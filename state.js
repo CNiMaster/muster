@@ -72,6 +72,25 @@ class StateStore extends EventEmitter {
     return task;
   }
 
+  deleteTask(id) {
+    const task = this.tasks.get(id);
+    if (!task) return null;
+    const ws = this.workspaces.get(task.workspaceId);
+    if (ws) ws.tasks = ws.tasks.filter(tid => tid !== id);
+    this.tasks.delete(id);
+    this.chatMessages.delete(id);
+    this.emit('task:deleted', { id, workspaceId: task.workspaceId });
+    return task;
+  }
+
+  renameTask(id, newName) {
+    const task = this.tasks.get(id);
+    if (!task) return null;
+    task.name = newName;
+    this.emit('task:update', task);
+    return task;
+  }
+
   restoreTask(workspaceId, savedTask) {
     const task = { ...savedTask, workspaceId };
     this.tasks.set(task.id, task);

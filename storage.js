@@ -121,6 +121,14 @@ export class Storage {
   }
 
   /**
+   * 永久删除任务文件夹
+   */
+  static deleteTaskFromDisk(projectPath, taskId) {
+    const taskDir = join(Storage.getTasksDir(projectPath), taskId);
+    if (existsSync(taskDir)) rmSync(taskDir, { recursive: true, force: true });
+  }
+
+  /**
    * 扫描最近打开过的项目（遍历 ~ 下的 .muster 目录）
    * 只扫描一层，避免太慢
    */

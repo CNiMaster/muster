@@ -11,7 +11,7 @@
 .tree-group.collapsed{display:none}
 .ws-item .tree-toggle:hover{color:var(--text)}
 .task-item{display:flex;align-items:center;gap:4px;padding:6px 8px;border-radius:6px;cursor:pointer;margin-bottom:1px;font-size:12px}
-.task-item:hover{background:var(--s2)}.task-item.active{background:var(--s3)}
+.task-item:hover{background:var(--s2)}.task-item.active{background:var(--s3)}.task-item:hover .task-actions{display:inline-flex!important}
 .bl-item{display:flex;align-items:center;gap:6px;padding:4px 8px 4px 12px;font-size:11px;color:var(--t2);cursor:default;border-radius:4px}
 .bl-item:hover{background:var(--s2)}
 *{margin:0;padding:0;box-sizing:border-box}
@@ -222,7 +222,7 @@ function connect(){
 function handleMsg(m){
   switch(m.type){
     case 'init': workspaces=m.workspaces||[];break;
-    case 'workspace:created': workspaces.push(m.data);break;
+    case 'workspace:created': workspaces.push(m.data);selectWs(m.data.id);break;
     case 'task:created': tasks[m.data.id]=m.data;render();
       if(pendingMsg){activeTask=m.data.id;render();sendMsg(pendingMsg);pendingMsg=null}
       else{selectTask(m.data.id)}break;
@@ -239,6 +239,7 @@ function handleMsg(m){
     case 'timer:scheduled': if(activeTask){if(!chatMsgs[activeTask])chatMsgs[activeTask]=[];const ts=new Date().toISOString();chatMsgs[activeTask].push({role:'system',agentName:'系统',text:'⏰ 定时消息已安排 ('+(m.data.delayMs/60000)+'分钟后触发)',timestamp:ts})}render();break;
     case 'restore:done': workspaces=m.workspaces||[];render();break;
     case 'backlog:update': backlog[m.data.workspaceId]=m.data.items;render();break;
+    case 'error': alert(m.data?.error||m.error||'未知错误');break;
   }
   render();
 }
@@ -297,6 +298,26 @@ function newTask(){
   if(!activeWs){alert('请先选择或新建工作区');return}
   const ws2=workspaces.find(w=>w.id===activeWs);
   send({type:'task:create',workspaceId:activeWs,cwd:ws2?.path||''});
+}
+async function renameTask(id){
+  const name=prompt('新任务名称:');
+  if(!name)return;
+  await fetch(`/api/task/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});
+  render();
+}
+function archiveTask(id){
+  if(!confirm('确定归档此任务？'))return;
+  fetch(`/api/task/${id}/archive`,{method:'POST'});
+  delete tasks[id];
+  if(activeTask===id){activeTask=null;viewMode='chat'}
+  render();
+}
+function deleteTask(id){
+  if(!confirm('确定永久删除此任务？此操作不可恢复。'))return;
+  fetch(`/api/task/${id}`,{method:'DELETE'});
+  delete tasks[id];
+  if(activeTask===id){activeTask=null;viewMode='chat'}
+  render();
 }
 function selectWs(id){
   activeWs=id;
@@ -421,6 +442,11 @@ function renderTree(){
       ${t.goal?'<span style="font-size:10px">🎯</span>':''}
       <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(firstMsg)}</span>
       <span style="font-size:10px;color:var(--t3);flex-shrink:0">$${(t.totalCost||0).toFixed(3)}</span>
+      <span class="task-actions" style="display:none;gap:2px;flex-shrink:0">
+        <span onclick="event.stopPropagation();renameTask('${t.id}')" style="cursor:pointer;color:var(--t3);font-size:11px" title="重命名">✏️</span>
+        <span onclick="event.stopPropagation();archiveTask('${t.id}')" style="cursor:pointer;color:var(--t3);font-size:11px" title="归档">📦</span>
+        <span onclick="event.stopPropagation();deleteTask('${t.id}')" style="cursor:pointer;color:var(--red);font-size:11px" title="删除">✕</span>
+      </span>
     </div>`;
     if(isExp){
       html+='<div class="tree-group">';

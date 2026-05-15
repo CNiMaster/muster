@@ -136,6 +136,25 @@ app.post('/api/task/:id/archive', (req, res) => {
   res.json({ ok: true });
 });
 
+// 删除任务
+app.delete('/api/task/:id', (req, res) => {
+  const t = state.getTask(req.params.id);
+  if (!t) return res.status(404).json({ error: 'Not found' });
+  const ws = state.getWorkspace(t.workspaceId);
+  if (ws) Storage.deleteTaskFromDisk(ws.path, t.id);
+  state.deleteTask(req.params.id);
+  res.json({ ok: true });
+});
+
+// 重命名任务
+app.put('/api/task/:id', (req, res) => {
+  const { name } = req.body;
+  if (!name) return res.status(400).json({ error: 'name 是必填字段' });
+  const t = state.renameTask(req.params.id, name);
+  if (!t) return res.status(404).json({ error: 'Not found' });
+  res.json(t);
+});
+
 // 恢复归档任务
 app.post('/api/task/:id/restore', (req, res) => {
   const { workspaceId, taskId } = req.body;
@@ -337,6 +356,7 @@ wss.on('connection', (ws, req) => {
         if (!msg.taskId || !msg.text) { ws.send(JSON.stringify({ type: 'error', error: 'taskId 和 text 是必填字段' })); return; }
         orchestrator.handleHumanMessage(msg.taskId, msg.text).catch(err => {
           console.error('Chat error:', err);
+          ws.send(JSON.stringify({ type: 'error', error: `Chat error: ${err.message}` }));
         });
       }
 
