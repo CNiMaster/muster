@@ -160,4 +160,52 @@ export class Storage {
     if (!existsSync(file)) return [];
     return JSON.parse(readFileSync(file, 'utf-8'));
   }
+
+  /**
+   * 保存工作区索引（全局，在 Muster 项目根目录）
+   */
+  static saveWorkspaceIndex(musterRoot, workspaces) {
+    const data = workspaces.map(w => ({ id: w.id, name: w.name, path: w.path }));
+    const dir = Storage.getMusterDir(musterRoot);
+    writeFileSync(join(dir, 'workspaces.json'), JSON.stringify(data, null, 2), 'utf-8');
+  }
+
+  /**
+   * 加载工作区索引
+   */
+  static loadWorkspaceIndex(musterRoot) {
+    const file = join(musterRoot, MUSTER_DIR, 'workspaces.json');
+    if (!existsSync(file)) return [];
+    return JSON.parse(readFileSync(file, 'utf-8'));
+  }
+
+  /**
+   * 从项目目录恢复工作区的所有任务
+   */
+  static restoreWorkspaceTasks(state, ws) {
+    const savedTasks = Storage.loadTasks(ws.path);
+    for (const st of savedTasks) {
+      if (st.archived) continue;
+      state.restoreTask(ws.id, st);
+    }
+    const savedBacklog = Storage.loadBacklog(ws.path);
+    if (savedBacklog.length) state.setBacklog(ws.id, savedBacklog);
+  }
+
+  /**
+   * 保存配置（复杂度、模型、沙盒覆盖）
+   */
+  static saveConfig(projectPath, config) {
+    const dir = Storage.getMusterDir(projectPath);
+    writeFileSync(join(dir, 'config.json'), JSON.stringify(config, null, 2), 'utf-8');
+  }
+
+  /**
+   * 加载配置
+   */
+  static loadConfig(projectPath) {
+    const file = join(projectPath, MUSTER_DIR, 'config.json');
+    if (!existsSync(file)) return null;
+    return JSON.parse(readFileSync(file, 'utf-8'));
+  }
 }

@@ -18,6 +18,13 @@ class StateStore extends EventEmitter {
     return ws;
   }
 
+  restoreWorkspace(savedWs) {
+    const ws = { ...savedWs, tasks: [] };
+    this.workspaces.set(ws.id, ws);
+    this.emit('workspace:update', ws);
+    return ws;
+  }
+
   getWorkspace(id) { return this.workspaces.get(id); }
   listWorkspaces() { return [...this.workspaces.values()]; }
 

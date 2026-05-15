@@ -1,5 +1,12 @@
 import { resolve, relative, dirname } from 'path';
 
+// 可覆盖的沙盒配置（通过 API 修改）
+export let sandboxOverrides = {
+  allowedTools: null,    // null = 使用默认白名单
+  writeTools: null,      // null = 使用默认写工具列表
+  blacklistEnabled: true, // 是否启用黑名单检查
+};
+
 // 黑名单：危险命令模式，Worker 绝对不能执行
 const BLACKLISTED_PATTERNS = [
   /\brm\s+-rf\s+[\/~]/i,           // rm -rf / or rm -rf ~
@@ -58,11 +65,12 @@ export function isBlacklisted(command) {
  * @returns {string[]} allowedTools 列表
  */
 export function getSandboxTools(cwd, targetPath) {
-  const tools = [...SANDBOX_ALLOWED_TOOLS];
+  const tools = sandboxOverrides.allowedTools || [...SANDBOX_ALLOWED_TOOLS];
 
   // 工作区内操作：允许写工具 + 受限 Bash
   if (targetPath && isWithinWorkspace(cwd, targetPath)) {
-    tools.push(...SANDBOX_WRITE_TOOLS);
+    const writeTools = sandboxOverrides.writeTools || SANDBOX_WRITE_TOOLS;
+    tools.push(...writeTools);
     tools.push('Bash');  // Bash 命令仍然受黑名单约束
   }
 
@@ -87,7 +95,7 @@ export function isWithinWorkspace(cwd, targetPath) {
  * @returns {{ allowed: boolean, reason?: string }}
  */
 export function checkBashCommand(command, cwd) {
-  if (isBlacklisted(command)) {
+  if (sandboxOverrides.blacklistEnabled !== false && isBlacklisted(command)) {
     return { allowed: false, reason: `命令命中黑名单: ${command.slice(0, 50)}` };
   }
   return { allowed: true };
@@ -99,8 +107,28 @@ export function checkBashCommand(command, cwd) {
 export function getSandboxConfig() {
   return {
     mode: 'sandbox',
-    allowedTools: SANDBOX_ALLOWED_TOOLS,
-    writeTools: SANDBOX_WRITE_TOOLS,
+    allowedTools: sandboxOverrides.allowedTools || SANDBOX_ALLOWED_TOOLS,
+    writeTools: sandboxOverrides.writeTools || SANDBOX_WRITE_TOOLS,
     blacklistedPatterns: BLACKLISTED_PATTERNS.length,
+    blacklistEnabled: sandboxOverrides.blacklistEnabled !== false,
+    overridesActive: sandboxOverrides.allowedTools !== null || sandboxOverrides.writeTools !== null || sandboxOverrides.blacklistEnabled === false,
+    defaultAllowedTools: SANDBOX_ALLOWED_TOOLS,
+    defaultWriteTools: SANDBOX_WRITE_TOOLS,
   };
+}
+
+/**
+ * 更新沙盒覆盖配置
+ */
+export function updateSandboxConfig(overrides) {
+  if (overrides.allowedTools !== undefined) {
+    sandboxOverrides.allowedTools = Array.isArray(overrides.allowedTools) ? overrides.allowedTools : null;
+  }
+  if (overrides.writeTools !== undefined) {
+    sandboxOverrides.writeTools = Array.isArray(overrides.writeTools) ? overrides.writeTools : null;
+  }
+  if (overrides.blacklistEnabled !== undefined) {
+    sandboxOverrides.blacklistEnabled = !!overrides.blacklistEnabled;
+  }
+  return getSandboxConfig();
 }

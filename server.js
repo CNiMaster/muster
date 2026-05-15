@@ -2,7 +2,9 @@ import express from 'express';
 import { WebSocketServer } from 'ws';
 import { createServer } from 'http';
 import { readdirSync, statSync, existsSync, mkdirSync } from 'fs';
-import { resolve, join, basename } from 'path';
+import { resolve, join, basename, dirname } from 'path';
+import { fileURLToPath } from 'url';
+const __dirname = dirname(fileURLToPath(import.meta.url));
 import { homedir } from 'os';
 import { state } from './state.js';
 import { orchestrator } from './orchestrator.js';
@@ -12,7 +14,7 @@ import { killAll } from './agent-runner.js';
 import { isPathAllowed } from './utils.js';
 import { scheduler } from './scheduler.js';
 import { BackupManager } from './backup.js';
-import { getSandboxConfig } from './sandbox.js';
+import { getSandboxConfig, updateSandboxConfig } from './sandbox.js';
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
@@ -55,6 +57,7 @@ app.post('/api/workspaces', (req, res) => {
   }
   const ws = state.createWorkspace(name || basename(dirPath), dirPath);
   Storage.saveWorkspace(dirPath, { ...ws, lastUsed: new Date().toISOString() });
+  Storage.saveWorkspaceIndex(__dirname, state.listWorkspaces());
   const savedTasks = Storage.loadTasks(dirPath);
   for (const st of savedTasks) {
     if (st.archived) continue;
@@ -166,11 +169,14 @@ app.get('/api/chat/:taskId', (req, res) => res.json(state.getChatMessages(req.pa
 
 app.put('/api/config', (req, res) => {
   if (req.body.complexity) setComplexity(req.body.complexity);
-  res.json({ ok: true, complexity: CONFIG.complexity });
+  if (req.body.leaderModel && ['opus','sonnet','haiku'].includes(req.body.leaderModel)) CONFIG.models.leader = req.body.leaderModel;
+  const existing = Storage.loadConfig(__dirname) || {};
+  Storage.saveConfig(__dirname, { ...existing, complexity: CONFIG.complexity, leaderModel: CONFIG.models.leader });
+  res.json({ ok: true, complexity: CONFIG.complexity, leaderModel: CONFIG.models.leader });
 });
 
 app.get('/api/config', (req, res) => {
-  res.json({ complexity: CONFIG.complexity, preset: CONFIG.preset.label, skipPermissions: CONFIG.skipPermissions,
+  res.json({ complexity: CONFIG.complexity, leaderModel: CONFIG.models.leader, preset: CONFIG.preset.label, skipPermissions: CONFIG.skipPermissions,
     goalMaxIter: CONFIG.preset.goalMaxIter, goalBudgetCap: CONFIG.preset.goalBudgetCap });
 });
 
@@ -194,6 +200,15 @@ app.get('/api/skills', (req, res) => res.json(listSkills()));
 
 // ===== 沙盒 & 权限 API =====
 app.get('/api/sandbox', (req, res) => res.json(getSandboxConfig()));
+app.put('/api/sandbox/config', (req, res) => {
+  const { allowedTools, writeTools, blacklistEnabled } = req.body;
+  const result = updateSandboxConfig({ allowedTools, writeTools, blacklistEnabled });
+  // 持久化沙盒配置
+  const config = Storage.loadConfig(__dirname) || {};
+  config.sandbox = { allowedTools, writeTools, blacklistEnabled };
+  Storage.saveConfig(__dirname, config);
+  res.json(result);
+});
 
 // ===== 备份 API =====
 app.get('/api/backups/:taskId', (req, res) => {
@@ -307,6 +322,8 @@ wss.on('connection', (ws, req) => {
         dirPath = resolve(dirPath);
         if (!isPathAllowed(dirPath)) { ws.send(JSON.stringify({ type: 'error', error: '路径不在允许范围内' })); return; }
         const ws2 = state.createWorkspace(msg.name || basename(dirPath), dirPath);
+        Storage.saveWorkspace(dirPath, { ...ws2, lastUsed: new Date().toISOString() });
+        Storage.saveWorkspaceIndex(__dirname, state.listWorkspaces());
         ws.send(JSON.stringify({ type: 'workspace:created', data: ws2 }));
       }
 
@@ -323,9 +340,27 @@ wss.on('connection', (ws, req) => {
         });
       }
 
+      if (msg.type === 'timer:schedule') {
+        if (!msg.taskId || !msg.text) { ws.send(JSON.stringify({ type: 'error', error: 'taskId and text required' })); return; }
+        const task = state.getTask(msg.taskId);
+        if (!task) return;
+        const job = scheduler.scheduleOnce({
+          name: `定时: ${msg.text.slice(0, 40)}`,
+          delayMs: (msg.delayMinutes || 30) * 60 * 1000,
+          reason: 'timer',
+          payload: { taskId: msg.taskId, text: msg.text },
+          execute: () => orchestrator.handleHumanMessage(msg.taskId, msg.text),
+        });
+        ws.send(JSON.stringify({ type: 'timer:scheduled', data: job }));
+      }
+
       if (msg.type === 'config:set') {
         if (msg.complexity) setComplexity(msg.complexity);
-        broadcast({ type: 'config:updated', complexity: CONFIG.complexity });
+        if (msg.leaderModel && ['opus','sonnet','haiku'].includes(msg.leaderModel)) CONFIG.models.leader = msg.leaderModel;
+        // 持久化到项目配置（merge 保留 sandbox 等已有字段）
+        const existing = Storage.loadConfig(__dirname) || {};
+        Storage.saveConfig(__dirname, { ...existing, complexity: CONFIG.complexity, leaderModel: CONFIG.models.leader });
+        broadcast({ type: 'config:updated', complexity: CONFIG.complexity, leaderModel: CONFIG.models.leader });
       }
 
       if (msg.type === 'goal:set') {
@@ -396,7 +431,29 @@ function gracefulShutdown() {
 process.on('SIGTERM', gracefulShutdown);
 process.on('SIGINT', gracefulShutdown);
 
+function restoreWorkspaceState() {
+  // 从持久化恢复全局配置
+  const saved = Storage.loadConfig(__dirname);
+  if (saved) {
+    if (saved.complexity) setComplexity(saved.complexity);
+    if (saved.leaderModel && ['opus','sonnet','haiku'].includes(saved.leaderModel)) CONFIG.models.leader = saved.leaderModel;
+    if (saved.sandbox) updateSandboxConfig(saved.sandbox);
+  }
+
+  // 恢复工作区及其任务
+  const savedWorkspaces = Storage.loadWorkspaceIndex(__dirname);
+  for (const wsMeta of savedWorkspaces) {
+    const ws = state.restoreWorkspace(wsMeta);
+    Storage.restoreWorkspaceTasks(state, ws);
+  }
+  // 如果工作区恢复后数量 > 0，广播恢复结果
+  if (savedWorkspaces.length > 0) {
+    broadcast({ type: 'restore:done', count: savedWorkspaces.length, workspaces: state.listWorkspaces() });
+  }
+}
+
 server.listen(CONFIG.port, () => {
+  restoreWorkspaceState();
   const skipNote = CONFIG.skipPermissions ? '' : '\n  ⚠️  权限检查已启用，如需自动执行请设置 MUSTER_SKIP_PERMISSIONS=true';
   console.log(`\n  Muster v2 — http://localhost:${CONFIG.port}${skipNote}\n`);
 });

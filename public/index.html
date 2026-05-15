@@ -6,6 +6,14 @@
 <title>Muster</title>
 <style>
 :root{--bg:#0d1017;--surface:#151922;--s2:#1c2130;--s3:#232a3b;--border:#2a3148;--text:#d8dce8;--t2:#7a809a;--t3:#4e5470;--blue:#4f8ff7;--green:#34d399;--yellow:#fbbf24;--red:#f87171;--purple:#a78bfa;--cyan:#22d3ee;--orange:#fb923c}
+.tree-toggle{cursor:pointer;user-select:none;font-size:10px;color:var(--t3);width:16px;flex-shrink:0;text-align:center;transition:.15s}
+.tree-group{margin-left:18px;border-left:1px solid var(--border);padding-left:6px}
+.tree-group.collapsed{display:none}
+.ws-item .tree-toggle:hover{color:var(--text)}
+.task-item{display:flex;align-items:center;gap:4px;padding:6px 8px;border-radius:6px;cursor:pointer;margin-bottom:1px;font-size:12px}
+.task-item:hover{background:var(--s2)}.task-item.active{background:var(--s3)}
+.bl-item{display:flex;align-items:center;gap:6px;padding:4px 8px 4px 12px;font-size:11px;color:var(--t2);cursor:default;border-radius:4px}
+.bl-item:hover{background:var(--s2)}
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px;line-height:1.5;height:100vh;overflow:hidden}
 ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
@@ -128,19 +136,12 @@ input:focus,textarea:focus{border-color:var(--blue)}
       <div class="left-sec-title">工作区 <button onclick="openWorkspace()">打开目录</button></div>
       <div id="wsList"></div>
     </div>
-    <div class="left-sec">
-      <div class="left-sec-title">任务 <button onclick="newTask()">+ 新建</button></div>
-      <div id="taskList" style="max-height:200px;overflow-y:auto"></div>
-    </div>
-    <div class="left-sec">
-      <div class="left-sec-title">清单 <button onclick="addBacklogItem()">+ 添加</button></div>
-      <div id="backlogList" style="max-height:250px;overflow-y:auto"></div>
-    </div>
-    <div class="left-body">
-      <div class="left-sec-title" style="margin-bottom:8px">团队</div>
-      <div id="agentList">
-        <div class="agent-item" onclick="selectView('chat')"><div class="agent-avatar av-human">你</div><span>老板</span><div class="agent-dot ad-idle"></div></div>
-        <div style="text-align:center;padding:20px;color:var(--t3);font-size:12px">启动任务后<br>Agent 团队自动组建</div>
+    <div class="left-body" id="treeBody" style="overflow-y:auto;flex:1;padding:4px 0">
+      <div style="padding:20px;text-align:center;color:var(--t3);font-size:12px;line-height:1.8">
+        选择工作区后<br>自动展开任务树<br><br>
+        👆 点击工作区直接对话 → 自动新建任务<br>
+        👆 点击具体任务 → 进入该任务<br>
+        👆 点击任务名旁 ▸ 展开子任务/清单
       </div>
     </div>
   </div>
@@ -148,7 +149,10 @@ input:focus,textarea:focus{border-color:var(--blue)}
   <div class="right" id="rightPanel">
     <div class="chat-header">
       <div class="chat-title" id="chatTitle">Muster</div>
-      <div class="chat-meta" id="chatMeta"><span id="goalBadge" style="display:none;background:var(--yellow)20;color:var(--yellow);padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600"></span></div>
+      <div class="chat-meta" id="chatMeta">
+        <span id="modelBadge" style="background:var(--purple)20;color:var(--purple);padding:2px 8px;border-radius:4px;font-size:11px;cursor:pointer;font-weight:600" onclick="cycleModel()" title="点击切换Leader模型">Leader: Opus</span>
+        <span id="goalBadge" style="display:none;background:var(--yellow)20;color:var(--yellow);padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600"></span>
+      </div>
     </div>
     <div class="chat-messages" id="chatMsgs">
       <div class="chat-empty">
@@ -156,10 +160,11 @@ input:focus,textarea:focus{border-color:var(--blue)}
           <div style="font-size:24px;margin-bottom:12px">👋</div>
           <div style="font-size:15px;color:var(--t2);margin-bottom:6px">欢迎来到 Muster</div>
           <div style="font-size:12px;color:var(--t3);line-height:1.8">
-            1. 左侧选择或新建工作区<br>
-            2. 点击 + 新建任务<br>
-            3. 在这里和 Leader 对话<br>
-            Leader 会追问需求、确认后自动启动团队
+            1. 左侧选择工作区 → 自动建任务<br>
+            2. 直接输入消息和 Leader 对话<br>
+            3. 任务执行后展开树看团队进度<br>
+            4. Leader 自动分配专家和技能<br>
+            顶部 <span style="color:var(--purple)">Leader: Opus</span> 可切换模型
           </div>
         </div>
       </div>
@@ -168,19 +173,32 @@ input:focus,textarea:focus{border-color:var(--blue)}
       <textarea id="inputBox" placeholder="输入消息和 Leader 对话..." rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMsg()}"></textarea>
       <button class="btn-send" id="sendBtn" onclick="sendMsg()">发送</button>
     </div>
-    <div id="goalInput" style="display:none;padding:4px 16px;border-top:1px solid var(--border);background:var(--surface)">
-      <div style="display:flex;gap:8px;align-items:center;padding:6px 0">
-        <span style="color:var(--yellow);font-size:12px;font-weight:600">GOAL</span>
-        <input id="goalText" placeholder="Completion condition (e.g., 'all tests pass')" style="flex:1;font-size:12px;padding:4px 8px">
-        <button onclick="setGoal()" style="background:var(--yellow);color:#000;font-size:11px;padding:4px 10px;font-weight:600">Set</button>
-        <button onclick="clearGoal()" style="background:var(--red)30;color:var(--red);font-size:11px;padding:4px 8px">Clear</button>
+    <div id="inputToolbar" style="display:flex;gap:6px;padding:6px 16px 10px;border-top:1px solid var(--border);background:var(--surface);align-items:center;flex-wrap:wrap">
+      <!-- Timer Toggle -->
+      <button id="timerToggle" onclick="toggleTimer()" style="background:transparent;color:var(--t3);font-size:12px;padding:4px 8px;border-radius:4px;font-weight:500;cursor:pointer;border:1px solid var(--border)">⏰ 定时</button>
+      <div id="timerControls" style="display:none;gap:4px;align-items:center;font-size:12px;color:var(--t2)">
+        <span>延迟</span>
+        <input id="timerDelay" type="number" value="30" min="1" style="width:50px;font-size:11px;padding:2px 4px">
+        <span>分钟后触发</span>
+      </div>
+      <span style="color:var(--t3);font-size:11px">|</span>
+      <!-- Goal -->
+      <button id="goalToggle" onclick="toggleGoalMenu()" style="background:var(--yellow)15;color:var(--yellow);font-size:12px;padding:4px 8px;border-radius:4px;font-weight:500;cursor:pointer;border:1px solid var(--yellow)40">🎯 Goal</button>
+      <div id="goalPresets" style="display:none;gap:4px;align-items:center;flex-wrap:wrap">
+        <button onclick="setGoalPreset('所有测试通过')" style="background:var(--s3);color:var(--t2);padding:3px 8px;border-radius:4px;font-size:11px;cursor:pointer">✅ 所有测试通过</button>
+        <button onclick="setGoalPreset('无安全漏洞')" style="background:var(--s3);color:var(--t2);padding:3px 8px;border-radius:4px;font-size:11px;cursor:pointer">🛡️ 无安全漏洞</button>
+        <button onclick="setGoalPreset('API 文档完整')" style="background:var(--s3);color:var(--t2);padding:3px 8px;border-radius:4px;font-size:11px;cursor:pointer">📖 API 文档完整</button>
+        <button onclick="setGoalPreset('代码无遗留问题')" style="background:var(--s3);color:var(--t2);padding:3px 8px;border-radius:4px;font-size:11px;cursor:pointer">🧹 代码无遗留问题</button>
+        <input id="goalCustom" placeholder="自定义..." style="width:120px;font-size:11px;padding:2px 6px" onkeydown="if(event.key==='Enter')setGoalPreset(this.value)">
       </div>
     </div>
   </div>
 </div>
+  </div>
+</div>
 
 <script>
-let ws, workspaces=[], tasks={}, chatMsgs={}, backlog={}, activeWs=null, activeTask=null, activeAgent=null, viewMode='chat', complexity='normal', wsDelay=1000;
+let ws, workspaces=[], tasks={}, chatMsgs={}, backlog={}, activeWs=null, activeTask=null, activeAgent=null, viewMode='chat', complexity='normal', wsDelay=1000, expandedTree={}, leaderModel='opus', pendingMsg=null, timerMode=false, goalActive=false;
 
 function gid(id){return document.getElementById(id)}
 function esc(t){return t?t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'):''}
@@ -188,6 +206,13 @@ function escJs(s){return s?s.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/
 
 // WebSocket
 function connect(){
+  // 从服务端恢复持久化配置
+  fetch('/api/config').then(r=>r.json()).then(cfg=>{
+    if(cfg.complexity)complexity=cfg.complexity;
+    if(cfg.leaderModel)leaderModel=cfg.leaderModel;
+    gid('modelBadge').textContent='Leader: '+leaderModel.charAt(0).toUpperCase()+leaderModel.slice(1);
+    renderCx();
+  });
   ws=new WebSocket(`${location.protocol==='https:'?'wss:':'ws:'}//${location.host}/ws`);
   ws.onopen=()=>{gid('wsDot').className='dot dot-on';gid('wsL').textContent='已连接';wsDelay=1000};
   ws.onclose=()=>{gid('wsDot').className='dot dot-off';gid('wsL').textContent='重连中';wsDelay=Math.min(wsDelay*2,30000);setTimeout(connect,wsDelay)};
@@ -198,8 +223,10 @@ function handleMsg(m){
   switch(m.type){
     case 'init': workspaces=m.workspaces||[];break;
     case 'workspace:created': workspaces.push(m.data);break;
-    case 'task:created': tasks[m.data.id]=m.data;if(activeWs)renderTasks();selectTask(m.data.id);break;
-    case 'task:update': tasks[m.data.id]=m.data;if(m.data.goal){gid('goalBadge').style.display='inline';const mi={simple:3,normal:5,deep:10}[complexity];gid('goalBadge').textContent=`🎯 Goal: ${m.data.goalIterations||0}/${mi}`}break;
+    case 'task:created': tasks[m.data.id]=m.data;render();
+      if(pendingMsg){activeTask=m.data.id;render();sendMsg(pendingMsg);pendingMsg=null}
+      else{selectTask(m.data.id)}break;
+    case 'task:update': tasks[m.data.id]=m.data;if(m.data.goal){gid('goalBadge').style.display='inline';const mi={simple:3,normal:5,deep:10}[complexity];gid('goalBadge').textContent=`🎯 ${m.data.goal?.slice(0,20)||''} ${m.data.goalIterations||0}/${mi}`;goalActive=true}else{gid('goalBadge').style.display='none';goalActive=false}break;
     case 'subtask:update': if(tasks[m.data.taskId]){const st=tasks[m.data.taskId].subtasks?.find(s=>s.id===m.data.id);if(st)Object.assign(st,m.data)}break;
     case 'chat:message':
       if(!chatMsgs[m.data.taskId])chatMsgs[m.data.taskId]=[];
@@ -208,8 +235,10 @@ function handleMsg(m){
       break;
     case 'agent:output': break;
     case 'agent:tool': break;
-    case 'config:updated': complexity=m.complexity;renderCx();break;
-    case 'backlog:update': backlog[m.data.workspaceId]=m.data.items;renderBacklog();break;
+    case 'config:updated': complexity=m.complexity;if(m.leaderModel){leaderModel=m.leaderModel;gid('modelBadge').textContent='Leader: '+leaderModel.charAt(0).toUpperCase()+leaderModel.slice(1)}renderCx();break;
+    case 'timer:scheduled': if(activeTask){if(!chatMsgs[activeTask])chatMsgs[activeTask]=[];const ts=new Date().toISOString();chatMsgs[activeTask].push({role:'system',agentName:'系统',text:'⏰ 定时消息已安排 ('+(m.data.delayMs/60000)+'分钟后触发)',timestamp:ts})}render();break;
+    case 'restore:done': workspaces=m.workspaces||[];render();break;
+    case 'backlog:update': backlog[m.data.workspaceId]=m.data.items;render();break;
   }
   render();
 }
@@ -269,38 +298,156 @@ function newTask(){
   const ws2=workspaces.find(w=>w.id===activeWs);
   send({type:'task:create',workspaceId:activeWs,cwd:ws2?.path||''});
 }
-function selectWs(id){activeWs=id;activeTask=null;activeAgent=null;
-  if(!backlog[id]){fetch(`/api/backlog/${id}`).then(r=>r.json()).then(items=>{backlog[id]=items;renderBacklog()})}
+function selectWs(id){
+  activeWs=id;
+  // 收起之前展开的任务树
+  expandedTree={};
+  activeTask=null;
+  activeAgent=null;
+  if(!backlog[id]){fetch(`/api/backlog/${id}`).then(r=>r.json()).then(items=>{backlog[id]=items;render()})}
+  // 自动展开此工作区
+  expandedTree['ws-'+id]=true;
+  // 自动新建任务
+  const ws2=workspaces.find(w=>w.id===id);
+  if(ws2) send({type:'task:create',workspaceId:id,cwd:ws2.path||''});
   render()}
 function selectTask(id){activeTask=id;activeAgent=null;viewMode='chat';render();scrollChat()}
 function selectView(mode,agentId){viewMode=agentId?'agent':mode;activeAgent=agentId||null;render()}
-function sendMsg(){
-  const text=gid('inputBox').value.trim();
-  if(!text||!activeTask)return;
-  send({type:'chat:send',taskId:activeTask,text});
+function sendMsg(text){
+  if(!text)text=gid('inputBox').value.trim();
+  if(!text)return;
   gid('inputBox').value='';
+  // 有工作区无任务 → 自动建新任务，建好后再发
+  if(!activeTask && activeWs){
+    const ws2=workspaces.find(w=>w.id===activeWs);
+    if(ws2){pendingMsg=text;send({type:'task:create',workspaceId:activeWs,cwd:ws2.path||''});return}
+  }
+  if(!activeTask){alert('请先选择或新建工作区');return}
+  // 定时模式：发到 scheduler
+  if(timerMode){
+    const delay=parseInt(gid('timerDelay').value)||30;
+    send({type:'timer:schedule',taskId:activeTask,text,delayMinutes:delay});
+    gid('timerToggle').click(); // 关闭定时模式
+    return;
+  }
+  send({type:'chat:send',taskId:activeTask,text});
 }
 function setCx(c){complexity=c;send({type:'config:set',complexity:c});renderCx()}
 function renderCx(){document.querySelectorAll('.cx-btn').forEach(b=>{b.classList.toggle('active',b.textContent===({simple:'简单',normal:'标准',deep:'深度'}[complexity]))})}
 
-// Goal
-function toggleGoalInput(){const el=gid('goalInput');el.style.display=el.style.display==='none'?'block':'none'}
-function setGoal(){const goal=gid('goalText').value.trim();if(!goal||!activeTask)return;send({type:'goal:set',taskId:activeTask,goal});gid('goalBadge').style.display='inline';const maxIter={simple:3,normal:5,deep:10}[complexity];gid('goalBadge').textContent=`🎯 Goal: 0/${maxIter}`}
-function clearGoal(){if(!activeTask)return;send({type:'goal:set',taskId:activeTask,goal:null});gid('goalBadge').style.display='none';gid('goalText').value=''}
+// Model
+// ===== Timer =====
+function toggleTimer(){
+  timerMode=!timerMode;
+  gid('timerToggle').style.background=timerMode?'var(--blue)25':'transparent';
+  gid('timerToggle').style.color=timerMode?'var(--blue)':'var(--t3)';
+  gid('timerToggle').style.borderColor=timerMode?'var(--blue)':'var(--border)';
+  gid('timerControls').style.display=timerMode?'flex':'none';
+}
+// ===== Goal =====
+function toggleGoalMenu(){
+  const el=gid('goalPresets');
+  el.style.display=el.style.display==='none'?'flex':'none';
+}
+function setGoalPreset(goalText){
+  if(!activeTask)return;
+  goalActive=!goalActive;
+  if(!goalActive){
+    send({type:'goal:set',taskId:activeTask,goal:null});
+    gid('goalBadge').style.display='none';
+    gid('goalToggle').style.background='var(--yellow)15';
+    gid('goalToggle').style.borderColor='var(--yellow)40';
+    gid('goalToggle').textContent='🎯 Goal';
+    gid('goalPresets').style.display='none';
+    return;
+  }
+  send({type:'goal:set',taskId:activeTask,goal:goalText});
+  gid('goalBadge').style.display='inline';
+  const maxIter={simple:3,normal:5,deep:10}[complexity];
+  gid('goalBadge').textContent=`🎯 ${goalText} 0/${maxIter}`;
+  gid('goalToggle').textContent=`🎯 ${goalText}`;
+  gid('goalToggle').style.background='var(--yellow)30';
+  gid('goalToggle').style.borderColor='var(--yellow)';
+  gid('goalPresets').style.display='none';
+}
+// ===== Model =====
+const MODELS=['opus','sonnet','haiku'];
+function cycleModel(){
+  const idx=MODELS.indexOf(leaderModel);
+  leaderModel=MODELS[(idx+1)%MODELS.length];
+  gid('modelBadge').textContent='Leader: '+leaderModel.charAt(0).toUpperCase()+leaderModel.slice(1);
+  send({type:'config:set',leaderModel});
+}
 
-// Render
+// Render — 树形结构
 function render(){
-  renderWorkspaces();renderTasks();renderBacklog();renderAgents();renderChat();updateTopbar();
+  renderWorkspaces();
+  renderTree();
+  renderAgents();
+  renderChat();
+  updateTopbar();
 }
 
 function renderWorkspaces(){
-  gid('wsList').innerHTML=workspaces.map(w=>`<div class="ws-item ${w.id===activeWs?'active':''}" onclick="selectWs('${w.id}')"><span class="ws-icon">📁</span>${esc(w.name)}</div>`).join('')||'<div style="padding:8px;color:var(--t3);font-size:12px">点击 + 新建工作区</div>';
+  gid('wsList').innerHTML=workspaces.map(w=>{
+    const isExpanded=!!expandedTree['ws-'+w.id];
+    return `<div class="ws-item ${w.id===activeWs?'active':''}" onclick="selectWs('${w.id}')">
+      <span class="tree-toggle" onclick="event.stopPropagation();toggleTree('ws-${w.id}')">${isExpanded?'▾':'▸'}</span>
+      <span class="ws-icon">📁</span>${esc(w.name)}
+    </div>`;
+  }).join('')||'<div style="padding:8px;color:var(--t3);font-size:12px">点击"打开目录"新建工作区</div>';
 }
 
-function renderTasks(){
-  if(!activeWs){gid('taskList').innerHTML='<div style="padding:8px;color:var(--t3);font-size:12px">选择工作区后显示任务</div>';return}
-  const ts=Object.values(tasks).filter(t=>t.workspaceId===activeWs);
-  gid('taskList').innerHTML=ts.reverse().map(t=>`<div class="task-item ${t.id===activeTask?'active':''}" onclick="selectTask('${t.id}')"><span class="task-status ts-${t.status}"></span>${esc((t.conversationHistory?.[0]?.content||'新任务').slice(0,30))}</div>`).join('')||'<div style="padding:8px;color:var(--t3);font-size:12px">点击 + 新建任务</div>';
+function toggleTree(key){
+  expandedTree[key]=!expandedTree[key];
+  render();
+}
+
+function renderTree(){
+  if(!activeWs){gid('treeBody').innerHTML='';return}
+  const ts=Object.values(tasks).filter(t=>t.workspaceId===activeWs).reverse();
+  const wsKey='ws-'+activeWs;
+  if(!expandedTree[wsKey]){gid('treeBody').innerHTML='';return}
+
+  let html='<div class="tree-group" style="margin-left:0;border-left:none;padding-left:0">';
+  ts.forEach(t=>{
+    const tk='task-'+t.id;
+    const isExp=!!expandedTree[tk];
+    const backlogItems=backlog[activeWs]||[];
+    const firstMsg=(t.conversationHistory?.[0]?.content||'新任务').slice(0,28);
+    html+=`<div class="task-item ${t.id===activeTask?'active':''}" onclick="selectTask('${t.id}')">
+      <span class="tree-toggle" onclick="event.stopPropagation();toggleTree('${tk}')">${isExp?'▾':'▸'}</span>
+      <span class="task-status ts-${t.status}"></span>
+      ${t.goal?'<span style="font-size:10px">🎯</span>':''}
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(firstMsg)}</span>
+      <span style="font-size:10px;color:var(--t3);flex-shrink:0">$${(t.totalCost||0).toFixed(3)}</span>
+    </div>`;
+    if(isExp){
+      html+='<div class="tree-group">';
+      // Agent 团队
+      html+=`<div style="font-size:10px;color:var(--t3);padding:4px 8px 2px;text-transform:uppercase;letter-spacing:.3px">👥 团队</div>`;
+      html+=`<div onclick="selectTask('${t.id}')" class="bl-item ${t.id===activeTask?'active':''}" style="cursor:pointer"><span class="agent-avatar av-leader" style="width:16px;height:16px;font-size:7px">L</span>Leader</div>`;
+      (t.subtasks||[]).forEach((st,i)=>{
+        const s=st.status;
+        html+=`<div onclick="selectView('agent','worker-${i}')" class="bl-item" style="cursor:pointer"><span class="agent-avatar av-worker" style="width:16px;height:16px;font-size:7px">W</span>Worker#${i+1} <span style="font-size:9px;color:var(--t3)">${s}</span></div>`;
+        if(st.attempts?.some(a=>a.role==='verifier')){
+          html+=`<div onclick="selectView('agent','verifier-${i}')" class="bl-item" style="cursor:pointer;padding-left:24px"><span class="agent-avatar av-verifier" style="width:14px;height:14px;font-size:6px">V</span>Verifier#${i+1}</div>`;
+        }
+      });
+      // 清单
+      if(backlogItems.length){
+        html+=`<div style="font-size:10px;color:var(--t3);padding:6px 8px 2px;text-transform:uppercase;letter-spacing:.3px;display:flex;justify-content:space-between">📋 清单 <button onclick="addBacklogItem()" style="background:transparent;color:var(--t3);font-size:10px;padding:0 4px">+</button></div>`;
+        backlogItems.forEach(i=>{
+          const icon=i.status==='completed'?'✅':i.status==='in_progress'||i.status==='assigned'?'🔄':'⬜';
+          html+=`<div class="bl-item">${icon} ${esc(i.title)} <button onclick="event.stopPropagation();removeBacklog('${i.id}')" style="margin-left:auto;background:transparent;color:var(--t3);font-size:9px;padding:0 4px">✕</button></div>`;
+        });
+      }
+      html+='</div>';
+    }
+  });
+  html+='</div>';
+  if(!ts.length)html='<div style="padding:12px;color:var(--t3);font-size:12px;text-align:center">无任务<br><br>点击工作区自动创建</div>';
+  gid('treeBody').innerHTML=html;
 }
 
 function renderAgents(){
@@ -324,8 +471,8 @@ function renderChat(){
   if(!activeTask||!tasks[activeTask]){return}
   const msgs=chatMsgs[activeTask]||[];
   const t=tasks[activeTask];
-  gid('chatTitle').textContent=viewMode==='chat'?'团队群聊':'Agent 详情';
-  gid('chatMeta').innerHTML=`<span class="task-status ts-${t?.status}"></span>${statusL(t?.status)} | $${(t?.totalCost||0).toFixed(3)} ${tokenTableHtml(t)}`;
+  const maxGoalIter=t.goal?({simple:3,normal:5,deep:10}[complexity]||5):0;
+  gid('chatMeta').innerHTML=`<span id="modelBadge" style="background:var(--purple)20;color:var(--purple);padding:2px 8px;border-radius:4px;font-size:11px;cursor:pointer;font-weight:600" onclick="cycleModel()" title="点击切换Leader模型">Leader: ${leaderModel.charAt(0).toUpperCase()+leaderModel.slice(1)}</span> ${t.goal?`<span style="background:var(--yellow)20;color:var(--yellow);padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600">🎯 ${esc(t.goal).slice(0,20)} ${t.goalIterations||0}/${maxGoalIter}</span>`:''} <span class="task-status ts-${t?.status}"></span> ${statusL(t?.status)} | $${(t?.totalCost||0).toFixed(3)} ${tokenTableHtml(t)}`;
 
   if(!msgs.length){
     gid('chatMsgs').innerHTML='<div class="chat-empty"><div style="font-size:13px;color:var(--t2)">和 Leader 开始对话吧</div></div>';
@@ -438,7 +585,6 @@ function tokenTableHtml(t){
 }
 function fmtTok(n){return n>=1000000?((n/1000000).toFixed(1)+'M'):n>=1000?((n/1000).toFixed(1)+'k'):String(n||0)}
 
-// Backlog
 function addBacklogItem(){
   if(!activeWs){alert('请先选择工作区');return}
   const title=prompt('任务标题');
@@ -472,12 +618,10 @@ function scrollChat(){requestAnimationFrame(()=>{const el=gid('chatMsgs');if(el)
 
 // ===== Settings Modal =====
 async function openSettings(){
-  const [config,sandbox,jobs,personas,skills]=await Promise.all([
+  const [config,sandbox,jobs]=await Promise.all([
     fetch('/api/config').then(r=>r.json()),
     fetch('/api/sandbox').then(r=>r.json()),
     fetch('/api/scheduler/jobs').then(r=>r.json()),
-    fetch('/api/personas').then(r=>r.json()),
-    fetch('/api/skills').then(r=>r.json()),
   ]);
 
   const modal=document.createElement('div');
@@ -492,54 +636,99 @@ async function openSettings(){
     </div>
   </div>`).join(''):'<div style="color:var(--t3);font-size:12px;text-align:center;padding:12px">暂无定时任务</div>';
 
-  modal.innerHTML=`<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;width:600px;max-height:80vh;overflow-y:auto">
+  modal.innerHTML=`<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;width:620px;max-height:85vh;overflow-y:auto">
     <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
-      <span style="font-weight:700;font-size:16px">⚙ Settings</span>
+      <span style="font-weight:700;font-size:16px">⚙ 设置</span>
       <button onclick="gid('settingsModal').remove()" style="background:transparent;color:var(--t2);font-size:18px">✕</button>
     </div>
     <div style="padding:16px 20px">
-      <h3 style="font-size:13px;color:var(--blue);margin:0 0 10px">权限模式</h3>
-      <div style="background:var(--s2);border-radius:8px;padding:12px;margin-bottom:16px">
-        <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="color:var(--t2)">模式</span><span style="color:var(--green);font-weight:600">沙盒 (Sandbox)</span></div>
-        <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="color:var(--t2)">可用工具</span><span>${sandbox.allowedTools.length} 个</span></div>
-        <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="color:var(--t2)">写工具 (工作区内)</span><span>${sandbox.writeTools.join(', ')}</span></div>
-        <div style="display:flex;justify-content:space-between"><span style="color:var(--t2)">黑名单规则</span><span>${sandbox.blacklistedPatterns} 条</span></div>
+
+      <div style="background:var(--s2);border-radius:10px;padding:14px;margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <span style="color:var(--text);font-weight:600;font-size:14px">🛡️ 权限模式</span>
+          <span style="color:var(--green);font-weight:600;font-size:12px;background:var(--green)20;padding:3px 10px;border-radius:4px">沙盒 (Sandbox)</span>
+        </div>
+        <div style="font-size:12px;color:var(--t2);line-height:1.7;margin-bottom:8px">
+          Worker 只能在 <strong>工作目录内</strong> 操作，危险命令（rm -rf、强制推送等）被拦截。<br>
+          防止 AI 误删文件或执行破坏性操作。
+        </div>
+        <div style="display:flex;gap:20px;font-size:12px;color:var(--t2)">
+          <span>🔧 读工具: ${sandbox.allowedTools.length} 个</span>
+          <span>✏️ 写工具: ${sandbox.writeTools.join(', ')}</span>
+          <span>🚫 黑名单: ${sandbox.blacklistedPatterns} 条</span>
+        </div>
       </div>
 
-      <h3 style="font-size:13px;color:var(--blue);margin:0 0 10px">专家 Persona (${personas.length})</h3>
-      <div style="background:var(--s2);border-radius:8px;padding:12px;margin-bottom:16px;display:flex;gap:6px;flex-wrap:wrap">
-        ${personas.map(p=>`<span style="background:var(--s3);padding:4px 10px;border-radius:4px;font-size:12px;color:var(--cyan)">${esc(p)}</span>`).join('')}
+      <div style="background:var(--s2);border-radius:10px;padding:14px;margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <span style="color:var(--text);font-weight:600;font-size:14px">🧠 Leader 模型</span>
+          <span style="color:var(--purple);font-weight:600;font-size:12px;background:var(--purple)20;padding:3px 10px;border-radius:4px">当前: ${leaderModel}</span>
+        </div>
+        <div style="font-size:12px;color:var(--t2);line-height:1.7;margin-bottom:8px">
+          Leader 是调度中枢，负责理解需求、规划任务、分配专家、汇总结果。模型越强理解越准。<br>
+          点击顶部 <strong style="color:var(--purple)">Leader: XXX</strong> 标签切换，Worker 和 Verifier 由系统自动分配。
+        </div>
+        <div style="font-size:11px;color:var(--t3);line-height:1.6">
+          • Opus — 最强模型，适合复杂需求<br>
+          • Sonnet — 平衡速度与质量（默认）<br>
+          • Haiku — 最快最省，适合简单任务
+        </div>
       </div>
 
-      <h3 style="font-size:13px;color:var(--blue);margin:0 0 10px">技能 Skills (${skills.length})</h3>
-      <div style="background:var(--s2);border-radius:8px;padding:12px;margin-bottom:16px;display:flex;gap:6px;flex-wrap:wrap">
-        ${skills.map(s=>`<span style="background:var(--s3);padding:3px 8px;border-radius:4px;font-size:11px;color:var(--t2)">${esc(s)}</span>`).join('')}
+      <div style="background:var(--s2);border-radius:10px;padding:14px;margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <span style="color:var(--text);font-weight:600;font-size:14px">🎯 复杂度预设</span>
+          <span style="color:var(--blue);font-weight:600;font-size:12px;background:var(--blue)20;padding:3px 10px;border-radius:4px">当前: ${config.complexity==='simple'?'简单':config.complexity==='normal'?'标准':'深度'}</span>
+        </div>
+        <div style="font-size:12px;color:var(--t2);line-height:1.7;margin-bottom:10px">
+          控制 Worker 的重试次数和并行数量。复杂度越高越耐心但越贵。
+        </div>
+        <div style="display:flex;gap:8px">
+          ${[{k:'simple',l:'简单',d:'出错重试1次<br>最多2个子任务并行<br>省钱省时间'},{k:'normal',l:'标准',d:'出错重试3次<br>最多3个子任务并行<br>日常推荐'},{k:'deep',l:'深度',d:'出错重试5次<br>最多5个子任务并行<br>追求质量'}].map(p=>`<div onclick="setCx('${p.k}')" style="flex:1;padding:12px;border-radius:8px;cursor:pointer;text-align:center;background:${config.complexity===p.k?'var(--blue)20':'var(--s3)'};border:1px solid ${config.complexity===p.k?'var(--blue)':'transparent'}"><div style="font-weight:600;font-size:13px;color:${config.complexity===p.k?'var(--blue)':'var(--text)'}">${p.l}</div><div style="font-size:11px;color:var(--t2);margin-top:4px;line-height:1.5">${p.d}</div></div>`).join('')}
+        </div>
       </div>
 
-      <h3 style="font-size:13px;color:var(--blue);margin:0 0 10px">定时任务</h3>
-      <div style="background:var(--s2);border-radius:8px;padding:12px;margin-bottom:16px" id="jobsList">
-        ${scheduledHtml}
+      <div style="background:var(--s2);border-radius:10px;padding:14px;margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <span style="color:var(--text);font-weight:600;font-size:14px">🎯 Goal 模式</span>
+          <span style="color:var(--yellow);font-weight:600;font-size:12px;background:var(--yellow)20;padding:3px 10px;border-radius:4px">自治循环</span>
+        </div>
+        <div style="font-size:12px;color:var(--t2);line-height:1.8">
+          <strong>是什么：</strong>给任务设定一个完成条件，系统自动执行 → 检查 → 重试，直到条件满足或预算用尽。<br><br>
+          <strong>怎么用：</strong>
+          <ol style="margin:4px 0 0 18px;padding:0">
+            <li>选择一个任务</li>
+            <li>点击输入框上方的 🎯 按钮</li>
+            <li>输入条件如 "所有测试通过" 或 "API 文档完整无遗漏"</li>
+            <li>系统自动循环执行，直到达标</li>
+          </ol><br>
+          <strong>停止条件：</strong>
+          <ul style="margin:0 0 0 18px;padding:0">
+            <li>评估员确认目标已达成</li>
+            <li>达到最大迭代次数（简单3次 / 标准5次 / 深度10次）</li>
+            <li>预算超限</li>
+          </ul>
+        </div>
       </div>
 
-      <h3 style="font-size:13px;color:var(--blue);margin:0 0 10px">手动调度</h3>
-      <div style="background:var(--s2);border-radius:8px;padding:12px;margin-bottom:16px">
-        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
-          <span style="color:var(--t2);font-size:12px;white-space:nowrap">延迟</span>
+      <div style="background:var(--s2);border-radius:10px;padding:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <span style="color:var(--text);font-weight:600;font-size:14px">⏰ 定时任务</span>
+        </div>
+        <div style="font-size:12px;color:var(--t2);line-height:1.7;margin-bottom:10px">
+          当 Worker 遇到 API 限流时自动安排重试，也可以手动调度延迟执行的任务。
+        </div>
+        <div style="background:var(--s3);border-radius:8px;padding:12px;margin-bottom:10px" id="jobsList">
+          ${scheduledHtml}
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+          <span style="color:var(--t2);font-size:12px;white-space:nowrap">⏲️ 延迟</span>
           <input id="schedDelay" type="number" value="120" min="1" style="width:60px;font-size:12px">
           <span style="color:var(--t2);font-size:12px">分钟</span>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <span style="color:var(--t2);font-size:12px;white-space:nowrap">原因</span>
-          <input id="schedReason" placeholder="限流重试 / 定时巡检" style="flex:1;font-size:12px">
+          <input id="schedReason" placeholder="原因" style="flex:1;font-size:12px">
         </div>
       </div>
 
-      <h3 style="font-size:13px;color:var(--blue);margin:0 0 10px">复杂度预设</h3>
-      <div style="background:var(--s2);border-radius:8px;padding:12px">
-        <div style="display:flex;gap:8px">
-          ${[{k:'simple',l:'简单',d:'1次重试, 2并发'},{k:'normal',l:'标准',d:'3次重试, 3并发'},{k:'deep',l:'深度',d:'5次重试, 5并发'}].map(p=>`<div onclick="setCx('${p.k}')" style="flex:1;padding:10px;border-radius:6px;cursor:pointer;text-align:center;background:${config.complexity===p.k?'var(--blue)20':'var(--s3)'};border:1px solid ${config.complexity===p.k?'var(--blue)':'transparent'}"><div style="font-weight:600;font-size:13px;color:${config.complexity===p.k?'var(--blue)':'var(--text)'}">${p.l}</div><div style="font-size:11px;color:var(--t2);margin-top:2px">${p.d}</div></div>`).join('')}
-        </div>
-      </div>
     </div>
   </div>`;
   document.body.appendChild(modal);
