@@ -20,6 +20,15 @@ const BLACKLISTED_PATTERNS = [
   /\bfsck\b/i,
   /\biptables\b/i,
   /\bsystemctl\s+(stop|disable)\b/i,
+  // Shellward-inspired patterns: injection, data exfiltration, shell escape
+  /\bcurl\s+.*\|\s*(?:ba)?sh/i,                          // pipe curl to shell
+  /\bwget\s+.*\|\s*(?:ba)?sh/i,                          // pipe wget to shell
+  /\bpython\s+-c\s+.*(?:os\.system|subprocess)/i,        // python shell escape
+  /\bnode\s+-e\s+.*(?:child_process)/i,                   // node shell escape
+  /\benv\b.*>\s*\//i,                                     // env dump to file
+  /\bexport\s+PATH=/i,                                    // PATH manipulation
+  /\b\/etc\/(?:passwd|shadow|hosts)/i,                    // sensitive system files
+  /\.ssh\//i,                                            // SSH key access
 ];
 
 // 白名单：工作区内安全的工具

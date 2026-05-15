@@ -1,0 +1,12 @@
+{
+  "engineering": { "label": "工程开发", "count": 0, "personas": [] },
+  "frontend": { "label": "前端开发", "count": 0, "personas": [] },
+  "backend": { "label": "后端开发", "count": 0, "personas": [] },
+  "security": { "label": "安全", "count": 0, "personas": [] },
+  "design": { "label": "设计", "count": 0, "personas": [] },
+  "marketing": { "label": "营销", "count": 0, "personas": [] },
+  "product": { "label": "产品", "count": 0, "personas": [] },
+  "data": { "label": "数据", "count": 0, "personas": [] },
+  "devops": { "label": "运维", "count": 0, "personas": [] },
+  "qa": { "label": "测试", "count": 0, "personas": [] }
+}

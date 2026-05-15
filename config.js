@@ -24,6 +24,7 @@ const promptCache = {};
 // 专家 Persona 目录
 const AGENTS_DIR = resolve(__dirname, 'agents');
 const SKILLS_DIR = resolve(__dirname, 'skills');
+const PERSONAS_DIR = resolve(__dirname, 'personas');
 
 export const CONFIG = {
   port: parseInt(process.env.MUSTER_PORT || '3456', 10),
@@ -138,11 +139,22 @@ export function loadPrompt(name) {
 
 /**
  * 加载专家 Persona prompt（按需，不缓存以节省内存）
+ * 先查本地 agents/，再查 personas/{domain}/
  */
 export function loadPersona(name) {
-  const file = join(AGENTS_DIR, `${name}.md`);
-  if (!existsSync(file)) return null;
-  return readFileSync(file, 'utf-8');
+  const localFile = join(AGENTS_DIR, `${name}.md`);
+  if (existsSync(localFile)) return readFileSync(localFile, 'utf-8');
+  if (existsSync(PERSONAS_DIR)) {
+    const domainsFile = join(PERSONAS_DIR, 'domains.json');
+    if (existsSync(domainsFile)) {
+      const domains = JSON.parse(readFileSync(domainsFile, 'utf-8'));
+      for (const domain of Object.keys(domains)) {
+        const domainFile = join(PERSONAS_DIR, domain, `${name}.md`);
+        if (existsSync(domainFile)) return readFileSync(domainFile, 'utf-8');
+      }
+    }
+  }
+  return null;
 }
 
 /**
@@ -198,13 +210,25 @@ export function buildSkillCatalog() {
  * 轻量角色目录：本地 persona + 外部域摘要
  */
 export function buildPersonaCatalog() {
+  const lines = [];
+  // 本地 personas
   const personas = listPersonas();
-  return personas.map(name => {
+  for (const name of personas) {
     const file = join(AGENTS_DIR, `${name}.md`);
-    if (!existsSync(file)) return name;
+    if (!existsSync(file)) { lines.push(name); continue; }
     const content = readFileSync(file, 'utf-8');
     const descMatch = content.match(/^---\n[\s\S]*?description:\s*(.+)/m);
-    const desc = descMatch ? descMatch[1].trim() : '';
-    return `${name}: ${desc}`;
-  }).join('\n');
+    lines.push(`${name}: ${descMatch ? descMatch[1].trim() : ''}`);
+  }
+  // 外部域摘要
+  const domainsFile = join(PERSONAS_DIR, 'domains.json');
+  if (existsSync(domainsFile)) {
+    const domains = JSON.parse(readFileSync(domainsFile, 'utf-8'));
+    for (const [domain, data] of Object.entries(domains)) {
+      if (data.count > 0) {
+        lines.push(`[${data.label} (${data.count})]: 可用角色详见 /api/persona-catalog?domain=${domain}`);
+      }
+    }
+  }
+  return lines.join('\n');
 }
