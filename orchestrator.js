@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import { CONFIG, loadPrompt, loadPersona, loadSkill } from './config.js';
+import { CONFIG, loadPrompt, loadPersona, loadSkill, buildSkillCatalog, buildPersonaCatalog } from './config.js';
 import { state } from './state.js';
 import { spawnAgent } from './agent-runner.js';
 import { tryParseJSON } from './utils.js';
@@ -30,10 +30,13 @@ class Orchestrator extends EventEmitter {
     state.addChatMessage(taskId, { role: 'system', agentName: '系统', text: 'Leader 正在思考...', type: 'system' });
 
     try {
+      const leaderSystemPrompt = loadPrompt('leader')
+        .replace('[SKILL_CATALOG]', buildSkillCatalog())
+        .replace('[PERSONA_CATALOG]', buildPersonaCatalog());
       const leaderResult = await spawnAgent({
         role: 'leader',
         prompt: chatPrompt,
-        systemPrompt: loadPrompt('leader'),
+        systemPrompt: leaderSystemPrompt,
         budget: CONFIG.budgets.leader,
         cwd: task.cwd,
         jsonSchema: CONFIG.leaderIntentSchema,
@@ -61,11 +64,19 @@ class Orchestrator extends EventEmitter {
         state.addChatMessage(taskId, { role: 'leader', agentName: 'Leader', text: intent.text, type: 'execute' });
         task.conversationHistory.push({ role: 'leader', content: intent.text, timestamp: new Date().toISOString() });
 
-        this.runTask(taskId, intent.plan).catch(err => {
-          console.error('Task execution error:', err);
-          state.updateTask(taskId, { status: 'failed', result: err.message, completedAt: new Date().toISOString() });
-          state.addChatMessage(taskId, { role: 'system', agentName: '系统', text: `任务失败: ${err.message}`, type: 'system' });
-        });
+        if (task.goal) {
+          this.runGoalLoop(taskId, intent.plan, task.goal).catch(err => {
+            console.error('Goal loop error:', err);
+            state.updateTask(taskId, { status: 'failed', result: err.message, completedAt: new Date().toISOString() });
+            state.addChatMessage(taskId, { role: 'system', agentName: '系统', text: `Goal 循环失败: ${err.message}`, type: 'system' });
+          });
+        } else {
+          this.runTask(taskId, intent.plan).catch(err => {
+            console.error('Task execution error:', err);
+            state.updateTask(taskId, { status: 'failed', result: err.message, completedAt: new Date().toISOString() });
+            state.addChatMessage(taskId, { role: 'system', agentName: '系统', text: `任务失败: ${err.message}`, type: 'system' });
+          });
+        }
       }
     } catch (err) {
       state.addChatMessage(taskId, { role: 'system', agentName: '系统', text: `Leader 出错: ${err.message}`, type: 'system' });
@@ -112,9 +123,12 @@ class Orchestrator extends EventEmitter {
     });
 
     const aggPrompt = buildAggregationPrompt(task.conversationHistory.map(h => h.content).join('\n'), results, subtasks);
+    const aggSystemPrompt = loadPrompt('leader')
+      .replace('[SKILL_CATALOG]', buildSkillCatalog())
+      .replace('[PERSONA_CATALOG]', buildPersonaCatalog());
     try {
       const aggResult = await spawnAgent({
-        role: 'leader', prompt: aggPrompt, systemPrompt: loadPrompt('leader'),
+        role: 'leader', prompt: aggPrompt, systemPrompt: aggSystemPrompt,
         budget: CONFIG.budgets.leader, cwd: task.cwd, emitter: this, sessionId: taskId
       });
       state.addCost(taskId, aggResult.cost, aggResult.usage, aggResult.modelUsage);
@@ -250,6 +264,126 @@ class Orchestrator extends EventEmitter {
     }
     return Promise.all(results);
   }
+
+  /**
+   * Goal Mode：自治循环，直到目标达成或安全限制
+   */
+  async runGoalLoop(taskId, initialPlan, goal) {
+    const maxIter = CONFIG.preset.goalMaxIter;
+    const budgetCap = CONFIG.preset.goalBudgetCap;
+    let currentPlan = initialPlan;
+
+    for (let iteration = 0; iteration < maxIter; iteration++) {
+      const task = state.getTask(taskId);
+
+      if (task.totalCost >= budgetCap) {
+        state.addChatMessage(taskId, { role: 'system', agentName: '系统', text: `Budget cap reached ($${budgetCap.toFixed(2)}). Goal loop stopped.`, type: 'system' });
+        break;
+      }
+
+      state.addChatMessage(taskId, { role: 'system', agentName: '系统', text: `🎯 Goal iteration ${iteration + 1}/${maxIter}`, type: 'system' });
+
+      // Execute current plan
+      await this.runTask(taskId, currentPlan);
+      const updatedTask = state.getTask(taskId);
+      const subtaskResults = updatedTask.subtasks.map((st, i) => ({
+        success: st.status === 'completed',
+        output: st.finalOutput || '',
+        subtaskIndex: i,
+        title: st.title
+      }));
+
+      // Evaluate goal
+      const verdict = await this.evaluateGoal(taskId, goal, subtaskResults);
+
+      if (!verdict) {
+        state.addChatMessage(taskId, { role: 'system', agentName: '系统', text: '评估员无法响应，Goal 循环停止。', type: 'system' });
+        break;
+      }
+
+      state.addGoalIteration(taskId, iteration + 1, verdict, currentPlan, subtaskResults);
+
+      if (verdict.goalMet && verdict.confidence >= 0.8) {
+        state.updateTask(taskId, { status: 'completed' });
+        state.addChatMessage(taskId, { role: 'leader', agentName: 'Leader', text: `🎯 Goal achieved! Confidence: ${(verdict.confidence * 100).toFixed(0)}%\n${verdict.reasoning}`, type: 'chat' });
+        return;
+      }
+
+      state.addChatMessage(taskId, {
+        role: 'system', agentName: '系统',
+        text: `Goal not met (confidence: ${((verdict.confidence || 0) * 100).toFixed(0)}%). Remaining: ${verdict.remainingIssues?.join(', ') || 'see details'}`,
+        type: 'system'
+      });
+
+      // Replan
+      const replanResult = await this.replanForGoal(taskId, goal, { iteration: iteration + 1, verdict, subtaskResults });
+
+      if (!replanResult || replanResult.action !== 'execute' || !replanResult.plan) {
+        state.addChatMessage(taskId, { role: 'leader', agentName: 'Leader', text: replanResult?.text || 'Cannot create further plan. Goal loop stopped.', type: 'chat' });
+        break;
+      }
+
+      currentPlan = replanResult.plan;
+      state.addChatMessage(taskId, { role: 'leader', agentName: 'Leader', text: `🔄 Replanning: ${replanResult.text}`, type: 'execute' });
+
+      // Reset subtasks for new iteration
+      state.updateTask(taskId, { subtasks: [], status: 'chatting' });
+    }
+
+    state.updateTask(taskId, { status: 'completed' });
+    state.addChatMessage(taskId, { role: 'system', agentName: '系统', text: `Goal loop ended after ${state.getTask(taskId).goalIterations} iterations.`, type: 'system' });
+  }
+
+  /**
+   * 评估 Goal 是否达成
+   */
+  async evaluateGoal(taskId, goal, subtaskResults) {
+    const task = state.getTask(taskId);
+    const resultsSummary = subtaskResults.map(r =>
+      `${r.success ? 'PASS' : 'FAIL'}: ${r.title}\n${(r.output || '').slice(0, 500)}`
+    ).join('\n\n');
+
+    const evalPrompt = `## Goal Condition\n${goal}\n\n## Completed Work\n${resultsSummary}\n\nHas the goal been fully met?`;
+
+    const result = await spawnAgent({
+      role: 'verifier',
+      prompt: evalPrompt,
+      systemPrompt: loadPrompt('goal-evaluator'),
+      budget: CONFIG.budgets.verifier,
+      cwd: task.cwd,
+      jsonSchema: CONFIG.goalEvaluatorSchema,
+      emitter: this,
+      sessionId: taskId
+    });
+
+    state.addCost(taskId, result.cost, result.usage, result.modelUsage);
+    return result.structuredOutput || tryParseJSON(result.text);
+  }
+
+  /**
+   * 根据 Goal 评估结果重新规划
+   */
+  async replanForGoal(taskId, goal, previousIteration) {
+    const task = state.getTask(taskId);
+    const replanPrompt = buildReplanPrompt(task.conversationHistory, goal, previousIteration);
+    const leaderSystemPrompt = loadPrompt('leader')
+      .replace('[SKILL_CATALOG]', buildSkillCatalog())
+      .replace('[PERSONA_CATALOG]', buildPersonaCatalog());
+
+    const result = await spawnAgent({
+      role: 'leader',
+      prompt: replanPrompt,
+      systemPrompt: leaderSystemPrompt,
+      budget: CONFIG.budgets.leader,
+      cwd: task.cwd,
+      jsonSchema: CONFIG.leaderIntentSchema,
+      emitter: this,
+      sessionId: taskId
+    });
+
+    state.addCost(taskId, result.cost, result.usage, result.modelUsage);
+    return result.structuredOutput || tryParseJSON(result.text);
+  }
 }
 
 function buildLeaderChatPrompt(history, newMessage, task) {
@@ -274,7 +408,6 @@ function isRateLimitError(msg) {
 }
 
 function parseRetryDelay(msg) {
-  // 尝试从错误信息中提取重试等待时间
   const match = msg.match(/(\d+)\s*(?:minute|min|second|sec|hour)/i);
   if (!match) return null;
   const n = parseInt(match[1]);
@@ -282,6 +415,14 @@ function parseRetryDelay(msg) {
   if (/minute|min/i.test(msg)) return n * 60000;
   if (/second|sec/i.test(msg)) return n * 1000;
   return null;
+}
+
+function buildReplanPrompt(history, goal, previousIteration) {
+  const historyStr = history.slice(-MAX_HISTORY_CONTEXT).map(h =>
+    `${h.role === 'human' ? '老板' : 'Leader'}: ${h.content}`
+  ).join('\n');
+
+  return `## 对话历史\n${historyStr}\n\n## Goal Condition\n${goal}\n\n## Previous Attempt\nIteration: ${previousIteration.iteration}\nEvaluator verdict: ${previousIteration.verdict.goalMet ? 'MET' : 'NOT MET'}\nReasoning: ${previousIteration.verdict.reasoning}\nRemaining issues: ${previousIteration.verdict.remainingIssues?.join('; ') || 'none listed'}\nSuggested actions: ${previousIteration.verdict.suggestedActions?.join('; ') || 'none listed'}\n\nResults:\n${previousIteration.subtaskResults.map((r, i) => `${r.success ? 'PASS' : 'FAIL'}: ${r.title || 'Subtask ' + (i + 1)}`).join('\n')}\n\nThe goal was NOT met. Create a NEW plan focusing on the remaining issues. Do NOT repeat the same approach that failed.`;
 }
 
 export const orchestrator = new Orchestrator();

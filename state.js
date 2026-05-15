@@ -7,6 +7,7 @@ class StateStore extends EventEmitter {
     this.workspaces = new Map();  // id -> Workspace
     this.tasks = new Map();       // id -> Task
     this.chatMessages = new Map(); // taskId -> ChatMessage[]
+    this.backlogs = new Map();    // workspaceId -> BacklogItem[]
   }
 
   // ===== Workspace =====
@@ -35,7 +36,10 @@ class StateStore extends EventEmitter {
       totalTokens: { input: 0, output: 0, cacheRead: 0 },
       modelUsage: {},  // { "model-name": { inputTokens, outputTokens, cacheReadTokens, costUSD } }
       createdAt: new Date().toISOString(),
-      completedAt: null
+      completedAt: null,
+      goal: null,
+      goalIterations: 0,
+      goalHistory: []
     };
     this.tasks.set(task.id, task);
     this.chatMessages.set(task.id, []);
@@ -183,6 +187,87 @@ class StateStore extends EventEmitter {
         task.modelUsage[model].costUSD += data.costUSD || 0;
       }
     }
+  }
+
+  addGoalIteration(taskId, iteration, verdict, plan, results) {
+    const task = this.tasks.get(taskId);
+    if (!task) return;
+    task.goalIterations = iteration;
+    task.goalHistory.push({
+      iteration,
+      evaluatorVerdict: verdict,
+      plan: plan?.summary || null,
+      results: results?.map(r => ({ success: r.success, title: r.subtaskIndex })) || []
+    });
+    this.emit('task:update', task);
+    return task;
+  }
+
+  // ===== Backlog =====
+  getBacklog(workspaceId) {
+    return this.backlogs.get(workspaceId) || [];
+  }
+
+  createBacklogItem(workspaceId, { title, description, priority }) {
+    if (!this.backlogs.has(workspaceId)) this.backlogs.set(workspaceId, []);
+    const items = this.backlogs.get(workspaceId);
+    const item = {
+      id: randomUUID(),
+      workspaceId,
+      title, description,
+      status: 'pending',
+      priority: priority ?? items.length,
+      assignee: null,
+      requiredSkill: null,
+      requiredPersona: null,
+      taskId: null,
+      claimedAt: null,
+      completedAt: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    items.push(item);
+    this.emit('backlog:update', { workspaceId, items });
+    return item;
+  }
+
+  updateBacklogItem(workspaceId, itemId, updates) {
+    const items = this.backlogs.get(workspaceId);
+    if (!items) return null;
+    const item = items.find(i => i.id === itemId);
+    if (!item) return null;
+    Object.assign(item, updates, { updatedAt: new Date().toISOString() });
+    this.emit('backlog:update', { workspaceId, items });
+    return item;
+  }
+
+  removeBacklogItem(workspaceId, itemId) {
+    const items = this.backlogs.get(workspaceId);
+    if (!items) return false;
+    const idx = items.findIndex(i => i.id === itemId);
+    if (idx === -1) return false;
+    items.splice(idx, 1);
+    this.emit('backlog:update', { workspaceId, items });
+    return true;
+  }
+
+  reorderBacklog(workspaceId, itemIds) {
+    const items = this.backlogs.get(workspaceId);
+    if (!items) return;
+    const ordered = itemIds.map(id => items.find(i => i.id === id)).filter(Boolean);
+    ordered.forEach((item, i) => { item.priority = i; item.updatedAt = new Date().toISOString(); });
+    items.sort((a, b) => a.priority - b.priority);
+    this.emit('backlog:update', { workspaceId, items });
+  }
+
+  getPendingBacklog(workspaceId) {
+    return (this.backlogs.get(workspaceId) || [])
+      .filter(i => i.status === 'pending')
+      .sort((a, b) => a.priority - b.priority);
+  }
+
+  setBacklog(workspaceId, items) {
+    this.backlogs.set(workspaceId, items);
   }
 }
 

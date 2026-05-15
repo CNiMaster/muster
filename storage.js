@@ -149,4 +149,15 @@ export class Storage {
     }
     return results;
   }
+
+  static saveBacklog(projectPath, items) {
+    const dir = Storage.getMusterDir(projectPath);
+    writeFileSync(join(dir, 'backlog.json'), JSON.stringify(items, null, 2), 'utf-8');
+  }
+
+  static loadBacklog(projectPath) {
+    const file = join(projectPath, MUSTER_DIR, 'backlog.json');
+    if (!existsSync(file)) return [];
+    return JSON.parse(readFileSync(file, 'utf-8'));
+  }
 }

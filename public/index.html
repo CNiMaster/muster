@@ -119,7 +119,7 @@ input:focus,textarea:focus{border-color:var(--blue)}
         <button class="cx-btn" onclick="setCx('deep')">深度</button>
       </div>
       <span>|</span>
-      <button onclick="openSettings()" style="background:transparent;color:var(--t2);font-size:16px;padding:2px 6px" title="Settings">⚙</button> <span class="dot dot-off" id="wsDot"></span><span id="wsL">连接中</span>
+      <button onclick="openSettings()" style="background:transparent;color:var(--t2);font-size:16px;padding:2px 6px" title="Settings">⚙</button> <button onclick="toggleGoalInput()" style="background:transparent;color:var(--yellow);font-size:14px;padding:2px 6px" title="Set Goal">🎯</button> <span class="dot dot-off" id="wsDot"></span><span id="wsL">连接中</span>
     </div>
   </div>
 
@@ -131,6 +131,10 @@ input:focus,textarea:focus{border-color:var(--blue)}
     <div class="left-sec">
       <div class="left-sec-title">任务 <button onclick="newTask()">+ 新建</button></div>
       <div id="taskList" style="max-height:200px;overflow-y:auto"></div>
+    </div>
+    <div class="left-sec">
+      <div class="left-sec-title">清单 <button onclick="addBacklogItem()">+ 添加</button></div>
+      <div id="backlogList" style="max-height:250px;overflow-y:auto"></div>
     </div>
     <div class="left-body">
       <div class="left-sec-title" style="margin-bottom:8px">团队</div>
@@ -144,7 +148,7 @@ input:focus,textarea:focus{border-color:var(--blue)}
   <div class="right" id="rightPanel">
     <div class="chat-header">
       <div class="chat-title" id="chatTitle">Muster</div>
-      <div class="chat-meta" id="chatMeta"></div>
+      <div class="chat-meta" id="chatMeta"><span id="goalBadge" style="display:none;background:var(--yellow)20;color:var(--yellow);padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600"></span></div>
     </div>
     <div class="chat-messages" id="chatMsgs">
       <div class="chat-empty">
@@ -164,11 +168,19 @@ input:focus,textarea:focus{border-color:var(--blue)}
       <textarea id="inputBox" placeholder="输入消息和 Leader 对话..." rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMsg()}"></textarea>
       <button class="btn-send" id="sendBtn" onclick="sendMsg()">发送</button>
     </div>
+    <div id="goalInput" style="display:none;padding:4px 16px;border-top:1px solid var(--border);background:var(--surface)">
+      <div style="display:flex;gap:8px;align-items:center;padding:6px 0">
+        <span style="color:var(--yellow);font-size:12px;font-weight:600">GOAL</span>
+        <input id="goalText" placeholder="Completion condition (e.g., 'all tests pass')" style="flex:1;font-size:12px;padding:4px 8px">
+        <button onclick="setGoal()" style="background:var(--yellow);color:#000;font-size:11px;padding:4px 10px;font-weight:600">Set</button>
+        <button onclick="clearGoal()" style="background:var(--red)30;color:var(--red);font-size:11px;padding:4px 8px">Clear</button>
+      </div>
+    </div>
   </div>
 </div>
 
 <script>
-let ws, workspaces=[], tasks={}, chatMsgs={}, activeWs=null, activeTask=null, activeAgent=null, viewMode='chat', complexity='normal', wsDelay=1000;
+let ws, workspaces=[], tasks={}, chatMsgs={}, backlog={}, activeWs=null, activeTask=null, activeAgent=null, viewMode='chat', complexity='normal', wsDelay=1000;
 
 function gid(id){return document.getElementById(id)}
 function esc(t){return t?t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'):''}
@@ -187,7 +199,7 @@ function handleMsg(m){
     case 'init': workspaces=m.workspaces||[];break;
     case 'workspace:created': workspaces.push(m.data);break;
     case 'task:created': tasks[m.data.id]=m.data;if(activeWs)renderTasks();selectTask(m.data.id);break;
-    case 'task:update': tasks[m.data.id]=m.data;break;
+    case 'task:update': tasks[m.data.id]=m.data;if(m.data.goal){gid('goalBadge').style.display='inline';const mi={simple:3,normal:5,deep:10}[complexity];gid('goalBadge').textContent=`🎯 Goal: ${m.data.goalIterations||0}/${mi}`}break;
     case 'subtask:update': if(tasks[m.data.taskId]){const st=tasks[m.data.taskId].subtasks?.find(s=>s.id===m.data.id);if(st)Object.assign(st,m.data)}break;
     case 'chat:message':
       if(!chatMsgs[m.data.taskId])chatMsgs[m.data.taskId]=[];
@@ -197,6 +209,7 @@ function handleMsg(m){
     case 'agent:output': break;
     case 'agent:tool': break;
     case 'config:updated': complexity=m.complexity;renderCx();break;
+    case 'backlog:update': backlog[m.data.workspaceId]=m.data.items;renderBacklog();break;
   }
   render();
 }
@@ -256,7 +269,9 @@ function newTask(){
   const ws2=workspaces.find(w=>w.id===activeWs);
   send({type:'task:create',workspaceId:activeWs,cwd:ws2?.path||''});
 }
-function selectWs(id){activeWs=id;activeTask=null;activeAgent=null;render()}
+function selectWs(id){activeWs=id;activeTask=null;activeAgent=null;
+  if(!backlog[id]){fetch(`/api/backlog/${id}`).then(r=>r.json()).then(items=>{backlog[id]=items;renderBacklog()})}
+  render()}
 function selectTask(id){activeTask=id;activeAgent=null;viewMode='chat';render();scrollChat()}
 function selectView(mode,agentId){viewMode=agentId?'agent':mode;activeAgent=agentId||null;render()}
 function sendMsg(){
@@ -268,9 +283,14 @@ function sendMsg(){
 function setCx(c){complexity=c;send({type:'config:set',complexity:c});renderCx()}
 function renderCx(){document.querySelectorAll('.cx-btn').forEach(b=>{b.classList.toggle('active',b.textContent===({simple:'简单',normal:'标准',deep:'深度'}[complexity]))})}
 
+// Goal
+function toggleGoalInput(){const el=gid('goalInput');el.style.display=el.style.display==='none'?'block':'none'}
+function setGoal(){const goal=gid('goalText').value.trim();if(!goal||!activeTask)return;send({type:'goal:set',taskId:activeTask,goal});gid('goalBadge').style.display='inline';const maxIter={simple:3,normal:5,deep:10}[complexity];gid('goalBadge').textContent=`🎯 Goal: 0/${maxIter}`}
+function clearGoal(){if(!activeTask)return;send({type:'goal:set',taskId:activeTask,goal:null});gid('goalBadge').style.display='none';gid('goalText').value=''}
+
 // Render
 function render(){
-  renderWorkspaces();renderTasks();renderAgents();renderChat();updateTopbar();
+  renderWorkspaces();renderTasks();renderBacklog();renderAgents();renderChat();updateTopbar();
 }
 
 function renderWorkspaces(){
@@ -417,6 +437,36 @@ function tokenTableHtml(t){
   return html;
 }
 function fmtTok(n){return n>=1000000?((n/1000000).toFixed(1)+'M'):n>=1000?((n/1000).toFixed(1)+'k'):String(n||0)}
+
+// Backlog
+function addBacklogItem(){
+  if(!activeWs){alert('请先选择工作区');return}
+  const title=prompt('任务标题');
+  if(!title)return;
+  send({type:'backlog:add',workspaceId:activeWs,title,description:''})
+}
+function renderBacklog(){
+  if(!activeWs){gid('backlogList').innerHTML='<div style="padding:8px;color:var(--t3);font-size:12px">选择工作区后显示清单</div>';return}
+  const items=backlog[activeWs]||[];
+  const pending=items.filter(i=>i.status==='pending');
+  const active=items.filter(i=>i.status==='in_progress'||i.status==='assigned');
+  const done=items.filter(i=>i.status==='completed');
+  if(!items.length){gid('backlogList').innerHTML='<div style="padding:8px;color:var(--t3);font-size:12px">点击 + 添加任务</div>';return}
+  let html='';
+  active.forEach(i=>{html+=`<div class="task-item" style="opacity:1"><span class="task-status ts-executing"></span>${esc(i.title)} <span style="color:var(--blue);font-size:10px">[${i.assignee||'...'}]</span></div>`});
+  pending.forEach((i,idx)=>{html+=`<div class="task-item" onclick="moveBacklog('${i.id}','up',${idx})"><span class="task-status ts-chatting"></span>${esc(i.title)} <button onclick="event.stopPropagation();removeBacklog('${i.id}')" style="float:right;background:transparent;color:var(--t3);font-size:10px;padding:0 4px">✕</button></div>`});
+  done.forEach(i=>{html+=`<div class="task-item" style="opacity:.5"><span class="task-status ts-completed"></span><s>${esc(i.title)}</s></div>`});
+  gid('backlogList').innerHTML=html;
+}
+function removeBacklog(itemId){if(!activeWs)return;send({type:'backlog:remove',workspaceId:activeWs,itemId})}
+function moveBacklog(itemId,dir,idx){
+  const items=(backlog[activeWs]||[]).filter(i=>i.status==='pending');
+  if(dir==='up'&&idx>0){[items[idx-1],items[idx]]=[items[idx],items[idx-1]]}
+  else if(dir==='down'&&idx<items.length-1){[items[idx],items[idx+1]]=[items[idx+1],items[idx]]}
+  const allItems=backlog[activeWs]||[];
+  const newOrder=[...allItems.filter(i=>i.status!=='pending'),...items];
+  send({type:'backlog:reorder',workspaceId:activeWs,itemIds:newOrder.map(i=>i.id)});
+}
 
 function scrollChat(){requestAnimationFrame(()=>{const el=gid('chatMsgs');if(el)el.scrollTop=el.scrollHeight})}
 

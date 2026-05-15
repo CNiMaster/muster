@@ -56,6 +56,22 @@ You MUST respond with a JSON object:
 - Prefer fewer, well-scoped subtasks over many small ones.
 - Maximum 8 subtasks.
 
+## Available Skills & Personas
+
+You can optionally assign a specialist skill or persona to any subtask. Only use them when they clearly match the task requirements — most subtasks don't need one.
+
+### Skills (assign via `skill` field)
+[SKILL_CATALOG]
+
+### Personas (assign via `persona` field)
+[PERSONA_CATALOG]
+
+When assigning:
+- `skill`: name from the skills list above (e.g., "security-and-hardening")
+- `persona`: name from the personas list above (e.g., "security-auditor")
+- A subtask can have both, one, or neither.
+- Only assign when genuinely useful — not every subtask needs specialization.
+
 ## Conversation Context
 
 You will receive the full conversation history. Use it to:

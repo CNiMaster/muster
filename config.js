@@ -6,9 +6,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // 复杂度预设（用户只选这个）
 const PRESETS = {
-  simple:  { retries: 1, concurrency: 2, budgetScale: 0.5, label: '简单' },
-  normal:  { retries: 3, concurrency: 3, budgetScale: 1.0, label: '标准' },
-  deep:    { retries: 5, concurrency: 5, budgetScale: 2.0, label: '深度' }
+  simple:  { retries: 1, concurrency: 2, budgetScale: 0.5, label: '简单', goalMaxIter: 3, goalBudgetCap: 5.00 },
+  normal:  { retries: 3, concurrency: 3, budgetScale: 1.0, label: '标准', goalMaxIter: 5, goalBudgetCap: 10.00 },
+  deep:    { retries: 5, concurrency: 5, budgetScale: 2.0, label: '深度', goalMaxIter: 10, goalBudgetCap: 25.00 }
 };
 
 // 基础预算（USD），会乘以 budgetScale
@@ -93,7 +93,9 @@ export const CONFIG = {
               type: 'object',
               properties: {
                 title: { type: 'string' },
-                description: { type: 'string' }
+                description: { type: 'string' },
+                skill: { type: 'string', description: 'Optional skill name from catalog' },
+                persona: { type: 'string', description: 'Optional persona name from catalog' }
               },
               required: ['title', 'description']
             }
@@ -112,6 +114,18 @@ export const CONFIG = {
       issues: { type: 'array', items: { type: 'string' } }
     },
     required: ['approved', 'feedback']
+  },
+
+  goalEvaluatorSchema: {
+    type: 'object',
+    properties: {
+      goalMet: { type: 'boolean' },
+      confidence: { type: 'number' },
+      reasoning: { type: 'string' },
+      remainingIssues: { type: 'array', items: { type: 'string' } },
+      suggestedActions: { type: 'array', items: { type: 'string' } }
+    },
+    required: ['goalMet', 'confidence', 'reasoning']
   }
 };
 
@@ -162,4 +176,35 @@ export function listSkills() {
 
 export function setComplexity(level) {
   if (PRESETS[level]) CONFIG.complexity = level;
+}
+
+/**
+ * 轻量技能目录：提取每个 SKILL.md 的 frontmatter description
+ * 20 skills ≈ 200 tokens（而非加载全部文件 ≈ 5000 tokens）
+ */
+export function buildSkillCatalog() {
+  const skills = listSkills();
+  return skills.map(name => {
+    const file = join(SKILLS_DIR, name, 'SKILL.md');
+    if (!existsSync(file)) return null;
+    const content = readFileSync(file, 'utf-8');
+    const descMatch = content.match(/^---\n[\s\S]*?description:\s*(.+)/m);
+    const desc = descMatch ? descMatch[1].trim() : '';
+    return `${name}: ${desc}`;
+  }).filter(Boolean).join('\n');
+}
+
+/**
+ * 轻量角色目录：本地 persona + 外部域摘要
+ */
+export function buildPersonaCatalog() {
+  const personas = listPersonas();
+  return personas.map(name => {
+    const file = join(AGENTS_DIR, `${name}.md`);
+    if (!existsSync(file)) return name;
+    const content = readFileSync(file, 'utf-8');
+    const descMatch = content.match(/^---\n[\s\S]*?description:\s*(.+)/m);
+    const desc = descMatch ? descMatch[1].trim() : '';
+    return `${name}: ${desc}`;
+  }).join('\n');
 }

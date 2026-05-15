@@ -60,6 +60,8 @@ app.post('/api/workspaces', (req, res) => {
     if (st.archived) continue;
     state.restoreTask(ws.id, st);
   }
+  const savedBacklog = Storage.loadBacklog(dirPath);
+  if (savedBacklog.length) state.setBacklog(ws.id, savedBacklog);
   res.json(ws);
 });
 
@@ -168,7 +170,22 @@ app.put('/api/config', (req, res) => {
 });
 
 app.get('/api/config', (req, res) => {
-  res.json({ complexity: CONFIG.complexity, preset: CONFIG.preset.label, skipPermissions: CONFIG.skipPermissions });
+  res.json({ complexity: CONFIG.complexity, preset: CONFIG.preset.label, skipPermissions: CONFIG.skipPermissions,
+    goalMaxIter: CONFIG.preset.goalMaxIter, goalBudgetCap: CONFIG.preset.goalBudgetCap });
+});
+
+// ===== Goal API =====
+app.post('/api/task/:id/goal', (req, res) => {
+  const { goal } = req.body;
+  const task = state.getTask(req.params.id);
+  if (!task) return res.status(404).json({ error: 'Not found' });
+  state.updateTask(req.params.id, { goal: goal || null, goalIterations: 0, goalHistory: [] });
+  res.json({ ok: true, goal: goal || null });
+});
+
+app.delete('/api/task/:id/goal', (req, res) => {
+  state.updateTask(req.params.id, { goal: null });
+  res.json({ ok: true });
 });
 
 // ===== 专家 & 技能 API =====
@@ -196,6 +213,47 @@ app.post('/api/backups/:taskId/restore/:backupId', (req, res) => {
 
 // ===== 定时任务 API =====
 app.get('/api/scheduler/jobs', (req, res) => res.json(scheduler.listJobs()));
+
+// ===== Backlog API =====
+app.get('/api/backlog/:workspaceId', (req, res) => {
+  res.json(state.getBacklog(req.params.workspaceId));
+});
+
+app.post('/api/backlog/:workspaceId', (req, res) => {
+  const { title, description, priority } = req.body;
+  if (!title) return res.status(400).json({ error: 'title 是必填字段' });
+  const ws = state.getWorkspace(req.params.workspaceId);
+  if (!ws) return res.status(404).json({ error: 'Workspace not found' });
+  const item = state.createBacklogItem(req.params.workspaceId, { title, description, priority });
+  Storage.saveBacklog(ws.path, state.getBacklog(req.params.workspaceId));
+  res.json(item);
+});
+
+app.put('/api/backlog/:workspaceId/:itemId', (req, res) => {
+  const ws = state.getWorkspace(req.params.workspaceId);
+  if (!ws) return res.status(404).json({ error: 'Workspace not found' });
+  const item = state.updateBacklogItem(req.params.workspaceId, req.params.itemId, req.body);
+  if (!item) return res.status(404).json({ error: 'Item not found' });
+  Storage.saveBacklog(ws.path, state.getBacklog(req.params.workspaceId));
+  res.json(item);
+});
+
+app.delete('/api/backlog/:workspaceId/:itemId', (req, res) => {
+  const ws = state.getWorkspace(req.params.workspaceId);
+  if (!ws) return res.status(404).json({ error: 'Workspace not found' });
+  const ok = state.removeBacklogItem(req.params.workspaceId, req.params.itemId);
+  ok ? res.json({ ok: true }) : res.status(404).json({ error: 'Item not found' });
+});
+
+app.put('/api/backlog/:workspaceId/reorder', (req, res) => {
+  const { itemIds } = req.body;
+  if (!Array.isArray(itemIds)) return res.status(400).json({ error: 'itemIds must be array' });
+  const ws = state.getWorkspace(req.params.workspaceId);
+  if (!ws) return res.status(404).json({ error: 'Workspace not found' });
+  state.reorderBacklog(req.params.workspaceId, itemIds);
+  Storage.saveBacklog(ws.path, state.getBacklog(req.params.workspaceId));
+  res.json({ ok: true });
+});
 
 app.post('/api/scheduler/cancel/:jobId', (req, res) => {
   const ok = scheduler.cancel(req.params.jobId);
@@ -269,6 +327,44 @@ wss.on('connection', (ws, req) => {
         if (msg.complexity) setComplexity(msg.complexity);
         broadcast({ type: 'config:updated', complexity: CONFIG.complexity });
       }
+
+      if (msg.type === 'goal:set') {
+        if (!msg.taskId) { ws.send(JSON.stringify({ type: 'error', error: 'taskId is required' })); return; }
+        state.updateTask(msg.taskId, { goal: msg.goal || null, goalIterations: 0, goalHistory: [] });
+        broadcast({ type: 'task:update', data: state.getTask(msg.taskId) });
+      }
+
+      if (msg.type === 'backlog:add') {
+        if (!msg.workspaceId || !msg.title) { ws.send(JSON.stringify({ type: 'error', error: 'workspaceId 和 title 是必填字段' })); return; }
+        const item = state.createBacklogItem(msg.workspaceId, { title: msg.title, description: msg.description, priority: msg.priority });
+        const ws2 = state.getWorkspace(msg.workspaceId);
+        if (ws2) Storage.saveBacklog(ws2.path, state.getBacklog(msg.workspaceId));
+        broadcast({ type: 'backlog:update', data: { workspaceId: msg.workspaceId, items: state.getBacklog(msg.workspaceId) } });
+      }
+
+      if (msg.type === 'backlog:update') {
+        if (!msg.workspaceId || !msg.itemId) { ws.send(JSON.stringify({ type: 'error', error: 'workspaceId 和 itemId 是必填字段' })); return; }
+        state.updateBacklogItem(msg.workspaceId, msg.itemId, msg.updates || {});
+        const ws2 = state.getWorkspace(msg.workspaceId);
+        if (ws2) Storage.saveBacklog(ws2.path, state.getBacklog(msg.workspaceId));
+        broadcast({ type: 'backlog:update', data: { workspaceId: msg.workspaceId, items: state.getBacklog(msg.workspaceId) } });
+      }
+
+      if (msg.type === 'backlog:reorder') {
+        if (!msg.workspaceId || !msg.itemIds) { ws.send(JSON.stringify({ type: 'error', error: 'workspaceId 和 itemIds 是必填字段' })); return; }
+        state.reorderBacklog(msg.workspaceId, msg.itemIds);
+        const ws2 = state.getWorkspace(msg.workspaceId);
+        if (ws2) Storage.saveBacklog(ws2.path, state.getBacklog(msg.workspaceId));
+        broadcast({ type: 'backlog:update', data: { workspaceId: msg.workspaceId, items: state.getBacklog(msg.workspaceId) } });
+      }
+
+      if (msg.type === 'backlog:remove') {
+        if (!msg.workspaceId || !msg.itemId) { ws.send(JSON.stringify({ type: 'error', error: 'workspaceId 和 itemId 是必填字段' })); return; }
+        state.removeBacklogItem(msg.workspaceId, msg.itemId);
+        const ws2 = state.getWorkspace(msg.workspaceId);
+        if (ws2) Storage.saveBacklog(ws2.path, state.getBacklog(msg.workspaceId));
+        broadcast({ type: 'backlog:update', data: { workspaceId: msg.workspaceId, items: state.getBacklog(msg.workspaceId) } });
+      }
     } catch (err) {
       console.error('WS error:', err);
     }
@@ -291,6 +387,7 @@ events.forEach(evt => {
 });
 orchestrator.on('agent:output', (data) => broadcast({ type: 'agent:output', data }));
 orchestrator.on('agent:tool', (data) => broadcast({ type: 'agent:tool', data }));
+state.on('backlog:update', (data) => broadcast({ type: 'backlog:update', data }));
 
 // 进程清理
 function gracefulShutdown() {
