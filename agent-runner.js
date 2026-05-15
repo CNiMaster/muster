@@ -41,6 +41,9 @@ export function spawnAgent(opts) {
       stdio: ['pipe', 'pipe', 'pipe']
     });
 
+    // 立即关闭 stdin，防止 claude CLI 等待 stdin 输入 3 秒产生警告
+    proc.stdin.end();
+
     activeProcesses.add(proc);
 
     let fullText = '';
@@ -106,7 +109,9 @@ export function spawnAgent(opts) {
     });
 
     const errLines = [];
-    proc.stderr.on('data', (d) => errLines.push(d.toString()));
+    proc.stderr.on('data', (d) => {
+      errLines.push(d.toString());
+    });
 
     proc.on('close', (code) => {
       clearTimeout(timeout);

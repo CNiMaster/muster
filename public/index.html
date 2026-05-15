@@ -113,7 +113,7 @@ input:focus,textarea:focus{border-color:var(--blue)}
 <body>
 <div class="app">
   <div class="topbar">
-    <h1><span>Muster</span></h1>
+    <h1><span>Muster</span><span id="statusBadge" style="font-size:11px;font-weight:400;color:var(--t2);margin-left:8px"></span><span id="statusDot" class="dot dot-off"></span></h1>
     <div class="topbar-r">
       <span>Agents: <strong id="agentN">0</strong></span>
       <span>|</span>
@@ -160,7 +160,7 @@ input:focus,textarea:focus{border-color:var(--blue)}
           <div style="font-size:24px;margin-bottom:12px">👋</div>
           <div style="font-size:15px;color:var(--t2);margin-bottom:6px">欢迎来到 Muster</div>
           <div style="font-size:12px;color:var(--t3);line-height:1.8">
-            1. 左侧选择工作区 → 自动建任务<br>
+            1. 左侧选择工作区，点 + 新建任务<br>
             2. 直接输入消息和 Leader 对话<br>
             3. 任务执行后展开树看团队进度<br>
             4. Leader 自动分配专家和技能<br>
@@ -492,10 +492,11 @@ function renderAgents(){
 
 function renderChat(){
   if(activeAgent){renderAgentDetail();return}
-  if(!activeTask||!tasks[activeTask]){gid('chatMsgs').innerHTML='';gid('chatMeta').innerHTML='';return}
+  if(!activeTask||!tasks[activeTask]){gid('chatMsgs').innerHTML='';gid('chatMeta').innerHTML='';gid('chatTitle').textContent='Muster';return}
   const msgs=chatMsgs[activeTask]||[];
   const t=tasks[activeTask];
   const maxGoalIter=t.goal?({simple:3,normal:5,deep:10}[complexity]||5):0;
+  gid('chatTitle').textContent=esc((t.conversationHistory?.[0]?.content||'新任务').slice(0,32));
   gid('chatMeta').innerHTML=`<span id="modelBadge" style="background:var(--purple)20;color:var(--purple);padding:2px 8px;border-radius:4px;font-size:11px;cursor:pointer;font-weight:600" onclick="cycleModel()" title="点击切换Leader模型">Leader: ${leaderModel.charAt(0).toUpperCase()+leaderModel.slice(1)}</span> ${t.goal?`<span style="background:var(--yellow)20;color:var(--yellow);padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600">🎯 ${esc(t.goal).slice(0,20)} ${t.goalIterations||0}/${maxGoalIter}</span>`:''} <span class="task-status ts-${t?.status}"></span> ${statusL(t?.status)} | $${(t?.totalCost||0).toFixed(3)} ${tokenTableHtml(t)}`;
 
   if(!msgs.length){
@@ -582,6 +583,9 @@ function updateTopbar(){
   const t=activeTask&&tasks[activeTask];
   gid('agentN').textContent=t?((t.subtasks||[]).length*2+1):0;
   gid('costN').textContent=`$${(t?.totalCost||0).toFixed(3)}`;
+  const st=t?statusL(t.status):'';
+  gid('statusBadge').textContent=st?` · ${st}`:'';
+  gid('statusDot').className=t?`dot ts-${t.status}`:'dot dot-off';
   // Token 统计：按模型显示
   const mu=t?.modelUsage||{};
   const models=Object.keys(mu);
