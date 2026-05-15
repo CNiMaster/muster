@@ -52,6 +52,7 @@ export function spawnAgent(opts) {
     let usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 };
     let modelUsage = {};
     let resolved = false;
+    const rawErrLines = [];
 
     const timeout = setTimeout(() => {
       if (!resolved) {
@@ -104,7 +105,7 @@ export function spawnAgent(opts) {
           }
         }
       } catch (e) {
-        console.warn(`[agent-runner] Failed to parse output line: ${line.slice(0, 100)} (${e.message})`);
+        rawErrLines.push(line.slice(0, 200));
       }
     });
 
@@ -124,7 +125,10 @@ export function spawnAgent(opts) {
         }
         resolve({ text: fullText, structuredOutput, cost, usage, modelUsage });
       } else {
-        reject(new Error(`Agent ${role} failed: ${errLines.join('').slice(0, 200) || 'exit ' + code}`));
+        const stderrInfo = errLines.join('').slice(0, 500);
+        const stdoutInfo = rawErrLines.join('\n').slice(0, 500);
+        const detail = [stderrInfo, stdoutInfo].filter(Boolean).join(' | ') || `exit ${code}`;
+        reject(new Error(`Agent ${role} failed: ${detail}`));
       }
     });
 

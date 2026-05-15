@@ -67,7 +67,6 @@ export const CONFIG = {
 
   get baseFlags() {
     const flags = [
-      '--print',
       '--output-format', 'stream-json',
       '--verbose',
       '--no-session-persistence'

@@ -127,7 +127,7 @@ input:focus,textarea:focus{border-color:var(--blue)}
         <button class="cx-btn" onclick="setCx('deep')">深度</button>
       </div>
       <span>|</span>
-      <button onclick="openSettings()" style="background:transparent;color:var(--t2);font-size:16px;padding:2px 6px" title="Settings">⚙</button> <button onclick="toggleGoalInput()" style="background:transparent;color:var(--yellow);font-size:14px;padding:2px 6px" title="Set Goal">🎯</button> <span class="dot dot-off" id="wsDot"></span><span id="wsL">连接中</span>
+      <button onclick="openSettings()" style="background:transparent;color:var(--t2);font-size:16px;padding:2px 6px" title="Settings">⚙</button> <button onclick="toggleGoalMenu()" style="background:transparent;color:var(--yellow);font-size:14px;padding:2px 6px" title="Set Goal">🎯</button> <span class="dot dot-off" id="wsDot"></span><span id="wsL">连接中</span>
     </div>
   </div>
 
@@ -192,8 +192,6 @@ input:focus,textarea:focus{border-color:var(--blue)}
         <input id="goalCustom" placeholder="自定义..." style="width:120px;font-size:11px;padding:2px 6px" onkeydown="if(event.key==='Enter')setGoalPreset(this.value)">
       </div>
     </div>
-  </div>
-</div>
   </div>
 </div>
 
@@ -475,6 +473,8 @@ function renderTree(){
 }
 
 function renderAgents(){
+  const el=gid('agentList');
+  if(!el)return;
   let html='<div class="agent-item" onclick="selectView(\'chat\')"><div class="agent-avatar av-human">你</div><span>老板</span></div>';
   if(activeTask&&tasks[activeTask]){
     const t=tasks[activeTask];
@@ -487,12 +487,17 @@ function renderAgents(){
       }
     });
   }
-  gid('agentList').innerHTML=html;
+  el.innerHTML=html;
 }
 
 function renderChat(){
   if(activeAgent){renderAgentDetail();return}
-  if(!activeTask||!tasks[activeTask]){gid('chatMsgs').innerHTML='';gid('chatMeta').innerHTML='';gid('chatTitle').textContent='Muster';return}
+  if(!activeTask||!tasks[activeTask]){
+    gid('chatMsgs').innerHTML='<div class="chat-empty"><div><div style="font-size:24px;margin-bottom:12px">👋</div><div style="font-size:15px;color:var(--t2);margin-bottom:6px">欢迎来到 Muster</div><div style="font-size:12px;color:var(--t3);line-height:1.8">1. 左侧选择工作区，直接输入对话自动创建任务<br>2. Leader 自动规划、分配专家、执行验证<br>3. 顶部 <span style="color:var(--purple)">Leader: Opus</span> 可切换模型</div></div></div>';
+    gid('chatMeta').innerHTML='';
+    gid('chatTitle').textContent='Muster';
+    return;
+  }
   const msgs=chatMsgs[activeTask]||[];
   const t=tasks[activeTask];
   const maxGoalIter=t.goal?({simple:3,normal:5,deep:10}[complexity]||5):0;
@@ -620,17 +625,19 @@ function addBacklogItem(){
   send({type:'backlog:add',workspaceId:activeWs,title,description:''})
 }
 function renderBacklog(){
-  if(!activeWs){gid('backlogList').innerHTML='<div style="padding:8px;color:var(--t3);font-size:12px">选择工作区后显示清单</div>';return}
+  const el=gid('backlogList');
+  if(!el)return;
+  if(!activeWs){el.innerHTML='<div style="padding:8px;color:var(--t3);font-size:12px">选择工作区后显示清单</div>';return}
   const items=backlog[activeWs]||[];
   const pending=items.filter(i=>i.status==='pending');
   const active=items.filter(i=>i.status==='in_progress'||i.status==='assigned');
   const done=items.filter(i=>i.status==='completed');
-  if(!items.length){gid('backlogList').innerHTML='<div style="padding:8px;color:var(--t3);font-size:12px">点击 + 添加任务</div>';return}
+  if(!items.length){el.innerHTML='<div style="padding:8px;color:var(--t3);font-size:12px">点击 + 添加任务</div>';return}
   let html='';
   active.forEach(i=>{html+=`<div class="task-item" style="opacity:1"><span class="task-status ts-executing"></span>${esc(i.title)} <span style="color:var(--blue);font-size:10px">[${i.assignee||'...'}]</span></div>`});
   pending.forEach((i,idx)=>{html+=`<div class="task-item" onclick="moveBacklog('${i.id}','up',${idx})"><span class="task-status ts-chatting"></span>${esc(i.title)} <button onclick="event.stopPropagation();removeBacklog('${i.id}')" style="float:right;background:transparent;color:var(--t3);font-size:10px;padding:0 4px">✕</button></div>`});
   done.forEach(i=>{html+=`<div class="task-item" style="opacity:.5"><span class="task-status ts-completed"></span><s>${esc(i.title)}</s></div>`});
-  gid('backlogList').innerHTML=html;
+  el.innerHTML=html;
 }
 function removeBacklog(itemId){if(!activeWs)return;send({type:'backlog:remove',workspaceId:activeWs,itemId})}
 function moveBacklog(itemId,dir,idx){
@@ -779,6 +786,12 @@ function relativeTime(iso){
 
 // Init
 connect();
+
+// Textarea auto-expand
+gid('inputBox').addEventListener('input',function(){
+  this.style.height='auto';
+  this.style.height=Math.min(this.scrollHeight,120)+'px';
+});
 </script>
 </body>
 </html>
