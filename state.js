@@ -197,7 +197,7 @@ class StateStore extends EventEmitter {
       iteration,
       evaluatorVerdict: verdict,
       plan: plan?.summary || null,
-      results: results?.map(r => ({ success: r.success, title: r.subtaskIndex })) || []
+      results: results?.map(r => ({ success: r.success, title: r.title, subtaskIndex: r.subtaskIndex })) || []
     });
     this.emit('task:update', task);
     return task;

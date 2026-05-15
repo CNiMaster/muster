@@ -331,15 +331,15 @@ wss.on('connection', (ws, req) => {
       if (msg.type === 'goal:set') {
         if (!msg.taskId) { ws.send(JSON.stringify({ type: 'error', error: 'taskId is required' })); return; }
         state.updateTask(msg.taskId, { goal: msg.goal || null, goalIterations: 0, goalHistory: [] });
-        broadcast({ type: 'task:update', data: state.getTask(msg.taskId) });
+        // task:update 由事件桥接自动 broadcast
       }
 
       if (msg.type === 'backlog:add') {
         if (!msg.workspaceId || !msg.title) { ws.send(JSON.stringify({ type: 'error', error: 'workspaceId 和 title 是必填字段' })); return; }
-        const item = state.createBacklogItem(msg.workspaceId, { title: msg.title, description: msg.description, priority: msg.priority });
+        state.createBacklogItem(msg.workspaceId, { title: msg.title, description: msg.description, priority: msg.priority });
         const ws2 = state.getWorkspace(msg.workspaceId);
         if (ws2) Storage.saveBacklog(ws2.path, state.getBacklog(msg.workspaceId));
-        broadcast({ type: 'backlog:update', data: { workspaceId: msg.workspaceId, items: state.getBacklog(msg.workspaceId) } });
+        // backlog:update 由事件桥接自动广播
       }
 
       if (msg.type === 'backlog:update') {
@@ -347,7 +347,6 @@ wss.on('connection', (ws, req) => {
         state.updateBacklogItem(msg.workspaceId, msg.itemId, msg.updates || {});
         const ws2 = state.getWorkspace(msg.workspaceId);
         if (ws2) Storage.saveBacklog(ws2.path, state.getBacklog(msg.workspaceId));
-        broadcast({ type: 'backlog:update', data: { workspaceId: msg.workspaceId, items: state.getBacklog(msg.workspaceId) } });
       }
 
       if (msg.type === 'backlog:reorder') {
@@ -355,7 +354,6 @@ wss.on('connection', (ws, req) => {
         state.reorderBacklog(msg.workspaceId, msg.itemIds);
         const ws2 = state.getWorkspace(msg.workspaceId);
         if (ws2) Storage.saveBacklog(ws2.path, state.getBacklog(msg.workspaceId));
-        broadcast({ type: 'backlog:update', data: { workspaceId: msg.workspaceId, items: state.getBacklog(msg.workspaceId) } });
       }
 
       if (msg.type === 'backlog:remove') {
@@ -363,7 +361,6 @@ wss.on('connection', (ws, req) => {
         state.removeBacklogItem(msg.workspaceId, msg.itemId);
         const ws2 = state.getWorkspace(msg.workspaceId);
         if (ws2) Storage.saveBacklog(ws2.path, state.getBacklog(msg.workspaceId));
-        broadcast({ type: 'backlog:update', data: { workspaceId: msg.workspaceId, items: state.getBacklog(msg.workspaceId) } });
       }
     } catch (err) {
       console.error('WS error:', err);

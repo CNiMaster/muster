@@ -26,7 +26,7 @@ const BLACKLISTED_PATTERNS = [
   /\bpython\s+-c\s+.*(?:os\.system|subprocess)/i,        // python shell escape
   /\bnode\s+-e\s+.*(?:child_process)/i,                   // node shell escape
   /\benv\b.*>\s*\//i,                                     // env dump to file
-  /\bexport\s+PATH=/i,                                    // PATH manipulation
+  /\bexport\s+PATH\s*=\s*(?!\$PATH:)/i,                     // PATH manipulation (without $PATH reference)
   /\b\/etc\/(?:passwd|shadow|hosts)/i,                    // sensitive system files
   /\.ssh\//i,                                            // SSH key access
 ];

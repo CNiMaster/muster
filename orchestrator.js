@@ -276,7 +276,7 @@ class Orchestrator extends EventEmitter {
     for (let iteration = 0; iteration < maxIter; iteration++) {
       const task = state.getTask(taskId);
 
-      if (task.totalCost >= budgetCap) {
+      if ((task.totalCost || 0) >= budgetCap) {
         state.addChatMessage(taskId, { role: 'system', agentName: '系统', text: `Budget cap reached ($${budgetCap.toFixed(2)}). Goal loop stopped.`, type: 'system' });
         break;
       }
@@ -330,8 +330,8 @@ class Orchestrator extends EventEmitter {
       state.updateTask(taskId, { subtasks: [], status: 'chatting' });
     }
 
-    state.updateTask(taskId, { status: 'completed' });
-    state.addChatMessage(taskId, { role: 'system', agentName: '系统', text: `Goal loop ended after ${state.getTask(taskId).goalIterations} iterations.`, type: 'system' });
+    state.updateTask(taskId, { status: 'failed' });
+    state.addChatMessage(taskId, { role: 'system', agentName: '系统', text: `Goal loop exhausted after ${state.getTask(taskId).goalIterations} iterations — goal NOT achieved.`, type: 'system' });
   }
 
   /**
