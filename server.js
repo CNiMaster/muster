@@ -1,0 +1,308 @@
+import express from 'express';
+import { WebSocketServer } from 'ws';
+import { createServer } from 'http';
+import { readdirSync, statSync, existsSync, mkdirSync } from 'fs';
+import { resolve, join, basename } from 'path';
+import { homedir } from 'os';
+import { state } from './state.js';
+import { orchestrator } from './orchestrator.js';
+import { CONFIG, setComplexity, listPersonas, listSkills } from './config.js';
+import { Storage } from './storage.js';
+import { killAll } from './agent-runner.js';
+import { isPathAllowed } from './utils.js';
+import { scheduler } from './scheduler.js';
+import { BackupManager } from './backup.js';
+import { getSandboxConfig } from './sandbox.js';
+
+const app = express();
+app.use(express.json({ limit: '1mb' }));
+app.use(express.static('public'));
+
+const server = createServer(app);
+const wss = new WebSocketServer({ server, path: '/ws' });
+
+function broadcast(data) {
+  const msg = JSON.stringify(data);
+  for (const ws of wss.clients) { if (ws.readyState === 1) ws.send(msg); }
+}
+
+// 健康检查
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', uptime: process.uptime() });
+});
+
+// REST API
+app.get('/api/workspaces', (req, res) => res.json(state.listWorkspaces()));
+
+app.post('/api/workspaces', (req, res) => {
+  let { name, path: dirPath } = req.body;
+  if (!dirPath || typeof dirPath !== 'string') {
+    return res.status(400).json({ error: 'path 是必填字段' });
+  }
+  dirPath = dirPath.replace(/^~/, homedir());
+  dirPath = resolve(dirPath);
+
+  if (!isPathAllowed(dirPath)) {
+    return res.status(403).json({ error: '路径不在允许范围内' });
+  }
+
+  if (!existsSync(dirPath)) {
+    try { mkdirSync(dirPath, { recursive: true }); }
+    catch (e) { return res.status(400).json({ error: `无法创建目录: ${e.message}` }); }
+  }
+  if (!statSync(dirPath).isDirectory()) {
+    return res.status(400).json({ error: '路径不是目录' });
+  }
+  const ws = state.createWorkspace(name || basename(dirPath), dirPath);
+  Storage.saveWorkspace(dirPath, { ...ws, lastUsed: new Date().toISOString() });
+  const savedTasks = Storage.loadTasks(dirPath);
+  for (const st of savedTasks) {
+    if (st.archived) continue;
+    state.restoreTask(ws.id, st);
+  }
+  res.json(ws);
+});
+
+// 目录浏览 API
+app.get('/api/browse', (req, res) => {
+  let dirPath = (req.query.path || '~').replace(/^~/, homedir());
+  dirPath = resolve(dirPath);
+
+  if (!isPathAllowed(dirPath)) {
+    return res.json({ path: dirPath, exists: false, dirs: [], error: '路径不在允许范围内' });
+  }
+
+  if (!existsSync(dirPath) || !statSync(dirPath).isDirectory()) {
+    return res.json({ path: dirPath, exists: false, dirs: [] });
+  }
+  try {
+    const entries = readdirSync(dirPath, { withFileTypes: true });
+    const dirs = entries
+      .filter(e => e.isDirectory() && !e.name.startsWith('.'))
+      .map(e => ({ name: e.name, path: join(dirPath, e.name) }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    res.json({ path: dirPath, exists: true, dirs });
+  } catch (e) {
+    res.json({ path: dirPath, exists: true, dirs: [], error: e.message });
+  }
+});
+
+// 路径验证
+app.post('/api/validate-path', (req, res) => {
+  const p = req.body?.path;
+  if (!p || typeof p !== 'string') {
+    return res.status(400).json({ error: 'path 是必填字段' });
+  }
+  const resolved = resolve(p.replace(/^~/, homedir()));
+  if (!isPathAllowed(resolved)) {
+    return res.json({ path: resolved, exists: false, isDir: false, error: '路径不在允许范围内' });
+  }
+  res.json({ path: resolved, exists: existsSync(resolved), isDir: existsSync(resolved) && statSync(resolved).isDirectory() });
+});
+
+app.get('/api/tasks/:workspaceId', (req, res) => res.json(state.listTasks(req.params.workspaceId)));
+
+app.post('/api/tasks', (req, res) => {
+  const { workspaceId, cwd } = req.body;
+  if (!workspaceId || !cwd) {
+    return res.status(400).json({ error: 'workspaceId 和 cwd 是必填字段' });
+  }
+  if (!state.getWorkspace(workspaceId)) {
+    return res.status(404).json({ error: 'Workspace not found' });
+  }
+  res.json(state.createTask(workspaceId, cwd));
+});
+
+app.get('/api/task/:id', (req, res) => {
+  const t = state.getTask(req.params.id);
+  t ? res.json(t) : res.status(404).json({ error: 'Not found' });
+});
+
+// 任务归档
+app.post('/api/task/:id/archive', (req, res) => {
+  const t = state.getTask(req.params.id);
+  if (!t) return res.status(404).json({ error: 'Not found' });
+  const ws = state.getWorkspace(t.workspaceId);
+  if (ws) {
+    Storage.archiveTask(ws.path, t.id);
+    state.tasks.delete(t.id);
+    state.chatMessages.delete(t.id);
+  }
+  res.json({ ok: true });
+});
+
+// 恢复归档任务
+app.post('/api/task/:id/restore', (req, res) => {
+  const { workspaceId, taskId } = req.body;
+  if (!workspaceId || !taskId) {
+    return res.status(400).json({ error: 'workspaceId 和 taskId 是必填字段' });
+  }
+  const ws = state.getWorkspace(workspaceId);
+  if (!ws) return res.status(404).json({ error: 'Workspace not found' });
+  Storage.unarchiveTask(ws.path, taskId);
+  const savedTasks = Storage.loadTasks(ws.path);
+  const st = savedTasks.find(t => t.id === taskId);
+  if (st) {
+    state.restoreTask(workspaceId, st);
+  }
+  res.json({ ok: true });
+});
+
+// 获取归档任务列表
+app.get('/api/archived/:workspaceId', (req, res) => {
+  const ws = state.getWorkspace(req.params.workspaceId);
+  if (!ws) return res.json([]);
+  res.json(Storage.loadArchivedTasks(ws.path));
+});
+
+// 最近项目
+app.get('/api/recent', (req, res) => {
+  res.json(Storage.scanRecentProjects());
+});
+
+app.get('/api/chat/:taskId', (req, res) => res.json(state.getChatMessages(req.params.taskId)));
+
+app.put('/api/config', (req, res) => {
+  if (req.body.complexity) setComplexity(req.body.complexity);
+  res.json({ ok: true, complexity: CONFIG.complexity });
+});
+
+app.get('/api/config', (req, res) => {
+  res.json({ complexity: CONFIG.complexity, preset: CONFIG.preset.label, skipPermissions: CONFIG.skipPermissions });
+});
+
+// ===== 专家 & 技能 API =====
+app.get('/api/personas', (req, res) => res.json(listPersonas()));
+app.get('/api/skills', (req, res) => res.json(listSkills()));
+
+// ===== 沙盒 & 权限 API =====
+app.get('/api/sandbox', (req, res) => res.json(getSandboxConfig()));
+
+// ===== 备份 API =====
+app.get('/api/backups/:taskId', (req, res) => {
+  const task = state.getTask(req.params.taskId);
+  if (!task) return res.status(404).json({ error: 'Not found' });
+  const bm = new BackupManager(task.cwd);
+  res.json(bm.listBackups());
+});
+
+app.post('/api/backups/:taskId/restore/:backupId', (req, res) => {
+  const task = state.getTask(req.params.taskId);
+  if (!task) return res.status(404).json({ error: 'Not found' });
+  const bm = new BackupManager(task.cwd);
+  const result = bm.restore(req.params.backupId);
+  res.json(result);
+});
+
+// ===== 定时任务 API =====
+app.get('/api/scheduler/jobs', (req, res) => res.json(scheduler.listJobs()));
+
+app.post('/api/scheduler/cancel/:jobId', (req, res) => {
+  const ok = scheduler.cancel(req.params.jobId);
+  ok ? res.json({ ok: true }) : res.status(404).json({ error: 'Job not found' });
+});
+
+app.post('/api/scheduler/schedule', (req, res) => {
+  const { taskId, subtaskIndex, delayMinutes } = req.body;
+  if (!taskId || subtaskIndex === undefined || !delayMinutes) {
+    return res.status(400).json({ error: 'taskId, subtaskIndex, delayMinutes 是必填字段' });
+  }
+  const task = state.getTask(taskId);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+  const subtask = task.subtasks[subtaskIndex];
+  if (!subtask) return res.status(404).json({ error: 'Subtask not found' });
+
+  const job = scheduler.scheduleOnce({
+    name: `手动重试: ${subtask.title}`,
+    delayMs: delayMinutes * 60 * 1000,
+    reason: 'manual',
+    payload: { taskId, subtask, index: subtaskIndex },
+    execute: () => orchestrator.runSubtaskWithVerification(taskId, subtask, subtaskIndex),
+  });
+  res.json(job);
+});
+
+// 桥接 scheduler 事件到 WS
+scheduler.on('job:scheduled', (job) => broadcast({ type: 'scheduler:job', data: job }));
+scheduler.on('job:started', (job) => broadcast({ type: 'scheduler:job', data: { ...job, status: 'running' } }));
+scheduler.on('job:completed', (job) => broadcast({ type: 'scheduler:job', data: { ...job, status: 'completed' } }));
+scheduler.on('job:failed', (data) => broadcast({ type: 'scheduler:job', data }));
+scheduler.on('job:cancelled', (job) => broadcast({ type: 'scheduler:job', data: { ...job, status: 'cancelled' } }));
+
+// WebSocket — 验证 Origin
+wss.on('connection', (ws, req) => {
+  const origin = req.headers.origin;
+  if (origin && origin !== `http://localhost:${CONFIG.port}` && origin !== `http://127.0.0.1:${CONFIG.port}`) {
+    ws.close(1008, 'Invalid origin');
+    return;
+  }
+
+  ws.send(JSON.stringify({ type: 'init', workspaces: state.listWorkspaces() }));
+
+  ws.on('message', (raw) => {
+    try {
+      const msg = JSON.parse(raw);
+
+      if (msg.type === 'workspace:create') {
+        if (!msg.path) { ws.send(JSON.stringify({ type: 'error', error: 'path 是必填字段' })); return; }
+        let dirPath = msg.path.replace(/^~/, homedir());
+        dirPath = resolve(dirPath);
+        if (!isPathAllowed(dirPath)) { ws.send(JSON.stringify({ type: 'error', error: '路径不在允许范围内' })); return; }
+        const ws2 = state.createWorkspace(msg.name || basename(dirPath), dirPath);
+        ws.send(JSON.stringify({ type: 'workspace:created', data: ws2 }));
+      }
+
+      if (msg.type === 'task:create') {
+        if (!msg.workspaceId) { ws.send(JSON.stringify({ type: 'error', error: 'workspaceId 是必填字段' })); return; }
+        const task = state.createTask(msg.workspaceId, msg.cwd || process.cwd());
+        ws.send(JSON.stringify({ type: 'task:created', data: task }));
+      }
+
+      if (msg.type === 'chat:send') {
+        if (!msg.taskId || !msg.text) { ws.send(JSON.stringify({ type: 'error', error: 'taskId 和 text 是必填字段' })); return; }
+        orchestrator.handleHumanMessage(msg.taskId, msg.text).catch(err => {
+          console.error('Chat error:', err);
+        });
+      }
+
+      if (msg.type === 'config:set') {
+        if (msg.complexity) setComplexity(msg.complexity);
+        broadcast({ type: 'config:updated', complexity: CONFIG.complexity });
+      }
+    } catch (err) {
+      console.error('WS error:', err);
+    }
+  });
+});
+
+// 桥接事件
+const events = ['task:update', 'subtask:update', 'chat:message'];
+events.forEach(evt => {
+  state.on(evt, (data) => {
+    broadcast({ type: evt, data });
+    if (data.taskId) {
+      const task = state.getTask(data.taskId);
+      if (task) {
+        const ws = state.getWorkspace(task.workspaceId);
+        if (ws) Storage.saveTask(ws.path, task, state.getChatMessages(data.taskId));
+      }
+    }
+  });
+});
+orchestrator.on('agent:output', (data) => broadcast({ type: 'agent:output', data }));
+orchestrator.on('agent:tool', (data) => broadcast({ type: 'agent:tool', data }));
+
+// 进程清理
+function gracefulShutdown() {
+  killAll();
+  scheduler.shutdown();
+  server.close();
+  process.exit(0);
+}
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);
+
+server.listen(CONFIG.port, () => {
+  const skipNote = CONFIG.skipPermissions ? '' : '\n  ⚠️  权限检查已启用，如需自动执行请设置 MUSTER_SKIP_PERMISSIONS=true';
+  console.log(`\n  Muster v2 — http://localhost:${CONFIG.port}${skipNote}\n`);
+});

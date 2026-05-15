@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Muster</title>
+<style>
+:root{--bg:#0d1017;--surface:#151922;--s2:#1c2130;--s3:#232a3b;--border:#2a3148;--text:#d8dce8;--t2:#7a809a;--t3:#4e5470;--blue:#4f8ff7;--green:#34d399;--yellow:#fbbf24;--red:#f87171;--purple:#a78bfa;--cyan:#22d3ee;--orange:#fb923c}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px;line-height:1.5;height:100vh;overflow:hidden}
+::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+button{cursor:pointer;border:none;border-radius:6px;padding:6px 12px;font-size:13px;font-weight:500}
+input,textarea{background:var(--s2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 10px;font-size:13px;font-family:inherit;outline:none;resize:none}
+input:focus,textarea:focus{border-color:var(--blue)}
+
+.app{display:grid;grid-template-columns:260px 1fr;grid-template-rows:48px 1fr;height:100vh}
+.topbar{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;padding:0 16px;border-bottom:1px solid var(--border);background:var(--surface)}
+.topbar h1{font-size:16px;font-weight:700}.topbar h1 span{color:var(--blue)}
+.topbar-r{display:flex;align-items:center;gap:12px;font-size:12px;color:var(--t2)}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block}
+.dot-on{background:var(--green)}.dot-off{background:var(--red)}
+
+/* Left Panel */
+.left{border-right:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;overflow:hidden}
+.left-sec{padding:10px 12px;border-bottom:1px solid var(--border)}
+.left-sec-title{font-size:11px;font-weight:600;text-transform:uppercase;color:var(--t3);letter-spacing:.5px;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between}
+.left-sec-title button{font-size:11px;padding:2px 8px;background:var(--s3);color:var(--t2);border-radius:4px}
+.left-sec-title button:hover{color:var(--text);background:var(--blue)30}
+.left-body{flex:1;overflow-y:auto;padding:8px 12px}
+
+.ws-item{padding:8px 10px;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:8px;margin-bottom:2px;font-size:13px}
+.ws-item:hover{background:var(--s2)}.ws-item.active{background:var(--s3);font-weight:500}
+.ws-icon{font-size:15px}
+
+.task-item{padding:8px 10px;border-radius:6px;cursor:pointer;margin-bottom:2px;font-size:12px}
+.task-item:hover{background:var(--s2)}.task-item.active{background:var(--s3)}
+.task-status{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+.ts-chatting{background:var(--cyan)}.ts-planning{background:var(--yellow)}.ts-executing{background:var(--blue);animation:pulse 1.5s infinite}.ts-completed{background:var(--green)}.ts-failed{background:var(--red)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+.agent-item{padding:6px 10px;border-radius:6px;cursor:pointer;margin-bottom:1px;font-size:12px;display:flex;align-items:center;gap:6px}
+.agent-item:hover{background:var(--s2)}.agent-item.active{background:var(--s3)}
+.agent-avatar{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0}
+.av-human{background:var(--purple)30;color:var(--purple)}.av-leader{background:var(--cyan)30;color:var(--cyan)}
+.av-worker{background:var(--blue)30;color:var(--blue)}.av-verifier{background:var(--orange)30;color:var(--orange)}
+.agent-dot{width:6px;height:6px;border-radius:50%;margin-left:auto;flex-shrink:0}
+.ad-idle{background:var(--t3)}.ad-running{background:var(--green);animation:pulse 1.5s infinite}.ad-done{background:var(--green)}
+
+/* Right Panel: Chat */
+.right{display:flex;flex-direction:column;overflow:hidden}
+.chat-header{padding:12px 16px;border-bottom:1px solid var(--border);background:var(--surface);display:flex;align-items:center;justify-content:space-between}
+.chat-title{font-weight:600;font-size:14px}
+.chat-meta{font-size:11px;color:var(--t2);display:flex;gap:10px;align-items:center}
+
+.chat-messages{flex:1;overflow-y:auto;padding:16px}
+.chat-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--t3);text-align:center}
+
+.msg{margin-bottom:12px;display:flex;gap:10px;max-width:800px}
+.msg-avatar{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0}
+.msg-body{flex:1;min-width:0}
+.msg-head{display:flex;align-items:center;gap:6px;margin-bottom:3px}
+.msg-name{font-weight:600;font-size:12px}
+.msg-time{font-size:10px;color:var(--t3)}
+.msg-text{font-size:13px;line-height:1.6;color:var(--t2);white-space:pre-wrap;word-break:break-word}
+.msg-text a{color:var(--blue)}
+
+.msg-human .msg-avatar{background:var(--purple)25;color:var(--purple)}
+.msg-human .msg-name{color:var(--purple)}
+.msg-human .msg-text{color:var(--text)}
+.msg-leader .msg-avatar{background:var(--cyan)25;color:var(--cyan)}
+.msg-leader .msg-name{color:var(--cyan)}
+.msg-worker .msg-avatar{background:var(--blue)25;color:var(--blue)}
+.msg-worker .msg-name{color:var(--blue)}
+.msg-verifier .msg-avatar{background:var(--orange)25;color:var(--orange)}
+.msg-verifier .msg-name{color:var(--orange)}
+.msg-system .msg-avatar{background:var(--t3)25;color:var(--t3)}
+.msg-system .msg-name{color:var(--t3)}
+.msg-system .msg-text{font-size:12px;font-style:italic}
+
+.badge-pass{color:var(--green);font-weight:600}.badge-fail{color:var(--red);font-weight:600}
+
+/* Agent Detail View */
+.agent-detail{padding:16px;overflow-y:auto;flex:1}
+.ad-section{margin-bottom:16px}
+.ad-section h3{font-size:12px;font-weight:600;color:var(--t3);text-transform:uppercase;margin-bottom:8px;letter-spacing:.5px}
+.ad-row{display:flex;justify-content:space-between;padding:4px 0;font-size:13px}
+.ad-row span:first-child{color:var(--t2)}.ad-row span:last-child{font-weight:500}
+.tool-item{padding:6px 10px;background:var(--s2);border-radius:4px;margin-bottom:4px;font-size:12px;color:var(--t2);display:flex;align-items:center;gap:6px}
+.tool-icon{font-size:11px}
+.ad-output{background:var(--s2);border-radius:8px;padding:10px;font-size:12px;color:var(--t2);white-space:pre-wrap;word-break:break-word;max-height:300px;overflow-y:auto;line-height:1.6}
+
+/* Input */
+.chat-input{padding:12px 16px;border-top:1px solid var(--border);background:var(--surface);display:flex;gap:8px;align-items:flex-end}
+.chat-input textarea{flex:1;min-height:36px;max-height:120px;padding:8px 12px}
+.btn-send{background:var(--blue);color:#fff;padding:8px 16px;font-weight:600;align-self:flex-end}
+.btn-send:hover{filter:brightness(1.15)}
+.btn-send:disabled{opacity:.4}
+
+/* Complexity selector */
+.complexity-sel{display:flex;gap:4px;margin-left:8px}
+.cx-btn{padding:3px 10px;border-radius:4px;font-size:11px;font-weight:600;background:var(--s3);color:var(--t2);cursor:pointer}
+.cx-btn:hover{color:var(--text)}.cx-btn.active{background:var(--blue)30;color:var(--blue)}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <h1><span>Muster</span></h1>
+    <div class="topbar-r">
+      <span>Agents: <strong id="agentN">0</strong></span>
+      <span>|</span>
+      <span id="costN">$0.000</span>
+      <span>|</span>
+      <span id="tokenN">0 tokens</span>
+      <span>|</span>
+      <div class="complexity-sel">
+        <button class="cx-btn" onclick="setCx('simple')">简单</button>
+        <button class="cx-btn active" onclick="setCx('normal')">标准</button>
+        <button class="cx-btn" onclick="setCx('deep')">深度</button>
+      </div>
+      <span>|</span>
+      <button onclick="openSettings()" style="background:transparent;color:var(--t2);font-size:16px;padding:2px 6px" title="Settings">⚙</button> <span class="dot dot-off" id="wsDot"></span><span id="wsL">连接中</span>
+    </div>
+  </div>
+
+  <div class="left">
+    <div class="left-sec">
+      <div class="left-sec-title">工作区 <button onclick="openWorkspace()">打开目录</button></div>
+      <div id="wsList"></div>
+    </div>
+    <div class="left-sec">
+      <div class="left-sec-title">任务 <button onclick="newTask()">+ 新建</button></div>
+      <div id="taskList" style="max-height:200px;overflow-y:auto"></div>
+    </div>
+    <div class="left-body">
+      <div class="left-sec-title" style="margin-bottom:8px">团队</div>
+      <div id="agentList">
+        <div class="agent-item" onclick="selectView('chat')"><div class="agent-avatar av-human">你</div><span>老板</span><div class="agent-dot ad-idle"></div></div>
+        <div style="text-align:center;padding:20px;color:var(--t3);font-size:12px">启动任务后<br>Agent 团队自动组建</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="right" id="rightPanel">
+    <div class="chat-header">
+      <div class="chat-title" id="chatTitle">Muster</div>
+      <div class="chat-meta" id="chatMeta"></div>
+    </div>
+    <div class="chat-messages" id="chatMsgs">
+      <div class="chat-empty">
+        <div>
+          <div style="font-size:24px;margin-bottom:12px">👋</div>
+          <div style="font-size:15px;color:var(--t2);margin-bottom:6px">欢迎来到 Muster</div>
+          <div style="font-size:12px;color:var(--t3);line-height:1.8">
+            1. 左侧选择或新建工作区<br>
+            2. 点击 + 新建任务<br>
+            3. 在这里和 Leader 对话<br>
+            Leader 会追问需求、确认后自动启动团队
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="chat-input">
+      <textarea id="inputBox" placeholder="输入消息和 Leader 对话..." rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMsg()}"></textarea>
+      <button class="btn-send" id="sendBtn" onclick="sendMsg()">发送</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let ws, workspaces=[], tasks={}, chatMsgs={}, activeWs=null, activeTask=null, activeAgent=null, viewMode='chat', complexity='normal', wsDelay=1000;
+
+function gid(id){return document.getElementById(id)}
+function esc(t){return t?t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'):''}
+function escJs(s){return s?s.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'\\"').replace(/\n/g,'\\n').replace(/\r/g,'\\r'):''}
+
+// WebSocket
+function connect(){
+  ws=new WebSocket(`${location.protocol==='https:'?'wss:':'ws:'}//${location.host}/ws`);
+  ws.onopen=()=>{gid('wsDot').className='dot dot-on';gid('wsL').textContent='已连接';wsDelay=1000};
+  ws.onclose=()=>{gid('wsDot').className='dot dot-off';gid('wsL').textContent='重连中';wsDelay=Math.min(wsDelay*2,30000);setTimeout(connect,wsDelay)};
+  ws.onmessage=(e)=>handleMsg(JSON.parse(e.data));
+}
+
+function handleMsg(m){
+  switch(m.type){
+    case 'init': workspaces=m.workspaces||[];break;
+    case 'workspace:created': workspaces.push(m.data);break;
+    case 'task:created': tasks[m.data.id]=m.data;if(activeWs)renderTasks();selectTask(m.data.id);break;
+    case 'task:update': tasks[m.data.id]=m.data;break;
+    case 'subtask:update': if(tasks[m.data.taskId]){const st=tasks[m.data.taskId].subtasks?.find(s=>s.id===m.data.id);if(st)Object.assign(st,m.data)}break;
+    case 'chat:message':
+      if(!chatMsgs[m.data.taskId])chatMsgs[m.data.taskId]=[];
+      chatMsgs[m.data.taskId].push(m.data);
+      if(m.data.taskId===activeTask)renderChat();
+      break;
+    case 'agent:output': break;
+    case 'agent:tool': break;
+    case 'config:updated': complexity=m.complexity;renderCx();break;
+  }
+  render();
+}
+
+function send(msg){ws.send(JSON.stringify(msg))}
+
+// Actions
+function openWorkspace(){
+  // 打开目录浏览弹窗
+  showDirPicker('~/');
+}
+
+function showDirPicker(startPath){
+  const modal=document.createElement('div');
+  modal.id='dirModal';
+  modal.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML=`<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;width:480px;max-height:70vh;display:flex;flex-direction:column">
+    <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">
+      <span style="font-weight:600">打开目录</span>
+      <input id="dirInput" value="${esc(startPath)}" style="flex:1;font-size:12px;padding:4px 8px" onkeydown="if(event.key==='Enter')browseDir(this.value)">
+      <button onclick="browseDir(gid('dirInput').value)" style="background:var(--s3);color:var(--text);font-size:12px;padding:4px 10px">浏览</button>
+    </div>
+    <div id="dirList" style="flex:1;overflow-y:auto;padding:8px;max-height:300px;min-height:150px"></div>
+    <div style="padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="gid('dirModal').remove()" style="background:var(--s3);color:var(--t2)">取消</button>
+      <button onclick="confirmOpenDir()" style="background:var(--blue);color:#fff;font-weight:600">打开</button>
+    </div>
+  </div>`;
+  document.body.appendChild(modal);
+  browseDir(startPath);
+}
+
+async function browseDir(path){
+  const r=await fetch(`/api/browse?path=${encodeURIComponent(path)}`);
+  const d=await r.json();
+  gid('dirInput').value=d.path;
+  const list=gid('dirList');
+  if(!d.exists){list.innerHTML=`<div style="padding:20px;text-align:center;color:var(--red)">目录不存在: ${esc(d.path)}</div>`;return}
+  // 返回上级
+  const parent=d.path.split('/').slice(0,-1).join('/')||'/';
+  let html=`<div class="ws-item" ondblclick="browseDir('${escJs(parent)}')" style="color:var(--t2)"><span>📁</span> ..</div>`;
+  d.dirs.forEach(dir=>{
+    html+=`<div class="ws-item" ondblclick="browseDir('${escJs(dir.path)}')" onclick="gid('dirInput').value='${escJs(dir.path)}'"><span>📁</span> ${esc(dir.name)}</div>`;
+  });
+  if(!d.dirs.length)html+=`<div style="padding:12px;color:var(--t3);text-align:center;font-size:12px">空目录（双击选这个）</div>`;
+  list.innerHTML=html;
+}
+
+async function confirmOpenDir(){
+  const path=gid('dirInput').value.trim();
+  if(!path)return;
+  send({type:'workspace:create',name:path.split('/').pop(),path});
+  gid('dirModal').remove();
+}
+function newTask(){
+  if(!activeWs){alert('请先选择或新建工作区');return}
+  const ws2=workspaces.find(w=>w.id===activeWs);
+  send({type:'task:create',workspaceId:activeWs,cwd:ws2?.path||''});
+}
+function selectWs(id){activeWs=id;activeTask=null;activeAgent=null;render()}
+function selectTask(id){activeTask=id;activeAgent=null;viewMode='chat';render();scrollChat()}
+function selectView(mode,agentId){viewMode=agentId?'agent':mode;activeAgent=agentId||null;render()}
+function sendMsg(){
+  const text=gid('inputBox').value.trim();
+  if(!text||!activeTask)return;
+  send({type:'chat:send',taskId:activeTask,text});
+  gid('inputBox').value='';
+}
+function setCx(c){complexity=c;send({type:'config:set',complexity:c});renderCx()}
+function renderCx(){document.querySelectorAll('.cx-btn').forEach(b=>{b.classList.toggle('active',b.textContent===({simple:'简单',normal:'标准',deep:'深度'}[complexity]))})}
+
+// Render
+function render(){
+  renderWorkspaces();renderTasks();renderAgents();renderChat();updateTopbar();
+}
+
+function renderWorkspaces(){
+  gid('wsList').innerHTML=workspaces.map(w=>`<div class="ws-item ${w.id===activeWs?'active':''}" onclick="selectWs('${w.id}')"><span class="ws-icon">📁</span>${esc(w.name)}</div>`).join('')||'<div style="padding:8px;color:var(--t3);font-size:12px">点击 + 新建工作区</div>';
+}
+
+function renderTasks(){
+  if(!activeWs){gid('taskList').innerHTML='<div style="padding:8px;color:var(--t3);font-size:12px">选择工作区后显示任务</div>';return}
+  const ts=Object.values(tasks).filter(t=>t.workspaceId===activeWs);
+  gid('taskList').innerHTML=ts.reverse().map(t=>`<div class="task-item ${t.id===activeTask?'active':''}" onclick="selectTask('${t.id}')"><span class="task-status ts-${t.status}"></span>${esc((t.conversationHistory?.[0]?.content||'新任务').slice(0,30))}</div>`).join('')||'<div style="padding:8px;color:var(--t3);font-size:12px">点击 + 新建任务</div>';
+}
+
+function renderAgents(){
+  let html='<div class="agent-item" onclick="selectView(\'chat\')"><div class="agent-avatar av-human">你</div><span>老板</span></div>';
+  if(activeTask&&tasks[activeTask]){
+    const t=tasks[activeTask];
+    html+=`<div class="agent-item ${viewMode==='chat'&&!activeAgent?'active':''}" onclick="selectView('chat')"><div class="agent-avatar av-leader">L</div><span>Leader</span><div class="agent-dot ${t.status==='executing'||t.status==='planning'?'ad-running':t.status==='completed'?'ad-done':'ad-idle'}"></div></div>`;
+    (t.subtasks||[]).forEach((st,i)=>{
+      const status=st.status;
+      html+=`<div class="agent-item" onclick="selectView('agent','worker-${i}')"><div class="agent-avatar av-worker">W</div><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Worker#${i+1}</span><div class="agent-dot ${status==='running'||status==='retrying'?'ad-running':status==='completed'?'ad-done':'ad-idle'}"></div></div>`;
+      if(st.attempts?.some(a=>a.role==='verifier')){
+        html+=`<div class="agent-item" onclick="selectView('agent','verifier-${i}')"><div class="agent-avatar av-verifier">V</div><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Verifier#${i+1}</span></div>`;
+      }
+    });
+  }
+  gid('agentList').innerHTML=html;
+}
+
+function renderChat(){
+  if(activeAgent){renderAgentDetail();return}
+  if(!activeTask||!tasks[activeTask]){return}
+  const msgs=chatMsgs[activeTask]||[];
+  const t=tasks[activeTask];
+  gid('chatTitle').textContent=viewMode==='chat'?'团队群聊':'Agent 详情';
+  gid('chatMeta').innerHTML=`<span class="task-status ts-${t?.status}"></span>${statusL(t?.status)} | $${(t?.totalCost||0).toFixed(3)} ${tokenTableHtml(t)}`;
+
+  if(!msgs.length){
+    gid('chatMsgs').innerHTML='<div class="chat-empty"><div style="font-size:13px;color:var(--t2)">和 Leader 开始对话吧</div></div>';
+    return;
+  }
+
+  gid('chatMsgs').innerHTML=msgs.map(m=>{
+    const cls=`msg-${m.role}`;
+    const avatar=getAvatar(m.role,m.agentName);
+    const time=new Date(m.timestamp).toLocaleTimeString('zh',{hour:'2-digit',minute:'2-digit'});
+    let text=esc(m.text);
+    // 高亮 APPROVED/REJECTED
+    text=text.replace(/APPROVED/g,'<span class="badge-pass">APPROVED ✓</span>');
+    text=text.replace(/REJECTED/g,'<span class="badge-f">REJECTED ✗</span>');
+    return `<div class="msg ${cls}"><div class="msg-avatar">${avatar}</div><div class="msg-body"><div class="msg-head"><span class="msg-name">${esc(m.agentName||m.role)}</span><span class="msg-time">${time}</span></div><div class="msg-text">${text}</div></div></div>`;
+  }).join('');
+}
+
+function renderAgentDetail(){
+  if(!activeTask||!activeAgent)return;
+  const t=tasks[activeTask];
+  const [role,idx]=activeAgent.split('-');
+  const i=parseInt(idx);
+  const st=(t?.subtasks||[])[i];
+  if(!st){gid('chatMsgs').innerHTML='<div class="chat-empty">Agent 暂无数据</div>';return}
+
+  const isWorker=role==='worker';
+  const name=isWorker?`Worker#${i+1}`:`Verifier#${i+1}`;
+  const avatar=getAvatar(isWorker?'worker':'verifier');
+  const status=st.status;
+
+  let html=`<div class="agent-detail">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+      <div class="msg-avatar" style="width:48px;height:48px;font-size:18px">${avatar}</div>
+      <div><div style="font-weight:600;font-size:16px;color:var(--${isWorker?'blue':'orange'})">${name}</div>
+      <div style="font-size:12px;color:var(--t2)">${esc(st.title)}</div></div>
+    </div>
+    <div class="ad-section"><h3>状态</h3>
+      <div class="ad-row"><span>任务</span><span>${esc(st.title)}</span></div>
+      <div class="ad-row"><span>状态</span><span>${statusL(status)}</span></div>
+      <div class="ad-row"><span>尝试次数</span><span>${st.attempts?.length||0}</span></div>
+    </div>`;
+
+  const attempts=(st.attempts||[]).filter(a=>isWorker?a.role==='worker':a.role==='verifier');
+  if(attempts.length){
+    html+=`<div class="ad-section"><h3>工作记录</h3>`;
+    attempts.forEach((a,ai)=>{
+      const costStr=`$${(a.cost||0).toFixed(3)}`;
+      const statusTag=a.status==='approved'?'<span class="badge-pass">APPROVED</span>':
+                       a.status==='rejected'?'<span class="badge-f">REJECTED</span>':a.status;
+      html+=`<div style="margin-bottom:10px;padding:8px 10px;background:var(--s2);border-radius:6px">
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-weight:600;font-size:12px">Attempt ${ai+1}</span><span>${statusTag} | ${costStr}</span></div>
+        <div class="ad-output">${esc((a.output||'').slice(0,500))}</div>
+      </div>`;
+    });
+    html+=`</div>`;
+  }
+
+  // Show tool calls from chat messages
+  const taskMsgs=chatMsgs[activeTask]||[];
+  const toolMsgs=taskMsgs.filter(m=>m.type==='system'&&m.agentName?.includes(name));
+  if(toolMsgs.length){
+    html+=`<div class="ad-section"><h3>操作日志</h3>`;
+    toolMsgs.forEach(m=>{html+=`<div class="tool-item"><span class="tool-icon">→</span>${esc(m.text)}</div>`});
+    html+=`</div>`;
+  }
+
+  html+=`<button style="background:var(--s3);color:var(--t2);width:100%;margin-top:8px" onclick="selectView('chat')">← 返回群聊</button></div>`;
+  gid('chatMsgs').innerHTML=html;
+}
+
+function getAvatar(role,name){
+  if(role==='human')return'<div style="background:var(--purple)25;color:var(--purple);width:100%;height:100%;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700">你</div>';
+  if(role==='leader')return'🤖';
+  if(role==='worker')return'🔧';
+  if(role==='verifier')return'🔍';
+  return'📡';
+}
+
+function statusL(s){return{chatting:'对话中',planning:'规划中',executing:'执行中',completed:'已完成',failed:'失败',pending:'等待',running:'执行中',verifying:'验证中',retrying:'重试中'}[s]||s||''}
+
+function updateTopbar(){
+  const t=activeTask&&tasks[activeTask];
+  gid('agentN').textContent=t?((t.subtasks||[]).length*2+1):0;
+  gid('costN').textContent=`$${(t?.totalCost||0).toFixed(3)}`;
+  // Token 统计：按模型显示
+  const mu=t?.modelUsage||{};
+  const models=Object.keys(mu);
+  if(models.length){
+    const total=models.reduce((s,m)=>s+(mu[m].inputTokens||0)+(mu[m].outputTokens||0),0);
+    gid('tokenN').textContent=`${(total/1000).toFixed(1)}k tokens (${models.length} 模型)`;
+  } else {
+    gid('tokenN').textContent='0 tokens';
+  }
+}
+
+// 渲染 token 详情（在群聊 meta 中显示）
+function tokenTableHtml(t){
+  const mu=t?.modelUsage||{};
+  const models=Object.keys(mu);
+  if(!models.length)return'';
+  let html='<table style="font-size:11px;border-collapse:collapse;margin-top:4px"><tr style="color:var(--t3)"><th style="text-align:left;padding:2px 8px">模型</th><th style="padding:2px 8px">输入</th><th style="padding:2px 8px">输出</th><th style="padding:2px 8px">缓存</th><th style="padding:2px 8px">费用</th></tr>';
+  models.forEach(m=>{
+    const d=mu[m];
+    const shortName=m.split('/').pop();
+    html+=`<tr><td style="padding:2px 8px;color:var(--text)">${esc(shortName)}</td><td style="padding:2px 8px;text-align:right">${fmtTok(d.inputTokens)}</td><td style="padding:2px 8px;text-align:right">${fmtTok(d.outputTokens)}</td><td style="padding:2px 8px;text-align:right">${fmtTok(d.cacheReadTokens)}</td><td style="padding:2px 8px;text-align:right;color:var(--yellow)">$${(d.costUSD||0).toFixed(3)}</td></tr>`;
+  });
+  html+='</table>';
+  return html;
+}
+function fmtTok(n){return n>=1000000?((n/1000000).toFixed(1)+'M'):n>=1000?((n/1000).toFixed(1)+'k'):String(n||0)}
+
+function scrollChat(){requestAnimationFrame(()=>{const el=gid('chatMsgs');if(el)el.scrollTop=el.scrollHeight})}
+
+// ===== Settings Modal =====
+async function openSettings(){
+  const [config,sandbox,jobs,personas,skills]=await Promise.all([
+    fetch('/api/config').then(r=>r.json()),
+    fetch('/api/sandbox').then(r=>r.json()),
+    fetch('/api/scheduler/jobs').then(r=>r.json()),
+    fetch('/api/personas').then(r=>r.json()),
+    fetch('/api/skills').then(r=>r.json()),
+  ]);
+
+  const modal=document.createElement('div');
+  modal.id='settingsModal';
+  modal.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center';
+
+  const scheduledHtml=jobs.length?jobs.map(j=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)">
+    <div><strong>${esc(j.name)}</strong> <span style="color:var(--t3);font-size:11px">${j.reason||''}</span></div>
+    <div style="display:flex;gap:6px;align-items:center">
+      <span style="color:var(--t2);font-size:11px">${j.status==='scheduled'?relativeTime(j.runAt):j.status}</span>
+      ${j.status==='scheduled'?`<button onclick="cancelJob('${j.id}')" style="background:var(--red)30;color:var(--red);font-size:11px;padding:2px 8px">取消</button>`:''}
+    </div>
+  </div>`).join(''):'<div style="color:var(--t3);font-size:12px;text-align:center;padding:12px">暂无定时任务</div>';
+
+  modal.innerHTML=`<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;width:600px;max-height:80vh;overflow-y:auto">
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+      <span style="font-weight:700;font-size:16px">⚙ Settings</span>
+      <button onclick="gid('settingsModal').remove()" style="background:transparent;color:var(--t2);font-size:18px">✕</button>
+    </div>
+    <div style="padding:16px 20px">
+      <h3 style="font-size:13px;color:var(--blue);margin:0 0 10px">权限模式</h3>
+      <div style="background:var(--s2);border-radius:8px;padding:12px;margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="color:var(--t2)">模式</span><span style="color:var(--green);font-weight:600">沙盒 (Sandbox)</span></div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="color:var(--t2)">可用工具</span><span>${sandbox.allowedTools.length} 个</span></div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="color:var(--t2)">写工具 (工作区内)</span><span>${sandbox.writeTools.join(', ')}</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--t2)">黑名单规则</span><span>${sandbox.blacklistedPatterns} 条</span></div>
+      </div>
+
+      <h3 style="font-size:13px;color:var(--blue);margin:0 0 10px">专家 Persona (${personas.length})</h3>
+      <div style="background:var(--s2);border-radius:8px;padding:12px;margin-bottom:16px;display:flex;gap:6px;flex-wrap:wrap">
+        ${personas.map(p=>`<span style="background:var(--s3);padding:4px 10px;border-radius:4px;font-size:12px;color:var(--cyan)">${esc(p)}</span>`).join('')}
+      </div>
+
+      <h3 style="font-size:13px;color:var(--blue);margin:0 0 10px">技能 Skills (${skills.length})</h3>
+      <div style="background:var(--s2);border-radius:8px;padding:12px;margin-bottom:16px;display:flex;gap:6px;flex-wrap:wrap">
+        ${skills.map(s=>`<span style="background:var(--s3);padding:3px 8px;border-radius:4px;font-size:11px;color:var(--t2)">${esc(s)}</span>`).join('')}
+      </div>
+
+      <h3 style="font-size:13px;color:var(--blue);margin:0 0 10px">定时任务</h3>
+      <div style="background:var(--s2);border-radius:8px;padding:12px;margin-bottom:16px" id="jobsList">
+        ${scheduledHtml}
+      </div>
+
+      <h3 style="font-size:13px;color:var(--blue);margin:0 0 10px">手动调度</h3>
+      <div style="background:var(--s2);border-radius:8px;padding:12px;margin-bottom:16px">
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+          <span style="color:var(--t2);font-size:12px;white-space:nowrap">延迟</span>
+          <input id="schedDelay" type="number" value="120" min="1" style="width:60px;font-size:12px">
+          <span style="color:var(--t2);font-size:12px">分钟</span>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span style="color:var(--t2);font-size:12px;white-space:nowrap">原因</span>
+          <input id="schedReason" placeholder="限流重试 / 定时巡检" style="flex:1;font-size:12px">
+        </div>
+      </div>
+
+      <h3 style="font-size:13px;color:var(--blue);margin:0 0 10px">复杂度预设</h3>
+      <div style="background:var(--s2);border-radius:8px;padding:12px">
+        <div style="display:flex;gap:8px">
+          ${[{k:'simple',l:'简单',d:'1次重试, 2并发'},{k:'normal',l:'标准',d:'3次重试, 3并发'},{k:'deep',l:'深度',d:'5次重试, 5并发'}].map(p=>`<div onclick="setCx('${p.k}')" style="flex:1;padding:10px;border-radius:6px;cursor:pointer;text-align:center;background:${config.complexity===p.k?'var(--blue)20':'var(--s3)'};border:1px solid ${config.complexity===p.k?'var(--blue)':'transparent'}"><div style="font-weight:600;font-size:13px;color:${config.complexity===p.k?'var(--blue)':'var(--text)'}">${p.l}</div><div style="font-size:11px;color:var(--t2);margin-top:2px">${p.d}</div></div>`).join('')}
+        </div>
+      </div>
+    </div>
+  </div>`;
+  document.body.appendChild(modal);
+}
+
+async function cancelJob(jobId){
+  await fetch(`/api/scheduler/cancel/${jobId}`,{method:'POST'});
+  gid('settingsModal').remove();
+  openSettings();
+}
+
+function relativeTime(iso){
+  const diff=new Date(iso)-Date.now();
+  if(diff<0)return'已到期';
+  const m=Math.floor(diff/60000);
+  if(m<60)return`${m}分钟后`;
+  const h=Math.floor(m/60);
+  return`${h}小时${m%60}分钟后`;
+}
+
+// Init
+connect();
+</script>
+</body>
+</html>
