@@ -133,7 +133,7 @@ input:focus,textarea:focus{border-color:var(--blue)}
 
   <div class="left">
     <div class="left-sec">
-      <div class="left-sec-title">工作区 <button onclick="openWorkspace()">打开目录</button></div>
+      <div class="left-sec-title">工作区 <button onclick="openWorkspace()">打开目录</button><button onclick="newTask()" style="margin-left:4px;background:var(--blue)30;color:var(--blue);font-size:14px;line-height:1;padding:0 6px" title="新建任务">+</button></div>
       <div id="wsList"></div>
     </div>
     <div class="left-body" id="treeBody" style="overflow-y:auto;flex:1;padding:4px 0">
@@ -239,6 +239,7 @@ function handleMsg(m){
     case 'timer:scheduled': if(activeTask){if(!chatMsgs[activeTask])chatMsgs[activeTask]=[];const ts=new Date().toISOString();chatMsgs[activeTask].push({role:'system',agentName:'系统',text:'⏰ 定时消息已安排 ('+(m.data.delayMs/60000)+'分钟后触发)',timestamp:ts})}render();break;
     case 'restore:done': workspaces=m.workspaces||[];render();break;
     case 'backlog:update': backlog[m.data.workspaceId]=m.data.items;render();break;
+    case 'task:deleted': delete tasks[m.data.id];delete chatMsgs[m.data.id];if(activeTask===m.data.id){activeTask=null;viewMode='chat'}render();break;
     case 'error': alert(m.data?.error||m.error||'未知错误');break;
   }
   render();
@@ -308,14 +309,14 @@ async function renameTask(id){
 function archiveTask(id){
   if(!confirm('确定归档此任务？'))return;
   fetch(`/api/task/${id}/archive`,{method:'POST'});
-  delete tasks[id];
+  delete tasks[id];delete chatMsgs[id];
   if(activeTask===id){activeTask=null;viewMode='chat'}
   render();
 }
 function deleteTask(id){
   if(!confirm('确定永久删除此任务？此操作不可恢复。'))return;
   fetch(`/api/task/${id}`,{method:'DELETE'});
-  delete tasks[id];
+  delete tasks[id];delete chatMsgs[id];
   if(activeTask===id){activeTask=null;viewMode='chat'}
   render();
 }
@@ -328,11 +329,8 @@ function selectWs(id){
   if(!backlog[id]){fetch(`/api/backlog/${id}`).then(r=>r.json()).then(items=>{backlog[id]=items;render()})}
   // 自动展开此工作区
   expandedTree['ws-'+id]=true;
-  // 自动新建任务
-  const ws2=workspaces.find(w=>w.id===id);
-  if(ws2) send({type:'task:create',workspaceId:id,cwd:ws2.path||''});
   render()}
-function selectTask(id){activeTask=id;activeAgent=null;viewMode='chat';render();scrollChat()}
+function selectTask(id){activeTask=id;activeAgent=null;viewMode='chat';expandedTree['task-'+id]=true;render();scrollChat()}
 function selectView(mode,agentId){viewMode=agentId?'agent':mode;activeAgent=agentId||null;render()}
 function sendMsg(text){
   if(!text)text=gid('inputBox').value.trim();
@@ -494,7 +492,7 @@ function renderAgents(){
 
 function renderChat(){
   if(activeAgent){renderAgentDetail();return}
-  if(!activeTask||!tasks[activeTask]){return}
+  if(!activeTask||!tasks[activeTask]){gid('chatMsgs').innerHTML='';gid('chatMeta').innerHTML='';return}
   const msgs=chatMsgs[activeTask]||[];
   const t=tasks[activeTask];
   const maxGoalIter=t.goal?({simple:3,normal:5,deep:10}[complexity]||5):0;
