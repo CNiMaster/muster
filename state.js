@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 import { EventEmitter } from 'events';
+import { CONFIG } from './config.js';
 
 class StateStore extends EventEmitter {
   constructor() {
@@ -34,14 +35,15 @@ class StateStore extends EventEmitter {
       id: randomUUID(),
       workspaceId,
       cwd,
-      status: 'chatting',  // chatting | planning | executing | completed | failed
+      status: 'chatting',
+      leaderModel: CONFIG.models.leader,
       conversationHistory: [],
       subtasks: [],
       agents: [],
       result: null,
       totalCost: 0,
       totalTokens: { input: 0, output: 0, cacheRead: 0 },
-      modelUsage: {},  // { "model-name": { inputTokens, outputTokens, cacheReadTokens, costUSD } }
+      modelUsage: {},
       createdAt: new Date().toISOString(),
       completedAt: null,
       goal: null,

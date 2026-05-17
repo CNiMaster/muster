@@ -10,7 +10,7 @@ import { state } from './state.js';
 import { orchestrator } from './orchestrator.js';
 import { CONFIG, setComplexity, listPersonas, listSkills } from './config.js';
 import { Storage } from './storage.js';
-import { killAll } from './agent-runner.js';
+import { killAll, killSession } from './agent-runner.js';
 import { isPathAllowed } from './utils.js';
 import { scheduler } from './scheduler.js';
 import { BackupManager } from './backup.js';
@@ -140,10 +140,23 @@ app.post('/api/task/:id/archive', (req, res) => {
 app.delete('/api/task/:id', (req, res) => {
   const t = state.getTask(req.params.id);
   if (!t) return res.status(404).json({ error: 'Not found' });
+  // Kill any running agents for this task
+  const killed = killSession(req.params.id);
+  if (killed) console.log(`[server] Killed ${killed} agent(s) for task ${req.params.id}`);
   const ws = state.getWorkspace(t.workspaceId);
   if (ws) Storage.deleteTaskFromDisk(ws.path, t.id);
   state.deleteTask(req.params.id);
   res.json({ ok: true });
+});
+
+// 停止任务（杀掉所有关联子进程，不删除）
+app.post('/api/task/:id/stop', (req, res) => {
+  const t = state.getTask(req.params.id);
+  if (!t) return res.status(404).json({ error: 'Not found' });
+  const killed = killSession(req.params.id);
+  state.updateTask(req.params.id, { status: 'stopped' });
+  state.addChatMessage(req.params.id, { role: 'system', agentName: '系统', text: `⏹️ 任务已手动停止 (${killed} 个 agent 被终止)`, type: 'system' });
+  res.json({ ok: true, killed });
 });
 
 // 重命名任务
@@ -424,7 +437,7 @@ wss.on('connection', (ws, req) => {
 });
 
 // 桥接事件
-const events = ['task:update', 'subtask:update', 'chat:message'];
+const events = ['task:update', 'subtask:update', 'chat:message', 'task:deleted'];
 events.forEach(evt => {
   state.on(evt, (data) => {
     broadcast({ type: evt, data });
@@ -466,6 +479,22 @@ function restoreWorkspaceState() {
     const ws = state.restoreWorkspace(wsMeta);
     Storage.restoreWorkspaceTasks(state, ws);
   }
+
+  // 将服务器重启时处于瞬时状态的任务标记为 stopped
+  const transientStates = ['executing', 'planning', 'running', 'verifying', 'retrying'];
+  for (const task of state.tasks.values()) {
+    if (transientStates.includes(task.status)) {
+      state.updateTask(task.id, { status: 'stopped' });
+      state.addChatMessage(task.id, {
+        role: 'system', agentName: '系统',
+        text: '⏹️ 服务器重启，任务已停止。请重新发送消息继续。',
+        type: 'system'
+      });
+      const ws2 = state.getWorkspace(task.workspaceId);
+      if (ws2) Storage.saveTask(ws2.path, task, state.getChatMessages(task.id));
+    }
+  }
+
   // 如果工作区恢复后数量 > 0，广播恢复结果
   if (savedWorkspaces.length > 0) {
     broadcast({ type: 'restore:done', count: savedWorkspaces.length, workspaces: state.listWorkspaces() });

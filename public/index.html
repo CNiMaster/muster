@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Muster</title>
 <style>
-:root{--bg:#0d1017;--surface:#151922;--s2:#1c2130;--s3:#232a3b;--border:#2a3148;--text:#d8dce8;--t2:#7a809a;--t3:#4e5470;--blue:#4f8ff7;--green:#34d399;--yellow:#fbbf24;--red:#f87171;--purple:#a78bfa;--cyan:#22d3ee;--orange:#fb923c}
+:root{--bg:#0d1017;--surface:#151922;--s2:#1c2130;--s3:#232a3b;--border:#2a3148;--text:#d8dce8;--t2:#7a809a;--t3:#4e5470;--blue:#4f8ff7;--green:#34d399;--yellow:#fbbf24;--red:#f87171;--purple:#a78bfa;--cyan:#22d3ee;--orange:#fb923c;--blue20:#4f8ff733;--blue25:#4f8ff740;--blue30:#4f8ff74d;--green20:#34d39933;--red30:#f871714d;--purple20:#a78bfa33;--purple25:#a78bfa40;--purple30:#a78bfa4d;--yellow15:#fbbf2426;--yellow20:#fbbf2433;--yellow30:#fbbf244d;--yellow40:#fbbf2466;--cyan25:#22d3ee40;--cyan30:#22d3ee4d;--orange25:#fb923c40;--orange30:#fb923c4d;--t320:#4e547033}
 .tree-toggle{cursor:pointer;user-select:none;font-size:10px;color:var(--t3);width:16px;flex-shrink:0;text-align:center;transition:.15s}
 .tree-group{margin-left:18px;border-left:1px solid var(--border);padding-left:6px}
 .tree-group.collapsed{display:none}
@@ -17,7 +17,11 @@
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px;line-height:1.5;height:100vh;overflow:hidden}
 ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
-button{cursor:pointer;border:none;border-radius:6px;padding:6px 12px;font-size:13px;font-weight:500}
+button{cursor:pointer;border:none;border-radius:6px;padding:6px 12px;font-size:13px;font-weight:500;transition:background .15s,color .15s,opacity .15s}
+button:hover{filter:brightness(1.1)}
+.ws-item,.task-item,.bl-item{transition:background .15s}
+@keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
 input,textarea{background:var(--s2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 10px;font-size:13px;font-family:inherit;outline:none;resize:none}
 input:focus,textarea:focus{border-color:var(--blue)}
 
@@ -33,7 +37,7 @@ input:focus,textarea:focus{border-color:var(--blue)}
 .left-sec{padding:10px 12px;border-bottom:1px solid var(--border)}
 .left-sec-title{font-size:11px;font-weight:600;text-transform:uppercase;color:var(--t3);letter-spacing:.5px;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between}
 .left-sec-title button{font-size:11px;padding:2px 8px;background:var(--s3);color:var(--t2);border-radius:4px}
-.left-sec-title button:hover{color:var(--text);background:var(--blue)30}
+.left-sec-title button:hover{color:var(--text);background:var(--blue30)}
 .left-body{flex:1;overflow-y:auto;padding:8px 12px}
 
 .ws-item{padding:8px 10px;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:8px;margin-bottom:2px;font-size:13px}
@@ -43,14 +47,14 @@ input:focus,textarea:focus{border-color:var(--blue)}
 .task-item{padding:8px 10px;border-radius:6px;cursor:pointer;margin-bottom:2px;font-size:12px}
 .task-item:hover{background:var(--s2)}.task-item.active{background:var(--s3)}
 .task-status{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
-.ts-chatting{background:var(--cyan)}.ts-planning{background:var(--yellow)}.ts-executing{background:var(--blue);animation:pulse 1.5s infinite}.ts-completed{background:var(--green)}.ts-failed{background:var(--red)}
+.ts-chatting{background:var(--cyan)}.ts-planning{background:var(--yellow)}.ts-executing{background:var(--blue);animation:pulse 1.5s infinite}.ts-completed{background:var(--green)}.ts-failed{background:var(--red)}.ts-stopped{background:var(--t3)}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 
 .agent-item{padding:6px 10px;border-radius:6px;cursor:pointer;margin-bottom:1px;font-size:12px;display:flex;align-items:center;gap:6px}
 .agent-item:hover{background:var(--s2)}.agent-item.active{background:var(--s3)}
 .agent-avatar{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0}
-.av-human{background:var(--purple)30;color:var(--purple)}.av-leader{background:var(--cyan)30;color:var(--cyan)}
-.av-worker{background:var(--blue)30;color:var(--blue)}.av-verifier{background:var(--orange)30;color:var(--orange)}
+.av-human{background:var(--purple30);color:var(--purple)}.av-leader{background:var(--cyan30);color:var(--cyan)}
+.av-worker{background:var(--blue30);color:var(--blue)}.av-verifier{background:var(--orange30);color:var(--orange)}
 .agent-dot{width:6px;height:6px;border-radius:50%;margin-left:auto;flex-shrink:0}
 .ad-idle{background:var(--t3)}.ad-running{background:var(--green);animation:pulse 1.5s infinite}.ad-done{background:var(--green)}
 
@@ -63,23 +67,28 @@ input:focus,textarea:focus{border-color:var(--blue)}
 .chat-messages{flex:1;overflow-y:auto;padding:16px}
 .chat-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--t3);text-align:center}
 
-.msg{margin-bottom:12px;display:flex;gap:10px;max-width:800px}
+.msg{margin-bottom:12px;display:flex;gap:10px;max-width:800px;animation:fadeIn .2s ease-out}
+.msg-human{border-left:3px solid var(--purple);padding-left:8px}
+.msg-leader{border-left:3px solid var(--cyan);padding-left:8px}
+.msg-worker{border-left:3px solid var(--blue);padding-left:8px}
+.msg-verifier{border-left:3px solid var(--orange);padding-left:8px}
+.msg-system{border-left:3px solid var(--t3);padding-left:8px}
 .msg-avatar{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0}
 .msg-body{flex:1;min-width:0}
 .msg-head{display:flex;align-items:center;gap:6px;margin-bottom:3px}
 .msg-name{font-weight:600;font-size:12px}
 .msg-time{font-size:10px;color:var(--t3)}
-.msg-text{font-size:13px;line-height:1.6;color:var(--t2);white-space:pre-wrap;word-break:break-word}
+.msg-text{font-size:13px;line-height:1.6;color:var(--text);white-space:pre-wrap;word-break:break-word}
 .msg-text a{color:var(--blue)}
 
-.msg-human .msg-avatar{background:var(--purple)25;color:var(--purple)}
+.msg-human .msg-avatar{background:var(--purple25);color:var(--purple)}
 .msg-human .msg-name{color:var(--purple)}
 .msg-human .msg-text{color:var(--text)}
-.msg-leader .msg-avatar{background:var(--cyan)25;color:var(--cyan)}
+.msg-leader .msg-avatar{background:var(--cyan25);color:var(--cyan)}
 .msg-leader .msg-name{color:var(--cyan)}
-.msg-worker .msg-avatar{background:var(--blue)25;color:var(--blue)}
+.msg-worker .msg-avatar{background:var(--blue25);color:var(--blue)}
 .msg-worker .msg-name{color:var(--blue)}
-.msg-verifier .msg-avatar{background:var(--orange)25;color:var(--orange)}
+.msg-verifier .msg-avatar{background:var(--orange25);color:var(--orange)}
 .msg-verifier .msg-name{color:var(--orange)}
 .msg-system .msg-avatar{background:var(--t3)25;color:var(--t3)}
 .msg-system .msg-name{color:var(--t3)}
@@ -107,13 +116,23 @@ input:focus,textarea:focus{border-color:var(--blue)}
 /* Complexity selector */
 .complexity-sel{display:flex;gap:4px;margin-left:8px}
 .cx-btn{padding:3px 10px;border-radius:4px;font-size:11px;font-weight:600;background:var(--s3);color:var(--t2);cursor:pointer}
-.cx-btn:hover{color:var(--text)}.cx-btn.active{background:var(--blue)30;color:var(--blue)}
+.cx-btn:hover{color:var(--text)}.cx-btn.active{background:var(--blue30);color:var(--blue)}
+
+/* Mobile responsive */
+.menu-btn{display:none;background:transparent;color:var(--text);font-size:18px;padding:4px 8px}
+@media(max-width:768px){
+  .app{grid-template-columns:1fr}
+  .left{position:fixed;left:0;top:48px;bottom:0;width:280px;z-index:100;transform:translateX(-100%);transition:transform .25s ease}
+  .left.open{transform:translateX(0)}
+  .menu-btn{display:inline-block}
+  .topbar-r .complexity-sel,.topbar-r span[id="agentN"],.topbar-r span[id="costN"],.topbar-r span[id="tokenN"]{display:none}
+}
 </style>
 </head>
 <body>
 <div class="app">
   <div class="topbar">
-    <h1><span>Muster</span><span id="statusBadge" style="font-size:11px;font-weight:400;color:var(--t2);margin-left:8px"></span><span id="statusDot" class="dot dot-off"></span></h1>
+    <h1><button class="menu-btn" onclick="document.querySelector('.left').classList.toggle('open')">☰</button> <span>Muster</span><span id="statusBadge" style="font-size:11px;font-weight:400;color:var(--t2);margin-left:8px"></span><span id="statusDot" class="dot dot-off"></span></h1>
     <div class="topbar-r">
       <span>Agents: <strong id="agentN">0</strong></span>
       <span>|</span>
@@ -133,7 +152,7 @@ input:focus,textarea:focus{border-color:var(--blue)}
 
   <div class="left">
     <div class="left-sec">
-      <div class="left-sec-title">工作区 <button onclick="openWorkspace()">打开目录</button><button onclick="newTask()" style="margin-left:4px;background:var(--blue)30;color:var(--blue);font-size:14px;line-height:1;padding:0 6px" title="新建任务">+</button></div>
+      <div class="left-sec-title">工作区 <button onclick="openWorkspace()">打开目录</button><button onclick="newTask()" style="margin-left:4px;background:var(--blue30);color:var(--blue);font-size:14px;line-height:1;padding:0 6px" title="新建任务">+</button></div>
       <div id="wsList"></div>
     </div>
     <div class="left-body" id="treeBody" style="overflow-y:auto;flex:1;padding:4px 0">
@@ -150,27 +169,27 @@ input:focus,textarea:focus{border-color:var(--blue)}
     <div class="chat-header">
       <div class="chat-title" id="chatTitle">Muster</div>
       <div class="chat-meta" id="chatMeta">
-        <span id="modelBadge" style="background:var(--purple)20;color:var(--purple);padding:2px 8px;border-radius:4px;font-size:11px;cursor:pointer;font-weight:600" onclick="cycleModel()" title="点击切换Leader模型">Leader: Opus</span>
-        <span id="goalBadge" style="display:none;background:var(--yellow)20;color:var(--yellow);padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600"></span>
+        <span id="modelBadge" style="background:var(--purple20);color:var(--purple);padding:2px 8px;border-radius:4px;font-size:11px;cursor:pointer;font-weight:600" onclick="cycleModel()" title="点击切换Leader模型">Leader: Opus</span>
       </div>
     </div>
     <div class="chat-messages" id="chatMsgs">
       <div class="chat-empty">
-        <div>
-          <div style="font-size:24px;margin-bottom:12px">👋</div>
-          <div style="font-size:15px;color:var(--t2);margin-bottom:6px">欢迎来到 Muster</div>
-          <div style="font-size:12px;color:var(--t3);line-height:1.8">
-            1. 左侧选择工作区，点 + 新建任务<br>
-            2. 直接输入消息和 Leader 对话<br>
-            3. 任务执行后展开树看团队进度<br>
-            4. Leader 自动分配专家和技能<br>
-            顶部 <span style="color:var(--purple)">Leader: Opus</span> 可切换模型
+        <div style="text-align:center">
+          <div style="font-size:40px;margin-bottom:16px;animation:float 3s ease-in-out infinite">👋</div>
+          <div style="font-size:18px;font-weight:600;color:var(--text);margin-bottom:8px">欢迎来到 Muster</div>
+          <div style="font-size:13px;color:var(--t2);margin-bottom:20px">AI 多智能体协作平台</div>
+          <div style="display:flex;flex-direction:column;gap:8px;text-align:left;max-width:280px;margin:0 auto">
+            <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--t2)"><span style="background:var(--blue30);color:var(--blue);padding:2px 6px;border-radius:4px;font-weight:600">1</span> 左侧选择工作区</div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--t2)"><span style="background:var(--cyan30);color:var(--cyan);padding:2px 6px;border-radius:4px;font-weight:600">2</span> 直接输入消息和 Leader 对话</div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--t2)"><span style="background:var(--purple30);color:var(--purple);padding:2px 6px;border-radius:4px;font-weight:600">3</span> 展开树看团队进度</div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--t2)"><span style="background:var(--yellow30);color:var(--yellow);padding:2px 6px;border-radius:4px;font-weight:600">4</span> Leader 自动分配专家和技能</div>
           </div>
         </div>
       </div>
     </div>
+    <div id="agentActivity" style="display:none;padding:6px 16px;font-size:11px;color:var(--t3);background:var(--surface);border-left:3px solid var(--blue);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:0"></div>
     <div class="chat-input">
-      <textarea id="inputBox" placeholder="输入消息和 Leader 对话..." rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMsg()}"></textarea>
+      <textarea id="inputBox" placeholder="输入消息和 Leader 对话..." rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing){event.preventDefault();sendMsg()}"></textarea>
       <button class="btn-send" id="sendBtn" onclick="sendMsg()">发送</button>
     </div>
     <div id="inputToolbar" style="display:flex;gap:6px;padding:6px 16px 10px;border-top:1px solid var(--border);background:var(--surface);align-items:center;flex-wrap:wrap">
@@ -183,7 +202,7 @@ input:focus,textarea:focus{border-color:var(--blue)}
       </div>
       <span style="color:var(--t3);font-size:11px">|</span>
       <!-- Goal -->
-      <button id="goalToggle" onclick="toggleGoalMenu()" style="background:var(--yellow)15;color:var(--yellow);font-size:12px;padding:4px 8px;border-radius:4px;font-weight:500;cursor:pointer;border:1px solid var(--yellow)40">🎯 Goal</button>
+      <button id="goalToggle" onclick="toggleGoalMenu()" style="background:var(--yellow15);color:var(--yellow);font-size:12px;padding:4px 8px;border-radius:4px;font-weight:500;cursor:pointer;border:1px solid var(--yellow40)">🎯 Goal</button>
       <div id="goalPresets" style="display:none;gap:4px;align-items:center;flex-wrap:wrap">
         <button onclick="setGoalPreset('所有测试通过')" style="background:var(--s3);color:var(--t2);padding:3px 8px;border-radius:4px;font-size:11px;cursor:pointer">✅ 所有测试通过</button>
         <button onclick="setGoalPreset('无安全漏洞')" style="background:var(--s3);color:var(--t2);padding:3px 8px;border-radius:4px;font-size:11px;cursor:pointer">🛡️ 无安全漏洞</button>
@@ -196,7 +215,7 @@ input:focus,textarea:focus{border-color:var(--blue)}
 </div>
 
 <script>
-let ws, workspaces=[], tasks={}, chatMsgs={}, backlog={}, activeWs=null, activeTask=null, activeAgent=null, viewMode='chat', complexity='normal', wsDelay=1000, expandedTree={}, leaderModel='opus', pendingMsg=null, timerMode=false, goalActive=false;
+let ws, workspaces=[], tasks={}, chatMsgs={}, backlog={}, activeWs=null, activeTask=null, activeAgent=null, viewMode='chat', complexity='normal', wsDelay=1001, expandedTree={}, leaderModel='opus', pendingMsg=null, timerMode=false, goalActive=false, lastSentMsg=null, _agentStart=null, _agentTimer=null;
 
 function gid(id){return document.getElementById(id)}
 function esc(t){return t?t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'):''}
@@ -224,15 +243,37 @@ function handleMsg(m){
     case 'task:created': tasks[m.data.id]=m.data;render();
       if(pendingMsg){activeTask=m.data.id;render();sendMsg(pendingMsg);pendingMsg=null}
       else{selectTask(m.data.id)}break;
-    case 'task:update': tasks[m.data.id]=m.data;if(m.data.goal){gid('goalBadge').style.display='inline';const mi={simple:3,normal:5,deep:10}[complexity];gid('goalBadge').textContent=`🎯 ${m.data.goal?.slice(0,20)||''} ${m.data.goalIterations||0}/${mi}`;goalActive=true}else{gid('goalBadge').style.display='none';goalActive=false}break;
+    case 'task:update': tasks[m.data.id]=m.data;goalActive=!!m.data.goal;break;
     case 'subtask:update': if(tasks[m.data.taskId]){const st=tasks[m.data.taskId].subtasks?.find(s=>s.id===m.data.id);if(st)Object.assign(st,m.data)}break;
     case 'chat:message':
       if(!chatMsgs[m.data.taskId])chatMsgs[m.data.taskId]=[];
       chatMsgs[m.data.taskId].push(m.data);
+      // Hide activity indicator when real message arrives
+      const act=gid('agentActivity');if(act)act.style.display='none';_agentStart=null;if(_agentTimer){clearInterval(_agentTimer);_agentTimer=null}
+      // 恢复输入状态
+      gid('sendBtn').disabled=false;gid('inputBox').disabled=false;gid('sendBtn').textContent='发送';
       if(m.data.taskId===activeTask)renderChat();
       break;
-    case 'agent:output': break;
-    case 'agent:tool': break;
+    case 'agent:output':
+      if(m.data?.sessionId===activeTask){
+        const el=gid('agentActivity');
+        const prefix=m.data.subtaskId?'[W] ':m.data.role==='leader'?'[L] ':'';
+        if(el){
+          if(!_agentStart){_agentStart=Date.now();startAgentTimer()}
+          el.innerHTML=`<span id="agentElapsed" style="color:var(--blue);font-weight:600"></span> ${prefix}${esc(m.data.text?.slice(0,100)||(m.data.role+' 思考中...'))}`;el.style.display='block'
+        }
+      }
+      break;
+    case 'agent:tool':
+      if(m.data?.sessionId===activeTask){
+        const el=gid('agentActivity');
+        const prefix=m.data.subtaskId?'[W] ':m.data.role==='leader'?'[L] ':'';
+        if(el){
+          if(!_agentStart){_agentStart=Date.now();startAgentTimer()}
+          el.innerHTML=`<span id="agentElapsed" style="color:var(--blue);font-weight:600"></span> ${prefix}🔧 <span style="color:var(--blue)">${esc(m.data.tool)}</span> ${esc(JSON.stringify(m.data.input||{}).slice(0,80))}${m.data.toolCallCount?` <span style="color:var(--t3)">#${m.data.toolCallCount}</span>`:''}`;el.style.display='block'
+        }
+      }
+      break;
     case 'config:updated': complexity=m.complexity;if(m.leaderModel){leaderModel=m.leaderModel;gid('modelBadge').textContent='Leader: '+leaderModel.charAt(0).toUpperCase()+leaderModel.slice(1)}renderCx();break;
     case 'timer:scheduled': if(activeTask){if(!chatMsgs[activeTask])chatMsgs[activeTask]=[];const ts=new Date().toISOString();chatMsgs[activeTask].push({role:'system',agentName:'系统',text:'⏰ 定时消息已安排 ('+(m.data.delayMs/60000)+'分钟后触发)',timestamp:ts})}render();break;
     case 'restore:done': workspaces=m.workspaces||[];render();break;
@@ -318,6 +359,12 @@ function deleteTask(id){
   if(activeTask===id){activeTask=null;viewMode='chat'}
   render();
 }
+function stopTask(id){
+  if(!confirm('确定停止此任务？正在运行的 agent 将被终止。'))return;
+  fetch(`/api/task/${id}/stop`,{method:'POST'}).then(r=>r.json()).then(d=>{
+    if(d.ok)console.log('stopped',d.killed,'agents');
+  });
+}
 function selectWs(id){
   activeWs=id;
   // 收起之前展开的任务树
@@ -328,11 +375,17 @@ function selectWs(id){
   // 自动展开此工作区
   expandedTree['ws-'+id]=true;
   render()}
-function selectTask(id){activeTask=id;activeAgent=null;viewMode='chat';expandedTree['task-'+id]=true;render();scrollChat()}
+function selectTask(id){
+  activeTask=id;activeAgent=null;viewMode='chat';expandedTree['task-'+id]=true;
+  // Restore per-task leader model
+  if(tasks[id]?.leaderModel){leaderModel=tasks[id].leaderModel}
+  render();scrollChat()
+}
 function selectView(mode,agentId){viewMode=agentId?'agent':mode;activeAgent=agentId||null;render()}
 function sendMsg(text){
   if(!text)text=gid('inputBox').value.trim();
   if(!text)return;
+  lastSentMsg=text;
   gid('inputBox').value='';
   // 有工作区无任务 → 自动建新任务，建好后再发
   if(!activeTask && activeWs){
@@ -348,7 +401,10 @@ function sendMsg(text){
     return;
   }
   send({type:'chat:send',taskId:activeTask,text});
+  // 禁用输入直到收到回复
+  gid('sendBtn').disabled=true;gid('inputBox').disabled=true;gid('sendBtn').textContent='等待中...';
 }
+function retryLastMsg(){if(lastSentMsg&&activeTask){sendMsg(lastSentMsg)}}
 function setCx(c){complexity=c;send({type:'config:set',complexity:c});renderCx()}
 function renderCx(){document.querySelectorAll('.cx-btn').forEach(b=>{b.classList.toggle('active',b.textContent===({simple:'简单',normal:'标准',deep:'深度'}[complexity]))})}
 
@@ -356,7 +412,7 @@ function renderCx(){document.querySelectorAll('.cx-btn').forEach(b=>{b.classList
 // ===== Timer =====
 function toggleTimer(){
   timerMode=!timerMode;
-  gid('timerToggle').style.background=timerMode?'var(--blue)25':'transparent';
+  gid('timerToggle').style.background=timerMode?'var(--blue25)':'transparent';
   gid('timerToggle').style.color=timerMode?'var(--blue)':'var(--t3)';
   gid('timerToggle').style.borderColor=timerMode?'var(--blue)':'var(--border)';
   gid('timerControls').style.display=timerMode?'flex':'none';
@@ -371,21 +427,20 @@ function setGoalPreset(goalText){
   goalActive=!goalActive;
   if(!goalActive){
     send({type:'goal:set',taskId:activeTask,goal:null});
-    gid('goalBadge').style.display='none';
-    gid('goalToggle').style.background='var(--yellow)15';
-    gid('goalToggle').style.borderColor='var(--yellow)40';
+    gid('goalToggle').style.background='var(--yellow15)';
+    gid('goalToggle').style.borderColor='var(--yellow40)';
     gid('goalToggle').textContent='🎯 Goal';
     gid('goalPresets').style.display='none';
+    render();
     return;
   }
   send({type:'goal:set',taskId:activeTask,goal:goalText});
-  gid('goalBadge').style.display='inline';
   const maxIter={simple:3,normal:5,deep:10}[complexity];
-  gid('goalBadge').textContent=`🎯 ${goalText} 0/${maxIter}`;
   gid('goalToggle').textContent=`🎯 ${goalText}`;
-  gid('goalToggle').style.background='var(--yellow)30';
+  gid('goalToggle').style.background='var(--yellow30)';
   gid('goalToggle').style.borderColor='var(--yellow)';
   gid('goalPresets').style.display='none';
+  render();
 }
 // ===== Model =====
 const MODELS=['opus','sonnet','haiku'];
@@ -393,14 +448,17 @@ function cycleModel(){
   const idx=MODELS.indexOf(leaderModel);
   leaderModel=MODELS[(idx+1)%MODELS.length];
   gid('modelBadge').textContent='Leader: '+leaderModel.charAt(0).toUpperCase()+leaderModel.slice(1);
-  send({type:'config:set',leaderModel});
+  // Update active task's leader model independently
+  if(activeTask&&tasks[activeTask]){
+    tasks[activeTask].leaderModel=leaderModel;
+    send({type:'config:set',leaderModel});
+  }
 }
 
 // Render — 树形结构
 function render(){
   renderWorkspaces();
   renderTree();
-  renderAgents();
   renderChat();
   updateTopbar();
 }
@@ -430,39 +488,47 @@ function renderTree(){
   ts.forEach(t=>{
     const tk='task-'+t.id;
     const isExp=!!expandedTree[tk];
+    const isActive=t.id===activeTask;
     const backlogItems=backlog[activeWs]||[];
     const firstMsg=(t.conversationHistory?.[0]?.content||'新任务').slice(0,28);
-    html+=`<div class="task-item ${t.id===activeTask?'active':''}" onclick="selectTask('${t.id}')">
+    html+=`<div class="task-item ${isActive?'active':''}" onclick="selectTask('${t.id}')">
       <span class="tree-toggle" onclick="event.stopPropagation();toggleTree('${tk}')">${isExp?'▾':'▸'}</span>
       <span class="task-status ts-${t.status}"></span>
       ${t.goal?'<span style="font-size:10px">🎯</span>':''}
       <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(firstMsg)}</span>
       <span style="font-size:10px;color:var(--t3);flex-shrink:0">$${(t.totalCost||0).toFixed(3)}</span>
-      <span class="task-actions" style="display:none;gap:2px;flex-shrink:0">
-        <span onclick="event.stopPropagation();renameTask('${t.id}')" style="cursor:pointer;color:var(--t3);font-size:11px" title="重命名">✏️</span>
-        <span onclick="event.stopPropagation();archiveTask('${t.id}')" style="cursor:pointer;color:var(--t3);font-size:11px" title="归档">📦</span>
-        <span onclick="event.stopPropagation();deleteTask('${t.id}')" style="cursor:pointer;color:var(--red);font-size:11px" title="删除">✕</span>
+      <span class="task-actions" style="display:none;gap:4px;flex-shrink:0">
+        ${t.status==='executing'||t.status==='planning'?`<span onclick="event.stopPropagation();stopTask('${t.id}')" style="cursor:pointer;color:var(--yellow);font-size:14px" title="停止">⏹️</span>`:''}
+        <span onclick="event.stopPropagation();renameTask('${t.id}')" style="cursor:pointer;color:var(--t3);font-size:14px" title="重命名">✏️</span>
+        <span onclick="event.stopPropagation();archiveTask('${t.id}')" style="cursor:pointer;color:var(--t3);font-size:14px" title="归档">📦</span>
+        <span onclick="event.stopPropagation();deleteTask('${t.id}')" style="cursor:pointer;color:var(--red);font-size:14px" title="删除">🗑️</span>
       </span>
     </div>`;
-    if(isExp){
+    // Active task: always show team + checklist; other tasks: only when expanded
+    if(isActive || isExp){
       html+='<div class="tree-group">';
       // Agent 团队
       html+=`<div style="font-size:10px;color:var(--t3);padding:4px 8px 2px;text-transform:uppercase;letter-spacing:.3px">👥 团队</div>`;
-      html+=`<div onclick="selectTask('${t.id}')" class="bl-item ${t.id===activeTask?'active':''}" style="cursor:pointer"><span class="agent-avatar av-leader" style="width:16px;height:16px;font-size:7px">L</span>Leader</div>`;
+      html+=`<div onclick="selectTask('${t.id}')" class="bl-item ${isActive?'active':''}" style="cursor:pointer"><span class="agent-avatar av-leader" style="width:16px;height:16px;font-size:7px">L</span>Leader</div>`;
       (t.subtasks||[]).forEach((st,i)=>{
         const s=st.status;
-        html+=`<div onclick="selectView('agent','worker-${i}')" class="bl-item" style="cursor:pointer"><span class="agent-avatar av-worker" style="width:16px;height:16px;font-size:7px">W</span>Worker#${i+1} <span style="font-size:9px;color:var(--t3)">${s}</span></div>`;
+        const wModel=st.workerModel?`<span style="font-size:9px;color:var(--purple);margin-left:4px">${st.workerModel}</span>`:'';
+        const wPersona=st.persona?`<span style="font-size:9px;color:var(--blue);margin-left:2px">${st.persona}</span>`:'';
+        const wSkill=st.skill?`<span style="font-size:9px;color:var(--yellow);margin-left:2px">${st.skill}</span>`:'';
+        html+=`<div onclick="selectView('agent','worker-${i}')" class="bl-item" style="cursor:pointer"><span class="agent-avatar av-worker" style="width:16px;height:16px;font-size:7px">W</span>Worker#${i+1}${wModel}${wPersona}${wSkill} <span style="font-size:9px;color:var(--t3)">${s}</span></div>`;
         if(st.attempts?.some(a=>a.role==='verifier')){
           html+=`<div onclick="selectView('agent','verifier-${i}')" class="bl-item" style="cursor:pointer;padding-left:24px"><span class="agent-avatar av-verifier" style="width:14px;height:14px;font-size:6px">V</span>Verifier#${i+1}</div>`;
         }
       });
-      // 清单
+      // 清单（始终显示，带新增按钮）
+      html+=`<div style="font-size:10px;color:var(--t3);padding:6px 8px 2px;text-transform:uppercase;letter-spacing:.3px;display:flex;justify-content:space-between">📋 清单 <button onclick="addBacklogItem()" style="background:transparent;color:var(--t3);font-size:10px;padding:0 4px">+</button></div>`;
       if(backlogItems.length){
-        html+=`<div style="font-size:10px;color:var(--t3);padding:6px 8px 2px;text-transform:uppercase;letter-spacing:.3px;display:flex;justify-content:space-between">📋 清单 <button onclick="addBacklogItem()" style="background:transparent;color:var(--t3);font-size:10px;padding:0 4px">+</button></div>`;
         backlogItems.forEach(i=>{
           const icon=i.status==='completed'?'✅':i.status==='in_progress'||i.status==='assigned'?'🔄':'⬜';
           html+=`<div class="bl-item">${icon} ${esc(i.title)} <button onclick="event.stopPropagation();removeBacklog('${i.id}')" style="margin-left:auto;background:transparent;color:var(--t3);font-size:9px;padding:0 4px">✕</button></div>`;
         });
+      } else {
+        html+=`<div style="padding:2px 8px 4px;font-size:11px;color:var(--t3)">暂无清单项</div>`;
       }
       html+='</div>';
     }
@@ -481,7 +547,8 @@ function renderAgents(){
     html+=`<div class="agent-item ${viewMode==='chat'&&!activeAgent?'active':''}" onclick="selectView('chat')"><div class="agent-avatar av-leader">L</div><span>Leader</span><div class="agent-dot ${t.status==='executing'||t.status==='planning'?'ad-running':t.status==='completed'?'ad-done':'ad-idle'}"></div></div>`;
     (t.subtasks||[]).forEach((st,i)=>{
       const status=st.status;
-      html+=`<div class="agent-item" onclick="selectView('agent','worker-${i}')"><div class="agent-avatar av-worker">W</div><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Worker#${i+1}</span><div class="agent-dot ${status==='running'||status==='retrying'?'ad-running':status==='completed'?'ad-done':'ad-idle'}"></div></div>`;
+      const wLabel=`Worker#${i+1}`+(st.workerModel?` · ${st.workerModel}`:'')+(st.persona?` · ${st.persona}`:'');
+      html+=`<div class="agent-item" onclick="selectView('agent','worker-${i}')"><div class="agent-avatar av-worker">W</div><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(wLabel)}">${esc(wLabel)}</span><div class="agent-dot ${status==='running'||status==='retrying'?'ad-running':status==='completed'?'ad-done':'ad-idle'}"></div></div>`;
       if(st.attempts?.some(a=>a.role==='verifier')){
         html+=`<div class="agent-item" onclick="selectView('agent','verifier-${i}')"><div class="agent-avatar av-verifier">V</div><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Verifier#${i+1}</span></div>`;
       }
@@ -493,8 +560,8 @@ function renderAgents(){
 function renderChat(){
   if(activeAgent){renderAgentDetail();return}
   if(!activeTask||!tasks[activeTask]){
-    gid('chatMsgs').innerHTML='<div class="chat-empty"><div><div style="font-size:24px;margin-bottom:12px">👋</div><div style="font-size:15px;color:var(--t2);margin-bottom:6px">欢迎来到 Muster</div><div style="font-size:12px;color:var(--t3);line-height:1.8">1. 左侧选择工作区，直接输入对话自动创建任务<br>2. Leader 自动规划、分配专家、执行验证<br>3. 顶部 <span style="color:var(--purple)">Leader: Opus</span> 可切换模型</div></div></div>';
-    gid('chatMeta').innerHTML='';
+    gid('chatMsgs').innerHTML='<div class="chat-empty"><div><div style="font-size:24px;margin-bottom:12px">👋</div><div style="font-size:15px;color:var(--t2);margin-bottom:6px">欢迎来到 Muster</div><div style="font-size:12px;color:var(--t3);line-height:1.8">1. 左侧选择工作区，直接输入对话自动创建任务<br>2. Leader 自动规划、分配专家、执行验证<br>3. 顶部 <span style="color:var(--purple)">Leader</span> 可切换模型</div></div></div>';
+    gid('chatMeta').innerHTML=`<span id="modelBadge" style="background:var(--purple20);color:var(--purple);padding:2px 8px;border-radius:4px;font-size:11px;cursor:pointer;font-weight:600" onclick="cycleModel()" title="点击切换Leader模型">Leader: ${leaderModel.charAt(0).toUpperCase()+leaderModel.slice(1)}</span>`;
     gid('chatTitle').textContent='Muster';
     return;
   }
@@ -502,22 +569,35 @@ function renderChat(){
   const t=tasks[activeTask];
   const maxGoalIter=t.goal?({simple:3,normal:5,deep:10}[complexity]||5):0;
   gid('chatTitle').textContent=esc((t.conversationHistory?.[0]?.content||'新任务').slice(0,32));
-  gid('chatMeta').innerHTML=`<span id="modelBadge" style="background:var(--purple)20;color:var(--purple);padding:2px 8px;border-radius:4px;font-size:11px;cursor:pointer;font-weight:600" onclick="cycleModel()" title="点击切换Leader模型">Leader: ${leaderModel.charAt(0).toUpperCase()+leaderModel.slice(1)}</span> ${t.goal?`<span style="background:var(--yellow)20;color:var(--yellow);padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600">🎯 ${esc(t.goal).slice(0,20)} ${t.goalIterations||0}/${maxGoalIter}</span>`:''} <span class="task-status ts-${t?.status}"></span> ${statusL(t?.status)} | $${(t?.totalCost||0).toFixed(3)} ${tokenTableHtml(t)}`;
+  gid('chatMeta').innerHTML=`<span id="modelBadge" style="background:var(--purple20);color:var(--purple);padding:2px 8px;border-radius:4px;font-size:11px;cursor:pointer;font-weight:600" onclick="cycleModel()" title="点击切换Leader模型">Leader: ${leaderModel.charAt(0).toUpperCase()+leaderModel.slice(1)}</span> ${t.goal?`<span style="background:var(--yellow20);color:var(--yellow);padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600">🎯 ${esc(t.goal).slice(0,20)} ${t.goalIterations||0}/${maxGoalIter}</span>`:''} <span class="task-status ts-${t?.status}"></span> ${statusL(t?.status)} | $${(t?.totalCost||0).toFixed(3)} ${tokenTableHtml(t)}`;
 
   if(!msgs.length){
     gid('chatMsgs').innerHTML='<div class="chat-empty"><div style="font-size:13px;color:var(--t2)">和 Leader 开始对话吧</div></div>';
     return;
   }
 
-  gid('chatMsgs').innerHTML=msgs.map(m=>{
+  gid('chatMsgs').innerHTML=msgs.map((m,mi)=>{
     const cls=`msg-${m.role}`;
     const avatar=getAvatar(m.role,m.agentName);
     const time=new Date(m.timestamp).toLocaleTimeString('zh',{hour:'2-digit',minute:'2-digit'});
     let text=esc(m.text);
-    // 高亮 APPROVED/REJECTED
     text=text.replace(/APPROVED/g,'<span class="badge-pass">APPROVED ✓</span>');
-    text=text.replace(/REJECTED/g,'<span class="badge-f">REJECTED ✗</span>');
-    return `<div class="msg ${cls}"><div class="msg-avatar">${avatar}</div><div class="msg-body"><div class="msg-head"><span class="msg-name">${esc(m.agentName||m.role)}</span><span class="msg-time">${time}</span></div><div class="msg-text">${text}</div></div></div>`;
+    text=text.replace(/REJECTED/g,'<span class="badge-fail">REJECTED ✗</span>');
+    // Error messages
+    const isError=m.type==='error';
+    const retryBtn=isError?`<button onclick="retryLastMsg()" style="margin-top:6px;background:var(--red);color:#fff;border:none;padding:3px 10px;border-radius:4px;font-size:11px;cursor:pointer">重试</button>`:'';
+    // Collapsible long text (300+ chars)
+    const COLLAPSE_LEN=300;
+    const isLong=m.text&&m.text.length>COLLAPSE_LEN;
+    let collapseHtml='';
+    if(isLong){
+      const short=esc(m.text.slice(0,COLLAPSE_LEN))+'...';
+      const full=text;
+      collapseHtml=`<span class="msg-collapsed" id="mc${mi}">${short} <span onclick="gid('mc${mi}').style.display='none';gid('mf${mi}').style.display='block'" style="color:var(--blue);cursor:pointer;font-size:11px">展开全部 (${m.text.length}字)</span></span><span class="msg-full" id="mf${mi}" style="display:none">${full} <span onclick="gid('mf${mi}').style.display='none';gid('mc${mi}').style.display='inline'" style="color:var(--blue);cursor:pointer;font-size:11px">收起</span></span>`;
+    }
+    const displayText=isLong?collapseHtml:isError&&m.text.length>80?esc(m.text.slice(0,80)+'...'):text;
+    const detailToggle=isError&&m.text.length>80?`<span onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'" style="color:var(--blue);cursor:pointer;font-size:11px;margin-left:6px">详情</span><div style="display:none;margin-top:4px;padding:6px;background:var(--s2);border-radius:4px;font-size:11px;white-space:pre-wrap;max-height:200px;overflow-y:auto">${text}</div>`:'';
+    return `<div class="msg ${cls}" style="${isError?'border-left:3px solid var(--red)':''}"><div class="msg-avatar">${avatar}</div><div class="msg-body"><div class="msg-head"><span class="msg-name">${esc(m.agentName||m.role)}</span><span class="msg-time">${time}</span></div><div class="msg-text">${displayText}${detailToggle}${retryBtn}</div></div></div>`;
   }).join('');
 }
 
@@ -544,6 +624,10 @@ function renderAgentDetail(){
       <div class="ad-row"><span>任务</span><span>${esc(st.title)}</span></div>
       <div class="ad-row"><span>状态</span><span>${statusL(status)}</span></div>
       <div class="ad-row"><span>尝试次数</span><span>${st.attempts?.length||0}</span></div>
+      <div class="ad-row"><span>总耗时</span><span>${(function(){const wa=(st.attempts||[]).filter(a=>a.role==='worker'&&a.startedAt);if(!wa.length)return'-';const first=new Date(wa[0].startedAt);const last=wa[wa.length-1];const end=last.completedAt?new Date(last.completedAt):new Date();const sec=Math.round((end-first)/1000);const m=Math.floor(sec/60);const s=sec%60;return m>0?m+'分'+s+'秒':s+'秒'})()}</span></div>
+      ${isWorker?`<div class="ad-row"><span>模型</span><span>${st.workerModel||'sonnet'}${st.attempts?.length>1?' → opus (升级)':''}</span></div>
+      <div class="ad-row"><span>角色</span><span>${st.persona||'-'}</span></div>
+      <div class="ad-row"><span>技能</span><span>${st.skill||'-'}</span></div>`:''}
     </div>`;
 
   const attempts=(st.attempts||[]).filter(a=>isWorker?a.role==='worker':a.role==='verifier');
@@ -552,21 +636,35 @@ function renderAgentDetail(){
     attempts.forEach((a,ai)=>{
       const costStr=`$${(a.cost||0).toFixed(3)}`;
       const statusTag=a.status==='approved'?'<span class="badge-pass">APPROVED</span>':
-                       a.status==='rejected'?'<span class="badge-f">REJECTED</span>':a.status;
-      html+=`<div style="margin-bottom:10px;padding:8px 10px;background:var(--s2);border-radius:6px">
-        <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-weight:600;font-size:12px">Attempt ${ai+1}</span><span>${statusTag} | ${costStr}</span></div>
-        <div class="ad-output">${esc((a.output||'').slice(0,500))}</div>
+                       a.status==='rejected'?'<span class="badge-fail">REJECTED</span>':
+                       a.status==='failed'?'<span class="badge-fail">FAILED</span>':a.status;
+      const tools=a.tools||[];
+      const hasOutput=a.output&&a.output.length>0;
+      // 计算耗时
+      let durationStr='';
+      if(a.startedAt){
+        const start=new Date(a.startedAt);
+        const end=a.completedAt?new Date(a.completedAt):new Date();
+        const sec=Math.round((end-start)/1000);
+        const min=Math.floor(sec/60);
+        const s=sec%60;
+        durationStr=min>0?`${min}分${s}秒`:`${s}秒`;
+      }
+      // 重试类型标识
+      let retryLabel='';
+      if(a.role==='worker'&&ai>0){
+        retryLabel=ai===1?'<span style="color:var(--orange);font-size:10px;margin-left:6px">🔄 自我反思</span>':
+                   ai===2?'<span style="color:var(--red);font-size:10px;margin-left:6px">🔄 Leader指导</span>':
+                   `<span style="color:var(--red);font-size:10px;margin-left:6px">🔄 重试#${ai}</span>`;
+      }
+      html+=`<div style="margin-bottom:10px;padding:8px 10px;background:var(--s2);border-radius:6px;border-left:3px solid ${a.status==='approved'?'var(--green)':a.status==='rejected'||a.status==='failed'?'var(--red)':'var(--border)'}">
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-weight:600;font-size:12px">Attempt ${ai+1}${retryLabel}</span><span>${statusTag}${durationStr?` | ⏱${durationStr}`:''} | ${costStr}</span></div>
+        ${a.errorCategory?`<div style="font-size:10px;color:var(--red);margin-bottom:4px">错误类型: ${esc(a.errorCategory)}</div>`:''}
+        ${a.verifierFeedback?`<div style="font-size:10px;color:var(--orange);margin-bottom:4px;padding:4px 6px;background:var(--s2);border-radius:3px">Verifier: ${esc(a.verifierFeedback.slice(0,200))}</div>`:''}
+        ${tools.length?`<div style="margin-bottom:6px"><div style="font-size:10px;color:var(--t3);margin-bottom:2px">工具调用 (${tools.length})</div>${tools.map(t=>`<div style="font-size:11px;padding:2px 0;color:var(--t2)"><span style="color:var(--blue)">🔧 ${esc(t.tool)}</span> <span style="font-size:10px">${esc(JSON.stringify(t.input||{}).slice(0,80))}</span></div>`).slice(-10).join('')}${tools.length>10?`<div style="font-size:10px;color:var(--t3)">... 共 ${tools.length} 次</div>`:''}</div>`:''}
+        ${hasOutput?`<div style="font-size:10px;color:var(--t3);margin-bottom:2px;cursor:pointer" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">输出 (${a.output.length}字) ▾</div><div style="display:none;max-height:300px;overflow-y:auto;white-space:pre-wrap;font-size:11px;background:var(--s2);padding:6px;border-radius:4px">${esc(a.output)}</div>`:''}
       </div>`;
     });
-    html+=`</div>`;
-  }
-
-  // Show tool calls from chat messages
-  const taskMsgs=chatMsgs[activeTask]||[];
-  const toolMsgs=taskMsgs.filter(m=>m.type==='system'&&m.agentName?.includes(name));
-  if(toolMsgs.length){
-    html+=`<div class="ad-section"><h3>操作日志</h3>`;
-    toolMsgs.forEach(m=>{html+=`<div class="tool-item"><span class="tool-icon">→</span>${esc(m.text)}</div>`});
     html+=`</div>`;
   }
 
@@ -574,15 +672,26 @@ function renderAgentDetail(){
   gid('chatMsgs').innerHTML=html;
 }
 
+function startAgentTimer(){
+  if(_agentTimer)clearInterval(_agentTimer);
+  _agentTimer=setInterval(()=>{
+    const el=document.getElementById('agentElapsed');
+    if(!el||!_agentStart){clearInterval(_agentTimer);_agentTimer=null;return}
+    const sec=Math.round((Date.now()-_agentStart)/1000);
+    const m=Math.floor(sec/60);const s=sec%60;
+    el.textContent=(m>0?m+'m':'')+s+'s';
+  },1000);
+}
+
 function getAvatar(role,name){
-  if(role==='human')return'<div style="background:var(--purple)25;color:var(--purple);width:100%;height:100%;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700">你</div>';
+  if(role==='human')return'<div style="background:var(--purple25);color:var(--purple);width:100%;height:100%;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700">你</div>';
   if(role==='leader')return'🤖';
   if(role==='worker')return'🔧';
   if(role==='verifier')return'🔍';
   return'📡';
 }
 
-function statusL(s){return{chatting:'对话中',planning:'规划中',executing:'执行中',completed:'已完成',failed:'失败',pending:'等待',running:'执行中',verifying:'验证中',retrying:'重试中'}[s]||s||''}
+function statusL(s){return{chatting:'对话中',planning:'规划中',executing:'执行中',completed:'已完成',failed:'失败',stopped:'已停止',pending:'等待',running:'执行中',verifying:'验证中',retrying:'重试中'}[s]||s||''}
 
 function updateTopbar(){
   const t=activeTask&&tasks[activeTask];
@@ -667,7 +776,7 @@ async function openSettings(){
     <div><strong>${esc(j.name)}</strong> <span style="color:var(--t3);font-size:11px">${j.reason||''}</span></div>
     <div style="display:flex;gap:6px;align-items:center">
       <span style="color:var(--t2);font-size:11px">${j.status==='scheduled'?relativeTime(j.runAt):j.status}</span>
-      ${j.status==='scheduled'?`<button onclick="cancelJob('${j.id}')" style="background:var(--red)30;color:var(--red);font-size:11px;padding:2px 8px">取消</button>`:''}
+      ${j.status==='scheduled'?`<button onclick="cancelJob('${j.id}')" style="background:var(--red30);color:var(--red);font-size:11px;padding:2px 8px">取消</button>`:''}
     </div>
   </div>`).join(''):'<div style="color:var(--t3);font-size:12px;text-align:center;padding:12px">暂无定时任务</div>';
 
@@ -681,7 +790,7 @@ async function openSettings(){
       <div style="background:var(--s2);border-radius:10px;padding:14px;margin-bottom:16px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
           <span style="color:var(--text);font-weight:600;font-size:14px">🛡️ 权限模式</span>
-          <span style="color:var(--green);font-weight:600;font-size:12px;background:var(--green)20;padding:3px 10px;border-radius:4px">沙盒 (Sandbox)</span>
+          <span style="color:var(--green);font-weight:600;font-size:12px;background:var(--green20);padding:3px 10px;border-radius:4px">沙盒 (Sandbox)</span>
         </div>
         <div style="font-size:12px;color:var(--t2);line-height:1.7;margin-bottom:8px">
           Worker 只能在 <strong>工作目录内</strong> 操作，危险命令（rm -rf、强制推送等）被拦截。<br>
@@ -697,7 +806,7 @@ async function openSettings(){
       <div style="background:var(--s2);border-radius:10px;padding:14px;margin-bottom:16px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
           <span style="color:var(--text);font-weight:600;font-size:14px">🧠 Leader 模型</span>
-          <span style="color:var(--purple);font-weight:600;font-size:12px;background:var(--purple)20;padding:3px 10px;border-radius:4px">当前: ${leaderModel}</span>
+          <span style="color:var(--purple);font-weight:600;font-size:12px;background:var(--purple20);padding:3px 10px;border-radius:4px">当前: ${leaderModel}</span>
         </div>
         <div style="font-size:12px;color:var(--t2);line-height:1.7;margin-bottom:8px">
           Leader 是调度中枢，负责理解需求、规划任务、分配专家、汇总结果。模型越强理解越准。<br>
@@ -713,20 +822,20 @@ async function openSettings(){
       <div style="background:var(--s2);border-radius:10px;padding:14px;margin-bottom:16px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
           <span style="color:var(--text);font-weight:600;font-size:14px">🎯 复杂度预设</span>
-          <span style="color:var(--blue);font-weight:600;font-size:12px;background:var(--blue)20;padding:3px 10px;border-radius:4px">当前: ${config.complexity==='simple'?'简单':config.complexity==='normal'?'标准':'深度'}</span>
+          <span style="color:var(--blue);font-weight:600;font-size:12px;background:var(--blue20);padding:3px 10px;border-radius:4px">当前: ${config.complexity==='simple'?'简单':config.complexity==='normal'?'标准':'深度'}</span>
         </div>
         <div style="font-size:12px;color:var(--t2);line-height:1.7;margin-bottom:10px">
           控制 Worker 的重试次数和并行数量。复杂度越高越耐心但越贵。
         </div>
         <div style="display:flex;gap:8px">
-          ${[{k:'simple',l:'简单',d:'出错重试1次<br>最多2个子任务并行<br>省钱省时间'},{k:'normal',l:'标准',d:'出错重试3次<br>最多3个子任务并行<br>日常推荐'},{k:'deep',l:'深度',d:'出错重试5次<br>最多5个子任务并行<br>追求质量'}].map(p=>`<div onclick="setCx('${p.k}')" style="flex:1;padding:12px;border-radius:8px;cursor:pointer;text-align:center;background:${config.complexity===p.k?'var(--blue)20':'var(--s3)'};border:1px solid ${config.complexity===p.k?'var(--blue)':'transparent'}"><div style="font-weight:600;font-size:13px;color:${config.complexity===p.k?'var(--blue)':'var(--text)'}">${p.l}</div><div style="font-size:11px;color:var(--t2);margin-top:4px;line-height:1.5">${p.d}</div></div>`).join('')}
+          ${[{k:'simple',l:'简单',d:'出错重试1次<br>最多2个子任务并行<br>省钱省时间'},{k:'normal',l:'标准',d:'出错重试2次<br>最多3个子任务并行<br>日常推荐'},{k:'deep',l:'深度',d:'出错重试3次<br>最多3个子任务并行<br>追求质量'}].map(p=>`<div onclick="setCx('${p.k}')" style="flex:1;padding:12px;border-radius:8px;cursor:pointer;text-align:center;background:${config.complexity===p.k?'var(--blue20)':'var(--s3)'};border:1px solid ${config.complexity===p.k?'var(--blue)':'transparent'}"><div style="font-weight:600;font-size:13px;color:${config.complexity===p.k?'var(--blue)':'var(--text)'}">${p.l}</div><div style="font-size:11px;color:var(--t2);margin-top:4px;line-height:1.5">${p.d}</div></div>`).join('')}
         </div>
       </div>
 
       <div style="background:var(--s2);border-radius:10px;padding:14px;margin-bottom:16px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
           <span style="color:var(--text);font-weight:600;font-size:14px">🎯 Goal 模式</span>
-          <span style="color:var(--yellow);font-weight:600;font-size:12px;background:var(--yellow)20;padding:3px 10px;border-radius:4px">自治循环</span>
+          <span style="color:var(--yellow);font-weight:600;font-size:12px;background:var(--yellow20);padding:3px 10px;border-radius:4px">自治循环</span>
         </div>
         <div style="font-size:12px;color:var(--t2);line-height:1.8">
           <strong>是什么：</strong>给任务设定一个完成条件，系统自动执行 → 检查 → 重试，直到条件满足或预算用尽。<br><br>

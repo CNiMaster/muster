@@ -29,7 +29,9 @@ Desktop launch: double-click `start.command` (auto-opens browser).
 
 Configs persist to `.muster/config.json` — restores on restart (complexity, leader model, sandbox overrides). Workspaces and tasks also auto-restore from disk.
 
-No build step, no test suite. Node.js ESM project (`"type": "module"` in package.json).
+No build step, no test suite. Node.js ESM project (`"type": "module"` in package.json). Single-file frontend (`public/index.html`) — all CSS/HTML/JS in one file, no framework, no hot-reload.
+
+**Language**: UI and prompts are Chinese-first. Task descriptions, logs, and user-facing messages default to Chinese. Code comments and variable names are mixed (English + Chinese).
 
 ## Architecture
 
@@ -108,22 +110,30 @@ Tasks are never deleted — only archived (`archived: true` flag). Archived task
 
 ### Concurrency Model
 
-`orchestrator.runParallel(taskFns, concurrency)` limits concurrent Worker-Verifier pairs. Concurrency comes from the complexity preset (2/3/5). Each subtask runs the full Worker→Verifier adversarial loop independently.
+`orchestrator.runWithDependencies(taskId, subtasks, runFn, concurrency)` implements a DAG-based scheduler. Independent subtasks run in parallel (up to concurrency limit from preset: 2/3/3). Subtasks with `dependsOn` wait for dependencies. File overlap is auto-detected — shared files between subtasks force sequential execution. Concurrency comes from the complexity preset (2/3/3). Each subtask runs the full Worker→Verifier adversarial loop independently.
 
 ### WebSocket Events
 
 Server bridges state events to all connected WS clients:
-- `task:update`, `subtask:update`, `chat:message` — from state.js EventEmitter
+- `task:update`, `subtask:update`, `chat:message`, `task:deleted` — from state.js EventEmitter
 - `agent:output`, `agent:tool` — from orchestrator (real-time agent activity)
 - `backlog:update`, `config:updated`, `timer:scheduled` — from various subsystems
 
 All state changes auto-persist to disk via the event bridge in server.js.
 
+### Retry & Failure Recovery
+
+Workers have a progressive retry strategy governed by the complexity preset:
+1. **Attempt 1**: Execute normally
+2. **Attempt 2** (1st retry): Self-reflection — Worker receives its previous output and is told to continue from the failure point
+3. **Attempt 3** (2nd retry): Leader diagnosis — Leader analyzes the failure and provides guidance
+4. **Attempt 4+**: Notify human for intervention
+
+On retry, the Worker model auto-escalates to `opus`. When a Worker times out (10-min default) or hits the tool-call limit (50), partial output is preserved and verification is skipped. If a rate limit error is detected, the system auto-schedules a delayed retry. Backups of affected files are taken before each Worker's first attempt, accessible via `/api/backups`.
+
 ### Sandbox & Security
 
-Default mode is **sandbox**: Workers can only use whitelisted tools within the workspace directory. 26 blacklist patterns block dangerous commands (rm -rf /, git push --force, shell injection, SSH access, etc.). Workers operating outside the workspace require explicit approval. Backups are taken before each modification (up to 15 snapshots per project).
-
-Sandbox config is API-customizable — tools can be whitelisted/blacklisted via settings UI, and overrides persist to disk.
+Default mode is **sandbox**: Workers operate with restricted permissions. `sandbox.js` maintains a 22-pattern blacklist for dangerous commands (rm -rf, git push --force, shell injection). Write tools (Edit/Write/Bash) are only allowed within the workspace directory. The sandbox is configurable via the settings UI and persists overrides to `.muster/config.json`. To fully disable sandboxing, set `MUSTER_SKIP_PERMISSIONS=true`.
 
 ### Expert Personas & Skills
 

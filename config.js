@@ -6,16 +6,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // 复杂度预设（用户只选这个）
 const PRESETS = {
-  simple:  { retries: 1, concurrency: 2, budgetScale: 0.5, label: '简单', goalMaxIter: 3, goalBudgetCap: 5.00 },
-  normal:  { retries: 3, concurrency: 3, budgetScale: 1.0, label: '标准', goalMaxIter: 5, goalBudgetCap: 10.00 },
-  deep:    { retries: 5, concurrency: 5, budgetScale: 2.0, label: '深度', goalMaxIter: 10, goalBudgetCap: 25.00 }
-};
-
-// 基础预算（USD），会乘以 budgetScale
-const BASE_BUDGETS = {
-  leader: 0.50,
-  worker: 1.00,
-  verifier: 0.30
+  simple:  { retries: 1, concurrency: 2, label: '简单', goalMaxIter: 3, goalBudgetCap: 5 },
+  normal:  { retries: 2, concurrency: 3, label: '标准', goalMaxIter: 5, goalBudgetCap: 15 },
+  deep:    { retries: 3, concurrency: 3, label: '深度', goalMaxIter: 10, goalBudgetCap: 30 }
 };
 
 // Prompt 缓存
@@ -35,22 +28,17 @@ export const CONFIG = {
   // 当前复杂度（默认标准）
   complexity: 'normal',
 
-  // 是否跳过 Claude 权限检查（默认关闭，需显式启用）
-  skipPermissions: process.env.MUSTER_SKIP_PERMISSIONS === 'true',
+  // 默认跳过权限检查（子进程无法交互式审批，且第三方 API 用户无安全风险）
+  skipPermissions: process.env.MUSTER_SKIP_PERMISSIONS !== 'false',
 
   get preset() { return PRESETS[CONFIG.complexity]; },
   get maxRetries() { return CONFIG.preset.retries; },
   get maxConcurrency() { return CONFIG.preset.concurrency; },
   get agentTimeout() { return 10 * 60 * 1000; },  // 10 分钟
+  maxToolCalls: 50,  // 每个 agent 最多 50 次工具调用，防止无限探索
 
-  get budgets() {
-    const s = CONFIG.preset.budgetScale;
-    return {
-      leader: BASE_BUDGETS.leader * s,
-      worker: BASE_BUDGETS.worker * s,
-      verifier: BASE_BUDGETS.verifier * s
-    };
-  },
+  // Verifier 重试时升级模型
+  verifierEscalationModel: 'sonnet',
 
   // 模型按角色分配（用 Claude 的别名，自动映射到用户设置）
   models: {
@@ -66,15 +54,7 @@ export const CONFIG = {
   },
 
   get baseFlags() {
-    const flags = [
-      '--output-format', 'stream-json',
-      '--verbose',
-      '--no-session-persistence'
-    ];
-    if (CONFIG.skipPermissions) {
-      flags.push('--dangerously-skip-permissions');
-    }
-    return flags;
+    return ['--output-format', 'stream-json', '--verbose', '--no-session-persistence'];
   },
 
   // JSON Schema
@@ -94,8 +74,11 @@ export const CONFIG = {
               properties: {
                 title: { type: 'string' },
                 description: { type: 'string' },
+                files: { type: 'array', items: { type: 'string' }, description: 'Files this subtask will read or modify' },
+                model: { type: 'string', enum: ['opus', 'sonnet', 'haiku'], description: 'Model for this worker (default: sonnet)' },
                 skill: { type: 'string', description: 'Optional skill name from catalog' },
-                persona: { type: 'string', description: 'Optional persona name from catalog' }
+                persona: { type: 'string', description: 'Optional persona name from catalog' },
+                depends_on: { type: 'array', items: { type: 'integer' }, description: 'Indices of subtasks this depends on (for sequential execution)' }
               },
               required: ['title', 'description']
             }
