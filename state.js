@@ -48,7 +48,9 @@ class StateStore extends EventEmitter {
       completedAt: null,
       goal: null,
       goalIterations: 0,
-      goalHistory: []
+      goalHistory: [],
+      mode: 'agent',
+      experts: []
     };
     this.tasks.set(task.id, task);
     this.chatMessages.set(task.id, []);

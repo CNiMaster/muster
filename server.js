@@ -8,6 +8,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 import { homedir } from 'os';
 import { state } from './state.js';
 import { orchestrator } from './orchestrator.js';
+import { groupChat } from './group-chat.js';
 import { CONFIG, setComplexity, listPersonas, listSkills } from './config.js';
 import { Storage } from './storage.js';
 import { killAll, killSession } from './agent-runner.js';
@@ -18,7 +19,12 @@ import { getSandboxConfig, updateSandboxConfig } from './sandbox.js';
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
-app.use(express.static('public'));
+// 禁止缓存 HTML，确保 UI 修改即时可见
+app.use((req, res, next) => {
+  if (req.path === '/' || req.path.endsWith('.html')) res.set('Cache-Control', 'no-store, must-revalidate');
+  next();
+});
+app.use(express.static('public', { maxAge: 0 }));
 
 const server = createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws' });
@@ -344,7 +350,7 @@ wss.on('connection', (ws, req) => {
 
   ws.send(JSON.stringify({ type: 'init', workspaces: state.listWorkspaces() }));
 
-  ws.on('message', (raw) => {
+  ws.on('message', async (raw) => {
     try {
       const msg = JSON.parse(raw);
 
@@ -367,10 +373,18 @@ wss.on('connection', (ws, req) => {
 
       if (msg.type === 'chat:send') {
         if (!msg.taskId || !msg.text) { ws.send(JSON.stringify({ type: 'error', error: 'taskId 和 text 是必填字段' })); return; }
-        orchestrator.handleHumanMessage(msg.taskId, msg.text).catch(err => {
-          console.error('Chat error:', err);
-          ws.send(JSON.stringify({ type: 'error', error: `Chat error: ${err.message}` }));
-        });
+        const task = state.getTask(msg.taskId);
+        if (task?.mode === 'groupchat') {
+          groupChat.handleMessage(msg.taskId, msg.text).catch(err => {
+            console.error('GroupChat error:', err);
+            ws.send(JSON.stringify({ type: 'error', error: `GroupChat error: ${err.message}` }));
+          });
+        } else {
+          orchestrator.handleHumanMessage(msg.taskId, msg.text).catch(err => {
+            console.error('Chat error:', err);
+            ws.send(JSON.stringify({ type: 'error', error: `Chat error: ${err.message}` }));
+          });
+        }
       }
 
       if (msg.type === 'timer:schedule') {
@@ -430,6 +444,36 @@ wss.on('connection', (ws, req) => {
         const ws2 = state.getWorkspace(msg.workspaceId);
         if (ws2) Storage.saveBacklog(ws2.path, state.getBacklog(msg.workspaceId));
       }
+
+      // ===== 模式切换 =====
+      if (msg.type === 'mode:switch') {
+        if (!msg.taskId || !msg.mode) { ws.send(JSON.stringify({ type: 'error', error: 'taskId 和 mode 是必填字段' })); return; }
+        const task = state.getTask(msg.taskId);
+        if (!task) { ws.send(JSON.stringify({ type: 'error', error: 'Task not found' })); return; }
+        const newMode = msg.mode; // 'agent' | 'groupchat'
+
+        if (task.mode === newMode) return; // 没变化
+
+        if (task.mode === 'groupchat' && newMode === 'agent') {
+          // Chat → Agent：总结聊天成果，作为第一条消息注入
+          const summary = await groupChat.summarizeForAgent(msg.taskId).catch(() => null);
+          state.updateTask(msg.taskId, { mode: 'agent', experts: [] });
+          state.addChatMessage(msg.taskId, { role: 'system', agentName: '系统', text: '🤖 已切换到 Agent 模式', type: 'system' });
+          broadcast({ type: 'mode:switched', taskId: msg.taskId, mode: 'agent' });
+          // 如果有总结，自动作为 Agent 模式的第一条消息
+          if (summary) {
+            state.addChatMessage(msg.taskId, { role: 'system', agentName: '系统', text: `📋 群聊总结:\n${summary.slice(0, 500)}`, type: 'system' });
+          }
+        } else if (task.mode === 'agent' && newMode === 'groupchat') {
+          // Agent → Chat
+          groupChat.switchToChat(msg.taskId);
+          broadcast({ type: 'mode:switched', taskId: msg.taskId, mode: 'groupchat' });
+        } else {
+          // 默认：直接切换
+          state.updateTask(msg.taskId, { mode: newMode });
+          broadcast({ type: 'mode:switched', taskId: msg.taskId, mode: newMode });
+        }
+      }
     } catch (err) {
       console.error('WS error:', err);
     }
@@ -452,6 +496,8 @@ events.forEach(evt => {
 });
 orchestrator.on('agent:output', (data) => broadcast({ type: 'agent:output', data }));
 orchestrator.on('agent:tool', (data) => broadcast({ type: 'agent:tool', data }));
+groupChat.on('agent:output', (data) => broadcast({ type: 'agent:output', data }));
+groupChat.on('agent:tool', (data) => broadcast({ type: 'agent:tool', data }));
 state.on('backlog:update', (data) => broadcast({ type: 'backlog:update', data }));
 
 // 进程清理

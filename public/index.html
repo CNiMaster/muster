@@ -2,155 +2,237 @@
 <html lang="zh">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0c0e14">
+<link rel="manifest" href="manifest.json">
 <title>Muster</title>
 <style>
-:root{--bg:#0d1017;--surface:#151922;--s2:#1c2130;--s3:#232a3b;--border:#2a3148;--text:#d8dce8;--t2:#7a809a;--t3:#4e5470;--blue:#4f8ff7;--green:#34d399;--yellow:#fbbf24;--red:#f87171;--purple:#a78bfa;--cyan:#22d3ee;--orange:#fb923c;--blue20:#4f8ff733;--blue25:#4f8ff740;--blue30:#4f8ff74d;--green20:#34d39933;--red30:#f871714d;--purple20:#a78bfa33;--purple25:#a78bfa40;--purple30:#a78bfa4d;--yellow15:#fbbf2426;--yellow20:#fbbf2433;--yellow30:#fbbf244d;--yellow40:#fbbf2466;--cyan25:#22d3ee40;--cyan30:#22d3ee4d;--orange25:#fb923c40;--orange30:#fb923c4d;--t320:#4e547033}
-.tree-toggle{cursor:pointer;user-select:none;font-size:10px;color:var(--t3);width:16px;flex-shrink:0;text-align:center;transition:.15s}
+:root{--bg:#f5f0eb;--surface:#fffcf8;--s2:#f2eee9;--s3:#e8e3dd;--s4:#ddd8d1;--border:#e0dbd5;--border-light:#d2cdc6;--text:#1c1a18;--t2:#6b6660;--t3:#9c9690;--accent:#c97d4e;--green:#5a9e7a;--yellow:#c9a03e;--red:#c95a4a;--purple:#8f7ab0;--cyan:#4a9ea8;--orange:#c97d4e;--accent10:#c97d4e1a;--accent15:#c97d4e26;--accent20:#c97d4e33;--accent30:#c97d4e4d;--green10:#5a9e7a1a;--green20:#5a9e7a33;--green30:#5a9e7a4d;--red10:#c95a4a1a;--red20:#c95a4a33;--red30:#c95a4a4d;--purple10:#8f7ab01a;--purple15:#8f7ab026;--purple20:#8f7ab033;--purple30:#8f7ab04d;--yellow10:#c9a03e1a;--yellow20:#c9a03e33;--yellow30:#c9a03e4d;--yellow40:#c9a03e66;--cyan15:#4a9ea826;--cyan20:#4a9ea833;--cyan30:#4a9ea84d;--orange15:#c97d4e26;--orange20:#c97d4e33;--orange30:#c97d4e4d;--t310:#9c96901a;
+	--blue:var(--accent);--blue20:var(--accent20);--blue25:var(--accent20);--blue30:var(--accent30);
+	--radius:10px;--radius-sm:6px;--radius-lg:14px;--shadow:0 2px 12px rgba(0,0,0,.08);--shadow-lg:0 8px 32px rgba(0,0,0,.12);--glass:rgba(255,252,248,.72);--glass-border:rgba(0,0,0,.06);--transition:.2s cubic-bezier(.4,0,.2,1)}
+body.dark-theme{--bg:#1a1816;--surface:#242220;--s2:#2e2c29;--s3:#3a3734;--s4:#46433f;--border:#3a3734;--border-light:#4a4743;--text:#e6e2dd;--t2:#99948e;--t3:#706b65;--glass:rgba(26,24,22,.72);--glass-border:rgba(255,255,255,.06);--shadow:0 2px 12px rgba(0,0,0,.4);--shadow-lg:0 8px 32px rgba(0,0,0,.5)}
+@media(prefers-color-scheme:dark){
+  body.theme-auto{--bg:#1a1816;--surface:#242220;--s2:#2e2c29;--s3:#3a3734;--s4:#46433f;--border:#3a3734;--border-light:#4a4743;--text:#e6e2dd;--t2:#99948e;--t3:#706b65;--glass:rgba(26,24,22,.72);--glass-border:rgba(255,255,255,.06);--shadow:0 2px 12px rgba(0,0,0,.4);--shadow-lg:0 8px 32px rgba(0,0,0,.5)}
+}
+
+*{margin:0;padding:0;box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',sans-serif;font-size:13px;line-height:1.5;height:100vh;overflow:hidden;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}::-webkit-scrollbar-thumb:hover{background:var(--border-light)}
+button{cursor:pointer;border:none;border-radius:var(--radius-sm);padding:6px 12px;font-size:13px;font-weight:500;transition:all var(--transition);font-family:inherit}
+button:active{transform:scale(.97)}
+input,textarea{background:var(--s2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);padding:8px 12px;font-size:13px;font-family:inherit;outline:none;resize:none;transition:border-color var(--transition)}
+input:focus,textarea:focus{border-color:var(--accent)}
+::placeholder{color:var(--t3)}
+
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
+@keyframes slideIn{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:none}}
+
+.app{display:grid;grid-template-columns:272px 1fr;grid-template-rows:52px 1fr;height:100vh}
+
+
+/* === Topbar === */
+.topbar{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;padding:0 18px;border-bottom:1px solid var(--glass-border);background:var(--glass);backdrop-filter:blur(24px) saturate(1.5);-webkit-backdrop-filter:blur(24px) saturate(1.5);z-index:10}
+.topbar h1{font-size:15px;font-weight:700;letter-spacing:-.2px;display:flex;align-items:center;gap:6px}
+.topbar h1>span:first-of-type{background:linear-gradient(135deg,var(--accent),var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.topbar-r{display:flex;align-items:center;gap:10px;font-size:11px;color:var(--t2)}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block}
+.dot-on{background:var(--green);box-shadow:0 0 6px var(--green30)}.dot-off{background:var(--t3)}
+
+/* === Left Sidebar === */
+.left{border-right:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;overflow:hidden}
+.left-sec{padding:12px 14px;border-bottom:1px solid var(--border)}
+.left-sec-title{font-size:10px;font-weight:700;text-transform:uppercase;color:var(--t3);letter-spacing:.8px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between}
+.left-sec-title button{font-size:10px;padding:3px 10px;background:var(--s3);color:var(--t2);border-radius:var(--radius-sm);font-weight:600}
+.left-sec-title button:hover{color:var(--text);background:var(--accent30)}
+.left-body{flex:1;overflow-y:auto;padding:6px 10px}
+
+.ws-item{padding:8px 12px;border-radius:var(--radius-sm);cursor:pointer;display:flex;align-items:center;gap:8px;margin-bottom:1px;font-size:13px;transition:all var(--transition)}
+.ws-item:hover{background:var(--s2)}.ws-item.active{background:var(--s3);font-weight:500}
+.ws-icon{font-size:14px}
+.tree-toggle{cursor:pointer;user-select:none;font-size:10px;color:var(--t3);width:16px;flex-shrink:0;text-align:center;transition:var(--transition)}
 .tree-group{margin-left:18px;border-left:1px solid var(--border);padding-left:6px}
 .tree-group.collapsed{display:none}
 .ws-item .tree-toggle:hover{color:var(--text)}
-.task-item{display:flex;align-items:center;gap:4px;padding:6px 8px;border-radius:6px;cursor:pointer;margin-bottom:1px;font-size:12px}
-.task-item:hover{background:var(--s2)}.task-item.active{background:var(--s3)}.task-item:hover .task-actions{display:inline-flex!important}
-.bl-item{display:flex;align-items:center;gap:6px;padding:4px 8px 4px 12px;font-size:11px;color:var(--t2);cursor:default;border-radius:4px}
-.bl-item:hover{background:var(--s2)}
-*{margin:0;padding:0;box-sizing:border-box}
-body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px;line-height:1.5;height:100vh;overflow:hidden}
-::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
-button{cursor:pointer;border:none;border-radius:6px;padding:6px 12px;font-size:13px;font-weight:500;transition:background .15s,color .15s,opacity .15s}
-button:hover{filter:brightness(1.1)}
-.ws-item,.task-item,.bl-item{transition:background .15s}
-@keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
-@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
-input,textarea{background:var(--s2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 10px;font-size:13px;font-family:inherit;outline:none;resize:none}
-input:focus,textarea:focus{border-color:var(--blue)}
 
-.app{display:grid;grid-template-columns:260px 1fr;grid-template-rows:48px 1fr;height:100vh}
-.topbar{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;padding:0 16px;border-bottom:1px solid var(--border);background:var(--surface)}
-.topbar h1{font-size:16px;font-weight:700}.topbar h1 span{color:var(--blue)}
-.topbar-r{display:flex;align-items:center;gap:12px;font-size:12px;color:var(--t2)}
-.dot{width:7px;height:7px;border-radius:50%;display:inline-block}
-.dot-on{background:var(--green)}.dot-off{background:var(--red)}
-
-/* Left Panel */
-.left{border-right:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;overflow:hidden}
-.left-sec{padding:10px 12px;border-bottom:1px solid var(--border)}
-.left-sec-title{font-size:11px;font-weight:600;text-transform:uppercase;color:var(--t3);letter-spacing:.5px;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between}
-.left-sec-title button{font-size:11px;padding:2px 8px;background:var(--s3);color:var(--t2);border-radius:4px}
-.left-sec-title button:hover{color:var(--text);background:var(--blue30)}
-.left-body{flex:1;overflow-y:auto;padding:8px 12px}
-
-.ws-item{padding:8px 10px;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:8px;margin-bottom:2px;font-size:13px}
-.ws-item:hover{background:var(--s2)}.ws-item.active{background:var(--s3);font-weight:500}
-.ws-icon{font-size:15px}
-
-.task-item{padding:8px 10px;border-radius:6px;cursor:pointer;margin-bottom:2px;font-size:12px}
+.task-item{display:flex;align-items:center;gap:4px;padding:7px 10px;border-radius:var(--radius-sm);cursor:pointer;margin-bottom:1px;font-size:12px;transition:all var(--transition)}
 .task-item:hover{background:var(--s2)}.task-item.active{background:var(--s3)}
-.task-status{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
-.ts-chatting{background:var(--cyan)}.ts-planning{background:var(--yellow)}.ts-executing{background:var(--blue);animation:pulse 1.5s infinite}.ts-completed{background:var(--green)}.ts-failed{background:var(--red)}.ts-stopped{background:var(--t3)}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.task-item:hover .task-actions{display:inline-flex!important}
+.task-status{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;flex-shrink:0}
+.ts-chatting{background:var(--cyan)}.ts-planning{background:var(--yellow)}.ts-executing{background:var(--accent);animation:pulse 1.5s infinite}.ts-completed{background:var(--green)}.ts-failed{background:var(--red)}.ts-stopped{background:var(--t3)}
 
-.agent-item{padding:6px 10px;border-radius:6px;cursor:pointer;margin-bottom:1px;font-size:12px;display:flex;align-items:center;gap:6px}
+.bl-item{display:flex;align-items:center;gap:6px;padding:4px 8px 4px 12px;font-size:11px;color:var(--t2);cursor:default;border-radius:var(--radius-sm);transition:background var(--transition)}
+.bl-item:hover{background:var(--s2)}
+
+/* Agent list */
+.agent-item{padding:6px 10px;border-radius:var(--radius-sm);cursor:pointer;margin-bottom:1px;font-size:12px;display:flex;align-items:center;gap:6px;transition:background var(--transition)}
 .agent-item:hover{background:var(--s2)}.agent-item.active{background:var(--s3)}
 .agent-avatar{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0}
-.av-human{background:var(--purple30);color:var(--purple)}.av-leader{background:var(--cyan30);color:var(--cyan)}
-.av-worker{background:var(--blue30);color:var(--blue)}.av-verifier{background:var(--orange30);color:var(--orange)}
+.av-human{background:var(--purple20);color:var(--purple)}.av-leader{background:var(--cyan20);color:var(--cyan)}
+.av-worker{background:var(--accent20);color:var(--accent)}.av-verifier{background:var(--orange20);color:var(--orange)}
 .agent-dot{width:6px;height:6px;border-radius:50%;margin-left:auto;flex-shrink:0}
 .ad-idle{background:var(--t3)}.ad-running{background:var(--green);animation:pulse 1.5s infinite}.ad-done{background:var(--green)}
 
-/* Right Panel: Chat */
-.right{display:flex;flex-direction:column;overflow:hidden}
-.chat-header{padding:12px 16px;border-bottom:1px solid var(--border);background:var(--surface);display:flex;align-items:center;justify-content:space-between}
-.chat-title{font-weight:600;font-size:14px}
-.chat-meta{font-size:11px;color:var(--t2);display:flex;gap:10px;align-items:center}
+/* === Right Panel === */
+.right{display:flex;flex-direction:column;overflow:hidden;position:relative;z-index:0;background:var(--bg)}.right::before{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;background:radial-gradient(ellipse 90% 65% at 50% -15%,rgba(91,154,255,.12),transparent),radial-gradient(ellipse 70% 55% at 85% 85%,rgba(168,130,248,.08),transparent)}
 
-.chat-messages{flex:1;overflow-y:auto;padding:16px}
+.chat-header{padding:12px 18px;border-bottom:1px solid var(--border);background:var(--glass);backdrop-filter:blur(24px) saturate(180%);-webkit-backdrop-filter:blur(24px) saturate(180%);display:flex;align-items:center;justify-content:space-between;min-height:48px}
+.chat-title{font-weight:600;font-size:14px;letter-spacing:-.1px}
+.chat-meta{font-size:11px;color:var(--t2);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+
+.chat-messages{flex:1;overflow-y:auto;padding:18px}
 .chat-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--t3);text-align:center}
 
-.msg{margin-bottom:12px;display:flex;gap:10px;max-width:800px;animation:fadeIn .2s ease-out}
-.msg-human{border-left:3px solid var(--purple);padding-left:8px}
-.msg-leader{border-left:3px solid var(--cyan);padding-left:8px}
-.msg-worker{border-left:3px solid var(--blue);padding-left:8px}
-.msg-verifier{border-left:3px solid var(--orange);padding-left:8px}
-.msg-system{border-left:3px solid var(--t3);padding-left:8px}
-.msg-avatar{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0}
+/* Messages */
+.msg{margin-bottom:14px;display:flex;gap:10px;max-width:820px;animation:fadeIn .25s ease-out}
+.msg-human{border-left:3px solid var(--purple);padding-left:10px}
+.msg-leader{border-left:3px solid var(--cyan);padding-left:10px}
+.msg-worker{border-left:3px solid var(--accent);padding-left:10px}
+.msg-verifier{border-left:3px solid var(--orange);padding-left:10px}
+.msg-system{border-left:3px solid var(--t3);padding-left:10px}
+.msg-avatar{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0}
 .msg-body{flex:1;min-width:0}
-.msg-head{display:flex;align-items:center;gap:6px;margin-bottom:3px}
+.msg-head{display:flex;align-items:center;gap:6px;margin-bottom:2px}
 .msg-name{font-weight:600;font-size:12px}
 .msg-time{font-size:10px;color:var(--t3)}
-.msg-text{font-size:13px;line-height:1.6;color:var(--text);white-space:pre-wrap;word-break:break-word}
-.msg-text a{color:var(--blue)}
+.msg-text{font-size:13px;line-height:1.65;color:var(--text);white-space:pre-wrap;word-break:break-word}
+.msg-text a{color:var(--accent)}
 
-.msg-human .msg-avatar{background:var(--purple25);color:var(--purple)}
+.msg-human .msg-avatar{background:var(--purple15);color:var(--purple)}
 .msg-human .msg-name{color:var(--purple)}
-.msg-human .msg-text{color:var(--text)}
-.msg-leader .msg-avatar{background:var(--cyan25);color:var(--cyan)}
+.msg-leader .msg-avatar{background:var(--cyan15);color:var(--cyan)}
 .msg-leader .msg-name{color:var(--cyan)}
-.msg-worker .msg-avatar{background:var(--blue25);color:var(--blue)}
-.msg-worker .msg-name{color:var(--blue)}
-.msg-verifier .msg-avatar{background:var(--orange25);color:var(--orange)}
+.msg-worker .msg-avatar{background:var(--accent15);color:var(--accent)}
+.msg-worker .msg-name{color:var(--accent)}
+.msg-verifier .msg-avatar{background:var(--orange15);color:var(--orange)}
 .msg-verifier .msg-name{color:var(--orange)}
-.msg-system .msg-avatar{background:var(--t3)25;color:var(--t3)}
+.msg-system .msg-avatar{background:var(--t310);color:var(--t3)}
 .msg-system .msg-name{color:var(--t3)}
-.msg-system .msg-text{font-size:12px;font-style:italic}
+.msg-system .msg-text{font-size:12px;font-style:italic;color:var(--t2)}
+.msg-expert{border-left:3px solid var(--accent);padding-left:10px}
+.msg-expert .msg-avatar{font-size:16px}
 
-.badge-pass{color:var(--green);font-weight:600}.badge-fail{color:var(--red);font-weight:600}
+.badge-pass{color:var(--green);font-weight:700}.badge-fail{color:var(--red);font-weight:700}
 
-/* Agent Detail View */
-.agent-detail{padding:16px;overflow-y:auto;flex:1}
-.ad-section{margin-bottom:16px}
-.ad-section h3{font-size:12px;font-weight:600;color:var(--t3);text-transform:uppercase;margin-bottom:8px;letter-spacing:.5px}
-.ad-row{display:flex;justify-content:space-between;padding:4px 0;font-size:13px}
-.ad-row span:first-child{color:var(--t2)}.ad-row span:last-child{font-weight:500}
-.tool-item{padding:6px 10px;background:var(--s2);border-radius:4px;margin-bottom:4px;font-size:12px;color:var(--t2);display:flex;align-items:center;gap:6px}
-.tool-icon{font-size:11px}
-.ad-output{background:var(--s2);border-radius:8px;padding:10px;font-size:12px;color:var(--t2);white-space:pre-wrap;word-break:break-word;max-height:300px;overflow-y:auto;line-height:1.6}
+/* Mode toggle */
+.mode-sel{display:flex;gap:2px;margin-left:6px;background:var(--s2);border-radius:var(--radius-sm);padding:2px}
+.md-btn{padding:3px 12px;border-radius:5px;font-size:11px;font-weight:600;background:transparent;color:var(--t2);transition:all var(--transition)}
+.md-btn:hover{color:var(--text);background:var(--s3)}
+.md-btn.active{background:var(--green20);color:var(--green);box-shadow:0 1px 4px rgba(0,0,0,.2)}
 
-/* Input */
-.chat-input{padding:12px 16px;border-top:1px solid var(--border);background:var(--surface);display:flex;gap:8px;align-items:flex-end}
-.chat-input textarea{flex:1;min-height:36px;max-height:120px;padding:8px 12px}
-.btn-send{background:var(--blue);color:#fff;padding:8px 16px;font-weight:600;align-self:flex-end}
-.btn-send:hover{filter:brightness(1.15)}
-.btn-send:disabled{opacity:.4}
+/* Expert panel */
+.expert-panel{display:flex;gap:6px;flex-wrap:wrap;padding:2px 0}
+.expert-chip{display:flex;align-items:center;gap:4px;padding:3px 10px;border-radius:14px;font-size:11px;font-weight:600;letter-spacing:-.1px}
+.expert-chip .e-dot{width:5px;height:5px;border-radius:50%;animation:pulse 1.5s infinite}
 
 /* Complexity selector */
-.complexity-sel{display:flex;gap:4px;margin-left:8px}
-.cx-btn{padding:3px 10px;border-radius:4px;font-size:11px;font-weight:600;background:var(--s3);color:var(--t2);cursor:pointer}
-.cx-btn:hover{color:var(--text)}.cx-btn.active{background:var(--blue30);color:var(--blue)}
+.complexity-sel{display:flex;gap:2px;margin-left:6px;background:var(--s2);border-radius:var(--radius-sm);padding:2px}
+.cx-btn{padding:3px 10px;border-radius:5px;font-size:11px;font-weight:600;background:transparent;color:var(--t2);transition:all var(--transition)}
+.cx-btn:hover{color:var(--text);background:var(--s3)}
+.cx-btn.active{background:var(--accent20);color:var(--accent)}
 
-/* Mobile responsive */
+/* Agent Detail */
+.agent-detail{padding:18px;overflow-y:auto;flex:1}
+.ad-section{margin-bottom:18px}
+.ad-section h3{font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;margin-bottom:8px;letter-spacing:.6px}
+.ad-row{display:flex;justify-content:space-between;padding:5px 0;font-size:13px}
+.ad-row span:first-child{color:var(--t2)}.ad-row span:last-child{font-weight:500}
+.tool-item{padding:8px 12px;background:var(--s2);border-radius:var(--radius-sm);margin-bottom:4px;font-size:12px;color:var(--t2);display:flex;align-items:center;gap:6px}
+.tool-icon{font-size:11px}
+.ad-output{background:var(--s2);border-radius:var(--radius);padding:12px;font-size:12px;color:var(--t2);white-space:pre-wrap;word-break:break-word;max-height:300px;overflow-y:auto;line-height:1.6}
+
+/* Input area */
+.chat-input{padding:12px 18px;border-top:1px solid var(--border);background:var(--glass);backdrop-filter:blur(24px) saturate(180%);-webkit-backdrop-filter:blur(24px) saturate(180%);display:flex;gap:8px;align-items:flex-end}
+.chat-input textarea{flex:1;min-height:38px;max-height:120px;padding:9px 14px;border-radius:var(--radius);background:var(--s2);border:1px solid var(--border);transition:border-color var(--transition)}
+.chat-input textarea:focus{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent15)}
+.btn-send{background:linear-gradient(135deg,var(--accent),#4a7af0);color:#fff;padding:9px 20px;font-weight:600;border-radius:var(--radius);letter-spacing:-.1px;box-shadow:0 2px 8px rgba(91,154,255,.25)}
+.btn-send:hover{filter:brightness(1.1);box-shadow:0 4px 12px rgba(91,154,255,.35)}
+.btn-send:disabled{opacity:.35;filter:none;box-shadow:none}
+
+#agentActivity{display:none;padding:8px 18px;font-size:11px;color:var(--t3);background:var(--surface);border-left:3px solid var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:0}
+#inputToolbar{display:flex;gap:6px;padding:6px 18px 10px;border-top:1px solid var(--border);background:var(--glass);backdrop-filter:blur(24px) saturate(180%);-webkit-backdrop-filter:blur(24px) saturate(180%);align-items:center;flex-wrap:wrap}
+
+/* Topbar buttons - Settings/Goal */
+.topbar-btn{background:transparent;color:var(--t2);font-size:16px;padding:4px 6px;border-radius:var(--radius-sm)}
+.topbar-btn:hover{background:var(--s3);color:var(--text)}
+
+/* === Mobile === */
 .menu-btn{display:none;background:transparent;color:var(--text);font-size:18px;padding:4px 8px}
+/* 遮罩层默认隐藏，不占用 Grid 位置 */
+.left-overlay{display:none!important}
+
 @media(max-width:768px){
   .app{grid-template-columns:1fr}
-  .left{position:fixed;left:0;top:48px;bottom:0;width:280px;z-index:100;transform:translateX(-100%);transition:transform .25s ease}
+  .left{position:fixed;left:0;top:52px;bottom:0;width:280px;z-index:100;transform:translateX(-100%);transition:transform .3s cubic-bezier(.4,0,.2,1);box-shadow:var(--shadow-lg)}
   .left.open{transform:translateX(0)}
+  .left-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99;display:none}
+  .left-overlay.show{display:block}
   .menu-btn{display:inline-block}
   .topbar-r .complexity-sel,.topbar-r span[id="agentN"],.topbar-r span[id="costN"],.topbar-r span[id="tokenN"]{display:none}
+  .chat-header{padding:10px 14px}
+  .chat-messages{padding:12px}
+  .chat-input{padding:10px 14px}
+  #inputToolbar{padding:6px 14px 8px}
 }
+
+@media(max-width:480px){
+  .chat-input textarea{font-size:16px}
+  .btn-send{padding:9px 14px}
+  .msg{gap:8px}
+  .msg-avatar{width:28px;height:28px;font-size:11px}
+}
+
+/* === PWA support === */
+@media(display-mode:standalone){
+  .topbar{-webkit-app-region:drag;padding-left:78px}
+  .topbar h1,.topbar-r,.topbar button,.topbar .mode-sel,.topbar .complexity-sel{-webkit-app-region:no-drag}
+  .traffic-lights{display:flex!important}
+}
+.traffic-lights{display:none;gap:8px;align-items:center;margin-right:6px;flex-shrink:0}
+.tl-dot{width:12px;height:12px;border-radius:50%;border:1px solid rgba(0,0,0,.15)}
+.tl-close{background:#ff5f57}.tl-min{background:#febc2e}.tl-max{background:#28c840}
+
+/* Welcome card animation */
+.welcome-step{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--t2);padding:6px 0}
+.welcome-step .step-num{display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:6px;font-weight:700;font-size:11px;flex-shrink:0}
 </style>
 </head>
 <body>
 <div class="app">
   <div class="topbar">
-    <h1><button class="menu-btn" onclick="document.querySelector('.left').classList.toggle('open')">☰</button> <span>Muster</span><span id="statusBadge" style="font-size:11px;font-weight:400;color:var(--t2);margin-left:8px"></span><span id="statusDot" class="dot dot-off"></span></h1>
+    <div class="traffic-lights"><div class="tl-dot tl-close"></div><div class="tl-dot tl-min"></div><div class="tl-dot tl-max"></div></div>
+    <h1><button class="menu-btn" onclick="toggleSidebar()">☰</button> <span>Muster</span><span id="statusBadge" style="font-size:11px;font-weight:500;color:var(--t2);margin-left:8px"></span><span id="statusDot" class="dot dot-off"></span></h1>
     <div class="topbar-r">
       <span>Agents: <strong id="agentN">0</strong></span>
-      <span>|</span>
+      <span style="color:var(--border)">|</span>
       <span id="costN">$0.000</span>
-      <span>|</span>
+      <span style="color:var(--border)">|</span>
       <span id="tokenN">0 tokens</span>
-      <span>|</span>
+      <span style="color:var(--border)">|</span>
+      <div class="mode-sel">
+        <button class="md-btn active" id="modeAgent" onclick="switchMode('agent')">🤖 Agent</button>
+        <button class="md-btn" id="modeChat" onclick="switchMode('groupchat')">💬 群聊</button>
+      </div>
+      <span style="color:var(--border)">|</span>
       <div class="complexity-sel">
         <button class="cx-btn" onclick="setCx('simple')">简单</button>
         <button class="cx-btn active" onclick="setCx('normal')">标准</button>
         <button class="cx-btn" onclick="setCx('deep')">深度</button>
       </div>
-      <span>|</span>
-      <button onclick="openSettings()" style="background:transparent;color:var(--t2);font-size:16px;padding:2px 6px" title="Settings">⚙</button> <button onclick="toggleGoalMenu()" style="background:transparent;color:var(--yellow);font-size:14px;padding:2px 6px" title="Set Goal">🎯</button> <span class="dot dot-off" id="wsDot"></span><span id="wsL">连接中</span>
+      <span style="color:var(--border)">|</span>
+      <button class="topbar-btn" onclick="toggleTheme()" id="themeBtn" title="切换主题">🌙</button>
+<button class="topbar-btn" onclick="openSettings()" title="设置">⚙</button>
+      <button class="topbar-btn" onclick="toggleGoalMenu()" style="color:var(--yellow)" title="设定目标">🎯</button>
+      <span class="dot dot-off" id="wsDot"></span><span id="wsL">连接中</span>
     </div>
   </div>
 
-  <div class="left">
+  <div class="left-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
+  <div class="left" id="sidebar">
     <div class="left-sec">
       <div class="left-sec-title">工作区 <button onclick="openWorkspace()">打开目录</button><button onclick="newTask()" style="margin-left:4px;background:var(--blue30);color:var(--blue);font-size:14px;line-height:1;padding:0 6px" title="新建任务">+</button></div>
       <div id="wsList"></div>
@@ -169,20 +251,20 @@ input:focus,textarea:focus{border-color:var(--blue)}
     <div class="chat-header">
       <div class="chat-title" id="chatTitle">Muster</div>
       <div class="chat-meta" id="chatMeta">
-        <span id="modelBadge" style="background:var(--purple20);color:var(--purple);padding:2px 8px;border-radius:4px;font-size:11px;cursor:pointer;font-weight:600" onclick="cycleModel()" title="点击切换Leader模型">Leader: Opus</span>
+        <span id="modelBadge" style="background:var(--purple10);color:var(--purple);padding:3px 10px;border-radius:var(--radius-sm);font-size:11px;cursor:pointer;font-weight:600;letter-spacing:-.1px" onclick="cycleModel()" title="点击切换Leader模型">Leader: Opus</span>
       </div>
     </div>
     <div class="chat-messages" id="chatMsgs">
       <div class="chat-empty">
         <div style="text-align:center">
-          <div style="font-size:40px;margin-bottom:16px;animation:float 3s ease-in-out infinite">👋</div>
-          <div style="font-size:18px;font-weight:600;color:var(--text);margin-bottom:8px">欢迎来到 Muster</div>
-          <div style="font-size:13px;color:var(--t2);margin-bottom:20px">AI 多智能体协作平台</div>
-          <div style="display:flex;flex-direction:column;gap:8px;text-align:left;max-width:280px;margin:0 auto">
-            <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--t2)"><span style="background:var(--blue30);color:var(--blue);padding:2px 6px;border-radius:4px;font-weight:600">1</span> 左侧选择工作区</div>
-            <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--t2)"><span style="background:var(--cyan30);color:var(--cyan);padding:2px 6px;border-radius:4px;font-weight:600">2</span> 直接输入消息和 Leader 对话</div>
-            <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--t2)"><span style="background:var(--purple30);color:var(--purple);padding:2px 6px;border-radius:4px;font-weight:600">3</span> 展开树看团队进度</div>
-            <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--t2)"><span style="background:var(--yellow30);color:var(--yellow);padding:2px 6px;border-radius:4px;font-weight:600">4</span> Leader 自动分配专家和技能</div>
+          <div style="font-size:48px;margin-bottom:20px;animation:float 3s ease-in-out infinite;filter:drop-shadow(0 4px 12px rgba(91,154,255,.3))">🤖</div>
+          <div style="font-size:20px;font-weight:700;color:var(--text);margin-bottom:6px;letter-spacing:-.3px">欢迎来到 Muster</div>
+          <div style="font-size:13px;color:var(--t2);margin-bottom:24px;font-weight:500">AI 多智能体协作平台</div>
+          <div style="display:flex;flex-direction:column;gap:10px;text-align:left;max-width:300px;margin:0 auto">
+            <div class="welcome-step"><span class="step-num" style="background:var(--accent20);color:var(--accent)">1</span> 左侧选择工作区</div>
+            <div class="welcome-step"><span class="step-num" style="background:var(--cyan20);color:var(--cyan)">2</span> 直接输入消息和 Leader 对话</div>
+            <div class="welcome-step"><span class="step-num" style="background:var(--purple20);color:var(--purple)">3</span> 展开树看团队进度</div>
+            <div class="welcome-step"><span class="step-num" style="background:var(--yellow20);color:var(--yellow)">4</span> Leader 自动分配专家和技能</div>
           </div>
         </div>
       </div>
@@ -194,7 +276,7 @@ input:focus,textarea:focus{border-color:var(--blue)}
     </div>
     <div id="inputToolbar" style="display:flex;gap:6px;padding:6px 16px 10px;border-top:1px solid var(--border);background:var(--surface);align-items:center;flex-wrap:wrap">
       <!-- Timer Toggle -->
-      <button id="timerToggle" onclick="toggleTimer()" style="background:transparent;color:var(--t3);font-size:12px;padding:4px 8px;border-radius:4px;font-weight:500;cursor:pointer;border:1px solid var(--border)">⏰ 定时</button>
+      <button id="timerToggle" onclick="toggleTimer()" class="topbar-btn" style="font-size:12px;padding:4px 8px;border-radius:var(--radius-sm);font-weight:500;border:1px solid var(--border)">⏰ 定时</button>
       <div id="timerControls" style="display:none;gap:4px;align-items:center;font-size:12px;color:var(--t2)">
         <span>延迟</span>
         <input id="timerDelay" type="number" value="30" min="1" style="width:50px;font-size:11px;padding:2px 4px">
@@ -202,7 +284,7 @@ input:focus,textarea:focus{border-color:var(--blue)}
       </div>
       <span style="color:var(--t3);font-size:11px">|</span>
       <!-- Goal -->
-      <button id="goalToggle" onclick="toggleGoalMenu()" style="background:var(--yellow15);color:var(--yellow);font-size:12px;padding:4px 8px;border-radius:4px;font-weight:500;cursor:pointer;border:1px solid var(--yellow40)">🎯 Goal</button>
+      <button id="goalToggle" onclick="toggleGoalMenu()" class="topbar-btn" style="background:var(--yellow10);color:var(--yellow);font-size:12px;padding:4px 8px;border-radius:var(--radius-sm);font-weight:500;border:1px solid var(--yellow40)">🎯 Goal</button>
       <div id="goalPresets" style="display:none;gap:4px;align-items:center;flex-wrap:wrap">
         <button onclick="setGoalPreset('所有测试通过')" style="background:var(--s3);color:var(--t2);padding:3px 8px;border-radius:4px;font-size:11px;cursor:pointer">✅ 所有测试通过</button>
         <button onclick="setGoalPreset('无安全漏洞')" style="background:var(--s3);color:var(--t2);padding:3px 8px;border-radius:4px;font-size:11px;cursor:pointer">🛡️ 无安全漏洞</button>
@@ -215,7 +297,10 @@ input:focus,textarea:focus{border-color:var(--blue)}
 </div>
 
 <script>
-let ws, workspaces=[], tasks={}, chatMsgs={}, backlog={}, activeWs=null, activeTask=null, activeAgent=null, viewMode='chat', complexity='normal', wsDelay=1001, expandedTree={}, leaderModel='opus', pendingMsg=null, timerMode=false, goalActive=false, lastSentMsg=null, _agentStart=null, _agentTimer=null;
+let ws, workspaces=[], tasks={}, chatMsgs={}, backlog={}, activeWs=null, activeTask=null, activeAgent=null, viewMode='chat', complexity='normal', wsDelay=1001, expandedTree={}, leaderModel='opus', pendingMsg=null, timerMode=false, goalActive=false, lastSentMsg=null, _agentStart=null, _agentTimer=null, taskMode='agent';
+
+function toggleSidebar(){const s=gid('sidebar');const o=gid('sidebarOverlay');s.classList.toggle('open');if(o)o.classList.toggle('show',s.classList.contains('open'))}
+function closeSidebar(){const s=gid('sidebar');const o=gid('sidebarOverlay');if(s)s.classList.remove('open');if(o)o.classList.remove('show')}
 
 function gid(id){return document.getElementById(id)}
 function esc(t){return t?t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'):''}
@@ -275,6 +360,7 @@ function handleMsg(m){
       }
       break;
     case 'config:updated': complexity=m.complexity;if(m.leaderModel){leaderModel=m.leaderModel;gid('modelBadge').textContent='Leader: '+leaderModel.charAt(0).toUpperCase()+leaderModel.slice(1)}renderCx();break;
+    case 'mode:switched': if(tasks[m.taskId]){tasks[m.taskId].mode=m.mode;taskMode=m.mode}renderMode();render();break;
     case 'timer:scheduled': if(activeTask){if(!chatMsgs[activeTask])chatMsgs[activeTask]=[];const ts=new Date().toISOString();chatMsgs[activeTask].push({role:'system',agentName:'系统',text:'⏰ 定时消息已安排 ('+(m.data.delayMs/60000)+'分钟后触发)',timestamp:ts})}render();break;
     case 'restore:done': workspaces=m.workspaces||[];render();break;
     case 'backlog:update': backlog[m.data.workspaceId]=m.data.items;render();break;
@@ -295,8 +381,8 @@ function openWorkspace(){
 function showDirPicker(startPath){
   const modal=document.createElement('div');
   modal.id='dirModal';
-  modal.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center';
-  modal.innerHTML=`<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;width:480px;max-height:70vh;display:flex;flex-direction:column">
+  modal.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);z-index:9999;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML=`<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);width:480px;box-shadow:var(--shadow-lg);max-height:70vh;display:flex;flex-direction:column">
     <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">
       <span style="font-weight:600">打开目录</span>
       <input id="dirInput" value="${esc(startPath)}" style="flex:1;font-size:12px;padding:4px 8px" onkeydown="if(event.key==='Enter')browseDir(this.value)">
@@ -379,7 +465,7 @@ function selectTask(id){
   activeTask=id;activeAgent=null;viewMode='chat';expandedTree['task-'+id]=true;
   // Restore per-task leader model
   if(tasks[id]?.leaderModel){leaderModel=tasks[id].leaderModel}
-  render();scrollChat()
+  renderMode();render();scrollChat()
 }
 function selectView(mode,agentId){viewMode=agentId?'agent':mode;activeAgent=agentId||null;render()}
 function sendMsg(text){
@@ -407,6 +493,25 @@ function sendMsg(text){
 function retryLastMsg(){if(lastSentMsg&&activeTask){sendMsg(lastSentMsg)}}
 function setCx(c){complexity=c;send({type:'config:set',complexity:c});renderCx()}
 function renderCx(){document.querySelectorAll('.cx-btn').forEach(b=>{b.classList.toggle('active',b.textContent===({simple:'简单',normal:'标准',deep:'深度'}[complexity]))})}
+
+// ===== Mode Switch =====
+function switchMode(mode){
+  if(!activeTask){return}
+  const t=tasks[activeTask];
+  if(t?.mode===mode)return;
+  send({type:'mode:switch',taskId:activeTask,mode});
+}
+function renderMode(){
+  const t=activeTask&&tasks[activeTask];
+  taskMode=t?.mode||'agent';
+  const agentBtn=gid('modeAgent');
+  const chatBtn=gid('modeChat');
+  if(agentBtn){agentBtn.classList.toggle('active',taskMode==='agent')}
+  if(chatBtn){chatBtn.classList.toggle('active',taskMode==='groupchat')}
+  // 群聊模式修改 placeholder
+  const input=gid('inputBox');
+  if(input){input.placeholder=taskMode==='groupchat'?'输入消息，与专家们群聊...':'输入消息和 Leader 对话...'}
+}
 
 // Model
 // ===== Timer =====
@@ -461,6 +566,7 @@ function render(){
   renderTree();
   renderChat();
   updateTopbar();
+  renderMode();
 }
 
 function renderWorkspaces(){
@@ -561,7 +667,7 @@ function renderChat(){
   if(activeAgent){renderAgentDetail();return}
   if(!activeTask||!tasks[activeTask]){
     gid('chatMsgs').innerHTML='<div class="chat-empty"><div><div style="font-size:24px;margin-bottom:12px">👋</div><div style="font-size:15px;color:var(--t2);margin-bottom:6px">欢迎来到 Muster</div><div style="font-size:12px;color:var(--t3);line-height:1.8">1. 左侧选择工作区，直接输入对话自动创建任务<br>2. Leader 自动规划、分配专家、执行验证<br>3. 顶部 <span style="color:var(--purple)">Leader</span> 可切换模型</div></div></div>';
-    gid('chatMeta').innerHTML=`<span id="modelBadge" style="background:var(--purple20);color:var(--purple);padding:2px 8px;border-radius:4px;font-size:11px;cursor:pointer;font-weight:600" onclick="cycleModel()" title="点击切换Leader模型">Leader: ${leaderModel.charAt(0).toUpperCase()+leaderModel.slice(1)}</span>`;
+    gid('chatMeta').innerHTML=`<span id="modelBadge" style="background:var(--purple10);color:var(--purple);padding:3px 10px;border-radius:var(--radius-sm);font-size:11px;cursor:pointer;font-weight:600;letter-spacing:-.1px" onclick="cycleModel()" title="点击切换Leader模型">Leader: ${leaderModel.charAt(0).toUpperCase()+leaderModel.slice(1)}</span>`;
     gid('chatTitle').textContent='Muster';
     return;
   }
@@ -569,7 +675,9 @@ function renderChat(){
   const t=tasks[activeTask];
   const maxGoalIter=t.goal?({simple:3,normal:5,deep:10}[complexity]||5):0;
   gid('chatTitle').textContent=esc((t.conversationHistory?.[0]?.content||'新任务').slice(0,32));
-  gid('chatMeta').innerHTML=`<span id="modelBadge" style="background:var(--purple20);color:var(--purple);padding:2px 8px;border-radius:4px;font-size:11px;cursor:pointer;font-weight:600" onclick="cycleModel()" title="点击切换Leader模型">Leader: ${leaderModel.charAt(0).toUpperCase()+leaderModel.slice(1)}</span> ${t.goal?`<span style="background:var(--yellow20);color:var(--yellow);padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600">🎯 ${esc(t.goal).slice(0,20)} ${t.goalIterations||0}/${maxGoalIter}</span>`:''} <span class="task-status ts-${t?.status}"></span> ${statusL(t?.status)} | $${(t?.totalCost||0).toFixed(3)} ${tokenTableHtml(t)}`;
+  const modeLabel=t.mode==='groupchat'?'<span style="background:var(--green20);color:var(--green);padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600">💬 群聊</span> ':'';
+  const expertPanel=(t.mode==='groupchat'&&t.experts?.length)?'<div class="expert-panel">'+t.experts.map(e=>'<div class="expert-chip" style="background:'+e.color+'20;color:'+e.color+'">'+e.emoji+' '+esc(e.displayName)+' <div class="e-dot" style="background:'+e.color+'"></div></div>').join('')+'</div>':'';
+  gid('chatMeta').innerHTML=modeLabel+expertPanel+`<span id="modelBadge" style="background:var(--purple10);color:var(--purple);padding:3px 10px;border-radius:var(--radius-sm);font-size:11px;cursor:pointer;font-weight:600;letter-spacing:-.1px" onclick="cycleModel()" title="点击切换Leader模型">Leader: ${leaderModel.charAt(0).toUpperCase()+leaderModel.slice(1)}</span> ${t.goal?`<span style="background:var(--yellow20);color:var(--yellow);padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600">🎯 ${esc(t.goal).slice(0,20)} ${t.goalIterations||0}/${maxGoalIter}</span>`:''} <span class="task-status ts-${t?.status}"></span> ${statusL(t?.status)} | $${(t?.totalCost||0).toFixed(3)} ${tokenTableHtml(t)}`;
 
   if(!msgs.length){
     gid('chatMsgs').innerHTML='<div class="chat-empty"><div style="font-size:13px;color:var(--t2)">和 Leader 开始对话吧</div></div>';
@@ -597,7 +705,8 @@ function renderChat(){
     }
     const displayText=isLong?collapseHtml:isError&&m.text.length>80?esc(m.text.slice(0,80)+'...'):text;
     const detailToggle=isError&&m.text.length>80?`<span onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'" style="color:var(--blue);cursor:pointer;font-size:11px;margin-left:6px">详情</span><div style="display:none;margin-top:4px;padding:6px;background:var(--s2);border-radius:4px;font-size:11px;white-space:pre-wrap;max-height:200px;overflow-y:auto">${text}</div>`:'';
-    return `<div class="msg ${cls}" style="${isError?'border-left:3px solid var(--red)':''}"><div class="msg-avatar">${avatar}</div><div class="msg-body"><div class="msg-head"><span class="msg-name">${esc(m.agentName||m.role)}</span><span class="msg-time">${time}</span></div><div class="msg-text">${displayText}${detailToggle}${retryBtn}</div></div></div>`;
+    const expertStyle=m.role==='expert'?`border-left:3px solid ${getExpertColor(m.agentName)};${getExpertNameStyle(m.agentName)}`:'';
+    return `<div class="msg ${cls}" style="${isError?'border-left:3px solid var(--red)':expertStyle}"><div class="msg-avatar">${avatar}</div><div class="msg-body"><div class="msg-head"><span class="msg-name" ${m.role==='expert'?`style="color:${getExpertColor(m.agentName)}"`:''}>${esc(m.agentName||m.role)}</span><span class="msg-time">${time}</span></div><div class="msg-text">${displayText}${detailToggle}${retryBtn}</div></div></div>`;
   }).join('');
 }
 
@@ -688,10 +797,22 @@ function getAvatar(role,name){
   if(role==='leader')return'🤖';
   if(role==='worker')return'🔧';
   if(role==='verifier')return'🔍';
+  if(role==='expert'){
+    const t=activeTask&&tasks[activeTask];
+    const expert=t?.experts?.find(e=>e.displayName===name);
+    const emoji=expert?.emoji||'💡';
+    return emoji;
+  }
   return'📡';
 }
 
 function statusL(s){return{chatting:'对话中',planning:'规划中',executing:'执行中',completed:'已完成',failed:'失败',stopped:'已停止',pending:'等待',running:'执行中',verifying:'验证中',retrying:'重试中'}[s]||s||''}
+function getExpertColor(name){
+  const t=activeTask&&tasks[activeTask];
+  const e=t?.experts?.find(x=>x.displayName===name);
+  return e?.color||'var(--blue)';
+}
+function getExpertNameStyle(name){return ''}
 
 function updateTopbar(){
   const t=activeTask&&tasks[activeTask];
@@ -770,7 +891,7 @@ async function openSettings(){
 
   const modal=document.createElement('div');
   modal.id='settingsModal';
-  modal.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center';
+  modal.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);z-index:9999;display:flex;align-items:center;justify-content:center';
 
   const scheduledHtml=jobs.length?jobs.map(j=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)">
     <div><strong>${esc(j.name)}</strong> <span style="color:var(--t3);font-size:11px">${j.reason||''}</span></div>
@@ -892,6 +1013,29 @@ function relativeTime(iso){
   const h=Math.floor(m/60);
   return`${h}小时${m%60}分钟后`;
 }
+
+// ===== Theme =====
+let themeMode = 'dark'; // 'dark' | 'light' | 'auto'
+function toggleTheme(){
+  const modes = ['dark','light','auto'];
+  const labels = {'dark':'🌙','light':'☀️','auto':'🔄'};
+  const idx = modes.indexOf(themeMode);
+  themeMode = modes[(idx+1)%3];
+  document.body.classList.remove('dark-theme','theme-auto');
+  if(themeMode==='auto'){
+    document.body.classList.add('theme-auto');
+    gid('themeBtn').textContent='🔄';
+  } else if(themeMode==='light'){
+    gid('themeBtn').textContent='☀️';
+  } else {
+    document.body.classList.add('dark-theme');
+    gid('themeBtn').textContent='🌙';
+  }
+  // persist
+  localStorage.setItem('musterTheme', themeMode);
+}
+// restore saved theme
+(function(){const t=localStorage.getItem('musterTheme');if(t){themeMode=t;const labels={'dark':'🌙','light':'☀️','auto':'🔄'};document.body.classList.remove('dark-theme','theme-auto');if(t==='auto')document.body.classList.add('theme-auto');else if(t==='light'){}else{document.body.classList.add('dark-theme')}gid('themeBtn').textContent=labels[t]||'🌙'}})();
 
 // Init
 connect();
