@@ -8,6 +8,30 @@ Muster is a local multi-agent orchestration system that spawns Claude Code CLI p
 
 **Agent personas and skills** — 3 local personas plus 200+ domain experts integrated from [jnMetaCode/agency-agents-zh](https://github.com/jnMetaCode/agency-agents-zh) into `personas/`. 20 skills from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) in `skills/`.
 
+## Product Direction: Agent Company Workbench
+
+Muster is being redesigned from a one-shot Leader → Worker → Verifier orchestrator into a persistent, project-driven Agent company workbench.
+
+Authoritative planning documents:
+
+- `docs/PRD-agent-company-workbench.md` — product requirements and accepted domain semantics
+- `docs/agent-company-implementation-checklist.md` — phased implementation and acceptance checklist
+
+Key constraints for all new work:
+
+- Do not preserve or extend the existing "quick task" mode as a product requirement. The current orchestrator and group chat are legacy implementation references, not the target architecture.
+- Reuse low-level capabilities where appropriate: Claude Code process execution, streaming events, sandboxing, scheduling, backups, and path validation.
+- Replace the orchestration and state model with Company, Project, Agent Definition, Project Agent Thread, Mirror, Task, Trigger, Artifact, Report Cycle, and Usage concepts from the PRD.
+- All real work belongs to a Project. Employee identity is company-scoped; working context and runtime threads are project-scoped.
+- A mirror is a project-local temporary parallel execution thread for one employee, not a new formal company employee.
+- Task is the single runtime abstraction for queues, collaboration, clarification, feedback, event triggers, scheduled work, and bounded discussions.
+- The platform owns deterministic infrastructure; semantic decisions must be assigned to an explicit Agent.
+- No concurrent operation may silently overwrite or lose project files.
+- The first validated vertical is a local single-user long-form novel company. Multi-tenant SaaS, payments, and full PPT/Word/video editing are later work.
+- Old `.muster` runtime data contains failed test runs, has no migration requirement, and may be removed when the new persistence layer is introduced.
+
+Current code below still documents the legacy implementation until replacement phases land. Do not describe planned modules as already implemented.
+
 ## Commands
 
 ```bash
@@ -153,6 +177,13 @@ Workers can load specialist personas (`agents/*.md`, `personas/{domain}/*.md`) a
 | [jnMetaCode/agency-orchestrator](https://github.com/jnMetaCode/agency-orchestrator) | Multi-agent orchestration engine | DAG parallel execution patterns |
 | [jnMetaCode/shellward](https://github.com/jnMetaCode/shellward) | 8-layer security middleware | Sandbox blacklist patterns inspired by this |
 | [jnMetaCode/ai-coding-guide](https://github.com/jnMetaCode/ai-coding-guide) | 66 Claude Code tips & best practices | Optimize prompts & workflows |
+
+## iHome API 接入规则
+
+- iHome API 以 `/Users/master/Project/iHome/docs/Api规范/` 为唯一规范源。
+- 收到 iHome API 变更通知时，先读 `变更通知/INDEX.md` 筛选出 `must_check` 项，再只读对应通知文件，不要整包加载全部规范。
+- 本项目维护一份"实际使用的 iHome API 清单"，每次变更先搜索这些端点。
+- STT WebSocket 必须发送 16kHz / 16bit / mono PCM 分片；浏览器 MediaRecorder 的 webm/opus 不能直接按 PCM 发。
 
 ## 指令入口约定（不可随意修改）
 

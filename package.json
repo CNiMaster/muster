@@ -1,16 +1,50 @@
 {
   "name": "muster",
-  "version": "2.0.0",
-  "description": "Local multi-agent orchestration with Claude Code CLI",
+  "version": "3.0.0",
+  "description": "Local Agent Company Workbench — persistent project-driven multi-agent orchestration",
   "license": "MIT",
   "type": "module",
-  "engines": { "node": ">=18.0.0" },
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "tsx watch src/server/server.ts",
+    "start": "node dist/server/server.js",
+    "typecheck": "tsc -b --pretty",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "build:server": "tsup",
+    "build:client": "vite build",
+    "build": "npm run build:server && npm run build:client",
+    "clean": "rm -rf dist tsconfig.tsbuildtime *.tsbuildtime"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.62.0",
+    "@xyflow/react": "^12.3.5",
+    "better-sqlite3": "^11.7.0",
     "express": "^5.2.1",
-    "ws": "^8.18.0"
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router-dom": "^7.1.0",
+    "ws": "^8.18.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@codemirror/lang-markdown": "^6.3.1",
+    "@codemirror/view": "^6.36.1",
+    "@playwright/test": "^1.49.1",
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/express": "^5.0.2",
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "@types/ws": "^8.5.13",
+    "@vitejs/plugin-react": "^4.3.4",
+    "tsup": "^8.3.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5",
+    "vitest": "^2.1.8"
   }
 }

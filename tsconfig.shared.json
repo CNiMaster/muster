@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "types": ["node"],
+    "rootDir": "src/shared",
+    "outDir": "dist/shared",
+    "tsBuildInfoFile": ".tsbuildinfo/shared.tsbuildinfo",
+    "composite": true
+  },
+  "include": ["src/shared/**/*.ts"]
+}

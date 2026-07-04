@@ -1,5 +1,11 @@
 node_modules/
+dist/
+.vite/
+.tsbuildinfo/
+*.tsbuildinfo
 .muster/
 .muster-backups/
 .claude/
+.codegraph/
 .DS_Store
+/tmp-muster-dev.log
