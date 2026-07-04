@@ -22,6 +22,7 @@ import { projectsRouter, projectById } from './api/projects';
 import { graphsRouter } from './api/graphs';
 import { taskByProjectRouter, taskByIdRouter } from './api/tasks';
 import { usageRouter } from './api/reports-usage';
+import { novelRouter, projectScopedNovel } from './api/novel';
 import { errorMiddleware } from './api/middleware';
 import { realtime } from './realtime';
 import { getDb } from './db/client';
@@ -41,12 +42,14 @@ async function createApp(): Promise<express.Express> {
   // API
   app.use('/api', healthRouter);
   app.use('/api/companies', companiesRouter);
+  app.use('/api/novel', novelRouter);
   app.use('/api/companies/:companyId/agents', agentsRouter);
   app.use('/api/companies/:companyId/projects', projectsRouter);
   app.use('/api/companies/:companyId/relationships', graphsRouter);
   app.use('/api/projects/:id', projectById);
   app.use('/api/projects/:id/tasks', taskByProjectRouter);
   app.use('/api/projects/:id/usage', usageRouter);
+  app.use('/api/projects/:id', projectScopedNovel);
   app.use('/api/tasks/:id', taskByIdRouter);
 
   app.use(errorMiddleware);
