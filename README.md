@@ -1,134 +1,49 @@
-# Muster v2
+# Muster v3
 
-本地多 Agent 编排系统 — 以 Claude Code CLI 为后端引擎，提供 Web UI 可视化交互。
+本地 Agent 公司工作台 —— 持久化、项目驱动的多 Agent 协作系统，首个落地场景为长篇小说创作公司。
+
+> 旧 Leader→Worker→Verifier 单次编排器已废弃；当前实现见 `CLAUDE.md`。
 
 ## 快速开始
 
 ```bash
-# 安装依赖
-npm install
-
-# 启动服务
-npm start
-# 或 node server.js
+npm install        # 安装依赖
+npm run dev        # 开发模式：tsx watch + Vite middleware，访问 http://127.0.0.1:3456
 ```
 
-浏览器自动打开 http://localhost:3456
+生产构建：
 
-### 桌面快捷方式
-
-双击 `start.command` 即可启动，服务在后台运行，日志输出到 `/tmp/muster.log`。
-关闭终端窗口也不会影响服务运行。
-
-> **提示**：如果端口 3456 被占用，启动脚本会自动清理旧进程。
-
-## 环境变量
-
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `MUSTER_PORT` | `3456` | 服务端口 |
-| `CLAUDE_BIN` | `claude` | Claude Code CLI 路径 |
-| `MUSTER_SKIP_PERMISSIONS` | `false` | 设为 `true` 跳过权限检查 |
-| `MUSTER_ALLOWED_ROOTS` | `~:/tmp` | 目录浏览允许的根路径 |
-
-## 使用指南
-
-### 基本流程
-
-1. **打开工作区** — 点击左侧"打开目录"，选择项目文件夹
-2. **对话** — 选中工作区后直接输入消息，Leader 自动理解需求、规划任务、分配专家
-3. **跟踪进度** — 左侧任务树展开后可查看 Worker/Verifier 团队进度
-4. **查看结果** — 右侧聊天区实时显示 Agent 输出
-
-### 定时消息
-
-点击输入框上方 ⏰ 按钮开启定时模式，设置延迟时间后发送的消息会在指定时间后自动触发。
-
-### Goal 模式
-
-🎯 Goal 模式让系统自治循环执行，直到达成目标或达到限制：
-- 输入框上方点击 🎯 Goal → 选择预制条件或自定义
-- 系统自动执行 → 评估 → 重试，直到达标
-- 可在顶部标签查看当前迭代进度
-
-### 复杂度预设
-
-顶部可选择三种复杂度模式：
-- **简单** — 出错重试 1 次，最多 2 个子任务并行
-- **标准** — 出错重试 3 次，最多 3 个子任务并行（日常推荐）
-- **深度** — 出错重试 5 次，最多 5 个子任务并行
-
-### 切换模型
-
-顶部紫色标签可点击切换 Leader 模型：Opus → Sonnet → Haiku。
-
-### 任务清单
-
-每个工作区可管理待办清单（Backlog），在任务树中展开任务可见。
-
-### 配置持久化
-
-设置（复杂度、模型、沙盒配置）自动保存，重启后恢复。
-工作区和任务进度在服务重启后自动恢复。
-
-## 技术架构
-
-```
-Human ←→ Leader (Opus) ←→ Workers (Sonnet) + Verifiers (Haiku)
+```bash
+npm run build      # tsup 编译 server + vite build 客户端
+npm start          # node dist/server/server.js
 ```
 
-- **Leader**: 对话中枢，理解意图（ask/answer/execute），自动分配专家和技能
-- **Worker**: 执行子任务，可加载领域专家角色（200+ 预置 Agent）
-- **Verifier**: 对抗式审查 Worker 输出，通过/反馈循环
+## 主要能力
 
-### 关键文件
+- **公司工作台**：创建公司、员工、部门、组织图、通信图、工作流图；上班锁定正式组织配置。
+- **持久 Task 内核**：10 态状态机、原子领取、租约心跳、依赖、追问 3 轮上限、自动规划。
+- **安全成果工作区**：每 Task 一个 Git worktree；串行发布队列做三方合并、同段冲突阻塞、可回滚。
+- **长篇小说公司**：5 基础岗位（lead/writer/character/plot/inspector），章节事件触发资料维护，定时一致性检查。
+- **镜像、监察、复盘、头脑风暴**：镜像并行不重复领取；监察员只建议不扩容；强制复盘按根员工聚合；闲置头脑风暴受限。
+- **Claude Code 执行器**：session 持久化、AgentRunResult 契约、用量统计、预算/无进展/重复检测。
 
-| 文件 | 说明 |
+## 常用脚本
+
+| 命令 | 作用 |
 |------|------|
-| `server.js` | Express + WebSocket 服务端 |
-| `orchestrator.js` | 核心编排引擎 |
-| `agent-runner.js` | Agent 进程管理 |
-| `state.js` | 内存状态管理 |
-| `config.js` | 复杂度预设、模型映射、角色/技能加载 |
-| `storage.js` | 文件持久化 |
-| `sandbox.js` | 沙盒权限系统 |
-| `scheduler.js` | 定时任务引擎 |
-| `backup.js` | 修改前快照备份 |
-| `public/index.html` | Web UI |
-| `prompts/` | Agent 系统提示词 |
-| `agents/` | 3 个内建专家角色 |
-| `skills/` | 20 个内建技能模块 |
-| `personas/` | 200+ 领域专家角色库 |
+| `npm run typecheck` | TypeScript 全量类型检查 |
+| `npm test` | Vitest 单测 + 集成（66 项） |
+| `npm run test:e2e` | Playwright 端到端 |
+| `npm run build` | 构建产物到 `dist/` |
 
-### 沙盒安全
+## 数据
 
-Worker 只能在白名单工具和工作目录内操作，26 条黑名单模式拦截危险命令（rm -rf、强制推送、shell 注入等）。
+- 数据库：`~/.muster/muster.db`（SQLite，WAL，14 张表）
+- Task worktree：`~/.muster/worktrees/<taskId>`
+- 项目成果：用户项目根目录（Muster 自动 `git init`）
 
-### 配置持久化结构
+## 文档
 
-```
-muster/.muster/
-├── config.json       # 全局配置（复杂度、模型、沙盒）
-├── workspaces.json   # 工作区索引
-
-<project-dir>/.muster/
-├── workspace.json    # 工作区元数据
-├── backlog.json      # 待办清单
-└── tasks/
-    └── <taskId>/
-        ├── task.json # 任务状态 + 对话历史
-        └── chat.json # 聊天消息
-```
-
-## 相关项目
-
-- [agent-skills](https://github.com/addyosmani/agent-skills) — Agent 角色与技能来源
-- [agency-agents-zh](https://github.com/jnMetaCode/agency-agents-zh) — 211 个中文专家角色
-- [superpowers-zh](https://github.com/jnMetaCode/superpowers-zh) — 20 种 AI 工作法
-- [shellward](https://github.com/jnMetaCode/shellward) — 8 层安全中间件
-- [agency-orchestrator](https://github.com/jnMetaCode/agency-orchestrator) — DAG 并行编排模式
-- [ai-coding-guide](https://github.com/jnMetaCode/ai-coding-guide) — 66 条 Claude Code 最佳实践
-
-## License
-
-MIT
+- `CLAUDE.md` — 当前架构与命令
+- `docs/PRD-agent-company-workbench.md` — 产品需求
+- `docs/agent-company-implementation-checklist.md` — 分阶段实施清单

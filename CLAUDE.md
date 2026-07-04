@@ -30,142 +30,101 @@ Key constraints for all new work:
 - The first validated vertical is a local single-user long-form novel company. Multi-tenant SaaS, payments, and full PPT/Word/video editing are later work.
 - Old `.muster` runtime data contains failed test runs, has no migration requirement, and may be removed when the new persistence layer is introduced.
 
-Current code below still documents the legacy implementation until replacement phases land. Do not describe planned modules as already implemented.
+> 已完成 8 阶段重写（Phase 0–7 + Phase 8 验收）。旧 Leader→Worker→Verifier 单次编排器和 group-chat 已废弃，代码移到 `legacy/` 仅供历史参考，不参与构建。下面文档反映当前实现。
 
 ## Commands
 
 ```bash
-npm start          # Start the server (runs server.js with Node ESM)
-npm run dev        # Start with --watch for auto-restart
-npm install        # Install dependencies (express, ws)
+npm install              # 安装依赖（express, ws, better-sqlite3, react, react-flow, vitest, playwright 等）
+npm run dev              # 开发模式：tsx watch src/server/server.ts，Express 挂 Vite middleware
+npm start                # 生产模式：node dist/server/server.js（需先 build）
+npm run typecheck        # TypeScript 项目引用全量检查
+npm test                 # Vitest 单测 + 集成（66 项）
+npm run test:e2e         # Playwright 端到端（需浏览器）
+npm run build            # tsup 编译 server + vite build 客户端 → dist/
 ```
-
-Desktop launch: double-click `start.command` (auto-opens browser).
 
 ## Configuration (Environment Variables)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MUSTER_PORT` | `3456` | Server port |
-| `CLAUDE_BIN` | `claude` | Path to Claude CLI binary |
-| `MUSTER_SKIP_PERMISSIONS` | `false` | Set `true` to pass `--dangerously-skip-permissions` to agents |
-| `MUSTER_ALLOWED_ROOTS` | `~:/tmp` | Colon-separated path roots for directory browsing |
+| `MUSTER_PORT` | `3456` | 服务端口 |
+| `MUSTER_HOST` | `127.0.0.1` | 绑定地址（本地单用户） |
+| `MUSTER_HOME` | `~/.muster` | 数据目录（muster.db、worktrees/） |
+| `CLAUDE_BIN` | `claude` | Claude Code CLI 路径 |
+| `MUSTER_SKIP_PERMISSIONS` | `false` | `true` 时给 Agent 传 `--dangerously-skip-permissions` |
+| `MUSTER_ALLOWED_ROOTS` | `~:/tmp` | 项目目录允许的根列表（冒号分隔） |
+| `NODE_ENV` | — | `production` 时 Express 服务 dist/client；否则挂 Vite middleware |
 
-Configs persist to `.muster/config.json` — restores on restart (complexity, leader model, sandbox overrides). Workspaces and tasks also auto-restore from disk.
+无构建无测试的旧时代已结束。SQLite 是公司配置、项目、Task、事件、用量的唯一权威源；文件成果保存在用户项目目录，由 Git worktree 隔离写、串行发布队列合并。
 
-No build step, no test suite. Node.js ESM project (`"type": "module"` in package.json). Single-file frontend (`public/index.html`) — all CSS/HTML/JS in one file, no framework, no hot-reload.
+**Language**: UI 和 prompts 中文优先。Task 标题、日志、用户消息默认中文；代码标识符英文+中文混合。
 
-**Language**: UI and prompts are Chinese-first. Task descriptions, logs, and user-facing messages default to Chinese. Code comments and variable names are mixed (English + Chinese).
+## Architecture（当前实现）
 
-## Architecture
-
-### Core Flow
-
-```
-Human (boss) ←→ Leader (project manager) ← orchestrates → Workers + Verifiers
-```
-
-- **Leader**: The sole conversational partner for the human. Judges intent: `ask` (clarify), `answer` (direct reply), or `execute` (start task). Uses conversation history for context continuity. Auto-assigns expert personas from `personas/` domain catalog.
-- **Workers**: Execute subtasks. Each Worker gets a subtask prompt + project directory as cwd.
-- **Verifiers**: Adversarial review of Worker output. Must approve or provide feedback. Worker retries up to N times on failure (preset-dependent).
-
-### Key New Features
-
-- **Timer mode**: Per-task timer toggle in chat input — messages are delayed and auto-triggered via scheduler
-- **Goal mode**: Autonoumous loop until preset/custom goal met (test pass, security audit, etc.) with iteration tracking
-- **Config persistence**: Settings auto-save to `.muster/config.json`, restore on startup
-- **Workspace restoration**: Saved workspace index + all tasks restore automatically after restart
-- **Clickable model badge**: Top bar shows "Leader: Opus" — click to cycle Opus↔Sonnet↔Haiku
-- **Auto-create task**: Click workspace = create new task; type without selecting task = auto-create then send
-
-### Agent Execution
-
-Each agent is a `child_process.spawn('claude', ...)` invocation:
+### 顶层布局
 
 ```
-claude -p "<prompt>" --output-format stream-json --verbose --system-prompt "<role>" --model <role-model>
+src/
+  shared/    # 类型、Zod schema、错误码、事件契约、常量（前后端共享）
+  server/
+    db/          # better-sqlite3 client + migrations/*.sql（14 张表）
+    domain/      # company / agent / project / thread / graph / task /
+                 # task-event / task-message / artifact / usage / report /
+                 # inspector / brainstorm / triggers / novel-template
+    task-engine/ # ExecutionAdapter 接口 + FakeExecutor + TaskEngine
+    executors/   # ClaudeCodeAdapter + 上下文装配 + 安全检查
+    worktree/    # Git worktree 管理 + 串行发布队列
+    api/         # Express 路由（companies/agents/projects/graphs/tasks/...）
+    realtime.ts  # WebSocket 广播 RealtimeEvent
+    server.ts    # 入口：单端口 3456，dev 挂 Vite，prod 服务 dist/client
+  client/      # React 19 + Router 7 + React Flow 12 + TanStack Query 5
+    pages/       # Home / Company / Graph / Project / Tasks / Usage
+    hooks/       # React Query hooks
+    api/         # fetch client + DTO
+tests/
+  unit/ integration/ e2e/   # 66 项 Vitest + Playwright smoke
+legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史参考）
 ```
 
-- `--output-format stream-json` **requires** `--verbose` (non-negotiable, CLI will error)
-- Models assigned by role: leader→opus, worker→sonnet, verifier→haiku (maps to user's Claude alias settings)
-- `--json-schema` used for structured Leader responses (ask/answer/execute)
-- Stream JSON events parsed line-by-line: `system` → `assistant` (text/tool_use) → `result` (cost/usage)
-- Per-model token tracking extracted from `result.modelUsage` field
+### 核心运行模型
 
-### Key Files
+- **公司状态机** `off | online | draining | review_paused`：上班锁定正式组织配置；镜像扩缩容例外。
+- **Task 是唯一运行单元**：10 态状态机 `queued|claimed|running|waiting_input|waiting_dependency|paused|blocked|completed|failed|cancelled`。
+- **原子领取**：`BEGIN IMMEDIATE` + `UPDATE ... WHERE state='queued' ... RETURNING`，租约 + 心跳 + 过期恢复。
+- **追问 3 轮上限**：超限自动给项目第一负责人派发上报 Task。
+- **执行器抽象**：`ExecutionAdapter` 接口；首个实现 `ClaudeCodeAdapter`（spawn claude，stream-json，session 持久化，Zod 校验 AgentRunResult）。
+- **安全成果工作区**：每 Task 一个隐藏 Git worktree + 专用分支；串行发布队列做文本三方合并、同段冲突阻塞、二进制独占锁、可回滚。
+- **长篇小说公司**：5 基础岗位（lead/writer/character/plot/inspector），第一负责人≠主写手；章节完成事件触发人物/情节维护；定时一致性检查；强制复盘按根员工聚合；闲置头脑风暴受限。
+- **镜像**：项目内临时并行线程，共享根员工职责/上下文/Task 池，不重复领取；成果归入根员工。
 
-| File | Role |
+### 关键文件
+
+| 文件 | 职责 |
 |------|------|
-| `server.js` | Express + WebSocket server, REST APIs, event bridge to WS |
-| `orchestrator.js` | Core engine: Leader conversation, task planning, Worker-Verifier adversarial loop |
-| `agent-runner.js` | Spawns Claude CLI, parses stream-json, extracts cost/usage/modelUsage |
-| `state.js` | In-memory state store (EventEmitter): workspaces, tasks, chat messages, subtasks |
-| `config.js` | Complexity presets (simple/normal/deep), model mapping, CLI flags, persona/skill loader |
-| `storage.js` | File-based persistence to `.muster/` directories in each project |
-| `sandbox.js` | Sandbox permission system: tool whitelist, command blacklist, API-overridable |
-| `backup.js` | Backup manager: pre-modification snapshots, max 15 per project |
-| `scheduler.js` | Scheduled task engine: one-shot and recurring jobs, rate-limit auto-retry |
-| `utils.js` | Path validation, JSON parsing, CLI argument sanitization |
-| `prompts/leader.md` | Chat-oriented Leader system prompt (ask/answer/execute modes) |
-| `prompts/worker.md` | Worker execution prompt with retry-aware output format |
-| `prompts/verifier.md` | Adversarial verifier prompt (approved/feedback JSON verdict) |
-| `public/index.html` | Single-file two-panel chat UI with tree sidebar, settings modal |
-| `agents/` | 3 expert personas from addyosmani/agent-skills |
-| `skills/` | 20 specialist skills from addyosmani/agent-skills |
-| `personas/` | 200+ domain expert personas from agency-agents-zh, organized into 10 domain directories |
+| `src/server/server.ts` | Express + WebSocket 入口，挂载所有 REST 路由 + Vite middleware |
+| `src/server/db/migrations/0001_init.sql` | 14 张表 schema |
+| `src/server/domain/task.ts` | Task 状态机、原子领取、租约、依赖、追问、自动规划 |
+| `src/server/task-engine/engine.ts` | pumpThread 驱动领取→执行→完成 |
+| `src/server/executors/claude-code-adapter.ts` | Claude CLI 适配器 + AgentRunResult Zod 校验 |
+| `src/server/worktree/publish-queue.ts` | 串行发布 + 三方合并 + 冲突阻塞 |
+| `src/server/domain/novel-template.ts` | 长篇小说公司一键模板 |
+| `src/server/domain/report.ts` | 强制复盘周期（review_paused → 看板 → 备注转修正） |
 
-### Persistence Structure
+### WebSocket 事件
 
-```
-muster/.muster/
-├── config.json              # Global config (complexity, leader model, sandbox)
-└── workspaces.json          # Workspace index (survives restart)
+统一 `RealtimeEvent<T>` 格式（id/type/companyId?/projectId?/taskId?/occurredAt/payload），`/ws` 路径广播。React Query 管 REST 状态，WS 事件负责失效。
 
-<project-dir>/.muster/
-├── workspace.json            # Workspace metadata
-├── backlog.json              # Backlog items
-└── tasks/
-    └── <taskId>/
-        ├── task.json          # Task state + conversation history + subtasks + modelUsage
-        └── chat.json          # Chat messages
-```
+### 沙盒与安全
 
-Tasks are never deleted — only archived (`archived: true` flag). Archived tasks can be restored.
+`src/server/sandbox.ts` 维护 22 条危险命令黑名单 + 工具白名单。Claude Code 默认只能访问当前 Task worktree + 用户授权只读参考项目。
 
-### Concurrency Model
+### 测试
 
-`orchestrator.runWithDependencies(taskId, subtasks, runFn, concurrency)` implements a DAG-based scheduler. Independent subtasks run in parallel (up to concurrency limit from preset: 2/3/3). Subtasks with `dependsOn` wait for dependencies. File overlap is auto-detected — shared files between subtasks force sequential execution. Concurrency comes from the complexity preset (2/3/3). Each subtask runs the full Worker→Verifier adversarial loop independently.
+- Vitest 集成测试 66 项（公司状态机、组织锁、跨项目只读、Task 并发领取/租约恢复/依赖/追问、worktree 三方合并/冲突阻塞、章节事件、复盘、头脑风暴、MVP 验收剧本、重启恢复）。
+- Playwright E2E smoke（首页、创建公司、健康接口）。
 
-### WebSocket Events
-
-Server bridges state events to all connected WS clients:
-- `task:update`, `subtask:update`, `chat:message`, `task:deleted` — from state.js EventEmitter
-- `agent:output`, `agent:tool` — from orchestrator (real-time agent activity)
-- `backlog:update`, `config:updated`, `timer:scheduled` — from various subsystems
-
-All state changes auto-persist to disk via the event bridge in server.js.
-
-### Retry & Failure Recovery
-
-Workers have a progressive retry strategy governed by the complexity preset:
-1. **Attempt 1**: Execute normally
-2. **Attempt 2** (1st retry): Self-reflection — Worker receives its previous output and is told to continue from the failure point
-3. **Attempt 3** (2nd retry): Leader diagnosis — Leader analyzes the failure and provides guidance
-4. **Attempt 4+**: Notify human for intervention
-
-On retry, the Worker model auto-escalates to `opus`. When a Worker times out (10-min default) or hits the tool-call limit (50), partial output is preserved and verification is skipped. If a rate limit error is detected, the system auto-schedules a delayed retry. Backups of affected files are taken before each Worker's first attempt, accessible via `/api/backups`.
-
-### Sandbox & Security
-
-Default mode is **sandbox**: Workers operate with restricted permissions. `sandbox.js` maintains a 22-pattern blacklist for dangerous commands (rm -rf, git push --force, shell injection). Write tools (Edit/Write/Bash) are only allowed within the workspace directory. The sandbox is configurable via the settings UI and persists overrides to `.muster/config.json`. To fully disable sandboxing, set `MUSTER_SKIP_PERMISSIONS=true`.
-
-### Expert Personas & Skills
-
-Workers can load specialist personas (`agents/*.md`, `personas/{domain}/*.md`) and skills (`skills/*/SKILL.md`) as system-prompt overlays. The orchestrator auto-injects these when a subtask specifies `persona` or `skill` fields. 200+ domain personas across 10 domains (engineering, marketing, design, security, product, data, qa, etc.) — imported from jnMetaCode/agency-agents-zh.
-
-### Scheduled Tasks
-
-`scheduler.js` manages one-shot and recurring jobs. When a Worker hits an LLM rate limit, the system auto-schedules a retry after the cooldown period. Users can also manually schedule tasks via timer toggle in chat input. All jobs are visible and cancellable through `/api/scheduler/jobs`.
+旧 Leader/Worker/Verifier、临时群聊、`.muster/config.json` 文件持久化等已全部废弃，不再参与运行。
 
 ## Related Projects
 

@@ -9,3 +9,4 @@ dist/
 .codegraph/
 .DS_Store
 /tmp-muster-dev.log
+.tsbuildinfo/
