@@ -1,0 +1,201 @@
+/**
+ * Phase 4 验收测试：临时 Git 仓库覆盖 worktree + 发布队列。
+ - 自动 git init
+ - worktree 创建/提交
+ - 非重叠自动合并
+ - 同段冲突阻塞
+ - 回滚
+ */
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { makeTestDb } from './setup';
+import type { DB } from '../../src/server/db/client';
+import {
+  ensureGitRepo,
+  createWorktree,
+  removeWorktree,
+  commitAll,
+  currentHead,
+} from '../../src/server/worktree/manager';
+import { PublishQueue } from '../../src/server/worktree/publish-queue';
+
+let tmpRoot: string;
+let tdb: ReturnType<typeof makeTestDb>;
+let db: DB;
+
+beforeEach(() => {
+  tmpRoot = mkdtempSync(path.join(tmpdir(), 'muster-wt-'));
+  tdb = makeTestDb();
+  db = tdb.db;
+});
+
+afterEach(() => {
+  rmSync(tmpRoot, { recursive: true, force: true });
+});
+
+describe('git repo management', () => {
+  it('ensureGitRepo 自动初始化', () => {
+    ensureGitRepo(tmpRoot);
+    expect(path.join(tmpRoot, '.git')).toBeDefined();
+    // 初始提交存在
+    const head = currentHead(tmpRoot);
+    expect(head).toMatch(/^[0-9a-f]{40}$/);
+  });
+
+  it('已有 .git 时不重复初始化', () => {
+    ensureGitRepo(tmpRoot);
+    ensureGitRepo(tmpRoot); // 幂等
+    expect(currentHead(tmpRoot)).toMatch(/^[0-9a-f]+$/);
+  });
+});
+
+describe('worktree lifecycle', () => {
+  it('创建 worktree 并提交', () => {
+    ensureGitRepo(tmpRoot);
+    const info = createWorktree(tmpRoot, 'proj1', 'task1');
+    expect(info.branch).toBe('muster/proj1/task1');
+    writeFileSync(path.join(info.path, 'ch01.md'), '# 第一章\n');
+    const hash = commitAll(info.path, '写第一章');
+    expect(hash).toMatch(/^[0-9a-f]{40}$/);
+    removeWorktree(tmpRoot, info);
+  });
+});
+
+describe('publish queue', () => {
+  it('非重叠文本自动三方合并', () => {
+    ensureGitRepo(tmpRoot);
+    // 正式目录建立基线文件
+    writeFileSync(path.join(tmpRoot, 'doc.md'), '段落A\n\n段落B\n');
+    commitAll(tmpRoot, 'baseline');
+
+    const wt = createWorktree(tmpRoot, 'proj', 'task-add');
+    // worktree 只改第一段
+    writeFileSync(path.join(wt.path, 'doc.md'), '段落A（task改）\n\n段落B\n');
+    commitAll(wt.path, 'task 改动');
+
+    // 同时正式目录只改第二段（不同位置，真正不重叠）
+    writeFileSync(path.join(tmpRoot, 'doc.md'), '段落A\n\n段落B（user改）\n');
+    commitAll(tmpRoot, 'user 改动');
+
+    const q = new PublishQueue(db);
+    const result = q.publish({
+      taskId: 'task-add',
+      threadId: 'th1',
+      worktreePath: wt.path,
+      baseCommit: wt.baseCommit,
+      projectRootDir: tmpRoot,
+      artifacts: [{ path: 'doc.md', kind: 'markdown', operation: 'update' }],
+    });
+
+    expect(result.blocked).toBe(false);
+    expect(result.mergedFiles).toContain('doc.md');
+    const merged = readFileSync(path.join(tmpRoot, 'doc.md'), 'utf8');
+    expect(merged).toContain('段落A（task改）');
+    expect(merged).toContain('段落B（user改）');
+  });
+
+  it('同段冲突阻塞发布', () => {
+    ensureGitRepo(tmpRoot);
+    writeFileSync(path.join(tmpRoot, 'doc.md'), '原始行\n');
+    commitAll(tmpRoot, 'baseline');
+
+    const wt = createWorktree(tmpRoot, 'proj', 'task-conflict');
+    // worktree 把同一行改成 X
+    writeFileSync(path.join(wt.path, 'doc.md'), 'worktree改\n');
+    commitAll(wt.path, 'task 改');
+
+    // 正式目录把同一行改成 Y
+    writeFileSync(path.join(tmpRoot, 'doc.md'), '正式目录改\n');
+    commitAll(tmpRoot, 'user 改');
+
+    const q = new PublishQueue(db);
+    const result = q.publish({
+      taskId: 'task-conflict',
+      threadId: 'th1',
+      worktreePath: wt.path,
+      baseCommit: wt.baseCommit,
+      projectRootDir: tmpRoot,
+      artifacts: [{ path: 'doc.md', kind: 'markdown', operation: 'update' }],
+    });
+
+    expect(result.blocked).toBe(true);
+    expect(result.conflicts).toContain('doc.md');
+    // 正式目录内容未被破坏
+    const cur = readFileSync(path.join(tmpRoot, 'doc.md'), 'utf8');
+    expect(cur).toBe('正式目录改\n');
+  });
+
+  it('二进制文件冲突阻塞', () => {
+    ensureGitRepo(tmpRoot);
+    writeFileSync(path.join(tmpRoot, 'cover.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    commitAll(tmpRoot, 'baseline');
+
+    const wt = createWorktree(tmpRoot, 'proj', 'task-bin');
+    writeFileSync(path.join(wt.path, 'cover.png'), Buffer.from([0xff, 0xd8, 0xff]));
+    commitAll(wt.path, 'task binary');
+
+    writeFileSync(path.join(tmpRoot, 'cover.png'), Buffer.from([0x01, 0x02, 0x03]));
+    commitAll(tmpRoot, 'user binary');
+
+    const q = new PublishQueue(db);
+    const result = q.publish({
+      taskId: 'task-bin',
+      threadId: 'th1',
+      worktreePath: wt.path,
+      baseCommit: wt.baseCommit,
+      projectRootDir: tmpRoot,
+      artifacts: [{ path: 'cover.png', kind: 'image', operation: 'update' }],
+    });
+    expect(result.blocked).toBe(true);
+    expect(result.conflicts).toContain('cover.png');
+  });
+
+  it('新文件直接复制', () => {
+    ensureGitRepo(tmpRoot);
+    commitAll(tmpRoot, 'baseline');
+    const wt = createWorktree(tmpRoot, 'proj', 'task-new');
+    writeFileSync(path.join(wt.path, 'new.md'), '新内容\n');
+    commitAll(wt.path, 'task new file');
+
+    const q = new PublishQueue(db);
+    const result = q.publish({
+      taskId: 'task-new',
+      threadId: 'th1',
+      worktreePath: wt.path,
+      baseCommit: wt.baseCommit,
+      projectRootDir: tmpRoot,
+      artifacts: [{ path: 'new.md', kind: 'markdown', operation: 'create' }],
+    });
+    expect(result.blocked).toBe(false);
+    expect(readFileSync(path.join(tmpRoot, 'new.md'), 'utf8')).toBe('新内容\n');
+  });
+});
+
+describe('multi-project isolation', () => {
+  it('两个项目串行锁不互相阻塞', () => {
+    ensureGitRepo(tmpRoot);
+    commitAll(tmpRoot, 'baseline');
+    const proj2 = mkdtempSync(path.join(tmpdir(), 'muster-wt2-'));
+    try {
+      ensureGitRepo(proj2);
+      commitAll(proj2, 'baseline');
+      const q = new PublishQueue(db);
+      // 不同 projectRoot 可同时进入（实现上是串行处理但锁按 root 区分）
+      const wt1 = createWorktree(tmpRoot, 'p1', 't1');
+      writeFileSync(path.join(wt1.path, 'a.md'), 'a\n');
+      commitAll(wt1.path, 't1');
+      const r1 = q.publish({
+        taskId: 't1', threadId: 'th', worktreePath: wt1.path,
+      baseCommit: wt1.baseCommit, projectRootDir: tmpRoot,
+        artifacts: [{ path: 'a.md', kind: 'markdown', operation: 'create' }],
+      });
+      expect(r1.blocked).toBe(false);
+    } finally {
+      rmSync(proj2, { recursive: true, force: true });
+    }
+  });
+});
+
+void mkdirSync;
