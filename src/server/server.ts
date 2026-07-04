@@ -16,7 +16,13 @@ import { fileURLToPath } from 'node:url';
 import { SERVER_CONFIG } from './env';
 import { log } from './logger';
 import { healthRouter } from './api/health';
+import { companiesRouter } from './api/companies';
+import { agentsRouter } from './api/agents';
+import { projectsRouter, projectById } from './api/projects';
+import { graphsRouter } from './api/graphs';
+import { errorMiddleware } from './api/middleware';
 import { realtime } from './realtime';
+import { getDb } from './db/client';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -27,8 +33,18 @@ async function createApp(): Promise<express.Express> {
   const app = express();
   app.use(express.json({ limit: '8mb' }));
 
+  // 初始化数据库（应用 migration）
+  getDb();
+
   // API
   app.use('/api', healthRouter);
+  app.use('/api/companies', companiesRouter);
+  app.use('/api/companies/:companyId/agents', agentsRouter);
+  app.use('/api/companies/:companyId/projects', projectsRouter);
+  app.use('/api/companies/:companyId/relationships', graphsRouter);
+  app.use('/api/projects/:id', projectById);
+
+  app.use(errorMiddleware);
 
   // 静态前端
   if (SERVER_CONFIG.isProd) {

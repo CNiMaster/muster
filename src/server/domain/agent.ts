@@ -1,0 +1,161 @@
+/**
+ * Agent Definition 领域：员工 CRUD + 组织配置锁校验。
+ *
+ * 上班期间（公司非 off）禁止增删改员工。
+ * 角色冲突（如同一员工不能同时是 lead + writer）由调用方在项目层校验。
+ */
+import type { DB } from '../db/client';
+import { AppError, ErrorCode } from '../../shared/errors';
+import { shortId, nowIso } from '../../shared/utils';
+import { getCompany, isOrgLocked } from './company';
+
+export interface AgentDefinition {
+  id: string;
+  companyId: string;
+  departmentId: string | null;
+  name: string;
+  role: string;
+  responsibilities: string;
+  systemPrompt: string;
+  skills: string[];
+  tools: string[];
+  permissions: Record<string, unknown>;
+  contactAllow: string[];
+  canDispatch: boolean;
+  executor: Record<string, unknown>;
+  isInspector: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface AgentRow {
+  id: string;
+  company_id: string;
+  department_id: string | null;
+  name: string;
+  role: string;
+  responsibilities: string;
+  system_prompt: string;
+  skills_json: string;
+  tools_json: string;
+  permissions_json: string;
+  contact_allow_json: string;
+  can_dispatch: number;
+  executor_json: string;
+  is_inspector: number;
+  created_at: string;
+  updated_at: string;
+}
+
+function fromRow(r: AgentRow): AgentDefinition {
+  return {
+    id: r.id,
+    companyId: r.company_id,
+    departmentId: r.department_id,
+    name: r.name,
+    role: r.role,
+    responsibilities: r.responsibilities,
+    systemPrompt: r.system_prompt,
+    skills: JSON.parse(r.skills_json ?? '[]'),
+    tools: JSON.parse(r.tools_json ?? '[]'),
+    permissions: JSON.parse(r.permissions_json ?? '{}'),
+    contactAllow: JSON.parse(r.contact_allow_json ?? '[]'),
+    canDispatch: r.can_dispatch === 1,
+    executor: JSON.parse(r.executor_json ?? '{}'),
+    isInspector: r.is_inspector === 1,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+}
+
+export interface CreateAgentInput {
+  companyId: string;
+  departmentId?: string;
+  name: string;
+  role: string;
+  responsibilities?: string;
+  systemPrompt?: string;
+  skills?: string[];
+  tools?: string[];
+  permissions?: Record<string, unknown>;
+  contactAllow?: string[];
+  canDispatch?: boolean;
+  executor?: Record<string, unknown>;
+  isInspector?: boolean;
+}
+
+function assertUnlocked(db: DB, companyId: string): void {
+  if (isOrgLocked(db, companyId)) {
+    throw new AppError(ErrorCode.COMPANY_LOCKED, '上班期间不能修改员工配置');
+  }
+}
+
+export function createAgent(db: DB, input: CreateAgentInput): AgentDefinition {
+  getCompany(db, input.companyId); // 校验存在
+  assertUnlocked(db, input.companyId);
+
+  const id = shortId('ag_');
+  const now = nowIso();
+  db.prepare(
+    `INSERT INTO agent_definition
+      (id, company_id, department_id, name, role, responsibilities, system_prompt,
+       skills_json, tools_json, permissions_json, contact_allow_json, can_dispatch,
+       executor_json, is_inspector, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+  ).run(
+    id, input.companyId, input.departmentId ?? null, input.name, input.role,
+    input.responsibilities ?? '', input.systemPrompt ?? '',
+    JSON.stringify(input.skills ?? []), JSON.stringify(input.tools ?? []),
+    JSON.stringify(input.permissions ?? {}), JSON.stringify(input.contactAllow ?? []),
+    input.canDispatch === false ? 0 : 1,
+    JSON.stringify(input.executor ?? {}),
+    input.isInspector ? 1 : 0,
+    now, now,
+  );
+  return getAgent(db, id);
+}
+
+export function getAgent(db: DB, id: string): AgentDefinition {
+  const row = db.prepare('SELECT * FROM agent_definition WHERE id = ?').get(id) as AgentRow | undefined;
+  if (!row) throw new AppError(ErrorCode.NOT_FOUND, `agent ${id} not found`);
+  return fromRow(row);
+}
+
+export function listAgents(db: DB, companyId: string): AgentDefinition[] {
+  const rows = db.prepare('SELECT * FROM agent_definition WHERE company_id = ? ORDER BY created_at').all(companyId) as AgentRow[];
+  return rows.map(fromRow);
+}
+
+export function updateAgent(
+  db: DB,
+  id: string,
+  patch: Partial<Omit<AgentDefinition, 'id' | 'companyId' | 'createdAt'>>,
+): AgentDefinition {
+  const cur = getAgent(db, id);
+  assertUnlocked(db, cur.companyId);
+  const next: AgentDefinition = {
+    ...cur,
+    ...patch,
+    updatedAt: nowIso(),
+  };
+  db.prepare(
+    `UPDATE agent_definition SET
+      department_id=?, name=?, role=?, responsibilities=?, system_prompt=?,
+      skills_json=?, tools_json=?, permissions_json=?, contact_allow_json=?,
+      can_dispatch=?, executor_json=?, is_inspector=?, updated_at=?
+     WHERE id=?`,
+  ).run(
+    next.departmentId, next.name, next.role, next.responsibilities, next.systemPrompt,
+    JSON.stringify(next.skills), JSON.stringify(next.tools),
+    JSON.stringify(next.permissions), JSON.stringify(next.contactAllow),
+    next.canDispatch ? 1 : 0, JSON.stringify(next.executor), next.isInspector ? 1 : 0,
+    next.updatedAt, id,
+  );
+  return getAgent(db, id);
+}
+
+export function deleteAgent(db: DB, id: string): void {
+  const cur = getAgent(db, id);
+  assertUnlocked(db, cur.companyId);
+  db.prepare('DELETE FROM agent_definition WHERE id=?').run(id);
+}
