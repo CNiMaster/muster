@@ -13,6 +13,10 @@ export interface ExecutionContext {
   workingDir: string;
   /** 输入协议 + 上下文引用解析后的内容。 */
   inputPacket: Record<string, unknown>;
+  /** Claude 会话 ID 提示：首次执行为空，后续传已有的 session id 用于 --resume。 */
+  sessionIdHint?: string;
+  /** 执行此 Task 的线程 id（用于记账与 session 持久化）。 */
+  threadId?: string;
 }
 
 export interface ExecutionEvents {
