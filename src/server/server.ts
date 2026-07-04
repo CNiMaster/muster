@@ -20,6 +20,8 @@ import { companiesRouter } from './api/companies';
 import { agentsRouter } from './api/agents';
 import { projectsRouter, projectById } from './api/projects';
 import { graphsRouter } from './api/graphs';
+import { taskByProjectRouter, taskByIdRouter } from './api/tasks';
+import { usageRouter } from './api/reports-usage';
 import { errorMiddleware } from './api/middleware';
 import { realtime } from './realtime';
 import { getDb } from './db/client';
@@ -43,6 +45,9 @@ async function createApp(): Promise<express.Express> {
   app.use('/api/companies/:companyId/projects', projectsRouter);
   app.use('/api/companies/:companyId/relationships', graphsRouter);
   app.use('/api/projects/:id', projectById);
+  app.use('/api/projects/:id/tasks', taskByProjectRouter);
+  app.use('/api/projects/:id/usage', usageRouter);
+  app.use('/api/tasks/:id', taskByIdRouter);
 
   app.use(errorMiddleware);
 
