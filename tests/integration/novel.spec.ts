@@ -53,6 +53,9 @@ describe('novel template', () => {
 
   it('生成 5 个基础岗位 + 第一负责人配置', () => {
     const r = createNovelCompany(db, { name: '小说公司' });
+    expect(r.departments).toHaveLength(2);
+    expect(r.agents.writer.departmentId).toBe(r.departments[0]!.id);
+    expect(r.agents.inspector.departmentId).toBe(r.departments[1]!.id);
     expect(r.agents.lead.role).toBe('lead');
     expect(r.agents.writer.role).toBe('writer');
     expect(r.agents.character.role).toBe('character');

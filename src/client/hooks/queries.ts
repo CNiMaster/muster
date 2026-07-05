@@ -3,6 +3,56 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
 import type { Company, Agent, Department, Project, Relationship, Task, UsageSummary, ProjectAgentThread } from '../api/types';
 
+export interface ProposalResult<T> {
+  source: 'claude' | 'offline_template';
+  proposal: T;
+  warning?: string;
+}
+
+export interface CompanyProposal {
+  name: string;
+  kind: 'novel';
+  charter: string;
+  departments: Array<{ name: string; purpose: string }>;
+  agentNotes: Array<{ role: string; focus: string }>;
+}
+export interface AgentProposal {
+  role: string;
+  responsibilities: string;
+  skills: string[];
+  tools: string[];
+  contactRoles: string[];
+}
+export interface ProjectProposal {
+  name: string;
+  genre: string;
+  audience: string;
+  outline: string;
+  pov: string;
+  style: string;
+  sampleText: string;
+  initialTaskTitle: string;
+}
+
+export function useGenerateCompanyProposal() {
+  return useMutation({
+    mutationFn: (input: { name: string; goal: string }) =>
+      api.post<ProposalResult<CompanyProposal>>('/api/setup-assistant/company', input),
+  });
+}
+export function useGenerateAgentProposal() {
+  return useMutation({
+    mutationFn: (input: { name: string; duty: string; existingRoles?: string[] }) =>
+      api.post<ProposalResult<AgentProposal>>('/api/setup-assistant/agent', input),
+  });
+}
+export function useGenerateProjectProposal() {
+  return useMutation({
+    mutationFn: (input: { prompt: string }) =>
+      api.post<ProposalResult<ProjectProposal>>('/api/setup-assistant/project', input),
+  });
+}
+
 // ===== Company =====
 export function useCompanies() {
   return useQuery({ queryKey: ['companies'], queryFn: () => api.get<Company[]>('/api/companies') });
@@ -25,7 +75,11 @@ export function useCreateCompany() {
 export function useCreateNovelCompany() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { name: string; charter?: string }) =>
+    mutationFn: (input: {
+      name: string;
+      charter?: string;
+      departments?: Array<{ name: string; purpose?: string }>;
+    }) =>
       api.post<{ company: Company; agents: Record<string, Agent> }>('/api/novel', input),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['companies'] }),
   });
@@ -605,5 +659,3 @@ export function useTestConnection() {
       api.post<any>('/api/settings/test-connection', payload),
   });
 }
-
-

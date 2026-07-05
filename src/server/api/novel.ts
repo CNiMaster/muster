@@ -19,8 +19,12 @@ export const novelRouter = Router();
 novelRouter.post(
   '/',
   asyncHandler(async (req, res) => {
-    const { name, charter } = z.object({ name: z.string().min(1), charter: z.string().optional() }).parse(req.body);
-    const result = createNovelCompany(getDb(), { name, charter });
+    const { name, charter, departments } = z.object({
+      name: z.string().min(1),
+      charter: z.string().optional(),
+      departments: z.array(z.object({ name: z.string().min(1), purpose: z.string().optional() })).optional(),
+    }).parse(req.body);
+    const result = createNovelCompany(getDb(), { name, charter, departments });
     res.status(201).json(result);
   }),
 );

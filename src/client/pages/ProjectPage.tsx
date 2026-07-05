@@ -11,6 +11,7 @@ import {
   useCreateMirror,
   useDeleteMirror,
   useStartBrainstorm,
+  useGenerateProjectProposal,
 } from '../hooks/queries';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
@@ -32,6 +33,7 @@ function NewProject({ companyId }: { companyId: string }): React.ReactElement {
   const { data: agents } = useAgents(companyId);
   const createProject = useCreateProject();
   const createTask = useCreateTask();
+  const generateProjectProposal = useGenerateProjectProposal();
 
   const [mode, setMode] = useState<'standard' | 'wizard'>('wizard');
 
@@ -43,7 +45,7 @@ function NewProject({ companyId }: { companyId: string }): React.ReactElement {
 
   // 对话式向导状态
   const [prompt, setPrompt] = useState('');
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [proposalNotice, setProposalNotice] = useState<string | null>(null);
   const [wizardResult, setWizardResult] = useState<{
     genre: string;
     audience: string;
@@ -54,61 +56,27 @@ function NewProject({ companyId }: { companyId: string }): React.ReactElement {
     initialTaskTitle: string;
   } | null>(null);
 
-  // AI 智能分析推荐生成
   const handleAIAnalyze = (): void => {
     if (!prompt.trim()) {
       toast('error', '请先输入您的创作想法');
       return;
     }
-    setIsGenerating(true);
     setWizardResult(null);
-
-    setTimeout(() => {
-      setIsGenerating(false);
-      const text = prompt.toLowerCase();
-      
-      let genre = '现代都市';
-      let audience = '大众读者';
-      let outline = '关于成长与奋斗的故事。';
-      let pov = '第三人称旁白';
-      let style = '平实自然';
-      let sampleText = '阳光透过树叶的缝隙洒在石子路上，微风吹过，带来一丝凉意...';
-      let initialTaskTitle = '编写第一章大纲与大体情节';
-      let generatedName = '风起时的旋律';
-
-      if (text.includes('赛博') || text.includes('科幻') || text.includes('朋克') || text.includes('cyber')) {
-        genre = '硬核科幻 / 赛博朋克';
-        audience = '重度科幻、悬疑及科技爱好者';
-        outline = '在高度数字化的未来穹顶之城中，退役义体侦探受雇调查一桩超级AI自决逃逸案。在逐步逼近真相时，他惊觉自己的记忆本身就是被该AI修改的容器...';
-        pov = '第一人称 (侦探视角)';
-        style = '冷酷、硬汉黑色电影 (Noir)、高信息密度';
-        sampleText = '雨水砸在碳纤维风衣的驳领上，发出沉闷的声响。我点燃一支薄荷电子烟，仿生眼在红绿交织的霓虹霓虹里扫描着嫌疑人的活动轨迹...';
-        initialTaskTitle = '起草世界观设定集与第一章分镜头大纲';
-        generatedName = '硅基挽歌';
-      } else if (text.includes('玄幻') || text.includes('仙侠') || text.includes('修真') || text.includes('修仙')) {
-        genre = '古典仙侠 / 凡人修真';
-        audience = '网络奇幻与修仙小说受众';
-        outline = '凡人少年偶得残破小鼎，可提纯灵草、炼化万物，自微末中踏上仙途。逆天改命，最终在诸神博弈的乱世中打破天道桎梏。';
-        pov = '第三人称限知视角 (围绕主角)';
-        style = '波澜壮阔、升级热血、画面感强';
-        sampleText = '山雨欲来，狂风呼啸。少年紧咬牙关，紧紧护着怀中那只满是铜锈的古鼎，双眼死死盯着渐渐逼近的几名仙师...';
-        initialTaskTitle = '整理修真境界设定与第一章“偶得机缘”起草';
-        generatedName = '九霄凡帝';
-      }
-
-      setName(generatedName);
-      setDesc(`【题材】${genre}\n【受众】${audience}\n【文风】${style}\n【梗概】${outline}`);
-      setWizardResult({
-        genre,
-        audience,
-        outline,
-        pov,
-        style,
-        sampleText,
-        initialTaskTitle,
-      });
-      toast('success', 'AI 设定推荐生成成功！请在下方进行可视化微调。');
-    }, 1500);
+    setProposalNotice(null);
+    generateProjectProposal.mutate(
+      { prompt: prompt.trim() },
+      {
+        onSuccess: (result) => {
+          const proposal = result.proposal;
+          setName(proposal.name);
+          setDesc(`【题材】${proposal.genre}\n【受众】${proposal.audience}\n【文风】${proposal.style}\n【梗概】${proposal.outline}`);
+          setWizardResult(proposal);
+          setProposalNotice(result.warning ?? '项目蓝图由 Claude 生成，可继续修改。');
+          toast(result.source === 'claude' ? 'success' : 'info', result.warning ?? '项目蓝图已生成');
+        },
+        onError: (error) => toast('error', (error as Error).message),
+      },
+    );
   };
 
   const submit = (): void => {
@@ -123,7 +91,7 @@ function NewProject({ companyId }: { companyId: string }): React.ReactElement {
         onSuccess: (p) => {
           // 如果有向导的初始任务，则创建任务并开工
           const initialTask = wizardResult?.initialTaskTitle || '编写第一章';
-          const defaultAssignee = agents && agents.length > 0 ? agents[0].id : undefined;
+          const defaultAssignee = agents?.find((agent) => agent.role === 'writer')?.id ?? agents?.[0]?.id;
 
           createTask.mutate(
             {
@@ -162,7 +130,7 @@ function NewProject({ companyId }: { companyId: string }): React.ReactElement {
       {/* 模式切换 */}
       <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-4)' }}>
         <Button variant={mode === 'wizard' ? 'primary' : 'ghost'} onClick={() => setMode('wizard')} size="sm">
-          AI 对话向导模式
+          智能对话向导
         </Button>
         <Button variant={mode === 'standard' ? 'primary' : 'ghost'} onClick={() => setMode('standard')} size="sm">
           标准表单模式
@@ -183,8 +151,8 @@ function NewProject({ companyId }: { companyId: string }): React.ReactElement {
                 />
               </Field>
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                <Button onClick={handleAIAnalyze} loading={isGenerating}>
-                  AI 智能生成蓝图配置
+                <Button onClick={handleAIAnalyze} loading={generateProjectProposal.isPending}>
+                  生成蓝图配置
                 </Button>
               </div>
             </div>
@@ -192,8 +160,9 @@ function NewProject({ companyId }: { companyId: string }): React.ReactElement {
 
           {/* 生成的结构化设定预览与微调 */}
           {wizardResult && (
-            <Card title="微调 AI 推荐配置" style={{ borderColor: 'var(--ok)' }}>
+            <Card title="微调推荐配置" style={{ borderColor: 'var(--ok)' }}>
               <div className="form-stack">
+                {proposalNotice && <p className="muted" style={{ margin: 0 }}>{proposalNotice}</p>}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
                   <Field label="故事名称">
                     <Input value={name} onChange={(e) => setName(e.target.value)} />

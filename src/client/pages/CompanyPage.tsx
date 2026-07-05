@@ -11,6 +11,7 @@ import {
   useDeleteDepartment,
   useDepartments,
   useUpdateAgent,
+  useGenerateAgentProposal,
 } from '../hooks/queries';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
@@ -31,6 +32,7 @@ export function CompanyPage(): React.ReactElement {
   const createDepartment = useCreateDepartment();
   const deleteDepartment = useDeleteDepartment();
   const updateAgent = useUpdateAgent();
+  const generateAgentProposal = useGenerateAgentProposal();
   const [agentName, setAgentName] = useState('');
   const [agentRole, setAgentRole] = useState('');
   const [agentDepartmentId, setAgentDepartmentId] = useState('');
@@ -39,7 +41,7 @@ export function CompanyPage(): React.ReactElement {
   // 员工新增向导状态
   const [useWizard, setUseWizard] = useState(false);
   const [agentDuty, setAgentDuty] = useState('');
-  const [isWizardGenerating, setIsWizardGenerating] = useState(false);
+  const [proposalNotice, setProposalNotice] = useState<string | null>(null);
   const [wizardRecommendation, setWizardRecommendation] = useState<{
     role: string;
     responsibilities: string;
@@ -71,41 +73,30 @@ export function CompanyPage(): React.ReactElement {
       toast('error', '请输入姓名与职责说明');
       return;
     }
-    setIsWizardGenerating(true);
     setWizardRecommendation(null);
-
-    setTimeout(() => {
-      setIsWizardGenerating(false);
-      const text = agentDuty.toLowerCase();
-
-      let role = 'assistant';
-      let responsibilities = '协助主写手搜集背景素材与整理资料';
-      let skills = ['research', 'creative-writing'];
-      let tools = ['web-search'];
-      let contactAllow = ['lead', 'writer'];
-
-      if (text.includes('校对') || text.includes('润色') || text.includes('改错') || text.includes('文字')) {
-        role = 'editor';
-        responsibilities = '校对和润色小说章节正文，确保文字流畅与语法正确';
-        skills = ['proofreading', 'grammar', 'style-matching'];
-        tools = ['word-checker', 'dictionary'];
-      } else if (text.includes('大纲') || text.includes('支线') || text.includes('伏笔') || text.includes('剧情') || text.includes('情节')) {
-        role = 'planner';
-        responsibilities = '规划小说支线情节，跟踪伏笔并维护大纲结构';
-        skills = ['outline-planning', 'logic', 'foreshadowing'];
-        tools = ['mindmap', 'timeline-tracker'];
-      }
-
-      setAgentRole(role);
-      setWizardRecommendation({
-        role,
-        responsibilities,
-        skills,
-        tools,
-        contactAllow,
-      });
-      toast('success', '已生成 AI 推荐配置！请确认或在下方修改后确认加入。');
-    }, 1000);
+    setProposalNotice(null);
+    generateAgentProposal.mutate(
+      {
+        name: agentName.trim(),
+        duty: agentDuty.trim(),
+        existingRoles: (agents ?? []).map((agent) => agent.role),
+      },
+      {
+        onSuccess: (result) => {
+          setAgentRole(result.proposal.role);
+          setWizardRecommendation({
+            role: result.proposal.role,
+            responsibilities: result.proposal.responsibilities,
+            skills: result.proposal.skills,
+            tools: result.proposal.tools,
+            contactAllow: result.proposal.contactRoles,
+          });
+          setProposalNotice(result.warning ?? '配置由 Claude 生成，可继续修改。');
+          toast(result.source === 'claude' ? 'success' : 'info', result.warning ?? 'Claude 配置已生成');
+        },
+        onError: (error) => toast('error', (error as Error).message),
+      },
+    );
   };
 
   const addAgent = (): void => {
@@ -260,7 +251,7 @@ export function CompanyPage(): React.ReactElement {
                 普通新增
               </Button>
               <Button size="sm" variant={useWizard ? 'primary' : 'ghost'} onClick={() => setUseWizard(true)}>
-                AI 新增向导 ✨
+                智能新增向导
               </Button>
             </div>
 
@@ -295,19 +286,20 @@ export function CompanyPage(): React.ReactElement {
                   </Field>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
-                  <Button size="sm" onClick={handleRecommendAgent} loading={isWizardGenerating} disabled={!agentName.trim() || !agentDuty.trim()}>
-                    AI 智能推荐岗位与配置
+                  <Button size="sm" onClick={handleRecommendAgent} loading={generateAgentProposal.isPending} disabled={!agentName.trim() || !agentDuty.trim()}>
+                    生成岗位配置
                   </Button>
                 </div>
 
                 {wizardRecommendation && (
                   <div style={{ borderTop: '1px solid var(--border-subtle)', marginTop: 12, paddingTop: 12 }}>
                     <h4 style={{ margin: '0 0 8px 0', fontSize: 'var(--text-xs)', color: 'var(--fg-muted)' }}>
-                      🔍 推荐配置预览 (支持可视化修改)
+                      推荐配置预览（可修改）
                     </h4>
+                    {proposalNotice && <p className="muted">{proposalNotice}</p>}
                     <div className="form-stack">
                       <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr', gap: 10 }}>
-                        <Field label="AI 推荐岗位">
+                        <Field label="推荐岗位">
                           <Input value={agentRole} onChange={(e) => setAgentRole(e.target.value)} />
                         </Field>
                         <Field label="详细岗位职责描述">

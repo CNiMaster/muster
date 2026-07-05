@@ -1,7 +1,12 @@
 import type React from 'react';
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useCreateNovelCompany, useCompanyAction } from '../hooks/queries';
+import {
+  useCreateNovelCompany,
+  useCompanyAction,
+  useGenerateCompanyProposal,
+  type CompanyProposal,
+} from '../hooks/queries';
 import { Card } from '../components/Card';
 import { Button, toast } from '../components/Button';
 import { Badge } from '../components/Badge';
@@ -11,15 +16,15 @@ export function CompanyWizardPage(): React.ReactElement {
   const navigate = useNavigate();
   const createNovelCompany = useCreateNovelCompany();
   const companyAction = useCompanyAction();
+  const generateProposal = useGenerateCompanyProposal();
 
   const [step, setStep] = useState<1 | 2>(1);
   const [name, setName] = useState('');
   const [goal, setGoal] = useState('');
   const [template, setTemplate] = useState('novel');
 
-  // 生成的预览数据
-  const [generatedCompanyId, setGeneratedCompanyId] = useState<string | null>(null);
-  const [previewAgents, setPreviewAgents] = useState<any[]>([]);
+  const [proposal, setProposal] = useState<CompanyProposal | null>(null);
+  const [proposalNotice, setProposalNotice] = useState<string | null>(null);
 
   const handleGenerate = (): void => {
     if (!name.trim()) {
@@ -27,38 +32,38 @@ export function CompanyWizardPage(): React.ReactElement {
       return;
     }
 
-    const charter = [
-      `# ${name} 公司章程`,
-      `创建目标：${goal || '协同创作长篇小说'}`,
-      '协同规则：第一负责人派发任务；主写手编写正文；监察员提供健康诊断。'
-    ].join('\n');
-
-    createNovelCompany.mutate(
-      { name, charter },
+    generateProposal.mutate(
+      { name: name.trim(), goal: goal.trim() },
       {
-        onSuccess: (data) => {
-          setGeneratedCompanyId(data.company.id);
-          // 整理为数组预览
-          const list = Object.values(data.agents);
-          setPreviewAgents(list);
+        onSuccess: (result) => {
+          setProposal(result.proposal);
+          setProposalNotice(result.warning ?? '方案由 Claude 生成，确认前可返回修改目标。');
           setStep(2);
-          toast('success', '向导架构设计完成！请进行架构体检与预览。');
+          toast(result.source === 'claude' ? 'success' : 'info', result.warning ?? '公司方案已生成');
         },
-        onError: (e) => toast('error', (e as { message?: string }).message ?? '初始化失败'),
+        onError: (e) => toast('error', (e as { message?: string }).message ?? '方案生成失败'),
       }
     );
   };
 
   const handleConfirmAndClockIn = (): void => {
-    if (!generatedCompanyId) return;
-    companyAction.mutate(
-      { id: generatedCompanyId, action: 'clock-in' },
+    if (!proposal) return;
+    createNovelCompany.mutate(
+      { name: proposal.name, charter: proposal.charter, departments: proposal.departments },
       {
-        onSuccess: () => {
-          toast('success', '公司已确认，今日正常上班！');
-          navigate(`/companies/${generatedCompanyId}`);
+        onSuccess: (data) => {
+          companyAction.mutate(
+            { id: data.company.id, action: 'clock-in' },
+            {
+              onSuccess: () => {
+                toast('success', '公司已创建并上班');
+                navigate(`/companies/${data.company.id}`);
+              },
+              onError: (e) => toast('error', (e as { message?: string }).message ?? '公司已创建，但上班失败'),
+            },
+          );
         },
-        onError: (e) => toast('error', (e as { message?: string }).message ?? '上班失败'),
+        onError: (e) => toast('error', (e as { message?: string }).message ?? '公司创建失败'),
       }
     );
   };
@@ -68,7 +73,7 @@ export function CompanyWizardPage(): React.ReactElement {
       <header className="page-header" style={{ marginBottom: 'var(--space-5)' }}>
         <div>
           <h1>对话式小说公司创建向导</h1>
-          <p className="subtitle">通过 AI 最佳实践模板及创作目标，一键构筑高标准小说生成团队</p>
+          <p className="subtitle">根据创作目标生成可编辑方案，再创建长篇小说协作团队</p>
         </div>
       </header>
 
@@ -104,7 +109,7 @@ export function CompanyWizardPage(): React.ReactElement {
       {step === 1 ? (
         <Card title="第一步：设定你的创作愿景">
           <div className="form-stack">
-            <Field label="AI 协作模板" required>
+            <Field label="协作模板" required>
               <Select value={template} onChange={(e) => setTemplate(e.target.value)}>
                 <option value="novel">长篇小说协作模板 (首个 MVP 版本推荐)</option>
               </Select>
@@ -118,7 +123,7 @@ export function CompanyWizardPage(): React.ReactElement {
               />
             </Field>
 
-            <Field label="小说核心目标与愿景 (AI 协作的指导方针)" hint="AI 架构师将根据核心愿景定制初始架构和团队岗位分配。">
+            <Field label="小说核心目标与愿景" hint="系统将根据核心愿景生成可编辑的初始架构和团队岗位建议。">
               <Textarea
                 value={goal}
                 onChange={(e) => setGoal(e.target.value)}
@@ -128,7 +133,7 @@ export function CompanyWizardPage(): React.ReactElement {
             </Field>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'var(--space-4)' }}>
-              <Button onClick={handleGenerate} loading={createNovelCompany.isPending} disabled={!name.trim()}>
+              <Button onClick={handleGenerate} loading={generateProposal.isPending} disabled={!name.trim()}>
                 生成预览与团队配置
               </Button>
             </div>
@@ -136,6 +141,11 @@ export function CompanyWizardPage(): React.ReactElement {
         </Card>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          {proposalNotice && (
+            <Card title="方案来源说明">
+              <p className="muted" style={{ margin: 0 }}>{proposalNotice}</p>
+            </Card>
+          )}
           {/* 体检状态卡片 */}
           <Card title="公司组织体检报告" style={{ borderColor: 'var(--ok)' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -167,10 +177,10 @@ export function CompanyWizardPage(): React.ReactElement {
           </Card>
 
           {/* 团队架构卡片 */}
-          <Card title="👥 AI 团队成员架构列表" actions={<Badge tone="info">{previewAgents.length} 人</Badge>}>
+          <Card title="团队岗位架构预览" actions={<Badge tone="info">{proposal?.agentNotes.length ?? 0} 人</Badge>}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-              {previewAgents.map((a) => (
-                <div key={a.id} style={{
+              {proposal?.agentNotes.map((agent) => (
+                <div key={agent.role} style={{
                   padding: 'var(--space-3)',
                   background: 'var(--bg-input)',
                   border: '1px solid var(--border-subtle)',
@@ -180,15 +190,13 @@ export function CompanyWizardPage(): React.ReactElement {
                   alignItems: 'center'
                 }}>
                   <div>
-                    <strong>{a.name}</strong>
+                    <strong>{agent.role}</strong>
                     <p style={{ margin: '4px 0 0 0', fontSize: 'var(--text-xs)', color: 'var(--fg-muted)' }}>
-                      职责：{a.responsibilities || '协同小说创作'}
+                      专注：{agent.focus}
                     </p>
                   </div>
                   <div style={{ display: 'flex', gap: '6px' }}>
-                    <Badge tone="info">{a.role}</Badge>
-                    {a.isInspector && <Badge tone="warn">监察员</Badge>}
-                    {a.canDispatch && <Badge tone="ok">可分派</Badge>}
+                    <Badge tone="info">{agent.role}</Badge>
                   </div>
                 </div>
               ))}
@@ -200,7 +208,7 @@ export function CompanyWizardPage(): React.ReactElement {
             <Button variant="ghost" onClick={() => setStep(1)}>
               返回上一步
             </Button>
-            <Button onClick={handleConfirmAndClockIn} loading={companyAction.isPending}>
+            <Button onClick={handleConfirmAndClockIn} loading={companyAction.isPending || createNovelCompany.isPending}>
               确认无误，今日开始上班！
             </Button>
           </div>

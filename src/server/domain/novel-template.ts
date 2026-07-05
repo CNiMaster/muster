@@ -15,16 +15,19 @@ import { listAgents } from './agent';
 import { initializeArtifactContent } from './artifact-content';
 import type { Artifact, ArtifactKind } from './artifact';
 import { getProject } from './project';
+import { createDepartment, type Department } from './department';
 
 export interface NovelTemplateInput {
   name: string;
   charter?: string;
   /** 默认风格、题材等元信息。 */
   meta?: Record<string, unknown>;
+  departments?: Array<{ name: string; purpose?: string }>;
 }
 
 export interface NovelTemplateResult {
   company: Company;
+  departments: Department[];
   agents: {
     lead: AgentDefinition;
     writer: AgentDefinition;
@@ -40,9 +43,23 @@ export function createNovelCompany(db: DB, input: NovelTemplateInput): NovelTemp
     kind: 'novel',
     charter: input.charter ?? defaultCharter(input.name),
   });
+  const departmentInputs = input.departments?.length
+    ? input.departments
+    : [
+        { name: '创作部', purpose: '正文、人物与情节协作' },
+        { name: '运营监察', purpose: '进度、拥堵与一致性检查' },
+      ];
+  const departments = departmentInputs.map((department) => createDepartment(db, {
+    companyId: company.id,
+    name: department.name,
+    rules: { purpose: department.purpose ?? '' },
+  }));
+  const creativeDepartmentId = departments[0]?.id;
+  const inspectorDepartmentId = departments[1]?.id ?? creativeDepartmentId;
 
   const lead = createAgent(db, {
     companyId: company.id,
+    departmentId: creativeDepartmentId,
     name: '项目第一负责人',
     role: 'lead',
     responsibilities: '拆解当前阶段工作并派发 Task；将用户纠正转为修正 Task；汇总项目轮次进展。',
@@ -51,6 +68,7 @@ export function createNovelCompany(db: DB, input: NovelTemplateInput): NovelTemp
   });
   const writer = createAgent(db, {
     companyId: company.id,
+    departmentId: creativeDepartmentId,
     name: '主写手',
     role: 'writer',
     responsibilities: '撰写小说章节正文；提交章节变更摘要。',
@@ -59,6 +77,7 @@ export function createNovelCompany(db: DB, input: NovelTemplateInput): NovelTemp
   });
   const character = createAgent(db, {
     companyId: company.id,
+    departmentId: creativeDepartmentId,
     name: '人物设计',
     role: 'character',
     responsibilities: '维护人物档案、人物关系设定。',
@@ -66,6 +85,7 @@ export function createNovelCompany(db: DB, input: NovelTemplateInput): NovelTemp
   });
   const plot = createAgent(db, {
     companyId: company.id,
+    departmentId: creativeDepartmentId,
     name: '情节架构',
     role: 'plot',
     responsibilities: '维护可编辑计划大纲、伏笔资料、剧情进度。',
@@ -73,6 +93,7 @@ export function createNovelCompany(db: DB, input: NovelTemplateInput): NovelTemp
   });
   const inspector = createAgent(db, {
     companyId: company.id,
+    departmentId: inspectorDepartmentId,
     name: '运营监察',
     role: 'inspector',
     responsibilities: '观察拥堵、缺席、死循环；建议扩容；不得自动改组织。',
@@ -103,7 +124,7 @@ export function createNovelCompany(db: DB, input: NovelTemplateInput): NovelTemp
   addRelationship(db, { companyId: company.id, kind: 'communication', sourceId: writer.id, targetId: plot.id, label: '求情节资料' });
   addRelationship(db, { companyId: company.id, kind: 'communication', sourceId: inspector.id, targetId: lead.id, label: '告警' });
 
-  return { company: updatedCompany, agents: { lead, writer, character, plot, inspector } };
+  return { company: updatedCompany, departments, agents: { lead, writer, character, plot, inspector } };
 }
 
 /** 校验：第一负责人与主写手不可同一人。 */
