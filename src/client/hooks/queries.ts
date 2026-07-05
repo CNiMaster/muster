@@ -303,3 +303,102 @@ export function useCreateArtifact() {
     },
   });
 }
+
+// ===== Reports & Reviews (Phase E) =====
+export interface ReportSummary {
+  id: string;
+  projectId: string;
+  cycleNo: number;
+  triggerKind: 'time' | 'task_count' | 'milestone';
+  summary: {
+    agents: Array<{
+      agentId: string;
+      name: string;
+      role: string;
+      completedTasks: number;
+      blocked: number;
+      recentSummaries: string[];
+      tokens: number;
+      costUSD: number;
+    }>;
+    totalTasks: number;
+  };
+  userNotes: Array<{ seq: number; note: string }>;
+  state: 'open' | 'reviewing' | 'closed';
+  openedAt: string;
+  closedAt: string | null;
+}
+
+export interface InspectorSuggestion {
+  id: string;
+  projectId: string;
+  kind: 'congestion' | 'absence' | 'loop' | 'suggest_mirror' | 'ok';
+  message: string;
+  targetAgentId: string | null;
+  createdAt: string;
+}
+
+export function useReports(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ['reports', projectId],
+    queryFn: () => api.get<ReportSummary[]>(`/api/projects/${projectId}/reports`),
+    enabled: !!projectId,
+  });
+}
+
+export function useReport(reportId: string | undefined) {
+  return useQuery({
+    queryKey: ['report', reportId],
+    queryFn: () => api.get<ReportSummary>(`/api/reports/${reportId}`),
+    enabled: !!reportId,
+  });
+}
+
+export function useCreateReport() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, triggerKind }: { projectId: string; triggerKind: 'time' | 'task_count' | 'milestone' }) =>
+      api.post<ReportSummary>(`/api/projects/${projectId}/reports/open`, { triggerKind }),
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: ['reports', vars.projectId] });
+      qc.invalidateQueries({ queryKey: ['project', vars.projectId] });
+      qc.invalidateQueries({ queryKey: ['companies'] }); // 触发状态可能导致公司 review_paused
+    },
+  });
+}
+
+export function useAddReportNote() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ reportId, note }: { reportId: string; note: string }) =>
+      api.post<ReportSummary>(`/api/reports/${reportId}/notes`, { note }),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['report', data.id] });
+      qc.invalidateQueries({ queryKey: ['reports', data.projectId] });
+    },
+  });
+}
+
+export function useCloseReport() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (reportId: string) =>
+      api.post<ReportSummary>(`/api/reports/${reportId}/close`),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['report', data.id] });
+      qc.invalidateQueries({ queryKey: ['reports', data.projectId] });
+      qc.invalidateQueries({ queryKey: ['project', data.projectId] });
+      qc.invalidateQueries({ queryKey: ['tasks', data.projectId] });
+    },
+  });
+}
+
+export function useInspectorSuggestions(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ['inspector', projectId],
+    queryFn: () => api.get<InspectorSuggestion[]>(`/api/projects/${projectId}/inspector`),
+    enabled: !!projectId,
+    refetchInterval: 5000,
+  });
+}
+

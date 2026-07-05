@@ -14,6 +14,8 @@ import { TasksPage } from './pages/TasksPage';
 import { UsagePage } from './pages/UsagePage';
 import { TaskDetailPage } from './pages/TaskDetailPage';
 import { ArtifactsPage } from './pages/ArtifactsPage';
+import { ReportsPage } from './pages/ReportsPage';
+import { DashboardPage } from './pages/DashboardPage';
 import { useToasts, ToastHost } from './components/Button';
 
 function ToastLayer(): React.ReactElement {
@@ -40,6 +42,8 @@ const router = createBrowserRouter([
       { path: 'projects/:projectId/tasks', element: <TasksPage /> },
       { path: 'projects/:projectId/usage', element: <UsagePage /> },
       { path: 'projects/:projectId/artifacts', element: <ArtifactsPage /> },
+      { path: 'projects/:projectId/reports', element: <ReportsPage /> },
+      { path: 'projects/:projectId/dashboard', element: <DashboardPage /> },
       { path: 'tasks/:taskId', element: <TaskDetailPage /> },
       { path: '*', element: <NotFoundPage /> },
     ],

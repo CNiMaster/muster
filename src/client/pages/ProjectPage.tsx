@@ -102,6 +102,12 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
           </div>
         </div>
         <div className="page-actions">
+          <Link to={`/projects/${projectId}/dashboard`}>
+            <Button variant="ghost" size="sm">看板</Button>
+          </Link>
+          <Link to={`/projects/${projectId}/reports`}>
+            <Button variant="ghost" size="sm">复盘</Button>
+          </Link>
           <Link to={`/projects/${projectId}/tasks`}>
             <Button variant="ghost" size="sm">Task 列表</Button>
           </Link>
