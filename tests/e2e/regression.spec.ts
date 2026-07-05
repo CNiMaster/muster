@@ -39,7 +39,12 @@ test('核心功能端到端完整回归流', async ({ page }) => {
 
   // 4. 验证项目详情并自动下发初始 Task
   await page.waitForURL(/\/projects\/pr_/);
-  await expect(page.locator('.project-page')).toBeVisible({ timeout: 5000 });
+  try {
+    await expect(page.locator('.project-page')).toBeVisible({ timeout: 5000 });
+  } catch (err) {
+    await page.screenshot({ path: '/Users/master/.gemini/antigravity/brain/b8da204f-f1ef-4e82-87c0-fb4c41838ee8/error_screenshot.png' });
+    throw err;
+  }
 
   // 5. 返回公司页并上班，然后进入项目进行看板/复盘测试
   await page.getByRole('link', { name: '首页' }).click();

@@ -64,7 +64,7 @@ projectScopedRouter.get(
   }),
 );
 
-const projectById = Router();
+const projectById = Router({ mergeParams: true });
 
 projectById.get(
   '/',

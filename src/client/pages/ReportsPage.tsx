@@ -1,6 +1,7 @@
 import type React from 'react';
 import { useParams } from 'react-router-dom';
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   useProject,
   useCompany,
@@ -23,6 +24,7 @@ const TRIGGER_LABELS = {
 };
 
 export function ReportsPage(): React.ReactElement {
+  const qc = useQueryClient();
   const { projectId = '' } = useParams();
   const { data: project } = useProject(projectId);
   const { data: company } = useCompany(project?.companyId);
@@ -49,6 +51,10 @@ export function ReportsPage(): React.ReactElement {
         onSuccess: (data) => {
           toast('success', '复盘周期已开启，公司已挂起等待复盘');
           setActiveReportId(data.id);
+          if (project?.companyId) {
+            qc.invalidateQueries({ queryKey: ['company', project.companyId] });
+            qc.invalidateQueries({ queryKey: ['companies'] });
+          }
           refetch();
         },
         onError: (e) => toast('error', (e as { message?: string }).message ?? '开启失败'),
@@ -74,6 +80,10 @@ export function ReportsPage(): React.ReactElement {
     closeReport.mutate(reportId, {
       onSuccess: () => {
         toast('success', '复盘已关闭，已向第一负责人派发修正任务');
+        if (project?.companyId) {
+          qc.invalidateQueries({ queryKey: ['company', project.companyId] });
+          qc.invalidateQueries({ queryKey: ['companies'] });
+        }
         refetch();
       },
       onError: (e) => toast('error', (e as { message?: string }).message ?? '关闭失败'),
