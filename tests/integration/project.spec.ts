@@ -11,7 +11,8 @@ import { createCompany, clockIn } from '../../src/server/domain/company';
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject, addProjectReference, assertCanReadSource } from '../../src/server/domain/project';
 import { ensurePrimaryThread, updateThreadState, createMirror } from '../../src/server/domain/thread';
-import { addRelationship, validateCommunication } from '../../src/server/domain/graph';
+import { addRelationship, deleteRelationship, validateCommunication } from '../../src/server/domain/graph';
+import { createTask } from '../../src/server/domain/task';
 import { AppError, ErrorCode } from '../../src/shared/errors';
 
 let tdb: ReturnType<typeof makeTestDb>;
@@ -89,14 +90,33 @@ describe('mirror isolation', () => {
 });
 
 describe('graph validation', () => {
-  it('通信图校验：源员工未授权联系目标 → 错误', () => {
+  it('新增/删除通信边原子同步派发权限', () => {
     const c = createCompany(db, { name: 'co' });
     const writer = createAgent(db, { companyId: c.id, name: 'writer', role: 'writer' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
-    addRelationship(db, { companyId: c.id, kind: 'communication', sourceId: lead.id, targetId: writer.id });
-    const errors = validateCommunication(db, c.id);
-    expect(errors.length).toBe(1);
-    expect(errors[0]).toMatch(/未授权联系/);
+    const project = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/p' });
+    const edge = addRelationship(db, {
+      companyId: c.id,
+      kind: 'communication',
+      sourceId: lead.id,
+      targetId: writer.id,
+    });
+
+    expect(validateCommunication(db, c.id)).toEqual([]);
+    expect(() => createTask(db, {
+      projectId: project.id,
+      dispatcherAgentId: lead.id,
+      assigneeAgentId: writer.id,
+      title: '通过通信边派发',
+    })).not.toThrow();
+
+    deleteRelationship(db, edge.id);
+    expect(() => createTask(db, {
+      projectId: project.id,
+      dispatcherAgentId: lead.id,
+      assigneeAgentId: writer.id,
+      title: '删除边后不可派发',
+    })).toThrow(/未授权联系/);
   });
 
   it('加入 contact_allow 后通信合法', () => {

@@ -18,6 +18,9 @@ import {
 import '@xyflow/react/dist/style.css';
 import {
   useCompany,
+  useAgents,
+  useProjects,
+  useStartWorkflow,
   useWorkflow,
   useSaveWorkflow,
   useValidateWorkflow,
@@ -39,14 +42,18 @@ const NODE_KIND_LABELS = {
 export function WorkflowGraphPage(): React.ReactElement {
   const { companyId = '', workflowId = 'main' } = useParams();
   const { data: company } = useCompany(companyId);
+  const { data: agents } = useAgents(companyId);
+  const { data: projects } = useProjects(companyId);
   const { data: workflowData, isLoading } = useWorkflow(companyId, workflowId);
   const saveWorkflow = useSaveWorkflow();
   const validateWorkflow = useValidateWorkflow();
+  const startWorkflow = useStartWorkflow();
 
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [errors, setErrors] = useState<string[] | null>(null);
+  const [startProjectId, setStartProjectId] = useState('');
 
   // 新节点表单状态
   const [newNodeLabel, setNewNodeLabel] = useState('');
@@ -152,7 +159,13 @@ export function WorkflowGraphPage(): React.ReactElement {
     const node: Node = {
       id,
       position: { x: 300 + Math.random() * 50, y: 200 + Math.random() * 50 },
-      data: { label: newNodeLabel, kind: newNodeKind, props: {} },
+      data: {
+        label: newNodeLabel,
+        kind: newNodeKind,
+        props: newNodeKind === 'step' || newNodeKind === 'decision'
+          ? { title: newNodeLabel, inputProtocol: {}, priority: 5 }
+          : {},
+      },
       style: getStyleForNode(newNodeKind),
     };
     setNodes((nds) => [...nds, node]);
@@ -163,7 +176,15 @@ export function WorkflowGraphPage(): React.ReactElement {
 
   // 修改当前选中节点属性
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
-  const handleUpdateSelected = (patch: { label?: string; kind?: 'step' | 'decision' | 'start' | 'end'; propsJson?: string }): void => {
+  const selectedData = selectedNode?.data as
+    | { label?: string; kind?: string; props?: Record<string, unknown> }
+    | undefined;
+  const selectedProps = selectedData?.props ?? {};
+  const handleUpdateSelected = (patch: {
+    label?: string;
+    kind?: 'step' | 'decision' | 'start' | 'end';
+    props?: Record<string, unknown>;
+  }): void => {
     if (!selectedNodeId) return;
     setNodes((nds) =>
       nds.map((n) => {
@@ -171,14 +192,7 @@ export function WorkflowGraphPage(): React.ReactElement {
         const currentData = n.data as any;
         const kind = patch.kind ?? currentData.kind;
         const label = patch.label ?? currentData.label;
-        let props = currentData.props ?? {};
-        if (patch.propsJson !== undefined) {
-          try {
-            props = JSON.parse(patch.propsJson);
-          } catch {
-            // ignore invalid json during typing
-          }
-        }
+        const props = patch.props ?? currentData.props ?? {};
         return {
           ...n,
           data: { ...currentData, label, kind, props },
@@ -186,6 +200,9 @@ export function WorkflowGraphPage(): React.ReactElement {
         };
       })
     );
+  };
+  const updateSelectedProps = (patch: Record<string, unknown>): void => {
+    handleUpdateSelected({ props: { ...selectedProps, ...patch } });
   };
 
   // 删除当前选中节点
@@ -305,6 +322,27 @@ export function WorkflowGraphPage(): React.ReactElement {
           </p>
         </div>
         <div className="page-actions">
+          <Select value={startProjectId} onChange={(event) => setStartProjectId(event.target.value)}>
+            <option value="">选择启动项目</option>
+            {projects?.map((project) => (
+              <option key={project.id} value={project.id}>{project.name}</option>
+            ))}
+          </Select>
+          <Button
+            variant="subtle"
+            size="sm"
+            disabled={!startProjectId}
+            loading={startWorkflow.isPending}
+            onClick={() => startWorkflow.mutate(
+              { companyId, workflowId, projectId: startProjectId },
+              {
+                onSuccess: () => toast('success', '工作流首个任务已进入项目队列'),
+                onError: (error) => toast('error', (error as Error).message),
+              },
+            )}
+          >
+            启动工作流
+          </Button>
           <Link to={`/companies/${companyId}`}>
             <Button variant="ghost" size="sm">返回公司</Button>
           </Link>
@@ -399,15 +437,56 @@ export function WorkflowGraphPage(): React.ReactElement {
                 </Select>
               </Field>
 
-              <Field label="额外参数 (JSON格式)">
-                <textarea
-                  className="mu-input mu-textarea"
-                  value={JSON.stringify((selectedNode.data as any).props || {}, null, 2)}
-                  onChange={(e) => handleUpdateSelected({ propsJson: e.target.value })}
-                  placeholder="{}"
-                  style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', height: '140px' }}
-                />
-              </Field>
+              {((selectedNode.data as any).kind === 'step' || (selectedNode.data as any).kind === 'decision') && (
+                <>
+                  <Field label="任务标题" required>
+                    <Input
+                      value={String(selectedProps.title ?? selectedData?.label ?? '')}
+                      onChange={(event) => updateSelectedProps({ title: event.target.value })}
+                    />
+                  </Field>
+                  <Field label="责任员工">
+                    <Select
+                      value={String(selectedProps.assigneeAgentId ?? '')}
+                      onChange={(event) => updateSelectedProps({
+                        assigneeAgentId: event.target.value || undefined,
+                        assigneeRole: undefined,
+                      })}
+                    >
+                      <option value="">项目第一负责人</option>
+                      {agents?.map((agent) => (
+                        <option key={agent.id} value={agent.id}>{agent.name} [{agent.role}]</option>
+                      ))}
+                    </Select>
+                  </Field>
+                  <Field label="优先级">
+                    <Select
+                      value={String(selectedProps.priority ?? 5)}
+                      onChange={(event) => updateSelectedProps({ priority: Number(event.target.value) })}
+                    >
+                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((priority) => (
+                        <option key={priority} value={priority}>{priority}</option>
+                      ))}
+                    </Select>
+                  </Field>
+                  <Field label="工作目标">
+                    <textarea
+                      className="mu-input mu-textarea"
+                      value={String(
+                        ((selectedProps.inputProtocol as Record<string, unknown> | undefined)?.goal) ?? '',
+                      )}
+                      onChange={(event) => updateSelectedProps({
+                        inputProtocol: {
+                          ...((selectedProps.inputProtocol as Record<string, unknown> | undefined) ?? {}),
+                          goal: event.target.value,
+                        },
+                      })}
+                      placeholder="说明该步骤需要完成什么"
+                      style={{ height: '100px' }}
+                    />
+                  </Field>
+                </>
+              )}
 
               <div style={{ marginTop: 'var(--space-4)', display: 'flex', gap: 'var(--space-2)' }}>
                 <Button variant="danger" onClick={handleDeleteSelectedNode} size="sm" style={{ width: '100%' }}>

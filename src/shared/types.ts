@@ -52,6 +52,8 @@ export interface AgentRunResult {
   outboundTasks: OutboundTaskRequest[];
   artifacts: ArtifactChange[];
   checkpoint?: string;
+  /** 工作流决策节点存在多个后继时，明确选择的连线标签。 */
+  workflowNextEdgeLabel?: string;
 }
 
 // ===== 实时事件契约 =====

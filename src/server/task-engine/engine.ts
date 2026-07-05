@@ -19,6 +19,7 @@ import {
   getTask,
   failTask,
   blockTask,
+  createTask,
 } from '../domain/task';
 import { getThread, listOnlineThreads, setClaudeSession, updateThreadState } from '../domain/thread';
 import { getAgent } from '../domain/agent';
@@ -37,6 +38,7 @@ import { realtime } from '../realtime';
 import { upsertPublishedArtifact } from '../domain/artifact';
 import { postSystemMessage } from '../domain/conversation';
 import { handleChapterCompleted } from '../domain/triggers';
+import { advanceWorkflowTask } from '../domain/workflow';
 import { deleteTaskRuntime, getTaskRuntime, saveTaskRuntime } from '../domain/task-runtime';
 import { existsSync } from 'node:fs';
 
@@ -220,6 +222,27 @@ export class TaskEngine {
         });
       }
       completeTask(this.db, task.id, result);
+      try {
+        advanceWorkflowTask(this.db, getTask(this.db, task.id), result);
+      } catch (workflowError) {
+        log.error('workflow advancement blocked', {
+          taskId: task.id,
+          err: workflowError instanceof Error ? workflowError.message : String(workflowError),
+        });
+        if (project.firstAgentId) {
+          createTask(this.db, {
+            projectId: project.id,
+            parentTaskId: task.id,
+            assigneeAgentId: project.firstAgentId,
+            title: `[工作流待处理] Task #${task.seq} 后继无法确定`,
+            inputProtocol: {
+              sourceTaskId: task.id,
+              reason: workflowError instanceof Error ? workflowError.message : String(workflowError),
+            },
+            priority: 9,
+          });
+        }
+      }
       const chapterArtifacts = result.artifacts.filter(
         (artifact) => artifact.operation !== 'delete'
           && (artifact.kind === 'chapter' || /^chapters\/.+\.md$/i.test(artifact.path)),

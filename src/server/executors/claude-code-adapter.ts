@@ -45,6 +45,7 @@ export const agentRunResultSchema = z.object({
   outboundTasks: z.array(outboundTaskSchema).default([]),
   artifacts: z.array(artifactSchema).default([]),
   checkpoint: z.string().optional(),
+  workflowNextEdgeLabel: z.string().optional(),
 });
 
 /** JSON Schema 描述，传给 Claude --json-schema。 */
@@ -81,6 +82,7 @@ const AGENT_RESULT_JSON_SCHEMA = {
       },
     },
     checkpoint: { type: 'string' },
+    workflowNextEdgeLabel: { type: 'string' },
   },
   required: ['outcome', 'summary'],
 };
@@ -406,6 +408,7 @@ function buildPrompt(ctx: ExecutionContext): string {
     '- outboundTasks: 需要派发的下游 Task（recipientAgentId/protocolId/title/payload/priority）',
     '- artifacts: 本次修改的文件（path/kind/operation）',
     '- checkpoint: 可选，便于恢复的检查点标识',
+    '- workflowNextEdgeLabel: 仅工作流存在多个后继时填写，必须与所选连线标签完全一致',
   ];
   return lines.join('\n');
 }

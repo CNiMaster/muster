@@ -29,6 +29,7 @@ import { companyMessagesRouter, projectMessagesRouter } from './api/conversation
 import { projectArtifactsRouter } from './api/artifacts';
 import { workflowsRouter } from './api/workflows';
 import { settingsRouter } from './api/settings';
+import { departmentsRouter } from './api/departments';
 import { asyncHandler, errorMiddleware, param } from './api/middleware';
 import { realtime } from './realtime';
 import { getDb } from './db/client';
@@ -94,6 +95,7 @@ async function createApp(): Promise<AppHandle> {
   app.use('/api/companies', companiesRouter);
   app.use('/api/novel', novelRouter);
   app.use('/api/companies/:companyId/agents', agentsRouter);
+  app.use('/api/companies/:companyId/departments', departmentsRouter);
   app.use('/api/companies/:companyId/projects', projectsRouter);
   app.use('/api/companies/:companyId/relationships', graphsRouter);
   app.use('/api/companies/:companyId/workflows', workflowsRouter);

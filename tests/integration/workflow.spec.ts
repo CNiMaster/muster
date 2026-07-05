@@ -2,8 +2,19 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { makeTestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
 import { createCompany, transitionCompany } from '../../src/server/domain/company';
-import { saveWorkflow, getWorkflow, validateWorkflow } from '../../src/server/domain/workflow';
+import {
+  advanceWorkflowTask,
+  getWorkflow,
+  materializeWorkflowTask,
+  saveWorkflow,
+  startWorkflow,
+  validateWorkflow,
+} from '../../src/server/domain/workflow';
 import { AppError, ErrorCode } from '../../src/shared/errors';
+import { createAgent } from '../../src/server/domain/agent';
+import { createProject } from '../../src/server/domain/project';
+import { claimNextTask, completeTask, getTask, listTasks, markRunning } from '../../src/server/domain/task';
+import { ensurePrimaryThread } from '../../src/server/domain/thread';
 
 let tdb: ReturnType<typeof makeTestDb>;
 let db: DB;
@@ -162,5 +173,109 @@ describe('Workflow Graph domain logic', () => {
 
     const errs = validateWorkflow(db, c.id, workflowId);
     expect(errs).toHaveLength(0);
+  });
+
+  it('结构化工作流节点可生成 Task，并在完成后创建明确后继', () => {
+    const company = createCompany(db, { name: 'co' });
+    const writer = createAgent(db, { companyId: company.id, name: 'writer', role: 'writer' });
+    const project = createProject(db, {
+      companyId: company.id,
+      name: 'novel',
+      rootDir: '/tmp/workflow-materialize',
+      firstAgentId: writer.id,
+    });
+    saveWorkflow(db, company.id, 'chapter', {
+      nodes: [
+        { id: 'start', kind: 'start', label: '开始', position: { x: 0, y: 0 } },
+        {
+          id: 'draft',
+          kind: 'step',
+          label: '起草',
+          position: { x: 1, y: 0 },
+          props: {
+            assigneeAgentId: writer.id,
+            title: '起草章节',
+            inputProtocol: { goal: '完成初稿' },
+            priority: 7,
+          },
+        },
+        {
+          id: 'polish',
+          kind: 'step',
+          label: '润色',
+          position: { x: 2, y: 0 },
+          props: {
+            assigneeRole: 'writer',
+            title: '润色章节',
+            inputProtocol: { goal: '统一文风' },
+            priority: 6,
+          },
+        },
+        { id: 'end', kind: 'end', label: '结束', position: { x: 3, y: 0 } },
+      ],
+      edges: [
+        { sourceId: 'start', targetId: 'draft' },
+        { sourceId: 'draft', targetId: 'polish' },
+        { sourceId: 'polish', targetId: 'end' },
+      ],
+    });
+
+    const started = startWorkflow(db, {
+      projectId: project.id,
+      workflowId: 'chapter',
+    });
+    expect(started).toHaveLength(1);
+    const draft = started[0]!;
+    expect(draft.assigneeAgentId).toBe(writer.id);
+    expect(draft.priority).toBe(7);
+    expect(draft.inputProtocol.workflowNodeId).toBe('draft');
+
+    const thread = ensurePrimaryThread(db, project.id, writer.id);
+    expect(claimNextTask(db, thread.id, writer.id)?.task.id).toBe(draft.id);
+    markRunning(db, draft.id);
+    completeTask(db, draft.id, {
+      outcome: 'completed',
+      summary: '初稿完成',
+      outboundTasks: [],
+      artifacts: [],
+    });
+    const next = advanceWorkflowTask(db, getTask(db, draft.id), {
+      outcome: 'completed',
+      summary: '初稿完成',
+      outboundTasks: [],
+      artifacts: [],
+    });
+    expect(next).toHaveLength(1);
+    expect(next[0]!.title).toBe('润色章节');
+    expect(next[0]!.parentTaskId).toBe(draft.id);
+    expect(listTasks(db, project.id)).toHaveLength(2);
+  });
+
+  it('拒绝把工作流节点责任人配置为其他公司员工', () => {
+    const company = createCompany(db, { name: 'co' });
+    const other = createCompany(db, { name: 'other' });
+    const outsider = createAgent(db, { companyId: other.id, name: 'outside', role: 'writer' });
+    expect(() => saveWorkflow(db, company.id, 'bad', {
+      nodes: [
+        { id: 'start', kind: 'start', label: '开始', position: { x: 0, y: 0 } },
+        {
+          id: 'step',
+          kind: 'step',
+          label: '错误步骤',
+          position: { x: 1, y: 0 },
+          props: {
+            assigneeAgentId: outsider.id,
+            title: '错误步骤',
+            inputProtocol: {},
+            priority: 5,
+          },
+        },
+        { id: 'end', kind: 'end', label: '结束', position: { x: 2, y: 0 } },
+      ],
+      edges: [
+        { sourceId: 'start', targetId: 'step' },
+        { sourceId: 'step', targetId: 'end' },
+      ],
+    })).toThrow(/责任人必须属于/);
   });
 });

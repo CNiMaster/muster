@@ -7,11 +7,15 @@ import {
   useProjects,
   useCompanyAction,
   useCreateAgent,
+  useCreateDepartment,
+  useDeleteDepartment,
+  useDepartments,
+  useUpdateAgent,
 } from '../hooks/queries';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
 import { Badge, companyStateTone, stateLabel } from '../components/Badge';
-import { Input, Field } from '../components/Form';
+import { Input, Select, Field } from '../components/Form';
 import { EmptyState, Icons } from '../components/EmptyState';
 import { CardSkeleton } from '../components/Skeleton';
 import { ConversationPanel } from '../components/ConversationPanel';
@@ -20,11 +24,17 @@ export function CompanyPage(): React.ReactElement {
   const { companyId = '' } = useParams();
   const { data: company, isLoading } = useCompany(companyId);
   const { data: agents } = useAgents(companyId);
+  const { data: departments } = useDepartments(companyId);
   const { data: projects } = useProjects(companyId);
   const action = useCompanyAction();
-   const createAgent = useCreateAgent();
+  const createAgent = useCreateAgent();
+  const createDepartment = useCreateDepartment();
+  const deleteDepartment = useDeleteDepartment();
+  const updateAgent = useUpdateAgent();
   const [agentName, setAgentName] = useState('');
   const [agentRole, setAgentRole] = useState('');
+  const [agentDepartmentId, setAgentDepartmentId] = useState('');
+  const [departmentName, setDepartmentName] = useState('');
 
   // 员工新增向导状态
   const [useWizard, setUseWizard] = useState(false);
@@ -101,16 +111,26 @@ export function CompanyPage(): React.ReactElement {
   const addAgent = (): void => {
     if (!agentName.trim() || !agentRole.trim()) return;
 
+    const resolveContacts = (contacts: string[]): string[] => {
+      const resolved = contacts.flatMap((contact) => {
+        const byId = agents?.find((agent) => agent.id === contact);
+        if (byId) return [byId.id];
+        return (agents ?? []).filter((agent) => agent.role === contact).map((agent) => agent.id);
+      });
+      return [...new Set(resolved)];
+    };
     const payload = wizardRecommendation ? {
       name: agentName,
       role: agentRole,
       responsibilities: wizardRecommendation.responsibilities,
       skills: wizardRecommendation.skills,
       tools: wizardRecommendation.tools,
-      contactAllow: wizardRecommendation.contactAllow,
+      contactAllow: resolveContacts(wizardRecommendation.contactAllow),
+      departmentId: agentDepartmentId || undefined,
     } : {
       name: agentName,
       role: agentRole,
+      departmentId: agentDepartmentId || undefined,
     };
 
     createAgent.mutate(
@@ -121,6 +141,7 @@ export function CompanyPage(): React.ReactElement {
           setAgentName('');
           setAgentRole('');
           setAgentDuty('');
+          setAgentDepartmentId('');
           setWizardRecommendation(null);
         },
         onError: (e) => toast('error', (e as { message?: string }).message ?? '新增失败'),
@@ -184,6 +205,49 @@ export function CompanyPage(): React.ReactElement {
         </div>
       </Card>
 
+      <Card title="部门" className="section" actions={<Badge>{departments?.length ?? 0}</Badge>}>
+        {isOff && (
+          <div className="form-row" style={{ marginBottom: 12 }}>
+            <Field label="新部门名称">
+              <Input value={departmentName} onChange={(event) => setDepartmentName(event.target.value)} placeholder="例如：创作部" />
+            </Field>
+            <Button
+              size="sm"
+              disabled={!departmentName.trim()}
+              loading={createDepartment.isPending}
+              onClick={() => createDepartment.mutate(
+                { companyId, name: departmentName.trim() },
+                {
+                  onSuccess: () => setDepartmentName(''),
+                  onError: (error) => toast('error', (error as Error).message),
+                },
+              )}
+            >
+              新建部门
+            </Button>
+          </div>
+        )}
+        <ul className="entity-list">
+          {departments?.map((department) => (
+            <li key={department.id}>
+              <strong style={{ flex: 1 }}>{department.name}</strong>
+              <Badge tone="neutral">
+                {agents?.filter((agent) => agent.departmentId === department.id).length ?? 0} 人
+              </Badge>
+              {isOff && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => deleteDepartment.mutate({ companyId, id: department.id })}
+                >
+                  删除
+                </Button>
+              )}
+            </li>
+          ))}
+        </ul>
+      </Card>
+
       <Card
         title="员工"
         className="section"
@@ -207,6 +271,14 @@ export function CompanyPage(): React.ReactElement {
                 </Field>
                 <Field label="岗位">
                   <Input value={agentRole} onChange={(e) => setAgentRole(e.target.value)} placeholder="lead/writer/..." />
+                </Field>
+                <Field label="部门">
+                  <Select value={agentDepartmentId} onChange={(event) => setAgentDepartmentId(event.target.value)}>
+                    <option value="">未分配</option>
+                    {departments?.map((department) => (
+                      <option key={department.id} value={department.id}>{department.name}</option>
+                    ))}
+                  </Select>
                 </Field>
                 <Button onClick={addAgent} disabled={!agentName.trim() || !agentRole.trim()} loading={createAgent.isPending}>
                   新增
@@ -284,6 +356,26 @@ export function CompanyPage(): React.ReactElement {
               <div style={{ flex: 1 }}>
                 <strong>{a.name}</strong> <span className="muted">[{a.role}]</span>
               </div>
+              {isOff ? (
+                <Select
+                  value={a.departmentId ?? ''}
+                  aria-label={`${a.name}所属部门`}
+                  onChange={(event) => updateAgent.mutate({
+                    companyId,
+                    id: a.id,
+                    departmentId: event.target.value || null,
+                  })}
+                >
+                  <option value="">未分配部门</option>
+                  {departments?.map((department) => (
+                    <option key={department.id} value={department.id}>{department.name}</option>
+                  ))}
+                </Select>
+              ) : (
+                <span className="muted">
+                  {departments?.find((department) => department.id === a.departmentId)?.name ?? '未分配部门'}
+                </span>
+              )}
               {a.isInspector && <Badge tone="warn">监察</Badge>}
               {!a.canDispatch && <Badge tone="neutral">不可派发</Badge>}
             </li>

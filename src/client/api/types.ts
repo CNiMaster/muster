@@ -15,12 +15,22 @@ export interface Company {
 export interface Agent {
   id: string;
   companyId: string;
+  departmentId: string | null;
   name: string;
   role: string;
   responsibilities: string;
   isInspector: boolean;
   canDispatch: boolean;
   contactAllow: string[];
+}
+
+export interface Department {
+  id: string;
+  companyId: string;
+  name: string;
+  rules: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface Project {

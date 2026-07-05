@@ -2,6 +2,20 @@ import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
 import { isOrgLocked } from './company';
+import { getAgent, listAgents } from './agent';
+import { getProject } from './project';
+import { createTask, type Task } from './task';
+import type { AgentRunResult } from '../../shared/types';
+
+export interface WorkflowStepProps {
+  assigneeAgentId?: string;
+  assigneeRole?: string;
+  title: string;
+  inputProtocol: Record<string, unknown>;
+  priority: number;
+  contextRefs?: string[];
+  outputProtocol?: Record<string, unknown>;
+}
 
 export interface WorkflowNode {
   id: string;
@@ -102,6 +116,10 @@ export function saveWorkflow(
   }
 
   const now = nowIso();
+  const normalizedNodes = input.nodes.map((node) => ({
+    ...node,
+    props: normalizeAndValidateProps(db, companyId, node),
+  }));
 
   // 用 better-sqlite3 事务包裹删除与重新写入
   db.transaction(() => {
@@ -111,7 +129,7 @@ export function saveWorkflow(
 
     // 2. 写入 node
     const nodeMap = new Map<string, string>(); // 原 id/新 id 映射，如果是 React Flow 自动生成的字符串 ID 则保留它
-    for (const n of input.nodes) {
+    for (const n of normalizedNodes) {
       const dbId = n.id || shortId('wn_');
       nodeMap.set(n.id || dbId, dbId);
       db.prepare(
@@ -151,6 +169,151 @@ export function saveWorkflow(
       );
     }
   })();
+}
+
+function normalizeAndValidateProps(
+  db: DB,
+  companyId: string,
+  node: {
+    kind: 'step' | 'decision' | 'start' | 'end';
+    label: string;
+    props?: Record<string, unknown>;
+  },
+): Record<string, unknown> {
+  if (node.kind === 'start' || node.kind === 'end') return node.props ?? {};
+  const raw = node.props ?? {};
+  const assigneeAgentId = typeof raw.assigneeAgentId === 'string' ? raw.assigneeAgentId : undefined;
+  const assigneeRole = typeof raw.assigneeRole === 'string' ? raw.assigneeRole : undefined;
+  if (assigneeAgentId) {
+    const agent = getAgent(db, assigneeAgentId);
+    if (agent.companyId !== companyId) {
+      throw new AppError(ErrorCode.VALIDATION, `节点「${node.label}」责任人必须属于当前公司`);
+    }
+  }
+  if (assigneeRole && !listAgents(db, companyId).some((agent) => agent.role === assigneeRole)) {
+    throw new AppError(ErrorCode.VALIDATION, `节点「${node.label}」责任角色不存在：${assigneeRole}`);
+  }
+  const priority = typeof raw.priority === 'number' ? raw.priority : 5;
+  if (!Number.isInteger(priority) || priority < 1 || priority > 10) {
+    throw new AppError(ErrorCode.VALIDATION, `节点「${node.label}」优先级必须是 1-10 的整数`);
+  }
+  return {
+    ...raw,
+    title: typeof raw.title === 'string' && raw.title.trim() ? raw.title : node.label,
+    inputProtocol: isObject(raw.inputProtocol) ? raw.inputProtocol : {},
+    priority,
+    ...(assigneeAgentId ? { assigneeAgentId } : {}),
+    ...(assigneeRole ? { assigneeRole } : {}),
+  };
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+export function materializeWorkflowTask(
+  db: DB,
+  input: {
+    projectId: string;
+    workflowId: string;
+    workflowNodeId: string;
+    parentTaskId?: string;
+    dispatcherAgentId?: string;
+  },
+): Task {
+  const project = getProject(db, input.projectId);
+  const workflow = getWorkflow(db, project.companyId, input.workflowId);
+  const node = workflow.nodes.find((candidate) => candidate.id === input.workflowNodeId);
+  if (!node) throw new AppError(ErrorCode.NOT_FOUND, `工作流节点 ${input.workflowNodeId} 不存在`);
+  if (node.kind === 'start' || node.kind === 'end') {
+    throw new AppError(ErrorCode.VALIDATION, `${node.kind} 节点不能直接生成为 Task`);
+  }
+  const props = normalizeAndValidateProps(db, project.companyId, node) as unknown as WorkflowStepProps;
+  const agents = listAgents(db, project.companyId);
+  const assignee = props.assigneeAgentId
+    ? agents.find((agent) => agent.id === props.assigneeAgentId)
+    : props.assigneeRole
+      ? agents.find((agent) => agent.role === props.assigneeRole)
+      : agents.find((agent) => agent.id === project.firstAgentId);
+  if (!assignee) {
+    throw new AppError(ErrorCode.VALIDATION, `节点「${node.label}」没有可用责任人`);
+  }
+  return createTask(db, {
+    projectId: project.id,
+    parentTaskId: input.parentTaskId,
+    dispatcherAgentId: input.dispatcherAgentId,
+    assigneeAgentId: assignee.id,
+    title: props.title,
+    inputProtocol: {
+      ...props.inputProtocol,
+      workflowId: input.workflowId,
+      workflowNodeId: node.id,
+    },
+    contextRefs: props.contextRefs,
+    outputProtocol: props.outputProtocol,
+    priority: props.priority,
+  });
+}
+
+/** 已完成工作流 Task 的明确后继物化；多分支必须由结果返回精确边标签。 */
+export function advanceWorkflowTask(db: DB, task: Task, result: AgentRunResult): Task[] {
+  if (result.outcome !== 'completed') return [];
+  const workflowId = task.inputProtocol.workflowId;
+  const workflowNodeId = task.inputProtocol.workflowNodeId;
+  if (typeof workflowId !== 'string' || typeof workflowNodeId !== 'string') return [];
+  const project = getProject(db, task.projectId);
+  const workflow = getWorkflow(db, project.companyId, workflowId);
+  const outgoing = workflow.edges.filter((edge) => edge.sourceId === workflowNodeId);
+  if (outgoing.length === 0) return [];
+  let selected: WorkflowEdge;
+  if (outgoing.length === 1) {
+    selected = outgoing[0]!;
+  } else {
+    if (!result.workflowNextEdgeLabel) {
+      throw new AppError(ErrorCode.VALIDATION, `工作流节点存在 ${outgoing.length} 个后继，必须明确 workflowNextEdgeLabel`);
+    }
+    const matches = outgoing.filter((edge) => edge.label === result.workflowNextEdgeLabel);
+    if (matches.length !== 1) {
+      throw new AppError(ErrorCode.VALIDATION, `工作流连线标签无唯一匹配：${result.workflowNextEdgeLabel}`);
+    }
+    selected = matches[0]!;
+  }
+  const target = workflow.nodes.find((node) => node.id === selected.targetId);
+  if (!target) throw new AppError(ErrorCode.VALIDATION, `工作流后继节点 ${selected.targetId} 不存在`);
+  if (target.kind === 'end') return [];
+  return [materializeWorkflowTask(db, {
+    projectId: task.projectId,
+    workflowId,
+    workflowNodeId: target.id,
+    parentTaskId: task.id,
+    dispatcherAgentId: task.assigneeAgentId ?? undefined,
+  })];
+}
+
+export function startWorkflow(
+  db: DB,
+  input: { projectId: string; workflowId: string },
+): Task[] {
+  const project = getProject(db, input.projectId);
+  const errors = validateWorkflow(db, project.companyId, input.workflowId);
+  if (errors.length > 0) {
+    throw new AppError(ErrorCode.VALIDATION, `工作流不可启动：${errors.join('；')}`);
+  }
+  const workflow = getWorkflow(db, project.companyId, input.workflowId);
+  const start = workflow.nodes.find((node) => node.kind === 'start');
+  if (!start) throw new AppError(ErrorCode.VALIDATION, '工作流缺少开始节点');
+  const outgoing = workflow.edges.filter((edge) => edge.sourceId === start.id);
+  if (outgoing.length !== 1) {
+    throw new AppError(ErrorCode.VALIDATION, '开始节点必须且只能有一个后继');
+  }
+  const target = workflow.nodes.find((node) => node.id === outgoing[0]!.targetId);
+  if (!target) throw new AppError(ErrorCode.VALIDATION, '开始节点后继不存在');
+  if (target.kind === 'end') return [];
+  return [materializeWorkflowTask(db, {
+    projectId: project.id,
+    workflowId: input.workflowId,
+    workflowNodeId: target.id,
+  })];
 }
 
 /**

@@ -8,6 +8,7 @@ import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
 import { getCompany, isOrgLocked } from './company';
+import { assertDepartmentInCompany } from './department';
 
 export interface AgentDefinition {
   id: string;
@@ -90,9 +91,24 @@ function assertUnlocked(db: DB, companyId: string): void {
   }
 }
 
+function assertContactAllow(db: DB, companyId: string, contactAllow: string[]): void {
+  if (contactAllow.length === 0) return;
+  const placeholders = contactAllow.map(() => '?').join(',');
+  const rows = db.prepare(
+    `SELECT id FROM agent_definition WHERE company_id = ? AND id IN (${placeholders})`,
+  ).all(companyId, ...contactAllow) as Array<{ id: string }>;
+  const valid = new Set(rows.map((row) => row.id));
+  const invalid = contactAllow.filter((id) => !valid.has(id));
+  if (invalid.length > 0) {
+    throw new AppError(ErrorCode.VALIDATION, `联系人必须是本公司员工：${invalid.join(', ')}`);
+  }
+}
+
 export function createAgent(db: DB, input: CreateAgentInput): AgentDefinition {
   getCompany(db, input.companyId); // 校验存在
   assertUnlocked(db, input.companyId);
+  assertDepartmentInCompany(db, input.companyId, input.departmentId ?? null);
+  assertContactAllow(db, input.companyId, input.contactAllow ?? []);
 
   const id = shortId('ag_');
   const now = nowIso();
@@ -138,6 +154,8 @@ export function updateAgent(
     ...patch,
     updatedAt: nowIso(),
   };
+  assertDepartmentInCompany(db, cur.companyId, next.departmentId);
+  assertContactAllow(db, cur.companyId, next.contactAllow);
   db.prepare(
     `UPDATE agent_definition SET
       department_id=?, name=?, role=?, responsibilities=?, system_prompt=?,
@@ -157,5 +175,8 @@ export function updateAgent(
 export function deleteAgent(db: DB, id: string): void {
   const cur = getAgent(db, id);
   assertUnlocked(db, cur.companyId);
+  if (cur.isInspector) {
+    throw new AppError(ErrorCode.CONFLICT, '监察员工是系统稳定性岗位，不能删除；可以修改配置');
+  }
   db.prepare('DELETE FROM agent_definition WHERE id=?').run(id);
 }

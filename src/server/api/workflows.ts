@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { asyncHandler, param } from './middleware';
 import { getDb } from '../db/client';
-import { getWorkflow, saveWorkflow, validateWorkflow } from '../domain/workflow';
+import { getWorkflow, saveWorkflow, startWorkflow, validateWorkflow } from '../domain/workflow';
 
 export const workflowsRouter = Router({ mergeParams: true });
 
@@ -48,6 +48,17 @@ workflowsRouter.put(
 
     saveWorkflow(db, companyId, workflowId, input);
     res.json({ ok: true });
+  }),
+);
+
+workflowsRouter.post(
+  '/:workflowId/start',
+  asyncHandler(async (req, res) => {
+    const input = z.object({ projectId: z.string().min(1) }).parse(req.body);
+    res.status(201).json(startWorkflow(getDb(), {
+      projectId: input.projectId,
+      workflowId: param(req, 'workflowId'),
+    }));
   }),
 );
 

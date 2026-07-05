@@ -10,6 +10,7 @@ import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
 import { isOrgLocked } from './company';
 import type { GraphKind } from '../../shared/types';
+import { getAgent } from './agent';
 
 export interface Relationship {
   id: string;
@@ -60,11 +61,26 @@ export function addRelationship(
   if (input.sourceId === input.targetId) {
     throw new AppError(ErrorCode.VALIDATION, '不能自引用关系');
   }
+  const source = getAgent(db, input.sourceId);
+  const target = getAgent(db, input.targetId);
+  if (source.companyId !== input.companyId || target.companyId !== input.companyId) {
+    throw new AppError(ErrorCode.VALIDATION, '关系图两端必须是本公司员工');
+  }
   const id = shortId('rel_');
-  db.prepare(
-    `INSERT INTO relationship (id, company_id, kind, source_id, target_id, label, protocol_json, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(id, input.companyId, input.kind, input.sourceId, input.targetId, input.label ?? '', JSON.stringify(input.protocol ?? {}), nowIso());
+  db.transaction(() => {
+    db.prepare(
+      `INSERT INTO relationship (id, company_id, kind, source_id, target_id, label, protocol_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(id, input.companyId, input.kind, input.sourceId, input.targetId, input.label ?? '', JSON.stringify(input.protocol ?? {}), nowIso());
+    if (input.kind === 'communication') {
+      const contacts = [...new Set([...source.contactAllow, target.id])];
+      db.prepare('UPDATE agent_definition SET contact_allow_json=?, updated_at=? WHERE id=?').run(
+        JSON.stringify(contacts),
+        nowIso(),
+        source.id,
+      );
+    }
+  })();
   return getRelationship(db, id);
 }
 
@@ -85,7 +101,18 @@ export function listRelationships(db: DB, companyId: string, kind?: GraphKind): 
 export function deleteRelationship(db: DB, id: string): void {
   const cur = getRelationship(db, id);
   assertUnlocked(db, cur.companyId);
-  db.prepare('DELETE FROM relationship WHERE id = ?').run(id);
+  db.transaction(() => {
+    db.prepare('DELETE FROM relationship WHERE id = ?').run(id);
+    if (cur.kind === 'communication') {
+      const source = getAgent(db, cur.sourceId);
+      const contacts = source.contactAllow.filter((contactId) => contactId !== cur.targetId);
+      db.prepare('UPDATE agent_definition SET contact_allow_json=?, updated_at=? WHERE id=?').run(
+        JSON.stringify(contacts),
+        nowIso(),
+        source.id,
+      );
+    }
+  })();
 }
 
 /**

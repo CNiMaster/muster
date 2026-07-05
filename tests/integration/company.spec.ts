@@ -6,6 +6,12 @@ import { makeTestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
 import { createCompany, getCompany, clockIn, clockOut, transitionCompany } from '../../src/server/domain/company';
 import { createAgent, updateAgent, deleteAgent } from '../../src/server/domain/agent';
+import {
+  createDepartment,
+  deleteDepartment,
+  listDepartments,
+  updateDepartment,
+} from '../../src/server/domain/department';
 import { AppError, ErrorCode } from '../../src/shared/errors';
 
 let tdb: ReturnType<typeof makeTestDb>;
@@ -68,6 +74,33 @@ describe('org config lock', () => {
     const c = createCompany(db, { name: 'co' });
     clockIn(db, c.id);
     expect(() => createAgent(db, { companyId: c.id, name: '新', role: 'writer' })).toThrow();
+  });
+
+  it('部门仅可在下班状态管理，员工只能加入本公司部门', () => {
+    const company = createCompany(db, { name: 'co' });
+    const other = createCompany(db, { name: 'other' });
+    const editorial = createDepartment(db, { companyId: company.id, name: '编辑部' });
+    const foreign = createDepartment(db, { companyId: other.id, name: '外部部门' });
+    expect(updateDepartment(db, editorial.id, { name: '创作部' }).name).toBe('创作部');
+    expect(listDepartments(db, company.id).map((department) => department.name)).toEqual(['创作部']);
+    expect(() =>
+      createAgent(db, { companyId: company.id, departmentId: foreign.id, name: '错配', role: 'writer' }),
+    ).toThrow(/部门必须属于/);
+
+    clockIn(db, company.id);
+    expect(() => createDepartment(db, { companyId: company.id, name: '上班新增' })).toThrowError(AppError);
+    expect(() => deleteDepartment(db, editorial.id)).toThrowError(AppError);
+  });
+
+  it('监察员工是运行稳定性岗位，不能删除', () => {
+    const company = createCompany(db, { name: 'co' });
+    const inspector = createAgent(db, {
+      companyId: company.id,
+      name: '监察员',
+      role: 'inspector',
+      isInspector: true,
+    });
+    expect(() => deleteAgent(db, inspector.id)).toThrowError(/监察员工/);
   });
 });
 

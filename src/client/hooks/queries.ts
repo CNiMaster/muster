@@ -1,7 +1,7 @@
 /** React Query hooks：所有数据获取集中在此。 */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
-import type { Company, Agent, Project, Relationship, Task, UsageSummary, ProjectAgentThread } from '../api/types';
+import type { Company, Agent, Department, Project, Relationship, Task, UsageSummary, ProjectAgentThread } from '../api/types';
 
 // ===== Company =====
 export function useCompanies() {
@@ -57,6 +57,7 @@ export function useCreateAgent() {
       companyId: string;
       name: string;
       role: string;
+      departmentId?: string;
       responsibilities?: string;
       systemPrompt?: string;
       skills?: string[];
@@ -67,6 +68,42 @@ export function useCreateAgent() {
     }) =>
       api.post<Agent>(`/api/companies/${companyId}/agents`, input),
     onSuccess: (data) => qc.invalidateQueries({ queryKey: ['agents', data.companyId] }),
+  });
+}
+export function useUpdateAgent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ companyId, id, ...patch }: { companyId: string; id: string; departmentId?: string | null }) =>
+      api.patch<Agent>(`/api/companies/${companyId}/agents/${id}`, patch),
+    onSuccess: (data) => qc.invalidateQueries({ queryKey: ['agents', data.companyId] }),
+  });
+}
+
+// ===== Departments =====
+export function useDepartments(companyId: string | undefined) {
+  return useQuery({
+    queryKey: ['departments', companyId],
+    queryFn: () => api.get<Department[]>(`/api/companies/${companyId}/departments`),
+    enabled: !!companyId,
+  });
+}
+export function useCreateDepartment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ companyId, name }: { companyId: string; name: string }) =>
+      api.post<Department>(`/api/companies/${companyId}/departments`, { name }),
+    onSuccess: (data) => qc.invalidateQueries({ queryKey: ['departments', data.companyId] }),
+  });
+}
+export function useDeleteDepartment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ companyId, id }: { companyId: string; id: string }) =>
+      api.delete(`/api/companies/${companyId}/departments/${id}`),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ['departments', vars.companyId] });
+      qc.invalidateQueries({ queryKey: ['agents', vars.companyId] });
+    },
   });
 }
 
@@ -123,6 +160,21 @@ export function useValidateGraph() {
   return useMutation({
     mutationFn: (companyId: string) =>
       api.post<{ errors: string[] }>(`/api/companies/${companyId}/relationships/validate`),
+  });
+}
+
+export function useStartWorkflow() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ companyId, workflowId, projectId }: {
+      companyId: string;
+      workflowId: string;
+      projectId: string;
+    }) => api.post<Task[]>(
+      `/api/companies/${companyId}/workflows/${workflowId}/start`,
+      { projectId },
+    ),
+    onSuccess: (_data, variables) => qc.invalidateQueries({ queryKey: ['tasks', variables.projectId] }),
   });
 }
 
@@ -553,7 +605,5 @@ export function useTestConnection() {
       api.post<any>('/api/settings/test-connection', payload),
   });
 }
-
-
 
 
