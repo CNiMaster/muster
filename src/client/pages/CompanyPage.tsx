@@ -22,7 +22,7 @@ export function CompanyPage(): React.ReactElement {
   const { data: agents } = useAgents(companyId);
   const { data: projects } = useProjects(companyId);
   const action = useCompanyAction();
-  const createAgent = useCreateAgent();
+   const createAgent = useCreateAgent();
   const [agentName, setAgentName] = useState('');
   const [agentRole, setAgentRole] = useState('');
 
@@ -44,15 +44,84 @@ export function CompanyPage(): React.ReactElement {
     );
   };
 
+  // 员工新增向导状态
+  const [useWizard, setUseWizard] = useState(false);
+  const [agentDuty, setAgentDuty] = useState('');
+  const [isWizardGenerating, setIsWizardGenerating] = useState(false);
+  const [wizardRecommendation, setWizardRecommendation] = useState<{
+    role: string;
+    responsibilities: string;
+    skills: string[];
+    tools: string[];
+    contactAllow: string[];
+  } | null>(null);
+
+  const handleRecommendAgent = (): void => {
+    if (!agentName.trim() || !agentDuty.trim()) {
+      toast('error', '请输入姓名与职责说明');
+      return;
+    }
+    setIsWizardGenerating(true);
+    setWizardRecommendation(null);
+
+    setTimeout(() => {
+      setIsWizardGenerating(false);
+      const text = agentDuty.toLowerCase();
+
+      let role = 'assistant';
+      let responsibilities = '协助主写手搜集背景素材与整理资料';
+      let skills = ['research', 'creative-writing'];
+      let tools = ['web-search'];
+      let contactAllow = ['lead', 'writer'];
+
+      if (text.includes('校对') || text.includes('润色') || text.includes('改错') || text.includes('文字')) {
+        role = 'editor';
+        responsibilities = '校对和润色小说章节正文，确保文字流畅与语法正确';
+        skills = ['proofreading', 'grammar', 'style-matching'];
+        tools = ['word-checker', 'dictionary'];
+      } else if (text.includes('大纲') || text.includes('支线') || text.includes('伏笔') || text.includes('剧情') || text.includes('情节')) {
+        role = 'planner';
+        responsibilities = '规划小说支线情节，跟踪伏笔并维护大纲结构';
+        skills = ['outline-planning', 'logic', 'foreshadowing'];
+        tools = ['mindmap', 'timeline-tracker'];
+      }
+
+      setAgentRole(role);
+      setWizardRecommendation({
+        role,
+        responsibilities,
+        skills,
+        tools,
+        contactAllow,
+      });
+      toast('success', '已生成 AI 推荐配置！请确认或在下方修改后确认加入。');
+    }, 1000);
+  };
+
   const addAgent = (): void => {
     if (!agentName.trim() || !agentRole.trim()) return;
+
+    const payload = wizardRecommendation ? {
+      name: agentName,
+      role: agentRole,
+      responsibilities: wizardRecommendation.responsibilities,
+      skills: wizardRecommendation.skills,
+      tools: wizardRecommendation.tools,
+      contactAllow: wizardRecommendation.contactAllow,
+    } : {
+      name: agentName,
+      role: agentRole,
+    };
+
     createAgent.mutate(
-      { companyId, name: agentName, role: agentRole },
+      { companyId, ...payload },
       {
         onSuccess: () => {
           toast('success', `员工「${agentName}」已加入`);
           setAgentName('');
           setAgentRole('');
+          setAgentDuty('');
+          setWizardRecommendation(null);
         },
         onError: (e) => toast('error', (e as { message?: string }).message ?? '新增失败'),
       },
@@ -121,16 +190,85 @@ export function CompanyPage(): React.ReactElement {
         actions={<Badge>{agents?.length ?? 0}</Badge>}
       >
         {isOff && (
-          <div className="form-row" style={{ marginBottom: 16 }}>
-            <Field label="姓名">
-              <Input value={agentName} onChange={(e) => setAgentName(e.target.value)} placeholder="张三" />
-            </Field>
-            <Field label="岗位">
-              <Input value={agentRole} onChange={(e) => setAgentRole(e.target.value)} placeholder="lead/writer/..." />
-            </Field>
-            <Button onClick={addAgent} disabled={!agentName.trim() || !agentRole.trim()} loading={createAgent.isPending}>
-              新增
-            </Button>
+          <div style={{ marginBottom: 20, borderBottom: '1px solid var(--border-subtle)', paddingBottom: 16 }}>
+            <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+              <Button size="sm" variant={useWizard ? 'ghost' : 'primary'} onClick={() => setUseWizard(false)}>
+                普通新增
+              </Button>
+              <Button size="sm" variant={useWizard ? 'primary' : 'ghost'} onClick={() => setUseWizard(true)}>
+                AI 新增向导 ✨
+              </Button>
+            </div>
+
+            {!useWizard ? (
+              <div className="form-row">
+                <Field label="姓名">
+                  <Input value={agentName} onChange={(e) => setAgentName(e.target.value)} placeholder="张三" />
+                </Field>
+                <Field label="岗位">
+                  <Input value={agentRole} onChange={(e) => setAgentRole(e.target.value)} placeholder="lead/writer/..." />
+                </Field>
+                <Button onClick={addAgent} disabled={!agentName.trim() || !agentRole.trim()} loading={createAgent.isPending}>
+                  新增
+                </Button>
+              </div>
+            ) : (
+              <div className="form-stack" style={{ background: 'var(--bg-input)', padding: 12, borderRadius: 8 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <Field label="员工姓名">
+                    <Input value={agentName} onChange={(e) => setAgentName(e.target.value)} placeholder="如: 李四" />
+                  </Field>
+                  <Field label="核心职责/期望工作">
+                    <Input value={agentDuty} onChange={(e) => setAgentDuty(e.target.value)} placeholder="如: 校对小说正文与语法" />
+                  </Field>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+                  <Button size="sm" onClick={handleRecommendAgent} loading={isWizardGenerating} disabled={!agentName.trim() || !agentDuty.trim()}>
+                    AI 智能推荐岗位与配置
+                  </Button>
+                </div>
+
+                {wizardRecommendation && (
+                  <div style={{ borderTop: '1px solid var(--border-subtle)', marginTop: 12, paddingTop: 12 }}>
+                    <h4 style={{ margin: '0 0 8px 0', fontSize: 'var(--text-xs)', color: 'var(--fg-muted)' }}>
+                      🔍 推荐配置预览 (支持可视化修改)
+                    </h4>
+                    <div className="form-stack">
+                      <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr', gap: 10 }}>
+                        <Field label="AI 推荐岗位">
+                          <Input value={agentRole} onChange={(e) => setAgentRole(e.target.value)} />
+                        </Field>
+                        <Field label="详细岗位职责描述">
+                          <Input 
+                            value={wizardRecommendation.responsibilities} 
+                            onChange={(e) => setWizardRecommendation({ ...wizardRecommendation, responsibilities: e.target.value })} 
+                          />
+                        </Field>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                        <Field label="推荐技能集 (Skills)">
+                          <Input 
+                            value={wizardRecommendation.skills.join(', ')} 
+                            onChange={(e) => setWizardRecommendation({ ...wizardRecommendation, skills: e.target.value.split(',').map(s => s.trim()) })} 
+                          />
+                        </Field>
+                        <Field label="工具集 (Tools)">
+                          <Input 
+                            value={wizardRecommendation.tools.join(', ')} 
+                            onChange={(e) => setWizardRecommendation({ ...wizardRecommendation, tools: e.target.value.split(',').map(s => s.trim()) })} 
+                          />
+                        </Field>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+                        <Button size="sm" onClick={addAgent} loading={createAgent.isPending}>
+                          确认配置并加入团队 🚀
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
         {agents && agents.length === 0 && (

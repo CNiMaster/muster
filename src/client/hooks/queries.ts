@@ -22,6 +22,14 @@ export function useCreateCompany() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['companies'] }),
   });
 }
+export function useCreateNovelCompany() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { name: string; charter?: string }) =>
+      api.post<{ company: Company; agents: Record<string, Agent> }>('/api/novel', input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['companies'] }),
+  });
+}
 export function useCompanyAction() {
   const qc = useQueryClient();
   return useMutation({
@@ -45,7 +53,18 @@ export function useAgents(companyId: string | undefined) {
 export function useCreateAgent() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ companyId, ...input }: { companyId: string; name: string; role: string }) =>
+    mutationFn: ({ companyId, ...input }: {
+      companyId: string;
+      name: string;
+      role: string;
+      responsibilities?: string;
+      systemPrompt?: string;
+      skills?: string[];
+      tools?: string[];
+      contactAllow?: string[];
+      canDispatch?: boolean;
+      isInspector?: boolean;
+    }) =>
       api.post<Agent>(`/api/companies/${companyId}/agents`, input),
     onSuccess: (data) => qc.invalidateQueries({ queryKey: ['agents', data.companyId] }),
   });

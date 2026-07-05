@@ -17,6 +17,7 @@ import { ArtifactsPage } from './pages/ArtifactsPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { WorkflowGraphPage } from './pages/WorkflowGraphPage';
+import { CompanyWizardPage } from './pages/CompanyWizardPage';
 import { useToasts, ToastHost } from './components/Button';
 
 function ToastLayer(): React.ReactElement {
@@ -36,6 +37,7 @@ const router = createBrowserRouter([
     element: <App />,
     children: [
       { index: true, element: <HomePage /> },
+      { path: 'companies/wizard', element: <CompanyWizardPage /> },
       { path: 'companies/:companyId', element: <CompanyPage /> },
       { path: 'companies/:companyId/graphs/:kind', element: <GraphPage /> },
       { path: 'companies/:companyId/workflows/:workflowId', element: <WorkflowGraphPage /> },

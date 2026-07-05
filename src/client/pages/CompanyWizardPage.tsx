@@ -1,0 +1,211 @@
+import type React from 'react';
+import { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useCreateNovelCompany, useCompanyAction } from '../hooks/queries';
+import { Card } from '../components/Card';
+import { Button, toast } from '../components/Button';
+import { Badge } from '../components/Badge';
+import { Input, Textarea, Select, Field } from '../components/Form';
+
+export function CompanyWizardPage(): React.ReactElement {
+  const navigate = useNavigate();
+  const createNovelCompany = useCreateNovelCompany();
+  const companyAction = useCompanyAction();
+
+  const [step, setStep] = useState<1 | 2>(1);
+  const [name, setName] = useState('');
+  const [goal, setGoal] = useState('');
+  const [template, setTemplate] = useState('novel');
+
+  // 生成的预览数据
+  const [generatedCompanyId, setGeneratedCompanyId] = useState<string | null>(null);
+  const [previewAgents, setPreviewAgents] = useState<any[]>([]);
+
+  const handleGenerate = (): void => {
+    if (!name.trim()) {
+      toast('error', '请输入公司名称');
+      return;
+    }
+
+    const charter = [
+      `# ${name} 公司章程`,
+      `创建目标：${goal || '协同创作长篇小说'}`,
+      '协同规则：第一负责人派发任务；主写手编写正文；监察员提供健康诊断。'
+    ].join('\n');
+
+    createNovelCompany.mutate(
+      { name, charter },
+      {
+        onSuccess: (data) => {
+          setGeneratedCompanyId(data.company.id);
+          // 整理为数组预览
+          const list = Object.values(data.agents);
+          setPreviewAgents(list);
+          setStep(2);
+          toast('success', '向导架构设计完成！请进行架构体检与预览。');
+        },
+        onError: (e) => toast('error', (e as { message?: string }).message ?? '初始化失败'),
+      }
+    );
+  };
+
+  const handleConfirmAndClockIn = (): void => {
+    if (!generatedCompanyId) return;
+    companyAction.mutate(
+      { id: generatedCompanyId, action: 'clock-in' },
+      {
+        onSuccess: () => {
+          toast('success', '公司已确认，今日正常上班！');
+          navigate(`/companies/${generatedCompanyId}`);
+        },
+        onError: (e) => toast('error', (e as { message?: string }).message ?? '上班失败'),
+      }
+    );
+  };
+
+  return (
+    <div className="wizard-page" style={{ maxWidth: '800px', margin: '0 auto', padding: 'var(--space-5) 0' }}>
+      <header className="page-header" style={{ marginBottom: 'var(--space-5)' }}>
+        <div>
+          <h1>对话式小说公司创建向导</h1>
+          <p className="subtitle">通过 AI 最佳实践模板及创作目标，一键构筑高标准小说生成团队</p>
+        </div>
+      </header>
+
+      {/* 步骤条 */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-5)', position: 'relative' }}>
+        <div style={{ position: 'absolute', top: '15px', left: '10%', right: '10%', height: '2px', background: 'var(--border-subtle)', zIndex: 0 }} />
+        <div style={{ position: 'absolute', top: '15px', left: '10%', width: step === 2 ? '80%' : '0%', height: '2px', background: 'var(--accent)', zIndex: 0, transition: 'width 0.3s ease' }} />
+
+        {[1, 2].map((s) => (
+          <div key={s} style={{ zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+            <div style={{
+              width: '32px',
+              height: '32px',
+              borderRadius: '50%',
+              background: step >= s ? 'var(--accent)' : 'var(--bg-elev)',
+              border: '2px solid ' + (step >= s ? 'var(--accent)' : 'var(--border)'),
+              color: step >= s ? '#fff' : 'var(--fg-muted)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontWeight: 'bold',
+              fontSize: '14px'
+            }}>
+              {s}
+            </div>
+            <span style={{ fontSize: 'var(--text-xs)', fontWeight: step === s ? 'bold' : 'normal', color: step === s ? 'var(--accent)' : 'var(--fg-muted)' }}>
+              {s === 1 ? '模板与目标设定' : '预览、体检与确认上线'}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {step === 1 ? (
+        <Card title="第一步：设定你的创作愿景">
+          <div className="form-stack">
+            <Field label="AI 协作模板" required>
+              <Select value={template} onChange={(e) => setTemplate(e.target.value)}>
+                <option value="novel">长篇小说协作模板 (首个 MVP 版本推荐)</option>
+              </Select>
+            </Field>
+
+            <Field label="小说公司名称" required>
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="例如: 银翼创世纪小说工作室"
+              />
+            </Field>
+
+            <Field label="小说核心目标与愿景 (AI 协作的指导方针)" hint="AI 架构师将根据核心愿景定制初始架构和团队岗位分配。">
+              <Textarea
+                value={goal}
+                onChange={(e) => setGoal(e.target.value)}
+                placeholder="例如: 创作一部硬核赛博朋克长篇小说，主要围绕 AI 觉醒和下城区侦探 K 展开。风格冷酷极简..."
+                style={{ height: '120px' }}
+              />
+            </Field>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'var(--space-4)' }}>
+              <Button onClick={handleGenerate} loading={createNovelCompany.isPending} disabled={!name.trim()}>
+                生成预览与团队配置
+              </Button>
+            </div>
+          </div>
+        </Card>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          {/* 体检状态卡片 */}
+          <Card title="🏢 公司组织体检报告" style={{ borderColor: 'var(--ok)' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ color: 'var(--ok)' }}>✓</span>
+                <span><strong>负责人与写手隔离：</strong> 第一负责人与主写手已被自动分配给不同实例，规避兼任冲突。</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ color: 'var(--ok)' }}>✓</span>
+                <span><strong>关键角色配置：</strong> 已配置 lead (第一负责人)、writer (主写手)、character (人物设计)、plot (情节架构)、inspector (运营监察)。</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ color: 'var(--ok)' }}>✓</span>
+                <span><strong>通信通道建立：</strong> 主写手和情节、人物设计通道已激活，监察警报路由至第一负责人。</span>
+              </div>
+              <div style={{
+                background: 'rgba(52, 211, 153, 0.08)',
+                border: '1px solid var(--ok)',
+                borderRadius: 'var(--radius-md)',
+                padding: 'var(--space-2) var(--space-3)',
+                fontSize: 'var(--text-sm)',
+                color: 'var(--ok)',
+                fontWeight: 'bold',
+                textAlign: 'center'
+              }}>
+                ✓ 组织健康体检合格！团队配置满足长篇小说生产规范。
+              </div>
+            </div>
+          </Card>
+
+          {/* 团队架构卡片 */}
+          <Card title="👥 AI 团队成员架构列表" actions={<Badge tone="info">{previewAgents.length} 人</Badge>}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+              {previewAgents.map((a) => (
+                <div key={a.id} style={{
+                  padding: 'var(--space-3)',
+                  background: 'var(--bg-input)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: 'var(--radius-md)',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center'
+                }}>
+                  <div>
+                    <strong>{a.name}</strong>
+                    <p style={{ margin: '4px 0 0 0', fontSize: 'var(--text-xs)', color: 'var(--fg-muted)' }}>
+                      职责：{a.responsibilities || '协同小说创作'}
+                    </p>
+                  </div>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <Badge tone="info">{a.role}</Badge>
+                    {a.isInspector && <Badge tone="warn">监察员</Badge>}
+                    {a.canDispatch && <Badge tone="ok">可分派</Badge>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          {/* 确认上线 */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 'var(--space-2)' }}>
+            <Button variant="ghost" onClick={() => setStep(1)}>
+              返回上一步
+            </Button>
+            <Button onClick={handleConfirmAndClockIn} loading={companyAction.isPending}>
+              确认无误，今日开始上班！
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

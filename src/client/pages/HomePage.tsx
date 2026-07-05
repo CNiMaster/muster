@@ -82,9 +82,14 @@ export function HomePage(): React.ReactElement {
               <option value="novel">长篇小说</option>
             </Select>
           </Field>
-          <Button onClick={submit} disabled={!name.trim()} loading={createCompany.isPending}>
-            创建
-          </Button>
+          <div style={{ display: 'flex', gap: 'var(--space-2)', alignSelf: 'flex-end' }}>
+            <Button onClick={submit} disabled={!name.trim()} loading={createCompany.isPending}>
+              创建
+            </Button>
+            <Link to="/companies/wizard">
+              <Button variant="ghost">AI 向导创建 ✨</Button>
+            </Link>
+          </div>
         </div>
       </Card>
 
