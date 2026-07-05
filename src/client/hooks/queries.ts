@@ -141,3 +141,38 @@ export function useProjectUsage(projectId: string | undefined) {
     enabled: !!projectId,
   });
 }
+
+// ===== Conversation messages =====
+export interface ConversationMessage {
+  id: string;
+  scopeKind: 'company' | 'project';
+  scopeId: string;
+  author: string;
+  role: 'user' | 'assistant' | 'system' | 'event';
+  content: string;
+  refTaskId: string | null;
+  createdAt: string;
+}
+
+export function useMessages(scope: 'company' | 'project', scopeId: string | undefined) {
+  const url = scope === 'company' ? `/api/companies/${scopeId}/messages` : `/api/projects/${scopeId}/messages`;
+  return useQuery({
+    queryKey: ['messages', scope, scopeId],
+    queryFn: () => api.get<ConversationMessage[]>(url),
+    enabled: !!scopeId,
+    refetchInterval: 4000, // 兜底轮询，WebSocket 接入后可移除
+  });
+}
+
+export function usePostMessage(scope: 'company' | 'project') {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ scopeId, content, mentions }: { scopeId: string; content: string; mentions?: string[] }) => {
+      const url = scope === 'company' ? `/api/companies/${scopeId}/messages` : `/api/projects/${scopeId}/messages`;
+      return api.post<{ userMessage: ConversationMessage; task: unknown }>(url, { content, mentions });
+    },
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ['messages', scope, vars.scopeId] });
+    },
+  });
+}

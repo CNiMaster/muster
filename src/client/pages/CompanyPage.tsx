@@ -14,6 +14,7 @@ import { Badge, companyStateTone, stateLabel } from '../components/Badge';
 import { Input, Field } from '../components/Form';
 import { EmptyState, Icons } from '../components/EmptyState';
 import { CardSkeleton } from '../components/Skeleton';
+import { ConversationPanel } from '../components/ConversationPanel';
 
 export function CompanyPage(): React.ReactElement {
   const { companyId = '' } = useParams();
@@ -101,6 +102,10 @@ export function CompanyPage(): React.ReactElement {
           <pre className="charter">{company.charter}</pre>
         </Card>
       )}
+
+      <Card title="公司对话" className="section">
+        <ConversationPanel scope="company" scopeId={company.id} companyId={company.id} title="与第一负责人对话" />
+      </Card>
 
       <Card title="关系图" className="section">
         <div className="graph-links">
