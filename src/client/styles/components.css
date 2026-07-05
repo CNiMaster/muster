@@ -631,3 +631,100 @@
 }
 
 .task-detail .page-header { align-items: flex-start; }
+
+/* ===== Markdown Editor & Preview ===== */
+.mu-md-editor {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.mu-md-preview {
+  padding: var(--space-4);
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  color: var(--fg);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.mu-md-h {
+  margin-top: var(--space-4);
+  margin-bottom: var(--space-2);
+  color: var(--fg);
+  font-weight: var(--fw-semibold);
+}
+.mu-md-h1 { font-size: var(--text-xl); border-bottom: 1px solid var(--border-subtle); padding-bottom: 4px; }
+.mu-md-h2 { font-size: var(--text-lg); }
+.mu-md-h3 { font-size: var(--text-base); }
+.mu-md-p { margin-bottom: var(--space-3); }
+
+.mu-md-code {
+  background: var(--bg-soft);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  border: 1px solid var(--border-subtle);
+  margin-bottom: var(--space-3);
+}
+
+.mu-md-icode {
+  background: var(--bg-soft);
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--accent);
+}
+
+.mu-md-quote {
+  border-left: 4px solid var(--accent);
+  padding-left: var(--space-3);
+  margin: 0 0 var(--space-3) 0;
+  color: var(--fg-muted);
+  font-style: italic;
+}
+
+.mu-md-ul, .mu-md-ol {
+  margin: 0 0 var(--space-3) var(--space-4);
+  padding: 0;
+}
+
+.mu-md-hr {
+  border: none;
+  border-top: 1px solid var(--border-subtle);
+  margin: var(--space-4) 0;
+}
+
+/* ===== Binary Preview ===== */
+.mu-artifact-image-preview {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: var(--space-6);
+  background: var(--bg-input);
+  border-radius: var(--radius-lg);
+  overflow: auto;
+  border: 1px solid var(--border-subtle);
+}
+.mu-artifact-image-preview img {
+  max-width: 100%;
+  max-height: 65vh;
+  object-fit: contain;
+  box-shadow: var(--shadow-2);
+  border-radius: var(--radius-md);
+}
+
+.mu-artifact-pdf-preview {
+  width: 100%;
+  height: 65vh;
+  border: none;
+  border-radius: var(--radius-lg);
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+}

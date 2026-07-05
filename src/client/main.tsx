@@ -13,6 +13,7 @@ import { ProjectPage } from './pages/ProjectPage';
 import { TasksPage } from './pages/TasksPage';
 import { UsagePage } from './pages/UsagePage';
 import { TaskDetailPage } from './pages/TaskDetailPage';
+import { ArtifactsPage } from './pages/ArtifactsPage';
 import { useToasts, ToastHost } from './components/Button';
 
 function ToastLayer(): React.ReactElement {
@@ -38,6 +39,7 @@ const router = createBrowserRouter([
       { path: 'projects/:projectId', element: <ProjectPage /> },
       { path: 'projects/:projectId/tasks', element: <TasksPage /> },
       { path: 'projects/:projectId/usage', element: <UsagePage /> },
+      { path: 'projects/:projectId/artifacts', element: <ArtifactsPage /> },
       { path: 'tasks/:taskId', element: <TaskDetailPage /> },
       { path: '*', element: <NotFoundPage /> },
     ],

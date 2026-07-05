@@ -26,6 +26,7 @@ import { usageRouter } from './api/reports-usage';
 import { novelRouter, projectScopedNovel } from './api/novel';
 import { projectPhase7, reportByIdRouter } from './api/phase7';
 import { companyMessagesRouter, projectMessagesRouter } from './api/conversation';
+import { projectArtifactsRouter } from './api/artifacts';
 import { asyncHandler, errorMiddleware, param } from './api/middleware';
 import { realtime } from './realtime';
 import { getDb } from './db/client';
@@ -57,6 +58,7 @@ async function createApp(): Promise<AppHandle> {
   projectById.use('/tasks', taskByProjectRouter);
   projectById.use('/usage', usageRouter);
   projectById.use('/messages', projectMessagesRouter);
+  projectById.use('/artifacts', projectArtifactsRouter);
   projectById.use('/', projectScopedNovel);   // chapter-completed / correction / check
   projectById.use('/', projectPhase7);         // reports / inspector / brainstorm
 

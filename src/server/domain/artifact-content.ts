@@ -1,0 +1,71 @@
+/**
+ * Artifact 文件内容读写。
+ *
+ PRD：用户编辑器保存正文时同样创建可追踪提交；派生只读视图不可编辑。
+ 本模块直接在项目根目录读写文件（用户编辑路径，区别于 Task worktree 的 publish）。
+ */
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import path from 'node:path';
+import type { DB } from '../db/client';
+import { AppError, ErrorCode } from '../../shared/errors';
+import { shortId, nowIso } from '../../shared/utils';
+import { assertEditable, getArtifact, getArtifactByPath, listArtifacts } from './artifact';
+import { getProject } from './project';
+
+/** 读 artifact 内容。 */
+export function readArtifactContent(db: DB, projectId: string, relPath: string): string {
+  const project = getProject(db, projectId);
+  const abs = path.resolve(project.rootDir, relPath);
+  if (!abs.startsWith(path.resolve(project.rootDir))) {
+    throw new AppError(ErrorCode.UNAUTHORIZED, '路径逃逸');
+  }
+  if (!existsSync(abs)) return '';
+  return readFileSync(abs, 'utf8');
+}
+
+/** 写 artifact 内容（仅可编辑成果）。 */
+export function writeArtifactContent(
+  db: DB,
+  projectId: string,
+  relPath: string,
+  content: string,
+): void {
+  const project = getProject(db, projectId);
+  const abs = path.resolve(project.rootDir, relPath);
+  if (!abs.startsWith(path.resolve(project.rootDir))) {
+    throw new AppError(ErrorCode.UNAUTHORIZED, '路径逃逸');
+  }
+  // 必须是已注册的可编辑 artifact
+  const art = getArtifactByPath(db, projectId, relPath);
+  if (!art) {
+    throw new AppError(ErrorCode.NOT_FOUND, `artifact ${relPath} 未注册，先注册再编辑`);
+  }
+  assertEditable(db, art.id);
+
+  const dir = path.dirname(abs);
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  writeFileSync(abs, content);
+}
+
+/** 自动注册并写入：用于"快速新建章节"等场景。 */
+export function createArtifactAndContent(
+  db: DB,
+  projectId: string,
+  input: { path: string; kind: string; content: string; ownerAgentId?: string },
+): void {
+  const existing = getArtifactByPath(db, projectId, input.path);
+  const artId = existing?.id;
+  if (artId) {
+    getArtifact(db, artId);
+  } else {
+    const id = shortId('ar_');
+    const now = nowIso();
+    db.prepare(
+      `INSERT INTO artifact (id, project_id, kind, path, owner_agent_id, merge_strategy, props_json, created_task_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 'three_way', '{}', NULL, ?, ?)`,
+    ).run(id, projectId, input.kind, input.path, input.ownerAgentId ?? null, now, now);
+  }
+  writeArtifactContent(db, projectId, input.path, input.content);
+}
+
+void listArtifacts;

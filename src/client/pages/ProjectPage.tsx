@@ -105,6 +105,9 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
           <Link to={`/projects/${projectId}/tasks`}>
             <Button variant="ghost" size="sm">Task 列表</Button>
           </Link>
+          <Link to={`/projects/${projectId}/artifacts`}>
+            <Button variant="ghost" size="sm">成果</Button>
+          </Link>
           <Link to={`/projects/${projectId}/usage`}>
             <Button variant="ghost" size="sm">用量</Button>
           </Link>

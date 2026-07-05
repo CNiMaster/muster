@@ -236,3 +236,70 @@ export function usePostMessage(scope: 'company' | 'project') {
     },
   });
 }
+
+// ===== Artifacts =====
+export interface Artifact {
+  id: string;
+  projectId: string;
+  kind: string;
+  path: string;
+  ownerAgentId: string | null;
+  mergeStrategy: 'three_way' | 'exclusive_lock';
+  props: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PublishRecord {
+  id: string;
+  taskId: string;
+  commitHash: string;
+  mergedFiles: string[];
+  conflicts: string[];
+  blocked: boolean;
+  publishedAt: string;
+}
+
+export function useArtifacts(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ['artifacts', projectId],
+    queryFn: () => api.get<Artifact[]>(`/api/projects/${projectId}/artifacts`),
+    enabled: !!projectId,
+  });
+}
+
+export function useArtifactHistory(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ['artifacts-history', projectId],
+    queryFn: () => api.get<PublishRecord[]>(`/api/projects/${projectId}/artifacts/history`),
+    enabled: !!projectId,
+  });
+}
+export function useArtifactContent(projectId: string | undefined, path: string | null) {
+  return useQuery({
+    queryKey: ['artifact-content', projectId, path],
+    queryFn: () => api.get<{ path: string; content: string }>(`/api/projects/${projectId}/artifacts/content?path=${encodeURIComponent(path!)}`),
+    enabled: !!projectId && !!path,
+  });
+}
+export function useSaveArtifactContent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, path, content }: { projectId: string; path: string; content: string }) =>
+      api.put<{ ok: boolean; path: string }>(`/api/projects/${projectId}/artifacts/content`, { path, content }),
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: ['artifact-content', vars.projectId, vars.path] });
+      qc.invalidateQueries({ queryKey: ['artifacts', vars.projectId] });
+    },
+  });
+}
+export function useCreateArtifact() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, ...input }: { projectId: string; path: string; kind: string; content: string; ownerAgentId?: string }) =>
+      api.post<{ ok: boolean; path: string }>(`/api/projects/${projectId}/artifacts`, input),
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: ['artifacts', vars.projectId] });
+    },
+  });
+}
