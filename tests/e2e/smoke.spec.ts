@@ -27,13 +27,15 @@ test('健康接口 200', async ({ request }) => {
 });
 
 test('向导式创建公司并正常上班', async ({ page }) => {
+  page.on('console', msg => console.log('BROWSER LOG:', msg.text()));
+  page.on('pageerror', err => console.error('BROWSER ERROR:', err.message));
   await page.goto('/');
   await page.getByRole('button', { name: 'AI 向导创建 ✨' }).click();
   await expect(page.locator('h1')).toContainText('对话式小说公司创建向导');
 
   const name = `向导公司-${Date.now()}`;
-  await page.getByPlaceholder('例如: 银翼创世纪小说工作室').fill(name);
-  await page.getByPlaceholder('例如: 创作一部硬核赛博朋克长篇小说...').fill('赛博朋克科幻小说主题');
+  await page.getByPlaceholder(/银翼创世纪小说工作室/).fill(name);
+  await page.getByPlaceholder(/创作一部硬核赛博朋克长篇小说/).fill('赛博朋克科幻小说主题');
   await page.getByRole('button', { name: '生成预览与团队配置' }).click();
 
   // 等待预览加载并检查体检结果

@@ -71,19 +71,19 @@ src/
     db/          # better-sqlite3 client + migrations/*.sql（14 张表）
     domain/      # company / agent / project / thread / graph / task /
                  # task-event / task-message / artifact / usage / report /
-                 # inspector / brainstorm / triggers / novel-template
+                 # inspector / brainstorm / triggers / novel-template / workflow
     task-engine/ # ExecutionAdapter 接口 + FakeExecutor + TaskEngine
     executors/   # ClaudeCodeAdapter + 上下文装配 + 安全检查
     worktree/    # Git worktree 管理 + 串行发布队列
-    api/         # Express 路由（companies/agents/projects/graphs/tasks/...）
+    api/         # Express 路由（companies/agents/projects/graphs/tasks/workflows/...）
     realtime.ts  # WebSocket 广播 RealtimeEvent
     server.ts    # 入口：单端口 3456，dev 挂 Vite，prod 服务 dist/client
   client/      # React 19 + Router 7 + React Flow 12 + TanStack Query 5
-    pages/       # Home / Company / Graph / Project / Tasks / Usage
+    pages/       # Home / Company / Graph / Project / Tasks / Usage / Artifacts / Reports / Dashboard / WorkflowGraph
     hooks/       # React Query hooks
     api/         # fetch client + DTO
 tests/
-  unit/ integration/ e2e/   # 70 项 Vitest + Playwright smoke（e2e 需手动跑）
+  unit/ integration/ e2e/   # 86 项 Vitest + Playwright regression & smoke
 legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史参考）
 ```
 

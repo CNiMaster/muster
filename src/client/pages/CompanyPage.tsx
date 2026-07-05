@@ -26,6 +26,18 @@ export function CompanyPage(): React.ReactElement {
   const [agentName, setAgentName] = useState('');
   const [agentRole, setAgentRole] = useState('');
 
+  // 员工新增向导状态
+  const [useWizard, setUseWizard] = useState(false);
+  const [agentDuty, setAgentDuty] = useState('');
+  const [isWizardGenerating, setIsWizardGenerating] = useState(false);
+  const [wizardRecommendation, setWizardRecommendation] = useState<{
+    role: string;
+    responsibilities: string;
+    skills: string[];
+    tools: string[];
+    contactAllow: string[];
+  } | null>(null);
+
   if (isLoading || !company) {
     return (
       <div className="loading">
@@ -43,18 +55,6 @@ export function CompanyPage(): React.ReactElement {
       },
     );
   };
-
-  // 员工新增向导状态
-  const [useWizard, setUseWizard] = useState(false);
-  const [agentDuty, setAgentDuty] = useState('');
-  const [isWizardGenerating, setIsWizardGenerating] = useState(false);
-  const [wizardRecommendation, setWizardRecommendation] = useState<{
-    role: string;
-    responsibilities: string;
-    skills: string[];
-    tools: string[];
-    contactAllow: string[];
-  } | null>(null);
 
   const handleRecommendAgent = (): void => {
     if (!agentName.trim() || !agentDuty.trim()) {
