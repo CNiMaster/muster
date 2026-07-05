@@ -17,8 +17,8 @@ import {
   completeTask,
   heartbeat,
   getTask,
-  pauseTask,
   failTask,
+  blockTask,
 } from '../domain/task';
 import { getThread, listOnlineThreads, setClaudeSession } from '../domain/thread';
 import { getAgent } from '../domain/agent';
@@ -105,6 +105,15 @@ export class TaskEngine {
         outboundTasks: [],
         artifacts: [],
       });
+      realtime.publish({
+        id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        type: 'task.blocked',
+        companyId: company.id,
+        projectId: project.id,
+        taskId: task.id,
+        occurredAt: new Date().toISOString(),
+        payload: { reason: msg, threadId: thread.id, agentId: agent.id },
+      });
       return true;
     }
 
@@ -116,7 +125,9 @@ export class TaskEngine {
       workingDir = worktreeInfo.path;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      log.error('worktree creation failed; falling back to project root', { taskId: task.id, err: msg });
+      log.error('worktree creation failed; task blocked', { taskId: task.id, err: msg });
+      blockTask(this.db, task.id, `无法建立隔离工作区：${msg}`);
+      return true;
     }
 
     // 心跳定时器
@@ -157,16 +168,51 @@ export class TaskEngine {
         setClaudeSession(this.db, thread.id, result._sessionIdHint);
       }
 
+      if (result.outcome === 'completed' && result.artifacts.length > 0 && worktreeInfo) {
+        const pub = this.publishArtifacts(task.id, thread.id, project.rootDir, worktreeInfo, result);
+        if (pub.blocked) {
+          blockTask(this.db, task.id, `成果发布冲突：${pub.conflicts.join(', ')}`);
+          realtime.publish({
+            id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            type: 'publish.blocked',
+            projectId: project.id,
+            taskId: task.id,
+            occurredAt: new Date().toISOString(),
+            payload: { conflicts: pub.conflicts, publishId: pub.id },
+          });
+          return true;
+        }
+      }
+
       completeTask(this.db, task.id, result);
       log.info('task completed', { taskId: task.id, outcome: result.outcome });
+      realtime.publish({
+        id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        type: `task.${result.outcome}`,
+        companyId: company.id,
+        projectId: project.id,
+        taskId: task.id,
+        occurredAt: new Date().toISOString(),
+        payload: { outcome: result.outcome, threadId: thread.id, agentId: agent.id },
+      });
 
-      // published artifacts：completed 才发布；其他状态保留在 worktree
-      if (result.outcome === 'completed' && result.artifacts.length > 0 && worktreeInfo) {
-        this.publishArtifacts(task.id, thread.id, project.rootDir, worktreeInfo, result);
-      }
       return true;
     } catch (err) {
       this.handleRunError(task.id, err);
+      const failedTask = getTask(this.db, task.id);
+      realtime.publish({
+        id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        type: `task.${failedTask.state}`,
+        companyId: company.id,
+        projectId: project.id,
+        taskId: task.id,
+        occurredAt: new Date().toISOString(),
+        payload: {
+          error: err instanceof Error ? err.message : String(err),
+          threadId: thread.id,
+          agentId: agent.id,
+        },
+      });
       return true;
     } finally {
       clearInterval(hbTimer);
@@ -188,9 +234,8 @@ export class TaskEngine {
     projectRootDir: string,
     worktreeInfo: ReturnType<typeof createWorktree>,
     result: AgentRunResult,
-  ): void {
-    try {
-      const pub = this.publishQueue.publish({
+  ): ReturnType<PublishQueue['publish']> {
+      return this.publishQueue.publish({
         taskId,
         threadId,
         worktreePath: worktreeInfo.path,
@@ -202,28 +247,6 @@ export class TaskEngine {
           operation: a.operation,
         })),
       });
-      if (pub.blocked) {
-        log.warn('publish blocked by conflicts', { taskId, conflicts: pub.conflicts });
-        // 把已 completed 的 Task 重新标 blocked，让用户介入
-        try {
-          pauseTask(this.db, taskId);
-        } catch {
-          // Task 可能已被其他流程改动，忽略
-        }
-        realtime.publish({
-          id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-          type: 'publish.blocked',
-          projectId: getTask(this.db, taskId).projectId,
-          taskId,
-          occurredAt: new Date().toISOString(),
-          payload: { conflicts: pub.conflicts, publishId: pub.id },
-        });
-      } else {
-        log.info('publish merged', { taskId, files: pub.mergedFiles.length, commit: pub.commitHash.slice(0, 8) });
-      }
-    } catch (e) {
-      log.error('publish failed', { taskId, err: String(e) });
-    }
   }
 
   /** 异常分级（P7）：根据错误类型走不同分支。 */

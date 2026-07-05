@@ -466,6 +466,21 @@ export function failTask(db: DB, taskId: string, message: string): Task {
   return getTask(db, taskId);
 }
 
+/** 将尚未安全落地的 Task 标记为 blocked，保留检查点供人工处理。 */
+export function blockTask(db: DB, taskId: string, message: string, checkpoint?: string): Task {
+  const cur = getTask(db, taskId);
+  if (!['claimed', 'running', 'completed'].includes(cur.state)) {
+    throw new AppError(ErrorCode.TASK_INVALID_TRANSITION, `task ${taskId} 状态 ${cur.state} 不可阻塞`);
+  }
+  const now = nowIso();
+  db.prepare(
+    `UPDATE task SET state='blocked', outcome='blocked', summary=?, checkpoint=?,
+      completed_at=NULL, lease_owner_thread_id=NULL, lease_expires_at=NULL, updated_at=? WHERE id=?`,
+  ).run(message.slice(0, 2000), checkpoint ?? cur.checkpoint, now, taskId);
+  appendTaskEvent(db, taskId, 'blocked', { message });
+  return getTask(db, taskId);
+}
+
 /** 取得 Task 的父子链（从 root 到当前）。 */
 export function getTaskChain(db: DB, taskId: string): Task[] {
   const chain: Task[] = [];

@@ -64,6 +64,22 @@ describe('worktree lifecycle', () => {
 });
 
 describe('publish queue', () => {
+  it('声明的成果文件不存在时阻塞发布', () => {
+    ensureGitRepo(tmpRoot);
+    const wt = createWorktree(tmpRoot, 'proj', 'task-missing');
+    const result = new PublishQueue(db).publish({
+      taskId: 'task-missing',
+      threadId: 'th1',
+      worktreePath: wt.path,
+      baseCommit: wt.baseCommit,
+      projectRootDir: tmpRoot,
+      artifacts: [{ path: 'missing.md', kind: 'markdown', operation: 'create' }],
+    });
+
+    expect(result.blocked).toBe(true);
+    expect(result.conflicts).toContain('missing.md');
+  });
+
   it('非重叠文本自动三方合并', () => {
     ensureGitRepo(tmpRoot);
     // 正式目录建立基线文件

@@ -126,6 +126,7 @@ export class PublishQueue {
 
       if (!existsSync(sourceAbs)) {
         log.warn('publish: source missing', { path: art.path });
+        conflicts.push(art.path);
         continue;
       }
 

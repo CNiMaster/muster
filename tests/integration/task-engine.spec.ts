@@ -230,6 +230,7 @@ describe('fake executor end-to-end', () => {
 
     const fake = new FakeExecutor().script([
       {
+        writeFiles: { 'ch01.md': '# 第一章\n' },
         result: {
           outcome: 'completed',
           summary: '完成了',
