@@ -24,6 +24,8 @@ export interface FakeScriptStep {
    * key=相对路径，value=内容。
    */
   writeFiles?: Record<string, string>;
+  /** 运行前断言 worktree 中已有文件内容，用于验证等待态恢复。 */
+  expectFiles?: Record<string, string>;
 }
 
 export class FakeExecutor implements ExecutionAdapter {
@@ -50,6 +52,16 @@ export class FakeExecutor implements ExecutionAdapter {
     if (step.outputs) {
       for (const chunk of step.outputs) {
         events?.onOutput?.(chunk);
+      }
+    }
+    if (step.expectFiles) {
+      const { readFileSync } = await import('node:fs');
+      const path = await import('node:path');
+      for (const [rel, content] of Object.entries(step.expectFiles)) {
+        const actual = readFileSync(path.resolve(ctx.workingDir, rel), 'utf8');
+        if (actual !== content) {
+          throw new Error(`expected preserved file ${rel}`);
+        }
       }
     }
     if (step.writeFiles) {

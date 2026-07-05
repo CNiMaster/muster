@@ -17,7 +17,7 @@ import type { DB } from '../../src/server/db/client';
 import { createNovelCompany } from '../../src/server/domain/novel-template';
 import { createProject } from '../../src/server/domain/project';
 import { ensurePrimaryThread } from '../../src/server/domain/thread';
-import { createTask, listTasks } from '../../src/server/domain/task';
+import { answerClarification, createTask, getTask, listTasks } from '../../src/server/domain/task';
 import { clockIn } from '../../src/server/domain/company';
 import { TaskEngine } from '../../src/server/task-engine/engine';
 import { FakeExecutor } from '../../src/server/task-engine/fake-executor';
@@ -145,6 +145,64 @@ describe('engine → worktree → publish wiring', () => {
     const replies = listMessages(db, 'project', project.id).filter((message) => message.role === 'assistant');
     expect(replies).toHaveLength(1);
     expect(replies[0]!.content).toContain('已经安排');
+  });
+
+  it('waiting_input 恢复后沿用原 worktree，不丢失未发布草稿', async () => {
+    const r = createNovelCompany(db, { name: 'co' });
+    clockIn(db, r.company.id);
+    const project = createProject(db, {
+      companyId: r.company.id,
+      name: 'novel',
+      rootDir: projectRoot,
+      firstAgentId: r.agents.lead.id,
+    });
+    ensureGitRepo(projectRoot);
+    writeFileSync(path.join(projectRoot, 'README.md'), '#\n');
+    commitAll(projectRoot, 'baseline');
+
+    const thread = ensurePrimaryThread(db, project.id, r.agents.writer.id);
+    const task = createTask(db, {
+      projectId: project.id,
+      assigneeAgentId: r.agents.writer.id,
+      title: '续写草稿',
+    });
+    const fake = new FakeExecutor().script([
+      {
+        writeFiles: { 'drafts/ch01.md': '未完成草稿\n' },
+        result: {
+          outcome: 'waiting_input',
+          summary: '等待主角姓名',
+          question: '主角叫什么？',
+          outboundTasks: [],
+          artifacts: [],
+        },
+      },
+      {
+        expectFiles: { 'drafts/ch01.md': '未完成草稿\n' },
+        writeFiles: { 'drafts/ch01.md': '未完成草稿\n主角叫李墨。\n' },
+        result: {
+          outcome: 'completed',
+          summary: '草稿完成',
+          outboundTasks: [],
+          artifacts: [{ path: 'drafts/ch01.md', kind: 'markdown', operation: 'create' }],
+        },
+      },
+    ]);
+    const engine = new TaskEngine(db, fake);
+
+    await engine.pumpThread(thread.id);
+    const runtime = db.prepare('SELECT worktree_path FROM task_runtime WHERE task_id=?').get(task.id) as
+      | { worktree_path: string }
+      | undefined;
+    expect(runtime).toBeDefined();
+    expect(readFileSync(path.join(runtime!.worktree_path, 'drafts/ch01.md'), 'utf8')).toBe('未完成草稿\n');
+
+    answerClarification(db, task.id, '主角叫李墨');
+    await engine.pumpThread(thread.id);
+
+    expect(getTask(db, task.id).state).toBe('completed');
+    expect(readFileSync(path.join(projectRoot, 'drafts/ch01.md'), 'utf8')).toContain('主角叫李墨');
+    expect(db.prepare('SELECT 1 FROM task_runtime WHERE task_id=?').get(task.id)).toBeUndefined();
   });
 
   it('执行器抛 timeout → Task 标 failed（区别于 blocked）', async () => {

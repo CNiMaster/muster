@@ -7,7 +7,7 @@
  - 回滚
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { makeTestDb } from './setup';
@@ -143,6 +143,36 @@ describe('publish queue', () => {
     expect(cur).toBe('正式目录改\n');
   });
 
+  it('任一成果冲突时整批发布保持原子性，不留下先处理文件', () => {
+    ensureGitRepo(tmpRoot);
+    writeFileSync(path.join(tmpRoot, 'doc.md'), '原始行\n');
+    commitAll(tmpRoot, 'baseline');
+
+    const wt = createWorktree(tmpRoot, 'proj', 'task-atomic-conflict');
+    writeFileSync(path.join(wt.path, 'new.md'), '不应提前落盘\n');
+    writeFileSync(path.join(wt.path, 'doc.md'), 'worktree改\n');
+    commitAll(wt.path, 'task changes');
+
+    writeFileSync(path.join(tmpRoot, 'doc.md'), '正式目录改\n');
+    commitAll(tmpRoot, 'user change');
+
+    const result = new PublishQueue(db).publish({
+      taskId: 'task-atomic-conflict',
+      threadId: 'th1',
+      worktreePath: wt.path,
+      baseCommit: wt.baseCommit,
+      projectRootDir: tmpRoot,
+      artifacts: [
+        { path: 'new.md', kind: 'markdown', operation: 'create' },
+        { path: 'doc.md', kind: 'markdown', operation: 'update' },
+      ],
+    });
+
+    expect(result.blocked).toBe(true);
+    expect(existsSync(path.join(tmpRoot, 'new.md'))).toBe(false);
+    expect(readFileSync(path.join(tmpRoot, 'doc.md'), 'utf8')).toBe('正式目录改\n');
+  });
+
   it('二进制文件冲突阻塞', () => {
     ensureGitRepo(tmpRoot);
     writeFileSync(path.join(tmpRoot, 'cover.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
@@ -186,6 +216,33 @@ describe('publish queue', () => {
     });
     expect(result.blocked).toBe(false);
     expect(readFileSync(path.join(tmpRoot, 'new.md'), 'utf8')).toBe('新内容\n');
+  });
+
+  it('回滚发生冲突时拒绝破坏后续提交并保持记录未回滚', () => {
+    ensureGitRepo(tmpRoot);
+    writeFileSync(path.join(tmpRoot, 'doc.md'), '基线\n');
+    commitAll(tmpRoot, 'baseline');
+    const wt = createWorktree(tmpRoot, 'proj', 'task-rollback');
+    writeFileSync(path.join(wt.path, 'doc.md'), '任务版本\n');
+    const q = new PublishQueue(db);
+    const published = q.publish({
+      taskId: 'task-rollback',
+      threadId: 'th1',
+      worktreePath: wt.path,
+      baseCommit: wt.baseCommit,
+      projectRootDir: tmpRoot,
+      artifacts: [{ path: 'doc.md', kind: 'markdown', operation: 'update' }],
+    });
+    writeFileSync(path.join(tmpRoot, 'doc.md'), '后续用户版本\n');
+    const laterHead = commitAll(tmpRoot, 'later user change');
+
+    expect(() => q.rollback(published.id, tmpRoot)).toThrow(/回滚冲突/);
+    expect(currentHead(tmpRoot)).toBe(laterHead);
+    expect(readFileSync(path.join(tmpRoot, 'doc.md'), 'utf8')).toBe('后续用户版本\n');
+    const rolledBack = db.prepare('SELECT rolled_back FROM publish_record WHERE id=?').get(published.id) as {
+      rolled_back: number;
+    };
+    expect(rolledBack.rolled_back).toBe(0);
   });
 });
 

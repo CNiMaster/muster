@@ -10,8 +10,9 @@
  - 每次发布记录 Task、执行线程、提交哈希和成果引用，并支持回滚。
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
+import { tmpdir } from 'node:os';
 import { shortId, nowIso } from '../../shared/utils';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { log } from '../logger';
@@ -97,24 +98,24 @@ export class PublishQueue {
     const id = shortId('pub_');
     const publishedAt = nowIso();
     const conflicts: string[] = [];
-    const merged: string[] = [];
+    const pending = new Map<string, { operation: 'write' | 'delete'; content?: Buffer }>();
 
     // 1. 在 worktree 提交所有改动，得到 commit hash
     const wtCommit = commitAll(req.worktreePath, `muster: task ${req.taskId} 成果`);
 
-    // 2. 检查每个文件是否与正式目录冲突
+    // 2. 预计算整批变更。此阶段绝不修改正式目录，保证发现任一冲突时零落盘。
     for (const art of req.artifacts) {
       // 路径逃逸防护：所有 artifact path 必须在项目根目录内
       assertWithin(req.projectRootDir, art.path);
       if (art.operation === 'delete') {
-        // 删除操作：直接删
         const target = path.join(req.projectRootDir, art.path);
         if (existsSync(target)) {
-          try {
-            spawnSync('rm', [target]);
-            merged.push(art.path);
-          } catch {
+          const base = gitFileAt(req.projectRootDir, req.baseCommit, art.path);
+          const current = readFileSync(target);
+          if (!base || !current.equals(base)) {
             conflicts.push(art.path);
+          } else {
+            pending.set(art.path, { operation: 'delete' });
           }
         }
         continue;
@@ -131,9 +132,7 @@ export class PublishQueue {
       }
 
       if (!existsSync(targetAbs)) {
-        // 新文件：直接复制
-        copyFile(sourceAbs, targetAbs);
-        merged.push(art.path);
+        pending.set(art.path, { operation: 'write', content: readFileSync(sourceAbs) });
         continue;
       }
 
@@ -144,18 +143,43 @@ export class PublishQueue {
       }
 
       // 文本三方合并
-      const ok = this.threeWayMerge(req.projectRootDir, req.baseCommit, art.path, sourceAbs);
-      if (ok) {
-        merged.push(art.path);
+      const mergedContent = this.threeWayMerge(req.projectRootDir, req.baseCommit, art.path, sourceAbs);
+      if (mergedContent !== null) {
+        pending.set(art.path, { operation: 'write', content: Buffer.from(mergedContent) });
       } else {
         conflicts.push(art.path);
       }
     }
 
-    // 3. 在正式目录提交合并结果（仅当无冲突）
+    // 3. 只有整批预检通过才一次性落盘；写入异常时恢复文件快照。
+    const merged = conflicts.length === 0 ? [...pending.keys()] : [];
     let commitHash = wtCommit;
     if (conflicts.length === 0 && merged.length > 0) {
-      commitHash = commitAll(req.projectRootDir, `muster: publish task ${req.taskId}`);
+      const backups = new Map<string, Buffer | null>();
+      try {
+        for (const [relPath, change] of pending) {
+          const target = path.join(req.projectRootDir, relPath);
+          backups.set(relPath, existsSync(target) ? readFileSync(target) : null);
+          if (change.operation === 'delete') {
+            rmSync(target, { force: true });
+          } else {
+            const dir = path.dirname(target);
+            if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+            writeFileSync(target, change.content!);
+          }
+        }
+        commitHash = commitAll(req.projectRootDir, `muster: publish task ${req.taskId}`);
+      } catch (error) {
+        for (const [relPath, previous] of backups) {
+          const target = path.join(req.projectRootDir, relPath);
+          if (previous === null) rmSync(target, { force: true });
+          else {
+            if (!existsSync(path.dirname(target))) mkdirSync(path.dirname(target), { recursive: true });
+            writeFileSync(target, previous);
+          }
+        }
+        throw error;
+      }
     }
 
     // 4. 记录
@@ -194,7 +218,7 @@ export class PublishQueue {
    - 简化实现：用 git merge-file（需要 base/ours/theirs 三个临时文件）。
    - 返回 true=合并成功，false=冲突。
    */
-  private threeWayMerge(projectRoot: string, baseCommit: string, relPath: string, sourceAbs: string): boolean {
+  private threeWayMerge(projectRoot: string, baseCommit: string, relPath: string, sourceAbs: string): string | null {
     const targetAbs = path.join(projectRoot, relPath);
     // 用 baseCommit:path 取 base（worktree 创建时正式目录的版本）
     const baseResult = spawnSync('git', ['show', `${baseCommit}:${relPath}`], {
@@ -206,34 +230,23 @@ export class PublishQueue {
     const theirsContent = readFileSync(sourceAbs, 'utf8');
 
     // 调用 git merge-file：原地修改 ours
-    const tmpBase = `${targetAbs}.base.tmp`;
-    const tmpTheirs = `${targetAbs}.theirs.tmp`;
+    const mergeDir = mkdtempSync(path.join(tmpdir(), 'muster-merge-'));
+    const tmpOurs = path.join(mergeDir, 'ours');
+    const tmpBase = path.join(mergeDir, 'base');
+    const tmpTheirs = path.join(mergeDir, 'theirs');
+    writeFileSync(tmpOurs, oursContent);
     writeFileSync(tmpBase, baseContent);
     writeFileSync(tmpTheirs, theirsContent);
     try {
       const r = spawnSync(
         'git',
-        ['merge-file', '-q', '--diff3', targetAbs, tmpBase, tmpTheirs],
+        ['merge-file', '-q', '--diff3', tmpOurs, tmpBase, tmpTheirs],
         { encoding: 'utf8' },
       );
-      // exit code: 0=无冲突, >0=冲突数
-      if (r.status === 0) {
-        return true;
-      }
-      // 冲突：检查目标是否含冲突标记
-      const merged = readFileSync(targetAbs, 'utf8');
-      if (merged.includes('<<<<<<<')) {
-        // 还原目标，避免半合并状态
-        writeFileSync(targetAbs, oursContent);
-        return false;
-      }
-      return true;
+      if (r.status === 0) return readFileSync(tmpOurs, 'utf8');
+      return null;
     } finally {
-      try {
-        spawnSync('rm', ['-f', tmpBase, tmpTheirs]);
-      } catch {
-        // ignore
-      }
+      rmSync(mergeDir, { recursive: true, force: true });
     }
   }
 
@@ -249,8 +262,11 @@ export class PublishQueue {
       encoding: 'utf8',
     });
     if (r.status !== 0) {
-      // 可能已被后续 commit 覆盖，用 reset --hard 到上一条
-      spawnSync('git', ['reset', '--hard', 'HEAD~1'], { cwd: projectRootDir });
+      spawnSync('git', ['revert', '--abort'], { cwd: projectRootDir, encoding: 'utf8' });
+      throw new AppError(
+        ErrorCode.WORKTREE_CONFLICT,
+        `回滚冲突，已保留后续提交：${(r.stderr || r.stdout || '').trim().slice(0, 300)}`,
+      );
     }
     this.db.prepare('UPDATE publish_record SET rolled_back = 1 WHERE id = ?').run(publishId);
   }
@@ -275,12 +291,6 @@ function isBinaryPath(p: string): boolean {
   return /\.(png|jpe?g|gif|webp|pdf|zip|mp[34]|mov|pptx?|xlsx?|docx?)$/i.test(p);
 }
 
-function copyFile(src: string, dst: string): void {
-  const dir = path.dirname(dst);
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  writeFileSync(dst, readFileSync(src));
-}
-
 /**
  * 防路径逃逸：相对路径解析后必须落在 root 内。
  * 拒绝 `..`、绝对路径、符号链接逃逸等注入。
@@ -291,4 +301,12 @@ function assertWithin(root: string, relPath: string): void {
   if (resolved !== absRoot && !resolved.startsWith(`${absRoot}${path.sep}`)) {
     throw new AppError(ErrorCode.WORKTREE_CONFLICT, `路径逃逸：${relPath} 解析到 ${resolved}，超出项目根 ${absRoot}`);
   }
+}
+
+function gitFileAt(projectRoot: string, commit: string, relPath: string): Buffer | null {
+  const result = spawnSync('git', ['show', `${commit}:${relPath}`], {
+    cwd: projectRoot,
+    encoding: null,
+  });
+  return result.status === 0 && result.stdout ? Buffer.from(result.stdout) : null;
 }

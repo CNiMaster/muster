@@ -27,6 +27,7 @@ import { assertSafeToRun } from '../executors/safety';
 import { getProject } from '../domain/project';
 import { getCompany } from '../domain/company';
 import { createWorktree, removeWorktree } from '../worktree/manager';
+import { commitAll } from '../worktree/manager';
 import { PublishQueue } from '../worktree/publish-queue';
 import { checkBudget, recordUsage } from '../domain/usage';
 import { log } from '../logger';
@@ -36,6 +37,8 @@ import { realtime } from '../realtime';
 import { upsertPublishedArtifact } from '../domain/artifact';
 import { postSystemMessage } from '../domain/conversation';
 import { handleChapterCompleted } from '../domain/triggers';
+import { deleteTaskRuntime, getTaskRuntime, saveTaskRuntime } from '../domain/task-runtime';
+import { existsSync } from 'node:fs';
 
 export interface EngineOptions {
   heartbeatIntervalMs?: number;
@@ -123,9 +126,19 @@ export class TaskEngine {
 
     // 创建 Task worktree（PRD：每个 Task 隔离 worktree）
     let worktreeInfo: ReturnType<typeof createWorktree> | null = null;
+    let preserveWorktree = false;
     let workingDir = project.rootDir;
     try {
-      worktreeInfo = createWorktree(project.rootDir, project.id, task.id);
+      worktreeInfo = getTaskRuntime(this.db, task.id) ?? null;
+      if (worktreeInfo && !existsSync(worktreeInfo.path)) {
+        blockTask(this.db, task.id, '等待态隔离工作区缺失，已停止以避免静默丢失草稿');
+        updateThreadState(this.db, thread.id, 'failed');
+        return true;
+      }
+      if (!worktreeInfo) {
+        worktreeInfo = createWorktree(project.rootDir, project.id, task.id);
+        saveTaskRuntime(this.db, worktreeInfo);
+      }
       workingDir = worktreeInfo.path;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -172,6 +185,11 @@ export class TaskEngine {
       // 持久化 Claude session id（首次返回后保存，后续 --resume 用）
       if (result._sessionIdHint && result._sessionIdHint !== thread.claudeSessionId) {
         setClaudeSession(this.db, thread.id, result._sessionIdHint);
+      }
+
+      if (result.outcome === 'waiting_input' || result.outcome === 'waiting_dependency') {
+        commitAll(worktreeInfo.path, `muster: checkpoint task ${task.id}`);
+        preserveWorktree = true;
       }
 
       if (result.outcome === 'completed' && result.artifacts.length > 0 && worktreeInfo) {
@@ -284,9 +302,10 @@ export class TaskEngine {
     } finally {
       clearInterval(hbTimer);
       // 清理 worktree（已 publish 或失败都不再保留工作目录）
-      if (worktreeInfo) {
+      if (worktreeInfo && !preserveWorktree) {
         try {
           removeWorktree(project.rootDir, worktreeInfo);
+          deleteTaskRuntime(this.db, task.id);
         } catch (e) {
           log.warn('worktree cleanup failed', { taskId: task.id, err: String(e) });
         }
