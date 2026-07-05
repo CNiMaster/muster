@@ -27,23 +27,28 @@ test('核心功能端到端完整回归流', async ({ page }) => {
   await page.getByRole('button', { name: '确认配置并加入团队 🚀' }).click();
   await expect(page.getByText('老李 [editor]')).toBeVisible({ timeout: 5000 });
 
-  // 重新上班锁定配置
-  await page.getByRole('button', { name: '上班' }).click();
-  await expect(page.locator('.mu-badge').getByText(/^上班$/).first()).toBeVisible({ timeout: 5000 });
-
-  // 3. 项目向导创建新项目与开工
-  await page.getByRole('link', { name: '发布新项目' }).click();
+  // 3. 项目向导创建新项目与开工（公司处于下班状态才能新建项目）
+  await page.getByRole('link', { name: '新建项目' }).click();
   await page.getByPlaceholder(/用您自然的语言描述故事想法/).fill('写一本都市修仙小说，风格幽默');
   await page.getByRole('button', { name: 'AI 智能生成蓝图配置' }).click();
   await expect(page.getByText('🎨 可视化修改 AI 推荐配置')).toBeVisible({ timeout: 5000 });
   await page.getByPlaceholder(/my-novel/).fill(`/tmp/e2e-novel-${timestamp}`);
   await page.getByRole('button', { name: '确认设定并正式开工 🚀' }).click();
 
-  // 4. 验证项目详情与 Task 生成
+  // 4. 验证项目详情并自动下发初始 Task
   await expect(page.locator('.project-page')).toBeVisible({ timeout: 5000 });
-  await expect(page.getByRole('button', { name: '看板' })).toBeVisible();
 
-  // 5. 看板与复盘流程测试
+  // 5. 返回公司页并上班，然后进入项目进行看板/复盘测试
+  await page.goto('/');
+  await page.getByRole('link', { name: companyName }).click();
+  await page.getByRole('button', { name: '上班' }).click();
+  await expect(page.locator('.mu-badge').getByText(/^上班$/).first()).toBeVisible({ timeout: 5000 });
+
+  // 点击进入刚刚创建的项目（修仙题材默认自动生成名称“九霄凡帝”）
+  await page.getByRole('link', { name: '九霄凡帝' }).first().click();
+  await expect(page.getByRole('button', { name: '看板' })).toBeVisible({ timeout: 5000 });
+
+  // 6. 看板与复盘流程测试
   // 前往复盘页
   await page.getByRole('button', { name: '复盘' }).click();
   await expect(page.getByText('无活跃复盘周期')).toBeVisible({ timeout: 5000 });
