@@ -1,6 +1,8 @@
 import { test, expect } from '@playwright/test';
 
 test('核心功能端到端完整回归流', async ({ page }) => {
+  page.on('console', msg => console.log('BROWSER LOG:', msg.text()));
+  page.on('pageerror', err => console.error('BROWSER ERROR:', err.message));
   const timestamp = Date.now();
   const companyName = `回归公司-${timestamp}`;
   const projectName = `回归小说-${timestamp}`;
@@ -45,7 +47,7 @@ test('核心功能端到端完整回归流', async ({ page }) => {
   await expect(page.locator('.mu-badge').getByText(/^上班$/).first()).toBeVisible({ timeout: 5000 });
 
   // 点击进入刚刚创建的项目（修仙题材默认自动生成名称“九霄凡帝”）
-  await page.getByRole('link', { name: '九霄凡帝' }).first().click();
+  await page.locator('a', { hasText: '九霄凡帝' }).first().click();
   await expect(page.getByRole('button', { name: '看板' })).toBeVisible({ timeout: 5000 });
 
   // 6. 看板与复盘流程测试
