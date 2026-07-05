@@ -124,7 +124,11 @@ function buildSummary(db: DB, projectId: string): Record<string, unknown> {
       costUSD: usage.totalCostUSD,
     };
   });
-  return { agents: agents_, totalTasks: tasks.length };
+  return {
+    agents: agents_,
+    totalTasks: tasks.length,
+    completedTasksTotal: tasks.filter((task) => task.state === 'completed').length,
+  };
 }
 
 export function getReport(db: DB, id: string): ReportSummary {
@@ -169,11 +173,11 @@ export function shouldTriggerReport(
   const interval = opts.taskCountInterval ?? 20;
   const tasks = listTasks(db, projectId);
   const completed = tasks.filter((t) => t.state === 'completed').length;
-  if (completed > 0 && completed % interval === 0) {
-    // 检查最近是否已有未关闭的复盘
-    const open = listReports(db, projectId).find((r) => r.state !== 'closed');
-    if (!open) return { trigger: true, kind: 'task_count' };
-  }
+  const reports = listReports(db, projectId);
+  const open = reports.find((r) => r.state !== 'closed');
+  if (open) return { trigger: false, kind: null };
+  const lastBaseline = Number(reports[0]?.summary.completedTasksTotal ?? 0);
+  if (completed - lastBaseline >= interval) return { trigger: true, kind: 'task_count' };
   return { trigger: false, kind: null };
 }
 

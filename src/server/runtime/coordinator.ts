@@ -2,9 +2,13 @@ import type { DB } from '../db/client';
 import { listCompanies, transitionCompany } from '../domain/company';
 import { listProjects } from '../domain/project';
 import { ensureProjectThreads } from '../domain/thread';
-import { ensurePlanningTask, recoverExpiredLeases } from '../domain/task';
+import { ensurePlanningTask, listTasks, recoverExpiredLeases } from '../domain/task';
 import type { TaskEngine } from '../task-engine/engine';
 import { log } from '../logger';
+import { interruptActiveBrainstorms } from '../domain/brainstorm';
+import { openReportCycle, shouldTriggerReport } from '../domain/report';
+import { isSoftCapReached, type Budget } from '../domain/usage';
+import { updateProject } from '../domain/project';
 
 export interface RuntimeTickResult {
   recoveredLeases: number;
@@ -39,6 +43,26 @@ export class ProjectRuntimeCoordinator {
         for (const project of listProjects(this.db, company.id)) {
           if (project.state === 'archived' || project.state === 'completed' || project.state === 'paused') continue;
           const threads = ensureProjectThreads(this.db, project.id);
+          const tasks = listTasks(this.db, project.id);
+          const formalActive = tasks.some(
+            (task) => task.isDiscussion === 0
+              && ['queued', 'claimed', 'running', 'waiting_input', 'waiting_dependency', 'paused'].includes(task.state),
+          );
+          if (formalActive) interruptActiveBrainstorms(this.db, project.id);
+
+          const budget = (project.settings.budget ?? {}) as Budget;
+          const hasRunning = tasks.some((task) => task.state === 'claimed' || task.state === 'running');
+          if (isSoftCapReached(this.db, project.id, budget) && !hasRunning) {
+            updateProject(this.db, project.id, { state: 'paused' });
+            continue;
+          }
+
+          const interval = Number(project.settings.reviewTaskInterval ?? 20);
+          const review = shouldTriggerReport(this.db, project.id, { taskCountInterval: interval });
+          if (review.trigger && review.kind && !hasRunning) {
+            openReportCycle(this.db, { projectId: project.id, triggerKind: review.kind });
+            break;
+          }
           const planning = ensurePlanningTask(this.db, project.id);
           if (planning) plannedTasks.push(planning.id);
           if (options.pump !== false) {
