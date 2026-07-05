@@ -22,6 +22,7 @@ import { shortId, nowIso } from '../../shared/utils';
 import { LEASE_TTL_MS, MAX_CLARIFY_ROUNDS } from '../../shared/constants';
 import type { AgentRunResult, ArtifactChange, TaskOutcome, TaskState } from '../../shared/types';
 import { getProject } from './project';
+import { getAgent } from './agent';
 import { appendTaskEvent } from './task-event';
 import { addTaskMessage } from './task-message';
 
@@ -163,7 +164,21 @@ function nextSeq(db: DB, projectId: string): number {
 }
 
 export function createTask(db: DB, input: CreateTaskInput): Task {
-  getProject(db, input.projectId);
+  const project = getProject(db, input.projectId);
+  const assignee = input.assigneeAgentId ? getAgent(db, input.assigneeAgentId) : null;
+  const dispatcher = input.dispatcherAgentId ? getAgent(db, input.dispatcherAgentId) : null;
+  if (assignee && assignee.companyId !== project.companyId) {
+    throw new AppError(ErrorCode.UNAUTHORIZED, `员工 ${assignee.id} 不属于项目所在公司`);
+  }
+  if (dispatcher && dispatcher.companyId !== project.companyId) {
+    throw new AppError(ErrorCode.UNAUTHORIZED, `派发者 ${dispatcher.id} 不属于项目所在公司`);
+  }
+  if (dispatcher && assignee && dispatcher.id !== assignee.id && !dispatcher.contactAllow.includes(assignee.id)) {
+    throw new AppError(
+      ErrorCode.UNAUTHORIZED,
+      `员工 ${dispatcher.id} 未授权联系 ${assignee.id}`,
+    );
+  }
   const id = shortId('tk_');
   const now = nowIso();
   const seq = nextSeq(db, input.projectId);
@@ -258,11 +273,19 @@ export function claimNextTask(db: DB, threadId: string, assigneeAgentId?: string
       .prepare(
         `UPDATE task
          SET state='claimed', lease_owner_thread_id=?, lease_expires_at=?, heartbeat_at=?,
-             assignee_thread_id=?, assignee_agent_id=COALESCE(?, assignee_agent_id), updated_at=?
+             assignee_thread_id=?, updated_at=?
          WHERE id = (
            SELECT t.id FROM task t
            WHERE t.project_id = (SELECT project_id FROM project_agent_thread WHERE id = ?)
              AND t.state = 'queued'
+             AND (
+               t.assignee_agent_id = (SELECT agent_id FROM project_agent_thread WHERE id = ?)
+               OR (
+                 t.assignee_agent_id IS NULL
+                 AND (SELECT agent_id FROM project_agent_thread WHERE id = ?)
+                   = (SELECT first_agent_id FROM project WHERE id = t.project_id)
+               )
+             )
              AND NOT EXISTS(
                SELECT 1 FROM task_dependency d
                JOIN task dep ON dep.id = d.depends_on_id
@@ -273,7 +296,7 @@ export function claimNextTask(db: DB, threadId: string, assigneeAgentId?: string
          AND state = 'queued'
          RETURNING id`,
       )
-      .get(threadId, leaseExpiresAt, heartbeatAt, threadId, assigneeAgentId ?? null, stamp, threadId) as
+      .get(threadId, leaseExpiresAt, heartbeatAt, threadId, stamp, threadId, threadId, threadId) as
       | { id: string }
       | undefined;
     if (!info) return null;
@@ -282,6 +305,7 @@ export function claimNextTask(db: DB, threadId: string, assigneeAgentId?: string
   });
 
   if (!row) return null;
+  void assigneeAgentId; // 兼容旧调用方；实际身份始终以持久化 thread.agent_id 为准。
   return { task: row, leasedUntil: leaseExpiresAt };
 }
 

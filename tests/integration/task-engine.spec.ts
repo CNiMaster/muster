@@ -85,9 +85,23 @@ describe('task state machine', () => {
 });
 
 describe('atomic claim (concurrent)', () => {
+  it('员工不能领取其他员工的 Task，也不能改写原负责人', () => {
+    const { project, lead, writer } = fixture();
+    const writerTask = createTask(db, {
+      projectId: project.id,
+      assigneeAgentId: writer.id,
+      title: '只允许 writer 执行',
+    });
+    const leadThread = ensurePrimaryThread(db, project.id, lead.id);
+
+    expect(claimNextTask(db, leadThread.id, lead.id)).toBeNull();
+    expect(getTask(db, writerTask.id).assigneeAgentId).toBe(writer.id);
+    expect(getTask(db, writerTask.id).state).toBe('queued');
+  });
+
   it('并发领取同一 Task 只有一个成功', () => {
     const { project, writer } = fixture();
-    const t = createTask(db, { projectId: project.id, title: 'only one' });
+    const t = createTask(db, { projectId: project.id, assigneeAgentId: writer.id, title: 'only one' });
     const primary = ensurePrimaryThread(db, project.id, writer.id);
     const m1 = createMirror(db, project.id, writer.id);
     const m2 = createMirror(db, project.id, writer.id);
@@ -104,8 +118,8 @@ describe('atomic claim (concurrent)', () => {
 
   it('按 priority DESC, seq ASC 排序领取', () => {
     const { project, writer } = fixture();
-    const t1 = createTask(db, { projectId: project.id, title: 'low', priority: 1 });
-    const t2 = createTask(db, { projectId: project.id, title: 'high', priority: 9 });
+    const t1 = createTask(db, { projectId: project.id, assigneeAgentId: writer.id, title: 'low', priority: 1 });
+    const t2 = createTask(db, { projectId: project.id, assigneeAgentId: writer.id, title: 'high', priority: 9 });
     const thread = ensurePrimaryThread(db, project.id, writer.id);
     const got = claimNextTask(db, thread.id, writer.id);
     expect(got!.task.id).toBe(t2.id); // 高优先级先
@@ -120,7 +134,7 @@ describe('atomic claim (concurrent)', () => {
 describe('lease recovery', () => {
   it('租约过期 → recoverExpiredLeases 复位为 queued', async () => {
     const { project, writer } = fixture();
-    createTask(db, { projectId: project.id, title: 't' });
+    createTask(db, { projectId: project.id, assigneeAgentId: writer.id, title: 't' });
     const thread = ensurePrimaryThread(db, project.id, writer.id);
     const claimed = claimNextTask(db, thread.id, writer.id)!;
     expect(claimed.task.state).toBe('claimed');
@@ -137,8 +151,8 @@ describe('lease recovery', () => {
 describe('dependencies', () => {
   it('依赖未完成时不可领取', () => {
     const { project, writer } = fixture();
-    const dep = createTask(db, { projectId: project.id, title: 'dep' });
-    const main = createTask(db, { projectId: project.id, title: 'main' });
+    const dep = createTask(db, { projectId: project.id, assigneeAgentId: writer.id, title: 'dep' });
+    const main = createTask(db, { projectId: project.id, assigneeAgentId: writer.id, title: 'main' });
     addDependency(db, main.id, dep.id);
     expect(areDependenciesMet(db, main.id)).toBe(false);
 
@@ -152,7 +166,7 @@ describe('dependencies', () => {
 
   it('依赖完成后父 task 自动从 waiting_dependency 恢复', () => {
     const { project, writer } = fixture();
-    const parent = createTask(db, { projectId: project.id, title: 'parent' });
+    const parent = createTask(db, { projectId: project.id, assigneeAgentId: writer.id, title: 'parent' });
     const result: AgentRunResult = {
       outcome: 'waiting_dependency',
       summary: '等待子任务',

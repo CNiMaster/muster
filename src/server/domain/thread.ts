@@ -8,7 +8,7 @@ import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
 import { getProject } from './project';
-import { getAgent } from './agent';
+import { getAgent, listAgents } from './agent';
 
 export type ThreadKind = 'primary' | 'mirror';
 export type ThreadState = 'idle' | 'running' | 'waiting' | 'paused' | 'failed';
@@ -95,6 +95,15 @@ export function getThread(db: DB, id: string): ProjectAgentThread {
 export function listThreads(db: DB, projectId: string): ProjectAgentThread[] {
   const rows = db.prepare('SELECT * FROM project_agent_thread WHERE project_id = ? ORDER BY created_at').all(projectId) as ThreadRow[];
   return rows.map(fromRow);
+}
+
+/** 为项目中的全部正式员工幂等建立 primary thread。 */
+export function ensureProjectThreads(db: DB, projectId: string): ProjectAgentThread[] {
+  const project = getProject(db, projectId);
+  for (const agent of listAgents(db, project.companyId)) {
+    ensurePrimaryThread(db, projectId, agent.id);
+  }
+  return listThreads(db, projectId).filter((thread) => thread.kind === 'primary');
 }
 
 export function listMirrorsOfRoot(db: DB, rootThreadId: string): ProjectAgentThread[] {

@@ -21,8 +21,11 @@ import {
   listCompanies,
   updateCompany,
   transitionCompany,
+  assertCompanyHealthy,
 } from '../domain/company';
 import type { CompanyState } from '../../shared/types';
+import { listProjects } from '../domain/project';
+import { ensureProjectThreads } from '../domain/thread';
 
 export const companiesRouter = Router();
 
@@ -76,7 +79,21 @@ function stateEndpoint(target: CompanyState): any {
   });
 }
 
-companiesRouter.post('/:id/clock-in', stateEndpoint('online'));
+companiesRouter.post(
+  '/:id/clock-in',
+  asyncHandler(async (req, res) => {
+    const db = getDb();
+    const companyId = param(req, 'id');
+    assertCompanyHealthy(db, companyId);
+    const company = transitionCompany(db, companyId, 'online');
+    for (const project of listProjects(db, companyId)) {
+      if (project.state !== 'archived' && project.state !== 'completed') {
+        ensureProjectThreads(db, project.id);
+      }
+    }
+    res.json(company);
+  }),
+);
 companiesRouter.post('/:id/clock-out', stateEndpoint('off'));
 companiesRouter.post('/:id/drain', stateEndpoint('draining'));
 companiesRouter.post('/:id/review-pause', stateEndpoint('review_paused'));

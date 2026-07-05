@@ -30,7 +30,10 @@ import {
   listThreads,
   getThread,
   removeMirror,
+  ensureProjectThreads,
 } from '../domain/thread';
+import { getCompany } from '../domain/company';
+import { registerDefaultNovelScheduleTriggers } from '../domain/triggers';
 
 export const projectsRouter = Router({ mergeParams: true });
 export const projectScopedRouter = Router({ mergeParams: true });
@@ -53,7 +56,14 @@ projectsRouter.post(
   '/',
   asyncHandler(async (req, res) => {
     const input = createProjectSchema.parse(req.body);
-    res.status(201).json(createProject(getDb(), { companyId: param(req,'companyId'), ...input }));
+    const db = getDb();
+    const companyId = param(req, 'companyId');
+    const project = createProject(db, { companyId, ...input });
+    ensureProjectThreads(db, project.id);
+    if (getCompany(db, companyId).kind === 'novel') {
+      registerDefaultNovelScheduleTriggers(db, project.id);
+    }
+    res.status(201).json(project);
   }),
 );
 

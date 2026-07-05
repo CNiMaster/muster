@@ -10,6 +10,7 @@ import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
 import { getCompany } from './company';
+import { getAgent } from './agent';
 
 export type ProjectState = 'idle' | 'active' | 'paused' | 'completed' | 'archived';
 
@@ -58,14 +59,21 @@ export function createProject(
   db: DB,
   input: { companyId: string; name: string; description?: string; rootDir: string; firstAgentId?: string },
 ): Project {
-  getCompany(db, input.companyId);
+  const company = getCompany(db, input.companyId);
   if (!input.rootDir) throw new AppError(ErrorCode.VALIDATION, 'rootDir 必填');
+  const firstAgentId = input.firstAgentId ?? company.firstAgentId ?? undefined;
+  if (firstAgentId) {
+    const firstAgent = getAgent(db, firstAgentId);
+    if (firstAgent.companyId !== company.id) {
+      throw new AppError(ErrorCode.VALIDATION, '项目第一负责人必须属于项目所在公司');
+    }
+  }
   const id = shortId('pr_');
   const now = nowIso();
   db.prepare(
     `INSERT INTO project (id, company_id, name, description, root_dir, first_agent_id, state, settings_json, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, 'idle', '{}', ?, ?)`,
-  ).run(id, input.companyId, input.name, input.description ?? '', input.rootDir, input.firstAgentId ?? null, now, now);
+  ).run(id, input.companyId, input.name, input.description ?? '', input.rootDir, firstAgentId ?? null, now, now);
   return getProject(db, id);
 }
 
