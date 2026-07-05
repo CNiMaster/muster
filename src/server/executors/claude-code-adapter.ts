@@ -360,7 +360,7 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
 /** 构建 Claude 提示词：装 Task 工作包 + 上下文 + 输出要求。 */
 /** 首次执行生成 session id（用于 --session-id）。 */
 function generateSessionId(): string {
-  return `muster-${randomUUID()}`;
+  return randomUUID();
 }
 
 function buildPrompt(ctx: ExecutionContext): string {

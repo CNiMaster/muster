@@ -1,6 +1,8 @@
 /**
  * 进程级运行时配置。所有 process.env 读取集中在此。
  */
+import fs from 'node:fs';
+import path from 'node:path';
 import { deepFreeze } from '../shared/utils';
 
 function readPort(): number {
@@ -17,12 +19,26 @@ function readMusterDir(): string {
   return process.env.MUSTER_HOME ?? `${process.env.HOME ?? '/tmp'}/.muster`;
 }
 
+function readClaudeBin(): string {
+  if (process.env.CLAUDE_BIN) {
+    return process.env.CLAUDE_BIN;
+  }
+  const home = process.env.HOME;
+  if (home) {
+    const localBin = path.join(home, '.local/bin/claude');
+    if (fs.existsSync(localBin)) {
+      return localBin;
+    }
+  }
+  return 'claude';
+}
+
 export const SERVER_CONFIG = deepFreeze({
   host: readHost(),
   port: readPort(),
   musterDir: readMusterDir(),
   dbPath: `${readMusterDir()}/muster.db`,
-  claudeBin: process.env.CLAUDE_BIN ?? 'claude',
+  claudeBin: readClaudeBin(),
   skipPermissions: process.env.MUSTER_SKIP_PERMISSIONS === 'true',
   isProd: process.env.NODE_ENV === 'production',
 });
