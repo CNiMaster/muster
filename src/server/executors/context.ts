@@ -8,9 +8,15 @@ import type { DB } from '../db/client';
 import { getCompany } from '../domain/company';
 import { getProject } from '../domain/project';
 import { getAgent } from '../domain/agent';
-import { getTask } from '../domain/task';
 import { listTaskMessages } from '../domain/task-message';
 import type { Task } from '../domain/task';
+import { getTask as loadTask } from '../domain/task';
+import { getArtifactByPath } from '../domain/artifact';
+import { readArtifactContent } from '../domain/artifact-content';
+import { assertCanReadSource, listProjectReferences } from '../domain/project';
+
+const MAX_REFERENCE_BYTES = 64 * 1024;
+const MAX_TOTAL_REFERENCE_BYTES = 256 * 1024;
 
 export interface AssembledContext {
   systemPrompt: string;
@@ -50,6 +56,7 @@ export function assembleContext(
 
   // ===== Input Packet =====
   const recentMessages = listTaskMessages(db, task.id).slice(-6);
+  const referencedArtifacts = loadReferencedArtifacts(db, task);
   const inputPacket: Record<string, unknown> = {
     ...task.inputProtocol,
     taskId: task.id,
@@ -58,13 +65,48 @@ export function assembleContext(
     outputProtocol: task.outputProtocol,
     contextRefs: task.contextRefs,
     recentDiscussion: recentMessages.map((m) => ({ author: m.author, role: m.role, content: m.content })),
+    referencedArtifacts,
   };
+  if (task.parentTaskId) {
+    const parent = loadTask(db, task.parentTaskId);
+    inputPacket.parentTask = { id: parent.id, seq: parent.seq, title: parent.title, summary: parent.summary };
+  }
 
   return {
     systemPrompt,
     inputPacket,
-    referencedArtifacts: {},
+    referencedArtifacts,
   };
 }
 
-void getTask; // 预留：未来用于加载父 Task 上下文
+function loadReferencedArtifacts(db: DB, task: Task): Record<string, string> {
+  const loaded: Record<string, string> = {};
+  let totalBytes = 0;
+  for (const ref of task.contextRefs) {
+    let projectId = task.projectId;
+    let relPath = ref;
+    const cross = /^project:([^:]+):(.+)$/.exec(ref);
+    if (cross) {
+      projectId = cross[1]!;
+      relPath = cross[2]!;
+      assertCanReadSource(db, task.projectId, projectId);
+      const grant = listProjectReferences(db, task.projectId).find((item) => item.sourceProjectId === projectId);
+      const root = grant?.sourcePath.replace(/\/+$/, '') ?? '';
+      if (root && relPath !== root && !relPath.startsWith(`${root}/`)) {
+        throw new Error(`跨项目引用 ${relPath} 超出授权路径 ${root}`);
+      }
+    }
+    if (!getArtifactByPath(db, projectId, relPath)) {
+      throw new Error(`上下文成果未登记：${ref}`);
+    }
+    const content = readArtifactContent(db, projectId, relPath);
+    const remaining = MAX_TOTAL_REFERENCE_BYTES - totalBytes;
+    if (remaining <= 0) break;
+    const limit = Math.min(MAX_REFERENCE_BYTES, remaining);
+    const buffer = Buffer.from(content, 'utf8');
+    const selected = buffer.subarray(0, limit).toString('utf8');
+    loaded[ref] = selected + (buffer.length > limit ? '\n[内容已截断]' : '');
+    totalBytes += Buffer.byteLength(selected);
+  }
+  return loaded;
+}
