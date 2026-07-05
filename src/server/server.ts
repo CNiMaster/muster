@@ -34,15 +34,16 @@ import { realtime } from './realtime';
 import { getDb } from './db/client';
 import { TaskEngine } from './task-engine/engine';
 import { ClaudeCodeAdapter } from './executors/claude-code-adapter';
-import { getProject } from './domain/project';
-import { listThreads } from './domain/thread';
-import { AppError, ErrorCode } from '../shared/errors';
+import { TriggerScheduler } from './trigger-scheduler';
+import { ProjectRuntimeCoordinator } from './runtime/coordinator';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export interface AppHandle {
   app: express.Express;
   engine: TaskEngine;
+  triggerScheduler: TriggerScheduler;
+  coordinator: ProjectRuntimeCoordinator;
 }
 
 async function createApp(): Promise<AppHandle> {
@@ -68,10 +69,8 @@ async function createApp(): Promise<AppHandle> {
   projectById.post(
     '/pump',
     asyncHandler(async (req, res) => {
-      const threads = listThreads(getDb(), param(req, 'id'));
-      if (threads.length === 0) throw new AppError(ErrorCode.NOT_FOUND, '项目无活跃线程');
-      const ran = await engine.pumpAll(threads.map((t) => t.id));
-      res.json({ pumped: ran, totalThreads: threads.length });
+      const result = await coordinator.pumpProject(param(req, 'id'));
+      res.json(result);
     }),
   );
 
@@ -81,6 +80,15 @@ async function createApp(): Promise<AppHandle> {
     pollIntervalMs: Number(process.env.MUSTER_POLL_INTERVAL_MS ?? 2000),
     concurrency: Number(process.env.MUSTER_CONCURRENCY ?? 4),
   });
+  const triggerScheduler = new TriggerScheduler(
+    getDb(),
+    Number(process.env.MUSTER_TRIGGER_POLL_INTERVAL_MS ?? 1000),
+  );
+  const coordinator = new ProjectRuntimeCoordinator(
+    getDb(),
+    engine,
+    Number(process.env.MUSTER_POLL_INTERVAL_MS ?? 2000),
+  );
   // API（顶层）
   app.use('/api', healthRouter);
   app.use('/api/companies', companiesRouter);
@@ -115,18 +123,19 @@ async function createApp(): Promise<AppHandle> {
     app.use(vite.middlewares);
   }
 
-  return { app, engine };
+  return { app, engine, triggerScheduler, coordinator };
 }
 
 async function main(): Promise<void> {
-  const { app, engine } = await createApp();
+  const { app, engine, triggerScheduler, coordinator } = await createApp();
   const httpServer = createServer(app);
 
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
   realtime.attach(wss);
 
   // 启动 Task 引擎轮询
-  engine.start();
+  coordinator.start();
+  triggerScheduler.start();
 
   httpServer.listen(SERVER_CONFIG.port, SERVER_CONFIG.host, () => {
     log.info('muster server listening', {
@@ -139,6 +148,8 @@ async function main(): Promise<void> {
   const shutdown = (signal: string): void => {
     log.info('shutting down', { signal });
     engine.stop();
+    coordinator.stop();
+    triggerScheduler.stop();
     httpServer.close();
     wss.close();
     setTimeout(() => process.exit(0), 500);
@@ -154,4 +165,3 @@ main().catch((err) => {
 
 // 兼容测试导入（createApp 仍可被引用）
 export { createApp };
-void getProject;

@@ -11,6 +11,19 @@ import { getProject } from './project';
 import { listAgents } from './agent';
 import { createTask } from './task';
 import type { ArtifactChange } from '../../shared/types';
+import { transaction } from '../db/client';
+
+export type ConsistencyCheckKind = 'omission' | 'continuity' | 'long_term';
+
+interface ScheduleTriggerRow {
+  id: string;
+  project_id: string;
+  interval_ms: number;
+  template_json: string;
+  enabled: number;
+  created_at: string;
+  next_run_at: string | null;
+}
 
 /** 注册一个事件触发器（持久化）。 */
 export function registerEventTrigger(
@@ -29,15 +42,91 @@ export function registerEventTrigger(
 /** 注册一个定时触发器。 */
 export function registerScheduleTrigger(
   db: DB,
-  input: { projectId: string; intervalMs: number; template: Record<string, unknown> },
+  input: { projectId: string; intervalMs: number; template: Record<string, unknown>; now?: Date },
 ): { id: string } {
+  getProject(db, input.projectId);
+  if (!Number.isFinite(input.intervalMs) || input.intervalMs <= 0) {
+    throw new Error('intervalMs 必须是正数');
+  }
   const id = shortId('tr_');
-  const now = nowIso();
+  const now = input.now?.toISOString() ?? nowIso();
+  const nextRunAt = new Date(new Date(now).getTime() + input.intervalMs).toISOString();
   db.prepare(
-    `INSERT INTO trigger (id, project_id, kind, interval_ms, template_json, enabled, created_at, updated_at)
-     VALUES (?, ?, 'schedule', ?, ?, 1, ?, ?)`,
-  ).run(id, input.projectId, input.intervalMs, JSON.stringify(input.template), now, now);
+    `INSERT INTO trigger
+       (id, project_id, kind, interval_ms, template_json, enabled, created_at, updated_at, next_run_at)
+     VALUES (?, ?, 'schedule', ?, ?, 1, ?, ?, ?)`,
+  ).run(id, input.projectId, input.intervalMs, JSON.stringify(input.template), now, now, nextRunAt);
   return { id };
+}
+
+/**
+ * 领取并派发所有到期 schedule trigger。
+ *
+ * next_run_at 在创建 Task 前于同一事务推进；派发失败会整体回滚，下一轮可重试。
+ * 下班公司的 trigger 保持到期状态，上班后立即补派发。
+ */
+export function dispatchDueScheduleTriggers(db: DB, now = new Date()): string[] {
+  const nowMs = now.getTime();
+  const candidates = db.prepare(
+    `SELECT tr.*
+       FROM trigger tr
+       JOIN project p ON p.id = tr.project_id
+       JOIN company c ON c.id = p.company_id
+      WHERE tr.kind = 'schedule' AND tr.enabled = 1 AND c.state = 'online'`,
+  ).all() as ScheduleTriggerRow[];
+  const dispatched: string[] = [];
+
+  for (const candidate of candidates) {
+    const fallbackDue = new Date(candidate.created_at).getTime() + candidate.interval_ms;
+    const dueMs = candidate.next_run_at ? new Date(candidate.next_run_at).getTime() : fallbackDue;
+    if (!Number.isFinite(dueMs) || dueMs > nowMs) continue;
+
+    const taskId = transaction(db, () => {
+      const current = db.prepare(
+        `SELECT tr.*
+           FROM trigger tr
+           JOIN project p ON p.id = tr.project_id
+           JOIN company c ON c.id = p.company_id
+          WHERE tr.id = ? AND tr.kind = 'schedule' AND tr.enabled = 1 AND c.state = 'online'`,
+      ).get(candidate.id) as ScheduleTriggerRow | undefined;
+      if (!current) return null;
+
+      const currentDue = current.next_run_at
+        ? new Date(current.next_run_at).getTime()
+        : new Date(current.created_at).getTime() + current.interval_ms;
+      if (!Number.isFinite(currentDue) || currentDue > nowMs) return null;
+
+      const firedAt = now.toISOString();
+      const nextRunAt = new Date(nowMs + current.interval_ms).toISOString();
+      db.prepare(
+        'UPDATE trigger SET last_fired_at = ?, next_run_at = ?, updated_at = ? WHERE id = ?',
+      ).run(firedAt, nextRunAt, firedAt, current.id);
+
+      const template = JSON.parse(current.template_json || '{}') as {
+        checkKind?: ConsistencyCheckKind;
+      };
+      const checkKind = template.checkKind;
+      if (!checkKind || !['omission', 'continuity', 'long_term'].includes(checkKind)) {
+        throw new Error(`schedule trigger ${current.id} 缺少合法 checkKind`);
+      }
+      return dispatchConsistencyCheck(db, current.project_id, checkKind);
+    });
+    if (taskId) dispatched.push(taskId);
+  }
+
+  return dispatched;
+}
+
+/** 为小说项目注册默认的一致性巡检周期。 */
+export function registerDefaultNovelScheduleTriggers(db: DB, projectId: string): void {
+  const defaults: Array<[ConsistencyCheckKind, number]> = [
+    ['omission', 15 * 60_000],
+    ['continuity', 60 * 60_000],
+    ['long_term', 6 * 60 * 60_000],
+  ];
+  for (const [checkKind, intervalMs] of defaults) {
+    registerScheduleTrigger(db, { projectId, intervalMs, template: { checkKind } });
+  }
 }
 
 export interface ChapterCompletedEvent {
@@ -90,7 +179,7 @@ export function handleChapterCompleted(db: DB, ev: ChapterCompletedEvent): strin
 }
 
 /** 派发定时一致性检查 Task（可被 scheduler 调用）。 */
-export function dispatchConsistencyCheck(db: DB, projectId: string, checkKind: 'omission' | 'continuity' | 'long_term'): string | null {
+export function dispatchConsistencyCheck(db: DB, projectId: string, checkKind: ConsistencyCheckKind): string | null {
   const project = getProject(db, projectId);
   const inspector = listAgents(db, project.companyId).find((a) => a.isInspector);
   const target = inspector?.id ?? project.firstAgentId;
