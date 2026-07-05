@@ -38,10 +38,11 @@ test('核心功能端到端完整回归流', async ({ page }) => {
   await page.getByRole('button', { name: '确认设定并正式开工 🚀' }).click();
 
   // 4. 验证项目详情并自动下发初始 Task
+  await page.waitForURL(/\/projects\/pr_/);
   await expect(page.locator('.project-page')).toBeVisible({ timeout: 5000 });
 
   // 5. 返回公司页并上班，然后进入项目进行看板/复盘测试
-  await page.goto('/');
+  await page.getByRole('link', { name: '首页' }).click();
   await page.getByRole('link', { name: companyName }).click();
   await page.getByRole('button', { name: '上班' }).click();
   await expect(page.locator('.mu-badge').getByText(/^上班$/).first()).toBeVisible({ timeout: 5000 });

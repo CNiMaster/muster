@@ -80,7 +80,6 @@ async function createApp(): Promise<AppHandle> {
     pollIntervalMs: Number(process.env.MUSTER_POLL_INTERVAL_MS ?? 2000),
     concurrency: Number(process.env.MUSTER_CONCURRENCY ?? 4),
   });
-
   // API（顶层）
   app.use('/api', healthRouter);
   app.use('/api/companies', companiesRouter);
