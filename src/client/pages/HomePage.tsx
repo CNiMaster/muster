@@ -2,19 +2,19 @@ import type React from 'react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useCompanies, useCreateCompany } from '../hooks/queries';
+import { Button } from '../components/Button';
+import { Card } from '../components/Card';
+import { Badge, companyStateTone, stateLabel } from '../components/Badge';
+import { Input, Select, Field } from '../components/Form';
+import { EmptyState, Icons } from '../components/EmptyState';
+import { CardSkeleton } from '../components/Skeleton';
+import { toast } from '../components/Button';
 
 interface HealthResp {
   status: string;
   version: string;
   time: string;
 }
-
-const STATE_LABEL: Record<string, string> = {
-  off: '下班',
-  online: '上班',
-  draining: '排空',
-  review_paused: '复盘',
-};
 
 export function HomePage(): React.ReactElement {
   const { data: companies, isLoading } = useCompanies();
@@ -32,7 +32,16 @@ export function HomePage(): React.ReactElement {
 
   const submit = (): void => {
     if (!name.trim()) return;
-    createCompany.mutate({ name, kind }, { onSuccess: () => setName('') });
+    createCompany.mutate(
+      { name, kind },
+      {
+        onSuccess: (c) => {
+          toast('success', `公司「${c.name}」已创建`);
+          setName('');
+        },
+        onError: (e) => toast('error', `创建失败：${(e as { message?: string }).message ?? '未知错误'}`),
+      },
+    );
   };
 
   return (
@@ -40,53 +49,77 @@ export function HomePage(): React.ReactElement {
       <h1>Muster Agent 公司工作台</h1>
       <p className="subtitle">本地单用户长篇小说公司 · MVP</p>
 
-      <section className="card">
-        <h2>系统状态</h2>
-        {health ? (
-          <ul>
-            <li>状态：{health.status}</li>
-            <li>版本：{health.version}</li>
-          </ul>
-        ) : (
-          <p>正在检查后端健康…</p>
-        )}
-      </section>
+      <div className="usage-grid section">
+        <Card className="mu-metric">
+          <div className="mu-metric-label">服务状态</div>
+          <div className="mu-metric-value">
+            <Badge tone={health?.status === 'ok' ? 'ok' : 'warn'} dot>
+              {health?.status ?? '检查中'}
+            </Badge>
+          </div>
+          <div className="mu-metric-hint">v{health?.version ?? '—'}</div>
+        </Card>
+        <Card className="mu-metric">
+          <div className="mu-metric-label">公司总数</div>
+          <div className="mu-metric-value">{companies?.length ?? 0}</div>
+        </Card>
+      </div>
 
-      <section className="card">
-        <h2>创建公司</h2>
+      <Card title="创建公司" className="section">
         <div className="form-row">
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="公司名称，例如：我的小说公司"
-          />
-          <select value={kind} onChange={(e) => setKind(e.target.value)}>
-            <option value="novel">长篇小说</option>
-          </select>
-          <button onClick={submit} disabled={!name.trim() || createCompany.isPending}>
-            {createCompany.isPending ? '创建中…' : '创建'}
-          </button>
+          <Field label="公司名称">
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="例如：我的小说公司"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') submit();
+              }}
+            />
+          </Field>
+          <Field label="类型">
+            <Select value={kind} onChange={(e) => setKind(e.target.value)}>
+              <option value="novel">长篇小说</option>
+            </Select>
+          </Field>
+          <Button onClick={submit} disabled={!name.trim()} loading={createCompany.isPending}>
+            创建
+          </Button>
         </div>
-        {createCompany.error && (
-          <p className="error">创建失败：{(createCompany.error as { message?: string }).message}</p>
-        )}
-      </section>
+      </Card>
 
-      <section className="card">
-        <h2>我的公司</h2>
-        {isLoading && <p>加载中…</p>}
-        {companies && companies.length === 0 && <p className="muted">还没有公司，先创建一个吧。</p>}
+      <Card
+        title="我的公司"
+        className="section"
+        actions={companies && companies.length > 0 ? <Badge>{companies.length}</Badge> : undefined}
+      >
+        {isLoading && (
+          <div className="mu-skel-stack">
+            <CardSkeleton />
+            <div style={{ height: 8 }} />
+            <CardSkeleton />
+          </div>
+        )}
+        {companies && companies.length === 0 && (
+          <EmptyState
+            icon={Icons.empty}
+            title="还没有公司"
+            hint="先创建一个公司开始你的小说创作协作。"
+          />
+        )}
         <ul className="entity-list">
           {companies?.map((c) => (
             <li key={c.id}>
-              <Link to={`/companies/${c.id}`}>
+              <Link to={`/companies/${c.id}`} style={{ flex: 1 }}>
                 <strong>{c.name}</strong> <span className="muted">({c.kind})</span>
               </Link>
-              <span className={`badge ${c.state === 'online' ? 'ok' : 'off'}`}>{STATE_LABEL[c.state]}</span>
+              <Badge tone={companyStateTone(c.state)} dot={c.state === 'online'}>
+                {stateLabel(c.state)}
+              </Badge>
             </li>
           ))}
         </ul>
-      </section>
+      </Card>
     </div>
   );
 }

@@ -22,6 +22,11 @@ import {
   useDeleteRelationship,
   useValidateGraph,
 } from '../hooks/queries';
+import { Button } from '../components/Button';
+import { Badge } from '../components/Badge';
+import { Card } from '../components/Card';
+import { EmptyState, Icons } from '../components/EmptyState';
+import { toast } from '../components/Button';
 
 const KIND_LABEL: Record<string, string> = {
   org: '组织图',
@@ -102,24 +107,41 @@ export function GraphPage(): React.ReactElement {
       return;
     }
     validate.mutate(companyId, {
-      onSuccess: (r) => setErrors(r.errors),
+      onSuccess: (r) => {
+        setErrors(r.errors);
+        if (r.errors.length === 0) toast('success', '关系校验通过');
+        else toast('error', `发现 ${r.errors.length} 个问题`);
+      },
     });
   };
 
   return (
     <div className="graph-page">
       <header className="page-header">
-        <h1>{KIND_LABEL[graphKind]}</h1>
-        {readonly && <span className="badge warn">上班只读</span>}
-        <button onClick={doValidate}>校验</button>
+        <div>
+          <h1>{KIND_LABEL[graphKind]}</h1>
+          {readonly && <Badge tone="warn">上班只读</Badge>}
+        </div>
+        <Button variant="ghost" onClick={doValidate} loading={validate.isPending}>
+          校验关系
+        </Button>
       </header>
       {errors && errors.length > 0 && (
-        <div className="card errors">
-          <h3>校验错误</h3>
+        <Card className="section" style={{ borderColor: 'var(--err)' }}>
+          <h3 style={{ color: 'var(--err)', marginTop: 0 }}>校验错误</h3>
           <ul>{errors.map((e, i) => <li key={i}>{e}</li>)}</ul>
-        </div>
+        </Card>
       )}
-      <div className="graph-canvas" style={{ height: 600 }}>
+      <div className="graph-canvas" style={{ height: 600, position: 'relative' }}>
+        {nodes.length === 0 && (
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1, pointerEvents: 'none' }}>
+            <EmptyState
+              icon={Icons.graph}
+              title="画布为空"
+              hint={readonly ? '请先下班，再新增员工以构成关系图。' : '先去公司页新增员工，再回来拖动连线。'}
+            />
+          </div>
+        )}
         <ReactFlow
           nodes={nodes}
           edges={edges}

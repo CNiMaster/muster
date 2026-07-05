@@ -1,0 +1,27 @@
+- generic [ref=f1e3]:
+  - banner [ref=f1e4]:
+    - link "Muster · Agent 公司工作台" [ref=f1e6] [cursor=pointer]:
+      - /url: /
+    - navigation [ref=f1e7]:
+      - link "首页" [ref=f1e8] [cursor=pointer]:
+        - /url: /
+  - main [ref=f1e9]:
+    - generic [ref=f1e10]:
+      - heading "Muster Agent 公司工作台" [level=1] [ref=f1e11]
+      - paragraph [ref=f1e12]: 本地单用户长篇小说公司 · MVP
+      - generic [ref=f1e13]:
+        - heading "系统状态" [level=2] [ref=f1e14]
+        - list [ref=f1e15]:
+          - listitem [ref=f1e16]: 状态：ok
+          - listitem [ref=f1e17]: 版本：3.0.0
+      - generic [ref=f1e18]:
+        - heading "创建公司" [level=2] [ref=f1e19]
+        - generic [ref=f1e20]:
+          - textbox "公司名称，例如：我的小说公司" [ref=f1e21]
+          - combobox [ref=f1e22]:
+            - option "长篇小说" [selected]
+          - button "创建" [disabled] [ref=f1e23]
+      - generic [ref=f1e24]:
+        - heading "我的公司" [level=2] [ref=f1e25]
+        - paragraph [ref=f1e26]: 还没有公司，先创建一个吧。
+        - list

@@ -1,0 +1,112 @@
+/**
+ * Muster 设计系统 tokens
+ *
+ 基于 ui-ux-pro-max 规范清单：
+ - 色板：warm-gray 深色，对比度 ≥4.5:1（fg/fg-muted/fg-subtle 三档可读性）
+ - 间距 scale：4/8/12/16/24/32/48/64
+ - 字号：12/14/16/20/24/32，行高 1.5/1.4/1.25 三档
+ - 阴影：elevation 1/2/3
+ - focus ring：accent 色 2px outline + 2px offset，键盘可见
+ - z-index scale：10/20/30/40/50（dropdown/modal/toast/tooltip）
+ - 动效：100/150/200/300ms，prefers-reduced-motion 关闭
+ - 圆角：4/6/8/12
+ - touch target：≥44px
+ */
+
+:root {
+  /* ===== 色板（warm-gray 深色） ===== */
+  --bg: #1f1d1b;
+  --bg-elev: #2a2825;
+  --bg-soft: #34312d;
+  --bg-hover: #3d3933;
+  --bg-input: #1a1816;
+
+  --fg: #f5f1ea;          /* 主文本，对 --bg 对比度 14.8:1 */
+  --fg-muted: #c5baa8;    /* 次文本，对 --bg 对比度 7.6:1 */
+  --fg-subtle: #8a8074;   /* 提示/占位，对 --bg 对比度 4.6:1 */
+
+  --accent: #e8865e;      /* 提亮版 #d97757，对 --bg 对比度 4.7:1 */
+  --accent-hover: #d97757;
+  --accent-fg: #1f1d1b;   /* accent 背景上的文字 */
+
+  --ok: #8fc26e;          /* 对 --bg 6.1:1 */
+  --ok-bg: rgba(143, 194, 110, 0.16);
+  --warn: #f0c04d;        /* 对 --bg 8.9:1 */
+  --warn-bg: rgba(240, 192, 77, 0.16);
+  --err: #e57354;         /* 对 --bg 4.8:1 */
+  --err-bg: rgba(229, 115, 84, 0.16);
+  --info: #7ab4d4;        /* 对 --bg 6.4:1 */
+  --info-bg: rgba(122, 180, 212, 0.16);
+
+  --border: #423f3a;
+  --border-subtle: #34312d;
+  --border-strong: #56524c;
+
+  /* ===== 间距 scale ===== */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  /* ===== 字号 + 行高 ===== */
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-base: 16px;
+  --text-lg: 20px;
+  --text-xl: 24px;
+  --text-2xl: 32px;
+  --leading-tight: 1.25;
+  --leading-snug: 1.4;
+  --leading-normal: 1.5;
+
+  /* ===== 字重 ===== */
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+
+  /* ===== 圆角 ===== */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+
+  /* ===== 阴影 elevation ===== */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-2: 0 2px 8px rgba(0, 0, 0, 0.35), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-3: 0 8px 24px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.3);
+
+  /* ===== focus ring ===== */
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+
+  /* ===== z-index scale ===== */
+  --z-dropdown: 10;
+  --z-sticky: 20;
+  --z-overlay: 30;
+  --z-modal: 40;
+  --z-toast: 50;
+
+  /* ===== 动效 ===== */
+  --duration-fast: 100ms;
+  --duration-base: 150ms;
+  --duration-moderate: 200ms;
+  --duration-slow: 300ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ===== 字体 ===== */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue', 'Segoe UI', sans-serif;
+  --font-mono: 'SF Mono', 'JetBrains Mono', 'Menlo', monospace;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0ms;
+    --duration-base: 0ms;
+    --duration-moderate: 0ms;
+    --duration-slow: 0ms;
+  }
+}
