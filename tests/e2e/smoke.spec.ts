@@ -45,8 +45,8 @@ test('向导式创建公司并正常上班', async ({ page }) => {
   // 点击确认并上班
   await page.getByRole('button', { name: '确认无误，今日开始上班！' }).click();
 
-  // 应该自动跳转到公司详情，状态为“在线”
+  // 应该自动跳转到公司详情，状态为“上班”
   await expect(page.locator('h1')).toContainText(name);
-  await expect(page.getByText('在线')).toBeVisible({ timeout: 5000 });
+  await expect(page.locator('.mu-badge').getByText(/^上班$/).first()).toBeVisible({ timeout: 5000 });
 });
 

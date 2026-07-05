@@ -14,8 +14,11 @@ test('核心功能端到端完整回归流', async ({ page }) => {
   await expect(page.getByText('✓ 组织健康体检合格！')).toBeVisible({ timeout: 5000 });
   await page.getByRole('button', { name: '确认无误，今日开始上班！' }).click();
 
-  // 2. 公司页内新增员工（向导模式）
+  // 2. 公司页内新增员工（向导模式 - 需要下班状态才能新增）
   await expect(page.locator('h1')).toContainText(companyName);
+  await page.getByRole('button', { name: '下班' }).click();
+  await expect(page.locator('.mu-badge').getByText(/^下班$/).first()).toBeVisible({ timeout: 5000 });
+
   await page.getByRole('button', { name: 'AI 新增向导 ✨' }).click();
   await page.getByPlaceholder(/李四/).fill('老李');
   await page.getByPlaceholder(/校对小说正文与语法/).fill('校对错字和语病');
@@ -23,6 +26,10 @@ test('核心功能端到端完整回归流', async ({ page }) => {
   await expect(page.getByText('🔍 推荐配置预览 (支持可视化修改)')).toBeVisible({ timeout: 5000 });
   await page.getByRole('button', { name: '确认配置并加入团队 🚀' }).click();
   await expect(page.getByText('老李 [editor]')).toBeVisible({ timeout: 5000 });
+
+  // 重新上班锁定配置
+  await page.getByRole('button', { name: '上班' }).click();
+  await expect(page.locator('.mu-badge').getByText(/^上班$/).first()).toBeVisible({ timeout: 5000 });
 
   // 3. 项目向导创建新项目与开工
   await page.getByRole('link', { name: '发布新项目' }).click();
