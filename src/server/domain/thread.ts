@@ -102,6 +102,20 @@ export function listMirrorsOfRoot(db: DB, rootThreadId: string): ProjectAgentThr
   return rows.map(fromRow);
 }
 
+/** 跨项目列出 online 公司下所有活跃线程（用于引擎轮询）。 */
+export function listOnlineThreads(db: DB): ProjectAgentThread[] {
+  const rows = db
+    .prepare(
+      `SELECT t.* FROM project_agent_thread t
+       JOIN project p ON p.id = t.project_id
+       JOIN company c ON c.id = p.company_id
+       WHERE c.state = 'online'
+       ORDER BY t.created_at`,
+    )
+    .all() as ThreadRow[];
+  return rows.map(fromRow);
+}
+
 export function updateThreadState(db: DB, id: string, state: ThreadState): ProjectAgentThread {
   db.prepare('UPDATE project_agent_thread SET state=?, updated_at=? WHERE id=?').run(state, nowIso(), id);
   return getThread(db, id);

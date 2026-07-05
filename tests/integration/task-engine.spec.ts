@@ -9,7 +9,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { makeTestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createCompany } from '../../src/server/domain/company';
+import { createCompany, clockIn } from '../../src/server/domain/company';
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject, updateProject } from '../../src/server/domain/project';
 import { ensurePrimaryThread, createMirror } from '../../src/server/domain/thread';
@@ -209,7 +209,8 @@ describe('clarification rounds', () => {
 
 describe('fake executor end-to-end', () => {
   it('假执行器驱动 Task 闭环', async () => {
-    const { project, writer } = fixture();
+    const { c, project, writer } = fixture();
+    clockIn(db, c.id); // 引擎要求公司 online 才领取
     createTask(db, { projectId: project.id, assigneeAgentId: writer.id, title: '写章节' });
     const thread = ensurePrimaryThread(db, project.id, writer.id);
 

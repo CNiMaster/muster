@@ -17,6 +17,16 @@ export default defineConfig({
   build: {
     outDir: resolve(__dirname, 'dist/client'),
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ['react', 'react-dom', 'react-router-dom'],
+          query: ['@tanstack/react-query'],
+          flow: ['@xyflow/react'],
+        },
+      },
+    },
+    chunkSizeWarningLimit: 700,
   },
   appType: 'spa',
 });

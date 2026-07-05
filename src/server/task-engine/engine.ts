@@ -1,43 +1,123 @@
 /**
  * Task 引擎：驱动线程领取 → 执行 → 完成的循环。
  *
- - 单进程内每个活跃线程可触发一次 pump()，尝试领取并执行一个 Task。
- - 执行结果由 ExecutionAdapter 返回，引擎在同一事务写入。
- - waiting_input 不阻塞：派发者回答后 task 重新入队。
- - 异常被捕获：task 标 failed，不传染进程。
+ 真正的编排核心：
+ - pumpThread：领取 → 创建 worktree → markRunning → 装配上下文 → adapter.run
+              → completeTask → publish artifacts → 回写 session id
+ - pumpAll：拉动一批线程
+ - start/stop：定时轮询所有活跃线程（接入 server 启动）
+ - 异常分级（P7）：超时/budget/blocked 区分
+ - 文件冲突时把 Task 标 blocked（PRD：同段冲突保留双方并阻塞发布）
  */
 import type { DB } from '../db/client';
 import type { ExecutionAdapter, ExecutionContext } from './executor';
-import { claimNextTask, markRunning, completeTask, heartbeat, getTask } from '../domain/task';
-import { getThread } from '../domain/thread';
+import {
+  claimNextTask,
+  markRunning,
+  completeTask,
+  heartbeat,
+  getTask,
+  pauseTask,
+  failTask,
+} from '../domain/task';
+import { getThread, listOnlineThreads, setClaudeSession } from '../domain/thread';
 import { getAgent } from '../domain/agent';
+import { assembleContext } from '../executors/context';
+import { assertSafeToRun } from '../executors/safety';
+import { getProject } from '../domain/project';
+import { getCompany } from '../domain/company';
+import { createWorktree, removeWorktree } from '../worktree/manager';
+import { PublishQueue } from '../worktree/publish-queue';
+import { recordUsage } from '../domain/usage';
 import { log } from '../logger';
+import { AppError, ErrorCode } from '../../shared/errors';
+import type { AgentRunResult } from '../../shared/types';
+import { realtime } from '../realtime';
 
 export interface EngineOptions {
-  /** 心跳间隔 ms。 */
   heartbeatIntervalMs?: number;
+  /** 单进程并发 pump 数上限。 */
+  concurrency?: number;
+  /** 轮询间隔 ms（start 后）。 */
+  pollIntervalMs?: number;
 }
 
 export class TaskEngine {
+  private publishQueue: PublishQueue;
+  private pollTimer: NodeJS.Timeout | null = null;
+  private pumping = new Set<string>(); // 正在 pump 的 threadId，防重入
+
   constructor(
     private db: DB,
     private adapter: ExecutionAdapter,
     private opts: EngineOptions = {},
-  ) {}
+  ) {
+    this.publishQueue = new PublishQueue(db);
+  }
 
   /**
    * 让指定线程尝试领取并执行下一个 Task。
    * 返回是否执行了某个 Task。
    */
   async pumpThread(threadId: string): Promise<boolean> {
-    const thread = getThread(this.db, threadId);
-    const agent = getAgent(this.db, thread.agentId);
+    if (this.pumping.has(threadId)) return false;
+    this.pumping.add(threadId);
+    try {
+      return await this._pumpThread(threadId);
+    } finally {
+      this.pumping.delete(threadId);
+    }
+  }
 
+  private async _pumpThread(threadId: string): Promise<boolean> {
+    const thread = getThread(this.db, threadId);
+    const project = getProject(this.db, thread.projectId);
+    const company = getCompany(this.db, project.companyId);
+
+    // 公司不在 online 不领取
+    if (company.state !== 'online') return false;
+
+    const agent = getAgent(this.db, thread.agentId);
     const claimed = claimNextTask(this.db, threadId, thread.agentId);
     if (!claimed) return false;
 
     const task = claimed.task;
-    log.info('task claimed', { taskId: task.id, seq: task.seq, threadId, agent: agent.name });
+    log.info('task claimed', { taskId: task.id, seq: task.seq, threadId, agent: agent.name, projectId: project.id });
+    realtime.publish({
+      id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      type: 'task.claimed',
+      companyId: company.id,
+      projectId: project.id,
+      taskId: task.id,
+      occurredAt: new Date().toISOString(),
+      payload: { threadId, agentId: agent.id, seq: task.seq },
+    });
+
+    // 安全检查：重复失败/无进展
+    try {
+      assertSafeToRun(this.db, task.id);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      log.warn('task blocked by safety check', { taskId: task.id, msg });
+      completeTask(this.db, task.id, {
+        outcome: 'blocked',
+        summary: `安全检查阻断：${msg}`,
+        outboundTasks: [],
+        artifacts: [],
+      });
+      return true;
+    }
+
+    // 创建 Task worktree（PRD：每个 Task 隔离 worktree）
+    let worktreeInfo: ReturnType<typeof createWorktree> | null = null;
+    let workingDir = project.rootDir;
+    try {
+      worktreeInfo = createWorktree(project.rootDir, project.id, task.id);
+      workingDir = worktreeInfo.path;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      log.error('worktree creation failed; falling back to project root', { taskId: task.id, err: msg });
+    }
 
     // 心跳定时器
     const hb = this.opts.heartbeatIntervalMs ?? 30_000;
@@ -54,47 +134,166 @@ export class TaskEngine {
 
       const ctx: ExecutionContext = {
         task: getTask(this.db, task.id),
-        systemPrompt: agent.systemPrompt || agent.responsibilities,
-        workingDir: '', // Phase 4 接入 worktree
-        inputPacket: {
-          ...task.inputProtocol,
-          contextRefs: task.contextRefs,
-          outputProtocol: task.outputProtocol,
-        },
+        systemPrompt: '', // 由 assembleContext 装配
+        workingDir,
+        inputPacket: {},
+        threadId: thread.id,
+        sessionIdHint: thread.claudeSessionId ?? undefined,
       };
+      const assembled = assembleContext(this.db, ctx.task, {
+        threadId: thread.id,
+        sessionIdHint: ctx.sessionIdHint,
+      });
+      ctx.systemPrompt = assembled.systemPrompt;
+      ctx.inputPacket = assembled.inputPacket;
 
       const result = await this.adapter.run(ctx, {
         onOutput: (chunk) => log.debug('agent output', { taskId: task.id, chunk: chunk.slice(0, 120) }),
         onToolCall: (name, input) => log.debug('agent tool', { taskId: task.id, name }),
       });
 
+      // 持久化 Claude session id（首次返回后保存，后续 --resume 用）
+      if (result._sessionIdHint && result._sessionIdHint !== thread.claudeSessionId) {
+        setClaudeSession(this.db, thread.id, result._sessionIdHint);
+      }
+
       completeTask(this.db, task.id, result);
       log.info('task completed', { taskId: task.id, outcome: result.outcome });
+
+      // published artifacts：completed 才发布；其他状态保留在 worktree
+      if (result.outcome === 'completed' && result.artifacts.length > 0 && worktreeInfo) {
+        this.publishArtifacts(task.id, thread.id, project.rootDir, worktreeInfo, result);
+      }
       return true;
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      log.error('task failed', { taskId: task.id, err: msg });
-      // 标 failed
-      completeTask(this.db, task.id, {
-        outcome: 'blocked',
-        summary: `执行异常：${msg}`,
-        outboundTasks: [],
-        artifacts: [],
-      });
+      this.handleRunError(task.id, err);
       return true;
     } finally {
       clearInterval(hbTimer);
+      // 清理 worktree（已 publish 或失败都不再保留工作目录）
+      if (worktreeInfo) {
+        try {
+          removeWorktree(project.rootDir, worktreeInfo);
+        } catch (e) {
+          log.warn('worktree cleanup failed', { taskId: task.id, err: String(e) });
+        }
+      }
     }
   }
 
-  /** 拉动所有活跃线程，并发泵。 */
+  /** 发布 artifacts 到正式项目目录。冲突时把 Task 标 blocked。 */
+  private publishArtifacts(
+    taskId: string,
+    threadId: string,
+    projectRootDir: string,
+    worktreeInfo: ReturnType<typeof createWorktree>,
+    result: AgentRunResult,
+  ): void {
+    try {
+      const pub = this.publishQueue.publish({
+        taskId,
+        threadId,
+        worktreePath: worktreeInfo.path,
+        baseCommit: worktreeInfo.baseCommit,
+        projectRootDir,
+        artifacts: result.artifacts.map((a) => ({
+          path: a.path,
+          kind: a.kind,
+          operation: a.operation,
+        })),
+      });
+      if (pub.blocked) {
+        log.warn('publish blocked by conflicts', { taskId, conflicts: pub.conflicts });
+        // 把已 completed 的 Task 重新标 blocked，让用户介入
+        try {
+          pauseTask(this.db, taskId);
+        } catch {
+          // Task 可能已被其他流程改动，忽略
+        }
+        realtime.publish({
+          id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          type: 'publish.blocked',
+          projectId: getTask(this.db, taskId).projectId,
+          taskId,
+          occurredAt: new Date().toISOString(),
+          payload: { conflicts: pub.conflicts, publishId: pub.id },
+        });
+      } else {
+        log.info('publish merged', { taskId, files: pub.mergedFiles.length, commit: pub.commitHash.slice(0, 8) });
+      }
+    } catch (e) {
+      log.error('publish failed', { taskId, err: String(e) });
+    }
+  }
+
+  /** 异常分级（P7）：根据错误类型走不同分支。 */
+  private handleRunError(taskId: string, err: unknown): void {
+    const msg = err instanceof Error ? err.message : String(err);
+
+    // budget / no_progress / 不可恢复异常 → blocked（需人工介入）
+    if (err instanceof AppError) {
+      if (err.code === ErrorCode.EXECUTOR_BUDGET_EXCEEDED) {
+        log.warn('task hit budget', { taskId });
+        completeTask(this.db, taskId, {
+          outcome: 'blocked',
+          summary: `预算超限：${msg}`,
+          outboundTasks: [],
+          artifacts: [],
+        });
+        return;
+      }
+      if (err.code === ErrorCode.EXECUTOR_NO_PROGRESS) {
+        completeTask(this.db, taskId, {
+          outcome: 'blocked',
+          summary: `无进展：${msg}`,
+          outboundTasks: [],
+          artifacts: [],
+        });
+        return;
+      }
+    }
+
+    // timeout / 结构错误 / spawn 错 → failed（可重试或观察后重试）
+    log.error('task failed', { taskId, err: msg });
+    failTask(this.db, taskId, `执行异常：${msg}`);
+  }
+
+  /** 拉动所有活跃线程，并发泵（限并发上限）。 */
   async pumpAll(threadIds: string[]): Promise<number> {
+    const limit = this.opts.concurrency ?? 4;
     let ran = 0;
-    await Promise.all(
-      threadIds.map(async (tid) => {
-        if (await this.pumpThread(tid)) ran++;
-      }),
-    );
+    for (let i = 0; i < threadIds.length; i += limit) {
+      const batch = threadIds.slice(i, i + limit);
+      const results = await Promise.all(batch.map((tid) => this.pumpThread(tid)));
+      ran += results.filter(Boolean).length;
+    }
     return ran;
+  }
+
+  /** 启动定时轮询所有 online 公司的活跃线程。 */
+  start(): void {
+    if (this.pollTimer) return;
+    const interval = this.opts.pollIntervalMs ?? 2000;
+    this.pollTimer = setInterval(async () => {
+      try {
+        const threads = listOnlineThreads(this.db);
+        // 只 pump primary 和 idle mirror（避免重入）
+        const candidates = threads.filter((t) => t.state === 'idle' || t.state === 'running');
+        if (candidates.length === 0) return;
+        await this.pumpAll(candidates.map((t) => t.id));
+      } catch (e) {
+        log.warn('poll cycle error', { err: String(e) });
+      }
+    }, interval);
+    this.pollTimer.unref?.();
+    log.info('task engine polling started', { intervalMs: interval });
+  }
+
+  stop(): void {
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
+      log.info('task engine polling stopped');
+    }
   }
 }

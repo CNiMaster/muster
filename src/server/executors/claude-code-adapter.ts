@@ -11,6 +11,7 @@
  */
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createInterface } from 'node:readline';
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { AgentRunResult, OutboundTaskRequest, ArtifactChange } from '../../shared/types';
 import type { ExecutionAdapter, ExecutionContext, ExecutionEvents } from '../task-engine/executor';
@@ -116,14 +117,13 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
     };
   }
 
-  async run(ctx: ExecutionContext, events?: ExecutionEvents): Promise<AgentRunResult> {
-    const start = Date.now();
+  async run(ctx: ExecutionContext, events?: ExecutionEvents): Promise<AgentRunResult & { _sessionIdHint?: string }> {
     const prompt = buildPrompt(ctx);
-    const { result, raw, sessionId } = await this.spawnClaude({
+    const { result, sessionId } = await this.spawnClaude({
       prompt,
       systemPrompt: ctx.systemPrompt,
       cwd: ctx.workingDir || process.cwd(),
-      sessionId: ctx.sessionIdHint,
+      existingSessionId: ctx.sessionIdHint,
       events,
     });
 
@@ -134,25 +134,23 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
         taskId: ctx.task.id,
         err: parsed.error.message,
       });
-      // 兜底：把全文当 summary，标 blocked
       return {
         outcome: 'blocked',
         summary: `执行器输出不符合 AgentRunResult 契约：${parsed.error.message}\n原文：${result.fullText.slice(0, 500)}`,
         outboundTasks: [],
         artifacts: [],
+        _sessionIdHint: sessionId ?? undefined,
       };
     }
-    void raw;
-    void sessionId;
-    void start;
-    return parsed.data;
+    return { ...parsed.data, _sessionIdHint: sessionId ?? undefined };
   }
 
   private spawnClaude(opts: {
     prompt: string;
     systemPrompt: string;
     cwd: string;
-    sessionId?: string;
+    /** 已有的 session id（后续 --resume）；undefined 表示首次执行。 */
+    existingSessionId?: string;
     events?: ExecutionEvents;
   }): Promise<{
     result: { fullText: string; structuredOutput: unknown };
@@ -170,9 +168,11 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
         '--json-schema', JSON.stringify(AGENT_RESULT_JSON_SCHEMA),
       ];
 
-      // session 持久化：首次 --session-id，后续 --resume
-      if (opts.sessionId) {
-        args.push('--resume', opts.sessionId);
+      // session 持久化：首次 --session-id（生成新 id），后续 --resume
+      if (opts.existingSessionId) {
+        args.push('--resume', opts.existingSessionId);
+      } else {
+        args.push('--session-id', generateSessionId());
       }
 
       // 沙盒
@@ -358,6 +358,11 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
 }
 
 /** 构建 Claude 提示词：装 Task 工作包 + 上下文 + 输出要求。 */
+/** 首次执行生成 session id（用于 --session-id）。 */
+function generateSessionId(): string {
+  return `muster-${randomUUID()}`;
+}
+
 function buildPrompt(ctx: ExecutionContext): string {
   const t = ctx.task;
   const lines: string[] = [

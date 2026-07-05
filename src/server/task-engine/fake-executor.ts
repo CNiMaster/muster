@@ -16,6 +16,13 @@ export interface FakeScriptStep {
   delayMs?: number;
   /** 输出文本片段（模拟流式）。 */
   outputs?: string[];
+  /** 模拟返回的 Claude session id。 */
+  sessionId?: string;
+  /**
+   * 在 ctx.workingDir（worktree）里写文件，模拟 Agent 真实产出。
+   * key=相对路径，value=内容。
+   */
+  writeFiles?: Record<string, string>;
 }
 
 export class FakeExecutor implements ExecutionAdapter {
@@ -44,17 +51,25 @@ export class FakeExecutor implements ExecutionAdapter {
         events?.onOutput?.(chunk);
       }
     }
+    if (step.writeFiles) {
+      const { mkdirSync, writeFileSync } = await import('node:fs');
+      const path = await import('node:path');
+      for (const [rel, content] of Object.entries(step.writeFiles)) {
+        const abs = path.resolve(ctx.workingDir, rel);
+        mkdirSync(path.dirname(abs), { recursive: true });
+        writeFileSync(abs, content);
+      }
+    }
     if (step.throw) {
       throw new Error(step.throw);
     }
-    return (
-      step.result ?? {
-        outcome: 'completed',
-        summary: 'fake completed',
-        outboundTasks: [],
-        artifacts: [],
-      }
-    );
+    const result = step.result ?? {
+      outcome: 'completed' as const,
+      summary: 'fake completed',
+      outboundTasks: [],
+      artifacts: [],
+    };
+    return { ...result, _sessionIdHint: step.sessionId } as AgentRunResult & { _sessionIdHint?: string };
   }
 
   get callCount(): number {

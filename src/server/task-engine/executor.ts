@@ -25,6 +25,9 @@ export interface ExecutionEvents {
 }
 
 export interface ExecutionAdapter {
-  /** 执行一次 Task，返回符合 AgentRunResult 契约的结果。 */
-  run(ctx: ExecutionContext, events?: ExecutionEvents): Promise<AgentRunResult>;
+  /**
+   * 执行一次 Task，返回符合 AgentRunResult 契约的结果。
+   * 返回值可附带 _sessionIdHint（执行器发现的 Claude session id），引擎会持久化到 thread。
+   */
+  run(ctx: ExecutionContext, events?: ExecutionEvents): Promise<AgentRunResult & { _sessionIdHint?: string }>;
 }

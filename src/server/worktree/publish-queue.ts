@@ -104,6 +104,8 @@ export class PublishQueue {
 
     // 2. 检查每个文件是否与正式目录冲突
     for (const art of req.artifacts) {
+      // 路径逃逸防护：所有 artifact path 必须在项目根目录内
+      assertWithin(req.projectRootDir, art.path);
       if (art.operation === 'delete') {
         // 删除操作：直接删
         const target = path.join(req.projectRootDir, art.path);
@@ -276,4 +278,16 @@ function copyFile(src: string, dst: string): void {
   const dir = path.dirname(dst);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   writeFileSync(dst, readFileSync(src));
+}
+
+/**
+ * 防路径逃逸：相对路径解析后必须落在 root 内。
+ * 拒绝 `..`、绝对路径、符号链接逃逸等注入。
+ */
+function assertWithin(root: string, relPath: string): void {
+  const resolved = path.resolve(root, relPath);
+  const absRoot = path.resolve(root);
+  if (resolved !== absRoot && !resolved.startsWith(`${absRoot}${path.sep}`)) {
+    throw new AppError(ErrorCode.WORKTREE_CONFLICT, `路径逃逸：${relPath} 解析到 ${resolved}，超出项目根 ${absRoot}`);
+  }
 }

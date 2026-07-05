@@ -39,8 +39,8 @@ npm install              # 安装依赖（express, ws, better-sqlite3, react, re
 npm run dev              # 开发模式：tsx watch src/server/server.ts，Express 挂 Vite middleware
 npm start                # 生产模式：node dist/server/server.js（需先 build）
 npm run typecheck        # TypeScript 项目引用全量检查
-npm test                 # Vitest 单测 + 集成（66 项）
-npm run test:e2e         # Playwright 端到端（需浏览器）
+npm test                 # Vitest 单测 + 集成（70 项）
+npm run test:e2e         # Playwright 端到端（需先 `npx playwright install`，未在 CI 跑过）
 npm run build            # tsup 编译 server + vite build 客户端 → dist/
 ```
 
@@ -83,7 +83,7 @@ src/
     hooks/       # React Query hooks
     api/         # fetch client + DTO
 tests/
-  unit/ integration/ e2e/   # 66 项 Vitest + Playwright smoke
+  unit/ integration/ e2e/   # 70 项 Vitest + Playwright smoke（e2e 需手动跑）
 legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史参考）
 ```
 
@@ -94,6 +94,7 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 - **原子领取**：`BEGIN IMMEDIATE` + `UPDATE ... WHERE state='queued' ... RETURNING`，租约 + 心跳 + 过期恢复。
 - **追问 3 轮上限**：超限自动给项目第一负责人派发上报 Task。
 - **执行器抽象**：`ExecutionAdapter` 接口；首个实现 `ClaudeCodeAdapter`（spawn claude，stream-json，session 持久化，Zod 校验 AgentRunResult）。
+- **引擎驱动**：`TaskEngine.start()` 在 server 启动时定时轮询所有 online 公司的活跃线程（`pollIntervalMs` 默认 2s），每轮 `pumpThread` 领取→创建 worktree→执行→发布；也提供 `POST /api/projects/:id/pump` 手动触发。
 - **安全成果工作区**：每 Task 一个隐藏 Git worktree + 专用分支；串行发布队列做文本三方合并、同段冲突阻塞、二进制独占锁、可回滚。
 - **长篇小说公司**：5 基础岗位（lead/writer/character/plot/inspector），第一负责人≠主写手；章节完成事件触发人物/情节维护；定时一致性检查；强制复盘按根员工聚合；闲置头脑风暴受限。
 - **镜像**：项目内临时并行线程，共享根员工职责/上下文/Task 池，不重复领取；成果归入根员工。
@@ -121,8 +122,12 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 
 ### 测试
 
-- Vitest 集成测试 66 项（公司状态机、组织锁、跨项目只读、Task 并发领取/租约恢复/依赖/追问、worktree 三方合并/冲突阻塞、章节事件、复盘、头脑风暴、MVP 验收剧本、重启恢复）。
-- Playwright E2E smoke（首页、创建公司、健康接口）。
+- Vitest 集成测试 70 项（公司状态机、组织锁、跨项目只读、Task 并发领取/租约恢复/依赖/追问、worktree 三方合并/冲突阻塞、章节事件、复盘、头脑风暴、**engine→worktree→publish 编排链路**、MVP 验收剧本、重启恢复）。
+- Playwright E2E smoke 已写（首页、创建公司、健康接口），但**未在本机执行过**——需 `npx playwright install` 后手动 `npm run test:e2e`。
+
+### 已知工程取舍
+- `noUncheckedIndexedAccess` 关闭（为绕过 express `req.params` 类型摩擦）。代价：数组下标访问不强制 undefined 检查。如需更严格，重开后主要修 `src/shared/utils.ts` 和 domain 的 row 映射。
+- 真实 Claude CLI 端到端（`ClaudeCodeAdapter` 实际 spawn）未自动化测试，只测了 `FakeExecutor`。生产使用前需手动验证 `claude` 可执行且 `--session-id`/`--resume` 行为符合预期。
 
 旧 Leader/Worker/Verifier、临时群聊、`.muster/config.json` 文件持久化等已全部废弃，不再参与运行。
 

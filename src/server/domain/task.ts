@@ -16,6 +16,7 @@
  追问：waiting_input 时 clarification_rounds++；超过 MAX_CLARIFY_ROUNDS 上报第一负责人。
  */
 import type { DB } from '../db/client';
+import { immediateTransaction } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
 import { LEASE_TTL_MS, MAX_CLARIFY_ROUNDS } from '../../shared/constants';
@@ -245,58 +246,43 @@ export interface ClaimResult {
  * - BEGIN IMMEDIATE 拿写锁，UPDATE ... RETURNING 保证只被一个线程领到
  */
 export function claimNextTask(db: DB, threadId: string, assigneeAgentId?: string): ClaimResult | null {
-  const now = Date.now();
-  const leaseExpiresAt = new Date(now + LEASE_TTL_MS).toISOString();
-  const heartbeatAt = new Date(now).toISOString();
+  const leaseExpiresAt = new Date(Date.now() + LEASE_TTL_MS).toISOString();
+  const heartbeatAt = new Date().toISOString();
+  const stamp = nowIso();
 
-  // 选择候选：依赖已满足的 queued 任务
-  const candidate = db
-    .prepare(
-      `SELECT t.id FROM task t
-       WHERE t.project_id IN (SELECT project_id FROM project_agent_thread WHERE id = ?)
-         AND t.state = 'queued'
-         AND NOT EXISTS(
-           SELECT 1 FROM task_dependency d
-           JOIN task dep ON dep.id = d.depends_on_id
-           WHERE d.task_id = t.id AND dep.state NOT IN ('completed'))
-       ORDER BY t.priority DESC, t.seq ASC
-       LIMIT 1`,
-    )
-    .get(threadId) as { id: string } | undefined;
-
-  if (!candidate) return null;
-
-  const claimed = immediateClaim(db, candidate.id, threadId, assigneeAgentId, leaseExpiresAt, heartbeatAt);
-  if (!claimed) return null;
-  return { task: claimed, leasedUntil: leaseExpiresAt };
-}
-
-function immediateClaim(
-  db: DB,
-  taskId: string,
-  threadId: string,
-  assigneeAgentId: string | undefined,
-  leaseExpiresAt: string,
-  heartbeatAt: string,
-): Task | null {
-  let result: Task | null = null;
-  db.transaction(() => {
+  // 原子领取：单条 UPDATE 把候选选择 + 状态翻转合并，
+  // WHERE 子查询选出当前线程可领的、依赖已满足的、最高优先级最早入队的 queued task。
+  // 外层用 BEGIN IMMEDIATE 立即拿写锁，避免 deferred 锁的并发选候选窗口。
+  const row = immediateTransaction(db, () => {
     const info = db
       .prepare(
         `UPDATE task
          SET state='claimed', lease_owner_thread_id=?, lease_expires_at=?, heartbeat_at=?,
              assignee_thread_id=?, assignee_agent_id=COALESCE(?, assignee_agent_id), updated_at=?
-         WHERE id=? AND state='queued'`,
+         WHERE id = (
+           SELECT t.id FROM task t
+           WHERE t.project_id = (SELECT project_id FROM project_agent_thread WHERE id = ?)
+             AND t.state = 'queued'
+             AND NOT EXISTS(
+               SELECT 1 FROM task_dependency d
+               JOIN task dep ON dep.id = d.depends_on_id
+               WHERE d.task_id = t.id AND dep.state NOT IN ('completed'))
+           ORDER BY t.priority DESC, t.seq ASC
+           LIMIT 1
+         )
+         AND state = 'queued'
+         RETURNING id`,
       )
-      .run(threadId, leaseExpiresAt, heartbeatAt, threadId, assigneeAgentId ?? null, nowIso(), taskId);
-    if (info.changes === 0) {
-      result = null;
-      return;
-    }
-    appendTaskEvent(db, taskId, 'claimed', { threadId });
-    result = getTask(db, taskId);
-  })();
-  return result;
+      .get(threadId, leaseExpiresAt, heartbeatAt, threadId, assigneeAgentId ?? null, stamp, threadId) as
+      | { id: string }
+      | undefined;
+    if (!info) return null;
+    appendTaskEvent(db, info.id, 'claimed', { threadId });
+    return getTask(db, info.id);
+  });
+
+  if (!row) return null;
+  return { task: row, leasedUntil: leaseExpiresAt };
 }
 
 /** 标 running（执行器开始）。必须在 claimed 之后。 */
@@ -444,6 +430,18 @@ export function recoverExpiredLeases(db: DB): number {
 }
 
 // ===== 取消 / 暂停 / 恢复 =====
+/** 标记 Task 失败（引擎异常专用，区别于 blocked）。 */
+export function failTask(db: DB, taskId: string, message: string): Task {
+  const cur = getTask(db, taskId);
+  const now = nowIso();
+  db.prepare(
+    `UPDATE task SET state='failed', summary=?, lease_owner_thread_id=NULL, lease_expires_at=NULL, updated_at=? WHERE id=?`,
+  ).run(message.slice(0, 2000), now, taskId);
+  appendTaskEvent(db, taskId, 'failed', { message });
+  void cur;
+  return getTask(db, taskId);
+}
+
 export function cancelTask(db: DB, taskId: string): Task {
   const cur = getTask(db, taskId);
   assertTransition(cur.state, 'cancelled');
