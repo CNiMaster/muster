@@ -33,9 +33,9 @@ test('核心功能端到端完整回归流', async ({ page }) => {
   await page.getByRole('link', { name: '新建项目' }).click();
   await page.getByPlaceholder(/用您自然的语言描述故事想法/).fill('写一本都市修仙小说，风格幽默');
   await page.getByRole('button', { name: 'AI 智能生成蓝图配置' }).click();
-  await expect(page.getByText('🎨 可视化修改 AI 推荐配置')).toBeVisible({ timeout: 5000 });
+  await expect(page.getByText('微调 AI 推荐配置')).toBeVisible({ timeout: 5000 });
   await page.getByPlaceholder(/my-novel/).fill(`/tmp/e2e-novel-${timestamp}`);
-  await page.getByRole('button', { name: '确认设定并正式开工 🚀' }).click();
+  await page.getByRole('button', { name: '确认设定并正式开工' }).click();
 
   // 4. 验证项目详情并自动下发初始 Task
   await page.waitForURL(/\/projects\/pr_/);
