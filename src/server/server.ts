@@ -27,6 +27,7 @@ import { novelRouter, projectScopedNovel } from './api/novel';
 import { projectPhase7, reportByIdRouter } from './api/phase7';
 import { companyMessagesRouter, projectMessagesRouter } from './api/conversation';
 import { projectArtifactsRouter } from './api/artifacts';
+import { workflowsRouter } from './api/workflows';
 import { asyncHandler, errorMiddleware, param } from './api/middleware';
 import { realtime } from './realtime';
 import { getDb } from './db/client';
@@ -87,6 +88,7 @@ async function createApp(): Promise<AppHandle> {
   app.use('/api/companies/:companyId/agents', agentsRouter);
   app.use('/api/companies/:companyId/projects', projectsRouter);
   app.use('/api/companies/:companyId/relationships', graphsRouter);
+  app.use('/api/companies/:companyId/workflows', workflowsRouter);
   app.use('/api/companies/:id/messages', companyMessagesRouter);
   app.use('/api/projects/:id', projectById);
   app.use('/api/reports/:id', reportByIdRouter);

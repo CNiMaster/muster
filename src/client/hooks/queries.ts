@@ -402,3 +402,67 @@ export function useInspectorSuggestions(projectId: string | undefined) {
   });
 }
 
+// ===== Workflows (Phase F) =====
+export interface WorkflowNode {
+  id: string;
+  companyId: string;
+  workflowId: string;
+  kind: 'step' | 'decision' | 'start' | 'end';
+  label: string;
+  position: { x: number; y: number };
+  props: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface WorkflowEdge {
+  id: string;
+  companyId: string;
+  workflowId: string;
+  sourceId: string;
+  targetId: string;
+  label: string;
+  createdAt: string;
+}
+
+export interface WorkflowData {
+  nodes: WorkflowNode[];
+  edges: WorkflowEdge[];
+}
+
+export function useWorkflow(companyId: string | undefined, workflowId: string | undefined) {
+  return useQuery({
+    queryKey: ['workflow', companyId, workflowId],
+    queryFn: () => api.get<WorkflowData>(`/api/companies/${companyId}/workflows/${workflowId}`),
+    enabled: !!companyId && !!workflowId,
+  });
+}
+
+export function useSaveWorkflow() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      companyId,
+      workflowId,
+      nodes,
+      edges,
+    }: {
+      companyId: string;
+      workflowId: string;
+      nodes: Array<{ id?: string; kind: 'step' | 'decision' | 'start' | 'end'; label: string; position: { x: number; y: number }; props?: Record<string, unknown> }>;
+      edges: Array<{ sourceId: string; targetId: string; label?: string }>;
+    }) =>
+      api.put<{ ok: boolean }>(`/api/companies/${companyId}/workflows/${workflowId}`, { nodes, edges }),
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: ['workflow', vars.companyId, vars.workflowId] });
+    },
+  });
+}
+
+export function useValidateWorkflow() {
+  return useMutation({
+    mutationFn: ({ companyId, workflowId }: { companyId: string; workflowId: string }) =>
+      api.post<{ errors: string[] }>(`/api/companies/${companyId}/workflows/${workflowId}/validate`),
+  });
+}
+
+

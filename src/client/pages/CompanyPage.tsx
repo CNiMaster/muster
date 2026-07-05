@@ -108,9 +108,10 @@ export function CompanyPage(): React.ReactElement {
       </Card>
 
       <Card title="关系图" className="section">
-        <div className="graph-links">
+        <div className="graph-links" style={{ display: 'flex', gap: 'var(--space-4)' }}>
           <Link to={`/companies/${companyId}/graphs/org`}>组织图</Link>
           <Link to={`/companies/${companyId}/graphs/communication`}>通信图</Link>
+          <Link to={`/companies/${companyId}/workflows/main`}>工作流图</Link>
         </div>
       </Card>
 
