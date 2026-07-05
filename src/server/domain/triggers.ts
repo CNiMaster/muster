@@ -12,6 +12,7 @@ import { listAgents } from './agent';
 import { createTask } from './task';
 import type { ArtifactChange } from '../../shared/types';
 import { transaction } from '../db/client';
+import { appendTaskEvent } from './task-event';
 
 export type ConsistencyCheckKind = 'omission' | 'continuity' | 'long_term';
 
@@ -135,6 +136,7 @@ export interface ChapterCompletedEvent {
   chapterSeq: number;
   summary: string;
   artifacts: ArtifactChange[];
+  sourceTaskId?: string;
 }
 
 /**
@@ -144,6 +146,15 @@ export interface ChapterCompletedEvent {
  * - 模板：{ trigger: 'chapter_completed', chapter, summary }
  */
 export function handleChapterCompleted(db: DB, ev: ChapterCompletedEvent): string[] {
+  if (ev.sourceTaskId) {
+    const existing = db.prepare(
+      "SELECT payload_json FROM task_event WHERE task_id=? AND kind='chapter_completed_dispatched' LIMIT 1",
+    ).get(ev.sourceTaskId) as { payload_json: string } | undefined;
+    if (existing) {
+      const payload = JSON.parse(existing.payload_json) as { taskIds?: string[] };
+      return payload.taskIds ?? [];
+    }
+  }
   const project = getProject(db, ev.projectId);
   const agents = listAgents(db, project.companyId);
   const dispatched: string[] = [];
@@ -160,6 +171,7 @@ export function handleChapterCompleted(db: DB, ev: ChapterCompletedEvent): strin
     if (!agentId) continue;
     const task = createTask(db, {
       projectId: ev.projectId,
+      parentTaskId: ev.sourceTaskId,
       assigneeAgentId: agentId,
       dispatcherAgentId: project.firstAgentId ?? undefined,
       title: t.title,
@@ -173,6 +185,10 @@ export function handleChapterCompleted(db: DB, ev: ChapterCompletedEvent): strin
       priority: 6,
     });
     dispatched.push(task.id);
+  }
+
+  if (ev.sourceTaskId) {
+    appendTaskEvent(db, ev.sourceTaskId, 'chapter_completed_dispatched', { taskIds: dispatched });
   }
 
   return dispatched;

@@ -34,6 +34,7 @@ import {
 } from '../domain/thread';
 import { getCompany } from '../domain/company';
 import { registerDefaultNovelScheduleTriggers } from '../domain/triggers';
+import { initializeNovelProject } from '../domain/novel-template';
 
 export const projectsRouter = Router({ mergeParams: true });
 export const projectScopedRouter = Router({ mergeParams: true });
@@ -61,6 +62,7 @@ projectsRouter.post(
     const project = createProject(db, { companyId, ...input });
     ensureProjectThreads(db, project.id);
     if (getCompany(db, companyId).kind === 'novel') {
+      initializeNovelProject(db, project.id);
       registerDefaultNovelScheduleTriggers(db, project.id);
     }
     res.status(201).json(project);

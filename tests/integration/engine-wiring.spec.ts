@@ -110,6 +110,9 @@ describe('engine → worktree → publish wiring', () => {
     expect(usage.totalInputTokens).toBe(120);
     expect(usage.totalOutputTokens).toBe(30);
     expect(usage.totalCostUSD).toBe(0.01);
+    const followups = listTasks(db, project.id).filter((task) => task.parentTaskId === t.id);
+    expect(followups.some((task) => task.title.includes('人物档案'))).toBe(true);
+    expect(followups.some((task) => task.title.includes('剧情进度'))).toBe(true);
   });
 
   it('第一负责人完成用户消息 Task 后把摘要回复到项目对话', async () => {

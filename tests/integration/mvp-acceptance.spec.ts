@@ -77,7 +77,15 @@ describe('MVP acceptance: 一个小说阶段完整闭环', () => {
     });
     const fake = new FakeExecutor().script([
       { result: { outcome: 'waiting_input', summary: '需要主角背景', question: '主角叫什么？', outboundTasks: [], artifacts: [] } },
-      { result: { outcome: 'completed', summary: '第1章完成', outboundTasks: [], artifacts: [{ path: 'chapters/01.md', kind: 'markdown', operation: 'create' }] } },
+      {
+        writeFiles: { 'chapters/01.md': '# 第一章\n李墨登场，灵根觉醒。\n' },
+        result: {
+          outcome: 'completed',
+          summary: '第1章完成',
+          outboundTasks: [],
+          artifacts: [{ path: 'chapters/01.md', kind: 'markdown', operation: 'create' }],
+        },
+      },
     ]);
     const engine = new TaskEngine(db, fake);
 

@@ -9,16 +9,24 @@ import path from 'node:path';
 import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
-import { assertEditable, getArtifact, getArtifactByPath, listArtifacts } from './artifact';
+import { assertEditable, getArtifact, getArtifactByPath, listArtifacts, registerArtifact, type Artifact, type ArtifactKind } from './artifact';
 import { getProject } from './project';
+
+/** 解析项目内相对路径，使用 path.relative 避免 `/root-evil` 前缀绕过。 */
+export function resolveArtifactPath(rootDir: string, relPath: string): string {
+  const root = path.resolve(rootDir);
+  const abs = path.resolve(root, relPath);
+  const relative = path.relative(root, abs);
+  if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new AppError(ErrorCode.UNAUTHORIZED, '路径逃逸');
+  }
+  return abs;
+}
 
 /** 读 artifact 内容。 */
 export function readArtifactContent(db: DB, projectId: string, relPath: string): string {
   const project = getProject(db, projectId);
-  const abs = path.resolve(project.rootDir, relPath);
-  if (!abs.startsWith(path.resolve(project.rootDir))) {
-    throw new AppError(ErrorCode.UNAUTHORIZED, '路径逃逸');
-  }
+  const abs = resolveArtifactPath(project.rootDir, relPath);
   if (!existsSync(abs)) return '';
   return readFileSync(abs, 'utf8');
 }
@@ -31,10 +39,7 @@ export function writeArtifactContent(
   content: string,
 ): void {
   const project = getProject(db, projectId);
-  const abs = path.resolve(project.rootDir, relPath);
-  if (!abs.startsWith(path.resolve(project.rootDir))) {
-    throw new AppError(ErrorCode.UNAUTHORIZED, '路径逃逸');
-  }
+  const abs = resolveArtifactPath(project.rootDir, relPath);
   // 必须是已注册的可编辑 artifact
   const art = getArtifactByPath(db, projectId, relPath);
   if (!art) {
@@ -66,6 +71,25 @@ export function createArtifactAndContent(
     ).run(id, projectId, input.kind, input.path, input.ownerAgentId ?? null, now, now);
   }
   writeArtifactContent(db, projectId, input.path, input.content);
+}
+
+/** 项目模板初始化专用：允许创建派生只读成果的初始占位内容。 */
+export function initializeArtifactContent(
+  db: DB,
+  projectId: string,
+  input: { path: string; kind: ArtifactKind; content: string; ownerAgentId?: string },
+): Artifact {
+  const project = getProject(db, projectId);
+  const artifact = getArtifactByPath(db, projectId, input.path) ?? registerArtifact(db, {
+    projectId,
+    path: input.path,
+    kind: input.kind,
+    ownerAgentId: input.ownerAgentId,
+  });
+  const abs = resolveArtifactPath(project.rootDir, input.path);
+  if (!existsSync(path.dirname(abs))) mkdirSync(path.dirname(abs), { recursive: true });
+  if (!existsSync(abs)) writeFileSync(abs, input.content);
+  return artifact;
 }
 
 void listArtifacts;

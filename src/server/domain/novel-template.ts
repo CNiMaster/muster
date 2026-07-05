@@ -11,6 +11,10 @@ import { createAgent } from './agent';
 import { addRelationship } from './graph';
 import type { Company } from './company';
 import type { AgentDefinition } from './agent';
+import { listAgents } from './agent';
+import { initializeArtifactContent } from './artifact-content';
+import type { Artifact, ArtifactKind } from './artifact';
+import { getProject } from './project';
 
 export interface NovelTemplateInput {
   name: string;
@@ -107,6 +111,37 @@ export function assertLeadWriterSeparate(leadId: string, writerId: string): void
   if (leadId === writerId) {
     throw new AppError(ErrorCode.AGENT_ROLE_CONFLICT, '项目第一负责人与主写手必须由不同员工担任');
   }
+}
+
+/** 创建长篇小说项目的渐进式基础成果。幂等，不覆盖已有内容。 */
+export function initializeNovelProject(db: DB, projectId: string): Artifact[] {
+  const project = getProject(db, projectId);
+  const agents = listAgents(db, project.companyId);
+  const owner = (role: string): string | undefined => agents.find((agent) => agent.role === role)?.id;
+  const definitions: Array<{
+    path: string;
+    kind: ArtifactKind;
+    ownerRole: string;
+    content: string;
+  }> = [
+    { path: 'project/brief.md', kind: 'project_brief', ownerRole: 'lead', content: `# ${project.name}\n\n${project.description || '等待第一负责人根据初始任务逐步完善。'}\n` },
+    { path: 'planning/synopsis.md', kind: 'synopsis', ownerRole: 'lead', content: '# 故事梗概\n\n等待项目规划。\n' },
+    { path: 'planning/style-profile.md', kind: 'style_profile', ownerRole: 'writer', content: '# 文风档案\n\n等待用户与主写手共同确认。\n' },
+    { path: 'planning/outline.md', kind: 'outline', ownerRole: 'plot', content: '# 计划大纲\n\n按创作进度滚动展开。\n' },
+    { path: 'canon/characters.md', kind: 'character_sheet', ownerRole: 'character', content: '# 人物档案\n\n随章节进展维护。\n' },
+    { path: 'canon/worldbuilding.md', kind: 'worldbuilding', ownerRole: 'plot', content: '# 世界观\n\n随项目需要逐步建立。\n' },
+    { path: 'canon/timeline.md', kind: 'timeline', ownerRole: 'plot', content: '# 时间线资料\n\n随章节进展维护。\n' },
+    { path: 'canon/foreshadowing.md', kind: 'foreshadowing', ownerRole: 'plot', content: '# 伏笔资料\n\n记录埋设、推进与回收状态。\n' },
+    { path: 'views/character-relations.md', kind: 'character_relation_view', ownerRole: 'character', content: '# 人物关系（派生只读）\n\n尚无已发生关系。\n' },
+    { path: 'views/plot-progress.md', kind: 'plot_progress_view', ownerRole: 'plot', content: '# 实际剧情进度（派生只读）\n\n尚无已完成章节。\n' },
+    { path: 'views/timeline.md', kind: 'timeline_view', ownerRole: 'plot', content: '# 实际时间线（派生只读）\n\n尚无已发生事件。\n' },
+  ];
+  return definitions.map((definition) => initializeArtifactContent(db, projectId, {
+    path: definition.path,
+    kind: definition.kind,
+    content: definition.content,
+    ownerAgentId: owner(definition.ownerRole),
+  }));
 }
 
 function defaultCharter(name: string): string {

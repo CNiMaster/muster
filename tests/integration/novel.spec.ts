@@ -10,12 +10,15 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { makeTestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createNovelCompany, assertLeadWriterSeparate } from '../../src/server/domain/novel-template';
+import { createNovelCompany, assertLeadWriterSeparate, initializeNovelProject } from '../../src/server/domain/novel-template';
 import { createProject } from '../../src/server/domain/project';
 import { listTasks } from '../../src/server/domain/task';
 import { handleChapterCompleted, dispatchConsistencyCheck, dispatchCorrectionTask } from '../../src/server/domain/triggers';
 import { registerArtifact, assertEditable, READONLY_KINDS } from '../../src/server/domain/artifact';
 import { AppError, ErrorCode } from '../../src/shared/errors';
+import { mkdtempSync, existsSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 
 let tdb: ReturnType<typeof makeTestDb>;
 let db: DB;
@@ -26,6 +29,28 @@ beforeEach(() => {
 });
 
 describe('novel template', () => {
+  it('初始化小说项目基础成果与只读派生视图', () => {
+    const rootDir = mkdtempSync(path.join(tmpdir(), 'muster-novel-init-'));
+    try {
+      const r = createNovelCompany(db, { name: 'co' });
+      const project = createProject(db, {
+        companyId: r.company.id,
+        name: 'novel',
+        rootDir,
+        firstAgentId: r.agents.lead.id,
+      });
+      const artifacts = initializeNovelProject(db, project.id);
+
+      expect(artifacts.length).toBeGreaterThanOrEqual(11);
+      expect(artifacts.some((artifact) => artifact.kind === 'outline')).toBe(true);
+      expect(artifacts.some((artifact) => artifact.kind === 'character_relation_view')).toBe(true);
+      expect(existsSync(path.join(rootDir, 'planning/outline.md'))).toBe(true);
+      expect(existsSync(path.join(rootDir, 'views/character-relations.md'))).toBe(true);
+    } finally {
+      rmSync(rootDir, { recursive: true, force: true });
+    }
+  });
+
   it('生成 5 个基础岗位 + 第一负责人配置', () => {
     const r = createNovelCompany(db, { name: '小说公司' });
     expect(r.agents.lead.role).toBe('lead');

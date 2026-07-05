@@ -35,6 +35,7 @@ import type { AgentRunResult } from '../../shared/types';
 import { realtime } from '../realtime';
 import { upsertPublishedArtifact } from '../domain/artifact';
 import { postSystemMessage } from '../domain/conversation';
+import { handleChapterCompleted } from '../domain/triggers';
 
 export interface EngineOptions {
   heartbeatIntervalMs?: number;
@@ -201,6 +202,22 @@ export class TaskEngine {
         });
       }
       completeTask(this.db, task.id, result);
+      const chapterArtifacts = result.artifacts.filter(
+        (artifact) => artifact.operation !== 'delete'
+          && (artifact.kind === 'chapter' || /^chapters\/.+\.md$/i.test(artifact.path)),
+      );
+      if (result.outcome === 'completed' && chapterArtifacts.length > 0) {
+        const chapterPath = chapterArtifacts[0]!.path;
+        const seqMatch = /(\d+)/.exec(chapterPath);
+        handleChapterCompleted(this.db, {
+          projectId: project.id,
+          sourceTaskId: task.id,
+          chapterPath,
+          chapterSeq: seqMatch ? Number(seqMatch[1]) : task.seq,
+          summary: result.summary,
+          artifacts: chapterArtifacts,
+        });
+      }
       if (result._usage) {
         recordUsage(this.db, {
           projectId: project.id,
