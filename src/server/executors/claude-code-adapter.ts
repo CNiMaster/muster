@@ -14,7 +14,7 @@ import { createInterface } from 'node:readline';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { AgentRunResult, OutboundTaskRequest, ArtifactChange } from '../../shared/types';
-import type { ExecutionAdapter, ExecutionContext, ExecutionEvents } from '../task-engine/executor';
+import type { ExecutionAdapter, ExecutionContext, ExecutionEvents, ExecutionRunResult } from '../task-engine/executor';
 import { SERVER_CONFIG } from '../env';
 import { sanitizeArg, tryParseJSON } from '../../shared/utils';
 import { getSandboxTools } from '../sandbox';
@@ -119,7 +119,7 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
     };
   }
 
-  async run(ctx: ExecutionContext, events?: ExecutionEvents): Promise<AgentRunResult & { _sessionIdHint?: string }> {
+  async run(ctx: ExecutionContext, events?: ExecutionEvents): Promise<ExecutionRunResult> {
     const db = getDb();
     const sysSettings = getSystemSettings(db);
     // merge 逻辑：若 options 属于系统默认，则使用数据库最新设置；否则以实例化 opts 优先以兼容测试覆盖
@@ -131,7 +131,7 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
     };
 
     const prompt = buildPrompt(ctx);
-    const { result, sessionId } = await this.spawnClaude({
+    const { result, sessionId, raw } = await this.spawnClaude({
       prompt,
       systemPrompt: ctx.systemPrompt,
       cwd: ctx.workingDir || process.cwd(),
@@ -139,6 +139,16 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
       events,
       settings: mergedSettings,
     });
+    const usage = {
+      model: Object.keys(raw.modelUsage)[0] ?? (this.opts.model || 'claude'),
+      inputTokens: raw.inputTokens,
+      outputTokens: raw.outputTokens,
+      cacheReadTokens: raw.cacheReadTokens,
+      cacheCreateTokens: raw.cacheCreateTokens,
+      toolCalls: raw.toolCalls,
+      durationMs: raw.durationMs,
+      costUSD: raw.costUSD,
+    };
 
     // 校验结构化输出
     const parsed = agentRunResultSchema.safeParse(result.structuredOutput ?? tryParseJSON(result.fullText));
@@ -153,9 +163,10 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
         outboundTasks: [],
         artifacts: [],
         _sessionIdHint: sessionId ?? undefined,
+        _usage: usage,
       };
     }
-    return { ...parsed.data, _sessionIdHint: sessionId ?? undefined };
+    return { ...parsed.data, _sessionIdHint: sessionId ?? undefined, _usage: usage };
   }
 
   private spawnClaude(opts: {

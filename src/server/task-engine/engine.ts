@@ -20,7 +20,7 @@ import {
   failTask,
   blockTask,
 } from '../domain/task';
-import { getThread, listOnlineThreads, setClaudeSession } from '../domain/thread';
+import { getThread, listOnlineThreads, setClaudeSession, updateThreadState } from '../domain/thread';
 import { getAgent } from '../domain/agent';
 import { assembleContext } from '../executors/context';
 import { assertSafeToRun } from '../executors/safety';
@@ -28,11 +28,13 @@ import { getProject } from '../domain/project';
 import { getCompany } from '../domain/company';
 import { createWorktree, removeWorktree } from '../worktree/manager';
 import { PublishQueue } from '../worktree/publish-queue';
-import { recordUsage } from '../domain/usage';
+import { checkBudget, recordUsage } from '../domain/usage';
 import { log } from '../logger';
 import { AppError, ErrorCode } from '../../shared/errors';
 import type { AgentRunResult } from '../../shared/types';
 import { realtime } from '../realtime';
+import { upsertPublishedArtifact } from '../domain/artifact';
+import { postSystemMessage } from '../domain/conversation';
 
 export interface EngineOptions {
   heartbeatIntervalMs?: number;
@@ -82,6 +84,7 @@ export class TaskEngine {
     if (!claimed) return false;
 
     const task = claimed.task;
+    updateThreadState(this.db, thread.id, 'running');
     log.info('task claimed', { taskId: task.id, seq: task.seq, threadId, agent: agent.name, projectId: project.id });
     realtime.publish({
       id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -127,6 +130,7 @@ export class TaskEngine {
       const msg = e instanceof Error ? e.message : String(e);
       log.error('worktree creation failed; task blocked', { taskId: task.id, err: msg });
       blockTask(this.db, task.id, `无法建立隔离工作区：${msg}`);
+      updateThreadState(this.db, thread.id, 'failed');
       return true;
     }
 
@@ -142,6 +146,7 @@ export class TaskEngine {
 
     try {
       markRunning(this.db, task.id);
+      checkBudget(this.db, project.id, task.budget);
 
       const ctx: ExecutionContext = {
         task: getTask(this.db, task.id),
@@ -172,6 +177,7 @@ export class TaskEngine {
         const pub = this.publishArtifacts(task.id, thread.id, project.rootDir, worktreeInfo, result);
         if (pub.blocked) {
           blockTask(this.db, task.id, `成果发布冲突：${pub.conflicts.join(', ')}`);
+          updateThreadState(this.db, thread.id, 'paused');
           realtime.publish({
             id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
             type: 'publish.blocked',
@@ -184,7 +190,50 @@ export class TaskEngine {
         }
       }
 
+      for (const artifact of result.artifacts) {
+        if (artifact.operation === 'delete') continue;
+        upsertPublishedArtifact(this.db, {
+          projectId: project.id,
+          path: artifact.path,
+          kind: artifact.kind,
+          ownerAgentId: agent.id,
+          taskId: task.id,
+        });
+      }
       completeTask(this.db, task.id, result);
+      if (result._usage) {
+        recordUsage(this.db, {
+          projectId: project.id,
+          agentId: agent.id,
+          threadId: thread.id,
+          taskId: task.id,
+          ...result._usage,
+        });
+      }
+      if (
+        result.outcome === 'completed'
+        && task.inputProtocol.trigger === 'user_message'
+        && (task.inputProtocol.scope === 'project' || task.inputProtocol.scope === 'company')
+        && typeof task.inputProtocol.scopeId === 'string'
+      ) {
+        postSystemMessage(this.db, {
+          scopeKind: task.inputProtocol.scope,
+          scopeId: task.inputProtocol.scopeId,
+          role: 'assistant',
+          author: agent.id,
+          content: result.summary,
+          refTaskId: task.id,
+        });
+      }
+      updateThreadState(
+        this.db,
+        thread.id,
+        result.outcome === 'waiting_input' || result.outcome === 'waiting_dependency'
+          ? 'waiting'
+          : result.outcome === 'blocked'
+            ? 'paused'
+            : 'idle',
+      );
       log.info('task completed', { taskId: task.id, outcome: result.outcome });
       realtime.publish({
         id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -199,6 +248,7 @@ export class TaskEngine {
       return true;
     } catch (err) {
       this.handleRunError(task.id, err);
+      updateThreadState(this.db, thread.id, 'failed');
       const failedTask = getTask(this.db, task.id);
       realtime.publish({
         id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,

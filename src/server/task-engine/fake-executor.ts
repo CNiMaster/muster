@@ -5,7 +5,7 @@
  - 可模拟：success / waiting_input / waiting_dependency / blocked / 超时 / 无进展 / 结构错误。
  */
 import type { AgentRunResult } from '../../shared/types';
-import type { ExecutionAdapter, ExecutionContext, ExecutionEvents } from './executor';
+import type { ExecutionAdapter, ExecutionContext, ExecutionEvents, ExecutionRunResult, ExecutionUsage } from './executor';
 
 export interface FakeScriptStep {
   /** 直接返回的结果。 */
@@ -18,6 +18,7 @@ export interface FakeScriptStep {
   outputs?: string[];
   /** 模拟返回的 Claude session id。 */
   sessionId?: string;
+  usage?: ExecutionUsage;
   /**
    * 在 ctx.workingDir（worktree）里写文件，模拟 Agent 真实产出。
    * key=相对路径，value=内容。
@@ -36,7 +37,7 @@ export class FakeExecutor implements ExecutionAdapter {
     return this;
   }
 
-  async run(ctx: ExecutionContext, events?: ExecutionEvents): Promise<AgentRunResult> {
+  async run(ctx: ExecutionContext, events?: ExecutionEvents): Promise<ExecutionRunResult> {
     this.calls.push(ctx);
     const step = this.steps[Math.min(this.cursor, this.steps.length - 1)] ?? {
       result: { outcome: 'completed', summary: 'fake completed', outboundTasks: [], artifacts: [] },
@@ -69,7 +70,7 @@ export class FakeExecutor implements ExecutionAdapter {
       outboundTasks: [],
       artifacts: [],
     };
-    return { ...result, _sessionIdHint: step.sessionId } as AgentRunResult & { _sessionIdHint?: string };
+    return { ...result, _sessionIdHint: step.sessionId, _usage: step.usage };
   }
 
   get callCount(): number {

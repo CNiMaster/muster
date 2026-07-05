@@ -144,3 +144,25 @@ export function assertOwnerOrDispatch(db: DB, artifactId: string, agentId: strin
     throw new AppError(ErrorCode.UNAUTHORIZED, `成果 ${a.path} 由 ${a.ownerAgentId} 维护，${agentId} 无权直接修改`);
   }
 }
+
+/** Agent 成果发布后的幂等登记。 */
+export function upsertPublishedArtifact(
+  db: DB,
+  input: { projectId: string; path: string; kind: string; ownerAgentId?: string; taskId: string },
+): Artifact {
+  const existing = getArtifactByPath(db, input.projectId, input.path);
+  if (existing) {
+    db.prepare(
+      'UPDATE artifact SET kind=?, owner_agent_id=COALESCE(owner_agent_id, ?), updated_at=? WHERE id=?',
+    ).run(input.kind, input.ownerAgentId ?? null, nowIso(), existing.id);
+    return getArtifact(db, existing.id);
+  }
+  const id = shortId('ar_');
+  const now = nowIso();
+  db.prepare(
+    `INSERT INTO artifact
+      (id, project_id, kind, path, owner_agent_id, merge_strategy, props_json, created_task_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, 'three_way', '{}', ?, ?, ?)`,
+  ).run(id, input.projectId, input.kind, input.path, input.ownerAgentId ?? null, input.taskId, now, now);
+  return getArtifact(db, id);
+}

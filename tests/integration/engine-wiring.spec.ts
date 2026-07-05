@@ -23,6 +23,9 @@ import { TaskEngine } from '../../src/server/task-engine/engine';
 import { FakeExecutor } from '../../src/server/task-engine/fake-executor';
 import { getThread } from '../../src/server/domain/thread';
 import { ensureGitRepo, commitAll } from '../../src/server/worktree/manager';
+import { listArtifacts } from '../../src/server/domain/artifact';
+import { summarizeProjectUsage } from '../../src/server/domain/usage';
+import { listMessages, postUserMessage } from '../../src/server/domain/conversation';
 
 let tdb: ReturnType<typeof makeTestDb>;
 let db: DB;
@@ -66,6 +69,16 @@ describe('engine → worktree → publish wiring', () => {
         // 在 worktree 里写章节文件（模拟 Agent 真实产出）
         writeFiles: { 'chapters/01.md': '# 第一章\n李墨登场。\n' },
         sessionId: 'sess-fake-001',
+        usage: {
+          model: 'fake-model',
+          inputTokens: 120,
+          outputTokens: 30,
+          cacheReadTokens: 80,
+          cacheCreateTokens: 0,
+          toolCalls: 2,
+          durationMs: 50,
+          costUSD: 0.01,
+        },
         result: {
           outcome: 'completed',
           summary: '第1章完成',
@@ -92,6 +105,43 @@ describe('engine → worktree → publish wiring', () => {
     // Claude session id 持久化到 thread
     const updatedThread = getThread(db, thread.id);
     expect(updatedThread.claudeSessionId).toBe('sess-fake-001');
+    expect(listArtifacts(db, project.id).map((artifact) => artifact.path)).toContain('chapters/01.md');
+    const usage = summarizeProjectUsage(db, project.id);
+    expect(usage.totalInputTokens).toBe(120);
+    expect(usage.totalOutputTokens).toBe(30);
+    expect(usage.totalCostUSD).toBe(0.01);
+  });
+
+  it('第一负责人完成用户消息 Task 后把摘要回复到项目对话', async () => {
+    const r = createNovelCompany(db, { name: 'co' });
+    clockIn(db, r.company.id);
+    const project = createProject(db, {
+      companyId: r.company.id,
+      name: 'novel',
+      rootDir: projectRoot,
+      firstAgentId: r.agents.lead.id,
+    });
+    ensureGitRepo(projectRoot);
+    const thread = ensurePrimaryThread(db, project.id, r.agents.lead.id);
+    postUserMessage(db, {
+      scopeKind: 'project',
+      scopeId: project.id,
+      content: '请汇报当前安排',
+    });
+    const fake = new FakeExecutor().script([{
+      result: {
+        outcome: 'completed',
+        summary: '已经安排主写手开始第一章。',
+        outboundTasks: [],
+        artifacts: [],
+      },
+    }]);
+
+    await new TaskEngine(db, fake).pumpThread(thread.id);
+
+    const replies = listMessages(db, 'project', project.id).filter((message) => message.role === 'assistant');
+    expect(replies).toHaveLength(1);
+    expect(replies[0]!.content).toContain('已经安排');
   });
 
   it('执行器抛 timeout → Task 标 failed（区别于 blocked）', async () => {
@@ -117,6 +167,7 @@ describe('engine → worktree → publish wiring', () => {
     const t = listTasks(db, project.id)[0];
     expect(t.state).toBe('failed');
     expect(t.summary).toMatch(/timed out|超时/);
+    expect(getThread(db, thread.id).state).toBe('failed');
   });
 
   it('发布链路：worktree 多文件产出全部合并到正式目录', async () => {
