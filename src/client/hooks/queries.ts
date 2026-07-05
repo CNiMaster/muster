@@ -124,6 +124,66 @@ export function useCreateTask() {
   });
 }
 
+export function useTask(id: string | undefined) {
+  return useQuery({
+    queryKey: ['task', id],
+    queryFn: () => api.get<Task>(`/api/tasks/${id}`),
+    enabled: !!id,
+    refetchInterval: 3000,
+  });
+}
+
+export interface TaskEvent {
+  id: string;
+  taskId: string;
+  kind: string;
+  payload: Record<string, unknown>;
+  occurredAt: string;
+}
+export interface TaskMessageDTO {
+  id: string;
+  taskId: string;
+  author: string;
+  role: 'user' | 'assistant' | 'system' | 'dispatch';
+  content: string;
+  createdAt: string;
+}
+
+export function useTaskEvents(taskId: string | undefined) {
+  return useQuery({
+    queryKey: ['task-events', taskId],
+    queryFn: () => api.get<TaskEvent[]>(`/api/tasks/${taskId}/events`),
+    enabled: !!taskId,
+  });
+}
+export function useTaskMessages(taskId: string | undefined) {
+  return useQuery({
+    queryKey: ['task-messages', taskId],
+    queryFn: () => api.get<TaskMessageDTO[]>(`/api/tasks/${taskId}/messages`),
+    enabled: !!taskId,
+    refetchInterval: 4000,
+  });
+}
+export function usePostTaskMessage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ taskId, content }: { taskId: string; content: string }) =>
+      api.post<TaskMessageDTO>(`/api/tasks/${taskId}/messages`, { content }),
+    onSuccess: (_d, vars) => qc.invalidateQueries({ queryKey: ['task-messages', vars.taskId] }),
+  });
+}
+export function useTaskAction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ taskId, action, payload }: { taskId: string; action: 'cancel' | 'pause' | 'resume' | 'clarify'; payload?: { answer?: string } }) =>
+      api.post<Task>(`/api/tasks/${taskId}/${action}`, payload ?? {}),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['task', data.id] });
+      qc.invalidateQueries({ queryKey: ['task-events', data.id] });
+    },
+  });
+}
+
 // ===== Threads =====
 export function useThreads(projectId: string | undefined) {
   return useQuery({

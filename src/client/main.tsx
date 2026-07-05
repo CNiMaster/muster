@@ -12,6 +12,7 @@ import { GraphPage } from './pages/GraphPage';
 import { ProjectPage } from './pages/ProjectPage';
 import { TasksPage } from './pages/TasksPage';
 import { UsagePage } from './pages/UsagePage';
+import { TaskDetailPage } from './pages/TaskDetailPage';
 import { useToasts, ToastHost } from './components/Button';
 
 function ToastLayer(): React.ReactElement {
@@ -37,6 +38,7 @@ const router = createBrowserRouter([
       { path: 'projects/:projectId', element: <ProjectPage /> },
       { path: 'projects/:projectId/tasks', element: <TasksPage /> },
       { path: 'projects/:projectId/usage', element: <UsagePage /> },
+      { path: 'tasks/:taskId', element: <TaskDetailPage /> },
       { path: '*', element: <NotFoundPage /> },
     ],
   },

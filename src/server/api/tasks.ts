@@ -18,9 +18,12 @@ import {
   listTasks,
   answerClarification,
   cancelTask,
+  pauseTask,
+  resumeTask,
+  getTaskChain,
 } from '../domain/task';
 import { listTaskEvents } from '../domain/task-event';
-import { listTaskMessages } from '../domain/task-message';
+import { listTaskMessages, addTaskMessage } from '../domain/task-message';
 import type { TaskState } from '../../shared/types';
 
 export const taskByProjectRouter = Router({ mergeParams: true });
@@ -75,6 +78,14 @@ taskByIdRouter.get(
 );
 
 taskByIdRouter.post(
+  '/messages',
+  asyncHandler(async (req, res) => {
+    const { content } = z.object({ content: z.string().min(1) }).parse(req.body);
+    res.status(201).json(addTaskMessage(getDb(), param(req, 'id'), { author: 'user', role: 'user', content }));
+  }),
+);
+
+taskByIdRouter.post(
   '/clarify',
   asyncHandler(async (req, res) => {
     const { answer } = z.object({ answer: z.string().min(1) }).parse(req.body);
@@ -86,5 +97,26 @@ taskByIdRouter.post(
   '/cancel',
   asyncHandler(async (req, res) => {
     res.json(cancelTask(getDb(), param(req, 'id')));
+  }),
+);
+
+taskByIdRouter.post(
+  '/pause',
+  asyncHandler(async (req, res) => {
+    res.json(pauseTask(getDb(), param(req, 'id')));
+  }),
+);
+
+taskByIdRouter.post(
+  '/resume',
+  asyncHandler(async (req, res) => {
+    res.json(resumeTask(getDb(), param(req, 'id')));
+  }),
+);
+
+taskByIdRouter.get(
+  '/chain',
+  asyncHandler(async (req, res) => {
+    res.json(getTaskChain(getDb(), param(req, 'id')));
   }),
 );

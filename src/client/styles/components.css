@@ -600,3 +600,34 @@
   font-size: var(--text-sm);
 }
 .mu-conv-mention-item:hover { background: var(--bg-soft); }
+
+/* ===== Task Detail 讨论区 ===== */
+.mu-task-msgs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: 320px;
+  overflow-y: auto;
+}
+.mu-task-msg {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  border-left: 3px solid var(--border-strong);
+}
+.mu-task-msg-user { border-left-color: var(--accent); }
+.mu-task-msg-assistant { border-left-color: var(--info); }
+.mu-task-msg-system { border-left-color: var(--fg-subtle); }
+.mu-task-msg-dispatch { border-left-color: var(--warn); }
+.mu-task-msg-author {
+  font-size: var(--text-xs);
+  color: var(--fg-subtle);
+  margin-bottom: 2px;
+}
+.mu-task-msg-text {
+  font-size: var(--text-sm);
+  white-space: pre-wrap;
+  line-height: var(--leading-normal);
+}
+
+.task-detail .page-header { align-items: flex-start; }

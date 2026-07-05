@@ -42,6 +42,11 @@ export interface Relationship {
   label: string;
 }
 
+export interface TaskArtifact {
+  path: string;
+  kind: string;
+  operation: 'create' | 'update' | 'delete';
+}
 export interface Task {
   id: string;
   projectId: string;
@@ -49,11 +54,24 @@ export interface Task {
   title: string;
   state: string;
   assigneeAgentId: string | null;
+  dispatcherAgentId: string | null;
+  parentTaskId: string | null;
+  rootTaskId: string | null;
+  assigneeThreadId: string | null;
   outcome: string | null;
   summary: string;
   question: string | null;
+  inputProtocol: Record<string, unknown>;
+  outputProtocol: Record<string, unknown>;
+  contextRefs: string[];
+  artifacts: TaskArtifact[];
   priority: number;
+  deadlineAt: string | null;
+  completedAt: string | null;
+  clarificationRounds: number;
+  isDiscussion: number;
   createdAt: string;
+  updatedAt: string;
 }
 
 export interface UsageSummary {

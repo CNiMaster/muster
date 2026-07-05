@@ -442,6 +442,17 @@ export function failTask(db: DB, taskId: string, message: string): Task {
   return getTask(db, taskId);
 }
 
+/** 取得 Task 的父子链（从 root 到当前）。 */
+export function getTaskChain(db: DB, taskId: string): Task[] {
+  const chain: Task[] = [];
+  let cur: Task | null = getTask(db, taskId);
+  while (cur) {
+    chain.unshift(cur);
+    cur = cur.parentTaskId ? getTask(db, cur.parentTaskId) : null;
+  }
+  return chain;
+}
+
 export function cancelTask(db: DB, taskId: string): Task {
   const cur = getTask(db, taskId);
   assertTransition(cur.state, 'cancelled');
