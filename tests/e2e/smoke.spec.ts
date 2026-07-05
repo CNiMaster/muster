@@ -39,7 +39,7 @@ test('向导式创建公司并正常上班', async ({ page }) => {
   await page.getByRole('button', { name: '生成预览与团队配置' }).click();
 
   // 等待预览加载并检查体检结果
-  await expect(page.getByText('✓ 组织健康体检合格！')).toBeVisible({ timeout: 5000 });
+  await expect(page.getByText('组织健康体检合格！')).toBeVisible({ timeout: 5000 });
   await expect(page.getByText('项目第一负责人')).toBeVisible();
 
   // 点击确认并上班

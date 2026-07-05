@@ -13,7 +13,7 @@ test('核心功能端到端完整回归流', async ({ page }) => {
   await page.getByPlaceholder(/银翼创世纪小说工作室/).fill(companyName);
   await page.getByPlaceholder(/创作一部硬核赛博朋克长篇小说/).fill('赛博朋克科幻小说主题');
   await page.getByRole('button', { name: '生成预览与团队配置' }).click();
-  await expect(page.getByText('✓ 组织健康体检合格！')).toBeVisible({ timeout: 5000 });
+  await expect(page.getByText('组织健康体检合格！')).toBeVisible({ timeout: 5000 });
   await page.getByRole('button', { name: '确认无误，今日开始上班！' }).click();
 
   // 2. 公司页内新增员工（向导模式 - 需要下班状态才能新增）
