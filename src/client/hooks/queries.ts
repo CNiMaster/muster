@@ -484,4 +484,49 @@ export function useValidateWorkflow() {
   });
 }
 
+// ===== Mirrors & Brainstorm (Phase 8 & PRD alignment) =====
+export function useCreateMirror() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, threadId }: { projectId: string; threadId: string }) =>
+      api.post<any>(`/api/projects/${projectId}/threads/${threadId}/mirror`, {}),
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: ['threads', vars.projectId] });
+    },
+  });
+}
+
+export function useDeleteMirror() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, threadId }: { projectId: string; threadId: string }) =>
+      api.delete<any>(`/api/projects/${projectId}/threads/${threadId}`),
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: ['threads', vars.projectId] });
+    },
+  });
+}
+
+export function useStartBrainstorm() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      projectId,
+      topic,
+      participantAgentIds,
+      maxRounds,
+    }: {
+      projectId: string;
+      topic: string;
+      participantAgentIds: string[];
+      maxRounds?: number;
+    }) =>
+      api.post<any>(`/api/projects/${projectId}/brainstorm`, { topic, participantAgentIds, maxRounds }),
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: ['tasks', vars.projectId] });
+    },
+  });
+}
+
+
 

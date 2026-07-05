@@ -83,6 +83,25 @@ export function TaskDetailPage(): React.ReactElement {
       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16 }}>
         <div>
           {task.state === 'waiting_input' && <ClarifyCard taskId={task.id} onSubmit={(ans) => doAction('clarify', ans)} loading={action.isPending} />}
+          
+          {task.summary === '被正式 Task 打断，提前结束' && (
+            <div style={{
+              background: 'rgba(245, 158, 11, 0.08)',
+              border: '1px solid var(--warn)',
+              borderRadius: 'var(--radius-lg)',
+              padding: 'var(--space-3) var(--space-4)',
+              marginBottom: 'var(--space-4)',
+              fontSize: 'var(--text-sm)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 'var(--space-2)'
+            }}>
+              <span style={{ flex: 1 }}>
+                <strong>头脑风暴已终止：</strong> 该讨论由于任务队列中进入了高优先级的正式 Task，已自动中止以释放员工精力。
+              </span>
+            </div>
+          )}
+
           {task.summary && (
             <Card title="摘要">
               <pre className="charter">{task.summary}</pre>
@@ -93,9 +112,38 @@ export function TaskDetailPage(): React.ReactElement {
               <p>{task.question}</p>
             </Card>
           )}
-          <Card title="输入协议" className="section">
-            <pre className="charter">{JSON.stringify(task.inputProtocol ?? {}, null, 2)}</pre>
-          </Card>
+          
+          {task.inputProtocol?.type === 'brainstorm' ? (() => {
+            const bp = task.inputProtocol as any;
+            return (
+              <Card title="头脑风暴讨论配置" className="section" style={{ borderColor: 'var(--accent)' }}>
+                <div className="form-stack" style={{ fontSize: 'var(--text-sm)' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    <div><strong>讨论议题：</strong><span className="muted">{bp.topic}</span></div>
+                    <div><strong>限定最大轮次：</strong><span className="muted">{bp.maxRounds} 轮</span></div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '6px' }}>
+                    <div><strong>预算软限制：</strong><span className="muted">Token: {bp.maxTokens?.toLocaleString()}, 时长: {bp.maxDurationMs ? bp.maxDurationMs / 60000 : 0} 分钟</span></div>
+                    <div><strong>讨论准则：</strong><span className="muted">{bp.constraint}</span></div>
+                  </div>
+                  <div style={{ marginTop: '6px' }}>
+                    <strong>与会空闲员工：</strong>
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '4px' }}>
+                      {(bp.participants as string[] ?? []).map(pId => {
+                        const aName = agents?.find(x => x.id === pId)?.name ?? pId;
+                        return <Badge key={pId} tone="info">{aName}</Badge>;
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            );
+          })() : (
+            <Card title="输入协议" className="section">
+              <pre className="charter">{JSON.stringify(task.inputProtocol ?? {}, null, 2)}</pre>
+            </Card>
+          )}
+
           {(task.artifacts?.length ?? 0) > 0 && (
             <Card title="成果变更" className="section">
               <ul className="entity-list">

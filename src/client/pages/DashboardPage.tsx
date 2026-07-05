@@ -62,7 +62,6 @@ export function DashboardPage(): React.ReactElement {
                 fontSize: 'var(--text-sm)'
               }}
             >
-              <span style={{ color: 'var(--err)', fontSize: 'var(--text-lg)' }}>⚠️</span>
               <div style={{ flex: 1 }}>
                 <strong style={{ color: 'var(--err)' }}>运营监察警报：</strong>
                 <span className="muted">{w.message}</span>
@@ -151,7 +150,7 @@ export function DashboardPage(): React.ReactElement {
               border: '1px solid var(--border-subtle)',
               fontSize: 'var(--text-sm)'
             }}>
-              <strong>📌 运营指标总结：</strong>
+              <strong>运营指标总结：</strong>
               <ul style={{ margin: '8px 0 0 16px', padding: 0 }} className="muted">
                 <li>累计触发 Task 执行数：{tasks?.length ?? 0} 个</li>
                 <li>完成率：{tasks?.length ? ((tasks.filter(t => t.state === 'completed').length / tasks.length) * 100).toFixed(1) : 0}%</li>
@@ -166,7 +165,7 @@ export function DashboardPage(): React.ReactElement {
               border: '1px solid var(--border-subtle)',
               fontSize: 'var(--text-sm)'
             }}>
-              <strong>🛠️ 诊断建议：</strong>
+              <strong>诊断建议：</strong>
               <div style={{ marginTop: 'var(--space-2)' }}>
                 {suggestions && suggestions.some(s => s.kind !== 'ok') ? (
                   <div className="muted">
@@ -174,7 +173,7 @@ export function DashboardPage(): React.ReactElement {
                   </div>
                 ) : (
                   <div style={{ color: 'var(--ok)' }}>
-                    ✓ 诊断全绿！当前项目运转健康，没有检测到任何队列堵塞、主线程闲置或无限追问循环的迹象。
+                    诊断全绿！当前项目运转健康，没有检测到任何队列堵塞、主线程闲置或无限追问循环的迹象。
                   </div>
                 )}
               </div>

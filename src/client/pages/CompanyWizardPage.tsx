@@ -137,18 +137,18 @@ export function CompanyWizardPage(): React.ReactElement {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
           {/* 体检状态卡片 */}
-          <Card title="🏢 公司组织体检报告" style={{ borderColor: 'var(--ok)' }}>
+          <Card title="公司组织体检报告" style={{ borderColor: 'var(--ok)' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ color: 'var(--ok)' }}>✓</span>
+                <span style={{ color: 'var(--ok)', fontWeight: 'bold' }}>[通过]</span>
                 <span><strong>负责人与写手隔离：</strong> 第一负责人与主写手已被自动分配给不同实例，规避兼任冲突。</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ color: 'var(--ok)' }}>✓</span>
+                <span style={{ color: 'var(--ok)', fontWeight: 'bold' }}>[通过]</span>
                 <span><strong>关键角色配置：</strong> 已配置 lead (第一负责人)、writer (主写手)、character (人物设计)、plot (情节架构)、inspector (运营监察)。</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ color: 'var(--ok)' }}>✓</span>
+                <span style={{ color: 'var(--ok)', fontWeight: 'bold' }}>[通过]</span>
                 <span><strong>通信通道建立：</strong> 主写手和情节、人物设计通道已激活，监察警报路由至第一负责人。</span>
               </div>
               <div style={{
@@ -161,7 +161,7 @@ export function CompanyWizardPage(): React.ReactElement {
                 fontWeight: 'bold',
                 textAlign: 'center'
               }}>
-                ✓ 组织健康体检合格！团队配置满足长篇小说生产规范。
+                组织健康体检合格！团队配置满足长篇小说生产规范。
               </div>
             </div>
           </Card>

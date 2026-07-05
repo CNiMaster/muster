@@ -1,6 +1,6 @@
 import type React from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   useProject,
   useAgents,
@@ -8,6 +8,9 @@ import {
   useCreateProject,
   useCompany,
   useCreateTask,
+  useCreateMirror,
+  useDeleteMirror,
+  useStartBrainstorm,
 } from '../hooks/queries';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
@@ -169,7 +172,7 @@ function NewProject({ companyId }: { companyId: string }): React.ReactElement {
       {mode === 'wizard' ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
           {/* 对话输入框 */}
-          <Card title="💬 输入你的小说想法与核心创意">
+          <Card title="输入小说愿景与核心创意">
             <div className="form-stack">
               <Field label="你想创作怎样的故事？" hint="例如: 写一部讲凡人修仙题材的小说，主角资质愚钝但有神秘法宝，文风热血，受众是男频读者。">
                 <Textarea
@@ -189,7 +192,7 @@ function NewProject({ companyId }: { companyId: string }): React.ReactElement {
 
           {/* 生成的结构化设定预览与微调 */}
           {wizardResult && (
-            <Card title="🎨 可视化修改 AI 推荐配置" style={{ borderColor: 'var(--ok)' }}>
+            <Card title="微调 AI 推荐配置" style={{ borderColor: 'var(--ok)' }}>
               <div className="form-stack">
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
                   <Field label="故事名称">
@@ -275,7 +278,7 @@ function NewProject({ companyId }: { companyId: string }): React.ReactElement {
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'var(--space-3)' }}>
                   <Button onClick={submit} disabled={!name.trim() || !rootDir.trim()} loading={createProject.isPending}>
-                    确认设定并正式开工 🚀
+                    确认设定并正式开工
                   </Button>
                 </div>
               </div>
@@ -321,10 +324,65 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
   const { data: agents } = useAgents(project?.companyId);
   const { data: threads } = useThreads(projectId);
 
+  const createMirror = useCreateMirror();
+  const deleteMirror = useDeleteMirror();
+  const startBrainstorm = useStartBrainstorm();
+
+  // 头脑风暴表单状态
+  const [topic, setTopic] = useState('');
+  const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
+  const [maxRounds, setMaxRounds] = useState(3);
+
+  // 初始化时默认全选所有员工作为脑暴参与者
+  useEffect(() => {
+    if (agents && agents.length > 0 && selectedAgents.length === 0) {
+      setSelectedAgents(agents.map(a => a.id));
+    }
+  }, [agents]);
+
   if (!project) return <div className="loading">加载中…</div>;
 
+  const handleToggleAgent = (agentId: string) => {
+    setSelectedAgents(prev =>
+      prev.includes(agentId) ? prev.filter(id => id !== agentId) : [...prev, agentId]
+    );
+  };
+
+  const handleStartBrainstorm = () => {
+    if (!topic.trim()) {
+      toast('error', '请输入讨论主题');
+      return;
+    }
+    if (selectedAgents.length === 0) {
+      toast('error', '请至少选择 1 名参与员工');
+      return;
+    }
+
+    startBrainstorm.mutate(
+      {
+        projectId,
+        topic,
+        participantAgentIds: selectedAgents,
+        maxRounds,
+      },
+      {
+        onSuccess: (res) => {
+          if (res.state === 'skipped') {
+            toast('info', `跳过：${res.reason}`);
+          } else {
+            toast('success', '头脑风暴讨论任务已发起！可以在 Task 列表中查看讨论。');
+            setTopic('');
+          }
+        },
+        onError: (err) => {
+          toast('error', (err as any).message ?? '脑暴启动失败');
+        },
+      }
+    );
+  };
+
   return (
-    <div className="project-page">
+    <div className="project-page" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
       <header className="page-header">
         <div>
           <h1>{project.name}</h1>
@@ -353,33 +411,130 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
       </header>
 
       <Card title="项目说明">
-        <p className="muted">{project.description || '(未填写)'}</p>
+        <p className="muted" style={{ margin: 0 }}>{project.description || '(未填写)'}</p>
       </Card>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)', alignItems: 'start' }}>
+        {/* 项目员工线程与镜像管理 */}
+        <Card title="项目员工线程与扩容" actions={<Badge>{threads?.length ?? 0}</Badge>}>
+          {threads && threads.length === 0 && (
+            <EmptyState icon={Icons.empty} title="还没有员工进入项目" hint="公司上班后，员工会自动进入项目开始领取 Task。" />
+          )}
+          <ul className="entity-list">
+            {threads?.map((t) => {
+              const a = agents?.find((x) => x.id === t.agentId);
+              const isMirror = t.kind === 'mirror';
+              return (
+                <li key={t.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 'var(--space-3)' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                      <strong>{a?.name ?? t.agentId}</strong>
+                      <span className="muted" style={{ fontSize: 'var(--text-xs)' }}>[{a?.role}]</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px', marginTop: '2px' }}>
+                      <Badge tone={isMirror ? 'warn' : 'info'}>
+                        {isMirror ? '镜像' : '主线程'}
+                      </Badge>
+                      <Badge tone="neutral">{t.state}</Badge>
+                    </div>
+                  </div>
+                  
+                  {/* 镜像增删控制 */}
+                  <div>
+                    {isMirror ? (
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        loading={deleteMirror.isPending}
+                        onClick={() => {
+                          deleteMirror.mutate({ projectId, threadId: t.id }, {
+                            onSuccess: () => toast('success', '镜像已成功释放并安全注销'),
+                            onError: (err) => toast('error', (err as any).message ?? '注销失败'),
+                          });
+                        }}
+                      >
+                        注销镜像
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        loading={createMirror.isPending}
+                        onClick={() => {
+                          createMirror.mutate({ projectId, threadId: t.id }, {
+                            onSuccess: () => toast('success', '已为该岗位克隆并行执行镜像！'),
+                            onError: (err) => toast('error', (err as any).message ?? '克隆失败'),
+                          });
+                        }}
+                      >
+                        + 增设镜像
+                      </Button>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </Card>
+
+        {/* 头脑风暴讨论区 */}
+        <Card title="创意讨论 · 头脑风暴" actions={<Badge tone="info">闲置触发</Badge>}>
+          <div className="form-stack">
+            <p className="muted" style={{ fontSize: 'var(--text-sm)', margin: 0 }}>
+              当项目没有积压任务时，可主动召集闲置员工进行特定主题的头脑风暴，产出决策建议。
+            </p>
+            <Field label="讨论主题" required>
+              <Input
+                value={topic}
+                onChange={(e) => setTopic(e.target.value)}
+                placeholder="例如: 探讨后续第三章的爽点与剧情转折..."
+              />
+            </Field>
+            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '12px' }}>
+              <Field label="参会员工 (多选)">
+                <div style={{
+                  maxHeight: '120px',
+                  overflowY: 'auto',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '8px',
+                  background: 'var(--bg-input)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '6px'
+                }}>
+                  {agents?.map(a => (
+                    <label key={a.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--text-sm)', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedAgents.includes(a.id)}
+                        onChange={() => handleToggleAgent(a.id)}
+                      />
+                      <span>{a.name} ({a.role})</span>
+                    </label>
+                  ))}
+                </div>
+              </Field>
+              <Field label="最大讨论轮次">
+                <Select value={maxRounds} onChange={(e) => setMaxRounds(Number(e.target.value))}>
+                  <option value="2">2 轮讨论</option>
+                  <option value="3">3 轮讨论 (默认)</option>
+                  <option value="4">4 轮讨论</option>
+                  <option value="5">5 轮讨论</option>
+                </Select>
+              </Field>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'var(--space-2)' }}>
+              <Button onClick={handleStartBrainstorm} loading={startBrainstorm.isPending}>
+                召集脑暴会议
+              </Button>
+            </div>
+          </div>
+        </Card>
+      </div>
 
       <Card title="项目对话" className="section">
         <ConversationPanel scope="project" scopeId={projectId} companyId={project.companyId} title="与项目第一负责人对话" />
-      </Card>
-
-      <Card title="项目员工线程" className="section" actions={<Badge>{threads?.length ?? 0}</Badge>}>
-        {threads && threads.length === 0 && (
-          <EmptyState icon={Icons.empty} title="还没有员工进入项目" hint="公司上班后，员工会自动进入项目开始领取 Task。" />
-        )}
-        <ul className="entity-list">
-          {threads?.map((t) => {
-            const a = agents?.find((x) => x.id === t.agentId);
-            return (
-              <li key={t.id}>
-                <div style={{ flex: 1 }}>
-                  <strong>{a?.name ?? t.agentId}</strong> <span className="muted">[{a?.role}]</span>
-                </div>
-                <Badge tone={t.kind === 'mirror' ? 'warn' : 'info'}>
-                  {t.kind === 'mirror' ? '镜像' : '主线程'}
-                </Badge>
-                <Badge tone="neutral">{t.state}</Badge>
-              </li>
-            );
-          })}
-        </ul>
       </Card>
     </div>
   );
