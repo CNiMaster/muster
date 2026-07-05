@@ -48,6 +48,9 @@ test('核心功能端到端完整回归流', async ({ page }) => {
 
   // 点击进入刚刚创建的项目（修仙题材默认自动生成名称“九霄凡帝”）
   await page.locator('a', { hasText: '九霄凡帝' }).first().click();
+  console.log('CLICKED PROJECT LINK. CURRENT URL:', page.url());
+  await expect(page.locator('.loading')).not.toBeVisible({ timeout: 5000 });
+  console.log('LOADING COMPLETED. CURRENT URL:', page.url());
   await expect(page.getByRole('button', { name: '看板' })).toBeVisible({ timeout: 5000 });
 
   // 6. 看板与复盘流程测试
