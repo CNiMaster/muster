@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import {
   useProject,
@@ -24,6 +24,7 @@ export function ProjectPage(): React.ReactElement {
 }
 
 function NewProject({ companyId }: { companyId: string }): React.ReactElement {
+  const navigate = useNavigate();
   const { data: company } = useCompany(companyId);
   const { data: agents } = useAgents(companyId);
   const createProject = useCreateProject();
@@ -132,13 +133,11 @@ function NewProject({ companyId }: { companyId: string }): React.ReactElement {
               onSuccess: () => {
                 toast('success', `项目「${p.name}」已创建，并已自动下发首个 Task「${initialTask}」！`);
                 // 跳转到项目详情
-                window.location.hash = `#/projects/${p.id}`;
-                window.location.pathname = `/projects/${p.id}`;
+                navigate(`/projects/${p.id}`);
               },
               onError: () => {
                 toast('success', `项目「${p.name}」已创建`);
-                window.location.hash = `#/projects/${p.id}`;
-                window.location.pathname = `/projects/${p.id}`;
+                navigate(`/projects/${p.id}`);
               }
             }
           );
