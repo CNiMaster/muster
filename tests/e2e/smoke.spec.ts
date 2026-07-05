@@ -30,7 +30,7 @@ test('向导式创建公司并正常上班', async ({ page }) => {
   page.on('console', msg => console.log('BROWSER LOG:', msg.text()));
   page.on('pageerror', err => console.error('BROWSER ERROR:', err.message));
   await page.goto('/');
-  await page.getByRole('button', { name: 'AI 向导创建 ✨' }).click();
+  await page.getByRole('button', { name: '智能向导创建' }).click();
   await expect(page.locator('h1')).toContainText('对话式小说公司创建向导');
 
   const name = `向导公司-${Date.now()}`;
@@ -39,8 +39,9 @@ test('向导式创建公司并正常上班', async ({ page }) => {
   await page.getByRole('button', { name: '生成预览与团队配置' }).click();
 
   // 等待预览加载并检查体检结果
-  await expect(page.getByText('组织健康体检合格！')).toBeVisible({ timeout: 5000 });
-  await expect(page.getByText('项目第一负责人')).toBeVisible();
+  await expect(page.getByRole('main').getByText(/Claude 生成不可用/)).toBeVisible({ timeout: 5000 });
+  await expect(page.getByText(/组织健康体检合格/)).toBeVisible();
+  await expect(page.getByText('lead', { exact: true }).first()).toBeVisible();
 
   // 点击确认并上班
   await page.getByRole('button', { name: '确认无误，今日开始上班！' }).click();
@@ -49,4 +50,3 @@ test('向导式创建公司并正常上班', async ({ page }) => {
   await expect(page.locator('h1')).toContainText(name);
   await expect(page.locator('.mu-badge').getByText(/^上班$/).first()).toBeVisible({ timeout: 5000 });
 });
-

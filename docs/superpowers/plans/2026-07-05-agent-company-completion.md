@@ -8,6 +8,8 @@
 
 **Tech Stack:** Node.js 22.12+、TypeScript、Express 5、React 19、SQLite/better-sqlite3、Claude Code CLI、Git worktree、Vitest、Playwright。
 
+> **执行结果（2026-07-05）：** Tasks 1–8 与 Task 9 的代码、文档和验证均已完成。最终证据为 typecheck 通过、Vitest 123/123、生产构建通过、Playwright 5/5，以及真实 Claude Code 两轮 Task 冒烟通过。真实冒烟期间发现并修复了 session 随 cwd 存储导致跨 worktree 无法 `--resume` 的问题。下方复选框是实施时的 TDD 操作脚本，不再作为当前状态源；当前范围以实施清单顶部的验收记录为准。
+
 ## Global Constraints
 
 - `CLAUDE.md` 是唯一项目指令源。

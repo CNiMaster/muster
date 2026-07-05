@@ -127,8 +127,30 @@ export function useCreateAgent() {
 export function useUpdateAgent() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ companyId, id, ...patch }: { companyId: string; id: string; departmentId?: string | null }) =>
+    mutationFn: ({ companyId, id, ...patch }: {
+      companyId: string;
+      id: string;
+      departmentId?: string | null;
+      name?: string;
+      role?: string;
+      responsibilities?: string;
+      systemPrompt?: string;
+      skills?: string[];
+      tools?: string[];
+      permissions?: Record<string, unknown>;
+    }) =>
       api.patch<Agent>(`/api/companies/${companyId}/agents/${id}`, patch),
+    onSuccess: (data) => qc.invalidateQueries({ queryKey: ['agents', data.companyId] }),
+  });
+}
+export function useAgentAvailability() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ companyId, id, action }: {
+      companyId: string;
+      id: string;
+      action: 'clock-in' | 'clock-out';
+    }) => api.post<Agent>(`/api/companies/${companyId}/agents/${id}/${action}`),
     onSuccess: (data) => qc.invalidateQueries({ queryKey: ['agents', data.companyId] }),
   });
 }
@@ -645,7 +667,7 @@ export function useSystemSettings() {
 export function useSaveSystemSettings() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (settings: { claudeBin: string; skipPermissions: boolean; timeoutMs: number; maxToolCalls: number }) =>
+    mutationFn: (settings: { claudeBin: string; model: string; skipPermissions: boolean; timeoutMs: number; maxToolCalls: number }) =>
       api.post<any>('/api/settings', settings),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['systemSettings'] });
@@ -655,7 +677,7 @@ export function useSaveSystemSettings() {
 
 export function useTestConnection() {
   return useMutation({
-    mutationFn: (payload: { claudeBin?: string }) =>
+    mutationFn: (payload: { claudeBin?: string; model?: string }) =>
       api.post<any>('/api/settings/test-connection', payload),
   });
 }

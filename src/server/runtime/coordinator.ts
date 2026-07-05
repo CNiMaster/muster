@@ -9,6 +9,7 @@ import { interruptActiveBrainstorms } from '../domain/brainstorm';
 import { openReportCycle, shouldTriggerReport } from '../domain/report';
 import { isSoftCapReached, type Budget } from '../domain/usage';
 import { updateProject } from '../domain/project';
+import { settleDrainingAgents } from '../domain/agent';
 
 export interface RuntimeTickResult {
   recoveredLeases: number;
@@ -40,6 +41,7 @@ export class ProjectRuntimeCoordinator {
 
       for (const company of listCompanies(this.db)) {
         if (company.state !== 'online') continue;
+        settleDrainingAgents(this.db, company.id);
         for (const project of listProjects(this.db, company.id)) {
           if (project.state === 'archived' || project.state === 'completed' || project.state === 'paused') continue;
           const threads = ensureProjectThreads(this.db, project.id);
@@ -48,7 +50,11 @@ export class ProjectRuntimeCoordinator {
             (task) => task.isDiscussion === 0
               && ['queued', 'claimed', 'running', 'waiting_input', 'waiting_dependency', 'paused'].includes(task.state),
           );
-          if (formalActive) interruptActiveBrainstorms(this.db, project.id);
+          if (formalActive) {
+            for (const taskId of interruptActiveBrainstorms(this.db, project.id)) {
+              this.engine.abortTask(taskId);
+            }
+          }
 
           const budget = (project.settings.budget ?? {}) as Budget;
           const hasRunning = tasks.some((task) => task.state === 'claimed' || task.state === 'running');

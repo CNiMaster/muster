@@ -25,6 +25,7 @@ export interface AgentDefinition {
   canDispatch: boolean;
   executor: Record<string, unknown>;
   isInspector: boolean;
+  availabilityState: 'online' | 'draining' | 'off';
   createdAt: string;
   updatedAt: string;
 }
@@ -44,6 +45,7 @@ interface AgentRow {
   can_dispatch: number;
   executor_json: string;
   is_inspector: number;
+  availability_state: 'online' | 'draining' | 'off';
   created_at: string;
   updated_at: string;
 }
@@ -64,6 +66,7 @@ function fromRow(r: AgentRow): AgentDefinition {
     canDispatch: r.can_dispatch === 1,
     executor: JSON.parse(r.executor_json ?? '{}'),
     isInspector: r.is_inspector === 1,
+    availabilityState: r.availability_state,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -145,7 +148,7 @@ export function listAgents(db: DB, companyId: string): AgentDefinition[] {
 export function updateAgent(
   db: DB,
   id: string,
-  patch: Partial<Omit<AgentDefinition, 'id' | 'companyId' | 'createdAt'>>,
+  patch: Partial<Omit<AgentDefinition, 'id' | 'companyId' | 'createdAt' | 'availabilityState'>>,
 ): AgentDefinition {
   const cur = getAgent(db, id);
   assertUnlocked(db, cur.companyId);
@@ -179,4 +182,41 @@ export function deleteAgent(db: DB, id: string): void {
     throw new AppError(ErrorCode.CONFLICT, '监察员工是系统稳定性岗位，不能删除；可以修改配置');
   }
   db.prepare('DELETE FROM agent_definition WHERE id=?').run(id);
+}
+
+/** 员工独立上班；不改变公司组织配置。 */
+export function clockInAgent(db: DB, id: string): AgentDefinition {
+  getAgent(db, id);
+  db.prepare("UPDATE agent_definition SET availability_state='online', updated_at=? WHERE id=?").run(nowIso(), id);
+  return getAgent(db, id);
+}
+
+/** 员工独立下班；有正在执行的 Task 时先排空。 */
+export function clockOutAgent(db: DB, id: string): AgentDefinition {
+  getAgent(db, id);
+  const running = db.prepare(
+    "SELECT 1 FROM task WHERE assignee_agent_id=? AND state IN ('claimed','running') LIMIT 1",
+  ).get(id);
+  db.prepare('UPDATE agent_definition SET availability_state=?, updated_at=? WHERE id=?').run(
+    running ? 'draining' : 'off',
+    nowIso(),
+    id,
+  );
+  return getAgent(db, id);
+}
+
+/** 将已经完成手头工作的 draining 员工转为 off。 */
+export function settleDrainingAgents(db: DB, companyId: string): string[] {
+  const settled: string[] = [];
+  for (const agent of listAgents(db, companyId)) {
+    if (agent.availabilityState !== 'draining') continue;
+    const running = db.prepare(
+      "SELECT 1 FROM task WHERE assignee_agent_id=? AND state IN ('claimed','running') LIMIT 1",
+    ).get(agent.id);
+    if (!running) {
+      db.prepare("UPDATE agent_definition SET availability_state='off', updated_at=? WHERE id=?").run(nowIso(), agent.id);
+      settled.push(agent.id);
+    }
+  }
+  return settled;
 }

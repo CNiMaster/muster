@@ -10,6 +10,7 @@ import { AppError, ErrorCode } from '../../shared/errors';
 import { getCompany } from './company';
 import { getProject } from './project';
 import { createTask } from './task';
+import { getAgent } from './agent';
 
 export type ScopeKind = 'company' | 'project';
 export type MessageRole = 'user' | 'assistant' | 'system' | 'event';
@@ -77,9 +78,14 @@ export interface PostUserMessageInput {
  * 2. 派发一个 Task 给第一负责人（scope 是 company 时用公司第一负责人；project 用项目第一负责人）
  *    第一负责人通过执行器处理后回复（assistant 消息由引擎写入）
  */
-export function postUserMessage(db: DB, input: PostUserMessageInput): { userMessage: ConversationMessage; task: ReturnType<typeof createTask> | null } {
+export function postUserMessage(db: DB, input: PostUserMessageInput): {
+  userMessage: ConversationMessage;
+  task: ReturnType<typeof createTask> | null;
+  tasks: Array<ReturnType<typeof createTask>>;
+} {
   if (!input.content.trim()) throw new AppError(ErrorCode.VALIDATION, '消息内容不能为空');
   assertScope(db, input.scopeKind, input.scopeId);
+  return db.transaction(() => {
 
   const id = shortId('cm_');
   const now = nowIso();
@@ -102,38 +108,62 @@ export function postUserMessage(db: DB, input: PostUserMessageInput): { userMess
   // 否则只记录用户消息（不派 Task），由系统在合适时回应。
   let firstAgentId: string | null = null;
   let projectId: string | null = null;
+  let companyId: string;
   if (input.scopeKind === 'company') {
     const c = getCompany(db, input.scopeId);
+    companyId = c.id;
     firstAgentId = c.firstAgentId;
     // 找公司下任意一个项目作为 Task 载体（若没有则不派 Task）
     const anyProject = db.prepare('SELECT id FROM project WHERE company_id = ? ORDER BY created_at LIMIT 1').get(input.scopeId) as { id: string } | undefined;
     if (anyProject) projectId = anyProject.id;
   } else {
     const p = getProject(db, input.scopeId);
+    companyId = p.companyId;
     firstAgentId = p.firstAgentId ?? getCompany(db, p.companyId).firstAgentId;
     projectId = p.id;
   }
 
-  let task: ReturnType<typeof createTask> | null = null;
-  if (firstAgentId && projectId) {
-    task = createTask(db, {
-      projectId,
-      assigneeAgentId: firstAgentId,
-      title: `[用户消息] ${input.content.slice(0, 40)}`,
-      inputProtocol: {
-        trigger: 'user_message',
-        scope: input.scopeKind,
-        scopeId: input.scopeId,
-        content: input.content,
-        mentions: input.mentions ?? [],
-      },
-      priority: 7,
-    });
+  const mentionedAgents = [...new Set(input.mentions ?? [])].map((agentId) => {
+    const agent = getAgent(db, agentId);
+    if (agent.companyId !== companyId) {
+      throw new AppError(ErrorCode.VALIDATION, `@员工 ${agentId} 不属于当前公司`);
+    }
+    if (agent.permissions.userDirectContact === false) {
+      throw new AppError(ErrorCode.UNAUTHORIZED, `员工 ${agent.name} 未开放用户直接联系`);
+    }
+    return agent;
+  });
+  const recipients = mentionedAgents.length > 0
+    ? mentionedAgents.map((agent) => agent.id)
+    : firstAgentId
+      ? [firstAgentId]
+      : [];
+  const tasks: Array<ReturnType<typeof createTask>> = [];
+  if (projectId) {
+    for (const recipientAgentId of recipients) {
+      tasks.push(createTask(db, {
+        projectId,
+        assigneeAgentId: recipientAgentId,
+        title: `[用户消息] ${input.content.slice(0, 40)}`,
+        inputProtocol: {
+          trigger: 'user_message',
+          scope: input.scopeKind,
+          scopeId: input.scopeId,
+          content: input.content,
+          mentions: input.mentions ?? [],
+        },
+        priority: 7,
+      }));
+    }
+  }
+  const task = tasks[0] ?? null;
+  if (task) {
     db.prepare('UPDATE conversation_message SET ref_task_id = ? WHERE id = ?').run(task.id, id);
     userMessage.refTaskId = task.id;
   }
 
-  return { userMessage, task };
+  return { userMessage, task, tasks };
+  })();
 }
 
 /** 写入 assistant/system/event 消息（由引擎或系统调用）。 */

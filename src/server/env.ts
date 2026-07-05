@@ -33,12 +33,17 @@ function readClaudeBin(): string {
   return 'claude';
 }
 
+function readModel(): string {
+  return process.env.MUSTER_MODEL ?? '';
+}
+
 export const SERVER_CONFIG = deepFreeze({
   host: readHost(),
   port: readPort(),
   musterDir: readMusterDir(),
   dbPath: `${readMusterDir()}/muster.db`,
   claudeBin: readClaudeBin(),
+  model: readModel(),
   skipPermissions: process.env.MUSTER_SKIP_PERMISSIONS === 'true',
   isProd: process.env.NODE_ENV === 'production',
 });

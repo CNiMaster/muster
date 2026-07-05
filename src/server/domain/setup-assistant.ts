@@ -51,7 +51,7 @@ export class ClaudeSetupGenerator implements SetupGenerator {
 
   async generate(input: { prompt: string; jsonSchema: Record<string, unknown> }): Promise<unknown> {
     const settings = getSystemSettings(this.db);
-    const { stdout } = await execFileAsync(settings.claudeBin, [
+    const args = [
       '-p',
       input.prompt,
       '--output-format',
@@ -66,7 +66,9 @@ export class ClaudeSetupGenerator implements SetupGenerator {
       '--no-session-persistence',
       '--max-budget-usd',
       '0.10',
-    ], {
+    ];
+    if (settings.model) args.push('--model', settings.model);
+    const { stdout } = await execFileAsync(settings.claudeBin, args, {
       cwd: process.cwd(),
       timeout: Math.min(settings.timeoutMs, 30_000),
       maxBuffer: 1024 * 1024,

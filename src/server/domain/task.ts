@@ -278,6 +278,8 @@ export function claimNextTask(db: DB, threadId: string, assigneeAgentId?: string
            SELECT t.id FROM task t
            WHERE t.project_id = (SELECT project_id FROM project_agent_thread WHERE id = ?)
              AND t.state = 'queued'
+             AND (SELECT availability_state FROM agent_definition
+                  WHERE id = (SELECT agent_id FROM project_agent_thread WHERE id = ?)) = 'online'
              AND (
                t.assignee_agent_id = (SELECT agent_id FROM project_agent_thread WHERE id = ?)
                OR (
@@ -296,7 +298,7 @@ export function claimNextTask(db: DB, threadId: string, assigneeAgentId?: string
          AND state = 'queued'
          RETURNING id`,
       )
-      .get(threadId, leaseExpiresAt, heartbeatAt, threadId, stamp, threadId, threadId, threadId) as
+      .get(threadId, leaseExpiresAt, heartbeatAt, threadId, stamp, threadId, threadId, threadId, threadId) as
       | { id: string }
       | undefined;
     if (!info) return null;

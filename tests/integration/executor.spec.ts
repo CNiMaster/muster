@@ -8,17 +8,21 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { makeTestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { agentRunResultSchema } from '../../src/server/executors/claude-code-adapter';
+import { agentRunResultSchema, prepareClaudeSessionForCwd } from '../../src/server/executors/claude-code-adapter';
 import { assembleContext } from '../../src/server/executors/context';
 import { detectRepeatedFailure, detectNoProgress } from '../../src/server/executors/safety';
 import { createCompany } from '../../src/server/domain/company';
-import { createAgent } from '../../src/server/domain/agent';
+import { createAgent, updateAgent } from '../../src/server/domain/agent';
 import { createProject } from '../../src/server/domain/project';
 import { createTask, completeTask, markRunning } from '../../src/server/domain/task';
 import { ensurePrimaryThread } from '../../src/server/domain/thread';
 import { appendTaskEvent } from '../../src/server/domain/task-event';
 import { recordUsage, summarizeProjectUsage, summarizeAgentUsage, checkBudget, isSoftCapReached } from '../../src/server/domain/usage';
 import { AppError, ErrorCode } from '../../src/shared/errors';
+import { getSystemSettings, saveSystemSettings } from '../../src/server/domain/setting';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 
 let tdb: ReturnType<typeof makeTestDb>;
 let db: DB;
@@ -26,6 +30,39 @@ let db: DB;
 beforeEach(() => {
   tdb = makeTestDb();
   db = tdb.db;
+});
+
+describe('system executor settings', () => {
+  it('保存模型标识并去除两端空白', () => {
+    saveSystemSettings(db, { model: '  provider/model-v1  ' });
+    expect(getSystemSettings(db).model).toBe('provider/model-v1');
+  });
+
+  it('跨 Task worktree 复制 Claude 会话供 --resume 使用', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'muster-session-copy-'));
+    try {
+      const projectsRoot = path.join(root, 'projects');
+      const oldProject = path.join(projectsRoot, 'old-worktree');
+      const latestProject = path.join(projectsRoot, 'latest-worktree');
+      const newCwd = path.join(root, 'new_worktree');
+      const sessionId = '00000000-0000-4000-8000-000000000001';
+      mkdirSync(oldProject, { recursive: true });
+      mkdirSync(latestProject, { recursive: true });
+      mkdirSync(newCwd);
+      writeFileSync(path.join(oldProject, `${sessionId}.jsonl`), '{"type":"summary"}\n');
+      writeFileSync(path.join(latestProject, `${sessionId}.jsonl`), '{"type":"latest"}\n');
+      const older = new Date(Date.now() - 60_000);
+      utimesSync(path.join(oldProject, `${sessionId}.jsonl`), older, older);
+
+      expect(prepareClaudeSessionForCwd(sessionId, newCwd, projectsRoot)).toBe(true);
+      const encoded = realpathSync(newCwd).replace(/[^a-zA-Z0-9-]/g, '-');
+      const copied = path.join(projectsRoot, encoded, `${sessionId}.jsonl`);
+      expect(existsSync(copied)).toBe(true);
+      expect(readFileSync(copied, 'utf8')).toBe('{"type":"latest"}\n');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('AgentRunResult schema', () => {
@@ -52,16 +89,35 @@ describe('AgentRunResult schema', () => {
 describe('context assembly', () => {
   it('装配系统提示包含公司章程/项目说明/职责', () => {
     const c = createCompany(db, { name: 'co', charter: '公司章程内容' });
-    const a = createAgent(db, { companyId: c.id, name: 'writer', role: 'writer', responsibilities: '写章节' });
+    const a = createAgent(db, {
+      companyId: c.id,
+      name: 'writer',
+      role: 'writer',
+      responsibilities: '写章节',
+      skills: ['长篇叙事'],
+      tools: ['本地文件'],
+    });
+    const character = createAgent(db, {
+      companyId: c.id,
+      name: 'character',
+      role: 'character',
+      responsibilities: '维护人物',
+    });
+    updateAgent(db, a.id, { contactAllow: [character.id] });
     const p = createProject(db, { companyId: c.id, name: 'novel', description: '一本小说', rootDir: '/tmp/n', firstAgentId: a.id });
     const t = createTask(db, { projectId: p.id, assigneeAgentId: a.id, title: '写第1章', inputProtocol: { goal: 'ch01' } });
     const ctx = assembleContext(db, t);
     expect(ctx.systemPrompt).toContain('公司章程内容');
     expect(ctx.systemPrompt).toContain('一本小说');
     expect(ctx.systemPrompt).toContain('写章节');
+    expect(ctx.systemPrompt).toContain('长篇叙事');
+    expect(ctx.systemPrompt).toContain('本地文件');
     expect(ctx.systemPrompt).toContain('AgentRunResult');
     expect(ctx.inputPacket.goal).toBe('ch01');
     expect(ctx.inputPacket.title).toBe('写第1章');
+    expect(ctx.inputPacket.availableContacts).toEqual([
+      expect.objectContaining({ id: character.id, role: 'character' }),
+    ]);
   });
 });
 

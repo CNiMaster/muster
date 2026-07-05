@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { makeTestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
 import { createCompany, getCompany, clockIn, clockOut, transitionCompany } from '../../src/server/domain/company';
-import { createAgent, updateAgent, deleteAgent } from '../../src/server/domain/agent';
+import { clockInAgent, clockOutAgent, createAgent, updateAgent, deleteAgent } from '../../src/server/domain/agent';
 import {
   createDepartment,
   deleteDepartment,
@@ -13,6 +13,9 @@ import {
   updateDepartment,
 } from '../../src/server/domain/department';
 import { AppError, ErrorCode } from '../../src/shared/errors';
+import { createProject } from '../../src/server/domain/project';
+import { claimNextTask, createTask, markRunning } from '../../src/server/domain/task';
+import { ensurePrimaryThread } from '../../src/server/domain/thread';
 
 let tdb: ReturnType<typeof makeTestDb>;
 let db: DB;
@@ -46,6 +49,33 @@ describe('company state machine', () => {
     const c = createCompany(db, { name: 'co' });
     clockIn(db, c.id);
     expect(clockOut(db, c.id).state).toBe('off');
+  });
+
+  it('有运行中 Task 时下班先进入 draining，不中断当前工作', () => {
+    const c = createCompany(db, { name: 'co' });
+    const agent = createAgent(db, { companyId: c.id, name: 'writer', role: 'writer' });
+    const project = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/company-drain' });
+    const thread = ensurePrimaryThread(db, project.id, agent.id);
+    const task = createTask(db, { projectId: project.id, assigneeAgentId: agent.id, title: '运行中' });
+    claimNextTask(db, thread.id, agent.id);
+    markRunning(db, task.id);
+    clockIn(db, c.id);
+
+    expect(clockOut(db, c.id).state).toBe('draining');
+  });
+
+  it('员工可独立上下班，下班时 Task 保留排队且不可领取', () => {
+    const company = createCompany(db, { name: 'co' });
+    const agent = createAgent(db, { companyId: company.id, name: 'writer', role: 'writer' });
+    const project = createProject(db, { companyId: company.id, name: 'p', rootDir: '/tmp/agent-off' });
+    const thread = ensurePrimaryThread(db, project.id, agent.id);
+    const task = createTask(db, { projectId: project.id, assigneeAgentId: agent.id, title: '等待上班' });
+
+    expect(clockOutAgent(db, agent.id).availabilityState).toBe('off');
+    expect(claimNextTask(db, thread.id, agent.id)).toBeNull();
+    expect(task.state).toBe('queued');
+    expect(clockInAgent(db, agent.id).availabilityState).toBe('online');
+    expect(claimNextTask(db, thread.id, agent.id)?.task.id).toBe(task.id);
   });
 });
 

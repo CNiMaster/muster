@@ -124,12 +124,20 @@ export function clockIn(db: DB, id: string): Company {
 
 /** 下班 = * → off（必须先 review_paused 或 draining，或直接从 online 排空）。 */
 export function clockOut(db: DB, id: string): Company {
-  const cur = getCompany(db, id);
+  let cur = getCompany(db, id);
   if (cur.state === 'online') {
-    // 先排空
-    transitionCompany(db, id, 'draining');
+    cur = transitionCompany(db, id, 'draining');
   }
+  if (cur.state === 'draining' && hasRunningTasks(db, id)) return cur;
   return transitionCompany(db, id, 'off');
+}
+
+function hasRunningTasks(db: DB, companyId: string): boolean {
+  return Boolean(db.prepare(
+    `SELECT 1 FROM task t
+     JOIN project p ON p.id=t.project_id
+     WHERE p.company_id=? AND t.state IN ('claimed','running') LIMIT 1`,
+  ).get(companyId));
 }
 
 /** 当前是否锁定组织配置。 */

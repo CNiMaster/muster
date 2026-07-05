@@ -25,7 +25,7 @@ export interface InspectorSuggestion {
 
 export function generateInspectorSuggestions(db: DB, projectId: string): InspectorSuggestion[] {
   const project = getProject(db, projectId);
-  void project;
+  const agents = listAgents(db, project.companyId);
   const tasks = listTasks(db, projectId);
   const threads = listThreads(db, projectId);
   const out: InspectorSuggestion[] = [];
@@ -67,6 +67,20 @@ export function generateInspectorSuggestions(db: DB, projectId: string): Inspect
       }
     }
   }
+  for (const agent of agents) {
+    if (agent.availabilityState === 'online') continue;
+    const queued = tasks.filter((task) => task.assigneeAgentId === agent.id && task.state === 'queued').length;
+    if (queued > 0) {
+      out.push({
+        id: shortId('sg_'),
+        projectId,
+        kind: 'absence',
+        message: `员工 ${agent.name} 当前${agent.availabilityState === 'draining' ? '排空中' : '下班'}，${queued} 个 Task 正在等待`,
+        targetAgentId: agent.id,
+        createdAt: now,
+      });
+    }
+  }
 
   // 死循环：同一 task 反复 lease_recovered（检测在 safety.ts，此处只汇总）
   const recovered = tasks.filter((t) => t.state === 'queued' && t.clarificationRounds > 0);
@@ -86,5 +100,3 @@ export function generateInspectorSuggestions(db: DB, projectId: string): Inspect
   }
   return out;
 }
-
-void listAgents;

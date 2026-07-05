@@ -5,6 +5,7 @@ import { AGENT_TIMEOUT_MS, MAX_TOOL_CALLS } from '../../shared/constants';
 
 export interface SystemSettings {
   claudeBin: string;
+  model: string;
   skipPermissions: boolean;
   timeoutMs: number;
   maxToolCalls: number;
@@ -27,6 +28,7 @@ export function setSetting(db: DB, key: string, value: string): void {
 export function getSystemSettings(db: DB): SystemSettings {
   return {
     claudeBin: getSetting(db, 'claude_bin', SERVER_CONFIG.claudeBin),
+    model: getSetting(db, 'model', SERVER_CONFIG.model),
     skipPermissions: getSetting(db, 'skip_permissions', SERVER_CONFIG.skipPermissions ? 'true' : 'false') === 'true',
     timeoutMs: Number(getSetting(db, 'timeout_ms', String(AGENT_TIMEOUT_MS))),
     maxToolCalls: Number(getSetting(db, 'max_tool_calls', String(MAX_TOOL_CALLS))),
@@ -37,6 +39,9 @@ export function getSystemSettings(db: DB): SystemSettings {
 export function saveSystemSettings(db: DB, settings: Partial<SystemSettings>): void {
   if (settings.claudeBin !== undefined) {
     setSetting(db, 'claude_bin', settings.claudeBin);
+  }
+  if (settings.model !== undefined) {
+    setSetting(db, 'model', settings.model.trim());
   }
   if (settings.skipPermissions !== undefined) {
     setSetting(db, 'skip_permissions', settings.skipPermissions ? 'true' : 'false');

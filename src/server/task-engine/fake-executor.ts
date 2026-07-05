@@ -47,7 +47,13 @@ export class FakeExecutor implements ExecutionAdapter {
     this.cursor++;
 
     if (step.delayMs) {
-      await new Promise((r) => setTimeout(r, step.delayMs));
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(resolve, step.delayMs);
+        ctx.signal?.addEventListener('abort', () => {
+          clearTimeout(timer);
+          reject(new Error('execution aborted'));
+        }, { once: true });
+      });
     }
     if (step.outputs) {
       for (const chunk of step.outputs) {

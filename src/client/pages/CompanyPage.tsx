@@ -12,6 +12,7 @@ import {
   useDepartments,
   useUpdateAgent,
   useGenerateAgentProposal,
+  useAgentAvailability,
 } from '../hooks/queries';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
@@ -20,6 +21,7 @@ import { Input, Select, Field } from '../components/Form';
 import { EmptyState, Icons } from '../components/EmptyState';
 import { CardSkeleton } from '../components/Skeleton';
 import { ConversationPanel } from '../components/ConversationPanel';
+import type { Agent } from '../api/types';
 
 export function CompanyPage(): React.ReactElement {
   const { companyId = '' } = useParams();
@@ -33,10 +35,12 @@ export function CompanyPage(): React.ReactElement {
   const deleteDepartment = useDeleteDepartment();
   const updateAgent = useUpdateAgent();
   const generateAgentProposal = useGenerateAgentProposal();
+  const agentAvailability = useAgentAvailability();
   const [agentName, setAgentName] = useState('');
   const [agentRole, setAgentRole] = useState('');
   const [agentDepartmentId, setAgentDepartmentId] = useState('');
   const [departmentName, setDepartmentName] = useState('');
+  const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
 
   // 员工新增向导状态
   const [useWizard, setUseWizard] = useState(false);
@@ -141,6 +145,29 @@ export function CompanyPage(): React.ReactElement {
   };
 
   const isOff = company.state === 'off';
+  const saveAgent = (): void => {
+    if (!editingAgent) return;
+    updateAgent.mutate(
+      {
+        companyId,
+        id: editingAgent.id,
+        name: editingAgent.name,
+        role: editingAgent.role,
+        responsibilities: editingAgent.responsibilities,
+        systemPrompt: editingAgent.systemPrompt,
+        skills: editingAgent.skills,
+        tools: editingAgent.tools,
+        permissions: editingAgent.permissions,
+      },
+      {
+        onSuccess: () => {
+          setEditingAgent(null);
+          toast('success', '员工配置已保存');
+        },
+        onError: (error) => toast('error', (error as Error).message),
+      },
+    );
+  };
 
   return (
     <div className="company-page">
@@ -370,9 +397,91 @@ export function CompanyPage(): React.ReactElement {
               )}
               {a.isInspector && <Badge tone="warn">监察</Badge>}
               {!a.canDispatch && <Badge tone="neutral">不可派发</Badge>}
+              <Badge tone={a.availabilityState === 'online' ? 'ok' : a.availabilityState === 'draining' ? 'warn' : 'neutral'}>
+                {a.availabilityState === 'online' ? '上班' : a.availabilityState === 'draining' ? '排空中' : '下班'}
+              </Badge>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={a.availabilityState === 'draining'}
+                onClick={() => agentAvailability.mutate({
+                  companyId,
+                  id: a.id,
+                  action: a.availabilityState === 'online' ? 'clock-out' : 'clock-in',
+                })}
+              >
+                {a.availabilityState === 'online' ? '员工下班' : '员工上班'}
+              </Button>
+              {isOff && (
+                <Button size="sm" variant="subtle" onClick={() => setEditingAgent(a)}>
+                  编辑
+                </Button>
+              )}
             </li>
           ))}
         </ul>
+        {isOff && editingAgent && (
+          <div className="form-stack" style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border-subtle)' }}>
+            <h4 style={{ margin: 0 }}>编辑员工：{editingAgent.name}</h4>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <Field label="姓名">
+                <Input value={editingAgent.name} onChange={(event) => setEditingAgent({ ...editingAgent, name: event.target.value })} />
+              </Field>
+              <Field label="岗位">
+                <Input value={editingAgent.role} onChange={(event) => setEditingAgent({ ...editingAgent, role: event.target.value })} />
+              </Field>
+            </div>
+            <Field label="职责">
+              <textarea
+                className="mu-input mu-textarea"
+                value={editingAgent.responsibilities}
+                onChange={(event) => setEditingAgent({ ...editingAgent, responsibilities: event.target.value })}
+              />
+            </Field>
+            <Field label="员工专属指令">
+              <textarea
+                className="mu-input mu-textarea"
+                value={editingAgent.systemPrompt}
+                onChange={(event) => setEditingAgent({ ...editingAgent, systemPrompt: event.target.value })}
+              />
+            </Field>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <Field label="技能（逗号分隔）">
+                <Input
+                  value={editingAgent.skills.join(', ')}
+                  onChange={(event) => setEditingAgent({
+                    ...editingAgent,
+                    skills: event.target.value.split(',').map((value) => value.trim()).filter(Boolean),
+                  })}
+                />
+              </Field>
+              <Field label="能力声明（逗号分隔）">
+                <Input
+                  value={editingAgent.tools.join(', ')}
+                  onChange={(event) => setEditingAgent({
+                    ...editingAgent,
+                    tools: event.target.value.split(',').map((value) => value.trim()).filter(Boolean),
+                  })}
+                />
+              </Field>
+            </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input
+                type="checkbox"
+                checked={editingAgent.permissions.userDirectContact !== false}
+                onChange={(event) => setEditingAgent({
+                  ...editingAgent,
+                  permissions: { ...editingAgent.permissions, userDirectContact: event.target.checked },
+                })}
+              />
+              允许用户在对话中直接 @ 此员工
+            </label>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <Button variant="ghost" onClick={() => setEditingAgent(null)}>取消</Button>
+              <Button loading={updateAgent.isPending} onClick={saveAgent}>保存员工配置</Button>
+            </div>
+          </div>
+        )}
       </Card>
 
       <Card

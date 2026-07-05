@@ -118,7 +118,8 @@ export function listOnlineThreads(db: DB): ProjectAgentThread[] {
       `SELECT t.* FROM project_agent_thread t
        JOIN project p ON p.id = t.project_id
        JOIN company c ON c.id = p.company_id
-       WHERE c.state = 'online'
+       JOIN agent_definition a ON a.id = t.agent_id
+       WHERE c.state = 'online' AND a.availability_state = 'online'
        ORDER BY t.created_at`,
     )
     .all() as ThreadRow[];
@@ -140,6 +141,13 @@ export function removeMirror(db: DB, id: string): void {
   const t = getThread(db, id);
   if (t.kind !== 'mirror') {
     throw new AppError(ErrorCode.CONFLICT, '不能删除 primary thread');
+  }
+  const activeTask = db.prepare(
+    `SELECT 1 FROM task
+     WHERE lease_owner_thread_id=? AND state IN ('claimed','running') LIMIT 1`,
+  ).get(id);
+  if (t.state === 'running' || activeTask) {
+    throw new AppError(ErrorCode.CONFLICT, '镜像正在执行 Task，必须完成当前 Task 后再注销');
   }
   db.prepare('DELETE FROM project_agent_thread WHERE id = ?').run(id);
 }

@@ -9,31 +9,32 @@ test('核心功能端到端完整回归流', async ({ page }) => {
 
   // 1. 向导创建公司并上班
   await page.goto('/');
-  await page.getByRole('button', { name: 'AI 向导创建 ✨' }).click();
+  await page.getByRole('button', { name: '智能向导创建' }).click();
   await page.getByPlaceholder(/银翼创世纪小说工作室/).fill(companyName);
   await page.getByPlaceholder(/创作一部硬核赛博朋克长篇小说/).fill('赛博朋克科幻小说主题');
   await page.getByRole('button', { name: '生成预览与团队配置' }).click();
-  await expect(page.getByText('组织健康体检合格！')).toBeVisible({ timeout: 5000 });
+  await expect(page.getByRole('main').getByText(/Claude 生成不可用/)).toBeVisible({ timeout: 5000 });
+  await expect(page.getByText(/组织健康体检合格/)).toBeVisible();
   await page.getByRole('button', { name: '确认无误，今日开始上班！' }).click();
 
   // 2. 公司页内新增员工（向导模式 - 需要下班状态才能新增）
   await expect(page.locator('h1')).toContainText(companyName);
-  await page.getByRole('button', { name: '下班' }).click();
+  await page.getByRole('button', { name: '下班', exact: true }).click();
   await expect(page.locator('.mu-badge').getByText(/^下班$/).first()).toBeVisible({ timeout: 5000 });
 
-  await page.getByRole('button', { name: 'AI 新增向导 ✨' }).click();
+  await page.getByRole('button', { name: '智能新增向导' }).click();
   await page.getByPlaceholder(/李四/).fill('老李');
   await page.getByPlaceholder(/校对小说正文与语法/).fill('校对错字和语病');
-  await page.getByRole('button', { name: 'AI 智能推荐岗位与配置' }).click();
-  await expect(page.getByText('🔍 推荐配置预览 (支持可视化修改)')).toBeVisible({ timeout: 5000 });
+  await page.getByRole('button', { name: '生成岗位配置' }).click();
+  await expect(page.getByText('推荐配置预览（可修改）')).toBeVisible({ timeout: 5000 });
   await page.getByRole('button', { name: '确认配置并加入团队 🚀' }).click();
-  await expect(page.getByText('老李 [editor]')).toBeVisible({ timeout: 5000 });
+  await expect(page.getByText('老李', { exact: true })).toBeVisible({ timeout: 5000 });
 
   // 3. 项目向导创建新项目与开工（公司处于下班状态才能新建项目）
   await page.getByRole('link', { name: '新建项目' }).click();
   await page.getByPlaceholder(/用您自然的语言描述故事想法/).fill('写一本都市修仙小说，风格幽默');
-  await page.getByRole('button', { name: 'AI 智能生成蓝图配置' }).click();
-  await expect(page.getByText('微调 AI 推荐配置')).toBeVisible({ timeout: 5000 });
+  await page.getByRole('button', { name: '生成蓝图配置' }).click();
+  await expect(page.getByText('微调推荐配置')).toBeVisible({ timeout: 5000 });
   await page.getByPlaceholder(/my-novel/).fill(`/tmp/e2e-novel-${timestamp}`);
   await page.getByRole('button', { name: '确认设定并正式开工' }).click();
 
@@ -52,8 +53,8 @@ test('核心功能端到端完整回归流', async ({ page }) => {
   await page.getByRole('button', { name: '上班' }).click();
   await expect(page.locator('.mu-badge').getByText(/^上班$/).first()).toBeVisible({ timeout: 5000 });
 
-  // 点击进入刚刚创建的项目（修仙题材默认自动生成名称“九霄凡帝”）
-  await page.locator('a', { hasText: '九霄凡帝' }).first().click();
+  // 离线 E2E 使用明确标注的确定性模板项目名。
+  await page.locator('a', { hasText: '未命名小说项目' }).first().click();
   console.log('CLICKED PROJECT LINK. CURRENT URL:', page.url());
   await expect(page.locator('.loading')).not.toBeVisible({ timeout: 5000 });
   console.log('LOADING COMPLETED. CURRENT URL:', page.url());

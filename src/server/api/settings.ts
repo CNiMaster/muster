@@ -27,6 +27,7 @@ settingsRouter.post(
   asyncHandler(async (req, res) => {
     const schema = z.object({
       claudeBin: z.string().min(1),
+      model: z.string().max(200),
       skipPermissions: z.boolean(),
       timeoutMs: z.number().min(1000),
       maxToolCalls: z.number().min(1),
@@ -44,10 +45,13 @@ settingsRouter.post(
   asyncHandler(async (req, res) => {
     const schema = z.object({
       claudeBin: z.string().optional(),
+      model: z.string().max(200).optional(),
     });
-    const { claudeBin } = schema.parse(req.body);
+    const { claudeBin, model } = schema.parse(req.body);
     const db = getDb();
-    const activeBin = claudeBin || getSystemSettings(db).claudeBin;
+    const settings = getSystemSettings(db);
+    const activeBin = claudeBin || settings.claudeBin;
+    const activeModel = model?.trim() ?? settings.model;
 
     log.info('testing connection for claudeBin', { bin: activeBin });
 
@@ -78,9 +82,18 @@ settingsRouter.post(
       const startBridge = Date.now();
       try {
         // 使用 -p + --print 做非交互式轻量单次对话，限定 15s 超时
+        const bridgeArgs = [
+          '-p',
+          '测试系统连通性。请用中文回答"桥接正常"，不要添加任何其他字符。',
+          '--print',
+          '--tools',
+          '',
+          '--disable-slash-commands',
+        ];
+        if (activeModel) bridgeArgs.push('--model', activeModel);
         const { stdout, stderr } = await execFileAsync(
           activeBin,
-          ['-p', '测试系统连通性。请用中文回答"桥接正常"，不要添加任何其他字符。', '--print'],
+          bridgeArgs,
           { timeout: 15000 }
         );
         bridgeOutput = stdout.trim();
@@ -94,6 +107,7 @@ settingsRouter.post(
 
     res.json({
       claudeBin: activeBin,
+      model: activeModel,
       versionTest: {
         success: versionSuccess,
         durationMs: versionDurationMs,

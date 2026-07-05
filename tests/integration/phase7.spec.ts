@@ -6,7 +6,7 @@ import { makeTestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
 import { createNovelCompany } from '../../src/server/domain/novel-template';
 import { createProject } from '../../src/server/domain/project';
-import { ensurePrimaryThread, createMirror, listThreads } from '../../src/server/domain/thread';
+import { ensurePrimaryThread, createMirror, listThreads, removeMirror, updateThreadState } from '../../src/server/domain/thread';
 import { createTask, claimNextTask, listTasks, completeTask, markRunning } from '../../src/server/domain/task';
 import { generateInspectorSuggestions } from '../../src/server/domain/inspector';
 import { openReportCycle, addReportNote, closeReport, shouldTriggerReport, getReport } from '../../src/server/domain/report';
@@ -59,6 +59,12 @@ describe('mirror task pool sharing', () => {
     expect(m.rootThreadId).toBe(primary.id);
     const all = listThreads(db, fx.project.id);
     expect(all.length).toBe(2);
+  });
+
+  it('运行中的镜像不能直接注销', () => {
+    const mirror = createMirror(db, fx.project.id, fx.agents.writer.id);
+    updateThreadState(db, mirror.id, 'running');
+    expect(() => removeMirror(db, mirror.id)).toThrow(/完成当前 Task/);
   });
 });
 
@@ -153,6 +159,6 @@ describe('brainstorm', () => {
     const interrupted = interruptActiveBrainstorms(db, fx.project.id);
     expect(interrupted).toContain(r.taskId);
     const t = listTasks(db, fx.project.id).find((x) => x.id === r.taskId);
-    expect(t?.state).toBe('completed');
+    expect(t?.state).toBe('cancelled');
   });
 });

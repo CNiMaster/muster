@@ -1,25 +1,27 @@
-import { StrictMode } from 'react';
+import { lazy, StrictMode, Suspense } from 'react';
 import type React from 'react';
 import { createRoot } from 'react-dom/client';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import './styles/global.css';
 import { App } from './App';
-import { HomePage } from './pages/HomePage';
-import { NotFoundPage } from './pages/NotFoundPage';
-import { CompanyPage } from './pages/CompanyPage';
-import { GraphPage } from './pages/GraphPage';
-import { ProjectPage } from './pages/ProjectPage';
-import { TasksPage } from './pages/TasksPage';
-import { UsagePage } from './pages/UsagePage';
-import { TaskDetailPage } from './pages/TaskDetailPage';
-import { ArtifactsPage } from './pages/ArtifactsPage';
-import { ReportsPage } from './pages/ReportsPage';
-import { DashboardPage } from './pages/DashboardPage';
-import { WorkflowGraphPage } from './pages/WorkflowGraphPage';
-import { CompanyWizardPage } from './pages/CompanyWizardPage';
-import { SettingsPage } from './pages/SettingsPage';
 import { useToasts, ToastHost } from './components/Button';
+import { RealtimeSync } from './realtime';
+
+const HomePage = lazy(() => import('./pages/HomePage').then((m) => ({ default: m.HomePage })));
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage').then((m) => ({ default: m.NotFoundPage })));
+const CompanyPage = lazy(() => import('./pages/CompanyPage').then((m) => ({ default: m.CompanyPage })));
+const GraphPage = lazy(() => import('./pages/GraphPage').then((m) => ({ default: m.GraphPage })));
+const ProjectPage = lazy(() => import('./pages/ProjectPage').then((m) => ({ default: m.ProjectPage })));
+const TasksPage = lazy(() => import('./pages/TasksPage').then((m) => ({ default: m.TasksPage })));
+const UsagePage = lazy(() => import('./pages/UsagePage').then((m) => ({ default: m.UsagePage })));
+const TaskDetailPage = lazy(() => import('./pages/TaskDetailPage').then((m) => ({ default: m.TaskDetailPage })));
+const ArtifactsPage = lazy(() => import('./pages/ArtifactsPage').then((m) => ({ default: m.ArtifactsPage })));
+const ReportsPage = lazy(() => import('./pages/ReportsPage').then((m) => ({ default: m.ReportsPage })));
+const DashboardPage = lazy(() => import('./pages/DashboardPage').then((m) => ({ default: m.DashboardPage })));
+const WorkflowGraphPage = lazy(() => import('./pages/WorkflowGraphPage').then((m) => ({ default: m.WorkflowGraphPage })));
+const CompanyWizardPage = lazy(() => import('./pages/CompanyWizardPage').then((m) => ({ default: m.CompanyWizardPage })));
+const SettingsPage = lazy(() => import('./pages/SettingsPage').then((m) => ({ default: m.SettingsPage })));
 
 function ToastLayer(): React.ReactElement {
   const { toasts, dismiss } = useToasts();
@@ -62,7 +64,10 @@ if (!rootEl) throw new Error('#root not found');
 createRoot(rootEl).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <RealtimeSync />
+      <Suspense fallback={<div className="loading">加载中…</div>}>
+        <RouterProvider router={router} />
+      </Suspense>
       <ToastLayer />
     </QueryClientProvider>
   </StrictMode>,

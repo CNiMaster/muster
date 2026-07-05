@@ -99,6 +99,46 @@ describe('ProjectRuntimeCoordinator', () => {
 
     await coordinator.tick({ pump: false });
 
-    expect(listTasks(db, project.id).find((task) => task.id === discussion.taskId)?.state).toBe('completed');
+    expect(listTasks(db, project.id).find((task) => task.id === discussion.taskId)?.state).toBe('cancelled');
+  });
+
+  it('正式 Task 到达后中止正在执行的头脑风暴，不允许迟到结果回写', async () => {
+    const novel = createNovelCompany(db, { name: 'co' });
+    const project = createProject(db, {
+      companyId: novel.company.id,
+      name: 'book',
+      rootDir: '/tmp/muster-coordinator-running-brainstorm',
+    });
+    const discussion = startBrainstorm(db, {
+      projectId: project.id,
+      topic: '正在讨论',
+      participantAgentIds: [novel.agents.writer.id],
+    });
+    transitionCompany(db, novel.company.id, 'online');
+    const fake = new FakeExecutor().script([{
+      delayMs: 5_000,
+      result: { outcome: 'completed', summary: '迟到结论', outboundTasks: [], artifacts: [] },
+    }]);
+    const engine = new TaskEngine(db, fake);
+    const coordinator = new ProjectRuntimeCoordinator(db, engine);
+    await coordinator.tick({ pump: false });
+    const thread = listThreads(db, project.id).find((item) => item.agentId === novel.agents.writer.id)!;
+    const running = engine.pumpThread(thread.id);
+    for (let attempt = 0; attempt < 100 && fake.callCount === 0; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(fake.callCount).toBe(1);
+    createTask(db, {
+      projectId: project.id,
+      assigneeAgentId: novel.agents.lead.id,
+      title: '紧急正式任务',
+    });
+
+    await coordinator.tick({ pump: false });
+    await running;
+
+    const interrupted = listTasks(db, project.id).find((task) => task.id === discussion.taskId)!;
+    expect(interrupted.state).toBe('cancelled');
+    expect(interrupted.summary).not.toContain('迟到结论');
   });
 });

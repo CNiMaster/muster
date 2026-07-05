@@ -13,6 +13,7 @@ export function SettingsPage(): React.ReactElement {
 
   // 表单状态
   const [claudeBin, setClaudeBin] = useState('');
+  const [model, setModel] = useState('');
   const [skipPermissions, setSkipPermissions] = useState(false);
   const [timeoutMs, setTimeoutMs] = useState(600000);
   const [maxToolCalls, setMaxToolCalls] = useState(30);
@@ -24,6 +25,7 @@ export function SettingsPage(): React.ReactElement {
   useEffect(() => {
     if (settings) {
       setClaudeBin(settings.claudeBin);
+      setModel(settings.model ?? '');
       setSkipPermissions(settings.skipPermissions);
       setTimeoutMs(settings.timeoutMs);
       setMaxToolCalls(settings.maxToolCalls);
@@ -39,6 +41,7 @@ export function SettingsPage(): React.ReactElement {
     saveSettings.mutate(
       {
         claudeBin,
+        model,
         skipPermissions,
         timeoutMs,
         maxToolCalls,
@@ -56,7 +59,7 @@ export function SettingsPage(): React.ReactElement {
 
   const handleTest = () => {
     testConnection.mutate(
-      { claudeBin },
+      { claudeBin, model },
       {
         onSuccess: (res) => {
           setTestResult(res);
@@ -95,6 +98,14 @@ export function SettingsPage(): React.ReactElement {
                 value={claudeBin}
                 onChange={(e) => setClaudeBin(e.target.value)}
                 placeholder="例如: /Users/username/.local/bin/claude"
+              />
+            </Field>
+
+            <Field label="模型标识" hint="可留空以使用 Claude Code 默认模型；代理服务请填写其实际支持的模型标识。">
+              <Input
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                placeholder="例如: sonnet 或代理服务提供的模型名"
               />
             </Field>
 

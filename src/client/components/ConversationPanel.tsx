@@ -40,7 +40,7 @@ export function ConversationPanel({ scope, scopeId, companyId, title }: Conversa
 
   const send = (): void => {
     if (!text.trim()) return;
-    const mentions = extractMentions(text);
+    const mentions = extractMentions(text, agents ?? []);
     post.mutate(
       { scopeId, content: text, mentions },
       {
@@ -146,7 +146,11 @@ function MessageBubble({ message, agents }: { message: ConversationMessage; agen
   );
 }
 
-function extractMentions(text: string): string[] {
+function extractMentions(text: string, agents: Array<{ id: string; name: string }>): string[] {
   const matches = text.match(/@([^\s@]+)/g) ?? [];
-  return matches.map((m) => m.slice(1));
+  const ids = matches.flatMap((match) => {
+    const name = match.slice(1);
+    return agents.filter((agent) => agent.name === name).map((agent) => agent.id);
+  });
+  return [...new Set(ids)];
 }

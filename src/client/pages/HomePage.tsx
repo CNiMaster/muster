@@ -87,7 +87,7 @@ export function HomePage(): React.ReactElement {
               创建
             </Button>
             <Link to="/companies/wizard">
-              <Button variant="ghost">AI 向导创建 ✨</Button>
+              <Button variant="ghost">智能向导创建</Button>
             </Link>
           </div>
         </div>

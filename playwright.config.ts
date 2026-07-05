@@ -20,7 +20,13 @@ export default defineConfig({
   webServer: {
     command: 'npm run dev',
     url: 'http://127.0.0.1:3456/api/health',
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     timeout: 60_000,
+    env: {
+      ...process.env,
+      MUSTER_HOME: `/tmp/muster-e2e-${process.pid}`,
+      CLAUDE_BIN: '/definitely/missing/claude',
+      MUSTER_EXECUTOR: 'fake',
+    },
   },
 });

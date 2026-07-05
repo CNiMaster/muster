@@ -12,6 +12,16 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { randomUUID } from 'node:crypto';
+import {
+  copyFileSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  realpathSync,
+  statSync,
+} from 'node:fs';
+import path from 'node:path';
 import { z } from 'zod';
 import type { AgentRunResult, OutboundTaskRequest, ArtifactChange } from '../../shared/types';
 import type { ExecutionAdapter, ExecutionContext, ExecutionEvents, ExecutionRunResult } from '../task-engine/executor';
@@ -114,7 +124,7 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
   constructor(opts: ClaudeAdapterOptions = {}) {
     this.opts = {
       claudeBin: opts.claudeBin ?? SERVER_CONFIG.claudeBin,
-      model: opts.model ?? '',
+      model: opts.model ?? SERVER_CONFIG.model,
       skipPermissions: opts.skipPermissions ?? SERVER_CONFIG.skipPermissions,
       timeoutMs: opts.timeoutMs ?? AGENT_TIMEOUT_MS,
       maxToolCalls: opts.maxToolCalls ?? MAX_TOOL_CALLS,
@@ -127,33 +137,64 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
     // merge 逻辑：若 options 属于系统默认，则使用数据库最新设置；否则以实例化 opts 优先以兼容测试覆盖
     const mergedSettings: SystemSettings = {
       claudeBin: this.opts.claudeBin !== SERVER_CONFIG.claudeBin ? this.opts.claudeBin : sysSettings.claudeBin,
+      model: this.opts.model !== SERVER_CONFIG.model ? this.opts.model : sysSettings.model,
       skipPermissions: this.opts.skipPermissions !== SERVER_CONFIG.skipPermissions ? this.opts.skipPermissions : sysSettings.skipPermissions,
       timeoutMs: this.opts.timeoutMs !== AGENT_TIMEOUT_MS ? this.opts.timeoutMs : sysSettings.timeoutMs,
       maxToolCalls: this.opts.maxToolCalls !== MAX_TOOL_CALLS ? this.opts.maxToolCalls : sysSettings.maxToolCalls,
     };
 
     const prompt = buildPrompt(ctx);
-    const { result, sessionId, raw } = await this.spawnClaude({
+    let execution = await this.spawnClaude({
       prompt,
       systemPrompt: ctx.systemPrompt,
       cwd: ctx.workingDir || process.cwd(),
       existingSessionId: ctx.sessionIdHint,
       events,
       settings: mergedSettings,
+      signal: ctx.signal,
     });
-    const usage = {
-      model: Object.keys(raw.modelUsage)[0] ?? (this.opts.model || 'claude'),
-      inputTokens: raw.inputTokens,
-      outputTokens: raw.outputTokens,
-      cacheReadTokens: raw.cacheReadTokens,
-      cacheCreateTokens: raw.cacheCreateTokens,
-      toolCalls: raw.toolCalls,
-      durationMs: raw.durationMs,
-      costUSD: raw.costUSD,
-    };
 
     // 校验结构化输出
-    const parsed = agentRunResultSchema.safeParse(result.structuredOutput ?? tryParseJSON(result.fullText));
+    let parsed = agentRunResultSchema.safeParse(
+      execution.result.structuredOutput ?? tryParseJSON(execution.result.fullText),
+    );
+    if (!parsed.success && execution.sessionId && !ctx.signal?.aborted) {
+      log.warn('claude output missing structured result; requesting one format correction', {
+        taskId: ctx.task.id,
+      });
+      const correction = await this.spawnClaude({
+        prompt: [
+          '不要执行任何工具，也不要继续修改文件。',
+          '只根据刚才已经完成的工作，严格通过 StructuredOutput 返回 AgentRunResult。',
+          '不得输出解释性正文；artifacts 必须准确列出刚才实际修改的文件。',
+        ].join('\n'),
+        systemPrompt: ctx.systemPrompt,
+        cwd: ctx.workingDir || process.cwd(),
+        existingSessionId: execution.sessionId,
+        events,
+        settings: mergedSettings,
+        signal: ctx.signal,
+        disableTools: true,
+      });
+      execution = {
+        result: correction.result,
+        sessionId: correction.sessionId ?? execution.sessionId,
+        raw: mergeRunStats(execution.raw, correction.raw),
+      };
+      parsed = agentRunResultSchema.safeParse(
+        execution.result.structuredOutput ?? tryParseJSON(execution.result.fullText),
+      );
+    }
+    const usage = {
+      model: Object.keys(execution.raw.modelUsage)[0] ?? (mergedSettings.model || 'claude-default'),
+      inputTokens: execution.raw.inputTokens,
+      outputTokens: execution.raw.outputTokens,
+      cacheReadTokens: execution.raw.cacheReadTokens,
+      cacheCreateTokens: execution.raw.cacheCreateTokens,
+      toolCalls: execution.raw.toolCalls,
+      durationMs: execution.raw.durationMs,
+      costUSD: execution.raw.costUSD,
+    };
     if (!parsed.success) {
       log.warn('claude output invalid AgentRunResult', {
         taskId: ctx.task.id,
@@ -161,14 +202,14 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
       });
       return {
         outcome: 'blocked',
-        summary: `执行器输出不符合 AgentRunResult 契约：${parsed.error.message}\n原文：${result.fullText.slice(0, 500)}`,
+        summary: `执行器输出不符合 AgentRunResult 契约：${parsed.error.message}\n原文：${execution.result.fullText.slice(0, 500)}`,
         outboundTasks: [],
         artifacts: [],
-        _sessionIdHint: sessionId ?? undefined,
+        _sessionIdHint: execution.sessionId ?? undefined,
         _usage: usage,
       };
     }
-    return { ...parsed.data, _sessionIdHint: sessionId ?? undefined, _usage: usage };
+    return { ...parsed.data, _sessionIdHint: execution.sessionId ?? undefined, _usage: usage };
   }
 
   private spawnClaude(opts: {
@@ -179,6 +220,8 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
     existingSessionId?: string;
     events?: ExecutionEvents;
     settings: SystemSettings;
+    signal?: AbortSignal;
+    disableTools?: boolean;
   }): Promise<{
     result: { fullText: string; structuredOutput: unknown };
     raw: RawRunStats;
@@ -197,13 +240,16 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
 
       // session 持久化：首次 --session-id（生成新 id），后续 --resume
       if (opts.existingSessionId) {
+        prepareClaudeSessionForCwd(opts.existingSessionId, opts.cwd);
         args.push('--resume', opts.existingSessionId);
       } else {
         args.push('--session-id', generateSessionId());
       }
 
       // 沙盒
-      if (opts.settings.skipPermissions) {
+      if (opts.disableTools) {
+        args.push('--tools', '');
+      } else if (opts.settings.skipPermissions) {
         args.push('--dangerously-skip-permissions', '--allow-dangerously-skip-permissions');
       } else {
         const tools = getSandboxTools(opts.cwd, opts.cwd);
@@ -211,9 +257,14 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
         args.push('--permission-mode', 'acceptEdits');
       }
 
-      if (this.opts.model) args.push('--model', this.opts.model);
+      if (opts.settings.model) args.push('--model', opts.settings.model);
 
-      log.info('spawning claude', { bin: opts.settings.claudeBin, args: args.length, cwd: opts.cwd, model: this.opts.model });
+      log.info('spawning claude', {
+        bin: opts.settings.claudeBin,
+        args: args.length,
+        cwd: opts.cwd,
+        model: opts.settings.model || '(claude default)',
+      });
 
       const proc = spawn(opts.settings.claudeBin, args, {
         cwd: opts.cwd,
@@ -223,6 +274,10 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
       proc.stdin.end();
 
       this.active.add(proc);
+      const abort = (): void => {
+        proc.kill('SIGTERM');
+      };
+      opts.signal?.addEventListener('abort', abort, { once: true });
 
       let fullText = '';
       let structuredOutput: unknown = null;
@@ -232,6 +287,7 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
       let inputTokens = 0;
       let outputTokens = 0;
       let cacheReadTokens = 0;
+      let cacheCreateTokens = 0;
       let costUSD = 0;
       let resultSessionId: string | null = null;
       const start = Date.now();
@@ -247,7 +303,7 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
               fullText: fullText || `(超时 ${opts.settings.timeoutMs / 1000}s)`,
               structuredOutput: structuredOutput ?? tryParseJSON(fullText),
             },
-            raw: this.collectStats(start, inputTokens, outputTokens, cacheReadTokens, 0, toolCalls, costUSD, modelUsage),
+            raw: this.collectStats(start, inputTokens, outputTokens, cacheReadTokens, cacheCreateTokens, toolCalls, costUSD, modelUsage),
             sessionId: resultSessionId,
           });
         }
@@ -280,7 +336,7 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
                       proc.kill('SIGTERM');
                       resolve({
                         result: { fullText, structuredOutput: tryParseJSON(fullText) },
-                        raw: this.collectStats(start, inputTokens, outputTokens, cacheReadTokens, 0, toolCalls, costUSD, modelUsage),
+                        raw: this.collectStats(start, inputTokens, outputTokens, cacheReadTokens, cacheCreateTokens, toolCalls, costUSD, modelUsage),
                         sessionId: resultSessionId,
                       });
                     }
@@ -295,6 +351,7 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
               inputTokens += ev.usage.input_tokens ?? 0;
               outputTokens += ev.usage.output_tokens ?? 0;
               cacheReadTokens += ev.usage.cache_read_input_tokens ?? 0;
+              cacheCreateTokens += ev.usage.cache_creation_input_tokens ?? 0;
             }
             if (ev.modelUsage) {
               for (const [m, d] of Object.entries(ev.modelUsage as Record<string, any>)) {
@@ -319,6 +376,7 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
       proc.stderr.on('data', (d) => errLines.push(d.toString()));
 
       proc.on('close', (code) => {
+        opts.signal?.removeEventListener('abort', abort);
         clearTimeout(timeout);
         this.active.delete(proc);
         if (resolved) return;
@@ -329,7 +387,7 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
               fullText,
               structuredOutput: structuredOutput ?? (fullText ? tryParseJSON(fullText) : null),
             },
-            raw: this.collectStats(start, inputTokens, outputTokens, cacheReadTokens, 0, toolCalls, costUSD, modelUsage),
+            raw: this.collectStats(start, inputTokens, outputTokens, cacheReadTokens, cacheCreateTokens, toolCalls, costUSD, modelUsage),
             sessionId: resultSessionId,
           });
         } else {
@@ -339,6 +397,7 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
       });
 
       proc.on('error', (err) => {
+        opts.signal?.removeEventListener('abort', abort);
         clearTimeout(timeout);
         this.active.delete(proc);
         if (!resolved) {
@@ -388,6 +447,84 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
 /** 首次执行生成 session id（用于 --session-id）。 */
 function generateSessionId(): string {
   return randomUUID();
+}
+
+/**
+ * Claude Code 按 cwd 把会话存放在 ~/.claude/projects/<encoded-cwd>。
+ * Muster 每个 Task 使用不同 worktree，因此续接前需把线程会话复制到新 cwd 的项目目录。
+ */
+export function prepareClaudeSessionForCwd(
+  sessionId: string,
+  cwd: string,
+  projectsRoot = path.join(process.env.HOME ?? '', '.claude', 'projects'),
+): boolean {
+  if (!projectsRoot || !existsSync(projectsRoot)) return false;
+  const destinationDir = path.join(projectsRoot, encodeClaudeProjectPath(cwd));
+  const destinationFile = path.join(destinationDir, `${sessionId}.jsonl`);
+  if (existsSync(destinationFile)) return true;
+
+  let sourceDir: string | null = null;
+  let sourceMtime = -1;
+  let sourceSize = -1;
+  for (const entry of readdirSync(projectsRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const candidateDir = path.join(projectsRoot, entry.name);
+    const candidateFile = path.join(candidateDir, `${sessionId}.jsonl`);
+    if (!existsSync(candidateFile)) continue;
+    const stats = statSync(candidateFile);
+    if (stats.mtimeMs > sourceMtime || (stats.mtimeMs === sourceMtime && stats.size > sourceSize)) {
+      sourceDir = candidateDir;
+      sourceMtime = stats.mtimeMs;
+      sourceSize = stats.size;
+    }
+  }
+  if (!sourceDir) return false;
+
+  mkdirSync(destinationDir, { recursive: true, mode: 0o700 });
+  copyFileSync(path.join(sourceDir, `${sessionId}.jsonl`), destinationFile);
+  const companionDir = path.join(sourceDir, sessionId);
+  if (existsSync(companionDir)) {
+    cpSync(companionDir, path.join(destinationDir, sessionId), { recursive: true });
+  }
+  log.info('claude session copied for new task worktree', {
+    sessionId,
+    cwd,
+  });
+  return true;
+}
+
+function mergeRunStats(first: RawRunStats, second: RawRunStats): RawRunStats {
+  const modelUsage: RawRunStats['modelUsage'] = {};
+  for (const source of [first.modelUsage, second.modelUsage]) {
+    for (const [model, usage] of Object.entries(source)) {
+      const current = modelUsage[model] ?? {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        costUSD: 0,
+      };
+      current.inputTokens += usage.inputTokens;
+      current.outputTokens += usage.outputTokens;
+      current.cacheReadTokens += usage.cacheReadTokens;
+      current.costUSD += usage.costUSD;
+      modelUsage[model] = current;
+    }
+  }
+  return {
+    costUSD: first.costUSD + second.costUSD,
+    inputTokens: first.inputTokens + second.inputTokens,
+    outputTokens: first.outputTokens + second.outputTokens,
+    cacheReadTokens: first.cacheReadTokens + second.cacheReadTokens,
+    cacheCreateTokens: first.cacheCreateTokens + second.cacheCreateTokens,
+    toolCalls: first.toolCalls + second.toolCalls,
+    durationMs: first.durationMs + second.durationMs,
+    modelUsage,
+    sessionId: second.sessionId ?? first.sessionId,
+  };
+}
+
+function encodeClaudeProjectPath(cwd: string): string {
+  return realpathSync(cwd).replace(/[^a-zA-Z0-9-]/g, '-');
 }
 
 function buildPrompt(ctx: ExecutionContext): string {

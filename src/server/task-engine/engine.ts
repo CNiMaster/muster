@@ -54,6 +54,7 @@ export class TaskEngine {
   private publishQueue: PublishQueue;
   private pollTimer: NodeJS.Timeout | null = null;
   private pumping = new Set<string>(); // 正在 pump 的 threadId，防重入
+  private activeRuns = new Map<string, AbortController>();
 
   constructor(
     private db: DB,
@@ -172,6 +173,9 @@ export class TaskEngine {
         threadId: thread.id,
         sessionIdHint: thread.claudeSessionId ?? undefined,
       };
+      const runController = new AbortController();
+      this.activeRuns.set(task.id, runController);
+      ctx.signal = runController.signal;
       const assembled = assembleContext(this.db, ctx.task, {
         threadId: thread.id,
         sessionIdHint: ctx.sessionIdHint,
@@ -305,6 +309,11 @@ export class TaskEngine {
 
       return true;
     } catch (err) {
+      if (getTask(this.db, task.id).state === 'cancelled') {
+        updateThreadState(this.db, thread.id, 'idle');
+        log.info('cancelled task execution stopped', { taskId: task.id });
+        return true;
+      }
       this.handleRunError(task.id, err);
       updateThreadState(this.db, thread.id, 'failed');
       const failedTask = getTask(this.db, task.id);
@@ -324,6 +333,7 @@ export class TaskEngine {
       return true;
     } finally {
       clearInterval(hbTimer);
+      this.activeRuns.delete(task.id);
       // 清理 worktree（已 publish 或失败都不再保留工作目录）
       if (worktreeInfo && !preserveWorktree) {
         try {
@@ -334,6 +344,14 @@ export class TaskEngine {
         }
       }
     }
+  }
+
+  /** 取消正在执行的 Task；用于正式工作抢占低优先级讨论。 */
+  abortTask(taskId: string): boolean {
+    const controller = this.activeRuns.get(taskId);
+    if (!controller) return false;
+    controller.abort();
+    return true;
   }
 
   /** 发布 artifacts 到正式项目目录。冲突时把 Task 标 blocked。 */

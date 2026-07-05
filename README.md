@@ -27,18 +27,21 @@ npm start          # node dist/server/server.js
 - **镜像、监察、复盘、头脑风暴**：镜像并行不重复领取；监察员只建议不扩容；强制复盘按根员工聚合；闲置头脑风暴受限。
 - **Claude Code 执行器**：session 持久化、AgentRunResult 契约、用量统计、预算/无进展/重复检测。
 
+Claude Code 路径、模型标识、超时和工具调用上限可在“系统设置”中修改并立即测试。模型留空时使用 Claude Code 默认值；使用代理服务时应填写代理实际支持的模型标识。
+
 ## 常用脚本
 
 | 命令 | 作用 |
 |------|------|
 | `npm run typecheck` | TypeScript 全量类型检查 |
-| `npm test` | Vitest 单测 + 集成（66 项） |
+| `npm test` | Vitest 单测 + 集成（123 项） |
 | `npm run test:e2e` | Playwright 端到端 |
+| `npm run test:claude-smoke` | 使用真实 Claude Code 连续执行两个 Task，验证会话续接、成果和用量 |
 | `npm run build` | 构建产物到 `dist/` |
 
 ## 数据
 
-- 数据库：`~/.muster/muster.db`（SQLite，WAL，14 张表）
+- 数据库：`~/.muster/muster.db`（SQLite，WAL，20 张业务表）
 - Task worktree：`~/.muster/worktrees/<taskId>`
 - 项目成果：用户项目根目录（Muster 自动 `git init`）
 

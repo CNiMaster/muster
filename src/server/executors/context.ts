@@ -7,7 +7,7 @@
 import type { DB } from '../db/client';
 import { getCompany } from '../domain/company';
 import { getProject } from '../domain/project';
-import { getAgent } from '../domain/agent';
+import { getAgent, listAgents } from '../domain/agent';
 import { listTaskMessages } from '../domain/task-message';
 import type { Task } from '../domain/task';
 import { getTask as loadTask } from '../domain/task';
@@ -42,6 +42,8 @@ export function assembleContext(
   sp.push('# 项目说明', project.description || project.name, '');
   if (agent) {
     sp.push('# 你的职责', `岗位：${agent.role}`, agent.responsibilities || '', '');
+    if (agent.skills.length > 0) sp.push('# 指定技能', agent.skills.join('、'), '');
+    if (agent.tools.length > 0) sp.push('# 可用能力声明', agent.tools.join('、'), '');
     if (agent.systemPrompt) sp.push(agent.systemPrompt);
   }
   sp.push(
@@ -57,6 +59,15 @@ export function assembleContext(
   // ===== Input Packet =====
   const recentMessages = listTaskMessages(db, task.id).slice(-6);
   const referencedArtifacts = loadReferencedArtifacts(db, task);
+  const companyAgents = listAgents(db, company.id);
+  const availableContacts = agent
+    ? agent.contactAllow.flatMap((contactId) => {
+        const contact = companyAgents.find((candidate) => candidate.id === contactId);
+        return contact
+          ? [{ id: contact.id, name: contact.name, role: contact.role, responsibilities: contact.responsibilities }]
+          : [];
+      })
+    : [];
   const inputPacket: Record<string, unknown> = {
     ...task.inputProtocol,
     taskId: task.id,
@@ -66,6 +77,7 @@ export function assembleContext(
     contextRefs: task.contextRefs,
     recentDiscussion: recentMessages.map((m) => ({ author: m.author, role: m.role, content: m.content })),
     referencedArtifacts,
+    availableContacts,
   };
   if (task.parentTaskId) {
     const parent = loadTask(db, task.parentTaskId);

@@ -96,6 +96,12 @@ describe('Artifacts workspace domain & APIs', () => {
       expect(() => {
         writeArtifactContent(db, p.id, '../../etc/passwd', 'malicious');
       }).toThrowError(/路径逃逸/);
+
+      // 不能用字符串前缀绕过：/tmp/project-evil 不是 /tmp/project 的子目录。
+      const siblingPrefixPath = `../${path.basename(rootDir)}-evil/secret.txt`;
+      expect(() => {
+        readArtifactContent(db, p.id, siblingPrefixPath);
+      }).toThrowError(/路径逃逸/);
     } finally {
       if (existsSync(rootDir)) {
         rmSync(rootDir, { recursive: true, force: true });

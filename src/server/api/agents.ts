@@ -11,7 +11,15 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { asyncHandler, param } from './middleware';
 import { getDb } from '../db/client';
-import { createAgent, getAgent, listAgents, updateAgent, deleteAgent } from '../domain/agent';
+import {
+  clockInAgent,
+  clockOutAgent,
+  createAgent,
+  getAgent,
+  listAgents,
+  updateAgent,
+  deleteAgent,
+} from '../domain/agent';
 
 export const agentsRouter = Router({ mergeParams: true });
 
@@ -60,6 +68,7 @@ agentsRouter.patch(
     delete patch.id;
     delete patch.companyId;
     delete patch.createdAt;
+    delete patch.availabilityState;
     res.json(updateAgent(getDb(), a.id, patch));
   }),
 );
@@ -71,3 +80,21 @@ agentsRouter.delete(
     res.status(204).end();
   }),
 );
+
+agentsRouter.post('/:id/clock-in', asyncHandler(async (req, res) => {
+  const agent = getAgent(getDb(), param(req, 'id'));
+  if (agent.companyId !== param(req, 'companyId')) {
+    res.status(404).json({ error: 'agent not found' });
+    return;
+  }
+  res.json(clockInAgent(getDb(), agent.id));
+}));
+
+agentsRouter.post('/:id/clock-out', asyncHandler(async (req, res) => {
+  const agent = getAgent(getDb(), param(req, 'id'));
+  if (agent.companyId !== param(req, 'companyId')) {
+    res.status(404).json({ error: 'agent not found' });
+    return;
+  }
+  res.json(clockOutAgent(getDb(), agent.id));
+}));

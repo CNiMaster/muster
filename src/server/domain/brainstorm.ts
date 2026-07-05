@@ -9,7 +9,7 @@
  */
 import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
-import { createTask, listTasks } from './task';
+import { cancelTask, createTask, listTasks } from './task';
 import { getProject } from './project';
 import { listAgents } from './agent';
 
@@ -79,17 +79,15 @@ export function startBrainstorm(db: DB, setup: BrainstormSetup): BrainstormResul
   return { taskId: task.id, state: 'started' };
 }
 
-/** 正式 Task 到达时，活跃头脑风暴自动结束（参与者退出）。 */
+/** 正式 Task 到达时，活跃头脑风暴自动取消（执行引擎负责中止对应进程）。 */
 export function interruptActiveBrainstorms(db: DB, projectId: string): string[] {
   const discussions = listTasks(db, projectId).filter(
     (t) => t.isDiscussion === 1 && ['queued', 'claimed', 'running'].includes(t.state),
   );
   const interrupted: string[] = [];
   for (const d of discussions) {
-    db.prepare("UPDATE task SET state='completed', outcome='completed', summary='被正式 Task 打断，提前结束', updated_at=? WHERE id=?").run(
-      new Date().toISOString(),
-      d.id,
-    );
+    cancelTask(db, d.id);
+    db.prepare("UPDATE task SET summary='被正式 Task 打断，已取消讨论', updated_at=? WHERE id=?").run(new Date().toISOString(), d.id);
     interrupted.push(d.id);
   }
   return interrupted;

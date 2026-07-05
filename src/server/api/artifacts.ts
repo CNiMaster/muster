@@ -7,14 +7,18 @@
  */
 import { Router } from 'express';
 import { z } from 'zod';
-import path from 'node:path';
 import { existsSync } from 'node:fs';
 import { asyncHandler, param } from './middleware';
 import { getDb } from '../db/client';
 import { listArtifacts } from '../domain/artifact';
 import { getProject } from '../domain/project';
 import { PublishQueue } from '../worktree/publish-queue';
-import { readArtifactContent, writeArtifactContent, createArtifactAndContent } from '../domain/artifact-content';
+import {
+  readArtifactContent,
+  writeArtifactContent,
+  createArtifactAndContent,
+  resolveArtifactPath,
+} from '../domain/artifact-content';
 
 export const projectArtifactsRouter = Router({ mergeParams: true });
 
@@ -47,11 +51,7 @@ projectArtifactsRouter.get(
       res.status(400).json({ error: { code: 'validation', message: 'path required' } });
       return;
     }
-    const abs = path.resolve(project.rootDir, relPath);
-    if (!abs.startsWith(path.resolve(project.rootDir))) {
-      res.status(403).json({ error: { code: 'unauthorized', message: '路径逃逸' } });
-      return;
-    }
+    const abs = resolveArtifactPath(project.rootDir, relPath);
     if (!existsSync(abs)) {
       res.status(404).end();
       return;

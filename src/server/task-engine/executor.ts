@@ -17,6 +17,8 @@ export interface ExecutionContext {
   sessionIdHint?: string;
   /** 执行此 Task 的线程 id（用于记账与 session 持久化）。 */
   threadId?: string;
+  /** 上层取消 Task 时中止正在运行的执行器进程。 */
+  signal?: AbortSignal;
 }
 
 export interface ExecutionEvents {

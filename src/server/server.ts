@@ -36,6 +36,7 @@ import { realtime } from './realtime';
 import { getDb } from './db/client';
 import { TaskEngine } from './task-engine/engine';
 import { ClaudeCodeAdapter } from './executors/claude-code-adapter';
+import { FakeExecutor } from './task-engine/fake-executor';
 import { TriggerScheduler } from './trigger-scheduler';
 import { ProjectRuntimeCoordinator } from './runtime/coordinator';
 
@@ -77,7 +78,9 @@ async function createApp(): Promise<AppHandle> {
   );
 
   // 创建 Task 引擎实例（先于 API 引用）
-  const adapter = new ClaudeCodeAdapter();
+  const adapter = process.env.MUSTER_EXECUTOR === 'fake'
+    ? new FakeExecutor()
+    : new ClaudeCodeAdapter();
   const engine = new TaskEngine(getDb(), adapter, {
     pollIntervalMs: Number(process.env.MUSTER_POLL_INTERVAL_MS ?? 2000),
     concurrency: Number(process.env.MUSTER_CONCURRENCY ?? 4),

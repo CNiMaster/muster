@@ -12,6 +12,7 @@ import { createNovelCompany } from '../../src/server/domain/novel-template';
 import { createProject } from '../../src/server/domain/project';
 import { listMessages, postUserMessage, postSystemMessage } from '../../src/server/domain/conversation';
 import { listTasks } from '../../src/server/domain/task';
+import { updateAgent } from '../../src/server/domain/agent';
 
 let tdb: ReturnType<typeof makeTestDb>;
 let db: DB;
@@ -69,6 +70,41 @@ describe('conversation messages', () => {
     });
     expect(task).not.toBeNull();
     expect(task!.assigneeAgentId).toBe(r.agents.lead.id);
+  });
+
+  it('@员工时直接派给被提及者，未提及时仍默认第一负责人', () => {
+    const r = createNovelCompany(db, { name: 'co' });
+    const project = createProject(db, {
+      companyId: r.company.id,
+      name: 'novel',
+      rootDir: '/tmp/direct-mention',
+      firstAgentId: r.agents.lead.id,
+    });
+    const direct = postUserMessage(db, {
+      scopeKind: 'project',
+      scopeId: project.id,
+      content: '@主写手 请说明文风',
+      mentions: [r.agents.writer.id],
+    });
+    expect(direct.tasks).toHaveLength(1);
+    expect(direct.task?.assigneeAgentId).toBe(r.agents.writer.id);
+  });
+
+  it('员工关闭用户直联后拒绝 @，且不留下半条消息', () => {
+    const r = createNovelCompany(db, { name: 'co' });
+    const project = createProject(db, {
+      companyId: r.company.id,
+      name: 'novel',
+      rootDir: '/tmp/direct-denied',
+    });
+    updateAgent(db, r.agents.writer.id, { permissions: { userDirectContact: false } });
+    expect(() => postUserMessage(db, {
+      scopeKind: 'project',
+      scopeId: project.id,
+      content: '@主写手',
+      mentions: [r.agents.writer.id],
+    })).toThrow(/未开放用户直接联系/);
+    expect(listMessages(db, 'project', project.id)).toHaveLength(0);
   });
 
   it('消息按时间正序排列', () => {

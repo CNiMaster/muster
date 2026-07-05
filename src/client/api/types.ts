@@ -19,9 +19,14 @@ export interface Agent {
   name: string;
   role: string;
   responsibilities: string;
+  systemPrompt: string;
+  skills: string[];
+  tools: string[];
+  permissions: Record<string, unknown>;
   isInspector: boolean;
   canDispatch: boolean;
   contactAllow: string[];
+  availabilityState: 'online' | 'draining' | 'off';
 }
 
 export interface Department {
