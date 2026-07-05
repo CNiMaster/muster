@@ -19,6 +19,8 @@ import { SERVER_CONFIG } from '../env';
 import { sanitizeArg, tryParseJSON } from '../../shared/utils';
 import { getSandboxTools } from '../sandbox';
 import { AGENT_TIMEOUT_MS, MAX_TOOL_CALLS } from '../../shared/constants';
+import { getDb } from '../db/client';
+import { getSystemSettings, type SystemSettings } from '../domain/setting';
 import { log } from '../logger';
 import { AppError, ErrorCode } from '../../shared/errors';
 
@@ -118,6 +120,16 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
   }
 
   async run(ctx: ExecutionContext, events?: ExecutionEvents): Promise<AgentRunResult & { _sessionIdHint?: string }> {
+    const db = getDb();
+    const sysSettings = getSystemSettings(db);
+    // merge 逻辑：若 options 属于系统默认，则使用数据库最新设置；否则以实例化 opts 优先以兼容测试覆盖
+    const mergedSettings: SystemSettings = {
+      claudeBin: this.opts.claudeBin !== SERVER_CONFIG.claudeBin ? this.opts.claudeBin : sysSettings.claudeBin,
+      skipPermissions: this.opts.skipPermissions !== SERVER_CONFIG.skipPermissions ? this.opts.skipPermissions : sysSettings.skipPermissions,
+      timeoutMs: this.opts.timeoutMs !== AGENT_TIMEOUT_MS ? this.opts.timeoutMs : sysSettings.timeoutMs,
+      maxToolCalls: this.opts.maxToolCalls !== MAX_TOOL_CALLS ? this.opts.maxToolCalls : sysSettings.maxToolCalls,
+    };
+
     const prompt = buildPrompt(ctx);
     const { result, sessionId } = await this.spawnClaude({
       prompt,
@@ -125,6 +137,7 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
       cwd: ctx.workingDir || process.cwd(),
       existingSessionId: ctx.sessionIdHint,
       events,
+      settings: mergedSettings,
     });
 
     // 校验结构化输出
@@ -152,6 +165,7 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
     /** 已有的 session id（后续 --resume）；undefined 表示首次执行。 */
     existingSessionId?: string;
     events?: ExecutionEvents;
+    settings: SystemSettings;
   }): Promise<{
     result: { fullText: string; structuredOutput: unknown };
     raw: RawRunStats;
@@ -176,7 +190,7 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
       }
 
       // 沙盒
-      if (this.opts.skipPermissions) {
+      if (opts.settings.skipPermissions) {
         args.push('--dangerously-skip-permissions', '--allow-dangerously-skip-permissions');
       } else {
         const tools = getSandboxTools(opts.cwd, opts.cwd);
@@ -186,9 +200,9 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
 
       if (this.opts.model) args.push('--model', this.opts.model);
 
-      log.info('spawning claude', { bin: this.opts.claudeBin, args: args.length, cwd: opts.cwd, model: this.opts.model });
+      log.info('spawning claude', { bin: opts.settings.claudeBin, args: args.length, cwd: opts.cwd, model: this.opts.model });
 
-      const proc = spawn(this.opts.claudeBin, args, {
+      const proc = spawn(opts.settings.claudeBin, args, {
         cwd: opts.cwd,
         env: { ...process.env },
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -212,19 +226,19 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
       const timeout = setTimeout(() => {
         if (!resolved) {
           resolved = true;
-          log.warn('claude timed out', { timeoutMs: this.opts.timeoutMs });
+          log.warn('claude timed out', { timeoutMs: opts.settings.timeoutMs });
           proc.kill('SIGTERM');
           setTimeout(() => proc.kill('SIGKILL'), 5_000);
           resolve({
             result: {
-              fullText: fullText || `(超时 ${this.opts.timeoutMs / 1000}s)`,
+              fullText: fullText || `(超时 ${opts.settings.timeoutMs / 1000}s)`,
               structuredOutput: structuredOutput ?? tryParseJSON(fullText),
             },
             raw: this.collectStats(start, inputTokens, outputTokens, cacheReadTokens, 0, toolCalls, costUSD, modelUsage),
             sessionId: resultSessionId,
           });
         }
-      }, this.opts.timeoutMs);
+      }, opts.settings.timeoutMs);
 
       const rl = createInterface({ input: proc.stdout });
       rl.on('line', (line) => {
@@ -245,7 +259,7 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
                 if (block.type === 'tool_use') {
                   toolCalls++;
                   opts.events?.onToolCall?.(block.name, block.input);
-                  if (toolCalls > this.opts.maxToolCalls) {
+                  if (toolCalls > opts.settings.maxToolCalls) {
                     log.warn('claude exceeded max tool calls', { count: toolCalls });
                     if (!resolved) {
                       resolved = true;

@@ -528,5 +528,32 @@ export function useStartBrainstorm() {
   });
 }
 
+// ===== System Settings & Testing =====
+export function useSystemSettings() {
+  return useQuery({
+    queryKey: ['systemSettings'],
+    queryFn: () => api.get<any>('/api/settings'),
+  });
+}
+
+export function useSaveSystemSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (settings: { claudeBin: string; skipPermissions: boolean; timeoutMs: number; maxToolCalls: number }) =>
+      api.post<any>('/api/settings', settings),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['systemSettings'] });
+    },
+  });
+}
+
+export function useTestConnection() {
+  return useMutation({
+    mutationFn: (payload: { claudeBin?: string }) =>
+      api.post<any>('/api/settings/test-connection', payload),
+  });
+}
+
+
 
 

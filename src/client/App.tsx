@@ -25,6 +25,7 @@ function CompanyIndicator(): React.ReactElement {
     return (
       <nav className="topnav">
         <NavLink to="/" end>首页</NavLink>
+        <NavLink to="/settings">设置</NavLink>
       </nav>
     );
   }
@@ -32,6 +33,7 @@ function CompanyIndicator(): React.ReactElement {
     <nav className="topnav">
       <NavLink to="/" end>首页</NavLink>
       <NavLink to={`/companies/${company.id}`} end>{company.name}</NavLink>
+      <NavLink to="/settings">设置</NavLink>
       <StateBadge state={company.state} />
     </nav>
   );

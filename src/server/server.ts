@@ -28,6 +28,7 @@ import { projectPhase7, reportByIdRouter } from './api/phase7';
 import { companyMessagesRouter, projectMessagesRouter } from './api/conversation';
 import { projectArtifactsRouter } from './api/artifacts';
 import { workflowsRouter } from './api/workflows';
+import { settingsRouter } from './api/settings';
 import { asyncHandler, errorMiddleware, param } from './api/middleware';
 import { realtime } from './realtime';
 import { getDb } from './db/client';
@@ -92,6 +93,7 @@ async function createApp(): Promise<AppHandle> {
   app.use('/api/projects/:id', projectById);
   app.use('/api/reports/:id', reportByIdRouter);
   app.use('/api/tasks/:id', taskByIdRouter);
+  app.use('/api/settings', settingsRouter);
 
   app.use(errorMiddleware);
 

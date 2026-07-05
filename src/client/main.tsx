@@ -18,6 +18,7 @@ import { ReportsPage } from './pages/ReportsPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { WorkflowGraphPage } from './pages/WorkflowGraphPage';
 import { CompanyWizardPage } from './pages/CompanyWizardPage';
+import { SettingsPage } from './pages/SettingsPage';
 import { useToasts, ToastHost } from './components/Button';
 
 function ToastLayer(): React.ReactElement {
@@ -49,6 +50,7 @@ const router = createBrowserRouter([
       { path: 'projects/:projectId/reports', element: <ReportsPage /> },
       { path: 'projects/:projectId/dashboard', element: <DashboardPage /> },
       { path: 'tasks/:taskId', element: <TaskDetailPage /> },
+      { path: 'settings', element: <SettingsPage /> },
       { path: '*', element: <NotFoundPage /> },
     ],
   },
