@@ -27,6 +27,17 @@ export interface Agent {
   canDispatch: boolean;
   contactAllow: string[];
   availabilityState: 'online' | 'draining' | 'off';
+  executor: AgentExecutorJson;
+}
+
+/** 员工级执行器配置（与 server AgentExecutorJson 对齐）。 */
+export interface AgentExecutorJson {
+  model?: string;
+  claudeBin?: string;
+  timeoutMs?: number;
+  maxToolCalls?: number;
+  skipPermissions?: boolean;
+  apiKeyEnv?: string;
 }
 
 export interface Department {
@@ -46,6 +57,7 @@ export interface Project {
   rootDir: string;
   firstAgentId: string | null;
   state: 'idle' | 'active' | 'paused' | 'completed' | 'archived';
+  settings: Record<string, unknown>;
 }
 
 export interface Relationship {
@@ -55,6 +67,7 @@ export interface Relationship {
   sourceId: string;
   targetId: string;
   label: string;
+  archivedAt: string | null;
 }
 
 export interface TaskArtifact {

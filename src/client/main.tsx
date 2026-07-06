@@ -20,6 +20,7 @@ const ArtifactsPage = lazy(() => import('./pages/ArtifactsPage').then((m) => ({ 
 const ReportsPage = lazy(() => import('./pages/ReportsPage').then((m) => ({ default: m.ReportsPage })));
 const DashboardPage = lazy(() => import('./pages/DashboardPage').then((m) => ({ default: m.DashboardPage })));
 const WorkflowGraphPage = lazy(() => import('./pages/WorkflowGraphPage').then((m) => ({ default: m.WorkflowGraphPage })));
+const CharacterGraphPage = lazy(() => import('./pages/CharacterGraphPage').then((m) => ({ default: m.CharacterGraphPage })));
 const CompanyWizardPage = lazy(() => import('./pages/CompanyWizardPage').then((m) => ({ default: m.CompanyWizardPage })));
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then((m) => ({ default: m.SettingsPage })));
 
@@ -46,6 +47,7 @@ const router = createBrowserRouter([
       { path: 'companies/:companyId/workflows/:workflowId', element: <WorkflowGraphPage /> },
       { path: 'companies/:companyId/projects/new', element: <ProjectPage /> },
       { path: 'projects/:projectId', element: <ProjectPage /> },
+      { path: 'projects/:projectId/character-graph', element: <CharacterGraphPage /> },
       { path: 'projects/:projectId/tasks', element: <TasksPage /> },
       { path: 'projects/:projectId/usage', element: <UsagePage /> },
       { path: 'projects/:projectId/artifacts', element: <ArtifactsPage /> },

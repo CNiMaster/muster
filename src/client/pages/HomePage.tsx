@@ -7,6 +7,7 @@ import { Card } from '../components/Card';
 import { Badge, companyStateTone, stateLabel } from '../components/Badge';
 import { Input, Select, Field } from '../components/Form';
 import { EmptyState, Icons } from '../components/EmptyState';
+import { OnboardingGuide } from '../components/OnboardingGuide';
 import { CardSkeleton } from '../components/Skeleton';
 import { toast } from '../components/Button';
 
@@ -48,6 +49,8 @@ export function HomePage(): React.ReactElement {
     <div className="home">
       <h1>Muster Agent 公司工作台</h1>
       <p className="subtitle">本地单用户长篇小说公司 · MVP</p>
+
+      <OnboardingGuide hasCompany={(companies?.length ?? 0) > 0} />
 
       <div className="usage-grid section">
         <Card className="mu-metric">

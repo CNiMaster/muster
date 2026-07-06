@@ -26,6 +26,9 @@ import {
 import type { CompanyState } from '../../shared/types';
 import { listProjects } from '../domain/project';
 import { ensureProjectThreads } from '../domain/thread';
+import { summarizeCompanyUsage } from '../domain/usage';
+import { listAgents } from '../domain/agent';
+import { listDepartments } from '../domain/department';
 
 export const companiesRouter = Router();
 
@@ -98,3 +101,95 @@ companiesRouter.post('/:id/clock-out', stateEndpoint('off'));
 companiesRouter.post('/:id/drain', stateEndpoint('draining'));
 companiesRouter.post('/:id/review-pause', stateEndpoint('review_paused'));
 companiesRouter.post('/:id/resume', stateEndpoint('online'));
+
+/** 公司级用量聚合（PRD Phase 3.7）。 */
+companiesRouter.get(
+  '/:id/usage',
+  asyncHandler(async (req, res) => {
+    res.json(summarizeCompanyUsage(getDb(), param(req, 'id')));
+  }),
+);
+
+/**
+ 部门与员工状态看板（PRD Phase 4，清单 172）。
+ 聚合：每个部门下的员工，含 availability、当前 thread state、当前 Task 标题、积压 Task 数。
+ */
+companiesRouter.get(
+  '/:id/status-board',
+  asyncHandler(async (req, res) => {
+    const db = getDb();
+    const companyId = param(req, 'id');
+    const departments = listDepartments(db, companyId);
+    const agents = listAgents(db, companyId);
+    // 该公司所有项目下的线程与活跃 Task
+    const threads = db
+      .prepare(
+        `SELECT t.id, t.agent_id, t.state AS thread_state, t.project_id
+         FROM project_agent_thread t
+         JOIN project p ON p.id = t.project_id
+         WHERE p.company_id=? AND t.kind='primary'`,
+      )
+      .all(companyId) as Array<{ id: string; agent_id: string; thread_state: string; project_id: string }>;
+    const tasks = db
+      .prepare(
+        `SELECT tk.id, tk.title, tk.state, tk.assignee_agent_id, tk.project_id
+         FROM task tk
+         JOIN project p ON p.id = tk.project_id
+         WHERE p.company_id=? AND tk.state IN ('queued','claimed','running','waiting_input','waiting_dependency','paused')`,
+      )
+      .all(companyId) as Array<{ id: string; title: string; state: string; assignee_agent_id: string | null; project_id: string }>;
+
+    const result = departments.map((dept) => {
+      const deptAgents = agents.filter((a) => a.departmentId === dept.id);
+      return {
+        id: dept.id,
+        name: dept.name,
+        agents: deptAgents.map((a) => {
+          const agentThreads = threads.filter((t) => t.agent_id === a.id);
+          // running/waiting 状态优先；否则取第一个
+          const activeThread = agentThreads.find((t) => t.thread_state === 'running')
+            ?? agentThreads.find((t) => t.thread_state === 'waiting')
+            ?? agentThreads[0];
+          const agentTasks = tasks.filter((t) => t.assignee_agent_id === a.id);
+          const currentTask = agentTasks.find((t) => t.state === 'running' || t.state === 'claimed');
+          const queuedTaskCount = agentTasks.filter((t) => t.state === 'queued').length;
+          return {
+            id: a.id,
+            name: a.name,
+            role: a.role,
+            availability: a.availabilityState,
+            threadState: activeThread?.thread_state ?? null,
+            currentTaskTitle: currentTask?.title ?? null,
+            queuedTaskCount,
+          };
+        }),
+      };
+    });
+    // 未分配部门的员工单独成组
+    const noDeptAgents = agents.filter((a) => !a.departmentId);
+    if (noDeptAgents.length > 0) {
+      result.push({
+        id: '__unassigned__',
+        name: '未分配部门',
+        agents: noDeptAgents.map((a) => {
+          const agentThreads = threads.filter((t) => t.agent_id === a.id);
+          const activeThread = agentThreads.find((t) => t.thread_state === 'running')
+            ?? agentThreads.find((t) => t.thread_state === 'waiting')
+            ?? agentThreads[0];
+          const agentTasks = tasks.filter((t) => t.assignee_agent_id === a.id);
+          const currentTask = agentTasks.find((t) => t.state === 'running' || t.state === 'claimed');
+          return {
+            id: a.id,
+            name: a.name,
+            role: a.role,
+            availability: a.availabilityState,
+            threadState: activeThread?.thread_state ?? null,
+            currentTaskTitle: currentTask?.title ?? null,
+            queuedTaskCount: agentTasks.filter((t) => t.state === 'queued').length,
+          };
+        }),
+      });
+    }
+    res.json({ departments: result });
+  }),
+);

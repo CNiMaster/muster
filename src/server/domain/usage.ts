@@ -48,6 +48,49 @@ export function recordUsage(db: DB, input: UsageRecordInput): void {
   );
 }
 
+/**
+ 多模型批量记录（PRD Phase 3.7）。
+ - 主模型用顶层 token 总和写一条。
+ - 其余模型各写一条（toolCalls/durationMs 不重复记录）。
+ - 这样既保留主模型总览，又让 byModel 聚合能正确反映每个模型的 token。
+ */
+export function recordUsageBatch(
+  db: DB,
+  base: Omit<UsageRecordInput, 'model' | 'inputTokens' | 'outputTokens' | 'cacheReadTokens' | 'cacheCreateTokens' | 'costUSD'>,
+  primary: {
+    model: string;
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    cacheCreateTokens: number;
+    costUSD: number;
+  },
+  secondaryModels?: Array<{
+    model: string;
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    cacheCreateTokens: number;
+    costUSD: number;
+  }>,
+): void {
+  db.transaction(() => {
+    recordUsage(db, { ...base, ...primary });
+    if (secondaryModels) {
+      for (const m of secondaryModels) {
+        if (m.inputTokens === 0 && m.outputTokens === 0 && m.costUSD === 0) continue;
+        recordUsage(db, {
+          ...base,
+          ...m,
+          // 次模型不重复记 toolCalls/durationMs，避免双计
+          toolCalls: 0,
+          durationMs: 0,
+        });
+      }
+    }
+  })();
+}
+
 export interface UsageSummary {
   totalInputTokens: number;
   totalOutputTokens: number;
@@ -71,6 +114,18 @@ export function summarizeAgentUsage(db: DB, projectId: string, rootAgentId: stri
   const rows = db
     .prepare('SELECT * FROM usage_record WHERE project_id = ? AND agent_id = ?')
     .all(projectId, rootAgentId) as any[];
+  return aggregate(rows);
+}
+
+/** 按公司聚合：汇总该公司所有项目的用量（PRD Phase 3.7）。 */
+export function summarizeCompanyUsage(db: DB, companyId: string): UsageSummary {
+  const rows = db
+    .prepare(
+      `SELECT u.* FROM usage_record u
+       JOIN project p ON p.id = u.project_id
+       WHERE p.company_id = ?`,
+    )
+    .all(companyId) as any[];
   return aggregate(rows);
 }
 

@@ -13,6 +13,7 @@ import { createTask } from './task';
 import type { ArtifactChange } from '../../shared/types';
 import { transaction } from '../db/client';
 import { appendTaskEvent } from './task-event';
+import { MAINTENANCE_ROLES } from './novel-template';
 
 export type ConsistencyCheckKind = 'omission' | 'continuity' | 'long_term';
 
@@ -140,9 +141,10 @@ export interface ChapterCompletedEvent {
 }
 
 /**
- * 章节完成事件处理：
- * - 找到项目的 character/plot/timeline/foreshadowing 责任员工
- * - 给每个相关岗位派发一个维护 Task
+ 章节完成事件处理：
+ * - 扫描项目中所有维护类岗位（MAINTENANCE_ROLES），给每个有对应员工的岗位派发维护 Task
+ * - 基础：character（人物档案）、plot（剧情/伏笔/大纲）
+ * - 扩展：worldview（世界观）、timeline（时间线）、foreshadowing（伏笔）、continuity（连续性）、style（文风）、relationship（情感线）
  * - 模板：{ trigger: 'chapter_completed', chapter, summary }
  */
 export function handleChapterCompleted(db: DB, ev: ChapterCompletedEvent): string[] {
@@ -161,20 +163,27 @@ export function handleChapterCompleted(db: DB, ev: ChapterCompletedEvent): strin
 
   const byRole = (role: string): string | undefined => agents.find((a) => a.role === role)?.id;
 
-  const targets: Array<{ role: string; title: string }> = [
-    { role: 'character', title: `[事件] 维护人物档案（第${ev.chapterSeq}章）` },
-    { role: 'plot', title: `[事件] 维护剧情进度与伏笔（第${ev.chapterSeq}章）` },
-  ];
+  // 动态扫描维护类岗位（PRD:458）：每个有员工的维护岗位派一个 Task
+  const titleByRole: Record<string, string> = {
+    character: `维护人物档案（第${ev.chapterSeq}章）`,
+    plot: `维护剧情进度与伏笔（第${ev.chapterSeq}章）`,
+    worldview: `维护世界观（第${ev.chapterSeq}章）`,
+    timeline: `维护时间线（第${ev.chapterSeq}章）`,
+    foreshadowing: `维护伏笔资料（第${ev.chapterSeq}章）`,
+    continuity: `连续性检查（第${ev.chapterSeq}章）`,
+    style: `文风审校（第${ev.chapterSeq}章）`,
+    relationship: `维护情感线（第${ev.chapterSeq}章）`,
+  };
 
-  for (const t of targets) {
-    const agentId = byRole(t.role);
+  for (const role of MAINTENANCE_ROLES) {
+    const agentId = byRole(role);
     if (!agentId) continue;
     const task = createTask(db, {
       projectId: ev.projectId,
       parentTaskId: ev.sourceTaskId,
       assigneeAgentId: agentId,
       dispatcherAgentId: project.firstAgentId ?? undefined,
-      title: t.title,
+      title: `[事件] ${titleByRole[role] ?? `维护${role}`}`,
       inputProtocol: {
         trigger: 'chapter_completed',
         chapter: ev.chapterPath,

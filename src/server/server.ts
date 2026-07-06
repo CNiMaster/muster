@@ -27,6 +27,7 @@ import { novelRouter, projectScopedNovel } from './api/novel';
 import { projectPhase7, reportByIdRouter } from './api/phase7';
 import { companyMessagesRouter, projectMessagesRouter } from './api/conversation';
 import { projectArtifactsRouter } from './api/artifacts';
+import { companyEventsRouter, projectEventsRouter } from './api/events';
 import { workflowsRouter } from './api/workflows';
 import { settingsRouter } from './api/settings';
 import { departmentsRouter } from './api/departments';
@@ -64,6 +65,7 @@ async function createApp(): Promise<AppHandle> {
   projectById.use('/tasks', taskByProjectRouter);
   projectById.use('/usage', usageRouter);
   projectById.use('/messages', projectMessagesRouter);
+  projectById.use('/events', projectEventsRouter);
   projectById.use('/artifacts', projectArtifactsRouter);
   projectById.use('/', projectScopedNovel);   // chapter-completed / correction / check
   projectById.use('/', projectPhase7);         // reports / inspector / brainstorm
@@ -104,6 +106,7 @@ async function createApp(): Promise<AppHandle> {
   app.use('/api/companies/:companyId/relationships', graphsRouter);
   app.use('/api/companies/:companyId/workflows', workflowsRouter);
   app.use('/api/companies/:id/messages', companyMessagesRouter);
+  app.use('/api/companies/:companyId/events', companyEventsRouter);
   app.use('/api/projects/:id', projectById);
   app.use('/api/reports/:id', reportByIdRouter);
   app.use('/api/tasks/:id', taskByIdRouter);

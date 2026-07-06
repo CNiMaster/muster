@@ -21,6 +21,7 @@ export interface Relationship {
   label: string;
   protocol: Record<string, unknown>;
   createdAt: string;
+  archivedAt: string | null;
 }
 
 interface RelationshipRow {
@@ -32,6 +33,7 @@ interface RelationshipRow {
   label: string;
   protocol_json: string;
   created_at: string;
+  archived_at: string | null;
 }
 
 function fromRow(r: RelationshipRow): Relationship {
@@ -44,6 +46,7 @@ function fromRow(r: RelationshipRow): Relationship {
     label: r.label,
     protocol: JSON.parse(r.protocol_json ?? '{}'),
     createdAt: r.created_at,
+    archivedAt: r.archived_at,
   };
 }
 
@@ -90,11 +93,28 @@ export function getRelationship(db: DB, id: string): Relationship {
   return fromRow(row);
 }
 
-export function listRelationships(db: DB, companyId: string, kind?: GraphKind): Relationship[] {
-  const sql = kind
-    ? 'SELECT * FROM relationship WHERE company_id = ? AND kind = ? ORDER BY created_at'
-    : 'SELECT * FROM relationship WHERE company_id = ? ORDER BY created_at';
-  const rows = (kind ? db.prepare(sql).all(companyId, kind) : db.prepare(sql).all(companyId)) as RelationshipRow[];
+/**
+ 列出关系。
+ - includeArchived=false（默认）：只返回未归档关系（运行态使用）。
+ - includeArchived=true：返回所有关系（前端展示归档态使用）。
+ */
+export function listRelationships(
+  db: DB,
+  companyId: string,
+  kind?: GraphKind,
+  opts: { includeArchived?: boolean } = {},
+): Relationship[] {
+  const where = ['company_id = ?'];
+  const params: unknown[] = [companyId];
+  if (kind) {
+    where.push('kind = ?');
+    params.push(kind);
+  }
+  if (!opts.includeArchived) {
+    where.push('archived_at IS NULL');
+  }
+  const sql = `SELECT * FROM relationship WHERE ${where.join(' AND ')} ORDER BY archived_at IS NULL DESC, created_at`;
+  const rows = db.prepare(sql).all(...params) as RelationshipRow[];
   return rows.map(fromRow);
 }
 
@@ -113,6 +133,48 @@ export function deleteRelationship(db: DB, id: string): void {
       );
     }
   })();
+}
+
+/**
+ 归档关系（软删除，PRD:351-359）。
+ 归档态关系不出现在运行时图中，但前端可以灰色虚线展示，便于追溯历史组织。
+ 通信边归档时同步从 contact_allow 移除目标（避免运行态仍按旧权限通信）。
+ */
+export function archiveRelationship(db: DB, id: string): Relationship {
+  const cur = getRelationship(db, id);
+  assertUnlocked(db, cur.companyId);
+  db.transaction(() => {
+    db.prepare('UPDATE relationship SET archived_at=? WHERE id=?').run(nowIso(), id);
+    if (cur.kind === 'communication') {
+      const source = getAgent(db, cur.sourceId);
+      const contacts = source.contactAllow.filter((contactId) => contactId !== cur.targetId);
+      db.prepare('UPDATE agent_definition SET contact_allow_json=?, updated_at=? WHERE id=?').run(
+        JSON.stringify(contacts),
+        nowIso(),
+        source.id,
+      );
+    }
+  })();
+  return getRelationship(db, id);
+}
+
+/** 恢复归档关系。通信边恢复时同步把 target 重新加入 contact_allow。 */
+export function restoreRelationship(db: DB, id: string): Relationship {
+  const cur = getRelationship(db, id);
+  assertUnlocked(db, cur.companyId);
+  db.transaction(() => {
+    db.prepare('UPDATE relationship SET archived_at=NULL WHERE id=?').run(id);
+    if (cur.kind === 'communication') {
+      const source = getAgent(db, cur.sourceId);
+      const contacts = [...new Set([...source.contactAllow, cur.targetId])];
+      db.prepare('UPDATE agent_definition SET contact_allow_json=?, updated_at=? WHERE id=?').run(
+        JSON.stringify(contacts),
+        nowIso(),
+        source.id,
+      );
+    }
+  })();
+  return getRelationship(db, id);
 }
 
 /**

@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import {
   useProject,
+  useUpdateProject,
   useAgents,
   useThreads,
   useCreateProject,
@@ -11,6 +12,7 @@ import {
   useCreateMirror,
   useDeleteMirror,
   useStartBrainstorm,
+  useBrainstormBudget,
   useGenerateProjectProposal,
 } from '../hooks/queries';
 import { Button, toast } from '../components/Button';
@@ -18,6 +20,7 @@ import { Card } from '../components/Card';
 import { Badge } from '../components/Badge';
 import { Input, Textarea, Select, Field } from '../components/Form';
 import { EmptyState, Icons } from '../components/EmptyState';
+import type { Project } from '../api/types';
 import { ConversationPanel } from '../components/ConversationPanel';
 
 export function ProjectPage(): React.ReactElement {
@@ -301,6 +304,7 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
   const [topic, setTopic] = useState('');
   const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
   const [maxRounds, setMaxRounds] = useState(3);
+  const brainstormBudget = useBrainstormBudget(projectId);
 
   // 初始化时默认全选所有员工作为脑暴参与者
   useEffect(() => {
@@ -310,6 +314,32 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
   }, [agents]);
 
   if (!project) return <div className="loading">加载中…</div>;
+
+  const handleAutoBrainstorm = () => {
+    if (!topic.trim()) {
+      toast('error', '请输入讨论主题');
+      return;
+    }
+    startBrainstorm.mutate(
+      {
+        projectId,
+        topic,
+        maxRounds,
+        autoSelectParticipants: { count: 2 },
+      },
+      {
+        onSuccess: (res) => {
+          if (res.state === 'skipped') {
+            toast('info', `跳过：${res.reason}`);
+          } else {
+            toast('success', '已随机召集 2 名闲置员工开始讨论');
+            setTopic('');
+          }
+        },
+        onError: (err) => toast('error', (err as any).message ?? '脑暴启动失败'),
+      },
+    );
+  };
 
   const handleToggleAgent = (agentId: string) => {
     setSelectedAgents(prev =>
@@ -373,6 +403,9 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
           <Link to={`/projects/${projectId}/artifacts`}>
             <Button variant="ghost" size="sm">成果</Button>
           </Link>
+          <Link to={`/projects/${projectId}/character-graph`}>
+            <Button variant="ghost" size="sm">人物关系图</Button>
+          </Link>
           <Link to={`/projects/${projectId}/usage`}>
             <Button variant="ghost" size="sm">用量</Button>
           </Link>
@@ -382,6 +415,8 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
       <Card title="项目说明">
         <p className="muted" style={{ margin: 0 }}>{project.description || '(未填写)'}</p>
       </Card>
+
+      <ReviewSettingsCard project={project} />
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)', alignItems: 'start' }}>
         {/* 项目员工线程与镜像管理 */}
@@ -452,6 +487,11 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
             <p className="muted" style={{ fontSize: 'var(--text-sm)', margin: 0 }}>
               当项目没有积压任务时，可主动召集闲置员工进行特定主题的头脑风暴，产出决策建议。
             </p>
+            {brainstormBudget.data && (
+              <p className="muted" style={{ fontSize: 'var(--text-sm)', margin: 0 }}>
+                今日讨论预算：已用 ${brainstormBudget.data.spent.toFixed(2)} / ${brainstormBudget.data.budget.toFixed(2)}（剩余 ${brainstormBudget.data.remaining.toFixed(2)}）
+              </p>
+            )}
             <Field label="讨论主题" required>
               <Input
                 value={topic}
@@ -493,7 +533,10 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
                 </Select>
               </Field>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'var(--space-2)' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 'var(--space-2)' }}>
+              <Button variant="ghost" onClick={handleAutoBrainstorm} loading={startBrainstorm.isPending} title="随机选 2 名闲置员工参与">
+                随机选闲置员工
+              </Button>
               <Button onClick={handleStartBrainstorm} loading={startBrainstorm.isPending}>
                 召集脑暴会议
               </Button>
@@ -506,5 +549,62 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
         <ConversationPanel scope="project" scopeId={projectId} companyId={project.companyId} title="与项目第一负责人对话" />
       </Card>
     </div>
+  );
+}
+
+/** 复盘触发配置卡片（PRD Phase 5，清单 196）。 */
+function ReviewSettingsCard({ project }: { project: Project }): React.ReactNode {
+  const updateProject = useUpdateProject();
+  const settings = (project.settings ?? {}) as {
+    reviewTaskInterval?: number;
+    reviewTimeIntervalHours?: number;
+    milestoneReviewAt?: string;
+    dailyDiscussionBudgetUSD?: number;
+  };
+  const [taskInterval, setTaskInterval] = useState(String(settings.reviewTaskInterval ?? ''));
+  const [timeHours, setTimeHours] = useState(String(settings.reviewTimeIntervalHours ?? ''));
+  const [milestone, setMilestone] = useState(settings.milestoneReviewAt ?? '');
+  const [dailyBudget, setDailyBudget] = useState(String(settings.dailyDiscussionBudgetUSD ?? ''));
+
+  const save = (): void => {
+    const next: Record<string, unknown> = { ...project.settings };
+    next.reviewTaskInterval = taskInterval ? Number(taskInterval) : undefined;
+    next.reviewTimeIntervalHours = timeHours ? Number(timeHours) : undefined;
+    next.milestoneReviewAt = milestone || undefined;
+    next.dailyDiscussionBudgetUSD = dailyBudget ? Number(dailyBudget) : undefined;
+    updateProject.mutate(
+      { id: project.id, settings: next },
+      {
+        onSuccess: () => toast('success', '复盘配置已保存'),
+        onError: (e) => toast('error', (e as Error).message),
+      },
+    );
+  };
+
+  return (
+    <Card title="复盘与预算配置">
+      <div className="form-stack">
+        <p className="muted" style={{ fontSize: 'var(--text-sm)', margin: 0 }}>
+          配置强制复盘的触发条件（满足任一即触发）与讨论每日预算。
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <Field label="按完成 Task 数触发（留空=20）">
+            <Input type="number" value={taskInterval} onChange={(e) => setTaskInterval(e.target.value)} placeholder="20" />
+          </Field>
+          <Field label="按时间间隔触发（小时，留空=关闭）">
+            <Input type="number" value={timeHours} onChange={(e) => setTimeHours(e.target.value)} placeholder="例如 72" />
+          </Field>
+        </div>
+        <Field label="里程碑复盘时间（留空=关闭）">
+          <Input type="datetime-local" value={milestone ? milestone.slice(0, 16) : ''} onChange={(e) => setMilestone(e.target.value ? new Date(e.target.value).toISOString() : '')} />
+        </Field>
+        <Field label="讨论每日预算（USD，留空=2）">
+          <Input type="number" step="0.5" value={dailyBudget} onChange={(e) => setDailyBudget(e.target.value)} placeholder="2" />
+        </Field>
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <Button onClick={save} loading={updateProject.isPending}>保存配置</Button>
+        </div>
+      </div>
+    </Card>
   );
 }

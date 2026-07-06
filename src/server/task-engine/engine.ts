@@ -9,6 +9,7 @@
  - 异常分级（P7）：超时/budget/blocked 区分
  - 文件冲突时把 Task 标 blocked（PRD：同段冲突保留双方并阻塞发布）
  */
+import path from 'node:path';
 import type { DB } from '../db/client';
 import type { ExecutionAdapter, ExecutionContext } from './executor';
 import {
@@ -21,16 +22,16 @@ import {
   blockTask,
   createTask,
 } from '../domain/task';
-import { getThread, listOnlineThreads, setClaudeSession, updateThreadState } from '../domain/thread';
+import { getThread, listOnlineThreads, setClaudeSession, updateThreadState, incrementExecCount, clearSessionForCompaction, rotateSession } from '../domain/thread';
 import { getAgent } from '../domain/agent';
 import { assembleContext } from '../executors/context';
 import { assertSafeToRun } from '../executors/safety';
-import { getProject } from '../domain/project';
+import { getProject, listProjectReferences } from '../domain/project';
 import { getCompany } from '../domain/company';
 import { createWorktree, removeWorktree } from '../worktree/manager';
 import { commitAll } from '../worktree/manager';
 import { PublishQueue } from '../worktree/publish-queue';
-import { checkBudget, recordUsage } from '../domain/usage';
+import { checkBudget, recordUsage, recordUsageBatch } from '../domain/usage';
 import { log } from '../logger';
 import { AppError, ErrorCode } from '../../shared/errors';
 import type { AgentRunResult } from '../../shared/types';
@@ -39,6 +40,7 @@ import { upsertPublishedArtifact } from '../domain/artifact';
 import { postSystemMessage } from '../domain/conversation';
 import { handleChapterCompleted } from '../domain/triggers';
 import { advanceWorkflowTask } from '../domain/workflow';
+import { createSuggestionTasksFromBrainstorm } from '../domain/brainstorm';
 import { deleteTaskRuntime, getTaskRuntime, saveTaskRuntime } from '../domain/task-runtime';
 import { existsSync } from 'node:fs';
 
@@ -172,6 +174,11 @@ export class TaskEngine {
         inputPacket: {},
         threadId: thread.id,
         sessionIdHint: thread.claudeSessionId ?? undefined,
+        // PRD Phase 3.4：收集授权参考项目根目录，让 Claude 直接只读访问（--add-dir）。
+        readonlyDirs: collectReadonlyReferenceDirs(this.db, task.projectId),
+        // PRD Phase 3：员工级执行器配置 + 用户级凭据引用
+        agentExecutor: normalizeAgentExecutor(agent.executor),
+        apiKeyEnv: extractApiKeyEnv(agent.executor),
       };
       const runController = new AbortController();
       this.activeRuns.set(task.id, runController);
@@ -191,6 +198,19 @@ export class TaskEngine {
       // 持久化 Claude session id（首次返回后保存，后续 --resume 用）
       if (result._sessionIdHint && result._sessionIdHint !== thread.claudeSessionId) {
         setClaudeSession(this.db, thread.id, result._sessionIdHint);
+      }
+
+      // 会话压缩/轮换（PRD Phase 3.6）：累计执行达阈值后，把摘要记入 thread 并清空 session，
+      // 下次执行自动开新 session；context 装配时把 compactionSummary 注入 systemPrompt。
+      // 时间轮换：距上次开新 session 超过阈值时清空 session（不重置 exec_count）。
+      const exec = incrementExecCount(this.db, thread.id);
+      if (exec.shouldCompact && result.outcome === 'completed') {
+        const compactSummary = `[会话压缩 ${new Date().toISOString()}] 最近 ${exec.count} 次执行的最新成果：${result.summary || '（无摘要）'}`;
+        clearSessionForCompaction(this.db, thread.id, compactSummary);
+        log.info('session compacted', { threadId: thread.id, count: exec.count });
+      } else if (exec.shouldRotate && result.outcome === 'completed') {
+        rotateSession(this.db, thread.id);
+        log.info('session rotated by time', { threadId: thread.id });
       }
 
       if (result.outcome === 'waiting_input' || result.outcome === 'waiting_dependency') {
@@ -226,6 +246,17 @@ export class TaskEngine {
         });
       }
       completeTask(this.db, task.id, result);
+      // 讨论结论→建议 Task（PRD Phase 8.4）：brainstorm 完成且 outputProtocol.suggestions 存在时派生建议
+      if (
+        result.outcome === 'completed'
+        && task.isDiscussion === 1
+        && Array.isArray((result as AgentRunResult & { suggestions?: unknown }).suggestions)
+      ) {
+        const suggestions = (result as AgentRunResult & { suggestions?: Array<{ title: string; rationale?: string }> }).suggestions!;
+        if (suggestions.length > 0) {
+          createSuggestionTasksFromBrainstorm(this.db, task.id, suggestions);
+        }
+      }
       try {
         advanceWorkflowTask(this.db, getTask(this.db, task.id), result);
       } catch (workflowError) {
@@ -264,13 +295,47 @@ export class TaskEngine {
         });
       }
       if (result._usage) {
-        recordUsage(this.db, {
-          projectId: project.id,
-          agentId: agent.id,
-          threadId: thread.id,
-          taskId: task.id,
-          ...result._usage,
-        });
+        const usage = result._usage;
+        if (usage.byModel && usage.byModel.length > 0) {
+          // 多模型：主模型 + 次模型分别入库（PRD Phase 3.7）
+          const primary = usage.byModel.find((m) => m.model === usage.model) ?? usage.byModel[0]!;
+          const secondary = usage.byModel.filter((m) => m.model !== primary.model);
+          recordUsageBatch(
+            this.db,
+            {
+              projectId: project.id,
+              agentId: agent.id,
+              threadId: thread.id,
+              taskId: task.id,
+              toolCalls: usage.toolCalls,
+              durationMs: usage.durationMs,
+            },
+            {
+              model: primary.model,
+              inputTokens: primary.inputTokens,
+              outputTokens: primary.outputTokens,
+              cacheReadTokens: primary.cacheReadTokens,
+              cacheCreateTokens: primary.cacheCreateTokens,
+              costUSD: primary.costUSD,
+            },
+            secondary.map((m) => ({
+              model: m.model,
+              inputTokens: m.inputTokens,
+              outputTokens: m.outputTokens,
+              cacheReadTokens: m.cacheReadTokens,
+              cacheCreateTokens: m.cacheCreateTokens,
+              costUSD: m.costUSD,
+            })),
+          );
+        } else {
+          recordUsage(this.db, {
+            projectId: project.id,
+            agentId: agent.id,
+            threadId: thread.id,
+            taskId: task.id,
+            ...usage,
+          });
+        }
       }
       if (
         result.outcome === 'completed'
@@ -446,4 +511,55 @@ export class TaskEngine {
       log.info('task engine polling stopped');
     }
   }
+}
+
+/**
+ 收集当前项目授权只读引用的所有源项目根目录（PRD Phase 3.4）。
+ - 仅返回与当前项目 worktree 不同的真实目录。
+ - 若 sourcePath 为空表示授权整个源项目根目录。
+ */
+function collectReadonlyReferenceDirs(db: import('../db/client').DB, projectId: string): string[] {
+  try {
+    const refs = listProjectReferences(db, projectId);
+    const dirs: string[] = [];
+    for (const ref of refs) {
+      const sourceProject = getProject(db, ref.sourceProjectId);
+      const base = sourceProject.rootDir;
+      if (!base) continue;
+      const sub = ref.sourcePath?.replace(/^\/+|\/+$/g, '');
+      const dir = sub ? path.join(base, sub) : base;
+      if (!dirs.includes(dir)) dirs.push(dir);
+    }
+    return dirs;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ 把 agent_definition.executor_json 规整为 AgentExecutorConfig（PRD Phase 3）。
+ 只提取已知字段，忽略未知键；类型不匹配的字段丢弃。
+ */
+function normalizeAgentExecutor(raw: Record<string, unknown> | undefined): import('./executor').AgentExecutorConfig | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const cfg: import('./executor').AgentExecutorConfig = {};
+  if (typeof raw.model === 'string' && raw.model) cfg.model = raw.model;
+  if (typeof raw.claudeBin === 'string' && raw.claudeBin) cfg.claudeBin = raw.claudeBin;
+  if (typeof raw.timeoutMs === 'number' && raw.timeoutMs > 0) cfg.timeoutMs = raw.timeoutMs;
+  if (typeof raw.maxToolCalls === 'number' && raw.maxToolCalls > 0) cfg.maxToolCalls = raw.maxToolCalls;
+  if (typeof raw.skipPermissions === 'boolean') cfg.skipPermissions = raw.skipPermissions;
+  return Object.keys(cfg).length > 0 ? cfg : undefined;
+}
+
+/**
+ 从 agent.executor 提取用户级凭据引用（环境变量名，PRD Phase 3）。
+ 只返回合法的环境变量名（字母数字下划线），防止注入。
+ */
+function extractApiKeyEnv(raw: Record<string, unknown> | undefined): string | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const v = raw.apiKeyEnv;
+  if (typeof v !== 'string' || !v) return undefined;
+  // 严格校验：只允许大写字母、数字、下划线，必须字母开头
+  if (!/^[A-Z][A-Z0-9_]*$/.test(v)) return undefined;
+  return v;
 }

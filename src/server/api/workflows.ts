@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { asyncHandler, param } from './middleware';
 import { getDb } from '../db/client';
-import { getWorkflow, saveWorkflow, startWorkflow, validateWorkflow } from '../domain/workflow';
+import { getWorkflow, saveWorkflow, startWorkflow, validateWorkflow, validateWorkflowResponsibility } from '../domain/workflow';
 
 export const workflowsRouter = Router({ mergeParams: true });
 
@@ -47,7 +47,12 @@ workflowsRouter.put(
     const input = saveWorkflowSchema.parse(req.body);
 
     saveWorkflow(db, companyId, workflowId, input);
-    res.json({ ok: true });
+    // PRD:359 保存前自动校验：不阻断半成品保存，但把 errors 返回前端展示
+    const errors = [
+      ...validateWorkflow(db, companyId, workflowId),
+      ...validateWorkflowResponsibility(db, companyId, workflowId),
+    ];
+    res.json({ ok: true, errors });
   }),
 );
 

@@ -30,6 +30,22 @@ export interface AgentDefinition {
   updatedAt: string;
 }
 
+/**
+ 员工级执行器配置（executor_json 结构，PRD Phase 3）。
+ 所有字段可选，缺省回退到系统级 SystemSettings。
+ - apiKeyEnv：用户级凭据引用，存环境变量名（如 ANTHROPIC_API_KEY_BOB），不存明文。
+   spawn Claude 时把 process.env[apiKeyEnv] 注入子进程 ANTHROPIC_API_KEY。
+   合法变量名必须匹配 /^[A-Z][A-Z0-9_]*$/，否则在引擎侧被忽略。
+ */
+export interface AgentExecutorJson {
+  model?: string;
+  claudeBin?: string;
+  timeoutMs?: number;
+  maxToolCalls?: number;
+  skipPermissions?: boolean;
+  apiKeyEnv?: string;
+}
+
 interface AgentRow {
   id: string;
   company_id: string;
@@ -107,11 +123,48 @@ function assertContactAllow(db: DB, companyId: string, contactAllow: string[]): 
   }
 }
 
+/**
+ 校验 executor_json（PRD Phase 3）。
+ - apiKeyEnv 必须匹配 /^[A-Z][A-Z0-9_]*$/，防止注入非法字符或明文 key。
+ - model/claudeBin 必须是非空字符串。
+ - timeoutMs/maxToolCalls 必须是正数。
+ */
+function assertExecutorValid(executor: Record<string, unknown> | undefined): void {
+  if (!executor) return;
+  if (typeof executor !== 'object') {
+    throw new AppError(ErrorCode.VALIDATION, 'executor 必须是对象');
+  }
+  if (executor.apiKeyEnv !== undefined) {
+    if (typeof executor.apiKeyEnv !== 'string' || !/^[A-Z][A-Z0-9_]*$/.test(executor.apiKeyEnv)) {
+      throw new AppError(
+        ErrorCode.VALIDATION,
+        'apiKeyEnv 必须是合法的环境变量名（大写字母/数字/下划线，字母开头）',
+      );
+    }
+  }
+  if (executor.model !== undefined && (typeof executor.model !== 'string' || !executor.model)) {
+    throw new AppError(ErrorCode.VALIDATION, 'executor.model 必须是非空字符串');
+  }
+  if (executor.claudeBin !== undefined && (typeof executor.claudeBin !== 'string' || !executor.claudeBin)) {
+    throw new AppError(ErrorCode.VALIDATION, 'executor.claudeBin 必须是非空字符串');
+  }
+  if (executor.timeoutMs !== undefined && (typeof executor.timeoutMs !== 'number' || executor.timeoutMs <= 0)) {
+    throw new AppError(ErrorCode.VALIDATION, 'executor.timeoutMs 必须是正数');
+  }
+  if (executor.maxToolCalls !== undefined && (typeof executor.maxToolCalls !== 'number' || executor.maxToolCalls <= 0)) {
+    throw new AppError(ErrorCode.VALIDATION, 'executor.maxToolCalls 必须是正数');
+  }
+  if (executor.skipPermissions !== undefined && typeof executor.skipPermissions !== 'boolean') {
+    throw new AppError(ErrorCode.VALIDATION, 'executor.skipPermissions 必须是布尔值');
+  }
+}
+
 export function createAgent(db: DB, input: CreateAgentInput): AgentDefinition {
   getCompany(db, input.companyId); // 校验存在
   assertUnlocked(db, input.companyId);
   assertDepartmentInCompany(db, input.companyId, input.departmentId ?? null);
   assertContactAllow(db, input.companyId, input.contactAllow ?? []);
+  assertExecutorValid(input.executor);
 
   const id = shortId('ag_');
   const now = nowIso();
@@ -159,6 +212,7 @@ export function updateAgent(
   };
   assertDepartmentInCompany(db, cur.companyId, next.departmentId);
   assertContactAllow(db, cur.companyId, next.contactAllow);
+  assertExecutorValid(next.executor);
   db.prepare(
     `UPDATE agent_definition SET
       department_id=?, name=?, role=?, responsibilities=?, system_prompt=?,

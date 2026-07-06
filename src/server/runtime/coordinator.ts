@@ -1,7 +1,7 @@
 import type { DB } from '../db/client';
 import { listCompanies, transitionCompany } from '../domain/company';
 import { listProjects } from '../domain/project';
-import { ensureProjectThreads } from '../domain/thread';
+import { ensureProjectThreads, releaseProjectMirrors } from '../domain/thread';
 import { ensurePlanningTask, listTasks, recoverExpiredLeases } from '../domain/task';
 import type { TaskEngine } from '../task-engine/engine';
 import { log } from '../logger';
@@ -16,6 +16,7 @@ export interface RuntimeTickResult {
   plannedTasks: string[];
   pumpedTasks: number;
   settledCompanies: string[];
+  releasedMirrors: string[];
 }
 
 /** 统一驱动公司生命周期和项目任务执行。 */
@@ -31,19 +32,26 @@ export class ProjectRuntimeCoordinator {
 
   async tick(options: { pump?: boolean } = {}): Promise<RuntimeTickResult> {
     if (this.ticking) {
-      return { recoveredLeases: 0, plannedTasks: [], pumpedTasks: 0, settledCompanies: [] };
+      return { recoveredLeases: 0, plannedTasks: [], pumpedTasks: 0, settledCompanies: [], releasedMirrors: [] };
     }
     this.ticking = true;
     try {
       const recoveredLeases = recoverExpiredLeases(this.db);
       const plannedTasks: string[] = [];
+      const releasedMirrors: string[] = [];
       let pumpedTasks = 0;
 
       for (const company of listCompanies(this.db)) {
         if (company.state !== 'online') continue;
         settleDrainingAgents(this.db, company.id);
         for (const project of listProjects(this.db, company.id)) {
-          if (project.state === 'archived' || project.state === 'completed' || project.state === 'paused') continue;
+          // archived/completed：级联释放 mirror（PRD Phase 5.4）；paused 仍保留镜像便于恢复。
+          if (project.state === 'archived' || project.state === 'completed') {
+            const ids = releaseProjectMirrors(this.db, project.id);
+            releasedMirrors.push(...ids);
+            continue;
+          }
+          if (project.state === 'paused') continue;
           const threads = ensureProjectThreads(this.db, project.id);
           const tasks = listTasks(this.db, project.id);
           const formalActive = tasks.some(
@@ -64,7 +72,11 @@ export class ProjectRuntimeCoordinator {
           }
 
           const interval = Number(project.settings.reviewTaskInterval ?? 20);
-          const review = shouldTriggerReport(this.db, project.id, { taskCountInterval: interval });
+          const review = shouldTriggerReport(this.db, project.id, {
+            taskCountInterval: interval,
+            // 时间触发：项目 settings.reviewTimeIntervalHours 设定的小时数（0/未设表示不启用）
+            timeIntervalMs: Number(project.settings.reviewTimeIntervalHours ?? 0) * 3600_000 || undefined,
+          });
           if (review.trigger && review.kind && !hasRunning) {
             openReportCycle(this.db, { projectId: project.id, triggerKind: review.kind });
             break;
@@ -78,20 +90,25 @@ export class ProjectRuntimeCoordinator {
       }
 
       const settledCompanies = this.settleDrainingCompanies();
-      return { recoveredLeases, plannedTasks, pumpedTasks, settledCompanies };
+      return { recoveredLeases, plannedTasks, pumpedTasks, settledCompanies, releasedMirrors };
     } finally {
       this.ticking = false;
     }
   }
 
   async pumpProject(projectId: string): Promise<RuntimeTickResult> {
-    const project = this.db.prepare('SELECT company_id FROM project WHERE id=?').get(projectId) as
-      | { company_id: string }
+    const project = this.db.prepare('SELECT company_id, state FROM project WHERE id=?').get(projectId) as
+      | { company_id: string; state: string }
       | undefined;
-    if (!project) return { recoveredLeases: 0, plannedTasks: [], pumpedTasks: 0, settledCompanies: [] };
+    if (!project) return { recoveredLeases: 0, plannedTasks: [], pumpedTasks: 0, settledCompanies: [], releasedMirrors: [] };
     const company = listCompanies(this.db).find((item) => item.id === project.company_id);
     if (!company || company.state !== 'online') {
-      return { recoveredLeases: 0, plannedTasks: [], pumpedTasks: 0, settledCompanies: [] };
+      return { recoveredLeases: 0, plannedTasks: [], pumpedTasks: 0, settledCompanies: [], releasedMirrors: [] };
+    }
+    // archived/completed 项目即使手动 pump 也只释放镜像，不再调度新工作。
+    if (project.state === 'archived' || project.state === 'completed') {
+      const releasedMirrors = releaseProjectMirrors(this.db, projectId);
+      return { recoveredLeases: 0, plannedTasks: [], pumpedTasks: 0, settledCompanies: [], releasedMirrors };
     }
     const recoveredLeases = recoverExpiredLeases(this.db);
     const threads = ensureProjectThreads(this.db, projectId);
@@ -102,6 +119,7 @@ export class ProjectRuntimeCoordinator {
       plannedTasks: planning ? [planning.id] : [],
       pumpedTasks,
       settledCompanies: this.settleDrainingCompanies(),
+      releasedMirrors: [],
     };
   }
 

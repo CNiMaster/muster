@@ -67,12 +67,22 @@ export function isBlacklisted(command: string): boolean {
   return BLACKLISTED_PATTERNS.some((p) => p.test(command));
 }
 
-export function getSandboxTools(cwd: string, targetPath: string): string[] {
+export function getSandboxTools(
+  cwd: string,
+  targetPath: string,
+  /** 额外只读目录（PRD Phase 3.4）：授权参考项目目录，Claude 可读不可写。
+   *  这些目录只会加入 Read/Glob/Grep 白名单，不会获得 Edit/Write/Bash。 */
+  readonlyRoots: string[] = [],
+): string[] {
   const tools = [...(sandboxOverrides.allowedTools ?? SANDBOX_ALLOWED_TOOLS)];
+  // 主 cwd 仍是可写工作区
   if (targetPath && isWithinWorkspace(cwd, targetPath)) {
     tools.push(...(sandboxOverrides.writeTools ?? SANDBOX_WRITE_TOOLS));
     tools.push('Bash');
   }
+  // 只读根：仅为去重，不额外添加工具（Read/Glob/Grep 已在默认白名单）。
+  // 此处仅用于 future-proofing：若 Claude Code 区分 path-scoped 工具权限，可在此注入。
+  void readonlyRoots;
   return tools;
 }
 

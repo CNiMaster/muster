@@ -39,7 +39,7 @@ npm install              # 安装依赖（express, ws, better-sqlite3, react, re
 npm run dev              # 开发模式：tsx watch src/server/server.ts，Express 挂 Vite middleware
 npm start                # 生产模式：node dist/server/server.js（需先 build）
 npm run typecheck        # TypeScript 项目引用全量检查
-npm test                 # Vitest 单测 + 集成（123 项）
+npm test                 # Vitest 单测 + 集成（190 项）
 npm run test:e2e         # Playwright 端到端（5 项）
 npm run test:claude-smoke # 真实 Claude 两轮 Task/session/artifact/usage 冒烟
 npm run build            # tsup 编译 server + vite build 客户端 → dist/
@@ -74,21 +74,25 @@ src/
     db/          # better-sqlite3 client + migrations/*.sql（20 张业务表）
     domain/      # company / agent / project / thread / graph / task /
                  # task-event / task-message / artifact / usage / report /
-                 # inspector / brainstorm / triggers / novel-template / workflow
-    task-engine/ # ExecutionAdapter 接口 + FakeExecutor + TaskEngine
+                 # inspector / brainstorm / triggers / novel-template / workflow /
+                 # event-feed（关键事件聚合）/ graph-proposal（自然语言改图）/
+                 # character-graph（只读人物关系图解析）
+    task-engine/ # ExecutionAdapter 接口 + FakeExecutor + TaskEngine + agentExecutor 覆盖
     trigger-scheduler.ts # 轮询持久化 schedule trigger，原子推进并派发巡检 Task
-    executors/   # ClaudeCodeAdapter + 上下文装配 + 安全检查
-    worktree/    # Git worktree 管理 + 串行发布队列
-    api/         # Express 路由（companies/agents/projects/graphs/tasks/workflows/...）
+    executors/   # ClaudeCodeAdapter + 上下文装配 + 安全检查 + 会话压缩 + 时间轮换 + apiKeyEnv 凭据注入
+    worktree/    # Git worktree 管理 + 串行发布队列 + artifact 独占锁
+    api/         # Express 路由（companies(status-board/usage)/agents/projects(character-graph)/
+                 # graphs(propose/apply)/artifacts(open/rollback)/events/usage/workflows/brainstorm/...）
     realtime.ts  # WebSocket 广播 RealtimeEvent
     server.ts    # 入口：单端口 3456，dev 挂 Vite，prod 服务 dist/client
   client/      # React 19 + Router 7 + React Flow 12 + TanStack Query 5
-    pages/       # Home / Company / Graph / Project / Tasks / Usage / Artifacts / Reports / Dashboard / WorkflowGraph / Settings
+    pages/       # Home / Company / Graph / Project / Tasks / Usage / Artifacts / Reports / Dashboard / WorkflowGraph / CharacterGraph / Settings
+    components/  # StatusBoard / EventFeedList / OnboardingGuide / ErrorBoundary / NaturalLanguageGraphPanel / ...
     hooks/       # React Query hooks
     realtime.ts  # WebSocket 断线重连 + 精确失效 React Query 缓存
     api/         # fetch client + DTO
 tests/
-  unit/ integration/ e2e/   # 93 项 Vitest + Playwright regression & smoke
+  unit/ integration/ e2e/   # 190 项 Vitest + Playwright regression/smoke/novel
 legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史参考）
 ```
 
@@ -134,7 +138,7 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 
 ### 测试
 
-- Vitest 单元与集成测试 123 项（公司/员工上下班、组织锁、跨项目只读、Task 并发领取/租约恢复/依赖/追问、定时触发去重、通信权限、实时缓存、worktree 三方合并/原子发布/冲突阻塞、章节事件、复盘、讨论中断、工作流、MVP 验收和重启恢复）。
+- Vitest 单元与集成测试 190 项（公司/员工上下班、组织锁、跨项目只读、Task 并发领取/租约恢复/依赖/追问、定时触发去重、通信权限、实时缓存、worktree 三方合并/原子发布/冲突阻塞、章节事件、复盘、讨论中断、工作流、MVP 验收、重启恢复，以及 v1 缺口推进新增的项目健康/工作流责任岗位/监察心跳/事件聚合 feed/关系归档/镜像自动释放/多模型 token 归集/建议 Task/自然语言改图/会话压缩/二进制独占锁/授权参考目录/员工级执行器配置+凭据引用+会话时间轮换/状态看板/复盘配置可编辑/题材扩展包+可选岗位/维护事件动态岗位/只读人物关系图/讨论自动选人+每日预算/soak 50 Task+压缩+mirror+复盘等专项）。
 - Playwright 5 项已在本机 Chromium 通过，覆盖向导创建、员工与项目配置、上下班、复盘备注和恢复。
 - `npm run test:claude-smoke` 已使用真实 Claude Code 连续完成两个 Task，验证跨 worktree 的 `--session-id`/`--resume`、文件发布、Artifact 登记和 Token/缓存用量。
 

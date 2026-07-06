@@ -78,6 +78,45 @@ export class PublishQueue {
         published_at TEXT NOT NULL
       )
     `);
+    // artifact_lock 表由 migration 0010 创建；此处幂等保证存在。
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS artifact_lock (
+        artifact_path  TEXT NOT NULL,
+        project_root   TEXT NOT NULL,
+        holder_task_id TEXT NOT NULL,
+        acquired_at    TEXT NOT NULL,
+        queue_position INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (artifact_path, project_root)
+      )
+    `);
+  }
+
+  /**
+   独占锁（PRD:400）。
+   - 获取：artifact_path + project_root 唯一。若被同 task 持有则视为获取；被其他 task 持有则失败。
+   - 释放：成功发布或失败回滚后调用。
+   - 持久化在 artifact_lock 表，进程重启不丢失。
+   */
+  private acquireLock(projectRoot: string, artifactPath: string, taskId: string): boolean {
+    const existing = this.db
+      .prepare('SELECT holder_task_id FROM artifact_lock WHERE artifact_path=? AND project_root=?')
+      .get(artifactPath, projectRoot) as { holder_task_id: string } | undefined;
+    if (!existing) {
+      this.db
+        .prepare(
+          `INSERT INTO artifact_lock (artifact_path, project_root, holder_task_id, acquired_at, queue_position)
+           VALUES (?, ?, ?, ?, 0)`,
+        )
+        .run(artifactPath, projectRoot, taskId, nowIso());
+      return true;
+    }
+    return existing.holder_task_id === taskId;
+  }
+
+  private releaseLocks(projectRoot: string, taskId: string): void {
+    this.db
+      .prepare('DELETE FROM artifact_lock WHERE project_root=? AND holder_task_id=?')
+      .run(projectRoot, taskId);
   }
 
   /** 执行一次发布。返回 PublishResult；conflicts 非空表示被阻塞。 */
@@ -99,7 +138,26 @@ export class PublishQueue {
     const publishedAt = nowIso();
     const conflicts: string[] = [];
     const pending = new Map<string, { operation: 'write' | 'delete'; content?: Buffer }>();
+    const acquiredLocks: string[] = [];
 
+    try {
+      return this.doPublishInner(req, id, publishedAt, conflicts, pending, acquiredLocks);
+    } finally {
+      // 无论成功/失败/异常，释放本次获取的所有锁（成功发布后二进制已落盘，无需继续持有）
+      if (acquiredLocks.length > 0) {
+        this.releaseLocks(req.projectRootDir, req.taskId);
+      }
+    }
+  }
+
+  private doPublishInner(
+    req: PublishRequest,
+    id: string,
+    publishedAt: string,
+    conflicts: string[],
+    pending: Map<string, { operation: 'write' | 'delete'; content?: Buffer }>,
+    acquiredLocks: string[],
+  ): PublishResult {
     // 1. 在 worktree 提交所有改动，得到 commit hash
     const wtCommit = commitAll(req.worktreePath, `muster: task ${req.taskId} 成果`);
 
@@ -137,8 +195,23 @@ export class PublishQueue {
       }
 
       if (isBinary) {
-        // 二进制：独占锁（此处简化为冲突阻塞）
-        conflicts.push(art.path);
+        // 二进制：独占锁（PRD:400）+ 基线漂移检测。
+        // 1) 锁被其他 task 持有 → conflict（排队等待）
+        // 2) 锁拿到但 base 与当前正式版本不一致 → conflict（无法三方合并二进制，
+        //    必须等用户/第一负责人裁决；同 task 连续写时 base 一致才能覆盖）
+        if (!this.acquireLock(req.projectRootDir, art.path, req.taskId)) {
+          conflicts.push(art.path);
+          continue;
+        }
+        acquiredLocks.push(art.path);
+        const baseContent = gitFileAt(req.projectRootDir, req.baseCommit, art.path);
+        const currentContent = readFileSync(targetAbs);
+        if (!baseContent || !currentContent.equals(baseContent)) {
+          // 基线已变（用户或其他 task 已改过此二进制），无法安全覆盖
+          conflicts.push(art.path);
+          continue;
+        }
+        pending.set(art.path, { operation: 'write', content: readFileSync(sourceAbs) });
         continue;
       }
 

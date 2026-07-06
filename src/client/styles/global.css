@@ -240,3 +240,54 @@ p { margin: 0 0 var(--space-3) 0; }
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: var(--space-3);
 }
+
+/* ===== ErrorBoundary ===== */
+.error-boundary {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-8) var(--space-4);
+}
+.error-boundary-card {
+  max-width: 560px;
+  width: 100%;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  box-shadow: var(--shadow-md);
+}
+.error-boundary-card h2 {
+  margin: 0 0 var(--space-2);
+  color: var(--err, #c0392b);
+}
+.error-boundary-card details {
+  margin: var(--space-3) 0;
+}
+.error-boundary-card .error-stack {
+  background: var(--bg-soft);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  overflow: auto;
+  max-height: 240px;
+  white-space: pre-wrap;
+}
+.error-boundary-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+.error-boundary-actions > * {
+  text-decoration: none;
+}
+
+/* ===== StatusBoard（PRD Phase 4）===== */
+.mu-status-board { display: flex; flex-direction: column; gap: var(--space-3); }
+.mu-status-board-dept { border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: var(--space-3); }
+.mu-status-board-dept-header { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); }
+.mu-status-board-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+.mu-status-board-table th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border-subtle); font-weight: 600; color: var(--text-muted); }
+.mu-status-board-table td { padding: 6px 8px; border-bottom: 1px solid var(--border-subtle); }
+.mu-status-board-table tbody tr:last-child td { border-bottom: none; }

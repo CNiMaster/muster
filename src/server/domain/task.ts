@@ -51,6 +51,7 @@ export interface Task {
   checkpoint: string | null;
   clarificationRounds: number;
   isDiscussion: number;
+  isSuggestion: number;
   budget: Record<string, unknown>;
   deadlineAt: string | null;
   completedAt: string | null;
@@ -83,6 +84,7 @@ interface TaskRow {
   checkpoint: string | null;
   clarification_rounds: number;
   is_discussion: number;
+  is_suggestion: number;
   budget_json: string;
   deadline_at: string | null;
   completed_at: string | null;
@@ -116,6 +118,7 @@ function fromRow(r: TaskRow): Task {
     checkpoint: r.checkpoint,
     clarificationRounds: r.clarification_rounds,
     isDiscussion: r.is_discussion,
+    isSuggestion: r.is_suggestion,
     budget: JSON.parse(r.budget_json ?? '{}'),
     deadlineAt: r.deadline_at,
     completedAt: r.completed_at,
@@ -136,6 +139,8 @@ export interface CreateTaskInput {
   outputProtocol?: Record<string, unknown>;
   priority?: number;
   isDiscussion?: boolean;
+  /** 标记为建议 Task（PRD Phase 8.4）：来自讨论结论，等待用户采纳后才参与执行。 */
+  isSuggestion?: boolean;
   deadlineAt?: string;
 }
 
@@ -197,16 +202,18 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
       (id, project_id, seq, root_task_id, parent_task_id, dispatcher_agent_id, assignee_agent_id,
        assignee_thread_id, title, input_protocol_json, context_refs_json, output_protocol_json,
        priority, state, lease_owner_thread_id, lease_expires_at, heartbeat_at, outcome, summary,
-       question, artifacts_json, checkpoint, clarification_rounds, is_discussion, budget_json,
+       question, artifacts_json, checkpoint, clarification_rounds, is_discussion, is_suggestion, budget_json,
        deadline_at, completed_at, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?, ?,?,'queued',NULL,NULL,NULL,NULL,'',NULL,'[]',NULL,0,?,'{}',?,NULL,?,?)`,
+     VALUES (?,?,?,?,?,?,?,?,?,?,?, ?,?,'queued',NULL,NULL,NULL,NULL,'',NULL,'[]',NULL,0,?,?,'{}',?,NULL,?,?)`,
   ).run(
     id, input.projectId, seq, rootTaskId, input.parentTaskId ?? null, input.dispatcherAgentId ?? null,
     input.assigneeAgentId ?? null, null, input.title,
     JSON.stringify(input.inputProtocol ?? {}), JSON.stringify(input.contextRefs ?? []),
     JSON.stringify(input.outputProtocol ?? {}),
     input.priority ?? 5,
-    input.isDiscussion ? 1 : 0, input.deadlineAt ?? null, now, now,
+    input.isDiscussion ? 1 : 0,
+    input.isSuggestion ? 1 : 0,
+    input.deadlineAt ?? null, now, now,
   );
   // 修正 root_task_id 自引用
   if (!input.parentTaskId && !input.rootTaskId) {
@@ -278,6 +285,7 @@ export function claimNextTask(db: DB, threadId: string, assigneeAgentId?: string
            SELECT t.id FROM task t
            WHERE t.project_id = (SELECT project_id FROM project_agent_thread WHERE id = ?)
              AND t.state = 'queued'
+             AND t.is_suggestion = 0
              AND (SELECT availability_state FROM agent_definition
                   WHERE id = (SELECT agent_id FROM project_agent_thread WHERE id = ?)) = 'online'
              AND (
@@ -499,6 +507,25 @@ export function cancelTask(db: DB, taskId: string): Task {
   assertTransition(cur.state, 'cancelled');
   db.prepare(`UPDATE task SET state='cancelled', lease_owner_thread_id=NULL, lease_expires_at=NULL, updated_at=? WHERE id=?`).run(nowIso(), taskId);
   appendTaskEvent(db, taskId, 'cancelled', {});
+  return getTask(db, taskId);
+}
+
+/**
+ 采纳建议 Task（PRD Phase 8.4）：清除 is_suggestion 标记，恢复正常优先级，
+ 让该 Task 进入正式领取队列。仅对 is_suggestion=1 的 Task 有效。
+ */
+export function acceptSuggestion(db: DB, taskId: string): Task {
+  const cur = getTask(db, taskId);
+  if (cur.isSuggestion !== 1) {
+    throw new AppError(ErrorCode.VALIDATION, `Task ${taskId} 不是建议 Task，无需采纳`);
+  }
+  if (cur.state !== 'queued') {
+    throw new AppError(ErrorCode.TASK_INVALID_TRANSITION, `建议 Task ${taskId} 当前状态 ${cur.state}，无法采纳`);
+  }
+  // 恢复默认优先级 5（建议态时 priority 极低）
+  const priority = cur.priority <= 1 ? 5 : cur.priority;
+  db.prepare('UPDATE task SET is_suggestion=0, priority=?, updated_at=? WHERE id=?').run(priority, nowIso(), taskId);
+  appendTaskEvent(db, taskId, 'suggestion_accepted', {});
   return getTask(db, taskId);
 }
 

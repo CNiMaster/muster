@@ -20,6 +20,7 @@ import {
   cancelTask,
   pauseTask,
   resumeTask,
+  acceptSuggestion,
   getTaskChain,
 } from '../domain/task';
 import { listTaskEvents } from '../domain/task-event';
@@ -111,6 +112,14 @@ taskByIdRouter.post(
   '/resume',
   asyncHandler(async (req, res) => {
     res.json(resumeTask(getDb(), param(req, 'id')));
+  }),
+);
+
+/** 采纳建议 Task（PRD Phase 8.4）：清除 is_suggestion 标记，进入正式领取队列。 */
+taskByIdRouter.post(
+  '/accept',
+  asyncHandler(async (req, res) => {
+    res.json(acceptSuggestion(getDb(), param(req, 'id')));
   }),
 );
 

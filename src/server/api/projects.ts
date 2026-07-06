@@ -35,6 +35,7 @@ import {
 import { getCompany } from '../domain/company';
 import { registerDefaultNovelScheduleTriggers } from '../domain/triggers';
 import { initializeNovelProject } from '../domain/novel-template';
+import { getCharacterGraph } from '../domain/character-graph';
 
 export const projectsRouter = Router({ mergeParams: true });
 export const projectScopedRouter = Router({ mergeParams: true });
@@ -106,6 +107,14 @@ projectById.get(
   '/threads',
   asyncHandler(async (req, res) => {
     res.json(listThreads(getDb(), param(req,'id')));
+  }),
+);
+
+/** 人物关系图（只读，PRD Phase 7，清单 251）。 */
+projectById.get(
+  '/character-graph',
+  asyncHandler(async (req, res) => {
+    res.json(getCharacterGraph(getDb(), param(req, 'id')));
   }),
 );
 

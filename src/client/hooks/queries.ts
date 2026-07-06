@@ -1,7 +1,7 @@
 /** React Query hooks：所有数据获取集中在此。 */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
-import type { Company, Agent, Department, Project, Relationship, Task, UsageSummary, ProjectAgentThread } from '../api/types';
+import type { Company, Agent, AgentExecutorJson, Department, Project, Relationship, Task, UsageSummary, ProjectAgentThread } from '../api/types';
 
 export interface ProposalResult<T> {
   source: 'claude' | 'offline_template';
@@ -96,6 +96,33 @@ export function useCompanyAction() {
   });
 }
 
+export interface StatusBoardAgent {
+  id: string;
+  name: string;
+  role: string;
+  availability: 'online' | 'draining' | 'off';
+  threadState: string | null;
+  currentTaskTitle: string | null;
+  queuedTaskCount: number;
+}
+export interface StatusBoardDepartment {
+  id: string;
+  name: string;
+  agents: StatusBoardAgent[];
+}
+export interface StatusBoard {
+  departments: StatusBoardDepartment[];
+}
+
+export function useStatusBoard(companyId: string | undefined) {
+  return useQuery({
+    queryKey: ['status-board', companyId],
+    queryFn: () => api.get<StatusBoard>(`/api/companies/${companyId}/status-board`),
+    enabled: !!companyId,
+    refetchInterval: 5000,
+  });
+}
+
 // ===== Agents =====
 export function useAgents(companyId: string | undefined) {
   return useQuery({
@@ -138,6 +165,7 @@ export function useUpdateAgent() {
       skills?: string[];
       tools?: string[];
       permissions?: Record<string, unknown>;
+      executor?: AgentExecutorJson;
     }) =>
       api.patch<Agent>(`/api/companies/${companyId}/agents/${id}`, patch),
     onSuccess: (data) => qc.invalidateQueries({ queryKey: ['agents', data.companyId] }),
@@ -198,6 +226,29 @@ export function useProject(id: string | undefined) {
     enabled: !!id,
   });
 }
+
+export interface CharacterGraphNode { id: string; label: string; description?: string; }
+export interface CharacterGraphEdge { id: string; source: string; target: string; label: string; }
+export interface CharacterGraph {
+  nodes: CharacterGraphNode[];
+  edges: CharacterGraphEdge[];
+  source: string;
+}
+export function useCharacterGraph(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ['character-graph', projectId],
+    queryFn: () => api.get<CharacterGraph>(`/api/projects/${projectId}/character-graph`),
+    enabled: !!projectId,
+  });
+}
+export function useUpdateProject() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...patch }: { id: string; name?: string; description?: string; firstAgentId?: string | null; settings?: Record<string, unknown> }) =>
+      api.patch<Project>(`/api/projects/${id}`, patch),
+    onSuccess: (data) => qc.invalidateQueries({ queryKey: ['project', data.id] }),
+  });
+}
 export function useCreateProject() {
   const qc = useQueryClient();
   return useMutation({
@@ -208,10 +259,17 @@ export function useCreateProject() {
 }
 
 // ===== Relationships =====
-export function useRelationships(companyId: string | undefined, kind?: 'org' | 'communication') {
-  const qs = kind ? `?kind=${kind}` : '';
+export function useRelationships(
+  companyId: string | undefined,
+  kind?: 'org' | 'communication',
+  opts: { includeArchived?: boolean } = {},
+) {
+  const params = new URLSearchParams();
+  if (kind) params.set('kind', kind);
+  if (opts.includeArchived) params.set('includeArchived', '1');
+  const qs = params.toString() ? `?${params.toString()}` : '';
   return useQuery({
-    queryKey: ['relationships', companyId, kind],
+    queryKey: ['relationships', companyId, kind, opts.includeArchived ?? false],
     queryFn: () => api.get<Relationship[]>(`/api/companies/${companyId}/relationships${qs}`),
     enabled: !!companyId,
   });
@@ -229,6 +287,73 @@ export function useDeleteRelationship() {
   return useMutation({
     mutationFn: ({ companyId, id }: { companyId: string; id: string }) =>
       api.delete(`/api/companies/${companyId}/relationships/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['relationships'] }),
+  });
+}
+
+/** 归档关系（软删除，PRD:351-359）。 */
+export function useArchiveRelationship() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ companyId, id }: { companyId: string; id: string }) =>
+      api.post<Relationship>(`/api/companies/${companyId}/relationships/${id}/archive`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['relationships'] }),
+  });
+}
+
+/** 恢复归档关系。 */
+export function useRestoreRelationship() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ companyId, id }: { companyId: string; id: string }) =>
+      api.post<Relationship>(`/api/companies/${companyId}/relationships/${id}/restore`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['relationships'] }),
+  });
+}
+
+// ===== 自然语言图变更（PRD:357） =====
+export interface GraphChangeProposal {
+  changes: Array<{
+    action: 'add_edge' | 'remove_edge';
+    sourceHint?: string;
+    targetHint?: string;
+    sourceId?: string;
+    targetId?: string;
+    label?: string;
+  }>;
+  unableToParse?: string;
+}
+
+export interface GraphDiff {
+  added: Array<{ sourceId: string; targetId: string; label?: string }>;
+  removed: Array<{ relationshipId: string; sourceId: string; targetId: string }>;
+}
+
+export interface GraphProposalResult {
+  source: 'claude' | 'offline';
+  proposal: GraphChangeProposal;
+  diff: GraphDiff;
+  warning?: string;
+}
+
+export function useProposeGraphChange() {
+  return useMutation({
+    mutationFn: ({ companyId, kind, naturalLanguage }: { companyId: string; kind: 'org' | 'communication'; naturalLanguage: string }) =>
+      api.post<GraphProposalResult>(`/api/companies/${companyId}/relationships/propose`, {
+        kind,
+        naturalLanguage,
+      }),
+  });
+}
+
+export function useApplyGraphChange() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ companyId, kind, proposal }: { companyId: string; kind: 'org' | 'communication'; proposal: GraphChangeProposal }) =>
+      api.post<{ ok: boolean; diff: GraphDiff }>(`/api/companies/${companyId}/relationships/apply`, {
+        kind,
+        proposal,
+      }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['relationships'] }),
   });
 }
@@ -451,6 +576,64 @@ export function useCreateArtifact() {
   });
 }
 
+/** 用系统默认应用打开任意成果文件（PRD:369）。 */
+export function useOpenArtifactExternally() {
+  return useMutation({
+    mutationFn: ({ projectId, path }: { projectId: string; path: string }) =>
+      api.post<{ ok: boolean; command: string; path: string }>(
+        `/api/projects/${projectId}/artifacts/open`,
+        { path },
+      ),
+  });
+}
+
+/** 回滚到指定 publish_record（PRD:401）。 */
+export function useRollbackArtifact() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, publishId }: { projectId: string; publishId: string }) =>
+      api.post<{ ok: boolean; publishId: string }>(
+        `/api/projects/${projectId}/artifacts/rollback`,
+        { publishId },
+      ),
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: ['artifacts-history', vars.projectId] });
+      qc.invalidateQueries({ queryKey: ['artifacts', vars.projectId] });
+    },
+  });
+}
+
+/** 关键事件聚合 feed（PRD:346,349）。 */
+export interface FeedEvent {
+  id: string;
+  taskId: string;
+  projectId: string;
+  kind: string;
+  payload: Record<string, unknown>;
+  occurredAt: string;
+  taskTitle: string;
+  taskSeq: number;
+  assigneeAgentId: string | null;
+}
+
+export function useCompanyEvents(companyId: string | undefined, since?: string) {
+  return useQuery({
+    queryKey: ['company-events', companyId, since],
+    queryFn: () =>
+      api.get<FeedEvent[]>(`/api/companies/${companyId}/events${since ? `?since=${encodeURIComponent(since)}` : ''}`),
+    enabled: !!companyId,
+  });
+}
+
+export function useProjectEvents(projectId: string | undefined, since?: string) {
+  return useQuery({
+    queryKey: ['project-events', projectId, since],
+    queryFn: () =>
+      api.get<FeedEvent[]>(`/api/projects/${projectId}/events${since ? `?since=${encodeURIComponent(since)}` : ''}`),
+    enabled: !!projectId,
+  });
+}
+
 // ===== Reports & Reviews (Phase E) =====
 export interface ReportSummary {
   id: string;
@@ -643,16 +826,28 @@ export function useStartBrainstorm() {
       topic,
       participantAgentIds,
       maxRounds,
+      autoSelectParticipants,
     }: {
       projectId: string;
       topic: string;
-      participantAgentIds: string[];
+      participantAgentIds?: string[];
       maxRounds?: number;
+      autoSelectParticipants?: { count: number };
     }) =>
-      api.post<any>(`/api/projects/${projectId}/brainstorm`, { topic, participantAgentIds, maxRounds }),
+      api.post<any>(`/api/projects/${projectId}/brainstorm`, { topic, participantAgentIds, maxRounds, autoSelectParticipants }),
     onSuccess: (_d, vars) => {
       qc.invalidateQueries({ queryKey: ['tasks', vars.projectId] });
     },
+  });
+}
+
+export interface BrainstormBudget { spent: number; budget: number; remaining: number; }
+export function useBrainstormBudget(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ['brainstorm-budget', projectId],
+    queryFn: () => api.get<BrainstormBudget>(`/api/projects/${projectId}/brainstorm/budget`),
+    enabled: !!projectId,
+    refetchInterval: 15000,
   });
 }
 

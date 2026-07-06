@@ -157,3 +157,79 @@ export function assertCanReadSource(db: DB, projectId: string, sourceProjectId: 
     throw new AppError(ErrorCode.UNAUTHORIZED, `项目 ${projectId} 无权只读引用 ${sourceProjectId}`);
   }
 }
+
+/**
+ 项目健康校验（PRD:359，与公司级 assertCompanyHealthy 互补）。
+ 触发点：项目创建后、新增镜像、公司上班。
+ - 第一负责人必须存在且归属同公司。
+ - 公司必须有第一负责人（项目继承）。
+ - 引用项目必须可读（project_reference 行存在且 read_only=1）。
+ 返回错误数组（空数组表示健康）；assertProjectHealthy 在错误非空时抛出。
+ */
+export interface ProjectHealthIssue {
+  code: string;
+  message: string;
+}
+
+export function checkProjectHealth(db: DB, projectId: string): ProjectHealthIssue[] {
+  const issues: ProjectHealthIssue[] = [];
+  // getProject 自身不存在会抛 NOT_FOUND，调用方应先确认项目存在
+  const project = getProject(db, projectId);
+  const company = getCompany(db, project.companyId);
+
+  if (!company.firstAgentId) {
+    issues.push({ code: 'company_no_first_agent', message: `公司「${company.name}」未设置第一负责人` });
+  }
+  if (!project.firstAgentId) {
+    issues.push({ code: 'project_no_first_agent', message: `项目「${project.name}」未设置第一负责人` });
+  } else {
+    const firstAgent = getAgent(db, project.firstAgentId);
+    if (firstAgent.companyId !== project.companyId) {
+      issues.push({
+        code: 'first_agent_mismatch',
+        message: `项目第一负责人 ${firstAgent.name} 不属于项目所在公司`,
+      });
+    }
+  }
+
+  // 引用项目可读性：每条引用的 source_project 都必须存在
+  const refs = listProjectReferences(db, projectId);
+  for (const ref of refs) {
+    const existsRow = db.prepare('SELECT 1 FROM project WHERE id = ?').get(ref.sourceProjectId);
+    if (!existsRow) {
+      issues.push({
+        code: 'reference_broken',
+        message: `引用的源项目 ${ref.sourceProjectId} 已不存在`,
+      });
+    }
+  }
+
+  // 缺失责任岗位检测（PRD:359）：管理类成果必须有责任员工。
+  // 只检查非派生只读 kind；owner_agent_id 为 NULL 视为缺责。
+  const orphanArtifacts = db
+    .prepare(
+      `SELECT path, kind FROM artifact
+       WHERE project_id=? AND owner_agent_id IS NULL
+         AND kind NOT IN ('character_relation_view','plot_progress_view','timeline_view')`,
+    )
+    .all(projectId) as Array<{ path: string; kind: string }>;
+  for (const a of orphanArtifacts) {
+    issues.push({
+      code: 'artifact_no_owner',
+      message: `成果「${a.path}」（${a.kind}）没有责任岗位`,
+    });
+  }
+
+  return issues;
+}
+
+/** 抛出版本：用于运行时硬性校验（创建、镜像新增、上班）。 */
+export function assertProjectHealthy(db: DB, projectId: string): void {
+  const issues = checkProjectHealth(db, projectId);
+  if (issues.length > 0) {
+    throw new AppError(
+      ErrorCode.VALIDATION,
+      `项目健康校验未通过：\n${issues.map((i) => `- [${i.code}] ${i.message}`).join('\n')}`,
+    );
+  }
+}

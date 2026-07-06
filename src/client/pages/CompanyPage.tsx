@@ -13,14 +13,18 @@ import {
   useUpdateAgent,
   useGenerateAgentProposal,
   useAgentAvailability,
+  useCompanyEvents,
+  useStatusBoard,
 } from '../hooks/queries';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
 import { Badge, companyStateTone, stateLabel } from '../components/Badge';
 import { Input, Select, Field } from '../components/Form';
 import { EmptyState, Icons } from '../components/EmptyState';
+import { StatusBoard } from '../components/StatusBoard';
 import { CardSkeleton } from '../components/Skeleton';
 import { ConversationPanel } from '../components/ConversationPanel';
+import { EventFeedList } from '../components/EventFeedList';
 import type { Agent } from '../api/types';
 
 export function CompanyPage(): React.ReactElement {
@@ -28,7 +32,9 @@ export function CompanyPage(): React.ReactElement {
   const { data: company, isLoading } = useCompany(companyId);
   const { data: agents } = useAgents(companyId);
   const { data: departments } = useDepartments(companyId);
+  const { data: statusBoard, isLoading: statusBoardLoading } = useStatusBoard(companyId);
   const { data: projects } = useProjects(companyId);
+  const { data: events } = useCompanyEvents(companyId);
   const action = useCompanyAction();
   const createAgent = useCreateAgent();
   const createDepartment = useCreateDepartment();
@@ -158,6 +164,7 @@ export function CompanyPage(): React.ReactElement {
         skills: editingAgent.skills,
         tools: editingAgent.tools,
         permissions: editingAgent.permissions,
+        executor: editingAgent.executor,
       },
       {
         onSuccess: () => {
@@ -213,6 +220,14 @@ export function CompanyPage(): React.ReactElement {
 
       <Card title="公司对话" className="section">
         <ConversationPanel scope="company" scopeId={company.id} companyId={company.id} title="与第一负责人对话" />
+      </Card>
+
+      <Card title="员工状态看板" className="section" actions={<Badge tone="info">实时</Badge>}>
+        <StatusBoard data={statusBoard} loading={statusBoardLoading} />
+      </Card>
+
+      <Card title="关键事件" className="section" actions={<Badge>{events?.length ?? 0}</Badge>}>
+        <EventFeedList events={events ?? []} />
       </Card>
 
       <Card title="关系图" className="section">
@@ -476,6 +491,76 @@ export function CompanyPage(): React.ReactElement {
               />
               允许用户在对话中直接 @ 此员工
             </label>
+            <details style={{ borderTop: '1px dashed var(--border-subtle)', paddingTop: 12, marginTop: 4 }}>
+              <summary style={{ cursor: 'pointer', fontWeight: 600 }}>执行器配置（覆盖系统默认，可选）</summary>
+              <div className="form-stack" style={{ marginTop: 12 }}>
+                <p className="muted" style={{ fontSize: 'var(--text-sm)', margin: 0 }}>
+                  留空则使用系统默认。API Key 凭据只存环境变量名，绝不存明文。
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <Field label="模型覆盖">
+                    <Input
+                      value={String(editingAgent.executor.model ?? '')}
+                      placeholder="例如 sonnet（留空用系统默认）"
+                      onChange={(event) => setEditingAgent({
+                        ...editingAgent,
+                        executor: { ...editingAgent.executor, model: event.target.value || undefined },
+                      })}
+                    />
+                  </Field>
+                  <Field label="Claude CLI 路径覆盖">
+                    <Input
+                      value={String(editingAgent.executor.claudeBin ?? '')}
+                      placeholder="留空用系统默认"
+                      onChange={(event) => setEditingAgent({
+                        ...editingAgent,
+                        executor: { ...editingAgent.executor, claudeBin: event.target.value || undefined },
+                      })}
+                    />
+                  </Field>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <Field label="超时(ms)">
+                    <Input
+                      type="number"
+                      value={String(editingAgent.executor.timeoutMs ?? '')}
+                      placeholder="留空用系统默认"
+                      onChange={(event) => {
+                        const v = event.target.value;
+                        setEditingAgent({
+                          ...editingAgent,
+                          executor: { ...editingAgent.executor, timeoutMs: v ? Number(v) : undefined },
+                        });
+                      }}
+                    />
+                  </Field>
+                  <Field label="最大工具调用数">
+                    <Input
+                      type="number"
+                      value={String(editingAgent.executor.maxToolCalls ?? '')}
+                      placeholder="留空用系统默认"
+                      onChange={(event) => {
+                        const v = event.target.value;
+                        setEditingAgent({
+                          ...editingAgent,
+                          executor: { ...editingAgent.executor, maxToolCalls: v ? Number(v) : undefined },
+                        });
+                      }}
+                    />
+                  </Field>
+                </div>
+                <Field label="API Key 环境变量名">
+                  <Input
+                    value={String(editingAgent.executor.apiKeyEnv ?? '')}
+                    placeholder="例如 ANTHROPIC_API_KEY_BOB（只填变量名，不要填真实 key）"
+                    onChange={(event) => setEditingAgent({
+                      ...editingAgent,
+                      executor: { ...editingAgent.executor, apiKeyEnv: event.target.value || undefined },
+                    })}
+                  />
+                </Field>
+              </div>
+            </details>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <Button variant="ghost" onClick={() => setEditingAgent(null)}>取消</Button>
               <Button loading={updateAgent.isPending} onClick={saveAgent}>保存员工配置</Button>

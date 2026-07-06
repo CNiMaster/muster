@@ -134,14 +134,28 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
   async run(ctx: ExecutionContext, events?: ExecutionEvents): Promise<ExecutionRunResult> {
     const db = getDb();
     const sysSettings = getSystemSettings(db);
-    // merge 逻辑：若 options 属于系统默认，则使用数据库最新设置；否则以实例化 opts 优先以兼容测试覆盖
-    const mergedSettings: SystemSettings = {
+    // merge 优先级：实例化 opts > agent_executor > 系统设置。
+    // 1. 实例化 opts（测试覆盖）> 系统 DB 设置
+    const fromInstance: SystemSettings = {
       claudeBin: this.opts.claudeBin !== SERVER_CONFIG.claudeBin ? this.opts.claudeBin : sysSettings.claudeBin,
       model: this.opts.model !== SERVER_CONFIG.model ? this.opts.model : sysSettings.model,
       skipPermissions: this.opts.skipPermissions !== SERVER_CONFIG.skipPermissions ? this.opts.skipPermissions : sysSettings.skipPermissions,
       timeoutMs: this.opts.timeoutMs !== AGENT_TIMEOUT_MS ? this.opts.timeoutMs : sysSettings.timeoutMs,
       maxToolCalls: this.opts.maxToolCalls !== MAX_TOOL_CALLS ? this.opts.maxToolCalls : sysSettings.maxToolCalls,
     };
+    // 2. 员工级 executor_json 覆盖（PRD Phase 3：员工执行器配置）
+    const agentEx = ctx.agentExecutor;
+    const mergedSettings: SystemSettings = {
+      claudeBin: agentEx?.claudeBin ?? fromInstance.claudeBin,
+      model: agentEx?.model ?? fromInstance.model,
+      skipPermissions: agentEx?.skipPermissions ?? fromInstance.skipPermissions,
+      timeoutMs: agentEx?.timeoutMs ?? fromInstance.timeoutMs,
+      maxToolCalls: agentEx?.maxToolCalls ?? fromInstance.maxToolCalls,
+    };
+
+    // 3. 用户级凭据引用：把 process.env[apiKeyEnv] 注入子进程 ANTHROPIC_API_KEY
+    const apiKeyEnv = ctx.apiKeyEnv;
+    const apiKeyValue = apiKeyEnv ? process.env[apiKeyEnv] : undefined;
 
     const prompt = buildPrompt(ctx);
     let execution = await this.spawnClaude({
@@ -152,6 +166,8 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
       events,
       settings: mergedSettings,
       signal: ctx.signal,
+      readonlyDirs: ctx.readonlyDirs,
+      apiKeyValue,
     });
 
     // 校验结构化输出
@@ -175,6 +191,8 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
         settings: mergedSettings,
         signal: ctx.signal,
         disableTools: true,
+        readonlyDirs: ctx.readonlyDirs,
+        apiKeyValue,
       });
       execution = {
         result: correction.result,
@@ -194,6 +212,17 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
       toolCalls: execution.raw.toolCalls,
       durationMs: execution.raw.durationMs,
       costUSD: execution.raw.costUSD,
+      // 多模型分摊明细（PRD Phase 3.7）。当 Claude 实际使用了多个模型时，byModel 列出每个模型的 token。
+      byModel: Object.keys(execution.raw.modelUsage).length > 0
+        ? Object.entries(execution.raw.modelUsage).map(([m, d]) => ({
+            model: m,
+            inputTokens: d.inputTokens,
+            outputTokens: d.outputTokens,
+            cacheReadTokens: d.cacheReadTokens,
+            cacheCreateTokens: 0,
+            costUSD: d.costUSD,
+          }))
+        : undefined,
     };
     if (!parsed.success) {
       log.warn('claude output invalid AgentRunResult', {
@@ -222,6 +251,10 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
     settings: SystemSettings;
     signal?: AbortSignal;
     disableTools?: boolean;
+    /** 授权只读目录（PRD Phase 3.4）。 */
+    readonlyDirs?: string[];
+    /** 用户级凭据值（来自 process.env[apiKeyEnv]）；注入子进程 ANTHROPIC_API_KEY。 */
+    apiKeyValue?: string;
   }): Promise<{
     result: { fullText: string; structuredOutput: unknown };
     raw: RawRunStats;
@@ -252,9 +285,17 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
       } else if (opts.settings.skipPermissions) {
         args.push('--dangerously-skip-permissions', '--allow-dangerously-skip-permissions');
       } else {
-        const tools = getSandboxTools(opts.cwd, opts.cwd);
+        const tools = getSandboxTools(opts.cwd, opts.cwd, opts.readonlyDirs ?? []);
         for (const t of tools) args.push('--allowedTools', t);
         args.push('--permission-mode', 'acceptEdits');
+      }
+
+      // PRD Phase 3.4：把授权只读参考目录暴露给 Claude。
+      // --add-dir 让 Claude Code 把这些目录纳入可访问范围；权限仍是 acceptEdits 之外只读。
+      for (const dir of opts.readonlyDirs ?? []) {
+        if (dir && dir !== opts.cwd) {
+          args.push('--add-dir', dir);
+        }
       }
 
       if (opts.settings.model) args.push('--model', opts.settings.model);
@@ -266,9 +307,14 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
         model: opts.settings.model || '(claude default)',
       });
 
+      const childEnv: NodeJS.ProcessEnv = { ...process.env };
+      // PRD Phase 3：用户级凭据引用——把员工配置的环境变量值注入子进程。
+      if (opts.apiKeyValue) {
+        childEnv.ANTHROPIC_API_KEY = opts.apiKeyValue;
+      }
       const proc = spawn(opts.settings.claudeBin, args, {
         cwd: opts.cwd,
-        env: { ...process.env },
+        env: childEnv,
         stdio: ['pipe', 'pipe', 'pipe'],
       });
       proc.stdin.end();

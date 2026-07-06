@@ -9,6 +9,8 @@ import {
   useProject,
   useAgents,
   useArtifactHistory,
+  useOpenArtifactExternally,
+  useRollbackArtifact,
 } from '../hooks/queries';
 import { Card } from '../components/Card';
 import { Badge } from '../components/Badge';
@@ -102,6 +104,7 @@ export function ArtifactsPage(): React.ReactElement {
             content: (
               <HistoryList
                 items={history ?? []}
+                projectId={projectId}
                 empty={<EmptyState icon={Icons.empty} title="无发布历史" hint="任务完成后会自动合并改动并生成修改记录。" />}
               />
             ),
@@ -163,6 +166,7 @@ function ArtifactEditor({ projectId, path, onClose }: { projectId: string; path:
 
   const { data, isLoading } = useArtifactContent(projectId, isBinary ? null : path);
   const save = useSaveArtifactContent();
+  const openExternal = useOpenArtifactExternally();
   const [draft, setDraft] = useState<string | null>(null);
   const artifacts = useArtifacts(projectId);
   const art = artifacts.data?.find((a) => a.path === path);
@@ -185,11 +189,24 @@ function ArtifactEditor({ projectId, path, onClose }: { projectId: string; path:
     );
   };
 
+  const openNow = (): void => {
+    openExternal.mutate(
+      { projectId, path },
+      {
+        onSuccess: () => toast('success', '已用系统默认应用打开'),
+        onError: (e) => toast('error', (e as { message?: string }).message ?? '打开失败'),
+      },
+    );
+  };
+
   return (
     <Modal open onClose={onClose} title={path} size="xl"
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>关闭</Button>
+          <Button variant="ghost" onClick={openNow} loading={openExternal.isPending} title="调用系统默认应用打开此文件">
+            用默认应用打开
+          </Button>
           {!readonly && !isBinary && (
             <Button onClick={saveNow} disabled={!dirty} loading={save.isPending}>
               保存
@@ -280,6 +297,7 @@ function CreateArtifactModal({
 function HistoryList({
   items,
   empty,
+  projectId,
 }: {
   items: {
     id: string;
@@ -291,8 +309,25 @@ function HistoryList({
     publishedAt: string;
   }[];
   empty: React.ReactNode;
+  projectId: string;
 }): React.ReactNode {
+  const rollback = useRollbackArtifact();
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+
   if (items.length === 0) return empty;
+  const doRollback = (publishId: string): void => {
+    rollback.mutate(
+      { projectId, publishId },
+      {
+        onSuccess: () => {
+          toast('success', '已回滚到该提交之前的状态');
+          setConfirmingId(null);
+        },
+        onError: (e) => toast('error', (e as { message?: string }).message ?? '回滚失败'),
+      },
+    );
+  };
+
   return (
     <ul className="entity-list">
       {items.map((h) => (
@@ -325,6 +360,23 @@ function HistoryList({
           {h.conflicts.length > 0 && (
             <div style={{ fontSize: 'var(--text-xs)', color: 'var(--err)' }}>
               <strong>冲突阻塞文件:</strong> {h.conflicts.join(', ')}
+            </div>
+          )}
+          {!h.blocked && (
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)' }}>
+              {confirmingId === h.id ? (
+                <>
+                  <span className="muted" style={{ fontSize: 'var(--text-xs)' }}>确认回滚此提交？</span>
+                  <Button variant="ghost" onClick={() => setConfirmingId(null)}>取消</Button>
+                  <Button variant="danger" onClick={() => doRollback(h.id)} loading={rollback.isPending}>
+                    确认回滚
+                  </Button>
+                </>
+              ) : (
+                <Button variant="ghost" onClick={() => setConfirmingId(h.id)} title="用 git revert 撤销此次发布">
+                  回滚到此版本
+                </Button>
+              )}
             </div>
           )}
         </li>

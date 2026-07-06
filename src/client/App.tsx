@@ -1,20 +1,26 @@
 import type React from 'react';
 import { Outlet, NavLink, useParams } from 'react-router-dom';
 import { useCompany } from './hooks/queries';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 export function App(): React.ReactElement {
   return (
-    <div className="app-shell">
-      <header className="topbar">
-        <div className="brand">
-          <NavLink to="/">Muster · Agent 公司工作台</NavLink>
-        </div>
-        <CompanyIndicator />
-      </header>
-      <main className="main">
-        <Outlet />
-      </main>
-    </div>
+    <ErrorBoundary label="App">
+      <div className="app-shell">
+        <header className="topbar">
+          <div className="brand">
+            <NavLink to="/">Muster · Agent 公司工作台</NavLink>
+          </div>
+          <CompanyIndicator />
+        </header>
+        <main className="main">
+          {/* 页面级边界：单页崩溃不影响导航与其他页 */}
+          <ErrorBoundary label="Page">
+            <Outlet />
+          </ErrorBoundary>
+        </main>
+      </div>
+    </ErrorBoundary>
   );
 }
 

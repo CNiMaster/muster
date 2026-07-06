@@ -7,12 +7,13 @@
  */
 import type { DB } from '../db/client';
 import { shortId, nowIso } from '../../shared/utils';
+import { LEASE_TTL_MS } from '../../shared/constants';
 import { getProject } from './project';
 import { listTasks } from './task';
 import { listThreads } from './thread';
 import { listAgents } from './agent';
 
-export type SuggestionKind = 'congestion' | 'absence' | 'loop' | 'suggest_mirror' | 'ok';
+export type SuggestionKind = 'congestion' | 'absence' | 'loop' | 'suggest_mirror' | 'stuck' | 'ok';
 
 export interface InspectorSuggestion {
   id: string;
@@ -93,6 +94,37 @@ export function generateInspectorSuggestions(db: DB, projectId: string): Inspect
       targetAgentId: t.assigneeAgentId,
       createdAt: now,
     });
+  }
+
+  // 心跳停滞：claimed/running 但 heartbeatAt 长时间未更新（超过 2 倍租约）。
+  //  与 coordinator.recoverExpiredLeases 互补：那个负责"修复"过期租约，
+  //  本检查负责在过期临界点之前提前"告警"。
+  const nowMs = Date.now();
+  const stuckThresholdMs = 2 * LEASE_TTL_MS;
+  for (const t of tasks) {
+    if (t.state !== 'claimed' && t.state !== 'running') continue;
+    if (!t.heartbeatAt) {
+      out.push({
+        id: shortId('sg_'),
+        projectId,
+        kind: 'stuck',
+        message: `Task #${t.seq} 处于 ${t.state} 但无心跳记录`,
+        targetAgentId: t.assigneeAgentId,
+        createdAt: now,
+      });
+      continue;
+    }
+    const age = nowMs - new Date(t.heartbeatAt).getTime();
+    if (age > stuckThresholdMs) {
+      out.push({
+        id: shortId('sg_'),
+        projectId,
+        kind: 'stuck',
+        message: `Task #${t.seq} 心跳停滞 ${Math.round(age / 1000)}s（超过 ${Math.round(stuckThresholdMs / 1000)}s 阈值）`,
+        targetAgentId: t.assigneeAgentId,
+        createdAt: now,
+      });
+    }
   }
 
   if (out.length === 0) {

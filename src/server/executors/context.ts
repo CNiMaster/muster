@@ -54,6 +54,15 @@ export function assembleContext(
     '信息不足时用 waiting_input + question 在原 Task 中追问，不要编造。',
     '',
   );
+  // 会话压缩摘要（PRD Phase 3.6）：thread 经过压缩后保留的过往会话要点。
+  if (options.threadId) {
+    const compaction = db
+      .prepare('SELECT compaction_summary FROM project_agent_thread WHERE id=?')
+      .get(options.threadId) as { compaction_summary: string | null } | undefined;
+    if (compaction?.compaction_summary) {
+      sp.push('# 过往会话摘要（已压缩）', compaction.compaction_summary, '');
+    }
+  }
   const systemPrompt = sp.join('\n');
 
   // ===== Input Packet =====

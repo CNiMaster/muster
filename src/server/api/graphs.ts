@@ -1,9 +1,11 @@
 /**
  * Graph（组织/通信图）REST 路由。
  *
- - GET    /api/companies/:companyId/relationships?kind=org|communication
+ - GET    /api/companies/:companyId/relationships?kind=org|communication&includeArchived=1
  - POST   /api/companies/:companyId/relationships
- - DELETE /api/companies/:companyId/relationships/:id
+ - DELETE /api/companies/:companyId/relationships/:id            （硬删除）
+ - POST   /api/companies/:companyId/relationships/:id/archive    （软删除/归档）
+ - POST   /api/companies/:companyId/relationships/:id/restore    （恢复归档）
  - POST   /api/companies/:companyId/relationships/validate
  */
 import { Router } from 'express';
@@ -12,10 +14,14 @@ import { asyncHandler, param } from './middleware';
 import { getDb } from '../db/client';
 import {
   addRelationship,
+  archiveRelationship,
   deleteRelationship,
   listRelationships,
+  restoreRelationship,
   validateCommunication,
 } from '../domain/graph';
+import { ClaudeSetupGenerator } from '../domain/setup-assistant';
+import { proposeGraphChange, applyGraphProposal } from '../domain/graph-proposal';
 
 export const graphsRouter = Router({ mergeParams: true });
 
@@ -31,7 +37,8 @@ graphsRouter.get(
   '/',
   asyncHandler(async (req, res) => {
     const kind = req.query.kind as 'org' | 'communication' | undefined;
-    res.json(listRelationships(getDb(), param(req,'companyId'), kind));
+    const includeArchived = req.query.includeArchived === '1' || req.query.includeArchived === 'true';
+    res.json(listRelationships(getDb(), param(req, 'companyId'), kind, { includeArchived }));
   }),
 );
 
@@ -52,8 +59,73 @@ graphsRouter.delete(
 );
 
 graphsRouter.post(
+  '/:id/archive',
+  asyncHandler(async (req, res) => {
+    res.json(archiveRelationship(getDb(), param(req, 'id')));
+  }),
+);
+
+graphsRouter.post(
+  '/:id/restore',
+  asyncHandler(async (req, res) => {
+    res.json(restoreRelationship(getDb(), param(req, 'id')));
+  }),
+);
+
+graphsRouter.post(
   '/validate',
   asyncHandler(async (req, res) => {
     res.json({ errors: validateCommunication(getDb(), param(req,'companyId')) });
+  }),
+);
+
+/** 自然语言图变更提案（PRD:357）。 */
+const proposeSchema = z.object({
+  kind: z.enum(['org', 'communication']),
+  naturalLanguage: z.string().min(1).max(500),
+});
+
+graphsRouter.post(
+  '/propose',
+  asyncHandler(async (req, res) => {
+    const input = proposeSchema.parse(req.body);
+    const generator = new ClaudeSetupGenerator(getDb());
+    const result = await proposeGraphChange(
+      getDb(),
+      { companyId: param(req, 'companyId'), kind: input.kind, naturalLanguage: input.naturalLanguage },
+      generator,
+    );
+    res.json(result);
+  }),
+);
+
+/** 应用已确认的提案。 */
+const applySchema = z.object({
+  kind: z.enum(['org', 'communication']),
+  proposal: z.object({
+    changes: z.array(
+      z.object({
+        action: z.enum(['add_edge', 'remove_edge']),
+        sourceHint: z.string().optional(),
+        targetHint: z.string().optional(),
+        sourceId: z.string().optional(),
+        targetId: z.string().optional(),
+        label: z.string().optional(),
+      }),
+    ),
+    unableToParse: z.string().optional(),
+  }),
+});
+
+graphsRouter.post(
+  '/apply',
+  asyncHandler(async (req, res) => {
+    const input = applySchema.parse(req.body);
+    const diff = applyGraphProposal(
+      getDb(),
+      { companyId: param(req, 'companyId'), kind: input.kind, naturalLanguage: '' },
+      input.proposal,
+    );
+    res.json({ ok: true, diff });
   }),
 );

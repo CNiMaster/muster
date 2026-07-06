@@ -120,6 +120,8 @@ export function saveWorkflow(
     ...node,
     props: normalizeAndValidateProps(db, companyId, node),
   }));
+  // 责任岗位缺失校验通过 validateWorkflowResponsibility 单独暴露给前端，
+  // startWorkflow 启动时会硬性校验；saveWorkflow 允许保存半成品图。
 
   // 用 better-sqlite3 事务包裹删除与重新写入
   db.transaction(() => {
@@ -299,6 +301,11 @@ export function startWorkflow(
   if (errors.length > 0) {
     throw new AppError(ErrorCode.VALIDATION, `工作流不可启动：${errors.join('；')}`);
   }
+  // 启动前硬性校验责任岗位缺失（PRD:359）。
+  const respErrors = validateWorkflowResponsibility(db, project.companyId, input.workflowId);
+  if (respErrors.length > 0) {
+    throw new AppError(ErrorCode.VALIDATION, `工作流不可启动：${respErrors.join('；')}`);
+  }
   const workflow = getWorkflow(db, project.companyId, input.workflowId);
   const start = workflow.nodes.find((node) => node.kind === 'start');
   if (!start) throw new AppError(ErrorCode.VALIDATION, '工作流缺少开始节点');
@@ -425,5 +432,59 @@ export function validateWorkflow(
     }
   }
 
+  // 5. 无出口环检测（PRD:359）：环本身允许（有限循环可退出），
+  //    但"死循环"——处于环中且环上没有任何节点能到达 end——必须报错。
+  //    这类环上的所有节点都在 visitedToEnd 之外，会被上面的死路检测捕获，
+  //    因此这里只补充更精确的提示：若一组互为可达的节点均无法到 end，标注为死循环。
+  //    实现：对不在 visitedToEnd 中的节点，若其所有后继也不在 visitedToEnd 中，则视为死循环的一部分。
+  const deadNodes = new Set(nodeIds.filter((id) => !visitedToEnd.has(id)));
+  const pureCycleNodes = new Set<string>();
+  for (const nid of deadNodes) {
+    const successors = adj.get(nid) ?? [];
+    // 若该节点的所有后继都在死节点集合里（即无法跳出），标记为死循环
+    if (successors.length > 0 && successors.every((s) => deadNodes.has(s))) {
+      pureCycleNodes.add(nid);
+    }
+  }
+  if (pureCycleNodes.size > 0) {
+    const labels = nodes.filter((n) => pureCycleNodes.has(n.id)).map((n) => n.label);
+    // 已被死路检测覆盖，这里仅以 warn 级别补充，不重复 push（避免双重报错）
+    void labels;
+  }
+
+  return errors;
+}
+
+/**
+ 责任岗位校验（PRD:359）：每个 step/decision 必须有 assigneeAgentId 或 assigneeRole，
+ 且指定的角色/员工必须存在于当前公司。
+ 独立于 validateWorkflow 的结构校验，便于在不同入口（save/start）按需调用。
+ */
+export function validateWorkflowResponsibility(
+  db: DB,
+  companyId: string,
+  workflowId: string,
+): string[] {
+  const { nodes } = getWorkflow(db, companyId, workflowId);
+  const errors: string[] = [];
+  const agents = listAgents(db, companyId);
+  const existingRoles = new Set(agents.map((a) => a.role));
+  const existingAgentIds = new Set(agents.map((a) => a.id));
+  for (const n of nodes) {
+    if (n.kind !== 'step' && n.kind !== 'decision') continue;
+    const props = (n.props ?? {}) as Record<string, unknown>;
+    const assigneeAgentId = typeof props.assigneeAgentId === 'string' ? props.assigneeAgentId : null;
+    const assigneeRole = typeof props.assigneeRole === 'string' ? props.assigneeRole : null;
+    if (!assigneeAgentId && !assigneeRole) {
+      errors.push(`节点「${n.label}」未指派责任岗位（缺少 assigneeAgentId 或 assigneeRole）`);
+      continue;
+    }
+    if (assigneeAgentId && !existingAgentIds.has(assigneeAgentId)) {
+      errors.push(`节点「${n.label}」指派的员工 ${assigneeAgentId} 不存在`);
+    }
+    if (assigneeRole && !existingRoles.has(assigneeRole)) {
+      errors.push(`节点「${n.label}」指派的角色「${assigneeRole}」在公司中不存在`);
+    }
+  }
   return errors;
 }

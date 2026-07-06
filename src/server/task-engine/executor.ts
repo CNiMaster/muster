@@ -19,6 +19,31 @@ export interface ExecutionContext {
   threadId?: string;
   /** 上层取消 Task 时中止正在运行的执行器进程。 */
   signal?: AbortSignal;
+  /** 授权只读访问的额外目录（PRD Phase 3.4，授权参考项目根目录）。 */
+  readonlyDirs?: string[];
+  /**
+   * 员工级执行器配置（PRD Phase 3，覆盖系统默认）。
+   * 来自 agent_definition.executor_json，可含 model/claudeBin/timeoutMs/maxToolCalls/skipPermissions。
+   */
+  agentExecutor?: AgentExecutorConfig;
+  /**
+   * 用户级凭据引用：环境变量名（如 ANTHROPIC_API_KEY_BOB）。
+   * 执行器在 spawn 时把 process.env[apiKeyEnv] 注入子进程 ANTHROPIC_API_KEY。
+   * 只存变量名，绝不存明文 key。
+   */
+  apiKeyEnv?: string;
+}
+
+/**
+ 员工级执行器配置（agent_definition.executor_json 的结构化形态）。
+ 所有字段可选；未提供时回退到系统级 SystemSettings。
+ */
+export interface AgentExecutorConfig {
+  model?: string;
+  claudeBin?: string;
+  timeoutMs?: number;
+  maxToolCalls?: number;
+  skipPermissions?: boolean;
 }
 
 export interface ExecutionEvents {
@@ -35,6 +60,19 @@ export interface ExecutionUsage {
   toolCalls: number;
   durationMs: number;
   costUSD: number;
+  /**
+   多模型分摊明细（PRD Phase 3.7）。
+   主模型用顶层字段；其余模型放在 byModel 中，由引擎分别入库。
+   toolCalls/durationMs 不按模型拆分，仅在顶层记录一次。
+   */
+  byModel?: Array<{
+    model: string;
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    cacheCreateTokens: number;
+    costUSD: number;
+  }>;
 }
 
 export type ExecutionRunResult = AgentRunResult & {

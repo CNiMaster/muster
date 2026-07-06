@@ -164,20 +164,58 @@ export function closeReport(db: DB, reportId: string, dispatchCorrection: (note:
   return getReport(db, reportId);
 }
 
-/** 检查是否该触发强制复盘：基于完成 Task 数 / 里程碑。 */
+/** 检查是否该触发强制复盘：基于完成 Task 数 / 时间间隔 / 里程碑。
+ *
+ * 优先级：task_count > time > milestone。
+ * - task_count：完成数累计达到 lastBaseline + taskCountInterval。
+ * - time：距离上一轮复盘 opened_at 超过 timeIntervalMs（无上一轮则从项目创建时间起算）。
+ * - milestone：项目 settings.milestoneReviewAt 标记的里程碑时间已过且本轮未触发。
+ */
 export function shouldTriggerReport(
   db: DB,
   projectId: string,
-  opts: { taskCountInterval?: number },
+  opts: {
+    taskCountInterval?: number;
+    timeIntervalMs?: number;
+    now?: number;
+    milestoneReviewAt?: string;
+  },
 ): { trigger: boolean; kind: ReportTrigger | null } {
   const interval = opts.taskCountInterval ?? 20;
+  const nowMs = opts.now ?? Date.now();
   const tasks = listTasks(db, projectId);
   const completed = tasks.filter((t) => t.state === 'completed').length;
   const reports = listReports(db, projectId);
   const open = reports.find((r) => r.state !== 'closed');
   if (open) return { trigger: false, kind: null };
-  const lastBaseline = Number(reports[0]?.summary.completedTasksTotal ?? 0);
+  const lastReport = reports[0];
+  const lastBaseline = Number(lastReport?.summary.completedTasksTotal ?? 0);
+
+  // 1. task_count
   if (completed - lastBaseline >= interval) return { trigger: true, kind: 'task_count' };
+
+  // 2. time：距上一轮复盘（或项目创建）超过 timeIntervalMs
+  if (opts.timeIntervalMs && opts.timeIntervalMs > 0) {
+    const reference = lastReport?.openedAt ?? getProject(db, projectId).createdAt;
+    const refMs = new Date(reference).getTime();
+    if (Number.isFinite(refMs) && nowMs - refMs >= opts.timeIntervalMs) {
+      return { trigger: true, kind: 'time' };
+    }
+  }
+
+  // 3. milestone：settings.milestoneReviewAt 或 opts.milestoneReviewAt 指定的里程碑时间已过
+  const milestone = opts.milestoneReviewAt ?? String(getProject(db, projectId).settings.milestoneReviewAt ?? '');
+  if (milestone) {
+    const ms = new Date(milestone).getTime();
+    // 仅在里程碑时间已到达、且上一轮复盘早于里程碑时触发
+    if (Number.isFinite(ms) && nowMs >= ms) {
+      const lastOpenedMs = lastReport ? new Date(lastReport.openedAt).getTime() : NaN;
+      if (!Number.isFinite(lastOpenedMs) || lastOpenedMs < ms) {
+        return { trigger: true, kind: 'milestone' };
+      }
+    }
+  }
+
   return { trigger: false, kind: null };
 }
 
