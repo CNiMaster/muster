@@ -42,10 +42,24 @@
 
 明确留在后续范围：
 
-- 员工级多 API 凭据与多模态执行器（除 Claude Code 外的 OpenAI/Gemini adapter）；当前员工级 model/claudeBin/timeoutMs/apiKeyEnv 已支持，但执行器类型仅 ClaudeCode + Fake。
 - 部门级智能路由。
 - PPT/Word/网页公司模板、多租户、积分和支付。
 - docx/pptx/xlsx 内置预览（当前走"用默认应用打开"路径，PRD:369 已满足）。
+- 多模态（图像/PDF 输入）：当前多 API 执行器只做文本 + 文件工具循环，多模态需图片上传 + base64 处理。
+
+## 2026-07-06 多 API 执行器推进记录（Batch 10-14，post-v1 提前实现）
+
+用户要求"做 4：多 API 执行器"。本轮把清单 307"多 API 执行器"从 `[ ]` 推到 `[x]`（多模态部分注明后续）。验证证据：`npm run typecheck` 通过、`npm test` 30 个测试文件 235 项通过、`npm run build` 通过。
+
+核心设计：Provider 字段 + 工具循环执行器。每个员工可指定 `provider`（claude-cli / openai / gemini），引擎按 provider 分发。OpenAI/Gemini 通过 function calling 返回 tool call（read_file/write_file/edit_file/list_files/done），Muster 在 worktree 内执行，循环直到模型返回 done 并产出 AgentRunResult。模型不直接碰文件系统，Muster 是执行主体。
+
+本轮新交付（按 Batch 分组）：
+
+- **Batch 10（执行器抽象重构）**：`agentRunResultSchema` + `AGENT_RESULT_JSON_SCHEMA` 提取到 `result-schema.ts` 共享；`provider.ts` 定义 Provider 类型（claude-cli/openai/gemini）+ 默认 API key 变量名/模型/baseURL；`AgentExecutorJson` 增加 `provider`/`baseURL` 字段 + `assertExecutorValid` 枚举校验；`TaskEngine` 从单 adapter 改为 adapter registry（`adapters: Map<Provider, ExecutionAdapter>`）+ `selectAdapter` 按 agent provider 分发，向后兼容单 adapter 构造；`SystemSettings` 增加 `defaultProvider`/`openaiBaseURL`/`openaiModel`/`geminiModel`；`server.ts` 装配 adapter map。
+- **Batch 11（工具循环框架）**：`tools/file-tools.ts` 定义 5 个文件工具（read_file/write_file/edit_file/list_files/done）的 OpenAI function schema + 执行器（路径校验 `isWithinWorkspace`、只读目录保护、maxReadBytes 截断、edit 唯一匹配）；`tool-loop.ts` 通用驱动器（callModel 注入、多轮 tool call 执行、done 终止、maxToolCalls/timeout 上限、usage 累加）。
+- **Batch 12（OpenAI 兼容 Adapter）**：`openai-adapter.ts` `OpenAICompatibleAdapter`（任意 OpenAI 兼容 endpoint：OpenAI 官方 / DeepSeek / 通义 DashScope / 智谱）；agent executor baseURL 覆盖；`model-pricing.ts` 内置 OpenAI/DeepSeek/通义/智谱/Gemini 常见模型定价表 + `estimateCostUSD`（cached tokens 0.5x 折扣）；无 API key / API 错误返回 blocked。
+- **Batch 13（Gemini Adapter）**：`gemini-adapter.ts` `GeminiAdapter`（Google AI Studio generateContent + functionDeclarations）；OpenAI↔Gemini 消息格式转换层（system_instruction / functionCall / functionResponse）；usage 解析（promptTokenCount/candidatesTokenCount/cachedContentTokenCount）。
+- **Batch 14（手动压缩 + 上下文大小 + 前端 provider 配置）**：`POST /api/projects/:id/threads/:threadId/compact` 手动压缩 + `GET /api/projects/:id/threads/:threadId/context-size` 估算（compaction_summary + 最近 10 个 Task summary，4 字符≈1 token）；ProjectPage 线程卡片显示 `~X tokens · Y 次执行` + "手动压缩"按钮（prompt 输入摘要）；CompanyPage 员工编辑加 provider 下拉 + baseURL（openai 时）；SettingsPage 加"多执行器配置"卡片（默认 provider + 各 provider 默认 baseURL/model）。
 
 ## 2026-07-06 Batch 5-8 推进记录（v1 全部缺口清零）
 
@@ -304,7 +318,7 @@
 - [ ] 通用文档、PPT、网页制作公司模板。
 - [x] 更多成果预览和编辑处理器。（Markdown/图片/PDF + 外部应用打开已支持；docx/pptx/xlsx 未实现）
 - [ ] 部门级智能路由。
-- [ ] 多 API 执行器和多模态能力。
+- [x] 多 API 执行器（Claude CLI / OpenAI 兼容含 DeepSeek·通义·智谱 / Gemini 均已支持，含 function calling 工具循环、手动压缩、上下文大小显示、model→price 成本估算）。多模态（图像/PDF 输入）留后续。
 - [ ] 网站、多租户和云端沙盒。
 - [ ] 积分、支付和订阅。
 - [ ] 公司模板市场与 Skill 市场。

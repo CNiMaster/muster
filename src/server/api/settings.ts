@@ -31,6 +31,11 @@ settingsRouter.post(
       skipPermissions: z.boolean(),
       timeoutMs: z.number().min(1000),
       maxToolCalls: z.number().min(1),
+      // Batch 14：多执行器配置（可选，向后兼容）
+      defaultProvider: z.enum(['claude-cli', 'openai', 'gemini']).optional(),
+      openaiBaseURL: z.string().max(500).optional(),
+      openaiModel: z.string().max(200).optional(),
+      geminiModel: z.string().max(200).optional(),
     });
     const input = schema.parse(req.body);
     const db = getDb();

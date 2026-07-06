@@ -14,6 +14,8 @@ import {
   useStartBrainstorm,
   useBrainstormBudget,
   useGenerateProjectProposal,
+  useCompactThread,
+  useContextSize,
 } from '../hooks/queries';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
@@ -441,6 +443,9 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
                       </Badge>
                       <Badge tone="neutral">{t.state}</Badge>
                     </div>
+                    {!isMirror && (
+                      <ContextSizeBadge projectId={projectId} threadId={t.id} />
+                    )}
                   </div>
                   
                   {/* 镜像增删控制 */}
@@ -606,5 +611,38 @@ function ReviewSettingsCard({ project }: { project: Project }): React.ReactNode 
         </div>
       </div>
     </Card>
+  );
+}
+
+/** 上下文大小徽章 + 手动压缩按钮（Batch 14）。 */
+function ContextSizeBadge({ projectId, threadId }: { projectId: string; threadId: string }): React.ReactNode {
+  const { data } = useContextSize(projectId, threadId);
+  const compact = useCompactThread(projectId);
+  if (!data) return null;
+  const tone = data.estimatedTokens > 50000 ? 'err' : data.estimatedTokens > 20000 ? 'warn' : 'neutral';
+  return (
+    <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '4px' }}>
+      <Badge tone={tone as any}>
+        上下文 ~{data.estimatedTokens.toLocaleString()} tokens · {data.execCount} 次执行
+      </Badge>
+      <Button
+        variant="ghost"
+        size="sm"
+        loading={compact.isPending}
+        onClick={() => {
+          const summary = window.prompt('输入压缩摘要（留空则自动生成）：', '');
+          if (summary === null) return;
+          compact.mutate(
+            { threadId, summary: summary || undefined },
+            {
+              onSuccess: () => toast('success', '上下文已手动压缩'),
+              onError: (e) => toast('error', (e as Error).message),
+            },
+          );
+        }}
+      >
+        手动压缩
+      </Button>
+    </div>
   );
 }

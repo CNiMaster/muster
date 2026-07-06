@@ -249,6 +249,35 @@ export function useUpdateProject() {
     onSuccess: (data) => qc.invalidateQueries({ queryKey: ['project', data.id] }),
   });
 }
+
+/** 手动压缩线程上下文（Batch 14）。 */
+export function useCompactThread(projectId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ threadId, summary }: { threadId: string; summary?: string }) =>
+      api.post<{ ok: boolean }>(`/api/projects/${projectId}/threads/${threadId}/compact`, { summary }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['threads', projectId] });
+      qc.invalidateQueries({ queryKey: ['context-size'] });
+    },
+  });
+}
+
+export interface ContextSize {
+  execCount: number;
+  lastCompactionAt: string | null;
+  compactionSummary: string | null;
+  estimatedTokens: number;
+  recentTaskCount: number;
+}
+export function useContextSize(projectId: string | undefined, threadId: string | undefined) {
+  return useQuery({
+    queryKey: ['context-size', projectId, threadId],
+    queryFn: () => api.get<ContextSize>(`/api/projects/${projectId}/threads/${threadId}/context-size`),
+    enabled: !!projectId && !!threadId,
+    refetchInterval: 30000,
+  });
+}
 export function useCreateProject() {
   const qc = useQueryClient();
   return useMutation({
@@ -862,8 +891,17 @@ export function useSystemSettings() {
 export function useSaveSystemSettings() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (settings: { claudeBin: string; model: string; skipPermissions: boolean; timeoutMs: number; maxToolCalls: number }) =>
-      api.post<any>('/api/settings', settings),
+    mutationFn: (settings: {
+      claudeBin?: string;
+      model?: string;
+      skipPermissions?: boolean;
+      timeoutMs?: number;
+      maxToolCalls?: number;
+      defaultProvider?: string;
+      openaiBaseURL?: string;
+      openaiModel?: string;
+      geminiModel?: string;
+    }) => api.post<any>('/api/settings', settings),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['systemSettings'] });
     },

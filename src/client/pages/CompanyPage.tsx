@@ -498,10 +498,35 @@ export function CompanyPage(): React.ReactElement {
                   留空则使用系统默认。API Key 凭据只存环境变量名，绝不存明文。
                 </p>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <Field label="执行器（provider）">
+                    <Select
+                      value={String(editingAgent.executor.provider ?? '')}
+                      onChange={(event) => {
+                        const provider = event.target.value || undefined;
+                        // 按 provider 切换默认 apiKeyEnv 提示
+                        const defaultEnv = provider === 'openai' ? 'OPENAI_API_KEY'
+                          : provider === 'gemini' ? 'GOOGLE_API_KEY'
+                          : provider === 'claude-cli' ? 'ANTHROPIC_API_KEY' : '';
+                        setEditingAgent({
+                          ...editingAgent,
+                          executor: {
+                            ...editingAgent.executor,
+                            provider: provider as 'claude-cli' | 'openai' | 'gemini' | undefined,
+                            apiKeyEnv: editingAgent.executor.apiKeyEnv ?? (defaultEnv || undefined),
+                          },
+                        });
+                      }}
+                    >
+                      <option value="">默认（claude-cli）</option>
+                      <option value="claude-cli">Claude Code CLI</option>
+                      <option value="openai">OpenAI 兼容（GPT/DeepSeek/通义/智谱）</option>
+                      <option value="gemini">Gemini</option>
+                    </Select>
+                  </Field>
                   <Field label="模型覆盖">
                     <Input
                       value={String(editingAgent.executor.model ?? '')}
-                      placeholder="例如 sonnet（留空用系统默认）"
+                      placeholder={editingAgent.executor.provider === 'openai' ? 'gpt-4o / deepseek-chat / qwen-max' : editingAgent.executor.provider === 'gemini' ? 'gemini-2.0-flash' : 'sonnet'}
                       onChange={(event) => setEditingAgent({
                         ...editingAgent,
                         executor: { ...editingAgent.executor, model: event.target.value || undefined },
@@ -552,13 +577,29 @@ export function CompanyPage(): React.ReactElement {
                 <Field label="API Key 环境变量名">
                   <Input
                     value={String(editingAgent.executor.apiKeyEnv ?? '')}
-                    placeholder="例如 ANTHROPIC_API_KEY_BOB（只填变量名，不要填真实 key）"
+                    placeholder={
+                      editingAgent.executor.provider === 'openai' ? 'OPENAI_API_KEY（或自定义变量名）'
+                      : editingAgent.executor.provider === 'gemini' ? 'GOOGLE_API_KEY（或自定义变量名）'
+                      : 'ANTHROPIC_API_KEY（或自定义变量名）'
+                    }
                     onChange={(event) => setEditingAgent({
                       ...editingAgent,
                       executor: { ...editingAgent.executor, apiKeyEnv: event.target.value || undefined },
                     })}
                   />
                 </Field>
+                {editingAgent.executor.provider === 'openai' && (
+                  <Field label="API baseURL（OpenAI 兼容）">
+                    <Input
+                      value={String(editingAgent.executor.baseURL ?? '')}
+                      placeholder="留空=OpenAI 官方；DeepSeek=https://api.deepseek.com/v1；通义=https://dashscope.aliyuncs.com/compatible-mode/v1；智谱=https://open.bigmodel.cn/api/paas/v4"
+                      onChange={(event) => setEditingAgent({
+                        ...editingAgent,
+                        executor: { ...editingAgent.executor, baseURL: event.target.value || undefined },
+                      })}
+                    />
+                  </Field>
+                )}
               </div>
             </details>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>

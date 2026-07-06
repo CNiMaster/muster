@@ -33,69 +33,9 @@ import { getDb } from '../db/client';
 import { getSystemSettings, type SystemSettings } from '../domain/setting';
 import { log } from '../logger';
 import { AppError, ErrorCode } from '../../shared/errors';
-
-// AgentRunResult 的 Zod schema，用于 --json-schema 与结果校验
-const outboundTaskSchema = z.object({
-  recipientAgentId: z.string(),
-  protocolId: z.string(),
-  title: z.string(),
-  payload: z.record(z.unknown()).default({}),
-  priority: z.number().default(5),
-});
-const artifactSchema = z.object({
-  path: z.string(),
-  kind: z.string(),
-  operation: z.enum(['create', 'update', 'delete']),
-});
-
-export const agentRunResultSchema = z.object({
-  outcome: z.enum(['completed', 'waiting_input', 'waiting_dependency', 'blocked']),
-  summary: z.string(),
-  question: z.string().optional(),
-  outboundTasks: z.array(outboundTaskSchema).default([]),
-  artifacts: z.array(artifactSchema).default([]),
-  checkpoint: z.string().optional(),
-  workflowNextEdgeLabel: z.string().optional(),
-});
-
-/** JSON Schema 描述，传给 Claude --json-schema。 */
-const AGENT_RESULT_JSON_SCHEMA = {
-  type: 'object',
-  properties: {
-    outcome: { type: 'string', enum: ['completed', 'waiting_input', 'waiting_dependency', 'blocked'] },
-    summary: { type: 'string' },
-    question: { type: 'string' },
-    outboundTasks: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          recipientAgentId: { type: 'string' },
-          protocolId: { type: 'string' },
-          title: { type: 'string' },
-          payload: { type: 'object' },
-          priority: { type: 'number' },
-        },
-        required: ['recipientAgentId', 'protocolId', 'title'],
-      },
-    },
-    artifacts: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          path: { type: 'string' },
-          kind: { type: 'string' },
-          operation: { type: 'string', enum: ['create', 'update', 'delete'] },
-        },
-        required: ['path', 'kind', 'operation'],
-      },
-    },
-    checkpoint: { type: 'string' },
-    workflowNextEdgeLabel: { type: 'string' },
-  },
-  required: ['outcome', 'summary'],
-};
+import { agentRunResultSchema, AGENT_RESULT_JSON_SCHEMA } from './result-schema';
+// 保持向后兼容的 re-export（测试可能从此处导入）
+export { agentRunResultSchema } from './result-schema';
 
 export interface RawRunStats {
   costUSD: number;
@@ -135,8 +75,10 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
     const db = getDb();
     const sysSettings = getSystemSettings(db);
     // merge 优先级：实例化 opts > agent_executor > 系统设置。
+    // Claude adapter 只关心 claude 相关字段（provider 级字段由引擎处理）。
+    type ClaudeSettings = Pick<SystemSettings, 'claudeBin' | 'model' | 'skipPermissions' | 'timeoutMs' | 'maxToolCalls'>;
     // 1. 实例化 opts（测试覆盖）> 系统 DB 设置
-    const fromInstance: SystemSettings = {
+    const fromInstance: ClaudeSettings = {
       claudeBin: this.opts.claudeBin !== SERVER_CONFIG.claudeBin ? this.opts.claudeBin : sysSettings.claudeBin,
       model: this.opts.model !== SERVER_CONFIG.model ? this.opts.model : sysSettings.model,
       skipPermissions: this.opts.skipPermissions !== SERVER_CONFIG.skipPermissions ? this.opts.skipPermissions : sysSettings.skipPermissions,
@@ -145,7 +87,7 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
     };
     // 2. 员工级 executor_json 覆盖（PRD Phase 3：员工执行器配置）
     const agentEx = ctx.agentExecutor;
-    const mergedSettings: SystemSettings = {
+    const mergedSettings: ClaudeSettings = {
       claudeBin: agentEx?.claudeBin ?? fromInstance.claudeBin,
       model: agentEx?.model ?? fromInstance.model,
       skipPermissions: agentEx?.skipPermissions ?? fromInstance.skipPermissions,
@@ -248,7 +190,8 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
     /** 已有的 session id（后续 --resume）；undefined 表示首次执行。 */
     existingSessionId?: string;
     events?: ExecutionEvents;
-    settings: SystemSettings;
+    /** Claude 相关设置子集。 */
+    settings: Pick<SystemSettings, 'claudeBin' | 'model' | 'skipPermissions' | 'timeoutMs' | 'maxToolCalls'>;
     signal?: AbortSignal;
     disableTools?: boolean;
     /** 授权只读目录（PRD Phase 3.4）。 */

@@ -39,11 +39,15 @@ export interface ExecutionContext {
  所有字段可选；未提供时回退到系统级 SystemSettings。
  */
 export interface AgentExecutorConfig {
+  /** 执行器 provider，决定引擎分发到哪个 adapter。默认由系统设置决定（通常 claude-cli）。 */
+  provider?: string;
   model?: string;
   claudeBin?: string;
   timeoutMs?: number;
   maxToolCalls?: number;
   skipPermissions?: boolean;
+  /** OpenAI 兼容 API 的 baseURL（provider=openai 时生效，可切 DeepSeek/通义/智谱等）。 */
+  baseURL?: string;
 }
 
 export interface ExecutionEvents {

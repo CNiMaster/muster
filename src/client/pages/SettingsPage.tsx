@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { useSystemSettings, useSaveSystemSettings, useTestConnection } from '../hooks/queries';
 import { Card } from '../components/Card';
 import { Button, toast } from '../components/Button';
-import { Input, Field } from '../components/Form';
+import { Input, Field, Select } from '../components/Form';
 import { Badge } from '../components/Badge';
 
 export function SettingsPage(): React.ReactElement {
@@ -17,6 +17,11 @@ export function SettingsPage(): React.ReactElement {
   const [skipPermissions, setSkipPermissions] = useState(false);
   const [timeoutMs, setTimeoutMs] = useState(600000);
   const [maxToolCalls, setMaxToolCalls] = useState(30);
+  // Batch 14：多执行器配置
+  const [defaultProvider, setDefaultProvider] = useState('claude-cli');
+  const [openaiBaseURL, setOpenaiBaseURL] = useState('https://api.openai.com/v1');
+  const [openaiModel, setOpenaiModel] = useState('gpt-4o');
+  const [geminiModel, setGeminiModel] = useState('gemini-2.0-flash');
 
   // 测试结果状态
   const [testResult, setTestResult] = useState<any | null>(null);
@@ -29,6 +34,10 @@ export function SettingsPage(): React.ReactElement {
       setSkipPermissions(settings.skipPermissions);
       setTimeoutMs(settings.timeoutMs);
       setMaxToolCalls(settings.maxToolCalls);
+      setDefaultProvider(settings.defaultProvider ?? 'claude-cli');
+      setOpenaiBaseURL(settings.openaiBaseURL ?? 'https://api.openai.com/v1');
+      setOpenaiModel(settings.openaiModel ?? 'gpt-4o');
+      setGeminiModel(settings.geminiModel ?? 'gemini-2.0-flash');
     }
   }, [settings]);
 
@@ -45,6 +54,10 @@ export function SettingsPage(): React.ReactElement {
         skipPermissions,
         timeoutMs,
         maxToolCalls,
+        defaultProvider,
+        openaiBaseURL,
+        openaiModel,
+        geminiModel,
       },
       {
         onSuccess: () => {
@@ -234,6 +247,37 @@ export function SettingsPage(): React.ReactElement {
           </div>
         </Card>
       </div>
+
+      {/* Batch 14：多执行器配置 */}
+      <Card title="多执行器配置" style={{ marginTop: 'var(--space-5)' }}>
+        <div className="form-stack">
+          <p className="muted" style={{ fontSize: 'var(--text-sm)', margin: 0 }}>
+            配置默认执行器与各 provider 的全局默认。每个员工可在员工编辑里覆盖。
+            API Key 通过环境变量注入（OPENAI_API_KEY / GOOGLE_API_KEY / ANTHROPIC_API_KEY），不在此处填写。
+          </p>
+          <Field label="默认执行器" hint="新建员工未指定 provider 时使用">
+            <Select value={defaultProvider} onChange={(e) => setDefaultProvider(e.target.value)}>
+              <option value="claude-cli">Claude Code CLI（默认）</option>
+              <option value="openai">OpenAI 兼容（GPT/DeepSeek/通义/智谱）</option>
+              <option value="gemini">Gemini</option>
+            </Select>
+          </Field>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <Field label="OpenAI 默认 baseURL">
+              <Input value={openaiBaseURL} onChange={(e) => setOpenaiBaseURL(e.target.value)} placeholder="https://api.openai.com/v1" />
+            </Field>
+            <Field label="OpenAI 默认模型">
+              <Input value={openaiModel} onChange={(e) => setOpenaiModel(e.target.value)} placeholder="gpt-4o" />
+            </Field>
+          </div>
+          <Field label="Gemini 默认模型">
+            <Input value={geminiModel} onChange={(e) => setGeminiModel(e.target.value)} placeholder="gemini-2.0-flash" />
+          </Field>
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <Button onClick={handleSave} loading={saveSettings.isPending}>保存执行器配置</Button>
+          </div>
+        </div>
+      </Card>
     </div>
   );
 }

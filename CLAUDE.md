@@ -39,7 +39,7 @@ npm install              # 安装依赖（express, ws, better-sqlite3, react, re
 npm run dev              # 开发模式：tsx watch src/server/server.ts，Express 挂 Vite middleware
 npm start                # 生产模式：node dist/server/server.js（需先 build）
 npm run typecheck        # TypeScript 项目引用全量检查
-npm test                 # Vitest 单测 + 集成（190 项）
+npm test                 # Vitest 单测 + 集成（235 项）
 npm run test:e2e         # Playwright 端到端（5 项）
 npm run test:claude-smoke # 真实 Claude 两轮 Task/session/artifact/usage 冒烟
 npm run build            # tsup 编译 server + vite build 客户端 → dist/
@@ -79,7 +79,10 @@ src/
                  # character-graph（只读人物关系图解析）
     task-engine/ # ExecutionAdapter 接口 + FakeExecutor + TaskEngine + agentExecutor 覆盖
     trigger-scheduler.ts # 轮询持久化 schedule trigger，原子推进并派发巡检 Task
-    executors/   # ClaudeCodeAdapter + 上下文装配 + 安全检查 + 会话压缩 + 时间轮换 + apiKeyEnv 凭据注入
+    executors/   # ClaudeCodeAdapter + OpenAICompatibleAdapter + GeminiAdapter +
+                 # 上下文装配 + 安全检查 + 会话压缩 + 时间轮换 + apiKeyEnv 凭据注入 +
+                 # tool-loop（function calling 工具循环）+ file-tools（worktree 文件工具）+
+                 # model-pricing（成本估算）+ provider（多执行器分发）+ result-schema（共享 schema）
     worktree/    # Git worktree 管理 + 串行发布队列 + artifact 独占锁
     api/         # Express 路由（companies(status-board/usage)/agents/projects(character-graph)/
                  # graphs(propose/apply)/artifacts(open/rollback)/events/usage/workflows/brainstorm/...）

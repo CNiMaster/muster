@@ -33,17 +33,22 @@ export interface AgentDefinition {
 /**
  员工级执行器配置（executor_json 结构，PRD Phase 3）。
  所有字段可选，缺省回退到系统级 SystemSettings。
+ - provider：执行器类型（claude-cli / openai / gemini），决定引擎分发到哪个 adapter。
  - apiKeyEnv：用户级凭据引用，存环境变量名（如 ANTHROPIC_API_KEY_BOB），不存明文。
-   spawn Claude 时把 process.env[apiKeyEnv] 注入子进程 ANTHROPIC_API_KEY。
+   spawn Claude 时把 process.env[apiKeyEnv] 注入子进程 ANTHROPIC_API_KEY；
+   OpenAI/Gemini adapter 同理注入各自的环境变量。
    合法变量名必须匹配 /^[A-Z][A-Z0-9_]*$/，否则在引擎侧被忽略。
+ - baseURL：OpenAI 兼容 API 的 baseURL（provider=openai 时生效）。
  */
 export interface AgentExecutorJson {
+  provider?: string;
   model?: string;
   claudeBin?: string;
   timeoutMs?: number;
   maxToolCalls?: number;
   skipPermissions?: boolean;
   apiKeyEnv?: string;
+  baseURL?: string;
 }
 
 interface AgentRow {
@@ -142,11 +147,23 @@ function assertExecutorValid(executor: Record<string, unknown> | undefined): voi
       );
     }
   }
+  if (executor.provider !== undefined) {
+    const validProviders = ['claude-cli', 'openai', 'gemini'];
+    if (typeof executor.provider !== 'string' || !validProviders.includes(executor.provider)) {
+      throw new AppError(
+        ErrorCode.VALIDATION,
+        `executor.provider 必须是 ${validProviders.join(' / ')} 之一`,
+      );
+    }
+  }
   if (executor.model !== undefined && (typeof executor.model !== 'string' || !executor.model)) {
     throw new AppError(ErrorCode.VALIDATION, 'executor.model 必须是非空字符串');
   }
   if (executor.claudeBin !== undefined && (typeof executor.claudeBin !== 'string' || !executor.claudeBin)) {
     throw new AppError(ErrorCode.VALIDATION, 'executor.claudeBin 必须是非空字符串');
+  }
+  if (executor.baseURL !== undefined && (typeof executor.baseURL !== 'string' || !executor.baseURL)) {
+    throw new AppError(ErrorCode.VALIDATION, 'executor.baseURL 必须是非空字符串');
   }
   if (executor.timeoutMs !== undefined && (typeof executor.timeoutMs !== 'number' || executor.timeoutMs <= 0)) {
     throw new AppError(ErrorCode.VALIDATION, 'executor.timeoutMs 必须是正数');

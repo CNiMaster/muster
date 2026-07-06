@@ -31,6 +31,7 @@ import {
   getThread,
   removeMirror,
   ensureProjectThreads,
+  clearSessionForCompaction,
 } from '../domain/thread';
 import { getCompany } from '../domain/company';
 import { registerDefaultNovelScheduleTriggers } from '../domain/triggers';
@@ -140,6 +141,57 @@ projectById.post(
   asyncHandler(async (req, res) => {
     const t = getThread(getDb(), param(req,'threadId'));
     res.status(201).json(createMirror(getDb(), t.projectId, t.agentId));
+  }),
+);
+
+/**
+ 手动压缩线程上下文（Batch 14，用户要求）。
+ - body: { summary } 手动输入摘要，或留空让系统生成简单摘要。
+ - 调 clearSessionForCompaction 清空 session、重置 exec_count、写入摘要。
+ */
+projectById.post(
+  '/threads/:threadId/compact',
+  asyncHandler(async (req, res) => {
+    const db = getDb();
+    const threadId = param(req, 'threadId');
+    const t = getThread(db, threadId);
+    const input = z.object({ summary: z.string().optional() }).parse(req.body ?? {});
+    const summary = input.summary?.trim() || `[手动压缩 ${new Date().toISOString()}] 用户手动清空上下文`;
+    clearSessionForCompaction(db, t.id, summary);
+    res.json({ ok: true, threadId: t.id });
+  }),
+);
+
+/** 上下文大小估算（Batch 14）。 */
+projectById.get(
+  '/threads/:threadId/context-size',
+  asyncHandler(async (req, res) => {
+    const db = getDb();
+    const threadId = param(req, 'threadId');
+    const t = getThread(db, threadId);
+    const row = db.prepare(
+      'SELECT exec_count, last_compaction_at, compaction_summary FROM project_agent_thread WHERE id=?',
+    ).get(t.id) as {
+      exec_count: number;
+      last_compaction_at: string | null;
+      compaction_summary: string | null;
+    };
+    // 最近 N 个 Task summary 长度估算 token
+    const recentTasks = db.prepare(
+      `SELECT summary FROM task WHERE assignee_agent_id=? AND project_id=? AND state='completed'
+       ORDER BY completed_at DESC LIMIT 10`,
+    ).all(t.agentId, t.projectId) as Array<{ summary: string }>;
+    const summaryChars = (row.compaction_summary ?? '').length
+      + recentTasks.reduce((s, t) => s + (t.summary?.length ?? 0), 0);
+    // 粗估：4 字符 ≈ 1 token（中英混合）
+    const estimatedTokens = Math.ceil(summaryChars / 4);
+    res.json({
+      execCount: row.exec_count,
+      lastCompactionAt: row.last_compaction_at,
+      compactionSummary: row.compaction_summary,
+      estimatedTokens,
+      recentTaskCount: recentTasks.length,
+    });
   }),
 );
 

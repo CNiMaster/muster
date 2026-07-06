@@ -37,7 +37,10 @@ import { realtime } from './realtime';
 import { getDb } from './db/client';
 import { TaskEngine } from './task-engine/engine';
 import { ClaudeCodeAdapter } from './executors/claude-code-adapter';
+import { OpenAICompatibleAdapter } from './executors/openai-adapter';
+import { GeminiAdapter } from './executors/gemini-adapter';
 import { FakeExecutor } from './task-engine/fake-executor';
+import { getSystemSettings } from './domain/setting';
 import { TriggerScheduler } from './trigger-scheduler';
 import { ProjectRuntimeCoordinator } from './runtime/coordinator';
 
@@ -80,13 +83,28 @@ async function createApp(): Promise<AppHandle> {
   );
 
   // 创建 Task 引擎实例（先于 API 引用）
-  const adapter = process.env.MUSTER_EXECUTOR === 'fake'
-    ? new FakeExecutor()
-    : new ClaudeCodeAdapter();
-  const engine = new TaskEngine(getDb(), adapter, {
+  // Batch 10/12/13：多 provider adapter 注册表。
+  // Fake 模式下所有 provider 都用 FakeExecutor；
+  // 真实模式下 claude-cli 用 ClaudeCodeAdapter，openai/gemini 用对应 adapter。
+  const isFake = process.env.MUSTER_EXECUTOR === 'fake';
+  const adapterRegistry = new Map<string, import('./task-engine/executor').ExecutionAdapter>();
+  if (isFake) {
+    const fake = new FakeExecutor();
+    adapterRegistry.set('claude-cli', fake);
+    adapterRegistry.set('openai', fake);
+    adapterRegistry.set('gemini', fake);
+  } else {
+    adapterRegistry.set('claude-cli', new ClaudeCodeAdapter());
+    adapterRegistry.set('openai', new OpenAICompatibleAdapter());
+    adapterRegistry.set('gemini', new GeminiAdapter());
+  }
+  const engine = new TaskEngine(getDb(), adapterRegistry, {
     pollIntervalMs: Number(process.env.MUSTER_POLL_INTERVAL_MS ?? 2000),
     concurrency: Number(process.env.MUSTER_CONCURRENCY ?? 4),
   });
+  // 应用系统默认 provider
+  const sysSettings = getSystemSettings(getDb());
+  engine.setDefaultProvider(sysSettings.defaultProvider);
   const triggerScheduler = new TriggerScheduler(
     getDb(),
     Number(process.env.MUSTER_TRIGGER_POLL_INTERVAL_MS ?? 1000),

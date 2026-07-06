@@ -32,12 +32,14 @@ export interface Agent {
 
 /** 员工级执行器配置（与 server AgentExecutorJson 对齐）。 */
 export interface AgentExecutorJson {
+  provider?: 'claude-cli' | 'openai' | 'gemini';
   model?: string;
   claudeBin?: string;
   timeoutMs?: number;
   maxToolCalls?: number;
   skipPermissions?: boolean;
   apiKeyEnv?: string;
+  baseURL?: string;
 }
 
 export interface Department {

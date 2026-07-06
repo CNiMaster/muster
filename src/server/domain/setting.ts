@@ -2,6 +2,7 @@ import type { DB } from '../db/client';
 import { nowIso } from '../../shared/utils';
 import { SERVER_CONFIG } from '../env';
 import { AGENT_TIMEOUT_MS, MAX_TOOL_CALLS } from '../../shared/constants';
+import { DEFAULT_PROVIDER, PROVIDER_DEFAULT_BASE_URL, PROVIDER_DEFAULT_MODEL, PROVIDERS } from '../executors/provider';
 
 export interface SystemSettings {
   claudeBin: string;
@@ -9,6 +10,14 @@ export interface SystemSettings {
   skipPermissions: boolean;
   timeoutMs: number;
   maxToolCalls: number;
+  /** 默认执行器 provider（Batch 10）。 */
+  defaultProvider: string;
+  /** OpenAI 兼容 API 默认 baseURL。 */
+  openaiBaseURL: string;
+  /** OpenAI 默认模型。 */
+  openaiModel: string;
+  /** Gemini 默认模型。 */
+  geminiModel: string;
 }
 
 export function getSetting(db: DB, key: string, defaultValue: string): string {
@@ -32,6 +41,10 @@ export function getSystemSettings(db: DB): SystemSettings {
     skipPermissions: getSetting(db, 'skip_permissions', SERVER_CONFIG.skipPermissions ? 'true' : 'false') === 'true',
     timeoutMs: Number(getSetting(db, 'timeout_ms', String(AGENT_TIMEOUT_MS))),
     maxToolCalls: Number(getSetting(db, 'max_tool_calls', String(MAX_TOOL_CALLS))),
+    defaultProvider: getSetting(db, 'default_provider', DEFAULT_PROVIDER),
+    openaiBaseURL: getSetting(db, 'openai_base_url', PROVIDER_DEFAULT_BASE_URL.openai!),
+    openaiModel: getSetting(db, 'openai_model', PROVIDER_DEFAULT_MODEL.openai),
+    geminiModel: getSetting(db, 'gemini_model', PROVIDER_DEFAULT_MODEL.gemini),
   };
 }
 
@@ -51,5 +64,17 @@ export function saveSystemSettings(db: DB, settings: Partial<SystemSettings>): v
   }
   if (settings.maxToolCalls !== undefined) {
     setSetting(db, 'max_tool_calls', String(settings.maxToolCalls));
+  }
+  if (settings.defaultProvider !== undefined && (PROVIDERS as readonly string[]).includes(settings.defaultProvider)) {
+    setSetting(db, 'default_provider', settings.defaultProvider);
+  }
+  if (settings.openaiBaseURL !== undefined) {
+    setSetting(db, 'openai_base_url', settings.openaiBaseURL);
+  }
+  if (settings.openaiModel !== undefined) {
+    setSetting(db, 'openai_model', settings.openaiModel);
+  }
+  if (settings.geminiModel !== undefined) {
+    setSetting(db, 'gemini_model', settings.geminiModel);
   }
 }

@@ -12,6 +12,7 @@
 import path from 'node:path';
 import type { DB } from '../db/client';
 import type { ExecutionAdapter, ExecutionContext } from './executor';
+import { DEFAULT_PROVIDER, isProvider, type Provider } from '../executors/provider';
 import {
   claimNextTask,
   markRunning,
@@ -58,12 +59,40 @@ export class TaskEngine {
   private pumping = new Set<string>(); // 正在 pump 的 threadId，防重入
   private activeRuns = new Map<string, AbortController>();
 
+  /**
+   多 provider adapter 注册表（Batch 10）。
+   - adapters：provider → adapter 映射。
+   - defaultProvider：agent 未指定 provider 时使用。
+   兼容旧构造：若传入单 adapter，则视为 claude-cli 默认。
+   */
+  private adapters: Map<string, ExecutionAdapter>;
+  private defaultProvider: Provider;
+
   constructor(
     private db: DB,
-    private adapter: ExecutionAdapter,
+    adapterOrRegistry: ExecutionAdapter | Map<string, ExecutionAdapter>,
     private opts: EngineOptions = {},
   ) {
     this.publishQueue = new PublishQueue(db);
+    if (adapterOrRegistry instanceof Map) {
+      this.adapters = adapterOrRegistry;
+      this.defaultProvider = DEFAULT_PROVIDER;
+    } else {
+      // 向后兼容：单 adapter 视为 claude-cli
+      this.adapters = new Map([[DEFAULT_PROVIDER, adapterOrRegistry]]);
+      this.defaultProvider = DEFAULT_PROVIDER;
+    }
+  }
+
+  /** 设置默认 provider（SystemSettings 加载后调用）。 */
+  setDefaultProvider(provider: string): void {
+    if (isProvider(provider)) this.defaultProvider = provider;
+  }
+
+  /** 按 agent executor 配置选择 adapter，未知 provider 回退默认。 */
+  private selectAdapter(agentExecutorProvider?: string): ExecutionAdapter {
+    const provider = isProvider(agentExecutorProvider) ? agentExecutorProvider : this.defaultProvider;
+    return this.adapters.get(provider) ?? this.adapters.get(this.defaultProvider) ?? [...this.adapters.values()][0]!;
   }
 
   /**
@@ -190,7 +219,8 @@ export class TaskEngine {
       ctx.systemPrompt = assembled.systemPrompt;
       ctx.inputPacket = assembled.inputPacket;
 
-      const result = await this.adapter.run(ctx, {
+      const adapter = this.selectAdapter(normalizeAgentExecutor(agent.executor)?.provider);
+      const result = await adapter.run(ctx, {
         onOutput: (chunk) => log.debug('agent output', { taskId: task.id, chunk: chunk.slice(0, 120) }),
         onToolCall: (name, input) => log.debug('agent tool', { taskId: task.id, name }),
       });
@@ -548,6 +578,8 @@ function normalizeAgentExecutor(raw: Record<string, unknown> | undefined): impor
   if (typeof raw.timeoutMs === 'number' && raw.timeoutMs > 0) cfg.timeoutMs = raw.timeoutMs;
   if (typeof raw.maxToolCalls === 'number' && raw.maxToolCalls > 0) cfg.maxToolCalls = raw.maxToolCalls;
   if (typeof raw.skipPermissions === 'boolean') cfg.skipPermissions = raw.skipPermissions;
+  if (typeof raw.provider === 'string' && raw.provider) cfg.provider = raw.provider;
+  if (typeof raw.baseURL === 'string' && raw.baseURL) cfg.baseURL = raw.baseURL;
   return Object.keys(cfg).length > 0 ? cfg : undefined;
 }
 
