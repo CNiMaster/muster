@@ -28,6 +28,17 @@ export interface WorkflowNode {
   createdAt: string;
 }
 
+/**
+ * 边条件类型（决定工作流推进时走哪条边）。
+ * 平台级能力，模板/用户按需配置。
+ */
+export type EdgeCondition =
+  | { type: 'always' }
+  | { type: 'auto_review'; pass: boolean }
+  | { type: 'outcome_equals'; value: string }
+  | { type: 'manual_approval' }
+  | { type: 'agent_label' };
+
 export interface WorkflowEdge {
   id: string;
   companyId: string;
@@ -35,6 +46,10 @@ export interface WorkflowEdge {
   sourceId: string;
   targetId: string;
   label: string;
+  /** 条件表达式：决定推进时是否走此边。空 = agent_label（向后兼容）。 */
+  condition: EdgeCondition;
+  /** 最大遍历次数（受控回环保护），0=不限。 */
+  maxTraversals: number;
   createdAt: string;
 }
 
@@ -56,6 +71,8 @@ interface WorkflowEdgeRow {
   source_id: string;
   target_id: string;
   label: string;
+  condition_json: string;
+  max_traversals: number;
   created_at: string;
 }
 
@@ -72,6 +89,22 @@ function nodeFromRow(r: WorkflowNodeRow): WorkflowNode {
   };
 }
 
+function parseEdgeCondition(json: string, label: string): EdgeCondition {
+  if (!json || json === '{}') {
+    return { type: 'agent_label' };
+  }
+  try {
+    const parsed = JSON.parse(json);
+    if (parsed && typeof parsed === 'object' && typeof parsed.type === 'string') {
+      return parsed as EdgeCondition;
+    }
+  } catch {
+    // fall through to default
+  }
+  void label;
+  return { type: 'agent_label' };
+}
+
 function edgeFromRow(r: WorkflowEdgeRow): WorkflowEdge {
   return {
     id: r.id,
@@ -80,6 +113,8 @@ function edgeFromRow(r: WorkflowEdgeRow): WorkflowEdge {
     sourceId: r.source_id,
     targetId: r.target_id,
     label: r.label,
+    condition: parseEdgeCondition(r.condition_json ?? '{}', r.label),
+    maxTraversals: r.max_traversals ?? 0,
     createdAt: r.created_at,
   };
 }
@@ -108,7 +143,7 @@ export function saveWorkflow(
   workflowId: string,
   input: {
     nodes: Array<{ id?: string; kind: 'step' | 'decision' | 'start' | 'end'; label: string; position: { x: number; y: number }; props?: Record<string, unknown> }>;
-    edges: Array<{ sourceId: string; targetId: string; label?: string }>;
+    edges: Array<{ sourceId: string; targetId: string; label?: string; condition?: EdgeCondition; maxTraversals?: number }>;
   },
 ): void {
   if (isOrgLocked(db, companyId)) {
@@ -158,8 +193,8 @@ export function saveWorkflow(
       }
       const edgeId = shortId('we_');
       db.prepare(
-        `INSERT INTO workflow_edge (id, company_id, workflow_id, source_id, target_id, label, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO workflow_edge (id, company_id, workflow_id, source_id, target_id, label, condition_json, max_traversals, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
         edgeId,
         companyId,
@@ -167,6 +202,8 @@ export function saveWorkflow(
         sourceDbId,
         targetDbId,
         e.label ?? '',
+        JSON.stringify(e.condition ?? { type: 'agent_label' }),
+        e.maxTraversals ?? 0,
         now
       );
     }
@@ -221,6 +258,8 @@ export function materializeWorkflowTask(
     workflowNodeId: string;
     parentTaskId?: string;
     dispatcherAgentId?: string;
+    /** 工作流已遍历边计数（回环保护用，从父 Task 继承）。 */
+    workflowVisitedEdges?: Record<string, number>;
   },
 ): Task {
   const project = getProject(db, input.projectId);
@@ -250,6 +289,7 @@ export function materializeWorkflowTask(
       ...props.inputProtocol,
       workflowId: input.workflowId,
       workflowNodeId: node.id,
+      ...(input.workflowVisitedEdges ? { workflowVisitedEdges: input.workflowVisitedEdges } : {}),
     },
     contextRefs: props.contextRefs,
     outputProtocol: props.outputProtocol,
@@ -257,24 +297,132 @@ export function materializeWorkflowTask(
   });
 }
 
-/** 已完成工作流 Task 的明确后继物化；多分支必须由结果返回精确边标签。 */
+/**
+ * 已完成工作流 Task 的明确后继物化。
+ *
+ * 条件边求值逻辑（Phase 4 增强）：
+ * - always：无条件走此边（优先级最高）
+ * - auto_review：解析 Agent 输出中的 REVIEW_STATUS: PASS/FAIL，匹配 pass 布尔
+ * - outcome_equals：匹配 Task outcome 字符串
+ * - manual_approval：暂停工作流，等待用户确认（暂作为普通分支处理）
+ * - agent_label（默认/向后兼容）：Agent 在 workflowNextEdgeLabel 中返回 label
+ *
+ * 受控回环保护：
+ * - 如果边有 maxTraversals > 0，追踪该边被遍历的次数
+ * - 超限时拒绝走该边（改走 fallback 边或终止）
+ * - 计数通过 Task 的 inputProtocol.workflowVisitedEdges 继承传递
+ */
 export function advanceWorkflowTask(db: DB, task: Task, result: AgentRunResult): Task[] {
   if (result.outcome !== 'completed') return [];
   const workflowId = task.inputProtocol.workflowId;
   const workflowNodeId = task.inputProtocol.workflowNodeId;
   if (typeof workflowId !== 'string' || typeof workflowNodeId !== 'string') return [];
-  const project = getProject(db, task.projectId);
-  const workflow = getWorkflow(db, project.companyId, workflowId);
+  const proj = getProject(db, task.projectId);
+  const workflow = getWorkflow(db, proj.companyId, workflowId);
   const outgoing = workflow.edges.filter((edge) => edge.sourceId === workflowNodeId);
   if (outgoing.length === 0) return [];
+
+  // 从 inputProtocol 继承的已遍历边计数（回环保护用）
+  const visitedEdges = (task.inputProtocol.workflowVisitedEdges ?? {}) as Record<string, number>;
+
+  // 按条件类型求值，选出匹配的边
+  const matched = selectEdgeByCondition(outgoing, result, visitedEdges);
+
+  if (matched.length === 0) {
+    // 没有条件匹配，回退到 agent_label 模式
+    return selectByAgentLabel(db, task, workflow, outgoing, result, workflowId, visitedEdges);
+  }
+
+  const selected = matched[0]!;
+  const target = workflow.nodes.find((node) => node.id === selected.targetId);
+  if (!target) throw new AppError(ErrorCode.VALIDATION, `工作流后继节点 ${selected.targetId} 不存在`);
+  if (target.kind === 'end') return [];
+
+  // 回环计数更新
+  const newVisited = { ...visitedEdges };
+  if (selected.maxTraversals > 0) {
+    newVisited[selected.id] = (newVisited[selected.id] ?? 0) + 1;
+  }
+
+  return [materializeWorkflowTask(db, {
+    projectId: task.projectId,
+    workflowId,
+    workflowNodeId: target.id,
+    parentTaskId: task.id,
+    dispatcherAgentId: task.assigneeAgentId ?? undefined,
+    workflowVisitedEdges: newVisited,
+  })];
+}
+
+/** 按条件类型求值选出匹配的边（排除超 maxTraversals 的边）。 */
+function selectEdgeByCondition(
+  edges: WorkflowEdge[],
+  result: AgentRunResult,
+  visitedEdges: Record<string, number>,
+): WorkflowEdge[] {
+  const candidates = edges.filter((e) => {
+    // 回环保护：超过 maxTraversals 的边不再可选
+    if (e.maxTraversals > 0 && (visitedEdges[e.id] ?? 0) >= e.maxTraversals) {
+      return false;
+    }
+    return true;
+  });
+
+  // 优先级：always > auto_review > outcome_equals > manual_approval > agent_label
+  // 1. always 边
+  const alwaysEdges = candidates.filter((e) => e.condition.type === 'always');
+  if (alwaysEdges.length > 0) return alwaysEdges;
+
+  // 2. auto_review 边：解析 REVIEW_STATUS
+  const reviewStatus = extractReviewStatus(result.summary);
+  if (reviewStatus) {
+    const reviewMatch = candidates.filter(
+      (e) => e.condition.type === 'auto_review' && e.condition.pass === (reviewStatus === 'PASS'),
+    );
+    if (reviewMatch.length > 0) return reviewMatch;
+  }
+
+  // 3. outcome_equals 边
+  const outcomeMatch = candidates.filter(
+    (e) => e.condition.type === 'outcome_equals' && e.condition.value === result.outcome,
+  );
+  if (outcomeMatch.length > 0) return outcomeMatch;
+
+  // 4. manual_approval：总是可选（会创建等待确认的 Task），但优先级低于自动条件
+  const approvalMatch = candidates.filter((e) => e.condition.type === 'manual_approval');
+  if (approvalMatch.length > 0 && candidates.every((e) => e.condition.type !== 'auto_review' && e.condition.type !== 'outcome_equals')) {
+    return approvalMatch;
+  }
+
+  return [];
+}
+
+/** 向后兼容的 agent_label 匹配（原有多分支逻辑）。 */
+function selectByAgentLabel(
+  db: DB,
+  task: Task,
+  workflow: { nodes: WorkflowNode[]; edges: WorkflowEdge[] },
+  outgoing: WorkflowEdge[],
+  result: AgentRunResult,
+  workflowId: string,
+  visitedEdges: Record<string, number>,
+): Task[] {
   let selected: WorkflowEdge;
-  if (outgoing.length === 1) {
-    selected = outgoing[0]!;
+  // 过滤掉超 maxTraversals 的边
+  const available = outgoing.filter(
+    (e) => e.maxTraversals === 0 || (visitedEdges[e.id] ?? 0) < e.maxTraversals,
+  );
+  if (available.length === 0) {
+    // 所有边都超限了
+    throw new AppError(ErrorCode.VALIDATION, `工作流节点所有后继边已达到最大遍历次数，请检查是否存在死循环`);
+  }
+  if (available.length === 1) {
+    selected = available[0]!;
   } else {
     if (!result.workflowNextEdgeLabel) {
-      throw new AppError(ErrorCode.VALIDATION, `工作流节点存在 ${outgoing.length} 个后继，必须明确 workflowNextEdgeLabel`);
+      throw new AppError(ErrorCode.VALIDATION, `工作流节点存在 ${available.length} 个后继，必须明确 workflowNextEdgeLabel`);
     }
-    const matches = outgoing.filter((edge) => edge.label === result.workflowNextEdgeLabel);
+    const matches = available.filter((edge) => edge.label === result.workflowNextEdgeLabel);
     if (matches.length !== 1) {
       throw new AppError(ErrorCode.VALIDATION, `工作流连线标签无唯一匹配：${result.workflowNextEdgeLabel}`);
     }
@@ -283,13 +431,32 @@ export function advanceWorkflowTask(db: DB, task: Task, result: AgentRunResult):
   const target = workflow.nodes.find((node) => node.id === selected.targetId);
   if (!target) throw new AppError(ErrorCode.VALIDATION, `工作流后继节点 ${selected.targetId} 不存在`);
   if (target.kind === 'end') return [];
+
+  // 回环计数更新
+  const newVisited = { ...visitedEdges };
+  if (selected.maxTraversals > 0) {
+    newVisited[selected.id] = (newVisited[selected.id] ?? 0) + 1;
+  }
+
   return [materializeWorkflowTask(db, {
     projectId: task.projectId,
     workflowId,
     workflowNodeId: target.id,
     parentTaskId: task.id,
     dispatcherAgentId: task.assigneeAgentId ?? undefined,
+    workflowVisitedEdges: newVisited,
   })];
+}
+
+/** 从 Agent 输出中解析 REVIEW_STATUS 标记（借鉴 FreeBuddy）。 */
+function extractReviewStatus(summary: string | undefined): 'PASS' | 'FAIL' | null {
+  if (!summary) return null;
+  if (/<<<REVIEW_FAIL>>>/i.test(summary)) return 'FAIL';
+  if (/<<<REVIEW_PASS>>>/i.test(summary)) return 'PASS';
+  const matches = [...summary.matchAll(/REVIEW[\s_-]*STATUS\s*:\s*(PASS|FAIL)/gi)];
+  const last = matches.at(-1)?.[1];
+  if (!last) return null;
+  return last.toUpperCase() as 'PASS' | 'FAIL';
 }
 
 export function startWorkflow(

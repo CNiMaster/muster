@@ -781,6 +781,8 @@ export interface WorkflowEdge {
   sourceId: string;
   targetId: string;
   label: string;
+  condition?: { type: string; [key: string]: unknown };
+  maxTraversals?: number;
   createdAt: string;
 }
 
@@ -809,7 +811,7 @@ export function useSaveWorkflow() {
       companyId: string;
       workflowId: string;
       nodes: Array<{ id?: string; kind: 'step' | 'decision' | 'start' | 'end'; label: string; position: { x: number; y: number }; props?: Record<string, unknown> }>;
-      edges: Array<{ sourceId: string; targetId: string; label?: string }>;
+      edges: Array<{ sourceId: string; targetId: string; label?: string; condition?: Record<string, unknown>; maxTraversals?: number }>;
     }) =>
       api.put<{ ok: boolean }>(`/api/companies/${companyId}/workflows/${workflowId}`, { nodes, edges }),
     onSuccess: (_d, vars) => {

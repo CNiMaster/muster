@@ -24,6 +24,8 @@ const saveWorkflowSchema = z.object({
       sourceId: z.string(),
       targetId: z.string(),
       label: z.string().optional(),
+      condition: z.record(z.unknown()).optional(),
+      maxTraversals: z.number().int().min(0).optional(),
     })
   ),
 });
@@ -46,7 +48,13 @@ workflowsRouter.put(
     const workflowId = param(req, 'workflowId');
     const input = saveWorkflowSchema.parse(req.body);
 
-    saveWorkflow(db, companyId, workflowId, input);
+    saveWorkflow(db, companyId, workflowId, {
+      ...input,
+      edges: input.edges.map((e) => ({
+        ...e,
+        condition: e.condition as ReturnType<typeof JSON.parse> | undefined,
+      })),
+    });
     // PRD:359 保存前自动校验：不阻断半成品保存，但把 errors 返回前端展示
     const errors = [
       ...validateWorkflow(db, companyId, workflowId),

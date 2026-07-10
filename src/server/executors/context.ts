@@ -15,6 +15,7 @@ import { getArtifactByPath } from '../domain/artifact';
 import { readArtifactContent } from '../domain/artifact-content';
 import { assertCanReadSource, listProjectReferences } from '../domain/project';
 import { buildBridgePromptSection } from '../bridge';
+import { getWorkflow, type EdgeCondition } from '../domain/workflow';
 
 const MAX_REFERENCE_BYTES = 64 * 1024;
 const MAX_TOTAL_REFERENCE_BYTES = 256 * 1024;
@@ -112,12 +113,44 @@ export function assembleContext(
     const parent = loadTask(db, task.parentTaskId);
     inputPacket.parentTask = { id: parent.id, seq: parent.seq, title: parent.title, summary: parent.summary };
   }
+  // 工作流分支注入：让 Agent 知道当前节点有哪些可选出边
+  const wfId = task.inputProtocol.workflowId as string | undefined;
+  const wfNodeId = task.inputProtocol.workflowNodeId as string | undefined;
+  if (wfId && wfNodeId) {
+    try {
+      const wf = getWorkflow(db, project.companyId, wfId);
+      const branches = wf.edges
+        .filter((e) => e.sourceId === wfNodeId)
+        .map((e) => ({
+          label: e.label,
+          condition: describeCondition(e.condition),
+          maxTraversals: e.maxTraversals,
+        }));
+      if (branches.length > 0) {
+        inputPacket.workflowBranches = branches;
+      }
+    } catch {
+      // workflow 可能未配置，忽略
+    }
+  }
 
   return {
     systemPrompt,
     inputPacket,
     referencedArtifacts,
   };
+}
+
+/** 人类可读的条件描述（注入给 Agent 辅助决策）。 */
+function describeCondition(condition: EdgeCondition): string {
+  switch (condition.type) {
+    case 'always': return '无条件走此边';
+    case 'auto_review': return `当 REVIEW_STATUS: ${condition.pass ? 'PASS' : 'FAIL'} 时走此边`;
+    case 'outcome_equals': return `当 outcome=${condition.value} 时走此边`;
+    case 'manual_approval': return '需要用户手动确认';
+    case 'agent_label': return '由你在 workflowNextEdgeLabel 中返回此 label 选择';
+    default: return '未知条件';
+  }
 }
 
 function loadReferencedArtifacts(db: DB, task: Task): Record<string, string> {

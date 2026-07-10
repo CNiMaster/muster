@@ -39,6 +39,19 @@ const NODE_KIND_LABELS = {
   decision: '决策条件',
 };
 
+/** 将用户输入的条件类型字符串解析为 condition 对象。 */
+function parseConditionInput(type: string, label: string): Record<string, unknown> {
+  switch (type.trim().toLowerCase()) {
+    case 'always': return { type: 'always' };
+    case 'auto_review':
+      return { type: 'auto_review', pass: label === '通过' || label === '是' || /pass/i.test(label) };
+    case 'outcome_equals':
+      return { type: 'outcome_equals', value: label || 'completed' };
+    case 'manual_approval': return { type: 'manual_approval' };
+    default: return { type: 'agent_label' };
+  }
+}
+
 export function WorkflowGraphPage(): React.ReactElement {
   const { companyId = '', workflowId = 'main' } = useParams();
   const { data: company } = useCompany(companyId);
@@ -103,6 +116,14 @@ export function WorkflowGraphPage(): React.ReactElement {
       if (readonly || !conn.source || !conn.target) return;
       const isDecision = nodes.find((n) => n.id === conn.source)?.data?.kind === 'decision';
       const label = isDecision ? prompt('请输入决策连线标签 (如：是 / 否)', '是') || '' : '';
+      // 询问条件类型（可选）
+      const conditionType = isDecision
+        ? prompt('条件类型（留空=Agent选择，可选：always/auto_review/outcome_equals/manual_approval）', '') || ''
+        : '';
+      const condition = parseConditionInput(conditionType, label);
+      const maxTraversals = isDecision && conditionType
+        ? Number(prompt('最大遍历次数（0=不限，用于回环保护，建议3-5）', '0') || '0')
+        : 0;
       const newEdge: Edge = {
         id: `we_${Date.now()}`,
         source: conn.source,
@@ -111,6 +132,7 @@ export function WorkflowGraphPage(): React.ReactElement {
         targetHandle: conn.targetHandle,
         label,
         animated: isDecision,
+        data: { condition, maxTraversals },
       };
       setEdges((eds) => addEdge(newEdge, eds));
     },
@@ -127,22 +149,22 @@ export function WorkflowGraphPage(): React.ReactElement {
 
   // 节点自定义风格映射
   function getStyleForNode(kind: string): React.CSSProperties {
-    const base = {
-      padding: '10px 14px',
-      borderRadius: '8px',
-      fontSize: '12px',
-      fontWeight: '500',
-      textAlign: 'center' as const,
+    const base: React.CSSProperties = {
+      padding: 'var(--space-2) var(--space-3)',
+      borderRadius: 'var(--radius-lg)',
+      fontSize: 'var(--text-xs)',
+      fontWeight: 'var(--fw-medium)',
+      textAlign: 'center',
       boxShadow: 'var(--shadow-1)',
       color: 'var(--fg)',
     };
     switch (kind) {
       case 'start':
-        return { ...base, border: '2px solid var(--ok)', background: 'rgba(52, 211, 153, 0.08)' };
+        return { ...base, border: '2px solid var(--ok)', background: 'var(--ok-bg)' };
       case 'end':
-        return { ...base, border: '2px solid var(--err)', background: 'rgba(239, 68, 68, 0.08)' };
+        return { ...base, border: '2px solid var(--err)', background: 'var(--err-bg)' };
       case 'decision':
-        return { ...base, border: '2px solid var(--info)', background: 'rgba(59, 130, 246, 0.08)' };
+        return { ...base, border: '2px solid var(--info)', background: 'var(--info-bg)' };
       default: // step
         return { ...base, border: '1px solid var(--border)', background: 'var(--bg-elev)' };
     }
@@ -269,6 +291,8 @@ export function WorkflowGraphPage(): React.ReactElement {
       sourceId: e.source,
       targetId: e.target,
       label: e.label ? String(e.label) : undefined,
+      condition: (e.data as Record<string, unknown> | undefined)?.condition as Record<string, unknown> | undefined,
+      maxTraversals: (e.data as Record<string, unknown> | undefined)?.maxTraversals as number | undefined,
     }));
 
     // 1. 本地快速前置校验（保证至少有 start/end 节点）
@@ -318,7 +342,7 @@ export function WorkflowGraphPage(): React.ReactElement {
           <h1>公司工作流图编辑器</h1>
           <p className="subtitle" style={{ margin: 0 }}>
             分组 ID: <Badge tone="info">{workflowId}</Badge>
-            {readonly && <Badge tone="warn" style={{ marginLeft: 8 }}>上班只读</Badge>}
+            {readonly && <Badge tone="warn" style={{ marginLeft: 'var(--space-2)' }}>上班只读</Badge>}
           </p>
         </div>
         <div className="page-actions">
@@ -356,19 +380,9 @@ export function WorkflowGraphPage(): React.ReactElement {
 
       {/* 校验错误展示区 */}
       {errors && errors.length > 0 && (
-        <div style={{
-          background: 'rgba(239, 68, 68, 0.08)',
-          border: '1px solid var(--err)',
-          borderRadius: 'var(--radius-md)',
-          padding: 'var(--space-3) var(--space-4)',
-          marginBottom: 'var(--space-3)',
-          fontSize: 'var(--text-xs)',
-          color: 'var(--err)',
-          maxHeight: '120px',
-          overflowY: 'auto'
-        }}>
-          <strong style={{ display: 'block', marginBottom: '4px' }}>⚠️ 发现工作流图结构异常：</strong>
-          <ul style={{ margin: 0, paddingLeft: '16px' }}>
+        <div className="workflow-errors">
+          <strong className="workflow-errors-title">⚠️ 发现工作流图结构异常：</strong>
+          <ul className="workflow-errors-list">
             {errors.map((e, idx) => (
               <li key={idx}>{e}</li>
             ))}
@@ -377,8 +391,8 @@ export function WorkflowGraphPage(): React.ReactElement {
       )}
 
       {/* 主工作区：左侧画布，右侧属性 */}
-      <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 340px', gap: 'var(--space-4)', minHeight: 0 }}>
-        <div className="graph-canvas" style={{ border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', height: '100%' }}>
+      <div className="workflow-workspace">
+        <div className="graph-canvas workflow-canvas">
           {nodes.length === 0 && (
             <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1, pointerEvents: 'none' }}>
               <EmptyState
@@ -499,16 +513,9 @@ export function WorkflowGraphPage(): React.ReactElement {
             </div>
           ) : (
             <div className="form-stack">
-              <div style={{
-                background: 'var(--bg-soft)',
-                padding: 'var(--space-3)',
-                borderRadius: 'var(--radius-md)',
-                fontSize: 'var(--text-xs)',
-                color: 'var(--fg-muted)',
-                marginBottom: 'var(--space-2)'
-              }}>
+              <div className="workflow-helper">
                 <strong>💡 操作指南：</strong>
-                <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
+                <ul className="workflow-helper-list">
                   <li>在下方创建节点并拖拽定位。</li>
                   <li>从节点边缘的小圆点拉出连线，连接其他节点。</li>
                   <li>双击连线可快速删除边。</li>
@@ -516,7 +523,7 @@ export function WorkflowGraphPage(): React.ReactElement {
                 </ul>
               </div>
 
-              <h4 style={{ margin: 'var(--space-2) 0 var(--space-1) 0', fontSize: 'var(--text-xs)', textTransform: 'uppercase', color: 'var(--fg-subtle)' }}>
+              <h4 className="workflow-section-title">
                 添加新节点
               </h4>
 
