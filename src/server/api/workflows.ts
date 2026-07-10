@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { asyncHandler, param } from './middleware';
 import { getDb } from '../db/client';
 import { getWorkflow, saveWorkflow, startWorkflow, validateWorkflow, validateWorkflowResponsibility } from '../domain/workflow';
+import type { EdgeCondition } from '../domain/workflow';
 
 export const workflowsRouter = Router({ mergeParams: true });
 
@@ -52,7 +53,7 @@ workflowsRouter.put(
       ...input,
       edges: input.edges.map((e) => ({
         ...e,
-        condition: e.condition as ReturnType<typeof JSON.parse> | undefined,
+        condition: e.condition as EdgeCondition | undefined,
       })),
     });
     // PRD:359 保存前自动校验：不阻断半成品保存，但把 errors 返回前端展示

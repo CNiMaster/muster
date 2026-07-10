@@ -7,7 +7,7 @@
  - 假执行器驱动闭环
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { makeTestDb } from './setup';
+import { makeTestDb, makeTempGitRepo } from './setup';
 import type { DB } from '../../src/server/db/client';
 import { createCompany, clockIn } from '../../src/server/domain/company';
 import { createAgent } from '../../src/server/domain/agent';
@@ -44,7 +44,7 @@ function fixture() {
   const c = createCompany(db, { name: 'co' });
   const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
   const writer = createAgent(db, { companyId: c.id, name: 'writer', role: 'writer' });
-  const project = createProject(db, { companyId: c.id, name: 'novel', rootDir: '/tmp/n', firstAgentId: lead.id });
+  const project = createProject(db, { companyId: c.id, name: 'novel', rootDir: makeTempGitRepo(), firstAgentId: lead.id });
   return { c, lead, writer, project };
 }
 

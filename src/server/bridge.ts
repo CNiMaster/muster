@@ -108,6 +108,11 @@ bridgeRouter.get('/:action', (req, res) => {
   }
 
   const taskId = (req.query.taskId as string | undefined) ?? null;
+  // 基本格式校验：taskId 必须是合法的 shortId 前缀格式（防注入）
+  if (taskId && !/^[a-z]{2,4}_[a-zA-Z0-9]+$/.test(taskId)) {
+    res.status(400).json({ error: 'Invalid taskId format' });
+    return;
+  }
   const text = (req.query.text as string | undefined) ?? '';
   const filePath = (req.query.path as string | undefined) ?? '';
 

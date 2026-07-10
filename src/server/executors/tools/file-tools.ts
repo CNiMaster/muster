@@ -70,7 +70,7 @@ export const FILE_TOOLS: ToolDefinition[] = [
             description: '要预览的文件路径（action=preview 时必填）',
           },
         },
-        required: ['action', 'text'],
+        required: ['action'],
       },
     },
   },
@@ -294,6 +294,13 @@ export function executeFileTool(
       const action = String(call.args.action ?? 'progress');
       const text = String(call.args.text ?? '');
       const filePath = String(call.args.path ?? '');
+      // 校验：progress/notify 需要 text，preview 需要 path
+      if ((action === 'progress' || action === 'notify') && !text) {
+        return { toolCallId: call.id, name: call.name, content: `错误：action=${action} 需要 text 参数` };
+      }
+      if (action === 'preview' && !filePath) {
+        return { toolCallId: call.id, name: call.name, content: '错误：action=preview 需要 path 参数' };
+      }
       try {
         const params = new URLSearchParams({ taskId: loopback.taskId });
         if (action === 'preview' && filePath) {

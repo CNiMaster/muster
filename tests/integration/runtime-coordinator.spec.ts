@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { DB } from '../../src/server/db/client';
-import { makeTestDb } from './setup';
+import { makeTestDb, makeTempGitRepo } from './setup';
 import { createNovelCompany } from '../../src/server/domain/novel-template';
 import { createProject, updateProject } from '../../src/server/domain/project';
 import { transitionCompany, getCompany } from '../../src/server/domain/company';
@@ -25,7 +25,7 @@ describe('ProjectRuntimeCoordinator', () => {
     const project = createProject(db, {
       companyId: novel.company.id,
       name: 'book',
-      rootDir: '/tmp/muster-coordinator-online',
+      rootDir: makeTempGitRepo(),
     });
     transitionCompany(db, novel.company.id, 'online');
     const engine = new TaskEngine(db, new FakeExecutor().script([]));
@@ -43,7 +43,7 @@ describe('ProjectRuntimeCoordinator', () => {
     createProject(db, {
       companyId: novel.company.id,
       name: 'book',
-      rootDir: '/tmp/muster-coordinator-drain',
+      rootDir: makeTempGitRepo(),
     });
     transitionCompany(db, novel.company.id, 'online');
     transitionCompany(db, novel.company.id, 'draining');
@@ -59,7 +59,7 @@ describe('ProjectRuntimeCoordinator', () => {
     const project = createProject(db, {
       companyId: novel.company.id,
       name: 'book',
-      rootDir: '/tmp/muster-coordinator-review',
+      rootDir: makeTempGitRepo(),
     });
     updateProject(db, project.id, { settings: { reviewTaskInterval: 2 } });
     for (let i = 0; i < 2; i++) {
@@ -82,7 +82,7 @@ describe('ProjectRuntimeCoordinator', () => {
     const project = createProject(db, {
       companyId: novel.company.id,
       name: 'book',
-      rootDir: '/tmp/muster-coordinator-brainstorm',
+      rootDir: makeTempGitRepo(),
     });
     const discussion = startBrainstorm(db, {
       projectId: project.id,
@@ -107,7 +107,7 @@ describe('ProjectRuntimeCoordinator', () => {
     const project = createProject(db, {
       companyId: novel.company.id,
       name: 'book',
-      rootDir: '/tmp/muster-coordinator-running-brainstorm',
+      rootDir: makeTempGitRepo(),
     });
     const discussion = startBrainstorm(db, {
       projectId: project.id,

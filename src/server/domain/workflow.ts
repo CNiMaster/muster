@@ -389,8 +389,12 @@ function selectEdgeByCondition(
   if (outcomeMatch.length > 0) return outcomeMatch;
 
   // 4. manual_approval：总是可选（会创建等待确认的 Task），但优先级低于自动条件
+  //    仅当不存在 auto_review/outcome_equals 类型的候选边时才走此分支
   const approvalMatch = candidates.filter((e) => e.condition.type === 'manual_approval');
-  if (approvalMatch.length > 0 && candidates.every((e) => e.condition.type !== 'auto_review' && e.condition.type !== 'outcome_equals')) {
+  if (
+    approvalMatch.length > 0 &&
+    !candidates.some((e) => e.condition.type === 'auto_review' || e.condition.type === 'outcome_equals')
+  ) {
     return approvalMatch;
   }
 
