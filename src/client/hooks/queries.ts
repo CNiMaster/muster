@@ -162,6 +162,7 @@ export function useUpdateAgent() {
       role?: string;
       responsibilities?: string;
       systemPrompt?: string;
+      stance?: string;
       skills?: string[];
       tools?: string[];
       permissions?: Record<string, unknown>;

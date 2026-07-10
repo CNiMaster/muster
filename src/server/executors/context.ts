@@ -42,6 +42,14 @@ export function assembleContext(
   sp.push('# 项目说明', project.description || project.name, '');
   if (agent) {
     sp.push('# 你的职责', `岗位：${agent.role}`, agent.responsibilities || '', '');
+    if (agent.stance) {
+      sp.push(
+        '# 你的立场',
+        agent.stance,
+        '在讨论和协作中，你必须坚持以上立场。即使其他员工持不同观点，也要从该立场出发论证。只有当证据明确反驳时才可有限度地调整。',
+        '',
+      );
+    }
     if (agent.skills.length > 0) sp.push('# 指定技能', agent.skills.join('、'), '');
     if (agent.tools.length > 0) sp.push('# 可用能力声明', agent.tools.join('、'), '');
     if (agent.systemPrompt) sp.push(agent.systemPrompt);

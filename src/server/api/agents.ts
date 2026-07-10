@@ -36,6 +36,7 @@ const createAgentSchema = z.object({
   canDispatch: z.boolean().optional(),
   executor: z.record(z.unknown()).optional(),
   isInspector: z.boolean().optional(),
+  stance: z.string().optional(),
 });
 
 agentsRouter.get(

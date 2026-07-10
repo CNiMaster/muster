@@ -161,6 +161,7 @@ export function CompanyPage(): React.ReactElement {
         role: editingAgent.role,
         responsibilities: editingAgent.responsibilities,
         systemPrompt: editingAgent.systemPrompt,
+        stance: editingAgent.stance,
         skills: editingAgent.skills,
         tools: editingAgent.tools,
         permissions: editingAgent.permissions,
@@ -458,6 +459,14 @@ export function CompanyPage(): React.ReactElement {
                 className="mu-input mu-textarea"
                 value={editingAgent.systemPrompt}
                 onChange={(event) => setEditingAgent({ ...editingAgent, systemPrompt: event.target.value })}
+              />
+            </Field>
+            <Field label="立场 / 视角锁定（讨论/辩论时坚持的立场）">
+              <textarea
+                className="mu-input mu-textarea"
+                value={editingAgent.stance ?? ''}
+                placeholder="留空则不锁定立场。例如：你坚持现实主义文风，反对过度商业化。在讨论剧情走向时，始终从读者体验角度出发论证。"
+                onChange={(event) => setEditingAgent({ ...editingAgent, stance: event.target.value })}
               />
             </Field>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>

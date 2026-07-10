@@ -28,6 +28,7 @@ export interface Agent {
   contactAllow: string[];
   availabilityState: 'online' | 'draining' | 'off';
   executor: AgentExecutorJson;
+  stance: string;
 }
 
 /** 员工级执行器配置（与 server AgentExecutorJson 对齐）。 */

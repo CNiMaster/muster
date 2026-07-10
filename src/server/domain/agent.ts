@@ -25,6 +25,8 @@ export interface AgentDefinition {
   canDispatch: boolean;
   executor: Record<string, unknown>;
   isInspector: boolean;
+  /** 立场/视角：讨论/辩论时锁定 Agent 观点，防止盲目跟风。空 = 不注入。 */
+  stance: string;
   availabilityState: 'online' | 'draining' | 'off';
   createdAt: string;
   updatedAt: string;
@@ -66,6 +68,7 @@ interface AgentRow {
   can_dispatch: number;
   executor_json: string;
   is_inspector: number;
+  stance: string;
   availability_state: 'online' | 'draining' | 'off';
   created_at: string;
   updated_at: string;
@@ -87,6 +90,7 @@ function fromRow(r: AgentRow): AgentDefinition {
     canDispatch: r.can_dispatch === 1,
     executor: JSON.parse(r.executor_json ?? '{}'),
     isInspector: r.is_inspector === 1,
+    stance: r.stance ?? '',
     availabilityState: r.availability_state,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -107,6 +111,7 @@ export interface CreateAgentInput {
   canDispatch?: boolean;
   executor?: Record<string, unknown>;
   isInspector?: boolean;
+  stance?: string;
 }
 
 function assertUnlocked(db: DB, companyId: string): void {
@@ -189,8 +194,8 @@ export function createAgent(db: DB, input: CreateAgentInput): AgentDefinition {
     `INSERT INTO agent_definition
       (id, company_id, department_id, name, role, responsibilities, system_prompt,
        skills_json, tools_json, permissions_json, contact_allow_json, can_dispatch,
-       executor_json, is_inspector, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       executor_json, is_inspector, stance, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
   ).run(
     id, input.companyId, input.departmentId ?? null, input.name, input.role,
     input.responsibilities ?? '', input.systemPrompt ?? '',
@@ -199,6 +204,7 @@ export function createAgent(db: DB, input: CreateAgentInput): AgentDefinition {
     input.canDispatch === false ? 0 : 1,
     JSON.stringify(input.executor ?? {}),
     input.isInspector ? 1 : 0,
+    input.stance ?? '',
     now, now,
   );
   return getAgent(db, id);
@@ -234,13 +240,14 @@ export function updateAgent(
     `UPDATE agent_definition SET
       department_id=?, name=?, role=?, responsibilities=?, system_prompt=?,
       skills_json=?, tools_json=?, permissions_json=?, contact_allow_json=?,
-      can_dispatch=?, executor_json=?, is_inspector=?, updated_at=?
+      can_dispatch=?, executor_json=?, is_inspector=?, stance=?, updated_at=?
      WHERE id=?`,
   ).run(
     next.departmentId, next.name, next.role, next.responsibilities, next.systemPrompt,
     JSON.stringify(next.skills), JSON.stringify(next.tools),
     JSON.stringify(next.permissions), JSON.stringify(next.contactAllow),
     next.canDispatch ? 1 : 0, JSON.stringify(next.executor), next.isInspector ? 1 : 0,
+    next.stance ?? '',
     next.updatedAt, id,
   );
   return getAgent(db, id);
