@@ -32,6 +32,15 @@ export interface ExecutionContext {
    * 只存变量名，绝不存明文 key。
    */
   apiKeyEnv?: string;
+  /**
+   * Agent Bridge loopback 配置（Phase 3）。
+   * Agent 执行中可通过 Bash curl 调用此 URL 通知宿主进度。
+   * 注入到 systemPrompt 和 inputPacket 中。
+   */
+  loopback?: {
+    baseUrl: string;
+    taskId: string;
+  };
 }
 
 /**

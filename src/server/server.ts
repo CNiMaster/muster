@@ -32,6 +32,7 @@ import { workflowsRouter } from './api/workflows';
 import { settingsRouter } from './api/settings';
 import { departmentsRouter } from './api/departments';
 import { setupAssistantRouter } from './api/setup-assistant';
+import { bridgeRouter } from './bridge';
 import { asyncHandler, errorMiddleware, param } from './api/middleware';
 import { realtime } from './realtime';
 import { getDb } from './db/client';
@@ -131,6 +132,9 @@ async function createApp(): Promise<AppHandle> {
   app.use('/api/settings', settingsRouter);
   app.use('/api/setup-assistant', setupAssistantRouter);
 
+  // Agent Bridge：Agent 通过 curl 调用 /bridge/<action> 反馈进度
+  app.use('/bridge', bridgeRouter);
+
   app.use(errorMiddleware);
 
   // 静态前端
@@ -157,6 +161,9 @@ async function createApp(): Promise<AppHandle> {
 async function main(): Promise<void> {
   const { app, engine, triggerScheduler, coordinator } = await createApp();
   const httpServer = createServer(app);
+
+  // Agent Bridge loopback 端口注入
+  engine.serverPort = SERVER_CONFIG.port;
 
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
   realtime.attach(wss);

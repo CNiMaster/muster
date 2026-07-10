@@ -47,6 +47,33 @@ export interface ToolResult {
 
 /** 全部文件工具的 OpenAI function 定义。 */
 export const FILE_TOOLS: ToolDefinition[] = [
+  // Agent Bridge：让 Agent 主动通知宿主进度
+  {
+    type: 'function',
+    function: {
+      name: 'notify_host',
+      description: '向宿主发送进度通知。用于长任务中报告当前进展，让用户实时了解状态。',
+      parameters: {
+        type: 'object',
+        properties: {
+          action: {
+            type: 'string',
+            enum: ['progress', 'notify', 'preview'],
+            description: 'progress=进度更新, notify=toast通知, preview=请求预览文件',
+          },
+          text: {
+            type: 'string',
+            description: '进度消息或通知文本（action=progress/notify 时必填）',
+          },
+          path: {
+            type: 'string',
+            description: '要预览的文件路径（action=preview 时必填）',
+          },
+        },
+        required: ['action', 'text'],
+      },
+    },
+  },
   {
     type: 'function',
     function: {
@@ -158,11 +185,13 @@ const MAX_READ_BYTES = 64 * 1024;
  执行单个工具调用，返回结果内容。
  - workingDir：worktree 根目录。
  - readonlyDirs：只读目录列表（写入这些路径会被拒绝）。
+ - loopback：Agent Bridge 配置（notify_host 工具用）。
  */
 export function executeFileTool(
   call: ToolCall,
   workingDir: string,
   readonlyDirs: string[] = [],
+  loopback?: { baseUrl: string; taskId: string },
 ): ToolResult {
   const abs = (rel: string): string => resolve(workingDir, rel);
 
@@ -257,6 +286,32 @@ export function executeFileTool(
         content: 'Task 完成',
         doneResult: parsed.data,
       };
+    }
+    case 'notify_host': {
+      if (!loopback) {
+        return { toolCallId: call.id, name: call.name, content: '宿主桥接未配置，跳过通知' };
+      }
+      const action = String(call.args.action ?? 'progress');
+      const text = String(call.args.text ?? '');
+      const filePath = String(call.args.path ?? '');
+      try {
+        const params = new URLSearchParams({ taskId: loopback.taskId });
+        if (action === 'preview' && filePath) {
+          params.set('path', filePath);
+        } else if (text) {
+          params.set('text', text);
+        }
+        // fire-and-forget HTTP 调用，不阻塞工具循环
+        const url = `${loopback.baseUrl}/bridge/${action}?${params.toString()}`;
+        fetch(url).catch(() => { /* best-effort */ });
+        return {
+          toolCallId: call.id,
+          name: call.name,
+          content: `已发送${action === 'preview' ? '预览请求' : action === 'notify' ? '通知' : '进度'}：${text || filePath}`,
+        };
+      } catch (e) {
+        return { toolCallId: call.id, name: call.name, content: `通知发送失败：${(e as Error).message}` };
+      }
     }
     default:
       return { toolCallId: call.id, name: call.name, content: `错误：未知工具 ${call.name}` };

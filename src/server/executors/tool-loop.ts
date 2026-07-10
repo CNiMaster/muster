@@ -48,6 +48,8 @@ export interface ToolLoopOptions {
   workingDir: string;
   /** 只读目录。 */
   readonlyDirs?: string[];
+  /** Agent Bridge loopback 配置（notify_host 工具用）。 */
+  loopback?: { baseUrl: string; taskId: string };
   /** 最大工具调用轮数。 */
   maxToolCalls: number;
   /** 超时 ms。 */
@@ -112,7 +114,7 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult
           // 参数解析失败，用空对象
         }
         const call: ToolCall = { id: tc.id, name: tc.function.name, args: parsedArgs };
-        const tr: ToolResult = executeFileTool(call, opts.workingDir, opts.readonlyDirs ?? []);
+        const tr: ToolResult = executeFileTool(call, opts.workingDir, opts.readonlyDirs ?? [], opts.loopback);
         // 把 tool result 加回 messages
         messages.push({
           role: 'tool',

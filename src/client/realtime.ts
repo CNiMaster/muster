@@ -1,12 +1,17 @@
 import { useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { RealtimeEvent } from '../shared/types';
+import { toast } from './components/Button';
 
 export type QueryKey = readonly unknown[];
 
 /** 把服务端事件精确映射到受影响的 React Query 缓存，避免全局刷新。 */
 export function queryKeysForRealtimeEvent(event: RealtimeEvent): QueryKey[] {
   const keys: QueryKey[] = [];
+  // Agent Bridge 事件：刷活动流
+  if (event.type?.startsWith('bridge.')) {
+    keys.push(['project-events'], ['company-events']);
+  }
   if (event.projectId) {
     keys.push(
       ['tasks', event.projectId],
@@ -50,6 +55,13 @@ export function RealtimeSync(): null {
           const event = JSON.parse(String(message.data)) as RealtimeEvent;
           for (const queryKey of queryKeysForRealtimeEvent(event)) {
             void queryClient.invalidateQueries({ queryKey });
+          }
+          // Agent Bridge notify 事件 → 弹 toast
+          if (event.type === 'bridge.notify') {
+            const payload = event.payload as Record<string, unknown> | undefined;
+            if (payload && typeof payload.text === 'string') {
+              toast('info', payload.text);
+            }
           }
         } catch {
           // 忽略非协议消息，保持连接继续处理后续事件。

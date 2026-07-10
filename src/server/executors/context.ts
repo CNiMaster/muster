@@ -14,6 +14,7 @@ import { getTask as loadTask } from '../domain/task';
 import { getArtifactByPath } from '../domain/artifact';
 import { readArtifactContent } from '../domain/artifact-content';
 import { assertCanReadSource, listProjectReferences } from '../domain/project';
+import { buildBridgePromptSection } from '../bridge';
 
 const MAX_REFERENCE_BYTES = 64 * 1024;
 const MAX_TOTAL_REFERENCE_BYTES = 256 * 1024;
@@ -28,7 +29,13 @@ export interface AssembledContext {
 export function assembleContext(
   db: DB,
   task: Task,
-  options: { threadId?: string; sessionIdHint?: string; referencedArtifactPaths?: string[] } = {},
+  options: {
+    threadId?: string;
+    sessionIdHint?: string;
+    referencedArtifactPaths?: string[];
+    /** Agent Bridge loopback 配置（注入到 systemPrompt 的能力清单）。 */
+    loopback?: { baseUrl: string; taskId: string };
+  } = {},
 ): AssembledContext {
   const project = getProject(db, task.projectId);
   const company = getCompany(db, project.companyId);
@@ -54,6 +61,11 @@ export function assembleContext(
     if (agent.tools.length > 0) sp.push('# 可用能力声明', agent.tools.join('、'), '');
     if (agent.systemPrompt) sp.push(agent.systemPrompt);
   }
+  // Agent Bridge：注入桥接能力清单（让 Agent 可主动通知宿主进度）
+  if (options.loopback) {
+    sp.push(buildBridgePromptSection(options.loopback.baseUrl), '');
+  }
+
   sp.push(
     '# 输出契约',
     '你必须返回 JSON，符合 AgentRunResult 结构：',

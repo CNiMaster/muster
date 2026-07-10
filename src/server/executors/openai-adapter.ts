@@ -124,6 +124,7 @@ export class OpenAICompatibleAdapter implements ExecutionAdapter {
         timeoutMs,
         signal: ctx.signal,
         model,
+        loopback: ctx.loopback,
       });
 
       const durationMs = Date.now() - start;

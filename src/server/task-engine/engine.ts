@@ -59,6 +59,8 @@ export class TaskEngine {
   private pollTimer: NodeJS.Timeout | null = null;
   private pumping = new Set<string>(); // 正在 pump 的 threadId，防重入
   private activeRuns = new Map<string, AbortController>();
+  /** 服务端端口（用于 Agent Bridge loopback URL 构造） */
+  serverPort: number = 3456;
 
   /**
    多 provider adapter 注册表（Batch 10）。
@@ -209,6 +211,11 @@ export class TaskEngine {
         // PRD Phase 3：员工级执行器配置 + 用户级凭据引用
         agentExecutor: normalizeAgentExecutor(agent.executor),
         apiKeyEnv: extractApiKeyEnv(agent.executor),
+        // Agent Bridge loopback 配置
+        loopback: {
+          baseUrl: `http://127.0.0.1:${this.serverPort}`,
+          taskId: task.id,
+        },
       };
       const runController = new AbortController();
       this.activeRuns.set(task.id, runController);
@@ -216,6 +223,7 @@ export class TaskEngine {
       const assembled = assembleContext(this.db, ctx.task, {
         threadId: thread.id,
         sessionIdHint: ctx.sessionIdHint,
+        loopback: ctx.loopback,
       });
       ctx.systemPrompt = assembled.systemPrompt;
       ctx.inputPacket = assembled.inputPacket;
