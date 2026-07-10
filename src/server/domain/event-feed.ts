@@ -34,6 +34,9 @@ export const KEY_EVENT_KINDS = new Set([
   'lease_recovered',
   'rolled_back',
   'escalated',
+  // Agent 间协作活动
+  'spawned_child',
+  'suggestion_accepted',
 ]);
 
 export interface FeedEvent {

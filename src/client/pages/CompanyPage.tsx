@@ -25,6 +25,7 @@ import { StatusBoard } from '../components/StatusBoard';
 import { CardSkeleton } from '../components/Skeleton';
 import { ConversationPanel } from '../components/ConversationPanel';
 import { EventFeedList } from '../components/EventFeedList';
+import { ActivityPanel } from '../components/ActivityPanel';
 import type { Agent } from '../api/types';
 
 export function CompanyPage(): React.ReactElement {
@@ -229,6 +230,10 @@ export function CompanyPage(): React.ReactElement {
 
       <Card title="关键事件" className="section" actions={<Badge>{events?.length ?? 0}</Badge>}>
         <EventFeedList events={events ?? []} />
+      </Card>
+
+      <Card title="协作活动" className="section">
+        <ActivityPanel events={events ?? []} agents={agents} scope="company" scopeId={companyId} />
       </Card>
 
       <Card title="关系图" className="section">

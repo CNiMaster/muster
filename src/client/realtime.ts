@@ -12,7 +12,11 @@ export function queryKeysForRealtimeEvent(event: RealtimeEvent): QueryKey[] {
       ['tasks', event.projectId],
       ['threads', event.projectId],
       ['usage', event.projectId],
+      ['project-events', event.projectId],
     );
+  }
+  if (event.companyId) {
+    keys.push(['company-events', event.companyId]);
   }
   if (event.taskId) {
     keys.splice(

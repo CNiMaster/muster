@@ -16,6 +16,7 @@ import {
   useGenerateProjectProposal,
   useCompactThread,
   useContextSize,
+  useProjectEvents,
 } from '../hooks/queries';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
@@ -24,6 +25,7 @@ import { Input, Textarea, Select, Field } from '../components/Form';
 import { EmptyState, Icons } from '../components/EmptyState';
 import type { Project } from '../api/types';
 import { ConversationPanel } from '../components/ConversationPanel';
+import { ActivityPanel } from '../components/ActivityPanel';
 
 export function ProjectPage(): React.ReactElement {
   const { projectId, companyId } = useParams();
@@ -297,6 +299,7 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
   const { data: project } = useProject(projectId);
   const { data: agents } = useAgents(project?.companyId);
   const { data: threads } = useThreads(projectId);
+  const { data: projectEvents } = useProjectEvents(projectId);
 
   const createMirror = useCreateMirror();
   const deleteMirror = useDeleteMirror();
@@ -552,6 +555,10 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
 
       <Card title="项目对话" className="section">
         <ConversationPanel scope="project" scopeId={projectId} companyId={project.companyId} title="与项目第一负责人对话" />
+      </Card>
+
+      <Card title="协作活动" className="section">
+        <ActivityPanel events={projectEvents ?? []} agents={agents} scope="project" scopeId={projectId} />
       </Card>
     </div>
   );

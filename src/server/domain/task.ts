@@ -394,7 +394,13 @@ export function completeTask(db: DB, taskId: string, result: AgentRunResult): Ta
         if (result.outcome === 'waiting_dependency') {
           addDependency(db, cur.id, child.id);
         }
-        appendTaskEvent(db, cur.id, 'spawned_child', { childId: child.id, recipient: out.recipientAgentId });
+        appendTaskEvent(db, cur.id, 'spawned_child', {
+          childId: child.id,
+          childSeq: child.seq,
+          childTitle: out.title,
+          recipient: out.recipientAgentId,
+          dispatcher: cur.assigneeAgentId ?? cur.dispatcherAgentId ?? null,
+        });
       }
     }
 
