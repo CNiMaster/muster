@@ -19,6 +19,8 @@ describe('queryKeysForRealtimeEvent', () => {
       ['task-events', 'tk_1'],
       ['threads', 'pr_1'],
       ['usage', 'pr_1'],
+      ['project-events', 'pr_1'],
+      ['company-events', 'co_1'],
     ]);
   });
 

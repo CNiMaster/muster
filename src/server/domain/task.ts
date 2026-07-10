@@ -25,6 +25,7 @@ import { getProject } from './project';
 import { getAgent } from './agent';
 import { appendTaskEvent } from './task-event';
 import { addTaskMessage } from './task-message';
+import { isDispatchLoop } from './speech-queue';
 
 export interface Task {
   id: string;
@@ -378,14 +379,30 @@ export function completeTask(db: DB, taskId: string, result: AgentRunResult): Ta
     );
     appendTaskEvent(db, taskId, nextState, { outcome: result.outcome });
 
-    // 派生 outbound Task
+    // 派生 outbound Task（含 loop protection）
     if (result.outboundTasks?.length) {
       for (const out of result.outboundTasks) {
+        const dispatcherId = cur.assigneeAgentId ?? cur.dispatcherAgentId ?? null;
+        // Loop protection：检测 (dispatcher → recipient) 是否形成循环
+        const loopDetected = dispatcherId && dispatcherId !== out.recipientAgentId
+          ? isDispatchLoop(db, cur.projectId, dispatcherId, out.recipientAgentId)
+          : false;
+
+        if (loopDetected) {
+          // 阻断派发，记录循环检测事件
+          appendTaskEvent(db, cur.id, 'dispatch_loop_blocked', {
+            recipient: out.recipientAgentId,
+            title: out.title,
+            reason: `检测到 ${dispatcherId} → ${out.recipientAgentId} 可能形成调用循环，已阻断`,
+          });
+          continue;
+        }
+
         const child = createTask(db, {
           projectId: cur.projectId,
           parentTaskId: cur.id,
           rootTaskId: cur.rootTaskId ?? cur.id,
-          dispatcherAgentId: cur.assigneeAgentId ?? cur.dispatcherAgentId ?? undefined,
+          dispatcherAgentId: dispatcherId ?? undefined,
           assigneeAgentId: out.recipientAgentId,
           title: out.title,
           inputProtocol: out.payload,
@@ -399,7 +416,7 @@ export function completeTask(db: DB, taskId: string, result: AgentRunResult): Ta
           childSeq: child.seq,
           childTitle: out.title,
           recipient: out.recipientAgentId,
-          dispatcher: cur.assigneeAgentId ?? cur.dispatcherAgentId ?? null,
+          dispatcher: dispatcherId,
         });
       }
     }

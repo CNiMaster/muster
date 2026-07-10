@@ -39,6 +39,7 @@ import type { AgentRunResult } from '../../shared/types';
 import { realtime } from '../realtime';
 import { upsertPublishedArtifact } from '../domain/artifact';
 import { postSystemMessage } from '../domain/conversation';
+import { isDuplicateContent } from '../domain/speech-queue';
 import { handleChapterCompleted } from '../domain/triggers';
 import { advanceWorkflowTask } from '../domain/workflow';
 import { createSuggestionTasksFromBrainstorm } from '../domain/brainstorm';
@@ -373,14 +374,25 @@ export class TaskEngine {
         && (task.inputProtocol.scope === 'project' || task.inputProtocol.scope === 'company')
         && typeof task.inputProtocol.scopeId === 'string'
       ) {
-        postSystemMessage(this.db, {
-          scopeKind: task.inputProtocol.scope,
-          scopeId: task.inputProtocol.scopeId,
-          role: 'assistant',
-          author: agent.id,
-          content: result.summary,
-          refTaskId: task.id,
-        });
+        // 去重检查：如果回复内容与近期 assistant 消息高度相似，则跳过写入
+        const isDup = isDuplicateContent(
+          this.db,
+          task.inputProtocol.scope as string,
+          task.inputProtocol.scopeId as string,
+          result.summary,
+        );
+        if (!isDup) {
+          postSystemMessage(this.db, {
+            scopeKind: task.inputProtocol.scope,
+            scopeId: task.inputProtocol.scopeId,
+            role: 'assistant',
+            author: agent.id,
+            content: result.summary,
+            refTaskId: task.id,
+          });
+        } else {
+          log.info('assistant reply deduplicated', { taskId: task.id, agentId: agent.id });
+        }
       }
       updateThreadState(
         this.db,
