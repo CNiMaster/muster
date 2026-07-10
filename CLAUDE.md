@@ -39,7 +39,7 @@ npm install              # 安装依赖（express, ws, better-sqlite3, react, re
 npm run dev              # 开发模式：tsx watch src/server/server.ts，Express 挂 Vite middleware
 npm start                # 生产模式：node dist/server/server.js（需先 build）
 npm run typecheck        # TypeScript 项目引用全量检查
-npm test                 # Vitest 单测 + 集成（235 项）
+npm test                 # Vitest 单测 + 集成（235 项，需 git 可用）
 npm run test:e2e         # Playwright 端到端（5 项）
 npm run test:claude-smoke # 真实 Claude 两轮 Task/session/artifact/usage 冒烟
 npm run build            # tsup 编译 server + vite build 客户端 → dist/
@@ -71,26 +71,27 @@ npm run build            # tsup 编译 server + vite build 客户端 → dist/
 src/
   shared/    # 类型、Zod schema、错误码、事件契约、常量（前后端共享）
   server/
-    db/          # better-sqlite3 client + migrations/*.sql（20 张业务表）
+    db/          # better-sqlite3 client + migrations/*.sql（22 张业务表）
     domain/      # company / agent / project / thread / graph / task /
                  # task-event / task-message / artifact / usage / report /
                  # inspector / brainstorm / triggers / novel-template / workflow /
                  # event-feed（关键事件聚合）/ graph-proposal（自然语言改图）/
-                 # character-graph（只读人物关系图解析）
+                 # character-graph（只读人物关系图解析）/ speech-queue（loop protection + dedup）
     task-engine/ # ExecutionAdapter 接口 + FakeExecutor + TaskEngine + agentExecutor 覆盖
     trigger-scheduler.ts # 轮询持久化 schedule trigger，原子推进并派发巡检 Task
     executors/   # ClaudeCodeAdapter + OpenAICompatibleAdapter + GeminiAdapter +
                  # 上下文装配 + 安全检查 + 会话压缩 + 时间轮换 + apiKeyEnv 凭据注入 +
-                 # tool-loop（function calling 工具循环）+ file-tools（worktree 文件工具）+
+                 # tool-loop（function calling 工具循环）+ file-tools（worktree 文件工具 + notify_host）+
                  # model-pricing（成本估算）+ provider（多执行器分发）+ result-schema（共享 schema）
     worktree/    # Git worktree 管理 + 串行发布队列 + artifact 独占锁
+    bridge.ts    # Agent Bridge：loopback HTTP（/bridge/:action），Agent 可主动通知宿主进度
     api/         # Express 路由（companies(status-board/usage)/agents/projects(character-graph)/
                  # graphs(propose/apply)/artifacts(open/rollback)/events/usage/workflows/brainstorm/...）
     realtime.ts  # WebSocket 广播 RealtimeEvent
     server.ts    # 入口：单端口 3456，dev 挂 Vite，prod 服务 dist/client
   client/      # React 19 + Router 7 + React Flow 12 + TanStack Query 5
     pages/       # Home / Company / Graph / Project / Tasks / Usage / Artifacts / Reports / Dashboard / WorkflowGraph / CharacterGraph / Settings
-    components/  # StatusBoard / EventFeedList / OnboardingGuide / ErrorBoundary / NaturalLanguageGraphPanel / ...
+    components/  # StatusBoard / EventFeedList / ActivityPanel / ConversationPanel / OnboardingGuide / ErrorBoundary / NaturalLanguageGraphPanel / ...
     hooks/       # React Query hooks
     realtime.ts  # WebSocket 断线重连 + 精确失效 React Query 缓存
     api/         # fetch client + DTO
@@ -114,22 +115,40 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 - **长篇小说公司**：5 基础岗位（lead/writer/character/plot/inspector），第一负责人≠主写手；章节完成事件触发人物/情节维护；定时一致性检查；强制复盘按根员工聚合；闲置头脑风暴受限。
 - **镜像**：项目内临时并行线程，共享根员工职责/上下文/Task 池，不重复领取；成果归入根员工。
 
+### 多 Agent 协作增强（平台级能力）
+
+以下能力均为通用机制，不绑定特定模板（写作模板可以不用，编码模板可以按需配置）：
+
+- **立场锁定（stance）**：AgentDefinition 有 `stance` 字段，在 `assembleContext` 中注入 `# 你的立场` 到 system prompt，指示 Agent 在讨论/辩论中坚持预设立场。写作场景用于角色一致性，编码场景可用于 code review 立场。
+- **活动流面板（ActivityPanel）**：Agent 间的 outboundTasks 派发（`spawned_child` 事件）和交接活动显式化，在 ProjectPage/CompanyPage 的独立面板展示 `@A → @B` 协作摘要。WebSocket 实时刷新（`project-events`/`company-events` key）。
+- **Loop Protection**：`speech-queue.ts` 的 `isDispatchLoop()` 追踪 Agent→Agent 派发链，检测 A→B→A 回环和连续调用超限（阈值 3），在 `task.ts` 的 outboundTasks 派发处阻断并记录 `dispatch_loop_blocked` 事件。
+- **去重（dedup）**：`speech-queue.ts` 的 `isDuplicateContent()` 用 Jaccard 关键词相似度检查 assistant 回复是否与近期消息重复（>80% 抑制），在 `engine.ts` 回复写入前调用。
+- **Agent Bridge**：`bridge.ts` 提供 loopback HTTP 通道（`/bridge/:action`，action=progress/notify/preview），让 Agent 执行中主动通知宿主进度。OpenAI/Gemini 通过 `notify_host` 工具调用，Claude-cli 通过 systemPrompt 中的 curl 指令。taskId 格式校验防注入。
+- **工作流条件边 + 受控回环**：`WorkflowEdge` 有 `condition`（5 种：always/auto_review/outcome_equals/manual_approval/agent_label）和 `maxTraversals`（回环保护）。`advanceWorkflowTask` 按条件优先级求值而非仅靠 LLM label 匹配；`auto_review` 解析 `REVIEW_STATUS: PASS/FAIL` 标记（借鉴 FreeBuddy）。`assembleContext` 注入 `workflowBranches` 让 Agent 看到可选出边。
+
 ### 关键文件
 
 | 文件 | 职责 |
 |------|------|
-| `src/server/server.ts` | Express + WebSocket 入口，挂载所有 REST 路由 + Vite middleware |
+| `src/server/server.ts` | Express + WebSocket 入口，挂载所有 REST 路由 + Vite middleware + bridge |
 | `src/server/db/migrations/0001_init.sql` | 14 张表 schema |
-| `src/server/domain/task.ts` | Task 状态机、原子领取、租约、依赖、追问、自动规划 |
+| `src/server/domain/task.ts` | Task 状态机、原子领取、租约、依赖、追问、自动规划、loop protection |
+| `src/server/domain/speech-queue.ts` | isDispatchLoop（循环检测）+ isDuplicateContent（去重） |
+| `src/server/domain/workflow.ts` | 工作流图 + 条件边求值 + 受控回环（maxTraversals） |
+| `src/server/bridge.ts` | Agent Bridge loopback HTTP（/bridge/:action） |
 | `src/server/task-engine/engine.ts` | pumpThread 驱动领取→执行→完成 |
 | `src/server/trigger-scheduler.ts` | 持久化定时触发器轮询与生命周期 |
-| `src/client/realtime.ts` | WebSocket 实时查询同步 |
+| `src/client/realtime.ts` | WebSocket 实时查询同步 + bridge.notify toast |
+| `src/server/executors/context.ts` | 上下文装配（stance 注入 + workflowBranches + bridge prompt） |
 | `src/server/executors/claude-code-adapter.ts` | Claude CLI 适配器 + AgentRunResult Zod 校验 |
+| `src/server/executors/tools/file-tools.ts` | worktree 文件工具 + notify_host（Agent Bridge） |
 | `src/server/worktree/publish-queue.ts` | 串行发布 + 三方合并 + 冲突阻塞 |
 | `src/server/domain/novel-template.ts` | 长篇小说公司一键模板 |
 | `src/server/domain/report.ts` | 强制复盘周期（review_paused → 看板 → 备注转修正） |
 | `src/server/db/migrations/0003_settings.sql` | 系统设置表 |
 | `src/server/db/migrations/0004_trigger_schedule_state.sql` | 定时触发器执行游标 |
+| `src/server/db/migrations/0012_agent_stance.sql` | Agent stance 字段 |
+| `src/server/db/migrations/0014_workflow_edge_condition.sql` | 工作流边条件 + 回环上限 |
 
 ### WebSocket 事件
 
@@ -141,7 +160,8 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 
 ### 测试
 
-- Vitest 单元与集成测试 190 项（公司/员工上下班、组织锁、跨项目只读、Task 并发领取/租约恢复/依赖/追问、定时触发去重、通信权限、实时缓存、worktree 三方合并/原子发布/冲突阻塞、章节事件、复盘、讨论中断、工作流、MVP 验收、重启恢复，以及 v1 缺口推进新增的项目健康/工作流责任岗位/监察心跳/事件聚合 feed/关系归档/镜像自动释放/多模型 token 归集/建议 Task/自然语言改图/会话压缩/二进制独占锁/授权参考目录/员工级执行器配置+凭据引用+会话时间轮换/状态看板/复盘配置可编辑/题材扩展包+可选岗位/维护事件动态岗位/只读人物关系图/讨论自动选人+每日预算/soak 50 Task+压缩+mirror+复盘等专项）。
+- Vitest 单元与集成测试 235 项（公司/员工上下班、组织锁、跨项目只读、Task 并发领取/租约恢复/依赖/追问、定时触发去重、通信权限、实时缓存、worktree 三方合并/原子发布/冲突阻塞、章节事件、复盘、讨论中断、工作流、MVP 验收、重启恢复，以及 v1 缺口推进新增的项目健康/工作流责任岗位/监察心跳/事件聚合 feed/关系归档/镜像自动释放/多模型 token 归集/建议 Task/自然语言改图/会话压缩/二进制独占锁/授权参考目录/员工级执行器配置+凭据引用+会话时间轮换/状态看板/复盘配置可编辑/题材扩展包+可选岗位/维护事件动态岗位/只读人物关系图/讨论自动选人+每日预算/soak 50 Task+压缩+mirror+复盘等专项）。
+  - 测试环境需要真实 git 仓库作为 `project.rootDir`（`createWorktree` 需要 `git rev-parse HEAD` 成功）。`tests/integration/setup.ts` 的 `makeTempGitRepo()` 创建临时 git 仓库（含初始 commit）供测试使用。
 - Playwright 5 项已在本机 Chromium 通过，覆盖向导创建、员工与项目配置、上下班、复盘备注和恢复。
 - `npm run test:claude-smoke` 已使用真实 Claude Code 连续完成两个 Task，验证跨 worktree 的 `--session-id`/`--resume`、文件发布、Artifact 登记和 Token/缓存用量。
 
