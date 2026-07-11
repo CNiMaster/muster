@@ -67,3 +67,18 @@ test('项目路由保留公司导航并能从首页继续上次项目', async ({
   await expect(page.getByText('继续上次项目')).toBeVisible();
   await expect(page.getByRole('link', { name: '继续工作' })).toHaveAttribute('href', `/projects/${project.id}`);
 });
+
+test('设置页默认只展示常用操作，高级参数折叠且窄屏不溢出', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/settings');
+
+  await expect(page.getByRole('button', { name: '运行连接测试' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '保存设置' })).toBeVisible();
+  await expect(page.getByText('CLI 运行时')).toBeVisible();
+  await expect(page.getByPlaceholder(/username.*claude/)).toBeHidden();
+  await expect(page.getByText(/跳过 Agent 权限确认/)).toBeHidden();
+  await expect(page.getByPlaceholder('https://api.openai.com/v1')).toBeHidden();
+
+  const hasHorizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+  expect(hasHorizontalOverflow).toBe(false);
+});

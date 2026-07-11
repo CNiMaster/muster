@@ -21,6 +21,13 @@ html, body, #root {
   font-size: var(--text-base);
   line-height: var(--leading-normal);
   -webkit-font-smoothing: antialiased;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+pre, code, .path-value, .diagnostic-text {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 a {
@@ -123,7 +130,9 @@ p { margin: 0 0 var(--space-3) 0; }
   gap: var(--space-3);
   flex-wrap: wrap;
   margin-bottom: var(--space-5);
+  min-width: 0;
 }
+.page-header > * { min-width: 0; }
 .page-header h1 { margin: 0; }
 .page-actions {
   display: flex;
@@ -201,6 +210,18 @@ p { margin: 0 0 var(--space-3) 0; }
   white-space: normal;
   color: var(--fg-muted);
 }
+.settings-page { max-width: 960px; margin: 0 auto; padding: var(--space-4); }
+.settings-basic-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: var(--space-5);
+  align-items: end;
+}
+.connection-summary { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.settings-primary-actions { display: flex; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-5); }
+.settings-advanced { display: flex; flex-direction: column; gap: var(--space-3); }
+.settings-field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
+.settings-checkbox { display: flex; align-items: flex-start; gap: var(--space-2); cursor: pointer; }
 
 @media (max-width: 640px) {
   .next-action-card { align-items: stretch; flex-direction: column; }
@@ -396,6 +417,7 @@ p { margin: 0 0 var(--space-3) 0; }
   .main { padding: var(--space-4); }
   .dashboard-grid { grid-template-columns: 1fr; }
   .topbar { padding: 0 var(--space-4); }
+  .settings-basic-grid, .settings-field-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 640px) {
@@ -412,6 +434,9 @@ p { margin: 0 0 var(--space-3) 0; }
   .form-row { flex-direction: column; align-items: stretch; }
   .form-row > * { min-width: 0; }
   .workflow-workspace { grid-template-columns: 1fr !important; }
+  .settings-page { padding: 0; }
+  .settings-primary-actions { align-items: stretch; flex-direction: column; }
+  .settings-primary-actions .mu-btn { width: 100%; }
 }
 
 /* ===== Workflow 工作流编辑器 ===== */

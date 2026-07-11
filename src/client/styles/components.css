@@ -111,6 +111,7 @@
   transition: border-color var(--duration-base) var(--ease-out),
     box-shadow var(--duration-base) var(--ease-out),
     transform var(--duration-base) var(--ease-out);
+  min-width: 0;
 }
 .mu-card-e1 { box-shadow: var(--shadow-1); }
 .mu-card-e2 { box-shadow: var(--shadow-2); }
@@ -143,6 +144,7 @@
 }
 .mu-card-body {
   padding: var(--space-5);
+  min-width: 0;
 }
 
 /* ===== Badge ===== */

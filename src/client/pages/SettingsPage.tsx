@@ -1,258 +1,181 @@
 import type React from 'react';
-import { useState, useEffect } from 'react';
-import { useSystemSettings, useSaveSystemSettings, useTestConnection } from '../hooks/queries';
-import { Card } from '../components/Card';
-import { Button, toast } from '../components/Button';
-import { Input, Field, Select } from '../components/Form';
+import { useEffect, useState } from 'react';
+import { useSaveSystemSettings, useSystemSettings, useTestConnection } from '../hooks/queries';
 import { Badge } from '../components/Badge';
+import { Button, toast } from '../components/Button';
+import { Card } from '../components/Card';
+import { Field, Input, Select } from '../components/Form';
 
 export function SettingsPage(): React.ReactElement {
   const { data: settings, isLoading } = useSystemSettings();
   const saveSettings = useSaveSystemSettings();
   const testConnection = useTestConnection();
-
-  // 表单状态
   const [claudeBin, setClaudeBin] = useState('');
   const [model, setModel] = useState('');
   const [skipPermissions, setSkipPermissions] = useState(false);
   const [timeoutMs, setTimeoutMs] = useState(600000);
   const [maxToolCalls, setMaxToolCalls] = useState(30);
-  // Batch 14：多执行器配置
   const [defaultProvider, setDefaultProvider] = useState('claude-cli');
   const [openaiBaseURL, setOpenaiBaseURL] = useState('https://api.openai.com/v1');
   const [openaiModel, setOpenaiModel] = useState('gpt-4o');
   const [geminiModel, setGeminiModel] = useState('gemini-2.0-flash');
-
-  // 测试结果状态
   const [testResult, setTestResult] = useState<any | null>(null);
 
-  // 数据加载后初始化表单
   useEffect(() => {
-    if (settings) {
-      setClaudeBin(settings.claudeBin);
-      setModel(settings.model ?? '');
-      setSkipPermissions(settings.skipPermissions);
-      setTimeoutMs(settings.timeoutMs);
-      setMaxToolCalls(settings.maxToolCalls);
-      setDefaultProvider(settings.defaultProvider ?? 'claude-cli');
-      setOpenaiBaseURL(settings.openaiBaseURL ?? 'https://api.openai.com/v1');
-      setOpenaiModel(settings.openaiModel ?? 'gpt-4o');
-      setGeminiModel(settings.geminiModel ?? 'gemini-2.0-flash');
-    }
+    if (!settings) return;
+    setClaudeBin(settings.claudeBin);
+    setModel(settings.model ?? '');
+    setSkipPermissions(settings.skipPermissions);
+    setTimeoutMs(settings.timeoutMs);
+    setMaxToolCalls(settings.maxToolCalls);
+    setDefaultProvider(settings.defaultProvider ?? 'claude-cli');
+    setOpenaiBaseURL(settings.openaiBaseURL ?? 'https://api.openai.com/v1');
+    setOpenaiModel(settings.openaiModel ?? 'gpt-4o');
+    setGeminiModel(settings.geminiModel ?? 'gemini-2.0-flash');
   }, [settings]);
 
-  const handleSave = () => {
+  const handleSave = (): void => {
     if (!claudeBin.trim()) {
       toast('error', 'Claude 可执行文件路径不能为空');
       return;
     }
-
     saveSettings.mutate(
+      { claudeBin, model, skipPermissions, timeoutMs, maxToolCalls, defaultProvider, openaiBaseURL, openaiModel, geminiModel },
       {
-        claudeBin,
-        model,
-        skipPermissions,
-        timeoutMs,
-        maxToolCalls,
-        defaultProvider,
-        openaiBaseURL,
-        openaiModel,
-        geminiModel,
+        onSuccess: () => toast('success', '系统设置已保存并实时生效'),
+        onError: (error: any) => toast('error', error.message ?? '保存设置失败'),
       },
-      {
-        onSuccess: () => {
-          toast('success', '系统设置已成功保存并实时生效！');
-        },
-        onError: (err: any) => {
-          toast('error', err.message ?? '保存设置失败');
-        },
-      }
     );
   };
 
-  const handleTest = () => {
+  const handleTest = (): void => {
     testConnection.mutate(
       { claudeBin, model },
       {
-        onSuccess: (res) => {
-          setTestResult(res);
-          if (res.overallSuccess) {
-            toast('success', '连通性与桥接联调完全正常，测试通过！');
-          } else {
-            toast('error', '测试未完全通过，请检查错误输出。');
-          }
+        onSuccess: (result) => {
+          setTestResult(result);
+          toast(result.overallSuccess ? 'success' : 'error', result.overallSuccess ? '连接测试通过' : '连接测试未通过');
         },
-        onError: (err: any) => {
-          toast('error', err.message ?? '测试执行失败');
-        },
-      }
+        onError: (error: any) => toast('error', error.message ?? '测试执行失败'),
+      },
     );
   };
 
-  if (isLoading) {
-    return <div className="loading">加载系统设置中…</div>;
-  }
+  if (isLoading) return <div className="loading">加载系统设置中…</div>;
+
+  const providerLabels: Record<string, string> = {
+    'claude-cli': 'Claude Code CLI',
+    openai: 'OpenAI 兼容 API',
+    gemini: 'Gemini API',
+  };
 
   return (
-    <div className="settings-page" style={{ maxWidth: '960px', margin: '0 auto', padding: 'var(--space-4)' }}>
-      <header className="page-header" style={{ marginBottom: 'var(--space-5)' }}>
+    <div className="settings-page">
+      <header className="page-header">
         <div>
-          <h1>系统配置与连通性测试</h1>
-          <p className="subtitle">管理 Claude Code CLI 运行时参数并验证本地大模型管道的桥接状态</p>
-        </div>
-        <div className="page-actions">
-          <Button onClick={handleSave} loading={saveSettings.isPending}>保存全部设置</Button>
+          <h1>系统设置</h1>
+          <p className="subtitle">先确认默认执行器可以连接；需要时再展开高级参数。</p>
         </div>
       </header>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 'var(--space-5)', alignItems: 'start' }}>
-        {/* 左侧：表单配置 */}
-        <Card title="运行时核心配置">
-          <div className="form-stack">
-            <Field label="Claude 可执行文件路径" required hint="系统通过此路径调用 Claude CLI。通常为 claude，或 Mac 本地绝对路径。">
-              <Input
-                value={claudeBin}
-                onChange={(e) => setClaudeBin(e.target.value)}
-                placeholder="例如: /Users/username/.local/bin/claude"
-              />
-            </Field>
-
-            <Field label="模型标识" hint="可留空以使用 Claude Code 默认模型；代理服务请填写其实际支持的模型标识。">
-              <Input
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                placeholder="例如: sonnet 或代理服务提供的模型名"
-              />
-            </Field>
-
-            <Field label="权限控制" hint="开启后，Agent 执行工具将跳过二次授权弹窗。开发或可信本地项目建议开启。">
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', padding: '4px 0' }}>
-                <input
-                  type="checkbox"
-                  checked={skipPermissions}
-                  onChange={(e) => setSkipPermissions(e.target.checked)}
-                />
-                <span style={{ fontSize: 'var(--text-sm)' }}>跳过 Agent 权限确认 (MUSTER_SKIP_PERMISSIONS)</span>
-              </label>
-            </Field>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-              <Field label="单次 Task 超时时长 (毫秒)" required hint="超时后强制终止 CLI 进程。">
-                <Input
-                  type="number"
-                  value={timeoutMs}
-                  onChange={(e) => setTimeoutMs(Number(e.target.value))}
-                />
-              </Field>
-              <Field label="单任务最大工具调用数" required hint="超出限制后强行终止以防止死循环。">
-                <Input
-                  type="number"
-                  value={maxToolCalls}
-                  onChange={(e) => setMaxToolCalls(Number(e.target.value))}
-                />
-              </Field>
-            </div>
-          </div>
-        </Card>
-
-        {/* 右侧：测试控制与结果 */}
-        <Card title="管道联调与测试">
-          <div className="form-stack">
-            <p className="muted" style={{ fontSize: 'var(--text-sm)', margin: 0 }}>
-              实时模拟调用配置的 Claude Bin 可执行文件。分别验证“可执行文件存在性”与“大模型推理管道的桥接响应”。
-            </p>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-start', marginTop: '4px' }}>
-              <Button variant="ghost" onClick={handleTest} loading={testConnection.isPending}>
-                运行连通性与桥接测试
-              </Button>
-            </div>
-
-            {testResult && (
-              <div className="test-result-stack">
-                {/* 阶段 1：连通性测试 */}
-                <div className="test-result-box">
-                  <div className="test-result-head">
-                    <strong className="test-result-stage">阶段 1：命令行可执行测试</strong>
-                    <Badge tone={testResult.versionTest.success ? 'ok' : 'err'}>
-                      {testResult.versionTest.success ? '通过' : '失败'}
-                    </Badge>
-                  </div>
-                  <div className="muted test-result-meta">
-                    消耗时间: {testResult.versionTest.durationMs}ms
-                  </div>
-                  {testResult.versionTest.success ? (
-                    <code className="test-result-code">
-                      {testResult.versionTest.output}
-                    </code>
-                  ) : (
-                    <pre className="test-result-err">
-                      {testResult.versionTest.error}
-                    </pre>
-                  )}
-                </div>
-
-                {/* 阶段 2：桥接测试 */}
-                <div className="test-result-box">
-                  <div className="test-result-head">
-                    <strong className="test-result-stage">阶段 2：大模型桥接推理测试</strong>
-                    <Badge tone={testResult.bridgeTest.success ? 'ok' : 'err'}>
-                      {testResult.bridgeTest.success ? '通过' : '未执行/失败'}
-                    </Badge>
-                  </div>
-                  <div className="muted test-result-meta">
-                    消耗时间: {testResult.bridgeTest.durationMs}ms
-                  </div>
-                  {testResult.bridgeTest.success ? (
-                    <div className="test-result-out">
-                      <strong>模型回答:</strong> {testResult.bridgeTest.output}
-                    </div>
-                  ) : (
-                    <pre className="test-result-err">
-                      {testResult.bridgeTest.error || '因阶段 1 失败，跳过大模型桥接测试。'}
-                    </pre>
-                  )}
-                </div>
-
-                {/* 总体结论 */}
-                <div className={`test-result-summary ${testResult.overallSuccess ? 'is-ok' : 'is-err'}`}>
-                  {testResult.overallSuccess
-                    ? '系统连通性与大模型桥接调试成功！'
-                    : '管道连通或桥接校验失败，请检查路径或 API 密钥配置。'}
-                </div>
-              </div>
-            )}
-          </div>
-        </Card>
-      </div>
-
-      {/* Batch 14：多执行器配置 */}
-      <Card title="多执行器配置" style={{ marginTop: 'var(--space-5)' }}>
-        <div className="form-stack">
-          <p className="muted" style={{ fontSize: 'var(--text-sm)', margin: 0 }}>
-            配置默认执行器与各 provider 的全局默认。每个员工可在员工编辑里覆盖。
-            API Key 通过环境变量注入（OPENAI_API_KEY / GOOGLE_API_KEY / ANTHROPIC_API_KEY），不在此处填写。
-          </p>
-          <Field label="默认执行器" hint="新建员工未指定 provider 时使用">
-            <Select value={defaultProvider} onChange={(e) => setDefaultProvider(e.target.value)}>
-              <option value="claude-cli">Claude Code CLI（默认）</option>
-              <option value="openai">OpenAI 兼容（GPT/DeepSeek/通义/智谱）</option>
-              <option value="gemini">Gemini</option>
+      <Card title="常用设置" actions={<Badge tone={testResult?.overallSuccess ? 'ok' : 'neutral'}>{testResult?.overallSuccess ? '连接正常' : '尚未测试'}</Badge>}>
+        <div className="settings-basic-grid">
+          <Field label="默认执行器" hint="员工没有单独指定执行器时使用">
+            <Select value={defaultProvider} onChange={(event) => setDefaultProvider(event.target.value)}>
+              <option value="claude-cli">Claude Code CLI</option>
+              <option value="openai">OpenAI 兼容 API</option>
+              <option value="gemini">Gemini API</option>
             </Select>
           </Field>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <Field label="OpenAI 默认 baseURL">
-              <Input value={openaiBaseURL} onChange={(e) => setOpenaiBaseURL(e.target.value)} placeholder="https://api.openai.com/v1" />
+          <div className="connection-summary">
+            <span className="muted">当前连接</span>
+            <strong>{providerLabels[defaultProvider] ?? defaultProvider}</strong>
+            <span className="muted">{testResult ? (testResult.overallSuccess ? '最近测试成功' : '最近测试失败') : '运行测试以确认配置'}</span>
+          </div>
+        </div>
+        <div className="settings-primary-actions">
+          <Button variant="ghost" onClick={handleTest} loading={testConnection.isPending}>运行连接测试</Button>
+          <Button onClick={handleSave} loading={saveSettings.isPending}>保存设置</Button>
+        </div>
+        {testResult && <TestResultPanel result={testResult} />}
+      </Card>
+
+      <div className="settings-advanced section">
+        <details className="details-collapse">
+          <summary>CLI 运行时</summary>
+          <div className="form-stack">
+            <Field label="Claude 可执行文件路径" required hint="通常填写 claude；也可以使用本地绝对路径。">
+              <Input value={claudeBin} onChange={(event) => setClaudeBin(event.target.value)} placeholder="例如: /Users/username/.local/bin/claude" />
             </Field>
-            <Field label="OpenAI 默认模型">
-              <Input value={openaiModel} onChange={(e) => setOpenaiModel(e.target.value)} placeholder="gpt-4o" />
+            <Field label="模型标识" hint="留空使用执行器默认模型">
+              <Input value={model} onChange={(event) => setModel(event.target.value)} placeholder="例如: sonnet" />
             </Field>
           </div>
-          <Field label="Gemini 默认模型">
-            <Input value={geminiModel} onChange={(e) => setGeminiModel(e.target.value)} placeholder="gemini-2.0-flash" />
-          </Field>
+        </details>
+
+        <details className="details-collapse">
+          <summary>权限与运行限制</summary>
+          <div className="form-stack">
+            <Field label="权限控制">
+              <label className="settings-checkbox">
+                <input type="checkbox" checked={skipPermissions} onChange={(event) => setSkipPermissions(event.target.checked)} />
+                <span>跳过 Agent 权限确认（仅建议用于可信环境）</span>
+              </label>
+            </Field>
+            <div className="settings-field-grid">
+              <Field label="单次 Task 超时（毫秒）">
+                <Input type="number" value={timeoutMs} onChange={(event) => setTimeoutMs(Number(event.target.value))} />
+              </Field>
+              <Field label="单任务最大工具调用数">
+                <Input type="number" value={maxToolCalls} onChange={(event) => setMaxToolCalls(Number(event.target.value))} />
+              </Field>
+            </div>
+          </div>
+        </details>
+
+        <details className="details-collapse">
+          <summary>Provider 与 API 默认值</summary>
+          <div className="form-stack">
+            <p className="muted">API Key 只从环境变量读取，不在此处保存明文。</p>
+            <div className="settings-field-grid">
+              <Field label="OpenAI 默认 baseURL">
+                <Input value={openaiBaseURL} onChange={(event) => setOpenaiBaseURL(event.target.value)} placeholder="https://api.openai.com/v1" />
+              </Field>
+              <Field label="OpenAI 默认模型">
+                <Input value={openaiModel} onChange={(event) => setOpenaiModel(event.target.value)} placeholder="gpt-4o" />
+              </Field>
+            </div>
+            <Field label="Gemini 默认模型">
+              <Input value={geminiModel} onChange={(event) => setGeminiModel(event.target.value)} placeholder="gemini-2.0-flash" />
+            </Field>
+          </div>
+        </details>
+      </div>
+    </div>
+  );
+}
+
+function TestResultPanel({ result }: { result: any }): React.ReactElement {
+  return (
+    <div className="test-result-stack diagnostic-text">
+      <div className="test-result-box">
+        <div className="test-result-head">
+          <strong className="test-result-stage">命令行连接</strong>
+          <Badge tone={result.versionTest.success ? 'ok' : 'err'}>{result.versionTest.success ? '通过' : '失败'}</Badge>
         </div>
-      </Card>
+        {result.versionTest.success
+          ? <code className="test-result-code">{result.versionTest.output}</code>
+          : <pre className="test-result-err">{result.versionTest.error}</pre>}
+      </div>
+      <div className="test-result-box">
+        <div className="test-result-head">
+          <strong className="test-result-stage">模型桥接</strong>
+          <Badge tone={result.bridgeTest.success ? 'ok' : 'err'}>{result.bridgeTest.success ? '通过' : '未通过'}</Badge>
+        </div>
+        {result.bridgeTest.success
+          ? <div className="test-result-out">{result.bridgeTest.output}</div>
+          : <pre className="test-result-err">{result.bridgeTest.error || '命令行连接失败，未运行桥接测试。'}</pre>}
+      </div>
     </div>
   );
 }
