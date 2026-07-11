@@ -114,3 +114,12 @@ test('员工库展示全局档案与公司任职', async ({ page }) => {
   await page.getByRole('button', { name: '批准记忆' }).click();
   await expect(page.getByText('已批准记忆 1')).toBeVisible();
 });
+
+test('执行器中心为新 Mac 提供软件内检测和安装入口', async ({ page }) => {
+  await page.goto('/executors');
+  await expect(page.getByRole('heading', { name: '执行器安装中心' })).toBeVisible();
+  await expect(page.getByText('Codex CLI', { exact: true })).toBeVisible();
+  await expect(page.getByText('Claude Code CLI', { exact: true })).toBeVisible();
+  await expect(page.getByText('Gemini CLI', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '由 Muster 安装' }).first()).toBeVisible();
+});
