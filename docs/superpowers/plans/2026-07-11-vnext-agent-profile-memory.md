@@ -1,5 +1,9 @@
 # Muster vNext Agent Profile and Memory Implementation Plan
 
+**Status:** Completed and verified on 2026-07-11.
+
+**Acceptance:** `npm test` 40 files / 270 tests, `npm run typecheck`, `npm run build`, `npm run test:e2e` 10/10, and `git diff --check` all passed.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans and red-green-refactor for every runtime task.
 
 **Goal:** Give every Muster employee a stable global identity, an isolated Agent Home, reusable capabilities, reviewable layered memory, and session reconstruction that survives executor-session loss.

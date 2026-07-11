@@ -2,6 +2,27 @@
 
 > 依据：[Muster Agent 公司工作台 PRD](./PRD-agent-company-workbench.md)
 
+## 2026-07-11 vNext Agent Profile 与分层记忆验收
+
+本轮完成“员工是可复用本地 Agent，而不是某家公司里的一条配置”的纵向闭环：
+
+- 全局 `Agent Profile` 与 `Company Employee` 任职分离；旧员工 ID 兼容保留，同一档案可在多家公司任职且公司/项目上下文隔离。
+- 员工库、档案详情、招募已有员工，以及能力复制、带来源的记忆快照复制、同档案引用三种复用模式。
+- 每个员工拥有隔离 Agent Home；身份、能力和已批准记忆以原子 Markdown 快照可读落盘，待审记忆不进入文件视图。
+- 个人/技能/公司/项目四层记忆候选、审批、纠正、锁定、删除、版本与 FTS 检索；项目自动候选和显式个人指令采用不同审批边界。
+- 会话压缩先保存记忆并保留旧 session 引用；失败不破坏旧上下文，session 丢失后可按固定层级重建员工上下文。
+- 恢复基础能力默认保留记忆；清空个人记忆不删除能力或任职；能力导出排除记忆、凭据、会话、本地路径、公司和项目数据。
+
+验证证据：
+
+- `npm test`：40 个测试文件、270 项测试通过。
+- `npm run typecheck`：通过。
+- `npm run build`：server 与 client 生产构建通过。
+- `npm run test:e2e`：Chromium 10/10 通过。
+- `git diff --check`：通过。
+
+后续范围：统一执行器 Manifest/Profile、Codex 与自定义 CLI 安装配置、审批策略与 Turbo 范围、模板平台和去记忆分享生态。
+
 ## 2026-07-11 vNext 引导式工作区基础验收
 
 本轮完成通用 Agent 公司平台的第一段 vNext 纵向基础，不把后续 Agent Profile/记忆、统一执行器与权限、模板平台、分享生态误标为完成。

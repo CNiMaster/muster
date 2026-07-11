@@ -17,6 +17,7 @@ Authoritative planning documents:
 - `docs/PRD-agent-company-workbench.md` — product requirements and accepted domain semantics
 - `docs/superpowers/specs/2026-07-11-platform-workspace-agent-memory-templates-design.md` — confirmed vNext workspace, employee memory, executor, permission, template, and UX design
 - `docs/superpowers/plans/2026-07-11-vnext-guided-workspace-foundation.md` — delivered and verified vNext workspace/onboarding foundation
+- `docs/superpowers/plans/2026-07-11-vnext-agent-profile-memory.md` — delivered and verified Agent Profile, Agent Home, layered memory, and context recovery
 - `docs/agent-company-implementation-checklist.md` — completed historical implementation checklist and acceptance record
 
 Key constraints for all new work:
@@ -42,8 +43,8 @@ npm install              # 安装依赖（express, ws, better-sqlite3, react, re
 npm run dev              # 开发模式：tsx watch src/server/server.ts，Express 挂 Vite middleware
 npm start                # 生产模式：node dist/server/server.js（需先 build）
 npm run typecheck        # TypeScript 项目引用全量检查
-npm test                 # Vitest 单测 + 集成（246 项，需 git 可用）
-npm run test:e2e         # Playwright 端到端（9 项）
+npm test                 # Vitest 单测 + 集成（270 项，需 git 可用）
+npm run test:e2e         # Playwright 端到端（10 项）
 npm run test:claude-smoke # 真实 Claude 两轮 Task/session/artifact/usage 冒烟
 npm run build            # tsup 编译 server + vite build 客户端 → dist/
 ```
@@ -116,6 +117,9 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 - **通信边界**：带 `dispatcherAgentId` 的 Task 创建必须满足同公司和 `contact_allow`，不能绕过通信图直接派发。
 - **安全成果工作区**：每 Task 一个隐藏 Git worktree + 专用分支；串行发布队列做文本三方合并、同段冲突阻塞、二进制独占锁、可回滚。
 - **总工作区**：`workspace` 表持久化多个本地根目录并保证唯一激活；未显式指定路径的新项目写入 `{workspace}/companies/{公司}/projects/{项目-ID}`，Task 仍在项目专属 worktree 内执行。
+- **员工档案与任职**：`agent_profile` 是员工库中的全局稳定身份，`company_employee` 是公司任职；同一档案可被多家公司引用，也可仅复制能力或生成含所选个人记忆来源的独立快照。
+- **Agent Home 与分层记忆**：每个档案在 `{MUSTER_HOME}/agents/{profileId}` 拥有隔离个人空间；个人、技能、公司、项目记忆先进入候选审核，再写入版本化 SQLite/FTS 索引，并将已批准内容原子同步为人可读 Markdown。待审内容、凭据、会话与本地路径不会进入能力导出。
+- **可重建上下文**：上下文按身份原则→公司任职→项目→已批准分层记忆→Task 装配；自动/手动压缩先持久化记忆并保留前一 session 引用，失败时不清空旧 session。
 - **长篇小说公司**：5 基础岗位（lead/writer/character/plot/inspector），第一负责人≠主写手；章节完成事件触发人物/情节维护；定时一致性检查；强制复盘按根员工聚合；闲置头脑风暴受限。
 - **镜像**：项目内临时并行线程，共享根员工职责/上下文/Task 池，不重复领取；成果归入根员工。
 
@@ -154,6 +158,12 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 | `src/server/db/migrations/0012_agent_stance.sql` | Agent stance 字段 |
 | `src/server/db/migrations/0014_workflow_edge_condition.sql` | 工作流边条件 + 回环上限 |
 | `src/server/db/migrations/0015_workspace.sql` | 总工作区根目录与唯一激活状态 |
+| `src/server/db/migrations/0016_agent_profile.sql` | 全局 Agent Profile 与公司任职兼容迁移 |
+| `src/server/db/migrations/0017_agent_memory.sql` | 分层记忆候选、条目、版本与 FTS 索引 |
+| `src/server/db/migrations/0018_session_memory_flush.sql` | 压缩前记忆持久化与上一 session 引用 |
+| `src/server/db/migrations/0019_agent_profile_base.sql` | 可恢复的员工基础能力快照 |
+| `src/server/domain/agent-home.ts` | 隔离 Agent Home、身份/能力导出和记忆文件同步 |
+| `src/server/domain/memory.ts` | 记忆审核、作用域、版本、检索与安全扫描 |
 
 ### WebSocket 事件
 
@@ -165,10 +175,10 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 
 ### 测试
 
-- Vitest 单元与集成测试 246 项（34 个测试文件），覆盖既有运行闭环以及 workspace、下一步引导、最近项目恢复和安全回退文案。
+- Vitest 单元与集成测试 270 项（40 个测试文件），覆盖既有运行闭环以及 workspace 引导、全局员工档案、跨公司任职、Agent Home、分层记忆、上下文恢复、复用与安全重置。
   - 测试环境需要真实 git 仓库作为 `project.rootDir`（`createWorktree` 需要 `git rev-parse HEAD` 成功）。`tests/integration/setup.ts` 的 `makeTempGitRepo()` 创建临时 git 仓库（含初始 commit）供测试使用。
   - `project.rootDir` 与 `firstAgentId` 均为可选：建项目时留空，`createProject` 自动使用当前激活总工作区，并生成 `{workspace}/companies/{公司名}/projects/{项目名}-{项目ID}`；项目 ID 后缀保证同名项目不会共享目录。`ensureGitRepo()` 会在首个 worktree 创建时自动 `mkdir + git init`。
-- Playwright 9 项已在本机 Chromium 通过，覆盖建司→团队→项目→首 Task、在线建项目、最近项目恢复、公司上下文导航、复盘以及窄屏设置页。
+- Playwright 10 项已在本机 Chromium 通过，覆盖建司→团队→项目→首 Task、在线建项目、最近项目恢复、公司上下文导航、员工库、复盘以及窄屏设置页。
 - `npm run test:claude-smoke` 已使用真实 Claude Code 连续完成两个 Task，验证跨 worktree 的 `--session-id`/`--resume`、文件发布、Artifact 登记和 Token/缓存用量。
 
 `publish_record` 由 `0002_conversation.sql` 创建，记录 Task 发布提交、合并文件、冲突与阻塞状态，供成果修改历史页读取。
@@ -176,7 +186,7 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 ### 已知工程取舍
 - `noUncheckedIndexedAccess` 关闭（为绕过 express `req.params` 类型摩擦）。代价：数组下标访问不强制 undefined 检查。如需更严格，重开后主要修 `src/shared/utils.ts` 和 domain 的 row 映射。
 - Claude Code 的模型可用性由用户本机或代理服务决定。先在“系统设置”填写实际支持的模型标识并运行桥接测试；错误模型会直接返回诊断，不会用 FakeExecutor 冒充成功。
-- 当前已接入 Claude Code CLI、OpenAI-compatible API 和 Gemini API；Codex/Gemini CLI、通用 Manifest 安装管理、分层记忆、模板平台、多模态和多租户 SaaS 仍是后续范围。
+- 当前已接入 Claude Code CLI、OpenAI-compatible API 和 Gemini API，并已完成分层记忆；Codex/Gemini CLI、通用 Manifest 安装管理、统一审批/Turbo 权限、模板平台、多模态和多租户 SaaS 仍是后续范围。
 
 ### UI 分层约定
 - **低门槛优先**：首次主流程固定为“创建公司→组建团队→创建项目→发布 Task”；首屏只提供一个状态相关主行动，rootDir/firstAgentId 后端自动。
