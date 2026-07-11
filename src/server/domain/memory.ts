@@ -232,6 +232,54 @@ export function searchMemory(db: DB, input: {
   return rows.map(entryFromRow);
 }
 
+export function loadContextMemories(db: DB, input: {
+  profileId: string; companyId: string; projectId: string; limit?: number;
+}): MemoryEntry[] {
+  const now = nowIso();
+  return (db.prepare(
+    `SELECT * FROM memory_entry
+     WHERE profile_id=? AND state IN ('active','locked')
+       AND can_influence=1 AND (expires_at IS NULL OR expires_at > ?)
+       AND (
+         scope IN ('personal','skill')
+         OR (scope='company' AND company_id=?)
+         OR (scope='project' AND company_id=? AND project_id=?)
+       )
+     ORDER BY CASE scope WHEN 'personal' THEN 1 WHEN 'company' THEN 2 WHEN 'project' THEN 3 ELSE 4 END,
+       updated_at DESC LIMIT ?`,
+  ).all(
+    input.profileId, now, input.companyId, input.companyId, input.projectId,
+    Math.min(Math.max(input.limit ?? 8, 1), 20),
+  ) as EntryRow[]).map(entryFromRow);
+}
+
+export function flushThreadMemory(db: DB, input: {
+  threadId: string; content: string; sourceTaskId?: string;
+}): MemoryCandidate | null {
+  const content = input.content.trim();
+  if (!content) return null;
+  const row = db.prepare(
+    `SELECT a.profile_id, p.company_id, t.project_id
+     FROM project_agent_thread t
+     JOIN agent_definition a ON a.id=t.agent_id
+     JOIN project p ON p.id=t.project_id
+     WHERE t.id=?`,
+  ).get(input.threadId) as { profile_id: string; company_id: string; project_id: string } | undefined;
+  if (!row) throw new AppError(ErrorCode.NOT_FOUND, `thread ${input.threadId} not found`);
+  return createMemoryCandidate(db, {
+    profileId: row.profile_id,
+    scope: 'project',
+    companyId: row.company_id,
+    projectId: row.project_id,
+    content,
+    sourceTaskId: input.sourceTaskId,
+    author: 'agent',
+    confidence: 0.9,
+    canInfluence: true,
+    allowAutoApprove: true,
+  });
+}
+
 function validateScope(scope: MemoryScope, companyId?: string, projectId?: string): void {
   if (scope === 'company' && !companyId) throw new AppError(ErrorCode.VALIDATION, '公司记忆必须指定公司');
   if (scope === 'project' && (!companyId || !projectId)) throw new AppError(ErrorCode.VALIDATION, '项目记忆必须指定公司和项目');

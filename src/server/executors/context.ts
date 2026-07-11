@@ -16,6 +16,8 @@ import { readArtifactContent } from '../domain/artifact-content';
 import { assertCanReadSource, listProjectReferences } from '../domain/project';
 import { buildBridgePromptSection } from '../bridge';
 import { getWorkflow, type EdgeCondition } from '../domain/workflow';
+import { getAgentProfile } from '../domain/agent-profile';
+import { loadContextMemories } from '../domain/memory';
 
 const MAX_REFERENCE_BYTES = 64 * 1024;
 const MAX_TOTAL_REFERENCE_BYTES = 256 * 1024;
@@ -44,6 +46,11 @@ export function assembleContext(
 
   // ===== System Prompt =====
   const sp: string[] = [];
+  if (agent) {
+    const profile = getAgentProfile(db, agent.profileId);
+    sp.push('# 员工身份', profile.soul || profile.displayName, '');
+    if (profile.principles.length > 0) sp.push('# 工作原则', profile.principles.map((item) => `- ${item}`).join('\n'), '');
+  }
   if (company.charter) {
     sp.push('# 公司章程', company.charter, '');
   }
@@ -82,6 +89,16 @@ export function assembleContext(
       .get(options.threadId) as { compaction_summary: string | null } | undefined;
     if (compaction?.compaction_summary) {
       sp.push('# 过往会话摘要（已压缩）', compaction.compaction_summary, '');
+    }
+  }
+  if (agent) {
+    const memories = loadContextMemories(db, {
+      profileId: agent.profileId,
+      companyId: company.id,
+      projectId: project.id,
+    });
+    if (memories.length > 0) {
+      sp.push('# 已批准的相关记忆', ...memories.map((memory) => `- [${memory.scope}] ${memory.content}`), '');
     }
   }
   const systemPrompt = sp.join('\n');

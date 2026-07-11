@@ -9,6 +9,7 @@ import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
 import { getProject } from './project';
 import { getAgent, listAgents } from './agent';
+import { flushThreadMemory } from './memory';
 
 export type ThreadKind = 'primary' | 'mirror';
 export type ThreadState = 'idle' | 'running' | 'waiting' | 'paused' | 'failed';
@@ -20,6 +21,7 @@ export interface ProjectAgentThread {
   kind: ThreadKind;
   rootThreadId: string | null;
   claudeSessionId: string | null;
+  previousSessionId: string | null;
   context: Record<string, unknown>;
   state: ThreadState;
   createdAt: string;
@@ -33,6 +35,7 @@ interface ThreadRow {
   kind: ThreadKind;
   root_thread_id: string | null;
   claude_session_id: string | null;
+  previous_session_id: string | null;
   context_json: string;
   state: string;
   created_at: string;
@@ -47,6 +50,7 @@ function fromRow(r: ThreadRow): ProjectAgentThread {
     kind: r.kind,
     rootThreadId: r.root_thread_id,
     claudeSessionId: r.claude_session_id,
+    previousSessionId: r.previous_session_id ?? null,
     context: JSON.parse(r.context_json ?? '{}'),
     state: r.state as ThreadState,
     createdAt: r.created_at,
@@ -172,9 +176,22 @@ export function incrementExecCount(db: DB, id: string): { count: number; shouldC
 export function clearSessionForCompaction(db: DB, id: string, summary: string): void {
   db.prepare(
     `UPDATE project_agent_thread
-     SET claude_session_id=NULL, exec_count=0, last_compaction_at=?, compaction_summary=?, updated_at=?
+     SET previous_session_id=claude_session_id, claude_session_id=NULL, exec_count=0,
+       last_compaction_at=?, compaction_summary=?, updated_at=?
      WHERE id=?`,
   ).run(nowIso(), summary, nowIso(), id);
+}
+
+export function compactThreadWithMemory(db: DB, id: string, input: {
+  summary: string;
+  memoryContent: string;
+  sourceTaskId?: string;
+  flush?: () => void;
+}): void {
+  getThread(db, id);
+  if (input.flush) input.flush();
+  else flushThreadMemory(db, { threadId: id, content: input.memoryContent, sourceTaskId: input.sourceTaskId });
+  clearSessionForCompaction(db, id, input.summary);
 }
 
 /**

@@ -31,7 +31,7 @@ import {
   getThread,
   removeMirror,
   ensureProjectThreads,
-  clearSessionForCompaction,
+  compactThreadWithMemory,
 } from '../domain/thread';
 import { getCompany } from '../domain/company';
 import { registerDefaultNovelScheduleTriggers } from '../domain/triggers';
@@ -157,7 +157,7 @@ projectById.post(
     const t = getThread(db, threadId);
     const input = z.object({ summary: z.string().optional() }).parse(req.body ?? {});
     const summary = input.summary?.trim() || `[手动压缩 ${new Date().toISOString()}] 用户手动清空上下文`;
-    clearSessionForCompaction(db, t.id, summary);
+    compactThreadWithMemory(db, t.id, { summary, memoryContent: summary });
     res.json({ ok: true, threadId: t.id });
   }),
 );

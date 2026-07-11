@@ -23,7 +23,7 @@ import {
   blockTask,
   createTask,
 } from '../domain/task';
-import { getThread, listOnlineThreads, setClaudeSession, updateThreadState, incrementExecCount, clearSessionForCompaction, rotateSession } from '../domain/thread';
+import { getThread, listOnlineThreads, setClaudeSession, updateThreadState, incrementExecCount, compactThreadWithMemory, rotateSession } from '../domain/thread';
 import { getAgent } from '../domain/agent';
 import { assembleContext } from '../executors/context';
 import { assertSafeToRun } from '../executors/safety';
@@ -245,7 +245,11 @@ export class TaskEngine {
       const exec = incrementExecCount(this.db, thread.id);
       if (exec.shouldCompact && result.outcome === 'completed') {
         const compactSummary = `[会话压缩 ${new Date().toISOString()}] 最近 ${exec.count} 次执行的最新成果：${result.summary || '（无摘要）'}`;
-        clearSessionForCompaction(this.db, thread.id, compactSummary);
+        compactThreadWithMemory(this.db, thread.id, {
+          summary: compactSummary,
+          memoryContent: `最近执行摘要：${result.summary || '（无摘要）'}`,
+          sourceTaskId: task.id,
+        });
         log.info('session compacted', { threadId: thread.id, count: exec.count });
       } else if (exec.shouldRotate && result.outcome === 'completed') {
         rotateSession(this.db, thread.id);
