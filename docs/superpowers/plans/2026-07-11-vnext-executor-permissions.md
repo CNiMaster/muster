@@ -73,21 +73,21 @@
 - Unsupported manifest capabilities fail visibly; they never silently become unrestricted.
 - Custom CLI command templates use argument arrays and explicit placeholders; no shell interpolation.
 
-## Task 5: Add detection, managed-install workflow, and connection diagnostics
+## Task 5: Add system detection, official-install guidance, and connection diagnostics
 
 **Files:**
-- Add `src/server/domain/executor-install.ts`
+- Add `src/server/domain/executor-discovery.ts`
 - Add `src/server/api/executors.ts`
 - Modify `src/server/api/settings.ts`
-- Test `tests/integration/executor-install.spec.ts`
+- Test `tests/integration/executor-discovery.spec.ts`
 
-**Workflow:** detect → show official source/version/location → explicit confirmation → install/upgrade/rollback/uninstall → verify → credential/login setup → connection and sandbox test.
+**Workflow:** detect system install → show official source and supported commands → open official guide → user installs through the official mechanism → re-detect → bind exact system path/version → official login → connection and sandbox test.
 
 **Requirements:**
-- Managed runtimes live under `{MUSTER_HOME}/runtimes/{manifestId}/{version}`.
-- System installations are detected and recorded but never silently upgraded.
-- Installation plans are previewable and require explicit confirmation.
-- Initial implementation may support package-manager/manual commands per manifest, but must model every lifecycle state and keep rollback metadata.
+- Muster does not bundle or privately copy Codex, Claude Code, or Gemini CLI.
+- System installations are detected and recorded but never silently installed or upgraded.
+- Official commands are copyable and the authoritative installation guide opens from the app.
+- Re-detection creates a fixed Executor Profile for the exact executable path; official login and updates remain owned by the vendor CLI.
 
 ## Task 6: Replace settings UI with executor and permission center
 

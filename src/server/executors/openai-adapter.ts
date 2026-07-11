@@ -125,6 +125,7 @@ export class OpenAICompatibleAdapter implements ExecutionAdapter {
         signal: ctx.signal,
         model,
         loopback: ctx.loopback,
+        permissionGuard: ctx.permissionGuard,
       });
 
       const durationMs = Date.now() - start;

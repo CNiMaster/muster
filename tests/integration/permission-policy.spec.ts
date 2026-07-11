@@ -7,6 +7,10 @@ import {
   requestApproval,
   savePermissionRule,
 } from '../../src/server/domain/permission';
+import { executeFileTool } from '../../src/server/executors/tools/file-tools';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 
 describe('permission policy = approval strategy × allowed scope', () => {
   it('keeps Turbo bounded by scope and never auto-allows high-risk actions', () => {
@@ -29,5 +33,14 @@ describe('permission policy = approval strategy × allowed scope', () => {
       savePermissionRule(db, policy.id, { effect: 'deny', action: 'run-command', commandPattern: '^rm\\b' });
       expect(evaluatePermission(db, policy.id, { action: 'run-command', command: 'rm file', path: '/p', taskRoot: '/p', projectRoot: '/p', workspaceRoot: '/' }).decision).toBe('deny');
     } finally { close(); }
+  });
+
+  it('prevents an API model tool from writing before approval', () => {
+    const root=mkdtempSync(join(tmpdir(),'muster-permission-'));
+    try {
+      const result=executeFileTool({id:'call',name:'write_file',args:{path:'secret.txt',content:'no'}},root,[],undefined,()=>({allowed:false,message:'等待用户审批'}));
+      expect(result.content).toContain('需要用户审批');
+      expect(existsSync(join(root,'secret.txt'))).toBe(false);
+    } finally {rmSync(root,{recursive:true,force:true});}
   });
 });

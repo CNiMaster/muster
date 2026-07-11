@@ -25,7 +25,6 @@
     "@xyflow/react": "^12.3.5",
     "better-sqlite3": "^11.7.0",
     "express": "^5.2.1",
-    "npm": "^11.18.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.1.0",

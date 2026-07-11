@@ -50,6 +50,8 @@ import { mkdirSync } from 'node:fs';
 import { SERVER_CONFIG } from '../env';
 import { createExecutionRun, getEmployeeExecutorProfile, updateExecutionRunStatus } from '../domain/executor-profile';
 import { buildRunIsolation, withExecutorConcurrency } from '../executors/run-isolation';
+import { ensureApprovalRequest, evaluatePermission, getEmployeePermissionPolicy } from '../domain/permission';
+import { getActiveWorkspace } from '../domain/workspace';
 
 export interface EngineOptions {
   heartbeatIntervalMs?: number;
@@ -222,6 +224,7 @@ export class TaskEngine {
       const profileExecutor = executorProfile?.config as AgentExecutorConfig | undefined;
       const legacyExecutor = normalizeAgentExecutor(agent.executor);
       const effectiveExecutor = profileExecutor ?? legacyExecutor;
+      const permissionPolicy = getEmployeePermissionPolicy(this.db, agent.id);
       const ctx: ExecutionContext = {
         task: getTask(this.db, task.id),
         systemPrompt: '', // 由 assembleContext 装配
@@ -245,6 +248,32 @@ export class TaskEngine {
           baseUrl: `http://127.0.0.1:${this.serverPort}`,
           taskId: task.id,
         },
+        permissionGuard: permissionPolicy ? (request) => {
+          const decision = evaluatePermission(this.db, permissionPolicy.id, {
+            ...request,
+            taskRoot: workingDir,
+            projectRoot: project.rootDir,
+            workspaceRoot: getActiveWorkspace(this.db)?.rootDir ?? project.rootDir,
+            employeeId: agent.id,
+            companyId: company.id,
+            projectId: project.id,
+          });
+          if (decision.decision === 'allow') return { allowed: true };
+          if (decision.decision === 'approval-required') {
+            const approval = ensureApprovalRequest(this.db, { policyId: permissionPolicy.id, employeeId: agent.id, taskId: task.id, action: request.action, command: request.command, path: request.path });
+            return { allowed: false, message: `审批请求 ${approval.id} 已进入审批中心` };
+          }
+          return { allowed: false, message: decision.reason };
+        } : undefined,
+        permissionPolicy: permissionPolicy ? {
+          approvalStrategy: permissionPolicy.approvalStrategy,
+          scope: permissionPolicy.scope,
+          allowedRoots: permissionPolicy.scope === 'task' ? [workingDir]
+            : permissionPolicy.scope === 'project' ? [project.rootDir]
+            : permissionPolicy.scope === 'workspace' ? [getActiveWorkspace(this.db)?.rootDir ?? project.rootDir]
+            : permissionPolicy.scope === 'selected-directories' ? permissionPolicy.selectedDirectories
+            : [],
+        } : undefined,
       };
       const runController = new AbortController();
       this.activeRuns.set(task.id, runController);

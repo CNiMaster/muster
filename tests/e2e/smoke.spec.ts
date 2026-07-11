@@ -115,11 +115,12 @@ test('员工库展示全局档案与公司任职', async ({ page }) => {
   await expect(page.getByText('已批准记忆 1')).toBeVisible();
 });
 
-test('执行器中心为新 Mac 提供软件内检测和安装入口', async ({ page }) => {
+test('执行器中心检测系统安装并提供官方安装引导', async ({ page }) => {
   await page.goto('/executors');
-  await expect(page.getByRole('heading', { name: '执行器安装中心' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '执行器接入中心' })).toBeVisible();
   await expect(page.getByText('Codex CLI', { exact: true })).toBeVisible();
   await expect(page.getByText('Claude Code CLI', { exact: true })).toBeVisible();
   await expect(page.getByText('Gemini CLI', { exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: '由 Muster 安装' }).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: '检测系统安装' }).first()).toBeVisible();
+  await expect(page.getByText('Muster 不内置或复制 CLI，请选择官方支持的安装方式：').first()).toBeVisible();
 });

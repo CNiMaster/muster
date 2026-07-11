@@ -20,8 +20,13 @@ export class CodexCliAdapter implements ExecutionAdapter {
     writeFileSync(schemaPath,JSON.stringify(AGENT_RESULT_JSON_SCHEMA));
     const prompt=[ctx.systemPrompt,'# 当前 Task 工作包',JSON.stringify(ctx.inputPacket,null,2),'只返回符合指定 JSON Schema 的最终结果。'].join('\n\n');
     const common=['--json','--output-schema',schemaPath,'-o',outputPath];
+    const policy=ctx.permissionPolicy;
+    const approval=policy?.approvalStrategy==='no-approval'?'never':'untrusted';
     if(ctx.agentExecutor?.model)common.push('-m',ctx.agentExecutor.model);
-    const args=ctx.sessionIdHint?['exec','resume',ctx.sessionIdHint,...common,'-c','sandbox_mode="workspace-write"',prompt]:['exec',...common,'-s','workspace-write','-C',ctx.workingDir,prompt];
+    const sandbox=policy?.approvalStrategy==='deny'?'read-only':'workspace-write';
+    const initialPolicy=['-a',approval,'-s',sandbox,'-C',ctx.workingDir];
+    for(const root of policy?.allowedRoots??[]){if(root!==ctx.workingDir)initialPolicy.push('--add-dir',root);}
+    const args=ctx.sessionIdHint?['exec','resume',ctx.sessionIdHint,...common,'-c',`approval_policy="${approval}"`,'-c',`sandbox_mode="${sandbox}"`,prompt]:['exec',...common,...initialPolicy,prompt];
     const result=await (this.options.runner??defaultRunner)(binary,args,{cwd:ctx.workingDir,env:{...process.env,CODEX_HOME:ctx.runConfigDir??process.env.CODEX_HOME},signal:ctx.signal,timeout:ctx.agentExecutor?.timeoutMs??600_000});
     for(const line of result.stdout.split(/\r?\n/).filter(Boolean))events?.onOutput?.(line);
     if(result.exitCode!==0)throw new AppError(ErrorCode.INTERNAL,`Codex CLI 执行失败: ${result.stderr.slice(0,2000)}`);
