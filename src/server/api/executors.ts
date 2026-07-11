@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { getDb } from '../db/client';
 import { asyncHandler, param } from './middleware';
 import { BUILTIN_EXECUTOR_MANIFESTS } from '../executors/manifests';
-import { bindDetectedSystemExecutor, detectSystemExecutor } from '../domain/executor-discovery';
+import { bindDetectedSystemExecutor, detectSystemExecutor, testExecutorProfileConnection } from '../domain/executor-discovery';
 import { bindEmployeeExecutorProfile, createExecutorProfile, listExecutorProfiles } from '../domain/executor-profile';
 
 export const executorsRouter = Router();
@@ -14,3 +14,4 @@ executorsRouter.post('/profiles', asyncHandler(async (req,res)=>{const input=z.o
 executorsRouter.put('/employees/:employeeId/profile/:executorProfileId', asyncHandler(async (req,res)=>{bindEmployeeExecutorProfile(getDb(),param(req,'employeeId'),param(req,'executorProfileId'));res.json({ok:true});}));
 executorsRouter.post('/:manifestId/detect', asyncHandler(async (req,res)=>res.json(await detectSystemExecutor(param(req,'manifestId')))));
 executorsRouter.post('/:manifestId/bind-system', asyncHandler(async (req,res)=>res.status(201).json(await bindDetectedSystemExecutor(getDb(),param(req,'manifestId')))));
+executorsRouter.post('/profiles/:id/test', asyncHandler(async (req,res)=>res.json(await testExecutorProfileConnection(getDb(),param(req,'id')))));

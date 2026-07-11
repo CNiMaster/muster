@@ -42,5 +42,22 @@ CREATE TABLE permission_approval (
 );
 
 ALTER TABLE company_employee ADD COLUMN permission_policy_id TEXT REFERENCES permission_policy(id);
+
+INSERT INTO permission_policy (
+  id, name, approval_strategy, scope, selected_directories_json, created_at, updated_at
+)
+SELECT
+  'pp_legacy_' || id,
+  '兼容权限 · ' || role,
+  'no-approval',
+  'task',
+  '[]',
+  created_at,
+  updated_at
+FROM company_employee;
+
+UPDATE company_employee
+SET permission_policy_id = 'pp_legacy_' || id
+WHERE permission_policy_id IS NULL;
 CREATE INDEX idx_permission_rule_policy ON permission_rule(policy_id, created_at);
 CREATE INDEX idx_permission_approval_status ON permission_approval(status, created_at);
