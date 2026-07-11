@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## About Muster
 
-Muster is a local multi-agent orchestration system that spawns Claude Code CLI processes as agent backends and provides a web UI for visualization and interaction.
+Muster is a local multi-agent company workbench. Persistent employees collaborate through project-scoped Tasks while fixed CLI or API executors run their work in isolated worktrees.
 
 **Agent personas and skills** — 3 local personas plus 200+ domain experts integrated from [jnMetaCode/agency-agents-zh](https://github.com/jnMetaCode/agency-agents-zh) into `personas/`. 20 skills from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) in `skills/`.
 
@@ -15,14 +15,16 @@ Muster is being redesigned from a one-shot Leader → Worker → Verifier orches
 Authoritative planning documents:
 
 - `docs/PRD-agent-company-workbench.md` — product requirements and accepted domain semantics
-- `docs/agent-company-implementation-checklist.md` — phased implementation and acceptance checklist
+- `docs/superpowers/specs/2026-07-11-platform-workspace-agent-memory-templates-design.md` — confirmed vNext workspace, employee memory, executor, permission, template, and UX design
+- `docs/agent-company-implementation-checklist.md` — completed historical implementation checklist and acceptance record
 
 Key constraints for all new work:
 
 - Do not preserve or extend the existing "quick task" mode as a product requirement. The current orchestrator and group chat are legacy implementation references, not the target architecture.
 - Reuse low-level capabilities where appropriate: Claude Code process execution, streaming events, sandboxing, scheduling, backups, and path validation.
-- Replace the orchestration and state model with Company, Project, Agent Definition, Project Agent Thread, Mirror, Task, Trigger, Artifact, Report Cycle, and Usage concepts from the PRD.
-- All real work belongs to a Project. Employee identity is company-scoped; working context and runtime threads are project-scoped.
+- Evolve the domain model toward Workspace, Agent Profile, Company Employee, Project, Project Agent Thread, Mirror, Task, Trigger, Artifact, Report Cycle, Usage, Executor Profile, Permission Policy, Memory Entry, Capability Package, and Company Template concepts from the PRD and vNext design.
+- All real work belongs to a Project. Agent Profile is reusable and user-local; company employment, project context, runtime threads, sessions, permissions, and worktrees remain scoped and isolated.
+- Employees bind fixed CLI or API executors. Company defaults may be inherited, but an employee does not silently switch executors during a Task.
 - A mirror is a project-local temporary parallel execution thread for one employee, not a new formal company employee.
 - Task is the single runtime abstraction for queues, collaboration, clarification, feedback, event triggers, scheduled work, and bounded discussions.
 - The platform owns deterministic infrastructure; semantic decisions must be assigned to an explicit Agent.
@@ -106,7 +108,7 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 - **Task 是唯一运行单元**：10 态状态机 `queued|claimed|running|waiting_input|waiting_dependency|paused|blocked|completed|failed|cancelled`。
 - **原子领取**：`BEGIN IMMEDIATE` + `UPDATE ... WHERE state='queued' ... RETURNING`，租约 + 心跳 + 过期恢复。
 - **追问 3 轮上限**：超限自动给项目第一负责人派发上报 Task。
-- **执行器抽象**：`ExecutionAdapter` 接口；首个实现 `ClaudeCodeAdapter`（spawn claude，stream-json，session 持久化，Zod 校验 AgentRunResult）。
+- **执行器抽象**：`ExecutionAdapter` 接口；当前实现包含 `ClaudeCodeAdapter`、OpenAI-compatible 和 Gemini adapters。vNext 将其迁移到统一 Manifest/Profile 模型，并增加 Codex CLI 与自定义 CLI。
 - **引擎驱动**：`ProjectRuntimeCoordinator` 在 server 启动时定时轮询 online 公司，补线程、处理中断/排空/复盘并调用 `TaskEngine.pumpThread()` 完成领取→worktree→执行→发布；也提供 `POST /api/projects/:id/pump` 手动触发。
 - **定时触发**：`TriggerScheduler` 轮询 `trigger.next_run_at`；小说项目自动注册遗漏、连续性、长期一致性检查。下班期间不派发，上班后补派发；下一执行时间与 Task 创建在同一事务推进，避免重复。
 - **实时状态**：服务端通过 `/ws` 发布 Task 领取、完成和发布阻塞事件；前端按 project/task 标识精确失效查询缓存，4 秒消息轮询仅作断线兜底。
@@ -171,7 +173,7 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 ### 已知工程取舍
 - `noUncheckedIndexedAccess` 关闭（为绕过 express `req.params` 类型摩擦）。代价：数组下标访问不强制 undefined 检查。如需更严格，重开后主要修 `src/shared/utils.ts` 和 domain 的 row 映射。
 - Claude Code 的模型可用性由用户本机或代理服务决定。先在“系统设置”填写实际支持的模型标识并运行桥接测试；错误模型会直接返回诊断，不会用 FakeExecutor 冒充成功。
-- 首版只接入 Claude Code 执行器。员工级多 API 凭据、多模态执行器、通用 PPT/网页公司模板和多租户 SaaS 仍是后续范围。
+- 当前已接入 Claude Code CLI、OpenAI-compatible API 和 Gemini API；Codex/Gemini CLI、通用 Manifest 安装管理、分层记忆、模板平台、多模态和多租户 SaaS 仍是后续范围。
 
 ### UI 分层约定
 - **低门槛优先**：建项目只填名称，rootDir/firstAgentId 后端自动；建公司不展示只有一个选项的 Select。
