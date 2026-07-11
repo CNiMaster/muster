@@ -217,6 +217,7 @@ export class TaskEngine {
         runId: executionRun.id,
         employeeId: agent.id,
         profileId: executorProfile!.id,
+        threadId: thread.id,
       }) : null;
       if (isolation) {
         for (const dir of [isolation.configDir, isolation.tempDir, isolation.logDir, isolation.sessionDir]) mkdirSync(dir, { recursive: true });

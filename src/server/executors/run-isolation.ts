@@ -11,10 +11,10 @@ export interface RunIsolation {
   profileId: string;
 }
 
-export function buildRunIsolation(musterHome: string, input: { runId: string; employeeId: string; profileId: string }): RunIsolation {
+export function buildRunIsolation(musterHome: string, input: { runId: string; employeeId: string; profileId: string; threadId?: string }): RunIsolation {
   if (!/^[A-Za-z0-9_-]+$/.test(input.runId)) throw new Error('runId 格式无效');
   const runRoot = join(musterHome, 'runs', input.runId);
-  return { runRoot, configDir: join(runRoot, 'config'), tempDir: join(runRoot, 'tmp'), logDir: join(runRoot, 'logs'), sessionDir: join(runRoot, 'sessions'), employeeId: input.employeeId, profileId: input.profileId };
+  return { runRoot, configDir: join(musterHome, 'agents', input.employeeId, 'executors', input.profileId), tempDir: join(runRoot, 'tmp'), logDir: join(runRoot, 'logs'), sessionDir: join(musterHome, 'agents', input.employeeId, 'sessions', input.threadId ?? input.runId), employeeId: input.employeeId, profileId: input.profileId };
 }
 
 const lockTails = new Map<string, Promise<void>>();

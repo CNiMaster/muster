@@ -25,7 +25,7 @@ describe('shared executor isolation', () => {
       expect(one.tempDir).not.toBe(two.tempDir);
       expect(one.logDir).not.toBe(two.logDir);
       expect(one.sessionDir).not.toBe(two.sessionDir);
-      expect(one.configDir).toBe(join('/muster', 'runs', 'run-a', 'config'));
+      expect(one.configDir).toBe(join('/muster', 'agents', a.id, 'executors', profile.id));
     } finally {
       close();
     }

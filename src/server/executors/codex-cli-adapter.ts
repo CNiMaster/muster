@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { ExecutionAdapter, ExecutionContext, ExecutionEvents, ExecutionRunResult } from '../task-engine/executor';
@@ -27,6 +27,7 @@ export class CodexCliAdapter implements ExecutionAdapter {
     const initialPolicy=['-a',approval,'-s',sandbox,'-C',ctx.workingDir];
     for(const root of policy?.allowedRoots??[]){if(root!==ctx.workingDir)initialPolicy.push('--add-dir',root);}
     const args=ctx.sessionIdHint?['exec','resume',ctx.sessionIdHint,...common,'-c',`approval_policy="${approval}"`,'-c',`sandbox_mode="${sandbox}"`,prompt]:['exec',...common,...initialPolicy,prompt];
+    prepareCodexHome(ctx.runConfigDir);
     const result=await (this.options.runner??defaultRunner)(binary,args,{cwd:ctx.workingDir,env:{...process.env,CODEX_HOME:ctx.runConfigDir??process.env.CODEX_HOME},signal:ctx.signal,timeout:ctx.agentExecutor?.timeoutMs??600_000});
     for(const line of result.stdout.split(/\r?\n/).filter(Boolean))events?.onOutput?.(line);
     if(result.exitCode!==0)throw new AppError(ErrorCode.INTERNAL,`Codex CLI 执行失败: ${result.stderr.slice(0,2000)}`);
@@ -36,3 +37,4 @@ export class CodexCliAdapter implements ExecutionAdapter {
   }
 }
 function findSessionId(stdout:string):string|null{for(const line of stdout.split(/\r?\n/)){try{const event=JSON.parse(line);if(event.thread_id)return event.thread_id;if(event.session_id)return event.session_id;}catch{/* non-json diagnostic */}}return null;}
+function prepareCodexHome(target:string|undefined):void{if(!target)return;mkdirSync(target,{recursive:true});const source=join(process.env.HOME??'', '.codex','auth.json');const link=join(target,'auth.json');if(source&&existsSync(source)&&!existsSync(link))symlinkSync(source,link);}
