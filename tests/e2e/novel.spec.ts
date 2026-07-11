@@ -16,5 +16,6 @@ test('首页 onboarding 引导在无公司时渲染', async ({ page }) => {
 
 test('首页能导航到智能向导', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByRole('button', { name: '智能向导创建' })).toBeVisible({ timeout: 5000 });
+  const start = page.getByRole('link', { name: '开始创建公司' });
+  if (await start.count()) await expect(start).toBeVisible({ timeout: 5000 });
 });

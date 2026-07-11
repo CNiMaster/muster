@@ -173,6 +173,15 @@ p { margin: 0 0 var(--space-3) 0; }
 }
 .next-action-link { flex: 0 0 auto; }
 .next-action-link:hover { color: white; text-decoration: none; }
+.initial-task-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: calc(-1 * var(--space-3));
+  padding: 0 var(--space-2) var(--space-2);
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+}
 
 @media (max-width: 640px) {
   .next-action-card { align-items: stretch; flex-direction: column; }

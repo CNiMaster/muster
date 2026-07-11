@@ -9,35 +9,24 @@ test('核心功能端到端完整回归流', async ({ page }) => {
 
   // 1. 向导创建公司并上班
   await page.goto('/');
-  await page.getByRole('button', { name: '智能向导创建' }).click();
+  await page.getByRole('link', { name: '开始创建公司' }).click();
   await page.getByPlaceholder(/银翼创世纪小说工作室/).fill(companyName);
   await page.getByPlaceholder(/创作一部硬核赛博朋克长篇小说/).fill('赛博朋克科幻小说主题');
   await page.getByRole('button', { name: '生成预览与团队配置' }).click();
-  await expect(page.getByRole('main').getByText(/Claude 生成不可用/)).toBeVisible({ timeout: 5000 });
+  await expect(page.getByRole('main').getByText(/智能方案暂时不可用/)).toBeVisible({ timeout: 5000 });
   await expect(page.getByText(/组织健康体检合格/)).toBeVisible();
-  await page.getByRole('button', { name: '确认无误，今日开始上班！' }).click();
+  await page.getByRole('button', { name: '确认团队并创建项目' }).click();
 
-  // 2. 公司页内新增员工（向导模式 - 需要下班状态才能新增）
-  await expect(page.locator('h1')).toContainText(companyName);
-  await page.getByRole('button', { name: '下班', exact: true }).click();
-  await expect(page.locator('.mu-badge').getByText(/^下班$/).first()).toBeVisible({ timeout: 5000 });
-
-  await page.getByRole('button', { name: '智能新增向导' }).click();
-  await page.getByPlaceholder(/李四/).fill('老李');
-  await page.getByPlaceholder(/校对小说正文与语法/).fill('校对错字和语病');
-  await page.getByRole('button', { name: '生成岗位配置' }).click();
-  await expect(page.getByText('推荐配置预览（可修改）')).toBeVisible({ timeout: 5000 });
-  await page.getByRole('button', { name: '确认配置并加入团队 🚀' }).click();
-  await expect(page.getByText('老李', { exact: true })).toBeVisible({ timeout: 5000 });
-
-  // 3. 项目向导创建新项目与开工（公司处于下班状态才能新建项目）
-  await page.getByRole('link', { name: '新建项目' }).click();
+  // 2. 团队就绪后直接进入项目向导，公司无需下班
+  await page.waitForURL(/\/companies\/co_[^/]+\/projects\/new\?onboarding=1/);
+  const companyId = page.url().match(/\/companies\/(co_[^/]+)\//)?.[1];
+  expect(companyId).toBeTruthy();
   await page.getByPlaceholder(/用您自然的语言描述故事想法/).fill('写一本都市修仙小说，风格幽默');
   await page.getByRole('button', { name: '生成蓝图配置' }).click();
   await expect(page.getByText('微调推荐配置')).toBeVisible({ timeout: 5000 });
   await page.getByRole('button', { name: '确认设定并正式开工' }).click();
 
-  // 4. 验证项目详情并自动下发初始 Task
+  // 3. 验证项目详情、自动下发初始 Task，并保持公司在线
   await page.waitForURL(/\/projects\/pr_/);
   try {
     await expect(page.locator('.project-page')).toBeVisible({ timeout: 5000 });
@@ -45,11 +34,14 @@ test('核心功能端到端完整回归流', async ({ page }) => {
     await page.screenshot({ path: '/Users/master/.gemini/antigravity/brain/b8da204f-f1ef-4e82-87c0-fb4c41838ee8/error_screenshot.png' });
     throw err;
   }
+  await expect(page.getByText('根据用户初始设想整理项目简报与第一阶段大纲')).toBeVisible();
+  await expect(page.getByRole('link', { name: '发布新任务' })).toBeVisible();
+  const companyResponse = await page.request.get(`/api/companies/${companyId}`);
+  expect((await companyResponse.json()).state).toBe('online');
 
-  // 5. 返回公司页并上班，然后进入项目进行看板/复盘测试
+  // 4. 返回公司页，然后进入项目进行看板/复盘测试
   await page.getByRole('link', { name: '首页' }).click();
   await page.getByRole('link', { name: companyName }).click();
-  await page.getByRole('button', { name: '上班' }).click();
   await expect(page.locator('.mu-badge').getByText(/^上班$/).first()).toBeVisible({ timeout: 5000 });
 
   // 离线 E2E 使用明确标注的确定性模板项目名。
@@ -59,7 +51,7 @@ test('核心功能端到端完整回归流', async ({ page }) => {
   console.log('LOADING COMPLETED. CURRENT URL:', page.url());
   await expect(page.getByRole('button', { name: '看板' })).toBeVisible({ timeout: 5000 });
 
-  // 6. 看板与复盘流程测试
+  // 5. 看板与复盘流程测试
   // 前往复盘页
   await page.getByRole('button', { name: '复盘' }).click();
   await expect(page.getByText('无活跃复盘周期')).toBeVisible({ timeout: 5000 });

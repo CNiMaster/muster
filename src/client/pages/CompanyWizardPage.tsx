@@ -55,8 +55,8 @@ export function CompanyWizardPage(): React.ReactElement {
             { id: data.company.id, action: 'clock-in' },
             {
               onSuccess: () => {
-                toast('success', '公司已创建并上班');
-                navigate(`/companies/${data.company.id}`);
+                toast('success', '团队已准备好，接下来创建第一个项目');
+                navigate(`/companies/${data.company.id}/projects/new?onboarding=1`);
               },
               onError: (e) => toast('error', (e as { message?: string }).message ?? '公司已创建，但上班失败'),
             },
@@ -193,7 +193,7 @@ export function CompanyWizardPage(): React.ReactElement {
               返回上一步
             </Button>
             <Button onClick={handleConfirmAndClockIn} loading={companyAction.isPending || createNovelCompany.isPending}>
-              确认无误，今日开始上班！
+              确认团队并创建项目
             </Button>
           </div>
         </div>

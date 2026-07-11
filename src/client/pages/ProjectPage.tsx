@@ -392,6 +392,13 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
         attentionCount,
       })} />
 
+      {tasks && tasks.length > 0 && (
+        <div className="initial-task-summary" aria-label="最近发布的任务">
+          <Badge tone="info">已发布 Task</Badge>
+          <span>{tasks[0].title}</span>
+        </div>
+      )}
+
       <Card title="项目说明">
         <p className="muted" style={{ margin: 0 }}>{project.description || '(未填写)'}</p>
       </Card>

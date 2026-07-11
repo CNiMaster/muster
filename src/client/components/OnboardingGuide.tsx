@@ -1,11 +1,10 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
 import { Button } from './Button';
 
 /**
  首次使用引导（PRD Phase 8，清单 281）。
  - localStorage 标记是否已看过。
- - 3 步引导：创建公司 → 上班 → 建项目。
+ - 4 步引导：创建公司 → 组建团队 → 创建项目 → 发布 Task。
  - 用户可手动关闭（不再显示），或在完成首公司后自动隐藏。
  */
 const STORAGE_KEY = 'muster:onboarding:v1';
@@ -44,19 +43,20 @@ export function OnboardingGuide({ hasCompany }: { hasCompany: boolean }): React.
         <Button size="sm" variant="ghost" onClick={dismiss}>我知道了</Button>
       </div>
       <p className="muted" style={{ margin: '0 0 var(--space-3)' }}>
-        三步开始你的第一个 Agent 公司：
+        按顺序完成四步，就能让团队开始工作：
       </p>
       <ol style={{ margin: 0, paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
         <li>
-          <strong>创建公司</strong>：在下方填入公司名称（如"我的小说工作室"），选择类型后点击创建。
+          <strong>创建公司</strong>：描述目标并选择合适的公司模板。
         </li>
         <li>
-          <strong>公司上班</strong>：进入公司页面后，点击"公司上班"，员工会自动进入项目开始待命。
+          <strong>组建团队</strong>：确认模板自带的岗位，也可以按需要增减员工。
         </li>
         <li>
-          <strong>创建项目</strong>：在公司页面点击"新建项目"，输入项目愿景，第一负责人会自动开始规划。
-          <span className="muted"> 或试试 </span>
-          <Link to="/companies/wizard" style={{ color: 'var(--accent)' }}>智能建司向导</Link>
+          <strong>创建项目</strong>：为实际工作建立独立目录和任务沙盒。
+        </li>
+        <li>
+          <strong>发布 Task</strong>：告诉团队要完成什么，Muster 会分配、执行并跟踪结果。
         </li>
       </ol>
     </div>
