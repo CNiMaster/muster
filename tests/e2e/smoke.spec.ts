@@ -82,3 +82,22 @@ test('设置页默认只展示常用操作，高级参数折叠且窄屏不溢�
   const hasHorizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
   expect(hasHorizontalOverflow).toBe(false);
 });
+
+test('员工库展示全局档案与公司任职', async ({ page }) => {
+  const suffix = Date.now();
+  const companyResponse = await page.request.post('/api/companies', {
+    data: { name: `员工库公司-${suffix}`, kind: 'general' },
+  });
+  const company = await companyResponse.json();
+  const agentResponse = await page.request.post(`/api/companies/${company.id}/agents`, {
+    data: { name: `全局员工-${suffix}`, role: 'engineer', responsibilities: '负责实现' },
+  });
+  const agent = await agentResponse.json();
+
+  await page.goto('/agents');
+  await expect(page.getByRole('heading', { name: '员工库' })).toBeVisible();
+  await page.getByRole('link', { name: new RegExp(`全局员工-${suffix}`) }).click();
+  await expect(page.getByText('公司任职')).toBeVisible();
+  await expect(page.getByText('engineer', { exact: true })).toBeVisible();
+  await expect(page).toHaveURL(`/agents/${agent.profileId}`);
+});

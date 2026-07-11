@@ -33,6 +33,7 @@ import { settingsRouter } from './api/settings';
 import { departmentsRouter } from './api/departments';
 import { setupAssistantRouter } from './api/setup-assistant';
 import { workspacesRouter } from './api/workspaces';
+import { agentProfilesRouter, companyEmployeesRouter } from './api/agent-profiles';
 import { bridgeRouter } from './bridge';
 import { asyncHandler, errorMiddleware, param } from './api/middleware';
 import { realtime } from './realtime';
@@ -121,6 +122,7 @@ async function createApp(): Promise<AppHandle> {
   app.use('/api/companies', companiesRouter);
   app.use('/api/novel', novelRouter);
   app.use('/api/companies/:companyId/agents', agentsRouter);
+  app.use('/api/companies/:companyId/employees', companyEmployeesRouter);
   app.use('/api/companies/:companyId/departments', departmentsRouter);
   app.use('/api/companies/:companyId/projects', projectsRouter);
   app.use('/api/companies/:companyId/relationships', graphsRouter);
@@ -132,6 +134,7 @@ async function createApp(): Promise<AppHandle> {
   app.use('/api/tasks/:id', taskByIdRouter);
   app.use('/api/settings', settingsRouter);
   app.use('/api/workspaces', workspacesRouter);
+  app.use('/api/agent-profiles', agentProfilesRouter);
   app.use('/api/setup-assistant', setupAssistantRouter);
 
   // Agent Bridge：Agent 通过 curl 调用 /bridge/<action> 反馈进度

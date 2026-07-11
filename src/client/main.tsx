@@ -23,6 +23,8 @@ const WorkflowGraphPage = lazy(() => import('./pages/WorkflowGraphPage').then((m
 const CharacterGraphPage = lazy(() => import('./pages/CharacterGraphPage').then((m) => ({ default: m.CharacterGraphPage })));
 const CompanyWizardPage = lazy(() => import('./pages/CompanyWizardPage').then((m) => ({ default: m.CompanyWizardPage })));
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then((m) => ({ default: m.SettingsPage })));
+const AgentLibraryPage = lazy(() => import('./pages/AgentLibraryPage').then((m) => ({ default: m.AgentLibraryPage })));
+const AgentProfilePage = lazy(() => import('./pages/AgentProfilePage').then((m) => ({ default: m.AgentProfilePage })));
 
 function ToastLayer(): React.ReactElement {
   const { toasts, dismiss } = useToasts();
@@ -55,6 +57,8 @@ const router = createBrowserRouter([
       { path: 'projects/:projectId/dashboard', element: <DashboardPage /> },
       { path: 'tasks/:taskId', element: <TaskDetailPage /> },
       { path: 'settings', element: <SettingsPage /> },
+      { path: 'agents', element: <AgentLibraryPage /> },
+      { path: 'agents/:profileId', element: <AgentProfilePage /> },
       { path: '*', element: <NotFoundPage /> },
     ],
   },

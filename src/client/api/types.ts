@@ -41,6 +41,33 @@ export interface Agent {
   stance: string;
 }
 
+export interface AgentProfile {
+  id: string;
+  displayName: string;
+  soul: string;
+  principles: string[];
+  capabilities: Record<string, unknown>;
+  recommendedExecutor: Record<string, unknown>;
+  recommendedPermission: Record<string, unknown>;
+  baseVersion: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CompanyEmployee {
+  id: string;
+  profileId: string;
+  companyId: string;
+  legacyAgentId: string;
+  departmentId: string | null;
+  role: string;
+  responsibilities: string;
+  executor: Record<string, unknown>;
+  permission: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
 /** 员工级执行器配置（与 server AgentExecutorJson 对齐）。 */
 export interface AgentExecutorJson {
   provider?: 'claude-cli' | 'openai' | 'gemini';

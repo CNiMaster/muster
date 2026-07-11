@@ -24,6 +24,7 @@ import {
 export const agentsRouter = Router({ mergeParams: true });
 
 const createAgentSchema = z.object({
+  profileId: z.string().optional(),
   name: z.string().min(1),
   role: z.string().min(1),
   departmentId: z.string().optional(),

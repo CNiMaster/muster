@@ -1,7 +1,7 @@
 /** React Query hooks：所有数据获取集中在此。 */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
-import type { Company, Agent, AgentExecutorJson, Department, Project, Relationship, Task, UsageSummary, ProjectAgentThread, Workspace } from '../api/types';
+import type { Company, Agent, AgentExecutorJson, AgentProfile, CompanyEmployee, Department, Project, Relationship, Task, UsageSummary, ProjectAgentThread, Workspace } from '../api/types';
 
 export interface ProposalResult<T> {
   source: 'claude' | 'offline_template';
@@ -143,6 +143,41 @@ export function useStatusBoard(companyId: string | undefined) {
 }
 
 // ===== Agents =====
+export function useAgentProfiles() {
+  return useQuery({ queryKey: ['agent-profiles'], queryFn: () => api.get<AgentProfile[]>('/api/agent-profiles') });
+}
+export function useAgentProfile(id: string | undefined) {
+  return useQuery({
+    queryKey: ['agent-profile', id],
+    queryFn: () => api.get<AgentProfile>(`/api/agent-profiles/${id}`),
+    enabled: !!id,
+  });
+}
+export function useProfileEmployments(id: string | undefined) {
+  return useQuery({
+    queryKey: ['profile-employments', id],
+    queryFn: () => api.get<CompanyEmployee[]>(`/api/agent-profiles/${id}/employments`),
+    enabled: !!id,
+  });
+}
+export function useCreateAgentProfile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { displayName: string; soul?: string }) => api.post<AgentProfile>('/api/agent-profiles', input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['agent-profiles'] }),
+  });
+}
+export function useRecruitAgentProfile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ companyId, ...input }: { companyId: string; profileId: string; role: string; responsibilities?: string }) =>
+      api.post<Agent>(`/api/companies/${companyId}/employees`, input),
+    onSuccess: (agent) => {
+      qc.invalidateQueries({ queryKey: ['agents', agent.companyId] });
+      qc.invalidateQueries({ queryKey: ['profile-employments', agent.profileId] });
+    },
+  });
+}
 export function useAgents(companyId: string | undefined) {
   return useQuery({
     queryKey: ['agents', companyId],

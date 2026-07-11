@@ -15,6 +15,8 @@ import {
   useAgentAvailability,
   useCompanyEvents,
   useStatusBoard,
+  useAgentProfiles,
+  useRecruitAgentProfile,
 } from '../hooks/queries';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
@@ -45,11 +47,15 @@ export function CompanyPage(): React.ReactElement {
   const updateAgent = useUpdateAgent();
   const generateAgentProposal = useGenerateAgentProposal();
   const agentAvailability = useAgentAvailability();
+  const { data: agentProfiles } = useAgentProfiles();
+  const recruitProfile = useRecruitAgentProfile();
   const [agentName, setAgentName] = useState('');
   const [agentRole, setAgentRole] = useState('');
   const [agentDepartmentId, setAgentDepartmentId] = useState('');
   const [departmentName, setDepartmentName] = useState('');
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
+  const [recruitProfileId, setRecruitProfileId] = useState('');
+  const [recruitRole, setRecruitRole] = useState('');
 
   // 员工新增向导状态
   const [useWizard, setUseWizard] = useState(false);
@@ -300,6 +306,35 @@ export function CompanyPage(): React.ReactElement {
       >
         {isOff && (
           <div style={{ marginBottom: 20, borderBottom: '1px solid var(--border-subtle)', paddingBottom: 16 }}>
+            <details className="details-collapse" style={{ marginBottom: 'var(--space-4)' }}>
+              <summary>从员工库招募</summary>
+              <div className="form-row">
+                <Field label="员工档案">
+                  <Select value={recruitProfileId} onChange={(event) => setRecruitProfileId(event.target.value)}>
+                    <option value="">选择已有员工</option>
+                    {agentProfiles?.map((profile) => <option key={profile.id} value={profile.id}>{profile.displayName}</option>)}
+                  </Select>
+                </Field>
+                <Field label="本公司岗位">
+                  <Input value={recruitRole} onChange={(event) => setRecruitRole(event.target.value)} placeholder="例如：engineer" />
+                </Field>
+                <Button
+                  disabled={!recruitProfileId || !recruitRole.trim()}
+                  loading={recruitProfile.isPending}
+                  onClick={() => recruitProfile.mutate(
+                    { companyId, profileId: recruitProfileId, role: recruitRole.trim() },
+                    {
+                      onSuccess: () => {
+                        toast('success', '已从员工库招募');
+                        setRecruitProfileId('');
+                        setRecruitRole('');
+                      },
+                      onError: (error) => toast('error', (error as Error).message),
+                    },
+                  )}
+                >招募</Button>
+              </div>
+            </details>
             <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
               <Button size="sm" variant={useWizard ? 'ghost' : 'primary'} onClick={() => setUseWizard(false)}>
                 普通新增

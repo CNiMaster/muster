@@ -32,8 +32,9 @@ function ContextNavigation(): React.ReactElement {
   if (!company) {
     return (
       <nav className="topnav">
-        <NavLink to="/" end>首页</NavLink>
-        <NavLink to="/settings">设置</NavLink>
+      <NavLink to="/" end>首页</NavLink>
+      <NavLink to="/agents">员工库</NavLink>
+      <NavLink to="/settings">设置</NavLink>
       </nav>
     );
   }
@@ -42,6 +43,7 @@ function ContextNavigation(): React.ReactElement {
       <NavLink to="/" end>首页</NavLink>
       <NavLink to={`/companies/${company.id}`} end>{company.name}</NavLink>
       {project && <NavLink to={`/projects/${project.id}`} end>{project.name}</NavLink>}
+      <NavLink to="/agents">员工库</NavLink>
       <NavLink to="/settings">设置</NavLink>
       <StateBadge state={company.state} />
     </nav>
