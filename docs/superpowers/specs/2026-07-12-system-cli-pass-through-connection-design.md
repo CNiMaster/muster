@@ -64,6 +64,39 @@ Muster-specific runtime additions are limited to:
 
 If a vendor cannot support a required bridge without changing user configuration, the profile is marked capability-limited and the limitation is shown before binding. It never silently becomes unrestricted.
 
+## Project tasks and CLI session lifecycle
+
+The user-facing Project Task is the conversation/context container, equivalent to opening a new Codex task inside one project. It is distinct from internal employee assignments:
+
+- **Project Task**: created, named, completed, and archived by the user; groups one coherent objective and its conversation history.
+- **Employee Assignment**: an internal work order dispatched to one employee inside a Project Task.
+- **Employee Task Thread**: the employee's persistent conversational lane inside that Project Task; stores the vendor session/conversation ID.
+- **Run**: one process invocation that starts or resumes an Employee Task Thread.
+
+A new Project Task starts with no vendor session IDs. Muster creates a session lazily for each employee only when that employee first participates. Employees who never receive an assignment do not receive empty sessions. Follow-ups, delegated assignments, review, clarification, approval recovery, and rework within the same Project Task resume the same employee thread explicitly. Muster never uses “continue latest”.
+
+Creating another Project Task in the same project creates fresh employee threads by default. The new task still receives employee identity, capabilities, approved employee/company/project memory, current project facts, and relevant artifacts, but it does not receive the previous task's full transcript. This keeps weakly related user objectives from accumulating into one unbounded vendor context while preserving durable knowledge through Muster memory.
+
+Changing project, employee, or fixed executor always starts a new thread. Parallel work for one employee uses a mirror thread rather than writing concurrently to the employee's primary thread. When a Project Task is archived, all of its vendor thread IDs, summaries, usage, approvals, runs, and artifacts are retained as read-only history and are no longer selected for new work.
+
+## Context capacity and session health
+
+Muster, not the user, owns session health monitoring because vendor CLIs run headlessly. Before and during every Run, the session manager tracks available token/usage events, transcript size, accumulated tool output, turn count, compaction events, context-overflow errors, idle duration, wall-clock timeout, and consecutive recovery attempts.
+
+At a soft threshold, Muster asks the adapter to use its native compaction capability when one exists. Codex uses `thread/compact/start`; Claude may auto-compact and exposes compact lifecycle events. An adapter without a reliable non-interactive compact operation, including the current Antigravity CLI contract, declares that limitation rather than emulating an undocumented command.
+
+At a hard threshold, failed compaction, corrupt session, or repeated context error, Muster creates a replacement employee thread inside the same Project Task. Before replacement it persists a handoff bundle containing employee identity, approved memory, current objective, decisions, open assignments, artifact state, and the previous thread reference. The old thread remains archived and the replacement receives the bounded handoff rather than the full transcript.
+
+Recovery is finite: retry the current thread once, compact once when supported, then replace the thread once. If the replacement also fails, the assignment stops with a visible diagnostic. No adapter may loop indefinitely or leave a hidden interactive process waiting forever.
+
+## Approval takeover and wait recovery
+
+Certified CLI adapters must prevent invisible native approval prompts. Codex approvals are handled through app-server server-initiated requests. Claude and Antigravity tool calls are intercepted through their supported pre-tool hooks. The bridge maps the proposed command, path, network target, or tool call into the same Muster policy engine used by API tools.
+
+An immediately allowed or denied decision is returned synchronously. A decision requiring the user creates a durable approval record and moves the Assignment to `waiting_approval`. The live CLI request may wait for a bounded interval; if approved in time, Muster returns the decision to that process. On timeout, process exit, or Muster restart, the bridge fails closed, retains the approval and session ID, and resumes the same Employee Task Thread after the user decides.
+
+Native interactive prompts must never be the only approval surface. If an adapter cannot suppress, intercept, or safely time out its native prompt, it cannot be certified for background operation. Turbo changes Muster's automatic decision rules but does not bypass declared high-risk categories, and a failed bridge never degrades into unrestricted execution.
+
 ## Diagnostics
 
 Connection results use these states:
