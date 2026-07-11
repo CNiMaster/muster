@@ -8,9 +8,12 @@ import {
   listAgentProfiles,
   listProfileEmployments,
   updateAgentProfile,
+  copyAgentProfile,
+  resetAgentProfileToBase,
 } from '../domain/agent-profile';
 import { asyncHandler, param } from './middleware';
-import { materializeAgentHome, syncAgentIdentityFiles } from '../domain/agent-home';
+import { exportCapabilityPackage, materializeAgentHome, syncAgentIdentityFiles } from '../domain/agent-home';
+import { resetPersonalMemory } from '../domain/memory';
 
 export const agentProfilesRouter = Router();
 export const companyEmployeesRouter = Router({ mergeParams: true });
@@ -46,6 +49,31 @@ agentProfilesRouter.patch('/:id', asyncHandler(async (req, res) => {
 
 agentProfilesRouter.get('/:id/employments', asyncHandler(async (req, res) => {
   res.json(listProfileEmployments(getDb(), param(req, 'id')));
+}));
+
+agentProfilesRouter.post('/:id/copy', asyncHandler(async (req, res) => {
+  const input = z.object({
+    mode: z.enum(['capability-copy', 'snapshot-copy']),
+    displayName: z.string().optional(),
+  }).parse(req.body);
+  const profile = copyAgentProfile(getDb(), param(req, 'id'), input);
+  materializeAgentHome(profile);
+  res.status(201).json(profile);
+}));
+
+agentProfilesRouter.post('/:id/reset-base', asyncHandler(async (req, res) => {
+  const profile = resetAgentProfileToBase(getDb(), param(req, 'id'));
+  syncAgentIdentityFiles(profile);
+  res.json(profile);
+}));
+
+agentProfilesRouter.post('/:id/reset-personal-memory', asyncHandler(async (req, res) => {
+  const count = resetPersonalMemory(getDb(), param(req, 'id'), 'user');
+  res.json({ ok: true, count });
+}));
+
+agentProfilesRouter.get('/:id/export-capability', asyncHandler(async (req, res) => {
+  res.json(exportCapabilityPackage(getAgentProfile(getDb(), param(req, 'id'))));
 }));
 
 companyEmployeesRouter.post('/', asyncHandler(async (req, res) => {

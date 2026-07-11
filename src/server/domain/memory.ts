@@ -318,3 +318,40 @@ function indexMemory(db: DB, entryId: string, profileId: string, content: string
 function escapeFtsQuery(query: string): string {
   return `"${query.replace(/"/g, '""')}"`;
 }
+
+export function copyPersonalMemoryEntries(db: DB, sourceProfileId: string, targetProfileId: string): MemoryEntry[] {
+  getAgentProfile(db, sourceProfileId);
+  getAgentProfile(db, targetProfileId);
+  const sourceEntries = listMemoryEntries(db, { profileId: sourceProfileId, scope: 'personal' })
+    .filter((entry) => entry.state === 'active' || entry.state === 'locked');
+  const copies: MemoryEntry[] = [];
+  for (const source of sourceEntries) {
+    const candidate = createMemoryCandidate(db, {
+      profileId: targetProfileId,
+      scope: 'personal',
+      content: source.content,
+      author: 'user',
+      confidence: 1,
+      canInfluence: source.canInfluence,
+      expiresAt: source.expiresAt ?? undefined,
+      allowAutoApprove: true,
+    });
+    const entry = db.prepare('SELECT * FROM memory_entry WHERE source_candidate_id=?').get(candidate.id) as EntryRow | undefined;
+    if (entry) copies.push(entryFromRow(entry));
+  }
+  return copies;
+}
+
+export function resetPersonalMemory(db: DB, profileId: string, changedBy: string): number {
+  getAgentProfile(db, profileId);
+  const entries = listMemoryEntries(db, { profileId, scope: 'personal' });
+  const now = nowIso();
+  db.transaction(() => {
+    for (const entry of entries) {
+      db.prepare("UPDATE memory_entry SET state='deleted', updated_at=? WHERE id=?").run(now, entry.id);
+      db.prepare('DELETE FROM memory_fts WHERE entry_id=?').run(entry.id);
+      insertMemoryVersion(db, entry.id, entry.version + 1, entry.content, `${changedBy}:reset-personal`, null, now);
+    }
+  })();
+  return entries.length;
+}

@@ -167,6 +167,27 @@ export function useCreateAgentProfile() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['agent-profiles'] }),
   });
 }
+export function useCopyAgentProfile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, mode, displayName }: { id: string; mode: 'capability-copy' | 'snapshot-copy'; displayName?: string }) =>
+      api.post<AgentProfile>(`/api/agent-profiles/${id}/copy`, { mode, displayName }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['agent-profiles'] }),
+  });
+}
+export function useResetAgentProfile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, target }: { id: string; target: 'base' | 'personal-memory' }) =>
+      api.post<AgentProfile | { ok: true; count: number }>(
+        `/api/agent-profiles/${id}/${target === 'base' ? 'reset-base' : 'reset-personal-memory'}`,
+      ),
+    onSuccess: (_data, input) => {
+      qc.invalidateQueries({ queryKey: ['agent-profile', input.id] });
+      qc.invalidateQueries({ queryKey: ['memory-entries', input.id] });
+    },
+  });
+}
 export function useRecruitAgentProfile() {
   const qc = useQueryClient();
   return useMutation({

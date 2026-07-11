@@ -1,6 +1,7 @@
 import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { nowIso, shortId } from '../../shared/utils';
+import { copyPersonalMemoryEntries } from './memory';
 
 export interface AgentProfile {
   id: string;
@@ -115,6 +116,17 @@ export function createAgentProfile(db: DB, input: {
     now,
     now,
   );
+  const snapshot = {
+    displayName,
+    soul: input.soul ?? '',
+    principles: input.principles ?? [],
+    capabilities: input.capabilities ?? {},
+    recommendedExecutor: input.recommendedExecutor ?? {},
+    recommendedPermission: input.recommendedPermission ?? {},
+  };
+  db.prepare(
+    'INSERT INTO agent_profile_base (profile_id, version, snapshot_json, created_at) VALUES (?, 1, ?, ?)',
+  ).run(id, JSON.stringify(snapshot), now);
   return getAgentProfile(db, id);
 }
 
@@ -199,4 +211,41 @@ export function syncCompanyEmployeeRecord(db: DB, input: {
     input.departmentId, input.role, input.responsibilities, JSON.stringify(input.executor),
     JSON.stringify(input.permission), input.updatedAt, input.id,
   );
+}
+
+export function copyAgentProfile(db: DB, sourceId: string, input: {
+  mode: 'capability-copy' | 'snapshot-copy';
+  displayName?: string;
+}): AgentProfile {
+  const source = getAgentProfile(db, sourceId);
+  const copy = createAgentProfile(db, {
+    displayName: input.displayName?.trim() || `${source.displayName} 副本`,
+    soul: source.soul,
+    principles: [...source.principles],
+    capabilities: structuredClone(source.capabilities),
+    recommendedExecutor: structuredClone(source.recommendedExecutor),
+    recommendedPermission: structuredClone(source.recommendedPermission),
+  });
+  if (input.mode === 'snapshot-copy') copyPersonalMemoryEntries(db, source.id, copy.id);
+  return getAgentProfile(db, copy.id);
+}
+
+export function resetAgentProfileToBase(db: DB, id: string): AgentProfile {
+  getAgentProfile(db, id);
+  const row = db.prepare('SELECT snapshot_json, version FROM agent_profile_base WHERE profile_id=?').get(id) as
+    | { snapshot_json: string; version: number }
+    | undefined;
+  if (!row) throw new AppError(ErrorCode.NOT_FOUND, '员工基础能力快照不存在');
+  const snapshot = JSON.parse(row.snapshot_json) as {
+    displayName: string; soul: string; principles: string[]; capabilities: Record<string, unknown>;
+    recommendedExecutor: Record<string, unknown>; recommendedPermission: Record<string, unknown>;
+  };
+  db.prepare(
+    `UPDATE agent_profile SET display_name=?, soul=?, principles_json=?, capabilities_json=?,
+      recommended_executor_json=?, recommended_permission_json=?, base_version=?, updated_at=? WHERE id=?`,
+  ).run(
+    snapshot.displayName, snapshot.soul, JSON.stringify(snapshot.principles), JSON.stringify(snapshot.capabilities),
+    JSON.stringify(snapshot.recommendedExecutor), JSON.stringify(snapshot.recommendedPermission), row.version, nowIso(), id,
+  );
+  return getAgentProfile(db, id);
 }
