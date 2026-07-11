@@ -11,6 +11,13 @@ export interface ExecutionContext {
   task: Task;
   systemPrompt: string;
   workingDir: string;
+  /** Muster 创建的不可变执行记录与该次运行的隔离目录。 */
+  executionRunId?: string;
+  executorProfileId?: string;
+  runConfigDir?: string;
+  runTempDir?: string;
+  runLogDir?: string;
+  runSessionDir?: string;
   /** 输入协议 + 上下文引用解析后的内容。 */
   inputPacket: Record<string, unknown>;
   /** Claude 会话 ID 提示：首次执行为空，后续传已有的 session id 用于 --resume。 */

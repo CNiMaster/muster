@@ -11,7 +11,7 @@
  */
 import path from 'node:path';
 import type { DB } from '../db/client';
-import type { ExecutionAdapter, ExecutionContext } from './executor';
+import type { AgentExecutorConfig, ExecutionAdapter, ExecutionContext } from './executor';
 import { DEFAULT_PROVIDER, isProvider, type Provider } from '../executors/provider';
 import {
   claimNextTask,
@@ -46,6 +46,10 @@ import { advanceWorkflowTask } from '../domain/workflow';
 import { createSuggestionTasksFromBrainstorm } from '../domain/brainstorm';
 import { deleteTaskRuntime, getTaskRuntime, saveTaskRuntime } from '../domain/task-runtime';
 import { existsSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
+import { SERVER_CONFIG } from '../env';
+import { createExecutionRun, getEmployeeExecutorProfile, updateExecutionRunStatus } from '../domain/executor-profile';
+import { buildRunIsolation, withExecutorConcurrency } from '../executors/run-isolation';
 
 export interface EngineOptions {
   heartbeatIntervalMs?: number;
@@ -200,17 +204,41 @@ export class TaskEngine {
       markRunning(this.db, task.id);
       checkBudget(this.db, project.id, task.budget);
 
+      const executorProfile = getEmployeeExecutorProfile(this.db, agent.id);
+      const executionRun = executorProfile ? createExecutionRun(this.db, {
+        executorProfileId: executorProfile.id,
+        employeeId: agent.id,
+        projectId: project.id,
+        taskId: task.id,
+      }) : null;
+      const isolation = executionRun ? buildRunIsolation(SERVER_CONFIG.musterDir, {
+        runId: executionRun.id,
+        employeeId: agent.id,
+        profileId: executorProfile!.id,
+      }) : null;
+      if (isolation) {
+        for (const dir of [isolation.configDir, isolation.tempDir, isolation.logDir, isolation.sessionDir]) mkdirSync(dir, { recursive: true });
+      }
+      const profileExecutor = executorProfile?.config as AgentExecutorConfig | undefined;
+      const legacyExecutor = normalizeAgentExecutor(agent.executor);
+      const effectiveExecutor = profileExecutor ?? legacyExecutor;
       const ctx: ExecutionContext = {
         task: getTask(this.db, task.id),
         systemPrompt: '', // 由 assembleContext 装配
         workingDir,
+        executionRunId: executionRun?.id,
+        executorProfileId: executorProfile?.id,
+        runConfigDir: isolation?.configDir,
+        runTempDir: isolation?.tempDir,
+        runLogDir: isolation?.logDir,
+        runSessionDir: isolation?.sessionDir,
         inputPacket: {},
         threadId: thread.id,
         sessionIdHint: thread.claudeSessionId ?? undefined,
         // PRD Phase 3.4：收集授权参考项目根目录，让 Claude 直接只读访问（--add-dir）。
         readonlyDirs: collectReadonlyReferenceDirs(this.db, task.projectId),
         // PRD Phase 3：员工级执行器配置 + 用户级凭据引用
-        agentExecutor: normalizeAgentExecutor(agent.executor),
+        agentExecutor: effectiveExecutor,
         apiKeyEnv: extractApiKeyEnv(agent.executor),
         // Agent Bridge loopback 配置
         loopback: {
@@ -229,11 +257,19 @@ export class TaskEngine {
       ctx.systemPrompt = assembled.systemPrompt;
       ctx.inputPacket = assembled.inputPacket;
 
-      const adapter = this.selectAdapter(normalizeAgentExecutor(agent.executor)?.provider);
-      const result = await adapter.run(ctx, {
-        onOutput: (chunk) => log.debug('agent output', { taskId: task.id, chunk: chunk.slice(0, 120) }),
-        onToolCall: (name, input) => log.debug('agent tool', { taskId: task.id, name }),
-      });
+      const adapter = this.selectAdapter(providerForManifest(executorProfile?.manifestId) ?? effectiveExecutor?.provider);
+      if (executionRun) updateExecutionRunStatus(this.db, executionRun.id, 'running');
+      let result: Awaited<ReturnType<ExecutionAdapter['run']>>;
+      try {
+        result = await withExecutorConcurrency(executorProfile?.concurrencyMode ?? 'parallel', executorProfile?.id ?? agent.id, () => adapter.run(ctx, {
+          onOutput: (chunk) => log.debug('agent output', { taskId: task.id, chunk: chunk.slice(0, 120), executionRunId: executionRun?.id }),
+          onToolCall: (name, input) => log.debug('agent tool', { taskId: task.id, name, executionRunId: executionRun?.id }),
+        }));
+        if (executionRun) updateExecutionRunStatus(this.db, executionRun.id, result.outcome === 'completed' ? 'completed' : 'failed');
+      } catch (error) {
+        if (executionRun) updateExecutionRunStatus(this.db, executionRun.id, 'failed');
+        throw error;
+      }
 
       // 持久化 Claude session id（首次返回后保存，后续 --resume 用）
       if (result._sessionIdHint && result._sessionIdHint !== thread.claudeSessionId) {
@@ -567,6 +603,13 @@ export class TaskEngine {
       log.info('task engine polling stopped');
     }
   }
+}
+
+function providerForManifest(manifestId: string | undefined): string | undefined {
+  if (manifestId === 'claude-code-cli') return 'claude-cli';
+  if (manifestId === 'openai-compatible-api') return 'openai';
+  if (manifestId === 'gemini-api') return 'gemini';
+  return manifestId;
 }
 
 /**

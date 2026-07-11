@@ -73,6 +73,18 @@ export function listExecutorProfiles(db: DB): ExecutorProfile[] {
   return (db.prepare('SELECT * FROM executor_profile ORDER BY created_at, id').all() as ProfileRow[]).map(profileFromRow);
 }
 
+export function bindEmployeeExecutorProfile(db: DB, employeeId: string, executorProfileId: string): void {
+  getExecutorProfile(db, executorProfileId);
+  const result = db.prepare('UPDATE company_employee SET executor_profile_id=?, updated_at=? WHERE id=?').run(executorProfileId, nowIso(), employeeId);
+  if (result.changes !== 1) throw new AppError(ErrorCode.NOT_FOUND, `公司员工不存在: ${employeeId}`);
+}
+
+export function getEmployeeExecutorProfile(db: DB, employeeId: string): ExecutorProfile | null {
+  const row = db.prepare('SELECT executor_profile_id FROM company_employee WHERE id=?').get(employeeId) as { executor_profile_id: string | null } | undefined;
+  if (!row) throw new AppError(ErrorCode.NOT_FOUND, `公司员工不存在: ${employeeId}`);
+  return row.executor_profile_id ? getExecutorProfile(db, row.executor_profile_id) : null;
+}
+
 export function createExecutionRun(db: DB, input: { executorProfileId: string; employeeId: string; projectId: string; taskId: string }): ExecutionRun {
   const profile = getExecutorProfile(db, input.executorProfileId);
   const manifest = getExecutorManifest(profile.manifestId);
@@ -86,4 +98,13 @@ export function getExecutionRun(db: DB, id: string): ExecutionRun {
   const row = db.prepare('SELECT * FROM execution_run WHERE id=?').get(id) as RunRow | undefined;
   if (!row) throw new AppError(ErrorCode.NOT_FOUND, `执行记录不存在: ${id}`);
   return { id: row.id, executorProfileId: row.executor_profile_id, employeeId: row.employee_id, projectId: row.project_id, taskId: row.task_id, status: row.status, manifestSnapshot: JSON.parse(row.manifest_snapshot_json), profileSnapshot: JSON.parse(row.profile_snapshot_json), startedAt: row.started_at, finishedAt: row.finished_at, createdAt: row.created_at };
+}
+
+export function updateExecutionRunStatus(db: DB, id: string, status: ExecutionRun['status']): ExecutionRun {
+  const now = nowIso();
+  const startedAt = status === 'running' ? now : null;
+  const finishedAt = ['completed', 'failed', 'cancelled'].includes(status) ? now : null;
+  const result = db.prepare(`UPDATE execution_run SET status=?, started_at=COALESCE(?,started_at), finished_at=COALESCE(?,finished_at) WHERE id=?`).run(status, startedAt, finishedAt, id);
+  if (result.changes !== 1) throw new AppError(ErrorCode.NOT_FOUND, `执行记录不存在: ${id}`);
+  return getExecutionRun(db, id);
 }
