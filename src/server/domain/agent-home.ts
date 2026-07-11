@@ -3,6 +3,8 @@ import { dirname, join, resolve } from 'node:path';
 import { AppError, ErrorCode } from '../../shared/errors';
 import type { AgentProfile } from './agent-profile';
 import { SERVER_CONFIG } from '../env';
+import type { DB } from '../db/client';
+import { listMemoryEntries } from './memory';
 
 const PROFILE_ID_PATTERN = /^ap_[A-Za-z0-9_-]+$/;
 
@@ -65,6 +67,29 @@ export function exportCapabilityPackage(profile: AgentProfile): Record<string, u
   };
 }
 
+export function syncAgentMemoryFiles(db: DB, profileId: string, musterHome = SERVER_CONFIG.musterDir): void {
+  const home = getAgentHomePath(profileId, musterHome);
+  const entries = listMemoryEntries(db, { profileId });
+  atomicWrite(
+    join(home, 'memory/USER.md'),
+    renderMemorySnapshot('用户与个人记忆', entries.filter((entry) => entry.scope === 'personal')),
+  );
+  atomicWrite(
+    join(home, 'memory/CORE.md'),
+    renderMemorySnapshot('核心经验与 Skill', entries.filter((entry) => entry.scope === 'skill')),
+  );
+  const companyIds = new Set(entries.flatMap((entry) => entry.companyId ? [entry.companyId] : []));
+  for (const companyId of companyIds) {
+    const scoped = entries.filter((entry) => entry.scope === 'company' && entry.companyId === companyId);
+    atomicWrite(join(home, 'companies', companyId, 'MEMORY.md'), renderMemorySnapshot('公司任职记忆', scoped));
+  }
+  const projectIds = new Set(entries.flatMap((entry) => entry.projectId ? [entry.projectId] : []));
+  for (const projectId of projectIds) {
+    const scoped = entries.filter((entry) => entry.scope === 'project' && entry.projectId === projectId);
+    atomicWrite(join(home, 'projects', projectId, 'MEMORY.md'), renderMemorySnapshot('项目记忆', scoped));
+  }
+}
+
 function atomicWrite(path: string, content: string): void {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const temporary = `${path}.${process.pid}.tmp`;
@@ -78,4 +103,9 @@ function writeIfMissing(path: string, content: string): void {
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
   }
+}
+
+function renderMemorySnapshot(title: string, entries: Array<{ content: string; version: number; state: string }>): string {
+  const lines = entries.map((entry) => `- ${entry.content}  <!-- v${entry.version} ${entry.state} -->`);
+  return `# ${title}\n\n${lines.join('\n')}\n`;
 }

@@ -10,8 +10,10 @@ import {
   getAgentHomePath,
   materializeAgentHome,
   syncAgentIdentityFiles,
+  syncAgentMemoryFiles,
 } from '../../src/server/domain/agent-home';
 import { AppError } from '../../src/shared/errors';
+import { createMemoryCandidate } from '../../src/server/domain/memory';
 import { makeTestDb } from './setup';
 
 let db: DB;
@@ -72,5 +74,24 @@ describe('Agent Home', () => {
     expect(exported).toMatchObject({ displayName: '员工', capabilities: { skills: ['review'] } });
     expect(serialized).not.toContain('SECRET_TOKEN');
     expect(serialized).not.toMatch(/memory|session|company|project|credential|\/tmp/i);
+  });
+
+  it('将已批准个人记忆同步为人可读快照，不写入待审内容', () => {
+    const profile = createAgentProfile(db, { displayName: '员工' });
+    materializeAgentHome(profile, musterHome);
+    createMemoryCandidate(db, {
+      profileId: profile.id, scope: 'personal', content: '已批准的用户偏好', author: 'user', confidence: 1,
+      canInfluence: true, allowAutoApprove: true,
+    });
+    createMemoryCandidate(db, {
+      profileId: profile.id, scope: 'personal', content: '仍在待审的推断', author: 'agent', confidence: 0.7,
+      canInfluence: true,
+    });
+
+    syncAgentMemoryFiles(db, profile.id, musterHome);
+
+    const userMemory = readFileSync(join(getAgentHomePath(profile.id, musterHome), 'memory/USER.md'), 'utf8');
+    expect(userMemory).toContain('已批准的用户偏好');
+    expect(userMemory).not.toContain('仍在待审的推断');
   });
 });

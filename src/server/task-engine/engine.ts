@@ -25,6 +25,7 @@ import {
 } from '../domain/task';
 import { getThread, listOnlineThreads, setClaudeSession, updateThreadState, incrementExecCount, compactThreadWithMemory, rotateSession } from '../domain/thread';
 import { getAgent } from '../domain/agent';
+import { syncAgentMemoryFiles } from '../domain/agent-home';
 import { assembleContext } from '../executors/context';
 import { assertSafeToRun } from '../executors/safety';
 import { getProject, listProjectReferences } from '../domain/project';
@@ -250,6 +251,7 @@ export class TaskEngine {
           memoryContent: `最近执行摘要：${result.summary || '（无摘要）'}`,
           sourceTaskId: task.id,
         });
+        syncAgentMemoryFiles(this.db, agent.profileId);
         log.info('session compacted', { threadId: thread.id, count: exec.count });
       } else if (exec.shouldRotate && result.outcome === 'completed') {
         rotateSession(this.db, thread.id);

@@ -34,6 +34,8 @@ import {
   compactThreadWithMemory,
 } from '../domain/thread';
 import { getCompany } from '../domain/company';
+import { getAgent } from '../domain/agent';
+import { syncAgentMemoryFiles } from '../domain/agent-home';
 import { registerDefaultNovelScheduleTriggers } from '../domain/triggers';
 import { initializeNovelProject } from '../domain/novel-template';
 import { getCharacterGraph } from '../domain/character-graph';
@@ -158,6 +160,7 @@ projectById.post(
     const input = z.object({ summary: z.string().optional() }).parse(req.body ?? {});
     const summary = input.summary?.trim() || `[手动压缩 ${new Date().toISOString()}] 用户手动清空上下文`;
     compactThreadWithMemory(db, t.id, { summary, memoryContent: summary });
+    syncAgentMemoryFiles(db, getAgent(db, t.agentId).profileId);
     res.json({ ok: true, threadId: t.id });
   }),
 );

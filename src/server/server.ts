@@ -48,7 +48,7 @@ import { getSystemSettings } from './domain/setting';
 import { TriggerScheduler } from './trigger-scheduler';
 import { ProjectRuntimeCoordinator } from './runtime/coordinator';
 import { listAgentProfiles } from './domain/agent-profile';
-import { materializeAgentHome } from './domain/agent-home';
+import { materializeAgentHome, syncAgentMemoryFiles } from './domain/agent-home';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -68,7 +68,10 @@ async function createApp(): Promise<AppHandle> {
 
   // 初始化数据库（应用 migration）
   const db = getDb();
-  for (const profile of listAgentProfiles(db)) materializeAgentHome(profile);
+  for (const profile of listAgentProfiles(db)) {
+    materializeAgentHome(profile);
+    syncAgentMemoryFiles(db, profile.id);
+  }
 
   // ===== /api/projects/:id 子树统一挂载 =====
   // 把所有 project 范围内的子路由挂到 projectById 下，避免多个 Router 并列在前缀上导致顺序冲突。

@@ -17,6 +17,7 @@ import {
 } from '../domain/memory';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { asyncHandler, param } from './middleware';
+import { syncAgentMemoryFiles } from '../domain/agent-home';
 
 export const memoryRouter = Router({ mergeParams: true });
 
@@ -49,9 +50,11 @@ memoryRouter.post('/candidates/:candidateId/:action', asyncHandler(async (req, r
   const candidate = getMemoryCandidate(db, param(req, 'candidateId'));
   assertProfile(candidate.profileId, param(req, 'profileId'));
   const action = z.enum(['approve', 'reject']).parse(param(req, 'action'));
-  res.json(action === 'approve'
+  const result = action === 'approve'
     ? approveMemoryCandidate(db, candidate.id, 'user')
-    : rejectMemoryCandidate(db, candidate.id, 'user'));
+    : rejectMemoryCandidate(db, candidate.id, 'user');
+  syncAgentMemoryFiles(db, candidate.profileId);
+  res.json(result);
 }));
 
 memoryRouter.get('/entries', asyncHandler(async (req, res) => {
@@ -72,7 +75,9 @@ memoryRouter.patch('/entries/:entryId', asyncHandler(async (req, res) => {
   const entry = getMemoryEntry(db, param(req, 'entryId'));
   assertProfile(entry.profileId, param(req, 'profileId'));
   const { content } = z.object({ content: z.string().min(1) }).parse(req.body);
-  res.json(correctMemoryEntry(db, entry.id, content, 'user'));
+  const updated = correctMemoryEntry(db, entry.id, content, 'user');
+  syncAgentMemoryFiles(db, entry.profileId);
+  res.json(updated);
 }));
 
 memoryRouter.post('/entries/:entryId/:action', asyncHandler(async (req, res) => {
@@ -80,9 +85,11 @@ memoryRouter.post('/entries/:entryId/:action', asyncHandler(async (req, res) => 
   const entry = getMemoryEntry(db, param(req, 'entryId'));
   assertProfile(entry.profileId, param(req, 'profileId'));
   const action = z.enum(['lock', 'unlock', 'delete']).parse(param(req, 'action'));
-  if (action === 'lock') res.json(lockMemoryEntry(db, entry.id));
-  else if (action === 'unlock') res.json(unlockMemoryEntry(db, entry.id));
-  else res.json(deleteMemoryEntry(db, entry.id, 'user'));
+  const updated = action === 'lock' ? lockMemoryEntry(db, entry.id)
+    : action === 'unlock' ? unlockMemoryEntry(db, entry.id)
+    : deleteMemoryEntry(db, entry.id, 'user');
+  syncAgentMemoryFiles(db, entry.profileId);
+  res.json(updated);
 }));
 
 function assertProfile(actual: string, expected: string): void {

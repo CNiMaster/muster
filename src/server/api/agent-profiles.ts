@@ -12,7 +12,7 @@ import {
   resetAgentProfileToBase,
 } from '../domain/agent-profile';
 import { asyncHandler, param } from './middleware';
-import { exportCapabilityPackage, materializeAgentHome, syncAgentIdentityFiles } from '../domain/agent-home';
+import { exportCapabilityPackage, materializeAgentHome, syncAgentIdentityFiles, syncAgentMemoryFiles } from '../domain/agent-home';
 import { resetPersonalMemory } from '../domain/memory';
 
 export const agentProfilesRouter = Router();
@@ -58,6 +58,7 @@ agentProfilesRouter.post('/:id/copy', asyncHandler(async (req, res) => {
   }).parse(req.body);
   const profile = copyAgentProfile(getDb(), param(req, 'id'), input);
   materializeAgentHome(profile);
+  syncAgentMemoryFiles(getDb(), profile.id);
   res.status(201).json(profile);
 }));
 
@@ -69,6 +70,7 @@ agentProfilesRouter.post('/:id/reset-base', asyncHandler(async (req, res) => {
 
 agentProfilesRouter.post('/:id/reset-personal-memory', asyncHandler(async (req, res) => {
   const count = resetPersonalMemory(getDb(), param(req, 'id'), 'user');
+  syncAgentMemoryFiles(getDb(), param(req, 'id'));
   res.json({ ok: true, count });
 }));
 
