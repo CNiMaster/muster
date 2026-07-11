@@ -6,7 +6,7 @@
  */
 
 /** 所有支持的执行器 provider。 */
-export const PROVIDERS = ['claude-cli', 'openai', 'gemini'] as const;
+export const PROVIDERS = ['claude-cli', 'codex-cli', 'gemini-cli', 'custom-cli', 'openai', 'gemini'] as const;
 export type Provider = (typeof PROVIDERS)[number];
 
 export const DEFAULT_PROVIDER: Provider = 'claude-cli';
@@ -14,6 +14,9 @@ export const DEFAULT_PROVIDER: Provider = 'claude-cli';
 /** 各 provider 默认的环境变量名（存 apiKeyEnv 时提示用）。 */
 export const PROVIDER_DEFAULT_API_KEY_ENV: Record<Provider, string> = {
   'claude-cli': 'ANTHROPIC_API_KEY',
+  'codex-cli': 'OPENAI_API_KEY',
+  'gemini-cli': 'GOOGLE_API_KEY',
+  'custom-cli': 'CUSTOM_CLI_API_KEY',
   openai: 'OPENAI_API_KEY',
   gemini: 'GOOGLE_API_KEY',
 };
@@ -21,6 +24,9 @@ export const PROVIDER_DEFAULT_API_KEY_ENV: Record<Provider, string> = {
 /** 各 provider 默认的模型名。 */
 export const PROVIDER_DEFAULT_MODEL: Record<Provider, string> = {
   'claude-cli': 'sonnet',
+  'codex-cli': 'gpt-5',
+  'gemini-cli': 'gemini-2.5-pro',
+  'custom-cli': '',
   openai: 'gpt-4o',
   gemini: 'gemini-2.0-flash',
 };
@@ -28,6 +34,9 @@ export const PROVIDER_DEFAULT_MODEL: Record<Provider, string> = {
 /** 各 provider 默认的 baseURL（openai 兼容 API 可覆盖）。 */
 export const PROVIDER_DEFAULT_BASE_URL: Record<Provider, string | undefined> = {
   'claude-cli': undefined,
+  'codex-cli': undefined,
+  'gemini-cli': undefined,
+  'custom-cli': undefined,
   openai: 'https://api.openai.com/v1',
   gemini: 'https://generativelanguage.googleapis.com/v1beta',
 };
