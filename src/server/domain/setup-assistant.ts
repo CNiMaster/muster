@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { z } from 'zod';
 import type { DB } from '../db/client';
+import { log } from '../logger';
 import { getSystemSettings } from './setting';
 
 const execFileAsync = promisify(execFile);
@@ -14,6 +15,15 @@ export interface ProposalResult<T> {
 
 export interface SetupGenerator {
   generate(input: { prompt: string; jsonSchema: Record<string, unknown> }): Promise<unknown>;
+}
+
+export function formatProposalFallbackWarning(kind: 'company' | 'agent' | 'project'): string {
+  const labels = {
+    company: '默认团队配置',
+    agent: '默认员工配置',
+    project: '默认项目蓝图',
+  } as const;
+  return `智能方案暂时不可用，已为你载入可编辑的${labels[kind]}。`;
 }
 
 const agentProposalSchema = z.object({
@@ -104,6 +114,7 @@ export async function generateCompanyProposal(
     agentNotes: defaultAgentNotes(),
   };
   return generateWithFallback(
+    'company',
     generator,
     companyProposalSchema,
     `为本地 Agent 公司工作台设计长篇小说公司。公司名：${input.name}。目标：${input.goal}。输出简洁、可执行的公司章程、部门建议和岗位专注点，不增加用户未要求的岗位。`,
@@ -123,6 +134,7 @@ export async function generateAgentProposal(
     contactRoles: [],
   };
   return generateWithFallback(
+    'agent',
     generator,
     agentProposalSchema,
     `为 Agent 员工“${input.name}”生成配置。用户期望职责：${input.duty}。现有岗位：${(input.existingRoles ?? []).join(', ')}。role 使用简短英文标识；职责聚焦；只建议确有必要的技能、工具和对接岗位。`,
@@ -145,6 +157,7 @@ export async function generateProjectProposal(
     initialTaskTitle: '根据用户初始设想整理项目简报与第一阶段大纲',
   };
   return generateWithFallback(
+    'project',
     generator,
     projectProposalSchema,
     `根据以下长篇小说设想生成可编辑的项目蓝图：${input.prompt}。不要一次性编完整本小说；只给出项目名、题材、受众、初步梗概、视角、文风锚点、短样文和首个 Task。`,
@@ -153,6 +166,7 @@ export async function generateProjectProposal(
 }
 
 async function generateWithFallback<T>(
+  kind: 'company' | 'agent' | 'project',
   generator: SetupGenerator,
   schema: z.ZodType<T>,
   prompt: string,
@@ -165,10 +179,14 @@ async function generateWithFallback<T>(
     }));
     return { source: 'claude', proposal: generated };
   } catch (error) {
+    log.warn('setup assistant proposal generation failed; using default template', {
+      kind,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return {
       source: 'offline_template',
       proposal: offline,
-      warning: `Claude 生成不可用，已载入可编辑的离线模板：${error instanceof Error ? error.message : String(error)}`,
+      warning: formatProposalFallbackWarning(kind),
     };
   }
 }

@@ -15,7 +15,7 @@ class StaticGenerator implements SetupGenerator {
 
 class FailingGenerator implements SetupGenerator {
   async generate(): Promise<unknown> {
-    throw new Error('claude unavailable');
+    throw new Error('SECRET_DIAGNOSTIC /usr/local/bin/claude --json-schema stderr');
   }
 }
 
@@ -47,9 +47,12 @@ describe('setup assistant', () => {
     );
 
     expect(company.source).toBe('offline_template');
-    expect(company.warning).toContain('Claude 生成不可用');
+    expect(company.warning).toBe('智能方案暂时不可用，已为你载入可编辑的默认团队配置。');
+    expect(company.warning).not.toContain('SECRET_DIAGNOSTIC');
+    expect(company.warning).not.toContain('--json-schema');
     expect(company.proposal.charter).toContain('离线公司');
     expect(project.source).toBe('offline_template');
+    expect(project.warning).toBe('智能方案暂时不可用，已为你载入可编辑的默认项目蓝图。');
     expect(project.proposal.outline).toBe('凡人修仙成长故事');
   });
 
@@ -59,6 +62,6 @@ describe('setup assistant', () => {
       new StaticGenerator({ name: '' }),
     );
     expect(result.source).toBe('offline_template');
-    expect(result.warning).toContain('离线模板');
+    expect(result.warning).toBe('智能方案暂时不可用，已为你载入可编辑的默认项目蓝图。');
   });
 });
