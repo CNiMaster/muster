@@ -1,7 +1,7 @@
 /** React Query hooks：所有数据获取集中在此。 */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
-import type { Company, Agent, AgentExecutorJson, AgentProfile, CompanyEmployee, Department, Project, Relationship, Task, UsageSummary, ProjectAgentThread, Workspace } from '../api/types';
+import type { Company, Agent, AgentExecutorJson, AgentProfile, CompanyEmployee, MemoryCandidate, MemoryEntry, Department, Project, Relationship, Task, UsageSummary, ProjectAgentThread, Workspace } from '../api/types';
 
 export interface ProposalResult<T> {
   source: 'claude' | 'offline_template';
@@ -176,6 +176,39 @@ export function useRecruitAgentProfile() {
       qc.invalidateQueries({ queryKey: ['agents', agent.companyId] });
       qc.invalidateQueries({ queryKey: ['profile-employments', agent.profileId] });
     },
+  });
+}
+export function useMemoryCandidates(profileId: string | undefined) {
+  return useQuery({
+    queryKey: ['memory-candidates', profileId],
+    queryFn: () => api.get<MemoryCandidate[]>(`/api/agent-profiles/${profileId}/memory/candidates`),
+    enabled: !!profileId,
+  });
+}
+export function useMemoryEntries(profileId: string | undefined) {
+  return useQuery({
+    queryKey: ['memory-entries', profileId],
+    queryFn: () => api.get<MemoryEntry[]>(`/api/agent-profiles/${profileId}/memory/entries`),
+    enabled: !!profileId,
+  });
+}
+export function useReviewMemoryCandidate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ profileId, candidateId, action }: { profileId: string; candidateId: string; action: 'approve' | 'reject' }) =>
+      api.post<MemoryCandidate | MemoryEntry>(`/api/agent-profiles/${profileId}/memory/candidates/${candidateId}/${action}`),
+    onSuccess: (_data, input) => {
+      qc.invalidateQueries({ queryKey: ['memory-candidates', input.profileId] });
+      qc.invalidateQueries({ queryKey: ['memory-entries', input.profileId] });
+    },
+  });
+}
+export function useMemoryEntryAction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ profileId, entryId, action }: { profileId: string; entryId: string; action: 'lock' | 'unlock' | 'delete' }) =>
+      api.post<MemoryEntry>(`/api/agent-profiles/${profileId}/memory/entries/${entryId}/${action}`),
+    onSuccess: (_data, input) => qc.invalidateQueries({ queryKey: ['memory-entries', input.profileId] }),
   });
 }
 export function useAgents(companyId: string | undefined) {

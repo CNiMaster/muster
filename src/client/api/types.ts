@@ -68,6 +68,37 @@ export interface CompanyEmployee {
   updatedAt: string;
 }
 
+export interface MemoryCandidate {
+  id: string;
+  profileId: string;
+  scope: 'personal' | 'company' | 'project' | 'skill';
+  companyId: string | null;
+  projectId: string | null;
+  content: string;
+  sourceTaskId: string | null;
+  sourceMessageId: string | null;
+  author: string;
+  confidence: number;
+  canInfluence: boolean;
+  status: 'pending' | 'approved' | 'rejected';
+  quarantineReason: string | null;
+  createdAt: string;
+}
+
+export interface MemoryEntry {
+  id: string;
+  profileId: string;
+  scope: MemoryCandidate['scope'];
+  companyId: string | null;
+  projectId: string | null;
+  content: string;
+  version: number;
+  state: 'active' | 'locked' | 'superseded' | 'deleted';
+  canInfluence: boolean;
+  sourceCandidateId: string | null;
+  updatedAt: string;
+}
+
 /** 员工级执行器配置（与 server AgentExecutorJson 对齐）。 */
 export interface AgentExecutorJson {
   provider?: 'claude-cli' | 'openai' | 'gemini';

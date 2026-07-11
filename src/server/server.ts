@@ -34,6 +34,7 @@ import { departmentsRouter } from './api/departments';
 import { setupAssistantRouter } from './api/setup-assistant';
 import { workspacesRouter } from './api/workspaces';
 import { agentProfilesRouter, companyEmployeesRouter } from './api/agent-profiles';
+import { memoryRouter } from './api/memory';
 import { bridgeRouter } from './bridge';
 import { asyncHandler, errorMiddleware, param } from './api/middleware';
 import { realtime } from './realtime';
@@ -138,6 +139,7 @@ async function createApp(): Promise<AppHandle> {
   app.use('/api/settings', settingsRouter);
   app.use('/api/workspaces', workspacesRouter);
   app.use('/api/agent-profiles', agentProfilesRouter);
+  app.use('/api/agent-profiles/:profileId/memory', memoryRouter);
   app.use('/api/setup-assistant', setupAssistantRouter);
 
   // Agent Bridge：Agent 通过 curl 调用 /bridge/<action> 反馈进度
