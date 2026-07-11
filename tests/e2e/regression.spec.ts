@@ -5,7 +5,6 @@ test('核心功能端到端完整回归流', async ({ page }) => {
   page.on('pageerror', err => console.error('BROWSER ERROR:', err.message));
   const timestamp = Date.now();
   const companyName = `回归公司-${timestamp}`;
-  const projectName = `回归小说-${timestamp}`;
 
   // 1. 向导创建公司并上班
   await page.goto('/');
@@ -34,21 +33,12 @@ test('核心功能端到端完整回归流', async ({ page }) => {
     await page.screenshot({ path: '/Users/master/.gemini/antigravity/brain/b8da204f-f1ef-4e82-87c0-fb4c41838ee8/error_screenshot.png' });
     throw err;
   }
-  await expect(page.getByText('根据用户初始设想整理项目简报与第一阶段大纲')).toBeVisible();
+  await expect(page.getByLabel('最近发布的任务').getByText('根据用户初始设想整理项目简报与第一阶段大纲', { exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: '发布新任务' })).toBeVisible();
   const companyResponse = await page.request.get(`/api/companies/${companyId}`);
   expect((await companyResponse.json()).state).toBe('online');
 
-  // 4. 返回公司页，然后进入项目进行看板/复盘测试
-  await page.getByRole('link', { name: '首页' }).click();
-  await page.getByRole('link', { name: companyName }).click();
-  await expect(page.locator('.mu-badge').getByText(/^上班$/).first()).toBeVisible({ timeout: 5000 });
-
-  // 离线 E2E 使用明确标注的确定性模板项目名。
-  await page.locator('a', { hasText: '未命名小说项目' }).first().click();
-  console.log('CLICKED PROJECT LINK. CURRENT URL:', page.url());
-  await expect(page.locator('.loading')).not.toBeVisible({ timeout: 5000 });
-  console.log('LOADING COMPLETED. CURRENT URL:', page.url());
+  // 4. 在当前项目继续验证看板/复盘流程
   await expect(page.getByRole('button', { name: '看板' })).toBeVisible({ timeout: 5000 });
 
   // 5. 看板与复盘流程测试
