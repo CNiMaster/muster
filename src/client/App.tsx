@@ -1,6 +1,6 @@
 import type React from 'react';
 import { Outlet, NavLink, useParams } from 'react-router-dom';
-import { useCompany } from './hooks/queries';
+import { useCompany, useProject } from './hooks/queries';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 export function App(): React.ReactElement {
@@ -11,7 +11,7 @@ export function App(): React.ReactElement {
           <div className="brand">
             <NavLink to="/">Muster · Agent 公司工作台</NavLink>
           </div>
-          <CompanyIndicator />
+          <ContextNavigation />
         </header>
         <main className="main">
           {/* 页面级边界：单页崩溃不影响导航与其他页 */}
@@ -24,9 +24,11 @@ export function App(): React.ReactElement {
   );
 }
 
-function CompanyIndicator(): React.ReactElement {
-  const { companyId } = useParams();
-  const { data: company } = useCompany(companyId);
+function ContextNavigation(): React.ReactElement {
+  const { companyId, projectId } = useParams();
+  const { data: project } = useProject(projectId);
+  const effectiveCompanyId = companyId ?? project?.companyId;
+  const { data: company } = useCompany(effectiveCompanyId);
   if (!company) {
     return (
       <nav className="topnav">
@@ -39,6 +41,7 @@ function CompanyIndicator(): React.ReactElement {
     <nav className="topnav">
       <NavLink to="/" end>首页</NavLink>
       <NavLink to={`/companies/${company.id}`} end>{company.name}</NavLink>
+      {project && <NavLink to={`/projects/${project.id}`} end>{project.name}</NavLink>}
       <NavLink to="/settings">设置</NavLink>
       <StateBadge state={company.state} />
     </nav>

@@ -1,7 +1,7 @@
 import type React from 'react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useCompanies } from '../hooks/queries';
+import { useCompanies, useProject } from '../hooks/queries';
 import { Card } from '../components/Card';
 import { Badge, companyStateTone, stateLabel } from '../components/Badge';
 import { EmptyState, Icons } from '../components/EmptyState';
@@ -9,6 +9,7 @@ import { OnboardingGuide } from '../components/OnboardingGuide';
 import { CardSkeleton } from '../components/Skeleton';
 import { NextActionCard } from '../components/NextActionCard';
 import { deriveNextAction } from '../domain/next-action';
+import { readRecentProjectId, writeRecentProjectId } from '../hooks/useRecentProject';
 
 interface HealthResp {
   status: string;
@@ -18,6 +19,9 @@ interface HealthResp {
 
 export function HomePage(): React.ReactElement {
   const { data: companies, isLoading } = useCompanies();
+  const [recentProjectId, setRecentProjectId] = useState<string | null>(() =>
+    typeof window === 'undefined' ? null : readRecentProjectId(window.localStorage));
+  const recentProject = useProject(recentProjectId ?? undefined);
   const [health, setHealth] = useState<HealthResp | null>(null);
 
   useEffect(() => {
@@ -26,6 +30,12 @@ export function HomePage(): React.ReactElement {
       .then(setHealth)
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!recentProject.isError || !recentProjectId) return;
+    writeRecentProjectId(window.localStorage, null);
+    setRecentProjectId(null);
+  }, [recentProject.isError, recentProjectId]);
 
   return (
     <div className="home">
@@ -36,6 +46,18 @@ export function HomePage(): React.ReactElement {
 
       {companies && companies.length === 0 && (
         <NextActionCard action={deriveNextAction({ companies, projects: [], attentionCount: 0 })} />
+      )}
+
+      {recentProject.data && (
+        <div className="resume-project">
+          <div>
+            <strong>继续上次项目</strong>
+            <span className="muted">{recentProject.data.name}</span>
+          </div>
+          <Link className="mu-btn mu-btn-primary mu-btn-md" to={`/projects/${recentProject.data.id}`}>
+            <span>继续工作</span>
+          </Link>
+        </div>
       )}
 
       <div className="usage-grid section">

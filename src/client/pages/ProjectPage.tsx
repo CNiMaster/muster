@@ -29,6 +29,7 @@ import { ConversationPanel } from '../components/ConversationPanel';
 import { ActivityPanel } from '../components/ActivityPanel';
 import { NextActionCard } from '../components/NextActionCard';
 import { deriveNextAction } from '../domain/next-action';
+import { useRecentProject } from '../hooks/useRecentProject';
 
 export function ProjectPage(): React.ReactElement {
   const { projectId, companyId } = useParams();
@@ -262,6 +263,7 @@ function NewProject({ companyId }: { companyId: string }): React.ReactElement {
 }
 
 function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement {
+  useRecentProject(projectId);
   const { data: project } = useProject(projectId);
   const { data: agents } = useAgents(project?.companyId);
   const { data: threads } = useThreads(projectId);
@@ -361,7 +363,6 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
           <h1>{project.name}</h1>
           <div className="subtitle" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <Badge tone="neutral">{project.state}</Badge>
-            <span className="muted">根目录：{project.rootDir}</span>
           </div>
         </div>
         <div className="page-actions">
@@ -401,6 +402,10 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
 
       <Card title="项目说明">
         <p className="muted" style={{ margin: 0 }}>{project.description || '(未填写)'}</p>
+        <details className="details-collapse" style={{ marginTop: 'var(--space-3)' }}>
+          <summary>项目目录与高级信息</summary>
+          <code className="project-root-path">{project.rootDir}</code>
+        </details>
       </Card>
 
       {/* 高频：对话 + 活动上移到首屏 */}

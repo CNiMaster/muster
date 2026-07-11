@@ -11,11 +11,10 @@ test('首页加载且健康', async ({ page }) => {
 });
 
 test('创建小说公司并出现在列表', async ({ page }) => {
-  await page.goto('/');
   const name = `E2E公司-${Date.now()}`;
-  await page.getByPlaceholder('例如：我的小说公司').fill(name);
-  await page.getByRole('button', { name: '创建', exact: true }).click();
-  // 等待列表刷新
+  const response = await page.request.post('/api/companies', { data: { name, kind: 'general' } });
+  expect(response.status()).toBe(201);
+  await page.goto('/');
   await expect(page.getByRole('link', { name: new RegExp(name) })).toBeVisible({ timeout: 5000 });
 });
 
@@ -29,8 +28,7 @@ test('健康接口 200', async ({ request }) => {
 test('向导式创建公司并正常上班', async ({ page }) => {
   page.on('console', msg => console.log('BROWSER LOG:', msg.text()));
   page.on('pageerror', err => console.error('BROWSER ERROR:', err.message));
-  await page.goto('/');
-  await page.getByRole('button', { name: '智能向导创建' }).click();
+  await page.goto('/companies/wizard');
   await expect(page.locator('h1')).toContainText('对话式小说公司创建向导');
 
   const name = `向导公司-${Date.now()}`;
@@ -39,14 +37,33 @@ test('向导式创建公司并正常上班', async ({ page }) => {
   await page.getByRole('button', { name: '生成预览与团队配置' }).click();
 
   // 等待预览加载并检查体检结果
-  await expect(page.getByRole('main').getByText(/Claude 生成不可用/)).toBeVisible({ timeout: 5000 });
+  await expect(page.getByRole('main').getByText(/智能方案暂时不可用/)).toBeVisible({ timeout: 5000 });
   await expect(page.getByText(/组织健康体检合格/)).toBeVisible();
   await expect(page.getByText('lead', { exact: true }).first()).toBeVisible();
 
-  // 点击确认并上班
-  await page.getByRole('button', { name: '确认无误，今日开始上班！' }).click();
+  // 点击确认团队并进入项目创建
+  await page.getByRole('button', { name: '确认团队并创建项目' }).click();
 
-  // 应该自动跳转到公司详情，状态为“上班”
-  await expect(page.locator('h1')).toContainText(name);
-  await expect(page.locator('.mu-badge').getByText(/^上班$/).first()).toBeVisible({ timeout: 5000 });
+  await page.waitForURL(/\/companies\/co_[^/]+\/projects\/new\?onboarding=1/);
+  await expect(page.locator('h1')).toContainText(`新建项目 · ${name}`);
+});
+
+test('项目路由保留公司导航并能从首页继续上次项目', async ({ page }) => {
+  const suffix = Date.now();
+  const companyResponse = await page.request.post('/api/companies', {
+    data: { name: `导航公司-${suffix}`, kind: 'general' },
+  });
+  const company = await companyResponse.json();
+  const projectResponse = await page.request.post(`/api/companies/${company.id}/projects`, {
+    data: { name: `导航项目-${suffix}` },
+  });
+  const project = await projectResponse.json();
+
+  await page.goto(`/projects/${project.id}`);
+  await expect(page.getByRole('navigation').getByRole('link', { name: company.name })).toBeVisible();
+  await expect(page.getByRole('navigation').getByRole('link', { name: project.name })).toBeVisible();
+
+  await page.goto('/');
+  await expect(page.getByText('继续上次项目')).toBeVisible();
+  await expect(page.getByRole('link', { name: '继续工作' })).toHaveAttribute('href', `/projects/${project.id}`);
 });
