@@ -6,6 +6,15 @@
 
 **Out of scope:** Template marketplace/sharing, remote SaaS, silent installation, and automatic high-risk approval.
 
+## Implementation status (2026-07-12)
+
+- Tasks 1–3, 5–6 are implemented and covered by integration/E2E tests.
+- Task 4 is implemented for API tools, Codex CLI, and Claude Code CLI. Codex uses the official app-server bidirectional approval requests; Claude uses a fail-closed PreToolUse helper and loopback bridge. Denied native approvals create/retain the Muster approval result and deterministically block the Task.
+- Codex system CLI `0.134.0` passed real no-tool and denied `git push --dry-run` smoke tests. The wrapped shell command was classified as `git-push`, was not executed, and returned a blocked Task with its session ID.
+- Claude Code system CLI `2.1.168` passed Hook decision and bridge-failure tests. A full live model smoke is currently not acceptance evidence because the user's configured `ANTHROPIC_BASE_URL` returned model-not-found/retry failures; disabling those user settings also removes that CLI's active authentication.
+- Gemini native approval bridging remains pending. `--yolo` must not be treated as equivalent to bounded Muster Turbo before that bridge is implemented.
+- Latest automated acceptance: 48 Vitest files / 292 tests, typecheck, production build, 12 Playwright tests, and `git diff --check` pass.
+
 ---
 
 ## Task 1: Persist adapter manifests, executor profiles, and execution runs
