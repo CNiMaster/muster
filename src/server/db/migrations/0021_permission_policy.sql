@@ -19,6 +19,7 @@ CREATE TABLE permission_rule (
   employee_id TEXT,
   company_id TEXT,
   project_id TEXT,
+  task_id TEXT,
   network INTEGER,
   subprocess INTEGER,
   expires_at TEXT,

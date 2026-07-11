@@ -43,4 +43,16 @@ describe('permission policy = approval strategy × allowed scope', () => {
       expect(existsSync(join(root,'secret.txt'))).toBe(false);
     } finally {rmSync(root,{recursive:true,force:true});}
   });
+
+  it('allow-once permits only the same Task operation for a limited time', () => {
+    const {db,close}=makeTestDb();
+    try {
+      const policy=createPermissionPolicy(db,{name:'询问',approvalStrategy:'ask-always',scope:'task'});
+      const approval=requestApproval(db,{policyId:policy.id,employeeId:'e',taskId:'task-a',action:'write-file',path:'/p/a.txt'});
+      recordApprovalDecision(db,approval.id,{decision:'allow-once'});
+      const base={action:'write-file',path:'/p/a.txt',taskRoot:'/p',projectRoot:'/p',workspaceRoot:'/'};
+      expect(evaluatePermission(db,policy.id,{...base,taskId:'task-a'}).decision).toBe('allow');
+      expect(evaluatePermission(db,policy.id,{...base,taskId:'task-b'}).decision).toBe('approval-required');
+    } finally {close();}
+  });
 });

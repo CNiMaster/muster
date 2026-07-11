@@ -11,6 +11,7 @@ import { api } from '../api/client';
 import { Select } from '../components/Form';
 
 type ExecutorProfileOption = { id:string;name:string;manifestId:string;concurrencyMode:string };
+type PermissionPolicyOption = { id:string;name:string;approvalStrategy:string;scope:string };
 
 export function AgentProfilePage(): React.ReactElement {
   const { profileId } = useParams();
@@ -21,7 +22,9 @@ export function AgentProfilePage(): React.ReactElement {
   const resetProfile = useResetAgentProfile();
   const qc = useQueryClient();
   const executorProfiles = useQuery({ queryKey:['executor-profiles'], queryFn:()=>api.get<ExecutorProfileOption[]>('/api/executors/profiles') });
+  const permissionPolicies = useQuery({ queryKey:['permission-policies'], queryFn:()=>api.get<PermissionPolicyOption[]>('/api/permissions/policies') });
   const bindExecutor = useMutation({ mutationFn:({employeeId,executorProfileId}:{employeeId:string;executorProfileId:string})=>api.put(`/api/executors/employees/${employeeId}/profile/${executorProfileId}`), onSuccess:()=>{void qc.invalidateQueries({queryKey:['profile-employments',profileId]});toast('success','员工执行器已固定绑定');},onError:(e:any)=>toast('error',e.message??'绑定失败') });
+  const bindPermission = useMutation({ mutationFn:({employeeId,policyId}:{employeeId:string;policyId:string})=>api.put(`/api/permissions/employees/${employeeId}/policy/${policyId}`), onSuccess:()=>{void qc.invalidateQueries({queryKey:['profile-employments',profileId]});toast('success','员工权限策略已绑定');},onError:(e:any)=>toast('error',e.message??'绑定失败') });
   if (isLoading || !profile) return <CardSkeleton />;
   const capabilities = profile.capabilities as { skills?: string[]; tools?: string[] };
   return (
@@ -65,6 +68,10 @@ export function AgentProfilePage(): React.ReactElement {
                 <Select aria-label={`${company?.name??employment.companyId} 执行器`} value={employment.executorProfileId??''} onChange={(event)=>{if(event.target.value)bindExecutor.mutate({employeeId:employment.id,executorProfileId:event.target.value});}}>
                   <option value="">选择固定执行器</option>
                   {(executorProfiles.data??[]).map((item)=><option key={item.id} value={item.id}>{item.name}</option>)}
+                </Select>
+                <Select aria-label={`${company?.name??employment.companyId} 权限`} value={employment.permissionPolicyId??''} onChange={(event)=>{if(event.target.value)bindPermission.mutate({employeeId:employment.id,policyId:event.target.value});}}>
+                  <option value="">选择权限策略</option>
+                  {(permissionPolicies.data??[]).map((item)=><option key={item.id} value={item.id}>{item.name}</option>)}
                 </Select>
               </li>
             );

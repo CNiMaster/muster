@@ -35,6 +35,7 @@ function ContextNavigation(): React.ReactElement {
       <NavLink to="/" end>首页</NavLink>
       <NavLink to="/agents">员工库</NavLink>
       <NavLink to="/executors">执行器</NavLink>
+      <NavLink to="/permissions">权限</NavLink>
       <NavLink to="/settings">设置</NavLink>
       </nav>
     );
@@ -46,6 +47,7 @@ function ContextNavigation(): React.ReactElement {
       {project && <NavLink to={`/projects/${project.id}`} end>{project.name}</NavLink>}
       <NavLink to="/agents">员工库</NavLink>
       <NavLink to="/executors">执行器</NavLink>
+      <NavLink to="/permissions">权限</NavLink>
       <NavLink to="/settings">设置</NavLink>
       <StateBadge state={company.state} />
     </nav>

@@ -257,6 +257,7 @@ export class TaskEngine {
             employeeId: agent.id,
             companyId: company.id,
             projectId: project.id,
+            taskId: task.id,
           });
           if (decision.decision === 'allow') return { allowed: true };
           if (decision.decision === 'approval-required') {
