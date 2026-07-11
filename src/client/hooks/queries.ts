@@ -282,7 +282,7 @@ export function useContextSize(projectId: string | undefined, threadId: string |
 export function useCreateProject() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ companyId, ...input }: { companyId: string; name: string; rootDir: string; description?: string; firstAgentId?: string }) =>
+    mutationFn: ({ companyId, ...input }: { companyId: string; name: string; rootDir?: string; description?: string; firstAgentId?: string }) =>
       api.post<Project>(`/api/companies/${companyId}/projects`, input),
     onSuccess: (data) => qc.invalidateQueries({ queryKey: ['projects', data.companyId] }),
   });

@@ -23,6 +23,19 @@ beforeEach(() => {
   db = tdb.db;
 });
 
+describe('default project root', () => {
+  it('同一公司下的同名项目使用不同的自动目录', () => {
+    const company = createCompany(db, { name: '小说 公司' });
+
+    const first = createProject(db, { companyId: company.id, name: '同名 项目' });
+    const second = createProject(db, { companyId: company.id, name: '同名 项目' });
+
+    expect(first.rootDir).not.toBe(second.rootDir);
+    expect(first.rootDir).toContain('/muster-projects/小说-公司/同名-项目-');
+    expect(second.rootDir).toContain('/muster-projects/小说-公司/同名-项目-');
+  });
+});
+
 describe('employee across projects', () => {
   it('同一员工进入两个项目，thread 隔离', () => {
     const c = createCompany(db, { name: 'co' });

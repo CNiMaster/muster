@@ -10,7 +10,7 @@ import {
 import { Card } from '../components/Card';
 import { Button, toast } from '../components/Button';
 import { Badge } from '../components/Badge';
-import { Input, Textarea, Select, Field } from '../components/Form';
+import { Input, Textarea, Field } from '../components/Form';
 
 export function CompanyWizardPage(): React.ReactElement {
   const navigate = useNavigate();
@@ -21,7 +21,6 @@ export function CompanyWizardPage(): React.ReactElement {
   const [step, setStep] = useState<1 | 2>(1);
   const [name, setName] = useState('');
   const [goal, setGoal] = useState('');
-  const [template, setTemplate] = useState('novel');
 
   const [proposal, setProposal] = useState<CompanyProposal | null>(null);
   const [proposalNotice, setProposalNotice] = useState<string | null>(null);
@@ -90,7 +89,7 @@ export function CompanyWizardPage(): React.ReactElement {
               borderRadius: '50%',
               background: step >= s ? 'var(--accent)' : 'var(--bg-elev)',
               border: '2px solid ' + (step >= s ? 'var(--accent)' : 'var(--border)'),
-              color: step >= s ? '#fff' : 'var(--fg-muted)',
+              color: step >= s ? 'var(--accent-fg)' : 'var(--fg-muted)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -109,12 +108,6 @@ export function CompanyWizardPage(): React.ReactElement {
       {step === 1 ? (
         <Card title="第一步：设定你的创作愿景">
           <div className="form-stack">
-            <Field label="协作模板" required>
-              <Select value={template} onChange={(e) => setTemplate(e.target.value)}>
-                <option value="novel">长篇小说协作模板 (首个 MVP 版本推荐)</option>
-              </Select>
-            </Field>
-
             <Field label="小说公司名称" required>
               <Input
                 value={name}
@@ -161,16 +154,7 @@ export function CompanyWizardPage(): React.ReactElement {
                 <span style={{ color: 'var(--ok)', fontWeight: 'bold' }}>[通过]</span>
                 <span><strong>通信通道建立：</strong> 主写手和情节、人物设计通道已激活，监察警报路由至第一负责人。</span>
               </div>
-              <div style={{
-                background: 'rgba(52, 211, 153, 0.08)',
-                border: '1px solid var(--ok)',
-                borderRadius: 'var(--radius-md)',
-                padding: 'var(--space-2) var(--space-3)',
-                fontSize: 'var(--text-sm)',
-                color: 'var(--ok)',
-                fontWeight: 'bold',
-                textAlign: 'center'
-              }}>
+              <div className="wizard-health-summary">
                 组织健康体检合格！团队配置满足长篇小说生产规范。
               </div>
             </div>

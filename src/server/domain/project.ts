@@ -6,11 +6,25 @@
  * - 跨项目引用默认只读（project_reference.read_only 强制为 1）。
  * - 同一员工可同时进入两个项目（不同 project_agent_thread，互不串线）。
  */
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
 import { getCompany } from './company';
 import { getAgent } from './agent';
+
+/** 将任意字符串转为安全的路径片段：保留中文/字母数字，其余替换为 -。 */
+function sanitizePathSegment(s: string): string {
+  const cleaned = s.trim().replace(/[\\/:*?"<>|\s]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+  return cleaned || 'untitled';
+}
+
+/** 为未指定 rootDir 的项目生成唯一默认路径，避免同名项目共享工作区。 */
+function defaultRootDir(companyName: string, projectName: string, projectId: string): string {
+  const projectSegment = `${sanitizePathSegment(projectName)}-${sanitizePathSegment(projectId)}`;
+  return join(homedir(), 'muster-projects', sanitizePathSegment(companyName), projectSegment);
+}
 
 export type ProjectState = 'idle' | 'active' | 'paused' | 'completed' | 'archived';
 
@@ -57,10 +71,13 @@ function fromRow(r: ProjectRow): Project {
 
 export function createProject(
   db: DB,
-  input: { companyId: string; name: string; description?: string; rootDir: string; firstAgentId?: string },
+  input: { companyId: string; name: string; description?: string; rootDir?: string; firstAgentId?: string },
 ): Project {
   const company = getCompany(db, input.companyId);
-  if (!input.rootDir) throw new AppError(ErrorCode.VALIDATION, 'rootDir 必填');
+  const id = shortId('pr_');
+  // rootDir 未指定时自动生成默认路径，降低建项目门槛。
+  // ensureGitRepo() 会在首个 worktree 创建时自动 mkdir + git init。
+  const rootDir = input.rootDir?.trim() || defaultRootDir(company.name, input.name, id);
   const firstAgentId = input.firstAgentId ?? company.firstAgentId ?? undefined;
   if (firstAgentId) {
     const firstAgent = getAgent(db, firstAgentId);
@@ -68,12 +85,11 @@ export function createProject(
       throw new AppError(ErrorCode.VALIDATION, '项目第一负责人必须属于项目所在公司');
     }
   }
-  const id = shortId('pr_');
   const now = nowIso();
   db.prepare(
     `INSERT INTO project (id, company_id, name, description, root_dir, first_agent_id, state, settings_json, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, 'idle', '{}', ?, ?)`,
-  ).run(id, input.companyId, input.name, input.description ?? '', input.rootDir, firstAgentId ?? null, now, now);
+  ).run(id, input.companyId, input.name, input.description ?? '', rootDir, firstAgentId ?? null, now, now);
   return getProject(db, id);
 }
 

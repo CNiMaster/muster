@@ -466,50 +466,53 @@ export function CompanyPage(): React.ReactElement {
                 onChange={(event) => setEditingAgent({ ...editingAgent, systemPrompt: event.target.value })}
               />
             </Field>
-            <Field label="立场 / 视角锁定（讨论/辩论时坚持的立场）">
-              <textarea
-                className="mu-input mu-textarea"
-                value={editingAgent.stance ?? ''}
-                placeholder="留空则不锁定立场。例如：你坚持现实主义文风，反对过度商业化。在讨论剧情走向时，始终从读者体验角度出发论证。"
-                onChange={(event) => setEditingAgent({ ...editingAgent, stance: event.target.value })}
-              />
-            </Field>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <Field label="技能（逗号分隔）">
-                <Input
-                  value={editingAgent.skills.join(', ')}
-                  onChange={(event) => setEditingAgent({
-                    ...editingAgent,
-                    skills: event.target.value.split(',').map((value) => value.trim()).filter(Boolean),
-                  })}
-                />
-              </Field>
-              <Field label="能力声明（逗号分隔）">
-                <Input
-                  value={editingAgent.tools.join(', ')}
-                  onChange={(event) => setEditingAgent({
-                    ...editingAgent,
-                    tools: event.target.value.split(',').map((value) => value.trim()).filter(Boolean),
-                  })}
-                />
-              </Field>
-            </div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input
-                type="checkbox"
-                checked={editingAgent.permissions.userDirectContact !== false}
-                onChange={(event) => setEditingAgent({
-                  ...editingAgent,
-                  permissions: { ...editingAgent.permissions, userDirectContact: event.target.checked },
-                })}
-              />
-              允许用户在对话中直接 @ 此员工
-            </label>
-            <details style={{ borderTop: '1px dashed var(--border-subtle)', paddingTop: 12, marginTop: 4 }}>
-              <summary style={{ cursor: 'pointer', fontWeight: 600 }}>执行器配置（覆盖系统默认，可选）</summary>
-              <div className="form-stack" style={{ marginTop: 12 }}>
-                <p className="muted" style={{ fontSize: 'var(--text-sm)', margin: 0 }}>
-                  留空则使用系统默认。API Key 凭据只存环境变量名，绝不存明文。
+
+            {/* 高级配置：立场/技能/权限/执行器，默认折叠 */}
+            <details className="details-collapse">
+              <summary>高级配置（立场 · 技能 · 权限 · 执行器）</summary>
+              <div className="form-stack" style={{ paddingTop: 'var(--space-3)' }}>
+                <Field label="立场 / 视角锁定（讨论/辩论时坚持的立场）">
+                  <textarea
+                    className="mu-input mu-textarea"
+                    value={editingAgent.stance ?? ''}
+                    placeholder="留空则不锁定立场。例如：你坚持现实主义文风，反对过度商业化。在讨论剧情走向时，始终从读者体验角度出发论证。"
+                    onChange={(event) => setEditingAgent({ ...editingAgent, stance: event.target.value })}
+                  />
+                </Field>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <Field label="技能（逗号分隔）">
+                    <Input
+                      value={editingAgent.skills.join(', ')}
+                      onChange={(event) => setEditingAgent({
+                        ...editingAgent,
+                        skills: event.target.value.split(',').map((value) => value.trim()).filter(Boolean),
+                      })}
+                    />
+                  </Field>
+                  <Field label="能力声明（逗号分隔）">
+                    <Input
+                      value={editingAgent.tools.join(', ')}
+                      onChange={(event) => setEditingAgent({
+                        ...editingAgent,
+                        tools: event.target.value.split(',').map((value) => value.trim()).filter(Boolean),
+                      })}
+                    />
+                  </Field>
+                </div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input
+                    type="checkbox"
+                    checked={editingAgent.permissions.userDirectContact !== false}
+                    onChange={(event) => setEditingAgent({
+                      ...editingAgent,
+                      permissions: { ...editingAgent.permissions, userDirectContact: event.target.checked },
+                    })}
+                  />
+                  允许用户在对话中直接 @ 此员工
+                </label>
+
+                <p className="muted" style={{ fontSize: 'var(--text-xs)', margin: 'var(--space-2) 0 0' }}>
+                  执行器配置留空则使用系统默认。API Key 凭据只存环境变量名，绝不存明文。
                 </p>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                   <Field label="执行器（provider）">

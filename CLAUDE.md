@@ -162,6 +162,7 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 
 - Vitest 单元与集成测试 235 项（公司/员工上下班、组织锁、跨项目只读、Task 并发领取/租约恢复/依赖/追问、定时触发去重、通信权限、实时缓存、worktree 三方合并/原子发布/冲突阻塞、章节事件、复盘、讨论中断、工作流、MVP 验收、重启恢复，以及 v1 缺口推进新增的项目健康/工作流责任岗位/监察心跳/事件聚合 feed/关系归档/镜像自动释放/多模型 token 归集/建议 Task/自然语言改图/会话压缩/二进制独占锁/授权参考目录/员工级执行器配置+凭据引用+会话时间轮换/状态看板/复盘配置可编辑/题材扩展包+可选岗位/维护事件动态岗位/只读人物关系图/讨论自动选人+每日预算/soak 50 Task+压缩+mirror+复盘等专项）。
   - 测试环境需要真实 git 仓库作为 `project.rootDir`（`createWorktree` 需要 `git rev-parse HEAD` 成功）。`tests/integration/setup.ts` 的 `makeTempGitRepo()` 创建临时 git 仓库（含初始 commit）供测试使用。
+  - `project.rootDir` 与 `firstAgentId` 均为可选：建项目时留空，`createProject` 自动生成 `~/muster-projects/{公司名}/{项目名}-{项目ID}` 并继承公司负责人；项目 ID 后缀保证同名项目不会共享工作区。`ensureGitRepo()` 会在首个 worktree 创建时自动 `mkdir + git init`。前端建项目表单只暴露"名称"+"说明"两项。
 - Playwright 5 项已在本机 Chromium 通过，覆盖向导创建、员工与项目配置、上下班、复盘备注和恢复。
 - `npm run test:claude-smoke` 已使用真实 Claude Code 连续完成两个 Task，验证跨 worktree 的 `--session-id`/`--resume`、文件发布、Artifact 登记和 Token/缓存用量。
 
@@ -171,6 +172,12 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 - `noUncheckedIndexedAccess` 关闭（为绕过 express `req.params` 类型摩擦）。代价：数组下标访问不强制 undefined 检查。如需更严格，重开后主要修 `src/shared/utils.ts` 和 domain 的 row 映射。
 - Claude Code 的模型可用性由用户本机或代理服务决定。先在“系统设置”填写实际支持的模型标识并运行桥接测试；错误模型会直接返回诊断，不会用 FakeExecutor 冒充成功。
 - 首版只接入 Claude Code 执行器。员工级多 API 凭据、多模态执行器、通用 PPT/网页公司模板和多租户 SaaS 仍是后续范围。
+
+### UI 分层约定
+- **低门槛优先**：建项目只填名称，rootDir/firstAgentId 后端自动；建公司不展示只有一个选项的 Select。
+- **看板纯前端增强**：DashboardPage 用 `useProjectEvents`/`useStatusBoard`/`useTasks` reduce/`useProjectUsage.byModel` 在客户端做状态分布条、负载柱状图、事件时间线、模型用量拆分；不引入图表库，用 CSS（`.dashboard-*` 类）可视化。新增聚合趋势（吞吐/费用时序）需后端补端点，不属于前端职责。
+- **低频配置折叠**：项目页把线程扩容/脑暴/复盘配置收进 `<details className="details-collapse">`；员工编辑把立场/技能/权限/执行器折叠到"高级配置"；设置页用单一带 sticky 的"保存全部设置"，不在各 Card 内放独立保存按钮。
+- **内联 style**：历史代码大量 `style={{...}}`，新增复杂区块优先抽 `.details-collapse` 等语义类进 `global.css`；简单 grid/gap 保留内联可接受。
 
 旧 Leader/Worker/Verifier、临时群聊、`.muster/config.json` 文件持久化等已全部废弃，不再参与运行。
 

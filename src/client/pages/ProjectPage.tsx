@@ -46,9 +46,7 @@ function NewProject({ companyId }: { companyId: string }): React.ReactElement {
 
   // 基础表单状态
   const [name, setName] = useState('');
-  const [rootDir, setRootDir] = useState('');
   const [desc, setDesc] = useState('');
-  const [firstAgentId, setFirstAgentId] = useState('');
 
   // 对话式向导状态
   const [prompt, setPrompt] = useState('');
@@ -87,13 +85,13 @@ function NewProject({ companyId }: { companyId: string }): React.ReactElement {
   };
 
   const submit = (): void => {
-    if (!name.trim() || !rootDir.trim()) {
-      toast('error', '名称和根目录为必填项');
+    if (!name.trim()) {
+      toast('error', '项目名称为必填项');
       return;
     }
 
     createProject.mutate(
-      { companyId, name, rootDir, description: desc, firstAgentId: firstAgentId || undefined },
+      { companyId, name, description: desc },
       {
         onSuccess: (p) => {
           // 如果有向导的初始任务，则创建任务并开工
@@ -230,30 +228,8 @@ function NewProject({ companyId }: { companyId: string }): React.ReactElement {
                   />
                 </Field>
 
-                {/* 存储根路径和第一负责人 */}
-                <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 'var(--space-3)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
-                  <Field label="物理保存根路径" required hint="Muster 会在此目录初始化 Git 并存储小说章节">
-                    <Input
-                      value={rootDir}
-                      onChange={(e) => setRootDir(e.target.value)}
-                      placeholder="如: /Users/master/my-novel"
-                    />
-                  </Field>
-
-                  <Field label="项目第一负责人">
-                    <Select value={firstAgentId} onChange={(e) => setFirstAgentId(e.target.value)}>
-                      <option value="">（继承公司负责人）</option>
-                      {agents?.map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.name} [{a.role}]
-                        </option>
-                      ))}
-                    </Select>
-                  </Field>
-                </div>
-
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'var(--space-3)' }}>
-                  <Button onClick={submit} disabled={!name.trim() || !rootDir.trim()} loading={createProject.isPending}>
+                  <Button onClick={submit} disabled={!name.trim()} loading={createProject.isPending}>
                     确认设定并正式开工
                   </Button>
                 </div>
@@ -267,24 +243,11 @@ function NewProject({ companyId }: { companyId: string }): React.ReactElement {
             <Field label="项目名称" required>
               <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="例如：星辰变" />
             </Field>
-            <Field label="项目根目录" required hint="Muster 会在此目录自动初始化 Git，存放小说成果。">
-              <Input value={rootDir} onChange={(e) => setRootDir(e.target.value)} placeholder="/Users/.../my-novel" />
-            </Field>
             <Field label="项目说明">
-              <Textarea value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="一句话描述这本小说" />
-            </Field>
-            <Field label="项目第一负责人">
-              <Select value={firstAgentId} onChange={(e) => setFirstAgentId(e.target.value)}>
-                <option value="">（继承公司）</option>
-                {agents?.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name} [{a.role}]
-                  </option>
-                ))}
-              </Select>
+              <Textarea value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="一句话描述这本小说（选填）" />
             </Field>
             <div>
-              <Button onClick={submit} disabled={!name.trim() || !rootDir.trim()} loading={createProject.isPending}>
+              <Button onClick={submit} disabled={!name.trim()} loading={createProject.isPending}>
                 创建项目
               </Button>
             </div>
@@ -421,11 +384,23 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
         <p className="muted" style={{ margin: 0 }}>{project.description || '(未填写)'}</p>
       </Card>
 
-      <ReviewSettingsCard project={project} />
+      {/* 高频：对话 + 活动上移到首屏 */}
+      <Card title="项目对话">
+        <ConversationPanel scope="project" scopeId={projectId} companyId={project.companyId} title="与项目第一负责人对话" />
+      </Card>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)', alignItems: 'start' }}>
-        {/* 项目员工线程与镜像管理 */}
-        <Card title="项目员工线程与扩容" actions={<Badge>{threads?.length ?? 0}</Badge>}>
+      <Card title="协作活动">
+        <ActivityPanel events={projectEvents ?? []} agents={agents} scope="project" scopeId={projectId} />
+      </Card>
+
+      {/* 低频：线程扩容 + 脑暴 + 复盘配置折叠收起 */}
+      <details className="details-collapse">
+        <summary>运维与高级配置（线程扩容 · 头脑风暴 · 复盘预算）</summary>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', paddingTop: 'var(--space-3)' }}>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)', alignItems: 'start' }}>
+            {/* 项目员工线程与镜像管理 */}
+            <Card title="项目员工线程与扩容" actions={<Badge>{threads?.length ?? 0}</Badge>}>
           {threads && threads.length === 0 && (
             <EmptyState icon={Icons.empty} title="还没有员工进入项目" hint="公司上班后，员工会自动进入项目开始领取 Task。" />
           )}
@@ -553,13 +528,9 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
         </Card>
       </div>
 
-      <Card title="项目对话" className="section">
-        <ConversationPanel scope="project" scopeId={projectId} companyId={project.companyId} title="与项目第一负责人对话" />
-      </Card>
-
-      <Card title="协作活动" className="section">
-        <ActivityPanel events={projectEvents ?? []} agents={agents} scope="project" scopeId={projectId} />
-      </Card>
+          <ReviewSettingsCard project={project} />
+        </div>
+      </details>
     </div>
   );
 }

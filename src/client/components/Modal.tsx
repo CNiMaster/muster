@@ -3,7 +3,7 @@
  *
  - portal 到 body
  - backdrop 点击关闭、ESC 关闭
- - 焦点陷阱（简化版：tab 在模态内循环）
+ - 焦点陷阱：Tab/Shift+Tab 在模态内循环（WAI-ARIA dialog pattern）
  - 标题 + 关闭按钮 + 内容 + 底部操作
  */
 import type React from 'react';
@@ -21,6 +21,9 @@ export interface ModalProps {
   closeOnBackdrop?: boolean;
 }
 
+// 可聚焦元素选择器
+const FOCUSABLE = 'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 export function Modal({
   open,
   onClose,
@@ -35,14 +38,50 @@ export function Modal({
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        onClose();
+        return;
+      }
+      // Tab 焦点陷阱：在模态内循环
+      if (e.key === 'Tab') {
+        const root = ref.current;
+        if (!root) return;
+        const nodes = Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+          (el) => el.offsetParent !== null || el === document.activeElement,
+        );
+        if (nodes.length === 0) {
+          e.preventDefault();
+          root.focus();
+          return;
+        }
+        const first = nodes[0];
+        const last = nodes[nodes.length - 1];
+        const active = document.activeElement as HTMLElement | null;
+        if (e.shiftKey) {
+          if (active === first || !root.contains(active)) {
+            e.preventDefault();
+            last.focus();
+          }
+        } else {
+          if (active === last || !root.contains(active)) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
+      }
     };
     document.addEventListener('keydown', onKey);
     // 锁滚动
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    // 聚焦模态
-    setTimeout(() => ref.current?.focus(), 0);
+    // 聚焦模态（让首个可聚焦元素或模态根获得焦点）
+    setTimeout(() => {
+      const root = ref.current;
+      if (!root) return;
+      const first = root.querySelector<HTMLElement>(FOCUSABLE);
+      if (first) first.focus();
+      else root.focus();
+    }, 0);
     return () => {
       document.removeEventListener('keydown', onKey);
       document.body.style.overflow = prev;

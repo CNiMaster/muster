@@ -5,7 +5,7 @@ import { useCompanies, useCreateCompany } from '../hooks/queries';
 import { Button } from '../components/Button';
 import { Card } from '../components/Card';
 import { Badge, companyStateTone, stateLabel } from '../components/Badge';
-import { Input, Select, Field } from '../components/Form';
+import { Input, Field } from '../components/Form';
 import { EmptyState, Icons } from '../components/EmptyState';
 import { OnboardingGuide } from '../components/OnboardingGuide';
 import { CardSkeleton } from '../components/Skeleton';
@@ -79,11 +79,6 @@ export function HomePage(): React.ReactElement {
                 if (e.key === 'Enter') submit();
               }}
             />
-          </Field>
-          <Field label="类型">
-            <Select value={kind} onChange={(e) => setKind(e.target.value)}>
-              <option value="novel">长篇小说</option>
-            </Select>
           </Field>
           <div style={{ display: 'flex', gap: 'var(--space-2)', alignSelf: 'flex-end' }}>
             <Button onClick={submit} disabled={!name.trim()} loading={createCompany.isPending}>

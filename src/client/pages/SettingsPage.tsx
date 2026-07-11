@@ -100,6 +100,9 @@ export function SettingsPage(): React.ReactElement {
           <h1>系统配置与连通性测试</h1>
           <p className="subtitle">管理 Claude Code CLI 运行时参数并验证本地大模型管道的桥接状态</p>
         </div>
+        <div className="page-actions">
+          <Button onClick={handleSave} loading={saveSettings.isPending}>保存全部设置</Button>
+        </div>
       </header>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 'var(--space-5)', alignItems: 'start' }}>
@@ -149,12 +152,6 @@ export function SettingsPage(): React.ReactElement {
                 />
               </Field>
             </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'var(--space-3)' }}>
-              <Button onClick={handleSave} loading={saveSettings.isPending}>
-                保存当前设置
-              </Button>
-            </div>
           </div>
         </Card>
 
@@ -172,72 +169,53 @@ export function SettingsPage(): React.ReactElement {
             </div>
 
             {testResult && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '16px' }}>
+              <div className="test-result-stack">
                 {/* 阶段 1：连通性测试 */}
-                <div style={{
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: 'var(--radius-md)',
-                  padding: '12px',
-                  background: 'var(--bg-input)'
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <strong style={{ fontSize: 'var(--text-sm)' }}>阶段 1：命令行可执行测试</strong>
+                <div className="test-result-box">
+                  <div className="test-result-head">
+                    <strong className="test-result-stage">阶段 1：命令行可执行测试</strong>
                     <Badge tone={testResult.versionTest.success ? 'ok' : 'err'}>
                       {testResult.versionTest.success ? '通过' : '失败'}
                     </Badge>
                   </div>
-                  <div className="muted" style={{ fontSize: 'var(--text-xs)', marginBottom: '4px' }}>
+                  <div className="muted test-result-meta">
                     消耗时间: {testResult.versionTest.durationMs}ms
                   </div>
                   {testResult.versionTest.success ? (
-                    <code style={{ fontSize: 'var(--text-xs)', wordBreak: 'break-all', display: 'block', background: 'var(--bg-soft)', padding: '6px', borderRadius: '4px' }}>
+                    <code className="test-result-code">
                       {testResult.versionTest.output}
                     </code>
                   ) : (
-                    <pre style={{ fontSize: 'var(--text-xs)', color: 'var(--err)', background: 'rgba(239,68,68,0.05)', padding: '6px', borderRadius: '4px', margin: 0, whiteSpace: 'pre-wrap' }}>
+                    <pre className="test-result-err">
                       {testResult.versionTest.error}
                     </pre>
                   )}
                 </div>
 
                 {/* 阶段 2：桥接测试 */}
-                <div style={{
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: 'var(--radius-md)',
-                  padding: '12px',
-                  background: 'var(--bg-input)'
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <strong style={{ fontSize: 'var(--text-sm)' }}>阶段 2：大模型桥接推理测试</strong>
+                <div className="test-result-box">
+                  <div className="test-result-head">
+                    <strong className="test-result-stage">阶段 2：大模型桥接推理测试</strong>
                     <Badge tone={testResult.bridgeTest.success ? 'ok' : 'err'}>
                       {testResult.bridgeTest.success ? '通过' : '未执行/失败'}
                     </Badge>
                   </div>
-                  <div className="muted" style={{ fontSize: 'var(--text-xs)', marginBottom: '4px' }}>
+                  <div className="muted test-result-meta">
                     消耗时间: {testResult.bridgeTest.durationMs}ms
                   </div>
                   {testResult.bridgeTest.success ? (
-                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--fg-muted)', background: 'var(--bg-soft)', padding: '6px', borderRadius: '4px' }}>
+                    <div className="test-result-out">
                       <strong>模型回答:</strong> {testResult.bridgeTest.output}
                     </div>
                   ) : (
-                    <pre style={{ fontSize: 'var(--text-xs)', color: 'var(--err)', background: 'rgba(239,68,68,0.05)', padding: '6px', borderRadius: '4px', margin: 0, whiteSpace: 'pre-wrap' }}>
+                    <pre className="test-result-err">
                       {testResult.bridgeTest.error || '因阶段 1 失败，跳过大模型桥接测试。'}
                     </pre>
                   )}
                 </div>
 
                 {/* 总体结论 */}
-                <div style={{
-                  textAlign: 'center',
-                  fontWeight: 'bold',
-                  padding: '10px',
-                  borderRadius: 'var(--radius-md)',
-                  background: testResult.overallSuccess ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)',
-                  color: testResult.overallSuccess ? 'var(--ok)' : 'var(--err)',
-                  border: `1px solid ${testResult.overallSuccess ? 'var(--ok)' : 'var(--err)'}`,
-                  fontSize: 'var(--text-sm)'
-                }}>
+                <div className={`test-result-summary ${testResult.overallSuccess ? 'is-ok' : 'is-err'}`}>
                   {testResult.overallSuccess
                     ? '系统连通性与大模型桥接调试成功！'
                     : '管道连通或桥接校验失败，请检查路径或 API 密钥配置。'}
@@ -273,9 +251,6 @@ export function SettingsPage(): React.ReactElement {
           <Field label="Gemini 默认模型">
             <Input value={geminiModel} onChange={(e) => setGeminiModel(e.target.value)} placeholder="gemini-2.0-flash" />
           </Field>
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <Button onClick={handleSave} loading={saveSettings.isPending}>保存执行器配置</Button>
-          </div>
         </div>
       </Card>
     </div>

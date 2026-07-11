@@ -44,7 +44,7 @@ export const projectScopedRouter = Router({ mergeParams: true });
 const createProjectSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
-  rootDir: z.string().min(1),
+  rootDir: z.string().optional(),
   firstAgentId: z.string().optional(),
 });
 

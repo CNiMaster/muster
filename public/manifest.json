@@ -4,5 +4,14 @@
   "start_url": "/",
   "display": "standalone",
   "background_color": "#1f1d1b",
-  "theme_color": "#d97757"
+  "theme_color": "#1f1d1b",
+  "description": "本地单用户多 Agent 公司工作台 · 长篇小说协作生产",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
 }

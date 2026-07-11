@@ -4,6 +4,7 @@ import { resolve } from 'path';
 
 export default defineConfig({
   root: 'src/client',
+  publicDir: resolve(__dirname, 'public'),
   plugins: [react()],
   resolve: {
     alias: {
