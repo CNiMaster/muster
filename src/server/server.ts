@@ -38,6 +38,7 @@ import { memoryRouter } from './api/memory';
 import { permissionsRouter } from './api/permissions';
 import { executorsRouter } from './api/executors';
 import { CodexCliAdapter } from './executors/codex-cli-adapter';
+import { GeminiCliAdapter } from './executors/gemini-cli-adapter';
 import { bridgeRouter } from './bridge';
 import { asyncHandler, errorMiddleware, param } from './api/middleware';
 import { realtime } from './realtime';
@@ -114,6 +115,7 @@ async function createApp(): Promise<AppHandle> {
     adapterRegistry.set('openai', new OpenAICompatibleAdapter());
     adapterRegistry.set('gemini', new GeminiAdapter());
     adapterRegistry.set('codex-cli', new CodexCliAdapter());
+    adapterRegistry.set('gemini-cli', new GeminiCliAdapter());
   }
   const engine = new TaskEngine(getDb(), adapterRegistry, {
     pollIntervalMs: Number(process.env.MUSTER_POLL_INTERVAL_MS ?? 2000),

@@ -1,0 +1,14 @@
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import type { ExecutionAdapter,ExecutionContext,ExecutionEvents,ExecutionRunResult } from '../task-engine/executor';
+import { agentRunResultSchema } from './result-schema';
+import { tryParseJSON } from '../../shared/utils';
+import { AppError,ErrorCode } from '../../shared/errors';
+
+const execFileAsync=promisify(execFile);
+type Runner=(binary:string,args:string[],options:{cwd:string;env:NodeJS.ProcessEnv;signal?:AbortSignal;timeout:number})=>Promise<{exitCode:number;stdout:string;stderr:string}>;
+const defaultRunner:Runner=async(binary,args,options)=>{try{const result=await execFileAsync(binary,args,{...options,maxBuffer:16*1024*1024});return{exitCode:0,stdout:result.stdout,stderr:result.stderr};}catch(error:any){return{exitCode:typeof error.code==='number'?error.code:1,stdout:error.stdout??'',stderr:error.stderr??error.message};}};
+export class GeminiCliAdapter implements ExecutionAdapter{
+  constructor(private options:{runner?:Runner}={}){}
+  async run(ctx:ExecutionContext,events?:ExecutionEvents):Promise<ExecutionRunResult>{const binary=ctx.agentExecutor?.binaryPath??'gemini';const prompt=[ctx.systemPrompt,'# 当前 Task 工作包',JSON.stringify(ctx.inputPacket,null,2),'最终答复必须是 AgentRunResult JSON 对象，不要使用 Markdown 代码块。'].join('\n\n');const args=['-p',prompt,'--output-format','stream-json','--sandbox'];if(ctx.agentExecutor?.model)args.push('--model',ctx.agentExecutor.model);if(ctx.sessionIdHint)args.push('--resume',ctx.sessionIdHint);const result=await(this.options.runner??defaultRunner)(binary,args,{cwd:ctx.workingDir,env:{...process.env,GEMINI_CLI_HOME:ctx.runConfigDir??process.env.GEMINI_CLI_HOME},signal:ctx.signal,timeout:ctx.agentExecutor?.timeoutMs??600_000});if(result.exitCode!==0)throw new AppError(ErrorCode.INTERNAL,`Gemini CLI 执行失败: ${result.stderr.slice(0,2000)}`);let session:string|undefined;let content='';let stats:any={};for(const line of result.stdout.split(/\r?\n/).filter(Boolean)){events?.onOutput?.(line);try{const event=JSON.parse(line);session=event.session_id??event.sessionId??session;if(event.type==='message'&&event.role==='assistant')content+=typeof event.content==='string'?event.content:'';if(event.type==='result'){stats=event.stats??event.usage??stats;if(event.response)content=event.response;}}catch{/* diagnostic */}}const parsed=agentRunResultSchema.safeParse(tryParseJSON(content));if(!parsed.success)throw new AppError(ErrorCode.VALIDATION,'Gemini CLI 未返回有效的 AgentRunResult');return{...parsed.data,_sessionIdHint:session??ctx.sessionIdHint,_usage:{model:ctx.agentExecutor?.model??'gemini-cli',inputTokens:Number(stats.input_tokens??stats.inputTokens??0),outputTokens:Number(stats.output_tokens??stats.outputTokens??0),cacheReadTokens:Number(stats.cached_tokens??0),cacheCreateTokens:0,toolCalls:Number(stats.tool_calls??0),durationMs:Number(stats.duration_ms??0),costUSD:0}};}
+}
