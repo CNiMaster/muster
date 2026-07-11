@@ -4,6 +4,7 @@ import { useAgentProfile, useCompanies, useProfileEmployments } from '../hooks/q
 import { Badge } from '../components/Badge';
 import { Card } from '../components/Card';
 import { CardSkeleton } from '../components/Skeleton';
+import { MemoryReviewPanel } from '../components/MemoryReviewPanel';
 
 export function AgentProfilePage(): React.ReactElement {
   const { profileId } = useParams();
@@ -36,6 +37,7 @@ export function AgentProfilePage(): React.ReactElement {
           })}
         </ul>
       </Card>
+      <MemoryReviewPanel profileId={profile.id} />
     </div>
   );
 }

@@ -93,6 +93,15 @@ test('员工库展示全局档案与公司任职', async ({ page }) => {
     data: { name: `全局员工-${suffix}`, role: 'engineer', responsibilities: '负责实现' },
   });
   const agent = await agentResponse.json();
+  await page.request.post(`/api/agent-profiles/${agent.profileId}/memory/candidates`, {
+    data: {
+      scope: 'personal',
+      content: '用户偏好先看简短摘要',
+      author: 'agent',
+      confidence: 0.9,
+      canInfluence: true,
+    },
+  });
 
   await page.goto('/agents');
   await expect(page.getByRole('heading', { name: '员工库' })).toBeVisible();
@@ -100,4 +109,8 @@ test('员工库展示全局档案与公司任职', async ({ page }) => {
   await expect(page.getByText('公司任职')).toBeVisible();
   await expect(page.getByText('engineer', { exact: true })).toBeVisible();
   await expect(page).toHaveURL(`/agents/${agent.profileId}`);
+  await expect(page.getByText('待确认记忆 1')).toBeVisible();
+  await expect(page.getByText('用户偏好先看简短摘要')).toBeVisible();
+  await page.getByRole('button', { name: '批准记忆' }).click();
+  await expect(page.getByText('已批准记忆 1')).toBeVisible();
 });

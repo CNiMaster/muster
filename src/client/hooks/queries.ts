@@ -211,6 +211,14 @@ export function useMemoryEntryAction() {
     onSuccess: (_data, input) => qc.invalidateQueries({ queryKey: ['memory-entries', input.profileId] }),
   });
 }
+export function useCorrectMemoryEntry() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ profileId, entryId, content }: { profileId: string; entryId: string; content: string }) =>
+      api.patch<MemoryEntry>(`/api/agent-profiles/${profileId}/memory/entries/${entryId}`, { content }),
+    onSuccess: (_data, input) => qc.invalidateQueries({ queryKey: ['memory-entries', input.profileId] }),
+  });
+}
 export function useAgents(companyId: string | undefined) {
   return useQuery({
     queryKey: ['agents', companyId],
