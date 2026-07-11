@@ -649,6 +649,7 @@ function normalizeAgentExecutor(raw: Record<string, unknown> | undefined): impor
   if (typeof raw.skipPermissions === 'boolean') cfg.skipPermissions = raw.skipPermissions;
   if (typeof raw.provider === 'string' && raw.provider) cfg.provider = raw.provider;
   if (typeof raw.binaryPath === 'string' && raw.binaryPath) cfg.binaryPath = raw.binaryPath;
+  if (Array.isArray(raw.customArgs) && raw.customArgs.every((item) => typeof item === 'string')) cfg.customArgs = raw.customArgs;
   if (typeof raw.baseURL === 'string' && raw.baseURL) cfg.baseURL = raw.baseURL;
   return Object.keys(cfg).length > 0 ? cfg : undefined;
 }

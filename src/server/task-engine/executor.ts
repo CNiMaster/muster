@@ -59,6 +59,8 @@ export interface AgentExecutorConfig {
   provider?: string;
   /** 托管安装或用户选择的固定 CLI 二进制。 */
   binaryPath?: string;
+  /** 自定义 CLI 的参数数组模板；只替换整项占位符，不经过 shell。 */
+  customArgs?: string[];
   model?: string;
   claudeBin?: string;
   timeoutMs?: number;
