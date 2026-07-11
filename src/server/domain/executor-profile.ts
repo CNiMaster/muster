@@ -2,6 +2,8 @@ import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { nowIso, shortId } from '../../shared/utils';
 import { getExecutorManifest, type ExecutorConcurrency, type ExecutorManifest } from '../executors/manifests';
+import { existsSync } from 'node:fs';
+import { isAbsolute } from 'node:path';
 
 export type CredentialReference = { kind: 'env' | 'keychain' | 'cli-login' | 'encrypted-local'; reference: string };
 
@@ -54,6 +56,15 @@ export function createExecutorProfile(db: DB, input: { name: string; manifestId:
   if (!name) throw new AppError(ErrorCode.VALIDATION, '执行器档案名称不能为空');
   const manifest = getExecutorManifest(input.manifestId);
   assertNoSecretValues(input.config);
+  if (manifest.id === 'custom-cli') {
+    const binaryPath = input.config?.binaryPath;
+    if (typeof binaryPath !== 'string' || !isAbsolute(binaryPath) || !existsSync(binaryPath)) {
+      throw new AppError(ErrorCode.VALIDATION, '自定义 CLI 必须填写存在的可执行文件绝对路径');
+    }
+    if (input.config?.customArgs !== undefined && (!Array.isArray(input.config.customArgs) || !input.config.customArgs.every((item) => typeof item === 'string'))) {
+      throw new AppError(ErrorCode.VALIDATION, '自定义 CLI 参数模板必须是字符串数组');
+    }
+  }
   if (input.credentialRef && !/^[A-Z][A-Z0-9_]*$/.test(input.credentialRef.reference) && input.credentialRef.kind === 'env') {
     throw new AppError(ErrorCode.VALIDATION, '环境变量凭据引用格式无效');
   }

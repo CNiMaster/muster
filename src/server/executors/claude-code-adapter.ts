@@ -88,7 +88,7 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
     // 2. 员工级 executor_json 覆盖（PRD Phase 3：员工执行器配置）
     const agentEx = ctx.agentExecutor;
     const mergedSettings: ClaudeSettings = {
-      claudeBin: agentEx?.claudeBin ?? fromInstance.claudeBin,
+      claudeBin: agentEx?.binaryPath ?? agentEx?.claudeBin ?? fromInstance.claudeBin,
       model: agentEx?.model ?? fromInstance.model,
       skipPermissions: agentEx?.skipPermissions ?? fromInstance.skipPermissions,
       timeoutMs: agentEx?.timeoutMs ?? fromInstance.timeoutMs,
