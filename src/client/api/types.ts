@@ -12,6 +12,15 @@ export interface Company {
   updatedAt: string;
 }
 
+export interface Workspace {
+  id: string;
+  name: string;
+  rootDir: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Agent {
   id: string;
   companyId: string;

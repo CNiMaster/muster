@@ -13,6 +13,7 @@ import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
 import { getCompany } from './company';
 import { getAgent } from './agent';
+import { ensureDefaultWorkspace } from './workspace';
 
 /** 将任意字符串转为安全的路径片段：保留中文/字母数字，其余替换为 -。 */
 function sanitizePathSegment(s: string): string {
@@ -21,9 +22,9 @@ function sanitizePathSegment(s: string): string {
 }
 
 /** 为未指定 rootDir 的项目生成唯一默认路径，避免同名项目共享工作区。 */
-function defaultRootDir(companyName: string, projectName: string, projectId: string): string {
+function defaultRootDir(workspaceRoot: string, companyName: string, projectName: string, projectId: string): string {
   const projectSegment = `${sanitizePathSegment(projectName)}-${sanitizePathSegment(projectId)}`;
-  return join(homedir(), 'muster-projects', sanitizePathSegment(companyName), projectSegment);
+  return join(workspaceRoot, 'companies', sanitizePathSegment(companyName), 'projects', projectSegment);
 }
 
 export type ProjectState = 'idle' | 'active' | 'paused' | 'completed' | 'archived';
@@ -77,7 +78,13 @@ export function createProject(
   const id = shortId('pr_');
   // rootDir 未指定时自动生成默认路径，降低建项目门槛。
   // ensureGitRepo() 会在首个 worktree 创建时自动 mkdir + git init。
-  const rootDir = input.rootDir?.trim() || defaultRootDir(company.name, input.name, id);
+  const requestedRootDir = input.rootDir?.trim();
+  const rootDir = requestedRootDir || defaultRootDir(
+    ensureDefaultWorkspace(db, join(homedir(), 'MusterWorkspace')).rootDir,
+    company.name,
+    input.name,
+    id,
+  );
   const firstAgentId = input.firstAgentId ?? company.firstAgentId ?? undefined;
   if (firstAgentId) {
     const firstAgent = getAgent(db, firstAgentId);

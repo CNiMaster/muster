@@ -1,7 +1,7 @@
 /** React Query hooks：所有数据获取集中在此。 */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
-import type { Company, Agent, AgentExecutorJson, Department, Project, Relationship, Task, UsageSummary, ProjectAgentThread } from '../api/types';
+import type { Company, Agent, AgentExecutorJson, Department, Project, Relationship, Task, UsageSummary, ProjectAgentThread, Workspace } from '../api/types';
 
 export interface ProposalResult<T> {
   source: 'claude' | 'offline_template';
@@ -32,6 +32,25 @@ export interface ProjectProposal {
   style: string;
   sampleText: string;
   initialTaskTitle: string;
+}
+
+// ===== Workspaces =====
+export function useWorkspaces() {
+  return useQuery({ queryKey: ['workspaces'], queryFn: () => api.get<Workspace[]>('/api/workspaces') });
+}
+export function useCreateWorkspace() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { name: string; rootDir: string }) => api.post<Workspace>('/api/workspaces', input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['workspaces'] }),
+  });
+}
+export function useActivateWorkspace() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.post<Workspace>(`/api/workspaces/${id}/activate`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['workspaces'] }),
+  });
 }
 
 export function useGenerateCompanyProposal() {

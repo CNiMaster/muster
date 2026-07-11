@@ -31,8 +31,8 @@ describe('default project root', () => {
     const second = createProject(db, { companyId: company.id, name: '同名 项目' });
 
     expect(first.rootDir).not.toBe(second.rootDir);
-    expect(first.rootDir).toContain('/muster-projects/小说-公司/同名-项目-');
-    expect(second.rootDir).toContain('/muster-projects/小说-公司/同名-项目-');
+    expect(first.rootDir).toContain('/MusterWorkspace/companies/小说-公司/projects/同名-项目-');
+    expect(second.rootDir).toContain('/MusterWorkspace/companies/小说-公司/projects/同名-项目-');
   });
 });
 
