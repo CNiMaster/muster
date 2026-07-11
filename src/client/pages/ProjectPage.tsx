@@ -17,6 +17,7 @@ import {
   useCompactThread,
   useContextSize,
   useProjectEvents,
+  useTasks,
 } from '../hooks/queries';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
@@ -26,6 +27,8 @@ import { EmptyState, Icons } from '../components/EmptyState';
 import type { Project } from '../api/types';
 import { ConversationPanel } from '../components/ConversationPanel';
 import { ActivityPanel } from '../components/ActivityPanel';
+import { NextActionCard } from '../components/NextActionCard';
+import { deriveNextAction } from '../domain/next-action';
 
 export function ProjectPage(): React.ReactElement {
   const { projectId, companyId } = useParams();
@@ -263,6 +266,7 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
   const { data: agents } = useAgents(project?.companyId);
   const { data: threads } = useThreads(projectId);
   const { data: projectEvents } = useProjectEvents(projectId);
+  const { data: tasks } = useTasks(projectId);
 
   const createMirror = useCreateMirror();
   const deleteMirror = useDeleteMirror();
@@ -282,6 +286,8 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
   }, [agents]);
 
   if (!project) return <div className="loading">加载中…</div>;
+
+  const attentionCount = tasks?.filter((task) => task.state === 'blocked' || task.state === 'waiting_input').length ?? 0;
 
   const handleAutoBrainstorm = () => {
     if (!topic.trim()) {
@@ -379,6 +385,12 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
           </Link>
         </div>
       </header>
+
+      <NextActionCard action={deriveNextAction({
+        companies: [{ id: project.companyId, name: '' }],
+        projects: [project],
+        attentionCount,
+      })} />
 
       <Card title="项目说明">
         <p className="muted" style={{ margin: 0 }}>{project.description || '(未填写)'}</p>

@@ -27,6 +27,8 @@ import { ConversationPanel } from '../components/ConversationPanel';
 import { EventFeedList } from '../components/EventFeedList';
 import { ActivityPanel } from '../components/ActivityPanel';
 import type { Agent } from '../api/types';
+import { NextActionCard } from '../components/NextActionCard';
+import { deriveNextAction } from '../domain/next-action';
 
 export function CompanyPage(): React.ReactElement {
   const { companyId = '' } = useParams();
@@ -213,6 +215,10 @@ export function CompanyPage(): React.ReactElement {
           )}
         </div>
       </header>
+
+      {projects && projects.length === 0 && (
+        <NextActionCard action={deriveNextAction({ companies: [company], projects, attentionCount: 0 })} />
+      )}
 
       {company.charter && (
         <Card title="公司章程">
@@ -630,15 +636,11 @@ export function CompanyPage(): React.ReactElement {
       <Card
         title="项目"
         className="section"
-        actions={
-          isOff ? (
-            <Link to={`/companies/${companyId}/projects/new`}>
-              <Button variant="subtle" size="sm">
-                新建项目
-              </Button>
-            </Link>
-          ) : undefined
-        }
+        actions={projects && projects.length > 0 ? (
+          <Link className="mu-btn mu-btn-subtle mu-btn-sm" to={`/companies/${companyId}/projects/new`}>
+            <span>新建项目</span>
+          </Link>
+        ) : undefined}
       >
         {projects && projects.length === 0 && (
           <EmptyState icon={Icons.empty} title="还没有项目" hint="项目是所有实际工作的归属。" />

@@ -1,15 +1,14 @@
 import type React from 'react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useCompanies, useCreateCompany } from '../hooks/queries';
-import { Button } from '../components/Button';
+import { useCompanies } from '../hooks/queries';
 import { Card } from '../components/Card';
 import { Badge, companyStateTone, stateLabel } from '../components/Badge';
-import { Input, Field } from '../components/Form';
 import { EmptyState, Icons } from '../components/EmptyState';
 import { OnboardingGuide } from '../components/OnboardingGuide';
 import { CardSkeleton } from '../components/Skeleton';
-import { toast } from '../components/Button';
+import { NextActionCard } from '../components/NextActionCard';
+import { deriveNextAction } from '../domain/next-action';
 
 interface HealthResp {
   status: string;
@@ -19,10 +18,7 @@ interface HealthResp {
 
 export function HomePage(): React.ReactElement {
   const { data: companies, isLoading } = useCompanies();
-  const createCompany = useCreateCompany();
   const [health, setHealth] = useState<HealthResp | null>(null);
-  const [name, setName] = useState('');
-  const [kind, setKind] = useState('novel');
 
   useEffect(() => {
     fetch('/api/health')
@@ -31,26 +27,16 @@ export function HomePage(): React.ReactElement {
       .catch(() => {});
   }, []);
 
-  const submit = (): void => {
-    if (!name.trim()) return;
-    createCompany.mutate(
-      { name, kind },
-      {
-        onSuccess: (c) => {
-          toast('success', `公司「${c.name}」已创建`);
-          setName('');
-        },
-        onError: (e) => toast('error', `创建失败：${(e as { message?: string }).message ?? '未知错误'}`),
-      },
-    );
-  };
-
   return (
     <div className="home">
       <h1>Muster Agent 公司工作台</h1>
       <p className="subtitle">本地单用户长篇小说公司 · MVP</p>
 
       <OnboardingGuide hasCompany={(companies?.length ?? 0) > 0} />
+
+      {companies && companies.length === 0 && (
+        <NextActionCard action={deriveNextAction({ companies, projects: [], attentionCount: 0 })} />
+      )}
 
       <div className="usage-grid section">
         <Card className="mu-metric">
@@ -67,29 +53,6 @@ export function HomePage(): React.ReactElement {
           <div className="mu-metric-value">{companies?.length ?? 0}</div>
         </Card>
       </div>
-
-      <Card title="创建公司" className="section">
-        <div className="form-row">
-          <Field label="公司名称">
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="例如：我的小说公司"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') submit();
-              }}
-            />
-          </Field>
-          <div style={{ display: 'flex', gap: 'var(--space-2)', alignSelf: 'flex-end' }}>
-            <Button onClick={submit} disabled={!name.trim()} loading={createCompany.isPending}>
-              创建
-            </Button>
-            <Link to="/companies/wizard">
-              <Button variant="ghost">智能向导创建</Button>
-            </Link>
-          </div>
-        </div>
-      </Card>
 
       <Card
         title="我的公司"
