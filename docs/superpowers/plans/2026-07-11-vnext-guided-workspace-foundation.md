@@ -1,6 +1,5 @@
 # Muster vNext Guided Workspace Foundation Implementation Plan
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Deliver the first working vNext vertical: a safe company-to-project onboarding flow, a persistent total workspace, an action-first home/project experience, last-project resume, readable fallback errors, and progressive settings.
 
 **Architecture:** Add a persistent Workspace domain without replacing the current Project table, then route project default directories through the active workspace. Keep existing company, novel template, Task engine, worktree, and publish queue behavior intact. Build the new user journey by composing existing APIs and adding small focused UI components rather than rewriting the application shell.
@@ -39,7 +38,7 @@ The approved vNext spec spans independent subsystems. This plan implements the f
 - Produces: `formatProposalFallbackWarning(kind: 'company' | 'agent' | 'project'): string`
 - Preserves: `ProposalResult<T> = { source, proposal, warning? }`
 
-- [ ] **Step 1: Write the failing fallback-copy test**
+- [x] **Step 1: Write the failing fallback-copy test**
 
 Add assertions that a failed company proposal returns a short user-facing warning and does not contain the failed executable path, command flags, schema, stderr, or the injected sentinel `SECRET_DIAGNOSTIC`.
 
@@ -49,13 +48,13 @@ expect(company.warning).not.toContain('SECRET_DIAGNOSTIC');
 expect(company.warning).not.toContain('--json-schema');
 ```
 
-- [ ] **Step 2: Run the focused test and verify RED**
+- [x] **Step 2: Run the focused test and verify RED**
 
 Run: `npx vitest run tests/integration/setup-assistant.spec.ts`
 
 Expected: FAIL because the current warning appends the underlying process error.
 
-- [ ] **Step 3: Implement stable fallback copy**
+- [x] **Step 3: Implement stable fallback copy**
 
 Add a pure formatter and use it in each fallback path:
 
@@ -72,13 +71,13 @@ export function formatProposalFallbackWarning(kind: 'company' | 'agent' | 'proje
 
 Keep the original exception in server logs only.
 
-- [ ] **Step 4: Run focused tests and verify GREEN**
+- [x] **Step 4: Run focused tests and verify GREEN**
 
 Run: `npx vitest run tests/integration/setup-assistant.spec.ts`
 
 Expected: all setup-assistant tests pass with no raw diagnostic in response payloads.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/server/domain/setup-assistant.ts tests/integration/setup-assistant.spec.ts
@@ -103,7 +102,7 @@ git commit -m "fix: hide setup assistant diagnostics from users"
 - Produces HTTP: `GET /api/workspaces`, `POST /api/workspaces`, `POST /api/workspaces/:id/activate`
 - Project default directory consumes `getActiveWorkspace(db)?.rootDir`
 
-- [ ] **Step 1: Write failing workspace-domain tests**
+- [x] **Step 1: Write failing workspace-domain tests**
 
 Cover creation, one active workspace, activation switching, duplicate canonical root rejection, and project default paths beneath the active workspace.
 
@@ -115,13 +114,13 @@ const project = createProject(db, { companyId: company.id, name: '商城' });
 expect(project.rootDir).toContain('/tmp/muster-main/companies/公司/projects/商城-');
 ```
 
-- [ ] **Step 2: Run tests and verify RED**
+- [x] **Step 2: Run tests and verify RED**
 
 Run: `npx vitest run tests/integration/workspace.spec.ts tests/integration/project.spec.ts`
 
 Expected: FAIL because workspace migration/domain do not exist and project defaults still use `~/muster-projects`.
 
-- [ ] **Step 3: Add migration and focused domain implementation**
+- [x] **Step 3: Add migration and focused domain implementation**
 
 Use this schema:
 
@@ -139,7 +138,7 @@ CREATE UNIQUE INDEX workspace_single_active ON workspace(is_active) WHERE is_act
 
 Canonicalize roots with `resolve(input.rootDir.trim())`. `createWorkspace` activates the first workspace automatically; `setActiveWorkspace` changes active state in one transaction.
 
-- [ ] **Step 4: Route default project paths through Workspace**
+- [x] **Step 4: Route default project paths through Workspace**
 
 Change `defaultRootDir` to accept the DB-derived workspace root:
 
@@ -157,17 +156,17 @@ function defaultRootDir(workspaceRoot: string, companyName: string, projectName:
 
 When no active workspace exists, preserve compatibility with `join(homedir(), 'MusterWorkspace')` and lazily create the default workspace row before deriving the project path.
 
-- [ ] **Step 5: Add REST routes and client hooks**
+- [x] **Step 5: Add REST routes and client hooks**
 
 Expose typed workspace queries and mutations. Successful create/activate mutations invalidate `['workspaces']`.
 
-- [ ] **Step 6: Run focused tests and verify GREEN**
+- [x] **Step 6: Run focused tests and verify GREEN**
 
 Run: `npx vitest run tests/integration/workspace.spec.ts tests/integration/project.spec.ts`
 
 Expected: workspace and project tests pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/server/db/migrations/0015_workspace.sql src/server/domain/workspace.ts src/server/api/workspaces.ts src/server/server.ts src/server/domain/project.ts src/client/api/types.ts src/client/hooks/queries.ts tests/integration/workspace.spec.ts tests/integration/project.spec.ts
@@ -189,7 +188,7 @@ git commit -m "feat: add persistent Muster workspaces"
 - Produces: `deriveNextAction(input: NextActionInput): NextAction`
 - Produces UI: `<NextActionCard action={action} />`
 
-- [ ] **Step 1: Write failing state-table tests**
+- [x] **Step 1: Write failing state-table tests**
 
 Cover these exact states:
 
@@ -200,33 +199,33 @@ expect(deriveNextAction({ companies: [company], projects: [project], attentionCo
 expect(deriveNextAction({ companies: [company], projects: [project], attentionCount: 0 })).toMatchObject({ kind: 'publish-task' });
 ```
 
-- [ ] **Step 2: Run unit test and verify RED**
+- [x] **Step 2: Run unit test and verify RED**
 
 Run: `npx vitest run tests/unit/next-action.spec.ts`
 
 Expected: FAIL because the derivation module does not exist.
 
-- [ ] **Step 3: Implement pure next-action derivation**
+- [x] **Step 3: Implement pure next-action derivation**
 
 Define a discriminated union containing `kind`, `title`, `description`, `label`, and `href`. Do not put React or query logic in the domain module.
 
-- [ ] **Step 4: Implement one reusable action card**
+- [x] **Step 4: Implement one reusable action card**
 
 The component renders one primary link/button and optional secondary text. It must not nest a `<button>` inside a `<Link>`; style the link directly as a button.
 
-- [ ] **Step 5: Replace competing first-screen calls to action**
+- [x] **Step 5: Replace competing first-screen calls to action**
 
 - Home with no company: one primary `开始创建公司` action.
 - Company with no project: always show `创建第一个项目`, even when the company is online.
 - Project: place `发布新任务` or `处理待确认` before dashboard/navigation links.
 
-- [ ] **Step 6: Run unit and focused frontend tests**
+- [x] **Step 6: Run unit and focused frontend tests**
 
 Run: `npx vitest run tests/unit/next-action.spec.ts tests/unit/realtime.spec.ts`
 
 Expected: all pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/client/domain/next-action.ts src/client/components/NextActionCard.tsx src/client/pages/HomePage.tsx src/client/pages/CompanyPage.tsx src/client/pages/ProjectPage.tsx src/client/styles/global.css tests/unit/next-action.spec.ts
@@ -246,7 +245,7 @@ git commit -m "feat: guide users with contextual next actions"
 - Consumes: existing `useCreateNovelCompany`, `useCompanyAction`, `useCreateProject`, `useCreateTask`
 - Produces journey: company confirmation → `/companies/:id/projects/new?onboarding=1` → project/task creation → project detail
 
-- [ ] **Step 1: Update E2E to describe the desired journey and verify RED**
+- [x] **Step 1: Update E2E to describe the desired journey and verify RED**
 
 The E2E must assert:
 
@@ -259,7 +258,7 @@ Run: `npx playwright test tests/e2e/regression.spec.ts --project=chromium`
 
 Expected: FAIL at the navigation assertion because the current wizard lands on CompanyPage.
 
-- [ ] **Step 2: Change company confirmation behavior**
+- [x] **Step 2: Change company confirmation behavior**
 
 Keep creating and clocking in the company, but navigate to:
 
@@ -269,21 +268,21 @@ navigate(`/companies/${data.company.id}/projects/new?onboarding=1`);
 
 Use copy `团队已准备好，接下来创建第一个项目` instead of declaring onboarding complete.
 
-- [ ] **Step 3: Keep project creation available while online**
+- [x] **Step 3: Keep project creation available while online**
 
 Remove the `isOff` condition around the CompanyPage new-project action. Organization edits remain locked while online; project creation is not an organization mutation.
 
-- [ ] **Step 4: Update onboarding copy**
+- [x] **Step 4: Update onboarding copy**
 
 Use the fixed order `创建公司 → 组建团队 → 创建项目 → 发布 Task`. Remove stale copy about selecting a single company type control that no longer exists.
 
-- [ ] **Step 5: Run E2E and verify GREEN**
+- [x] **Step 5: Run E2E and verify GREEN**
 
 Run: `npx playwright test tests/e2e/regression.spec.ts tests/e2e/novel.spec.ts --project=chromium`
 
 Expected: both flows pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/client/pages/CompanyWizardPage.tsx src/client/pages/CompanyPage.tsx src/client/pages/ProjectPage.tsx src/client/components/OnboardingGuide.tsx tests/e2e/regression.spec.ts tests/e2e/novel.spec.ts
@@ -304,25 +303,25 @@ git commit -m "fix: complete guided company onboarding"
 - Produces: `readRecentProjectId(storage)`, `writeRecentProjectId(storage, id)`, `useRecentProject(projectId?)`
 - App navigation derives company context from `useProject(projectId)` when URL has no `companyId`
 
-- [ ] **Step 1: Write failing storage-helper tests**
+- [x] **Step 1: Write failing storage-helper tests**
 
 Test valid IDs, missing storage, malformed values, and clearing a deleted project ID. Use an injected `StorageLike` interface so unit tests do not require a browser.
 
-- [ ] **Step 2: Run unit tests and verify RED**
+- [x] **Step 2: Run unit tests and verify RED**
 
 Run: `npx vitest run tests/unit/recent-project.spec.ts`
 
 Expected: FAIL because the helper does not exist.
 
-- [ ] **Step 3: Implement recent-project persistence**
+- [x] **Step 3: Implement recent-project persistence**
 
 Store only the opaque project ID under `muster:last-project:v1`. Do not store paths, prompts, or project data in localStorage.
 
-- [ ] **Step 4: Record visits and show resume action**
+- [x] **Step 4: Record visits and show resume action**
 
 ProjectDetail calls `useRecentProject(projectId)`. HomePage shows `继续上次项目` when the ID still resolves; failed lookup clears the stale ID.
 
-- [ ] **Step 5: Replace CompanyIndicator with ContextNavigation**
+- [x] **Step 5: Replace CompanyIndicator with ContextNavigation**
 
 When the route has `projectId`, load the project, then its company. Render breadcrumbs/links:
 
@@ -332,13 +331,13 @@ When the route has `projectId`, load the project, then its company. Render bread
 
 Do not expose the project root path in the header. Put it in the advanced project details section with `overflow-wrap:anywhere`.
 
-- [ ] **Step 6: Run tests and smoke E2E**
+- [x] **Step 6: Run tests and smoke E2E**
 
 Run: `npx vitest run tests/unit/recent-project.spec.ts && npx playwright test tests/e2e/smoke.spec.ts --project=chromium`
 
 Expected: all pass and project routes preserve a route back to the company.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/client/hooks/useRecentProject.ts src/client/App.tsx src/client/pages/ProjectPage.tsx src/client/pages/HomePage.tsx tests/unit/recent-project.spec.ts tests/e2e/smoke.spec.ts
@@ -357,17 +356,17 @@ git commit -m "feat: resume the most recent project"
 - Preserves existing `SystemSettings` API
 - Produces beginner-facing connection summary plus `<details>` advanced sections
 
-- [ ] **Step 1: Add E2E assertions for basic settings**
+- [x] **Step 1: Add E2E assertions for basic settings**
 
 Assert the first viewport contains connection status/test and save controls, while CLI path, timeout, max tool calls, provider base URL, and Turbo-style permission toggles are inside collapsed advanced sections.
 
-- [ ] **Step 2: Run focused E2E and verify RED**
+- [x] **Step 2: Run focused E2E and verify RED**
 
 Run: `npx playwright test tests/e2e/smoke.spec.ts --project=chromium`
 
 Expected: FAIL because advanced fields are currently expanded.
 
-- [ ] **Step 3: Recompose SettingsPage without changing persistence**
+- [x] **Step 3: Recompose SettingsPage without changing persistence**
 
 Basic section:
 
@@ -382,7 +381,7 @@ Advanced `<details>` sections:
 - permission and timeout limits
 - provider/API defaults
 
-- [ ] **Step 4: Add global reflow protections**
+- [x] **Step 4: Add global reflow protections**
 
 Add:
 
@@ -395,13 +394,13 @@ pre, code, .path-value, .diagnostic-text { overflow-wrap: anywhere; word-break: 
 
 Ensure grids collapse at 900px and long paths/errors cannot increase page width.
 
-- [ ] **Step 5: Run E2E and production build**
+- [x] **Step 5: Run E2E and production build**
 
 Run: `npx playwright test tests/e2e/smoke.spec.ts --project=chromium && npm run build`
 
 Expected: E2E and build pass without horizontal overflow.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/client/pages/SettingsPage.tsx src/client/styles/global.css src/client/styles/components.css tests/e2e/smoke.spec.ts
@@ -418,7 +417,7 @@ git commit -m "refactor: simplify settings and responsive reflow"
 **Interfaces:**
 - No runtime interfaces; records verified delivered behavior and remaining vNext plans.
 
-- [ ] **Step 1: Run the complete verification bundle**
+- [x] **Step 1: Run the complete verification bundle**
 
 Run:
 
@@ -438,7 +437,7 @@ Expected:
 - all Playwright tests pass
 - no whitespace errors
 
-- [ ] **Step 2: Perform runtime flow audit**
+- [x] **Step 2: Perform runtime flow audit**
 
 Using a fresh `MUSTER_HOME`, verify:
 
@@ -452,11 +451,11 @@ Using a fresh `MUSTER_HOME`, verify:
 8. settings hide advanced fields by default
 9. no reviewed page has horizontal overflow at desktop or 640px width
 
-- [ ] **Step 3: Update documentation and plan checkboxes**
+- [x] **Step 3: Update documentation and plan checkboxes**
 
 Record only behavior proven by the commands and runtime audit. Keep later Agent Profile, memory, executor/permission, template, and sharing phases explicitly pending.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add CLAUDE.md docs/agent-company-implementation-checklist.md docs/superpowers/plans/2026-07-11-vnext-guided-workspace-foundation.md

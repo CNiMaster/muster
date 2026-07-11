@@ -16,6 +16,7 @@ Authoritative planning documents:
 
 - `docs/PRD-agent-company-workbench.md` — product requirements and accepted domain semantics
 - `docs/superpowers/specs/2026-07-11-platform-workspace-agent-memory-templates-design.md` — confirmed vNext workspace, employee memory, executor, permission, template, and UX design
+- `docs/superpowers/plans/2026-07-11-vnext-guided-workspace-foundation.md` — delivered and verified vNext workspace/onboarding foundation
 - `docs/agent-company-implementation-checklist.md` — completed historical implementation checklist and acceptance record
 
 Key constraints for all new work:
@@ -41,8 +42,8 @@ npm install              # 安装依赖（express, ws, better-sqlite3, react, re
 npm run dev              # 开发模式：tsx watch src/server/server.ts，Express 挂 Vite middleware
 npm start                # 生产模式：node dist/server/server.js（需先 build）
 npm run typecheck        # TypeScript 项目引用全量检查
-npm test                 # Vitest 单测 + 集成（235 项，需 git 可用）
-npm run test:e2e         # Playwright 端到端（5 项）
+npm test                 # Vitest 单测 + 集成（246 项，需 git 可用）
+npm run test:e2e         # Playwright 端到端（9 项）
 npm run test:claude-smoke # 真实 Claude 两轮 Task/session/artifact/usage 冒烟
 npm run build            # tsup 编译 server + vite build 客户端 → dist/
 ```
@@ -73,7 +74,7 @@ npm run build            # tsup 编译 server + vite build 客户端 → dist/
 src/
   shared/    # 类型、Zod schema、错误码、事件契约、常量（前后端共享）
   server/
-    db/          # better-sqlite3 client + migrations/*.sql（22 张业务表）
+    db/          # better-sqlite3 client + migrations/*.sql（含持久化 workspace）
     domain/      # company / agent / project / thread / graph / task /
                  # task-event / task-message / artifact / usage / report /
                  # inspector / brainstorm / triggers / novel-template / workflow /
@@ -114,6 +115,7 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 - **实时状态**：服务端通过 `/ws` 发布 Task 领取、完成和发布阻塞事件；前端按 project/task 标识精确失效查询缓存，4 秒消息轮询仅作断线兜底。
 - **通信边界**：带 `dispatcherAgentId` 的 Task 创建必须满足同公司和 `contact_allow`，不能绕过通信图直接派发。
 - **安全成果工作区**：每 Task 一个隐藏 Git worktree + 专用分支；串行发布队列做文本三方合并、同段冲突阻塞、二进制独占锁、可回滚。
+- **总工作区**：`workspace` 表持久化多个本地根目录并保证唯一激活；未显式指定路径的新项目写入 `{workspace}/companies/{公司}/projects/{项目-ID}`，Task 仍在项目专属 worktree 内执行。
 - **长篇小说公司**：5 基础岗位（lead/writer/character/plot/inspector），第一负责人≠主写手；章节完成事件触发人物/情节维护；定时一致性检查；强制复盘按根员工聚合；闲置头脑风暴受限。
 - **镜像**：项目内临时并行线程，共享根员工职责/上下文/Task 池，不重复领取；成果归入根员工。
 
@@ -151,6 +153,7 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 | `src/server/db/migrations/0004_trigger_schedule_state.sql` | 定时触发器执行游标 |
 | `src/server/db/migrations/0012_agent_stance.sql` | Agent stance 字段 |
 | `src/server/db/migrations/0014_workflow_edge_condition.sql` | 工作流边条件 + 回环上限 |
+| `src/server/db/migrations/0015_workspace.sql` | 总工作区根目录与唯一激活状态 |
 
 ### WebSocket 事件
 
@@ -162,10 +165,10 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 
 ### 测试
 
-- Vitest 单元与集成测试 235 项（公司/员工上下班、组织锁、跨项目只读、Task 并发领取/租约恢复/依赖/追问、定时触发去重、通信权限、实时缓存、worktree 三方合并/原子发布/冲突阻塞、章节事件、复盘、讨论中断、工作流、MVP 验收、重启恢复，以及 v1 缺口推进新增的项目健康/工作流责任岗位/监察心跳/事件聚合 feed/关系归档/镜像自动释放/多模型 token 归集/建议 Task/自然语言改图/会话压缩/二进制独占锁/授权参考目录/员工级执行器配置+凭据引用+会话时间轮换/状态看板/复盘配置可编辑/题材扩展包+可选岗位/维护事件动态岗位/只读人物关系图/讨论自动选人+每日预算/soak 50 Task+压缩+mirror+复盘等专项）。
+- Vitest 单元与集成测试 246 项（34 个测试文件），覆盖既有运行闭环以及 workspace、下一步引导、最近项目恢复和安全回退文案。
   - 测试环境需要真实 git 仓库作为 `project.rootDir`（`createWorktree` 需要 `git rev-parse HEAD` 成功）。`tests/integration/setup.ts` 的 `makeTempGitRepo()` 创建临时 git 仓库（含初始 commit）供测试使用。
-  - `project.rootDir` 与 `firstAgentId` 均为可选：建项目时留空，`createProject` 自动生成 `~/muster-projects/{公司名}/{项目名}-{项目ID}` 并继承公司负责人；项目 ID 后缀保证同名项目不会共享工作区。`ensureGitRepo()` 会在首个 worktree 创建时自动 `mkdir + git init`。前端建项目表单只暴露"名称"+"说明"两项。
-- Playwright 5 项已在本机 Chromium 通过，覆盖向导创建、员工与项目配置、上下班、复盘备注和恢复。
+  - `project.rootDir` 与 `firstAgentId` 均为可选：建项目时留空，`createProject` 自动使用当前激活总工作区，并生成 `{workspace}/companies/{公司名}/projects/{项目名}-{项目ID}`；项目 ID 后缀保证同名项目不会共享目录。`ensureGitRepo()` 会在首个 worktree 创建时自动 `mkdir + git init`。
+- Playwright 9 项已在本机 Chromium 通过，覆盖建司→团队→项目→首 Task、在线建项目、最近项目恢复、公司上下文导航、复盘以及窄屏设置页。
 - `npm run test:claude-smoke` 已使用真实 Claude Code 连续完成两个 Task，验证跨 worktree 的 `--session-id`/`--resume`、文件发布、Artifact 登记和 Token/缓存用量。
 
 `publish_record` 由 `0002_conversation.sql` 创建，记录 Task 发布提交、合并文件、冲突与阻塞状态，供成果修改历史页读取。
@@ -176,9 +179,9 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 - 当前已接入 Claude Code CLI、OpenAI-compatible API 和 Gemini API；Codex/Gemini CLI、通用 Manifest 安装管理、分层记忆、模板平台、多模态和多租户 SaaS 仍是后续范围。
 
 ### UI 分层约定
-- **低门槛优先**：建项目只填名称，rootDir/firstAgentId 后端自动；建公司不展示只有一个选项的 Select。
+- **低门槛优先**：首次主流程固定为“创建公司→组建团队→创建项目→发布 Task”；首屏只提供一个状态相关主行动，rootDir/firstAgentId 后端自动。
 - **看板纯前端增强**：DashboardPage 用 `useProjectEvents`/`useStatusBoard`/`useTasks` reduce/`useProjectUsage.byModel` 在客户端做状态分布条、负载柱状图、事件时间线、模型用量拆分；不引入图表库，用 CSS（`.dashboard-*` 类）可视化。新增聚合趋势（吞吐/费用时序）需后端补端点，不属于前端职责。
-- **低频配置折叠**：项目页把线程扩容/脑暴/复盘配置收进 `<details className="details-collapse">`；员工编辑把立场/技能/权限/执行器折叠到"高级配置"；设置页用单一带 sticky 的"保存全部设置"，不在各 Card 内放独立保存按钮。
+- **低频配置折叠**：项目页把目录、线程扩容、脑暴和复盘配置收进高级区；员工编辑折叠立场/技能/权限/执行器；设置页首屏只显示默认执行器、连接测试与保存，高级 CLI/权限/Provider 参数默认收起。
 - **内联 style**：历史代码大量 `style={{...}}`，新增复杂区块优先抽 `.details-collapse` 等语义类进 `global.css`；简单 grid/gap 保留内联可接受。
 
 旧 Leader/Worker/Verifier、临时群聊、`.muster/config.json` 文件持久化等已全部废弃，不再参与运行。
