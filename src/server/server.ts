@@ -46,6 +46,8 @@ import { FakeExecutor } from './task-engine/fake-executor';
 import { getSystemSettings } from './domain/setting';
 import { TriggerScheduler } from './trigger-scheduler';
 import { ProjectRuntimeCoordinator } from './runtime/coordinator';
+import { listAgentProfiles } from './domain/agent-profile';
+import { materializeAgentHome } from './domain/agent-home';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -64,7 +66,8 @@ async function createApp(): Promise<AppHandle> {
   app.use(express.json({ limit: '8mb' }));
 
   // 初始化数据库（应用 migration）
-  getDb();
+  const db = getDb();
+  for (const profile of listAgentProfiles(db)) materializeAgentHome(profile);
 
   // ===== /api/projects/:id 子树统一挂载 =====
   // 把所有 project 范围内的子路由挂到 projectById 下，避免多个 Router 并列在前缀上导致顺序冲突。

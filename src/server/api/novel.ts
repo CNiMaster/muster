@@ -13,6 +13,8 @@ import { getDb } from '../db/client';
 import { createNovelCompany } from '../domain/novel-template';
 import { handleChapterCompleted, dispatchCorrectionTask, dispatchConsistencyCheck } from '../domain/triggers';
 import { registerArtifact } from '../domain/artifact';
+import { getAgentProfile } from '../domain/agent-profile';
+import { materializeAgentHome } from '../domain/agent-home';
 
 export const novelRouter = Router();
 
@@ -24,7 +26,17 @@ novelRouter.post(
       charter: z.string().optional(),
       departments: z.array(z.object({ name: z.string().min(1), purpose: z.string().optional() })).optional(),
     }).parse(req.body);
-    const result = createNovelCompany(getDb(), { name, charter, departments });
+    const db = getDb();
+    const result = createNovelCompany(db, { name, charter, departments });
+    const templateAgents = [
+      result.agents.lead,
+      result.agents.writer,
+      result.agents.character,
+      result.agents.plot,
+      result.agents.inspector,
+      ...result.agents.extra,
+    ];
+    for (const agent of templateAgents) materializeAgentHome(getAgentProfile(db, agent.profileId));
     res.status(201).json(result);
   }),
 );

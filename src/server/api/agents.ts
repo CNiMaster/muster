@@ -20,6 +20,8 @@ import {
   updateAgent,
   deleteAgent,
 } from '../domain/agent';
+import { getAgentProfile } from '../domain/agent-profile';
+import { materializeAgentHome } from '../domain/agent-home';
 
 export const agentsRouter = Router({ mergeParams: true });
 
@@ -51,7 +53,10 @@ agentsRouter.post(
   '/',
   asyncHandler(async (req, res) => {
     const input = createAgentSchema.parse(req.body);
-    res.status(201).json(createAgent(getDb(), { companyId: param(req,'companyId'), ...input }));
+    const db = getDb();
+    const agent = createAgent(db, { companyId: param(req,'companyId'), ...input });
+    materializeAgentHome(getAgentProfile(db, agent.profileId));
+    res.status(201).json(agent);
   }),
 );
 

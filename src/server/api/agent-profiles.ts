@@ -10,6 +10,7 @@ import {
   updateAgentProfile,
 } from '../domain/agent-profile';
 import { asyncHandler, param } from './middleware';
+import { materializeAgentHome, syncAgentIdentityFiles } from '../domain/agent-home';
 
 export const agentProfilesRouter = Router();
 export const companyEmployeesRouter = Router({ mergeParams: true });
@@ -28,7 +29,9 @@ agentProfilesRouter.get('/', asyncHandler(async (_req, res) => {
 }));
 
 agentProfilesRouter.post('/', asyncHandler(async (req, res) => {
-  res.status(201).json(createAgentProfile(getDb(), profileSchema.parse(req.body)));
+  const profile = createAgentProfile(getDb(), profileSchema.parse(req.body));
+  materializeAgentHome(profile);
+  res.status(201).json(profile);
 }));
 
 agentProfilesRouter.get('/:id', asyncHandler(async (req, res) => {
@@ -36,7 +39,9 @@ agentProfilesRouter.get('/:id', asyncHandler(async (req, res) => {
 }));
 
 agentProfilesRouter.patch('/:id', asyncHandler(async (req, res) => {
-  res.json(updateAgentProfile(getDb(), param(req, 'id'), profileSchema.partial().parse(req.body)));
+  const profile = updateAgentProfile(getDb(), param(req, 'id'), profileSchema.partial().parse(req.body));
+  syncAgentIdentityFiles(profile);
+  res.json(profile);
 }));
 
 agentProfilesRouter.get('/:id/employments', asyncHandler(async (req, res) => {
