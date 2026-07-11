@@ -57,6 +57,8 @@ export interface ExecutionContext {
 export interface AgentExecutorConfig {
   /** 执行器 provider，决定引擎分发到哪个 adapter。默认由系统设置决定（通常 claude-cli）。 */
   provider?: string;
+  /** 托管安装或用户选择的固定 CLI 二进制。 */
+  binaryPath?: string;
   model?: string;
   claudeBin?: string;
   timeoutMs?: number;

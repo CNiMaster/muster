@@ -36,6 +36,7 @@ describe('self-service executor installation for a new Mac', () => {
       });
       const installed = await executeExecutorInstallPlan(db, plan.id, plan.confirmationToken, { run });
       expect(installed.status).toBe('installed');
+      expect(installed.executorProfileId).toMatch(/^ep_/);
       expect(installed.binaryPath).toBe(join(plan.targetDir, 'node_modules', '.bin', 'gemini'));
       expect(run).toHaveBeenCalledTimes(2);
       expect(readFileSync(installed.binaryPath!, 'utf8')).toContain('#!/bin/sh');

@@ -7,6 +7,7 @@ CREATE TABLE executor_install (
   package_name TEXT NOT NULL,
   target_dir TEXT NOT NULL,
   binary_path TEXT,
+  executor_profile_id TEXT REFERENCES executor_profile(id),
   official_source TEXT NOT NULL,
   confirmation_token TEXT NOT NULL,
   status TEXT NOT NULL CHECK (status IN ('planned','installing','installed','failed','rolled-back')),

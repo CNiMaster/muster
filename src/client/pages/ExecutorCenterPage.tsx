@@ -8,7 +8,7 @@ import { Card } from '../components/Card';
 
 type Manifest = { id:string;displayName:string;kind:'cli'|'api';officialSource:string;concurrency:string;managedInstall:{packageName:string}|null };
 type Detection = {found:boolean;path:string|null;version:string|null;managed:boolean};
-type Install = {id:string;manifestId:string;channel:string;packageName:string;targetDir:string;officialSource:string;confirmationToken:string;status:string;version:string|null;binaryPath:string|null;error:string|null};
+type Install = {id:string;manifestId:string;channel:string;packageName:string;targetDir:string;officialSource:string;confirmationToken:string;status:string;version:string|null;binaryPath:string|null;executorProfileId:string|null;error:string|null};
 
 export function ExecutorCenterPage():React.ReactElement {
   const qc=useQueryClient();

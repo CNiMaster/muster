@@ -75,6 +75,9 @@ export function listExecutorProfiles(db: DB): ExecutorProfile[] {
 
 export function bindEmployeeExecutorProfile(db: DB, employeeId: string, executorProfileId: string): void {
   getExecutorProfile(db, executorProfileId);
+  const employment = db.prepare('SELECT c.state FROM company_employee ce JOIN company c ON c.id=ce.company_id WHERE ce.id=?').get(employeeId) as { state: string } | undefined;
+  if (!employment) throw new AppError(ErrorCode.NOT_FOUND, `公司员工不存在: ${employeeId}`);
+  if (employment.state !== 'off') throw new AppError(ErrorCode.CONFLICT, '公司下班后才能修改员工执行器');
   const result = db.prepare('UPDATE company_employee SET executor_profile_id=?, updated_at=? WHERE id=?').run(executorProfileId, nowIso(), employeeId);
   if (result.changes !== 1) throw new AppError(ErrorCode.NOT_FOUND, `公司员工不存在: ${employeeId}`);
 }

@@ -6,6 +6,11 @@ import { Card } from '../components/Card';
 import { CardSkeleton } from '../components/Skeleton';
 import { MemoryReviewPanel } from '../components/MemoryReviewPanel';
 import { Button, toast } from '../components/Button';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { api } from '../api/client';
+import { Select } from '../components/Form';
+
+type ExecutorProfileOption = { id:string;name:string;manifestId:string;concurrencyMode:string };
 
 export function AgentProfilePage(): React.ReactElement {
   const { profileId } = useParams();
@@ -14,6 +19,9 @@ export function AgentProfilePage(): React.ReactElement {
   const { data: companies } = useCompanies();
   const copyProfile = useCopyAgentProfile();
   const resetProfile = useResetAgentProfile();
+  const qc = useQueryClient();
+  const executorProfiles = useQuery({ queryKey:['executor-profiles'], queryFn:()=>api.get<ExecutorProfileOption[]>('/api/executors/profiles') });
+  const bindExecutor = useMutation({ mutationFn:({employeeId,executorProfileId}:{employeeId:string;executorProfileId:string})=>api.put(`/api/executors/employees/${employeeId}/profile/${executorProfileId}`), onSuccess:()=>{void qc.invalidateQueries({queryKey:['profile-employments',profileId]});toast('success','员工执行器已固定绑定');},onError:(e:any)=>toast('error',e.message??'绑定失败') });
   if (isLoading || !profile) return <CardSkeleton />;
   const capabilities = profile.capabilities as { skills?: string[]; tools?: string[] };
   return (
@@ -54,6 +62,10 @@ export function AgentProfilePage(): React.ReactElement {
               <li key={employment.id}>
                 <Link to={`/companies/${employment.companyId}`} style={{ flex: 1 }}>{company?.name ?? employment.companyId}</Link>
                 <span>{employment.role}</span>
+                <Select aria-label={`${company?.name??employment.companyId} 执行器`} value={employment.executorProfileId??''} onChange={(event)=>{if(event.target.value)bindExecutor.mutate({employeeId:employment.id,executorProfileId:event.target.value});}}>
+                  <option value="">选择固定执行器</option>
+                  {(executorProfiles.data??[]).map((item)=><option key={item.id} value={item.id}>{item.name}</option>)}
+                </Select>
               </li>
             );
           })}
