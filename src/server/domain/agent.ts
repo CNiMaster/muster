@@ -9,9 +9,16 @@ import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
 import { getCompany, isOrgLocked } from './company';
 import { assertDepartmentInCompany } from './department';
+import {
+  createAgentProfile,
+  createCompanyEmployeeRecord,
+  getAgentProfile,
+  syncCompanyEmployeeRecord,
+} from './agent-profile';
 
 export interface AgentDefinition {
   id: string;
+  profileId: string;
   companyId: string;
   departmentId: string | null;
   name: string;
@@ -55,6 +62,7 @@ export interface AgentExecutorJson {
 
 interface AgentRow {
   id: string;
+  profile_id: string;
   company_id: string;
   department_id: string | null;
   name: string;
@@ -77,6 +85,7 @@ interface AgentRow {
 function fromRow(r: AgentRow): AgentDefinition {
   return {
     id: r.id,
+    profileId: r.profile_id,
     companyId: r.company_id,
     departmentId: r.department_id,
     name: r.name,
@@ -99,6 +108,7 @@ function fromRow(r: AgentRow): AgentDefinition {
 
 export interface CreateAgentInput {
   companyId: string;
+  profileId?: string;
   departmentId?: string;
   name: string;
   role: string;
@@ -188,26 +198,66 @@ export function createAgent(db: DB, input: CreateAgentInput): AgentDefinition {
   assertContactAllow(db, input.companyId, input.contactAllow ?? []);
   assertExecutorValid(input.executor);
 
-  const id = shortId('ag_');
-  const now = nowIso();
-  db.prepare(
-    `INSERT INTO agent_definition
-      (id, company_id, department_id, name, role, responsibilities, system_prompt,
-       skills_json, tools_json, permissions_json, contact_allow_json, can_dispatch,
-       executor_json, is_inspector, stance, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-  ).run(
-    id, input.companyId, input.departmentId ?? null, input.name, input.role,
-    input.responsibilities ?? '', input.systemPrompt ?? '',
-    JSON.stringify(input.skills ?? []), JSON.stringify(input.tools ?? []),
-    JSON.stringify(input.permissions ?? {}), JSON.stringify(input.contactAllow ?? []),
-    input.canDispatch === false ? 0 : 1,
-    JSON.stringify(input.executor ?? {}),
-    input.isInspector ? 1 : 0,
-    input.stance ?? '',
-    now, now,
-  );
-  return getAgent(db, id);
+  return db.transaction(() => {
+    const profile = input.profileId
+      ? getAgentProfile(db, input.profileId)
+      : createAgentProfile(db, {
+          displayName: input.name,
+          soul: input.systemPrompt,
+          capabilities: { skills: input.skills ?? [], tools: input.tools ?? [] },
+          recommendedExecutor: input.executor,
+          recommendedPermission: input.permissions,
+        });
+    const id = shortId('ag_');
+    const now = nowIso();
+    db.prepare(
+      `INSERT INTO agent_definition
+        (id, profile_id, company_id, department_id, name, role, responsibilities, system_prompt,
+         skills_json, tools_json, permissions_json, contact_allow_json, can_dispatch,
+         executor_json, is_inspector, stance, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    ).run(
+      id, profile.id, input.companyId, input.departmentId ?? null, input.name || profile.displayName, input.role,
+      input.responsibilities ?? '', input.systemPrompt ?? profile.soul,
+      JSON.stringify(input.skills ?? []), JSON.stringify(input.tools ?? []),
+      JSON.stringify(input.permissions ?? {}), JSON.stringify(input.contactAllow ?? []),
+      input.canDispatch === false ? 0 : 1, JSON.stringify(input.executor ?? {}),
+      input.isInspector ? 1 : 0, input.stance ?? '', now, now,
+    );
+    createCompanyEmployeeRecord(db, {
+      id,
+      profileId: profile.id,
+      companyId: input.companyId,
+      legacyAgentId: id,
+      departmentId: input.departmentId,
+      role: input.role,
+      responsibilities: input.responsibilities,
+      executor: input.executor,
+      permission: input.permissions,
+      createdAt: now,
+    });
+    return getAgent(db, id);
+  })();
+}
+
+export function recruitAgentProfile(db: DB, input: {
+  companyId: string;
+  profileId: string;
+  role: string;
+  departmentId?: string;
+  responsibilities?: string;
+}): AgentDefinition {
+  const profile = getAgentProfile(db, input.profileId);
+  const capabilities = profile.capabilities as { skills?: string[]; tools?: string[] };
+  return createAgent(db, {
+    ...input,
+    name: profile.displayName,
+    systemPrompt: profile.soul,
+    skills: capabilities.skills ?? [],
+    tools: capabilities.tools ?? [],
+    executor: profile.recommendedExecutor,
+    permissions: profile.recommendedPermission,
+  });
 }
 
 export function getAgent(db: DB, id: string): AgentDefinition {
@@ -250,6 +300,15 @@ export function updateAgent(
     next.stance ?? '',
     next.updatedAt, id,
   );
+  syncCompanyEmployeeRecord(db, {
+    id,
+    departmentId: next.departmentId,
+    role: next.role,
+    responsibilities: next.responsibilities,
+    executor: next.executor,
+    permission: next.permissions,
+    updatedAt: next.updatedAt,
+  });
   return getAgent(db, id);
 }
 

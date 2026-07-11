@@ -23,6 +23,7 @@ export interface Workspace {
 
 export interface Agent {
   id: string;
+  profileId: string;
   companyId: string;
   departmentId: string | null;
   name: string;
