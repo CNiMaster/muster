@@ -24,9 +24,8 @@ import {
   createTask,
   bindTaskToProjectTaskThread,
 } from '../domain/task';
-import { getThread, listOnlineThreads, setClaudeSession, updateThreadState, incrementExecCount, compactThreadWithMemory, rotateSession } from '../domain/thread';
+import { getThread, listOnlineThreads, updateThreadState } from '../domain/thread';
 import { getAgent } from '../domain/agent';
-import { syncAgentMemoryFiles } from '../domain/agent-home';
 import { assembleContext } from '../executors/context';
 import { assertSafeToRun } from '../executors/safety';
 import { getProject, listProjectReferences } from '../domain/project';
@@ -54,6 +53,7 @@ import { buildRunIsolation, withExecutorConcurrency } from '../executors/run-iso
 import { ensureApprovalRequest, evaluatePermission, getEmployeePermissionPolicy } from '../domain/permission';
 import { getActiveWorkspace } from '../domain/workspace';
 import {ensureProjectTaskThread,setProjectTaskThreadSession} from '../domain/project-task-thread';
+import{SessionManager}from'../domain/session-manager';
 
 export interface EngineOptions {
   heartbeatIntervalMs?: number;
@@ -290,7 +290,7 @@ export class TaskEngine {
         loopback: ctx.loopback,
       });
       ctx.systemPrompt = assembled.systemPrompt;
-      ctx.inputPacket = assembled.inputPacket;
+      ctx.inputPacket = Object.keys(projectTaskThread.handoff).length?{...assembled.inputPacket,sessionHandoff:projectTaskThread.handoff}:assembled.inputPacket;
 
       const adapter = this.selectAdapter(providerForManifest(executorProfile?.manifestId) ?? effectiveExecutor?.provider);
       if (executionRun) updateExecutionRunStatus(this.db, executionRun.id, 'running');
@@ -311,22 +311,39 @@ export class TaskEngine {
         setProjectTaskThreadSession(this.db, projectTaskThread.id, result._sessionIdHint);
       }
 
-      // 会话压缩/轮换（PRD Phase 3.6）：累计执行达阈值后，把摘要记入 thread 并清空 session，
-      // 下次执行自动开新 session；context 装配时把 compactionSummary 注入 systemPrompt。
-      // 时间轮换：距上次开新 session 超过阈值时清空 session（不重置 exec_count）。
-      const exec = incrementExecCount(this.db, thread.id);
-      if (exec.shouldCompact && result.outcome === 'completed') {
-        const compactSummary = `[会话压缩 ${new Date().toISOString()}] 最近 ${exec.count} 次执行的最新成果：${result.summary || '（无摘要）'}`;
-        compactThreadWithMemory(this.db, thread.id, {
-          summary: compactSummary,
-          memoryContent: `最近执行摘要：${result.summary || '（无摘要）'}`,
-          sourceTaskId: task.id,
+      if (result.outcome === 'completed') {
+        const sessionManager = new SessionManager(this.db);
+        const handoff = {
+          employeeId: agent.id,
+          projectId: project.id,
+          projectTaskId: task.projectTaskId,
+          lastTaskId: task.id,
+          lastSummary: result.summary,
+          artifacts: result.artifacts,
+        };
+        const decision = sessionManager.recordRun(projectTaskThread.id, {
+          transcriptBytes: Buffer.byteLength(JSON.stringify(ctx.inputPacket)) + Buffer.byteLength(result.summary),
+          inputTokens: result._usage?.inputTokens,
+          outputTokens: result._usage?.outputTokens,
+          handoff,
         });
-        syncAgentMemoryFiles(this.db, agent.profileId);
-        log.info('session compacted', { threadId: thread.id, count: exec.count });
-      } else if (exec.shouldRotate && result.outcome === 'completed') {
-        rotateSession(this.db, thread.id);
-        log.info('session rotated by time', { threadId: thread.id });
+        if (decision.action === 'compact') {
+          const sessionIdHint = result._sessionIdHint ?? ctx.sessionIdHint;
+          try {
+            if (adapter.compactSession && sessionIdHint) {
+              await adapter.compactSession({ ...ctx, sessionIdHint });
+              sessionManager.markCompacted(projectTaskThread.id);
+              log.info('vendor session compacted', { threadId: projectTaskThread.id });
+            } else {
+              sessionManager.rotate(projectTaskThread.id, handoff);
+            }
+          } catch (error) {
+            sessionManager.rotate(projectTaskThread.id, handoff);
+            log.warn('vendor compaction failed; session rotated', { threadId: projectTaskThread.id, error: String(error) });
+          }
+        } else if (decision.action === 'rotate') {
+          log.info('vendor session rotated at hard context limit', { threadId: projectTaskThread.id });
+        }
       }
 
       if (result.outcome === 'waiting_input' || result.outcome === 'waiting_dependency') {

@@ -113,4 +113,5 @@ export interface ExecutionAdapter {
    * 返回值可附带 _sessionIdHint（执行器发现的 Claude session id），引擎会持久化到 thread。
    */
   run(ctx: ExecutionContext, events?: ExecutionEvents): Promise<ExecutionRunResult>;
+  compactSession?(ctx:ExecutionContext):Promise<void>;
 }

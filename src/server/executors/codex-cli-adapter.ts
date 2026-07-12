@@ -8,7 +8,7 @@ import { tryParseJSON } from '../../shared/utils';
 
 export interface CodexApprovalRequest {kind:'command'|'file-change';command?:string;cwd:string;path?:string}
 export interface CodexAppServerRunInput {cwd:string;prompt:string;model?:string;existingThreadId?:string;outputSchema:Record<string,unknown>;approvalPolicy:'untrusted'|'never';sandbox:'read-only'|'workspace-write';signal?:AbortSignal;timeoutMs:number;onApproval:(request:CodexApprovalRequest)=>CliApprovalDecision;onOutput?:(chunk:string)=>void}
-export interface CodexAppServer {run(input:CodexAppServerRunInput):Promise<{threadId:string;text:string;approvalDeniedMessage?:string}>;close():void|Promise<void>}
+export interface CodexAppServer {run(input:CodexAppServerRunInput):Promise<{threadId:string;text:string;approvalDeniedMessage?:string}>;compact?(threadId:string,cwd:string):Promise<void>;close():void|Promise<void>}
 type AppServerFactory=(binary:string,options:{cwd:string;env:NodeJS.ProcessEnv})=>Promise<CodexAppServer>;
 
 export class CodexCliAdapter implements ExecutionAdapter {
@@ -32,6 +32,7 @@ export class CodexCliAdapter implements ExecutionAdapter {
       return{...parsed.data,_sessionIdHint:response.threadId};
     }finally{await server.close();}
   }
+  async compactSession(ctx:ExecutionContext):Promise<void>{if(!ctx.sessionIdHint)throw new AppError(ErrorCode.VALIDATION,'Codex 会话不存在，无法压缩');const binary=ctx.agentExecutor?.binaryPath??'codex';const server=await(this.options.appServerFactory??createStdioAppServer)(binary,{cwd:ctx.workingDir,env:{...process.env}});try{if(!server.compact)throw new AppError(ErrorCode.VALIDATION,'当前 Codex app-server 不支持压缩');await server.compact(ctx.sessionIdHint,ctx.workingDir);}finally{await server.close();}}
 }
 
 async function createStdioAppServer(binary:string,options:{cwd:string;env:NodeJS.ProcessEnv}):Promise<CodexAppServer>{return new StdioCodexAppServer(binary,options);}
@@ -64,6 +65,7 @@ class StdioCodexAppServer implements CodexAppServer{
     });
   }
   close():void{this.child.kill('SIGTERM');}
+  async compact(threadId:string,cwd:string):Promise<void>{await this.initialized;await this.request('thread/resume',{threadId,cwd});await this.request('thread/compact/start',{threadId});}
   private request(method:string,params:unknown):Promise<any>{const id=this.nextId++;this.write({method,id,params});return new Promise((resolve,reject)=>this.pending.set(id,{resolve,reject}));}
   private notify(method:string,params?:unknown):void{this.write(params===undefined?{method}:{method,params});}
   private write(message:unknown):void{this.child.stdin.write(`${JSON.stringify(message)}\n`);}
