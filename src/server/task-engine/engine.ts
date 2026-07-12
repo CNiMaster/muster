@@ -56,6 +56,7 @@ import { getActiveWorkspace } from '../domain/workspace';
 import {ensureProjectTaskThread,setProjectTaskThreadSession} from '../domain/project-task-thread';
 import{SessionManager}from'../domain/session-manager';
 import{approvalBroker}from'../domain/approval-broker';
+import { RunWatchdog } from './run-watchdog';
 
 export interface EngineOptions {
   heartbeatIntervalMs?: number;
@@ -290,6 +291,14 @@ export class TaskEngine {
       const runController = new AbortController();
       this.activeRuns.set(task.id, runController);
       ctx.signal = runController.signal;
+      const configuredTimeout = effectiveExecutor?.timeoutMs ?? 10 * 60_000;
+      const watchdog = new RunWatchdog({
+        startupTimeoutMs: Math.min(60_000, configuredTimeout),
+        idleTimeoutMs: Math.min(120_000, configuredTimeout),
+        maxRuntimeMs: configuredTimeout,
+        abort: () => runController.abort('executor-watchdog'),
+      });
+      ctx.reportActivity = () => watchdog.activity();
       const assembled = assembleContext(this.db, ctx.task, {
         threadId: thread.id,
         sessionIdHint: ctx.sessionIdHint,
@@ -305,12 +314,14 @@ export class TaskEngine {
       const runStartedAt=Date.now();
       try {
         let recoveryAttempt=0;
-        for(;;){try{result = await withExecutorConcurrency(executorProfile?.concurrencyMode ?? 'parallel', executorProfile?.id ?? agent.id, () => adapter.run(ctx, {
-            onOutput: (chunk) => log.debug('agent output', { taskId: task.id, chunk: chunk.slice(0, 120), executionRunId: executionRun?.id }),
-            onToolCall: (name, input) => log.debug('agent tool', { taskId: task.id, name, executionRunId: executionRun?.id }),
-          }));sessionManager.clearRecovery(projectTaskThread.id);break;}catch(error){if(!isRecoverableSessionError(error))throw error;recoveryAttempt+=1;const compactSupported=Boolean(adapter.compactSession);const recovery=recoveryAttempt===1?'retry':recoveryAttempt===2&&compactSupported?'compact':recoveryAttempt===(compactSupported?3:2)?'rotate':'stop';sessionManager.nextRecovery(projectTaskThread.id,compactSupported);if(recovery==='stop')throw error;if(recovery==='compact'&&adapter.compactSession&&ctx.sessionIdHint){try{await adapter.compactSession(ctx);}catch{sessionManager.rotate(projectTaskThread.id,{reason:'compact-failed',taskId:task.id});ctx.sessionIdHint=undefined;}}else if(recovery==='rotate'){sessionManager.rotate(projectTaskThread.id,{reason:'session-recovery',taskId:task.id});ctx.sessionIdHint=undefined;}log.warn('retrying recoverable executor failure',{taskId:task.id,recovery,error:String(error)});}}
+        for(;;){try{result = await Promise.race([withExecutorConcurrency(executorProfile?.concurrencyMode ?? 'parallel', executorProfile?.id ?? agent.id, () => adapter.run(ctx, {
+            onOutput: (chunk) => { watchdog.activity(); log.debug('agent output', { taskId: task.id, chunk: chunk.slice(0, 120), executionRunId: executionRun?.id }); },
+            onToolCall: (name, input) => { watchdog.activity(); log.debug('agent tool', { taskId: task.id, name, executionRunId: executionRun?.id }); },
+          })), watchdog.failure]);sessionManager.clearRecovery(projectTaskThread.id);break;}catch(error){if(!isRecoverableSessionError(error))throw error;recoveryAttempt+=1;const compactSupported=Boolean(adapter.compactSession);const recovery=recoveryAttempt===1?'retry':recoveryAttempt===2&&compactSupported?'compact':recoveryAttempt===(compactSupported?3:2)?'rotate':'stop';sessionManager.nextRecovery(projectTaskThread.id,compactSupported);if(recovery==='stop')throw error;if(recovery==='compact'&&adapter.compactSession&&ctx.sessionIdHint){try{await adapter.compactSession(ctx);}catch{sessionManager.rotate(projectTaskThread.id,{reason:'compact-failed',taskId:task.id});ctx.sessionIdHint=undefined;}}else if(recovery==='rotate'){sessionManager.rotate(projectTaskThread.id,{reason:'session-recovery',taskId:task.id});ctx.sessionIdHint=undefined;}log.warn('retrying recoverable executor failure',{taskId:task.id,recovery,error:String(error)});}}
+        watchdog.complete();
         if (executionRun) updateExecutionRunStatus(this.db, executionRun.id, result.outcome === 'completed' ? 'completed' : 'failed');
       } catch (error) {
+        watchdog.complete();
         if (executionRun) updateExecutionRunStatus(this.db, executionRun.id, 'failed');
         throw error;
       }

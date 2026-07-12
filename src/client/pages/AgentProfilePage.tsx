@@ -9,6 +9,7 @@ import { Button, toast } from '../components/Button';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
 import { Select } from '../components/Form';
+import { EmploymentCard } from '../components/agents/EmploymentCard';
 
 type ExecutorProfileOption = { id:string;name:string;manifestId:string;concurrencyMode:string };
 type PermissionPolicyOption = { id:string;name:string;approvalStrategy:string;scope:string };
@@ -58,25 +59,13 @@ export function AgentProfilePage(): React.ReactElement {
         </details>
       </Card>
       <Card title="公司任职" className="section">
-        <ul className="entity-list">
+        <p className="muted">任职决定员工在某家公司负责什么、使用哪个执行器，以及允许操作的范围；不会改变全局身份和个人记忆。</p>
+        <div className="employment-grid">
           {employments?.map((employment) => {
             const company = companies?.find((item) => item.id === employment.companyId);
-            return (
-              <li key={employment.id}>
-                <Link to={`/companies/${employment.companyId}`} style={{ flex: 1 }}>{company?.name ?? employment.companyId}</Link>
-                <span>{employment.role}</span>
-                <Select aria-label={`${company?.name??employment.companyId} 执行器`} value={employment.executorProfileId??''} onChange={(event)=>{if(event.target.value)bindExecutor.mutate({employeeId:employment.id,executorProfileId:event.target.value});}}>
-                  <option value="">选择固定执行器</option>
-                  {(executorProfiles.data??[]).map((item)=><option key={item.id} value={item.id}>{item.name}</option>)}
-                </Select>
-                <Select aria-label={`${company?.name??employment.companyId} 权限`} value={employment.permissionPolicyId??''} onChange={(event)=>{if(event.target.value)bindPermission.mutate({employeeId:employment.id,policyId:event.target.value});}}>
-                  <option value="">选择权限策略</option>
-                  {(permissionPolicies.data??[]).map((item)=><option key={item.id} value={item.id}>{item.name}</option>)}
-                </Select>
-              </li>
-            );
+            return <EmploymentCard key={employment.id} employment={employment} companyName={company?.name??employment.companyId} executors={executorProfiles.data??[]} policies={permissionPolicies.data??[]} onExecutor={executorProfileId=>bindExecutor.mutate({employeeId:employment.id,executorProfileId})} onPermission={policyId=>bindPermission.mutate({employeeId:employment.id,policyId})}/>;
           })}
-        </ul>
+        </div>
       </Card>
       <MemoryReviewPanel profileId={profile.id} />
     </div>

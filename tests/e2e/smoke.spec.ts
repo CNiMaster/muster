@@ -10,7 +10,7 @@ test('首页加载且健康', async ({ page }) => {
   await expect(page.getByText(/服务状态/)).toBeVisible();
 });
 
-test('创建小说公司并出现在列表', async ({ page }) => {
+test('创建通用公司并出现在列表', async ({ page }) => {
   const name = `E2E公司-${Date.now()}`;
   const response = await page.request.post('/api/companies', { data: { name, kind: 'general' } });
   expect(response.status()).toBe(201);
@@ -29,12 +29,13 @@ test('向导式创建公司并正常上班', async ({ page }) => {
   page.on('console', msg => console.log('BROWSER LOG:', msg.text()));
   page.on('pageerror', err => console.error('BROWSER ERROR:', err.message));
   await page.goto('/companies/wizard');
-  await expect(page.locator('h1')).toContainText('对话式小说公司创建向导');
+  await expect(page.locator('h1')).toContainText('创建 Agent 公司');
+  await page.getByLabel('公司模板').selectOption('novel');
 
   const name = `向导公司-${Date.now()}`;
-  await page.getByPlaceholder(/银翼创世纪小说工作室/).fill(name);
-  await page.getByPlaceholder(/创作一部硬核赛博朋克长篇小说/).fill('赛博朋克科幻小说主题');
-  await page.getByRole('button', { name: '生成预览与团队配置' }).click();
+  await page.getByLabel('公司名称').fill(name);
+  await page.getByLabel('公司目标').fill('赛博朋克科幻小说主题');
+  await page.getByRole('button', { name: '生成团队预览' }).click();
 
   // 等待预览加载并检查体检结果
   await expect(page.getByRole('main').getByText(/智能方案暂时不可用/)).toBeVisible({ timeout: 5000 });

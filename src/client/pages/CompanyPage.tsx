@@ -31,6 +31,8 @@ import { ActivityPanel } from '../components/ActivityPanel';
 import type { Agent } from '../api/types';
 import { NextActionCard } from '../components/NextActionCard';
 import { deriveNextAction } from '../domain/next-action';
+import { deriveCompanyDashboard } from '../domain/company-dashboard';
+import { CompanyOverview } from '../components/company/CompanyOverview';
 
 export function CompanyPage(): React.ReactElement {
   const { companyId = '' } = useParams();
@@ -58,7 +60,7 @@ export function CompanyPage(): React.ReactElement {
   const [recruitRole, setRecruitRole] = useState('');
 
   // 员工新增向导状态
-  const [useWizard, setUseWizard] = useState(false);
+  const [recruitMode, setRecruitMode] = useState<'library' | 'quick' | 'guided'>('library');
   const [agentDuty, setAgentDuty] = useState('');
   const [proposalNotice, setProposalNotice] = useState<string | null>(null);
   const [wizardRecommendation, setWizardRecommendation] = useState<{
@@ -226,6 +228,13 @@ export function CompanyPage(): React.ReactElement {
         <NextActionCard action={deriveNextAction({ companies: [company], projects, attentionCount: 0 })} />
       )}
 
+      <CompanyOverview dashboard={deriveCompanyDashboard({
+        company,
+        agents: (agents ?? []).map((agent) => ({ ...agent, executorReady: Boolean(agent.executor?.provider) })),
+        projects: projects ?? [],
+        waitingApprovals: 0,
+      })} />
+
       {company.charter && (
         <Card title="公司章程">
           <pre className="charter">{company.charter}</pre>
@@ -302,12 +311,18 @@ export function CompanyPage(): React.ReactElement {
       <Card
         title="员工"
         className="section"
+        id="team"
         actions={<Badge>{agents?.length ?? 0}</Badge>}
       >
         {isOff && (
           <div style={{ marginBottom: 20, borderBottom: '1px solid var(--border-subtle)', paddingBottom: 16 }}>
-            <details className="details-collapse" style={{ marginBottom: 'var(--space-4)' }}>
-              <summary>从员工库招募</summary>
+            <p className="muted">先选择员工来源。员工档案可以跨公司复用，公司岗位、执行器和权限则相互隔离。</p>
+            <div style={{ display: 'flex', gap: 10, marginBottom: 12, flexWrap: 'wrap' }} role="group" aria-label="员工来源">
+              <Button size="sm" variant={recruitMode === 'library' ? 'primary' : 'ghost'} onClick={() => setRecruitMode('library')}>从员工库招募</Button>
+              <Button size="sm" variant={recruitMode === 'quick' ? 'primary' : 'ghost'} onClick={() => setRecruitMode('quick')}>快速新建档案</Button>
+              <Button size="sm" variant={recruitMode === 'guided' ? 'primary' : 'ghost'} onClick={() => setRecruitMode('guided')}>智能岗位向导</Button>
+            </div>
+            {recruitMode === 'library' && (
               <div className="form-row">
                 <Field label="员工档案">
                   <Select value={recruitProfileId} onChange={(event) => setRecruitProfileId(event.target.value)}>
@@ -334,17 +349,9 @@ export function CompanyPage(): React.ReactElement {
                   )}
                 >招募</Button>
               </div>
-            </details>
-            <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
-              <Button size="sm" variant={useWizard ? 'ghost' : 'primary'} onClick={() => setUseWizard(false)}>
-                普通新增
-              </Button>
-              <Button size="sm" variant={useWizard ? 'primary' : 'ghost'} onClick={() => setUseWizard(true)}>
-                智能新增向导
-              </Button>
-            </div>
+            )}
 
-            {!useWizard ? (
+            {recruitMode === 'quick' ? (
               <div className="form-row">
                 <Field label="姓名">
                   <Input value={agentName} onChange={(e) => setAgentName(e.target.value)} placeholder="张三" />
@@ -364,7 +371,7 @@ export function CompanyPage(): React.ReactElement {
                   新增
                 </Button>
               </div>
-            ) : (
+            ) : recruitMode === 'guided' ? (
               <div className="form-stack" style={{ background: 'var(--bg-input)', padding: 12, borderRadius: 8 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                   <Field label="员工姓名">
@@ -421,7 +428,7 @@ export function CompanyPage(): React.ReactElement {
                   </div>
                 )}
               </div>
-            )}
+            ) : null}
           </div>
         )}
         {agents && agents.length === 0 && (

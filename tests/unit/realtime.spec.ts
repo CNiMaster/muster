@@ -34,4 +34,9 @@ describe('queryKeysForRealtimeEvent', () => {
       }),
     ).toEqual([]);
   });
+
+  it('项目任务与审批事件刷新各自的精确缓存', () => {
+    expect(queryKeysForRealtimeEvent({id:'ev_3',type:'project-task.archived',projectId:'pr_1',occurredAt:'2026-01-01T00:00:00.000Z',payload:{projectTaskId:'pt_1'}})).toContainEqual(['project-tasks','pr_1']);
+    expect(queryKeysForRealtimeEvent({id:'ev_4',type:'approval.decided',companyId:'co_1',occurredAt:'2026-01-01T00:00:00.000Z',payload:{approvalId:'ap_1'}})).toContainEqual(['permission-approvals']);
+  });
 });

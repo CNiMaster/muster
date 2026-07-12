@@ -5,22 +5,27 @@ import {
   useCreateNovelCompany,
   useCompanyAction,
   useGenerateCompanyProposal,
+  useCreateCompany,
   type CompanyProposal,
 } from '../hooks/queries';
 import { Card } from '../components/Card';
 import { Button, toast } from '../components/Button';
 import { Badge } from '../components/Badge';
 import { Input, Textarea, Field } from '../components/Form';
+import { Select } from '../components/Form';
+import { COMPANY_TEMPLATE_OPTIONS, type CompanyTemplateId } from '../domain/company-templates';
 
 export function CompanyWizardPage(): React.ReactElement {
   const navigate = useNavigate();
   const createNovelCompany = useCreateNovelCompany();
   const companyAction = useCompanyAction();
   const generateProposal = useGenerateCompanyProposal();
+  const createCompany = useCreateCompany();
 
   const [step, setStep] = useState<1 | 2>(1);
   const [name, setName] = useState('');
   const [goal, setGoal] = useState('');
+  const [templateId, setTemplateId] = useState<CompanyTemplateId>('general');
 
   const [proposal, setProposal] = useState<CompanyProposal | null>(null);
   const [proposalNotice, setProposalNotice] = useState<string | null>(null);
@@ -31,6 +36,13 @@ export function CompanyWizardPage(): React.ReactElement {
       return;
     }
 
+    if (templateId !== 'novel') {
+      createCompany.mutate({ name: name.trim(), kind: templateId, charter: goal.trim() }, {
+        onSuccess: (company) => { toast('success', '公司已创建，接下来组建团队'); navigate(`/companies/${company.id}#team`); },
+        onError: (e) => toast('error', (e as Error).message),
+      });
+      return;
+    }
     generateProposal.mutate(
       { name: name.trim(), goal: goal.trim() },
       {
@@ -71,8 +83,8 @@ export function CompanyWizardPage(): React.ReactElement {
     <div className="wizard-page" style={{ maxWidth: '800px', margin: '0 auto', padding: 'var(--space-5) 0' }}>
       <header className="page-header" style={{ marginBottom: 'var(--space-5)' }}>
         <div>
-          <h1>对话式小说公司创建向导</h1>
-          <p className="subtitle">根据创作目标生成可编辑方案，再创建长篇小说协作团队</p>
+          <h1>创建 Agent 公司</h1>
+          <p className="subtitle">先选择适合的公司模板，再组建团队和创建第一个项目。</p>
         </div>
       </header>
 
@@ -106,9 +118,10 @@ export function CompanyWizardPage(): React.ReactElement {
       </div>
 
       {step === 1 ? (
-        <Card title="第一步：设定你的创作愿景">
+        <Card title="第一步：选择公司类型与目标">
           <div className="form-stack">
-            <Field label="小说公司名称" required>
+            <Field label="公司模板" hint="模板只提供起点，之后仍可增减员工和调整工作流。"><Select value={templateId} onChange={event=>setTemplateId(event.target.value as CompanyTemplateId)}>{COMPANY_TEMPLATE_OPTIONS.map(template=><option key={template.id} value={template.id}>{template.name} — {template.description}</option>)}</Select></Field>
+            <Field label="公司名称" required>
               <Input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -116,18 +129,18 @@ export function CompanyWizardPage(): React.ReactElement {
               />
             </Field>
 
-            <Field label="小说核心目标与愿景" hint="系统将根据核心愿景生成可编辑的初始架构和团队岗位建议。">
+            <Field label="公司目标" hint={templateId==='novel'?'系统将根据创作目标生成可编辑团队。':'创建后进入团队页，可从员工库或岗位模板招募。'}>
               <Textarea
                 value={goal}
                 onChange={(e) => setGoal(e.target.value)}
-                placeholder="例如: 创作一部硬核赛博朋克长篇小说，主要围绕 AI 觉醒和下城区侦探 K 展开。风格冷酷极简..."
+                placeholder="例如：持续维护产品、完成内容生产，或推进一个长期研究项目。"
                 style={{ height: '120px' }}
               />
             </Field>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'var(--space-4)' }}>
-              <Button onClick={handleGenerate} loading={generateProposal.isPending} disabled={!name.trim()}>
-                生成预览与团队配置
+              <Button onClick={handleGenerate} loading={generateProposal.isPending||createCompany.isPending} disabled={!name.trim()}>
+                {templateId==='novel'?'生成团队预览':'创建公司并组建团队'}
               </Button>
             </div>
           </div>

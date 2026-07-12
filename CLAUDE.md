@@ -81,7 +81,7 @@ src/
                  # inspector / brainstorm / triggers / novel-template / workflow /
                  # event-feed（关键事件聚合）/ graph-proposal（自然语言改图）/
                  # character-graph（只读人物关系图解析）/ speech-queue（loop protection + dedup）
-    task-engine/ # ExecutionAdapter 接口 + FakeExecutor + TaskEngine + agentExecutor 覆盖
+    task-engine/ # ExecutionAdapter 接口 + FakeExecutor + TaskEngine + RunWatchdog + agentExecutor 覆盖
     trigger-scheduler.ts # 轮询持久化 schedule trigger，原子推进并派发巡检 Task
     executors/   # Claude/Codex/Gemini CLI + OpenAICompatible/Gemini API adapters +
                  # 上下文装配 + 安全检查 + 会话压缩 + 时间轮换 + apiKeyEnv 凭据注入 +
@@ -111,7 +111,8 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 - **Task 是唯一运行单元**：10 态状态机 `queued|claimed|running|waiting_input|waiting_dependency|paused|blocked|completed|failed|cancelled`。
 - **原子领取**：`BEGIN IMMEDIATE` + `UPDATE ... WHERE state='queued' ... RETURNING`，租约 + 心跳 + 过期恢复。
 - **追问 3 轮上限**：超限自动给项目第一负责人派发上报 Task。
-- **执行器抽象**：`ExecutionAdapter` 接口；当前实现包含 `ClaudeCodeAdapter`、OpenAI-compatible 和 Gemini adapters。vNext 将其迁移到统一 Manifest/Profile 模型，并增加 Codex CLI 与自定义 CLI。
+- **执行器抽象**：统一 Manifest/Profile 已落地；认证执行器包含 Codex CLI、Claude Code、Antigravity CLI 与 Muster API，自定义 CLI 以受限非交互模式运行。员工任职固定绑定执行器，基础探测使用 CLI 默认模型。
+- **执行生命周期**：`RunWatchdog` 统一限制启动、空闲与总运行时长；`SessionManager` 独立处理上下文软阈值压缩、硬阈值换代和有限恢复链。
 - **引擎驱动**：`ProjectRuntimeCoordinator` 在 server 启动时定时轮询 online 公司，补线程、处理中断/排空/复盘并调用 `TaskEngine.pumpThread()` 完成领取→worktree→执行→发布；也提供 `POST /api/projects/:id/pump` 手动触发。
 - **定时触发**：`TriggerScheduler` 轮询 `trigger.next_run_at`；小说项目自动注册遗漏、连续性、长期一致性检查。下班期间不派发，上班后补派发；下一执行时间与 Task 创建在同一事务推进，避免重复。
 - **实时状态**：服务端通过 `/ws` 发布 Task 领取、完成和发布阻塞事件；前端按 project/task 标识精确失效查询缓存，4 秒消息轮询仅作断线兜底。
@@ -176,10 +177,10 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 
 ### 测试
 
-- Vitest 单元与集成测试 270 项（40 个测试文件），覆盖既有运行闭环以及 workspace 引导、全局员工档案、跨公司任职、Agent Home、分层记忆、上下文恢复、复用与安全重置。
+- Vitest 单元与集成测试覆盖运行闭环、workspace 引导、全局员工档案、跨公司任职、Agent Home、分层记忆、项目任务会话、CLI 探测、审批桥、上下文恢复、复用与安全重置；准确数量以 `npm test` 当前输出为准。
   - 测试环境需要真实 git 仓库作为 `project.rootDir`（`createWorktree` 需要 `git rev-parse HEAD` 成功）。`tests/integration/setup.ts` 的 `makeTempGitRepo()` 创建临时 git 仓库（含初始 commit）供测试使用。
   - `project.rootDir` 与 `firstAgentId` 均为可选：建项目时留空，`createProject` 自动使用当前激活总工作区，并生成 `{workspace}/companies/{公司名}/projects/{项目名}-{项目ID}`；项目 ID 后缀保证同名项目不会共享目录。`ensureGitRepo()` 会在首个 worktree 创建时自动 `mkdir + git init`。
-- Playwright 10 项已在本机 Chromium 通过，覆盖建司→团队→项目→首 Task、在线建项目、最近项目恢复、公司上下文导航、员工库、复盘以及窄屏设置页。
+- Playwright 覆盖建司→团队→项目→首 Task、在线建项目、最近项目恢复、公司上下文导航、员工库、执行器中心、权限中心以及窄屏设置页；准确数量以 `npm run test:e2e` 当前输出为准。
 - `npm run test:claude-smoke` 已使用真实 Claude Code 连续完成两个 Task，验证跨 worktree 的 `--session-id`/`--resume`、文件发布、Artifact 登记和 Token/缓存用量。
 
 `publish_record` 由 `0002_conversation.sql` 创建，记录 Task 发布提交、合并文件、冲突与阻塞状态，供成果修改历史页读取。
@@ -187,7 +188,7 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 ### 已知工程取舍
 - `noUncheckedIndexedAccess` 关闭（为绕过 express `req.params` 类型摩擦）。代价：数组下标访问不强制 undefined 检查。如需更严格，重开后主要修 `src/shared/utils.ts` 和 domain 的 row 映射。
 - Claude Code 的模型可用性由用户本机或代理服务决定。先在“系统设置”填写实际支持的模型标识并运行桥接测试；错误模型会直接返回诊断，不会用 FakeExecutor 冒充成功。
-- 当前已接入 Claude Code CLI、OpenAI-compatible API 和 Gemini API，并已完成分层记忆；Codex/Gemini CLI、通用 Manifest 安装管理、统一审批/Turbo 权限、模板平台、多模态和多租户 SaaS 仍是后续范围。
+- 当前已接入 Codex CLI、Claude Code、Antigravity CLI、OpenAI-compatible API 和 Gemini API，并完成统一 Manifest/Profile、项目任务会话、审批/Turbo 权限、分层记忆和平台化公司入口。OpenCode/Pi 等更多 CLI、完整多模态和多租户 SaaS 仍是后续范围。
 
 ### UI 分层约定
 - **低门槛优先**：首次主流程固定为“创建公司→组建团队→创建项目→发布 Task”；首屏只提供一个状态相关主行动，rootDir/firstAgentId 后端自动。

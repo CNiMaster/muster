@@ -26,6 +26,8 @@ export interface ExecutionContext {
   threadId?: string;
   /** 上层取消 Task 时中止正在运行的执行器进程。 */
   signal?: AbortSignal;
+  /** 执行器产生输出或完成工具调用时报告活动，供统一看门狗刷新空闲期限。 */
+  reportActivity?: () => void;
   /** 授权只读访问的额外目录（PRD Phase 3.4，授权参考项目根目录）。 */
   readonlyDirs?: string[];
   /**

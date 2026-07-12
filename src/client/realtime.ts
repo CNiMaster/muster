@@ -8,6 +8,7 @@ export type QueryKey = readonly unknown[];
 /** 把服务端事件精确映射到受影响的 React Query 缓存，避免全局刷新。 */
 export function queryKeysForRealtimeEvent(event: RealtimeEvent): QueryKey[] {
   const keys: QueryKey[] = [];
+  if (event.type.startsWith('approval.')) keys.push(['permission-approvals']);
   // Agent Bridge 事件：刷活动流
   if (event.type?.startsWith('bridge.')) {
     keys.push(['project-events'], ['company-events']);
@@ -19,6 +20,11 @@ export function queryKeysForRealtimeEvent(event: RealtimeEvent): QueryKey[] {
       ['usage', event.projectId],
       ['project-events', event.projectId],
     );
+    if (event.type.startsWith('project-task.') || event.type.startsWith('project-task-thread.')) {
+      keys.push(['project-tasks', event.projectId]);
+      const projectTaskId = (event.payload as { projectTaskId?: unknown } | undefined)?.projectTaskId;
+      if (typeof projectTaskId === 'string') keys.push(['project-task', event.projectId, projectTaskId]);
+    }
   }
   if (event.companyId) {
     keys.push(['company-events', event.companyId]);
