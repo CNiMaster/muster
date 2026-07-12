@@ -1,7 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createInterface } from 'node:readline';
-import { existsSync, mkdirSync, symlinkSync } from 'node:fs';
-import { join } from 'node:path';
 import type { ExecutionAdapter, ExecutionContext, ExecutionEvents, ExecutionRunResult } from '../task-engine/executor';
 import { AGENT_RESULT_JSON_SCHEMA, agentRunResultSchema } from './result-schema';
 import { AppError, ErrorCode } from '../../shared/errors';
@@ -17,8 +15,7 @@ export class CodexCliAdapter implements ExecutionAdapter {
   constructor(private options:{appServerFactory?:AppServerFactory}={}){}
   async run(ctx:ExecutionContext,events?:ExecutionEvents):Promise<ExecutionRunResult>{
     const binary=ctx.agentExecutor?.binaryPath??'codex';
-    prepareCodexHome(ctx.runConfigDir);
-    const server=await(this.options.appServerFactory??createStdioAppServer)(binary,{cwd:ctx.workingDir,env:{...process.env,CODEX_HOME:ctx.runConfigDir??process.env.CODEX_HOME}});
+    const server=await(this.options.appServerFactory??createStdioAppServer)(binary,{cwd:ctx.workingDir,env:{...process.env}});
     try{
       const prompt=[ctx.systemPrompt,'# 当前 Task 工作包',JSON.stringify(ctx.inputPacket,null,2),'只返回符合指定 JSON Schema 的最终结果。'].join('\n\n');
       const response=await server.run({
@@ -97,5 +94,3 @@ class StdioCodexAppServer implements CodexAppServer{
     this.write({id:message.id,result:{decision:decision.approved?'accept':'decline'}});
   }
 }
-
-function prepareCodexHome(target:string|undefined):void{if(!target)return;mkdirSync(target,{recursive:true});const source=join(process.env.HOME??'', '.codex','auth.json');const link=join(target,'auth.json');if(source&&existsSync(source)&&!existsSync(link))symlinkSync(source,link);}

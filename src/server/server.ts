@@ -38,6 +38,7 @@ import { memoryRouter } from './api/memory';
 import { permissionsRouter } from './api/permissions';
 import { executorsRouter } from './api/executors';
 import { CodexCliAdapter } from './executors/codex-cli-adapter';
+import{AntigravityCliAdapter}from'./executors/antigravity-cli-adapter';
 import { GeminiCliAdapter } from './executors/gemini-cli-adapter';
 import { CustomCliAdapter } from './executors/custom-cli-adapter';
 import { bridgeRouter } from './bridge';
@@ -116,6 +117,7 @@ async function createApp(): Promise<AppHandle> {
     adapterRegistry.set('openai', new OpenAICompatibleAdapter());
     adapterRegistry.set('gemini', new GeminiAdapter());
     adapterRegistry.set('codex-cli', new CodexCliAdapter());
+    adapterRegistry.set('antigravity-cli',new AntigravityCliAdapter());
     adapterRegistry.set('gemini-cli', new GeminiCliAdapter());
     adapterRegistry.set('custom-cli', new CustomCliAdapter());
   }

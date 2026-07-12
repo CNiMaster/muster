@@ -14,6 +14,7 @@ describe('unified executor profiles', () => {
     expect(BUILTIN_EXECUTOR_MANIFESTS.map((manifest) => manifest.id)).toEqual([
       'codex-cli',
       'claude-code-cli',
+      'antigravity-cli',
       'gemini-cli',
       'openai-compatible-api',
       'gemini-api',

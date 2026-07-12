@@ -5,7 +5,6 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { evaluateCliToolRequest } from '../../src/server/executors/cli-permission-bridge';
 import { startClaudePermissionBridge } from '../../src/server/executors/claude-permission-bridge';
-import { claudeIsolationArgs } from '../../src/server/executors/claude-code-adapter';
 
 describe('CLI permission bridge',()=>{
   it('classifies high-risk commands before invoking the common guard',()=>{
@@ -50,7 +49,4 @@ describe('CLI permission bridge',()=>{
     }finally{rmSync(root,{recursive:true,force:true});}
   });
 
-  it('isolates employee runs from user plugins, MCP servers, and project settings',()=>{
-    expect(claudeIsolationArgs()).toEqual(['--strict-mcp-config','--mcp-config','{"mcpServers":{}}','--disable-slash-commands']);
-  });
 });

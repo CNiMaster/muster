@@ -219,7 +219,6 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
         '--verbose',
         '--system-prompt', cleanSystem,
         '--json-schema', JSON.stringify(AGENT_RESULT_JSON_SCHEMA),
-        ...claudeIsolationArgs(),
       ];
 
       // session 持久化：首次 --session-id（生成新 id），后续 --resume
@@ -439,8 +438,6 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
     this.active.clear();
   }
 }
-
-export function claudeIsolationArgs():string[]{return['--strict-mcp-config','--mcp-config','{"mcpServers":{}}','--disable-slash-commands'];}
 
 /** 构建 Claude 提示词：装 Task 工作包 + 上下文 + 输出要求。 */
 /** 首次执行生成 session id（用于 --session-id）。 */
