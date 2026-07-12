@@ -17,11 +17,12 @@ import type { DB } from '../../src/server/db/client';
 import { createNovelCompany } from '../../src/server/domain/novel-template';
 import { createProject } from '../../src/server/domain/project';
 import { ensurePrimaryThread } from '../../src/server/domain/thread';
+import {getThread} from '../../src/server/domain/thread';
 import { answerClarification, createTask, getTask, listTasks } from '../../src/server/domain/task';
 import { clockIn } from '../../src/server/domain/company';
 import { TaskEngine } from '../../src/server/task-engine/engine';
 import { FakeExecutor } from '../../src/server/task-engine/fake-executor';
-import { getThread } from '../../src/server/domain/thread';
+import { getProjectTaskThread } from '../../src/server/domain/project-task-thread';
 import { ensureGitRepo, commitAll } from '../../src/server/worktree/manager';
 import { listArtifacts } from '../../src/server/domain/artifact';
 import { summarizeProjectUsage } from '../../src/server/domain/usage';
@@ -102,9 +103,9 @@ describe('engine → worktree → publish wiring', () => {
     expect(existsSync(published)).toBe(true);
     expect(readFileSync(published, 'utf8')).toContain('李墨登场');
 
-    // Claude session id 持久化到 thread
-    const updatedThread = getThread(db, thread.id);
-    expect(updatedThread.claudeSessionId).toBe('sess-fake-001');
+    // vendor session 持久化到“项目任务 × 员工”线程，不污染项目级员工线程
+    expect(t.assigneeTaskThreadId).toBeTruthy();
+    expect(getProjectTaskThread(db,t.assigneeTaskThreadId!).vendorSessionId).toBe('sess-fake-001');
     expect(listArtifacts(db, project.id).map((artifact) => artifact.path)).toContain('chapters/01.md');
     const usage = summarizeProjectUsage(db, project.id);
     expect(usage.totalInputTokens).toBe(120);

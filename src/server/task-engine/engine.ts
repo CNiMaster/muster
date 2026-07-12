@@ -22,6 +22,7 @@ import {
   failTask,
   blockTask,
   createTask,
+  bindTaskToProjectTaskThread,
 } from '../domain/task';
 import { getThread, listOnlineThreads, setClaudeSession, updateThreadState, incrementExecCount, compactThreadWithMemory, rotateSession } from '../domain/thread';
 import { getAgent } from '../domain/agent';
@@ -52,6 +53,7 @@ import { createExecutionRun, getEmployeeExecutorProfile, updateExecutionRunStatu
 import { buildRunIsolation, withExecutorConcurrency } from '../executors/run-isolation';
 import { ensureApprovalRequest, evaluatePermission, getEmployeePermissionPolicy } from '../domain/permission';
 import { getActiveWorkspace } from '../domain/workspace';
+import {ensureProjectTaskThread,setProjectTaskThreadSession} from '../domain/project-task-thread';
 
 export interface EngineOptions {
   heartbeatIntervalMs?: number;
@@ -207,6 +209,8 @@ export class TaskEngine {
       checkBudget(this.db, project.id, task.budget);
 
       const executorProfile = getEmployeeExecutorProfile(this.db, agent.id);
+      const projectTaskThread=ensureProjectTaskThread(this.db,{projectTaskId:task.projectTaskId,employeeId:agent.id,executorProfileId:executorProfile?.id??null});
+      bindTaskToProjectTaskThread(this.db,task.id,projectTaskThread.id);
       const executionRun = executorProfile ? createExecutionRun(this.db, {
         executorProfileId: executorProfile.id,
         employeeId: agent.id,
@@ -217,7 +221,7 @@ export class TaskEngine {
         runId: executionRun.id,
         employeeId: agent.id,
         profileId: executorProfile!.id,
-        threadId: thread.id,
+        threadId: projectTaskThread.id,
       }) : null;
       if (isolation) {
         for (const dir of [isolation.configDir, isolation.tempDir, isolation.logDir, isolation.sessionDir]) mkdirSync(dir, { recursive: true });
@@ -237,8 +241,8 @@ export class TaskEngine {
         runLogDir: isolation?.logDir,
         runSessionDir: isolation?.sessionDir,
         inputPacket: {},
-        threadId: thread.id,
-        sessionIdHint: thread.claudeSessionId ?? undefined,
+        threadId: projectTaskThread.id,
+        sessionIdHint: projectTaskThread.vendorSessionId ?? undefined,
         // PRD Phase 3.4：收集授权参考项目根目录，让 Claude 直接只读访问（--add-dir）。
         readonlyDirs: collectReadonlyReferenceDirs(this.db, task.projectId),
         // PRD Phase 3：员工级执行器配置 + 用户级凭据引用
@@ -303,8 +307,8 @@ export class TaskEngine {
       }
 
       // 持久化 Claude session id（首次返回后保存，后续 --resume 用）
-      if (result._sessionIdHint && result._sessionIdHint !== thread.claudeSessionId) {
-        setClaudeSession(this.db, thread.id, result._sessionIdHint);
+      if (result._sessionIdHint && result._sessionIdHint !== projectTaskThread.vendorSessionId) {
+        setProjectTaskThreadSession(this.db, projectTaskThread.id, result._sessionIdHint);
       }
 
       // 会话压缩/轮换（PRD Phase 3.6）：累计执行达阈值后，把摘要记入 thread 并清空 session，
