@@ -23,6 +23,7 @@ import {
   blockTask,
   createTask,
   bindTaskToProjectTaskThread,
+  markTaskWaitingApproval,
 } from '../domain/task';
 import { getThread, listOnlineThreads, updateThreadState } from '../domain/thread';
 import { getAgent } from '../domain/agent';
@@ -54,6 +55,7 @@ import { ensureApprovalRequest, evaluatePermission, getEmployeePermissionPolicy 
 import { getActiveWorkspace } from '../domain/workspace';
 import {ensureProjectTaskThread,setProjectTaskThreadSession} from '../domain/project-task-thread';
 import{SessionManager}from'../domain/session-manager';
+import{approvalBroker}from'../domain/approval-broker';
 
 export interface EngineOptions {
   heartbeatIntervalMs?: number;
@@ -62,6 +64,8 @@ export interface EngineOptions {
   /** 轮询间隔 ms（start 后）。 */
   pollIntervalMs?: number;
 }
+
+function isRecoverableSessionError(error:unknown):boolean{return/(context|overflow|too many tokens|network|econn|timeout|timed out|no output|process.*exit)/i.test(error instanceof Error?error.message:String(error));}
 
 export class TaskEngine {
   private publishQueue: PublishQueue;
@@ -253,7 +257,7 @@ export class TaskEngine {
           baseUrl: `http://127.0.0.1:${this.serverPort}`,
           taskId: task.id,
         },
-        permissionGuard: permissionPolicy ? (request) => {
+        permissionGuard: permissionPolicy ? async (request) => {
           const decision = evaluatePermission(this.db, permissionPolicy.id, {
             ...request,
             taskRoot: workingDir,
@@ -267,7 +271,9 @@ export class TaskEngine {
           if (decision.decision === 'allow') return { allowed: true };
           if (decision.decision === 'approval-required') {
             const approval = ensureApprovalRequest(this.db, { policyId: permissionPolicy.id, employeeId: agent.id, taskId: task.id, action: request.action, command: request.command, path: request.path });
-            return { allowed: false, message: `审批请求 ${approval.id} 已进入审批中心` };
+            this.db.prepare('UPDATE permission_approval SET execution_run_id=?,project_task_thread_id=?,executor_profile_id=?,expires_at=?,recovery_json=? WHERE id=?').run(executionRun?.id??null,projectTaskThread.id,executorProfile?.id??null,new Date(Date.now()+600_000).toISOString(),JSON.stringify({vendorSessionId:projectTaskThread.vendorSessionId}),approval.id);
+            const resolution=await approvalBroker.wait(approval.id,600_000);
+            return resolution==='allow'?{allowed:true}:{allowed:false,message:`审批请求 ${approval.id} 已拒绝或超时`};
           }
           return { allowed: false, message: decision.reason };
         } : undefined,
@@ -295,11 +301,14 @@ export class TaskEngine {
       const adapter = this.selectAdapter(providerForManifest(executorProfile?.manifestId) ?? effectiveExecutor?.provider);
       if (executionRun) updateExecutionRunStatus(this.db, executionRun.id, 'running');
       let result: Awaited<ReturnType<ExecutionAdapter['run']>>;
+      const sessionManager = new SessionManager(this.db);
+      const runStartedAt=Date.now();
       try {
-        result = await withExecutorConcurrency(executorProfile?.concurrencyMode ?? 'parallel', executorProfile?.id ?? agent.id, () => adapter.run(ctx, {
-          onOutput: (chunk) => log.debug('agent output', { taskId: task.id, chunk: chunk.slice(0, 120), executionRunId: executionRun?.id }),
-          onToolCall: (name, input) => log.debug('agent tool', { taskId: task.id, name, executionRunId: executionRun?.id }),
-        }));
+        let recoveryAttempt=0;
+        for(;;){try{result = await withExecutorConcurrency(executorProfile?.concurrencyMode ?? 'parallel', executorProfile?.id ?? agent.id, () => adapter.run(ctx, {
+            onOutput: (chunk) => log.debug('agent output', { taskId: task.id, chunk: chunk.slice(0, 120), executionRunId: executionRun?.id }),
+            onToolCall: (name, input) => log.debug('agent tool', { taskId: task.id, name, executionRunId: executionRun?.id }),
+          }));sessionManager.clearRecovery(projectTaskThread.id);break;}catch(error){if(!isRecoverableSessionError(error))throw error;recoveryAttempt+=1;const compactSupported=Boolean(adapter.compactSession);const recovery=recoveryAttempt===1?'retry':recoveryAttempt===2&&compactSupported?'compact':recoveryAttempt===(compactSupported?3:2)?'rotate':'stop';sessionManager.nextRecovery(projectTaskThread.id,compactSupported);if(recovery==='stop')throw error;if(recovery==='compact'&&adapter.compactSession&&ctx.sessionIdHint){try{await adapter.compactSession(ctx);}catch{sessionManager.rotate(projectTaskThread.id,{reason:'compact-failed',taskId:task.id});ctx.sessionIdHint=undefined;}}else if(recovery==='rotate'){sessionManager.rotate(projectTaskThread.id,{reason:'session-recovery',taskId:task.id});ctx.sessionIdHint=undefined;}log.warn('retrying recoverable executor failure',{taskId:task.id,recovery,error:String(error)});}}
         if (executionRun) updateExecutionRunStatus(this.db, executionRun.id, result.outcome === 'completed' ? 'completed' : 'failed');
       } catch (error) {
         if (executionRun) updateExecutionRunStatus(this.db, executionRun.id, 'failed');
@@ -312,7 +321,6 @@ export class TaskEngine {
       }
 
       if (result.outcome === 'completed') {
-        const sessionManager = new SessionManager(this.db);
         const handoff = {
           employeeId: agent.id,
           projectId: project.id,
@@ -325,6 +333,8 @@ export class TaskEngine {
           transcriptBytes: Buffer.byteLength(JSON.stringify(ctx.inputPacket)) + Buffer.byteLength(result.summary),
           inputTokens: result._usage?.inputTokens,
           outputTokens: result._usage?.outputTokens,
+          toolOutputBytes:Buffer.byteLength(JSON.stringify(result.artifacts)),
+          durationMs:Date.now()-runStartedAt,
           handoff,
         });
         if (decision.action === 'compact') {
@@ -378,6 +388,8 @@ export class TaskEngine {
           taskId: task.id,
         });
       }
+      const approvalMatch=result.outcome==='blocked'?/审批请求\s+(approval_[A-Za-z0-9_-]+)/.exec(result.summary):null;
+      if(approvalMatch){commitAll(worktreeInfo.path,`muster: approval checkpoint ${task.id}`);preserveWorktree=true;markTaskWaitingApproval(this.db,task.id,approvalMatch[1]!);updateThreadState(this.db,thread.id,'paused');return true;}
       completeTask(this.db, task.id, result);
       // 讨论结论→建议 Task（PRD Phase 8.4）：brainstorm 完成且 outputProtocol.suggestions 存在时派生建议
       if (

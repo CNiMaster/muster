@@ -27,6 +27,7 @@ export default defineConfig({
       MUSTER_HOME: `/tmp/muster-e2e-${process.pid}`,
       CLAUDE_BIN: '/definitely/missing/claude',
       MUSTER_EXECUTOR: 'fake',
+      MUSTER_AUTO_EXECUTOR_DISCOVERY: 'false',
     },
   },
 });

@@ -35,10 +35,10 @@ describe('permission policy = approval strategy × allowed scope', () => {
     } finally { close(); }
   });
 
-  it('prevents an API model tool from writing before approval', () => {
+  it('prevents an API model tool from writing before approval', async () => {
     const root=mkdtempSync(join(tmpdir(),'muster-permission-'));
     try {
-      const result=executeFileTool({id:'call',name:'write_file',args:{path:'secret.txt',content:'no'}},root,[],undefined,()=>({allowed:false,message:'等待用户审批'}));
+      const result=await executeFileTool({id:'call',name:'write_file',args:{path:'secret.txt',content:'no'}},root,[],undefined,()=>({allowed:false,message:'等待用户审批'}));
       expect(result.content).toContain('需要用户审批');
       expect(existsSync(join(root,'secret.txt'))).toBe(false);
     } finally {rmSync(root,{recursive:true,force:true});}

@@ -33,7 +33,7 @@ describe('Codex CLI app-server adapter', () => {
       const guard=vi.fn(()=>({allowed:false,message:'审批请求 approval_1 已进入审批中心'}));
       const server:CodexAppServer={
         run:vi.fn(async input=>{
-          const decision=input.onApproval({kind:'command',command:'git push origin main',cwd:root});
+          const decision=await input.onApproval({kind:'command',command:'git push origin main',cwd:root});
           expect(decision).toEqual({approved:false,message:'审批请求 approval_1 已进入审批中心'});
           return {threadId:'employee-session',text:JSON.stringify({outcome:'blocked',summary:decision.message,outboundTasks:[],artifacts:[]})};
         }),

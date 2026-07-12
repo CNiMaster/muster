@@ -58,7 +58,7 @@ export interface ToolLoopOptions {
   signal?: AbortSignal;
   /** 模型名（用于 usage 记账）。 */
   model: string;
-  permissionGuard?: (request: { action: string; path?: string; command?: string }) => { allowed: boolean; message?: string };
+  permissionGuard?: (request: { action: string; path?: string; command?: string }) => { allowed: boolean; message?: string }|Promise<{ allowed: boolean; message?: string }>;
 }
 
 export interface ToolLoopResult {
@@ -115,7 +115,7 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult
           // 参数解析失败，用空对象
         }
         const call: ToolCall = { id: tc.id, name: tc.function.name, args: parsedArgs };
-        const tr: ToolResult = executeFileTool(call, opts.workingDir, opts.readonlyDirs ?? [], opts.loopback, opts.permissionGuard);
+        const tr: ToolResult = await executeFileTool(call, opts.workingDir, opts.readonlyDirs ?? [], opts.loopback, opts.permissionGuard);
         // 把 tool result 加回 messages
         messages.push({
           role: 'tool',

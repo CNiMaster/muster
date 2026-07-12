@@ -1,13 +1,13 @@
 import { isAbsolute, resolve } from 'node:path';
 
-export type PermissionGuard = (request:{action:string;path?:string;command?:string})=>{allowed:boolean;message?:string};
+export type PermissionGuard = (request:{action:string;path?:string;command?:string})=>{allowed:boolean;message?:string}|Promise<{allowed:boolean;message?:string}>;
 export interface CliToolRequest { toolName:string; input:Record<string,unknown>; cwd:string }
 export interface CliApprovalDecision { approved:boolean; message?:string }
 
-export function evaluateCliToolRequest(guard:PermissionGuard|undefined,request:CliToolRequest):CliApprovalDecision {
+export async function evaluateCliToolRequest(guard:PermissionGuard|undefined,request:CliToolRequest):Promise<CliApprovalDecision> {
   if(!guard)return{approved:false,message:'执行器没有可用的 Muster 权限策略'};
   const mapped=mapCliToolRequest(request);
-  const decision=guard(mapped);
+  const decision=await guard(mapped);
   return{approved:decision.allowed,message:decision.message};
 }
 

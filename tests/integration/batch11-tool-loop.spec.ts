@@ -35,8 +35,8 @@ describe('Batch 11.1 file-tools', () => {
     expect(names).toContain('done');
   });
 
-  it('write_file 写入 worktree', () => {
-    const r = executeFileTool(
+  it('write_file 写入 worktree', async () => {
+    const r = await executeFileTool(
       { id: '1', name: 'write_file', args: { path: 'a.txt', content: 'hello' } },
       workdir,
     );
@@ -44,35 +44,35 @@ describe('Batch 11.1 file-tools', () => {
     expect(readFileSync(join(workdir, 'a.txt'), 'utf8')).toBe('hello');
   });
 
-  it('read_file 读取内容', () => {
+  it('read_file 读取内容', async () => {
     writeFileSync(join(workdir, 'b.txt'), 'world');
-    const r = executeFileTool(
+    const r = await executeFileTool(
       { id: '2', name: 'read_file', args: { path: 'b.txt' } },
       workdir,
     );
     expect(r.content).toBe('world');
   });
 
-  it('read_file 路径越界被拒绝', () => {
-    const r = executeFileTool(
+  it('read_file 路径越界被拒绝', async () => {
+    const r = await executeFileTool(
       { id: '3', name: 'read_file', args: { path: '../../../etc/passwd' } },
       workdir,
     );
     expect(r.content).toMatch(/路径越界/);
   });
 
-  it('write_file 路径越界被拒绝', () => {
-    const r = executeFileTool(
+  it('write_file 路径越界被拒绝', async () => {
+    const r = await executeFileTool(
       { id: '4', name: 'write_file', args: { path: '/etc/x', content: 'x' } },
       workdir,
     );
     expect(r.content).toMatch(/路径越界/);
   });
 
-  it('write_file 只读目录被拒绝', () => {
+  it('write_file 只读目录被拒绝', async () => {
     const ro = mkdtempSync(join(tmpdir(), 'muster-ro-'));
     tmpRoots.push(ro);
-    const r = executeFileTool(
+    const r = await executeFileTool(
       { id: '5', name: 'write_file', args: { path: 'x', content: 'x' } },
       ro,
       [ro], // ro 本身被标为只读
@@ -80,9 +80,9 @@ describe('Batch 11.1 file-tools', () => {
     expect(r.content).toMatch(/只读/);
   });
 
-  it('edit_file 精确替换', () => {
+  it('edit_file 精确替换', async () => {
     writeFileSync(join(workdir, 'c.md'), '# 标题\n\n正文\n');
-    const r = executeFileTool(
+    const r = await executeFileTool(
       { id: '6', name: 'edit_file', args: { path: 'c.md', old_text: '正文', new_text: '新正文' } },
       workdir,
     );
@@ -90,19 +90,19 @@ describe('Batch 11.1 file-tools', () => {
     expect(readFileSync(join(workdir, 'c.md'), 'utf8')).toBe('# 标题\n\n新正文\n');
   });
 
-  it('edit_file 多处匹配拒绝', () => {
+  it('edit_file 多处匹配拒绝', async () => {
     writeFileSync(join(workdir, 'd.md'), 'a a a');
-    const r = executeFileTool(
+    const r = await executeFileTool(
       { id: '7', name: 'edit_file', args: { path: 'd.md', old_text: 'a', new_text: 'b' } },
       workdir,
     );
     expect(r.content).toMatch(/必须唯一|匹配.*处/);
   });
 
-  it('list_files 列出目录', () => {
+  it('list_files 列出目录', async () => {
     writeFileSync(join(workdir, 'x.txt'), 'x');
     mkdirSync(join(workdir, 'sub'));
-    const r = executeFileTool(
+    const r = await executeFileTool(
       { id: '8', name: 'list_files', args: { dir: '.' } },
       workdir,
     );
@@ -111,8 +111,8 @@ describe('Batch 11.1 file-tools', () => {
     expect(r.content).toContain('sub');
   });
 
-  it('done 返回合法 AgentRunResult', () => {
-    const r = executeFileTool(
+  it('done 返回合法 AgentRunResult', async () => {
+    const r = await executeFileTool(
       { id: '9', name: 'done', args: { outcome: 'completed', summary: 'ok', outboundTasks: [], artifacts: [] } },
       workdir,
     );
@@ -121,8 +121,8 @@ describe('Batch 11.1 file-tools', () => {
     expect(r.doneResult!.summary).toBe('ok');
   });
 
-  it('done 非法 outcome 被拒绝', () => {
-    const r = executeFileTool(
+  it('done 非法 outcome 被拒绝', async () => {
+    const r = await executeFileTool(
       { id: '10', name: 'done', args: { outcome: 'xxx', summary: '' } },
       workdir,
     );

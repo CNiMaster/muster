@@ -14,9 +14,9 @@ export async function startClaudePermissionBridge(configDir:string,cwd:string,gu
     let body='';
     req.setEncoding('utf8');
     req.on('data',chunk=>{body+=chunk;if(body.length>1024*1024)req.destroy();});
-    req.on('end',()=>{
+    req.on('end',async()=>{
       let payload:any;try{payload=JSON.parse(body);}catch{respond(res,deny('Muster 权限桥收到无效请求'));return;}
-      const decision=evaluateCliToolRequest(guard,{toolName:String(payload.tool_name??''),input:isRecord(payload.tool_input)?payload.tool_input:{},cwd});
+      const decision=await evaluateCliToolRequest(guard,{toolName:String(payload.tool_name??''),input:isRecord(payload.tool_input)?payload.tool_input:{},cwd});
       respond(res,decision.approved?allow():deny(decision.message??'Muster 权限策略拒绝了此操作'));
     });
   });
@@ -26,7 +26,8 @@ export async function startClaudePermissionBridge(configDir:string,cwd:string,gu
   const helperPath=join(configDir,`claude-permission-${token}.mjs`);
   writeFileSync(helperPath,CLAUDE_HOOK_HELPER);
   const settingsPath=join(configDir,`claude-permission-${token}.json`);
-  writeFileSync(settingsPath,JSON.stringify({hooks:{PreToolUse:[{matcher:'*',hooks:[{type:'command',command:process.execPath,args:[helperPath,hookUrl],timeout:30,statusMessage:'正在请求 Muster 权限策略'}]}]}}));
+  const hook={matcher:'*',hooks:[{type:'command',command:process.execPath,args:[helperPath,hookUrl],timeout:30,statusMessage:'正在请求 Muster 权限策略'}]};
+  writeFileSync(settingsPath,JSON.stringify({hooks:{PreToolUse:[hook],PermissionRequest:[hook]}}));
   return{settingsPath,helperPath,hookUrl,close:()=>close(server)};
 }
 

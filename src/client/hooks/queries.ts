@@ -33,6 +33,8 @@ export interface ProjectProposal {
   sampleText: string;
   initialTaskTitle: string;
 }
+export interface ProjectTaskThreadDTO { id:string; employeeId:string; executorProfileId:string|null; vendorSessionId:string|null; previousVendorSessionId:string|null; state:string; runCount:number; transcriptBytes:number; compactionCount:number; lastCompactionAt:string|null; updatedAt:string }
+export interface ProjectTaskDTO { id:string; projectId:string; seq:number; title:string; brief:string; state:'active'|'completed'|'archived'; completedAt:string|null; archivedAt:string|null; createdAt:string; updatedAt:string; threads?:ProjectTaskThreadDTO[] }
 
 // ===== Workspaces =====
 export function useWorkspaces() {
@@ -536,11 +538,16 @@ export function useTasks(projectId: string | undefined) {
 export function useCreateTask() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ projectId, ...input }: { projectId: string; title: string; assigneeAgentId?: string; priority?: number; inputProtocol?: Record<string, unknown> }) =>
+    mutationFn: ({ projectId, ...input }: { projectId: string; projectTaskId?:string; title: string; assigneeAgentId?: string; priority?: number; inputProtocol?: Record<string, unknown> }) =>
       api.post<Task>(`/api/projects/${projectId}/tasks`, input),
     onSuccess: (data) => qc.invalidateQueries({ queryKey: ['tasks', data.projectId] }),
   });
 }
+
+export function useProjectTasks(projectId:string|undefined){return useQuery({queryKey:['project-tasks',projectId],queryFn:()=>api.get<ProjectTaskDTO[]>(`/api/projects/${projectId}/project-tasks`),enabled:!!projectId});}
+export function useProjectTask(projectId:string|undefined,id:string|undefined){return useQuery({queryKey:['project-task',projectId,id],queryFn:()=>api.get<ProjectTaskDTO>(`/api/projects/${projectId}/project-tasks/${id}`),enabled:!!projectId&&!!id,refetchInterval:4000});}
+export function useCreateProjectTask(){const qc=useQueryClient();return useMutation({mutationFn:({projectId,...input}:{projectId:string;title:string;brief?:string})=>api.post<ProjectTaskDTO>(`/api/projects/${projectId}/project-tasks`,input),onSuccess:data=>qc.invalidateQueries({queryKey:['project-tasks',data.projectId]})});}
+export function useProjectTaskAction(){const qc=useQueryClient();return useMutation({mutationFn:({projectId,id,action}:{projectId:string;id:string;action:'complete'|'archive'})=>api.post<ProjectTaskDTO>(`/api/projects/${projectId}/project-tasks/${id}/${action}`),onSuccess:data=>{qc.invalidateQueries({queryKey:['project-tasks',data.projectId]});qc.invalidateQueries({queryKey:['project-task',data.projectId,data.id]});}});}
 
 export function useTask(id: string | undefined) {
   return useQuery({

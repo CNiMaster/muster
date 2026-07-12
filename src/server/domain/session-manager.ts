@@ -17,6 +17,8 @@ export class SessionManager {
 
   recordRun(threadId: string, input: {
     transcriptBytes: number;
+    toolOutputBytes?:number;
+    durationMs?:number;
     inputTokens?: number;
     outputTokens?: number;
     contextWindow?: number;
@@ -42,8 +44,8 @@ export class SessionManager {
       this.db.prepare("UPDATE project_task_thread SET previous_vendor_session_id=vendor_session_id,vendor_session_id=NULL,run_count=0,transcript_bytes=0,handoff_json=?,health_json='{}',updated_at=? WHERE id=?")
         .run(JSON.stringify(input.handoff), now, threadId);
     } else {
-      this.db.prepare('UPDATE project_task_thread SET run_count=?,transcript_bytes=?,handoff_json=?,updated_at=? WHERE id=?')
-        .run(runCount, bytes, JSON.stringify(input.handoff), now, threadId);
+      this.db.prepare('UPDATE project_task_thread SET run_count=?,transcript_bytes=?,handoff_json=?,health_json=?,updated_at=? WHERE id=?')
+        .run(runCount, bytes, JSON.stringify(input.handoff), JSON.stringify({...thread.health,toolOutputBytes:Number(thread.health.toolOutputBytes??0)+(input.toolOutputBytes??0),totalRunMs:Number(thread.health.totalRunMs??0)+(input.durationMs??0),lastRunAt:now,lastError:null}), now, threadId);
     }
     return { action, thread: getProjectTaskThread(this.db, threadId) };
   }
@@ -74,4 +76,6 @@ export class SessionManager {
       .run(JSON.stringify({ ...thread.health, recoveryAttempts: attempts, lastRecoveryAction: action }), nowIso(), threadId);
     return action;
   }
+
+  clearRecovery(threadId:string):void{const thread=getProjectTaskThread(this.db,threadId);this.db.prepare('UPDATE project_task_thread SET health_json=?,updated_at=? WHERE id=?').run(JSON.stringify({...thread.health,recoveryAttempts:0,lastRecoveryAction:null}),nowIso(),threadId);}
 }

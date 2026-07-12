@@ -49,7 +49,7 @@ export interface ExecutionContext {
     taskId: string;
   };
   /** API 工具调用前由 Muster 权限引擎同步判定。 */
-  permissionGuard?: (request: { action: string; path?: string; command?: string }) => { allowed: boolean; message?: string };
+  permissionGuard?: (request: { action: string; path?: string; command?: string }) => { allowed: boolean; message?: string }|Promise<{ allowed: boolean; message?: string }>;
   permissionPolicy?: { approvalStrategy: 'ask-always'|'ask-by-rule'|'no-approval'|'deny'; scope: 'task'|'project'|'workspace'|'selected-directories'|'device'; allowedRoots: string[] };
 }
 

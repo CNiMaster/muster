@@ -5,9 +5,10 @@ import { AGENT_RESULT_JSON_SCHEMA, agentRunResultSchema } from './result-schema'
 import { AppError, ErrorCode } from '../../shared/errors';
 import { evaluateCliToolRequest, type CliApprovalDecision } from './cli-permission-bridge';
 import { tryParseJSON } from '../../shared/utils';
+import { resolveCliEnvironment } from './cli-environment';
 
 export interface CodexApprovalRequest {kind:'command'|'file-change';command?:string;cwd:string;path?:string}
-export interface CodexAppServerRunInput {cwd:string;prompt:string;model?:string;existingThreadId?:string;outputSchema:Record<string,unknown>;approvalPolicy:'untrusted'|'never';sandbox:'read-only'|'workspace-write';signal?:AbortSignal;timeoutMs:number;onApproval:(request:CodexApprovalRequest)=>CliApprovalDecision;onOutput?:(chunk:string)=>void}
+export interface CodexAppServerRunInput {cwd:string;prompt:string;model?:string;existingThreadId?:string;outputSchema:Record<string,unknown>;approvalPolicy:'untrusted'|'never';sandbox:'read-only'|'workspace-write';signal?:AbortSignal;timeoutMs:number;onApproval:(request:CodexApprovalRequest)=>Promise<CliApprovalDecision>;onOutput?:(chunk:string)=>void}
 export interface CodexAppServer {run(input:CodexAppServerRunInput):Promise<{threadId:string;text:string;approvalDeniedMessage?:string}>;compact?(threadId:string,cwd:string):Promise<void>;close():void|Promise<void>}
 type AppServerFactory=(binary:string,options:{cwd:string;env:NodeJS.ProcessEnv})=>Promise<CodexAppServer>;
 
@@ -15,7 +16,7 @@ export class CodexCliAdapter implements ExecutionAdapter {
   constructor(private options:{appServerFactory?:AppServerFactory}={}){}
   async run(ctx:ExecutionContext,events?:ExecutionEvents):Promise<ExecutionRunResult>{
     const binary=ctx.agentExecutor?.binaryPath??'codex';
-    const server=await(this.options.appServerFactory??createStdioAppServer)(binary,{cwd:ctx.workingDir,env:{...process.env}});
+    const server=await(this.options.appServerFactory??createStdioAppServer)(binary,{cwd:ctx.workingDir,env:await resolveCliEnvironment()});
     try{
       const prompt=[ctx.systemPrompt,'# 当前 Task 工作包',JSON.stringify(ctx.inputPacket,null,2),'只返回符合指定 JSON Schema 的最终结果。'].join('\n\n');
       const response=await server.run({
@@ -32,7 +33,7 @@ export class CodexCliAdapter implements ExecutionAdapter {
       return{...parsed.data,_sessionIdHint:response.threadId};
     }finally{await server.close();}
   }
-  async compactSession(ctx:ExecutionContext):Promise<void>{if(!ctx.sessionIdHint)throw new AppError(ErrorCode.VALIDATION,'Codex 会话不存在，无法压缩');const binary=ctx.agentExecutor?.binaryPath??'codex';const server=await(this.options.appServerFactory??createStdioAppServer)(binary,{cwd:ctx.workingDir,env:{...process.env}});try{if(!server.compact)throw new AppError(ErrorCode.VALIDATION,'当前 Codex app-server 不支持压缩');await server.compact(ctx.sessionIdHint,ctx.workingDir);}finally{await server.close();}}
+  async compactSession(ctx:ExecutionContext):Promise<void>{if(!ctx.sessionIdHint)throw new AppError(ErrorCode.VALIDATION,'Codex 会话不存在，无法压缩');const binary=ctx.agentExecutor?.binaryPath??'codex';const server=await(this.options.appServerFactory??createStdioAppServer)(binary,{cwd:ctx.workingDir,env:await resolveCliEnvironment()});try{if(!server.compact)throw new AppError(ErrorCode.VALIDATION,'当前 Codex app-server 不支持压缩');await server.compact(ctx.sessionIdHint,ctx.workingDir);}finally{await server.close();}}
 }
 
 async function createStdioAppServer(binary:string,options:{cwd:string;env:NodeJS.ProcessEnv}):Promise<CodexAppServer>{return new StdioCodexAppServer(binary,options);}
@@ -72,7 +73,7 @@ class StdioCodexAppServer implements CodexAppServer{
   private handleLine(line:string):void{
     let message:any;try{message=JSON.parse(line);}catch{return;}
     if(message.id!==undefined&&!message.method){const pending=this.pending.get(Number(message.id));if(!pending)return;this.pending.delete(Number(message.id));message.error?pending.reject(new Error(message.error.message??'Codex RPC error')):pending.resolve(message.result);return;}
-    if(message.id!==undefined&&message.method){this.handleServerRequest(message);return;}
+    if(message.id!==undefined&&message.method){void this.handleServerRequest(message);return;}
     const waiter=this.turnWaiter;if(!waiter)return;
     if(message.method==='item/agentMessage/delta'){const delta=String(message.params?.delta??'');if(delta){waiter.text+=delta;waiter.onOutput?.(delta);}}
     if(message.method==='item/completed'&&message.params?.item?.type==='agentMessage')waiter.text=String(message.params.item.text??waiter.text);
@@ -84,14 +85,14 @@ class StdioCodexAppServer implements CodexAppServer{
       this.turnWaiter=undefined;waiter.resolve({threadId:waiter.threadId,text:text||waiter.text,approvalDeniedMessage:waiter.approvalDeniedMessage});
     }
   }
-  private handleServerRequest(message:any):void{
+  private async handleServerRequest(message:any):Promise<void>{
     const waiter=this.turnWaiter;
     if(!waiter){this.write({id:message.id,error:{code:-32000,message:'No active Muster Task'}});return;}
     let request:CodexApprovalRequest|undefined;
     if(message.method==='item/commandExecution/requestApproval'||message.method==='execCommandApproval')request={kind:'command',command:Array.isArray(message.params?.command)?message.params.command.join(' '):String(message.params?.command??''),cwd:message.params?.cwd??process.cwd()};
     if(message.method==='item/fileChange/requestApproval'||message.method==='applyPatchApproval')request={kind:'file-change',cwd:message.params?.cwd??process.cwd(),path:message.params?.grantRoot??message.params?.cwd};
     if(!request){this.write({id:message.id,error:{code:-32601,message:`Unsupported server request: ${message.method}`}});return;}
-    const decision=waiter.onApproval(request);
+    const decision=await waiter.onApproval(request);
     if(!decision.approved)waiter.approvalDeniedMessage=decision.message??'Muster 权限策略拒绝了此操作';
     this.write({id:message.id,result:{decision:decision.approved?'accept':'decline'}});
   }

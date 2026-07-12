@@ -34,6 +34,7 @@ import { log } from '../logger';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { agentRunResultSchema, AGENT_RESULT_JSON_SCHEMA } from './result-schema';
 import { startClaudePermissionBridge } from './claude-permission-bridge';
+import { resolveCliEnvironment } from './cli-environment';
 // 保持向后兼容的 re-export（测试可能从此处导入）
 export { agentRunResultSchema } from './result-schema';
 
@@ -210,6 +211,7 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
     sessionId: string | null;
   }> {
     const permissionBridge = opts.disableTools ? undefined : await startClaudePermissionBridge(opts.runConfigDir ?? path.join(opts.cwd,'.muster-tmp'),opts.cwd,opts.permissionGuard);
+    const loginShellEnv = await resolveCliEnvironment();
     return new Promise((resolve, reject) => {
       const cleanPrompt = sanitizeArg(opts.prompt);
       const cleanSystem = sanitizeArg(opts.systemPrompt || '你是 Muster 工作台的一名员工。');
@@ -255,7 +257,7 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
         model: opts.settings.model || '(claude default)',
       });
 
-      const childEnv: NodeJS.ProcessEnv = { ...process.env };
+      const childEnv: NodeJS.ProcessEnv = { ...loginShellEnv };
       // PRD Phase 3：用户级凭据引用——把员工配置的环境变量值注入子进程。
       if (opts.apiKeyValue) {
         childEnv.ANTHROPIC_API_KEY = opts.apiKeyValue;

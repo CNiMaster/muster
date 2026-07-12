@@ -45,6 +45,7 @@ export interface Task {
   outputProtocol: Record<string, unknown>;
   priority: number;
   state: TaskState;
+  waitState?:'waiting_approval'|null;
   leaseOwnerThreadId: string | null;
   leaseExpiresAt: string | null;
   heartbeatAt: string | null;
@@ -80,6 +81,7 @@ interface TaskRow {
   output_protocol_json: string;
   priority: number;
   state: TaskState;
+  wait_state:'waiting_approval'|null;
   lease_owner_thread_id: string | null;
   lease_expires_at: string | null;
   heartbeat_at: string | null;
@@ -115,7 +117,8 @@ function fromRow(r: TaskRow): Task {
     contextRefs: JSON.parse(r.context_refs_json ?? '[]'),
     outputProtocol: JSON.parse(r.output_protocol_json ?? '{}'),
     priority: r.priority,
-    state: r.state,
+    state: r.wait_state??r.state,
+    waitState:r.wait_state,
     leaseOwnerThreadId: r.lease_owner_thread_id,
     leaseExpiresAt: r.lease_expires_at,
     heartbeatAt: r.heartbeat_at,
@@ -159,6 +162,7 @@ const ALLOWED_TRANSITIONS: Record<TaskState, TaskState[]> = {
   running: ['waiting_input', 'waiting_dependency', 'paused', 'blocked', 'completed', 'failed', 'cancelled'],
   waiting_input: ['claimed', 'cancelled'],
   waiting_dependency: ['claimed', 'cancelled'],
+  waiting_approval: ['queued','cancelled'],
   paused: ['claimed', 'cancelled'],
   blocked: ['queued', 'cancelled'],
   completed: [],
@@ -243,6 +247,8 @@ export function getTask(db: DB, id: string): Task {
 }
 
 export function bindTaskToProjectTaskThread(db:DB,taskId:string,threadId:string):Task{db.prepare('UPDATE task SET assignee_task_thread_id=?,updated_at=? WHERE id=?').run(threadId,nowIso(),taskId);return getTask(db,taskId);}
+export function markTaskWaitingApproval(db:DB,taskId:string,approvalId:string):Task{const now=nowIso();db.prepare("UPDATE task SET state='paused',wait_state='waiting_approval',summary=?,lease_owner_thread_id=NULL,lease_expires_at=NULL,heartbeat_at=NULL,updated_at=? WHERE id=?").run(`等待审批 ${approvalId}`,now,taskId);appendTaskEvent(db,taskId,'waiting_approval',{approvalId});return getTask(db,taskId);}
+export function resumeTaskAfterApproval(db:DB,taskId:string):Task|null{const result=db.prepare("UPDATE task SET state='queued',wait_state=NULL,updated_at=? WHERE id=? AND wait_state='waiting_approval'").run(nowIso(),taskId);return result.changes?getTask(db,taskId):null;}
 
 export function listTasks(db: DB, projectId: string, state?: TaskState): Task[] {
   const sql = state

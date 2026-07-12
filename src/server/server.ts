@@ -55,6 +55,7 @@ import { TriggerScheduler } from './trigger-scheduler';
 import { ProjectRuntimeCoordinator } from './runtime/coordinator';
 import { listAgentProfiles } from './domain/agent-profile';
 import { materializeAgentHome, syncAgentMemoryFiles } from './domain/agent-home';
+import { autoDiscoverCertifiedExecutors } from './domain/executor-discovery';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -74,6 +75,7 @@ async function createApp(): Promise<AppHandle> {
 
   // 初始化数据库（应用 migration）
   const db = getDb();
+  if(process.env.MUSTER_AUTO_EXECUTOR_DISCOVERY!=='false')queueMicrotask(()=>{void autoDiscoverCertifiedExecutors(db);});
   for (const profile of listAgentProfiles(db)) {
     materializeAgentHome(profile);
     syncAgentMemoryFiles(db, profile.id);
