@@ -120,7 +120,7 @@ test('执行器中心检测系统安装并提供官方安装引导', async ({ pa
   await expect(page.getByRole('heading', { name: '执行器接入中心' })).toBeVisible();
   await expect(page.getByText('Codex CLI', { exact: true })).toBeVisible();
   await expect(page.getByText('Claude Code CLI', { exact: true })).toBeVisible();
-  await expect(page.getByText('Gemini CLI', { exact: true })).toBeVisible();
+  await expect(page.getByText('Antigravity CLI', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: '检测系统安装' }).first()).toBeVisible();
   await expect(page.getByText('Muster 不内置或复制 CLI，请选择官方支持的安装方式：').first()).toBeVisible();
 });
