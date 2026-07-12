@@ -31,6 +31,7 @@ export const taskByProjectRouter = Router({ mergeParams: true });
 export const taskByIdRouter = Router({ mergeParams: true });
 
 const createTaskSchema = z.object({
+  projectTaskId:z.string().optional(),
   title: z.string().min(1),
   assigneeAgentId: z.string().optional(),
   dispatcherAgentId: z.string().optional(),

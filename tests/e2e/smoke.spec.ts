@@ -114,3 +114,21 @@ test('员工库展示全局档案与公司任职', async ({ page }) => {
   await page.getByRole('button', { name: '批准记忆' }).click();
   await expect(page.getByText('已批准记忆 1')).toBeVisible();
 });
+
+test('执行器中心检测系统安装并提供官方安装引导', async ({ page }) => {
+  await page.goto('/executors');
+  await expect(page.getByRole('heading', { name: '执行器接入中心' })).toBeVisible();
+  await expect(page.getByText('Codex CLI', { exact: true })).toBeVisible();
+  await expect(page.getByText('Claude Code CLI', { exact: true })).toBeVisible();
+  await expect(page.getByText('Antigravity CLI', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '检测系统安装' }).first()).toBeVisible();
+  await expect(page.getByText('Muster 不内置或复制 CLI，请选择官方支持的安装方式：').first()).toBeVisible();
+});
+
+test('权限中心明确展示策略与范围并提供审批入口', async ({ page }) => {
+  await page.goto('/permissions');
+  await expect(page.getByRole('heading', { name: '权限与审批中心' })).toBeVisible();
+  await expect(page.getByText('Turbo 只是“无需审批”与所选范围的组合。')).toBeVisible();
+  await expect(page.getByRole('button', { name: '创建项目 Turbo' })).toBeVisible();
+  await expect(page.getByText('安装软件、凭据、推送、部署、外部消息、账号和付费操作仍单独审批。')).toBeVisible();
+});

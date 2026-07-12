@@ -741,3 +741,10 @@ p { margin: 0 0 var(--space-3) 0; }
 .details-collapse[open] > summary::after { transform: rotate(180deg); }
 .details-collapse > summary:hover { background: var(--bg-soft); }
 .details-collapse > div { padding: 0 var(--space-4) var(--space-3); }
+.executor-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:14px; }
+.executor-card { border:1px solid var(--border); border-radius:12px; padding:16px; min-width:0; }
+.executor-card-head { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }
+.official-install-guide { margin:12px 0; }
+.install-command { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px; border:1px solid var(--border-subtle); border-radius:var(--radius-sm); margin-top:6px; min-width:0; }
+.install-command code { overflow-wrap:anywhere; min-width:0; }
+.approval-list { display:grid; gap:10px; }

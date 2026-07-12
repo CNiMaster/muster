@@ -26,6 +26,8 @@ export interface CompanyEmployee {
   responsibilities: string;
   executor: Record<string, unknown>;
   permission: Record<string, unknown>;
+  executorProfileId: string | null;
+  permissionPolicyId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -53,6 +55,8 @@ interface EmployeeRow {
   responsibilities: string;
   executor_json: string;
   permission_json: string;
+  executor_profile_id: string | null;
+  permission_policy_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -83,6 +87,8 @@ function employeeFromRow(row: EmployeeRow): CompanyEmployee {
     responsibilities: row.responsibilities,
     executor: JSON.parse(row.executor_json),
     permission: JSON.parse(row.permission_json),
+    executorProfileId: row.executor_profile_id,
+    permissionPolicyId: row.permission_policy_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

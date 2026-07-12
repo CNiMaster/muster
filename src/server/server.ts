@@ -35,6 +35,12 @@ import { setupAssistantRouter } from './api/setup-assistant';
 import { workspacesRouter } from './api/workspaces';
 import { agentProfilesRouter, companyEmployeesRouter } from './api/agent-profiles';
 import { memoryRouter } from './api/memory';
+import { permissionsRouter } from './api/permissions';
+import { executorsRouter } from './api/executors';
+import { CodexCliAdapter } from './executors/codex-cli-adapter';
+import{AntigravityCliAdapter}from'./executors/antigravity-cli-adapter';
+import { GeminiCliAdapter } from './executors/gemini-cli-adapter';
+import { CustomCliAdapter } from './executors/custom-cli-adapter';
 import { bridgeRouter } from './bridge';
 import { asyncHandler, errorMiddleware, param } from './api/middleware';
 import { realtime } from './realtime';
@@ -49,6 +55,7 @@ import { TriggerScheduler } from './trigger-scheduler';
 import { ProjectRuntimeCoordinator } from './runtime/coordinator';
 import { listAgentProfiles } from './domain/agent-profile';
 import { materializeAgentHome, syncAgentMemoryFiles } from './domain/agent-home';
+import { autoDiscoverCertifiedExecutors } from './domain/executor-discovery';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -68,6 +75,7 @@ async function createApp(): Promise<AppHandle> {
 
   // 初始化数据库（应用 migration）
   const db = getDb();
+  if(process.env.MUSTER_AUTO_EXECUTOR_DISCOVERY!=='false')queueMicrotask(()=>{void autoDiscoverCertifiedExecutors(db);});
   for (const profile of listAgentProfiles(db)) {
     materializeAgentHome(profile);
     syncAgentMemoryFiles(db, profile.id);
@@ -103,10 +111,17 @@ async function createApp(): Promise<AppHandle> {
     adapterRegistry.set('claude-cli', fake);
     adapterRegistry.set('openai', fake);
     adapterRegistry.set('gemini', fake);
+    adapterRegistry.set('codex-cli', fake);
+    adapterRegistry.set('gemini-cli', fake);
+    adapterRegistry.set('custom-cli', fake);
   } else {
     adapterRegistry.set('claude-cli', new ClaudeCodeAdapter());
     adapterRegistry.set('openai', new OpenAICompatibleAdapter());
     adapterRegistry.set('gemini', new GeminiAdapter());
+    adapterRegistry.set('codex-cli', new CodexCliAdapter());
+    adapterRegistry.set('antigravity-cli',new AntigravityCliAdapter());
+    adapterRegistry.set('gemini-cli', new GeminiCliAdapter());
+    adapterRegistry.set('custom-cli', new CustomCliAdapter());
   }
   const engine = new TaskEngine(getDb(), adapterRegistry, {
     pollIntervalMs: Number(process.env.MUSTER_POLL_INTERVAL_MS ?? 2000),
@@ -143,6 +158,8 @@ async function createApp(): Promise<AppHandle> {
   app.use('/api/workspaces', workspacesRouter);
   app.use('/api/agent-profiles', agentProfilesRouter);
   app.use('/api/agent-profiles/:profileId/memory', memoryRouter);
+  app.use('/api/permissions', permissionsRouter);
+  app.use('/api/executors', executorsRouter);
   app.use('/api/setup-assistant', setupAssistantRouter);
 
   // Agent Bridge：Agent 通过 curl 调用 /bridge/<action> 反馈进度

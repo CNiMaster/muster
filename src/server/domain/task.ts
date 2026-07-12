@@ -26,22 +26,26 @@ import { getAgent } from './agent';
 import { appendTaskEvent } from './task-event';
 import { addTaskMessage } from './task-message';
 import { isDispatchLoop } from './speech-queue';
+import {assertProjectTaskActive,createProjectTask} from './project-task';
 
 export interface Task {
   id: string;
   projectId: string;
+  projectTaskId: string;
   seq: number;
   rootTaskId: string | null;
   parentTaskId: string | null;
   dispatcherAgentId: string | null;
   assigneeAgentId: string | null;
   assigneeThreadId: string | null;
+  assigneeTaskThreadId: string | null;
   title: string;
   inputProtocol: Record<string, unknown>;
   contextRefs: string[];
   outputProtocol: Record<string, unknown>;
   priority: number;
   state: TaskState;
+  waitState?:'waiting_approval'|null;
   leaseOwnerThreadId: string | null;
   leaseExpiresAt: string | null;
   heartbeatAt: string | null;
@@ -63,18 +67,21 @@ export interface Task {
 interface TaskRow {
   id: string;
   project_id: string;
+  project_task_id:string;
   seq: number;
   root_task_id: string | null;
   parent_task_id: string | null;
   dispatcher_agent_id: string | null;
   assignee_agent_id: string | null;
   assignee_thread_id: string | null;
+  assignee_task_thread_id:string|null;
   title: string;
   input_protocol_json: string;
   context_refs_json: string;
   output_protocol_json: string;
   priority: number;
   state: TaskState;
+  wait_state:'waiting_approval'|null;
   lease_owner_thread_id: string | null;
   lease_expires_at: string | null;
   heartbeat_at: string | null;
@@ -97,18 +104,21 @@ function fromRow(r: TaskRow): Task {
   return {
     id: r.id,
     projectId: r.project_id,
+    projectTaskId:r.project_task_id,
     seq: r.seq,
     rootTaskId: r.root_task_id,
     parentTaskId: r.parent_task_id,
     dispatcherAgentId: r.dispatcher_agent_id,
     assigneeAgentId: r.assignee_agent_id,
     assigneeThreadId: r.assignee_thread_id,
+    assigneeTaskThreadId:r.assignee_task_thread_id,
     title: r.title,
     inputProtocol: JSON.parse(r.input_protocol_json ?? '{}'),
     contextRefs: JSON.parse(r.context_refs_json ?? '[]'),
     outputProtocol: JSON.parse(r.output_protocol_json ?? '{}'),
     priority: r.priority,
-    state: r.state,
+    state: r.wait_state??r.state,
+    waitState:r.wait_state,
     leaseOwnerThreadId: r.lease_owner_thread_id,
     leaseExpiresAt: r.lease_expires_at,
     heartbeatAt: r.heartbeat_at,
@@ -130,6 +140,7 @@ function fromRow(r: TaskRow): Task {
 
 export interface CreateTaskInput {
   projectId: string;
+  projectTaskId?:string;
   parentTaskId?: string;
   rootTaskId?: string;
   dispatcherAgentId?: string;
@@ -151,6 +162,7 @@ const ALLOWED_TRANSITIONS: Record<TaskState, TaskState[]> = {
   running: ['waiting_input', 'waiting_dependency', 'paused', 'blocked', 'completed', 'failed', 'cancelled'],
   waiting_input: ['claimed', 'cancelled'],
   waiting_dependency: ['claimed', 'cancelled'],
+  waiting_approval: ['queued','cancelled'],
   paused: ['claimed', 'cancelled'],
   blocked: ['queued', 'cancelled'],
   completed: [],
@@ -190,6 +202,10 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
   const seq = nextSeq(db, input.projectId);
   // root_task_id 默认 = 自身（仅当无 parent）；有 parent 时继承 parent 的 root
   let rootTaskId = input.rootTaskId ?? null;
+  let projectTaskId=input.projectTaskId;
+  if(input.parentTaskId){const parent=getTask(db,input.parentTaskId);projectTaskId??=parent.projectTaskId;if(projectTaskId!==parent.projectTaskId)throw new AppError(ErrorCode.VALIDATION,'子工作单必须属于父工作单的项目任务');}
+  if(projectTaskId)assertProjectTaskActive(db,projectTaskId,input.projectId);
+  else projectTaskId=createProjectTask(db,{projectId:input.projectId,title:input.title}).id;
   if (!rootTaskId) {
     if (input.parentTaskId) {
       const parent = getTask(db, input.parentTaskId);
@@ -200,15 +216,15 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
   }
   db.prepare(
     `INSERT INTO task
-      (id, project_id, seq, root_task_id, parent_task_id, dispatcher_agent_id, assignee_agent_id,
-       assignee_thread_id, title, input_protocol_json, context_refs_json, output_protocol_json,
+      (id, project_id, project_task_id, seq, root_task_id, parent_task_id, dispatcher_agent_id, assignee_agent_id,
+       assignee_thread_id, assignee_task_thread_id, title, input_protocol_json, context_refs_json, output_protocol_json,
        priority, state, lease_owner_thread_id, lease_expires_at, heartbeat_at, outcome, summary,
        question, artifacts_json, checkpoint, clarification_rounds, is_discussion, is_suggestion, budget_json,
        deadline_at, completed_at, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?, ?,?,'queued',NULL,NULL,NULL,NULL,'',NULL,'[]',NULL,0,?,?,'{}',?,NULL,?,?)`,
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?, ?,?,'queued',NULL,NULL,NULL,NULL,'',NULL,'[]',NULL,0,?,?,'{}',?,NULL,?,?)`,
   ).run(
-    id, input.projectId, seq, rootTaskId, input.parentTaskId ?? null, input.dispatcherAgentId ?? null,
-    input.assigneeAgentId ?? null, null, input.title,
+    id, input.projectId,projectTaskId, seq, rootTaskId, input.parentTaskId ?? null, input.dispatcherAgentId ?? null,
+    input.assigneeAgentId ?? null, null,null, input.title,
     JSON.stringify(input.inputProtocol ?? {}), JSON.stringify(input.contextRefs ?? []),
     JSON.stringify(input.outputProtocol ?? {}),
     input.priority ?? 5,
@@ -229,6 +245,10 @@ export function getTask(db: DB, id: string): Task {
   if (!row) throw new AppError(ErrorCode.NOT_FOUND, `task ${id} not found`);
   return fromRow(row);
 }
+
+export function bindTaskToProjectTaskThread(db:DB,taskId:string,threadId:string):Task{db.prepare('UPDATE task SET assignee_task_thread_id=?,updated_at=? WHERE id=?').run(threadId,nowIso(),taskId);return getTask(db,taskId);}
+export function markTaskWaitingApproval(db:DB,taskId:string,approvalId:string):Task{const now=nowIso();db.prepare("UPDATE task SET state='paused',wait_state='waiting_approval',summary=?,lease_owner_thread_id=NULL,lease_expires_at=NULL,heartbeat_at=NULL,updated_at=? WHERE id=?").run(`等待审批 ${approvalId}`,now,taskId);appendTaskEvent(db,taskId,'waiting_approval',{approvalId});return getTask(db,taskId);}
+export function resumeTaskAfterApproval(db:DB,taskId:string):Task|null{const result=db.prepare("UPDATE task SET state='queued',wait_state=NULL,updated_at=? WHERE id=? AND wait_state='waiting_approval'").run(nowIso(),taskId);return result.changes?getTask(db,taskId):null;}
 
 export function listTasks(db: DB, projectId: string, state?: TaskState): Task[] {
   const sql = state

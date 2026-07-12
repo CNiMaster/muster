@@ -64,6 +64,8 @@ export interface CompanyEmployee {
   responsibilities: string;
   executor: Record<string, unknown>;
   permission: Record<string, unknown>;
+  executorProfileId: string | null;
+  permissionPolicyId: string | null;
   createdAt: string;
   updatedAt: string;
 }

@@ -15,6 +15,7 @@ export const TASK_STATES = [
   'running',
   'waiting_input',
   'waiting_dependency',
+  'waiting_approval',
   'paused',
   'blocked',
   'completed',

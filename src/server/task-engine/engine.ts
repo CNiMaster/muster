@@ -11,7 +11,7 @@
  */
 import path from 'node:path';
 import type { DB } from '../db/client';
-import type { ExecutionAdapter, ExecutionContext } from './executor';
+import type { AgentExecutorConfig, ExecutionAdapter, ExecutionContext } from './executor';
 import { DEFAULT_PROVIDER, isProvider, type Provider } from '../executors/provider';
 import {
   claimNextTask,
@@ -22,10 +22,11 @@ import {
   failTask,
   blockTask,
   createTask,
+  bindTaskToProjectTaskThread,
+  markTaskWaitingApproval,
 } from '../domain/task';
-import { getThread, listOnlineThreads, setClaudeSession, updateThreadState, incrementExecCount, compactThreadWithMemory, rotateSession } from '../domain/thread';
+import { getThread, listOnlineThreads, updateThreadState } from '../domain/thread';
 import { getAgent } from '../domain/agent';
-import { syncAgentMemoryFiles } from '../domain/agent-home';
 import { assembleContext } from '../executors/context';
 import { assertSafeToRun } from '../executors/safety';
 import { getProject, listProjectReferences } from '../domain/project';
@@ -46,6 +47,15 @@ import { advanceWorkflowTask } from '../domain/workflow';
 import { createSuggestionTasksFromBrainstorm } from '../domain/brainstorm';
 import { deleteTaskRuntime, getTaskRuntime, saveTaskRuntime } from '../domain/task-runtime';
 import { existsSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
+import { SERVER_CONFIG } from '../env';
+import { createExecutionRun, getEmployeeExecutorProfile, updateExecutionRunStatus } from '../domain/executor-profile';
+import { buildRunIsolation, withExecutorConcurrency } from '../executors/run-isolation';
+import { ensureApprovalRequest, evaluatePermission, getEmployeePermissionPolicy } from '../domain/permission';
+import { getActiveWorkspace } from '../domain/workspace';
+import {ensureProjectTaskThread,setProjectTaskThreadSession} from '../domain/project-task-thread';
+import{SessionManager}from'../domain/session-manager';
+import{approvalBroker}from'../domain/approval-broker';
 
 export interface EngineOptions {
   heartbeatIntervalMs?: number;
@@ -54,6 +64,8 @@ export interface EngineOptions {
   /** 轮询间隔 ms（start 后）。 */
   pollIntervalMs?: number;
 }
+
+function isRecoverableSessionError(error:unknown):boolean{return/(context|overflow|too many tokens|network|econn|timeout|timed out|no output|process.*exit)/i.test(error instanceof Error?error.message:String(error));}
 
 export class TaskEngine {
   private publishQueue: PublishQueue;
@@ -200,23 +212,80 @@ export class TaskEngine {
       markRunning(this.db, task.id);
       checkBudget(this.db, project.id, task.budget);
 
+      const executorProfile = getEmployeeExecutorProfile(this.db, agent.id);
+      const projectTaskThread=ensureProjectTaskThread(this.db,{projectTaskId:task.projectTaskId,employeeId:agent.id,executorProfileId:executorProfile?.id??null});
+      bindTaskToProjectTaskThread(this.db,task.id,projectTaskThread.id);
+      const executionRun = executorProfile ? createExecutionRun(this.db, {
+        executorProfileId: executorProfile.id,
+        employeeId: agent.id,
+        projectId: project.id,
+        taskId: task.id,
+      }) : null;
+      const isolation = executionRun ? buildRunIsolation(SERVER_CONFIG.musterDir, {
+        runId: executionRun.id,
+        employeeId: agent.id,
+        profileId: executorProfile!.id,
+        threadId: projectTaskThread.id,
+      }) : null;
+      if (isolation) {
+        for (const dir of [isolation.configDir, isolation.tempDir, isolation.logDir, isolation.sessionDir]) mkdirSync(dir, { recursive: true });
+      }
+      const profileExecutor = executorProfile?.config as AgentExecutorConfig | undefined;
+      const legacyExecutor = normalizeAgentExecutor(agent.executor);
+      const effectiveExecutor = profileExecutor ?? legacyExecutor;
+      const permissionPolicy = getEmployeePermissionPolicy(this.db, agent.id);
       const ctx: ExecutionContext = {
         task: getTask(this.db, task.id),
         systemPrompt: '', // 由 assembleContext 装配
         workingDir,
+        executionRunId: executionRun?.id,
+        executorProfileId: executorProfile?.id,
+        runConfigDir: isolation?.configDir,
+        runTempDir: isolation?.tempDir,
+        runLogDir: isolation?.logDir,
+        runSessionDir: isolation?.sessionDir,
         inputPacket: {},
-        threadId: thread.id,
-        sessionIdHint: thread.claudeSessionId ?? undefined,
+        threadId: projectTaskThread.id,
+        sessionIdHint: projectTaskThread.vendorSessionId ?? undefined,
         // PRD Phase 3.4：收集授权参考项目根目录，让 Claude 直接只读访问（--add-dir）。
         readonlyDirs: collectReadonlyReferenceDirs(this.db, task.projectId),
         // PRD Phase 3：员工级执行器配置 + 用户级凭据引用
-        agentExecutor: normalizeAgentExecutor(agent.executor),
+        agentExecutor: effectiveExecutor,
         apiKeyEnv: extractApiKeyEnv(agent.executor),
         // Agent Bridge loopback 配置
         loopback: {
           baseUrl: `http://127.0.0.1:${this.serverPort}`,
           taskId: task.id,
         },
+        permissionGuard: permissionPolicy ? async (request) => {
+          const decision = evaluatePermission(this.db, permissionPolicy.id, {
+            ...request,
+            taskRoot: workingDir,
+            projectRoot: project.rootDir,
+            workspaceRoot: getActiveWorkspace(this.db)?.rootDir ?? project.rootDir,
+            employeeId: agent.id,
+            companyId: company.id,
+            projectId: project.id,
+            taskId: task.id,
+          });
+          if (decision.decision === 'allow') return { allowed: true };
+          if (decision.decision === 'approval-required') {
+            const approval = ensureApprovalRequest(this.db, { policyId: permissionPolicy.id, employeeId: agent.id, taskId: task.id, action: request.action, command: request.command, path: request.path });
+            this.db.prepare('UPDATE permission_approval SET execution_run_id=?,project_task_thread_id=?,executor_profile_id=?,expires_at=?,recovery_json=? WHERE id=?').run(executionRun?.id??null,projectTaskThread.id,executorProfile?.id??null,new Date(Date.now()+600_000).toISOString(),JSON.stringify({vendorSessionId:projectTaskThread.vendorSessionId}),approval.id);
+            const resolution=await approvalBroker.wait(approval.id,600_000);
+            return resolution==='allow'?{allowed:true}:{allowed:false,message:`审批请求 ${approval.id} 已拒绝或超时`};
+          }
+          return { allowed: false, message: decision.reason };
+        } : undefined,
+        permissionPolicy: permissionPolicy ? {
+          approvalStrategy: permissionPolicy.approvalStrategy,
+          scope: permissionPolicy.scope,
+          allowedRoots: permissionPolicy.scope === 'task' ? [workingDir]
+            : permissionPolicy.scope === 'project' ? [project.rootDir]
+            : permissionPolicy.scope === 'workspace' ? [getActiveWorkspace(this.db)?.rootDir ?? project.rootDir]
+            : permissionPolicy.scope === 'selected-directories' ? permissionPolicy.selectedDirectories
+            : [],
+        } : undefined,
       };
       const runController = new AbortController();
       this.activeRuns.set(task.id, runController);
@@ -227,35 +296,64 @@ export class TaskEngine {
         loopback: ctx.loopback,
       });
       ctx.systemPrompt = assembled.systemPrompt;
-      ctx.inputPacket = assembled.inputPacket;
+      ctx.inputPacket = Object.keys(projectTaskThread.handoff).length?{...assembled.inputPacket,sessionHandoff:projectTaskThread.handoff}:assembled.inputPacket;
 
-      const adapter = this.selectAdapter(normalizeAgentExecutor(agent.executor)?.provider);
-      const result = await adapter.run(ctx, {
-        onOutput: (chunk) => log.debug('agent output', { taskId: task.id, chunk: chunk.slice(0, 120) }),
-        onToolCall: (name, input) => log.debug('agent tool', { taskId: task.id, name }),
-      });
-
-      // 持久化 Claude session id（首次返回后保存，后续 --resume 用）
-      if (result._sessionIdHint && result._sessionIdHint !== thread.claudeSessionId) {
-        setClaudeSession(this.db, thread.id, result._sessionIdHint);
+      const adapter = this.selectAdapter(providerForManifest(executorProfile?.manifestId) ?? effectiveExecutor?.provider);
+      if (executionRun) updateExecutionRunStatus(this.db, executionRun.id, 'running');
+      let result: Awaited<ReturnType<ExecutionAdapter['run']>>;
+      const sessionManager = new SessionManager(this.db);
+      const runStartedAt=Date.now();
+      try {
+        let recoveryAttempt=0;
+        for(;;){try{result = await withExecutorConcurrency(executorProfile?.concurrencyMode ?? 'parallel', executorProfile?.id ?? agent.id, () => adapter.run(ctx, {
+            onOutput: (chunk) => log.debug('agent output', { taskId: task.id, chunk: chunk.slice(0, 120), executionRunId: executionRun?.id }),
+            onToolCall: (name, input) => log.debug('agent tool', { taskId: task.id, name, executionRunId: executionRun?.id }),
+          }));sessionManager.clearRecovery(projectTaskThread.id);break;}catch(error){if(!isRecoverableSessionError(error))throw error;recoveryAttempt+=1;const compactSupported=Boolean(adapter.compactSession);const recovery=recoveryAttempt===1?'retry':recoveryAttempt===2&&compactSupported?'compact':recoveryAttempt===(compactSupported?3:2)?'rotate':'stop';sessionManager.nextRecovery(projectTaskThread.id,compactSupported);if(recovery==='stop')throw error;if(recovery==='compact'&&adapter.compactSession&&ctx.sessionIdHint){try{await adapter.compactSession(ctx);}catch{sessionManager.rotate(projectTaskThread.id,{reason:'compact-failed',taskId:task.id});ctx.sessionIdHint=undefined;}}else if(recovery==='rotate'){sessionManager.rotate(projectTaskThread.id,{reason:'session-recovery',taskId:task.id});ctx.sessionIdHint=undefined;}log.warn('retrying recoverable executor failure',{taskId:task.id,recovery,error:String(error)});}}
+        if (executionRun) updateExecutionRunStatus(this.db, executionRun.id, result.outcome === 'completed' ? 'completed' : 'failed');
+      } catch (error) {
+        if (executionRun) updateExecutionRunStatus(this.db, executionRun.id, 'failed');
+        throw error;
       }
 
-      // 会话压缩/轮换（PRD Phase 3.6）：累计执行达阈值后，把摘要记入 thread 并清空 session，
-      // 下次执行自动开新 session；context 装配时把 compactionSummary 注入 systemPrompt。
-      // 时间轮换：距上次开新 session 超过阈值时清空 session（不重置 exec_count）。
-      const exec = incrementExecCount(this.db, thread.id);
-      if (exec.shouldCompact && result.outcome === 'completed') {
-        const compactSummary = `[会话压缩 ${new Date().toISOString()}] 最近 ${exec.count} 次执行的最新成果：${result.summary || '（无摘要）'}`;
-        compactThreadWithMemory(this.db, thread.id, {
-          summary: compactSummary,
-          memoryContent: `最近执行摘要：${result.summary || '（无摘要）'}`,
-          sourceTaskId: task.id,
+      // 持久化 Claude session id（首次返回后保存，后续 --resume 用）
+      if (result._sessionIdHint && result._sessionIdHint !== projectTaskThread.vendorSessionId) {
+        setProjectTaskThreadSession(this.db, projectTaskThread.id, result._sessionIdHint);
+      }
+
+      if (result.outcome === 'completed') {
+        const handoff = {
+          employeeId: agent.id,
+          projectId: project.id,
+          projectTaskId: task.projectTaskId,
+          lastTaskId: task.id,
+          lastSummary: result.summary,
+          artifacts: result.artifacts,
+        };
+        const decision = sessionManager.recordRun(projectTaskThread.id, {
+          transcriptBytes: Buffer.byteLength(JSON.stringify(ctx.inputPacket)) + Buffer.byteLength(result.summary),
+          inputTokens: result._usage?.inputTokens,
+          outputTokens: result._usage?.outputTokens,
+          toolOutputBytes:Buffer.byteLength(JSON.stringify(result.artifacts)),
+          durationMs:Date.now()-runStartedAt,
+          handoff,
         });
-        syncAgentMemoryFiles(this.db, agent.profileId);
-        log.info('session compacted', { threadId: thread.id, count: exec.count });
-      } else if (exec.shouldRotate && result.outcome === 'completed') {
-        rotateSession(this.db, thread.id);
-        log.info('session rotated by time', { threadId: thread.id });
+        if (decision.action === 'compact') {
+          const sessionIdHint = result._sessionIdHint ?? ctx.sessionIdHint;
+          try {
+            if (adapter.compactSession && sessionIdHint) {
+              await adapter.compactSession({ ...ctx, sessionIdHint });
+              sessionManager.markCompacted(projectTaskThread.id);
+              log.info('vendor session compacted', { threadId: projectTaskThread.id });
+            } else {
+              sessionManager.rotate(projectTaskThread.id, handoff);
+            }
+          } catch (error) {
+            sessionManager.rotate(projectTaskThread.id, handoff);
+            log.warn('vendor compaction failed; session rotated', { threadId: projectTaskThread.id, error: String(error) });
+          }
+        } else if (decision.action === 'rotate') {
+          log.info('vendor session rotated at hard context limit', { threadId: projectTaskThread.id });
+        }
       }
 
       if (result.outcome === 'waiting_input' || result.outcome === 'waiting_dependency') {
@@ -290,6 +388,8 @@ export class TaskEngine {
           taskId: task.id,
         });
       }
+      const approvalMatch=result.outcome==='blocked'?/审批请求\s+(approval_[A-Za-z0-9_-]+)/.exec(result.summary):null;
+      if(approvalMatch){commitAll(worktreeInfo.path,`muster: approval checkpoint ${task.id}`);preserveWorktree=true;markTaskWaitingApproval(this.db,task.id,approvalMatch[1]!);updateThreadState(this.db,thread.id,'paused');return true;}
       completeTask(this.db, task.id, result);
       // 讨论结论→建议 Task（PRD Phase 8.4）：brainstorm 完成且 outputProtocol.suggestions 存在时派生建议
       if (
@@ -569,6 +669,13 @@ export class TaskEngine {
   }
 }
 
+function providerForManifest(manifestId: string | undefined): string | undefined {
+  if (manifestId === 'claude-code-cli') return 'claude-cli';
+  if (manifestId === 'openai-compatible-api') return 'openai';
+  if (manifestId === 'gemini-api') return 'gemini';
+  return manifestId;
+}
+
 /**
  收集当前项目授权只读引用的所有源项目根目录（PRD Phase 3.4）。
  - 仅返回与当前项目 worktree 不同的真实目录。
@@ -605,6 +712,8 @@ function normalizeAgentExecutor(raw: Record<string, unknown> | undefined): impor
   if (typeof raw.maxToolCalls === 'number' && raw.maxToolCalls > 0) cfg.maxToolCalls = raw.maxToolCalls;
   if (typeof raw.skipPermissions === 'boolean') cfg.skipPermissions = raw.skipPermissions;
   if (typeof raw.provider === 'string' && raw.provider) cfg.provider = raw.provider;
+  if (typeof raw.binaryPath === 'string' && raw.binaryPath) cfg.binaryPath = raw.binaryPath;
+  if (Array.isArray(raw.customArgs) && raw.customArgs.every((item) => typeof item === 'string')) cfg.customArgs = raw.customArgs;
   if (typeof raw.baseURL === 'string' && raw.baseURL) cfg.baseURL = raw.baseURL;
   return Object.keys(cfg).length > 0 ? cfg : undefined;
 }

@@ -27,13 +27,14 @@ import type { AgentRunResult, OutboundTaskRequest, ArtifactChange } from '../../
 import type { ExecutionAdapter, ExecutionContext, ExecutionEvents, ExecutionRunResult } from '../task-engine/executor';
 import { SERVER_CONFIG } from '../env';
 import { sanitizeArg, tryParseJSON } from '../../shared/utils';
-import { getSandboxTools } from '../sandbox';
 import { AGENT_TIMEOUT_MS, MAX_TOOL_CALLS } from '../../shared/constants';
 import { getDb } from '../db/client';
 import { getSystemSettings, type SystemSettings } from '../domain/setting';
 import { log } from '../logger';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { agentRunResultSchema, AGENT_RESULT_JSON_SCHEMA } from './result-schema';
+import { startClaudePermissionBridge } from './claude-permission-bridge';
+import { resolveCliEnvironment } from './cli-environment';
 // 保持向后兼容的 re-export（测试可能从此处导入）
 export { agentRunResultSchema } from './result-schema';
 
@@ -88,7 +89,7 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
     // 2. 员工级 executor_json 覆盖（PRD Phase 3：员工执行器配置）
     const agentEx = ctx.agentExecutor;
     const mergedSettings: ClaudeSettings = {
-      claudeBin: agentEx?.claudeBin ?? fromInstance.claudeBin,
+      claudeBin: agentEx?.binaryPath ?? agentEx?.claudeBin ?? fromInstance.claudeBin,
       model: agentEx?.model ?? fromInstance.model,
       skipPermissions: agentEx?.skipPermissions ?? fromInstance.skipPermissions,
       timeoutMs: agentEx?.timeoutMs ?? fromInstance.timeoutMs,
@@ -110,6 +111,8 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
       signal: ctx.signal,
       readonlyDirs: ctx.readonlyDirs,
       apiKeyValue,
+      permissionGuard: ctx.permissionGuard,
+      runConfigDir: ctx.runConfigDir,
     });
 
     // 校验结构化输出
@@ -135,6 +138,8 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
         disableTools: true,
         readonlyDirs: ctx.readonlyDirs,
         apiKeyValue,
+        permissionGuard: ctx.permissionGuard,
+        runConfigDir: ctx.runConfigDir,
       });
       execution = {
         result: correction.result,
@@ -183,7 +188,7 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
     return { ...parsed.data, _sessionIdHint: execution.sessionId ?? undefined, _usage: usage };
   }
 
-  private spawnClaude(opts: {
+  private async spawnClaude(opts: {
     prompt: string;
     systemPrompt: string;
     cwd: string;
@@ -198,11 +203,15 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
     readonlyDirs?: string[];
     /** 用户级凭据值（来自 process.env[apiKeyEnv]）；注入子进程 ANTHROPIC_API_KEY。 */
     apiKeyValue?: string;
+    permissionGuard?: ExecutionContext['permissionGuard'];
+    runConfigDir?: string;
   }): Promise<{
     result: { fullText: string; structuredOutput: unknown };
     raw: RawRunStats;
     sessionId: string | null;
   }> {
+    const permissionBridge = opts.disableTools ? undefined : await startClaudePermissionBridge(opts.runConfigDir ?? path.join(opts.cwd,'.muster-tmp'),opts.cwd,opts.permissionGuard);
+    const loginShellEnv = await resolveCliEnvironment();
     return new Promise((resolve, reject) => {
       const cleanPrompt = sanitizeArg(opts.prompt);
       const cleanSystem = sanitizeArg(opts.systemPrompt || '你是 Muster 工作台的一名员工。');
@@ -222,15 +231,13 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
         args.push('--session-id', generateSessionId());
       }
 
-      // 沙盒
+      // Muster 的 PreToolUse Hook 是 CLI 工具调用的权威权限入口。
+      // bypassPermissions 仅跳过 Claude 自带交互提示；Muster Hook 仍可阻止操作。
       if (opts.disableTools) {
         args.push('--tools', '');
-      } else if (opts.settings.skipPermissions) {
-        args.push('--dangerously-skip-permissions', '--allow-dangerously-skip-permissions');
       } else {
-        const tools = getSandboxTools(opts.cwd, opts.cwd, opts.readonlyDirs ?? []);
-        for (const t of tools) args.push('--allowedTools', t);
-        args.push('--permission-mode', 'acceptEdits');
+        args.push('--settings', permissionBridge!.settingsPath);
+        args.push('--permission-mode', 'bypassPermissions', '--allow-dangerously-skip-permissions');
       }
 
       // PRD Phase 3.4：把授权只读参考目录暴露给 Claude。
@@ -250,7 +257,7 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
         model: opts.settings.model || '(claude default)',
       });
 
-      const childEnv: NodeJS.ProcessEnv = { ...process.env };
+      const childEnv: NodeJS.ProcessEnv = { ...loginShellEnv };
       // PRD Phase 3：用户级凭据引用——把员工配置的环境变量值注入子进程。
       if (opts.apiKeyValue) {
         childEnv.ANTHROPIC_API_KEY = opts.apiKeyValue;
@@ -260,6 +267,8 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
         env: childEnv,
         stdio: ['pipe', 'pipe', 'pipe'],
       });
+      proc.once('close',()=>{void permissionBridge?.close();});
+      proc.once('error',()=>{void permissionBridge?.close();});
       proc.stdin.end();
 
       this.active.add(proc);

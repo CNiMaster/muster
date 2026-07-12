@@ -18,6 +18,10 @@ import {
   useContextSize,
   useProjectEvents,
   useTasks,
+  useProjectTasks,
+  useProjectTask,
+  useCreateProjectTask,
+  useProjectTaskAction,
 } from '../hooks/queries';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
@@ -269,6 +273,16 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
   const { data: threads } = useThreads(projectId);
   const { data: projectEvents } = useProjectEvents(projectId);
   const { data: tasks } = useTasks(projectId);
+  const { data: projectTasks } = useProjectTasks(projectId);
+  const createProjectTask = useCreateProjectTask();
+  const projectTaskAction = useProjectTaskAction();
+  const createWorkOrder = useCreateTask();
+  const [selectedProjectTaskId,setSelectedProjectTaskId]=useState<string>();
+  const {data:selectedProjectTask}=useProjectTask(projectId,selectedProjectTaskId);
+  const [projectTaskTitle,setProjectTaskTitle]=useState('');
+  const [projectTaskBrief,setProjectTaskBrief]=useState('');
+  const [workOrderTitle,setWorkOrderTitle]=useState('');
+  const [workOrderAssignee,setWorkOrderAssignee]=useState('');
 
   const createMirror = useCreateMirror();
   const deleteMirror = useDeleteMirror();
@@ -392,6 +406,17 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
         projects: [project],
         attentionCount,
       })} />
+
+      <Card title="项目任务" actions={<Badge tone="info">{projectTasks?.filter(item=>item.state==='active').length??0} 进行中</Badge>}>
+        <p className="muted">项目任务是上下文边界；其中下发给员工的具体事项称为员工工作单。</p>
+        <div className="form-stack">
+          <Field label="新项目任务标题"><Input value={projectTaskTitle} onChange={event=>setProjectTaskTitle(event.target.value)} placeholder="例如：重构执行器审批系统"/></Field>
+          <Field label="目标说明"><Textarea value={projectTaskBrief} onChange={event=>setProjectTaskBrief(event.target.value)} placeholder="说明目标、范围和验收标准"/></Field>
+          <Button disabled={!projectTaskTitle.trim()} loading={createProjectTask.isPending} onClick={()=>createProjectTask.mutate({projectId,title:projectTaskTitle,brief:projectTaskBrief},{onSuccess:item=>{setProjectTaskTitle('');setProjectTaskBrief('');setSelectedProjectTaskId(item.id);toast('success','项目任务已创建');}})}>新建项目任务</Button>
+        </div>
+        {(['active','completed','archived'] as const).map(state=><section key={state} className="section"><strong>{state==='active'?'进行中':state==='completed'?'已完成':'已归档'}</strong><ul className="entity-list">{projectTasks?.filter(item=>item.state===state).map(item=><li key={item.id}><button className="link-button" onClick={()=>setSelectedProjectTaskId(item.id)}>#{item.seq} {item.title}</button><span className="muted">{item.brief}</span>{state==='active'&&<Button size="sm" variant="ghost" onClick={()=>projectTaskAction.mutate({projectId,id:item.id,action:'complete'})}>完成</Button>}{state!=='archived'&&<Button size="sm" variant="ghost" onClick={()=>projectTaskAction.mutate({projectId,id:item.id,action:'archive'})}>归档</Button>}</li>)}</ul></section>)}
+        {selectedProjectTask&&<div className="section"><h3>#{selectedProjectTask.seq} {selectedProjectTask.title}</h3><p>{selectedProjectTask.brief||'（无目标说明）'}</p><div className="form-stack"><Field label="员工工作单"><Input value={workOrderTitle} disabled={selectedProjectTask.state==='archived'} onChange={event=>setWorkOrderTitle(event.target.value)} placeholder="给员工的具体工作"/></Field><Field label="指派员工"><Select value={workOrderAssignee} disabled={selectedProjectTask.state==='archived'} onChange={event=>setWorkOrderAssignee(event.target.value)}><option value="">自动分配</option>{agents?.map(agent=><option key={agent.id} value={agent.id}>{agent.name}</option>)}</Select></Field><Button disabled={selectedProjectTask.state==='archived'||!workOrderTitle.trim()} onClick={()=>createWorkOrder.mutate({projectId,projectTaskId:selectedProjectTask.id,title:workOrderTitle,assigneeAgentId:workOrderAssignee||undefined},{onSuccess:()=>{setWorkOrderTitle('');toast('success','员工工作单已发布');}})}>发布员工工作单</Button></div><h4>参与员工会话</h4>{selectedProjectTask.threads?.length?<ul className="entity-list">{selectedProjectTask.threads.map(thread=><li key={thread.id}><span>{agents?.find(agent=>agent.id===thread.employeeId)?.name??thread.employeeId}</span><Badge>{thread.state}</Badge><span className="muted">Run {thread.runCount} · 压缩 {thread.compactionCount} · {thread.vendorSessionId?'会话已建立':'等待首次参与'}</span></li>)}</ul>:<p className="muted">员工首次收到工作单后才创建会话。</p>}</div>}
+      </Card>
 
       {tasks && tasks.length > 0 && (
         <div className="initial-task-summary" aria-label="最近发布的任务">

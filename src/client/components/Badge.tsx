@@ -50,6 +50,7 @@ const STATE_LABELS: Record<string, string> = {
   running: '执行中',
   waiting_input: '等待补充',
   waiting_dependency: '等待依赖',
+  waiting_approval: '等待审批',
   paused: '已暂停',
   blocked: '阻塞',
   completed: '已完成',

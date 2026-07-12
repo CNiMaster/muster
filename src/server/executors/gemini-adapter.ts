@@ -132,6 +132,7 @@ export class GeminiAdapter implements ExecutionAdapter {
         signal: ctx.signal,
         model,
         loopback: ctx.loopback,
+        permissionGuard: ctx.permissionGuard,
       });
 
       const durationMs = Date.now() - start;

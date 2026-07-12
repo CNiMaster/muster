@@ -187,12 +187,13 @@ const MAX_READ_BYTES = 64 * 1024;
  - readonlyDirs：只读目录列表（写入这些路径会被拒绝）。
  - loopback：Agent Bridge 配置（notify_host 工具用）。
  */
-export function executeFileTool(
+export async function executeFileTool(
   call: ToolCall,
   workingDir: string,
   readonlyDirs: string[] = [],
   loopback?: { baseUrl: string; taskId: string },
-): ToolResult {
+  permissionGuard?: (request: { action: string; path?: string; command?: string }) => { allowed: boolean; message?: string }|Promise<{ allowed: boolean; message?: string }>,
+): Promise<ToolResult> {
   const abs = (rel: string): string => resolve(workingDir, rel);
 
   const assertWritable = (target: string): void => {
@@ -205,6 +206,14 @@ export function executeFileTool(
       }
     }
   };
+
+  const permissionAction = call.name === 'read_file' || call.name === 'list_files' ? 'read-file'
+    : call.name === 'write_file' || call.name === 'edit_file' ? 'write-file' : null;
+  if (permissionAction && permissionGuard) {
+    const rel = String(call.args.path ?? call.args.dir ?? '.');
+    const decision = await permissionGuard({ action: permissionAction, path: abs(rel) });
+    if (!decision.allowed) return { toolCallId: call.id, name: call.name, content: `需要用户审批：${decision.message ?? '权限策略未允许此操作'}` };
+  }
 
   switch (call.name) {
     case 'read_file': {

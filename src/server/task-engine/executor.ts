@@ -11,6 +11,13 @@ export interface ExecutionContext {
   task: Task;
   systemPrompt: string;
   workingDir: string;
+  /** Muster 创建的不可变执行记录与该次运行的隔离目录。 */
+  executionRunId?: string;
+  executorProfileId?: string;
+  runConfigDir?: string;
+  runTempDir?: string;
+  runLogDir?: string;
+  runSessionDir?: string;
   /** 输入协议 + 上下文引用解析后的内容。 */
   inputPacket: Record<string, unknown>;
   /** Claude 会话 ID 提示：首次执行为空，后续传已有的 session id 用于 --resume。 */
@@ -41,6 +48,9 @@ export interface ExecutionContext {
     baseUrl: string;
     taskId: string;
   };
+  /** API 工具调用前由 Muster 权限引擎同步判定。 */
+  permissionGuard?: (request: { action: string; path?: string; command?: string }) => { allowed: boolean; message?: string }|Promise<{ allowed: boolean; message?: string }>;
+  permissionPolicy?: { approvalStrategy: 'ask-always'|'ask-by-rule'|'no-approval'|'deny'; scope: 'task'|'project'|'workspace'|'selected-directories'|'device'; allowedRoots: string[] };
 }
 
 /**
@@ -50,6 +60,10 @@ export interface ExecutionContext {
 export interface AgentExecutorConfig {
   /** 执行器 provider，决定引擎分发到哪个 adapter。默认由系统设置决定（通常 claude-cli）。 */
   provider?: string;
+  /** 托管安装或用户选择的固定 CLI 二进制。 */
+  binaryPath?: string;
+  /** 自定义 CLI 的参数数组模板；只替换整项占位符，不经过 shell。 */
+  customArgs?: string[];
   model?: string;
   claudeBin?: string;
   timeoutMs?: number;
@@ -99,4 +113,5 @@ export interface ExecutionAdapter {
    * 返回值可附带 _sessionIdHint（执行器发现的 Claude session id），引擎会持久化到 thread。
    */
   run(ctx: ExecutionContext, events?: ExecutionEvents): Promise<ExecutionRunResult>;
+  compactSession?(ctx:ExecutionContext):Promise<void>;
 }

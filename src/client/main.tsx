@@ -25,6 +25,8 @@ const CompanyWizardPage = lazy(() => import('./pages/CompanyWizardPage').then((m
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then((m) => ({ default: m.SettingsPage })));
 const AgentLibraryPage = lazy(() => import('./pages/AgentLibraryPage').then((m) => ({ default: m.AgentLibraryPage })));
 const AgentProfilePage = lazy(() => import('./pages/AgentProfilePage').then((m) => ({ default: m.AgentProfilePage })));
+const ExecutorCenterPage = lazy(() => import('./pages/ExecutorCenterPage').then((m) => ({ default: m.ExecutorCenterPage })));
+const PermissionCenterPage = lazy(() => import('./pages/PermissionCenterPage').then((m) => ({ default: m.PermissionCenterPage })));
 
 function ToastLayer(): React.ReactElement {
   const { toasts, dismiss } = useToasts();
@@ -59,6 +61,8 @@ const router = createBrowserRouter([
       { path: 'settings', element: <SettingsPage /> },
       { path: 'agents', element: <AgentLibraryPage /> },
       { path: 'agents/:profileId', element: <AgentProfilePage /> },
+      { path: 'executors', element: <ExecutorCenterPage /> },
+      { path: 'permissions', element: <PermissionCenterPage /> },
       { path: '*', element: <NotFoundPage /> },
     ],
   },

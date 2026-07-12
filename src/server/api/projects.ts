@@ -39,6 +39,8 @@ import { syncAgentMemoryFiles } from '../domain/agent-home';
 import { registerDefaultNovelScheduleTriggers } from '../domain/triggers';
 import { initializeNovelProject } from '../domain/novel-template';
 import { getCharacterGraph } from '../domain/character-graph';
+import {archiveProjectTask,completeProjectTask,createProjectTask,getProjectTask,listProjectTasks} from '../domain/project-task';
+import {listProjectTaskThreads} from '../domain/project-task-thread';
 
 export const projectsRouter = Router({ mergeParams: true });
 export const projectScopedRouter = Router({ mergeParams: true });
@@ -104,6 +106,12 @@ projectById.patch(
     );
   }),
 );
+
+projectById.get('/project-tasks',asyncHandler(async(req,res)=>res.json(listProjectTasks(getDb(),param(req,'id')))));
+projectById.post('/project-tasks',asyncHandler(async(req,res)=>{const input=z.object({title:z.string().min(1),brief:z.string().optional()}).parse(req.body);res.status(201).json(createProjectTask(getDb(),{projectId:param(req,'id'),...input}));}));
+projectById.get('/project-tasks/:projectTaskId',asyncHandler(async(req,res)=>{const task=getProjectTask(getDb(),param(req,'projectTaskId'));if(task.projectId!==param(req,'id'))throw new Error('项目任务不属于当前项目');res.json({...task,threads:listProjectTaskThreads(getDb(),task.id)});}));
+projectById.post('/project-tasks/:projectTaskId/complete',asyncHandler(async(req,res)=>res.json(completeProjectTask(getDb(),param(req,'projectTaskId')))));
+projectById.post('/project-tasks/:projectTaskId/archive',asyncHandler(async(req,res)=>res.json(archiveProjectTask(getDb(),param(req,'projectTaskId')))));
 
 // threads
 projectById.get(

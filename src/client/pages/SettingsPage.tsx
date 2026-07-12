@@ -5,6 +5,7 @@ import { Badge } from '../components/Badge';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
 import { Field, Input, Select } from '../components/Form';
+import { Link } from 'react-router-dom';
 
 export function SettingsPage(): React.ReactElement {
   const { data: settings, isLoading } = useSystemSettings();
@@ -65,6 +66,8 @@ export function SettingsPage(): React.ReactElement {
 
   const providerLabels: Record<string, string> = {
     'claude-cli': 'Claude Code CLI',
+    'codex-cli': 'Codex CLI',
+    'gemini-cli': 'Gemini CLI',
     openai: 'OpenAI 兼容 API',
     gemini: 'Gemini API',
   };
@@ -83,6 +86,8 @@ export function SettingsPage(): React.ReactElement {
           <Field label="默认执行器" hint="员工没有单独指定执行器时使用">
             <Select value={defaultProvider} onChange={(event) => setDefaultProvider(event.target.value)}>
               <option value="claude-cli">Claude Code CLI</option>
+              <option value="codex-cli">Codex CLI</option>
+              <option value="gemini-cli">Gemini CLI</option>
               <option value="openai">OpenAI 兼容 API</option>
               <option value="gemini">Gemini API</option>
             </Select>
@@ -116,12 +121,8 @@ export function SettingsPage(): React.ReactElement {
         <details className="details-collapse">
           <summary>权限与运行限制</summary>
           <div className="form-stack">
-            <Field label="权限控制">
-              <label className="settings-checkbox">
-                <input type="checkbox" checked={skipPermissions} onChange={(event) => setSkipPermissions(event.target.checked)} />
-                <span>跳过 Agent 权限确认（仅建议用于可信环境）</span>
-              </label>
-            </Field>
+            <p>权限现已按员工使用“审批策略 × 允许范围”配置。Turbo 也必须选择范围。</p>
+            <div className="settings-primary-actions"><Link to="/permissions">打开权限与审批中心</Link><Link to="/executors">打开执行器接入中心</Link></div>
             <div className="settings-field-grid">
               <Field label="单次 Task 超时（毫秒）">
                 <Input type="number" value={timeoutMs} onChange={(event) => setTimeoutMs(Number(event.target.value))} />
