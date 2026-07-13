@@ -7,6 +7,25 @@ export interface CompanyTemplateOption {
   roles: string[];
 }
 
+export interface CompanySetupDraft {
+  templateId: CompanyTemplateId;
+  name: string;
+  goal: string;
+  departments: Array<{ key: string; name: string }>;
+  employees: Array<{
+    key: string;
+    name: string;
+    role: string;
+    responsibilities: string;
+    departmentKey: string;
+    isLead: boolean;
+  }>;
+  project: { name: string; description: string };
+  firstProjectTask: { title: string; brief: string };
+}
+
+export type SetupBindings = Record<string, { executorProfileId: string; permissionPolicyId: string }>;
+
 export const COMPANY_TEMPLATE_OPTIONS: CompanyTemplateOption[] = [
   { id: 'general', name: '通用项目公司', description: '适合研究、运营和跨职能工作', roles: ['lead', 'specialist', 'reviewer'] },
   { id: 'software', name: '软件研发公司', description: '适合产品设计、开发和质量验证', roles: ['lead', 'product', 'engineer', 'reviewer'] },

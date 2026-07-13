@@ -56,6 +56,7 @@ import { ProjectRuntimeCoordinator } from './runtime/coordinator';
 import { listAgentProfiles } from './domain/agent-profile';
 import { materializeAgentHome, syncAgentMemoryFiles } from './domain/agent-home';
 import { autoDiscoverCertifiedExecutors } from './domain/executor-discovery';
+import { companySetupRouter } from './api/company-setup';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -161,6 +162,7 @@ async function createApp(): Promise<AppHandle> {
   app.use('/api/permissions', permissionsRouter);
   app.use('/api/executors', executorsRouter);
   app.use('/api/setup-assistant', setupAssistantRouter);
+  app.use('/api/company-setup', companySetupRouter);
 
   // Agent Bridge：Agent 通过 curl 调用 /bridge/<action> 反馈进度
   app.use('/bridge', bridgeRouter);
