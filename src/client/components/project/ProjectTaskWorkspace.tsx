@@ -35,7 +35,20 @@ export function ProjectTaskWorkspace({ selectedTask, tasks, agents, draft, creat
       <div className="form-stack">
         <Field label="发布员工工作单"><Input value={workOrder.title} disabled={selectedTask.state === 'archived'} onChange={(event) => onWorkOrderChange({ ...workOrder, title: event.target.value })} placeholder="描述要交给员工完成的具体工作" /></Field>
         <Field label="指派员工"><Select value={workOrder.assigneeId} disabled={selectedTask.state === 'archived'} onChange={(event) => onWorkOrderChange({ ...workOrder, assigneeId: event.target.value })}><option value="">自动分配</option>{agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}</Select></Field>
-        <Button disabled={selectedTask.state === 'archived' || !workOrder.title.trim()} onClick={onPublishWorkOrder}>发布工作</Button>
+        <div className="work-order-submit-bar">
+          <div className="work-order-submit-copy">
+            <strong>{selectedTask.state === 'archived' ? '此任务已归档' : workOrder.title.trim() ? '工作单已准备好' : '填写工作内容后即可派发'}</strong>
+            <span>{selectedTask.state === 'archived' ? '归档任务仅供查看' : workOrder.assigneeId ? '将直接派发给所选员工' : 'Muster 将自动选择合适的员工'}</span>
+          </div>
+          <Button
+            className="work-order-submit"
+            icon={<svg className="work-order-submit-icon" width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m4 10 11-6-3.5 12-2.4-4.1L4 10Z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" /><path d="m9.1 11.9 2.6-2.6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /></svg>}
+            disabled={selectedTask.state === 'archived' || !workOrder.title.trim()}
+            onClick={onPublishWorkOrder}
+          >
+            派发给员工
+          </Button>
+        </div>
       </div>
     </div> : <EmptyState icon={Icons.empty} title="还没有项目任务" hint="创建一个目标清晰的项目任务后开始工作。" />}
 
