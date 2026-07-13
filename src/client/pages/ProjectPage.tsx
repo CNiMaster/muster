@@ -30,8 +30,6 @@ import { Input, Textarea, Select, Field } from '../components/Form';
 import { EmptyState, Icons } from '../components/EmptyState';
 import { ConversationPanel } from '../components/ConversationPanel';
 import { ActivityPanel } from '../components/ActivityPanel';
-import { NextActionCard } from '../components/NextActionCard';
-import { deriveNextAction } from '../domain/next-action';
 import { useRecentProject } from '../hooks/useRecentProject';
 import { WorkbenchShell } from '../components/workbench/WorkbenchShell';
 import { ProjectWorkNavigation } from '../components/workbench/ProjectWorkNavigation';
@@ -404,28 +402,17 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
       navigationLabel="项目工作列表"
       inspectorLabel="项目现场"
       attentionCount={attentionCount + (cockpit?.approvals.pending ?? 0)}
-      primaryAction={<a className="mu-btn mu-btn-primary mu-btn-sm workbench-publish-action" href="#project-tasks">＋ 发布工作</a>}
+      primaryAction={<a className="mu-btn mu-btn-primary mu-btn-sm workbench-publish-action" href="#work-order-composer">＋ 发布工作</a>}
       navigation={<ProjectWorkNavigation projectId={projectId} tasks={projectTasks ?? []} selectedId={selectedProjectTaskId} view={projectView} attentionCount={attentionCount} novel={company?.kind === 'novel'} onSelect={selectProjectTask} />}
-      inspector={<ProjectContextInspector projectId={projectId} projectState={project.state} selectedTask={selectedProjectTask} agents={agents ?? []} cockpit={cockpit} />}
+      inspector={<ProjectContextInspector projectId={projectId} companyId={project.companyId} projectState={project.state} selectedTask={selectedProjectTask} agents={agents ?? []} tasks={tasks ?? []} cockpit={cockpit} />}
     >
     <div className="project-page work-surface-page" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-      <header className="work-surface-heading">
+      {projectView !== 'task' && <header className="work-surface-heading">
         <div>
-          <h1>{project.name}</h1>
-          <div className="subtitle" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <StateBadge domain="project" state={project.state} />
-          </div>
+          <span className="task-stage-kicker">{project.name}</span>
+          <h1>{projectView === 'chat' ? '项目群聊' : '协作活动'}</h1>
         </div>
-      </header>
-
-      {projectView === 'task' && <NextActionCard action={deriveNextAction({
-        companies: [{ id: project.companyId, name: company?.name ?? '', state: company?.state }],
-        projects: [project],
-        attentionCount,
-        blockedEmployeeCount: cockpit?.employees.blocked,
-        activeProjectTaskCount: projectTasks?.filter((item) => item.state === 'active').length,
-        projectTaskId: projectTasks?.find((item) => item.state === 'active')?.id,
-      })} />}
+      </header>}
 
       {projectView === 'task' && <ProjectTaskWorkspace
         selectedTask={selectedProjectTask}
@@ -443,13 +430,6 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
         onPublishWorkOrder={() => { if (!selectedProjectTask) return; createWorkOrder.mutate({ projectId, projectTaskId: selectedProjectTask.id, title: workOrderTitle, assigneeAgentId: workOrderAssignee || undefined }, { onSuccess: () => { setWorkOrderTitle(''); toast('success', '员工工作单已发布'); } }); }}
       />}
 
-      {projectView === 'task' && tasks && tasks.length > 0 && (
-        <div className="initial-task-summary" aria-label="最近发布的任务">
-          <Badge tone="info">已发布 Task</Badge>
-          <span>{tasks[0].title}</span>
-        </div>
-      )}
-
       {/* 高频：对话 + 活动上移到首屏 */}
       {projectView === 'chat' && <Card id="project-conversation" title="项目对话">
         <ConversationPanel scope="project" scopeId={projectId} companyId={project.companyId} title="与项目第一负责人对话" />
@@ -460,8 +440,8 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
       </Card>}
 
       {/* 低频：线程扩容 + 脑暴 + 复盘配置折叠收起 */}
-      {projectView === 'task' && <details className="details-collapse">
-        <summary>团队运维与协作工具</summary>
+      {projectView === 'task' && <details id="advanced-collaboration" className="details-collapse project-advanced-tools">
+        <summary><span>高级协作</span><small>镜像、线程与脑暴</small></summary>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', paddingTop: 'var(--space-3)' }}>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)', alignItems: 'start' }}>

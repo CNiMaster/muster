@@ -39,7 +39,7 @@ export function ProjectToolPageShell({ tool, children, projectIdOverride, select
     attentionCount={attentionCount + (cockpit?.approvals.pending ?? 0)}
     primaryAction={<Link className="mu-btn mu-btn-primary mu-btn-sm" to={`/projects/${projectId}${selectedId ? `?projectTask=${selectedId}` : ''}`}>返回任务</Link>}
     navigation={<ProjectWorkNavigation projectId={projectId} tasks={projectTasks ?? []} selectedId={selectedId} view="tool" activeTool={tool} attentionCount={attentionCount} novel={company?.kind === 'novel'} onSelect={(id) => navigate(`/projects/${projectId}?projectTask=${id}`)} />}
-    inspector={<ProjectContextInspector projectId={projectId} projectState={project?.state ?? 'setup'} selectedTask={selectedTask} agents={agents ?? []} cockpit={cockpit} />}
+    inspector={<ProjectContextInspector projectId={projectId} companyId={project?.companyId} projectState={project?.state ?? 'setup'} selectedTask={selectedTask} agents={agents ?? []} tasks={tasks ?? []} cockpit={cockpit} />}
   >
     <div className="project-tool-surface">{children}</div>
   </WorkbenchShell>;
