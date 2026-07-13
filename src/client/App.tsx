@@ -5,7 +5,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 
 export function App(): React.ReactElement {
   const location = useLocation();
-  const workbenchRoute = /^\/companies\/[^/]+\/?$/.test(location.pathname) || /^\/projects\/[^/]+\/?$/.test(location.pathname);
+  const workbenchRoute = /^\/companies\/[^/]+\/?$/.test(location.pathname) || /^\/projects\/[^/]+(?:\/(?:tasks|usage|artifacts|reports|dashboard|character-graph|settings))?\/?$/.test(location.pathname) || /^\/tasks\/[^/]+\/?$/.test(location.pathname);
   return (
     <ErrorBoundary label="App">
       <div className="app-shell">

@@ -29,7 +29,7 @@ export function TasksPage(): React.ReactElement {
       },
       {
         onSuccess: () => {
-          toast('success', 'Task 已派发');
+          toast('success', '员工工作单已派发');
           setTitle('');
         },
         onError: (e) => toast('error', (e as { message?: string }).message ?? '派发失败'),
@@ -40,16 +40,16 @@ export function TasksPage(): React.ReactElement {
   return (
     <div className="tasks-page">
       <header className="page-header">
-        <h1>Task · {project?.name ?? '...'}</h1>
+        <div><h1>等待处理</h1><p className="subtitle">{project?.name ?? '项目'}的员工工作单</p></div>
       </header>
 
-      <Card title="派发新 Task" className="section">
+      <Card title="派发员工工作单" className="section">
         <div className="form-stack">
           <Field label="标题">
             <Input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="Task 标题"
+              placeholder="描述要完成的具体工作"
               onKeyDown={(e) => {
                 if (e.key === 'Enter') submit();
               }}
@@ -82,9 +82,9 @@ export function TasksPage(): React.ReactElement {
         </div>
       </Card>
 
-      <Card title="Task 列表" className="section" actions={tasks ? <Badge>{tasks.length}</Badge> : undefined}>
+      <Card title="工作单列表" className="section" actions={tasks ? <Badge>{tasks.length}</Badge> : undefined}>
         {tasks && tasks.length === 0 && (
-          <EmptyState icon={Icons.empty} title="还没有 Task" hint="派发一个 Task 启动协作。" />
+          <EmptyState icon={Icons.empty} title="还没有工作单" hint="发布一份具体工作后，员工会开始协作。" />
         )}
         <table className="task-table">
           <thead>

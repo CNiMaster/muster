@@ -3,7 +3,6 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import {
   useProject,
-  useUpdateProject,
   useAgents,
   useThreads,
   useCreateProject,
@@ -29,7 +28,6 @@ import { Card } from '../components/Card';
 import { Badge, StateBadge } from '../components/Badge';
 import { Input, Textarea, Select, Field } from '../components/Form';
 import { EmptyState, Icons } from '../components/EmptyState';
-import type { Project } from '../api/types';
 import { ConversationPanel } from '../components/ConversationPanel';
 import { ActivityPanel } from '../components/ActivityPanel';
 import { NextActionCard } from '../components/NextActionCard';
@@ -451,14 +449,6 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
         </div>
       )}
 
-      {projectView === 'task' && <Card title="项目说明">
-        <p className="muted" style={{ margin: 0 }}>{project.description || '(未填写)'}</p>
-        <details className="details-collapse" style={{ marginTop: 'var(--space-3)' }}>
-          <summary>项目目录与高级信息</summary>
-          <code className="project-root-path">{project.rootDir}</code>
-        </details>
-      </Card>}
-
       {/* 高频：对话 + 活动上移到首屏 */}
       {projectView === 'chat' && <Card id="project-conversation" title="项目对话">
         <ConversationPanel scope="project" scopeId={projectId} companyId={project.companyId} title="与项目第一负责人对话" />
@@ -470,7 +460,7 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
 
       {/* 低频：线程扩容 + 脑暴 + 复盘配置折叠收起 */}
       {projectView === 'task' && <details className="details-collapse">
-        <summary>运维与高级配置（线程扩容 · 头脑风暴 · 复盘预算）</summary>
+        <summary>团队运维与协作工具</summary>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', paddingTop: 'var(--space-3)' }}>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)', alignItems: 'start' }}>
@@ -602,69 +592,10 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
           </div>
         </Card>
       </div>
-
-          <ReviewSettingsCard project={project} />
         </div>
       </details>}
     </div>
     </WorkbenchShell>
-  );
-}
-
-/** 复盘触发配置卡片（PRD Phase 5，清单 196）。 */
-function ReviewSettingsCard({ project }: { project: Project }): React.ReactNode {
-  const updateProject = useUpdateProject();
-  const settings = (project.settings ?? {}) as {
-    reviewTaskInterval?: number;
-    reviewTimeIntervalHours?: number;
-    milestoneReviewAt?: string;
-    dailyDiscussionBudgetUSD?: number;
-  };
-  const [taskInterval, setTaskInterval] = useState(String(settings.reviewTaskInterval ?? ''));
-  const [timeHours, setTimeHours] = useState(String(settings.reviewTimeIntervalHours ?? ''));
-  const [milestone, setMilestone] = useState(settings.milestoneReviewAt ?? '');
-  const [dailyBudget, setDailyBudget] = useState(String(settings.dailyDiscussionBudgetUSD ?? ''));
-
-  const save = (): void => {
-    const next: Record<string, unknown> = { ...project.settings };
-    next.reviewTaskInterval = taskInterval ? Number(taskInterval) : undefined;
-    next.reviewTimeIntervalHours = timeHours ? Number(timeHours) : undefined;
-    next.milestoneReviewAt = milestone || undefined;
-    next.dailyDiscussionBudgetUSD = dailyBudget ? Number(dailyBudget) : undefined;
-    updateProject.mutate(
-      { id: project.id, settings: next },
-      {
-        onSuccess: () => toast('success', '复盘配置已保存'),
-        onError: (e) => toast('error', (e as Error).message),
-      },
-    );
-  };
-
-  return (
-    <Card title="复盘与预算配置">
-      <div className="form-stack">
-        <p className="muted" style={{ fontSize: 'var(--text-sm)', margin: 0 }}>
-          配置强制复盘的触发条件（满足任一即触发）与讨论每日预算。
-        </p>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <Field label="按完成 Task 数触发（留空=20）">
-            <Input type="number" value={taskInterval} onChange={(e) => setTaskInterval(e.target.value)} placeholder="20" />
-          </Field>
-          <Field label="按时间间隔触发（小时，留空=关闭）">
-            <Input type="number" value={timeHours} onChange={(e) => setTimeHours(e.target.value)} placeholder="例如 72" />
-          </Field>
-        </div>
-        <Field label="里程碑复盘时间（留空=关闭）">
-          <Input type="datetime-local" value={milestone ? milestone.slice(0, 16) : ''} onChange={(e) => setMilestone(e.target.value ? new Date(e.target.value).toISOString() : '')} />
-        </Field>
-        <Field label="讨论每日预算（USD，留空=2）">
-          <Input type="number" step="0.5" value={dailyBudget} onChange={(e) => setDailyBudget(e.target.value)} placeholder="2" />
-        </Field>
-        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-          <Button onClick={save} loading={updateProject.isPending}>保存配置</Button>
-        </div>
-      </div>
-    </Card>
   );
 }
 

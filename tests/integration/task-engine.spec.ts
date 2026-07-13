@@ -31,6 +31,7 @@ import { TaskEngine } from '../../src/server/task-engine/engine';
 import { FakeExecutor } from '../../src/server/task-engine/fake-executor';
 import { LEASE_TTL_MS, MAX_CLARIFY_ROUNDS } from '../../src/shared/constants';
 import type { AgentRunResult } from '../../src/shared/types';
+import { createProjectTask } from '../../src/server/domain/project-task';
 
 let tdb: ReturnType<typeof makeTestDb>;
 let db: DB;
@@ -251,12 +252,20 @@ describe('fake executor end-to-end', () => {
 
   it('无 Task 时自动给第一负责人派规划 Task', () => {
     const { project, lead } = fixture();
+    const projectTask = createProjectTask(db, { projectId: project.id, title: '当前迭代' });
     expect(listTasks(db, project.id)).toHaveLength(0);
     const plan = ensurePlanningTask(db, project.id);
     expect(plan).not.toBeNull();
     expect(plan!.assigneeAgentId).toBe(lead.id);
+    expect(plan!.projectTaskId).toBe(projectTask.id);
     expect(plan!.title).toMatch(/规划/);
     // 幂等：再调一次不重复
     expect(ensurePlanningTask(db, project.id)).toBeNull();
+  });
+
+  it('没有用户项目任务时不自动制造上下文边界', () => {
+    const { project } = fixture();
+    expect(ensurePlanningTask(db, project.id)).toBeNull();
+    expect(listTasks(db, project.id)).toHaveLength(0);
   });
 });

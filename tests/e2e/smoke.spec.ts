@@ -79,6 +79,11 @@ test('项目路由保留公司导航并能从首页继续上次项目', async ({
   await expect(page.locator('.workbench-breadcrumb')).toContainText(company.name);
   await expect(page.locator('.workbench-breadcrumb')).toContainText(project.name);
 
+  await page.goto(`/projects/${project.id}/dashboard`);
+  await expect(page.getByRole('navigation', { name: '项目工作列表' })).toBeVisible();
+  await expect(page.getByRole('link', { name: /员工看板/ })).toHaveClass(/is-active/);
+  await expect(page.locator('.topbar')).toHaveCount(0);
+
   await page.goto('/');
   await expect(page.getByText('继续上次项目')).toBeVisible();
   await expect(page.getByRole('link', { name: '继续工作' })).toHaveAttribute('href', `/projects/${project.id}`);
@@ -121,6 +126,9 @@ test('员工库展示全局档案与公司任职', async ({ page }) => {
 
   await page.goto('/agents');
   await expect(page.getByRole('heading', { name: '员工库' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '选择一套团队' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '软件研发团队' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '或单独添加岗位' })).toBeVisible();
   await page.getByRole('link', { name: new RegExp(`全局员工-${suffix}`) }).click();
   await expect(page.getByText('公司任职')).toBeVisible();
   await page.getByRole('tab', { name: /公司任职/ }).click();

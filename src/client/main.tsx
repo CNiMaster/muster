@@ -7,6 +7,7 @@ import './styles/global.css';
 import { App } from './App';
 import { useToasts, ToastHost } from './components/Button';
 import { RealtimeSync } from './realtime';
+import { ProjectToolPageShell, TaskDetailProjectShell } from './components/workbench/ProjectToolPageShell';
 
 const HomePage = lazy(() => import('./pages/HomePage').then((m) => ({ default: m.HomePage })));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage').then((m) => ({ default: m.NotFoundPage })));
@@ -27,6 +28,7 @@ const AgentLibraryPage = lazy(() => import('./pages/AgentLibraryPage').then((m) 
 const AgentProfilePage = lazy(() => import('./pages/AgentProfilePage').then((m) => ({ default: m.AgentProfilePage })));
 const ExecutorCenterPage = lazy(() => import('./pages/ExecutorCenterPage').then((m) => ({ default: m.ExecutorCenterPage })));
 const PermissionCenterPage = lazy(() => import('./pages/PermissionCenterPage').then((m) => ({ default: m.PermissionCenterPage })));
+const ProjectSettingsPage = lazy(() => import('./pages/ProjectSettingsPage').then((m) => ({ default: m.ProjectSettingsPage })));
 
 function ToastLayer(): React.ReactElement {
   const { toasts, dismiss } = useToasts();
@@ -51,13 +53,14 @@ const router = createBrowserRouter([
       { path: 'companies/:companyId/workflows/:workflowId', element: <WorkflowGraphPage /> },
       { path: 'companies/:companyId/projects/new', element: <ProjectPage /> },
       { path: 'projects/:projectId', element: <ProjectPage /> },
-      { path: 'projects/:projectId/character-graph', element: <CharacterGraphPage /> },
-      { path: 'projects/:projectId/tasks', element: <TasksPage /> },
-      { path: 'projects/:projectId/usage', element: <UsagePage /> },
-      { path: 'projects/:projectId/artifacts', element: <ArtifactsPage /> },
-      { path: 'projects/:projectId/reports', element: <ReportsPage /> },
-      { path: 'projects/:projectId/dashboard', element: <DashboardPage /> },
-      { path: 'tasks/:taskId', element: <TaskDetailPage /> },
+      { path: 'projects/:projectId/character-graph', element: <ProjectToolPageShell tool="character"><CharacterGraphPage /></ProjectToolPageShell> },
+      { path: 'projects/:projectId/tasks', element: <ProjectToolPageShell tool="tasks"><TasksPage /></ProjectToolPageShell> },
+      { path: 'projects/:projectId/usage', element: <ProjectToolPageShell tool="usage"><UsagePage /></ProjectToolPageShell> },
+      { path: 'projects/:projectId/artifacts', element: <ProjectToolPageShell tool="artifacts"><ArtifactsPage /></ProjectToolPageShell> },
+      { path: 'projects/:projectId/reports', element: <ProjectToolPageShell tool="reports"><ReportsPage /></ProjectToolPageShell> },
+      { path: 'projects/:projectId/dashboard', element: <ProjectToolPageShell tool="dashboard"><DashboardPage /></ProjectToolPageShell> },
+      { path: 'projects/:projectId/settings', element: <ProjectToolPageShell tool="settings"><ProjectSettingsPage /></ProjectToolPageShell> },
+      { path: 'tasks/:taskId', element: <TaskDetailProjectShell><TaskDetailPage /></TaskDetailProjectShell> },
       { path: 'settings', element: <SettingsPage /> },
       { path: 'agents', element: <AgentLibraryPage /> },
       { path: 'agents/:profileId', element: <AgentProfilePage /> },

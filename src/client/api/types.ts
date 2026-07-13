@@ -152,6 +152,7 @@ export interface TaskArtifact {
 export interface Task {
   id: string;
   projectId: string;
+  projectTaskId: string;
   seq: number;
   title: string;
   state: string;
@@ -160,6 +161,7 @@ export interface Task {
   parentTaskId: string | null;
   rootTaskId: string | null;
   assigneeThreadId: string | null;
+  assigneeTaskThreadId: string | null;
   outcome: string | null;
   summary: string;
   question: string | null;

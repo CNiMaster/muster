@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
-import { ProjectWorkNavigation } from '../../src/client/components/workbench/ProjectWorkNavigation';
+import { ProjectWorkNavigation, projectTaskMark } from '../../src/client/components/workbench/ProjectWorkNavigation';
 
 describe('project calm workbench', () => {
   it('keeps one vertical work list and routes communication into the center surface', () => {
@@ -11,5 +11,15 @@ describe('project calm workbench', () => {
     expect(screen.getByRole('link', { name: /等待处理/ })).toHaveTextContent('2');
     expect(screen.queryByRole('tab')).not.toBeInTheDocument();
     expect(screen.queryByText('人物关系')).not.toBeInTheDocument();
+  });
+
+  it('uses a meaningful title mark and folds duplicate project-task names', () => {
+    expect(projectTaskMark('修复执行器审批桥')).toBe('执行');
+    render(<MemoryRouter><ProjectWorkNavigation projectId="pr_1" selectedId="pt_2" view="task" attentionCount={0} novel={false} onSelect={vi.fn()} tasks={[
+      { id:'pt_2',projectId:'pr_1',seq:2,title:'[规划] 当前阶段工作拆解',brief:'',state:'active',completedAt:null,archivedAt:null,createdAt:'',updatedAt:'' },
+      { id:'pt_1',projectId:'pr_1',seq:1,title:'[规划] 当前阶段工作拆解',brief:'',state:'active',completedAt:null,archivedAt:null,createdAt:'',updatedAt:'' },
+    ]} /></MemoryRouter>);
+    expect(screen.getAllByRole('button', { name: /当前阶段工作拆解/ })).toHaveLength(2);
+    expect(screen.getByText('其余 1 个任务')).toBeInTheDocument();
   });
 });

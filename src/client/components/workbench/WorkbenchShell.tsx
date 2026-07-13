@@ -33,10 +33,10 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
   return <section className={`workbench ${preferences.leftOpen ? 'has-left' : ''} ${preferences.rightOpen ? 'has-right' : ''}`} style={style}>
     <header className="workbench-header">
       <Link to="/" className="workbench-brand" aria-label="返回 Muster 首页">M</Link>
-      <button type="button" className="workbench-icon-button" aria-label={preferences.leftOpen ? '收起工作列表' : '展开工作列表'} aria-expanded={preferences.leftOpen} aria-controls="work-navigation" onClick={preferences.toggleLeft}>☰</button>
+      <button type="button" className="workbench-icon-button" title={preferences.leftOpen ? '收起左侧工作列表' : '展开左侧工作列表'} aria-label={preferences.leftOpen ? '收起工作列表' : '展开工作列表'} aria-expanded={preferences.leftOpen} aria-controls="work-navigation" onClick={preferences.toggleLeft}><span className="pane-toggle-glyph is-left" aria-hidden="true" /></button>
       <div className="workbench-breadcrumb">{breadcrumb}</div>
       <button type="button" className="workbench-command" aria-label="搜索或跳转" onClick={() => setCommandOpen(true)}><kbd>⌘ K</kbd><span>搜索或跳转</span></button>
-      <button type="button" className="workbench-icon-button inspector-toggle" aria-label={preferences.rightOpen ? '收起现场信息' : '展开现场信息'} aria-expanded={preferences.rightOpen} aria-controls="work-inspector" onClick={preferences.toggleRight}>◧{attentionCount > 0 && <i>{attentionCount}</i>}</button>
+      <button type="button" className="workbench-icon-button inspector-toggle" title={preferences.rightOpen ? '收起右侧现场信息' : '展开右侧现场信息'} aria-label={preferences.rightOpen ? '收起现场信息' : '展开现场信息'} aria-expanded={preferences.rightOpen} aria-controls="work-inspector" onClick={preferences.toggleRight}><span className="pane-toggle-glyph is-right" aria-hidden="true" />{attentionCount > 0 && <i>{attentionCount}</i>}</button>
       {primaryAction && <div className="workbench-primary-action">{primaryAction}</div>}
     </header>
     <div className="workbench-grid">

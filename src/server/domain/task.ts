@@ -596,6 +596,11 @@ export function resumeTask(db: DB, taskId: string): Task {
 export function ensurePlanningTask(db: DB, projectId: string): Task | null {
   const project = getProject(db, projectId);
   if (!project.firstAgentId) return null;
+  // 项目任务是用户定义的上下文边界。后台规划只能进入已有边界，不能暗中创建新的项目任务。
+  const activeProjectTask = db.prepare(
+    `SELECT id FROM project_task WHERE project_id=? AND state='active' ORDER BY updated_at DESC, seq DESC LIMIT 1`,
+  ).get(projectId) as { id: string } | undefined;
+  if (!activeProjectTask) return null;
   const hasActive = db
     .prepare(`SELECT 1 FROM task WHERE project_id=? AND state IN ('queued','claimed','running','waiting_input','waiting_dependency','paused') LIMIT 1`)
     .get(projectId);
@@ -607,6 +612,7 @@ export function ensurePlanningTask(db: DB, projectId: string): Task | null {
   if (hasPlanning) return null;
   return createTask(db, {
     projectId,
+    projectTaskId: activeProjectTask.id,
     assigneeAgentId: project.firstAgentId,
     title: '[规划] 当前阶段工作拆解',
     inputProtocol: { reason: 'no_active_tasks' },

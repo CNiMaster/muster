@@ -110,6 +110,7 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 
 - **公司状态机** `off | online | draining | review_paused`：上班锁定正式组织配置；镜像扩缩容例外。
 - **Task 是唯一运行单元**：10 态状态机 `queued|claimed|running|waiting_input|waiting_dependency|paused|blocked|completed|failed|cancelled`。
+- **项目任务边界由用户控制**：后台自动规划只能进入已有的 active `project_task`；没有用户项目任务时不得暗中创建新的上下文边界。
 - **原子领取**：`BEGIN IMMEDIATE` + `UPDATE ... WHERE state='queued' ... RETURNING`，租约 + 心跳 + 过期恢复。
 - **追问 3 轮上限**：超限自动给项目第一负责人派发上报 Task。
 - **执行器抽象**：统一 Manifest/Profile 已落地；认证执行器包含 Codex CLI、Claude Code、Antigravity CLI 与 Muster API，自定义 CLI 以受限非交互模式运行。员工任职固定绑定执行器，基础探测使用 CLI 默认模型。
@@ -195,7 +196,9 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 ### UI 分层约定
 - **低门槛优先**：首次主流程固定为“创建公司→组建团队→创建项目→发布 Task”；首屏只提供一个状态相关主行动，rootDir/firstAgentId 后端自动。
 - **看板纯前端增强**：DashboardPage 用 `useProjectEvents`/`useStatusBoard`/`useTasks` reduce/`useProjectUsage.byModel` 在客户端做状态分布条、负载柱状图、事件时间线、模型用量拆分；不引入图表库，用 CSS（`.dashboard-*` 类）可视化。新增聚合趋势（吞吐/费用时序）需后端补端点，不属于前端职责。
-- **低频配置折叠**：项目页把目录、线程扩容、脑暴和复盘配置收进高级区；员工编辑折叠立场/技能/权限/执行器；设置页首屏只显示默认执行器、连接测试与保存，高级 CLI/权限/Provider 参数默认收起。
+- **低频配置收口**：项目目录、说明、复盘阈值和讨论预算集中到“项目设置”；项目页仅将线程扩容和脑暴收进协作工具折叠区。员工编辑折叠立场/技能/权限/执行器；系统设置首屏只显示默认执行器、连接测试与保存。
+- **项目工作台一致性**：项目任务、等待处理、员工看板、成果、复盘、用量、人物关系、项目设置及工作单详情都复用同一个三栏外壳；子工具页不得重新出现全局顶栏或脱离项目工作列表。
+- **模板优先创建**：员工库默认先展示与四类公司模板对应的整套团队，再展示单岗位快捷模板，空白自定义表单只作为低频入口；公司创建继续以模板向导为主入口。
 - **内联 style**：历史代码大量 `style={{...}}`，新增复杂区块优先抽 `.details-collapse` 等语义类进 `global.css`；简单 grid/gap 保留内联可接受。
 
 旧 Leader/Worker/Verifier、临时群聊、`.muster/config.json` 文件持久化等已全部废弃，不再参与运行。

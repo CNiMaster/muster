@@ -235,7 +235,7 @@ export function useEmployeeRuntime(id: string | undefined) {
 export function useCreateAgentProfile() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { displayName: string; soul?: string }) => api.post<AgentProfile>('/api/agent-profiles', input),
+    mutationFn: (input: { displayName: string; soul?: string; principles?: string[]; capabilities?: Record<string, unknown> }) => api.post<AgentProfile>('/api/agent-profiles', input),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['agent-profiles'] }),
   });
 }

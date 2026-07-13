@@ -12,6 +12,7 @@ import { TaskEngine } from '../../src/server/task-engine/engine';
 import { ProjectRuntimeCoordinator } from '../../src/server/runtime/coordinator';
 import { listReports } from '../../src/server/domain/report';
 import { startBrainstorm } from '../../src/server/domain/brainstorm';
+import { createProjectTask } from '../../src/server/domain/project-task';
 
 let db: DB;
 
@@ -27,6 +28,7 @@ describe('ProjectRuntimeCoordinator', () => {
       name: 'book',
       rootDir: makeTempGitRepo(),
     });
+    createProjectTask(db, { projectId: project.id, title: '启动作品' });
     transitionCompany(db, novel.company.id, 'online');
     const engine = new TaskEngine(db, new FakeExecutor().script([]));
     const coordinator = new ProjectRuntimeCoordinator(db, engine);
