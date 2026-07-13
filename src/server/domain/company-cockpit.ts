@@ -2,12 +2,7 @@ import type { CompanyCockpitDTO } from '../../shared/types';
 import type { DB } from '../db/client';
 import { getCompany } from './company';
 import { listProjects } from './project';
-
-interface EmployeeSummaryRow {
-  total: number;
-  online: number;
-  blocked: number;
-}
+import { getEmploymentHealth } from './executor-health';
 
 function requiredRoles(contract: Record<string, unknown>): string[] {
   const roles = contract.requiredRoles;
@@ -18,25 +13,8 @@ function requiredRoles(contract: Record<string, unknown>): string[] {
 export function getCompanyCockpit(db: DB, companyId: string): CompanyCockpitDTO {
   const company = getCompany(db, companyId);
   const projects = listProjects(db, companyId);
-  const employees = db.prepare(`
-    SELECT
-      COUNT(*) AS total,
-      COALESCE(SUM(CASE WHEN ad.availability_state='online' THEN 1 ELSE 0 END), 0) AS online,
-      COALESCE(SUM(CASE
-        WHEN ce.executor_profile_id IS NULL OR ce.permission_policy_id IS NULL THEN 1
-        WHEN COALESCE((
-          SELECT cp.status
-          FROM connection_probe cp
-          WHERE cp.executor_profile_id=ce.executor_profile_id AND cp.kind='connectivity'
-          ORDER BY cp.created_at DESC, cp.id DESC
-          LIMIT 1
-        ), 'missing') <> 'connected' THEN 1
-        ELSE 0
-      END), 0) AS blocked
-    FROM company_employee ce
-    JOIN agent_definition ad ON ad.id=ce.legacy_agent_id
-    WHERE ce.company_id=?
-  `).get(companyId) as EmployeeSummaryRow;
+  const employeeRows = db.prepare(`SELECT ce.id,ad.availability_state FROM company_employee ce JOIN agent_definition ad ON ad.id=ce.legacy_agent_id WHERE ce.company_id=?`).all(companyId) as Array<{id:string;availability_state:string}>;
+  const employees = { total: employeeRows.length, online: employeeRows.filter((row) => row.availability_state === 'online').length, blocked: employeeRows.filter((row) => getEmploymentHealth(db, row.id).state !== 'ready').length };
   const pending = (db.prepare(`
     SELECT COUNT(*) AS count
     FROM permission_approval pa

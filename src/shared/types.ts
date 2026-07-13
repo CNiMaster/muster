@@ -121,6 +121,15 @@ export interface EmployeeRuntimeDTO {
   }>;
 }
 
+export interface EmploymentHealthDTO {
+  state: 'ready' | 'checking' | 'blocked';
+  code: 'ready' | 'executor-missing' | 'permission-missing' | 'probe-missing' | 'probe-running' | 'probe-failed' | 'approval-bridge-limited';
+  label: string;
+  detail: string;
+  action: { label: string; href: string } | null;
+  probe: { status: string; classification: string | null; completedAt: string | null } | null;
+}
+
 // ===== 用量记录 =====
 export interface UsageRecord {
   id: string;

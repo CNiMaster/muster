@@ -68,6 +68,7 @@ export interface CompanyEmployee {
   permissionPolicyId: string | null;
   createdAt: string;
   updatedAt: string;
+  health?: import('../../shared/types').EmploymentHealthDTO;
 }
 
 export interface MemoryCandidate {

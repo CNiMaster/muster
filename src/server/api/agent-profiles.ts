@@ -16,6 +16,7 @@ import { exportCapabilityPackage, materializeAgentHome, syncAgentIdentityFiles, 
 import { resetPersonalMemory } from '../domain/memory';
 import { recruitFromDraft } from '../domain/recruitment';
 import { getEmployeeRuntime } from '../domain/employee-runtime';
+import { getEmploymentHealth } from '../domain/executor-health';
 
 export const agentProfilesRouter = Router();
 export const companyEmployeesRouter = Router({ mergeParams: true });
@@ -62,7 +63,8 @@ agentProfilesRouter.patch('/:id', asyncHandler(async (req, res) => {
 }));
 
 agentProfilesRouter.get('/:id/employments', asyncHandler(async (req, res) => {
-  res.json(listProfileEmployments(getDb(), param(req, 'id')));
+  const db = getDb();
+  res.json(listProfileEmployments(db, param(req, 'id')).map((employment) => ({ ...employment, health: getEmploymentHealth(db, employment.id) })));
 }));
 
 agentProfilesRouter.get('/:id/runtime', asyncHandler(async (req, res) => {
