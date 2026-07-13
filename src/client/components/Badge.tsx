@@ -5,6 +5,7 @@
  tone: ok | warn | err | info | neutral
  */
 import type React from 'react';
+import { getStateExplanation, type StateDomain } from './StateExplanation';
 
 export type BadgeTone = 'ok' | 'warn' | 'err' | 'info' | 'neutral';
 
@@ -61,3 +62,6 @@ const STATE_LABELS: Record<string, string> = {
 export function stateLabel(state: string): string {
   return STATE_LABELS[state] ?? state;
 }
+
+export function StateBadge({domain,state,tone}:{domain:StateDomain;state:string;tone?:BadgeTone}):React.ReactElement{const explanation=getStateExplanation(domain,state);return <Badge tone={tone??stateTone(domain,state)} title={`${explanation.description} ${explanation.impact}`}>{explanation.title}</Badge>}
+function stateTone(domain:StateDomain,state:string):BadgeTone{if(['failed','blocked','denied','timed-out'].includes(state))return'err';if(['draining','review_paused','paused','waiting','testing','pending','rotating'].includes(state))return'warn';if(['online','active','connected','allowed','completed'].includes(state))return'ok';return domain==='thread'&&state==='running'?'info':'neutral';}

@@ -5,7 +5,7 @@
  键盘：左右方向键切换（WAI-ARIA tabs pattern），Home/End 跳首尾。
  */
 import type React from 'react';
-import { useState, useRef } from 'react';
+import { useId, useState, useRef } from 'react';
 
 export interface TabItem {
   key: string;
@@ -22,6 +22,7 @@ export interface TabsProps {
 
 export function Tabs({ items, defaultKey, activeKey, onChange }: TabsProps): React.ReactElement {
   const [internal, setInternal] = useState(defaultKey ?? items[0]?.key);
+  const tabsId = useId();
   const active = activeKey ?? internal;
   const setActive = (k: string): void => {
     if (onChange) onChange(k);
@@ -56,6 +57,8 @@ export function Tabs({ items, defaultKey, activeKey, onChange }: TabsProps): Rea
           <button
             key={it.key}
             role="tab"
+            id={`${tabsId}-tab-${it.key}`}
+            aria-controls={`${tabsId}-panel`}
             aria-selected={it.key === active}
             tabIndex={it.key === active ? 0 : -1}
             className={`mu-tab ${it.key === active ? 'is-active' : ''}`}
@@ -65,7 +68,7 @@ export function Tabs({ items, defaultKey, activeKey, onChange }: TabsProps): Rea
           </button>
         ))}
       </div>
-      <div className="mu-tabs-panel" role="tabpanel">
+      <div className="mu-tabs-panel" role="tabpanel" id={`${tabsId}-panel`} aria-labelledby={`${tabsId}-tab-${activeItem?.key ?? ''}`}>
         {activeItem?.content}
       </div>
     </div>

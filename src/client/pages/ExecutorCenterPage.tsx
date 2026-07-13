@@ -2,7 +2,7 @@ import type React from 'react';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
-import { Badge } from '../components/Badge';
+import { Badge, StateBadge } from '../components/Badge';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';import{Field,Input}from'../components/Form';
 
@@ -37,5 +37,5 @@ export function ExecutorCenterPage():React.ReactElement{
   </div>;
 }
 function concurrencyLabel(value:string):string{return value==='parallel'?'支持员工并行':value==='profile-serial'?'同一配置串行':'全局串行';}
-function ProbeResult({probeId}:{probeId?:string}):React.ReactElement|null{const probe=useQuery({queryKey:['executor-probe',probeId],queryFn:()=>api.get<Probe>(`/api/executors/probes/${probeId}`),enabled:!!probeId,refetchInterval:query=>['queued','testing'].includes(query.state.data?.status??'')?500:false});if(!probeId)return null;const value=probe.data;if(!value)return <div className="diagnostic-text">正在启动测试…</div>;return <div className="diagnostic-text"><Badge tone={value.status==='connected'?'ok':value.status==='failed'?'err':'info'}>{value.kind==='model'?'指定模型':'基础联通'}：{value.status==='connected'?'正常':value.status==='failed'?'失败':'测试中'}</Badge>{value.model&&<span> {value.model}</span>}{value.classification&&<><br/>{diagnosticLabel(value.classification)}{value.stderr?`：${value.stderr}`:''}</>}{value.completedAt&&<><br/><span className="muted">{new Date(value.completedAt).toLocaleString()} · {value.durationMs}ms</span></>}</div>}
+function ProbeResult({probeId}:{probeId?:string}):React.ReactElement|null{const probe=useQuery({queryKey:['executor-probe',probeId],queryFn:()=>api.get<Probe>(`/api/executors/probes/${probeId}`),enabled:!!probeId,refetchInterval:query=>['queued','testing'].includes(query.state.data?.status??'')?500:false});if(!probeId)return null;const value=probe.data;if(!value)return <div className="diagnostic-text" aria-live="polite">正在启动测试…</div>;return <div className="diagnostic-text" aria-live="polite"><span>{value.kind==='model'?'指定模型':'基础联通'}：</span><StateBadge domain="probe" state={value.status}/>{value.model&&<span> {value.model}</span>}{value.classification&&<><br/>{diagnosticLabel(value.classification)}{value.stderr?`：${value.stderr}`:''}</>}{value.completedAt&&<><br/><span className="muted">{new Date(value.completedAt).toLocaleString()} · {value.durationMs}ms</span></>}</div>}
 function diagnosticLabel(value:string):string{return({not_found:'找不到执行器',version_failed:'CLI 版本过旧',authentication_failed:'认证失败',model_failed:'模型不可用',network_failed:'网络失败',permission_bridge_failed:'审批桥失败',timeout:'测试超时',invalid_output:'输出无效',mutated_workspace:'测试意外修改文件',failed:'测试失败'}as Record<string,string>)[value]??value;}

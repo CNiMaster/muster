@@ -1,7 +1,7 @@
 import type React from 'react';
 import { Link } from 'react-router-dom';
 import type { Project } from '../../api/types';
-import { Badge } from '../Badge';
+import { StateBadge } from '../Badge';
 import { Card } from '../Card';
 import { EmptyState, Icons } from '../EmptyState';
 
@@ -14,7 +14,7 @@ export function CompanyProjects({ companyId, projects }: { companyId: string; pr
     <ul className="entity-list">
       {projects.map((project) => <li key={project.id}>
         <Link to={`/projects/${project.id}`} style={{ flex: 1 }}><strong>{project.name}</strong></Link>
-        <Badge tone={project.state === 'active' ? 'ok' : project.state === 'paused' ? 'warn' : 'neutral'}>{project.state}</Badge>
+        <StateBadge domain="project" state={project.state} />
       </li>)}
     </ul>
   </Card>;

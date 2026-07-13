@@ -755,3 +755,5 @@ p { margin: 0 0 var(--space-3) 0; }
 .next-action-inline p{margin:4px 0 0}
 .employment-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:var(--space-4)}
 @media(max-width:640px){.dashboard-metrics{grid-template-columns:1fr}.next-action-inline{align-items:stretch;flex-direction:column}.employment-grid{grid-template-columns:1fr}}
+.state-explanation p,.blocking-issues p{margin:4px 0 0}.blocking-issues .entity-list li{align-items:flex-start}
+@media(max-width:390px){.entity-list li,.install-command,.executor-card-head{align-items:stretch;flex-direction:column}.entity-list .mu-btn,.blocking-issues .mu-btn{width:100%}.executor-grid{grid-template-columns:minmax(0,1fr)}code{max-width:100%;overflow-wrap:anywhere}}

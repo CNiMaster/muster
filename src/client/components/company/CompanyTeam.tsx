@@ -12,7 +12,7 @@ import {
   useRecruitFromDraft,
   useUpdateAgent,
 } from '../../hooks/queries';
-import { Badge } from '../Badge';
+import { Badge, StateBadge } from '../Badge';
 import { Button, toast } from '../Button';
 import { Card } from '../Card';
 import { EmptyState, Icons } from '../EmptyState';
@@ -72,7 +72,7 @@ export function CompanyTeam({
             {departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}
           </Select> : <span className="muted">{departments.find((department) => department.id === agent.departmentId)?.name ?? '未分配部门'}</span>}
           {agent.isInspector && <Badge tone="warn">监察</Badge>}
-          <Badge tone={agent.availabilityState === 'online' ? 'ok' : agent.availabilityState === 'draining' ? 'warn' : 'neutral'}>{agent.availabilityState === 'online' ? '上班' : agent.availabilityState === 'draining' ? '排空中' : '下班'}</Badge>
+          <StateBadge domain="employee" state={agent.availabilityState} />
           <Button size="sm" variant="ghost" disabled={agent.availabilityState === 'draining'} onClick={() => availability.mutate({ companyId, id: agent.id, action: agent.availabilityState === 'online' ? 'clock-out' : 'clock-in' })}>{agent.availabilityState === 'online' ? '员工下班' : '员工上班'}</Button>
         </li>)}
       </ul>
