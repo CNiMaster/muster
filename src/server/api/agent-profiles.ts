@@ -15,6 +15,7 @@ import { asyncHandler, param } from './middleware';
 import { exportCapabilityPackage, materializeAgentHome, syncAgentIdentityFiles, syncAgentMemoryFiles } from '../domain/agent-home';
 import { resetPersonalMemory } from '../domain/memory';
 import { recruitFromDraft } from '../domain/recruitment';
+import { getEmployeeRuntime } from '../domain/employee-runtime';
 
 export const agentProfilesRouter = Router();
 export const companyEmployeesRouter = Router({ mergeParams: true });
@@ -62,6 +63,10 @@ agentProfilesRouter.patch('/:id', asyncHandler(async (req, res) => {
 
 agentProfilesRouter.get('/:id/employments', asyncHandler(async (req, res) => {
   res.json(listProfileEmployments(getDb(), param(req, 'id')));
+}));
+
+agentProfilesRouter.get('/:id/runtime', asyncHandler(async (req, res) => {
+  res.json(getEmployeeRuntime(getDb(), param(req, 'id')));
 }));
 
 agentProfilesRouter.post('/:id/copy', asyncHandler(async (req, res) => {

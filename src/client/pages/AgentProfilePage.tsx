@@ -1,6 +1,6 @@
 import type React from 'react';
-import { Link, useParams } from 'react-router-dom';
-import { useAgentProfile, useCompanies, useCopyAgentProfile, useProfileEmployments, useResetAgentProfile } from '../hooks/queries';
+import { useParams } from 'react-router-dom';
+import { useAgentProfile, useCompanies, useCopyAgentProfile, useEmployeeRuntime, useProfileEmployments, useResetAgentProfile } from '../hooks/queries';
 import { Badge } from '../components/Badge';
 import { Card } from '../components/Card';
 import { CardSkeleton } from '../components/Skeleton';
@@ -8,8 +8,9 @@ import { MemoryReviewPanel } from '../components/MemoryReviewPanel';
 import { Button, toast } from '../components/Button';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
-import { Select } from '../components/Form';
 import { EmploymentCard } from '../components/agents/EmploymentCard';
+import { EmployeeRuntimePanel } from '../components/agents/EmployeeRuntimePanel';
+import { Tabs } from '../components/Tabs';
 
 type ExecutorProfileOption = { id:string;name:string;manifestId:string;concurrencyMode:string };
 type PermissionPolicyOption = { id:string;name:string;approvalStrategy:string;scope:string };
@@ -18,6 +19,7 @@ export function AgentProfilePage(): React.ReactElement {
   const { profileId } = useParams();
   const { data: profile, isLoading } = useAgentProfile(profileId);
   const { data: employments } = useProfileEmployments(profileId);
+  const { data: runtime } = useEmployeeRuntime(profileId);
   const { data: companies } = useCompanies();
   const copyProfile = useCopyAgentProfile();
   const resetProfile = useResetAgentProfile();
@@ -28,12 +30,9 @@ export function AgentProfilePage(): React.ReactElement {
   const bindPermission = useMutation({ mutationFn:({employeeId,policyId}:{employeeId:string;policyId:string})=>api.put(`/api/permissions/employees/${employeeId}/policy/${policyId}`), onSuccess:()=>{void qc.invalidateQueries({queryKey:['profile-employments',profileId]});toast('success','员工权限策略已绑定');},onError:(e:any)=>toast('error',e.message??'绑定失败') });
   if (isLoading || !profile) return <CardSkeleton />;
   const capabilities = profile.capabilities as { skills?: string[]; tools?: string[] };
-  return (
-    <div className="agent-profile-page">
-      <header className="page-header">
-        <div><h1>{profile.displayName}</h1><p className="subtitle">全局员工档案 · 基础版本 {profile.baseVersion}</p></div>
-      </header>
+  const identity = <div className="section-stack">
       <Card title="身份与能力">
+        <p className="muted">全局员工档案 · 基础版本 {profile.baseVersion}</p>
         <p>{profile.soul || '尚未设置稳定身份说明。'}</p>
         <div className="graph-links">
           {(capabilities.skills ?? []).map((skill) => <Badge key={skill} tone="info">{skill}</Badge>)}
@@ -58,7 +57,9 @@ export function AgentProfilePage(): React.ReactElement {
           </div>
         </details>
       </Card>
-      <Card title="公司任职" className="section">
+      <MemoryReviewPanel profileId={profile.id} />
+    </div>;
+  const employmentList = <Card title="公司任职">
         <p className="muted">任职决定员工在某家公司负责什么、使用哪个执行器，以及允许操作的范围；不会改变全局身份和个人记忆。</p>
         <div className="employment-grid">
           {employments?.map((employment) => {
@@ -66,8 +67,15 @@ export function AgentProfilePage(): React.ReactElement {
             return <EmploymentCard key={employment.id} employment={employment} companyName={company?.name??employment.companyId} executors={executorProfiles.data??[]} policies={permissionPolicies.data??[]} onExecutor={executorProfileId=>bindExecutor.mutate({employeeId:employment.id,executorProfileId})} onPermission={policyId=>bindPermission.mutate({employeeId:employment.id,policyId})}/>;
           })}
         </div>
-      </Card>
-      <MemoryReviewPanel profileId={profile.id} />
+      </Card>;
+  return (
+    <div className="agent-profile-page">
+      <header className="page-header"><div><h1>{profile.displayName}</h1><p className="subtitle">员工个人空间</p></div></header>
+      <Tabs items={[
+        { key: 'identity', label: '身份与能力', content: identity },
+        { key: 'employments', label: `公司任职（${employments?.length ?? 0}）`, content: employmentList },
+        { key: 'runtime', label: `项目工作状态（${runtime?.totals.threads ?? 0}）`, content: runtime ? <EmployeeRuntimePanel runtime={runtime} /> : <CardSkeleton /> },
+      ]} />
     </div>
   );
 }

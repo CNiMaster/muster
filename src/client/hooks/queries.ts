@@ -224,6 +224,14 @@ export function useProfileEmployments(id: string | undefined) {
     enabled: !!id,
   });
 }
+export function useEmployeeRuntime(id: string | undefined) {
+  return useQuery({
+    queryKey: ['employee-runtime', id],
+    queryFn: () => api.get<import('../../shared/types').EmployeeRuntimeDTO>(`/api/agent-profiles/${id}/runtime`),
+    enabled: !!id,
+    refetchInterval: 5000,
+  });
+}
 export function useCreateAgentProfile() {
   const qc = useQueryClient();
   return useMutation({

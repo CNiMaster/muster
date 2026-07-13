@@ -91,6 +91,36 @@ export interface CompanyCockpitDTO {
   };
 }
 
+export interface EmployeeRuntimeDTO {
+  profileId: string;
+  totals: { employments: number; projects: number; threads: number; workOrders: number; artifacts: number };
+  employments: Array<{
+    employeeId: string;
+    companyId: string;
+    companyName: string;
+    role: string;
+    projects: Array<{
+      projectId: string;
+      projectName: string;
+      threads: Array<{
+        id: string;
+        projectTaskId: string;
+        projectTaskTitle: string;
+        projectTaskState: 'active' | 'completed' | 'archived';
+        state: string;
+        vendorSessionState: 'not-created' | 'active' | 'replaced';
+        runCount: number;
+        workOrderCount: number;
+        compactionCount: number;
+        transcriptBytes: number;
+        updatedAt: string;
+      }>;
+      artifactCount: number;
+      lastActivityAt: string | null;
+    }>;
+  }>;
+}
+
 // ===== 用量记录 =====
 export interface UsageRecord {
   id: string;
