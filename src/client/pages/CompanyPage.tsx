@@ -6,9 +6,12 @@ import { CardSkeleton } from '../components/Skeleton';
 import { CompanyActivity } from '../components/company/CompanyActivity';
 import { CompanyOverview } from '../components/company/CompanyOverview';
 import { CompanyProjects } from '../components/company/CompanyProjects';
-import { CompanySections, isCompanySectionKey } from '../components/company/CompanySections';
+import { isCompanySectionKey } from '../components/company/CompanySections';
 import { CompanySettings } from '../components/company/CompanySettings';
 import { CompanyTeam } from '../components/company/CompanyTeam';
+import { WorkbenchShell } from '../components/workbench/WorkbenchShell';
+import { CompanyWorkNavigation } from '../components/workbench/CompanyWorkNavigation';
+import { CompanyContextInspector } from '../components/workbench/CompanyContextInspector';
 import {
   useAgents,
   useCompany,
@@ -20,10 +23,12 @@ import {
   useStatusBoard,
 } from '../hooks/queries';
 
+const COMPANY_KIND_LABELS: Record<string,string>={general:'通用团队',software:'软件研发',content:'内容创作',novel:'长篇小说'};
+
 export function CompanyPage(): React.ReactElement {
   const { companyId = '' } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
-  const requestedTab = searchParams.get('tab');
+  const requestedTab = searchParams.get('view') ?? searchParams.get('tab');
   const activeTab = isCompanySectionKey(requestedTab) ? requestedTab : 'overview';
   const { data: company, isLoading } = useCompany(companyId);
   const { data: cockpit } = useCompanyCockpit(companyId);
@@ -43,33 +48,40 @@ export function CompanyPage(): React.ReactElement {
     });
   };
 
-  return <div className="company-page">
-    <header className="page-header">
+  const centerContent = activeTab === 'overview'
+    ? (cockpit ? <CompanyOverview cockpit={cockpit} statusBoard={statusBoard} statusBoardLoading={statusBoardLoading} /> : <CardSkeleton />)
+    : activeTab === 'team' ? <CompanyTeam companyId={companyId} isOff={company.state === 'off'} agents={agents} departments={departments} />
+      : activeTab === 'projects' ? <CompanyProjects companyId={companyId} projects={projects} />
+        : activeTab === 'activity' ? <CompanyActivity companyId={companyId} agents={agents} events={events} />
+          : <CompanySettings company={company} />;
+  const companyAction = company.state === 'off'
+    ? <Button icon={<span aria-hidden="true">▶</span>} onClick={() => doAction('clock-in')} loading={action.isPending}>启动公司</Button>
+    : company.state === 'online'
+      ? <Button icon={<span aria-hidden="true">◷</span>} onClick={() => doAction('drain')} loading={action.isPending}>完成工作</Button>
+      : company.state === 'review_paused' ? <Button onClick={() => doAction('resume')} loading={action.isPending}>继续工作</Button> : undefined;
+
+  return <WorkbenchShell
+    scopeKey={`company:${companyId}`}
+    breadcrumb={<><span>{COMPANY_KIND_LABELS[company.kind] ?? company.kind}</span>　/　<strong>{company.name}</strong></>}
+    navigationLabel="公司工作列表"
+    inspectorLabel="公司现场"
+    attentionCount={(cockpit?.approvals.pending ?? 0) + (cockpit?.projects.attention ?? 0)}
+    primaryAction={companyAction}
+    navigation={<CompanyWorkNavigation active={activeTab} projectCount={projects.length} employeeCount={agents.length} attentionCount={(cockpit?.approvals.pending ?? 0) + (cockpit?.projects.attention ?? 0)} onChange={(view) => setSearchParams(view === 'overview' ? {} : { view })} />}
+    inspector={<CompanyContextInspector cockpit={cockpit} />}
+  >
+    <div className="company-page work-surface-page">
+    <header className="work-surface-heading">
       <div>
         <h1>{company.name}</h1>
         <div className="subtitle" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <Badge tone={companyStateTone(company.state)} dot={company.state === 'online'}>{stateLabel(company.state)}</Badge>
-          <span className="muted">类型：{company.kind}</span>
+          <span className="muted">{COMPANY_KIND_LABELS[company.kind]??company.kind}</span>
         </div>
       </div>
-      <div className="page-actions">
-        {company.state === 'off' && <Button onClick={() => doAction('clock-in')} loading={action.isPending}>上班</Button>}
-        {company.state === 'online' && <>
-          <Button variant="ghost" onClick={() => doAction('drain')} loading={action.isPending}>排空</Button>
-          <Button variant="danger" onClick={() => doAction('clock-out')} loading={action.isPending}>下班</Button>
-        </>}
-        {company.state === 'review_paused' && <Button onClick={() => doAction('resume')} loading={action.isPending}>继续工作</Button>}
-      </div>
     </header>
-
-    <CompanySections
-      active={activeTab}
-      onChange={(tab) => setSearchParams(tab === 'overview' ? {} : { tab })}
-      overview={cockpit ? <CompanyOverview cockpit={cockpit} statusBoard={statusBoard} statusBoardLoading={statusBoardLoading} /> : <CardSkeleton />}
-      team={<CompanyTeam companyId={companyId} isOff={company.state === 'off'} agents={agents} departments={departments} />}
-      projects={<CompanyProjects companyId={companyId} projects={projects} />}
-      activity={<CompanyActivity companyId={companyId} agents={agents} events={events} />}
-      settings={<CompanySettings company={company} />}
-    />
-  </div>;
+    {centerContent}
+    {company.state === 'online' && activeTab === 'settings' && <Button variant="danger" icon={<span aria-hidden="true">■</span>} onClick={() => doAction('clock-out')} loading={action.isPending}>停止公司</Button>}
+  </div>
+  </WorkbenchShell>;
 }

@@ -1,18 +1,20 @@
 import type React from 'react';
-import { Outlet, NavLink, useParams } from 'react-router-dom';
+import { Outlet, NavLink, useLocation, useParams } from 'react-router-dom';
 import { useCompany, useProject } from './hooks/queries';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 export function App(): React.ReactElement {
+  const location = useLocation();
+  const workbenchRoute = /^\/companies\/[^/]+\/?$/.test(location.pathname) || /^\/projects\/[^/]+\/?$/.test(location.pathname);
   return (
     <ErrorBoundary label="App">
       <div className="app-shell">
-        <header className="topbar">
+        {!workbenchRoute && <header className="topbar">
           <div className="brand">
-            <NavLink to="/">Muster · Agent 公司工作台</NavLink>
+            <NavLink to="/"><span className="brand-seal" aria-hidden="true">M</span><span>Muster</span><small>Agent 公司工作台</small></NavLink>
           </div>
           <ContextNavigation />
-        </header>
+        </header>}
         <main className="main">
           {/* 页面级边界：单页崩溃不影响导航与其他页 */}
           <ErrorBoundary label="Page">

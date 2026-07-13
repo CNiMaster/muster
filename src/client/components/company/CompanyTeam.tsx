@@ -72,8 +72,8 @@ export function CompanyTeam({
             {departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}
           </Select> : <span className="muted">{departments.find((department) => department.id === agent.departmentId)?.name ?? '未分配部门'}</span>}
           {agent.isInspector && <Badge tone="warn">监察</Badge>}
-          <StateBadge domain="employee" state={agent.availabilityState} />
-          <Button size="sm" variant="ghost" disabled={agent.availabilityState === 'draining'} onClick={() => availability.mutate({ companyId, id: agent.id, action: agent.availabilityState === 'online' ? 'clock-out' : 'clock-in' })}>{agent.availabilityState === 'online' ? '员工下班' : '员工上班'}</Button>
+          {isOff ? <Badge tone={agent.availabilityState === 'online' ? 'neutral' : 'warn'}>{agent.availabilityState === 'online' ? '随公司待命' : '已暂停'}</Badge> : <StateBadge domain="employee" state={agent.availabilityState} />}
+          {(!isOff || agent.availabilityState !== 'online') && <Button size="sm" variant="ghost" disabled={agent.availabilityState === 'draining'} onClick={() => availability.mutate({ companyId, id: agent.id, action: agent.availabilityState === 'online' ? 'clock-out' : 'clock-in' })}>{agent.availabilityState === 'online' ? '暂停员工' : '加入工作'}</Button>}
         </li>)}
       </ul>
     </Card>

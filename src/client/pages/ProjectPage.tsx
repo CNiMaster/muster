@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import {
   useProject,
@@ -22,6 +22,7 @@ import {
   useProjectTask,
   useCreateProjectTask,
   useProjectTaskAction,
+  useCompanyCockpit,
 } from '../hooks/queries';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
@@ -34,6 +35,10 @@ import { ActivityPanel } from '../components/ActivityPanel';
 import { NextActionCard } from '../components/NextActionCard';
 import { deriveNextAction } from '../domain/next-action';
 import { useRecentProject } from '../hooks/useRecentProject';
+import { WorkbenchShell } from '../components/workbench/WorkbenchShell';
+import { ProjectWorkNavigation } from '../components/workbench/ProjectWorkNavigation';
+import { ProjectContextInspector } from '../components/workbench/ProjectContextInspector';
+import { ProjectTaskWorkspace } from '../components/project/ProjectTaskWorkspace';
 
 export function ProjectPage(): React.ReactElement {
   const { projectId, companyId } = useParams();
@@ -269,6 +274,8 @@ function NewProject({ companyId }: { companyId: string }): React.ReactElement {
 function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement {
   useRecentProject(projectId);
   const { data: project } = useProject(projectId);
+  const { data: company } = useCompany(project?.companyId);
+  const { data: cockpit } = useCompanyCockpit(project?.companyId);
   const { data: agents } = useAgents(project?.companyId);
   const { data: threads } = useThreads(projectId);
   const { data: projectEvents } = useProjectEvents(projectId);
@@ -277,7 +284,9 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
   const createProjectTask = useCreateProjectTask();
   const projectTaskAction = useProjectTaskAction();
   const createWorkOrder = useCreateTask();
-  const [selectedProjectTaskId,setSelectedProjectTaskId]=useState<string>();
+  const [searchParams,setSearchParams]=useSearchParams();
+  const projectView = searchParams.get('view') === 'chat' ? 'chat' : searchParams.get('view') === 'activity' ? 'activity' : 'task';
+  const [selectedProjectTaskId,setSelectedProjectTaskId]=useState<string|undefined>(()=>searchParams.get('projectTask')??undefined);
   const {data:selectedProjectTask}=useProjectTask(projectId,selectedProjectTaskId);
   const [projectTaskTitle,setProjectTaskTitle]=useState('');
   const [projectTaskBrief,setProjectTaskBrief]=useState('');
@@ -301,9 +310,28 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
     }
   }, [agents]);
 
+  useEffect(() => {
+    if (!selectedProjectTaskId && projectTasks?.length) {
+      const id = projectTasks.find((item)=>item.state==='active')?.id ?? projectTasks[0]?.id;
+      if (id) {
+        setSelectedProjectTaskId(id);
+        const next = new URLSearchParams(searchParams);
+        next.set('projectTask', id);
+        setSearchParams(next, { replace: true });
+      }
+    }
+  }, [projectTasks, selectedProjectTaskId, searchParams, setSearchParams]);
+
   if (!project) return <div className="loading">加载中…</div>;
 
   const attentionCount = tasks?.filter((task) => task.state === 'blocked' || task.state === 'waiting_input').length ?? 0;
+  const selectProjectTask = (id:string):void => {
+    setSelectedProjectTaskId(id);
+    const next = new URLSearchParams(searchParams);
+    next.set('projectTask',id);
+    next.delete('view');
+    setSearchParams(next,{replace:true});
+  };
 
   const handleAutoBrainstorm = () => {
     if (!topic.trim()) {
@@ -371,79 +399,77 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
   };
 
   return (
-    <div className="project-page" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-      <header className="page-header">
+    <WorkbenchShell
+      scopeKey={`project:${projectId}`}
+      breadcrumb={<><span>{company?.name ?? '公司'}</span>　/　<strong>{project.name}</strong></>}
+      navigationLabel="项目工作列表"
+      inspectorLabel="项目现场"
+      attentionCount={attentionCount + (cockpit?.approvals.pending ?? 0)}
+      primaryAction={<a className="mu-btn mu-btn-primary" href="#project-tasks">＋ 发布工作</a>}
+      navigation={<ProjectWorkNavigation projectId={projectId} tasks={projectTasks ?? []} selectedId={selectedProjectTaskId} view={projectView} attentionCount={attentionCount} novel={company?.kind === 'novel'} onSelect={selectProjectTask} />}
+      inspector={<ProjectContextInspector projectId={projectId} projectState={project.state} selectedTask={selectedProjectTask} agents={agents ?? []} cockpit={cockpit} />}
+    >
+    <div className="project-page work-surface-page" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+      <header className="work-surface-heading">
         <div>
           <h1>{project.name}</h1>
           <div className="subtitle" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <StateBadge domain="project" state={project.state} />
           </div>
         </div>
-        <div className="page-actions">
-          <Link to={`/projects/${projectId}/dashboard`}>
-            <Button variant="ghost" size="sm">看板</Button>
-          </Link>
-          <Link to={`/projects/${projectId}/reports`}>
-            <Button variant="ghost" size="sm">复盘</Button>
-          </Link>
-          <Link to={`/projects/${projectId}/tasks`}>
-            <Button variant="ghost" size="sm">Task 列表</Button>
-          </Link>
-          <Link to={`/projects/${projectId}/artifacts`}>
-            <Button variant="ghost" size="sm">成果</Button>
-          </Link>
-          <Link to={`/projects/${projectId}/character-graph`}>
-            <Button variant="ghost" size="sm">人物关系图</Button>
-          </Link>
-          <Link to={`/projects/${projectId}/usage`}>
-            <Button variant="ghost" size="sm">用量</Button>
-          </Link>
-        </div>
       </header>
 
-      <NextActionCard action={deriveNextAction({
-        companies: [{ id: project.companyId, name: '' }],
+      {projectView === 'task' && <NextActionCard action={deriveNextAction({
+        companies: [{ id: project.companyId, name: company?.name ?? '', state: company?.state }],
         projects: [project],
         attentionCount,
-      })} />
+        blockedEmployeeCount: cockpit?.employees.blocked,
+        activeProjectTaskCount: projectTasks?.filter((item) => item.state === 'active').length,
+        projectTaskId: projectTasks?.find((item) => item.state === 'active')?.id,
+      })} />}
 
-      <Card title="项目任务" actions={<Badge tone="info">{projectTasks?.filter(item=>item.state==='active').length??0} 进行中</Badge>}>
-        <p className="muted">项目任务是上下文边界；其中下发给员工的具体事项称为员工工作单。</p>
-        <div className="form-stack">
-          <Field label="新项目任务标题"><Input value={projectTaskTitle} onChange={event=>setProjectTaskTitle(event.target.value)} placeholder="例如：重构执行器审批系统"/></Field>
-          <Field label="目标说明"><Textarea value={projectTaskBrief} onChange={event=>setProjectTaskBrief(event.target.value)} placeholder="说明目标、范围和验收标准"/></Field>
-          <Button disabled={!projectTaskTitle.trim()} loading={createProjectTask.isPending} onClick={()=>createProjectTask.mutate({projectId,title:projectTaskTitle,brief:projectTaskBrief},{onSuccess:item=>{setProjectTaskTitle('');setProjectTaskBrief('');setSelectedProjectTaskId(item.id);toast('success','项目任务已创建');}})}>新建项目任务</Button>
-        </div>
-        {(['active','completed','archived'] as const).map(state=><section key={state} className="section"><strong>{state==='active'?'进行中':state==='completed'?'已完成':'已归档'}</strong><ul className="entity-list">{projectTasks?.filter(item=>item.state===state).map(item=><li key={item.id}><button className="link-button" onClick={()=>setSelectedProjectTaskId(item.id)}>#{item.seq} {item.title}</button><span className="muted">{item.brief}</span>{state==='active'&&<Button size="sm" variant="ghost" onClick={()=>projectTaskAction.mutate({projectId,id:item.id,action:'complete'})}>完成</Button>}{state!=='archived'&&<Button size="sm" variant="ghost" onClick={()=>{if(window.confirm('归档后，本项目任务的员工工作单、会话和成果将只读保存；后续工作需要新建项目任务。确定归档吗？'))projectTaskAction.mutate({projectId,id:item.id,action:'archive'});}}>归档</Button>}</li>)}</ul></section>)}
-        {selectedProjectTask&&<div className="section"><h3>#{selectedProjectTask.seq} {selectedProjectTask.title} <StateBadge domain="project-task" state={selectedProjectTask.state}/></h3><p>{selectedProjectTask.brief||'（无目标说明）'}</p><div className="form-stack"><Field label="员工工作单"><Input value={workOrderTitle} disabled={selectedProjectTask.state==='archived'} onChange={event=>setWorkOrderTitle(event.target.value)} placeholder="给员工的具体工作"/></Field><Field label="指派员工"><Select value={workOrderAssignee} disabled={selectedProjectTask.state==='archived'} onChange={event=>setWorkOrderAssignee(event.target.value)}><option value="">自动分配</option>{agents?.map(agent=><option key={agent.id} value={agent.id}>{agent.name}</option>)}</Select></Field><Button disabled={selectedProjectTask.state==='archived'||!workOrderTitle.trim()} onClick={()=>createWorkOrder.mutate({projectId,projectTaskId:selectedProjectTask.id,title:workOrderTitle,assigneeAgentId:workOrderAssignee||undefined},{onSuccess:()=>{setWorkOrderTitle('');toast('success','员工工作单已发布');}})}>发布员工工作单</Button></div><h4>参与员工会话</h4>{selectedProjectTask.threads?.length?<ul className="entity-list">{selectedProjectTask.threads.map(thread=><li key={thread.id}><span>{agents?.find(agent=>agent.id===thread.employeeId)?.name??thread.employeeId}</span><StateBadge domain="thread" state={thread.state}/><span className="muted">Run {thread.runCount} · 压缩 {thread.compactionCount} · {thread.vendorSessionId?'会话已建立':'等待首次参与'}</span></li>)}</ul>:<p className="muted">员工首次收到工作单后才创建会话。</p>}</div>}
-      </Card>
+      {projectView === 'task' && <ProjectTaskWorkspace
+        selectedTask={selectedProjectTask}
+        tasks={projectTasks ?? []}
+        agents={agents ?? []}
+        draft={{ title: projectTaskTitle, brief: projectTaskBrief }}
+        creating={createProjectTask.isPending}
+        onDraftChange={(draft) => { setProjectTaskTitle(draft.title); setProjectTaskBrief(draft.brief); }}
+        onCreate={() => createProjectTask.mutate({ projectId, title: projectTaskTitle, brief: projectTaskBrief }, { onSuccess: (item) => { setProjectTaskTitle(''); setProjectTaskBrief(''); selectProjectTask(item.id); toast('success', '项目任务已创建'); } })}
+        onSelect={selectProjectTask}
+        onComplete={(id) => projectTaskAction.mutate({ projectId, id, action: 'complete' })}
+        onArchive={(id) => { if (window.confirm('归档后，本项目任务将只读保存；后续工作需要新建项目任务。确定归档吗？')) projectTaskAction.mutate({ projectId, id, action: 'archive' }); }}
+        workOrder={{ title: workOrderTitle, assigneeId: workOrderAssignee }}
+        onWorkOrderChange={(workOrder) => { setWorkOrderTitle(workOrder.title); setWorkOrderAssignee(workOrder.assigneeId); }}
+        onPublishWorkOrder={() => { if (!selectedProjectTask) return; createWorkOrder.mutate({ projectId, projectTaskId: selectedProjectTask.id, title: workOrderTitle, assigneeAgentId: workOrderAssignee || undefined }, { onSuccess: () => { setWorkOrderTitle(''); toast('success', '员工工作单已发布'); } }); }}
+      />}
 
-      {tasks && tasks.length > 0 && (
+      {projectView === 'task' && tasks && tasks.length > 0 && (
         <div className="initial-task-summary" aria-label="最近发布的任务">
           <Badge tone="info">已发布 Task</Badge>
           <span>{tasks[0].title}</span>
         </div>
       )}
 
-      <Card title="项目说明">
+      {projectView === 'task' && <Card title="项目说明">
         <p className="muted" style={{ margin: 0 }}>{project.description || '(未填写)'}</p>
         <details className="details-collapse" style={{ marginTop: 'var(--space-3)' }}>
           <summary>项目目录与高级信息</summary>
           <code className="project-root-path">{project.rootDir}</code>
         </details>
-      </Card>
+      </Card>}
 
       {/* 高频：对话 + 活动上移到首屏 */}
-      <Card title="项目对话">
+      {projectView === 'chat' && <Card id="project-conversation" title="项目对话">
         <ConversationPanel scope="project" scopeId={projectId} companyId={project.companyId} title="与项目第一负责人对话" />
-      </Card>
+      </Card>}
 
-      <Card title="协作活动">
+      {projectView === 'activity' && <Card title="协作活动">
         <ActivityPanel events={projectEvents ?? []} agents={agents} scope="project" scopeId={projectId} />
-      </Card>
+      </Card>}
 
       {/* 低频：线程扩容 + 脑暴 + 复盘配置折叠收起 */}
-      <details className="details-collapse">
+      {projectView === 'task' && <details className="details-collapse">
         <summary>运维与高级配置（线程扩容 · 头脑风暴 · 复盘预算）</summary>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', paddingTop: 'var(--space-3)' }}>
 
@@ -579,8 +605,9 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
 
           <ReviewSettingsCard project={project} />
         </div>
-      </details>
+      </details>}
     </div>
+    </WorkbenchShell>
   );
 }
 

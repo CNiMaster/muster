@@ -6,7 +6,7 @@ import { Badge } from './Badge';
  部门与员工状态看板（PRD Phase 4，清单 172）。
  按部门分组展示：availability、thread state、当前 Task、积压 Task 数。
  */
-export function StatusBoard({ data, loading }: { data: StatusBoardData | undefined; loading: boolean }): React.ReactNode {
+export function StatusBoard({ data, loading, companyState }: { data: StatusBoardData | undefined; loading: boolean; companyState?: string }): React.ReactNode {
   if (loading && !data) {
     return <div className="muted" style={{ padding: 12 }}>加载看板中…</div>;
   }
@@ -38,8 +38,8 @@ export function StatusBoard({ data, loading }: { data: StatusBoardData | undefin
                   <td>{a.name}</td>
                   <td className="muted">{a.role}</td>
                   <td>
-                    <Badge tone={a.availability === 'online' ? 'ok' : a.availability === 'draining' ? 'warn' : 'neutral'}>
-                      {a.availability === 'online' ? '上班' : a.availability === 'draining' ? '排空中' : '下班'}
+                    <Badge tone={companyState === 'off' ? 'neutral' : a.availability === 'online' ? 'ok' : a.availability === 'draining' ? 'warn' : 'neutral'}>
+                      {companyState === 'off' ? '随公司待命' : a.availability === 'online' ? '工作中' : a.availability === 'draining' ? '收尾中' : '已暂停'}
                     </Badge>
                   </td>
                   <td>

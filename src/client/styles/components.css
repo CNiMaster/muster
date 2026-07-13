@@ -56,9 +56,12 @@
 .mu-btn-primary {
   background: var(--accent);
   color: var(--accent-fg);
+  box-shadow: 0 5px 14px rgba(211, 79, 47, .2);
 }
 .mu-btn-primary:hover:not(:disabled) {
   background: var(--accent-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(211, 79, 47, .25);
 }
 
 .mu-btn-ghost {
@@ -130,7 +133,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-4) var(--space-5) 0;
+  padding: var(--space-5) var(--space-5) 0;
   gap: var(--space-3);
 }
 .mu-card-title {

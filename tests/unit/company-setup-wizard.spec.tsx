@@ -1,7 +1,7 @@
-import { render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CompanySetupWizard } from '../../src/client/components/company/CompanySetupWizard';
 import type { CompanySetupDraft } from '../../src/client/domain/company-templates';
 
@@ -16,7 +16,10 @@ const draft: CompanySetupDraft = {
 };
 
 describe('company setup wizard', () => {
-  it('requires every employee to have an executor and permission policy', async () => {
+  beforeEach(() => sessionStorage.clear());
+  afterEach(() => cleanup());
+
+  it('automatically applies the default executor and permission policy', async () => {
     const user = userEvent.setup();
     render(<MemoryRouter><CompanySetupWizard
       profiles={[{ id: 'ep_codex', name: 'Codex', manifestId: 'codex-cli', config: {}, connection: { status: 'connected', classification: null, version: '1.0', completedAt: '2026-07-13T00:00:00Z' } }]}
@@ -25,17 +28,22 @@ describe('company setup wizard', () => {
       onCommit={vi.fn(async () => undefined)}
     /></MemoryRouter>);
 
-    await user.selectOptions(screen.getByLabelText('公司模板'), 'software');
+    await user.click(screen.getByRole('button',{name:'选择软件研发公司'}));
     await user.type(screen.getByLabelText(/公司名称/), 'Acme');
-    await user.type(screen.getByLabelText(/公司目标/), '发布产品');
-    await user.click(screen.getByRole('button', { name: '生成团队预览' }));
-    expect(await screen.findByText('第二步：确认团队')).toBeVisible();
-    await user.click(screen.getByRole('button', { name: '下一步' }));
+    await user.type(screen.getByLabelText(/一句话目标/), '发布产品');
+    await user.click(screen.getByRole('button', { name: '先看看团队' }));
+    expect(await screen.findByText('团队已经排好')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: '继续 →' }));
 
-    const next = screen.getByRole('button', { name: '下一步' });
-    expect(next).toBeDisabled();
-    await user.selectOptions(screen.getByLabelText('软件工程师固定执行器'), 'ep_codex');
-    await user.selectOptions(screen.getByLabelText('软件工程师权限范围'), 'pp_project');
-    expect(next).toBeEnabled();
+    expect(await screen.findByText('默认配置已自动应用')).toBeVisible();
+    expect(screen.getByRole('button', { name: '继续 →' })).toBeEnabled();
+  });
+
+  it('can preview and commit the default company in one click', async()=>{
+    const user=userEvent.setup();const commit=vi.fn(async()=>undefined);
+    render(<MemoryRouter><CompanySetupWizard profiles={[{id:'ep',name:'Codex',manifestId:'codex-cli',config:{},connection:null}]} policies={[{id:'pp',name:'项目安全',approvalStrategy:'ask-by-rule',scope:'project',selectedDirectories:[]}]} onPreview={vi.fn(async()=>draft)} onCommit={commit}/></MemoryRouter>);
+    await user.type(screen.getByLabelText(/公司名称/),'Acme');await user.type(screen.getByLabelText(/一句话目标/),'发布产品');
+    await user.click(screen.getByRole('button',{name:'一键创建并进入项目 →'}));
+    expect(commit).toHaveBeenCalledWith(draft,{engineer:{executorProfileId:'ep',permissionPolicyId:'pp'}});
   });
 });

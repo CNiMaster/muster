@@ -14,7 +14,7 @@ export function getCompanyCockpit(db: DB, companyId: string): CompanyCockpitDTO 
   const company = getCompany(db, companyId);
   const projects = listProjects(db, companyId);
   const employeeRows = db.prepare(`SELECT ce.id,ad.availability_state FROM company_employee ce JOIN agent_definition ad ON ad.id=ce.legacy_agent_id WHERE ce.company_id=?`).all(companyId) as Array<{id:string;availability_state:string}>;
-  const employees = { total: employeeRows.length, online: employeeRows.filter((row) => row.availability_state === 'online').length, blocked: employeeRows.filter((row) => getEmploymentHealth(db, row.id).state !== 'ready').length };
+  const employees = { total: employeeRows.length, online: company.state === 'online' ? employeeRows.filter((row) => row.availability_state === 'online').length : 0, blocked: employeeRows.filter((row) => getEmploymentHealth(db, row.id).state !== 'ready').length };
   const pending = (db.prepare(`
     SELECT COUNT(*) AS count
     FROM permission_approval pa

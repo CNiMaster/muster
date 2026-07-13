@@ -41,29 +41,26 @@ test('向导式创建完整公司并进入首个项目任务', async ({ page }) 
   const policy = await policyResponse.json();
 
   await page.goto('/companies/wizard');
-  await expect(page.locator('h1')).toContainText('创建 Agent 公司');
-  await page.getByLabel('公司模板').selectOption('software');
+  await expect(page.locator('h1')).toContainText('组建你的 Agent 公司');
+  await page.getByRole('button', { name: '选择软件研发公司' }).click();
 
   const name = `向导公司-${Date.now()}`;
   await page.getByLabel('公司名称').fill(name);
-  await page.getByLabel('公司目标').fill('交付一个可用的软件产品');
-  await page.getByRole('button', { name: '生成团队预览' }).click();
-  await expect(page.getByText('第二步：确认团队')).toBeVisible();
-  await page.getByRole('button', { name: '下一步' }).click();
-  await page.getByRole('button', { name: '全部使用同一配置' }).click();
-  for (const employeeName of ['研发负责人','产品经理','软件工程师','质量工程师']) {
-    await page.getByLabel(`${employeeName}固定执行器`).selectOption(executor.id);
-    await page.getByLabel(`${employeeName}权限范围`).selectOption(policy.id);
-  }
-  await expect(page.getByLabel('研发负责人固定执行器')).toHaveValue(executor.id);
-  await expect(page.getByLabel('研发负责人权限范围')).toHaveValue(policy.id);
-  await page.getByRole('button', { name: '下一步' }).click();
-  await expect(page.getByText('第四步：创建首个项目与项目任务')).toBeVisible();
-  await page.getByRole('button', { name: '下一步' }).click();
-  await page.getByRole('button', { name: '创建公司并进入项目' }).click();
+  await page.getByLabel('一句话目标').fill('交付一个可用的软件产品');
+  await page.getByRole('button', { name: '先看看团队' }).click();
+  await expect(page.getByText('团队已经排好')).toBeVisible();
+  await page.getByRole('button', { name: '继续 →' }).click();
+  await expect(page.getByText('默认配置已自动应用')).toBeVisible();
+  await expect(page.locator('[aria-label="默认运行路径"]')).toContainText('4 位员工');
+  await expect(page.locator('[aria-label="默认运行路径"]')).toContainText('项目沙盒');
+  await page.getByRole('button', { name: '继续 →' }).click();
+  await expect(page.getByText('第一份工作')).toBeVisible();
+  await page.getByRole('button', { name: '继续 →' }).click();
+  await page.getByRole('button', { name: '创建并进入项目 →' }).click();
 
   await page.waitForURL(/\/projects\/pr_[^?]+\?projectTask=pt_[^&]+&onboarding=done/);
-  await expect(page.getByText('项目任务', { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole('navigation', { name: '项目工作列表' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '人物关系' })).toHaveCount(0);
 });
 
 test('项目路由保留公司导航并能从首页继续上次项目', async ({ page }) => {
@@ -78,8 +75,9 @@ test('项目路由保留公司导航并能从首页继续上次项目', async ({
   const project = await projectResponse.json();
 
   await page.goto(`/projects/${project.id}`);
-  await expect(page.getByRole('navigation').getByRole('link', { name: company.name })).toBeVisible();
-  await expect(page.getByRole('navigation').getByRole('link', { name: project.name })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: '项目工作列表' })).toBeVisible();
+  await expect(page.locator('.workbench-breadcrumb')).toContainText(company.name);
+  await expect(page.locator('.workbench-breadcrumb')).toContainText(project.name);
 
   await page.goto('/');
   await expect(page.getByText('继续上次项目')).toBeVisible();

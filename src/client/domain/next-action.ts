@@ -1,4 +1,4 @@
-export type NextActionKind = 'create-company' | 'create-project' | 'handle-attention' | 'publish-task';
+export type NextActionKind = 'create-company' | 'create-project' | 'handle-attention' | 'fix-runtime' | 'start-company' | 'continue-project-task' | 'create-project-task';
 
 export interface NextAction {
   kind: NextActionKind;
@@ -9,9 +9,12 @@ export interface NextAction {
 }
 
 export interface NextActionInput {
-  companies: Array<{ id: string; name: string }>;
+  companies: Array<{ id: string; name: string; state?: string }>;
   projects: Array<{ id: string; companyId: string; name: string }>;
   attentionCount: number;
+  blockedEmployeeCount?: number;
+  activeProjectTaskCount?: number;
+  projectTaskId?: string;
 }
 
 export function deriveNextAction(input: NextActionInput): NextAction {
@@ -47,11 +50,42 @@ export function deriveNextAction(input: NextActionInput): NextAction {
     };
   }
 
+  const company = input.companies.find((item) => item.id === project.companyId) ?? input.companies[0];
+  if ((input.blockedEmployeeCount ?? 0) > 0) {
+    return {
+      kind: 'fix-runtime',
+      title: '先让团队准备好',
+      description: `${input.blockedEmployeeCount} 位员工还不能运行。完成联通后再启动公司。`,
+      label: '修复运行配置',
+      href: `/companies/${company.id}?tab=team`,
+    };
+  }
+
+  if (company.state === 'off') {
+    return {
+      kind: 'start-company',
+      title: '团队已经就绪',
+      description: '启动公司后，员工才会领取工作单。',
+      label: '启动公司',
+      href: `/companies/${company.id}`,
+    };
+  }
+
+  if ((input.activeProjectTaskCount ?? 0) > 0) {
+    return {
+      kind: 'continue-project-task',
+      title: '继续当前项目任务',
+      description: '目标和上下文已经准备好，可以发布员工工作单。',
+      label: '打开任务工作区',
+      href: input.projectTaskId ? `/projects/${project.id}?projectTask=${input.projectTaskId}#project-tasks` : `/projects/${project.id}#project-tasks`,
+    };
+  }
+
   return {
-    kind: 'publish-task',
-    title: '告诉团队接下来做什么',
-    description: `在「${project.name}」中发布一个任务，Muster 会按职责分配并跟踪执行。`,
-    label: '发布新任务',
-    href: `/projects/${project.id}/tasks`,
+    kind: 'create-project-task',
+    title: '建立一个项目任务',
+    description: `为「${project.name}」创建清晰的目标和独立上下文。`,
+    label: '新建项目任务',
+    href: `/projects/${project.id}#project-tasks`,
   };
 }

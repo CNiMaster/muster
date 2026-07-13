@@ -18,6 +18,6 @@ export function CompanyOverview({ cockpit, statusBoard, statusBoardLoading = fal
     <div className="next-action-inline"><div><strong>推荐下一步</strong><p className="muted">{cockpit.nextAction.description}</p></div><Link className="mu-btn mu-btn-primary" to={cockpit.nextAction.href}>{cockpit.nextAction.label}</Link></div>
     <BlockingIssues issues={cockpit.risks.map((risk)=>({id:`${risk.kind}:${risk.label}`,what:risk.label,why:risk.kind==='approval'?'操作超出当前自动允许范围':risk.kind==='executor'?'员工执行器、权限或联通状态未准备好':risk.kind==='role-gap'?'公司模板要求的岗位尚未覆盖':'项目处于需要人工确认的状态',impact:risk.kind==='approval'||risk.kind==='executor'?'相关员工工作单暂时不能继续':'公司计划可能无法按预期推进',action:{label:'处理',href:risk.href}}))}/>
   </Card>
-  <Card title="员工状态看板" actions={<Badge tone="info">实时</Badge>}><StatusBoard data={statusBoard} loading={statusBoardLoading} /></Card>
+  <Card title="员工状态看板" actions={<Badge tone="info">实时</Badge>}><StatusBoard data={statusBoard} loading={statusBoardLoading} companyState={cockpit.companyState} /></Card>
   </div>;
 }

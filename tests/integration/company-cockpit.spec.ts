@@ -74,6 +74,7 @@ describe('company cockpit', () => {
 
     expect(cockpit.approvals.pending).toBe(1);
     expect(cockpit.employees).toMatchObject({ total: 2, blocked: 1 });
+    expect(cockpit.employees.online).toBe(0);
     expect(cockpit.projects).toMatchObject({ total: 1, active: 1 });
     expect(cockpit.roleGaps).toEqual([]);
     expect(cockpit.nextAction.kind).toBe('handle-approval');
