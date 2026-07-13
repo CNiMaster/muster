@@ -1,5 +1,7 @@
 # Company Employee Runtime Closure Implementation Plan
 
+> Superseded on 2026-07-13 by `docs/superpowers/plans/2026-07-13-muster-product-completion.md`. This earlier plan was only partially implemented and must not be used as completion evidence.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 将公司与员工模块重构为低门槛驾驶舱和三层员工模型，并补齐代码级运行闭环。
