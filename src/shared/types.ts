@@ -68,6 +68,13 @@ export interface RealtimeEvent<T = unknown> {
   payload: T;
 }
 
+export type {
+  LifecycleEvent,
+  LifecycleEventPayloadMap,
+  LifecycleEventScope,
+  LifecycleEventType,
+} from './lifecycle-events';
+
 // ===== 用量记录 =====
 export interface UsageRecord {
   id: string;
