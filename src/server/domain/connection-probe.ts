@@ -8,6 +8,7 @@ import { shortId } from '../../shared/utils';
 import { getExecutorProfile } from './executor-profile';
 import { getExecutorManifest, type ExecutorManifest } from '../executors/manifests';
 import { resolveCliEnvironment } from '../executors/cli-environment';
+import { redactSensitiveText } from '../../shared/redaction';
 
 const execFileAsync = promisify(execFile);
 const OK = 'MUSTER_CONNECTION_OK';
@@ -31,4 +32,4 @@ export async function runConnectionProbe(db:DB,input:{profileId:string;force:boo
 }
 export function startConnectionProbe(db:DB,input:{profileId:string;force:boolean;kind?:ProbeKind;runtime?:ProbeRuntime}):ConnectionProbe { const profile=getExecutorProfile(db,input.profileId); const kind=input.kind??'connectivity'; const model=kind==='model'&&typeof profile.config.model==='string'?profile.config.model:null; const key=JSON.stringify([kind,profile.config.binaryPath??'',profile.install.detectedVersion??null,model,'login-shell']); const id=shortId('probe_'),now=new Date().toISOString(); db.prepare("INSERT INTO connection_probe (id,executor_profile_id,cache_key,kind,model,status,version,created_at) VALUES (?,?,?,?,?,'queued',?,?)").run(id,profile.id,key,kind,model,profile.install.detectedVersion??null,now); queueMicrotask(()=>{void runConnectionProbe(db,{...input,kind,probeId:id}).catch(error=>{if(db.open)db.prepare("UPDATE connection_probe SET status='failed',classification='failed',stderr=?,completed_at=? WHERE id=?").run(redact(String(error)),new Date().toISOString(),id);});}); return getConnectionProbe(db,id); }
 function classify(text:string):ProbeClassification { const value=text.toLowerCase(); if(/requires a newer version|upgrade to the latest|version.*too old/.test(value))return'version_failed'; if(/auth|login|401|unauthorized|not logged/.test(value))return'authentication_failed'; if(/model.*(not found|unsupported|access)|invalid.*model|issue with the selected model/.test(value))return'model_failed'; if(/network|dns|econn|tls|proxy|retry/.test(value))return'network_failed'; if(/timeout|timed out/.test(value))return'timeout'; return'failed'; }
-export function redact(text:string):string { return text.replace(/(authorization\s*:\s*bearer\s+)[^\s]+/gi,'$1[REDACTED]').replace(/((?:api[_-]?key|token|secret)\s*[=:]\s*)[^\s]+/gi,'$1[REDACTED]'); }
+export const redact=redactSensitiveText;

@@ -4,6 +4,7 @@ import { nowIso, shortId } from '../../shared/utils';
 import { getExecutorManifest, type ExecutorConcurrency, type ExecutorManifest } from '../executors/manifests';
 import { existsSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
+import { redactSensitiveText } from '../../shared/redaction';
 
 export type CredentialReference = { kind: 'env' | 'keychain' | 'cli-login' | 'encrypted-local'; reference: string };
 
@@ -117,7 +118,7 @@ export function getExecutionRun(db: DB, id: string): ExecutionRun {
 }
 
 export function failExecutionRun(db: DB, id: string, classification: string, message: string): ExecutionRun {
-  const result = db.prepare(`UPDATE execution_run SET status='failed', failure_classification=?, failure_message=?, finished_at=? WHERE id=?`).run(classification, message.slice(0, 2_000), nowIso(), id);
+  const result = db.prepare(`UPDATE execution_run SET status='failed', failure_classification=?, failure_message=?, finished_at=? WHERE id=?`).run(classification, redactSensitiveText(message).slice(0, 2_000), nowIso(), id);
   if (result.changes !== 1) throw new AppError(ErrorCode.NOT_FOUND, `执行记录不存在: ${id}`);
   return getExecutionRun(db, id);
 }

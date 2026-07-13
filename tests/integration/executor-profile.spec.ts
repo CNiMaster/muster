@@ -65,8 +65,8 @@ describe('unified executor profiles', () => {
       expect(snapshot.manifestSnapshot.id).toBe('codex-cli');
       expect(snapshot.profileSnapshot.config).toEqual({ bin: 'codex', model: 'gpt-5' });
       expect(snapshot.status).toBe('created');
-      const failed=failExecutionRun(db,run.id,'empty_result','adapter returned no result');
-      expect(failed).toMatchObject({status:'failed',failureClassification:'empty_result',failureMessage:'adapter returned no result'});
+      const failed=failExecutionRun(db,run.id,'empty_result','adapter returned no result token=secret-value');
+      expect(failed).toMatchObject({status:'failed',failureClassification:'empty_result',failureMessage:'adapter returned no result token=[REDACTED]'});
     } finally {
       close();
     }
