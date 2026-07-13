@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { ProjectWorkNavigation, projectTaskMark } from '../../src/client/components/workbench/ProjectWorkNavigation';
+import { companySectionOptions, projectSectionOptions } from '../../src/client/components/workbench/WorkbenchContextSwitcher';
 
 describe('project calm workbench', () => {
   it('keeps one vertical work list and routes communication into the center surface', () => {
@@ -21,5 +22,14 @@ describe('project calm workbench', () => {
     ]} /></MemoryRouter>);
     expect(screen.getAllByRole('button', { name: /当前阶段工作拆解/ })).toHaveLength(2);
     expect(screen.getByText('其余 1 个任务')).toBeInTheDocument();
+  });
+
+  it('builds direct company and project switcher destinations', () => {
+    expect(companySectionOptions('co_1').find((item) => item.key === 'team')?.href).toBe('/companies/co_1?view=team');
+    const projectItems = projectSectionOptions('pr_1', 'pt_1');
+    expect(projectItems.find((item) => item.key === 'task')?.href).toBe('/projects/pr_1?projectTask=pt_1');
+    expect(projectItems.find((item) => item.key === 'chat')?.href).toBe('/projects/pr_1?view=chat&projectTask=pt_1');
+    expect(projectItems.some((item) => item.key === 'character')).toBe(false);
+    expect(projectSectionOptions('pr_1', 'pt_1', true).some((item) => item.key === 'character')).toBe(true);
   });
 });

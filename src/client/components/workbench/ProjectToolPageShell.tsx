@@ -4,6 +4,7 @@ import { useAgents, useCompany, useCompanyCockpit, useProject, useProjectTask, u
 import { ProjectContextInspector } from './ProjectContextInspector';
 import { ProjectWorkNavigation, type ProjectToolKey } from './ProjectWorkNavigation';
 import { WorkbenchShell } from './WorkbenchShell';
+import { WorkbenchContextSwitcher } from './WorkbenchContextSwitcher';
 
 const TOOL_LABELS: Record<ProjectToolKey, string> = {
   tasks: '等待处理',
@@ -32,7 +33,7 @@ export function ProjectToolPageShell({ tool, children, projectIdOverride, select
 
   return <WorkbenchShell
     scopeKey={`project:${projectId}`}
-    breadcrumb={<><span>{company?.name ?? '公司'}</span>　/　<span>{project?.name ?? '项目'}</span>　/　<strong>{TOOL_LABELS[tool]}</strong></>}
+    breadcrumb={<WorkbenchContextSwitcher companyId={project?.companyId ?? ''} companyName={company?.name ?? '公司'} companyKind={company?.kind} projectId={projectId} projectName={project?.name ?? '项目'} projectTaskId={selectedId} sectionKey={tool} sectionLabel={TOOL_LABELS[tool]} novel={company?.kind === 'novel'} />}
     navigationLabel="项目工作列表"
     inspectorLabel="项目现场"
     attentionCount={attentionCount + (cockpit?.approvals.pending ?? 0)}

@@ -37,6 +37,7 @@ import { WorkbenchShell } from '../components/workbench/WorkbenchShell';
 import { ProjectWorkNavigation } from '../components/workbench/ProjectWorkNavigation';
 import { ProjectContextInspector } from '../components/workbench/ProjectContextInspector';
 import { ProjectTaskWorkspace } from '../components/project/ProjectTaskWorkspace';
+import { WorkbenchContextSwitcher } from '../components/workbench/WorkbenchContextSwitcher';
 
 export function ProjectPage(): React.ReactElement {
   const { projectId, companyId } = useParams();
@@ -399,11 +400,11 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
   return (
     <WorkbenchShell
       scopeKey={`project:${projectId}`}
-      breadcrumb={<><span>{company?.name ?? '公司'}</span>　/　<strong>{project.name}</strong></>}
+      breadcrumb={<WorkbenchContextSwitcher companyId={project.companyId} companyName={company?.name ?? '公司'} companyKind={company?.kind} projectId={project.id} projectName={project.name} projectTaskId={selectedProjectTaskId} sectionKey={projectView} sectionLabel={{ task: '项目任务', chat: '项目群聊', activity: '协作活动' }[projectView]} novel={company?.kind === 'novel'} />}
       navigationLabel="项目工作列表"
       inspectorLabel="项目现场"
       attentionCount={attentionCount + (cockpit?.approvals.pending ?? 0)}
-      primaryAction={<a className="mu-btn mu-btn-primary" href="#project-tasks">＋ 发布工作</a>}
+      primaryAction={<a className="mu-btn mu-btn-primary mu-btn-sm workbench-publish-action" href="#project-tasks">＋ 发布工作</a>}
       navigation={<ProjectWorkNavigation projectId={projectId} tasks={projectTasks ?? []} selectedId={selectedProjectTaskId} view={projectView} attentionCount={attentionCount} novel={company?.kind === 'novel'} onSelect={selectProjectTask} />}
       inspector={<ProjectContextInspector projectId={projectId} projectState={project.state} selectedTask={selectedProjectTask} agents={agents ?? []} cockpit={cockpit} />}
     >

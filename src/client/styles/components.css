@@ -11,6 +11,8 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
+  min-height: 44px;
+  padding: 0 var(--space-4);
   font-family: inherit;
   font-size: var(--text-sm);
   font-weight: var(--fw-medium);
@@ -27,6 +29,7 @@
   user-select: none;
   flex-shrink: 0;
   min-width: max-content;
+  box-sizing: border-box;
 }
 .mu-btn > span { line-height: 1.25; }
 

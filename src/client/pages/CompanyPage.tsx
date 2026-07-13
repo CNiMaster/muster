@@ -12,6 +12,7 @@ import { CompanyTeam } from '../components/company/CompanyTeam';
 import { WorkbenchShell } from '../components/workbench/WorkbenchShell';
 import { CompanyWorkNavigation } from '../components/workbench/CompanyWorkNavigation';
 import { CompanyContextInspector } from '../components/workbench/CompanyContextInspector';
+import { WorkbenchContextSwitcher } from '../components/workbench/WorkbenchContextSwitcher';
 import {
   useAgents,
   useCompany,
@@ -62,7 +63,7 @@ export function CompanyPage(): React.ReactElement {
 
   return <WorkbenchShell
     scopeKey={`company:${companyId}`}
-    breadcrumb={<><span>{COMPANY_KIND_LABELS[company.kind] ?? company.kind}</span>　/　<strong>{company.name}</strong></>}
+    breadcrumb={<WorkbenchContextSwitcher companyId={companyId} companyName={company.name} companyKind={COMPANY_KIND_LABELS[company.kind] ?? company.kind} sectionKey={activeTab} sectionLabel={{ overview: '公司概览', projects: '项目', team: '员工看板', activity: '沟通与活动', settings: '公司设置' }[activeTab]} />}
     navigationLabel="公司工作列表"
     inspectorLabel="公司现场"
     attentionCount={(cockpit?.approvals.pending ?? 0) + (cockpit?.projects.attention ?? 0)}
