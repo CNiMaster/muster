@@ -57,7 +57,8 @@ import { getActiveWorkspace } from '../domain/workspace';
 import {ensureProjectTaskThread,setProjectTaskThreadSession} from '../domain/project-task-thread';
 import{SessionManager}from'../domain/session-manager';
 import{approvalBroker}from'../domain/approval-broker';
-import { RunWatchdog } from './run-watchdog';
+import { RunWatchdog, RunWatchdogTimeout } from './run-watchdog';
+import { makeLifecycleEvent } from '../../shared/lifecycle-events';
 
 export interface EngineOptions {
   heartbeatIntervalMs?: number;
@@ -275,9 +276,10 @@ export class TaskEngine {
             const approval = ensureApprovalRequest(this.db, { policyId: permissionPolicy.id, employeeId: agent.id, taskId: task.id, action: request.action, command: request.command, path: request.path });
             this.db.prepare('UPDATE permission_approval SET execution_run_id=?,project_task_thread_id=?,executor_profile_id=?,expires_at=?,recovery_json=? WHERE id=?').run(executionRun?.id??null,projectTaskThread.id,executorProfile?.id??null,new Date(Date.now()+600_000).toISOString(),JSON.stringify({vendorSessionId:projectTaskThread.vendorSessionId}),approval.id);
             markTaskWaitingApproval(this.db,task.id,approval.id,'online');
+            realtime.publish(makeLifecycleEvent('approval.requested',{approvalId:approval.id,taskId:task.id,projectTaskId:task.projectTaskId,threadId:projectTaskThread.id},{companyId:company.id,projectId:project.id,taskId:task.id}));
             const resolution=await approvalBroker.wait(approval.id,600_000);
             if(resolution==='allow'||resolution==='deny')clearTaskApprovalWait(this.db,task.id);
-            else markTaskWaitingApproval(this.db,task.id,approval.id,'persistent');
+            else {markTaskWaitingApproval(this.db,task.id,approval.id,'persistent');realtime.publish(makeLifecycleEvent('approval.timed-out',{approvalId:approval.id,taskId:task.id},{companyId:company.id,projectId:project.id,taskId:task.id}));}
             return resolution==='allow'?{allowed:true}:{allowed:false,message:`审批请求 ${approval.id} ${resolution==='deny'?'已拒绝':'等待超时，已安全停止'}`};
           }
           return { allowed: false, message: decision.reason };
@@ -321,12 +323,13 @@ export class TaskEngine {
         for(;;){try{result = await Promise.race([withExecutorConcurrency(executorProfile?.concurrencyMode ?? 'parallel', executorProfile?.id ?? agent.id, () => adapter.run(ctx, {
             onOutput: (chunk) => { watchdog.activity(); log.debug('agent output', { taskId: task.id, chunk: chunk.slice(0, 120), executionRunId: executionRun?.id }); },
             onToolCall: (name, input) => { watchdog.activity(); log.debug('agent tool', { taskId: task.id, name, executionRunId: executionRun?.id }); },
-          })), watchdog.failure]);sessionManager.clearRecovery(projectTaskThread.id);break;}catch(error){if(/network|econn|dns|tls|proxy/i.test(error instanceof Error?error.message:String(error)))watchdog.networkError();if(!isRecoverableSessionError(error))throw error;recoveryAttempt+=1;const compactSupported=Boolean(adapter.compactSession);const recovery=recoveryAttempt===1?'retry':recoveryAttempt===2&&compactSupported?'compact':recoveryAttempt===(compactSupported?3:2)?'rotate':'stop';sessionManager.nextRecovery(projectTaskThread.id,compactSupported);if(recovery==='stop')throw error;if(recovery==='compact'&&adapter.compactSession&&ctx.sessionIdHint){try{await adapter.compactSession(ctx);}catch{sessionManager.rotate(projectTaskThread.id,{reason:'compact-failed',taskId:task.id});ctx.sessionIdHint=undefined;}}else if(recovery==='rotate'){sessionManager.rotate(projectTaskThread.id,{reason:'session-recovery',taskId:task.id});ctx.sessionIdHint=undefined;}log.warn('retrying recoverable executor failure',{taskId:task.id,recovery,error:String(error)});}}
+          })), watchdog.failure]);sessionManager.clearRecovery(projectTaskThread.id);break;}catch(error){if(/network|econn|dns|tls|proxy/i.test(error instanceof Error?error.message:String(error)))watchdog.networkError();if(!isRecoverableSessionError(error))throw error;recoveryAttempt+=1;const compactSupported=Boolean(adapter.compactSession);const recovery=recoveryAttempt===1?'retry':recoveryAttempt===2&&compactSupported?'compact':recoveryAttempt===(compactSupported?3:2)?'rotate':'stop';sessionManager.nextRecovery(projectTaskThread.id,compactSupported);if(recovery==='stop')throw error;if(recovery==='compact'&&adapter.compactSession&&ctx.sessionIdHint){try{await adapter.compactSession(ctx);}catch{const previousSessionId=ctx.sessionIdHint??null;sessionManager.rotate(projectTaskThread.id,{reason:'compact-failed',taskId:task.id});ctx.sessionIdHint=undefined;realtime.publish(makeLifecycleEvent('session.rotated',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,previousSessionId,reason:'compact-failed'},{companyId:company.id,projectId:project.id,taskId:task.id}));}}else if(recovery==='rotate'){const previousSessionId=ctx.sessionIdHint??null;sessionManager.rotate(projectTaskThread.id,{reason:'session-recovery',taskId:task.id});ctx.sessionIdHint=undefined;realtime.publish(makeLifecycleEvent('session.rotated',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,previousSessionId,reason:'session-recovery'},{companyId:company.id,projectId:project.id,taskId:task.id}));}realtime.publish(makeLifecycleEvent('session.recovered',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,taskId:task.id,recovery},{companyId:company.id,projectId:project.id,taskId:task.id}));log.warn('retrying recoverable executor failure',{taskId:task.id,recovery,error:String(error)});}}
         watchdog.complete();
         if (executionRun) updateExecutionRunStatus(this.db, executionRun.id, result.outcome === 'completed' ? 'completed' : 'failed');
       } catch (error) {
         watchdog.complete();
         if (executionRun) updateExecutionRunStatus(this.db, executionRun.id, 'failed');
+        if(error instanceof RunWatchdogTimeout)realtime.publish(makeLifecycleEvent('run.watchdog-stopped',{runId:executionRun?.id??null,taskId:task.id,classification:error.classification},{companyId:company.id,projectId:project.id,taskId:task.id}));
         throw error;
       }
 
@@ -358,15 +361,17 @@ export class TaskEngine {
             if (adapter.compactSession && sessionIdHint) {
               await adapter.compactSession({ ...ctx, sessionIdHint });
               sessionManager.markCompacted(projectTaskThread.id);
+              realtime.publish(makeLifecycleEvent('session.compacted',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,sessionId:sessionIdHint},{companyId:company.id,projectId:project.id,taskId:task.id}));
               log.info('vendor session compacted', { threadId: projectTaskThread.id });
             } else {
-              sessionManager.rotate(projectTaskThread.id, handoff);
+              const previousSessionId=sessionIdHint??null;sessionManager.rotate(projectTaskThread.id, handoff);realtime.publish(makeLifecycleEvent('session.rotated',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,previousSessionId,reason:'compact-unavailable'},{companyId:company.id,projectId:project.id,taskId:task.id}));
             }
           } catch (error) {
-            sessionManager.rotate(projectTaskThread.id, handoff);
+            const previousSessionId=sessionIdHint??null;sessionManager.rotate(projectTaskThread.id, handoff);realtime.publish(makeLifecycleEvent('session.rotated',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,previousSessionId,reason:'compact-failed'},{companyId:company.id,projectId:project.id,taskId:task.id}));
             log.warn('vendor compaction failed; session rotated', { threadId: projectTaskThread.id, error: String(error) });
           }
         } else if (decision.action === 'rotate') {
+          realtime.publish(makeLifecycleEvent('session.rotated',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,previousSessionId:result._sessionIdHint??ctx.sessionIdHint??null,reason:'hard-context-limit'},{companyId:company.id,projectId:project.id,taskId:task.id}));
           log.info('vendor session rotated at hard context limit', { threadId: projectTaskThread.id });
         }
       }

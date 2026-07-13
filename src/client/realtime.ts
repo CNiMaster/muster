@@ -9,6 +9,7 @@ export type QueryKey = readonly unknown[];
 export function queryKeysForRealtimeEvent(event: RealtimeEvent): QueryKey[] {
   const keys: QueryKey[] = [];
   if (event.type.startsWith('approval.')) keys.push(['permission-approvals']);
+  if (event.type.startsWith('session.') || event.type === 'run.watchdog-stopped') keys.push(['employee-runtime']);
   // Agent Bridge 事件：刷活动流
   if (event.type?.startsWith('bridge.')) {
     keys.push(['project-events'], ['company-events']);
@@ -28,6 +29,7 @@ export function queryKeysForRealtimeEvent(event: RealtimeEvent): QueryKey[] {
   }
   if (event.companyId) {
     keys.push(['company-events', event.companyId]);
+    if (event.type.startsWith('approval.') || event.type.startsWith('project-task.') || event.type.startsWith('session.')) keys.push(['company-cockpit', event.companyId]);
   }
   if (event.taskId) {
     keys.splice(

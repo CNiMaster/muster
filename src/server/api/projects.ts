@@ -42,6 +42,7 @@ import { getCharacterGraph } from '../domain/character-graph';
 import {archiveProjectTask,completeProjectTask,createProjectTask,getProjectTask,listProjectTasks} from '../domain/project-task';
 import {listProjectTaskThreads} from '../domain/project-task-thread';
 import { realtime } from '../realtime';
+import { makeLifecycleEvent } from '../../shared/lifecycle-events';
 
 export const projectsRouter = Router({ mergeParams: true });
 export const projectScopedRouter = Router({ mergeParams: true });
@@ -109,10 +110,10 @@ projectById.patch(
 );
 
 projectById.get('/project-tasks',asyncHandler(async(req,res)=>res.json(listProjectTasks(getDb(),param(req,'id')))));
-projectById.post('/project-tasks',asyncHandler(async(req,res)=>{const input=z.object({title:z.string().min(1),brief:z.string().optional()}).parse(req.body);const projectId=param(req,'id');const task=createProjectTask(getDb(),{projectId,...input});const project=getProject(getDb(),projectId);realtime.publish({id:`ev_${Date.now()}`,type:'project-task.created',companyId:project.companyId,projectId,occurredAt:new Date().toISOString(),payload:{projectTaskId:task.id}});res.status(201).json(task);}));
+projectById.post('/project-tasks',asyncHandler(async(req,res)=>{const input=z.object({title:z.string().min(1),brief:z.string().optional()}).parse(req.body);const projectId=param(req,'id');const task=createProjectTask(getDb(),{projectId,...input});const project=getProject(getDb(),projectId);realtime.publish(makeLifecycleEvent('project-task.created',{projectTaskId:task.id},{companyId:project.companyId,projectId}));res.status(201).json(task);}));
 projectById.get('/project-tasks/:projectTaskId',asyncHandler(async(req,res)=>{const task=getProjectTask(getDb(),param(req,'projectTaskId'));if(task.projectId!==param(req,'id'))throw new Error('项目任务不属于当前项目');res.json({...task,threads:listProjectTaskThreads(getDb(),task.id)});}));
-projectById.post('/project-tasks/:projectTaskId/complete',asyncHandler(async(req,res)=>{const projectId=param(req,'id'),task=completeProjectTask(getDb(),param(req,'projectTaskId')),project=getProject(getDb(),projectId);realtime.publish({id:`ev_${Date.now()}`,type:'project-task.completed',companyId:project.companyId,projectId,occurredAt:new Date().toISOString(),payload:{projectTaskId:task.id}});res.json(task);}));
-projectById.post('/project-tasks/:projectTaskId/archive',asyncHandler(async(req,res)=>{const projectId=param(req,'id'),task=archiveProjectTask(getDb(),param(req,'projectTaskId')),project=getProject(getDb(),projectId);realtime.publish({id:`ev_${Date.now()}`,type:'project-task.archived',companyId:project.companyId,projectId,occurredAt:new Date().toISOString(),payload:{projectTaskId:task.id}});res.json(task);}));
+projectById.post('/project-tasks/:projectTaskId/complete',asyncHandler(async(req,res)=>{const projectId=param(req,'id'),task=completeProjectTask(getDb(),param(req,'projectTaskId')),project=getProject(getDb(),projectId);realtime.publish(makeLifecycleEvent('project-task.completed',{projectTaskId:task.id},{companyId:project.companyId,projectId}));res.json(task);}));
+projectById.post('/project-tasks/:projectTaskId/archive',asyncHandler(async(req,res)=>{const projectId=param(req,'id'),task=archiveProjectTask(getDb(),param(req,'projectTaskId')),project=getProject(getDb(),projectId);realtime.publish(makeLifecycleEvent('project-task.archived',{projectTaskId:task.id},{companyId:project.companyId,projectId}));res.json(task);}));
 
 // threads
 projectById.get(
