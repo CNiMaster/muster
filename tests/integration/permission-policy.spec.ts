@@ -3,6 +3,7 @@ import { makeTestDb } from './setup';
 import {
   createPermissionPolicy,
   evaluatePermission,
+  listApprovalQueue,
   recordApprovalDecision,
   requestApproval,
   savePermissionRule,
@@ -53,6 +54,17 @@ describe('permission policy = approval strategy × allowed scope', () => {
       const base={action:'write-file',path:'/p/a.txt',taskRoot:'/p',projectRoot:'/p',workspaceRoot:'/'};
       expect(evaluatePermission(db,policy.id,{...base,taskId:'task-a'}).decision).toBe('allow');
       expect(evaluatePermission(db,policy.id,{...base,taskId:'task-b'}).decision).toBe('approval-required');
+    } finally {close();}
+  });
+
+  it('explains whether approval can resume online or must be requeued', () => {
+    const {db,close}=makeTestDb();
+    try {
+      const policy=createPermissionPolicy(db,{name:'询问',approvalStrategy:'ask-always',scope:'task'});
+      const approval=requestApproval(db,{policyId:policy.id,employeeId:'e',taskId:'t',action:'run-command'});
+      db.prepare('UPDATE permission_approval SET expires_at=? WHERE id=?').run(new Date(Date.now()+300_000).toISOString(),approval.id);
+      expect(listApprovalQueue(db,(id)=>id===approval.id)[0]).toMatchObject({online:true,resumeMode:'direct'});
+      expect(String(listApprovalQueue(db,()=>false)[0]?.statusText)).toContain('重新入队');
     } finally {close();}
   });
 });

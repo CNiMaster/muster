@@ -20,11 +20,11 @@ function prepare(manifestId = 'codex-cli') {
 }
 
 let probeSequence = 0;
-function insertProbe(profileId: string, status: 'connected' | 'failed', classification: string | null = null): void {
+function insertProbe(profileId: string, status: 'connected' | 'failed', classification: string | null = null, kind: 'connectivity' | 'model' = 'connectivity', model: string | null = null): void {
   probeSequence += 1;
   const now = new Date(Date.parse(nowIso()) + probeSequence).toISOString();
-  db.prepare(`INSERT INTO connection_probe (id,executor_profile_id,cache_key,kind,status,classification,stdout,stderr,duration_ms,created_at,completed_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(`probe_${probeSequence}`, profileId, 'key', 'connectivity', status, classification, '', '', 1, now, now);
+  db.prepare(`INSERT INTO connection_probe (id,executor_profile_id,cache_key,kind,status,classification,version,model,stdout,stderr,duration_ms,created_at,completed_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(`probe_${probeSequence}`, profileId, 'key', kind, status, classification, '1.2.3', model, '', '', 1, now, now);
 }
 
 describe('executor health', () => {
@@ -42,7 +42,17 @@ describe('executor health', () => {
     insertProbe(executor.id, 'failed', 'authentication_failed');
     expect(getEmploymentHealth(db, employee.id).detail).toContain('尚未完成认证');
     insertProbe(executor.id, 'connected');
-    expect(getEmploymentHealth(db, employee.id)).toMatchObject({ state: 'ready', code: 'ready' });
+    expect(getEmploymentHealth(db, employee.id)).toMatchObject({ state: 'ready', code: 'ready', executorName: '执行器', manifestId: 'codex-cli', probeDetails: { version: '1.2.3' }, permission: { name: '项目权限', strategy: 'ask-by-rule', scope: 'project' } });
+  });
+
+  it('keeps base connectivity ready when only the explicitly selected model fails', () => {
+    const { employee, executor, policy } = prepare();
+    bindEmployeeExecutorProfile(db, employee.id, executor.id);
+    bindEmployeePermissionPolicy(db, employee.id, policy.id);
+    insertProbe(executor.id, 'connected');
+    insertProbe(executor.id, 'failed', 'model_failed', 'model', 'future-model');
+    expect(getEmploymentHealth(db, employee.id)).toMatchObject({ state: 'ready', modelProbe: { status: 'failed', model: 'future-model' } });
+    expect(getEmploymentHealth(db, employee.id).detail).toContain('基础联通正常');
   });
 
   it('marks a no-bridge custom CLI as restricted even after connectivity succeeds', () => {

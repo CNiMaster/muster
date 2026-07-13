@@ -40,7 +40,7 @@ export function HomePage(): React.ReactElement {
   return (
     <div className="home">
       <h1>Muster Agent 公司工作台</h1>
-      <p className="subtitle">本地单用户长篇小说公司 · MVP</p>
+      <p className="subtitle">本地单用户多 Agent 公司工作台</p>
 
       <OnboardingGuide hasCompany={(companies?.length ?? 0) > 0} />
 
@@ -92,7 +92,7 @@ export function HomePage(): React.ReactElement {
           <EmptyState
             icon={Icons.empty}
             title="还没有公司"
-            hint="先创建一个公司开始你的小说创作协作。"
+            hint="选择公司模板，组建团队并创建首个项目。"
           />
         )}
         <ul className="entity-list">

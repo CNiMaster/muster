@@ -128,6 +128,14 @@ export interface EmploymentHealthDTO {
   detail: string;
   action: { label: string; href: string } | null;
   probe: { status: string; classification: string | null; completedAt: string | null } | null;
+  executorProfileId: string | null;
+  executorName: string | null;
+  manifestId: string | null;
+  probeDetails: { status: string; classification: string | null; completedAt: string | null; version: string | null } | null;
+  modelProbe: { status: string; classification: string | null; completedAt: string | null; version: string | null; model: string | null } | null;
+  permission: { policyId: string; name: string; strategy: string; scope: string } | null;
+  reasons: string[];
+  remediation: { label: string; href: string } | null;
 }
 
 // ===== 用量记录 =====

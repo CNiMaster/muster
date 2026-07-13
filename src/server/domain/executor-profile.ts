@@ -31,11 +31,13 @@ export interface ExecutionRun {
   profileSnapshot: ExecutorProfile;
   startedAt: string | null;
   finishedAt: string | null;
+  failureClassification: string | null;
+  failureMessage: string | null;
   createdAt: string;
 }
 
 type ProfileRow = { id: string; name: string; manifest_id: string; manifest_version: number; config_json: string; credential_ref_json: string; install_json: string; concurrency_mode: ExecutorConcurrency; created_at: string; updated_at: string };
-type RunRow = { id: string; executor_profile_id: string; employee_id: string; project_id: string; task_id: string; status: ExecutionRun['status']; manifest_snapshot_json: string; profile_snapshot_json: string; started_at: string | null; finished_at: string | null; created_at: string };
+type RunRow = { id: string; executor_profile_id: string; employee_id: string; project_id: string; task_id: string; status: ExecutionRun['status']; manifest_snapshot_json: string; profile_snapshot_json: string; started_at: string | null; finished_at: string | null; failure_classification: string | null; failure_message: string | null; created_at: string };
 
 function profileFromRow(row: ProfileRow): ExecutorProfile {
   return { id: row.id, name: row.name, manifestId: row.manifest_id, manifestVersion: row.manifest_version, config: JSON.parse(row.config_json), credentialRef: JSON.parse(row.credential_ref_json), install: JSON.parse(row.install_json), concurrencyMode: row.concurrency_mode, createdAt: row.created_at, updatedAt: row.updated_at };
@@ -111,7 +113,13 @@ export function createExecutionRun(db: DB, input: { executorProfileId: string; e
 export function getExecutionRun(db: DB, id: string): ExecutionRun {
   const row = db.prepare('SELECT * FROM execution_run WHERE id=?').get(id) as RunRow | undefined;
   if (!row) throw new AppError(ErrorCode.NOT_FOUND, `执行记录不存在: ${id}`);
-  return { id: row.id, executorProfileId: row.executor_profile_id, employeeId: row.employee_id, projectId: row.project_id, taskId: row.task_id, status: row.status, manifestSnapshot: JSON.parse(row.manifest_snapshot_json), profileSnapshot: JSON.parse(row.profile_snapshot_json), startedAt: row.started_at, finishedAt: row.finished_at, createdAt: row.created_at };
+  return { id: row.id, executorProfileId: row.executor_profile_id, employeeId: row.employee_id, projectId: row.project_id, taskId: row.task_id, status: row.status, manifestSnapshot: JSON.parse(row.manifest_snapshot_json), profileSnapshot: JSON.parse(row.profile_snapshot_json), startedAt: row.started_at, finishedAt: row.finished_at, failureClassification: row.failure_classification, failureMessage: row.failure_message, createdAt: row.created_at };
+}
+
+export function failExecutionRun(db: DB, id: string, classification: string, message: string): ExecutionRun {
+  const result = db.prepare(`UPDATE execution_run SET status='failed', failure_classification=?, failure_message=?, finished_at=? WHERE id=?`).run(classification, message.slice(0, 2_000), nowIso(), id);
+  if (result.changes !== 1) throw new AppError(ErrorCode.NOT_FOUND, `执行记录不存在: ${id}`);
+  return getExecutionRun(db, id);
 }
 
 export function updateExecutionRunStatus(db: DB, id: string, status: ExecutionRun['status']): ExecutionRun {

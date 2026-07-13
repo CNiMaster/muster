@@ -10,7 +10,7 @@ Muster is a local multi-agent company workbench. Persistent employees collaborat
 
 ## Product Direction: Agent Company Workbench
 
-Muster is being redesigned from a one-shot Leader → Worker → Verifier orchestrator into a persistent, project-driven Agent company workbench.
+Muster is a persistent, project-driven Agent company workbench. The former one-shot Leader → Worker → Verifier model is retained only as historical context.
 
 Authoritative planning documents:
 
@@ -31,10 +31,10 @@ Key constraints for all new work:
 - Task is the single runtime abstraction for queues, collaboration, clarification, feedback, event triggers, scheduled work, and bounded discussions.
 - The platform owns deterministic infrastructure; semantic decisions must be assigned to an explicit Agent.
 - No concurrent operation may silently overwrite or lose project files.
-- The first validated vertical is a local single-user long-form novel company. Multi-tenant SaaS, payments, and full PPT/Word/video editing are later work.
+- Writing is one built-in company template alongside general, software, and content companies. Multi-tenant SaaS, payments, and full PPT/Word/video editing remain outside the local workbench scope.
 - Old `.muster` runtime data contains failed test runs, has no migration requirement, and may be removed when the new persistence layer is introduced.
 
-> 本地单用户长篇小说 MVP 已完成并通过自动化与真实 Claude Code 冒烟。旧 Leader→Worker→Verifier 单次编排器和 group-chat 已移除，不参与当前运行。下面文档反映当前实现；未纳入 MVP 的扩展项见实施清单顶部的审计记录。
+> 当前成品边界是本地单用户多 Agent 公司工作台：公司向导、团队与员工档案、项目任务、固定执行器/权限、审批、会话健康和实时状态均已形成代码级闭环。旧 Leader→Worker→Verifier 单次编排器不参与当前运行。
 
 ## Commands
 
@@ -43,8 +43,9 @@ npm install              # 安装依赖（express, ws, better-sqlite3, react, re
 npm run dev              # 开发模式：tsx watch src/server/server.ts，Express 挂 Vite middleware
 npm start                # 生产模式：node dist/server/server.js（需先 build）
 npm run typecheck        # TypeScript 项目引用全量检查
-npm test                 # Vitest 单测 + 集成（292 项，需 git 可用）
-npm run test:e2e         # Playwright 端到端（12 项）
+npm test                 # Vitest 单测 + 集成（需 git 可用）
+npm run test:product-acceptance # 无真实模型请求的成品领域验收
+npm run test:e2e         # Playwright 端到端
 npm run test:claude-smoke # 真实 Claude 两轮 Task/session/artifact/usage 冒烟
 npm run build            # tsup 编译 server + vite build 客户端 → dist/
 ```
@@ -101,7 +102,7 @@ src/
     realtime.ts  # WebSocket 断线重连 + 精确失效 React Query 缓存
     api/         # fetch client + DTO
 tests/
-  unit/ integration/ e2e/   # 190 项 Vitest + Playwright regression/smoke/novel
+  unit/ integration/ e2e/   # Vitest + Playwright regression/product flows
 legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史参考）
 ```
 
@@ -115,11 +116,11 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 - **执行生命周期**：`RunWatchdog` 统一限制启动、空闲与总运行时长；`SessionManager` 独立处理上下文软阈值压缩、硬阈值换代和有限恢复链。
 - **引擎驱动**：`ProjectRuntimeCoordinator` 在 server 启动时定时轮询 online 公司，补线程、处理中断/排空/复盘并调用 `TaskEngine.pumpThread()` 完成领取→worktree→执行→发布；也提供 `POST /api/projects/:id/pump` 手动触发。
 - **定时触发**：`TriggerScheduler` 轮询 `trigger.next_run_at`；小说项目自动注册遗漏、连续性、长期一致性检查。下班期间不派发，上班后补派发；下一执行时间与 Task 创建在同一事务推进，避免重复。
-- **实时状态**：服务端通过 `/ws` 发布 Task 领取、完成和发布阻塞事件；前端按 project/task 标识精确失效查询缓存，4 秒消息轮询仅作断线兜底。
+- **实时状态**：服务端通过 `/ws` 发布 Task、项目任务、审批、会话压缩/换代/恢复和 Watchdog 事件；前端精确失效项目任务、员工运行态、审批和公司驾驶舱缓存，轮询仅作断线兜底。
 - **通信边界**：带 `dispatcherAgentId` 的 Task 创建必须满足同公司和 `contact_allow`，不能绕过通信图直接派发。
 - **安全成果工作区**：每 Task 一个隐藏 Git worktree + 专用分支；串行发布队列做文本三方合并、同段冲突阻塞、二进制独占锁、可回滚。
 - **总工作区**：`workspace` 表持久化多个本地根目录并保证唯一激活；未显式指定路径的新项目写入 `{workspace}/companies/{公司}/projects/{项目-ID}`，Task 仍在项目专属 worktree 内执行。
-- **员工档案与任职**：`agent_profile` 是员工库中的全局稳定身份，`company_employee` 是公司任职；同一档案可被多家公司引用，也可仅复制能力或生成含所选个人记忆来源的独立快照。
+- **员工档案、任职与运行态**：`agent_profile` 是全局稳定身份，`company_employee` 是公司任职，`project_task_thread` 是项目任务中的运行会话；员工页将三者分栏展示，同一档案可被多家公司引用。
 - **Agent Home 与分层记忆**：每个档案在 `{MUSTER_HOME}/agents/{profileId}` 拥有隔离个人空间；个人、技能、公司、项目记忆先进入候选审核，再写入版本化 SQLite/FTS 索引，并将已批准内容原子同步为人可读 Markdown。待审内容、凭据、会话与本地路径不会进入能力导出。
 - **可重建上下文**：上下文按身份原则→公司任职→项目→已批准分层记忆→Task 装配；自动/手动压缩先持久化记忆并保留前一 session 引用，失败时不清空旧 session。
 - **长篇小说公司**：5 基础岗位（lead/writer/character/plot/inspector），第一负责人≠主写手；章节完成事件触发人物/情节维护；定时一致性检查；强制复盘按根员工聚合；闲置头脑风暴受限。
@@ -188,7 +189,8 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 ### 已知工程取舍
 - `noUncheckedIndexedAccess` 关闭（为绕过 express `req.params` 类型摩擦）。代价：数组下标访问不强制 undefined 检查。如需更严格，重开后主要修 `src/shared/utils.ts` 和 domain 的 row 映射。
 - Claude Code 的模型可用性由用户本机或代理服务决定。先在“系统设置”填写实际支持的模型标识并运行桥接测试；错误模型会直接返回诊断，不会用 FakeExecutor 冒充成功。
-- 当前已接入 Codex CLI、Claude Code、Antigravity CLI、OpenAI-compatible API 和 Gemini API，并完成统一 Manifest/Profile、项目任务会话、审批/Turbo 权限、分层记忆和平台化公司入口。OpenCode/Pi 等更多 CLI、完整多模态和多租户 SaaS 仍是后续范围。
+- 当前认证接入包含 Codex CLI、Claude Code、Antigravity CLI、OpenAI-compatible API 和 Gemini API，并完成统一 Manifest/Profile、项目任务会话、审批/Turbo 权限、分层记忆和平台化公司入口。
+- OpenCode/Pi 等更多 CLI 需通过同一兼容性门禁后再加入；完整多模态和多租户 SaaS 不属于当前本地成品边界。
 
 ### UI 分层约定
 - **低门槛优先**：首次主流程固定为“创建公司→组建团队→创建项目→发布 Task”；首屏只提供一个状态相关主行动，rootDir/firstAgentId 后端自动。

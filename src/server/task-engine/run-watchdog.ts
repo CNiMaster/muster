@@ -1,10 +1,26 @@
-export type RunWatchdogClassification = 'startup_timeout' | 'idle_timeout' | 'max_runtime' | 'network_errors';
+export type RunFailureClassification = 'startup_timeout' | 'idle_timeout' | 'max_runtime' | 'network_errors' | 'empty_result' | 'approval_timeout' | 'process_exit';
+export type RunWatchdogClassification = Extract<RunFailureClassification, 'startup_timeout' | 'idle_timeout' | 'max_runtime' | 'network_errors'>;
 
-export class RunWatchdogTimeout extends Error {
-  constructor(public readonly classification: RunWatchdogClassification) {
+export class RunFailure extends Error {
+  constructor(public readonly classification: RunFailureClassification, message: string = classification) {
+    super(message);
+    this.name = 'RunFailure';
+  }
+}
+
+export class RunWatchdogTimeout extends RunFailure {
+  constructor(classification: RunWatchdogClassification) {
     super(classification);
     this.name = 'RunWatchdogTimeout';
   }
+}
+
+export function classifyRunFailure(error: unknown): RunFailure {
+  if (error instanceof RunFailure) return error;
+  const message = error instanceof Error ? error.message : String(error);
+  if (/no valid AgentRunResult|empty result|undefined result|no result/i.test(message)) return new RunFailure('empty_result', message);
+  if (/exited|exit code|signal|process.*closed|spawn.*failed/i.test(message)) return new RunFailure('process_exit', message);
+  return new RunFailure('process_exit', message);
 }
 
 export interface RunWatchdogOptions {

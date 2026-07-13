@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { RunWatchdog, RunWatchdogTimeout } from '../../src/server/task-engine/run-watchdog';
+import { classifyRunFailure, RunFailure, RunWatchdog, RunWatchdogTimeout } from '../../src/server/task-engine/run-watchdog';
 
 describe('RunWatchdog', () => {
   it('执行器在首次活动前超过阈值时给出 startup 分类', async () => {
@@ -62,5 +62,11 @@ describe('RunWatchdog', () => {
     await failure;
     expect(abort).toHaveBeenCalledOnce();
     vi.useRealTimers();
+  });
+
+  it('classifies empty adapter results and process exits for persisted diagnostics', () => {
+    expect(classifyRunFailure(new Error('no valid AgentRunResult'))).toMatchObject<RunFailure>({classification:'empty_result'});
+    expect(classifyRunFailure(new Error('process exited with code 2'))).toMatchObject<RunFailure>({classification:'process_exit'});
+    expect(classifyRunFailure(new RunFailure('approval_timeout'))).toMatchObject<RunFailure>({classification:'approval_timeout'});
   });
 });

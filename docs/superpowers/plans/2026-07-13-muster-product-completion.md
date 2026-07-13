@@ -82,7 +82,7 @@ src/client/pages/AgentProfilePage.tsx             # 档案 / 任职 / 项目活�
 - Produces: `LifecycleEventType`, `LifecycleEventPayloadMap`, `makeLifecycleEvent()`。
 - Consumers: Tasks 2、8、9、10 的领域服务与 `src/client/realtime.ts`。
 
-- [ ] **Step 1: 写失败测试，固定所有必须事件名称和 payload**
+- [x] **Step 1: 写失败测试，固定所有必须事件名称和 payload**
 
 ```ts
 import { describe, expect, it } from 'vitest';
@@ -102,13 +102,13 @@ describe('lifecycle events', () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试并确认模块缺失**
+- [x] **Step 2: 运行测试并确认模块缺失**
 
 Run: `npx vitest run tests/unit/lifecycle-events.spec.ts`
 
 Expected: FAIL，提示 `src/shared/lifecycle-events.ts` 不存在。
 
-- [ ] **Step 3: 实现精确事件联合类型**
+- [x] **Step 3: 实现精确事件联合类型**
 
 ```ts
 export interface LifecycleEventPayloadMap {
@@ -133,13 +133,13 @@ export function makeLifecycleEvent<K extends keyof LifecycleEventPayloadMap>(
 }
 ```
 
-- [ ] **Step 4: 运行测试和类型检查**
+- [x] **Step 4: 运行测试和类型检查**
 
 Run: `npx vitest run tests/unit/lifecycle-events.spec.ts && npm run typecheck`
 
 Expected: PASS。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add src/shared/lifecycle-events.ts src/shared/types.ts tests/unit/lifecycle-events.spec.ts
@@ -172,7 +172,7 @@ export interface CompanyCockpitDTO {
 }
 ```
 
-- [ ] **Step 1: 写失败集成测试，证明审批、执行器和岗位缺口来自数据库**
+- [x] **Step 1: 写失败集成测试，证明审批、执行器和岗位缺口来自数据库**
 
 ```ts
 it('aggregates real approvals, executor health and role gaps', () => {
@@ -187,13 +187,13 @@ it('aggregates real approvals, executor health and role gaps', () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试并确认 `getCompanyCockpit` 缺失**
+- [x] **Step 2: 运行测试并确认 `getCompanyCockpit` 缺失**
 
 Run: `npx vitest run tests/integration/company-cockpit.spec.ts`
 
 Expected: FAIL。
 
-- [ ] **Step 3: 实现聚合查询，禁止前端再传 `waitingApprovals: 0`**
+- [x] **Step 3: 实现聚合查询，禁止前端再传 `waitingApprovals: 0`**
 
 ```ts
 export function getCompanyCockpit(db: DB, companyId: string): CompanyCockpitDTO {
@@ -208,7 +208,7 @@ export function getCompanyCockpit(db: DB, companyId: string): CompanyCockpitDTO 
 }
 ```
 
-- [ ] **Step 4: 增加路由和 React Query hook**
+- [x] **Step 4: 增加路由和 React Query hook**
 
 ```ts
 companiesRouter.get('/:id/cockpit', asyncHandler(async (req, res) => {
@@ -220,13 +220,13 @@ export function useCompanyCockpit(companyId: string) {
 }
 ```
 
-- [ ] **Step 5: 运行集成测试、API 测试和类型检查**
+- [x] **Step 5: 运行集成测试、API 测试和类型检查**
 
 Run: `npx vitest run tests/integration/company-cockpit.spec.ts tests/integration/company.spec.ts && npm run typecheck`
 
 Expected: PASS。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add src/server/domain/company-cockpit.ts src/server/api/companies.ts src/client/hooks/queries.ts src/client/domain/company-dashboard.ts tests/integration/company-cockpit.spec.ts
@@ -252,7 +252,7 @@ git commit -m "feat: expose truthful company cockpit status"
 - Consumes: `CompanyCockpitDTO`、现有 agents/departments/projects/events hooks。
 - Produces: URL 状态 `?tab=overview|team|projects|activity|settings`。
 
-- [ ] **Step 1: 安装组件测试依赖并配置独立 DOM setup**
+- [x] **Step 1: 安装组件测试依赖并配置独立 DOM setup**
 
 Run: `npm install -D @testing-library/react @testing-library/user-event @testing-library/jest-dom jsdom`
 
@@ -263,7 +263,7 @@ Run: `npm install -D @testing-library/react @testing-library/user-event @testing
 import '@testing-library/jest-dom/vitest';
 ```
 
-- [ ] **Step 2: 写失败组件测试，要求默认只渲染概览**
+- [x] **Step 2: 写失败组件测试，要求默认只渲染概览**
 
 ```tsx
 it('renders overview only until another tab is selected', () => {
@@ -275,13 +275,13 @@ it('renders overview only until another tab is selected', () => {
 });
 ```
 
-- [ ] **Step 3: 运行测试并确认当前长页面导致失败**
+- [x] **Step 3: 运行测试并确认当前长页面导致失败**
 
 Run: `npx vitest run tests/unit/company-page-layout.spec.tsx`
 
 Expected: FAIL，团队、活动和设置内容同时存在。
 
-- [ ] **Step 4: 抽取五个职责单一组件**
+- [x] **Step 4: 抽取五个职责单一组件**
 
 ```tsx
 const items: TabItem[] = [
@@ -294,17 +294,17 @@ const items: TabItem[] = [
 return <Tabs items={items} activeKey={tab} onChange={setTabInSearchParams} />;
 ```
 
-- [ ] **Step 5: 限制 `CompanyPage.tsx` 只做查询和 mutation 编排**
+- [x] **Step 5: 限制 `CompanyPage.tsx` 只做查询和 mutation 编排**
 
 Acceptance: `wc -l src/client/pages/CompanyPage.tsx` 小于 220；任何单个新组件小于 300 行。
 
-- [ ] **Step 6: 运行组件测试、类型检查和构建**
+- [x] **Step 6: 运行组件测试、类型检查和构建**
 
 Run: `npx vitest run tests/unit/company-page-layout.spec.tsx && npm run typecheck && npm run build`
 
 Expected: PASS。
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交**
 
 ```bash
 git add package.json package-lock.json vitest.config.ts tests/unit/setup-dom.ts src/client/components/company src/client/pages/CompanyPage.tsx tests/unit/company-page-layout.spec.tsx
@@ -338,7 +338,7 @@ export interface CompanySetupDraft {
 }
 ```
 
-- [ ] **Step 1: 写失败测试，四个模板都必须产生完整 Draft**
+- [x] **Step 1: 写失败测试，四个模板都必须产生完整 Draft**
 
 ```ts
 for (const templateId of ['general', 'software', 'content', 'novel'] as const) {
@@ -352,13 +352,13 @@ for (const templateId of ['general', 'software', 'content', 'novel'] as const) {
 }
 ```
 
-- [ ] **Step 2: 运行测试并确认 server 模板模块缺失**
+- [x] **Step 2: 运行测试并确认 server 模板模块缺失**
 
 Run: `npx vitest run tests/integration/company-setup.spec.ts`
 
 Expected: FAIL。
 
-- [ ] **Step 3: 实现四个内置模板，写作只是一种模板**
+- [x] **Step 3: 实现四个内置模板，写作只是一种模板**
 
 ```ts
 export const BUILTIN_COMPANY_TEMPLATES: Record<CompanyTemplateId, CompanyTemplate> = {
@@ -369,7 +369,7 @@ export const BUILTIN_COMPANY_TEMPLATES: Record<CompanyTemplateId, CompanyTemplat
 };
 ```
 
-- [ ] **Step 4: 用 SQLite 单事务提交整套设置**
+- [x] **Step 4: 用 SQLite 单事务提交整套设置**
 
 ```ts
 export function commitCompanySetup(db: DB, draft: CompanySetupDraft, bindings: SetupBindings): CompanySetupResult {
@@ -385,13 +385,13 @@ export function commitCompanySetup(db: DB, draft: CompanySetupDraft, bindings: S
 }
 ```
 
-- [ ] **Step 5: 验证任一步失败会完整回滚**
+- [x] **Step 5: 验证任一步失败会完整回滚**
 
 Run: `npx vitest run tests/integration/company-setup.spec.ts -t "rolls back"`
 
 Expected: PASS，company/department/employee/project/project_task 均无残留。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add src/server/domain/company-templates.ts src/server/domain/company-setup.ts src/server/api/company-setup.ts src/server/server.ts src/client/domain/company-templates.ts tests/integration/company-setup.spec.ts
@@ -412,7 +412,7 @@ git commit -m "feat: create companies from complete setup drafts"
 - Consumes: Task 4 preview/commit API、executor profiles/probes、permission policies。
 - Steps: `template → team → executors → project → confirm`。
 
-- [ ] **Step 1: 写失败测试，要求五步和阻塞条件完整**
+- [x] **Step 1: 写失败测试，要求五步和阻塞条件完整**
 
 ```tsx
 it('does not commit until every employee has an executor and permission policy', async () => {
@@ -427,13 +427,13 @@ it('does not commit until every employee has an executor and permission policy',
 });
 ```
 
-- [ ] **Step 2: 运行测试并确认当前两步小说流程失败**
+- [x] **Step 2: 运行测试并确认当前两步小说流程失败**
 
 Run: `npx vitest run tests/unit/company-setup-wizard.spec.tsx`
 
 Expected: FAIL。
 
-- [ ] **Step 3: 实现五步状态机和可回退编辑 Draft**
+- [x] **Step 3: 实现五步状态机和可回退编辑 Draft**
 
 ```ts
 type SetupStep = 'template' | 'team' | 'executors' | 'project' | 'confirm';
@@ -441,7 +441,7 @@ const STEP_ORDER: SetupStep[] = ['template', 'team', 'executors', 'project', 'co
 const canContinue = step !== 'executors' || draft.employees.every((employee) => bindings[employee.key]?.executorProfileId && bindings[employee.key]?.permissionPolicyId);
 ```
 
-- [ ] **Step 4: 执行器步骤展示真实探测状态和修复入口**
+- [x] **Step 4: 执行器步骤展示真实探测状态和修复入口**
 
 Acceptance:
 - connected：显示最后成功时间和版本。
@@ -450,20 +450,20 @@ Acceptance:
 - missing：链接到执行器中心官方安装说明。
 - 不自动安装、不自动登录、不自动升级。
 
-- [ ] **Step 5: 提交成功后直接进入首项目任务**
+- [x] **Step 5: 提交成功后直接进入首项目任务**
 
 ```ts
 const result = await commitSetup.mutateAsync({ draft, bindings });
 navigate(`/projects/${result.project.id}?projectTask=${result.projectTask.id}&onboarding=done`);
 ```
 
-- [ ] **Step 6: 运行组件测试、类型检查和 E2E**
+- [x] **Step 6: 运行组件测试、类型检查和 E2E**
 
 Run: `npx vitest run tests/unit/company-setup-wizard.spec.tsx && npm run typecheck && npx playwright test tests/e2e/smoke.spec.ts -g "向导"`
 
 Expected: PASS。
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交**
 
 ```bash
 git add src/client/components/company/CompanySetupWizard.tsx src/client/components/company/ExecutorReadinessStep.tsx src/client/pages/CompanyWizardPage.tsx src/client/hooks/queries.ts tests/unit/company-setup-wizard.spec.tsx tests/e2e/smoke.spec.ts
@@ -498,7 +498,7 @@ export interface RecruitmentDraft {
 }
 ```
 
-- [ ] **Step 1: 写失败测试，三种来源最终都生成同一 Draft**
+- [x] **Step 1: 写失败测试，三种来源最终都生成同一 Draft**
 
 ```tsx
 it.each(['reuse-profile', 'new-profile', 'role-template'] as const)('%s produces a reviewable draft', async (source) => {
@@ -510,17 +510,17 @@ it.each(['reuse-profile', 'new-profile', 'role-template'] as const)('%s produces
 });
 ```
 
-- [ ] **Step 2: 运行测试并确认当前分散表单失败**
+- [x] **Step 2: 运行测试并确认当前分散表单失败**
 
 Run: `npx vitest run tests/unit/recruitment-wizard.spec.tsx`
 
 Expected: FAIL。
 
-- [ ] **Step 3: 实现内置岗位模板和统一确认页**
+- [x] **Step 3: 实现内置岗位模板和统一确认页**
 
 Role templates 至少包含：负责人、产品、工程、研究、内容策划、创作者、编辑、质量审查、运营监察。
 
-- [ ] **Step 4: 实现单事务招募 API**
+- [x] **Step 4: 实现单事务招募 API**
 
 ```ts
 companyEmployeesRouter.post('/recruit', asyncHandler(async (req, res) => {
@@ -529,13 +529,13 @@ companyEmployeesRouter.post('/recruit', asyncHandler(async (req, res) => {
 }));
 ```
 
-- [ ] **Step 5: 运行组件、集成和现有通信边界测试**
+- [x] **Step 5: 运行组件、集成和现有通信边界测试**
 
 Run: `npx vitest run tests/unit/recruitment-wizard.spec.tsx tests/integration/recruitment.spec.ts tests/integration/trigger-communication.spec.ts`
 
 Expected: PASS。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add src/shared/role-templates.ts src/client/components/agents/RecruitmentWizard.tsx src/client/components/company/CompanyTeam.tsx src/server/api/agent-profiles.ts tests/unit/recruitment-wizard.spec.tsx tests/integration/recruitment.spec.ts
@@ -579,7 +579,7 @@ export interface EmployeeRuntimeDTO {
 }
 ```
 
-- [ ] **Step 1: 写失败集成测试，跨公司数据必须隔离**
+- [x] **Step 1: 写失败集成测试，跨公司数据必须隔离**
 
 ```ts
 it('returns project task threads and artifacts grouped by employment without leaking another profile', () => {
@@ -589,17 +589,17 @@ it('returns project task threads and artifacts grouped by employment without lea
 });
 ```
 
-- [ ] **Step 2: 运行测试并确认聚合不存在**
+- [x] **Step 2: 运行测试并确认聚合不存在**
 
 Run: `npx vitest run tests/integration/employee-runtime.spec.ts`
 
 Expected: FAIL。
 
-- [ ] **Step 3: 实现聚合 endpoint 和 hook**
+- [x] **Step 3: 实现聚合 endpoint 和 hook**
 
 查询必须通过 `company_employee.profile_id → legacy_agent_id → project_task_thread.employee_id` 关联，并按 company/project 分组。
 
-- [ ] **Step 4: 将档案页拆成三个标签**
+- [x] **Step 4: 将档案页拆成三个标签**
 
 ```tsx
 <Tabs items={[
@@ -609,13 +609,13 @@ Expected: FAIL。
 ]} />
 ```
 
-- [ ] **Step 5: 运行集成、组件、类型和构建测试**
+- [x] **Step 5: 运行集成、组件、类型和构建测试**
 
 Run: `npx vitest run tests/integration/employee-runtime.spec.ts tests/unit/employee-runtime-panel.spec.tsx && npm run typecheck && npm run build`
 
 Expected: PASS。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add src/server/domain/employee-runtime.ts src/server/api/agent-profiles.ts src/client/hooks/queries.ts src/client/components/agents/EmployeeRuntimePanel.tsx src/client/pages/AgentProfilePage.tsx tests/integration/employee-runtime.spec.ts tests/unit/employee-runtime-panel.spec.tsx
@@ -649,7 +649,7 @@ export interface ExecutorHealthDTO {
 }
 ```
 
-- [ ] **Step 1: 写失败测试，Profile 存在但 probe 失败不能显示 ready**
+- [x] **Step 1: 写失败测试，Profile 存在但 probe 失败不能显示 ready**
 
 ```ts
 it('does not infer readiness from an executor profile alone', () => {
@@ -661,27 +661,27 @@ it('does not infer readiness from an executor profile alone', () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试并确认当前错误推断失败**
+- [x] **Step 2: 运行测试并确认当前错误推断失败**
 
 Run: `npx vitest run tests/integration/executor-health.spec.ts tests/unit/employee-health.spec.ts`
 
 Expected: FAIL。
 
-- [ ] **Step 3: 查询最近基础 Probe，并独立呈现指定模型 Probe**
+- [x] **Step 3: 查询最近基础 Probe，并独立呈现指定模型 Probe**
 
 SQL 必须按 `executor_profile_id + kind` 取最新记录；模型 Probe 失败不能把基础联通改成未连接。
 
-- [ ] **Step 4: 任职卡展示版本、测试时间、诊断、权限策略和范围**
+- [x] **Step 4: 任职卡展示版本、测试时间、诊断、权限策略和范围**
 
 Acceptance: 用户能在卡片内回答“用哪个执行器、是否联通、最后何时检查、权限多大、为什么不能运行、去哪里修复”。
 
-- [ ] **Step 5: 运行专项和探测回归**
+- [x] **Step 5: 运行专项和探测回归**
 
 Run: `npx vitest run tests/integration/executor-health.spec.ts tests/integration/certified-cli-probe.spec.ts tests/unit/employee-health.spec.ts`
 
 Expected: PASS。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add src/server/domain/executor-health.ts src/server/domain/executor-profile.ts src/server/api/executors.ts src/server/api/agent-profiles.ts src/client/domain/employee-health.ts src/client/components/agents/EmploymentCard.tsx tests/integration/executor-health.spec.ts tests/unit/employee-health.spec.ts
@@ -705,7 +705,7 @@ git commit -m "feat: report real executor and permission health"
 - Produces classifications: `startup_timeout`, `idle_timeout`, `max_runtime`, `network_errors`, `empty_result`, `approval_timeout`, `process_exit`。
 - `ExecutionContext.reportActivity(kind)` accepts `output | tool | network-success | approval-wait`。
 
-- [ ] **Step 1: 写失败测试，覆盖尚未接入的网络、空结果和审批超时**
+- [x] **Step 1: 写失败测试，覆盖尚未接入的网络、空结果和审批超时**
 
 ```ts
 it('stops after three consecutive network errors and resets after output', async () => {
@@ -723,13 +723,13 @@ it('classifies a zero-exit process without a result as empty_result', async () =
 });
 ```
 
-- [ ] **Step 2: 运行 Watchdog 测试并确认缺失分类失败**
+- [x] **Step 2: 运行 Watchdog 测试并确认缺失分类失败**
 
 Run: `npx vitest run tests/unit/run-watchdog.spec.ts tests/integration/run-watchdog-lifecycle.spec.ts`
 
 Expected: FAIL。
 
-- [ ] **Step 3: 让所有 Adapter 上报活动和网络结果**
+- [x] **Step 3: 让所有 Adapter 上报活动和网络结果**
 
 ```ts
 events?.onOutput?.(chunk);
@@ -738,11 +738,11 @@ ctx.reportActivity?.('output');
 ctx.reportNetworkError?.(classifyNetworkError(error));
 ```
 
-- [ ] **Step 4: TaskEngine 只建立一个 RunWatchdog，并在所有退出路径 complete**
+- [x] **Step 4: TaskEngine 只建立一个 RunWatchdog，并在所有退出路径 complete**
 
 Acceptance: completed/failed/cancelled/waiting approval/异常抛出均清理计时器；超时调用 AbortController；迟到结果不得回写 Task。
 
-- [ ] **Step 5: 发布 `run.watchdog-stopped` 事件并保存 execution_run 失败分类**
+- [x] **Step 5: 发布 `run.watchdog-stopped` 事件并保存 execution_run 失败分类**
 
 若现有 `execution_run` 无诊断列，新增迁移：
 
@@ -753,13 +753,13 @@ ALTER TABLE execution_run ADD COLUMN failure_classification TEXT;
 ALTER TABLE execution_run ADD COLUMN failure_message TEXT;
 ```
 
-- [ ] **Step 6: 运行引擎、工具循环和适配器回归**
+- [x] **Step 6: 运行引擎、工具循环和适配器回归**
 
 Run: `npx vitest run tests/unit/run-watchdog.spec.ts tests/integration/run-watchdog-lifecycle.spec.ts tests/integration/engine-wiring.spec.ts tests/integration/batch11-tool-loop.spec.ts`
 
 Expected: PASS。
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交**
 
 ```bash
 git add src/server/task-engine src/server/executors src/server/db/migrations/0026_execution_run_diagnostics.sql tests/unit/run-watchdog.spec.ts tests/integration/run-watchdog-lifecycle.spec.ts
@@ -783,7 +783,7 @@ git commit -m "feat: close executor watchdog failure modes"
 - Consumes: Task 1 生命周期事件契约。
 - Produces: 审批请求、决定、超时；会话压缩、换代、恢复事件及精确缓存失效。
 
-- [ ] **Step 1: 写失败测试，订阅总线并验证完整事件序列**
+- [x] **Step 1: 写失败测试，订阅总线并验证完整事件序列**
 
 ```ts
 it('publishes approval wait, decision, resume and session rotation in order', async () => {
@@ -795,37 +795,37 @@ it('publishes approval wait, decision, resume and session rotation in order', as
 });
 ```
 
-- [ ] **Step 2: 运行测试并确认当前只发布审批决定**
+- [x] **Step 2: 运行测试并确认当前只发布审批决定**
 
 Run: `npx vitest run tests/integration/lifecycle-realtime.spec.ts tests/unit/realtime.spec.ts`
 
 Expected: FAIL。
 
-- [ ] **Step 3: 在领域动作发生处发布事件，不在 UI 猜测**
+- [x] **Step 3: 在领域动作发生处发布事件，不在 UI 猜测**
 
 ```ts
 const approval = ensureApprovalRequest(...);
 realtime.publish(makeLifecycleEvent('approval.requested', { approvalId: approval.id, taskId: task.id, projectTaskId: task.projectTaskId, threadId }, scope));
 ```
 
-- [ ] **Step 4: 前端精确失效 cockpit、approvals、project tasks、thread detail 和 employee runtime**
+- [x] **Step 4: 前端精确失效 cockpit、approvals、project tasks、thread detail 和 employee runtime**
 
 ```ts
 if (event.type.startsWith('approval.')) keys.push(['permission-approvals'], ['company-cockpit', event.companyId]);
 if (event.type.startsWith('session.')) keys.push(['project-task', event.projectId, payload.projectTaskId], ['agent-runtime']);
 ```
 
-- [ ] **Step 5: 权限中心显示等待剩余时间、CLI 是否在线和“批准后重新入队”状态**
+- [x] **Step 5: 权限中心显示等待剩余时间、CLI 是否在线和“批准后重新入队”状态**
 
 超时审批必须显示安全拒绝；用户稍后允许时显示工作单已重新排队，而不是假装原进程仍在线。
 
-- [ ] **Step 6: 运行审批、SessionManager、CLI Bridge 和实时测试**
+- [x] **Step 6: 运行审批、SessionManager、CLI Bridge 和实时测试**
 
 Run: `npx vitest run tests/integration/lifecycle-realtime.spec.ts tests/integration/session-manager.spec.ts tests/integration/cli-permission-bridge.spec.ts tests/unit/realtime.spec.ts`
 
 Expected: PASS。
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交**
 
 ```bash
 git add src/server/domain/permission.ts src/server/domain/approval-broker.ts src/server/domain/session-manager.ts src/server/task-engine/engine.ts src/server/api/permissions.ts src/client/realtime.ts src/client/pages/PermissionCenterPage.tsx tests/integration/lifecycle-realtime.spec.ts tests/unit/realtime.spec.ts
@@ -847,7 +847,7 @@ git commit -m "feat: stream approval and session lifecycle"
 **Interfaces:**
 - Produces: `getStateExplanation(domain, state)`，覆盖 company/employee/project/project-task/thread/probe/approval。
 
-- [ ] **Step 1: 写失败测试，所有用户可见状态必须有中文解释和行动**
+- [x] **Step 1: 写失败测试，所有用户可见状态必须有中文解释和行动**
 
 ```ts
 it.each([
@@ -858,17 +858,17 @@ it.each([
 });
 ```
 
-- [ ] **Step 2: 运行测试并确认集中解释模块缺失**
+- [x] **Step 2: 运行测试并确认集中解释模块缺失**
 
 Run: `npx vitest run tests/unit/state-explanation.spec.tsx`
 
 Expected: FAIL。
 
-- [ ] **Step 3: 实现统一说明和 BlockingIssues**
+- [x] **Step 3: 实现统一说明和 BlockingIssues**
 
 每个阻塞项必须包含：发生了什么、为什么、影响什么、下一步按钮；禁止只显示原始枚举或“操作失败”。
 
-- [ ] **Step 4: 修复键盘、焦点和响应式行为**
+- [x] **Step 4: 修复键盘、焦点和响应式行为**
 
 Acceptance:
 - Tabs 支持方向键/Home/End，切换后焦点合理。
@@ -877,13 +877,13 @@ Acceptance:
 - 危险操作确认说明影响范围。
 - 390px 宽度无横向溢出。
 
-- [ ] **Step 5: 运行组件、类型与构建测试**
+- [x] **Step 5: 运行组件、类型与构建测试**
 
 Run: `npx vitest run tests/unit/state-explanation.spec.tsx tests/unit/company-page-layout.spec.tsx tests/unit/employee-runtime-panel.spec.tsx && npm run typecheck && npm run build`
 
 Expected: PASS。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add src/client/components/StateExplanation.tsx src/client/components/BlockingIssues.tsx src/client/components/Badge.tsx src/client/components/company src/client/components/agents src/client/pages/ProjectPage.tsx src/client/pages/ExecutorCenterPage.tsx tests/unit/state-explanation.spec.tsx
@@ -902,7 +902,7 @@ git commit -m "feat: explain product states and recovery actions"
 **Interfaces:**
 - Produces: `npm run test:product-acceptance`。
 
-- [ ] **Step 1: 添加成品验收脚本**
+- [x] **Step 1: 添加成品验收脚本**
 
 ```json
 {
@@ -914,7 +914,7 @@ git commit -m "feat: explain product states and recovery actions"
 
 脚本必须验证：至少一个内置模板可完整 preview/commit；员工均有执行器和权限；首项目任务可创建工作单；归档后只读；所有健康 DTO 不含凭据值。
 
-- [ ] **Step 2: 添加产品全流程 E2E**
+- [x] **Step 2: 添加产品全流程 E2E**
 
 ```ts
 test('通用公司从模板到首项目任务', async ({ page }) => {
@@ -931,13 +931,13 @@ test('员工档案可查看任职和项目工作状态', async ({ page }) => {
 });
 ```
 
-- [ ] **Step 3: 清理文档中所有与当前实现矛盾的后续范围和旧数字**
+- [x] **Step 3: 清理文档中所有与当前实现矛盾的后续范围和旧数字**
 
 Run: `rg -n "Codex.*后续|统一审批.*后续|Playwright 10|270 项|190 项|小说.*唯一" CLAUDE.md docs/agent-company-implementation-checklist.md`
 
 Expected: 无过期命中。
 
-- [ ] **Step 4: 执行完整门禁**
+- [x] **Step 4: 执行完整门禁**
 
 ```bash
 npm test
@@ -956,11 +956,11 @@ Expected:
 - Playwright 0 failed。
 - diff check 无空白错误。
 
-- [ ] **Step 5: 执行选择性的真实 CLI 冒烟（需要用户再次授权）**
+- [x] **Step 5: 按用户要求从本轮验收排除真实 CLI 冒烟**
 
-真实冒烟不是自动门禁的替代物，只验证本机安装状态：Codex 默认响应/恢复/审批拒绝；Claude 默认响应/恢复/Hook；Antigravity 默认响应/恢复/Hook。不得显示或记录凭据值。
+用户已明确要求仅做代码层面检查。本轮不发起 Codex、Claude 或 Antigravity 的真实模型请求；自动门禁仍完整验证适配器契约、会话恢复、审批桥和失败关闭。
 
-- [ ] **Step 6: 检查 Git 范围并提交**
+- [x] **Step 6: 检查 Git 范围并提交**
 
 ```bash
 git status --short

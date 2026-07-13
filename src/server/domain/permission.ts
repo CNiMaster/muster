@@ -21,6 +21,13 @@ export function createPermissionPolicy(db:DB,input:{name:string;approvalStrategy
 export function getPermissionPolicy(db:DB,id:string):PermissionPolicy { const row=db.prepare('SELECT * FROM permission_policy WHERE id=?').get(id) as PolicyRow|undefined; if(!row) throw new AppError(ErrorCode.NOT_FOUND,`权限策略不存在: ${id}`); return fromRow(row); }
 export function listPermissionPolicies(db:DB):PermissionPolicy[] { return (db.prepare('SELECT * FROM permission_policy ORDER BY created_at,id').all() as PolicyRow[]).map(fromRow); }
 export function listPendingApprovals(db:DB):Record<string,unknown>[] { return db.prepare("SELECT * FROM permission_approval WHERE status='pending' ORDER BY created_at").all() as Record<string,unknown>[]; }
+export function listApprovalQueue(db:DB,isOnline:(id:string)=>boolean,now=Date.now()):Record<string,unknown>[] {
+  return listPendingApprovals(db).map((row)=>{
+    const id=String(row.id);const online=isOnline(id);const expiresAt=typeof row.expires_at==='string'?row.expires_at:null;
+    const remainingMs=online&&expiresAt?Math.max(0,Date.parse(expiresAt)-now):0;
+    return {...row,online,remainingMs,resumeMode:online?'direct':'requeue',statusText:online?`CLI 在线等待 · 剩余 ${Math.max(1,Math.ceil(remainingMs/60_000))} 分钟`:expiresAt&&Date.parse(expiresAt)<=now?'等待已超时 · 批准后重新入队':'进程已安全停止 · 批准后重新入队'};
+  });
+}
 export function getEmployeePermissionPolicy(db:DB,employeeId:string):PermissionPolicy|null { const row=db.prepare('SELECT permission_policy_id FROM company_employee WHERE id=?').get(employeeId) as {permission_policy_id:string|null}|undefined;if(!row)throw new AppError(ErrorCode.NOT_FOUND,`公司员工不存在: ${employeeId}`);return row.permission_policy_id?getPermissionPolicy(db,row.permission_policy_id):null; }
 export function bindEmployeePermissionPolicy(db:DB,employeeId:string,policyId:string):void { getPermissionPolicy(db,policyId); const employment=db.prepare('SELECT c.state FROM company_employee ce JOIN company c ON c.id=ce.company_id WHERE ce.id=?').get(employeeId) as {state:string}|undefined; if(!employment)throw new AppError(ErrorCode.NOT_FOUND,`公司员工不存在: ${employeeId}`);if(employment.state!=='off')throw new AppError(ErrorCode.CONFLICT,'公司下班后才能修改员工权限'); const result=db.prepare('UPDATE company_employee SET permission_policy_id=?,updated_at=? WHERE id=?').run(policyId,nowIso(),employeeId); if(result.changes!==1) throw new AppError(ErrorCode.NOT_FOUND,`公司员工不存在: ${employeeId}`); }
 

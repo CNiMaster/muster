@@ -50,14 +50,14 @@ import { deleteTaskRuntime, getTaskRuntime, saveTaskRuntime } from '../domain/ta
 import { existsSync } from 'node:fs';
 import { mkdirSync } from 'node:fs';
 import { SERVER_CONFIG } from '../env';
-import { createExecutionRun, getEmployeeExecutorProfile, updateExecutionRunStatus } from '../domain/executor-profile';
+import { createExecutionRun, failExecutionRun, getEmployeeExecutorProfile, updateExecutionRunStatus } from '../domain/executor-profile';
 import { buildRunIsolation, withExecutorConcurrency } from '../executors/run-isolation';
 import { ensureApprovalRequest, evaluatePermission, getEmployeePermissionPolicy } from '../domain/permission';
 import { getActiveWorkspace } from '../domain/workspace';
 import {ensureProjectTaskThread,setProjectTaskThreadSession} from '../domain/project-task-thread';
 import{SessionManager}from'../domain/session-manager';
 import{approvalBroker}from'../domain/approval-broker';
-import { RunWatchdog, RunWatchdogTimeout } from './run-watchdog';
+import { classifyRunFailure, RunFailure, RunWatchdog } from './run-watchdog';
 import { makeLifecycleEvent } from '../../shared/lifecycle-events';
 
 export interface EngineOptions {
@@ -237,6 +237,7 @@ export class TaskEngine {
       const legacyExecutor = normalizeAgentExecutor(agent.executor);
       const effectiveExecutor = profileExecutor ?? legacyExecutor;
       const permissionPolicy = getEmployeePermissionPolicy(this.db, agent.id);
+      let approvalFailure: RunFailure | null = null;
       const ctx: ExecutionContext = {
         task: getTask(this.db, task.id),
         systemPrompt: '', // 由 assembleContext 装配
@@ -279,7 +280,7 @@ export class TaskEngine {
             realtime.publish(makeLifecycleEvent('approval.requested',{approvalId:approval.id,taskId:task.id,projectTaskId:task.projectTaskId,threadId:projectTaskThread.id},{companyId:company.id,projectId:project.id,taskId:task.id}));
             const resolution=await approvalBroker.wait(approval.id,600_000);
             if(resolution==='allow'||resolution==='deny')clearTaskApprovalWait(this.db,task.id);
-            else {markTaskWaitingApproval(this.db,task.id,approval.id,'persistent');realtime.publish(makeLifecycleEvent('approval.timed-out',{approvalId:approval.id,taskId:task.id},{companyId:company.id,projectId:project.id,taskId:task.id}));}
+            else {approvalFailure=new RunFailure('approval_timeout',`审批请求 ${approval.id} ${resolution==='shutdown'?'因 Muster 停止而安全拒绝':'等待超时，已安全停止'}`);markTaskWaitingApproval(this.db,task.id,approval.id,'persistent');realtime.publish(makeLifecycleEvent('approval.timed-out',{approvalId:approval.id,taskId:task.id},{companyId:company.id,projectId:project.id,taskId:task.id}));}
             return resolution==='allow'?{allowed:true}:{allowed:false,message:`审批请求 ${approval.id} ${resolution==='deny'?'已拒绝':'等待超时，已安全停止'}`};
           }
           return { allowed: false, message: decision.reason };
@@ -324,13 +325,16 @@ export class TaskEngine {
             onOutput: (chunk) => { watchdog.activity(); log.debug('agent output', { taskId: task.id, chunk: chunk.slice(0, 120), executionRunId: executionRun?.id }); },
             onToolCall: (name, input) => { watchdog.activity(); log.debug('agent tool', { taskId: task.id, name, executionRunId: executionRun?.id }); },
           })), watchdog.failure]);sessionManager.clearRecovery(projectTaskThread.id);break;}catch(error){if(/network|econn|dns|tls|proxy/i.test(error instanceof Error?error.message:String(error)))watchdog.networkError();if(!isRecoverableSessionError(error))throw error;recoveryAttempt+=1;const compactSupported=Boolean(adapter.compactSession);const recovery=recoveryAttempt===1?'retry':recoveryAttempt===2&&compactSupported?'compact':recoveryAttempt===(compactSupported?3:2)?'rotate':'stop';sessionManager.nextRecovery(projectTaskThread.id,compactSupported);if(recovery==='stop')throw error;if(recovery==='compact'&&adapter.compactSession&&ctx.sessionIdHint){try{await adapter.compactSession(ctx);}catch{const previousSessionId=ctx.sessionIdHint??null;sessionManager.rotate(projectTaskThread.id,{reason:'compact-failed',taskId:task.id});ctx.sessionIdHint=undefined;realtime.publish(makeLifecycleEvent('session.rotated',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,previousSessionId,reason:'compact-failed'},{companyId:company.id,projectId:project.id,taskId:task.id}));}}else if(recovery==='rotate'){const previousSessionId=ctx.sessionIdHint??null;sessionManager.rotate(projectTaskThread.id,{reason:'session-recovery',taskId:task.id});ctx.sessionIdHint=undefined;realtime.publish(makeLifecycleEvent('session.rotated',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,previousSessionId,reason:'session-recovery'},{companyId:company.id,projectId:project.id,taskId:task.id}));}realtime.publish(makeLifecycleEvent('session.recovered',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,taskId:task.id,recovery},{companyId:company.id,projectId:project.id,taskId:task.id}));log.warn('retrying recoverable executor failure',{taskId:task.id,recovery,error:String(error)});}}
+        if(!result||typeof result.outcome!=='string')throw new RunFailure('empty_result','执行器没有返回有效的 AgentRunResult');
+        if(approvalFailure)throw approvalFailure;
         watchdog.complete();
         if (executionRun) updateExecutionRunStatus(this.db, executionRun.id, result.outcome === 'completed' ? 'completed' : 'failed');
       } catch (error) {
         watchdog.complete();
-        if (executionRun) updateExecutionRunStatus(this.db, executionRun.id, 'failed');
-        if(error instanceof RunWatchdogTimeout)realtime.publish(makeLifecycleEvent('run.watchdog-stopped',{runId:executionRun?.id??null,taskId:task.id,classification:error.classification},{companyId:company.id,projectId:project.id,taskId:task.id}));
-        throw error;
+        const failure=classifyRunFailure(error);
+        if (executionRun) failExecutionRun(this.db, executionRun.id, failure.classification, failure.message);
+        realtime.publish(makeLifecycleEvent('run.watchdog-stopped',{runId:executionRun?.id??null,taskId:task.id,classification:failure.classification},{companyId:company.id,projectId:project.id,taskId:task.id}));
+        throw failure;
       }
 
       // 持久化 Claude session id（首次返回后保存，后续 --resume 用）

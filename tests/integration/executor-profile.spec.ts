@@ -4,6 +4,7 @@ import { BUILTIN_EXECUTOR_MANIFESTS, getExecutorManifest } from '../../src/serve
 import {
   createExecutionRun,
   createExecutorProfile,
+  failExecutionRun,
   getExecutionRun,
   getExecutorProfile,
   listExecutorProfiles,
@@ -64,6 +65,8 @@ describe('unified executor profiles', () => {
       expect(snapshot.manifestSnapshot.id).toBe('codex-cli');
       expect(snapshot.profileSnapshot.config).toEqual({ bin: 'codex', model: 'gpt-5' });
       expect(snapshot.status).toBe('created');
+      const failed=failExecutionRun(db,run.id,'empty_result','adapter returned no result');
+      expect(failed).toMatchObject({status:'failed',failureClassification:'empty_result',failureMessage:'adapter returned no result'});
     } finally {
       close();
     }
