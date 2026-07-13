@@ -56,8 +56,26 @@ function assertScope(db: DB, kind: ScopeKind, id: string): void {
 }
 
 /** 列出某 scope 的消息（含 event 摘要）。 */
-export function listMessages(db: DB, kind: ScopeKind, scopeId: string): ConversationMessage[] {
+export function listMessages(db: DB, kind: ScopeKind, scopeId: string, agentId?: string): ConversationMessage[] {
   assertScope(db, kind, scopeId);
+  if (agentId) {
+    const agent = getAgent(db, agentId);
+    const companyId = kind === 'company' ? scopeId : getProject(db, scopeId).companyId;
+    if (agent.companyId !== companyId) {
+      throw new AppError(ErrorCode.UNAUTHORIZED, `员工 ${agentId} 不属于当前公司`);
+    }
+    const rows = db
+      .prepare(
+        `SELECT DISTINCT cm.*
+           FROM conversation_message cm
+           LEFT JOIN task t ON t.id = cm.ref_task_id
+          WHERE cm.scope_kind = ? AND cm.scope_id = ?
+            AND (cm.author = ? OR t.assignee_agent_id = ?)
+          ORDER BY cm.created_at ASC`,
+      )
+      .all(kind, scopeId, agentId, agentId) as ConvRow[];
+    return rows.map(fromRow);
+  }
   const rows = db
     .prepare('SELECT * FROM conversation_message WHERE scope_kind = ? AND scope_id = ? ORDER BY created_at ASC')
     .all(kind, scopeId) as ConvRow[];
@@ -70,6 +88,8 @@ export interface PostUserMessageInput {
   content: string;
   /** @提及的员工 agent id（可选）。 */
   mentions?: string[];
+  /** 项目中的用户任务上下文；员工单聊与群聊都应显式落入该边界。 */
+  projectTaskId?: string;
 }
 
 /**
@@ -143,6 +163,7 @@ export function postUserMessage(db: DB, input: PostUserMessageInput): {
     for (const recipientAgentId of recipients) {
       tasks.push(createTask(db, {
         projectId,
+        projectTaskId: input.projectTaskId,
         assigneeAgentId: recipientAgentId,
         title: `[用户消息] ${input.content.slice(0, 40)}`,
         inputProtocol: {

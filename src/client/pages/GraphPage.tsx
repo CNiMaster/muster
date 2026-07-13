@@ -32,8 +32,12 @@ import { toast } from '../components/Button';
 import { NaturalLanguageGraphPanel } from '../components/NaturalLanguageGraphPanel';
 
 const KIND_LABEL: Record<string, string> = {
-  org: '组织图',
-  communication: '通信图',
+  org: '员工上下级',
+  communication: '员工引用关系',
+};
+const KIND_HELP: Record<string, string> = {
+  org: '从负责人连向下属，表示管辖与汇报方向；实际拆单由第一负责人或公司工作流触发。',
+  communication: '从发起者连向可联系员工，表示谁可以引用谁；具体触发时机由公司工作流决定。',
 };
 
 export function GraphPage(): React.ReactElement {
@@ -152,6 +156,7 @@ export function GraphPage(): React.ReactElement {
       <header className="page-header">
         <div>
           <h1>{KIND_LABEL[graphKind]}</h1>
+          <p className="subtitle">{KIND_HELP[graphKind]}</p>
           {readonly && <Badge tone="warn">上班只读</Badge>}
           {archivedCount > 0 && (
             <label style={{ marginLeft: 'var(--space-3)', fontSize: 'var(--text-sm)' }}>

@@ -2,27 +2,33 @@ import type React from 'react';
 import { Link } from 'react-router-dom';
 import type { Agent, Task } from '../../api/types';
 import type { ProjectTaskDTO } from '../../hooks/queries';
-import { useProjectTaskAction } from '../../hooks/queries';
+import { useProjectAutomations, useProjectTaskAction } from '../../hooks/queries';
 import type { CompanyCockpitDTO } from '../../../shared/types';
 import { Badge, StateBadge, stateLabel, taskStateTone } from '../Badge';
 import { Button, toast } from '../Button';
 
-export function ProjectContextInspector({ projectId, companyId, projectState, selectedTask, agents, tasks, cockpit }: {
+const OPEN_STATES = new Set(['queued', 'claimed', 'running', 'waiting_input', 'waiting_dependency', 'waiting_approval', 'paused', 'blocked']);
+
+export function ProjectContextInspector({ projectId, companyId, projectState, selectedTask, selectedAgentId, agents, tasks, cockpit }: {
   projectId: string;
   companyId?: string;
   projectState: string;
   selectedTask?: ProjectTaskDTO;
+  selectedAgentId?: string;
   agents: Agent[];
   tasks: Task[];
   cockpit?: CompanyCockpitDTO;
 }): React.ReactElement {
   const taskAction = useProjectTaskAction();
-  const currentWorkOrders = selectedTask ? tasks.filter((task) => task.projectTaskId === selectedTask.id) : [];
-  const waitingWorkOrders = currentWorkOrders.filter((task) => task.state === 'waiting_input' || task.state === 'waiting_approval' || task.state === 'blocked');
+  const { data: automations = [] } = useProjectAutomations(projectId);
+  const selectedAgent = agents.find((agent) => agent.id === selectedAgentId);
+  const employeeTasks = selectedAgent ? tasks.filter((task) => task.assigneeAgentId === selectedAgent.id) : [];
+  const openEmployeeTasks = employeeTasks.filter((task) => OPEN_STATES.has(task.state));
+  const waitingWorkOrders = tasks.filter((task) => task.state === 'waiting_input' || task.state === 'waiting_approval' || task.state === 'blocked');
+  const runningCount = tasks.filter((task) => task.state === 'running' || task.state === 'claimed').length;
+  const claimCount = tasks.filter((task) => task.state === 'queued').length;
   const contextNeedsAttention = selectedTask?.threads?.some((thread) => thread.transcriptBytes > 2_000_000) ?? false;
-  const attentionTotal = waitingWorkOrders.length + (cockpit?.approvals.pending ?? 0) + (cockpit?.employees.blocked ?? 0) + (contextNeedsAttention ? 1 : 0);
-  const participantIds = new Set(selectedTask?.threads?.map((thread) => thread.employeeId) ?? []);
-  const participants = agents.filter((agent) => participantIds.has(agent.id));
+  const attentionTotal = waitingWorkOrders.length + (cockpit?.approvals.pending ?? 0) + (contextNeedsAttention ? 1 : 0);
 
   const completeTask = (): void => {
     if (!selectedTask) return;
@@ -40,53 +46,51 @@ export function ProjectContextInspector({ projectId, companyId, projectState, se
   };
 
   return <div className="context-inspector project-action-inspector">
-    {selectedTask ? <>
-      <section className="inspector-focus">
-        <div className="inspector-eyebrow">当前项目任务 · #{selectedTask.seq}</div>
-        <h2>{selectedTask.title}</h2>
-        <StateBadge domain="project-task" state={selectedTask.state} />
-        <a className="mu-btn mu-btn-primary mu-btn-sm inspector-primary-action" href="#work-order-composer">发布员工工作单</a>
-        {selectedTask.state === 'active' && <div className="inspector-task-actions">
-          <Button size="sm" variant="ghost" loading={taskAction.isPending} onClick={completeTask}>完成</Button>
-          <Button size="sm" variant="ghost" loading={taskAction.isPending} onClick={archiveTask}>归档</Button>
-        </div>}
-      </section>
+    {selectedAgent && <section className="inspector-person-focus">
+      <div className="inspector-person-head">
+        <span className="inspector-avatar" aria-hidden="true">{selectedAgent.name.slice(0, 1)}</span>
+        <div><div className="inspector-eyebrow">当前联系人</div><h2>{selectedAgent.name}</h2><p>{selectedAgent.role}</p></div>
+        <StateBadge domain="employee" state={selectedAgent.availabilityState} />
+      </div>
+      <a className="mu-btn mu-btn-primary mu-btn-sm inspector-primary-action" href="#employee-dispatch">派发给此员工</a>
+      <div className="inspector-section-heading"><h3>他的工作</h3><Link to={`/projects/${projectId}/tasks?agent=${selectedAgent.id}`}>全部 {employeeTasks.length}</Link></div>
+      {openEmployeeTasks.length ? <div className="inspector-work-orders">{openEmployeeTasks.slice(0, 3).map((task) => <Link key={task.id} className="inspector-work-order" to={`/tasks/${task.id}`}>
+        <span><strong>{task.title}</strong><small>工作单 #{task.seq}</small></span><Badge tone={taskStateTone(task.state)}>{stateLabel(task.state)}</Badge>
+      </Link>)}</div> : <p className="inspector-empty">当前没有待处理工作。</p>}
+    </section>}
 
-      <section className="inspector-section">
-        <div className="inspector-section-heading"><h3>员工工作单</h3><Link to={`/projects/${projectId}/tasks`}>查看全部 {currentWorkOrders.length}</Link></div>
-        {currentWorkOrders.length > 0 ? <div className="inspector-work-orders">{currentWorkOrders.slice(0, 4).map((task) => <Link key={task.id} className="inspector-work-order" to={`/tasks/${task.id}`}>
-          <span><strong>#{task.seq} {task.title}</strong><small>{agents.find((agent) => agent.id === task.assigneeAgentId)?.name ?? '等待分配'}</small></span>
-          <Badge tone={taskStateTone(task.state)}>{stateLabel(task.state)}</Badge>
-        </Link>)}</div> : <p className="inspector-empty">还没有派发工作。使用上方按钮创建第一张工作单。</p>}
-      </section>
+    <section className="inspector-section project-operation-board">
+      <div className="inspector-section-heading"><h3>项目运行</h3><StateBadge domain="project" state={projectState} /></div>
+      <div className="operation-link-grid">
+        <Link to={`/projects/${projectId}/tasks`}><strong>{claimCount}</strong><span>等待领取</span></Link>
+        <Link to={`/projects/${projectId}/dashboard`}><strong>{runningCount}</strong><span>正在运行</span></Link>
+        <Link to={`/projects/${projectId}/plans`}><strong>{automations.filter((item) => item.enabled).length}</strong><span>自动计划</span></Link>
+        <Link to={`/projects/${projectId}/artifacts`}><strong>→</strong><span>成果文件</span></Link>
+      </div>
+    </section>
 
-      <section className="inspector-section">
-        <div className="inspector-section-heading"><h3>参与员工</h3><span>{participants.length || selectedTask.threads?.length || 0}</span></div>
-        {selectedTask.threads?.length ? <div className="inspector-participants">{selectedTask.threads.map((thread) => {
-          const agent = agents.find((item) => item.id === thread.employeeId);
-          return <Link key={thread.id} className="inspector-participant" to={agent ? `/agents/${agent.profileId}` : `/projects/${projectId}/dashboard`}>
-            <span className="inspector-avatar" aria-hidden="true">{(agent?.name ?? '员').slice(0, 1)}</span>
-            <span><strong>{agent?.name ?? '员工'}</strong><small>Run {thread.runCount} · 压缩 {thread.compactionCount}</small></span>
-            <StateBadge domain="thread" state={thread.state} />
-          </Link>;
-        })}</div> : <p className="inspector-empty">员工收到工作单后会在这里建立独立会话。</p>}
-      </section>
+    {selectedTask && <section className="inspector-section inspector-project-context">
+      <div className="inspector-section-heading"><h3>工作上下文</h3><StateBadge domain="project-task" state={selectedTask.state} /></div>
+      <Link className="inspector-context-link" to={`/projects/${projectId}?view=task&projectTask=${selectedTask.id}`}><strong>#{selectedTask.seq} {selectedTask.title}</strong><span>查看项目任务与参与员工</span></Link>
+      {selectedTask.state === 'active' && <div className="inspector-task-actions">
+        <Button size="sm" variant="ghost" loading={taskAction.isPending} onClick={completeTask}>完成</Button>
+        <Button size="sm" variant="ghost" loading={taskAction.isPending} onClick={archiveTask}>归档</Button>
+      </div>}
+    </section>}
 
-      {attentionTotal > 0 && <section className="inspector-section inspector-attention-section">
-        <div className="inspector-section-heading"><h3>需要处理</h3><span>{attentionTotal}</span></div>
-        {waitingWorkOrders.slice(0, 2).map((task) => <Link key={task.id} to={`/tasks/${task.id}`}>{task.state === 'waiting_input' ? '员工等待你的补充' : task.state === 'blocked' ? '工作单遇到阻塞' : '工作单等待审批'}<span>#{task.seq}</span></Link>)}
-        {(cockpit?.approvals.pending ?? 0) > 0 && <Link to="/permissions">处理待审批<span>{cockpit!.approvals.pending}</span></Link>}
-        {(cockpit?.employees.blocked ?? 0) > 0 && <Link to={companyId ? `/companies/${companyId}?view=team` : `/projects/${projectId}/settings`}>修复员工运行配置<span>{cockpit!.employees.blocked}</span></Link>}
-        {contextNeedsAttention && <Link to={`/projects/${projectId}/dashboard`}>查看会话上下文<span>需关注</span></Link>}
-      </section>}
-    </> : <section className="inspector-focus"><div className="inspector-eyebrow">项目状态</div><h2>选择一个项目任务</h2><StateBadge domain="project" state={projectState} /><p>在左栏选择任务后，这里会显示员工、工作单和可执行操作。</p></section>}
+    {attentionTotal > 0 && <section className="inspector-section inspector-attention-section">
+      <div className="inspector-section-heading"><h3>需要处理</h3><span>{attentionTotal}</span></div>
+      {waitingWorkOrders.slice(0, 3).map((task) => <Link key={task.id} to={`/tasks/${task.id}`}><span>{task.state === 'waiting_input' ? '员工等待补充' : task.state === 'blocked' ? '工作单阻塞' : '等待审批'}</span><span>#{task.seq}</span></Link>)}
+      {(cockpit?.approvals.pending ?? 0) > 0 && <Link to="/permissions"><span>处理权限审批</span><span>{cockpit!.approvals.pending}</span></Link>}
+      {contextNeedsAttention && <Link to={`/projects/${projectId}/dashboard`}><span>会话上下文需关注</span><span>查看</span></Link>}
+    </section>}
 
     <section className="inspector-section inspector-quick-actions">
-      <h3>项目快捷入口</h3>
+      <h3>协作规则</h3>
       <div>
-        <Link to={`/projects/${projectId}?view=chat${selectedTask ? `&projectTask=${selectedTask.id}` : ''}`}>项目群聊</Link>
-        <Link to={`/projects/${projectId}/dashboard`}>运行概览</Link>
-        <Link to={`/projects/${projectId}/artifacts`}>成果文件</Link>
+        {companyId && <Link to={`/companies/${companyId}/graphs/org`}>组织上下级</Link>}
+        {companyId && <Link to={`/companies/${companyId}/graphs/communication`}>员工引用关系</Link>}
+        {companyId && <Link to={`/companies/${companyId}/workflows/main`}>公司工作流</Link>}
         <Link to={`/projects/${projectId}/settings`}>项目设置</Link>
       </div>
     </section>

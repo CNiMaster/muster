@@ -83,14 +83,17 @@ export function updateCompany(
   patch: Partial<Pick<Company, 'name' | 'charter' | 'contractJson' | 'firstAgentId'>>,
 ): Company {
   const cur = getCompany(db, id);
+  const definedPatch = Object.fromEntries(
+    Object.entries(patch).filter(([, value]) => value !== undefined),
+  ) as Partial<Pick<Company, 'name' | 'charter' | 'contractJson' | 'firstAgentId'>>;
   // 上班期间锁定正式组织配置（first_agent_id 视为组织配置）
-  if (cur.state !== 'off' && (patch.firstAgentId !== undefined || patch.name !== undefined)) {
+  if (cur.state !== 'off' && (definedPatch.firstAgentId !== undefined || definedPatch.name !== undefined)) {
     throw new AppError(ErrorCode.COMPANY_LOCKED, '上班期间不能修改组织配置');
   }
   const next: Company = {
     ...cur,
-    ...patch,
-    contractJson: patch.contractJson ?? cur.contractJson,
+    ...definedPatch,
+    contractJson: definedPatch.contractJson ?? cur.contractJson,
     updatedAt: nowIso(),
   };
   db.prepare(

@@ -23,12 +23,16 @@ export interface ConversationPanelProps {
   /** 用于解析 @提及候选员工的 companyId。 */
   companyId: string;
   title?: string;
+  /** 固定联系人；设置后成为该员工的项目单聊，并只显示与其关联的消息。 */
+  recipientAgentId?: string;
+  /** 对话生成的工作单必须归入这个用户项目任务。 */
+  projectTaskId?: string;
 }
 
-export function ConversationPanel({ scope, scopeId, companyId, title }: ConversationPanelProps): React.ReactElement {
-  const { data: messages, isLoading } = useMessages(scope, scopeId);
+export function ConversationPanel({ scope, scopeId, companyId, title, recipientAgentId, projectTaskId }: ConversationPanelProps): React.ReactElement {
+  const { data: messages, isLoading } = useMessages(scope, scopeId, recipientAgentId);
   const { data: agents } = useAgents(companyId);
-  const post = usePostMessage(scope);
+  const post = usePostMessage(scope, recipientAgentId);
   const [text, setText] = useState('');
   const [showMentions, setShowMentions] = useState(false);
   const [mentionFilter, setMentionFilter] = useState('');
@@ -40,9 +44,9 @@ export function ConversationPanel({ scope, scopeId, companyId, title }: Conversa
 
   const send = (): void => {
     if (!text.trim()) return;
-    const mentions = extractMentions(text, agents ?? []);
+    const mentions = recipientAgentId ? [recipientAgentId] : extractMentions(text, agents ?? []);
     post.mutate(
-      { scopeId, content: text, mentions },
+      { scopeId, content: text, mentions, projectTaskId },
       {
         onSuccess: () => setText(''),
         onError: (e) => toast('error', (e as { message?: string }).message ?? '发送失败'),
@@ -69,7 +73,8 @@ export function ConversationPanel({ scope, scopeId, companyId, title }: Conversa
     void id;
   };
 
-  const mentionCandidates = (agents ?? []).filter((a) => a.name.includes(mentionFilter));
+  const recipient = (agents ?? []).find((agent) => agent.id === recipientAgentId);
+  const mentionCandidates = recipientAgentId ? [] : (agents ?? []).filter((a) => a.name.includes(mentionFilter));
 
   return (
     <div className="mu-conv">
@@ -80,7 +85,7 @@ export function ConversationPanel({ scope, scopeId, companyId, title }: Conversa
           <EmptyState
             icon={Icons.empty}
             title="还没有对话"
-            hint={`向第一负责人发消息，开始协${scope === 'company' ? '调公司' : '作项目'}。`}
+            hint={recipient ? `在这里了解 ${recipient.name}、交代工作或继续追问。` : `向第一负责人发消息，开始协${scope === 'company' ? '调公司' : '作项目'}。`}
           />
         )}
         {messages?.map((m) => (
@@ -102,7 +107,7 @@ export function ConversationPanel({ scope, scopeId, companyId, title }: Conversa
             className="mu-input mu-textarea"
             value={text}
             onChange={(e) => onChange(e.target.value)}
-            placeholder="发消息给第一负责人…  Enter 发送，Shift+Enter 换行，@ 提及员工"
+            placeholder={recipient ? `发消息给 ${recipient.name}…  Enter 发送，Shift+Enter 换行` : '发消息给第一负责人…  Enter 发送，Shift+Enter 换行，@ 提及员工'}
             rows={2}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {

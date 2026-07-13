@@ -119,6 +119,17 @@ export function useCreateCompany() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['companies'] }),
   });
 }
+export function useUpdateCompany() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...patch }: { id: string; charter?: string; contractJson?: Record<string, unknown>; firstAgentId?: string | null }) =>
+      api.patch<Company>(`/api/companies/${id}`, patch),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['company', data.id] });
+      qc.invalidateQueries({ queryKey: ['companies'] });
+    },
+  });
+}
 export function usePreviewCompanySetup() {
   return useMutation({
     mutationFn: (input: { templateId: CompanySetupDraft['templateId']; name: string; goal: string }) =>
@@ -609,6 +620,55 @@ export function useStartWorkflow() {
   });
 }
 
+export interface ProjectAutomation {
+  id: string;
+  projectId: string;
+  kind: 'event' | 'schedule';
+  eventName: string | null;
+  intervalMs: number | null;
+  template: Record<string, unknown>;
+  enabled: boolean;
+  lastFiredAt: string | null;
+  nextRunAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function useProjectAutomations(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ['project-automations', projectId],
+    queryFn: () => api.get<ProjectAutomation[]>(`/api/projects/${projectId}/automation`),
+    enabled: !!projectId,
+  });
+}
+
+export function useCreateProjectSchedule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, ...input }: { projectId: string; title: string; intervalMinutes: number; projectTaskId: string; assigneeAgentId?: string; priority?: number }) =>
+      api.post<ProjectAutomation>(`/api/projects/${projectId}/automation/schedules`, input),
+    onSuccess: (data) => qc.invalidateQueries({ queryKey: ['project-automations', data.projectId] }),
+  });
+}
+
+export function useUpdateProjectAutomation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, triggerId, enabled }: { projectId: string; triggerId: string; enabled: boolean }) =>
+      api.patch<ProjectAutomation>(`/api/projects/${projectId}/automation/${triggerId}`, { enabled }),
+    onSuccess: (data) => qc.invalidateQueries({ queryKey: ['project-automations', data.projectId] }),
+  });
+}
+
+export function useDeleteProjectAutomation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, triggerId }: { projectId: string; triggerId: string }) =>
+      api.delete(`/api/projects/${projectId}/automation/${triggerId}`),
+    onSuccess: (_data, input) => qc.invalidateQueries({ queryKey: ['project-automations', input.projectId] }),
+  });
+}
+
 // ===== Tasks =====
 export function useTasks(projectId: string | undefined) {
   return useQuery({
@@ -721,25 +781,27 @@ export interface ConversationMessage {
   createdAt: string;
 }
 
-export function useMessages(scope: 'company' | 'project', scopeId: string | undefined) {
-  const url = scope === 'company' ? `/api/companies/${scopeId}/messages` : `/api/projects/${scopeId}/messages`;
+export function useMessages(scope: 'company' | 'project', scopeId: string | undefined, agentId?: string) {
+  const baseUrl = scope === 'company' ? `/api/companies/${scopeId}/messages` : `/api/projects/${scopeId}/messages`;
+  const url = `${baseUrl}${agentId ? `?agentId=${encodeURIComponent(agentId)}` : ''}`;
   return useQuery({
-    queryKey: ['messages', scope, scopeId],
+    queryKey: ['messages', scope, scopeId, agentId ?? 'all'],
     queryFn: () => api.get<ConversationMessage[]>(url),
     enabled: !!scopeId,
     refetchInterval: 4000, // 兜底轮询，WebSocket 接入后可移除
   });
 }
 
-export function usePostMessage(scope: 'company' | 'project') {
+export function usePostMessage(scope: 'company' | 'project', agentId?: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ scopeId, content, mentions }: { scopeId: string; content: string; mentions?: string[] }) => {
+    mutationFn: ({ scopeId, content, mentions, projectTaskId }: { scopeId: string; content: string; mentions?: string[]; projectTaskId?: string }) => {
       const url = scope === 'company' ? `/api/companies/${scopeId}/messages` : `/api/projects/${scopeId}/messages`;
-      return api.post<{ userMessage: ConversationMessage; task: unknown }>(url, { content, mentions });
+      return api.post<{ userMessage: ConversationMessage; task: unknown }>(url, { content, mentions, projectTaskId });
     },
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: ['messages', scope, vars.scopeId] });
+      if (agentId) qc.invalidateQueries({ queryKey: ['messages', scope, vars.scopeId, agentId] });
     },
   });
 }

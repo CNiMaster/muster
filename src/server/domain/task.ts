@@ -27,6 +27,7 @@ import { appendTaskEvent } from './task-event';
 import { addTaskMessage } from './task-message';
 import { isDispatchLoop } from './speech-queue';
 import {assertProjectTaskActive,createProjectTask} from './project-task';
+import { getCompany } from './company';
 
 export interface Task {
   id: string;
@@ -183,6 +184,16 @@ function nextSeq(db: DB, projectId: string): number {
 
 export function createTask(db: DB, input: CreateTaskInput): Task {
   const project = getProject(db, input.projectId);
+  const company = getCompany(db, project.companyId);
+  const taskProtocol = (company.contractJson.taskProtocol ?? {}) as { inputFields?: unknown; outputFields?: unknown };
+  const inputProtocol = {
+    ...(Array.isArray(taskProtocol.inputFields) ? { requiredFields: taskProtocol.inputFields } : {}),
+    ...(input.inputProtocol ?? {}),
+  };
+  const outputProtocol = {
+    ...(Array.isArray(taskProtocol.outputFields) ? { requiredFields: taskProtocol.outputFields } : {}),
+    ...(input.outputProtocol ?? {}),
+  };
   const assignee = input.assigneeAgentId ? getAgent(db, input.assigneeAgentId) : null;
   const dispatcher = input.dispatcherAgentId ? getAgent(db, input.dispatcherAgentId) : null;
   if (assignee && assignee.companyId !== project.companyId) {
@@ -225,8 +236,8 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
   ).run(
     id, input.projectId,projectTaskId, seq, rootTaskId, input.parentTaskId ?? null, input.dispatcherAgentId ?? null,
     input.assigneeAgentId ?? null, null,null, input.title,
-    JSON.stringify(input.inputProtocol ?? {}), JSON.stringify(input.contextRefs ?? []),
-    JSON.stringify(input.outputProtocol ?? {}),
+    JSON.stringify(inputProtocol), JSON.stringify(input.contextRefs ?? []),
+    JSON.stringify(outputProtocol),
     input.priority ?? 5,
     input.isDiscussion ? 1 : 0,
     input.isSuggestion ? 1 : 0,

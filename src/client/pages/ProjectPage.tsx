@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import {
   useProject,
@@ -22,6 +22,7 @@ import {
   useCreateProjectTask,
   useProjectTaskAction,
   useCompanyCockpit,
+  useDepartments,
 } from '../hooks/queries';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
@@ -35,6 +36,7 @@ import { WorkbenchShell } from '../components/workbench/WorkbenchShell';
 import { ProjectWorkNavigation } from '../components/workbench/ProjectWorkNavigation';
 import { ProjectContextInspector } from '../components/workbench/ProjectContextInspector';
 import { ProjectTaskWorkspace } from '../components/project/ProjectTaskWorkspace';
+import { ProjectEmployeeWorkspace } from '../components/project/ProjectEmployeeWorkspace';
 import { WorkbenchContextSwitcher } from '../components/workbench/WorkbenchContextSwitcher';
 
 export function ProjectPage(): React.ReactElement {
@@ -274,6 +276,7 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
   const { data: company } = useCompany(project?.companyId);
   const { data: cockpit } = useCompanyCockpit(project?.companyId);
   const { data: agents } = useAgents(project?.companyId);
+  const { data: departments } = useDepartments(project?.companyId);
   const { data: threads } = useThreads(projectId);
   const { data: projectEvents } = useProjectEvents(projectId);
   const { data: tasks } = useTasks(projectId);
@@ -282,13 +285,15 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
   const projectTaskAction = useProjectTaskAction();
   const createWorkOrder = useCreateTask();
   const [searchParams,setSearchParams]=useSearchParams();
-  const projectView = searchParams.get('view') === 'chat' ? 'chat' : searchParams.get('view') === 'activity' ? 'activity' : 'task';
+  const requestedView = searchParams.get('view');
+  const projectView = requestedView === 'task' ? 'task' : requestedView === 'group' ? 'group' : requestedView === 'activity' ? 'activity' : 'employee';
   const [selectedProjectTaskId,setSelectedProjectTaskId]=useState<string|undefined>(()=>searchParams.get('projectTask')??undefined);
   const {data:selectedProjectTask}=useProjectTask(projectId,selectedProjectTaskId);
   const [projectTaskTitle,setProjectTaskTitle]=useState('');
   const [projectTaskBrief,setProjectTaskBrief]=useState('');
   const [workOrderTitle,setWorkOrderTitle]=useState('');
   const [workOrderAssignee,setWorkOrderAssignee]=useState('');
+  const [employeeWorkTitle,setEmployeeWorkTitle]=useState('');
 
   const createMirror = useCreateMirror();
   const deleteMirror = useDeleteMirror();
@@ -321,13 +326,21 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
 
   if (!project) return <div className="loading">加载中…</div>;
 
+  const selectedAgentId = searchParams.get('agent') ?? project.firstAgentId ?? company?.firstAgentId ?? agents?.[0]?.id;
+  const selectedAgent = agents?.find((agent) => agent.id === selectedAgentId);
   const attentionCount = tasks?.filter((task) => task.state === 'blocked' || task.state === 'waiting_input').length ?? 0;
   const selectProjectTask = (id:string):void => {
     setSelectedProjectTaskId(id);
     const next = new URLSearchParams(searchParams);
     next.set('projectTask',id);
-    next.delete('view');
+    next.set('view','task');
     setSearchParams(next,{replace:true});
+  };
+  const setProjectTaskContext = (id: string): void => {
+    setSelectedProjectTaskId(id);
+    const next = new URLSearchParams(searchParams);
+    next.set('projectTask', id);
+    setSearchParams(next, { replace: true });
   };
 
   const handleAutoBrainstorm = () => {
@@ -398,21 +411,42 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
   return (
     <WorkbenchShell
       scopeKey={`project:${projectId}`}
-      breadcrumb={<WorkbenchContextSwitcher companyId={project.companyId} companyName={company?.name ?? '公司'} companyKind={company?.kind} projectId={project.id} projectName={project.name} projectTaskId={selectedProjectTaskId} sectionKey={projectView} sectionLabel={{ task: '项目任务', chat: '项目群聊', activity: '协作活动' }[projectView]} novel={company?.kind === 'novel'} />}
-      navigationLabel="项目工作列表"
-      inspectorLabel="项目现场"
+      breadcrumb={<WorkbenchContextSwitcher companyId={project.companyId} companyName={company?.name ?? '公司'} companyKind={company?.kind} projectId={project.id} projectName={project.name} projectTaskId={selectedProjectTaskId} sectionKey={projectView} sectionLabel={{ task: '项目任务', employee: selectedAgent?.name ?? '员工', group: '项目群聊', activity: '协作活动' }[projectView]} novel={company?.kind === 'novel'} />}
+      navigationLabel="项目组织与联系人"
+      inspectorLabel="项目任务与运行"
       attentionCount={attentionCount + (cockpit?.approvals.pending ?? 0)}
-      primaryAction={<a className="mu-btn mu-btn-primary mu-btn-sm workbench-publish-action" href="#work-order-composer">＋ 发布工作</a>}
-      navigation={<ProjectWorkNavigation projectId={projectId} tasks={projectTasks ?? []} selectedId={selectedProjectTaskId} view={projectView} attentionCount={attentionCount} novel={company?.kind === 'novel'} onSelect={selectProjectTask} />}
-      inspector={<ProjectContextInspector projectId={projectId} companyId={project.companyId} projectState={project.state} selectedTask={selectedProjectTask} agents={agents ?? []} tasks={tasks ?? []} cockpit={cockpit} />}
+      primaryAction={projectView === 'task'
+        ? <a className="mu-btn mu-btn-primary mu-btn-sm workbench-publish-action" href="#work-order-composer">＋ 派发工作</a>
+        : projectView === 'employee'
+          ? <a className="mu-btn mu-btn-primary mu-btn-sm workbench-publish-action" href="#employee-dispatch">＋ 派发工作</a>
+          : selectedAgentId
+            ? <Link className="mu-btn mu-btn-primary mu-btn-sm workbench-publish-action" to={`/projects/${projectId}?view=employee&agent=${selectedAgentId}${selectedProjectTaskId ? `&projectTask=${selectedProjectTaskId}` : ''}`}>联系负责人</Link>
+            : undefined}
+      navigation={<ProjectWorkNavigation projectId={projectId} projectTasks={projectTasks ?? []} tasks={tasks ?? []} agents={agents ?? []} departments={departments ?? []} firstAgentId={project.firstAgentId ?? company?.firstAgentId} selectedProjectTaskId={selectedProjectTaskId} selectedAgentId={selectedAgentId} view={projectView} attentionCount={attentionCount} novel={company?.kind === 'novel'} />}
+      inspector={<ProjectContextInspector projectId={projectId} companyId={project.companyId} projectState={project.state} selectedTask={selectedProjectTask} selectedAgentId={projectView === 'employee' ? selectedAgentId : undefined} agents={agents ?? []} tasks={tasks ?? []} cockpit={cockpit} />}
     >
     <div className="project-page work-surface-page" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-      {projectView !== 'task' && <header className="work-surface-heading">
+      {(projectView === 'group' || projectView === 'activity') && <header className="work-surface-heading">
         <div>
           <span className="task-stage-kicker">{project.name}</span>
-          <h1>{projectView === 'chat' ? '项目群聊' : '协作活动'}</h1>
+          <h1>{projectView === 'group' ? '项目群聊' : '协作活动'}</h1>
         </div>
       </header>}
+
+      {projectView === 'employee' && selectedAgent && <ProjectEmployeeWorkspace
+        projectId={projectId}
+        companyId={project.companyId}
+        agent={selectedAgent}
+        isFirstAgent={selectedAgent.id === (project.firstAgentId ?? company?.firstAgentId)}
+        tasks={tasks ?? []}
+        projectTasks={projectTasks ?? []}
+        projectTaskId={selectedProjectTaskId}
+        draft={employeeWorkTitle}
+        publishing={createWorkOrder.isPending}
+        onProjectTaskChange={setProjectTaskContext}
+        onDraftChange={setEmployeeWorkTitle}
+        onPublish={() => { if (!selectedProjectTaskId) return; createWorkOrder.mutate({ projectId, projectTaskId: selectedProjectTaskId, title: employeeWorkTitle, assigneeAgentId: selectedAgent.id }, { onSuccess: () => { setEmployeeWorkTitle(''); toast('success', `已派发给 ${selectedAgent.name}`); } }); }}
+      />}
 
       {projectView === 'task' && <ProjectTaskWorkspace
         selectedTask={selectedProjectTask}
@@ -431,8 +465,8 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
       />}
 
       {/* 高频：对话 + 活动上移到首屏 */}
-      {projectView === 'chat' && <Card id="project-conversation" title="项目对话">
-        <ConversationPanel scope="project" scopeId={projectId} companyId={project.companyId} title="与项目第一负责人对话" />
+      {projectView === 'group' && <Card id="project-conversation" title="项目成员群聊">
+        <ConversationPanel scope="project" scopeId={projectId} companyId={project.companyId} projectTaskId={selectedProjectTaskId} title="项目群 · 可 @ 指定员工" />
       </Card>}
 
       {projectView === 'activity' && <Card title="协作活动">

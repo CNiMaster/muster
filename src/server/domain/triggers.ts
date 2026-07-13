@@ -6,6 +6,7 @@
  - 用户纠正 → 派发修正 Task
  */
 import type { DB } from '../db/client';
+import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
 import { getProject } from './project';
 import { listAgents } from './agent';
@@ -25,6 +26,72 @@ interface ScheduleTriggerRow {
   enabled: number;
   created_at: string;
   next_run_at: string | null;
+}
+
+export interface ProjectTrigger {
+  id: string;
+  projectId: string;
+  kind: 'event' | 'schedule';
+  eventName: string | null;
+  intervalMs: number | null;
+  template: Record<string, unknown>;
+  enabled: boolean;
+  lastFiredAt: string | null;
+  nextRunAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface ProjectTriggerRow {
+  id: string;
+  project_id: string;
+  kind: 'event' | 'schedule';
+  event_name: string | null;
+  interval_ms: number | null;
+  template_json: string;
+  enabled: number;
+  last_fired_at: string | null;
+  next_run_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+function triggerFromRow(row: ProjectTriggerRow): ProjectTrigger {
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    kind: row.kind,
+    eventName: row.event_name,
+    intervalMs: row.interval_ms,
+    template: JSON.parse(row.template_json || '{}') as Record<string, unknown>,
+    enabled: row.enabled === 1,
+    lastFiredAt: row.last_fired_at,
+    nextRunAt: row.next_run_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function listProjectTriggers(db: DB, projectId: string): ProjectTrigger[] {
+  getProject(db, projectId);
+  const rows = db.prepare('SELECT * FROM trigger WHERE project_id=? ORDER BY created_at DESC').all(projectId) as ProjectTriggerRow[];
+  return rows.map(triggerFromRow);
+}
+
+export function setProjectTriggerEnabled(db: DB, projectId: string, triggerId: string, enabled: boolean): ProjectTrigger {
+  const row = db.prepare('SELECT * FROM trigger WHERE id=? AND project_id=?').get(triggerId, projectId) as ProjectTriggerRow | undefined;
+  if (!row) throw new AppError(ErrorCode.NOT_FOUND, '计划任务不存在或不属于当前项目');
+  const now = nowIso();
+  const nextRunAt = enabled && row.kind === 'schedule' && row.interval_ms
+    ? new Date(Date.now() + row.interval_ms).toISOString()
+    : row.next_run_at;
+  db.prepare('UPDATE trigger SET enabled=?, next_run_at=?, updated_at=? WHERE id=?').run(enabled ? 1 : 0, nextRunAt, now, triggerId);
+  return triggerFromRow(db.prepare('SELECT * FROM trigger WHERE id=?').get(triggerId) as ProjectTriggerRow);
+}
+
+export function deleteProjectTrigger(db: DB, projectId: string, triggerId: string): void {
+  const result = db.prepare('DELETE FROM trigger WHERE id=? AND project_id=?').run(triggerId, projectId);
+  if (!result.changes) throw new AppError(ErrorCode.NOT_FOUND, '计划任务不存在或不属于当前项目');
 }
 
 /** 注册一个事件触发器（持久化）。 */
@@ -106,12 +173,34 @@ export function dispatchDueScheduleTriggers(db: DB, now = new Date()): string[] 
 
       const template = JSON.parse(current.template_json || '{}') as {
         checkKind?: ConsistencyCheckKind;
+        title?: string;
+        assigneeAgentId?: string;
+        projectTaskId?: string;
+        priority?: number;
+        inputProtocol?: Record<string, unknown>;
+        outputProtocol?: Record<string, unknown>;
       };
       const checkKind = template.checkKind;
-      if (!checkKind || !['omission', 'continuity', 'long_term'].includes(checkKind)) {
-        throw new Error(`schedule trigger ${current.id} 缺少合法 checkKind`);
+      if (checkKind && ['omission', 'continuity', 'long_term'].includes(checkKind)) {
+        return dispatchConsistencyCheck(db, current.project_id, checkKind);
       }
-      return dispatchConsistencyCheck(db, current.project_id, checkKind);
+      if (!template.title || !template.projectTaskId) {
+        throw new Error(`schedule trigger ${current.id} 缺少任务标题或项目任务上下文`);
+      }
+      const activeContext = db.prepare("SELECT id FROM project_task WHERE id=? AND project_id=? AND state='active'").get(template.projectTaskId, current.project_id) as { id: string } | undefined;
+      if (!activeContext) {
+        db.prepare('UPDATE trigger SET enabled=0, updated_at=? WHERE id=?').run(firedAt, current.id);
+        return null;
+      }
+      return createTask(db, {
+        projectId: current.project_id,
+        projectTaskId: template.projectTaskId,
+        title: `[计划] ${template.title}`,
+        assigneeAgentId: template.assigneeAgentId,
+        priority: template.priority ?? 5,
+        inputProtocol: { trigger: 'schedule', scheduleTriggerId: current.id, ...(template.inputProtocol ?? {}) },
+        outputProtocol: template.outputProtocol,
+      }).id;
     });
     if (taskId) dispatched.push(taskId);
   }

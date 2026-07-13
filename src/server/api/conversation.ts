@@ -17,16 +17,17 @@ export const projectMessagesRouter = Router({ mergeParams: true });
 companyMessagesRouter.get(
   '/',
   asyncHandler(async (req, res) => {
-    res.json(listMessages(getDb(), 'company', param(req, 'id')));
+    const agentId = typeof req.query.agentId === 'string' ? req.query.agentId : undefined;
+    res.json(listMessages(getDb(), 'company', param(req, 'id'), agentId));
   }),
 );
 companyMessagesRouter.post(
   '/',
   asyncHandler(async (req, res) => {
-    const { content, mentions } = z
-      .object({ content: z.string().min(1), mentions: z.array(z.string()).optional() })
+    const { content, mentions, projectTaskId } = z
+      .object({ content: z.string().min(1), mentions: z.array(z.string()).optional(), projectTaskId: z.string().optional() })
       .parse(req.body);
-    const r = postUserMessage(getDb(), { scopeKind: 'company', scopeId: param(req, 'id'), content, mentions });
+    const r = postUserMessage(getDb(), { scopeKind: 'company', scopeId: param(req, 'id'), content, mentions, projectTaskId });
     res.status(201).json(r);
   }),
 );
@@ -34,16 +35,17 @@ companyMessagesRouter.post(
 projectMessagesRouter.get(
   '/',
   asyncHandler(async (req, res) => {
-    res.json(listMessages(getDb(), 'project', param(req, 'id')));
+    const agentId = typeof req.query.agentId === 'string' ? req.query.agentId : undefined;
+    res.json(listMessages(getDb(), 'project', param(req, 'id'), agentId));
   }),
 );
 projectMessagesRouter.post(
   '/',
   asyncHandler(async (req, res) => {
-    const { content, mentions } = z
-      .object({ content: z.string().min(1), mentions: z.array(z.string()).optional() })
+    const { content, mentions, projectTaskId } = z
+      .object({ content: z.string().min(1), mentions: z.array(z.string()).optional(), projectTaskId: z.string().optional() })
       .parse(req.body);
-    const r = postUserMessage(getDb(), { scopeKind: 'project', scopeId: param(req, 'id'), content, mentions });
+    const r = postUserMessage(getDb(), { scopeKind: 'project', scopeId: param(req, 'id'), content, mentions, projectTaskId });
     res.status(201).json(r);
   }),
 );

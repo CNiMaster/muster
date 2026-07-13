@@ -36,13 +36,14 @@ import {
 import { getCompany } from '../domain/company';
 import { getAgent } from '../domain/agent';
 import { syncAgentMemoryFiles } from '../domain/agent-home';
-import { registerDefaultNovelScheduleTriggers } from '../domain/triggers';
+import { deleteProjectTrigger, listProjectTriggers, registerDefaultNovelScheduleTriggers, registerScheduleTrigger, setProjectTriggerEnabled } from '../domain/triggers';
 import { initializeNovelProject } from '../domain/novel-template';
 import { getCharacterGraph } from '../domain/character-graph';
 import {archiveProjectTask,completeProjectTask,createProjectTask,getProjectTask,listProjectTasks} from '../domain/project-task';
 import {listProjectTaskThreads} from '../domain/project-task-thread';
 import { realtime } from '../realtime';
 import { makeLifecycleEvent } from '../../shared/lifecycle-events';
+import { AppError, ErrorCode } from '../../shared/errors';
 
 export const projectsRouter = Router({ mergeParams: true });
 export const projectScopedRouter = Router({ mergeParams: true });
@@ -114,6 +115,47 @@ projectById.post('/project-tasks',asyncHandler(async(req,res)=>{const input=z.ob
 projectById.get('/project-tasks/:projectTaskId',asyncHandler(async(req,res)=>{const task=getProjectTask(getDb(),param(req,'projectTaskId'));if(task.projectId!==param(req,'id'))throw new Error('项目任务不属于当前项目');res.json({...task,threads:listProjectTaskThreads(getDb(),task.id)});}));
 projectById.post('/project-tasks/:projectTaskId/complete',asyncHandler(async(req,res)=>{const projectId=param(req,'id'),task=completeProjectTask(getDb(),param(req,'projectTaskId')),project=getProject(getDb(),projectId);realtime.publish(makeLifecycleEvent('project-task.completed',{projectTaskId:task.id},{companyId:project.companyId,projectId}));res.json(task);}));
 projectById.post('/project-tasks/:projectTaskId/archive',asyncHandler(async(req,res)=>{const projectId=param(req,'id'),task=archiveProjectTask(getDb(),param(req,'projectTaskId')),project=getProject(getDb(),projectId);realtime.publish(makeLifecycleEvent('project-task.archived',{projectTaskId:task.id},{companyId:project.companyId,projectId}));res.json(task);}));
+
+projectById.get('/automation', asyncHandler(async (req, res) => {
+  res.json(listProjectTriggers(getDb(), param(req, 'id')));
+}));
+projectById.post('/automation/schedules', asyncHandler(async (req, res) => {
+  const input = z.object({
+    title: z.string().min(1),
+    intervalMinutes: z.number().int().min(1).max(525_600),
+    projectTaskId: z.string().min(1),
+    assigneeAgentId: z.string().optional(),
+    priority: z.number().int().min(1).max(9).optional(),
+  }).parse(req.body);
+  const projectId = param(req, 'id');
+  const project = getProject(getDb(), projectId);
+  const projectTask = getProjectTask(getDb(), input.projectTaskId);
+  if (projectTask.projectId !== projectId || projectTask.state !== 'active') {
+    throw new AppError(ErrorCode.VALIDATION, '计划任务必须绑定当前项目中进行中的项目任务');
+  }
+  if (input.assigneeAgentId && getAgent(getDb(), input.assigneeAgentId).companyId !== project.companyId) {
+    throw new AppError(ErrorCode.VALIDATION, '计划任务的执行员工不属于当前项目公司');
+  }
+  const created = registerScheduleTrigger(getDb(), {
+    projectId,
+    intervalMs: input.intervalMinutes * 60_000,
+    template: {
+      title: input.title,
+      projectTaskId: input.projectTaskId,
+      assigneeAgentId: input.assigneeAgentId,
+      priority: input.priority ?? 5,
+    },
+  });
+  res.status(201).json(listProjectTriggers(getDb(), projectId).find((item) => item.id === created.id));
+}));
+projectById.patch('/automation/:triggerId', asyncHandler(async (req, res) => {
+  const { enabled } = z.object({ enabled: z.boolean() }).parse(req.body);
+  res.json(setProjectTriggerEnabled(getDb(), param(req, 'id'), param(req, 'triggerId'), enabled));
+}));
+projectById.delete('/automation/:triggerId', asyncHandler(async (req, res) => {
+  deleteProjectTrigger(getDb(), param(req, 'id'), param(req, 'triggerId'));
+  res.status(204).end();
+}));
 
 // threads
 projectById.get(

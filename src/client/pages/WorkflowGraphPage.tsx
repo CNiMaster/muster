@@ -341,7 +341,8 @@ export function WorkflowGraphPage(): React.ReactElement {
         <div>
           <h1>公司工作流图编辑器</h1>
           <p className="subtitle" style={{ margin: 0 }}>
-            分组 ID: <Badge tone="info">{workflowId}</Badge>
+            节点决定谁完成什么，连线条件决定何时引用下一位员工。任务格式继承公司设置。
+            <Badge tone="info" style={{ marginLeft: 'var(--space-2)' }}>{workflowId}</Badge>
             {readonly && <Badge tone="warn" style={{ marginLeft: 'var(--space-2)' }}>上班只读</Badge>}
           </p>
         </div>
@@ -497,6 +498,20 @@ export function WorkflowGraphPage(): React.ReactElement {
                       })}
                       placeholder="说明该步骤需要完成什么"
                       style={{ height: '100px' }}
+                    />
+                  </Field>
+                  <Field label="本步骤成果要求">
+                    <textarea
+                      className="mu-input mu-textarea"
+                      value={String(((selectedProps.outputProtocol as Record<string, unknown> | undefined)?.resultFormat) ?? '')}
+                      onChange={(event) => updateSelectedProps({
+                        outputProtocol: {
+                          ...((selectedProps.outputProtocol as Record<string, unknown> | undefined) ?? {}),
+                          resultFormat: event.target.value,
+                        },
+                      })}
+                      placeholder="例如：返回结论、变更文件、风险和下一步"
+                      style={{ height: '80px' }}
                     />
                   </Field>
                 </>

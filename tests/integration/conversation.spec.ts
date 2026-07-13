@@ -13,6 +13,7 @@ import { createProject } from '../../src/server/domain/project';
 import { listMessages, postUserMessage, postSystemMessage } from '../../src/server/domain/conversation';
 import { listTasks } from '../../src/server/domain/task';
 import { updateAgent } from '../../src/server/domain/agent';
+import { createProjectTask } from '../../src/server/domain/project-task';
 
 let tdb: ReturnType<typeof makeTestDb>;
 let db: DB;
@@ -88,6 +89,19 @@ describe('conversation messages', () => {
     });
     expect(direct.tasks).toHaveLength(1);
     expect(direct.task?.assigneeAgentId).toBe(r.agents.writer.id);
+  });
+
+  it('员工单聊只返回与该员工工作单关联的消息', () => {
+    const r = createNovelCompany(db, { name: 'co' });
+    const project = createProject(db, { companyId: r.company.id, name: 'novel', rootDir: '/tmp/direct-filter', firstAgentId: r.agents.lead.id });
+    const projectTask = createProjectTask(db, { projectId: project.id, title: '完成第一章' });
+    const writerMessage = postUserMessage(db, { scopeKind: 'project', scopeId: project.id, projectTaskId: projectTask.id, content: '说明当前文风', mentions: [r.agents.writer.id] });
+    const leadMessage = postUserMessage(db, { scopeKind: 'project', scopeId: project.id, content: '汇总进展', mentions: [r.agents.lead.id] });
+    postSystemMessage(db, { scopeKind: 'project', scopeId: project.id, role: 'assistant', author: r.agents.writer.id, content: '文风说明', refTaskId: writerMessage.task!.id });
+    postSystemMessage(db, { scopeKind: 'project', scopeId: project.id, role: 'assistant', author: r.agents.lead.id, content: '负责人汇总', refTaskId: leadMessage.task!.id });
+
+    expect(listMessages(db, 'project', project.id, r.agents.writer.id).map((message) => message.content)).toEqual(['说明当前文风', '文风说明']);
+    expect(writerMessage.task?.projectTaskId).toBe(projectTask.id);
   });
 
   it('员工关闭用户直联后拒绝 @，且不留下半条消息', () => {

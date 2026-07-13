@@ -22,7 +22,8 @@ test('核心功能端到端完整回归流', async ({ page }) => {
   await page.getByRole('button', { name: '继续 →' }).click();
   await page.getByRole('button', { name: '创建并进入项目 →' }).click();
   await page.waitForURL(/\/projects\/pr_[^?]+\?projectTask=pt_[^&]+&onboarding=done/);
-  await expect(page.getByRole('navigation', { name: '项目工作列表' })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: '项目组织与联系人' })).toBeVisible();
+  await page.getByRole('link', { name: /项目任务/ }).click();
   await expect(page.getByRole('button', { name: /完成产品回归验收.*#1/ })).toBeVisible();
 
   const companies = await (await page.request.get('/api/companies')).json() as Array<{id:string;name:string}>;

@@ -27,14 +27,16 @@ export function companySectionOptions(companyId: string): WorkbenchSectionOption
 }
 
 export function projectSectionOptions(projectId: string, projectTaskId?: string, novel = false): WorkbenchSectionOption[] {
-  const taskQuery = projectTaskId ? `?projectTask=${projectTaskId}` : '';
+  const taskQuery = `?view=task${projectTaskId ? `&projectTask=${projectTaskId}` : ''}`;
   const viewQuery = (view: string): string => `?view=${view}${projectTaskId ? `&projectTask=${projectTaskId}` : ''}`;
   return [
+    { key: 'employee', label: '第一负责人', href: `/projects/${projectId}${viewQuery('employee')}` },
+    { key: 'group', label: '项目群聊', href: `/projects/${projectId}${viewQuery('group')}` },
     { key: 'task', label: '项目任务', href: `/projects/${projectId}${taskQuery}` },
-    { key: 'chat', label: '项目群聊', href: `/projects/${projectId}${viewQuery('chat')}` },
     { key: 'activity', label: '协作活动', href: `/projects/${projectId}${viewQuery('activity')}` },
-    { key: 'tasks', label: '等待处理', href: `/projects/${projectId}/tasks` },
-    { key: 'dashboard', label: '员工看板', href: `/projects/${projectId}/dashboard` },
+    { key: 'tasks', label: '任务领取清单', href: `/projects/${projectId}/tasks` },
+    { key: 'plans', label: '计划与自动化', href: `/projects/${projectId}/plans` },
+    { key: 'dashboard', label: '运行概览', href: `/projects/${projectId}/dashboard` },
     { key: 'artifacts', label: '成果与文件', href: `/projects/${projectId}/artifacts` },
     { key: 'reports', label: '复盘', href: `/projects/${projectId}/reports` },
     { key: 'usage', label: '用量', href: `/projects/${projectId}/usage` },

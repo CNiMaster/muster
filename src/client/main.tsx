@@ -29,6 +29,7 @@ const AgentProfilePage = lazy(() => import('./pages/AgentProfilePage').then((m) 
 const ExecutorCenterPage = lazy(() => import('./pages/ExecutorCenterPage').then((m) => ({ default: m.ExecutorCenterPage })));
 const PermissionCenterPage = lazy(() => import('./pages/PermissionCenterPage').then((m) => ({ default: m.PermissionCenterPage })));
 const ProjectSettingsPage = lazy(() => import('./pages/ProjectSettingsPage').then((m) => ({ default: m.ProjectSettingsPage })));
+const ProjectPlansPage = lazy(() => import('./pages/ProjectPlansPage').then((m) => ({ default: m.ProjectPlansPage })));
 
 function ToastLayer(): React.ReactElement {
   const { toasts, dismiss } = useToasts();
@@ -55,6 +56,7 @@ const router = createBrowserRouter([
       { path: 'projects/:projectId', element: <ProjectPage /> },
       { path: 'projects/:projectId/character-graph', element: <ProjectToolPageShell tool="character"><CharacterGraphPage /></ProjectToolPageShell> },
       { path: 'projects/:projectId/tasks', element: <ProjectToolPageShell tool="tasks"><TasksPage /></ProjectToolPageShell> },
+      { path: 'projects/:projectId/plans', element: <ProjectToolPageShell tool="plans"><ProjectPlansPage /></ProjectToolPageShell> },
       { path: 'projects/:projectId/usage', element: <ProjectToolPageShell tool="usage"><UsagePage /></ProjectToolPageShell> },
       { path: 'projects/:projectId/artifacts', element: <ProjectToolPageShell tool="artifacts"><ArtifactsPage /></ProjectToolPageShell> },
       { path: 'projects/:projectId/reports', element: <ProjectToolPageShell tool="reports"><ReportsPage /></ProjectToolPageShell> },

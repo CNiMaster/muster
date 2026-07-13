@@ -59,7 +59,7 @@ test('向导式创建完整公司并进入首个项目任务', async ({ page }) 
   await page.getByRole('button', { name: '创建并进入项目 →' }).click();
 
   await page.waitForURL(/\/projects\/pr_[^?]+\?projectTask=pt_[^&]+&onboarding=done/);
-  await expect(page.getByRole('navigation', { name: '项目工作列表' })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: '项目组织与联系人' })).toBeVisible();
   await expect(page.getByRole('button', { name: '人物关系' })).toHaveCount(0);
 });
 
@@ -75,13 +75,13 @@ test('项目路由保留公司导航并能从首页继续上次项目', async ({
   const project = await projectResponse.json();
 
   await page.goto(`/projects/${project.id}`);
-  await expect(page.getByRole('navigation', { name: '项目工作列表' })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: '项目组织与联系人' })).toBeVisible();
   await expect(page.locator('.workbench-breadcrumb')).toContainText(company.name);
   await expect(page.locator('.workbench-breadcrumb')).toContainText(project.name);
 
   await page.goto(`/projects/${project.id}/dashboard`);
-  await expect(page.getByRole('navigation', { name: '项目工作列表' })).toBeVisible();
-  await expect(page.getByRole('link', { name: /员工看板/ })).toHaveClass(/is-active/);
+  await expect(page.getByRole('navigation', { name: '项目组织与联系人' })).toBeVisible();
+  await expect(page.getByRole('link', { name: /运行概览/ })).toHaveClass(/is-active/);
   await expect(page.locator('.topbar')).toHaveCount(0);
 
   await page.goto('/');
