@@ -75,6 +75,22 @@ export type {
   LifecycleEventType,
 } from './lifecycle-events';
 
+export interface CompanyCockpitDTO {
+  companyId: string;
+  companyState: CompanyState;
+  employees: { total: number; online: number; blocked: number };
+  projects: { total: number; active: number; attention: number };
+  approvals: { pending: number };
+  roleGaps: Array<{ role: string; reason: string }>;
+  risks: Array<{ kind: string; label: string; href: string }>;
+  nextAction: {
+    kind: string;
+    label: string;
+    description: string;
+    href: string;
+  };
+}
+
 // ===== 用量记录 =====
 export interface UsageRecord {
   id: string;

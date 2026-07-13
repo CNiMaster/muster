@@ -2,6 +2,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
 import type { Company, Agent, AgentExecutorJson, AgentProfile, CompanyEmployee, MemoryCandidate, MemoryEntry, Department, Project, Relationship, Task, UsageSummary, ProjectAgentThread, Workspace } from '../api/types';
+import type { CompanyCockpitDTO } from '../../shared/types';
 
 export interface ProposalResult<T> {
   source: 'claude' | 'offline_template';
@@ -85,6 +86,13 @@ export function useCompany(id: string | undefined) {
     enabled: !!id,
   });
 }
+export function useCompanyCockpit(id: string | undefined) {
+  return useQuery({
+    queryKey: ['company-cockpit', id],
+    queryFn: () => api.get<CompanyCockpitDTO>(`/api/companies/${id}/cockpit`),
+    enabled: !!id,
+  });
+}
 export function useCreateCompany() {
   const qc = useQueryClient();
   return useMutation({
@@ -113,6 +121,7 @@ export function useCompanyAction() {
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['companies'] });
       qc.invalidateQueries({ queryKey: ['company', data.id] });
+      qc.invalidateQueries({ queryKey: ['company-cockpit', data.id] });
     },
   });
 }

@@ -29,6 +29,7 @@ import { ensureProjectThreads } from '../domain/thread';
 import { summarizeCompanyUsage } from '../domain/usage';
 import { listAgents } from '../domain/agent';
 import { listDepartments } from '../domain/department';
+import { getCompanyCockpit } from '../domain/company-cockpit';
 
 export const companiesRouter = Router();
 
@@ -58,6 +59,13 @@ companiesRouter.get(
   '/:id',
   asyncHandler(async (req, res) => {
     res.json(getCompany(getDb(), param(req,'id')));
+  }),
+);
+
+companiesRouter.get(
+  '/:id/cockpit',
+  asyncHandler(async (req, res) => {
+    res.json(getCompanyCockpit(getDb(), param(req, 'id')));
   }),
 );
 

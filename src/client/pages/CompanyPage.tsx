@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { useState } from 'react';
 import {
   useCompany,
+  useCompanyCockpit,
   useAgents,
   useProjects,
   useCompanyAction,
@@ -31,12 +32,12 @@ import { ActivityPanel } from '../components/ActivityPanel';
 import type { Agent } from '../api/types';
 import { NextActionCard } from '../components/NextActionCard';
 import { deriveNextAction } from '../domain/next-action';
-import { deriveCompanyDashboard } from '../domain/company-dashboard';
 import { CompanyOverview } from '../components/company/CompanyOverview';
 
 export function CompanyPage(): React.ReactElement {
   const { companyId = '' } = useParams();
   const { data: company, isLoading } = useCompany(companyId);
+  const { data: cockpit } = useCompanyCockpit(companyId);
   const { data: agents } = useAgents(companyId);
   const { data: departments } = useDepartments(companyId);
   const { data: statusBoard, isLoading: statusBoardLoading } = useStatusBoard(companyId);
@@ -228,12 +229,7 @@ export function CompanyPage(): React.ReactElement {
         <NextActionCard action={deriveNextAction({ companies: [company], projects, attentionCount: 0 })} />
       )}
 
-      <CompanyOverview dashboard={deriveCompanyDashboard({
-        company,
-        agents: (agents ?? []).map((agent) => ({ ...agent, executorReady: Boolean(agent.executor?.provider) })),
-        projects: projects ?? [],
-        waitingApprovals: 0,
-      })} />
+      {cockpit ? <CompanyOverview cockpit={cockpit} /> : <CardSkeleton />}
 
       {company.charter && (
         <Card title="公司章程">
