@@ -247,7 +247,8 @@ export function getTask(db: DB, id: string): Task {
 }
 
 export function bindTaskToProjectTaskThread(db:DB,taskId:string,threadId:string):Task{db.prepare('UPDATE task SET assignee_task_thread_id=?,updated_at=? WHERE id=?').run(threadId,nowIso(),taskId);return getTask(db,taskId);}
-export function markTaskWaitingApproval(db:DB,taskId:string,approvalId:string):Task{const now=nowIso();db.prepare("UPDATE task SET state='paused',wait_state='waiting_approval',summary=?,lease_owner_thread_id=NULL,lease_expires_at=NULL,heartbeat_at=NULL,updated_at=? WHERE id=?").run(`等待审批 ${approvalId}`,now,taskId);appendTaskEvent(db,taskId,'waiting_approval',{approvalId});return getTask(db,taskId);}
+export function markTaskWaitingApproval(db:DB,taskId:string,approvalId:string,mode:'online'|'persistent'='persistent'):Task{const now=nowIso();if(mode==='online')db.prepare("UPDATE task SET wait_state='waiting_approval',summary=?,updated_at=? WHERE id=?").run(`等待审批 ${approvalId}`,now,taskId);else db.prepare("UPDATE task SET state='paused',wait_state='waiting_approval',summary=?,lease_owner_thread_id=NULL,lease_expires_at=NULL,heartbeat_at=NULL,updated_at=? WHERE id=?").run(`等待审批 ${approvalId}`,now,taskId);appendTaskEvent(db,taskId,'waiting_approval',{approvalId,mode});return getTask(db,taskId);}
+export function clearTaskApprovalWait(db:DB,taskId:string):Task{db.prepare("UPDATE task SET wait_state=NULL,updated_at=? WHERE id=? AND wait_state='waiting_approval'").run(nowIso(),taskId);return getTask(db,taskId);}
 export function resumeTaskAfterApproval(db:DB,taskId:string):Task|null{const result=db.prepare("UPDATE task SET state='queued',wait_state=NULL,updated_at=? WHERE id=? AND wait_state='waiting_approval'").run(nowIso(),taskId);return result.changes?getTask(db,taskId):null;}
 
 export function listTasks(db: DB, projectId: string, state?: TaskState): Task[] {

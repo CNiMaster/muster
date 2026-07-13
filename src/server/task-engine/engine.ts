@@ -24,6 +24,7 @@ import {
   createTask,
   bindTaskToProjectTaskThread,
   markTaskWaitingApproval,
+  clearTaskApprovalWait,
 } from '../domain/task';
 import { getThread, listOnlineThreads, updateThreadState } from '../domain/thread';
 import { getAgent } from '../domain/agent';
@@ -273,8 +274,11 @@ export class TaskEngine {
           if (decision.decision === 'approval-required') {
             const approval = ensureApprovalRequest(this.db, { policyId: permissionPolicy.id, employeeId: agent.id, taskId: task.id, action: request.action, command: request.command, path: request.path });
             this.db.prepare('UPDATE permission_approval SET execution_run_id=?,project_task_thread_id=?,executor_profile_id=?,expires_at=?,recovery_json=? WHERE id=?').run(executionRun?.id??null,projectTaskThread.id,executorProfile?.id??null,new Date(Date.now()+600_000).toISOString(),JSON.stringify({vendorSessionId:projectTaskThread.vendorSessionId}),approval.id);
+            markTaskWaitingApproval(this.db,task.id,approval.id,'online');
             const resolution=await approvalBroker.wait(approval.id,600_000);
-            return resolution==='allow'?{allowed:true}:{allowed:false,message:`审批请求 ${approval.id} 已拒绝或超时`};
+            if(resolution==='allow'||resolution==='deny')clearTaskApprovalWait(this.db,task.id);
+            else markTaskWaitingApproval(this.db,task.id,approval.id,'persistent');
+            return resolution==='allow'?{allowed:true}:{allowed:false,message:`审批请求 ${approval.id} ${resolution==='deny'?'已拒绝':'等待超时，已安全停止'}`};
           }
           return { allowed: false, message: decision.reason };
         } : undefined,
@@ -317,7 +321,7 @@ export class TaskEngine {
         for(;;){try{result = await Promise.race([withExecutorConcurrency(executorProfile?.concurrencyMode ?? 'parallel', executorProfile?.id ?? agent.id, () => adapter.run(ctx, {
             onOutput: (chunk) => { watchdog.activity(); log.debug('agent output', { taskId: task.id, chunk: chunk.slice(0, 120), executionRunId: executionRun?.id }); },
             onToolCall: (name, input) => { watchdog.activity(); log.debug('agent tool', { taskId: task.id, name, executionRunId: executionRun?.id }); },
-          })), watchdog.failure]);sessionManager.clearRecovery(projectTaskThread.id);break;}catch(error){if(!isRecoverableSessionError(error))throw error;recoveryAttempt+=1;const compactSupported=Boolean(adapter.compactSession);const recovery=recoveryAttempt===1?'retry':recoveryAttempt===2&&compactSupported?'compact':recoveryAttempt===(compactSupported?3:2)?'rotate':'stop';sessionManager.nextRecovery(projectTaskThread.id,compactSupported);if(recovery==='stop')throw error;if(recovery==='compact'&&adapter.compactSession&&ctx.sessionIdHint){try{await adapter.compactSession(ctx);}catch{sessionManager.rotate(projectTaskThread.id,{reason:'compact-failed',taskId:task.id});ctx.sessionIdHint=undefined;}}else if(recovery==='rotate'){sessionManager.rotate(projectTaskThread.id,{reason:'session-recovery',taskId:task.id});ctx.sessionIdHint=undefined;}log.warn('retrying recoverable executor failure',{taskId:task.id,recovery,error:String(error)});}}
+          })), watchdog.failure]);sessionManager.clearRecovery(projectTaskThread.id);break;}catch(error){if(/network|econn|dns|tls|proxy/i.test(error instanceof Error?error.message:String(error)))watchdog.networkError();if(!isRecoverableSessionError(error))throw error;recoveryAttempt+=1;const compactSupported=Boolean(adapter.compactSession);const recovery=recoveryAttempt===1?'retry':recoveryAttempt===2&&compactSupported?'compact':recoveryAttempt===(compactSupported?3:2)?'rotate':'stop';sessionManager.nextRecovery(projectTaskThread.id,compactSupported);if(recovery==='stop')throw error;if(recovery==='compact'&&adapter.compactSession&&ctx.sessionIdHint){try{await adapter.compactSession(ctx);}catch{sessionManager.rotate(projectTaskThread.id,{reason:'compact-failed',taskId:task.id});ctx.sessionIdHint=undefined;}}else if(recovery==='rotate'){sessionManager.rotate(projectTaskThread.id,{reason:'session-recovery',taskId:task.id});ctx.sessionIdHint=undefined;}log.warn('retrying recoverable executor failure',{taskId:task.id,recovery,error:String(error)});}}
         watchdog.complete();
         if (executionRun) updateExecutionRunStatus(this.db, executionRun.id, result.outcome === 'completed' ? 'completed' : 'failed');
       } catch (error) {
@@ -546,6 +550,12 @@ export class TaskEngine {
         log.info('cancelled task execution stopped', { taskId: task.id });
         return true;
       }
+      if (getTask(this.db, task.id).waitState === 'waiting_approval') {
+        preserveWorktree = true;
+        updateThreadState(this.db, thread.id, 'paused');
+        log.warn('task safely paused after approval bridge timeout', { taskId: task.id });
+        return true;
+      }
       this.handleRunError(task.id, err);
       updateThreadState(this.db, thread.id, 'failed');
       const failedTask = getTask(this.db, task.id);
@@ -677,6 +687,9 @@ export class TaskEngine {
       this.pollTimer = null;
       log.info('task engine polling stopped');
     }
+    approvalBroker.rejectAll();
+    for (const controller of this.activeRuns.values()) controller.abort('engine-stop');
+    this.activeRuns.clear();
   }
 }
 

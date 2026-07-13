@@ -50,4 +50,17 @@ describe('RunWatchdog', () => {
     expect(abort).not.toHaveBeenCalled();
     vi.useRealTimers();
   });
+
+  it('连续网络错误达到上限后失败关闭', async () => {
+    vi.useFakeTimers();
+    const abort = vi.fn();
+    const watchdog = new RunWatchdog({ startupTimeoutMs: 100, idleTimeoutMs: 100, maxRuntimeMs: 500, maxNetworkErrors: 3, abort });
+    const failure = expect(watchdog.failure).rejects.toMatchObject<RunWatchdogTimeout>({ classification: 'network_errors' });
+    watchdog.networkError();
+    watchdog.networkError();
+    watchdog.networkError();
+    await failure;
+    expect(abort).toHaveBeenCalledOnce();
+    vi.useRealTimers();
+  });
 });
