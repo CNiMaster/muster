@@ -14,9 +14,22 @@ import {
 import { asyncHandler, param } from './middleware';
 import { exportCapabilityPackage, materializeAgentHome, syncAgentIdentityFiles, syncAgentMemoryFiles } from '../domain/agent-home';
 import { resetPersonalMemory } from '../domain/memory';
+import { recruitFromDraft } from '../domain/recruitment';
 
 export const agentProfilesRouter = Router();
 export const companyEmployeesRouter = Router({ mergeParams: true });
+
+const recruitmentDraftSchema = z.object({
+  source: z.enum(['reuse-profile', 'new-profile', 'role-template']),
+  profileId: z.string().optional(),
+  displayName: z.string().min(1),
+  role: z.string().min(1),
+  responsibilities: z.string(),
+  capabilities: z.object({ skills: z.array(z.string()), tools: z.array(z.string()) }),
+  departmentId: z.string().nullable(),
+  executorProfileId: z.string().nullable(),
+  permissionPolicyId: z.string().nullable(),
+});
 
 const profileSchema = z.object({
   displayName: z.string().min(1),
@@ -86,4 +99,9 @@ companyEmployeesRouter.post('/', asyncHandler(async (req, res) => {
     responsibilities: z.string().optional(),
   }).parse(req.body);
   res.status(201).json(recruitAgentProfile(getDb(), { companyId: param(req, 'companyId'), ...input }));
+}));
+
+companyEmployeesRouter.post('/recruit', asyncHandler(async (req, res) => {
+  const draft = recruitmentDraftSchema.parse(req.body);
+  res.status(201).json(recruitFromDraft(getDb(), param(req, 'companyId'), draft));
 }));

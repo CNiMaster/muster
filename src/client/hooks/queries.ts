@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import type { Company, Agent, AgentExecutorJson, AgentProfile, CompanyEmployee, MemoryCandidate, MemoryEntry, Department, Project, Relationship, Task, UsageSummary, ProjectAgentThread, Workspace } from '../api/types';
 import type { CompanyCockpitDTO } from '../../shared/types';
 import type { CompanySetupDraft, SetupBindings } from '../domain/company-templates';
+import type { RecruitmentDraft } from '../../shared/role-templates';
 
 export interface ExecutorProfileDTO {
   id: string;
@@ -259,6 +260,18 @@ export function useRecruitAgentProfile() {
     onSuccess: (agent) => {
       qc.invalidateQueries({ queryKey: ['agents', agent.companyId] });
       qc.invalidateQueries({ queryKey: ['profile-employments', agent.profileId] });
+    },
+  });
+}
+export function useRecruitFromDraft() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ companyId, draft }: { companyId: string; draft: RecruitmentDraft }) =>
+      api.post<Agent>(`/api/companies/${companyId}/employees/recruit`, draft),
+    onSuccess: (agent) => {
+      qc.invalidateQueries({ queryKey: ['agents', agent.companyId] });
+      qc.invalidateQueries({ queryKey: ['agent-profiles'] });
+      qc.invalidateQueries({ queryKey: ['company-cockpit', agent.companyId] });
     },
   });
 }
