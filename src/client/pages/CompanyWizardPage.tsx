@@ -1,216 +1,59 @@
 import type React from 'react';
-import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import {
-  useCreateNovelCompany,
-  useCompanyAction,
-  useGenerateCompanyProposal,
-  useCreateCompany,
-  type CompanyProposal,
-} from '../hooks/queries';
-import { Card } from '../components/Card';
 import { Button, toast } from '../components/Button';
-import { Badge } from '../components/Badge';
-import { Input, Textarea, Field } from '../components/Form';
-import { Select } from '../components/Form';
-import { COMPANY_TEMPLATE_OPTIONS, type CompanyTemplateId } from '../domain/company-templates';
+import { CompanySetupWizard } from '../components/company/CompanySetupWizard';
+import type { CompanySetupDraft, SetupBindings } from '../domain/company-templates';
+import {
+  useCommitCompanySetup,
+  useCreatePermissionPolicy,
+  useExecutorProfiles,
+  usePermissionPolicies,
+  usePreviewCompanySetup,
+} from '../hooks/queries';
 
 export function CompanyWizardPage(): React.ReactElement {
   const navigate = useNavigate();
-  const createNovelCompany = useCreateNovelCompany();
-  const companyAction = useCompanyAction();
-  const generateProposal = useGenerateCompanyProposal();
-  const createCompany = useCreateCompany();
+  const preview = usePreviewCompanySetup();
+  const commit = useCommitCompanySetup();
+  const { data: profiles = [] } = useExecutorProfiles();
+  const { data: policies = [] } = usePermissionPolicies();
+  const createPolicy = useCreatePermissionPolicy();
 
-  const [step, setStep] = useState<1 | 2>(1);
-  const [name, setName] = useState('');
-  const [goal, setGoal] = useState('');
-  const [templateId, setTemplateId] = useState<CompanyTemplateId>('general');
-
-  const [proposal, setProposal] = useState<CompanyProposal | null>(null);
-  const [proposalNotice, setProposalNotice] = useState<string | null>(null);
-
-  const handleGenerate = (): void => {
-    if (!name.trim()) {
-      toast('error', '请输入公司名称');
-      return;
+  const finish = async (draft: CompanySetupDraft, bindings: SetupBindings): Promise<void> => {
+    try {
+      const result = await commit.mutateAsync({ draft, bindings });
+      toast('success', '公司、团队和首个项目任务已创建');
+      navigate(`/projects/${result.project.id}?projectTask=${result.projectTask.id}&onboarding=done`);
+    } catch (error) {
+      toast('error', (error as Error).message);
     }
-
-    if (templateId !== 'novel') {
-      createCompany.mutate({ name: name.trim(), kind: templateId, charter: goal.trim() }, {
-        onSuccess: (company) => { toast('success', '公司已创建，接下来组建团队'); navigate(`/companies/${company.id}#team`); },
-        onError: (e) => toast('error', (e as Error).message),
-      });
-      return;
-    }
-    generateProposal.mutate(
-      { name: name.trim(), goal: goal.trim() },
-      {
-        onSuccess: (result) => {
-          setProposal(result.proposal);
-          setProposalNotice(result.warning ?? '方案由 Claude 生成，确认前可返回修改目标。');
-          setStep(2);
-          toast(result.source === 'claude' ? 'success' : 'info', result.warning ?? '公司方案已生成');
-        },
-        onError: (e) => toast('error', (e as { message?: string }).message ?? '方案生成失败'),
-      }
-    );
   };
 
-  const handleConfirmAndClockIn = (): void => {
-    if (!proposal) return;
-    createNovelCompany.mutate(
-      { name: proposal.name, charter: proposal.charter, departments: proposal.departments },
-      {
-        onSuccess: (data) => {
-          companyAction.mutate(
-            { id: data.company.id, action: 'clock-in' },
-            {
-              onSuccess: () => {
-                toast('success', '团队已准备好，接下来创建第一个项目');
-                navigate(`/companies/${data.company.id}/projects/new?onboarding=1`);
-              },
-              onError: (e) => toast('error', (e as { message?: string }).message ?? '公司已创建，但上班失败'),
-            },
-          );
-        },
-        onError: (e) => toast('error', (e as { message?: string }).message ?? '公司创建失败'),
-      }
-    );
-  };
-
-  return (
-    <div className="wizard-page" style={{ maxWidth: '800px', margin: '0 auto', padding: 'var(--space-5) 0' }}>
-      <header className="page-header" style={{ marginBottom: 'var(--space-5)' }}>
-        <div>
-          <h1>创建 Agent 公司</h1>
-          <p className="subtitle">先选择适合的公司模板，再组建团队和创建第一个项目。</p>
-        </div>
-      </header>
-
-      {/* 步骤条 */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-5)', position: 'relative' }}>
-        <div style={{ position: 'absolute', top: '15px', left: '10%', right: '10%', height: '2px', background: 'var(--border-subtle)', zIndex: 0 }} />
-        <div style={{ position: 'absolute', top: '15px', left: '10%', width: step === 2 ? '80%' : '0%', height: '2px', background: 'var(--accent)', zIndex: 0, transition: 'width 0.3s ease' }} />
-
-        {[1, 2].map((s) => (
-          <div key={s} style={{ zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-            <div style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: '50%',
-              background: step >= s ? 'var(--accent)' : 'var(--bg-elev)',
-              border: '2px solid ' + (step >= s ? 'var(--accent)' : 'var(--border)'),
-              color: step >= s ? 'var(--accent-fg)' : 'var(--fg-muted)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontWeight: 'bold',
-              fontSize: '14px'
-            }}>
-              {s}
-            </div>
-            <span style={{ fontSize: 'var(--text-xs)', fontWeight: step === s ? 'bold' : 'normal', color: step === s ? 'var(--accent)' : 'var(--fg-muted)' }}>
-              {s === 1 ? '模板与目标设定' : '预览、体检与确认上线'}
-            </span>
-          </div>
-        ))}
+  return <div className="wizard-page" style={{ maxWidth: 960, margin: '0 auto', padding: 'var(--space-5) 0' }}>
+    <header className="page-header">
+      <div><h1>创建 Agent 公司</h1><p className="subtitle">选择模板、确认团队、绑定执行器与权限，再创建首个项目任务。</p></div>
+      <div className="page-actions">
+        {!profiles.length && <Link className="mu-btn mu-btn-subtle" to="/executors">接入执行器</Link>}
+        {!policies.length && <Button variant="ghost" loading={createPolicy.isPending} onClick={() => createPolicy.mutate({ name: '项目内按规则询问', approvalStrategy: 'ask-by-rule', scope: 'project' }, {
+          onSuccess: () => toast('success', '默认项目权限已创建'),
+          onError: (error) => toast('error', (error as Error).message),
+        })}>创建默认权限</Button>}
       </div>
-
-      {step === 1 ? (
-        <Card title="第一步：选择公司类型与目标">
-          <div className="form-stack">
-            <Field label="公司模板" hint="模板只提供起点，之后仍可增减员工和调整工作流。"><Select value={templateId} onChange={event=>setTemplateId(event.target.value as CompanyTemplateId)}>{COMPANY_TEMPLATE_OPTIONS.map(template=><option key={template.id} value={template.id}>{template.name} — {template.description}</option>)}</Select></Field>
-            <Field label="公司名称" required>
-              <Input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="例如: 银翼创世纪小说工作室"
-              />
-            </Field>
-
-            <Field label="公司目标" hint={templateId==='novel'?'系统将根据创作目标生成可编辑团队。':'创建后进入团队页，可从员工库或岗位模板招募。'}>
-              <Textarea
-                value={goal}
-                onChange={(e) => setGoal(e.target.value)}
-                placeholder="例如：持续维护产品、完成内容生产，或推进一个长期研究项目。"
-                style={{ height: '120px' }}
-              />
-            </Field>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'var(--space-4)' }}>
-              <Button onClick={handleGenerate} loading={generateProposal.isPending||createCompany.isPending} disabled={!name.trim()}>
-                {templateId==='novel'?'生成团队预览':'创建公司并组建团队'}
-              </Button>
-            </div>
-          </div>
-        </Card>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-          {proposalNotice && (
-            <Card title="方案来源说明">
-              <p className="muted" style={{ margin: 0 }}>{proposalNotice}</p>
-            </Card>
-          )}
-          {/* 体检状态卡片 */}
-          <Card title="公司组织体检报告" style={{ borderColor: 'var(--ok)' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ color: 'var(--ok)', fontWeight: 'bold' }}>[通过]</span>
-                <span><strong>负责人与写手隔离：</strong> 第一负责人与主写手已被自动分配给不同实例，规避兼任冲突。</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ color: 'var(--ok)', fontWeight: 'bold' }}>[通过]</span>
-                <span><strong>关键角色配置：</strong> 已配置 lead (第一负责人)、writer (主写手)、character (人物设计)、plot (情节架构)、inspector (运营监察)。</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ color: 'var(--ok)', fontWeight: 'bold' }}>[通过]</span>
-                <span><strong>通信通道建立：</strong> 主写手和情节、人物设计通道已激活，监察警报路由至第一负责人。</span>
-              </div>
-              <div className="wizard-health-summary">
-                组织健康体检合格！团队配置满足长篇小说生产规范。
-              </div>
-            </div>
-          </Card>
-
-          {/* 团队架构卡片 */}
-          <Card title="团队岗位架构预览" actions={<Badge tone="info">{proposal?.agentNotes.length ?? 0} 人</Badge>}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-              {proposal?.agentNotes.map((agent) => (
-                <div key={agent.role} style={{
-                  padding: 'var(--space-3)',
-                  background: 'var(--bg-input)',
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: 'var(--radius-md)',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center'
-                }}>
-                  <div>
-                    <strong>{agent.role}</strong>
-                    <p style={{ margin: '4px 0 0 0', fontSize: 'var(--text-xs)', color: 'var(--fg-muted)' }}>
-                      专注：{agent.focus}
-                    </p>
-                  </div>
-                  <div style={{ display: 'flex', gap: '6px' }}>
-                    <Badge tone="info">{agent.role}</Badge>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Card>
-
-          {/* 确认上线 */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 'var(--space-2)' }}>
-            <Button variant="ghost" onClick={() => setStep(1)}>
-              返回上一步
-            </Button>
-            <Button onClick={handleConfirmAndClockIn} loading={companyAction.isPending || createNovelCompany.isPending}>
-              确认团队并创建项目
-            </Button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+    </header>
+    <CompanySetupWizard
+      profiles={profiles}
+      policies={policies}
+      previewing={preview.isPending}
+      committing={commit.isPending}
+      onPreview={async (input) => {
+        try {
+          return await preview.mutateAsync(input);
+        } catch (error) {
+          toast('error', (error as Error).message);
+          throw error;
+        }
+      }}
+      onCommit={finish}
+    />
+  </div>;
 }

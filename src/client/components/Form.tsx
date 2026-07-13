@@ -5,7 +5,7 @@
  - focus ring 键盘可见
  - 触达 ≥40px（输入框高 40px + padding）
  */
-import type React from 'react';
+import React, { useId } from 'react';
 
 export interface FieldProps {
   label?: React.ReactNode;
@@ -17,17 +17,28 @@ export interface FieldProps {
 }
 
 export function Field({ label, error, hint, required, children, className }: FieldProps): React.ReactElement {
+  const generatedId = useId();
+  const child = React.isValidElement<{ id?: string; 'aria-describedby'?: string; 'aria-invalid'?: boolean }>(children)
+    ? children
+    : null;
+  const controlId = child?.props.id ?? `field-${generatedId.replace(/:/g, '')}`;
+  const descriptionId = hint || error ? `${controlId}-description` : undefined;
+  const control = child ? React.cloneElement(child, {
+    id: controlId,
+    'aria-describedby': child.props['aria-describedby'] ?? descriptionId,
+    'aria-invalid': child.props['aria-invalid'] ?? (error ? true : undefined),
+  }) : children;
   return (
     <div className={`mu-field ${error ? 'has-error' : ''} ${className ?? ''}`}>
       {label && (
-        <label className="mu-field-label">
+        <label className="mu-field-label" htmlFor={controlId}>
           {label}
           {required && <span className="mu-field-required" aria-hidden="true">*</span>}
         </label>
       )}
-      {children}
-      {hint && !error && <div className="mu-field-hint">{hint}</div>}
-      {error && <div className="mu-field-error" role="alert">{error}</div>}
+      {control}
+      {hint && !error && <div id={descriptionId} className="mu-field-hint">{hint}</div>}
+      {error && <div id={descriptionId} className="mu-field-error" role="alert">{error}</div>}
     </div>
   );
 }

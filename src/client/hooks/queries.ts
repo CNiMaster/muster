@@ -3,6 +3,23 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
 import type { Company, Agent, AgentExecutorJson, AgentProfile, CompanyEmployee, MemoryCandidate, MemoryEntry, Department, Project, Relationship, Task, UsageSummary, ProjectAgentThread, Workspace } from '../api/types';
 import type { CompanyCockpitDTO } from '../../shared/types';
+import type { CompanySetupDraft, SetupBindings } from '../domain/company-templates';
+
+export interface ExecutorProfileDTO {
+  id: string;
+  name: string;
+  manifestId: string;
+  config: Record<string, unknown>;
+  connection: null | { status: 'queued' | 'testing' | 'connected' | 'failed'; classification: string | null; version: string | null; completedAt: string | null };
+}
+
+export interface PermissionPolicyDTO {
+  id: string;
+  name: string;
+  approvalStrategy: 'ask-always' | 'ask-by-rule' | 'no-approval' | 'deny';
+  scope: 'task' | 'project' | 'workspace' | 'selected-directories' | 'device';
+  selectedDirectories: string[];
+}
 
 export interface ProposalResult<T> {
   source: 'claude' | 'offline_template';
@@ -99,6 +116,41 @@ export function useCreateCompany() {
     mutationFn: (input: { name: string; kind?: string; charter?: string }) =>
       api.post<Company>('/api/companies', input),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['companies'] }),
+  });
+}
+export function usePreviewCompanySetup() {
+  return useMutation({
+    mutationFn: (input: { templateId: CompanySetupDraft['templateId']; name: string; goal: string }) =>
+      api.post<CompanySetupDraft>('/api/company-setup/preview', input),
+  });
+}
+export function useCommitCompanySetup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { draft: CompanySetupDraft; bindings: SetupBindings }) => api.post<{
+      company: Company;
+      employees: Agent[];
+      project: Project;
+      projectTask: ProjectTaskDTO;
+    }>('/api/company-setup/commit', input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['companies'] });
+      qc.invalidateQueries({ queryKey: ['agent-profiles'] });
+    },
+  });
+}
+export function useExecutorProfiles() {
+  return useQuery({ queryKey: ['executor-profiles'], queryFn: () => api.get<ExecutorProfileDTO[]>('/api/executors/profiles') });
+}
+export function usePermissionPolicies() {
+  return useQuery({ queryKey: ['permission-policies'], queryFn: () => api.get<PermissionPolicyDTO[]>('/api/permissions/policies') });
+}
+export function useCreatePermissionPolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { name: string; approvalStrategy: PermissionPolicyDTO['approvalStrategy']; scope: PermissionPolicyDTO['scope'] }) =>
+      api.post<PermissionPolicyDTO>('/api/permissions/policies', input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['permission-policies'] }),
   });
 }
 export function useCreateNovelCompany() {

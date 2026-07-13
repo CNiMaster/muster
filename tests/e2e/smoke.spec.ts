@@ -25,28 +25,41 @@ test('健康接口 200', async ({ request }) => {
   expect(body.status).toBe('ok');
 });
 
-test('向导式创建公司并正常上班', async ({ page }) => {
-  page.on('console', msg => console.log('BROWSER LOG:', msg.text()));
-  page.on('pageerror', err => console.error('BROWSER ERROR:', err.message));
+test('向导式创建完整公司并进入首个项目任务', async ({ page }) => {
+  const executorResponse = await page.request.post('/api/executors/profiles', { data: {
+    name: `E2E API 执行器-${Date.now()}`,
+    manifestId: 'openai-compatible-api',
+  } });
+  expect(executorResponse.status()).toBe(201);
+  const executor = await executorResponse.json();
+  const policyResponse = await page.request.post('/api/permissions/policies', { data: {
+    name: `E2E 项目权限-${Date.now()}`,
+    approvalStrategy: 'ask-by-rule',
+    scope: 'project',
+  } });
+  expect(policyResponse.status()).toBe(201);
+  const policy = await policyResponse.json();
+
   await page.goto('/companies/wizard');
   await expect(page.locator('h1')).toContainText('创建 Agent 公司');
-  await page.getByLabel('公司模板').selectOption('novel');
+  await page.getByLabel('公司模板').selectOption('software');
 
   const name = `向导公司-${Date.now()}`;
   await page.getByLabel('公司名称').fill(name);
-  await page.getByLabel('公司目标').fill('赛博朋克科幻小说主题');
+  await page.getByLabel('公司目标').fill('交付一个可用的软件产品');
   await page.getByRole('button', { name: '生成团队预览' }).click();
+  await expect(page.getByText('第二步：确认团队')).toBeVisible();
+  await page.getByRole('button', { name: '下一步' }).click();
+  await page.getByRole('button', { name: '全部使用同一配置' }).click();
+  await expect(page.getByLabel('研发负责人固定执行器')).toHaveValue(executor.id);
+  await expect(page.getByLabel('研发负责人权限范围')).toHaveValue(policy.id);
+  await page.getByRole('button', { name: '下一步' }).click();
+  await expect(page.getByText('第四步：创建首个项目与项目任务')).toBeVisible();
+  await page.getByRole('button', { name: '下一步' }).click();
+  await page.getByRole('button', { name: '创建公司并进入项目' }).click();
 
-  // 等待预览加载并检查体检结果
-  await expect(page.getByRole('main').getByText(/智能方案暂时不可用/)).toBeVisible({ timeout: 5000 });
-  await expect(page.getByText(/组织健康体检合格/)).toBeVisible();
-  await expect(page.getByText('lead', { exact: true }).first()).toBeVisible();
-
-  // 点击确认团队并进入项目创建
-  await page.getByRole('button', { name: '确认团队并创建项目' }).click();
-
-  await page.waitForURL(/\/companies\/co_[^/]+\/projects\/new\?onboarding=1/);
-  await expect(page.locator('h1')).toContainText(`新建项目 · ${name}`);
+  await page.waitForURL(/\/projects\/pr_[^?]+\?projectTask=pt_[^&]+&onboarding=done/);
+  await expect(page.getByText('项目任务')).toBeVisible();
 });
 
 test('项目路由保留公司导航并能从首页继续上次项目', async ({ page }) => {
