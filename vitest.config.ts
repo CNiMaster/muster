@@ -10,8 +10,12 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['tests/unit/**/*.test.ts', 'tests/integration/**/*.test.ts', 'tests/integration/**/*.spec.ts', 'tests/unit/**/*.spec.ts'],
-    setupFiles: [],
+    environmentMatchGlobs: [['tests/unit/**/*.spec.tsx', 'jsdom']],
+    include: [
+      'tests/unit/**/*.{test,spec}.{ts,tsx}',
+      'tests/integration/**/*.{test,spec}.ts',
+    ],
+    setupFiles: ['tests/unit/setup-dom.ts'],
     pool: 'forks',
   },
 });
