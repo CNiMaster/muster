@@ -86,6 +86,18 @@ describe('task state machine', () => {
 });
 
 describe('atomic claim (concurrent)', () => {
+  it('第一负责人领取任务池中的未分配工作后会成为持久负责人', () => {
+    const { project, lead } = fixture();
+    const pooledTask = createTask(db, { projectId: project.id, title: '由第一负责人领取并派发' });
+    const leadThread = ensurePrimaryThread(db, project.id, lead.id);
+
+    const claimed = claimNextTask(db, leadThread.id, lead.id);
+
+    expect(claimed?.task.id).toBe(pooledTask.id);
+    expect(claimed?.task.assigneeAgentId).toBe(lead.id);
+    expect(getTask(db, pooledTask.id).assigneeAgentId).toBe(lead.id);
+  });
+
   it('员工不能领取其他员工的 Task，也不能改写原负责人', () => {
     const { project, lead, writer } = fixture();
     const writerTask = createTask(db, {

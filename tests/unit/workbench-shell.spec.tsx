@@ -5,7 +5,11 @@ import { MemoryRouter } from 'react-router-dom';
 import { WorkbenchShell } from '../../src/client/components/workbench/WorkbenchShell';
 
 describe('calm workbench shell', () => {
-  beforeEach(() => { localStorage.clear(); localStorage.setItem('muster:workbench-guide:v1', 'done'); });
+  beforeEach(() => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 1440 });
+    localStorage.clear();
+    localStorage.setItem('muster:workbench-guide:v1', 'done');
+  });
   afterEach(cleanup);
 
   it('independently hides panes and persists the choice', async () => {

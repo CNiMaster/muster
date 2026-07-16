@@ -148,6 +148,9 @@ export interface CreateTaskInput {
   assigneeAgentId?: string;
   title: string;
   inputProtocol?: Record<string, unknown>;
+  requiredSkillIds?: string[];
+  requiredCapabilityIds?: string[];
+  knowledgeTargets?: string[];
   contextRefs?: string[];
   outputProtocol?: Record<string, unknown>;
   priority?: number;
@@ -189,6 +192,9 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
   const inputProtocol = {
     ...(Array.isArray(taskProtocol.inputFields) ? { requiredFields: taskProtocol.inputFields } : {}),
     ...(input.inputProtocol ?? {}),
+    ...(input.requiredSkillIds ? { requiredSkillIds: input.requiredSkillIds } : {}),
+    ...(input.requiredCapabilityIds ? { requiredCapabilityIds: input.requiredCapabilityIds } : {}),
+    ...(input.knowledgeTargets ? { knowledgeTargets: input.knowledgeTargets } : {}),
   };
   const outputProtocol = {
     ...(Array.isArray(taskProtocol.outputFields) ? { requiredFields: taskProtocol.outputFields } : {}),
@@ -313,6 +319,7 @@ export function claimNextTask(db: DB, threadId: string, assigneeAgentId?: string
       .prepare(
         `UPDATE task
          SET state='claimed', lease_owner_thread_id=?, lease_expires_at=?, heartbeat_at=?,
+             assignee_agent_id=COALESCE(assignee_agent_id, (SELECT agent_id FROM project_agent_thread WHERE id=?)),
              assignee_thread_id=?, updated_at=?
          WHERE id = (
            SELECT t.id FROM task t
@@ -339,7 +346,7 @@ export function claimNextTask(db: DB, threadId: string, assigneeAgentId?: string
          AND state = 'queued'
          RETURNING id`,
       )
-      .get(threadId, leaseExpiresAt, heartbeatAt, threadId, stamp, threadId, threadId, threadId, threadId) as
+      .get(threadId, leaseExpiresAt, heartbeatAt, threadId, threadId, stamp, threadId, threadId, threadId, threadId) as
       | { id: string }
       | undefined;
     if (!info) return null;

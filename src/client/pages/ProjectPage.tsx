@@ -38,6 +38,7 @@ import { ProjectContextInspector } from '../components/workbench/ProjectContextI
 import { ProjectTaskWorkspace } from '../components/project/ProjectTaskWorkspace';
 import { ProjectEmployeeWorkspace } from '../components/project/ProjectEmployeeWorkspace';
 import { WorkbenchContextSwitcher } from '../components/workbench/WorkbenchContextSwitcher';
+import { getProjectCreationPreset } from '../domain/company-templates';
 
 export function ProjectPage(): React.ReactElement {
   const { projectId, companyId } = useParams();
@@ -53,8 +54,10 @@ function NewProject({ companyId }: { companyId: string }): React.ReactElement {
   const createProject = useCreateProject();
   const createTask = useCreateTask();
   const generateProjectProposal = useGenerateProjectProposal();
+  const creationPreset = getProjectCreationPreset(company?.kind);
 
   const [mode, setMode] = useState<'standard' | 'wizard'>('wizard');
+  const effectiveMode = creationPreset.allowNovelWizard ? mode : 'standard';
 
   // 基础表单状态
   const [name, setName] = useState('');
@@ -107,8 +110,10 @@ function NewProject({ companyId }: { companyId: string }): React.ReactElement {
       {
         onSuccess: (p) => {
           // 如果有向导的初始任务，则创建任务并开工
-          const initialTask = wizardResult?.initialTaskTitle || '编写第一章';
-          const defaultAssignee = agents?.find((agent) => agent.role === 'writer')?.id ?? agents?.[0]?.id;
+          const initialTask = wizardResult?.initialTaskTitle || creationPreset.initialTaskTitle;
+          const defaultAssignee = creationPreset.preferredAssigneeRoles
+            .map((role) => agents?.find((agent) => agent.role === role))
+            .find((agent) => agent !== undefined)?.id ?? agents?.[0]?.id;
 
           createTask.mutate(
             {
@@ -140,21 +145,21 @@ function NewProject({ companyId }: { companyId: string }): React.ReactElement {
       <header className="page-header">
         <div>
           <h1>新建项目 · {company?.name}</h1>
-          <p className="subtitle">为该小说公司发布一个新的故事创作企划</p>
+          <p className="subtitle">{creationPreset.subtitle}</p>
         </div>
       </header>
 
       {/* 模式切换 */}
-      <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-4)' }}>
+      {creationPreset.allowNovelWizard && <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-4)' }}>
         <Button variant={mode === 'wizard' ? 'primary' : 'ghost'} onClick={() => setMode('wizard')} size="sm">
           智能对话向导
         </Button>
         <Button variant={mode === 'standard' ? 'primary' : 'ghost'} onClick={() => setMode('standard')} size="sm">
           标准表单模式
         </Button>
-      </div>
+      </div>}
 
-      {mode === 'wizard' ? (
+      {effectiveMode === 'wizard' ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
           {/* 对话输入框 */}
           <Card title="输入小说愿景与核心创意">
@@ -253,10 +258,10 @@ function NewProject({ companyId }: { companyId: string }): React.ReactElement {
         <Card title="标准创建项目">
           <div className="form-stack">
             <Field label="项目名称" required>
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="例如：星辰变" />
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={creationPreset.namePlaceholder} />
             </Field>
             <Field label="项目说明">
-              <Textarea value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="一句话描述这本小说（选填）" />
+              <Textarea value={desc} onChange={(e) => setDesc(e.target.value)} placeholder={creationPreset.descriptionPlaceholder} />
             </Field>
             <div>
               <Button onClick={submit} disabled={!name.trim()} loading={createProject.isPending}>

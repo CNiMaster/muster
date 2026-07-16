@@ -179,7 +179,7 @@ export class PublishQueue {
         continue;
       }
 
-      const isBinary = isBinaryPath(art.path) || art.kind === 'image' || art.kind === 'pdf';
+      const isBinary = isBinaryPath(art.path) || art.kind === 'image' || art.kind === 'pdf' || art.kind === 'video' || art.kind === 'audio' || art.kind === 'binary';
       const sourceAbs = path.join(req.worktreePath, art.path);
       const targetAbs = path.join(req.projectRootDir, art.path);
 
@@ -361,7 +361,7 @@ export class PublishQueue {
 }
 
 function isBinaryPath(p: string): boolean {
-  return /\.(png|jpe?g|gif|webp|pdf|zip|mp[34]|mov|pptx?|xlsx?|docx?)$/i.test(p);
+  return /\.(png|jpe?g|gif|webp|bmp|svg|pdf|zip|tar|gz|rar|7z|mp[34]|mov|avi|mkv|webm|flv|wav|aac|flac|ogg|m4a|pptx?|xlsx?|docx?)$/i.test(p);
 }
 
 /**

@@ -1,4 +1,12 @@
+import type {
+  CompanyTaskProtocol,
+  CompanyTemplateRelationship,
+  CompanyTemplateWorkflow,
+} from '../../shared/company-template';
+
 export type CompanyTemplateId = 'general' | 'software' | 'content' | 'novel';
+
+export type { CompanyTaskProtocol, CompanyTemplateRelationship, CompanyTemplateWorkflow };
 
 export interface CompanyTemplateRole {
   key: string;
@@ -17,9 +25,87 @@ export interface CompanyTemplate {
   employees: CompanyTemplateRole[];
   projectName: string;
   firstTaskTitle: string;
+  taskProtocol: CompanyTaskProtocol;
+  relationships: {
+    org: CompanyTemplateRelationship[];
+    communication: CompanyTemplateRelationship[];
+  };
+  workflow: CompanyTemplateWorkflow;
 }
 
-export const BUILTIN_COMPANY_TEMPLATES: Record<CompanyTemplateId, CompanyTemplate> = {
+type CompanyTemplateBase = Omit<CompanyTemplate, 'taskProtocol' | 'relationships' | 'workflow'>;
+
+const DEFAULT_TASK_PROTOCOL: CompanyTaskProtocol = {
+  version: 1,
+  inputFields: ['goal', 'background', 'references', 'acceptance'],
+  outputFields: ['summary', 'deliverables', 'risks', 'nextActions'],
+};
+
+function withCollaboration(base: CompanyTemplateBase): CompanyTemplate {
+  const lead = base.employees.find((employee) => employee.isLead);
+  if (!lead) throw new Error(`公司模板 ${base.id} 缺少第一负责人`);
+  const handoffProtocol = {
+    requestFields: DEFAULT_TASK_PROTOCOL.inputFields,
+    responseFields: DEFAULT_TASK_PROTOCOL.outputFields,
+    escalationRole: lead.role,
+  };
+  const org = base.employees
+    .filter((employee) => employee.key !== lead.key)
+    .map((employee) => ({ sourceKey: lead.key, targetKey: employee.key, label: '直接负责', protocol: handoffProtocol }));
+  const communication: CompanyTemplateRelationship[] = [];
+  const seen = new Set<string>();
+  const connect = (sourceKey: string, targetKey: string, label: string): void => {
+    const key = `${sourceKey}:${targetKey}`;
+    if (sourceKey === targetKey || seen.has(key)) return;
+    seen.add(key);
+    communication.push({ sourceKey, targetKey, label, protocol: handoffProtocol });
+  };
+  for (const employee of base.employees) {
+    if (employee.key === lead.key) continue;
+    connect(lead.key, employee.key, '可派发');
+    connect(employee.key, lead.key, '可上报');
+  }
+  for (let index = 0; index < base.employees.length - 1; index += 1) {
+    connect(base.employees[index]!.key, base.employees[index + 1]!.key, '可交接');
+    connect(base.employees[index + 1]!.key, base.employees[index]!.key, '可协商');
+  }
+  const workflowNodes: CompanyTemplateWorkflow['nodes'] = [
+    { key: 'start', kind: 'start', label: '任务进入', position: { x: 40, y: 160 } },
+    ...base.employees.map((employee, index) => ({
+      key: `employee:${employee.key}`,
+      kind: 'step' as const,
+      label: employee.name,
+      position: { x: 240 + index * 220, y: 160 },
+      props: {
+        assigneeRole: employee.role,
+        title: `${employee.name}处理与交接`,
+        inputProtocol: {
+          requiredFields: DEFAULT_TASK_PROTOCOL.inputFields,
+          goal: employee.responsibilities,
+        },
+        outputProtocol: {
+          requiredFields: DEFAULT_TASK_PROTOCOL.outputFields,
+          resultFormat: '提交结论摘要、交付物、风险与阻塞、后续动作',
+        },
+        priority: 5,
+      },
+    })),
+    { key: 'end', kind: 'end', label: '成果提交', position: { x: 240 + base.employees.length * 220, y: 160 } },
+  ];
+  const workflowEdges = workflowNodes.slice(0, -1).map((node, index) => ({
+    sourceKey: node.key,
+    targetKey: workflowNodes[index + 1]!.key,
+    label: index === 0 ? '负责人接单' : index === workflowNodes.length - 2 ? '提交成果' : '标准交接',
+  }));
+  return {
+    ...base,
+    taskProtocol: { ...DEFAULT_TASK_PROTOCOL, inputFields: [...DEFAULT_TASK_PROTOCOL.inputFields], outputFields: [...DEFAULT_TASK_PROTOCOL.outputFields] },
+    relationships: { org, communication },
+    workflow: { nodes: workflowNodes, edges: workflowEdges },
+  };
+}
+
+const TEMPLATE_BASES: Record<CompanyTemplateId, CompanyTemplateBase> = {
   general: {
     id: 'general', name: '通用项目公司', description: '适合研究、运营和跨职能工作',
     departments: [{ key: 'delivery', name: '执行部' }, { key: 'quality', name: '质量部' }],
@@ -64,6 +150,13 @@ export const BUILTIN_COMPANY_TEMPLATES: Record<CompanyTemplateId, CompanyTemplat
     ],
     projectName: '首部长篇作品', firstTaskTitle: '明确题材、读者与故事核心',
   },
+};
+
+export const BUILTIN_COMPANY_TEMPLATES: Record<CompanyTemplateId, CompanyTemplate> = {
+  general: withCollaboration(TEMPLATE_BASES.general),
+  software: withCollaboration(TEMPLATE_BASES.software),
+  content: withCollaboration(TEMPLATE_BASES.content),
+  novel: withCollaboration(TEMPLATE_BASES.novel),
 };
 
 export function getBuiltinCompanyTemplate(id: CompanyTemplateId): CompanyTemplate {

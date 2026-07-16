@@ -18,6 +18,9 @@ import { buildBridgePromptSection } from '../bridge';
 import { getWorkflow, type EdgeCondition } from '../domain/workflow';
 import { getAgentProfile } from '../domain/agent-profile';
 import { loadContextMemories } from '../domain/memory';
+import { resolveTaskSkills } from '../domain/capability-binding';
+import { resolveToolRecommendations, buildCapabilityCenterSection } from '../domain/tool-recommendation';
+import { listMaterials } from '../domain/material';
 
 const MAX_REFERENCE_BYTES = 64 * 1024;
 const MAX_TOTAL_REFERENCE_BYTES = 256 * 1024;
@@ -65,9 +68,30 @@ export function assembleContext(
         '',
       );
     }
-    if (agent.skills.length > 0) sp.push('# 指定技能', agent.skills.join('、'), '');
     if (agent.tools.length > 0) sp.push('# 可用能力声明', agent.tools.join('、'), '');
     if (agent.systemPrompt) sp.push(agent.systemPrompt);
+  }
+  const resolvedSkills = resolveTaskSkills(db, task);
+  const loadedSkills = resolvedSkills.filter((skill) => skill.status === 'loaded');
+  const skillDiagnostics = resolvedSkills.filter((skill) => skill.status !== 'loaded');
+  if (loadedSkills.length > 0) {
+    sp.push('# 本 Task 按需加载的 Skill');
+    for (const skill of loadedSkills) {
+      sp.push(`## ${skill.skillId}`, `来源：${skill.reason}`, skill.content ?? '', '');
+    }
+  }
+  if (skillDiagnostics.length > 0) {
+    sp.push(
+      '# Skill 配置诊断',
+      ...skillDiagnostics.map((skill) => `- ${skill.skillId}：${skill.status === 'missing' ? '未找到' : '已停用'}；原因：${skill.reason}`),
+      '',
+    );
+  }
+  // 能力中心:注入工具推荐(员工名下 capabilityBindings 的 recommendedToolIds)
+  if (agent) {
+    const toolRecommendations = resolveToolRecommendations(db, task);
+    const capabilityCenter = buildCapabilityCenterSection(toolRecommendations);
+    if (capabilityCenter) sp.push(capabilityCenter, '');
   }
   // Agent Bridge：注入桥接能力清单（让 Agent 可主动通知宿主进度）
   if (options.loopback) {
@@ -100,6 +124,16 @@ export function assembleContext(
     if (memories.length > 0) {
       sp.push('# 已批准的相关记忆', ...memories.map((memory) => `- [${memory.scope}] ${memory.content}`), '');
     }
+  }
+  // 项目素材清单:让员工知道项目有哪些素材可用(只注入摘要,不注入内容)
+  const materials = listMaterials(db, project.id);
+  if (materials.length > 0) {
+    sp.push('# 项目素材', '你可以引用以下项目素材(通过路径或链接访问):');
+    for (const m of materials) {
+      const loc = m.storagePath ? `项目内 ${m.storagePath}` : (m.sourceUrl ?? '未知位置');
+      sp.push(`- [${m.kind}] ${m.name} — ${loc}${m.tags.length ? ` (标签: ${m.tags.join(', ')})` : ''}`);
+    }
+    sp.push('');
   }
   const systemPrompt = sp.join('\n');
 

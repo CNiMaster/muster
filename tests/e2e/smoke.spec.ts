@@ -47,20 +47,36 @@ test('向导式创建完整公司并进入首个项目任务', async ({ page }) 
   const name = `向导公司-${Date.now()}`;
   await page.getByLabel('公司名称').fill(name);
   await page.getByLabel('一句话目标').fill('交付一个可用的软件产品');
-  await page.getByRole('button', { name: '先看看团队' }).click();
-  await expect(page.getByText('团队已经排好')).toBeVisible();
-  await page.getByRole('button', { name: '继续 →' }).click();
+  await page.getByRole('button', { name: '生成公司蓝图 →' }).click();
+  await expect(page.getByText('公司蓝图已生成，请确认')).toBeVisible();
+  for (const moduleName of ['公司概览', '团队与责任', '业务信息中心', '工作如何流转', '能力与运行条件', '风险与建议']) {
+    await expect(page.getByRole('heading', { name: moduleName })).toBeVisible();
+  }
+  await expect(page.getByText('Skill 由对应员工在相关 Task 中按需加载，不会把全部能力注入所有员工。')).toBeVisible();
+  await expect(page.getByText('建议先按推荐方案创建；员工、字段、视图和流程创建后仍可随时调整。')).toBeVisible();
+  await page.getByRole('button', { name: '继续到运行' }).click();
   await expect(page.getByText('默认配置已自动应用')).toBeVisible();
   await expect(page.locator('[aria-label="默认运行路径"]')).toContainText('4 位员工');
   await expect(page.locator('[aria-label="默认运行路径"]')).toContainText('项目沙盒');
-  await page.getByRole('button', { name: '继续 →' }).click();
+  await page.getByRole('button', { name: '继续到项目' }).click();
   await expect(page.getByText('第一份工作')).toBeVisible();
-  await page.getByRole('button', { name: '继续 →' }).click();
-  await page.getByRole('button', { name: '创建并进入项目 →' }).click();
+  await page.getByRole('button', { name: '继续到完成' }).click();
+  await page.getByRole('button', { name: '按推荐方案创建并进入项目 →' }).click();
 
   await page.waitForURL(/\/projects\/pr_[^?]+\?projectTask=pt_[^&]+&onboarding=done/);
   await expect(page.getByRole('navigation', { name: '项目组织与联系人' })).toBeVisible();
   await expect(page.getByRole('button', { name: '人物关系' })).toHaveCount(0);
+});
+
+test('company blueprint health links a runtime issue to its configuration surface', async ({ page }) => {
+  const response = await page.request.post('/api/companies', { data: { name: `旧公司-${Date.now()}`, kind: 'general' } });
+  expect(response.status()).toBe(201);
+  const company = await response.json();
+
+  await page.goto(`/companies/${company.id}?view=settings`);
+  await page.getByRole('button', { name: '重新检查' }).click();
+  await expect(page.getByText('公司缺少模板快照')).toBeVisible();
+  await expect(page.getByRole('link', { name: '查看公司设置' })).toHaveAttribute('href', `/companies/${company.id}?view=settings`);
 });
 
 test('项目路由保留公司导航并能从首页继续上次项目', async ({ page }) => {

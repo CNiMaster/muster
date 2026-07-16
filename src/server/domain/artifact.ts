@@ -1,32 +1,48 @@
 /**
- * 小说成果模型。
+ * 成果模型。
  *
- PRD 成果分类：
- - 权威可编辑：正文、计划大纲、正式设定
- - 管理成果（指定责任岗位维护）：人物档案、世界观、时间线、伏笔资料
- - 派生只读视图：实际人物关系、已发生时间线、剧情进度
+ * PRD 成果分类（小说场景）：
+ * - 权威可编辑：正文、计划大纲、正式设定
+ * - 管理成果（指定责任岗位维护）：人物档案、世界观、时间线、伏笔资料
+ * - 派生只读视图：实际人物关系、已发生时间线、剧情进度
+ *
+ * 通用场景（非小说公司）：artifact.kind 由公司模板的 knowledgeModel.artifactTypes 驱动，
+ * 同时内置通用 kind（video/audio/image/document/binary/markdown 等）。
  */
 import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
 import { getProject } from './project';
 
-export type ArtifactKind =
-  | 'project_brief' // 项目说明
-  | 'synopsis' // 故事梗概
-  | 'style_profile' // 风格档案
-  | 'outline' // 计划大纲（可编辑）
-  | 'chapter' // 章节 Markdown
-  | 'character_sheet' // 人物档案
-  | 'worldbuilding' // 世界观
-  | 'timeline' // 时间线
-  | 'foreshadowing' // 伏笔资料
-  | 'character_relation_view' // 派生只读：人物关系
-  | 'plot_progress_view' // 派生只读：剧情进度
-  | 'timeline_view'; // 派生只读：实际时间线
+/** 小说场景的成果 kind（向后兼容）。 */
+export type NovelArtifactKind =
+  | 'project_brief'
+  | 'synopsis'
+  | 'style_profile'
+  | 'outline'
+  | 'chapter'
+  | 'character_sheet'
+  | 'worldbuilding'
+  | 'timeline'
+  | 'foreshadowing'
+  | 'character_relation_view'
+  | 'plot_progress_view'
+  | 'timeline_view';
 
-export const READONLY_KINDS: ArtifactKind[] = ['character_relation_view', 'plot_progress_view', 'timeline_view'];
-export const EDITABLE_KINDS: ArtifactKind[] = [
+/** 通用内置 kind（非小说公司可用）。 */
+export type GenericArtifactKind = 'markdown' | 'text' | 'json' | 'image' | 'pdf' | 'video' | 'audio' | 'binary';
+
+/**
+ * 成果 kind。小说公司用 NovelArtifactKind,通用公司用 GenericArtifactKind 或模板自定义 kind。
+ * DB 列是 TEXT,接受任意值;此处类型用于编辑权限判断。
+ */
+export type ArtifactKind = NovelArtifactKind | GenericArtifactKind | (string & {});
+
+/** 派生只读 kind（不可编辑）。 */
+export const READONLY_KINDS: string[] = ['character_relation_view', 'plot_progress_view', 'timeline_view'];
+
+/** 小说场景可编辑 kind。 */
+export const EDITABLE_KINDS: string[] = [
   'project_brief',
   'synopsis',
   'style_profile',
@@ -128,6 +144,64 @@ export function getArtifactByPath(db: DB, projectId: string, path: string): Arti
 export function listArtifacts(db: DB, projectId: string): Artifact[] {
   const rows = db.prepare('SELECT * FROM artifact WHERE project_id = ? ORDER BY kind, path').all(projectId) as ArtifactRow[];
   return rows.map(fromRow);
+}
+
+export interface ArtifactGalleryGroup {
+  key: string;
+  label: string;
+  count: number;
+  items: Artifact[];
+}
+
+/**
+ * 成品画廊聚合视图。
+ * groupBy=time:按日期分组(YYYY-MM-DD)
+ * groupBy=type:按 kind 分组
+ */
+export function artifactGallery(db: DB, projectId: string, groupBy: 'time' | 'type' = 'time'): ArtifactGalleryGroup[] {
+  const artifacts = listArtifacts(db, projectId);
+  const groups = new Map<string, Artifact[]>();
+  for (const art of artifacts) {
+    const key = groupBy === 'time' ? art.createdAt.slice(0, 10) : art.kind;
+    const arr = groups.get(key) ?? [];
+    arr.push(art);
+    groups.set(key, arr);
+  }
+  return [...groups.entries()]
+    .map(([key, items]) => ({
+      key,
+      label: key,
+      count: items.length,
+      items: items.sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    }))
+    .sort((a, b) => b.label.localeCompare(a.label));
+}
+
+/** 公司级跨项目成品聚合。 */
+export function companyArtifactGallery(db: DB, companyId: string, groupBy: 'time' | 'type' | 'project' = 'time'): Array<ArtifactGalleryGroup & { projectId?: string; projectName?: string }> {
+  const rows = db.prepare(`SELECT a.*, p.name AS project_name FROM artifact a
+    JOIN project p ON p.id = a.project_id
+    WHERE p.company_id = ? ORDER BY a.created_at DESC`).all(companyId) as Array<ArtifactRow & { project_name: string }>;
+  const groups = new Map<string, Array<Artifact & { projectName: string }>>();
+  for (const row of rows) {
+    const key = groupBy === 'time' ? row.created_at.slice(0, 10) : groupBy === 'type' ? row.kind : row.project_id;
+    const arr = groups.get(key) ?? [];
+    arr.push({ ...fromRow(row), projectName: row.project_name });
+    groups.set(key, arr);
+  }
+  return [...groups.entries()]
+    .map(([key, items]) => {
+      const projectName = items[0]!.projectName;
+      return {
+        key,
+        label: groupBy === 'project' ? projectName : key,
+        count: items.length,
+        items: items.map((item) => { const { projectName: _unused, ...art } = item; void _unused; return art; }),
+        projectId: groupBy === 'project' ? key : undefined,
+        projectName: groupBy === 'project' ? projectName : undefined,
+      };
+    })
+    .sort((a, b) => b.label.localeCompare(a.label));
 }
 
 export function assertEditable(db: DB, artifactId: string): void {

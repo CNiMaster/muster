@@ -12,7 +12,7 @@
 import path from 'node:path';
 import type { DB } from '../db/client';
 import type { AgentExecutorConfig, ExecutionAdapter, ExecutionContext } from './executor';
-import { DEFAULT_PROVIDER, isProvider, type Provider } from '../executors/provider';
+import { DEFAULT_PROVIDER, isProvider, PROVIDER_DEFAULT_API_KEY_ENV, type Provider } from '../executors/provider';
 import {
   claimNextTask,
   markRunning,
@@ -51,6 +51,7 @@ import { existsSync } from 'node:fs';
 import { mkdirSync } from 'node:fs';
 import { SERVER_CONFIG } from '../env';
 import { createExecutionRun, failExecutionRun, getEmployeeExecutorProfile, updateExecutionRunStatus } from '../domain/executor-profile';
+import { resolveExecutorCredentialEnv } from '../domain/credential-store';
 import { buildRunIsolation, withExecutorConcurrency } from '../executors/run-isolation';
 import { ensureApprovalRequest, evaluatePermission, getEmployeePermissionPolicy } from '../domain/permission';
 import { getActiveWorkspace } from '../domain/workspace';
@@ -253,9 +254,9 @@ export class TaskEngine {
         sessionIdHint: projectTaskThread.vendorSessionId ?? undefined,
         // PRD Phase 3.4：收集授权参考项目根目录，让 Claude 直接只读访问（--add-dir）。
         readonlyDirs: collectReadonlyReferenceDirs(this.db, task.projectId),
-        // PRD Phase 3：员工级执行器配置 + 用户级凭据引用
+        // PRD Phase 3：员工级执行器配置 + 凭据三层解析(员工覆盖 > 公司覆盖 > 平台默认 > legacy/系统回退)
         agentExecutor: effectiveExecutor,
-        apiKeyEnv: extractApiKeyEnv(agent.executor),
+        apiKeyEnv: resolveExecutorCredentialForTask(this.db, agent, company.id, executorProfile, effectiveExecutor, this.defaultProvider),
         // Agent Bridge loopback 配置
         loopback: {
           baseUrl: `http://127.0.0.1:${this.serverPort}`,
@@ -763,3 +764,32 @@ function extractApiKeyEnv(raw: Record<string, unknown> | undefined): string | un
   if (!/^[A-Z][A-Z0-9_]*$/.test(v)) return undefined;
   return v;
 }
+
+/**
+ * 解析 Task 执行时最终生效的 API key 环境变量名(凭据三层解析)。
+ *
+ * 优先级:credential_definition 三层解析(员工覆盖 > 公司覆盖 > 平台默认)
+ * → legacy agent.executor.apiKeyEnv(向后兼容)
+ * → provider 默认环境变量(PROVIDER_DEFAULT_API_KEY_ENV)
+ *
+ * credential_definition 表不存在或查询失败时静默回退,不中断执行。
+ */
+function resolveExecutorCredentialForTask(
+  db: import('../db/client').DB,
+  agent: import('../domain/agent').AgentDefinition,
+  companyId: string,
+  executorProfile: import('../domain/executor-profile').ExecutorProfile | null,
+  effectiveExecutor: import('./executor').AgentExecutorConfig | undefined,
+  defaultProvider: string,
+): string | undefined {
+  const provider = providerForManifest(executorProfile?.manifestId) ?? effectiveExecutor?.provider ?? defaultProvider;
+  const legacyEnv = extractApiKeyEnv(agent.executor);
+  const providerFallback = PROVIDER_DEFAULT_API_KEY_ENV[provider as Provider];
+  try {
+    return resolveExecutorCredentialEnv(db, agent.profileId, companyId, provider, legacyEnv, providerFallback);
+  } catch {
+    // credential_definition 表缺失或查询异常:回退到 legacy + provider 默认
+    return legacyEnv ?? providerFallback;
+  }
+}
+

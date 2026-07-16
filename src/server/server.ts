@@ -57,6 +57,12 @@ import { listAgentProfiles } from './domain/agent-profile';
 import { materializeAgentHome, syncAgentMemoryFiles } from './domain/agent-home';
 import { autoDiscoverCertifiedExecutors } from './domain/executor-discovery';
 import { companySetupRouter } from './api/company-setup';
+import { templateHealthRouter } from './api/template-health';
+import { syncToolRegistry } from './domain/tool-registry';
+import { seedDefaultCredentialDefinitions } from './domain/credential-store';
+import { toolsRouter } from './api/tools';
+import { credentialsRouter, companyCredentialsRouter } from './api/credentials';
+import { materialsRouter } from './api/materials';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -89,6 +95,7 @@ async function createApp(): Promise<AppHandle> {
   projectById.use('/messages', projectMessagesRouter);
   projectById.use('/events', projectEventsRouter);
   projectById.use('/artifacts', projectArtifactsRouter);
+  projectById.use('/materials', materialsRouter);
   projectById.use('/', projectScopedNovel);   // chapter-completed / correction / check
   projectById.use('/', projectPhase7);         // reports / inspector / brainstorm
 
@@ -140,6 +147,24 @@ async function createApp(): Promise<AppHandle> {
     engine,
     Number(process.env.MUSTER_POLL_INTERVAL_MS ?? 2000),
   );
+  // 启动时扫描 tools/ 目录入索引(能力中心基础设施)
+  try {
+    const toolSync = syncToolRegistry(getDb());
+    if (toolSync.added || toolSync.updated || toolSync.removed) {
+      log.info('tool registry synced', toolSync);
+    }
+  } catch (err) {
+    log.warn('tool registry sync failed', { error: err instanceof Error ? err.message : String(err) });
+  }
+  // 启动时 seed 默认凭据定义(平台级基本能力,幂等)
+  try {
+    const credSeed = seedDefaultCredentialDefinitions(getDb());
+    if (credSeed.added) {
+      log.info('default credentials seeded', credSeed);
+    }
+  } catch (err) {
+    log.warn('credential seed failed', { error: err instanceof Error ? err.message : String(err) });
+  }
   // API（顶层）
   app.use('/api', healthRouter);
   app.use('/api/companies', companiesRouter);
@@ -152,6 +177,8 @@ async function createApp(): Promise<AppHandle> {
   app.use('/api/companies/:companyId/workflows', workflowsRouter);
   app.use('/api/companies/:id/messages', companyMessagesRouter);
   app.use('/api/companies/:companyId/events', companyEventsRouter);
+  app.use('/api/companies/:companyId/template-health', templateHealthRouter);
+  app.use('/api/companies/:companyId/credentials', companyCredentialsRouter);
   app.use('/api/projects/:id', projectById);
   app.use('/api/reports/:id', reportByIdRouter);
   app.use('/api/tasks/:id', taskByIdRouter);
@@ -163,6 +190,8 @@ async function createApp(): Promise<AppHandle> {
   app.use('/api/executors', executorsRouter);
   app.use('/api/setup-assistant', setupAssistantRouter);
   app.use('/api/company-setup', companySetupRouter);
+  app.use('/api/tools', toolsRouter);
+  app.use('/api/credentials', credentialsRouter);
 
   // Agent Bridge：Agent 通过 curl 调用 /bridge/<action> 反馈进度
   app.use('/bridge', bridgeRouter);

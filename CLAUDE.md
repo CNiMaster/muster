@@ -126,6 +126,10 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 - **可重建上下文**：上下文按身份原则→公司任职→项目→已批准分层记忆→Task 装配；自动/手动压缩先持久化记忆并保留前一 session 引用，失败时不清空旧 session。
 - **长篇小说公司**：5 基础岗位（lead/writer/character/plot/inspector），第一负责人≠主写手；章节完成事件触发人物/情节维护；定时一致性检查；强制复盘按根员工聚合；闲置头脑风暴受限。
 - **镜像**：项目内临时并行线程，共享根员工职责/上下文/Task 池，不重复领取；成果归入根员工。
+- **能力中心（工具档案库）**：平台是"搬运工不是提供者"。`tools/` 目录是"能力→可用实现"的备选目录（不是安装清单），每个档案含 frontmatter（capability/implementation local|api/executor_kind/credential_keys/install/check/maturity）+ 正文。启动时 `syncToolRegistry()` 扫描入库到 `tool_registry` 表；后台设默认项，创建公司时 `dispatchDefaultToolsToCompany()` 派发到 `company_tool`。`assembleContext` 按"员工名下所有 capabilityBindings 的 recommendedToolIds"注入 `# 能力中心` system prompt 段，员工已具备相似工具时优先用自己的，缺少时参考推荐。是否安装/调用由员工自行决定，平台不做强制门禁，只做软诊断（`capability_tool_unavailable`/`capability_executor_mismatch` finding）。`capabilityBindingDefinitionSchema` 已扩展 `recommendedToolIds` 和 `requiresExecutorKind` 两字段。
+- **凭据库（平台级基本能力）**：所有 API/CLI 接入的凭据凌驾于公司之上，统一管理。启动时 `seedDefaultCredentialDefinitions()` 幂等注入 LLM 默认凭据定义（Anthropic/OpenAI/Google 三家，`credential_definition` 表）；后台可设默认派发项；创建公司时 `dispatchDefaultCredentialsToCompany()` 派发到 `company_credential`。执行时三层解析环境变量名：① 员工级覆盖（Agent Home `profile/credentials.json`，只存变量名不存明文）→ ② 公司级覆盖（`company_credential.override_key`）→ ③ 平台默认（`credential_definition.credential_key`）→ ④ 系统回退（`PROVIDER_DEFAULT_API_KEY_ENV` 或 legacy `agent.executor.apiKeyEnv`）。`engine.ts` 的 `resolveExecutorCredentialForTask()` 统一装配，三个 adapter（Claude/OpenAI/Gemini）无需改动——它们已消费 `ctx.apiKeyEnv`。明文值始终由系统环境变量提供，不进 DB、不进日志、不进迁移。
+- **素材区（项目级）**：每个项目有素材库（原料/需求/源文件），三选一导入：link（存路径/URL 引用，不复制文件，源不动）→ moved（copy+unlink 移入，源删除）→ copied（copyFile 复制，源保留）。素材存储在 `{project.rootDir}/materials/_copied/`，路径校验防目录穿越（对照 `resolveArtifactPath`）。`assembleContext` 注入 `# 项目素材` 摘要清单让员工知道可用素材。素材健康检查（link 型本地源文件是否存在）。
+- **成品区泛化 + 多媒体**：`ArtifactKind` 从小说专用 12 种枚举泛化为 `NovelArtifactKind | GenericArtifactKind | string`（通用公司可用 video/audio/image/markdown/binary 等）。`artifactTypeDefinitionSchema.format` 扩展 `video|audio`。`publish-queue` 的 `isBinaryPath` 扩展音视频扩展名，video/audio/binary kind 走 `exclusive_lock`（整文件替换，不走三方合并）。ArtifactsPage 前端按格式渲染：image(`<img>`)、video(`<video controls>`)、audio(`<audio controls>`)、pdf(`<iframe>`)。成品画廊聚合查询（`artifactGallery` 按 time/type 分组，`companyArtifactGallery` 跨项目聚合）。
 
 ### 多 Agent 协作增强（平台级能力）
 
@@ -157,6 +161,12 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 | `src/server/worktree/publish-queue.ts` | 串行发布 + 三方合并 + 冲突阻塞 |
 | `src/server/domain/novel-template.ts` | 长篇小说公司一键模板 |
 | `src/server/domain/report.ts` | 强制复盘周期（review_paused → 看板 → 备注转修正） |
+| `tools/` | 能力中心工具档案库（能力→实现备选目录，启动扫描入 `tool_registry` 表） |
+| `src/server/domain/tool-registry.ts` | 工具档案扫描/CRUD/默认派发（`syncToolRegistry`/`listTools`/`dispatchDefaultToolsToCompany`） |
+| `src/server/domain/tool-recommendation.ts` | Task 执行时工具推荐解析 + `# 能力中心` system prompt 段构建 |
+| `src/server/api/tools.ts` | 工具档案管理 REST 路由 |
+| `src/server/domain/credential-store.ts` | 凭据库（平台级）：三层解析 + CRUD + seed + 公司派发 |
+| `src/server/api/credentials.ts` | 凭据库管理 REST 路由（平台级 + 公司级） |
 | `src/server/db/migrations/0003_settings.sql` | 系统设置表 |
 | `src/server/db/migrations/0004_trigger_schedule_state.sql` | 定时触发器执行游标 |
 | `src/server/db/migrations/0012_agent_stance.sql` | Agent stance 字段 |
@@ -200,6 +210,9 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 - **员工中心的项目工作台**：项目仍是工作空间与上下文边界，但日常观察对象是员工。左栏固定为组织与联系人树（第一负责人置顶、固定项目群聊、部门员工及其名下工作单）；中栏展示员工单聊/派发、项目任务、群聊或工具；右栏只放可点击的员工工作与项目运行入口。项目任务是用户目标边界，员工工作单归在员工名下。
 - **工作流与计划边界**：员工上下级、引用许可、步骤条件与任务交接格式属于公司级配置，项目暂不覆盖公司工作流；项目只配置计划任务、任务领取清单和运行状态。所有项目工具页复用同一个三栏外壳，子工具页不得重新出现全局顶栏。
 - **模板优先创建**：员工库默认先展示与四类公司模板对应的整套团队，再展示单岗位快捷模板，空白自定义表单只作为低频入口；公司创建继续以模板向导为主入口。
+- **Schema 驱动公司蓝图**：行业模板必须输出 `CompanyTemplateDraft` 结构化数据并通过服务端确定性校验；客户端只用受信任 React 模块渲染，不接收或执行模型 HTML。创建必须经过“生成蓝图→六模块确认→运行配置→创建”，不可恢复一键绕过确认。
+- **Skill 绑定与加载边界**：系统级 `company-template-architect` 只生成公司草案，不生成或审核新 Skill。业务 Skill 绑定到员工、字段或 Task，并只在 Task 明确 Skill、能力或知识目标命中时加载；缺失项进入诊断，禁止执行时搜索或自动安装外部 Skill。
+- **模板运行健康**：公司模板安装必须保存确认快照与版本。字段负责人、能力绑定、Skill 和计划目标的运行问题使用稳定 fingerprint 去重，向用户解释原因、影响、建议与配置入口；修复不得静默覆盖用户调整。
 - **内联 style**：历史代码大量 `style={{...}}`，新增复杂区块优先抽 `.details-collapse` 等语义类进 `global.css`；简单 grid/gap 保留内联可接受。
 
 旧 Leader/Worker/Verifier、临时群聊、`.muster/config.json` 文件持久化等已全部废弃，不再参与运行。

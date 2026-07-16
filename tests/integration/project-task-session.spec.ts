@@ -3,7 +3,7 @@ import {makeTestDb} from './setup';
 import {createCompany} from '../../src/server/domain/company';
 import {createProject} from '../../src/server/domain/project';
 import {createAgent} from '../../src/server/domain/agent';
-import {createProjectTask,archiveProjectTask,listProjectTasks} from '../../src/server/domain/project-task';
+import {createProjectTask,archiveProjectTask,completeProjectTask,listProjectTasks} from '../../src/server/domain/project-task';
 import {ensureProjectTaskThread,setProjectTaskThreadSession} from '../../src/server/domain/project-task-thread';
 import {createTask} from '../../src/server/domain/task';
 
@@ -47,6 +47,18 @@ describe('project task context boundary',()=>{
       expect(root.projectTaskId).toBeTruthy();
       expect(child.projectTaskId).toBe(root.projectTaskId);
       expect(listProjectTasks(db,project.id)).toHaveLength(1);
+    }finally{close();}
+  });
+
+  it('refuses to complete or archive a project task through another project boundary',()=>{
+    const{db,close}=makeTestDb();try{
+      const company=createCompany(db,{name:'公司'});
+      const first=createProject(db,{companyId:company.id,name:'项目一',rootDir:'/tmp/project-one'});
+      const second=createProject(db,{companyId:company.id,name:'项目二',rootDir:'/tmp/project-two'});
+      const projectTask=createProjectTask(db,{projectId:second.id,title:'项目二任务'});
+      expect(()=>completeProjectTask(db,projectTask.id,first.id)).toThrow(/不属于当前项目/);
+      expect(()=>archiveProjectTask(db,projectTask.id,first.id)).toThrow(/不属于当前项目/);
+      expect(listProjectTasks(db,second.id)[0]?.state).toBe('active');
     }finally{close();}
   });
 });

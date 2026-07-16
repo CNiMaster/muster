@@ -90,7 +90,7 @@ export function ProjectContextInspector({ projectId, companyId, projectState, se
       <div>
         {companyId && <Link to={`/companies/${companyId}/graphs/org`}>组织上下级</Link>}
         {companyId && <Link to={`/companies/${companyId}/graphs/communication`}>员工引用关系</Link>}
-        {companyId && <Link to={`/companies/${companyId}/workflows/main`}>公司工作流</Link>}
+        {companyId && <Link to={`/companies/${companyId}/workflows/main`}>员工协作流程</Link>}
         <Link to={`/projects/${projectId}/settings`}>项目设置</Link>
       </div>
     </section>

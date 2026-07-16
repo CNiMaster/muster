@@ -17,7 +17,7 @@ export function CompanyActivity({ companyId, agents, events }: { companyId: stri
       <div className="graph-links" style={{ display: 'flex', gap: 'var(--space-4)', flexWrap: 'wrap' }}>
         <Link to={`/companies/${companyId}/graphs/org`}>组织图</Link>
         <Link to={`/companies/${companyId}/graphs/communication`}>通信图</Link>
-        <Link to={`/companies/${companyId}/workflows/main`}>工作流图</Link>
+        <Link to={`/companies/${companyId}/workflows/main`}>员工协作流程</Link>
       </div>
     </Card>
   </div>;

@@ -11,6 +11,8 @@ import {
   useArtifactHistory,
   useOpenArtifactExternally,
   useRollbackArtifact,
+  useArtifactGallery,
+  type ArtifactGalleryGroup,
 } from '../hooks/queries';
 import { Card } from '../components/Card';
 import { Badge } from '../components/Badge';
@@ -25,6 +27,9 @@ import { MarkdownPreview } from '../components/MarkdownPreview';
 const EDITABLE_KINDS = ['project_brief', 'synopsis', 'style_profile', 'outline', 'chapter', 'character_sheet', 'worldbuilding', 'timeline', 'foreshadowing'];
 const READONLY_KINDS = ['character_relation_view', 'plot_progress_view', 'timeline_view'];
 
+/** 通用成果类型(Phase 4 泛化:非小说公司也可见)。 */
+const GENERIC_KINDS = ['markdown', 'text', 'json', 'image', 'pdf', 'video', 'audio', 'binary'];
+
 const KIND_LABELS: Record<string, string> = {
   project_brief: '项目说明',
   synopsis: '故事梗概',
@@ -38,6 +43,14 @@ const KIND_LABELS: Record<string, string> = {
   character_relation_view: '人物关系（只读）',
   plot_progress_view: '剧情进度（只读）',
   timeline_view: '实际时间线（只读）',
+  markdown: 'Markdown 文档',
+  text: '纯文本',
+  json: 'JSON 数据',
+  image: '图片',
+  pdf: 'PDF 文档',
+  video: '视频',
+  audio: '音频',
+  binary: '二进制文件',
 };
 
 export function ArtifactsPage(): React.ReactElement {
@@ -99,6 +112,13 @@ export function ArtifactsPage(): React.ReactElement {
             ),
           },
           {
+            key: 'gallery',
+            label: '画廊',
+            content: (
+              <GalleryView projectId={projectId} onSelect={setSelectedPath} />
+            ),
+          },
+          {
             key: 'history',
             label: `修改历史（${history?.length ?? 0}）`,
             content: (
@@ -123,6 +143,61 @@ export function ArtifactsPage(): React.ReactElement {
           }}
         />
       )}
+    </div>
+  );
+}
+
+function GalleryView({ projectId, onSelect }: { projectId: string; onSelect: (path: string) => void }): React.ReactNode {
+  const [groupBy, setGroupBy] = useState<'time' | 'type'>('time');
+  const { data: groups, isLoading } = useArtifactGallery(projectId, groupBy);
+
+  if (isLoading) return <p className="muted">加载画廊…</p>;
+  if (!groups || groups.length === 0) {
+    return <EmptyState icon={Icons.graph} title="画廊为空" hint="任务发布成品后，这里会按时间或类型归档展示。" />;
+  }
+
+  return (
+    <div className="artifact-gallery">
+      <div className="materials-toolbar" style={{ marginBottom: 'var(--space-3)' }}>
+        <Field label="分组方式">
+          <Select value={groupBy} onChange={(e) => setGroupBy(e.target.value as 'time' | 'type')}>
+            <option value="time">按时间</option>
+            <option value="type">按类型</option>
+          </Select>
+        </Field>
+      </div>
+      {(groups as ArtifactGalleryGroup[]).map((group) => (
+        <div key={group.key} className="tool-capability-group" style={{ marginBottom: 'var(--space-3)' }}>
+          <div className="tool-capability-title" style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span>{group.label}</span>
+            <Badge tone="neutral">{group.count}</Badge>
+          </div>
+          <div className="materials-grid" style={{ marginTop: 'var(--space-2)' }}>
+            {group.items.map((a) => {
+              const isImg = /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(a.path);
+              const isVid = /\.(mp4|mov|avi|mkv|webm|flv)$/i.test(a.path);
+              return (
+                <div key={a.id} className="material-card" onClick={() => onSelect(a.path)} style={{ cursor: 'pointer' }} role="button" tabIndex={0}>
+                  <div className="material-card-head">
+                    <span className="material-icon">{isImg ? '🖼️' : isVid ? '🎬' : '📄'}</span>
+                    <span className="material-name" title={a.path}>{a.path}</span>
+                  </div>
+                  {isImg && (
+                    <img src={`/api/projects/${projectId}/artifacts/raw?path=${encodeURIComponent(a.path)}`} alt={a.path} style={{ maxWidth: '100%', borderRadius: 4, marginTop: 'var(--space-2)' }} />
+                  )}
+                  {isVid && (
+                    <video controls preload="metadata" src={`/api/projects/${projectId}/artifacts/raw?path=${encodeURIComponent(a.path)}`} style={{ maxWidth: '100%', borderRadius: 4, marginTop: 'var(--space-2)' }} />
+                  )}
+                  <div className="material-meta">
+                    <Badge tone="info">{KIND_LABELS[a.kind] ?? a.kind}</Badge>
+                    <span className="muted">{new Date(a.createdAt).toLocaleDateString()}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -160,9 +235,11 @@ function ArtifactList({
 }
 
 function ArtifactEditor({ projectId, path, onClose }: { projectId: string; path: string; onClose: () => void }): React.ReactNode {
-  const isImage = /\.(png|jpe?g|gif|webp)$/i.test(path);
+  const isImage = /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(path);
   const isPdf = /\.pdf$/i.test(path);
-  const isBinary = isImage || isPdf;
+  const isVideo = /\.(mp4|mov|avi|mkv|webm|flv)$/i.test(path);
+  const isAudio = /\.(mp3|wav|aac|flac|ogg|m4a)$/i.test(path);
+  const isBinary = isImage || isPdf || isVideo || isAudio;
 
   const { data, isLoading } = useArtifactContent(projectId, isBinary ? null : path);
   const save = useSaveArtifactContent();
@@ -219,6 +296,14 @@ function ArtifactEditor({ projectId, path, onClose }: { projectId: string; path:
         isImage ? (
           <div className="mu-artifact-image-preview">
             <img src={`/api/projects/${projectId}/artifacts/raw?path=${encodeURIComponent(path)}`} alt={path} />
+          </div>
+        ) : isVideo ? (
+          <div className="mu-artifact-video-preview">
+            <video controls src={`/api/projects/${projectId}/artifacts/raw?path=${encodeURIComponent(path)}`} />
+          </div>
+        ) : isAudio ? (
+          <div className="mu-artifact-audio-preview">
+            <audio controls src={`/api/projects/${projectId}/artifacts/raw?path=${encodeURIComponent(path)}`} />
           </div>
         ) : (
           <iframe src={`/api/projects/${projectId}/artifacts/raw?path=${encodeURIComponent(path)}`} title={path} className="mu-artifact-pdf-preview" />
@@ -281,9 +366,16 @@ function CreateArtifactModal({
         </Field>
         <Field label="类型" required>
           <Select value={kind} onChange={(e) => setKind(e.target.value)}>
-            {EDITABLE_KINDS.map((k) => (
-              <option key={k} value={k}>{KIND_LABELS[k] ?? k}</option>
-            ))}
+            <optgroup label="通用">
+              {GENERIC_KINDS.map((k) => (
+                <option key={k} value={k}>{KIND_LABELS[k] ?? k}</option>
+              ))}
+            </optgroup>
+            <optgroup label="小说专用">
+              {EDITABLE_KINDS.map((k) => (
+                <option key={k} value={k}>{KIND_LABELS[k] ?? k}</option>
+              ))}
+            </optgroup>
           </Select>
         </Field>
         <Field label="初始内容">

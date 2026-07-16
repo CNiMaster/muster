@@ -15,6 +15,7 @@ import { Badge, taskStateTone, stateLabel } from '../components/Badge';
 import { Button, toast } from '../components/Button';
 import { Textarea, Field } from '../components/Form';
 import { EmptyState, Icons } from '../components/EmptyState';
+import { getTaskProtocolRows, TASK_PROTOCOL_FIELD_LABELS } from '../domain/task-protocol';
 
 export function TaskDetailPage(): React.ReactElement {
   const { taskId = '' } = useParams();
@@ -80,7 +81,7 @@ export function TaskDetailPage(): React.ReactElement {
         </div>
       </header>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16 }}>
+      <div className="task-detail-layout">
         <div>
           {task.state === 'waiting_input' && <ClarifyCard taskId={task.id} onSubmit={(ans) => doAction('clarify', ans)} loading={action.isPending} />}
           
@@ -139,10 +140,10 @@ export function TaskDetailPage(): React.ReactElement {
               </Card>
             );
           })() : (
-            <Card title="输入协议" className="section">
-              <pre className="charter">{JSON.stringify(task.inputProtocol ?? {}, null, 2)}</pre>
-            </Card>
+            <ProtocolCard title="工作交接单 · 我需要的信息" protocol={task.inputProtocol ?? {}} />
           )}
+
+          <ProtocolCard title="完成时应提交" protocol={task.outputProtocol ?? {}} emptyHint="按工作交接单提交结论、交付物、风险和后续动作。" />
 
           {(task.artifacts?.length ?? 0) > 0 && (
             <Card title="成果变更" className="section">
@@ -181,6 +182,15 @@ export function TaskDetailPage(): React.ReactElement {
       </div>
     </div>
   );
+}
+
+function ProtocolCard({ title, protocol, emptyHint }: { title: string; protocol: Record<string, unknown>; emptyHint?: string }): React.ReactElement {
+  const rows = getTaskProtocolRows(protocol);
+  const requiredFields = Array.isArray(protocol.requiredFields) ? protocol.requiredFields.map(String) : [];
+  return <Card title={title} className="section">
+    {requiredFields.length > 0 && <div className="protocol-required-fields"><span className="muted">标准字段</span>{requiredFields.map((field) => <Badge key={field}>{TASK_PROTOCOL_FIELD_LABELS[field] ?? field}</Badge>)}</div>}
+    {rows.length > 0 ? <dl className="task-protocol-details">{rows.map((row) => <div key={row.key}><dt>{row.label}</dt><dd>{row.value}</dd></div>)}</dl> : <p className="muted">{emptyHint ?? '尚未填写结构化交接信息。'}</p>}
+  </Card>;
 }
 
 function ClarifyCard({ taskId: _taskId, onSubmit, loading }: { taskId: string; onSubmit: (answer: string) => void; loading: boolean }): React.ReactElement {

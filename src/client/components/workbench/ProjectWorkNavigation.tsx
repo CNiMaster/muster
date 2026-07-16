@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import type { Agent, Department, Task } from '../../api/types';
 import type { ProjectTaskDTO } from '../../hooks/queries';
 
-export type ProjectToolKey = 'tasks' | 'plans' | 'dashboard' | 'artifacts' | 'reports' | 'usage' | 'character' | 'settings';
+export type ProjectToolKey = 'tasks' | 'plans' | 'dashboard' | 'artifacts' | 'materials' | 'reports' | 'usage' | 'character' | 'settings';
 export type ProjectSurfaceView = 'task' | 'employee' | 'group' | 'activity' | 'tool';
 
 const COMMON_TASK_VERBS = /^(完成|梳理|建立|实现|测试|修复|优化|设计|开发|检查|更新|创建|明确|制定|处理|进行|准备|编写|验证)/;
@@ -99,6 +99,7 @@ export function ProjectWorkNavigation({
 
     <div className="work-nav-section"><div className="work-nav-heading"><span>项目资料</span></div>
       <Link className={`work-nav-item ${activeTool === 'artifacts' ? 'is-active' : ''}`} to={`/projects/${projectId}/artifacts`}><span className="work-nav-icon">果</span><span className="work-nav-label">成果与文件</span></Link>
+      <Link className={`work-nav-item ${activeTool === 'materials' ? 'is-active' : ''}`} to={`/projects/${projectId}/materials`}><span className="work-nav-icon">材</span><span className="work-nav-label">素材库</span></Link>
       <Link className={`work-nav-item ${activeTool === 'reports' ? 'is-active' : ''}`} to={`/projects/${projectId}/reports`}><span className="work-nav-icon">复</span><span className="work-nav-label">复盘</span></Link>
       <Link className={`work-nav-item ${activeTool === 'usage' ? 'is-active' : ''}`} to={`/projects/${projectId}/usage`}><span className="work-nav-icon">量</span><span className="work-nav-label">用量</span></Link>
       {novel && <Link className={`work-nav-item ${activeTool === 'character' ? 'is-active' : ''}`} to={`/projects/${projectId}/character-graph`}><span className="work-nav-icon">人</span><span className="work-nav-label">人物关系</span></Link>}

@@ -8,7 +8,7 @@ import { getSystemSettings } from './setting';
 const execFileAsync = promisify(execFile);
 
 export interface ProposalResult<T> {
-  source: 'claude' | 'offline_template';
+  source: 'claude' | 'offline_template' | 'template_architect' | 'builtin_template';
   proposal: T;
   warning?: string;
 }

@@ -67,8 +67,8 @@ export function ProjectPlansPage(): React.ReactElement {
 
   return <div className="project-plans-page">
     <header className="page-header plans-page-header">
-      <div><h1>计划与自动化</h1><p className="subtitle">定时产生员工工作单；人员协作顺序仍由公司工作流决定。</p></div>
-      {project?.companyId && <Link className="mu-btn mu-btn-subtle" to={`/companies/${project.companyId}/workflows/main`}>查看公司工作流</Link>}
+      <div><h1>计划与自动化</h1><p className="subtitle">定时产生员工工作单；谁接单、交给谁和谁验收由员工协作流程决定。</p></div>
+      {project?.companyId && <Link className="mu-btn mu-btn-subtle" to={`/companies/${project.companyId}/workflows/main`}>查看员工协作流程</Link>}
     </header>
 
     <Card title="新建定时工作" className="section">

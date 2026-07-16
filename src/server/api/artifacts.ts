@@ -14,7 +14,7 @@ import { existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { asyncHandler, param } from './middleware';
 import { getDb } from '../db/client';
-import { listArtifacts } from '../domain/artifact';
+import { listArtifacts, artifactGallery } from '../domain/artifact';
 import { getProject } from '../domain/project';
 import { PublishQueue } from '../worktree/publish-queue';
 import {
@@ -31,6 +31,14 @@ projectArtifactsRouter.get(
   '/',
   asyncHandler(async (req, res) => {
     res.json(listArtifacts(getDb(), param(req, 'id')));
+  }),
+);
+
+projectArtifactsRouter.get(
+  '/gallery',
+  asyncHandler(async (req, res) => {
+    const groupBy = req.query.groupBy === 'type' ? 'type' : 'time';
+    res.json(artifactGallery(getDb(), param(req, 'id'), groupBy));
   }),
 );
 

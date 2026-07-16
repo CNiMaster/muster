@@ -27,6 +27,44 @@ export type TaskState = (typeof TASK_STATES)[number];
 export const TASK_OUTCOMES = ['completed', 'waiting_input', 'waiting_dependency', 'blocked'] as const;
 export type TaskOutcome = (typeof TASK_OUTCOMES)[number];
 
+export interface TaskCapabilityRequirements {
+  requiredSkillIds?: string[];
+  requiredCapabilityIds?: string[];
+  knowledgeTargets?: string[];
+  disabledSkillIds?: string[];
+}
+
+export interface ResolvedTaskSkill {
+  skillId: string;
+  source: 'task' | 'field' | 'employee' | 'legacy';
+  required: boolean;
+  reason: string;
+  content?: string;
+  status: 'loaded' | 'missing' | 'disabled';
+}
+
+export interface TemplateRuntimeHealthFinding {
+  id: string;
+  companyId: string;
+  fingerprint: string;
+  code: string;
+  severity: 'info' | 'warning' | 'blocking';
+  state: 'active' | 'dismissed' | 'resolved';
+  title: string;
+  message: string;
+  impact: string;
+  cause: string;
+  recommendation: string;
+  action: null | {
+    kind: 'open_module' | 'open_employee' | 'open_executor' | 'open_permission' | 'open_workflow';
+    label: string;
+    href: string;
+  };
+  resolvedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ===== 关系图类型 =====
 export const GRAPH_KINDS = ['org', 'communication', 'workflow'] as const;
 export type GraphKind = (typeof GRAPH_KINDS)[number];

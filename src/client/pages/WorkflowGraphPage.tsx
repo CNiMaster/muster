@@ -333,15 +333,15 @@ export function WorkflowGraphPage(): React.ReactElement {
     );
   };
 
-  if (isLoading) return <div className="loading">加载工作流画布中…</div>;
+  if (isLoading) return <div className="loading">加载员工协作流程中…</div>;
 
   return (
     <div className="graph-page" style={{ height: 'calc(100vh - 100px)', display: 'flex', flexDirection: 'column' }}>
       <header className="page-header" style={{ marginBottom: 'var(--space-3)' }}>
         <div>
-          <h1>公司工作流图编辑器</h1>
+          <h1>员工协作流程</h1>
           <p className="subtitle" style={{ margin: 0 }}>
-            节点决定谁完成什么，连线条件决定何时引用下一位员工。任务格式继承公司设置。
+            员工节点表示谁接单，连线表示交给谁、何时交接；每一步都继承公司的任务需求与交付模板。
             <Badge tone="info" style={{ marginLeft: 'var(--space-2)' }}>{workflowId}</Badge>
             {readonly && <Badge tone="warn" style={{ marginLeft: 'var(--space-2)' }}>上班只读</Badge>}
           </p>
@@ -361,19 +361,19 @@ export function WorkflowGraphPage(): React.ReactElement {
             onClick={() => startWorkflow.mutate(
               { companyId, workflowId, projectId: startProjectId },
               {
-                onSuccess: () => toast('success', '工作流首个任务已进入项目队列'),
+                onSuccess: () => toast('success', '协作流程的首个任务已进入项目队列'),
                 onError: (error) => toast('error', (error as Error).message),
               },
             )}
           >
-            启动工作流
+            启动协作流程
           </Button>
           <Link to={`/companies/${companyId}`}>
             <Button variant="ghost" size="sm">返回公司</Button>
           </Link>
           {!readonly && (
             <Button onClick={handleSave} loading={saveWorkflow.isPending} size="sm">
-              保存工作流
+              保存协作流程
             </Button>
           )}
         </div>
@@ -398,8 +398,8 @@ export function WorkflowGraphPage(): React.ReactElement {
             <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1, pointerEvents: 'none' }}>
               <EmptyState
                 icon={Icons.graph}
-                title="工作流画布为空"
-                hint={readonly ? '请先下班，再新增工作流节点。' : '在右侧侧边栏中输入名称并点击「新建节点」开始绘制工作流。'}
+                title="协作流程还没有员工交接节点"
+                hint={readonly ? '请先下班，再配置员工交接关系。' : '从右侧新增员工步骤，再拖动连线定义谁接单、交给谁和谁验收。'}
               />
             </div>
           )}
@@ -423,7 +423,7 @@ export function WorkflowGraphPage(): React.ReactElement {
         </div>
 
         {/* 右侧属性侧边栏 */}
-        <Card title={selectedNode ? '编辑节点属性' : '工作流工具箱'} style={{ height: '100%', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+        <Card title={selectedNode ? '编辑员工交接步骤' : '协作流程工具箱'} style={{ height: '100%', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
           {readonly ? (
             <div className="subtle" style={{ fontSize: 'var(--text-sm)' }}>
               🔒 公司运行中（已上班），工作流图处于锁定只读状态。请在下班后再做调整。

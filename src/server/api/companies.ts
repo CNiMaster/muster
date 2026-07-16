@@ -27,6 +27,7 @@ import type { CompanyState } from '../../shared/types';
 import { listProjects } from '../domain/project';
 import { ensureProjectThreads } from '../domain/thread';
 import { summarizeCompanyUsage } from '../domain/usage';
+import { companyArtifactGallery } from '../domain/artifact';
 import { listAgents } from '../domain/agent';
 import { listDepartments } from '../domain/department';
 import { getCompanyCockpit } from '../domain/company-cockpit';
@@ -115,6 +116,15 @@ companiesRouter.get(
   '/:id/usage',
   asyncHandler(async (req, res) => {
     res.json(summarizeCompanyUsage(getDb(), param(req, 'id')));
+  }),
+);
+
+/** 公司级成品画廊（跨项目聚合，按 time/type/project 分组）。 */
+companiesRouter.get(
+  '/:id/artifacts',
+  asyncHandler(async (req, res) => {
+    const groupBy = req.query.groupBy === 'type' ? 'type' : req.query.groupBy === 'project' ? 'project' : 'time';
+    res.json(companyArtifactGallery(getDb(), param(req, 'id'), groupBy));
   }),
 );
 

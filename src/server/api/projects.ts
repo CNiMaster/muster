@@ -39,7 +39,7 @@ import { syncAgentMemoryFiles } from '../domain/agent-home';
 import { deleteProjectTrigger, listProjectTriggers, registerDefaultNovelScheduleTriggers, registerScheduleTrigger, setProjectTriggerEnabled } from '../domain/triggers';
 import { initializeNovelProject } from '../domain/novel-template';
 import { getCharacterGraph } from '../domain/character-graph';
-import {archiveProjectTask,completeProjectTask,createProjectTask,getProjectTask,listProjectTasks} from '../domain/project-task';
+import {archiveProjectTask,completeProjectTask,createProjectTask,getProjectTaskInProject,listProjectTasks} from '../domain/project-task';
 import {listProjectTaskThreads} from '../domain/project-task-thread';
 import { realtime } from '../realtime';
 import { makeLifecycleEvent } from '../../shared/lifecycle-events';
@@ -112,9 +112,9 @@ projectById.patch(
 
 projectById.get('/project-tasks',asyncHandler(async(req,res)=>res.json(listProjectTasks(getDb(),param(req,'id')))));
 projectById.post('/project-tasks',asyncHandler(async(req,res)=>{const input=z.object({title:z.string().min(1),brief:z.string().optional()}).parse(req.body);const projectId=param(req,'id');const task=createProjectTask(getDb(),{projectId,...input});const project=getProject(getDb(),projectId);realtime.publish(makeLifecycleEvent('project-task.created',{projectTaskId:task.id},{companyId:project.companyId,projectId}));res.status(201).json(task);}));
-projectById.get('/project-tasks/:projectTaskId',asyncHandler(async(req,res)=>{const task=getProjectTask(getDb(),param(req,'projectTaskId'));if(task.projectId!==param(req,'id'))throw new Error('项目任务不属于当前项目');res.json({...task,threads:listProjectTaskThreads(getDb(),task.id)});}));
-projectById.post('/project-tasks/:projectTaskId/complete',asyncHandler(async(req,res)=>{const projectId=param(req,'id'),task=completeProjectTask(getDb(),param(req,'projectTaskId')),project=getProject(getDb(),projectId);realtime.publish(makeLifecycleEvent('project-task.completed',{projectTaskId:task.id},{companyId:project.companyId,projectId}));res.json(task);}));
-projectById.post('/project-tasks/:projectTaskId/archive',asyncHandler(async(req,res)=>{const projectId=param(req,'id'),task=archiveProjectTask(getDb(),param(req,'projectTaskId')),project=getProject(getDb(),projectId);realtime.publish(makeLifecycleEvent('project-task.archived',{projectTaskId:task.id},{companyId:project.companyId,projectId}));res.json(task);}));
+projectById.get('/project-tasks/:projectTaskId',asyncHandler(async(req,res)=>{const task=getProjectTaskInProject(getDb(),param(req,'projectTaskId'),param(req,'id'));res.json({...task,threads:listProjectTaskThreads(getDb(),task.id)});}));
+projectById.post('/project-tasks/:projectTaskId/complete',asyncHandler(async(req,res)=>{const projectId=param(req,'id'),task=completeProjectTask(getDb(),param(req,'projectTaskId'),projectId),project=getProject(getDb(),projectId);realtime.publish(makeLifecycleEvent('project-task.completed',{projectTaskId:task.id},{companyId:project.companyId,projectId}));res.json(task);}));
+projectById.post('/project-tasks/:projectTaskId/archive',asyncHandler(async(req,res)=>{const projectId=param(req,'id'),task=archiveProjectTask(getDb(),param(req,'projectTaskId'),projectId),project=getProject(getDb(),projectId);realtime.publish(makeLifecycleEvent('project-task.archived',{projectTaskId:task.id},{companyId:project.companyId,projectId}));res.json(task);}));
 
 projectById.get('/automation', asyncHandler(async (req, res) => {
   res.json(listProjectTriggers(getDb(), param(req, 'id')));
@@ -129,8 +129,8 @@ projectById.post('/automation/schedules', asyncHandler(async (req, res) => {
   }).parse(req.body);
   const projectId = param(req, 'id');
   const project = getProject(getDb(), projectId);
-  const projectTask = getProjectTask(getDb(), input.projectTaskId);
-  if (projectTask.projectId !== projectId || projectTask.state !== 'active') {
+  const projectTask = getProjectTaskInProject(getDb(), input.projectTaskId, projectId);
+  if (projectTask.state !== 'active') {
     throw new AppError(ErrorCode.VALIDATION, '计划任务必须绑定当前项目中进行中的项目任务');
   }
   if (input.assigneeAgentId && getAgent(getDb(), input.assigneeAgentId).companyId !== project.companyId) {

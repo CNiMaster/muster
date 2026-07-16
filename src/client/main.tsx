@@ -18,6 +18,7 @@ const TasksPage = lazy(() => import('./pages/TasksPage').then((m) => ({ default:
 const UsagePage = lazy(() => import('./pages/UsagePage').then((m) => ({ default: m.UsagePage })));
 const TaskDetailPage = lazy(() => import('./pages/TaskDetailPage').then((m) => ({ default: m.TaskDetailPage })));
 const ArtifactsPage = lazy(() => import('./pages/ArtifactsPage').then((m) => ({ default: m.ArtifactsPage })));
+const MaterialsPage = lazy(() => import('./pages/MaterialsPage').then((m) => ({ default: m.MaterialsPage })));
 const ReportsPage = lazy(() => import('./pages/ReportsPage').then((m) => ({ default: m.ReportsPage })));
 const DashboardPage = lazy(() => import('./pages/DashboardPage').then((m) => ({ default: m.DashboardPage })));
 const WorkflowGraphPage = lazy(() => import('./pages/WorkflowGraphPage').then((m) => ({ default: m.WorkflowGraphPage })));
@@ -59,6 +60,7 @@ const router = createBrowserRouter([
       { path: 'projects/:projectId/plans', element: <ProjectToolPageShell tool="plans"><ProjectPlansPage /></ProjectToolPageShell> },
       { path: 'projects/:projectId/usage', element: <ProjectToolPageShell tool="usage"><UsagePage /></ProjectToolPageShell> },
       { path: 'projects/:projectId/artifacts', element: <ProjectToolPageShell tool="artifacts"><ArtifactsPage /></ProjectToolPageShell> },
+      { path: 'projects/:projectId/materials', element: <ProjectToolPageShell tool="materials"><MaterialsPage /></ProjectToolPageShell> },
       { path: 'projects/:projectId/reports', element: <ProjectToolPageShell tool="reports"><ReportsPage /></ProjectToolPageShell> },
       { path: 'projects/:projectId/dashboard', element: <ProjectToolPageShell tool="dashboard"><DashboardPage /></ProjectToolPageShell> },
       { path: 'projects/:projectId/settings', element: <ProjectToolPageShell tool="settings"><ProjectSettingsPage /></ProjectToolPageShell> },

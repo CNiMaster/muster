@@ -5,6 +5,7 @@ import { Badge } from '../Badge';
 import { Button } from '../Button';
 import { Card } from '../Card';
 import { Field, Select } from '../Form';
+import { selectPreferredExecutor } from '../../domain/executor-selection';
 
 function connectionLabel(profile: ExecutorProfileDTO): { label: string; tone: 'ok' | 'warn' | 'err' | 'info' | 'neutral' } {
   if (!profile.connection) return { label: '创建后测试', tone: 'warn' };
@@ -22,7 +23,7 @@ export function ExecutorReadinessStep({ draft, bindings, profiles, policies, onC
   onRefresh?: () => Promise<void>;
   refreshing?: boolean;
 }): React.ReactElement {
-  const executor = profiles.find((profile) => profile.connection?.status === 'connected') ?? profiles[0];
+  const executor = selectPreferredExecutor(profiles);
   const policy = policies[0];
   const configured = draft.employees.filter((employee) => bindings[employee.key]?.executorProfileId && bindings[employee.key]?.permissionPolicyId).length;
   const connection = executor ? connectionLabel(executor) : null;

@@ -1,11 +1,13 @@
 import type React from 'react';
 import { useEffect, useState } from 'react';
-import { useSaveSystemSettings, useSystemSettings, useTestConnection } from '../hooks/queries';
+import { useSaveSystemSettings, useSystemSettings, useTestConnection, useTools, useSyncTools, useUpdateTool } from '../hooks/queries';
 import { Badge } from '../components/Badge';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
 import { Field, Input, Select } from '../components/Form';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
+import { ToolRegistryPanel } from '../components/settings/ToolRegistryPanel';
+import { CredentialStorePanel } from '../components/settings/CredentialStorePanel';
 
 export function SettingsPage(): React.ReactElement {
   const { data: settings, isLoading } = useSystemSettings();
@@ -71,6 +73,10 @@ export function SettingsPage(): React.ReactElement {
     openai: 'OpenAI 兼容 API',
     gemini: 'Gemini API',
   };
+
+  const [searchParams] = useSearchParams();
+  const focusTools = searchParams.get('view') === 'tools';
+  const focusCredentials = searchParams.get('view') === 'credentials';
 
   return (
     <div className="settings-page">
@@ -151,6 +157,9 @@ export function SettingsPage(): React.ReactElement {
             </Field>
           </div>
         </details>
+
+        <ToolRegistryPanel defaultOpen={focusTools} />
+        <CredentialStorePanel defaultOpen={focusCredentials} />
       </div>
     </div>
   );

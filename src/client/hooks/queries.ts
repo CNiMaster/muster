@@ -2,8 +2,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
 import type { Company, Agent, AgentExecutorJson, AgentProfile, CompanyEmployee, MemoryCandidate, MemoryEntry, Department, Project, Relationship, Task, UsageSummary, ProjectAgentThread, Workspace } from '../api/types';
-import type { CompanyCockpitDTO } from '../../shared/types';
-import type { CompanySetupDraft, SetupBindings } from '../domain/company-templates';
+import type { CompanyCockpitDTO, TemplateRuntimeHealthFinding } from '../../shared/types';
+import type { CompanySetupDraft, CompanyTemplateOption, SetupBindings } from '../domain/company-templates';
 import type { RecruitmentDraft } from '../../shared/role-templates';
 
 export interface ExecutorProfileDTO {
@@ -54,6 +54,61 @@ export interface ProjectProposal {
 }
 export interface ProjectTaskThreadDTO { id:string; employeeId:string; executorProfileId:string|null; vendorSessionId:string|null; previousVendorSessionId:string|null; state:string; runCount:number; transcriptBytes:number; compactionCount:number; lastCompactionAt:string|null; updatedAt:string }
 export interface ProjectTaskDTO { id:string; projectId:string; seq:number; title:string; brief:string; state:'active'|'completed'|'archived'; completedAt:string|null; archivedAt:string|null; createdAt:string; updatedAt:string; threads?:ProjectTaskThreadDTO[] }
+
+export interface ToolRegistryDTO {
+  id: string;
+  capabilityId: string;
+  implementation: 'local' | 'api';
+  title: string;
+  filePath: string;
+  executorKind: string;
+  credentialKeys: string;
+  installHint: string | null;
+  checkHint: string | null;
+  maturity: 'stable' | 'experimental' | 'deprecated';
+  isActive: boolean;
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CredentialDefinitionDTO {
+  id: string;
+  name: string;
+  credentialKey: string;
+  kind: 'env' | 'keychain' | 'cli-login';
+  category: 'llm' | 'external-api';
+  description: string;
+  applicableExecutors: string[];
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CompanyCredentialDTO {
+  companyId: string;
+  credentialDefinitionId: string;
+  overrideKey: string | null;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+  definition: CredentialDefinitionDTO;
+}
+
+export interface ProjectMaterialDTO {
+  id: string;
+  projectId: string;
+  name: string;
+  kind: 'video' | 'audio' | 'image' | 'document' | 'link' | 'other';
+  sourceType: 'link' | 'moved' | 'copied';
+  storagePath: string | null;
+  sourceUrl: string | null;
+  tags: string[];
+  meta: Record<string, unknown>;
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
 
 // ===== Workspaces =====
 export function useWorkspaces() {
@@ -134,6 +189,29 @@ export function usePreviewCompanySetup() {
   return useMutation({
     mutationFn: (input: { templateId: CompanySetupDraft['templateId']; name: string; goal: string }) =>
       api.post<CompanySetupDraft>('/api/company-setup/preview', input),
+  });
+}
+export function useCompanyTemplateCatalog() {
+  return useQuery({
+    queryKey: ['company-template-catalog'],
+    queryFn: () => api.get<CompanyTemplateOption[]>('/api/company-setup/templates'),
+  });
+}
+export function useTemplateHealthFindings(companyId: string | undefined) {
+  return useQuery({ queryKey: ['template-health', companyId], queryFn: () => api.get<TemplateRuntimeHealthFinding[]>(`/api/companies/${companyId}/template-health`), enabled: !!companyId });
+}
+export function useRefreshTemplateHealth() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (companyId: string) => api.post<TemplateRuntimeHealthFinding[]>(`/api/companies/${companyId}/template-health/refresh`),
+    onSuccess: (data, companyId) => qc.setQueryData(['template-health', companyId], data),
+  });
+}
+export function useDismissTemplateHealthFinding() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ companyId, findingId }: { companyId: string; findingId: string }) => api.post<TemplateRuntimeHealthFinding>(`/api/companies/${companyId}/template-health/${findingId}/dismiss`),
+    onSuccess: (_data, input) => qc.invalidateQueries({ queryKey: ['template-health', input.companyId] }),
   });
 }
 export function useCommitCompanySetup() {
@@ -900,6 +978,22 @@ export function useRollbackArtifact() {
   });
 }
 
+/** 成品画廊分组(按 time/type 聚合)。 */
+export interface ArtifactGalleryGroup {
+  key: string;
+  label: string;
+  count: number;
+  items: Artifact[];
+}
+
+export function useArtifactGallery(projectId: string | undefined, groupBy: 'time' | 'type' = 'time') {
+  return useQuery({
+    queryKey: ['artifact-gallery', projectId, groupBy],
+    queryFn: () => api.get<ArtifactGalleryGroup[]>(`/api/projects/${projectId}/artifacts/gallery?groupBy=${groupBy}`),
+    enabled: !!projectId,
+  });
+}
+
 /** 关键事件聚合 feed（PRD:346,349）。 */
 export interface FeedEvent {
   id: string;
@@ -1184,3 +1278,135 @@ export function useTestConnection() {
       api.post<any>('/api/settings/test-connection', payload),
   });
 }
+
+// ===== 工具档案(能力中心)=====
+export function useTools(filter?: { capabilityId?: string; implementation?: string; activeOnly?: boolean }) {
+  const params = new URLSearchParams();
+  if (filter?.capabilityId) params.set('capability', filter.capabilityId);
+  if (filter?.implementation) params.set('implementation', filter.implementation);
+  if (filter?.activeOnly) params.set('active', '1');
+  const qs = params.toString();
+  return useQuery({ queryKey: ['tools', filter], queryFn: () => api.get<ToolRegistryDTO[]>(`/api/tools${qs ? `?${qs}` : ''}`) });
+}
+
+export function useToolContent(id: string | undefined) {
+  return useQuery({ queryKey: ['tool-content', id], queryFn: () => api.get<{ content: string }>(`/api/tools/${id}/content`), enabled: !!id });
+}
+
+export function useSyncTools() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.get<{ added: number; updated: number; removed: number }>('/api/tools/sync'),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['tools'] }),
+  });
+}
+
+export function useSetToolDefaults() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (toolIds: string[]) => api.put('/api/tools/defaults', { toolIds }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['tools'] }),
+  });
+}
+
+export function useUpdateTool() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, isActive, isDefault }: { id: string; isActive?: boolean; isDefault?: boolean }) =>
+      api.put<ToolRegistryDTO>(`/api/tools/${id}`, { isActive, isDefault }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['tools'] }),
+  });
+}
+
+// ===== 凭据库(平台级基本能力)=====
+export function useCredentialDefinitions(filter?: { category?: string; defaultsOnly?: boolean }) {
+  const params = new URLSearchParams();
+  if (filter?.category) params.set('category', filter.category);
+  if (filter?.defaultsOnly) params.set('defaults', '1');
+  const qs = params.toString();
+  return useQuery({ queryKey: ['credential-definitions', filter], queryFn: () => api.get<CredentialDefinitionDTO[]>(`/api/credentials${qs ? `?${qs}` : ''}`) });
+}
+
+export function useCreateCredentialDefinition() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { name: string; credentialKey: string; kind?: string; category: 'llm' | 'external-api'; description?: string; applicableExecutors?: string[]; isDefault?: boolean }) =>
+      api.post<CredentialDefinitionDTO>('/api/credentials', input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['credential-definitions'] }),
+  });
+}
+
+export function useUpdateCredentialDefinition() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...patch }: { id: string } & Partial<CredentialDefinitionDTO>) =>
+      api.put<CredentialDefinitionDTO>(`/api/credentials/${id}`, patch),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['credential-definitions'] }),
+  });
+}
+
+export function useDeleteCredentialDefinition() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.delete(`/api/credentials/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['credential-definitions'] }),
+  });
+}
+
+export function useSetCredentialDefault() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, isDefault }: { id: string; isDefault: boolean }) =>
+      api.put<CredentialDefinitionDTO>(`/api/credentials/${id}/default`, { isDefault }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['credential-definitions'] }),
+  });
+}
+
+export function useCompanyCredentials(companyId: string | undefined) {
+  return useQuery({ queryKey: ['company-credentials', companyId], queryFn: () => api.get<CompanyCredentialDTO[]>(`/api/companies/${companyId}/credentials`), enabled: !!companyId });
+}
+
+export function useSetCompanyCredential() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ companyId, definitionId, overrideKey, enabled }: { companyId: string; definitionId: string; overrideKey?: string | null; enabled?: boolean }) =>
+      api.put<CompanyCredentialDTO>(`/api/companies/${companyId}/credentials/${definitionId}`, { overrideKey, enabled }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['company-credentials'] }),
+  });
+}
+
+// ===== 项目素材区 =====
+export function useMaterials(projectId: string | undefined, filter?: { kind?: string; tag?: string }) {
+  const params = new URLSearchParams();
+  if (filter?.kind) params.set('kind', filter.kind);
+  if (filter?.tag) params.set('tag', filter.tag);
+  const qs = params.toString();
+  return useQuery({ queryKey: ['materials', projectId, filter], queryFn: () => api.get<ProjectMaterialDTO[]>(`/api/projects/${projectId}/materials${qs ? `?${qs}` : ''}`), enabled: !!projectId });
+}
+
+export function useImportMaterial() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, ...input }: { projectId: string; mode: 'link' | 'moved' | 'copied'; sourcePath?: string; sourceUrl?: string; name?: string; tags?: string[] }) =>
+      api.post<ProjectMaterialDTO>(`/api/projects/${projectId}/materials`, input),
+    onSuccess: (_data, vars) => qc.invalidateQueries({ queryKey: ['materials', vars.projectId] }),
+  });
+}
+
+export function useDeleteMaterial() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, projectId }: { id: string; projectId: string }) => api.delete(`/api/projects/${projectId}/materials/${id}`),
+    onSuccess: (_data, vars) => qc.invalidateQueries({ queryKey: ['materials', vars.projectId] }),
+  });
+}
+
+export function useUpdateMaterial() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, projectId, ...patch }: { id: string; projectId: string; name?: string; tags?: string[] }) =>
+      api.put<ProjectMaterialDTO>(`/api/projects/${projectId}/materials/${id}`, patch),
+    onSuccess: (_data, vars) => qc.invalidateQueries({ queryKey: ['materials', vars.projectId] }),
+  });
+}
+
