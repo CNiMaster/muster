@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type React from 'react';
 import { Link } from 'react-router-dom';
 import { WorkbenchGuide } from './WorkbenchGuide';
-import { useWorkbenchPreferences } from './useWorkbenchPreferences';
+import { MIN_WORKBENCH_SURFACE_WIDTH, useWorkbenchPreferences } from './useWorkbenchPreferences';
 
 export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspectorLabel, navigation, inspector, primaryAction, attentionCount = 0, children }: {
   scopeKey: string;
@@ -29,7 +29,11 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [preferences.toggleLeft, preferences.toggleRight]);
 
-  const style = { '--work-left': `${preferences.leftWidth}px`, '--work-right': `${preferences.rightWidth}px` } as React.CSSProperties;
+  const style = {
+    '--work-left': `${preferences.leftWidth}px`,
+    '--work-right': `${preferences.rightWidth}px`,
+    '--work-surface-min': `${MIN_WORKBENCH_SURFACE_WIDTH}px`,
+  } as React.CSSProperties;
   return <section className={`workbench ${preferences.leftOpen ? 'has-left' : ''} ${preferences.rightOpen ? 'has-right' : ''}`} style={style}>
     <header className="workbench-header">
       <Link to="/" className="workbench-brand" aria-label="返回 Muster 首页">M</Link>

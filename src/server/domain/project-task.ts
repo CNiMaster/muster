@@ -2,16 +2,20 @@ import type {DB} from '../db/client';
 import {AppError,ErrorCode} from '../../shared/errors';
 import {nowIso,shortId} from '../../shared/utils';
 import {getProject} from './project';
+import { emptyProjectLaunchBrief, type ProjectLaunchBrief, type ProjectLaunchDiscovery } from '../../shared/project-launch';
+import { readProjectLaunchSnapshot, type ProjectLaunchState } from './project-launch';
 
 export type ProjectTaskState='active'|'completed'|'archived';
-export interface ProjectTask{id:string;projectId:string;seq:number;title:string;brief:string;state:ProjectTaskState;completedAt:string|null;archivedAt:string|null;createdAt:string;updatedAt:string}
-type Row={id:string;project_id:string;seq:number;title:string;brief:string;state:ProjectTaskState;completed_at:string|null;archived_at:string|null;created_at:string;updated_at:string};
-const fromRow=(r:Row):ProjectTask=>({id:r.id,projectId:r.project_id,seq:r.seq,title:r.title,brief:r.brief,state:r.state,completedAt:r.completed_at,archivedAt:r.archived_at,createdAt:r.created_at,updatedAt:r.updated_at});
+export interface ProjectTask{id:string;projectId:string;seq:number;title:string;brief:string;state:ProjectTaskState;launchState:ProjectLaunchState;launchBrief:ProjectLaunchBrief;capabilityDiscovery:ProjectLaunchDiscovery|null;launchConfirmedAt:string|null;completedAt:string|null;archivedAt:string|null;createdAt:string;updatedAt:string}
+type Row={id:string;project_id:string;seq:number;title:string;brief:string;state:ProjectTaskState;launch_state?:string;launch_brief_json?:string;capability_discovery_json?:string;launch_confirmed_at?:string|null;completed_at:string|null;archived_at:string|null;created_at:string;updated_at:string};
+const fromRow=(r:Row):ProjectTask=>{const launch=readProjectLaunchSnapshot(r);return{id:r.id,projectId:r.project_id,seq:r.seq,title:r.title,brief:r.brief,state:r.state,launchState:launch.state,launchBrief:launch.brief,capabilityDiscovery:launch.discovery,launchConfirmedAt:launch.confirmedAt,completedAt:r.completed_at,archivedAt:r.archived_at,createdAt:r.created_at,updatedAt:r.updated_at};};
 
-export function createProjectTask(db:DB,input:{projectId:string;title:string;brief?:string}):ProjectTask{
+export function createProjectTask(db:DB,input:{projectId:string;title:string;brief?:string;launchState?:ProjectLaunchState;launchBrief?:ProjectLaunchBrief}):ProjectTask{
   getProject(db,input.projectId);const title=input.title.trim();if(!title)throw new AppError(ErrorCode.VALIDATION,'项目任务标题不能为空');
   const seq=((db.prepare('SELECT MAX(seq) m FROM project_task WHERE project_id=?').get(input.projectId) as {m:number|null})?.m??0)+1;
-  const id=shortId('pt_'),now=nowIso();db.prepare('INSERT INTO project_task (id,project_id,seq,title,brief,state,created_at,updated_at) VALUES (?,?,?,?,?,\'active\',?,?)').run(id,input.projectId,seq,title,input.brief?.trim()??'',now,now);return getProjectTask(db,id);
+  const id=shortId('pt_'),now=nowIso(),launchState=input.launchState??'confirmed',launchBrief=input.launchBrief??emptyProjectLaunchBrief();
+  db.prepare("INSERT INTO project_task (id,project_id,seq,title,brief,state,launch_state,launch_brief_json,capability_discovery_json,launch_confirmed_at,created_at,updated_at) VALUES (?,?,?,?,?,'active',?,?,?, ?,?,?)")
+    .run(id,input.projectId,seq,title,input.brief?.trim()??'',launchState,JSON.stringify(launchBrief),'{}',launchState==='confirmed'?now:null,now,now);return getProjectTask(db,id);
 }
 export function getProjectTask(db:DB,id:string):ProjectTask{const row=db.prepare('SELECT * FROM project_task WHERE id=?').get(id) as Row|undefined;if(!row)throw new AppError(ErrorCode.NOT_FOUND,`项目任务不存在: ${id}`);return fromRow(row);}
 export function getProjectTaskInProject(db:DB,id:string,projectId:string):ProjectTask{const task=getProjectTask(db,id);if(task.projectId!==projectId)throw new AppError(ErrorCode.VALIDATION,'项目任务不属于当前项目');return task;}

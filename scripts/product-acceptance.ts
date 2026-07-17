@@ -8,6 +8,7 @@ import { createExecutorProfile } from '../src/server/domain/executor-profile';
 import { getEmploymentHealth } from '../src/server/domain/executor-health';
 import { createPermissionPolicy } from '../src/server/domain/permission';
 import { archiveProjectTask } from '../src/server/domain/project-task';
+import { confirmProjectLaunch, discoverProjectLaunchCapabilities } from '../src/server/domain/project-launch';
 import { createTask } from '../src/server/domain/task';
 import { nowIso } from '../src/shared/utils';
 import { getCompanyTemplateInstallation, listCapabilityBindings } from '../src/server/domain/template-installation';
@@ -41,6 +42,9 @@ try {
   assert.ok(health.every((item) => item.code === 'ready'), '探测成功且权限已绑定的员工应可运行');
   assert.doesNotMatch(JSON.stringify(health), /authorization|bearer|api[_-]?key|secret|password/i, '健康 DTO 不得包含凭据字段或授权头');
 
+  const launchBrief = { ...result.projectTask.launchBrief, expectedOutcome: result.projectTask.brief || '交付一个可运行的产品', requiredSkillIds: ['planning-and-task-breakdown'] };
+  assert.equal(discoverProjectLaunchCapabilities(db, result.projectTask.id, launchBrief).state, 'ready_for_confirmation', '项目任务必须先生成能力发现快照');
+  assert.equal(confirmProjectLaunch(db, result.projectTask.id, launchBrief).state, 'confirmed', '用户确认后才允许进入制作');
   const workOrder = createTask(db, { projectId: result.project.id, projectTaskId: result.projectTask.id, assigneeAgentId: result.employees[0]!.id, title: '完成验收工作单', requiredSkillIds: ['planning-and-task-breakdown'] });
   assert.equal(workOrder.projectTaskId, result.projectTask.id, '员工工作单必须属于首个项目任务');
   assert.equal(resolveTaskSkills(db, workOrder)[0]?.status, 'loaded', 'Task 要求的本地 Skill 必须按需加载');

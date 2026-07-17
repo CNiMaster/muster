@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
@@ -30,5 +30,31 @@ describe('calm workbench shell', () => {
     expect(screen.getByRole('link', { name: '执行器' })).toBeVisible();
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('dialog', { name: '搜索或跳转' })).not.toBeInTheDocument();
+  });
+
+  it('keeps the saved desktop pane choice when a narrow viewport temporarily hides it', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<MemoryRouter><WorkbenchShell scopeKey="project:responsive" breadcrumb="公司 / 项目" navigationLabel="项目工作列表" inspectorLabel="项目现场" navigation={<p>任务列表</p>} inspector={<p>当前现场</p>}><p>当前工作</p></WorkbenchShell></MemoryRouter>);
+    expect(screen.getByText('任务列表')).toBeVisible();
+    expect(screen.getByText('当前现场')).toBeVisible();
+
+    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 390 });
+    window.dispatchEvent(new Event('resize'));
+    await waitFor(() => {
+      expect(screen.queryByText('任务列表')).not.toBeInTheDocument();
+      expect(screen.queryByText('当前现场')).not.toBeInTheDocument();
+    });
+    expect(JSON.parse(localStorage.getItem('muster:workbench:project:responsive') ?? '{}')).toMatchObject({ leftOpen: true, rightOpen: true });
+
+    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 1440 });
+    window.dispatchEvent(new Event('resize'));
+    await waitFor(() => {
+      expect(screen.getByText('任务列表')).toBeVisible();
+      expect(screen.getByText('当前现场')).toBeVisible();
+    });
+
+    await user.click(screen.getByRole('button', { name: '收起工作列表' }));
+    rerender(<MemoryRouter><WorkbenchShell scopeKey="project:responsive" breadcrumb="公司 / 项目" navigationLabel="项目工作列表" inspectorLabel="项目现场" navigation={<p>任务列表</p>} inspector={<p>当前现场</p>}><p>当前工作</p></WorkbenchShell></MemoryRouter>);
+    expect(screen.queryByText('任务列表')).not.toBeInTheDocument();
   });
 });

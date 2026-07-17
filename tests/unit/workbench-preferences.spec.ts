@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_WORKBENCH_PREFERENCES,
+  MIN_WORKBENCH_SURFACE_WIDTH,
   normalizeWorkbenchPreferencesForWidth,
   readWorkbenchPreferences,
   toggleWorkbenchPane,
@@ -25,6 +26,12 @@ describe('workbench preferences', () => {
     expect(normalizeWorkbenchPreferencesForWidth(saved, 1440)).toEqual(saved);
     expect(normalizeWorkbenchPreferencesForWidth(saved, 1000)).toEqual({ ...saved, rightOpen: false });
     expect(normalizeWorkbenchPreferencesForWidth(saved, 390)).toEqual({ ...saved, leftOpen: false, rightOpen: false });
+  });
+
+  it('never keeps more panes open than the viewport can fit around the minimum work surface', () => {
+    const widePanes = { ...DEFAULT_WORKBENCH_PREFERENCES, leftWidth: 360, rightWidth: 420 };
+    expect(normalizeWorkbenchPreferencesForWidth(widePanes, 1_200)).toEqual({ ...widePanes, rightOpen: false });
+    expect(normalizeWorkbenchPreferencesForWidth(widePanes, 360 + MIN_WORKBENCH_SURFACE_WIDTH - 1)).toEqual({ ...widePanes, leftOpen: false, rightOpen: false });
   });
 
   it('keeps only one overlay pane open below the desktop breakpoint', () => {

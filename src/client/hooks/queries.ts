@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
 import type { Company, Agent, AgentExecutorJson, AgentProfile, CompanyEmployee, MemoryCandidate, MemoryEntry, Department, Project, Relationship, Task, UsageSummary, ProjectAgentThread, Workspace } from '../api/types';
 import type { CompanyCockpitDTO, TemplateRuntimeHealthFinding } from '../../shared/types';
+import type { ProjectLaunchBrief, ProjectLaunchDiscovery } from '../../shared/project-launch';
 import type { CompanySetupDraft, CompanyTemplateOption, SetupBindings } from '../domain/company-templates';
 import type { RecruitmentDraft } from '../../shared/role-templates';
 
@@ -53,7 +54,7 @@ export interface ProjectProposal {
   initialTaskTitle: string;
 }
 export interface ProjectTaskThreadDTO { id:string; employeeId:string; executorProfileId:string|null; vendorSessionId:string|null; previousVendorSessionId:string|null; state:string; runCount:number; transcriptBytes:number; compactionCount:number; lastCompactionAt:string|null; updatedAt:string }
-export interface ProjectTaskDTO { id:string; projectId:string; seq:number; title:string; brief:string; state:'active'|'completed'|'archived'; completedAt:string|null; archivedAt:string|null; createdAt:string; updatedAt:string; threads?:ProjectTaskThreadDTO[] }
+export interface ProjectTaskDTO { id:string; projectId:string; seq:number; title:string; brief:string; state:'active'|'completed'|'archived'; launchState:'draft'|'ready_for_confirmation'|'confirmed'; launchBrief:ProjectLaunchBrief; capabilityDiscovery:ProjectLaunchDiscovery|null; launchConfirmedAt:string|null; completedAt:string|null; archivedAt:string|null; createdAt:string; updatedAt:string; threads?:ProjectTaskThreadDTO[] }
 
 export interface ToolRegistryDTO {
   id: string;
@@ -766,8 +767,10 @@ export function useCreateTask() {
 
 export function useProjectTasks(projectId:string|undefined){return useQuery({queryKey:['project-tasks',projectId],queryFn:()=>api.get<ProjectTaskDTO[]>(`/api/projects/${projectId}/project-tasks`),enabled:!!projectId});}
 export function useProjectTask(projectId:string|undefined,id:string|undefined){return useQuery({queryKey:['project-task',projectId,id],queryFn:()=>api.get<ProjectTaskDTO>(`/api/projects/${projectId}/project-tasks/${id}`),enabled:!!projectId&&!!id,refetchInterval:4000});}
-export function useCreateProjectTask(){const qc=useQueryClient();return useMutation({mutationFn:({projectId,...input}:{projectId:string;title:string;brief?:string})=>api.post<ProjectTaskDTO>(`/api/projects/${projectId}/project-tasks`,input),onSuccess:data=>qc.invalidateQueries({queryKey:['project-tasks',data.projectId]})});}
+export function useCreateProjectTask(){const qc=useQueryClient();return useMutation({mutationFn:({projectId,...input}:{projectId:string;title:string;brief?:string;launchBrief?:ProjectLaunchBrief})=>api.post<ProjectTaskDTO>(`/api/projects/${projectId}/project-tasks`,input),onSuccess:data=>qc.invalidateQueries({queryKey:['project-tasks',data.projectId]})});}
 export function useProjectTaskAction(){const qc=useQueryClient();return useMutation({mutationFn:({projectId,id,action}:{projectId:string;id:string;action:'complete'|'archive'})=>api.post<ProjectTaskDTO>(`/api/projects/${projectId}/project-tasks/${id}/${action}`),onSuccess:data=>{qc.invalidateQueries({queryKey:['project-tasks',data.projectId]});qc.invalidateQueries({queryKey:['project-task',data.projectId,data.id]});}});}
+export function useDiscoverProjectLaunch(){const qc=useQueryClient();return useMutation({mutationFn:({projectId,id,launchBrief}:{projectId:string;id:string;launchBrief:ProjectLaunchBrief})=>api.post<ProjectTaskDTO>(`/api/projects/${projectId}/project-tasks/${id}/discover-capabilities`,{launchBrief}),onSuccess:data=>{qc.invalidateQueries({queryKey:['project-tasks',data.projectId]});qc.setQueryData(['project-task',data.projectId,data.id],data);}});}
+export function useConfirmProjectLaunch(){const qc=useQueryClient();return useMutation({mutationFn:({projectId,id,launchBrief}:{projectId:string;id:string;launchBrief:ProjectLaunchBrief})=>api.post<ProjectTaskDTO>(`/api/projects/${projectId}/project-tasks/${id}/confirm-launch`,{launchBrief}),onSuccess:data=>{qc.invalidateQueries({queryKey:['project-tasks',data.projectId]});qc.setQueryData(['project-task',data.projectId,data.id],data);}});}
 
 export function useTask(id: string | undefined) {
   return useQuery({
@@ -1409,4 +1412,3 @@ export function useUpdateMaterial() {
     onSuccess: (_data, vars) => qc.invalidateQueries({ queryKey: ['materials', vars.projectId] }),
   });
 }
-

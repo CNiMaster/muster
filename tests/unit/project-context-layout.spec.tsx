@@ -12,7 +12,7 @@ const agent = {
 } as Agent;
 
 const projectTask: ProjectTaskDTO = {
-  id: 'pt_1', projectId: 'pr_1', seq: 21, title: '审批恢复闭环', brief: '验证断线恢复', state: 'active', completedAt: null, archivedAt: null, createdAt: '', updatedAt: '',
+  id: 'pt_1', projectId: 'pr_1', seq: 21, title: '审批恢复闭环', brief: '验证断线恢复', state: 'active', launchState: 'confirmed', launchBrief: { expectedOutcome: '验证断线恢复', audience: '', effectAndStyle: '', constraints: '', deliverables: [], requiredCapabilityIds: [], requiredSkillIds: [], externalResearchNeeds: [], references: [], needsVisualConfirmation: false, visualReferences: [] }, capabilityDiscovery: null, launchConfirmedAt: '', completedAt: null, archivedAt: null, createdAt: '', updatedAt: '',
   threads: [{ id: 'pth_1', employeeId: 'ag_1', executorProfileId: null, vendorSessionId: 'session_1', previousVendorSessionId: null, state: 'idle', runCount: 2, transcriptBytes: 1200, compactionCount: 1, lastCompactionAt: null, updatedAt: '' }],
 };
 
@@ -22,7 +22,7 @@ const workOrder = {
 
 describe('project task workspace layout', () => {
   it('keeps the center focused on one project task and one dispatch composer', () => {
-    render(<ProjectTaskWorkspace selectedTask={projectTask} tasks={[projectTask]} agents={[agent]} draft={{ title: '', brief: '' }} creating={false} onDraftChange={vi.fn()} onCreate={vi.fn()} onSelect={vi.fn()} onComplete={vi.fn()} onArchive={vi.fn()} workOrder={{ title: '', assigneeId: '' }} onWorkOrderChange={vi.fn()} onPublishWorkOrder={vi.fn()} />);
+    render(<ProjectTaskWorkspace selectedTask={projectTask} tasks={[projectTask]} agents={[agent]} draft={{ title: '', brief: '' }} creating={false} onDraftChange={vi.fn()} onCreate={vi.fn()} onSelect={vi.fn()} onComplete={vi.fn()} onArchive={vi.fn()} workOrder={{ title: '', assigneeId: '' }} onWorkOrderChange={vi.fn()} onPublishWorkOrder={vi.fn()} discoveringLaunch={false} confirmingLaunch={false} onDiscoverLaunch={vi.fn()} onConfirmLaunch={vi.fn()} />);
     expect(screen.getByRole('heading', { name: '审批恢复闭环', level: 1 })).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: '工作内容' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '派发工作单' })).toBeDisabled();
@@ -37,5 +37,14 @@ describe('project task workspace layout', () => {
     expect(screen.getByRole('link', { name: /补齐恢复测试/ })).toHaveAttribute('href', '/tasks/tk_1');
     expect(screen.getByRole('link', { name: /自动计划/ })).toHaveAttribute('href', '/projects/pr_1/plans');
     expect(screen.getByRole('link', { name: '员工引用关系' })).toHaveAttribute('href', '/companies/co_1/graphs/communication');
+  });
+
+  it('shows requirement and capability confirmation before exposing production dispatch', () => {
+    const draftTask: ProjectTaskDTO = { ...projectTask, launchState: 'draft', launchConfirmedAt: null, launchBrief: { ...projectTask.launchBrief, expectedOutcome: '', needsVisualConfirmation: true, visualReferences: [] } };
+    const { container } = render(<ProjectTaskWorkspace selectedTask={draftTask} tasks={[draftTask]} agents={[agent]} draft={{ title: '', brief: '' }} creating={false} onDraftChange={vi.fn()} onCreate={vi.fn()} onSelect={vi.fn()} onComplete={vi.fn()} onArchive={vi.fn()} workOrder={{ title: '', assigneeId: '' }} onWorkOrderChange={vi.fn()} onPublishWorkOrder={vi.fn()} discoveringLaunch={false} confirmingLaunch={false} onDiscoverLaunch={vi.fn()} onConfirmLaunch={vi.fn()} />);
+    expect(screen.getByText('先确认想要的效果与可执行能力')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '确认需求与能力方案，允许制作' })).toBeDisabled();
+    expect(screen.getByText('制作尚未开始')).toBeInTheDocument();
+    expect(container.querySelector('.work-order-composer-heading')).toBeNull();
   });
 });

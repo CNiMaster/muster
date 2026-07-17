@@ -3,6 +3,8 @@ import { nowIso, shortId } from './utils';
 
 export interface LifecycleEventPayloadMap {
   'project-task.created': { projectTaskId: string };
+  'project-task.launch_discovered': { projectTaskId: string };
+  'project-task.launch_confirmed': { projectTaskId: string };
   'project-task.completed': { projectTaskId: string };
   'project-task.archived': { projectTaskId: string };
   'approval.requested': {

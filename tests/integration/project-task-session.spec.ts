@@ -6,6 +6,7 @@ import {createAgent} from '../../src/server/domain/agent';
 import {createProjectTask,archiveProjectTask,completeProjectTask,listProjectTasks} from '../../src/server/domain/project-task';
 import {ensureProjectTaskThread,setProjectTaskThreadSession} from '../../src/server/domain/project-task-thread';
 import {createTask} from '../../src/server/domain/task';
+import {discoverProjectLaunchCapabilities,confirmProjectLaunch} from '../../src/server/domain/project-launch';
 
 describe('project task context boundary',()=>{
   it('creates employee vendor sessions lazily per user-created project task',()=>{
@@ -59,6 +60,24 @@ describe('project task context boundary',()=>{
       expect(()=>completeProjectTask(db,projectTask.id,first.id)).toThrow(/不属于当前项目/);
       expect(()=>archiveProjectTask(db,projectTask.id,first.id)).toThrow(/不属于当前项目/);
       expect(listProjectTasks(db,second.id)[0]?.state).toBe('active');
+    }finally{close();}
+  });
+
+  it('keeps production work behind confirmed requirements, capability discovery, and visual approval',()=>{
+    const{db,close}=makeTestDb();try{
+      const company=createCompany(db,{name:'公司'});
+      const employee=createAgent(db,{companyId:company.id,name:'员工',role:'designer'});
+      const project=createProject(db,{companyId:company.id,name:'项目',rootDir:'/tmp/project'});
+      const launchBrief={expectedOutcome:'交付经过用户确认的发布视觉方案',audience:'产品用户',effectAndStyle:'克制科技感',constraints:'不得使用未授权素材',deliverables:['设计稿'],requiredCapabilityIds:['visual-design'],requiredSkillIds:[],externalResearchNeeds:['竞品参考'],references:[],needsVisualConfirmation:true,visualReferences:[]};
+      const projectTask=createProjectTask(db,{projectId:project.id,title:'发布视觉方案',launchState:'draft',launchBrief});
+      expect(()=>createTask(db,{projectId:project.id,projectTaskId:projectTask.id,assigneeAgentId:employee.id,title:'直接开始制作'})).toThrow(/尚未完成需求与能力确认/);
+      const discovered=discoverProjectLaunchCapabilities(db,projectTask.id,launchBrief);
+      expect(discovered.state).toBe('ready_for_confirmation');
+      expect(discovered.discovery?.capabilities).toContainEqual(expect.objectContaining({capabilityId:'visual-design',status:'unavailable'}));
+      expect(()=>confirmProjectLaunch(db,projectTask.id,launchBrief)).toThrow(/视觉参考/);
+      const confirmed=confirmProjectLaunch(db,projectTask.id,{...launchBrief,visualReferences:['素材区 /references/key-visual.png']});
+      expect(confirmed.state).toBe('confirmed');
+      expect(createTask(db,{projectId:project.id,projectTaskId:projectTask.id,assigneeAgentId:employee.id,title:'按确认方案制作'}).projectTaskId).toBe(projectTask.id);
     }finally{close();}
   });
 });
