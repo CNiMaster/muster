@@ -27,6 +27,7 @@ import { appendTaskEvent } from './task-event';
 import { addTaskMessage } from './task-message';
 import { isDispatchLoop } from './speech-queue';
 import {assertProjectTaskActive,createProjectTask} from './project-task';
+import {assertProjectLaunchConfirmed} from './project-launch';
 import { getCompany } from './company';
 
 export interface Task {
@@ -221,7 +222,7 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
   let rootTaskId = input.rootTaskId ?? null;
   let projectTaskId=input.projectTaskId;
   if(input.parentTaskId){const parent=getTask(db,input.parentTaskId);projectTaskId??=parent.projectTaskId;if(projectTaskId!==parent.projectTaskId)throw new AppError(ErrorCode.VALIDATION,'子工作单必须属于父工作单的项目任务');}
-  if(projectTaskId)assertProjectTaskActive(db,projectTaskId,input.projectId);
+  if(projectTaskId){assertProjectTaskActive(db,projectTaskId,input.projectId);assertProjectLaunchConfirmed(db,projectTaskId);}
   else projectTaskId=createProjectTask(db,{projectId:input.projectId,title:input.title}).id;
   if (!rootTaskId) {
     if (input.parentTaskId) {

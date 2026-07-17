@@ -21,6 +21,8 @@ import {
   useProjectTask,
   useCreateProjectTask,
   useProjectTaskAction,
+  useDiscoverProjectLaunch,
+  useConfirmProjectLaunch,
   useCompanyCockpit,
   useDepartments,
 } from '../hooks/queries';
@@ -40,6 +42,18 @@ import { ProjectEmployeeWorkspace } from '../components/project/ProjectEmployeeW
 import { WorkbenchContextSwitcher } from '../components/workbench/WorkbenchContextSwitcher';
 import { getProjectCreationPreset } from '../domain/company-templates';
 
+export type ProjectWorkbenchView = 'task' | 'employee' | 'group' | 'activity';
+
+/**
+ * A project always needs a usable center stage.  Employee view is meaningful
+ * only after the user explicitly chooses a person; the task stage is the
+ * durable default, including for a newly created or still-unstaffed project.
+ */
+export function resolveProjectWorkbenchView(requestedView: string | null): ProjectWorkbenchView {
+  if (requestedView === 'employee' || requestedView === 'group' || requestedView === 'activity') return requestedView;
+  return 'task';
+}
+
 export function ProjectPage(): React.ReactElement {
   const { projectId, companyId } = useParams();
   if (projectId) return <ProjectDetail projectId={projectId} />;
@@ -50,9 +64,8 @@ export function ProjectPage(): React.ReactElement {
 function NewProject({ companyId }: { companyId: string }): React.ReactElement {
   const navigate = useNavigate();
   const { data: company } = useCompany(companyId);
-  const { data: agents } = useAgents(companyId);
   const createProject = useCreateProject();
-  const createTask = useCreateTask();
+  const createProjectTask = useCreateProjectTask();
   const generateProjectProposal = useGenerateProjectProposal();
   const creationPreset = getProjectCreationPreset(company?.kind);
 
@@ -109,31 +122,14 @@ function NewProject({ companyId }: { companyId: string }): React.ReactElement {
       { companyId, name, description: desc },
       {
         onSuccess: (p) => {
-          // 如果有向导的初始任务，则创建任务并开工
+          // 新项目只建立「待确认」的项目任务；确认需求与能力前不派发制作工作单。
           const initialTask = wizardResult?.initialTaskTitle || creationPreset.initialTaskTitle;
-          const defaultAssignee = creationPreset.preferredAssigneeRoles
-            .map((role) => agents?.find((agent) => agent.role === role))
-            .find((agent) => agent !== undefined)?.id ?? agents?.[0]?.id;
-
-          createTask.mutate(
-            {
-              projectId: p.id,
-              title: initialTask,
-              assigneeAgentId: defaultAssignee,
-              priority: 1,
-            },
-            {
-              onSuccess: () => {
-                toast('success', `项目「${p.name}」已创建，并已自动下发首个 Task「${initialTask}」！`);
-                // 跳转到项目详情
-                navigate(`/projects/${p.id}`);
-              },
-              onError: () => {
-                toast('success', `项目「${p.name}」已创建`);
-                navigate(`/projects/${p.id}`);
-              }
-            }
-          );
+          createProjectTask.mutate({ projectId: p.id, title: initialTask, brief: desc, launchBrief: {
+            expectedOutcome: desc || initialTask,
+            audience: wizardResult?.audience ?? '',
+            effectAndStyle: wizardResult?.style ?? '',
+            constraints: '', deliverables: [], requiredCapabilityIds: [], requiredSkillIds: [], externalResearchNeeds: [], references: [], needsVisualConfirmation: false, visualReferences: [],
+          } }, { onSuccess: (projectTask) => { toast('success', `项目「${p.name}」已创建；请先确认「${initialTask}」的需求与能力方案。`); navigate(`/projects/${p.id}?view=task&projectTask=${projectTask.id}`); } });
         },
         onError: (e) => toast('error', (e as { message?: string }).message ?? '创建失败'),
       },
@@ -288,10 +284,12 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
   const { data: projectTasks } = useProjectTasks(projectId);
   const createProjectTask = useCreateProjectTask();
   const projectTaskAction = useProjectTaskAction();
+  const discoverProjectLaunch = useDiscoverProjectLaunch();
+  const confirmProjectLaunch = useConfirmProjectLaunch();
   const createWorkOrder = useCreateTask();
   const [searchParams,setSearchParams]=useSearchParams();
   const requestedView = searchParams.get('view');
-  const projectView = requestedView === 'task' ? 'task' : requestedView === 'group' ? 'group' : requestedView === 'activity' ? 'activity' : 'employee';
+  const projectView = resolveProjectWorkbenchView(requestedView);
   const [selectedProjectTaskId,setSelectedProjectTaskId]=useState<string|undefined>(()=>searchParams.get('projectTask')??undefined);
   const {data:selectedProjectTask}=useProjectTask(projectId,selectedProjectTaskId);
   const [projectTaskTitle,setProjectTaskTitle]=useState('');
@@ -467,6 +465,10 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
         workOrder={{ title: workOrderTitle, assigneeId: workOrderAssignee }}
         onWorkOrderChange={(workOrder) => { setWorkOrderTitle(workOrder.title); setWorkOrderAssignee(workOrder.assigneeId); }}
         onPublishWorkOrder={() => { if (!selectedProjectTask) return; createWorkOrder.mutate({ projectId, projectTaskId: selectedProjectTask.id, title: workOrderTitle, assigneeAgentId: workOrderAssignee || undefined }, { onSuccess: () => { setWorkOrderTitle(''); toast('success', '员工工作单已发布'); } }); }}
+        discoveringLaunch={discoverProjectLaunch.isPending}
+        confirmingLaunch={confirmProjectLaunch.isPending}
+        onDiscoverLaunch={(id, launchBrief) => discoverProjectLaunch.mutate({ projectId, id, launchBrief }, { onSuccess: () => toast('success', '已检查当前执行器、能力绑定、Skill 与工具候选') , onError: (error) => toast('error', (error as Error).message) })}
+        onConfirmLaunch={(id, launchBrief) => confirmProjectLaunch.mutate({ projectId, id, launchBrief }, { onSuccess: () => toast('success', '制作前提已确认，现在可以派发工作单') , onError: (error) => toast('error', (error as Error).message) })}
       />}
 
       {/* 高频：对话 + 活动上移到首屏 */}

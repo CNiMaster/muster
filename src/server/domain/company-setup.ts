@@ -132,7 +132,17 @@ export function commitCompanySetup(db: DB, draft: CompanySetupDraft, bindings: S
       initializeNovelProject(db, project.id);
       registerDefaultNovelScheduleTriggers(db, project.id);
     }
-    const projectTask = createProjectTask(db, { projectId: project.id, ...draft.firstProjectTask });
+    const projectTask = createProjectTask(db, {
+      projectId: project.id,
+      ...draft.firstProjectTask,
+      launchState: 'draft',
+      launchBrief: {
+        expectedOutcome: draft.firstProjectTask.brief,
+        audience: '', effectAndStyle: '', constraints: '', deliverables: [],
+        requiredCapabilityIds: [], requiredSkillIds: [], externalResearchNeeds: [], references: [],
+        needsVisualConfirmation: false, visualReferences: [],
+      },
+    });
     installCompanyTemplate(db, {
       companyId: updatedCompany.id,
       draft,

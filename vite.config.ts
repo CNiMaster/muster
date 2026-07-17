@@ -7,6 +7,9 @@ export default defineConfig({
   publicDir: resolve(__dirname, 'public'),
   plugins: [react()],
   resolve: {
+    // Worktrees can otherwise prebundle React separately for routed lazy pages,
+    // leaving React Router with a different hook dispatcher in dev mode.
+    dedupe: ['react', 'react-dom', 'react-router-dom'],
     alias: {
       '@shared': resolve(__dirname, 'src/shared'),
       '@client': resolve(__dirname, 'src/client'),
