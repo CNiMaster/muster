@@ -31,6 +31,7 @@ describe('conversation messages', () => {
       name: 'novel',
       rootDir: '/tmp/n',
       firstAgentId: r.agents.lead.id,
+      initialState: 'active',
     });
     const { userMessage, task } = postUserMessage(db, {
       scopeKind: 'project',
@@ -63,6 +64,7 @@ describe('conversation messages', () => {
       name: 'novel',
       rootDir: '/tmp/n',
       firstAgentId: r.agents.lead.id,
+      initialState: 'active',
     });
     const { task } = postUserMessage(db, {
       scopeKind: 'company',
@@ -80,6 +82,7 @@ describe('conversation messages', () => {
       name: 'novel',
       rootDir: '/tmp/direct-mention',
       firstAgentId: r.agents.lead.id,
+      initialState: 'active',
     });
     const direct = postUserMessage(db, {
       scopeKind: 'project',
@@ -93,7 +96,7 @@ describe('conversation messages', () => {
 
   it('员工单聊只返回与该员工工作单关联的消息', () => {
     const r = createNovelCompany(db, { name: 'co' });
-    const project = createProject(db, { companyId: r.company.id, name: 'novel', rootDir: '/tmp/direct-filter', firstAgentId: r.agents.lead.id });
+    const project = createProject(db, { companyId: r.company.id, name: 'novel', rootDir: '/tmp/direct-filter', firstAgentId: r.agents.lead.id, initialState: 'active'});
     const projectTask = createProjectTask(db, { projectId: project.id, title: '完成第一章' });
     const writerMessage = postUserMessage(db, { scopeKind: 'project', scopeId: project.id, projectTaskId: projectTask.id, content: '说明当前文风', mentions: [r.agents.writer.id] });
     const leadMessage = postUserMessage(db, { scopeKind: 'project', scopeId: project.id, content: '汇总进展', mentions: [r.agents.lead.id] });
@@ -110,6 +113,7 @@ describe('conversation messages', () => {
       companyId: r.company.id,
       name: 'novel',
       rootDir: '/tmp/direct-denied',
+      initialState: 'active',
     });
     updateAgent(db, r.agents.writer.id, { permissions: { userDirectContact: false } });
     expect(() => postUserMessage(db, {

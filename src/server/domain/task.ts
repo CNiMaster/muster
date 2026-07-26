@@ -28,6 +28,7 @@ import { addTaskMessage } from './task-message';
 import { isDispatchLoop } from './speech-queue';
 import {assertProjectTaskActive,createProjectTask} from './project-task';
 import {assertProjectLaunchConfirmed} from './project-launch';
+import {assertProjectActive} from './project-readiness';
 import { getCompany } from './company';
 
 export interface Task {
@@ -222,7 +223,7 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
   let rootTaskId = input.rootTaskId ?? null;
   let projectTaskId=input.projectTaskId;
   if(input.parentTaskId){const parent=getTask(db,input.parentTaskId);projectTaskId??=parent.projectTaskId;if(projectTaskId!==parent.projectTaskId)throw new AppError(ErrorCode.VALIDATION,'子工作单必须属于父工作单的项目任务');}
-  if(projectTaskId){assertProjectTaskActive(db,projectTaskId,input.projectId);assertProjectLaunchConfirmed(db,projectTaskId);}
+  if(projectTaskId){assertProjectTaskActive(db,projectTaskId,input.projectId);assertProjectLaunchConfirmed(db,projectTaskId);assertProjectActive(db,input.projectId);}
   else projectTaskId=createProjectTask(db,{projectId:input.projectId,title:input.title}).id;
   if (!rootTaskId) {
     if (input.parentTaskId) {
@@ -554,6 +555,76 @@ export function blockTask(db: DB, taskId: string, message: string, checkpoint?: 
   return getTask(db, taskId);
 }
 
+/** 发布冲突时保留 Agent 已声明的成果，供裁决完成后恢复原 Task 的审计信息。 */
+export function blockTaskForPublishConflict(
+  db: DB,
+  taskId: string,
+  message: string,
+  artifacts: AgentRunResult['artifacts'],
+): Task {
+  blockTask(db, taskId, message);
+  db.prepare('UPDATE task SET artifacts_json=?, updated_at=? WHERE id=?')
+    .run(JSON.stringify(artifacts), nowIso(), taskId);
+  appendTaskEvent(db, taskId, 'publish_conflict_preserved', {
+    artifacts: artifacts.map((artifact) => artifact.path),
+  });
+  return getTask(db, taskId);
+}
+
+/** 裁决成果已安全发布后，直接收口原 Task；不得重新排队并重复执行整项工作。 */
+export function completeTaskAfterPublishConflict(
+  db: DB,
+  taskId: string,
+  resolutionTaskId: string,
+): Task {
+  const cur = getTask(db, taskId);
+  if (cur.state === 'cancelled' || cur.state === 'completed') {
+    appendTaskEvent(db, taskId, 'publish_conflict_resolved_after_terminal_state', {
+      resolutionTaskId,
+      preservedState: cur.state,
+    });
+    return cur;
+  }
+  if (cur.state !== 'blocked') {
+    throw new AppError(ErrorCode.TASK_INVALID_TRANSITION, `task ${taskId} 状态 ${cur.state} 不可结束发布冲突`);
+  }
+  const now = nowIso();
+  db.prepare(
+    `UPDATE task SET state='completed', outcome='completed',
+      summary=?, completed_at=?, lease_owner_thread_id=NULL, lease_expires_at=NULL, updated_at=?
+     WHERE id=?`,
+  ).run(`成果发布冲突已由 Task ${resolutionTaskId} 裁决并安全发布`, now, now, taskId);
+  appendTaskEvent(db, taskId, 'publish_conflict_resolved', { resolutionTaskId });
+  return getTask(db, taskId);
+}
+
+/** Git 发布前的同步预检；之后到 DB 收口之间不得出现 await。 */
+export function assertPublishConflictCanFinalize(
+  db: DB,
+  resolutionTaskId: string,
+  sourceTaskIds: string[],
+): void {
+  const resolutionTask = getTask(db, resolutionTaskId);
+  if (resolutionTask.state !== 'running') {
+    throw new AppError(
+      ErrorCode.TASK_INVALID_TRANSITION,
+      `裁决 Task ${resolutionTaskId} 已变为 ${resolutionTask.state}，停止发布`,
+    );
+  }
+  for (const [index, sourceTaskId] of sourceTaskIds.entries()) {
+    const source = getTask(db, sourceTaskId);
+    const allowed = index === 0
+      ? source.state === 'blocked'
+      : ['blocked', 'cancelled', 'completed'].includes(source.state);
+    if (!allowed) {
+      throw new AppError(
+        ErrorCode.TASK_INVALID_TRANSITION,
+        `待收口 Task ${sourceTaskId} 已变为 ${source.state}，停止发布`,
+      );
+    }
+  }
+}
+
 /** 取得 Task 的父子链（从 root 到当前）。 */
 export function getTaskChain(db: DB, taskId: string): Task[] {
   const chain: Task[] = [];
@@ -569,6 +640,13 @@ export function cancelTask(db: DB, taskId: string): Task {
   const cur = getTask(db, taskId);
   assertTransition(cur.state, 'cancelled');
   db.prepare(`UPDATE task SET state='cancelled', lease_owner_thread_id=NULL, lease_expires_at=NULL, updated_at=? WHERE id=?`).run(nowIso(), taskId);
+  if (cur.inputProtocol.reason === 'publish_conflict') {
+    const publishIds = [cur.inputProtocol.publishId, cur.inputProtocol.rootPublishId]
+      .filter((value): value is string => typeof value === 'string');
+    for (const publishId of new Set(publishIds)) {
+      db.prepare(`UPDATE publish_record SET status='escalated' WHERE id=? AND status='open'`).run(publishId);
+    }
+  }
   appendTaskEvent(db, taskId, 'cancelled', {});
   return getTask(db, taskId);
 }
@@ -602,11 +680,15 @@ export function pauseTask(db: DB, taskId: string): Task {
 
 export function resumeTask(db: DB, taskId: string): Task {
   const cur = getTask(db, taskId);
-  if (cur.state !== 'paused' && cur.state !== 'blocked') {
+  const recoverableCancelledConflict = cur.state === 'cancelled' && cur.inputProtocol.reason === 'publish_conflict';
+  if (!['paused', 'blocked', 'failed'].includes(cur.state) && !recoverableCancelledConflict) {
     throw new AppError(ErrorCode.TASK_INVALID_TRANSITION, `task ${taskId} 不可恢复（${cur.state}）`);
   }
   const next = cur.state === 'paused' ? 'claimed' : 'queued';
-  db.prepare(`UPDATE task SET state=?, updated_at=? WHERE id=?`).run(next, nowIso(), taskId);
+  db.prepare(
+    `UPDATE task SET state=?, outcome=NULL, completed_at=NULL,
+      lease_owner_thread_id=NULL, lease_expires_at=NULL, heartbeat_at=NULL, updated_at=? WHERE id=?`,
+  ).run(next, nowIso(), taskId);
   appendTaskEvent(db, taskId, 'resumed', { from: cur.state });
   return getTask(db, taskId);
 }

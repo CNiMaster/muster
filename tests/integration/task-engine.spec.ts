@@ -45,7 +45,7 @@ function fixture() {
   const c = createCompany(db, { name: 'co' });
   const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
   const writer = createAgent(db, { companyId: c.id, name: 'writer', role: 'writer' });
-  const project = createProject(db, { companyId: c.id, name: 'novel', rootDir: makeTempGitRepo(), firstAgentId: lead.id });
+  const project = createProject(db, { companyId: c.id, name: 'novel', rootDir: makeTempGitRepo(), firstAgentId: lead.id, initialState: 'active'});
   return { c, lead, writer, project };
 }
 

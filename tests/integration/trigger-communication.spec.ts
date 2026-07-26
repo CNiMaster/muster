@@ -34,6 +34,7 @@ describe('schedule trigger dispatch', () => {
       name: 'novel',
       rootDir: '/tmp/trigger-test',
       firstAgentId: inspector.id,
+      initialState: 'active',
     });
     clockIn(db, company.id);
     registerScheduleTrigger(db, {
@@ -57,6 +58,7 @@ describe('schedule trigger dispatch', () => {
       name: 'novel',
       rootDir: '/tmp/trigger-offline-test',
       firstAgentId: lead.id,
+      initialState: 'active',
     });
     registerScheduleTrigger(db, {
       projectId: project.id,
@@ -73,7 +75,7 @@ describe('schedule trigger dispatch', () => {
   it('通用计划在既有项目任务上下文中派发并支持停用删除', () => {
     const company = createCompany(db, { name: 'co' });
     const lead = createAgent(db, { companyId: company.id, name: 'lead', role: 'lead' });
-    const project = createProject(db, { companyId: company.id, name: 'project', rootDir: '/tmp/generic-schedule', firstAgentId: lead.id });
+    const project = createProject(db, { companyId: company.id, name: 'project', rootDir: '/tmp/generic-schedule', firstAgentId: lead.id, initialState: 'active'});
     const projectTask = createProjectTask(db, { projectId: project.id, title: '持续质量检查' });
     clockIn(db, company.id);
     const trigger = registerScheduleTrigger(db, {
@@ -99,7 +101,7 @@ describe('task communication permission', () => {
     expect(updated.name).toBe('co');
     expect(updated.charter).toBe(company.charter);
     const lead = createAgent(db, { companyId: company.id, name: 'lead', role: 'lead' });
-    const project = createProject(db, { companyId: company.id, name: 'p', rootDir: '/tmp/task-protocol', firstAgentId: lead.id });
+    const project = createProject(db, { companyId: company.id, name: 'p', rootDir: '/tmp/task-protocol', firstAgentId: lead.id, initialState: 'active'});
     const task = createTask(db, { projectId: project.id, assigneeAgentId: lead.id, title: '交付任务' });
     expect(task.inputProtocol.requiredFields).toEqual(['goal', 'acceptance']);
     expect(task.outputProtocol.requiredFields).toEqual(['summary', 'artifacts']);
@@ -140,6 +142,7 @@ describe('task communication permission', () => {
       companyId: company.id,
       name: 'p',
       rootDir: '/tmp/communication-test',
+      initialState: 'active',
     });
 
     expect(() =>
@@ -165,6 +168,7 @@ describe('task communication permission', () => {
       companyId: company.id,
       name: 'p',
       rootDir: '/tmp/communication-allowed-test',
+      initialState: 'active',
     });
 
     expect(

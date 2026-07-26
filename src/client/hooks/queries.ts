@@ -1,7 +1,7 @@
 /** React Query hooks：所有数据获取集中在此。 */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
-import type { Company, Agent, AgentExecutorJson, AgentProfile, CompanyEmployee, MemoryCandidate, MemoryEntry, Department, Project, Relationship, Task, UsageSummary, ProjectAgentThread, Workspace } from '../api/types';
+import type { Company, Agent, AgentExecutorJson, AgentProfile, CompanyEmployee, MemoryCandidate, MemoryEntry, Department, Project, Relationship, Task, UsageSummary, ProjectAgentThread, Workspace, BusinessReview } from '../api/types';
 import type { CompanyCockpitDTO, TemplateRuntimeHealthFinding } from '../../shared/types';
 import type { ProjectLaunchBrief, ProjectLaunchDiscovery } from '../../shared/project-launch';
 import type { CompanySetupDraft, CompanyTemplateOption, SetupBindings } from '../domain/company-templates';
@@ -153,6 +153,18 @@ export function useGenerateProjectProposal() {
 export function useCompanies() {
   return useQuery({ queryKey: ['companies'], queryFn: () => api.get<Company[]>('/api/companies') });
 }
+/** 带过滤的公司列表（在营/归档/类型/搜索）。 */
+export function useCompanyList(filter?: { status?: 'active' | 'archived'; kind?: string; q?: string }) {
+  const params = new URLSearchParams();
+  if (filter?.status) params.set('status', filter.status);
+  if (filter?.kind) params.set('kind', filter.kind);
+  if (filter?.q) params.set('q', filter.q);
+  const qs = params.toString();
+  return useQuery({
+    queryKey: ['companies', filter],
+    queryFn: () => api.get<Company[]>(`/api/companies${qs ? `?${qs}` : ''}`),
+  });
+}
 export function useCompany(id: string | undefined) {
   return useQuery({
     queryKey: ['company', id],
@@ -178,12 +190,40 @@ export function useCreateCompany() {
 export function useUpdateCompany() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...patch }: { id: string; charter?: string; contractJson?: Record<string, unknown>; firstAgentId?: string | null }) =>
+    mutationFn: ({ id, ...patch }: { id: string; name?: string; charter?: string; contractJson?: Record<string, unknown>; firstAgentId?: string | null; reviewMode?: 'blocking' | 'parallel' }) =>
       api.patch<Company>(`/api/companies/${id}`, patch),
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['company', data.id] });
       qc.invalidateQueries({ queryKey: ['companies'] });
     },
+  });
+}
+export function useArchiveCompany() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason?: string }) =>
+      api.post<Company>(`/api/companies/${id}/archive`, { reason }),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['company', data.id] });
+      qc.invalidateQueries({ queryKey: ['companies'] });
+    },
+  });
+}
+export function useUnarchiveCompany() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id }: { id: string }) => api.post<Company>(`/api/companies/${id}/unarchive`, {}),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['company', data.id] });
+      qc.invalidateQueries({ queryKey: ['companies'] });
+    },
+  });
+}
+export function useDeleteCompany() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id }: { id: string }) => api.delete(`/api/companies/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['companies'] }),
   });
 }
 export function usePreviewCompanySetup() {
@@ -271,10 +311,14 @@ export function useCompanyAction() {
 
 export interface StatusBoardAgent {
   id: string;
+  profileId: string;
+  departmentId: string | null;
+  departmentName: string | null;
   name: string;
   role: string;
   availability: 'online' | 'draining' | 'off';
   threadState: string | null;
+  currentTaskId: string | null;
   currentTaskTitle: string | null;
   queuedTaskCount: number;
 }
@@ -462,6 +506,42 @@ export function useUpdateAgent() {
     onSuccess: (data) => qc.invalidateQueries({ queryKey: ['agents', data.companyId] }),
   });
 }
+/** 给员工绑定固定执行器（复用执行器连通测试结果，员工不重复测试）。 */
+export function useBindEmployeeExecutor() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ employeeId, executorProfileId }: { employeeId: string; executorProfileId: string }) =>
+      api.put(`/api/executors/employees/${employeeId}/profile/${executorProfileId}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['agents'] });
+      qc.invalidateQueries({ queryKey: ['profile-employments'] });
+    },
+  });
+}
+/** 给员工绑定权限策略。 */
+export function useBindEmployeePermission() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ employeeId, policyId }: { employeeId: string; policyId: string }) =>
+      api.put(`/api/permissions/employees/${employeeId}/policy/${policyId}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['agents'] });
+      qc.invalidateQueries({ queryKey: ['profile-employments'] });
+    },
+  });
+}
+/** 移除员工（解除任职，保留全局档案）。 */
+export function useDismissEmployee() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ companyId, employeeId }: { companyId: string; employeeId: string }) =>
+      api.delete(`/api/companies/${companyId}/agents/${employeeId}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['agents'] });
+      qc.invalidateQueries({ queryKey: ['agent-profiles'] });
+    },
+  });
+}
 export function useAgentAvailability() {
   const qc = useQueryClient();
   return useMutation({
@@ -535,9 +615,12 @@ export function useCharacterGraph(projectId: string | undefined) {
 export function useUpdateProject() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...patch }: { id: string; name?: string; description?: string; firstAgentId?: string | null; settings?: Record<string, unknown> }) =>
+    mutationFn: ({ id, ...patch }: { id: string; name?: string; description?: string; firstAgentId?: string | null; settings?: Record<string, unknown>; rootDir?: string; state?: Project['state'] }) =>
       api.patch<Project>(`/api/projects/${id}`, patch),
-    onSuccess: (data) => qc.invalidateQueries({ queryKey: ['project', data.id] }),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['project', data.id] });
+      qc.invalidateQueries({ queryKey: ['projects'] });
+    },
   });
 }
 
@@ -907,6 +990,11 @@ export interface PublishRecord {
   mergedFiles: string[];
   conflicts: string[];
   blocked: boolean;
+  rolledBack: boolean;
+  status: 'published' | 'open' | 'resolved' | 'escalated';
+  resolutionTaskId: string | null;
+  resolvedByTaskId: string | null;
+  resolvedAt: string | null;
   publishedAt: string;
 }
 
@@ -1410,5 +1498,32 @@ export function useUpdateMaterial() {
     mutationFn: ({ id, projectId, ...patch }: { id: string; projectId: string; name?: string; tags?: string[] }) =>
       api.put<ProjectMaterialDTO>(`/api/projects/${projectId}/materials/${id}`, patch),
     onSuccess: (_data, vars) => qc.invalidateQueries({ queryKey: ['materials', vars.projectId] }),
+  });
+}
+
+// ===== 业务产物审批 =====
+export function useBusinessReviews(filter?: { companyId?: string; projectId?: string; status?: 'pending' | 'approved' | 'rejected' | 'changes_requested' }) {
+  const params = new URLSearchParams();
+  if (filter?.companyId) params.set('companyId', filter.companyId);
+  if (filter?.projectId) params.set('projectId', filter.projectId);
+  if (filter?.status) params.set('status', filter.status);
+  const qs = params.toString();
+  return useQuery({
+    queryKey: ['business-reviews', filter],
+    queryFn: () => api.get<BusinessReview[]>(`/api/business-reviews${qs ? `?${qs}` : ''}`),
+    refetchInterval: 5000,
+  });
+}
+export function useDecideBusinessReview() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, decision, feedback }: { id: string; decision: 'approved' | 'rejected' | 'changes_requested'; feedback?: string }) =>
+      api.post<BusinessReview>(`/api/business-reviews/${id}/decision`, { decision, feedback }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ['business-reviews'] });
+      qc.invalidateQueries({ queryKey: ['tasks'] });
+      qc.invalidateQueries({ queryKey: ['company-cockpit'] });
+      void vars;
+    },
   });
 }

@@ -33,7 +33,66 @@ export interface LifecycleEventPayloadMap {
     taskId: string;
     classification: string;
   };
+  'publish.conflict-assigned': {
+    publishId: string;
+    rootPublishId: string;
+    resolutionTaskId: string;
+    sourceTaskId: string;
+    assigneeAgentId: string;
+    conflicts: string[];
+    attempt: number;
+  };
+  'publish.conflict-resolved': {
+    publishId: string;
+    rootPublishId: string;
+    resolutionTaskId: string;
+    sourceTaskIds: string[];
+    mergedFiles: string[];
+  };
+  'publish.conflict-escalated': {
+    publishId: string;
+    rootPublishId: string;
+    sourceTaskId: string;
+    conflicts: string[];
+    attempt: number;
+    reason: string;
+  };
+  // 项目准备流程（B2）：阶段进入/退出/回流/就绪
+  'project.phase-entered': {
+    projectId: string;
+    phase: ProjectPhase;
+    previousPhase: ProjectPhase | null;
+    rollbackFrom?: ProjectPhase;
+  };
+  'project.phase-exited': {
+    projectId: string;
+    phase: ProjectPhase;
+    outcome: 'forward' | 'rollback' | 'completed';
+  };
+  'project.readiness-passed': { projectId: string };
+  'project.rollback': {
+    projectId: string;
+    from: ProjectPhase;
+    to: ProjectPhase;
+    reason: string;
+  };
 }
+
+/**
+ * 项目阶段（与 server/domain/project.ts ProjectState 保持同步）。
+ * 内联定义避免 shared → server 的循环依赖；server 侧做映射时类型兼容即可。
+ */
+type ProjectPhase =
+  | 'idle'
+  | 'drafting'
+  | 'researching'
+  | 'equipping'
+  | 'staffing'
+  | 'ready'
+  | 'active'
+  | 'paused'
+  | 'completed'
+  | 'archived';
 
 export type LifecycleEventType = keyof LifecycleEventPayloadMap;
 

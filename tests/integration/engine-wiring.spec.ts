@@ -18,7 +18,7 @@ import { createNovelCompany } from '../../src/server/domain/novel-template';
 import { createProject } from '../../src/server/domain/project';
 import { ensurePrimaryThread } from '../../src/server/domain/thread';
 import {getThread} from '../../src/server/domain/thread';
-import { answerClarification, createTask, getTask, listTasks } from '../../src/server/domain/task';
+import { answerClarification, cancelTask, createTask, getTask, listTasks, resumeTask } from '../../src/server/domain/task';
 import { clockIn } from '../../src/server/domain/company';
 import { TaskEngine } from '../../src/server/task-engine/engine';
 import { FakeExecutor } from '../../src/server/task-engine/fake-executor';
@@ -27,6 +27,7 @@ import { ensureGitRepo, commitAll } from '../../src/server/worktree/manager';
 import { listArtifacts } from '../../src/server/domain/artifact';
 import { summarizeProjectUsage } from '../../src/server/domain/usage';
 import { listMessages, postUserMessage } from '../../src/server/domain/conversation';
+import type { ExecutionAdapter } from '../../src/server/task-engine/executor';
 
 let tdb: ReturnType<typeof makeTestDb>;
 let db: DB;
@@ -51,6 +52,7 @@ describe('engine → worktree → publish wiring', () => {
       name: 'novel',
       rootDir: projectRoot,
       firstAgentId: r.agents.lead.id,
+      initialState: 'active',
     });
     ensureGitRepo(projectRoot);
     // baseline 一个 README，便于 git 操作
@@ -124,6 +126,7 @@ describe('engine → worktree → publish wiring', () => {
       name: 'novel',
       rootDir: projectRoot,
       firstAgentId: r.agents.lead.id,
+      initialState: 'active',
     });
     ensureGitRepo(projectRoot);
     const thread = ensurePrimaryThread(db, project.id, r.agents.lead.id);
@@ -156,6 +159,7 @@ describe('engine → worktree → publish wiring', () => {
       name: 'novel',
       rootDir: projectRoot,
       firstAgentId: r.agents.lead.id,
+      initialState: 'active',
     });
     ensureGitRepo(projectRoot);
     writeFileSync(path.join(projectRoot, 'README.md'), '#\n');
@@ -206,6 +210,364 @@ describe('engine → worktree → publish wiring', () => {
     expect(db.prepare('SELECT 1 FROM task_runtime WHERE task_id=?').get(task.id)).toBeUndefined();
   });
 
+  it('发布冲突保留现场并派第一负责人，AI 裁决后关闭原 Task 与冲突记录', async () => {
+    const r = createNovelCompany(db, { name: 'co' });
+    clockIn(db, r.company.id);
+    const project = createProject(db, {
+      companyId: r.company.id,
+      name: 'novel',
+      rootDir: projectRoot,
+      firstAgentId: r.agents.lead.id,
+      initialState: 'active',
+    });
+    ensureGitRepo(projectRoot);
+    writeFileSync(path.join(projectRoot, 'doc.md'), '基线\n');
+    commitAll(projectRoot, 'baseline');
+
+    const writerThread = ensurePrimaryThread(db, project.id, r.agents.writer.id);
+    const leadThread = ensurePrimaryThread(db, project.id, r.agents.lead.id);
+    const sourceTask = createTask(db, {
+      projectId: project.id,
+      assigneeAgentId: r.agents.writer.id,
+      title: '修改同一段',
+    });
+
+    let runs = 0;
+    const adapter: ExecutionAdapter = {
+      async run(ctx) {
+        runs += 1;
+        if (runs === 1) {
+          writeFileSync(path.join(ctx.workingDir, 'doc.md'), '原任务版本\n');
+          writeFileSync(path.join(projectRoot, 'doc.md'), '并行发布版本\n');
+          commitAll(projectRoot, 'parallel publish');
+          return {
+            outcome: 'completed', summary: '原任务完成', outboundTasks: [],
+            artifacts: [{ path: 'doc.md', kind: 'markdown', operation: 'update' }],
+          };
+        }
+        const publishId = String(ctx.task.inputProtocol.publishId);
+        expect(readFileSync(path.join(ctx.workingDir, '.muster-conflicts', publishId, 'base', 'doc.md'), 'utf8')).toBe('基线\n');
+        expect(readFileSync(path.join(ctx.workingDir, '.muster-conflicts', publishId, 'ours', 'doc.md'), 'utf8')).toBe('并行发布版本\n');
+        expect(readFileSync(path.join(ctx.workingDir, '.muster-conflicts', publishId, 'theirs', 'doc.md'), 'utf8')).toBe('原任务版本\n');
+        writeFileSync(path.join(ctx.workingDir, 'doc.md'), '第一负责人裁决版\n');
+        return {
+          outcome: 'completed', summary: '裁决完成', outboundTasks: [],
+          artifacts: [{ path: 'doc.md', kind: 'markdown', operation: 'update' }],
+        };
+      },
+    };
+    const engine = new TaskEngine(db, adapter);
+
+    await engine.pumpThread(writerThread.id);
+
+    expect(getTask(db, sourceTask.id).state).toBe('blocked');
+    const sourceRuntime = db.prepare('SELECT worktree_path FROM task_runtime WHERE task_id=?').get(sourceTask.id) as
+      | { worktree_path: string }
+      | undefined;
+    expect(sourceRuntime).toBeDefined();
+    expect(existsSync(path.join(sourceRuntime!.worktree_path, 'doc.md'))).toBe(true);
+    const resolutionTask = listTasks(db, project.id).find((candidate) => candidate.inputProtocol.reason === 'publish_conflict');
+    expect(resolutionTask?.assigneeAgentId).toBe(r.agents.lead.id);
+    const openRecord = db.prepare('SELECT status,resolution_task_id FROM publish_record WHERE task_id=?').get(sourceTask.id) as {
+      status: string;
+      resolution_task_id: string | null;
+    };
+    expect(openRecord).toEqual({ status: 'open', resolution_task_id: resolutionTask!.id });
+
+    await engine.pumpThread(leadThread.id);
+
+    expect(readFileSync(path.join(projectRoot, 'doc.md'), 'utf8')).toBe('第一负责人裁决版\n');
+    expect(getTask(db, sourceTask.id).state).toBe('completed');
+    expect(getTask(db, resolutionTask!.id).state).toBe('completed');
+    expect(db.prepare('SELECT 1 FROM task_runtime WHERE task_id=?').get(sourceTask.id)).toBeUndefined();
+    const resolvedRecord = db.prepare('SELECT status,blocked,resolved_by_task_id,resolved_at FROM publish_record WHERE task_id=?').get(sourceTask.id) as {
+      status: string;
+      blocked: number;
+      resolved_by_task_id: string | null;
+      resolved_at: string | null;
+    };
+    expect(resolvedRecord.status).toBe('resolved');
+    // 原记录本身没有落盘，保留 blocked=1，避免把它误当成可 git revert 的正式提交。
+    expect(resolvedRecord.blocked).toBe(1);
+    expect(resolvedRecord.resolved_by_task_id).toBe(resolutionTask!.id);
+    expect(resolvedRecord.resolved_at).toBeTruthy();
+  });
+
+  it('裁决执行失败时升级记录，并可从失败 Task 重试后继续收口', async () => {
+    const r = createNovelCompany(db, { name: 'co' });
+    clockIn(db, r.company.id);
+    const project = createProject(db, {
+      companyId: r.company.id,
+      name: 'novel',
+      rootDir: projectRoot,
+      firstAgentId: r.agents.lead.id,
+      initialState: 'active',
+    });
+    ensureGitRepo(projectRoot);
+    writeFileSync(path.join(projectRoot, 'doc.md'), '基线\n');
+    commitAll(projectRoot, 'baseline');
+    const writerThread = ensurePrimaryThread(db, project.id, r.agents.writer.id);
+    const leadThread = ensurePrimaryThread(db, project.id, r.agents.lead.id);
+    const sourceTask = createTask(db, { projectId: project.id, assigneeAgentId: r.agents.writer.id, title: '冲突任务' });
+    let runs = 0;
+    const adapter: ExecutionAdapter = {
+      async run(ctx) {
+        runs += 1;
+        if (runs === 1) {
+          writeFileSync(path.join(ctx.workingDir, 'doc.md'), '原任务版本\n');
+          writeFileSync(path.join(projectRoot, 'doc.md'), '主干版本\n');
+          commitAll(projectRoot, 'main change');
+        } else if (runs === 2) {
+          throw new Error('fatal resolution executor error');
+        } else {
+          writeFileSync(path.join(ctx.workingDir, 'doc.md'), '重试后的裁决版\n');
+        }
+        return {
+          outcome: 'completed', summary: 'done', outboundTasks: [],
+          artifacts: [{ path: 'doc.md', kind: 'markdown', operation: 'update' }],
+        };
+      },
+    };
+    const engine = new TaskEngine(db, adapter);
+
+    await engine.pumpThread(writerThread.id);
+    const resolutionTask = listTasks(db, project.id).find((candidate) => candidate.inputProtocol.reason === 'publish_conflict')!;
+    await engine.pumpThread(leadThread.id);
+
+    expect(getTask(db, resolutionTask.id).state).toBe('failed');
+    expect((db.prepare('SELECT status FROM publish_record WHERE task_id=?').get(sourceTask.id) as { status: string }).status).toBe('escalated');
+
+    resumeTask(db, resolutionTask.id);
+    await engine.pumpThread(leadThread.id);
+
+    expect(getTask(db, sourceTask.id).state).toBe('completed');
+    expect(getTask(db, resolutionTask.id).state).toBe('completed');
+    expect(readFileSync(path.join(projectRoot, 'doc.md'), 'utf8')).toBe('重试后的裁决版\n');
+    expect((db.prepare('SELECT status FROM publish_record WHERE task_id=?').get(sourceTask.id) as { status: string }).status).toBe('resolved');
+  });
+
+  it('尚未执行的裁决被取消时立即升级记录，并允许用户恢复同一裁决 Task', async () => {
+    const r = createNovelCompany(db, { name: 'co' });
+    clockIn(db, r.company.id);
+    const project = createProject(db, { companyId: r.company.id, name: 'novel', rootDir: projectRoot, firstAgentId: r.agents.lead.id, initialState: 'active'});
+    ensureGitRepo(projectRoot);
+    writeFileSync(path.join(projectRoot, 'doc.md'), '基线\n');
+    commitAll(projectRoot, 'baseline');
+    const writerThread = ensurePrimaryThread(db, project.id, r.agents.writer.id);
+    const leadThread = ensurePrimaryThread(db, project.id, r.agents.lead.id);
+    const sourceTask = createTask(db, { projectId: project.id, assigneeAgentId: r.agents.writer.id, title: '冲突任务' });
+    let runs = 0;
+    const adapter: ExecutionAdapter = {
+      async run(ctx) {
+        runs += 1;
+        if (runs === 1) {
+          writeFileSync(path.join(ctx.workingDir, 'doc.md'), '原任务版本\n');
+          writeFileSync(path.join(projectRoot, 'doc.md'), '主干版本\n');
+          commitAll(projectRoot, 'main change');
+        } else {
+          writeFileSync(path.join(ctx.workingDir, 'doc.md'), '取消后恢复的裁决版\n');
+        }
+        return { outcome: 'completed', summary: 'done', outboundTasks: [], artifacts: [{ path: 'doc.md', kind: 'markdown', operation: 'update' }] };
+      },
+    };
+    const engine = new TaskEngine(db, adapter);
+
+    await engine.pumpThread(writerThread.id);
+    const resolutionTask = listTasks(db, project.id).find((candidate) => candidate.inputProtocol.reason === 'publish_conflict')!;
+    cancelTask(db, resolutionTask.id);
+    expect((db.prepare('SELECT status FROM publish_record WHERE task_id=?').get(sourceTask.id) as { status: string }).status).toBe('escalated');
+
+    resumeTask(db, resolutionTask.id);
+    await engine.pumpThread(leadThread.id);
+
+    expect(getTask(db, resolutionTask.id).state).toBe('completed');
+    expect(getTask(db, sourceTask.id).state).toBe('completed');
+    expect(readFileSync(path.join(projectRoot, 'doc.md'), 'utf8')).toBe('取消后恢复的裁决版\n');
+  });
+
+  it('原 Task 在裁决运行期间被取消时，发布前预检阻止最终版落入主干', async () => {
+    const r = createNovelCompany(db, { name: 'co' });
+    clockIn(db, r.company.id);
+    const project = createProject(db, { companyId: r.company.id, name: 'novel', rootDir: projectRoot, firstAgentId: r.agents.lead.id, initialState: 'active'});
+    ensureGitRepo(projectRoot);
+    writeFileSync(path.join(projectRoot, 'doc.md'), '基线\n');
+    commitAll(projectRoot, 'baseline');
+    const writerThread = ensurePrimaryThread(db, project.id, r.agents.writer.id);
+    const leadThread = ensurePrimaryThread(db, project.id, r.agents.lead.id);
+    const sourceTask = createTask(db, { projectId: project.id, assigneeAgentId: r.agents.writer.id, title: '随后取消' });
+    let runs = 0;
+    const adapter: ExecutionAdapter = {
+      async run(ctx) {
+        runs += 1;
+        if (runs === 1) {
+          writeFileSync(path.join(ctx.workingDir, 'doc.md'), '原任务版本\n');
+          writeFileSync(path.join(projectRoot, 'doc.md'), '应保留的主干版本\n');
+          commitAll(projectRoot, 'main change');
+        } else {
+          writeFileSync(path.join(ctx.workingDir, 'doc.md'), '不应发布的裁决版\n');
+          cancelTask(db, sourceTask.id);
+        }
+        return { outcome: 'completed', summary: 'done', outboundTasks: [], artifacts: [{ path: 'doc.md', kind: 'markdown', operation: 'update' }] };
+      },
+    };
+    const engine = new TaskEngine(db, adapter);
+
+    await engine.pumpThread(writerThread.id);
+    const resolutionTask = listTasks(db, project.id).find((candidate) => candidate.inputProtocol.reason === 'publish_conflict')!;
+    await engine.pumpThread(leadThread.id);
+
+    expect(readFileSync(path.join(projectRoot, 'doc.md'), 'utf8')).toBe('应保留的主干版本\n');
+    expect(getTask(db, sourceTask.id).state).toBe('cancelled');
+    expect(getTask(db, resolutionTask.id).state).toBe('failed');
+    expect((db.prepare('SELECT COUNT(*) AS count FROM publish_record WHERE task_id=? AND blocked=0').get(resolutionTask.id) as { count: number }).count).toBe(0);
+  });
+
+  it('Git 发布后数据库收口异常时自动 revert，不留下主干与 Task 状态分裂', async () => {
+    const r = createNovelCompany(db, { name: 'co' });
+    clockIn(db, r.company.id);
+    const project = createProject(db, { companyId: r.company.id, name: 'novel', rootDir: projectRoot, firstAgentId: r.agents.lead.id, initialState: 'active'});
+    ensureGitRepo(projectRoot);
+    writeFileSync(path.join(projectRoot, 'doc.md'), '基线\n');
+    commitAll(projectRoot, 'baseline');
+    const writerThread = ensurePrimaryThread(db, project.id, r.agents.writer.id);
+    const leadThread = ensurePrimaryThread(db, project.id, r.agents.lead.id);
+    const sourceTask = createTask(db, { projectId: project.id, assigneeAgentId: r.agents.writer.id, title: '收口失败测试' });
+    let runs = 0;
+    const adapter: ExecutionAdapter = {
+      async run(ctx) {
+        runs += 1;
+        if (runs === 1) {
+          writeFileSync(path.join(ctx.workingDir, 'doc.md'), '原任务版本\n');
+          writeFileSync(path.join(projectRoot, 'doc.md'), '回滚后应恢复的主干版本\n');
+          commitAll(projectRoot, 'main change');
+        } else {
+          writeFileSync(path.join(ctx.workingDir, 'doc.md'), '会被补偿撤销的裁决版\n');
+        }
+        return { outcome: 'completed', summary: 'done', outboundTasks: [], artifacts: [{ path: 'doc.md', kind: 'markdown', operation: 'update' }] };
+      },
+    };
+    const engine = new TaskEngine(db, adapter);
+
+    await engine.pumpThread(writerThread.id);
+    const resolutionTask = listTasks(db, project.id).find((candidate) => candidate.inputProtocol.reason === 'publish_conflict')!;
+    db.exec(`CREATE TRIGGER fail_conflict_finalize BEFORE UPDATE OF state ON task
+      WHEN OLD.id='${sourceTask.id}' AND NEW.state='completed'
+      BEGIN SELECT RAISE(ABORT, 'forced finalize failure'); END`);
+
+    await engine.pumpThread(leadThread.id);
+
+    expect(readFileSync(path.join(projectRoot, 'doc.md'), 'utf8')).toBe('回滚后应恢复的主干版本\n');
+    expect(getTask(db, sourceTask.id).state).toBe('blocked');
+    expect(getTask(db, resolutionTask.id).state).toBe('failed');
+    const compensated = db.prepare('SELECT rolled_back FROM publish_record WHERE task_id=? AND blocked=0').get(resolutionTask.id) as { rolled_back: number };
+    expect(compensated.rolled_back).toBe(1);
+  });
+
+  it('裁决期间主干再次漂移时只再派一轮，并由新 worktree 完成最终裁决', async () => {
+    const r = createNovelCompany(db, { name: 'co' });
+    clockIn(db, r.company.id);
+    const project = createProject(db, {
+      companyId: r.company.id,
+      name: 'novel',
+      rootDir: projectRoot,
+      firstAgentId: r.agents.lead.id,
+      initialState: 'active',
+    });
+    ensureGitRepo(projectRoot);
+    writeFileSync(path.join(projectRoot, 'doc.md'), '基线\n');
+    commitAll(projectRoot, 'baseline');
+    const writerThread = ensurePrimaryThread(db, project.id, r.agents.writer.id);
+    const leadThread = ensurePrimaryThread(db, project.id, r.agents.lead.id);
+    const sourceTask = createTask(db, { projectId: project.id, assigneeAgentId: r.agents.writer.id, title: '并发修改' });
+
+    let runs = 0;
+    const adapter: ExecutionAdapter = {
+      async run(ctx) {
+        runs += 1;
+        if (runs === 1) {
+          writeFileSync(path.join(ctx.workingDir, 'doc.md'), '原任务版本\n');
+          writeFileSync(path.join(projectRoot, 'doc.md'), '主干版本一\n');
+          commitAll(projectRoot, 'main one');
+        } else if (runs === 2) {
+          writeFileSync(path.join(ctx.workingDir, 'doc.md'), '裁决版本一\n');
+          writeFileSync(path.join(projectRoot, 'doc.md'), '主干版本二\n');
+          commitAll(projectRoot, 'main two');
+        } else {
+          const publishId = String(ctx.task.inputProtocol.publishId);
+          expect(readFileSync(path.join(ctx.workingDir, '.muster-conflicts', publishId, 'ours', 'doc.md'), 'utf8')).toBe('主干版本二\n');
+          expect(readFileSync(path.join(ctx.workingDir, '.muster-conflicts', publishId, 'theirs', 'doc.md'), 'utf8')).toBe('裁决版本一\n');
+          writeFileSync(path.join(ctx.workingDir, 'doc.md'), '最终裁决版\n');
+        }
+        return {
+          outcome: 'completed', summary: `run ${runs}`, outboundTasks: [],
+          artifacts: [{ path: 'doc.md', kind: 'markdown', operation: 'update' }],
+        };
+      },
+    };
+    const engine = new TaskEngine(db, adapter);
+
+    await engine.pumpThread(writerThread.id);
+    await engine.pumpThread(leadThread.id);
+    const firstResolution = listTasks(db, project.id).find((candidate) => candidate.inputProtocol.resolutionAttempt === 1)!;
+    expect(getTask(db, firstResolution.id).state).toBe('blocked');
+    const secondResolution = listTasks(db, project.id).find((candidate) => candidate.inputProtocol.resolutionAttempt === 2)!;
+    expect(secondResolution).toBeDefined();
+
+    await engine.pumpThread(leadThread.id);
+
+    expect(readFileSync(path.join(projectRoot, 'doc.md'), 'utf8')).toBe('最终裁决版\n');
+    expect(getTask(db, sourceTask.id).state).toBe('completed');
+    expect(getTask(db, firstResolution.id).state).toBe('completed');
+    expect(getTask(db, secondResolution.id).state).toBe('completed');
+    expect(listTasks(db, project.id).filter((candidate) => candidate.inputProtocol.reason === 'publish_conflict')).toHaveLength(2);
+    const conflictStatuses = (db.prepare('SELECT status FROM publish_record WHERE blocked=1 ORDER BY published_at').all() as Array<{ status: string }>).map((row) => row.status);
+    expect(conflictStatuses).toEqual(['resolved', 'resolved']);
+  });
+
+  it('两轮裁决仍冲突时整条发布链统一升级，不留下伪装为裁决中的记录', async () => {
+    const r = createNovelCompany(db, { name: 'co' });
+    clockIn(db, r.company.id);
+    const project = createProject(db, {
+      companyId: r.company.id,
+      name: 'novel',
+      rootDir: projectRoot,
+      firstAgentId: r.agents.lead.id,
+      initialState: 'active',
+    });
+    ensureGitRepo(projectRoot);
+    writeFileSync(path.join(projectRoot, 'doc.md'), '基线\n');
+    commitAll(projectRoot, 'baseline');
+    const writerThread = ensurePrimaryThread(db, project.id, r.agents.writer.id);
+    const leadThread = ensurePrimaryThread(db, project.id, r.agents.lead.id);
+    createTask(db, { projectId: project.id, assigneeAgentId: r.agents.writer.id, title: '持续冲突' });
+    let runs = 0;
+    const adapter: ExecutionAdapter = {
+      async run(ctx) {
+        runs += 1;
+        writeFileSync(path.join(ctx.workingDir, 'doc.md'), `任务版本 ${runs}\n`);
+        writeFileSync(path.join(projectRoot, 'doc.md'), `并行主干版本 ${runs}\n`);
+        commitAll(projectRoot, `parallel ${runs}`);
+        return {
+          outcome: 'completed', summary: `run ${runs}`, outboundTasks: [],
+          artifacts: [{ path: 'doc.md', kind: 'markdown', operation: 'update' }],
+        };
+      },
+    };
+    const engine = new TaskEngine(db, adapter);
+
+    await engine.pumpThread(writerThread.id);
+    await engine.pumpThread(leadThread.id);
+    await engine.pumpThread(leadThread.id);
+
+    const resolutionTasks = listTasks(db, project.id).filter((candidate) => candidate.inputProtocol.reason === 'publish_conflict');
+    expect(resolutionTasks).toHaveLength(2);
+    expect(resolutionTasks.every((candidate) => getTask(db, candidate.id).state === 'blocked')).toBe(true);
+    const statuses = (db.prepare('SELECT status FROM publish_record WHERE blocked=1').all() as Array<{ status: string }>)
+      .map((row) => row.status);
+    expect(statuses).toHaveLength(3);
+    expect(statuses.every((status) => status === 'escalated')).toBe(true);
+  });
+
   it('执行器抛 timeout → Task 标 failed（区别于 blocked）', async () => {
     const r = createNovelCompany(db, { name: 'co' });
     clockIn(db, r.company.id);
@@ -214,6 +576,7 @@ describe('engine → worktree → publish wiring', () => {
       name: 'novel',
       rootDir: projectRoot,
       firstAgentId: r.agents.lead.id,
+      initialState: 'active',
     });
     ensureGitRepo(projectRoot);
     writeFileSync(path.join(projectRoot, 'README.md'), '#\n');
@@ -240,6 +603,7 @@ describe('engine → worktree → publish wiring', () => {
       name: 'novel',
       rootDir: projectRoot,
       firstAgentId: r.agents.lead.id,
+      initialState: 'active',
     });
     ensureGitRepo(projectRoot);
     writeFileSync(path.join(projectRoot, 'README.md'), '#\n');
@@ -281,6 +645,7 @@ describe('engine → worktree → publish wiring', () => {
       name: 'novel',
       rootDir: projectRoot,
       firstAgentId: r.agents.lead.id,
+      initialState: 'active',
     });
     ensureGitRepo(projectRoot);
     writeFileSync(path.join(projectRoot, 'README.md'), '#\n');

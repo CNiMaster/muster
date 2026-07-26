@@ -27,6 +27,7 @@ describe('ProjectRuntimeCoordinator', () => {
       companyId: novel.company.id,
       name: 'book',
       rootDir: makeTempGitRepo(),
+      initialState: 'active',
     });
     createProjectTask(db, { projectId: project.id, title: '启动作品' });
     transitionCompany(db, novel.company.id, 'online');
@@ -46,6 +47,7 @@ describe('ProjectRuntimeCoordinator', () => {
       companyId: novel.company.id,
       name: 'book',
       rootDir: makeTempGitRepo(),
+      initialState: 'active',
     });
     transitionCompany(db, novel.company.id, 'online');
     transitionCompany(db, novel.company.id, 'draining');
@@ -62,6 +64,7 @@ describe('ProjectRuntimeCoordinator', () => {
       companyId: novel.company.id,
       name: 'book',
       rootDir: makeTempGitRepo(),
+      initialState: 'active',
     });
     updateProject(db, project.id, { settings: { reviewTaskInterval: 2 } });
     for (let i = 0; i < 2; i++) {
@@ -85,6 +88,7 @@ describe('ProjectRuntimeCoordinator', () => {
       companyId: novel.company.id,
       name: 'book',
       rootDir: makeTempGitRepo(),
+      initialState: 'active',
     });
     const discussion = startBrainstorm(db, {
       projectId: project.id,
@@ -110,6 +114,7 @@ describe('ProjectRuntimeCoordinator', () => {
       companyId: novel.company.id,
       name: 'book',
       rootDir: makeTempGitRepo(),
+      initialState: 'active',
     });
     const discussion = startBrainstorm(db, {
       projectId: project.id,

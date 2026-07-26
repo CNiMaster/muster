@@ -183,6 +183,7 @@ describe('Workflow Graph domain logic', () => {
       name: 'novel',
       rootDir: '/tmp/workflow-materialize',
       firstAgentId: writer.id,
+      initialState: 'active',
     });
     saveWorkflow(db, company.id, 'chapter', {
       nodes: [

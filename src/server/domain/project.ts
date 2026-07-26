@@ -7,7 +7,9 @@
  * - 同一员工可同时进入两个项目（不同 project_agent_thread，互不串线）。
  */
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve, isAbsolute } from 'node:path';
+import { existsSync, renameSync, statSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
@@ -27,7 +29,36 @@ function defaultRootDir(workspaceRoot: string, companyName: string, projectName:
   return join(workspaceRoot, 'companies', sanitizePathSegment(companyName), 'projects', projectSegment);
 }
 
-export type ProjectState = 'idle' | 'active' | 'paused' | 'completed' | 'archived';
+export type ProjectState =
+  | 'idle' // 兼容历史数据；新项目不再使用
+  | 'drafting' // 准备阶段：需求构思
+  | 'researching' // 准备阶段：调研
+  | 'equipping' // 准备阶段：能力装备
+  | 'staffing' // 准备阶段：员工就位
+  | 'ready' // 准备就绪：待用户确认开工
+  | 'active' // 开工
+  | 'paused'
+  | 'completed'
+  | 'archived';
+
+/** 准备阶段集合（state ∈ 这些值时渲染 ProjectOnboardingWizard）。 */
+export const ONBOARDING_PHASES: ReadonlySet<ProjectState> = new Set([
+  'drafting',
+  'researching',
+  'equipping',
+  'staffing',
+  'ready',
+]);
+
+/** 六阶段顺序（用于 stepper 和回流判断；active 是终点）。 */
+export const PHASE_ORDER: ProjectState[] = [
+  'drafting',
+  'researching',
+  'equipping',
+  'staffing',
+  'ready',
+  'active',
+];
 
 export interface Project {
   id: string;
@@ -72,7 +103,15 @@ function fromRow(r: ProjectRow): Project {
 
 export function createProject(
   db: DB,
-  input: { companyId: string; name: string; description?: string; rootDir?: string; firstAgentId?: string },
+  input: {
+    companyId: string;
+    name: string;
+    description?: string;
+    rootDir?: string;
+    firstAgentId?: string;
+    /** 初始状态，默认 drafting（进入准备流程）。测试/模板/迁移场景可传 active 跳过。 */
+    initialState?: ProjectState;
+  },
 ): Project {
   const company = getCompany(db, input.companyId);
   const id = shortId('pr_');
@@ -92,11 +131,12 @@ export function createProject(
       throw new AppError(ErrorCode.VALIDATION, '项目第一负责人必须属于项目所在公司');
     }
   }
+  const state = input.initialState ?? 'drafting';
   const now = nowIso();
   db.prepare(
     `INSERT INTO project (id, company_id, name, description, root_dir, first_agent_id, state, settings_json, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, 'idle', '{}', ?, ?)`,
-  ).run(id, input.companyId, input.name, input.description ?? '', rootDir, firstAgentId ?? null, now, now);
+     VALUES (?, ?, ?, ?, ?, ?, ?, '{}', ?, ?)`,
+  ).run(id, input.companyId, input.name, input.description ?? '', rootDir, firstAgentId ?? null, state, now, now);
   return getProject(db, id);
 }
 
@@ -114,14 +154,116 @@ export function listProjects(db: DB, companyId: string): Project[] {
 export function updateProject(
   db: DB,
   id: string,
-  patch: Partial<Pick<Project, 'name' | 'description' | 'firstAgentId' | 'state' | 'settings'>>,
+  patch: Partial<Pick<Project, 'name' | 'description' | 'firstAgentId' | 'state' | 'settings' | 'rootDir'>>,
 ): Project {
   const cur = getProject(db, id);
+
+  // 迁移项目目录：仅在显式传入新 rootDir 且与当前不同时触发。
+  // 安全约束：①新路径必须在 MUSTER_ALLOWED_ROOTS 内；②项目无活跃 task（避免丢失正在执行的 worktree 草稿）。
+  if (patch.rootDir !== undefined) {
+    const newRootDir = migrateProjectRootDir(db, id, cur.rootDir, patch.rootDir);
+    // 标记为已处理，下面统一 UPDATE
+    patch = { ...patch, rootDir: newRootDir };
+  }
+
   const next: Project = { ...cur, ...patch, settings: patch.settings ?? cur.settings, updatedAt: nowIso() };
   db.prepare(
-    `UPDATE project SET name=?, description=?, first_agent_id=?, state=?, settings_json=?, updated_at=? WHERE id=?`,
-  ).run(next.name, next.description, next.firstAgentId, next.state, JSON.stringify(next.settings), next.updatedAt, id);
+    `UPDATE project SET name=?, description=?, root_dir=?, first_agent_id=?, state=?, settings_json=?, updated_at=? WHERE id=?`,
+  ).run(next.name, next.description, next.rootDir, next.firstAgentId, next.state, JSON.stringify(next.settings), next.updatedAt, id);
   return getProject(db, id);
+}
+
+/**
+ * 迁移项目根目录：校验 + 物理迁移 + 清理旧 worktree。
+ * - 新路径必须在 MUSTER_ALLOWED_ROOTS 内（进程级白名单，复用 paths.isPathAllowed 逻辑）。
+ * - 新路径不能与旧路径相同。
+ * - 项目下不得有活跃 task（queued/claimed/running/waiting 系列/paused），否则迁移会切断正在跑的 worktree。
+ * - 旧目录若存在则整体 mv 到新路径；新路径父目录会自动 mkdir。
+ * - 旧目录对应的 worktree（task_runtime）全部清理，因为 worktree 分支指向旧 git 仓库。
+ * 返回规范化后的绝对路径。任何步骤失败抛 AppError，不改库。
+ */
+function migrateProjectRootDir(db: DB, projectId: string, oldRootDir: string, requestedNewRootDir: string): string {
+  const newRootDir = requestedNewRootDir.trim();
+  if (!newRootDir || !isAbsolute(newRootDir)) {
+    throw new AppError(ErrorCode.VALIDATION, '项目目录必须是绝对路径');
+  }
+  const resolvedNew = resolve(newRootDir);
+  const resolvedOld = resolve(oldRootDir);
+  if (resolvedNew === resolvedOld) {
+    return resolvedOld; // 无变化
+  }
+
+  // ①路径白名单校验（进程级 MUSTER_ALLOWED_ROOTS）
+  const allowedRoots = (process.env.MUSTER_ALLOWED_ROOTS
+    ? process.env.MUSTER_ALLOWED_ROOTS.split(':')
+    : [process.env.HOME ?? '/tmp', '/tmp']).map((r) => resolve(r));
+  const allowed = allowedRoots.some((root) => resolvedNew === root || resolvedNew.startsWith(`${root}/`));
+  if (!allowed) {
+    throw new AppError(
+      ErrorCode.VALIDATION,
+      `目标目录不在允许范围内（MUSTER_ALLOWED_ROOTS）。允许的根：${allowedRoots.join(', ')}`,
+    );
+  }
+
+  // ②无活跃 task 校验（避免丢草稿）
+  const activeStates = ['queued', 'claimed', 'running', 'waiting_input', 'waiting_dependency', 'paused'];
+  const activeCountRow = db
+    .prepare(`SELECT COUNT(*) AS c FROM task WHERE project_id=? AND state IN (${activeStates.map(() => '?').join(',')})`)
+    .get(projectId, ...activeStates) as { c: number };
+  if (activeCountRow.c > 0) {
+    throw new AppError(
+      ErrorCode.VALIDATION,
+      `项目下还有 ${activeCountRow.c} 个活跃任务，无法迁移目录（请先完成或取消这些任务，避免丢失执行中的草稿）`,
+    );
+  }
+
+  // ③清理该项目所有残留 worktree（指向旧 git 仓库的分支，迁移后失效）
+  const runtimeRows = db
+    .prepare(`SELECT task_id FROM task_runtime WHERE task_id IN (SELECT id FROM task WHERE project_id=?)`)
+    .all(projectId) as Array<{ task_id: string }>;
+  // worktree 清理用 git，允许失败（可能已不存在）
+  for (const row of runtimeRows) {
+    try {
+      spawnSync('git', ['worktree', 'remove', '--force', join(getWorktreeBase(), row.task_id)], {
+        cwd: resolvedOld,
+        env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+      });
+    } catch {
+      // 忽略
+    }
+  }
+
+  // ④物理迁移：旧目录存在则 mv；不存在则只更新库（新目录由 ensureGitRepo 在下次 worktree 创建时建立）
+  if (existsSync(resolvedOld)) {
+    // 新路径若已存在且非空，拒绝覆盖
+    if (existsSync(resolvedNew)) {
+      const stat = statSync(resolvedNew);
+      if (!stat.isDirectory()) {
+        throw new AppError(ErrorCode.VALIDATION, `目标路径已存在且不是目录：${resolvedNew}`);
+      }
+    }
+    // 确保父目录存在
+    const parent = join(resolvedNew, '..');
+    if (!existsSync(parent)) {
+      spawnSync('mkdir', ['-p', parent]);
+    }
+    try {
+      renameSync(resolvedOld, resolvedNew);
+    } catch (e) {
+      throw new AppError(
+        ErrorCode.WORKTREE_CONFLICT,
+        `目录迁移失败（${resolvedOld} → ${resolvedNew}）：${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }
+
+  return resolvedNew;
+}
+
+/** worktree 根目录（复用 manager.worktreeRoot 的公式，避免循环依赖）。 */
+function getWorktreeBase(): string {
+  const musterDir = process.env.MUSTER_HOME || join(homedir(), '.muster');
+  return join(musterDir, 'worktrees');
 }
 
 // ===== 跨项目只读引用 =====

@@ -37,6 +37,7 @@ import { useRecentProject } from '../hooks/useRecentProject';
 import { WorkbenchShell } from '../components/workbench/WorkbenchShell';
 import { ProjectWorkNavigation } from '../components/workbench/ProjectWorkNavigation';
 import { ProjectContextInspector } from '../components/workbench/ProjectContextInspector';
+import { ProjectOnboardingWizard } from '../components/project/ProjectOnboardingWizard';
 import { ProjectTaskWorkspace } from '../components/project/ProjectTaskWorkspace';
 import { ProjectEmployeeWorkspace } from '../components/project/ProjectEmployeeWorkspace';
 import { WorkbenchContextSwitcher } from '../components/workbench/WorkbenchContextSwitcher';
@@ -75,6 +76,7 @@ function NewProject({ companyId }: { companyId: string }): React.ReactElement {
   // 基础表单状态
   const [name, setName] = useState('');
   const [desc, setDesc] = useState('');
+  const [rootDir, setRootDir] = useState('');
 
   // 对话式向导状态
   const [prompt, setPrompt] = useState('');
@@ -119,7 +121,7 @@ function NewProject({ companyId }: { companyId: string }): React.ReactElement {
     }
 
     createProject.mutate(
-      { companyId, name, description: desc },
+      { companyId, name, description: desc, ...(rootDir.trim() ? { rootDir: rootDir.trim() } : {}) },
       {
         onSuccess: (p) => {
           // 新项目只建立「待确认」的项目任务；确认需求与能力前不派发制作工作单。
@@ -241,6 +243,10 @@ function NewProject({ companyId }: { companyId: string }): React.ReactElement {
                   />
                 </Field>
 
+                <Field label="项目目录（可选）" hint="留空则在默认工作区自动生成。必须填绝对路径，且在 MUSTER_ALLOWED_ROOTS 允许范围内。">
+                  <Input value={rootDir} onChange={(e) => setRootDir(e.target.value)} placeholder="例如：/Users/you/code/my-novel" />
+                </Field>
+
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'var(--space-3)' }}>
                   <Button onClick={submit} disabled={!name.trim()} loading={createProject.isPending}>
                     确认设定并正式开工
@@ -258,6 +264,9 @@ function NewProject({ companyId }: { companyId: string }): React.ReactElement {
             </Field>
             <Field label="项目说明">
               <Textarea value={desc} onChange={(e) => setDesc(e.target.value)} placeholder={creationPreset.descriptionPlaceholder} />
+            </Field>
+            <Field label="项目目录（可选）" hint="留空则在默认工作区自动生成。一个公司可同时跑多个项目，每个项目独立目录。必须填绝对路径，且在 MUSTER_ALLOWED_ROOTS 允许范围内。">
+              <Input value={rootDir} onChange={(e) => setRootDir(e.target.value)} placeholder="例如：/Users/you/code/my-project" />
             </Field>
             <div>
               <Button onClick={submit} disabled={!name.trim()} loading={createProject.isPending}>
@@ -328,6 +337,21 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
   }, [projectTasks, selectedProjectTaskId, searchParams, setSearchParams]);
 
   if (!project) return <div className="loading">加载中…</div>;
+
+  // 准备阶段：渲染 onboarding wizard 而非工作台（两层正交，active/paused 等仍走工作台）
+  const ONBOARDING_STATES = new Set(['drafting', 'researching', 'equipping', 'staffing', 'ready']);
+  if (ONBOARDING_STATES.has(project.state)) {
+    return (
+      <div className="project-page project-onboarding-container">
+        <div className="project-page-header">
+          <Link to={`/companies/${project.companyId}`} className="back-link">← 返回公司</Link>
+          <h1>{project.name}</h1>
+          <StateBadge domain="project" state={project.state} />
+        </div>
+        <ProjectOnboardingWizard project={project} />
+      </div>
+    );
+  }
 
   const selectedAgentId = searchParams.get('agent') ?? project.firstAgentId ?? company?.firstAgentId ?? agents?.[0]?.id;
   const selectedAgent = agents?.find((agent) => agent.id === selectedAgentId);

@@ -46,6 +46,8 @@ import { makeLifecycleEvent } from '../../shared/lifecycle-events';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { projectLaunchBriefSchema } from '../../shared/project-launch';
 import { confirmProjectLaunch, discoverProjectLaunchCapabilities } from '../domain/project-launch';
+import { transitionProjectPhase } from '../domain/project-readiness';
+import { PHASE_ORDER, type ProjectState } from '../domain/project';
 
 export const projectsRouter = Router({ mergeParams: true });
 export const projectScopedRouter = Router({ mergeParams: true });
@@ -100,13 +102,38 @@ projectById.patch(
   '/',
   asyncHandler(async (req, res) => {
     const patch = req.body ?? {};
+    // state 转换走专用闸门（transitionProjectPhase），其他字段走普通 update。
+    // 这样 PATCH 一个 state 会校验「准备阶段顺序推进或回流」，违反抛 409。
+    if (patch.state !== undefined) {
+      const target = patch.state as ProjectState;
+      const { project, previousState } = transitionProjectPhase(getDb(), param(req, 'id'), target);
+      const isRollback = PHASE_ORDER.indexOf(target) < PHASE_ORDER.indexOf(previousState);
+      if (isRollback) {
+        realtime.publish(
+          makeLifecycleEvent(
+            'project.rollback',
+            { projectId: project.id, from: previousState as ProjectState, to: project.state, reason: 'manual' },
+            { companyId: project.companyId, projectId: project.id },
+          ),
+        );
+      }
+      realtime.publish(
+        makeLifecycleEvent(
+          'project.phase-entered',
+          { projectId: project.id, phase: project.state, previousPhase: previousState, rollbackFrom: isRollback ? previousState : undefined },
+          { companyId: project.companyId, projectId: project.id },
+        ),
+      );
+      res.json(project);
+      return;
+    }
     res.json(
       updateProject(getDb(), param(req,'id'), {
         name: patch.name,
         description: patch.description,
         firstAgentId: patch.firstAgentId,
-        state: patch.state,
         settings: patch.settings,
+        rootDir: patch.rootDir,
       }),
     );
   }),

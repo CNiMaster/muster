@@ -16,7 +16,7 @@ describe('employee runtime', () => {
   it('groups project task threads and work orders beneath the correct employment', () => {
     const company = createCompany(db, { name: 'A' });
     const employee = createAgent(db, { companyId: company.id, name: '工程师', role: 'engineer' });
-    const project = createProject(db, { companyId: company.id, name: '产品', rootDir: '/tmp/muster-runtime-a' });
+    const project = createProject(db, { companyId: company.id, name: '产品', rootDir: '/tmp/muster-runtime-a', initialState: 'active'});
     const projectTask = createProjectTask(db, { projectId: project.id, title: '完成运行闭环' });
     const thread = ensureProjectTaskThread(db, { projectTaskId: projectTask.id, employeeId: employee.id, executorProfileId: null });
     setProjectTaskThreadSession(db, thread.id, 'vendor-session-1');
@@ -36,7 +36,7 @@ describe('employee runtime', () => {
     const company = createCompany(db, { name: 'A' });
     const employee = createAgent(db, { companyId: company.id, name: '甲', role: 'engineer' });
     const other = createAgent(db, { companyId: company.id, name: '乙', role: 'reviewer' });
-    const project = createProject(db, { companyId: company.id, name: '产品', rootDir: '/tmp/muster-runtime-b' });
+    const project = createProject(db, { companyId: company.id, name: '产品', rootDir: '/tmp/muster-runtime-b', initialState: 'active'});
     const projectTask = createProjectTask(db, { projectId: project.id, title: '隔离验证' });
     ensureProjectTaskThread(db, { projectTaskId: projectTask.id, employeeId: other.id, executorProfileId: null });
 

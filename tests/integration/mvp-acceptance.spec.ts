@@ -62,6 +62,7 @@ describe('MVP acceptance: 一个小说阶段完整闭环', () => {
       name: '星辰变',
       rootDir: projectRoot,
       firstAgentId: r.agents.lead.id,
+      initialState: 'active',
     });
     transitionCompany(db, r.company.id, 'online');
     const writerThread = ensurePrimaryThread(db, project.id, r.agents.writer.id);

@@ -10,6 +10,11 @@ export interface Company {
   firstAgentId: string | null;
   createdAt: string;
   updatedAt: string;
+  /** 非空 = 已归档（暂停营业）；null = 在营。 */
+  archivedAt: string | null;
+  archivedReason: string | null;
+  /** 业务审批模式：blocking=提交后阻塞等待；parallel=提交后继续。 */
+  reviewMode: 'blocking' | 'parallel';
 }
 
 export interface Workspace {
@@ -39,6 +44,10 @@ export interface Agent {
   availabilityState: 'online' | 'draining' | 'off';
   executor: AgentExecutorJson;
   stance: string;
+  /** 公司任职绑定的固定执行器档案（来自 company_employee）。 */
+  executorProfileId?: string | null;
+  /** 公司任职绑定的权限策略（来自 company_employee）。 */
+  permissionPolicyId?: string | null;
 }
 
 export interface AgentProfile {
@@ -52,6 +61,8 @@ export interface AgentProfile {
   baseVersion: number;
   createdAt: string;
   updatedAt: string;
+  /** 该档案在多少家公司任职（人才市场用，由 /api/agent-profiles 聚合返回）。 */
+  employmentCount?: number;
 }
 
 export interface CompanyEmployee {
@@ -69,6 +80,28 @@ export interface CompanyEmployee {
   createdAt: string;
   updatedAt: string;
   health?: import('../../shared/types').EmploymentHealthDTO;
+}
+
+export type BusinessReviewKind = 'material' | 'artifact' | 'character' | 'skill' | 'relationship' | 'plot' | 'custom';
+export type BusinessReviewStatus = 'pending' | 'approved' | 'rejected' | 'changes_requested';
+
+export interface BusinessReview {
+  id: string;
+  companyId: string;
+  projectId: string | null;
+  taskId: string | null;
+  employeeId: string;
+  reviewKind: BusinessReviewKind;
+  subjectId: string;
+  subjectSnapshot: Record<string, unknown>;
+  title: string;
+  summary: string | null;
+  status: BusinessReviewStatus;
+  feedback: string | null;
+  decidedBy: string | null;
+  decidedAt: string | null;
+  reworkTaskId: string | null;
+  createdAt: string;
 }
 
 export interface MemoryCandidate {
@@ -130,7 +163,17 @@ export interface Project {
   description: string;
   rootDir: string;
   firstAgentId: string | null;
-  state: 'idle' | 'active' | 'paused' | 'completed' | 'archived';
+  state:
+    | 'idle'
+    | 'drafting'
+    | 'researching'
+    | 'equipping'
+    | 'staffing'
+    | 'ready'
+    | 'active'
+    | 'paused'
+    | 'completed'
+    | 'archived';
   settings: Record<string, unknown>;
 }
 
