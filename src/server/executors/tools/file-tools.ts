@@ -1,23 +1,31 @@
 /**
  * Worktree 文件工具集（Batch 11）。
  *
- * 为 OpenAI/Gemini 等 HTTP API 执行器提供 function calling 工具。
- * 模型通过 tool call 描述要做的操作（读/写/编辑/列文件/完成），Muster 在 worktree 内执行。
+ * 历史职责：为 OpenAI/Gemini 等 HTTP API 执行器提供 function calling 工具定义 +
+ * 工具执行入口（executeFileTool switch 分发）。
  *
- * 安全不变量：
+ * B1 骨干改造后：本文件只保留 **类型定义** 和 **工具定义数据（FILE_TOOLS）**。
+ * 工具执行逻辑（原 executeFileTool 的 switch）已迁到 `./registry.ts`，由
+ * `RuntimeToolRegistry` + `executeTool` 统一分发。新的可执行工具（MCP / 自定义 /
+ * AI 生成）请注册到 RuntimeToolRegistry，不要再扩展这里的 switch。
+ *
+ * FILE_TOOLS 保留是为了让 registry.ts 能复用同一份工具描述，避免描述与运行时分叉；
+ * registry.ts 内部不直接 import FILE_TOOLS（它自带等价的 BUILTIN_TOOL_DEFINITIONS），
+ * 但本数组仍作为「事实定义」供 adapter / 文档 / 测试引用。
+ *
+ * 安全不变量（在 registry.ts 的 handler 中继续保持）：
  * - 所有文件操作限制在 ctx.workingDir 内（isWithinWorkspace 校验）。
  * - readonlyDirs 可读但不可写。
  * - done 工具结束循环并产出 AgentRunResult。
- *
- * 工具定义采用 OpenAI function calling 格式（name/description/parameters），
- * Gemini adapter 负责转换格式。
  */
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync } from 'node:fs';
-import path from 'node:path';
-import { resolve } from 'node:path';
-import { isWithinWorkspace } from '../../sandbox';
-import { agentRunResultSchema } from '../result-schema';
 import type { AgentRunResult } from '../../../shared/types';
+import type { DB } from '../../db/client';
+
+/** 业务审批上下文：submit_review 工具用，通过 taskId 反查公司/项目/员工。 */
+export interface ReviewContext {
+  db: DB;
+  taskId: string;
+}
 
 /** OpenAI function calling 工具定义。 */
 export interface ToolDefinition {
@@ -71,6 +79,41 @@ export const FILE_TOOLS: ToolDefinition[] = [
           },
         },
         required: ['action'],
+      },
+    },
+  },
+  // 业务产物审批：Agent 产出关键业务产物后提交人工审批
+  {
+    type: 'function',
+    function: {
+      name: 'submit_review',
+      description: '提交业务产物（素材/成品/人物档案/功法/人物关系/剧情）等待用户人工审批。用于产出关键内容后请求确认是否达标。提交后根据公司审批模式，当前 Task 会阻塞等待（blocking）或继续执行（parallel）。',
+      parameters: {
+        type: 'object',
+        properties: {
+          review_kind: {
+            type: 'string',
+            enum: ['material', 'artifact', 'character', 'skill', 'relationship', 'plot', 'custom'],
+            description: '产物类型：material=素材, artifact=成品, character=人物, skill=功法/技能, relationship=人物关系, plot=剧情, custom=自定义',
+          },
+          subject_id: {
+            type: 'string',
+            description: '被审对象的唯一标识（如人物档案 id、素材 id、文件路径等）',
+          },
+          title: {
+            type: 'string',
+            description: '审批标题（如：人物档案：林某某、第一章初稿）',
+          },
+          summary: {
+            type: 'string',
+            description: '一句话摘要，便于用户快速判断',
+          },
+          snapshot: {
+            type: 'object',
+            description: '产物快照（审批时的内容副本，防止后续被改）。结构随 review_kind 变化：character 含 name/age/background/appearance/traits；skill 含 name/level/description/effects；relationship 含 characters/edges；plot 含 title/mainline/foreshadowing/conflicts；material/artifact 含 path/format/content。',
+          },
+        },
+        required: ['review_kind', 'subject_id', 'title'],
       },
     },
   },
@@ -179,157 +222,28 @@ export const FILE_TOOLS: ToolDefinition[] = [
   },
 ];
 
-const MAX_READ_BYTES = 64 * 1024;
-
 /**
- 执行单个工具调用，返回结果内容。
- - workingDir：worktree 根目录。
- - readonlyDirs：只读目录列表（写入这些路径会被拒绝）。
- - loopback：Agent Bridge 配置（notify_host 工具用）。
+ * @deprecated B1 骨干改造后，工具执行统一走 `./registry.ts` 的 `executeTool`。
+ * 此函数保留为兼容入口，内部委托给 RuntimeToolRegistry 分发。
+ * 新代码请直接使用 `executeTool(call, ctx)`。
  */
 export async function executeFileTool(
   call: ToolCall,
   workingDir: string,
   readonlyDirs: string[] = [],
   loopback?: { baseUrl: string; taskId: string },
-  permissionGuard?: (request: { action: string; path?: string; command?: string }) => { allowed: boolean; message?: string }|Promise<{ allowed: boolean; message?: string }>,
+  permissionGuard?: (request: { action: string; path?: string; command?: string }) => { allowed: boolean; message?: string } | Promise<{ allowed: boolean; message?: string }>,
+  reviewContext?: ReviewContext,
 ): Promise<ToolResult> {
-  const abs = (rel: string): string => resolve(workingDir, rel);
-
-  const assertWritable = (target: string): void => {
-    if (!isWithinWorkspace(workingDir, target)) {
-      throw new Error(`路径越界：${target} 不在工作目录 ${workingDir} 内`);
-    }
-    for (const ro of readonlyDirs) {
-      if (isWithinWorkspace(ro, target)) {
-        throw new Error(`路径只读：${target} 在授权只读目录 ${ro} 内，不可写入`);
-      }
-    }
+  // 延迟导入避免运行时循环依赖（registry.ts 仅 import 本模块的类型）
+  const { createBuiltinToolRegistry, executeTool } = await import('./registry');
+  const ctx: Parameters<typeof executeTool>[1] = {
+    workingDir,
+    readonlyDirs,
+    loopback,
+    reviewContext,
+    permissionGuard,
+    toolRegistry: createBuiltinToolRegistry(),
   };
-
-  const permissionAction = call.name === 'read_file' || call.name === 'list_files' ? 'read-file'
-    : call.name === 'write_file' || call.name === 'edit_file' ? 'write-file' : null;
-  if (permissionAction && permissionGuard) {
-    const rel = String(call.args.path ?? call.args.dir ?? '.');
-    const decision = await permissionGuard({ action: permissionAction, path: abs(rel) });
-    if (!decision.allowed) return { toolCallId: call.id, name: call.name, content: `需要用户审批：${decision.message ?? '权限策略未允许此操作'}` };
-  }
-
-  switch (call.name) {
-    case 'read_file': {
-      const rel = String(call.args.path ?? '');
-      const target = abs(rel);
-      if (!isWithinWorkspace(workingDir, target)) {
-        return { toolCallId: call.id, name: call.name, content: `错误：路径越界 ${rel}` };
-      }
-      if (!existsSync(target)) return { toolCallId: call.id, name: call.name, content: `错误：文件不存在 ${rel}` };
-      const buf = readFileSync(target);
-      const slice = buf.subarray(0, MAX_READ_BYTES).toString('utf8');
-      return {
-        toolCallId: call.id,
-        name: call.name,
-        content: slice + (buf.length > MAX_READ_BYTES ? '\n[内容已截断]' : ''),
-      };
-    }
-    case 'write_file': {
-      const rel = String(call.args.path ?? '');
-      const content = String(call.args.content ?? '');
-      const target = abs(rel);
-      try {
-        assertWritable(target);
-        mkdirSync(path.dirname(target), { recursive: true });
-        writeFileSync(target, content);
-        return { toolCallId: call.id, name: call.name, content: `已写入 ${rel}（${content.length} 字符）` };
-      } catch (e) {
-        return { toolCallId: call.id, name: call.name, content: `错误：${(e as Error).message}` };
-      }
-    }
-    case 'edit_file': {
-      const rel = String(call.args.path ?? '');
-      const oldText = String(call.args.old_text ?? '');
-      const newText = String(call.args.new_text ?? '');
-      const target = abs(rel);
-      try {
-        assertWritable(target);
-        if (!existsSync(target)) return { toolCallId: call.id, name: call.name, content: `错误：文件不存在 ${rel}` };
-        const original = readFileSync(target, 'utf8');
-        const occurrences = original.split(oldText).length - 1;
-        if (occurrences === 0) return { toolCallId: call.id, name: call.name, content: `错误：未找到要替换的文本` };
-        if (occurrences > 1) return { toolCallId: call.id, name: call.name, content: `错误：要替换的文本匹配 ${occurrences} 处，必须唯一` };
-        const updated = original.replace(oldText, newText);
-        writeFileSync(target, updated);
-        return { toolCallId: call.id, name: call.name, content: `已编辑 ${rel}` };
-      } catch (e) {
-        return { toolCallId: call.id, name: call.name, content: `错误：${(e as Error).message}` };
-      }
-    }
-    case 'list_files': {
-      const rel = String(call.args.dir ?? '.');
-      const target = abs(rel);
-      if (!isWithinWorkspace(workingDir, target)) {
-        return { toolCallId: call.id, name: call.name, content: `错误：路径越界 ${rel}` };
-      }
-      if (!existsSync(target)) return { toolCallId: call.id, name: call.name, content: `错误：目录不存在 ${rel}` };
-      try {
-        const entries = readdirSync(target).map((name) => {
-          const stat = statSync(path.join(target, name));
-          return `${stat.isDirectory() ? '[DIR]' : '     '} ${name}`;
-        });
-        return { toolCallId: call.id, name: call.name, content: entries.join('\n') || '(空目录)' };
-      } catch (e) {
-        return { toolCallId: call.id, name: call.name, content: `错误：${(e as Error).message}` };
-      }
-    }
-    case 'done': {
-      const parsed = agentRunResultSchema.safeParse(call.args);
-      if (!parsed.success) {
-        return {
-          toolCallId: call.id,
-          name: call.name,
-          content: `错误：AgentRunResult 校验失败：${parsed.error.message}`,
-        };
-      }
-      return {
-        toolCallId: call.id,
-        name: call.name,
-        content: 'Task 完成',
-        doneResult: parsed.data,
-      };
-    }
-    case 'notify_host': {
-      if (!loopback) {
-        return { toolCallId: call.id, name: call.name, content: '宿主桥接未配置，跳过通知' };
-      }
-      const action = String(call.args.action ?? 'progress');
-      const text = String(call.args.text ?? '');
-      const filePath = String(call.args.path ?? '');
-      // 校验：progress/notify 需要 text，preview 需要 path
-      if ((action === 'progress' || action === 'notify') && !text) {
-        return { toolCallId: call.id, name: call.name, content: `错误：action=${action} 需要 text 参数` };
-      }
-      if (action === 'preview' && !filePath) {
-        return { toolCallId: call.id, name: call.name, content: '错误：action=preview 需要 path 参数' };
-      }
-      try {
-        const params = new URLSearchParams({ taskId: loopback.taskId });
-        if (action === 'preview' && filePath) {
-          params.set('path', filePath);
-        } else if (text) {
-          params.set('text', text);
-        }
-        // fire-and-forget HTTP 调用，不阻塞工具循环
-        const url = `${loopback.baseUrl}/bridge/${action}?${params.toString()}`;
-        fetch(url).catch(() => { /* best-effort */ });
-        return {
-          toolCallId: call.id,
-          name: call.name,
-          content: `已发送${action === 'preview' ? '预览请求' : action === 'notify' ? '通知' : '进度'}：${text || filePath}`,
-        };
-      } catch (e) {
-        return { toolCallId: call.id, name: call.name, content: `通知发送失败：${(e as Error).message}` };
-      }
-    }
-    default:
-      return { toolCallId: call.id, name: call.name, content: `错误：未知工具 ${call.name}` };
-  }
+  return executeTool(call, ctx);
 }

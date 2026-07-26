@@ -14,7 +14,8 @@
  *（compaction_summary + 最近 Task summary 作为 assistant 消息）。
  */
 import type { ExecutionAdapter, ExecutionContext, ExecutionEvents, ExecutionRunResult } from '../task-engine/executor';
-import { runToolLoop, FILE_TOOLS, type ChatMessage, type CallModelFn } from './tool-loop';
+import { runToolLoop, type ChatMessage, type CallModelFn } from './tool-loop';
+import type { ToolDefinition } from './tools/registry';
 import { estimateCostUSD } from './model-pricing';
 import { PROVIDER_DEFAULT_API_KEY_ENV, PROVIDER_DEFAULT_BASE_URL, PROVIDER_DEFAULT_MODEL } from './provider';
 import { getDb } from '../db/client';
@@ -65,11 +66,11 @@ export class OpenAICompatibleAdapter implements ExecutionAdapter {
     const messages = this.buildMessages(ctx);
 
     // callModel：发 POST /chat/completions
-    const callModel: CallModelFn = async (msgs, signal) => {
+    const callModel: CallModelFn = async (msgs, signal, tools: ToolDefinition[]) => {
       const body = {
         model,
         messages: msgs,
-        tools: FILE_TOOLS,
+        tools,
         tool_choice: 'auto',
         stream: false,
       };
@@ -126,6 +127,7 @@ export class OpenAICompatibleAdapter implements ExecutionAdapter {
         model,
         loopback: ctx.loopback,
         permissionGuard: ctx.permissionGuard,
+        reviewContext: { db: getDb(), taskId: ctx.task.id },
       });
 
       const durationMs = Date.now() - start;

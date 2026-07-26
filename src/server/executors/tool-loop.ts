@@ -8,7 +8,17 @@
  *
  * 具体 adapter 提供 `callModel` 函数（发起 HTTP 请求并返回 OpenAI 格式的响应）。
  */
-import { executeFileTool, FILE_TOOLS, type ToolCall, type ToolResult } from './tools/file-tools';
+import {
+  executeTool,
+  createBuiltinToolRegistry,
+  RuntimeToolRegistry,
+  type ToolContext,
+  type ToolCall,
+  type ToolResult,
+  type ToolDefinition,
+  type ReviewContext,
+} from './tools/registry';
+import { FILE_TOOLS } from './tools/file-tools';
 import type { AgentRunResult } from '../../shared/types';
 import type { ExecutionUsage } from '../task-engine/executor';
 
@@ -36,8 +46,12 @@ export interface ModelCallResult {
   };
 }
 
-/** adapter 提供的模型调用函数。 */
-export type CallModelFn = (messages: ChatMessage[], signal: AbortSignal) => Promise<ModelCallResult>;
+/** adapter 提供的模型调用函数。tools 为当前可用的工具定义（来自 RuntimeToolRegistry）。 */
+export type CallModelFn = (
+  messages: ChatMessage[],
+  signal: AbortSignal,
+  tools: ToolDefinition[],
+) => Promise<ModelCallResult>;
 
 export interface ToolLoopOptions {
   /** 初始 messages（system + user）。 */
@@ -48,8 +62,12 @@ export interface ToolLoopOptions {
   workingDir: string;
   /** 只读目录。 */
   readonlyDirs?: string[];
+  /** 运行时工具注册表。未传时使用内置 7 工具（B1 兼容默认）。 */
+  toolRegistry?: RuntimeToolRegistry;
   /** Agent Bridge loopback 配置（notify_host 工具用）。 */
   loopback?: { baseUrl: string; taskId: string };
+  /** 业务审批上下文（submit_review 工具用）。 */
+  reviewContext?: ReviewContext;
   /** 最大工具调用轮数。 */
   maxToolCalls: number;
   /** 超时 ms。 */
@@ -74,7 +92,8 @@ export interface ToolLoopResult {
  */
 export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult> {
   const messages = [...opts.messages];
-  const tools = FILE_TOOLS;
+  const toolRegistry = opts.toolRegistry ?? createBuiltinToolRegistry();
+  const tools = toolRegistry.definitions();
   let rounds = 0;
   let totalInput = 0;
   let totalOutput = 0;
@@ -91,7 +110,7 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult
     while (rounds < opts.maxToolCalls) {
       if (controller.signal.aborted) break;
       rounds++;
-      const modelResult = await opts.callModel(messages, controller.signal);
+      const modelResult = await opts.callModel(messages, controller.signal, tools);
       totalInput += modelResult.usage.promptTokens;
       totalOutput += modelResult.usage.completionTokens;
       totalCached += modelResult.usage.cachedTokens ?? 0;
@@ -115,7 +134,15 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult
           // 参数解析失败，用空对象
         }
         const call: ToolCall = { id: tc.id, name: tc.function.name, args: parsedArgs };
-        const tr: ToolResult = await executeFileTool(call, opts.workingDir, opts.readonlyDirs ?? [], opts.loopback, opts.permissionGuard);
+        const ctx: ToolContext = {
+          workingDir: opts.workingDir,
+          readonlyDirs: opts.readonlyDirs ?? [],
+          loopback: opts.loopback,
+          reviewContext: opts.reviewContext,
+          permissionGuard: opts.permissionGuard,
+          toolRegistry,
+        };
+        const tr: ToolResult = await executeTool(call, ctx);
         // 把 tool result 加回 messages
         messages.push({
           role: 'tool',
@@ -166,5 +193,10 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult
   };
 }
 
-/** 工具定义（供 adapter 传给 API）。 */
-export { FILE_TOOLS };
+/**
+ * 工具定义的来源已迁移到 RuntimeToolRegistry（B1 骨干）。
+ * adapter 通过 callModel 的第三个参数 `tools` 拿到动态工具集，
+ * 不再直接引用模块级 FILE_TOOLS 常量。
+ * 如需静态工具定义（如测试/文档），仍可从 './tools/file-tools' 导入 FILE_TOOLS。
+ */
+export { FILE_TOOLS } from './tools/file-tools';

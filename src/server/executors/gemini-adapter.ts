@@ -7,7 +7,8 @@
  * 会话复用：同 OpenAI，用 message history 重建上下文。
  */
 import type { ExecutionAdapter, ExecutionContext, ExecutionEvents, ExecutionRunResult } from '../task-engine/executor';
-import { runToolLoop, FILE_TOOLS, type ChatMessage, type CallModelFn } from './tool-loop';
+import { runToolLoop, type ChatMessage, type CallModelFn } from './tool-loop';
+import type { ToolDefinition } from './tools/registry';
 import { estimateCostUSD } from './model-pricing';
 import { PROVIDER_DEFAULT_API_KEY_ENV, PROVIDER_DEFAULT_BASE_URL, PROVIDER_DEFAULT_MODEL } from './provider';
 import { getDb } from '../db/client';
@@ -52,7 +53,7 @@ export class GeminiAdapter implements ExecutionAdapter {
     const messages = this.buildMessages(ctx);
     const baseURL = this.opts.baseURL;
 
-    const callModel: CallModelFn = async (msgs, signal) => {
+    const callModel: CallModelFn = async (msgs, signal, tools: ToolDefinition[]) => {
       // 转换 OpenAI 风格 messages → Gemini contents
       const systemInstruction = msgs.find((m) => m.role === 'system')?.content;
       const contents = msgs
@@ -61,7 +62,7 @@ export class GeminiAdapter implements ExecutionAdapter {
 
       const body: Record<string, unknown> = {
         contents,
-        tools: [{ functionDeclarations: FILE_TOOLS.map((t) => t.function) }],
+        tools: [{ functionDeclarations: tools.map((t) => t.function) }],
         toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
       };
       if (systemInstruction) {
@@ -133,6 +134,7 @@ export class GeminiAdapter implements ExecutionAdapter {
         model,
         loopback: ctx.loopback,
         permissionGuard: ctx.permissionGuard,
+        reviewContext: { db: getDb(), taskId: ctx.task.id },
       });
 
       const durationMs = Date.now() - start;
