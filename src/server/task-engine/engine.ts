@@ -21,6 +21,9 @@ import {
   getTask,
   failTask,
   blockTask,
+  blockTaskForPublishConflict,
+  completeTaskAfterPublishConflict,
+  assertPublishConflictCanFinalize,
   createTask,
   bindTaskToProjectTaskThread,
   markTaskWaitingApproval,
@@ -67,6 +70,30 @@ export interface EngineOptions {
   concurrency?: number;
   /** 轮询间隔 ms（start 后）。 */
   pollIntervalMs?: number;
+}
+
+interface PublishConflictResolutionContext {
+  publishId: string;
+  rootPublishId: string;
+  sourceTaskIds: string[];
+  conflicts: string[];
+  attempt: number;
+}
+
+function getPublishConflictResolutionContext(input: Record<string, unknown>): PublishConflictResolutionContext | null {
+  if (input.reason !== 'publish_conflict' || typeof input.publishId !== 'string') return null;
+  const sourceTaskIds = Array.isArray(input.sourceTaskIds)
+    ? input.sourceTaskIds.filter((value): value is string => typeof value === 'string')
+    : typeof input.sourceTaskId === 'string' ? [input.sourceTaskId] : [];
+  return {
+    publishId: input.publishId,
+    rootPublishId: typeof input.rootPublishId === 'string' ? input.rootPublishId : input.publishId,
+    sourceTaskIds,
+    conflicts: Array.isArray(input.conflicts)
+      ? input.conflicts.filter((value): value is string => typeof value === 'string')
+      : [],
+    attempt: typeof input.resolutionAttempt === 'number' ? input.resolutionAttempt : 1,
+  };
 }
 
 function isRecoverableSessionError(error:unknown):boolean{return/(context|overflow|too many tokens|network|econn|timeout|timed out|no output|process.*exit)/i.test(error instanceof Error?error.message:String(error));}
@@ -182,6 +209,9 @@ export class TaskEngine {
     let worktreeInfo: ReturnType<typeof createWorktree> | null = null;
     let preserveWorktree = false;
     let workingDir = project.rootDir;
+    // B3a：MCP 连接池提升到 try 外，确保 finally 能清理（ctx 在 try 内定义，作用域不达 finally）
+    let mcpPool: import('../executors/tools/mcp/client-pool').McpClientPool | undefined;
+    const resolutionContext = getPublishConflictResolutionContext(task.inputProtocol);
     try {
       worktreeInfo = getTaskRuntime(this.db, task.id) ?? null;
       if (worktreeInfo && !existsSync(worktreeInfo.path)) {
@@ -214,6 +244,17 @@ export class TaskEngine {
 
     try {
       markRunning(this.db, task.id);
+      // 补发 task.running：让工位墙/状态看板在 claimed→running 的瞬间秒级刷新
+      // （markRunning 只写 DB 事件，不走 realtime，否则前端只能等 5s 轮询）
+      realtime.publish({
+        id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        type: 'task.running',
+        companyId: company.id,
+        projectId: project.id,
+        taskId: task.id,
+        occurredAt: new Date().toISOString(),
+        payload: { threadId: thread.id, agentId: agent.id, seq: task.seq },
+      });
       checkBudget(this.db, project.id, task.budget);
 
       const executorProfile = getEmployeeExecutorProfile(this.db, agent.id);
@@ -296,6 +337,23 @@ export class TaskEngine {
             : [],
         } : undefined,
       };
+      // B3a：装配工具集（内置 + 已启用 MCP），失败不阻塞（降级为纯内置）
+      try {
+        const { assembleTools } = await import('../executors/tool-assembly');
+        const assembled = await assembleTools(this.db, company.id);
+        ctx.toolRegistry = assembled.registry;
+        ctx.mcpPool = assembled.pool;
+        mcpPool = assembled.pool; // 提升引用，供 finally 清理
+      } catch (e) {
+        log.warn('tool assembly failed, falling back to builtin only', { taskId: task.id, err: e instanceof Error ? e.message : String(e) });
+      }
+      if (resolutionContext) {
+        this.publishQueue.prepareResolutionWorkspace(
+          resolutionContext.publishId,
+          task.id,
+          worktreeInfo.path,
+        );
+      }
       const runController = new AbortController();
       this.activeRuns.set(task.id, runController);
       ctx.signal = runController.signal;
@@ -382,24 +440,127 @@ export class TaskEngine {
       }
 
       if (result.outcome === 'waiting_input' || result.outcome === 'waiting_dependency') {
-        commitAll(worktreeInfo.path, `muster: checkpoint task ${task.id}`);
+        commitAll(worktreeInfo.path, `muster: checkpoint task ${task.id}`, {
+          excludePaths: resolutionContext ? ['.muster-conflicts'] : [],
+        });
         preserveWorktree = true;
+      }
+      if (resolutionContext && result.outcome === 'blocked') preserveWorktree = true;
+
+      if (resolutionContext && result.outcome === 'completed') {
+        const artifactPaths = new Set(result.artifacts.map((artifact) => artifact.path));
+        const missing = resolutionContext.conflicts.filter((conflictPath) => !artifactPaths.has(conflictPath));
+        const unrelated = result.artifacts
+          .map((artifact) => artifact.path)
+          .filter((artifactPath) => !resolutionContext.conflicts.includes(artifactPath));
+        if (missing.length > 0 || unrelated.length > 0) {
+          blockTask(
+            this.db,
+            task.id,
+            `裁决结果范围不完整：缺少 [${missing.join(', ')}]，越界 [${unrelated.join(', ')}]`,
+          );
+          preserveWorktree = true;
+          updateThreadState(this.db, thread.id, 'paused');
+          return true;
+        }
+        assertPublishConflictCanFinalize(this.db, task.id, resolutionContext.sourceTaskIds);
+        this.publishQueue.cleanupResolutionWorkspace(resolutionContext.publishId, worktreeInfo.path);
       }
 
       if (result.outcome === 'completed' && result.artifacts.length > 0 && worktreeInfo) {
         const pub = this.publishArtifacts(task.id, thread.id, project.rootDir, worktreeInfo, result);
         if (pub.blocked) {
-          blockTask(this.db, task.id, `成果发布冲突：${pub.conflicts.join(', ')}`);
+          blockTaskForPublishConflict(
+            this.db,
+            task.id,
+            `成果发布冲突：${pub.conflicts.join(', ')}`,
+            result.artifacts,
+          );
+          preserveWorktree = true;
           updateThreadState(this.db, thread.id, 'paused');
-          realtime.publish({
-            id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-            type: 'publish.blocked',
-            projectId: project.id,
-            taskId: task.id,
-            occurredAt: new Date().toISOString(),
-            payload: { conflicts: pub.conflicts, publishId: pub.id },
-          });
+          const nextAttempt = resolutionContext ? resolutionContext.attempt + 1 : 1;
+          const rootPublishId = resolutionContext?.rootPublishId ?? pub.id;
+          const sourceTaskIds = [...new Set([...(resolutionContext?.sourceTaskIds ?? []), task.id])];
+          if (project.firstAgentId && nextAttempt <= 2) {
+            const resolutionTask = this.db.transaction(() => {
+              const created = this.createPublishConflictResolutionTask({
+                task,
+                assigneeAgentId: project.firstAgentId!,
+                publishId: pub.id,
+                rootPublishId,
+                conflicts: pub.conflicts,
+                sourceTaskIds,
+                attempt: nextAttempt,
+              });
+              this.publishQueue.assignResolutionTask(pub.id, created.id);
+              return created;
+            })();
+            realtime.publish(makeLifecycleEvent('publish.conflict-assigned', {
+              publishId: pub.id,
+              rootPublishId,
+              resolutionTaskId: resolutionTask.id,
+              sourceTaskId: task.id,
+              assigneeAgentId: project.firstAgentId,
+              conflicts: pub.conflicts,
+              attempt: nextAttempt,
+            }, { companyId: company.id, projectId: project.id, taskId: task.id }));
+          } else {
+            const escalationIds = [pub.id, rootPublishId, resolutionContext?.publishId].filter(
+              (value): value is string => Boolean(value),
+            );
+            for (const publishId of new Set(escalationIds)) this.publishQueue.markEscalated(publishId);
+            realtime.publish(makeLifecycleEvent('publish.conflict-escalated', {
+              publishId: pub.id,
+              rootPublishId,
+              sourceTaskId: task.id,
+              conflicts: pub.conflicts,
+              attempt: nextAttempt,
+              reason: project.firstAgentId ? '裁决后再次冲突，已达到自动裁决上限' : '项目未设置第一负责人',
+            }, { companyId: company.id, projectId: project.id, taskId: task.id }));
+          }
           return true;
+        }
+        if (resolutionContext) {
+          const publishIds = [...new Set([resolutionContext.rootPublishId, resolutionContext.publishId])];
+          const sourceTaskIds = [...new Set(resolutionContext.sourceTaskIds)];
+          try {
+            this.db.transaction(() => {
+              for (const publishId of publishIds) this.publishQueue.markResolved(publishId, task.id);
+              for (const sourceTaskId of sourceTaskIds) {
+                completeTaskAfterPublishConflict(this.db, sourceTaskId, task.id);
+              }
+            })();
+          } catch (finalizeError) {
+            try {
+              this.publishQueue.rollback(pub.id, project.rootDir);
+            } catch (rollbackError) {
+              throw new AppError(
+                ErrorCode.WORKTREE_CONFLICT,
+                `裁决状态收口失败且发布补偿回滚失败：${String(finalizeError)}；${String(rollbackError)}`,
+              );
+            }
+            throw finalizeError;
+          }
+          for (const sourceTaskId of sourceTaskIds) {
+            const sourceRuntime = getTaskRuntime(this.db, sourceTaskId);
+            if (!sourceRuntime) continue;
+            try {
+              removeWorktree(project.rootDir, sourceRuntime);
+              deleteTaskRuntime(this.db, sourceTaskId);
+            } catch (error) {
+              log.warn('resolved conflict worktree cleanup failed', { sourceTaskId, error: String(error) });
+            }
+          }
+          for (const publishId of publishIds) {
+            updateThreadState(this.db, this.publishQueue.getRecord(publishId).threadId, 'idle');
+          }
+          realtime.publish(makeLifecycleEvent('publish.conflict-resolved', {
+            publishId: resolutionContext.publishId,
+            rootPublishId: resolutionContext.rootPublishId,
+            resolutionTaskId: task.id,
+            sourceTaskIds,
+            mergedFiles: pub.mergedFiles,
+          }, { companyId: company.id, projectId: project.id, taskId: task.id }));
         }
       }
 
@@ -414,7 +575,7 @@ export class TaskEngine {
         });
       }
       const approvalMatch=result.outcome==='blocked'?/审批请求\s+(approval_[A-Za-z0-9_-]+)/.exec(result.summary):null;
-      if(approvalMatch){commitAll(worktreeInfo.path,`muster: approval checkpoint ${task.id}`);preserveWorktree=true;markTaskWaitingApproval(this.db,task.id,approvalMatch[1]!);updateThreadState(this.db,thread.id,'paused');return true;}
+      if(approvalMatch){commitAll(worktreeInfo.path,`muster: approval checkpoint ${task.id}`,{excludePaths:resolutionContext?['.muster-conflicts']:[]});preserveWorktree=true;markTaskWaitingApproval(this.db,task.id,approvalMatch[1]!);updateThreadState(this.db,thread.id,'paused');return true;}
       completeTask(this.db, task.id, result);
       // 讨论结论→建议 Task（PRD Phase 8.4）：brainstorm 完成且 outputProtocol.suggestions 存在时派生建议
       if (
@@ -556,6 +717,14 @@ export class TaskEngine {
       return true;
     } catch (err) {
       if (getTask(this.db, task.id).state === 'cancelled') {
+        if (resolutionContext) {
+          this.escalatePublishConflictResolution(resolutionContext, {
+            companyId: company.id,
+            projectId: project.id,
+            taskId: task.id,
+            reason: '裁决 Task 已取消，可从成果历史进入该 Task 后恢复',
+          });
+        }
         updateThreadState(this.db, thread.id, 'idle');
         log.info('cancelled task execution stopped', { taskId: task.id });
         return true;
@@ -565,6 +734,14 @@ export class TaskEngine {
         updateThreadState(this.db, thread.id, 'paused');
         log.warn('task safely paused after approval bridge timeout', { taskId: task.id });
         return true;
+      }
+      if (resolutionContext) {
+        this.escalatePublishConflictResolution(resolutionContext, {
+          companyId: company.id,
+          projectId: project.id,
+          taskId: task.id,
+          reason: `裁决执行失败，可从成果历史进入该 Task 后恢复：${err instanceof Error ? err.message : String(err)}`,
+        });
       }
       this.handleRunError(task.id, err);
       updateThreadState(this.db, thread.id, 'failed');
@@ -586,6 +763,14 @@ export class TaskEngine {
     } finally {
       clearInterval(hbTimer);
       this.activeRuns.delete(task.id);
+      // B3a：关闭 MCP 连接池（即使 task 失败也要清理子进程）
+      if (mcpPool) {
+        try {
+          await mcpPool.close();
+        } catch {
+          /* ignore */
+        }
+      }
       // 清理 worktree（已 publish 或失败都不再保留工作目录）
       if (worktreeInfo && !preserveWorktree) {
         try {
@@ -626,6 +811,57 @@ export class TaskEngine {
           operation: a.operation,
         })),
       });
+  }
+
+  private createPublishConflictResolutionTask(input: {
+    task: ReturnType<typeof getTask>;
+    assigneeAgentId: string;
+    publishId: string;
+    rootPublishId: string;
+    conflicts: string[];
+    sourceTaskIds: string[];
+    attempt: number;
+  }): ReturnType<typeof createTask> {
+    return createTask(this.db, {
+      projectId: input.task.projectId,
+      projectTaskId: input.task.projectTaskId,
+      parentTaskId: input.task.id,
+      rootTaskId: input.task.rootTaskId ?? input.task.id,
+      assigneeAgentId: input.assigneeAgentId,
+      title: `[裁决] Task #${input.task.seq} 成果发布冲突`,
+      priority: 8,
+      inputProtocol: {
+        reason: 'publish_conflict',
+        publishId: input.publishId,
+        rootPublishId: input.rootPublishId,
+        sourceTaskIds: input.sourceTaskIds,
+        conflicts: input.conflicts,
+        resolutionAttempt: input.attempt,
+        conflictSnapshotDir: `.muster-conflicts/${input.publishId}`,
+        instructions: '比较裁决包中的 base/ours/theirs；需要用户决定时返回 waiting_input；最终只修改并声明全部冲突文件为 artifacts。',
+      },
+      outputProtocol: {
+        requiredFields: ['summary', 'artifacts'],
+        artifactPaths: input.conflicts,
+      },
+    });
+  }
+
+  private escalatePublishConflictResolution(
+    context: PublishConflictResolutionContext,
+    scope: { companyId: string; projectId: string; taskId: string; reason: string },
+  ): void {
+    for (const publishId of new Set([context.rootPublishId, context.publishId])) {
+      this.publishQueue.markEscalated(publishId);
+    }
+    realtime.publish(makeLifecycleEvent('publish.conflict-escalated', {
+      publishId: context.publishId,
+      rootPublishId: context.rootPublishId,
+      sourceTaskId: scope.taskId,
+      conflicts: context.conflicts,
+      attempt: context.attempt,
+      reason: scope.reason,
+    }, { companyId: scope.companyId, projectId: scope.projectId, taskId: scope.taskId }));
   }
 
   /** 异常分级（P7）：根据错误类型走不同分支。 */
@@ -792,4 +1028,3 @@ function resolveExecutorCredentialForTask(
     return legacyEnv ?? providerFallback;
   }
 }
-

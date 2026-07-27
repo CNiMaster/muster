@@ -76,6 +76,11 @@ export interface LifecycleEventPayloadMap {
     to: ProjectPhase;
     reason: string;
   };
+  // Plugin 系统（B3a）：安装/启停/健康检查
+  'plugin.installed': { pluginId: string };
+  'plugin.enabled': { pluginId: string };
+  'plugin.disabled': { pluginId: string };
+  'plugin.health-failed': { pluginId: string; error: string };
 }
 
 /**

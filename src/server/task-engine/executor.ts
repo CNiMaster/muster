@@ -31,6 +31,13 @@ export interface ExecutionContext {
   /** 授权只读访问的额外目录（PRD Phase 3.4，授权参考项目根目录）。 */
   readonlyDirs?: string[];
   /**
+   * 运行时工具注册表（B3a）：内置工具 + 已启用 MCP 工具的合并集。
+   * 缺省 undefined 时 adapter 走 createBuiltinToolRegistry（向后兼容 B1/B2）。
+   */
+  toolRegistry?: import('../executors/tools/registry').RuntimeToolRegistry;
+  /** MCP 连接池（B3a）：task 结束时由 engine 关闭。 */
+  mcpPool?: import('../executors/tools/mcp/client-pool').McpClientPool;
+  /**
    * 员工级执行器配置（PRD Phase 3，覆盖系统默认）。
    * 来自 agent_definition.executor_json，可含 model/claudeBin/timeoutMs/maxToolCalls/skipPermissions。
    */

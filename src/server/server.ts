@@ -26,6 +26,7 @@ import { usageRouter } from './api/reports-usage';
 import { novelRouter, projectScopedNovel } from './api/novel';
 import { projectPhase7, reportByIdRouter } from './api/phase7';
 import { companyMessagesRouter, projectMessagesRouter } from './api/conversation';
+import { pluginsRouter } from './api/plugins';
 import { projectArtifactsRouter } from './api/artifacts';
 import { companyEventsRouter, projectEventsRouter } from './api/events';
 import { workflowsRouter } from './api/workflows';
@@ -63,6 +64,7 @@ import { seedDefaultCredentialDefinitions } from './domain/credential-store';
 import { toolsRouter } from './api/tools';
 import { credentialsRouter, companyCredentialsRouter } from './api/credentials';
 import { materialsRouter } from './api/materials';
+import { businessReviewsRouter } from './api/business-reviews';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -180,6 +182,7 @@ async function createApp(): Promise<AppHandle> {
   app.use('/api/companies/:companyId/template-health', templateHealthRouter);
   app.use('/api/companies/:companyId/credentials', companyCredentialsRouter);
   app.use('/api/projects/:id', projectById);
+  app.use('/api/plugins', pluginsRouter);
   app.use('/api/reports/:id', reportByIdRouter);
   app.use('/api/tasks/:id', taskByIdRouter);
   app.use('/api/settings', settingsRouter);
@@ -192,6 +195,7 @@ async function createApp(): Promise<AppHandle> {
   app.use('/api/company-setup', companySetupRouter);
   app.use('/api/tools', toolsRouter);
   app.use('/api/credentials', credentialsRouter);
+  app.use('/api/business-reviews', businessReviewsRouter);
 
   // Agent Bridge：Agent 通过 curl 调用 /bridge/<action> 反馈进度
   app.use('/bridge', bridgeRouter);

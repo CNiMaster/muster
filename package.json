@@ -16,12 +16,15 @@
     "test:e2e": "playwright test",
     "test:product-acceptance": "tsx scripts/product-acceptance.ts",
     "test:claude-smoke": "tsx scripts/claude-smoke.ts",
+    "cleanup:companies": "tsx scripts/cleanup-companies.ts",
     "build:server": "tsup",
+    "build:migrations": "node -e \"require('fs').cpSync('src/server/db/migrations','dist/server/db/migrations',{recursive:true})\"",
     "build:client": "vite build",
-    "build": "npm run build:server && npm run build:client",
+    "build": "npm run build:server && npm run build:migrations && npm run build:client",
     "clean": "rm -rf dist tsconfig.tsbuildtime *.tsbuildtime"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@tanstack/react-query": "^5.62.0",
     "@xyflow/react": "^12.3.5",
     "better-sqlite3": "^11.7.0",

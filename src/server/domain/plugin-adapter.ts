@@ -207,7 +207,8 @@ function bridgeActionToPlugin(
 // 数据库 plugin 表 → Plugin（B3 写入侧启用后这里才有数据）
 // ──────────────────────────────────────────────────────────────────────────
 
-function parsePluginRow(row: PluginRow): Plugin {
+/** 把 plugin 表的行反序列化为 Plugin（plugin-install 等写侧模块复用）。 */
+export function parsePluginRow(row: PluginRow): Plugin {
   const source = parseSource(row.source_kind, row.source_ref);
   const scope = parseScope(row.scope_level, row.scope_id);
   const manifest = JSON.parse(row.manifest_json) as PluginManifest;

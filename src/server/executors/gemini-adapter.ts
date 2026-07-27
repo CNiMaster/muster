@@ -128,6 +128,7 @@ export class GeminiAdapter implements ExecutionAdapter {
         callModel,
         workingDir: ctx.workingDir,
         readonlyDirs: ctx.readonlyDirs,
+        toolRegistry: ctx.toolRegistry, // B3a：缺省 undefined 走内置 registry
         maxToolCalls,
         timeoutMs,
         signal: ctx.signal,
