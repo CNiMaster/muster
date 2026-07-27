@@ -44,10 +44,10 @@ export const projectStaffingSchema = z
 /** 项目准备就绪检查清单（ready 阶段产出，提交后进 active）。 */
 export const projectReadinessSchema = z
   .object({
-    draft: projectDraftSchema,
-    research: projectResearchSchema,
-    equipment: projectEquipmentSchema,
-    staffing: projectStaffingSchema,
+    draft: projectDraftSchema.default({ goal: '', audience: '', constraints: '' }),
+    research: projectResearchSchema.default({ summary: '', candidateSkills: [], candidateTools: [] }),
+    equipment: projectEquipmentSchema.default({ enabledPlugins: [], missingCapabilities: [] }),
+    staffing: projectStaffingSchema.default({ employeeIds: [] }),
     notes: z.string().default(''),
   })
   .strict();

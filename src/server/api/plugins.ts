@@ -28,9 +28,18 @@ import {
 import { McpClientPool } from '../executors/tools/mcp/client-pool';
 import { searchMarketplace, installMarketplaceEntry, type MarketplaceEntry, type InstallScope } from '../domain/marketplace';
 import { authorSkill } from '../domain/skill-author';
+import { getCompany } from '../domain/company';
 import { realtime } from '../realtime';
 import { makeLifecycleEvent } from '../../shared/lifecycle-events';
 import { AppError, ErrorCode } from '../../shared/errors';
+
+/** 组织配置锁：启停 plugin 需公司下班。 */
+function assertCompanyOff(db: ReturnType<typeof getDb>, companyId: string): void {
+  const company = getCompany(db, companyId);
+  if (company.state !== 'off') {
+    throw new AppError(ErrorCode.COMPANY_LOCKED, '公司上班期间不能修改能力配置，请先让公司下班');
+  }
+}
 
 export const pluginsRouter = Router();
 
@@ -125,6 +134,7 @@ pluginsRouter.post(
 pluginsRouter.post(
   '/companies/:companyId/plugins/:id/enable',
   asyncHandler(async (req, res) => {
+    assertCompanyOff(getDb(), param(req, 'companyId'));
     setCompanyPluginEnabled(getDb(), param(req, 'companyId'), param(req, 'id'), true);
     realtime.publish(
       makeLifecycleEvent('plugin.enabled', { pluginId: param(req, 'id') }, { companyId: param(req, 'companyId') }),
@@ -136,6 +146,7 @@ pluginsRouter.post(
 pluginsRouter.post(
   '/companies/:companyId/plugins/:id/disable',
   asyncHandler(async (req, res) => {
+    assertCompanyOff(getDb(), param(req, 'companyId'));
     setCompanyPluginEnabled(getDb(), param(req, 'companyId'), param(req, 'id'), false);
     realtime.publish(
       makeLifecycleEvent('plugin.disabled', { pluginId: param(req, 'id') }, { companyId: param(req, 'companyId') }),

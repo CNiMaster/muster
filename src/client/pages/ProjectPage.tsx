@@ -348,7 +348,7 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
           <h1>{project.name}</h1>
           <StateBadge domain="project" state={project.state} />
         </div>
-        <ProjectOnboardingWizard project={project} />
+        <ProjectOnboardingWizard project={project} companyId={project.companyId} />
       </div>
     );
   }

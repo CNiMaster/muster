@@ -1,7 +1,7 @@
 /** React Query hooks：所有数据获取集中在此。 */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
-import type { Company, Agent, AgentExecutorJson, AgentProfile, CompanyEmployee, MemoryCandidate, MemoryEntry, Department, Project, Relationship, Task, UsageSummary, ProjectAgentThread, Workspace, BusinessReview } from '../api/types';
+import type { Company, Agent, AgentExecutorJson, AgentProfile, CompanyEmployee, MemoryCandidate, MemoryEntry, Department, Project, Relationship, Task, UsageSummary, ProjectAgentThread, Workspace, BusinessReview, Plugin } from '../api/types';
 import type { CompanyCockpitDTO, TemplateRuntimeHealthFinding } from '../../shared/types';
 import type { ProjectLaunchBrief, ProjectLaunchDiscovery } from '../../shared/project-launch';
 import type { CompanySetupDraft, CompanyTemplateOption, SetupBindings } from '../domain/company-templates';
@@ -1524,6 +1524,51 @@ export function useDecideBusinessReview() {
       qc.invalidateQueries({ queryKey: ['tasks'] });
       qc.invalidateQueries({ queryKey: ['company-cockpit'] });
       void vars;
+    },
+  });
+}
+
+// ── B4 Plugin hooks ──────────────────────────────────────────────────────
+
+/** 列出所有 plugin（含 builtin 只读视图 + 数据库写入的）。 */
+export function usePlugins() {
+  return useQuery({
+    queryKey: ['plugins'],
+    queryFn: () => api.get<Plugin[]>('/api/plugins'),
+  });
+}
+
+/** 公司已启用的 plugin id 列表。 */
+export function useEnabledCompanyPlugins(companyId: string | undefined) {
+  return useQuery({
+    queryKey: ['enabled-plugins', companyId],
+    queryFn: () => api.get<string[]>(`/api/plugins/companies/${companyId}/plugins/enabled`),
+    enabled: !!companyId,
+  });
+}
+
+/** 公司级启停 plugin（需公司下班）。 */
+export function useToggleCompanyPlugin() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ companyId, pluginId, enabled }: { companyId: string; pluginId: string; enabled: boolean }) =>
+      api.post<{ ok: boolean }>(`/api/plugins/companies/${companyId}/plugins/${pluginId}/${enabled ? 'enable' : 'disable'}`, {}),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ['enabled-plugins', vars.companyId] });
+      qc.invalidateQueries({ queryKey: ['plugins'] });
+    },
+  });
+}
+
+/** 精确分配员工到项目（staffing 阶段用，区别于全公司批量 ensureProjectThreads）。 */
+export function useStaffProject() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, agentIds }: { projectId: string; agentIds: string[] }) =>
+      api.post<{ ok: boolean; threadIds: string[] }>(`/api/projects/${projectId}/staff`, { agentIds }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ['project', vars.projectId] });
+      qc.invalidateQueries({ queryKey: ['threads', vars.projectId] });
     },
   });
 }

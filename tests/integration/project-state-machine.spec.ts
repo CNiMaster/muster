@@ -16,7 +16,19 @@ import {
   transitionProjectPhase,
   assertProjectActive,
 } from '../../src/server/domain/project-readiness';
+import { setProjectReadiness } from '../../src/server/domain/project-onboarding';
 import { AppError, ErrorCode } from '../../src/shared/errors';
+
+/** 填充完整 readiness，让向前跃迁过 validatePhaseExit（B4 后跃迁需产物）。 */
+function fillReadiness(db2: DB, id: string): void {
+  setProjectReadiness(db2, id, {
+    draft: { goal: 'g', audience: 'a', constraints: 'c' },
+    research: { summary: 's', candidateSkills: ['sk'], candidateTools: [] },
+    equipment: { enabledPlugins: ['plg_x'], missingCapabilities: [] },
+    staffing: { employeeIds: ['ag_x'] },
+    notes: '',
+  });
+}
 
 let tdb: ReturnType<typeof makeTestDb>;
 let db: DB;
@@ -128,13 +140,15 @@ describe('assertCanTransition 非法转换', () => {
 describe('transitionProjectPhase', () => {
   it('向前跃迁成功并返回 previousState', () => {
     const id = makeDraftingProject();
+    fillReadiness(db, id);
     const { project, previousState } = transitionProjectPhase(db, id, 'researching');
     expect(project.state).toBe('researching');
     expect(previousState).toBe('drafting');
   });
 
-  it('回流跃迁成功', () => {
+  it('回流跃迁成功（不需要 readiness）', () => {
     const id = makeDraftingProject();
+    fillReadiness(db, id);
     transitionProjectPhase(db, id, 'researching');
     const { project, previousState } = transitionProjectPhase(db, id, 'drafting');
     expect(project.state).toBe('drafting');
@@ -147,8 +161,15 @@ describe('transitionProjectPhase', () => {
     expect(getProject(db, id).state).toBe('drafting'); // 状态未被改
   });
 
+  it('向前跃迁缺产物被 validatePhaseExit 拦截', () => {
+    const id = makeDraftingProject();
+    // 不填 readiness，drafting→researching 缺 goal
+    expect(() => transitionProjectPhase(db, id, 'researching')).toThrow(AppError);
+  });
+
   it('走完整准备流程到 active', () => {
     const id = makeDraftingProject();
+    fillReadiness(db, id);
     for (const target of ['researching', 'equipping', 'staffing', 'ready', 'active'] as ProjectState[]) {
       transitionProjectPhase(db, id, target);
     }
@@ -169,6 +190,7 @@ describe('assertProjectActive 派工闸门', () => {
 
   it('各准备阶段派工均被拒', () => {
     const id = makeDraftingProject();
+    fillReadiness(db, id);
     for (const target of ['researching', 'equipping', 'staffing', 'ready'] as ProjectState[]) {
       transitionProjectPhase(db, id, target);
       expect(() => assertProjectActive(db, id)).toThrow(AppError);
@@ -177,6 +199,7 @@ describe('assertProjectActive 派工闸门', () => {
 
   it('active 项目派工放行', () => {
     const id = makeDraftingProject();
+    fillReadiness(db, id);
     for (const target of ['researching', 'equipping', 'staffing', 'ready', 'active'] as ProjectState[]) {
       transitionProjectPhase(db, id, target);
     }

@@ -147,6 +147,9 @@ projectById.post('/project-tasks/:projectTaskId/confirm-launch',asyncHandler(asy
 projectById.post('/project-tasks/:projectTaskId/complete',asyncHandler(async(req,res)=>{const projectId=param(req,'id'),task=completeProjectTask(getDb(),param(req,'projectTaskId'),projectId),project=getProject(getDb(),projectId);realtime.publish(makeLifecycleEvent('project-task.completed',{projectTaskId:task.id},{companyId:project.companyId,projectId}));res.json(task);}));
 projectById.post('/project-tasks/:projectTaskId/archive',asyncHandler(async(req,res)=>{const projectId=param(req,'id'),task=archiveProjectTask(getDb(),param(req,'projectTaskId'),projectId),project=getProject(getDb(),projectId);realtime.publish(makeLifecycleEvent('project-task.archived',{projectTaskId:task.id},{companyId:project.companyId,projectId}));res.json(task);}));
 
+// B4 staffing：精确分配员工到项目（按 agentIds 创建 primary thread，区别于 ensureProjectThreads 全公司批量）
+projectById.post('/staff',asyncHandler(async(req,res)=>{const input=z.object({agentIds:z.array(z.string().min(1)).min(1)}).parse(req.body);const projectId=param(req,'id');const threads=input.agentIds.map((agentId)=>ensurePrimaryThread(getDb(),projectId,agentId));res.status(201).json({ok:true,threadIds:threads.map((t)=>t.id)});}));
+
 projectById.get('/automation', asyncHandler(async (req, res) => {
   res.json(listProjectTriggers(getDb(), param(req, 'id')));
 }));

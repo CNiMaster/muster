@@ -11,6 +11,7 @@ import { PHASE_ORDER, type ProjectState } from './project';
 import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { getProject, updateProject, type Project } from './project';
+import { validatePhaseExit } from './project-onboarding';
 
 /**
  * 断言 state 转换合法。
@@ -52,7 +53,7 @@ export function assertCanTransition(from: ProjectState, to: ProjectState): void 
 }
 
 /**
- * 执行阶段跃迁：校验合法性后更新 project.state。
+ * 执行阶段跃迁：校验合法性 + 阶段产物后更新 project.state。
  * 返回更新后的 project 与 previousState。lifecycle event 由调用方（API 路由）发布。
  */
 export function transitionProjectPhase(
@@ -63,6 +64,8 @@ export function transitionProjectPhase(
   const project = getProject(db, projectId);
   const previousState = project.state;
   assertCanTransition(previousState, target);
+  // B4：向前跃迁校验阶段产物完整性（回流不校验，全允许）
+  validatePhaseExit(db, projectId, previousState, target);
   const updated = updateProject(db, projectId, { state: target });
   return { project: updated, previousState };
 }

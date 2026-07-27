@@ -239,3 +239,11 @@ export interface ProjectAgentThread {
   rootThreadId: string | null;
   state: string;
 }
+
+/** Plugin 统一模型（从 shared 复用，避免前后端类型分叉）。 */
+export type {
+  Plugin,
+  PluginKind,
+  PluginStatus,
+  PluginMaturity,
+} from '../../shared/plugin';
