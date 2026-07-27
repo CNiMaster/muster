@@ -398,6 +398,11 @@ function HistoryList({
     mergedFiles: string[];
     conflicts: string[];
     blocked: boolean;
+    rolledBack: boolean;
+    status: 'published' | 'open' | 'resolved' | 'escalated';
+    resolutionTaskId: string | null;
+    resolvedByTaskId: string | null;
+    resolvedAt: string | null;
     publishedAt: string;
   }[];
   empty: React.ReactNode;
@@ -436,8 +441,14 @@ function HistoryList({
               </a>
             </div>
             <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
-              {h.blocked ? (
-                <Badge tone="err">冲突阻塞</Badge>
+              {h.rolledBack ? (
+                <Badge tone="neutral">已回滚</Badge>
+              ) : h.status === 'resolved' ? (
+                <Badge tone="ok">已裁决发布</Badge>
+              ) : h.status === 'escalated' ? (
+                <Badge tone="err">待人工介入</Badge>
+              ) : h.status === 'open' ? (
+                <Badge tone="warn">第一负责人裁决中</Badge>
               ) : (
                 <Badge tone="ok">已合并发布</Badge>
               )}
@@ -454,7 +465,28 @@ function HistoryList({
               <strong>冲突阻塞文件:</strong> {h.conflicts.join(', ')}
             </div>
           )}
-          {!h.blocked && (
+          {h.status === 'open' && h.resolutionTaskId && (
+            <div style={{ fontSize: 'var(--text-xs)' }}>
+              已派给第一负责人：{' '}
+              <a href={`#/tasks/${h.resolutionTaskId}`} style={{ color: 'var(--accent)' }}>
+                进入裁决 Task
+              </a>
+            </div>
+          )}
+          {h.status === 'escalated' && h.resolutionTaskId && (
+            <div style={{ fontSize: 'var(--text-xs)' }}>
+              自动裁决已停止：{' '}
+              <a href={`#/tasks/${h.resolutionTaskId}`} style={{ color: 'var(--accent)' }}>
+                进入裁决 Task 重试
+              </a>
+            </div>
+          )}
+          {h.status === 'resolved' && h.resolvedByTaskId && (
+            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--fg-muted)' }}>
+              裁决 Task：<a href={`#/tasks/${h.resolvedByTaskId}`}>{h.resolvedByTaskId}</a>
+            </div>
+          )}
+          {!h.blocked && !h.rolledBack && (
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)' }}>
               {confirmingId === h.id ? (
                 <>

@@ -13,6 +13,11 @@ export function SettingsPage(): React.ReactElement {
   const { data: settings, isLoading } = useSystemSettings();
   const saveSettings = useSaveSystemSettings();
   const testConnection = useTestConnection();
+  // 注意：所有 hook（含 useSearchParams）必须在任何早期 return 之前调用，
+  // 否则 React 会抛 "Rendered fewer hooks than expected"。
+  const [searchParams] = useSearchParams();
+  const focusTools = searchParams.get('view') === 'tools';
+  const focusCredentials = searchParams.get('view') === 'credentials';
   const [claudeBin, setClaudeBin] = useState('');
   const [model, setModel] = useState('');
   const [skipPermissions, setSkipPermissions] = useState(false);
@@ -73,10 +78,6 @@ export function SettingsPage(): React.ReactElement {
     openai: 'OpenAI 兼容 API',
     gemini: 'Gemini API',
   };
-
-  const [searchParams] = useSearchParams();
-  const focusTools = searchParams.get('view') === 'tools';
-  const focusCredentials = searchParams.get('view') === 'credentials';
 
   return (
     <div className="settings-page">

@@ -4,7 +4,7 @@ import type { CompanySectionKey } from '../company/CompanySections';
 const items: Array<{ key: CompanySectionKey; label: string; icon: string }> = [
   { key: 'overview', label: '公司概览', icon: '◎' },
   { key: 'projects', label: '项目', icon: '▣' },
-  { key: 'team', label: '员工看板', icon: '人' },
+  { key: 'team', label: '组织架构', icon: '人' },
   { key: 'activity', label: '沟通与活动', icon: '◌' },
   { key: 'settings', label: '更多设置', icon: '…' },
 ];

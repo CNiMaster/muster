@@ -63,13 +63,13 @@ export function CompanyPage(): React.ReactElement {
 
   return <WorkbenchShell
     scopeKey={`company:${companyId}`}
-    breadcrumb={<WorkbenchContextSwitcher companyId={companyId} companyName={company.name} companyKind={COMPANY_KIND_LABELS[company.kind] ?? company.kind} sectionKey={activeTab} sectionLabel={{ overview: '公司概览', projects: '项目', team: '员工看板', activity: '沟通与活动', settings: '公司设置' }[activeTab]} />}
+    breadcrumb={<WorkbenchContextSwitcher companyId={companyId} companyName={company.name} companyKind={COMPANY_KIND_LABELS[company.kind] ?? company.kind} sectionKey={activeTab} sectionLabel={{ overview: '公司概览', projects: '项目', team: '组织架构', activity: '沟通与活动', settings: '公司设置' }[activeTab]} />}
     navigationLabel="公司工作列表"
     inspectorLabel="公司现场"
     attentionCount={(cockpit?.approvals.pending ?? 0) + (cockpit?.projects.attention ?? 0)}
     primaryAction={companyAction}
     navigation={<CompanyWorkNavigation active={activeTab} projectCount={projects.length} employeeCount={agents.length} attentionCount={(cockpit?.approvals.pending ?? 0) + (cockpit?.projects.attention ?? 0)} onChange={(view) => setSearchParams(view === 'overview' ? {} : { view })} />}
-    inspector={<CompanyContextInspector cockpit={cockpit} />}
+    inspector={<CompanyContextInspector cockpit={cockpit} statusBoard={statusBoard} statusBoardLoading={statusBoardLoading} />}
   >
     <div className="company-page work-surface-page">
     <header className="work-surface-heading">

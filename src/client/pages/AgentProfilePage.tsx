@@ -26,8 +26,6 @@ export function AgentProfilePage(): React.ReactElement {
   const qc = useQueryClient();
   const executorProfiles = useQuery({ queryKey:['executor-profiles'], queryFn:()=>api.get<ExecutorProfileOption[]>('/api/executors/profiles') });
   const permissionPolicies = useQuery({ queryKey:['permission-policies'], queryFn:()=>api.get<PermissionPolicyOption[]>('/api/permissions/policies') });
-  const bindExecutor = useMutation({ mutationFn:({employeeId,executorProfileId}:{employeeId:string;executorProfileId:string})=>api.put(`/api/executors/employees/${employeeId}/profile/${executorProfileId}`), onSuccess:()=>{void qc.invalidateQueries({queryKey:['profile-employments',profileId]});toast('success','员工执行器已固定绑定');},onError:(e:any)=>toast('error',e.message??'绑定失败') });
-  const bindPermission = useMutation({ mutationFn:({employeeId,policyId}:{employeeId:string;policyId:string})=>api.put(`/api/permissions/employees/${employeeId}/policy/${policyId}`), onSuccess:()=>{void qc.invalidateQueries({queryKey:['profile-employments',profileId]});toast('success','员工权限策略已绑定');},onError:(e:any)=>toast('error',e.message??'绑定失败') });
   if (isLoading || !profile) return <CardSkeleton />;
   const capabilities = profile.capabilities as { skills?: string[]; tools?: string[] };
   const identity = <div className="section-stack">
@@ -64,7 +62,7 @@ export function AgentProfilePage(): React.ReactElement {
         <div className="employment-grid">
           {employments?.map((employment) => {
             const company = companies?.find((item) => item.id === employment.companyId);
-            return <EmploymentCard key={employment.id} employment={employment} companyName={company?.name??employment.companyId} executors={executorProfiles.data??[]} policies={permissionPolicies.data??[]} onExecutor={executorProfileId=>bindExecutor.mutate({employeeId:employment.id,executorProfileId})} onPermission={policyId=>bindPermission.mutate({employeeId:employment.id,policyId})}/>;
+            return <EmploymentCard key={employment.id} employment={employment} companyName={company?.name??employment.companyId} executors={executorProfiles.data??[]} policies={permissionPolicies.data??[]} />;
           })}
         </div>
       </Card>;

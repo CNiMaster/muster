@@ -12,6 +12,7 @@ import { ProjectToolPageShell, TaskDetailProjectShell } from './components/workb
 const HomePage = lazy(() => import('./pages/HomePage').then((m) => ({ default: m.HomePage })));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage').then((m) => ({ default: m.NotFoundPage })));
 const CompanyPage = lazy(() => import('./pages/CompanyPage').then((m) => ({ default: m.CompanyPage })));
+const CompanyListPage = lazy(() => import('./pages/CompanyListPage').then((m) => ({ default: m.CompanyListPage })));
 const GraphPage = lazy(() => import('./pages/GraphPage').then((m) => ({ default: m.GraphPage })));
 const ProjectPage = lazy(() => import('./pages/ProjectPage').then((m) => ({ default: m.ProjectPage })));
 const TasksPage = lazy(() => import('./pages/TasksPage').then((m) => ({ default: m.TasksPage })));
@@ -29,6 +30,7 @@ const AgentLibraryPage = lazy(() => import('./pages/AgentLibraryPage').then((m) 
 const AgentProfilePage = lazy(() => import('./pages/AgentProfilePage').then((m) => ({ default: m.AgentProfilePage })));
 const ExecutorCenterPage = lazy(() => import('./pages/ExecutorCenterPage').then((m) => ({ default: m.ExecutorCenterPage })));
 const PermissionCenterPage = lazy(() => import('./pages/PermissionCenterPage').then((m) => ({ default: m.PermissionCenterPage })));
+const BusinessReviewPage = lazy(() => import('./pages/BusinessReviewPage').then((m) => ({ default: m.BusinessReviewPage })));
 const ProjectSettingsPage = lazy(() => import('./pages/ProjectSettingsPage').then((m) => ({ default: m.ProjectSettingsPage })));
 const ProjectPlansPage = lazy(() => import('./pages/ProjectPlansPage').then((m) => ({ default: m.ProjectPlansPage })));
 
@@ -49,6 +51,7 @@ const router = createBrowserRouter([
     element: <App />,
     children: [
       { index: true, element: <HomePage /> },
+      { path: 'companies', element: <CompanyListPage /> },
       { path: 'companies/wizard', element: <CompanyWizardPage /> },
       { path: 'companies/:companyId', element: <CompanyPage /> },
       { path: 'companies/:companyId/graphs/:kind', element: <GraphPage /> },
@@ -70,6 +73,7 @@ const router = createBrowserRouter([
       { path: 'agents/:profileId', element: <AgentProfilePage /> },
       { path: 'executors', element: <ExecutorCenterPage /> },
       { path: 'permissions', element: <PermissionCenterPage /> },
+      { path: 'reviews', element: <BusinessReviewPage /> },
       { path: '*', element: <NotFoundPage /> },
     ],
   },

@@ -64,6 +64,13 @@ export function CompanySettings({ company }: { company: Company }): React.ReactE
     <Card title="公司章程">
       {company.charter ? <pre className="charter">{company.charter}</pre> : <p className="muted">尚未设置公司章程。</p>}
     </Card>
+    <Card title="目录与沙盒说明">
+      <div className="dir-explain-list">
+        <div className="dir-explain-item"><span className="dir-explain-tag">工作区</span><div><strong>Workspace</strong><p className="muted">默认项目目录的父容器，可在「设置」中切换激活工作区。一个工作区可容纳多家公司、多个项目。</p></div></div>
+        <div className="dir-explain-item"><span className="dir-explain-tag">项目目录</span><div><strong>project.rootDir</strong><p className="muted">每个项目独立的正式目录（自带 git 仓库）。一个公司可同时运行多个项目，每个项目目录互不影响。在「项目」列表中可查看和迁移。</p></div></div>
+        <div className="dir-explain-item"><span className="dir-explain-tag">执行沙盒</span><div><strong>~/.muster/worktrees/&lt;taskId&gt;</strong><p className="muted">每个任务执行时基于项目目录创建的临时隔离 worktree。Agent 不直接改正式目录，成果经发布合并回项目目录。任务结束自动清理。</p></div></div>
+      </div>
+    </Card>
     <CompanyCredentialCard companyId={company.id} />
     <Card title="执行环境">
       <div className="settings-link-row"><Link className="mu-btn mu-btn-subtle" to="/executors">执行器中心</Link><Link className="mu-btn mu-btn-subtle" to="/permissions">权限中心</Link></div>

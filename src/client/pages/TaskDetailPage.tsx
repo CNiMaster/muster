@@ -34,6 +34,11 @@ export function TaskDetailPage(): React.ReactElement {
 
   const assignee = agents?.find((a) => a.id === task.assigneeAgentId);
   const dispatcher = agents?.find((a) => a.id === task.dispatcherAgentId);
+  const isConflictResolution = task.inputProtocol?.reason === 'publish_conflict';
+  const canResume = task.state === 'paused'
+    || task.state === 'blocked'
+    || task.state === 'failed'
+    || (task.state === 'cancelled' && isConflictResolution);
 
   const doAction = (a: 'cancel' | 'pause' | 'resume' | 'clarify', answer?: string): void => {
     action.mutate(
@@ -68,9 +73,11 @@ export function TaskDetailPage(): React.ReactElement {
               暂停
             </Button>
           )}
-          {(task.state === 'paused' || task.state === 'blocked') && (
+          {canResume && (
             <Button onClick={() => doAction('resume')} loading={action.isPending}>
-              恢复
+              {task.state === 'failed' || task.state === 'cancelled'
+                ? (isConflictResolution ? '重试裁决' : '重试')
+                : '恢复'}
             </Button>
           )}
           {!['completed', 'cancelled', 'failed'].includes(task.state) && (
