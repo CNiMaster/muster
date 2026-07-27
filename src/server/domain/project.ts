@@ -166,7 +166,13 @@ export function updateProject(
     patch = { ...patch, rootDir: newRootDir };
   }
 
-  const next: Project = { ...cur, ...patch, settings: patch.settings ?? cur.settings, updatedAt: nowIso() };
+  const next: Project = {
+    ...cur,
+    // 过滤掉 patch 中 undefined 的字段，避免部分更新时把现有字段覆盖为 undefined
+    ...(Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)) as Partial<Project>),
+    settings: patch.settings ?? cur.settings,
+    updatedAt: nowIso(),
+  };
   db.prepare(
     `UPDATE project SET name=?, description=?, root_dir=?, first_agent_id=?, state=?, settings_json=?, updated_at=? WHERE id=?`,
   ).run(next.name, next.description, next.rootDir, next.firstAgentId, next.state, JSON.stringify(next.settings), next.updatedAt, id);
