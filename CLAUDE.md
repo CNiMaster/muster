@@ -119,7 +119,7 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 - **定时触发**：`TriggerScheduler` 轮询 `trigger.next_run_at`；小说项目自动注册遗漏、连续性、长期一致性检查。下班期间不派发，上班后补派发；下一执行时间与 Task 创建在同一事务推进，避免重复。
 - **实时状态**：服务端通过 `/ws` 发布 Task、项目任务、审批、会话压缩/换代/恢复和 Watchdog 事件；前端精确失效项目任务、员工运行态、审批和公司驾驶舱缓存，轮询仅作断线兜底。
 - **通信边界**：带 `dispatcherAgentId` 的 Task 创建必须满足同公司和 `contact_allow`，不能绕过通信图直接派发。
-- **安全成果工作区**：每 Task 一个隐藏 Git worktree + 专用分支；串行发布队列做文本三方合并、同段冲突阻塞、二进制独占锁、可回滚。
+- **安全成果工作区**：每 Task 一个隐藏 Git worktree + 专用分支；串行发布队列做文本三方合并和二进制独占锁。冲突时保留原 worktree，自动给项目第一负责人派发带 base/ours/theirs 快照的交互式裁决 Task；临时快照不会进入 Git 提交，裁决失败或取消会升级并允许原 Task 重试。裁决发布前必须同步预检任务链，Git 发布后若数据库收口失败则自动回滚；连续两轮仍冲突时整条发布链统一升级人工。仅真正落盘且尚未回滚的发布可人工回滚。
 - **总工作区**：`workspace` 表持久化多个本地根目录并保证唯一激活；未显式指定路径的新项目写入 `{workspace}/companies/{公司}/projects/{项目-ID}`，Task 仍在项目专属 worktree 内执行。
 - **员工档案、任职与运行态**：`agent_profile` 是全局稳定身份，`company_employee` 是公司任职，`project_task_thread` 是项目任务中的运行会话；员工页将三者分栏展示，同一档案可被多家公司引用。
 - **Agent Home 与分层记忆**：每个档案在 `{MUSTER_HOME}/agents/{profileId}` 拥有隔离个人空间；个人、技能、公司、项目记忆先进入候选审核，再写入版本化 SQLite/FTS 索引，并将已批准内容原子同步为人可读 Markdown。待审内容、凭据、会话与本地路径不会进入能力导出。

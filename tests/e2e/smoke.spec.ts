@@ -6,8 +6,9 @@ import { test, expect } from '@playwright/test';
 
 test('首页加载且健康', async ({ page }) => {
   await page.goto('/');
-  await expect(page.locator('h1')).toContainText('Muster Agent 公司工作台');
-  await expect(page.getByText(/服务状态/)).toBeVisible();
+  await expect(page.locator('h1')).toContainText('你的公司');
+  await expect(page.getByText('公司现场')).toBeVisible();
+  await expect(page.getByText(/本地服务 运行正常/)).toBeVisible();
 });
 
 test('创建通用公司并出现在列表', async ({ page }) => {
@@ -141,11 +142,10 @@ test('员工库展示全局档案与公司任职', async ({ page }) => {
   });
 
   await page.goto('/agents');
-  await expect(page.getByRole('heading', { name: '员工库' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: '选择一套团队' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '人才市场' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '添加人才' })).toBeVisible();
   await expect(page.getByRole('heading', { name: '软件研发团队' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: '或单独添加岗位' })).toBeVisible();
-  await page.getByRole('link', { name: new RegExp(`全局员工-${suffix}`) }).click();
+  await page.getByRole('link', { name: new RegExp(`全局员工-${suffix}`) }).first().click();
   await expect(page.getByText('公司任职')).toBeVisible();
   await page.getByRole('tab', { name: /公司任职/ }).click();
   await expect(page.getByText('本公司岗位：').locator('..')).toContainText('engineer');
@@ -164,13 +164,12 @@ test('执行器中心检测系统安装并提供官方安装引导', async ({ pa
   await expect(page.getByText('Claude Code CLI', { exact: true })).toBeVisible();
   await expect(page.getByText('Antigravity CLI', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: '检测系统安装' }).first()).toBeVisible();
-  await expect(page.getByText('Muster 不内置或复制 CLI，请选择官方支持的安装方式：').first()).toBeVisible();
+  await expect(page.getByText('选择官方支持的安装方式：').first()).toBeVisible();
 });
 
 test('权限中心明确展示策略与范围并提供审批入口', async ({ page }) => {
   await page.goto('/permissions');
   await expect(page.getByRole('heading', { name: '权限与审批中心' })).toBeVisible();
-  await expect(page.getByText('Turbo 只是“无需审批”与所选范围的组合。')).toBeVisible();
   await expect(page.getByRole('button', { name: '创建项目 Turbo' })).toBeVisible();
   await expect(page.getByText('安装软件、凭据、推送、部署、外部消息、账号和付费操作仍单独审批。')).toBeVisible();
 });

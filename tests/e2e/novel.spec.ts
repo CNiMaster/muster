@@ -10,12 +10,11 @@ test('首页 onboarding 引导在无公司时渲染', async ({ page }) => {
     try { localStorage.removeItem('muster:onboarding:v1'); } catch { /* ignore */ }
   });
   await page.goto('/');
-  await expect(page.locator('h1')).toContainText('Muster Agent 公司工作台', { timeout: 5000 });
+  await expect(page.locator('h1')).toContainText('你的公司', { timeout: 5000 });
   // 页面正常渲染即通过（引导是否可见取决于是否已有公司）
 });
 
 test('首页能导航到智能向导', async ({ page }) => {
   await page.goto('/');
-  const start = page.getByRole('link', { name: '开始创建公司' });
-  if (await start.count()) await expect(start).toBeVisible({ timeout: 5000 });
+  await expect(page.getByRole('link', { name: /创建新公司/ })).toBeVisible({ timeout: 5000 });
 });

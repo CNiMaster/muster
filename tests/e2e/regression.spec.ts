@@ -32,9 +32,9 @@ test('核心功能端到端完整回归流', async ({ page }) => {
   await page.goto(`/companies/${company.id}`);
   await expect(page.getByText('公司驾驶舱')).toBeVisible();
   await expect(page.getByRole('navigation',{name:'公司工作列表'})).toBeVisible();
-  await page.getByRole('button',{name:/员工看板/}).click();
+  await page.getByRole('button',{name:/组织架构/}).click();
   await expect(page.getByText('项目负责人', { exact: true }).first()).toBeVisible();
-  await expect(page.getByText('随公司待命').first()).toBeVisible();
+  await expect(page.getByText('待命').first()).toBeVisible();
   await page.getByRole('button',{name:/项目/}).click();
   await expect(page.getByText(`回归项目-${timestamp}`, { exact: true })).toBeVisible();
 });

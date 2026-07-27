@@ -13,7 +13,7 @@ test('公司安静工作台和员工三层视图形成完整入口', async ({ pa
   await expect(page.getByRole('button',{name:'公司概览'})).toBeVisible();
   await expect(page.getByRole('tab')).toHaveCount(0);
   await expect(page.getByText('推荐下一步')).toBeVisible();
-  await page.getByRole('button',{name:/员工看板/}).click();
+  await page.getByRole('button',{name:/组织架构/}).click();
   await page.getByRole('link',{name:new RegExp(`成品员工-${suffix}`)}).click();
   await expect(page.getByRole('tab',{name:'身份与能力'})).toBeVisible();
   await expect(page.getByRole('tab',{name:/公司任职/})).toBeVisible();
