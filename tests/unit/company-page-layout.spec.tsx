@@ -10,7 +10,7 @@ describe('company page sections', () => {
     const view = render(<CompanyWorkNavigation active="overview" projectCount={2} employeeCount={4} attentionCount={1} onChange={(value) => { selected = value; }} />);
     expect(screen.queryByRole('tab')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /公司概览/ })).toHaveAttribute('aria-current', 'page');
-    await user.click(screen.getByRole('button', { name: /员工看板/ }));
+    await user.click(screen.getByRole('button', { name: /组织架构/ }));
     expect(selected).toBe('team');
     view.unmount();
   });

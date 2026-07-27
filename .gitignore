@@ -12,3 +12,4 @@ dist/
 .DS_Store
 /tmp-muster-dev.log
 .tsbuildinfo/
+test-results/

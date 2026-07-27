@@ -6,6 +6,8 @@
  - POST   /api/projects/:id/artifacts           { path, kind, content, ownerAgentId? }
  - POST   /api/projects/:id/artifacts/open      { path }  用系统默认应用打开（PRD:369）
  - POST   /api/projects/:id/artifacts/rollback  { publishId }  回滚到指定发布（PRD:401）
+
+ 发布冲突不通过按钮强制覆盖：TaskEngine 会保留原 worktree，并给项目第一负责人派发可交互的裁决 Task。
  - GET    /api/projects/:id/artifacts/history
  */
 import { Router } from 'express';

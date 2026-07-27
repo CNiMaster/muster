@@ -12,6 +12,8 @@ import { Router } from 'express';
 import { realtime } from './realtime';
 import type { RealtimeEvent } from '../shared/types';
 import { shortId, nowIso } from '../shared/utils';
+import { getDb } from './db/client';
+import { submitBusinessReview, type BusinessReviewKind } from './domain/business-review';
 
 export interface BridgeActionParam {
   name: string;
@@ -23,6 +25,8 @@ export interface BridgeAction {
   name: string;
   summary: string;
   description: string;
+  /** HTTP 方法：GET（轻量通知）或 POST（带 JSON body，如业务审批快照）。 */
+  method?: 'GET' | 'POST';
   params?: BridgeActionParam[];
 }
 
@@ -59,6 +63,21 @@ export const BRIDGE_ACTIONS: BridgeAction[] = [
       { name: 'taskId', description: 'Current task ID (optional)' },
     ],
   },
+  {
+    name: 'submit-review',
+    summary: 'Submit a business deliverable for human approval.',
+    description:
+      '提交业务产物（素材/成品/人物/功法/关系/剧情）等待用户人工审批。产出关键内容后调用。blocking 模式下当前 Task 会阻塞等待。',
+    method: 'POST',
+    params: [
+      { name: 'taskId', description: 'Current task ID', required: true },
+      { name: 'review_kind', description: 'material|artifact|character|skill|relationship|plot|custom', required: true },
+      { name: 'subject_id', description: '被审对象唯一标识', required: true },
+      { name: 'title', description: '审批标题', required: true },
+      { name: 'summary', description: '一句话摘要' },
+      { name: 'snapshot', description: '产物快照 JSON（结构随 review_kind 变化）' },
+    ],
+  },
 ];
 
 export function isKnownBridgeAction(action: string): boolean {
@@ -83,9 +102,13 @@ export function buildBridgePromptSection(baseUrl: string): string {
     lines.push(`## ${action.name}`);
     lines.push(action.summary, action.description);
     lines.push('```sh');
-    lines.push(
-      `curl -s "${baseUrl}/bridge/${action.name}${query}"`,
-    );
+    if (action.method === 'POST') {
+      // POST 动作：用 JSON body 传输结构化数据（如审批快照）
+      const bodyParams = params.filter((p) => p.name !== 'taskId');
+      lines.push(`curl -s -X POST "${baseUrl}/bridge/${action.name}" -H "Content-Type: application/json" -d '{ ${bodyParams.map((p) => `"${p.name}": "<value>"`).join(', ')} }'`);
+    } else {
+      lines.push(`curl -s "${baseUrl}/bridge/${action.name}${query}"`);
+    }
     lines.push('```');
     if (params.length) {
       lines.push('参数：');
@@ -132,4 +155,51 @@ bridgeRouter.get('/:action', (req, res) => {
   realtime.publish(event);
 
   res.json({ ok: true, action });
+});
+
+/**
+ * POST /bridge/submit-review：Agent 提交业务产物审批。
+ * Claude CLI 通过 curl POST JSON body 调用（snapshot 较大，不适合 GET query）。
+ */
+bridgeRouter.post('/submit-review', (req, res) => {
+  try {
+    const taskId = String(req.body?.taskId ?? '');
+    if (!/^[a-z]{2,4}_[a-zA-Z0-9]+$/.test(taskId)) {
+      res.status(400).json({ error: 'Invalid taskId format' });
+      return;
+    }
+    const db = getDb();
+    const taskRow = db.prepare('SELECT id, project_id, assignee_agent_id FROM task WHERE id=?').get(taskId) as
+      | { id: string; project_id: string; assignee_agent_id: string | null } | undefined;
+    if (!taskRow) {
+      res.status(404).json({ error: `Task not found: ${taskId}` });
+      return;
+    }
+    const projectRow = db.prepare('SELECT id, company_id FROM project WHERE id=?').get(taskRow.project_id) as
+      | { id: string; company_id: string } | undefined;
+    if (!projectRow) {
+      res.status(404).json({ error: `Project not found: ${taskRow.project_id}` });
+      return;
+    }
+    const validKinds: BusinessReviewKind[] = ['material', 'artifact', 'character', 'skill', 'relationship', 'plot', 'custom'];
+    const reviewKind = String(req.body?.review_kind ?? 'custom') as BusinessReviewKind;
+    if (!validKinds.includes(reviewKind)) {
+      res.status(400).json({ error: `Invalid review_kind: ${reviewKind}` });
+      return;
+    }
+    const review = submitBusinessReview(db, {
+      companyId: projectRow.company_id,
+      projectId: projectRow.id,
+      taskId,
+      employeeId: taskRow.assignee_agent_id ?? '',
+      reviewKind,
+      subjectId: String(req.body?.subject_id ?? ''),
+      subjectSnapshot: (req.body?.snapshot as Record<string, unknown>) ?? {},
+      title: String(req.body?.title ?? ''),
+      summary: req.body?.summary ? String(req.body.summary) : undefined,
+    });
+    res.status(201).json({ ok: true, reviewId: review.id, status: review.status });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
 });

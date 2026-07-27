@@ -77,12 +77,19 @@ export function removeWorktree(rootDir: string, info: WorktreeInfo): void {
   git(rootDir, ['branch', '-D', info.branch], { allowFail: true });
 }
 
-export function commitAll(wtPath: string, message: string): string {
+export function commitAll(
+  wtPath: string,
+  message: string,
+  options: { excludePaths?: string[] } = {},
+): string {
   git(wtPath, ['add', '-A']);
-  // 检查是否有改动
-  const status = git(wtPath, ['status', '--porcelain']).stdout;
-  if (!status) {
-    // 无改动，返回当前 HEAD
+  for (const excluded of options.excludePaths ?? []) {
+    // 仅从暂存区排除，文件仍留在 worktree 给恢复后的 Task 使用。
+    git(wtPath, ['reset', '-q', '--', excluded], { allowFail: true });
+  }
+  // 只检查暂存区。被排除的未跟踪快照不应触发空 commit。
+  const staged = git(wtPath, ['diff', '--cached', '--name-only']).stdout;
+  if (!staged) {
     return git(wtPath, ['rev-parse', 'HEAD']).stdout;
   }
   git(wtPath, ['commit', '-q', '-m', message]);

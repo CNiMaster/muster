@@ -25,7 +25,31 @@ import {
 } from '../domain/task';
 import { listTaskEvents } from '../domain/task-event';
 import { listTaskMessages, addTaskMessage } from '../domain/task-message';
+import { getProject } from '../domain/project';
+import { getCompany } from '../domain/company';
+import { realtime } from '../realtime';
 import type { TaskState } from '../../shared/types';
+
+/** 为 task 状态变更补发 realtime 事件，让工位墙/状态看板秒级刷新。 */
+function publishTaskStateEvent(taskId: string, state: string): void {
+  try {
+    const db = getDb();
+    const task = getTask(db, taskId);
+    const project = getProject(db, task.projectId);
+    const company = getCompany(db, project.companyId);
+    realtime.publish({
+      id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      type: `task.${state}`,
+      companyId: company.id,
+      projectId: project.id,
+      taskId: task.id,
+      occurredAt: new Date().toISOString(),
+      payload: { state, agentId: task.assigneeAgentId },
+    });
+  } catch {
+    // 补发事件失败不应阻断业务流程
+  }
+}
 
 export const taskByProjectRouter = Router({ mergeParams: true });
 export const taskByIdRouter = Router({ mergeParams: true });
@@ -101,21 +125,28 @@ taskByIdRouter.post(
 taskByIdRouter.post(
   '/cancel',
   asyncHandler(async (req, res) => {
-    res.json(cancelTask(getDb(), param(req, 'id')));
+    const task = cancelTask(getDb(), param(req, 'id'));
+    publishTaskStateEvent(task.id, 'cancelled');
+    res.json(task);
   }),
 );
 
 taskByIdRouter.post(
   '/pause',
   asyncHandler(async (req, res) => {
-    res.json(pauseTask(getDb(), param(req, 'id')));
+    const task = pauseTask(getDb(), param(req, 'id'));
+    publishTaskStateEvent(task.id, 'paused');
+    res.json(task);
   }),
 );
 
 taskByIdRouter.post(
   '/resume',
   asyncHandler(async (req, res) => {
-    res.json(resumeTask(getDb(), param(req, 'id')));
+    const task = resumeTask(getDb(), param(req, 'id'));
+    // resume 后状态可能是 claimed 或 queued，用实际状态发事件
+    publishTaskStateEvent(task.id, task.state);
+    res.json(task);
   }),
 );
 

@@ -1,10 +1,13 @@
 /**
  * Company REST 路由。
  *
- - GET    /api/companies
+ - GET    /api/companies?status=active|archived&kind=&q=
  - POST   /api/companies
  - GET    /api/companies/:id
- - PATCH  /api/companies/:id
+ - PATCH  /api/companies/:id           (name/charter/contractJson/firstAgentId/reviewMode)
+ - DELETE /api/companies/:id           (仅已归档)
+ - POST   /api/companies/:id/archive
+ - POST   /api/companies/:id/unarchive
  - POST   /api/companies/:id/clock-in
  - POST   /api/companies/:id/clock-out
  - POST   /api/companies/:id/drain
@@ -22,6 +25,9 @@ import {
   updateCompany,
   transitionCompany,
   assertCompanyHealthy,
+  archiveCompany,
+  unarchiveCompany,
+  deleteCompany,
 } from '../domain/company';
 import type { CompanyState } from '../../shared/types';
 import { listProjects } from '../domain/project';
@@ -43,8 +49,18 @@ const createCompanySchema = z.object({
 
 companiesRouter.get(
   '/',
-  asyncHandler(async (_req, res) => {
-    res.json(listCompanies(getDb()));
+  asyncHandler(async (req, res) => {
+    const q = typeof req.query.q === 'string' ? req.query.q.trim() : undefined;
+    const kind = typeof req.query.kind === 'string' ? req.query.kind : undefined;
+    const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+    res.json(
+      listCompanies(getDb(), {
+        q,
+        kind,
+        activeOnly: status === 'active',
+        archivedOnly: status === 'archived',
+      }),
+    );
   }),
 );
 
@@ -80,8 +96,34 @@ companiesRouter.patch(
         charter: patch.charter,
         contractJson: patch.contractJson,
         firstAgentId: patch.firstAgentId,
+        reviewMode: patch.reviewMode,
       }),
     );
+  }),
+);
+
+companiesRouter.delete(
+  '/:id',
+  asyncHandler(async (req, res) => {
+    deleteCompany(getDb(), param(req, 'id'));
+    res.status(204).end();
+  }),
+);
+
+const archiveSchema = z.object({ reason: z.string().optional() });
+
+companiesRouter.post(
+  '/:id/archive',
+  asyncHandler(async (req, res) => {
+    const { reason } = archiveSchema.parse(req.body ?? {});
+    res.json(archiveCompany(getDb(), param(req, 'id'), reason));
+  }),
+);
+
+companiesRouter.post(
+  '/:id/unarchive',
+  asyncHandler(async (req, res) => {
+    res.json(unarchiveCompany(getDb(), param(req, 'id')));
   }),
 );
 
@@ -157,7 +199,13 @@ companiesRouter.get(
       )
       .all(companyId) as Array<{ id: string; title: string; state: string; assignee_agent_id: string | null; project_id: string }>;
 
-    const result = departments.map((dept) => {
+    type SeatAgent = {
+      id: string; profileId: string; departmentId: string | null; departmentName: string | null;
+      name: string; role: string; availability: 'online' | 'draining' | 'off';
+      threadState: string | null; currentTaskId: string | null; currentTaskTitle: string | null; queuedTaskCount: number;
+    };
+    type SeatDepartment = { id: string; name: string; agents: SeatAgent[] };
+    const result: SeatDepartment[] = departments.map((dept) => {
       const deptAgents = agents.filter((a) => a.departmentId === dept.id);
       return {
         id: dept.id,
@@ -173,10 +221,14 @@ companiesRouter.get(
           const queuedTaskCount = agentTasks.filter((t) => t.state === 'queued').length;
           return {
             id: a.id,
+            profileId: a.profileId,
+            departmentId: dept.id,
+            departmentName: dept.name,
             name: a.name,
             role: a.role,
             availability: a.availabilityState,
             threadState: activeThread?.thread_state ?? null,
+            currentTaskId: currentTask?.id ?? null,
             currentTaskTitle: currentTask?.title ?? null,
             queuedTaskCount,
           };
@@ -198,10 +250,14 @@ companiesRouter.get(
           const currentTask = agentTasks.find((t) => t.state === 'running' || t.state === 'claimed');
           return {
             id: a.id,
+            profileId: a.profileId,
+            departmentId: null,
+            departmentName: null,
             name: a.name,
             role: a.role,
             availability: a.availabilityState,
             threadState: activeThread?.thread_state ?? null,
+            currentTaskId: currentTask?.id ?? null,
             currentTaskTitle: currentTask?.title ?? null,
             queuedTaskCount: agentTasks.filter((t) => t.state === 'queued').length,
           };

@@ -37,6 +37,10 @@ export interface AgentDefinition {
   availabilityState: 'online' | 'draining' | 'off';
   createdAt: string;
   updatedAt: string;
+  /** 公司任职绑定的固定执行器档案（来自 company_employee.executor_profile_id）。 */
+  executorProfileId?: string | null;
+  /** 公司任职绑定的权限策略（来自 company_employee.permission_policy_id）。 */
+  permissionPolicyId?: string | null;
 }
 
 /**
@@ -263,12 +267,24 @@ export function recruitAgentProfile(db: DB, input: {
 export function getAgent(db: DB, id: string): AgentDefinition {
   const row = db.prepare('SELECT * FROM agent_definition WHERE id = ?').get(id) as AgentRow | undefined;
   if (!row) throw new AppError(ErrorCode.NOT_FOUND, `agent ${id} not found`);
-  return fromRow(row);
+  return withEmploymentBindings(db, fromRow(row));
 }
 
 export function listAgents(db: DB, companyId: string): AgentDefinition[] {
   const rows = db.prepare('SELECT * FROM agent_definition WHERE company_id = ? ORDER BY created_at').all(companyId) as AgentRow[];
-  return rows.map(fromRow);
+  return rows.map((row) => withEmploymentBindings(db, fromRow(row)));
+}
+
+/** 附带 company_employee 表的执行器/权限绑定（legacy_agent_id 与 agent_definition.id 同值）。 */
+function withEmploymentBindings(db: DB, agent: AgentDefinition): AgentDefinition {
+  const row = db.prepare(
+    'SELECT executor_profile_id, permission_policy_id FROM company_employee WHERE legacy_agent_id=?',
+  ).get(agent.id) as { executor_profile_id: string | null; permission_policy_id: string | null } | undefined;
+  return {
+    ...agent,
+    executorProfileId: row?.executor_profile_id ?? null,
+    permissionPolicyId: row?.permission_policy_id ?? null,
+  };
 }
 
 export function updateAgent(

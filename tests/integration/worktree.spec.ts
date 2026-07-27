@@ -10,6 +10,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { existsSync, mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { makeTestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
 import {
@@ -60,6 +61,21 @@ describe('worktree lifecycle', () => {
     const hash = commitAll(info.path, '写第一章');
     expect(hash).toMatch(/^[0-9a-f]{40}$/);
     removeWorktree(tmpRoot, info);
+  });
+
+  it('检查点提交排除临时裁决快照，但保留真实草稿', () => {
+    ensureGitRepo(tmpRoot);
+    const info = createWorktree(tmpRoot, 'proj1', 'task-checkpoint');
+    mkdirSync(path.join(info.path, '.muster-conflicts', 'pub-1'), { recursive: true });
+    writeFileSync(path.join(info.path, '.muster-conflicts', 'pub-1', 'theirs.md'), '临时冲突全文\n');
+    writeFileSync(path.join(info.path, 'draft.md'), '真实草稿\n');
+
+    commitAll(info.path, 'checkpoint', { excludePaths: ['.muster-conflicts'] });
+
+    const tracked = spawnSync('git', ['ls-files'], { cwd: info.path, encoding: 'utf8' }).stdout;
+    expect(tracked).toContain('draft.md');
+    expect(tracked).not.toContain('.muster-conflicts');
+    expect(existsSync(path.join(info.path, '.muster-conflicts', 'pub-1', 'theirs.md'))).toBe(true);
   });
 });
 
@@ -138,6 +154,8 @@ describe('publish queue', () => {
 
     expect(result.blocked).toBe(true);
     expect(result.conflicts).toContain('doc.md');
+    expect(result.status).toBe('open');
+    expect(() => q.rollback(result.id, tmpRoot)).toThrow(/未曾落盘/);
     // 正式目录内容未被破坏
     const cur = readFileSync(path.join(tmpRoot, 'doc.md'), 'utf8');
     expect(cur).toBe('正式目录改\n');

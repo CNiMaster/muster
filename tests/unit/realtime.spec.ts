@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { queryKeysForRealtimeEvent } from '../../src/client/realtime';
 
 describe('queryKeysForRealtimeEvent', () => {
-  it('Task 事件刷新任务、详情、事件、线程与看板', () => {
+  it('Task 事件刷新任务、详情、事件、线程、看板与工位墙', () => {
     expect(
       queryKeysForRealtimeEvent({
         id: 'ev_1',
@@ -21,6 +21,7 @@ describe('queryKeysForRealtimeEvent', () => {
       ['usage', 'pr_1'],
       ['project-events', 'pr_1'],
       ['company-events', 'co_1'],
+      ['status-board', 'co_1'],
     ]);
   });
 

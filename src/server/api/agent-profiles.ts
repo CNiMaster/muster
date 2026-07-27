@@ -43,7 +43,14 @@ const profileSchema = z.object({
 });
 
 agentProfilesRouter.get('/', asyncHandler(async (_req, res) => {
-  res.json(listAgentProfiles(getDb()));
+  const db = getDb();
+  const profiles = listAgentProfiles(db);
+  // 附带每个档案的在营公司任职数（避免前端 N+1）。
+  const countRows = db.prepare(
+    `SELECT profile_id, COUNT(*) as n FROM company_employee GROUP BY profile_id`,
+  ).all() as Array<{ profile_id: string; n: number }>;
+  const countMap = new Map(countRows.map((r) => [r.profile_id, r.n]));
+  res.json(profiles.map((p) => ({ ...p, employmentCount: countMap.get(p.id) ?? 0 })));
 }));
 
 agentProfilesRouter.post('/', asyncHandler(async (req, res) => {

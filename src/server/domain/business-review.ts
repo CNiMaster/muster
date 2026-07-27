@@ -1,0 +1,206 @@
+/**
+ * 业务产物审批 domain。
+ *
+ * 与 permission_approval（CLI 命令阻塞审批）不同：这是业务产物（素材/成品/人物/功法/关系）
+ * 的异步审批。
+ *
+ * - 提交（submitBusinessReview）：Agent 把产物提交审批 → 写表。
+ *   公司 review_mode='blocking' 时把对应 Task 置 waiting_input（阻塞等待）；
+ *   'parallel' 时 Task 继续跑。
+ * - 决定（decideBusinessReview）：
+ *   - approved → 恢复原 Task（blocking 模式下）。
+ *   - rejected / changes_requested → 派发新 Task 给同一员工，携带审批反馈（不回原会话，
+ *     解决上下文混乱）。原 Task 在 blocking 模式下标记 cancelled（返工另起）。
+ *
+ * 渲染完全由前端 React 组件按 review_kind 确定性渲染，无 AI 依赖。
+ */
+import type { DB } from '../db/client';
+import { AppError, ErrorCode } from '../../shared/errors';
+import { nowIso, shortId } from '../../shared/utils';
+import { createTask, type CreateTaskInput } from './task';
+import { getCompany } from './company';
+
+export type BusinessReviewKind = 'material' | 'artifact' | 'character' | 'skill' | 'relationship' | 'plot' | 'custom';
+export type BusinessReviewStatus = 'pending' | 'approved' | 'rejected' | 'changes_requested';
+
+export interface BusinessReview {
+  id: string;
+  companyId: string;
+  projectId: string | null;
+  taskId: string | null;
+  employeeId: string;
+  reviewKind: BusinessReviewKind;
+  subjectId: string;
+  subjectSnapshot: Record<string, unknown>;
+  title: string;
+  summary: string | null;
+  status: BusinessReviewStatus;
+  feedback: string | null;
+  decidedBy: string | null;
+  decidedAt: string | null;
+  reworkTaskId: string | null;
+  createdAt: string;
+}
+
+interface ReviewRow {
+  id: string;
+  company_id: string;
+  project_id: string | null;
+  task_id: string | null;
+  employee_id: string;
+  review_kind: BusinessReviewKind;
+  subject_id: string;
+  subject_snapshot_json: string;
+  title: string;
+  summary: string | null;
+  status: BusinessReviewStatus;
+  feedback: string | null;
+  decided_by: string | null;
+  decided_at: string | null;
+  rework_task_id: string | null;
+  created_at: string;
+}
+
+function fromRow(r: ReviewRow): BusinessReview {
+  return {
+    id: r.id,
+    companyId: r.company_id,
+    projectId: r.project_id,
+    taskId: r.task_id,
+    employeeId: r.employee_id,
+    reviewKind: r.review_kind,
+    subjectId: r.subject_id,
+    subjectSnapshot: JSON.parse(r.subject_snapshot_json ?? '{}'),
+    title: r.title,
+    summary: r.summary,
+    status: r.status,
+    feedback: r.feedback,
+    decidedBy: r.decided_by,
+    decidedAt: r.decided_at,
+    reworkTaskId: r.rework_task_id,
+    createdAt: r.created_at,
+  };
+}
+
+export interface SubmitReviewInput {
+  companyId: string;
+  projectId?: string;
+  taskId?: string;
+  employeeId: string;
+  reviewKind: BusinessReviewKind;
+  subjectId: string;
+  subjectSnapshot: Record<string, unknown>;
+  title: string;
+  summary?: string;
+}
+
+/**
+ * 提交业务产物审批。
+ * blocking 模式：把对应 Task 置 waiting_input（阻塞，等待用户决定）。
+ * parallel 模式：Task 继续执行，审批异步。
+ */
+export function submitBusinessReview(db: DB, input: SubmitReviewInput): BusinessReview {
+  const company = getCompany(db, input.companyId);
+  const id = shortId('rev_');
+  const now = nowIso();
+  db.prepare(
+    `INSERT INTO business_review (id, company_id, project_id, task_id, employee_id, review_kind, subject_id, subject_snapshot_json, title, summary, status, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+  ).run(
+    id, input.companyId, input.projectId ?? null, input.taskId ?? null, input.employeeId,
+    input.reviewKind, input.subjectId, JSON.stringify(input.subjectSnapshot ?? {}),
+    input.title, input.summary ?? null, now,
+  );
+
+  // blocking 模式：阻塞提交来源 Task
+  if (company.reviewMode === 'blocking' && input.taskId) {
+    db.prepare("UPDATE task SET state='waiting_input', wait_state=NULL, updated_at=? WHERE id=? AND state IN ('running','claimed')")
+      .run(now, input.taskId);
+  }
+
+  return getBusinessReview(db, id);
+}
+
+export function getBusinessReview(db: DB, id: string): BusinessReview {
+  const row = db.prepare('SELECT * FROM business_review WHERE id=?').get(id) as ReviewRow | undefined;
+  if (!row) throw new AppError(ErrorCode.NOT_FOUND, `业务审批不存在: ${id}`);
+  return fromRow(row);
+}
+
+export function listBusinessReviews(
+  db: DB,
+  filter: { companyId?: string; projectId?: string; status?: BusinessReviewStatus } = {},
+): BusinessReview[] {
+  const where: string[] = [];
+  const params: (string | number)[] = [];
+  if (filter.companyId) { where.push('company_id=?'); params.push(filter.companyId); }
+  if (filter.projectId) { where.push('project_id=?'); params.push(filter.projectId); }
+  if (filter.status) { where.push('status=?'); params.push(filter.status); }
+  const sql = `SELECT * FROM business_review${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY created_at DESC`;
+  return (db.prepare(sql).all(...params) as ReviewRow[]).map(fromRow);
+}
+
+export interface DecideReviewInput {
+  decision: 'approved' | 'rejected' | 'changes_requested';
+  feedback?: string;
+  decidedBy?: string;
+}
+
+/**
+ * 决定业务审批。
+ * - approved：恢复原 Task（若被阻塞）。
+ * - rejected / changes_requested：派发新 Task 给同一员工，携带反馈（不回原会话）。
+ *   原阻塞 Task 标记 cancelled（返工另起）。
+ * 需要 projectId 才能派发返工 Task；若审批未关联项目，则仅记录决定。
+ */
+export function decideBusinessReview(db: DB, id: string, input: DecideReviewInput): BusinessReview {
+  const review = getBusinessReview(db, id);
+  if (review.status !== 'pending') {
+    throw new AppError(ErrorCode.CONFLICT, `该审批已处理：${review.status}`);
+  }
+  const now = nowIso();
+
+  if (input.decision === 'approved') {
+    // 恢复原阻塞 Task
+    if (review.taskId) {
+      db.prepare("UPDATE task SET state='queued', updated_at=? WHERE id=? AND state='waiting_input'").run(now, review.taskId);
+    }
+    db.prepare('UPDATE business_review SET status=?, feedback=?, decided_by=?, decided_at=? WHERE id=?')
+      .run('approved', input.feedback ?? null, input.decidedBy ?? null, now, id);
+  } else {
+    // 打回：派发新 Task（不回原会话）
+    let reworkTaskId: string | null = null;
+    if (review.projectId) {
+      const reworkTitle = `[返工] ${review.title}`;
+      const feedbackPayload: Record<string, unknown> = {
+        reviewKind: review.reviewKind,
+        subjectId: review.subjectId,
+        subjectSnapshot: review.subjectSnapshot,
+        feedback: input.feedback ?? '',
+        decision: input.decision,
+        previousReviewId: id,
+      };
+      const taskInput: CreateTaskInput = {
+        projectId: review.projectId,
+        title: reworkTitle,
+        assigneeAgentId: review.employeeId,
+        inputProtocol: { type: 'business_rework', payload: feedbackPayload },
+        contextRefs: [`business_review:${id}`],
+      };
+      try {
+        const reworkTask = createTask(db, taskInput);
+        reworkTaskId = reworkTask.id;
+      } catch {
+        // 派发失败不阻塞决定本身，仅记录
+      }
+    }
+    // 原阻塞 Task 标记 cancelled（返工另起）
+    if (review.taskId) {
+      db.prepare("UPDATE task SET state='cancelled', updated_at=? WHERE id=? AND state='waiting_input'").run(now, review.taskId);
+    }
+    db.prepare('UPDATE business_review SET status=?, feedback=?, decided_by=?, decided_at=?, rework_task_id=? WHERE id=?')
+      .run(input.decision, input.feedback ?? null, input.decidedBy ?? null, now, reworkTaskId, id);
+  }
+
+  return getBusinessReview(db, id);
+}

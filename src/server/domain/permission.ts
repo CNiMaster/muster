@@ -31,6 +31,19 @@ export function listApprovalQueue(db:DB,isOnline:(id:string)=>boolean,now=Date.n
 export function getEmployeePermissionPolicy(db:DB,employeeId:string):PermissionPolicy|null { const row=db.prepare('SELECT permission_policy_id FROM company_employee WHERE id=?').get(employeeId) as {permission_policy_id:string|null}|undefined;if(!row)throw new AppError(ErrorCode.NOT_FOUND,`公司员工不存在: ${employeeId}`);return row.permission_policy_id?getPermissionPolicy(db,row.permission_policy_id):null; }
 export function bindEmployeePermissionPolicy(db:DB,employeeId:string,policyId:string):void { getPermissionPolicy(db,policyId); const employment=db.prepare('SELECT c.state FROM company_employee ce JOIN company c ON c.id=ce.company_id WHERE ce.id=?').get(employeeId) as {state:string}|undefined; if(!employment)throw new AppError(ErrorCode.NOT_FOUND,`公司员工不存在: ${employeeId}`);if(employment.state!=='off')throw new AppError(ErrorCode.CONFLICT,'公司下班后才能修改员工权限'); const result=db.prepare('UPDATE company_employee SET permission_policy_id=?,updated_at=? WHERE id=?').run(policyId,nowIso(),employeeId); if(result.changes!==1) throw new AppError(ErrorCode.NOT_FOUND,`公司员工不存在: ${employeeId}`); }
 
+/**
+ * 按公司批量绑定权限策略到所有员工。要求公司处于下班（off）状态。
+ * 返回受影响员工数。
+ */
+export function bindCompanyEmployeesPermission(db:DB,companyId:string,policyId:string):{updated:number} {
+  getPermissionPolicy(db,policyId);
+  const company=db.prepare('SELECT state FROM company WHERE id=?').get(companyId) as {state:string}|undefined;
+  if(!company) throw new AppError(ErrorCode.NOT_FOUND,`公司不存在: ${companyId}`);
+  if(company.state!=='off') throw new AppError(ErrorCode.CONFLICT,'公司下班后才能批量修改员工权限');
+  const result=db.prepare('UPDATE company_employee SET permission_policy_id=?,updated_at=? WHERE company_id=?').run(policyId,nowIso(),companyId);
+  return { updated: result.changes };
+}
+
 function inside(root:string,path:string):boolean { const a=resolve(root); const b=resolve(path); return a===b||b.startsWith(`${a}/`); }
 function inScope(policy:PermissionPolicy,request:PermissionRequest):boolean { if(!request.path) return true; if(policy.scope==='device') return true; if(policy.scope==='task') return inside(request.taskRoot,request.path); if(policy.scope==='project') return inside(request.projectRoot,request.path); if(policy.scope==='workspace') return inside(request.workspaceRoot,request.path); return policy.selectedDirectories.some((root)=>inside(root,request.path!)); }
 function matches(rule:RuleRow,request:PermissionRequest):boolean { if(rule.expires_at&&rule.expires_at<=nowIso()) return false; if(rule.action&&rule.action!==request.action) return false; if(rule.command_pattern&&(!request.command||!new RegExp(rule.command_pattern).test(request.command))) return false; if(rule.path_prefix&&(!request.path||!inside(rule.path_prefix,request.path))) return false; if(rule.file_extension&&(!request.path||extname(request.path)!==rule.file_extension)) return false; if(rule.employee_id&&rule.employee_id!==request.employeeId) return false; if(rule.company_id&&rule.company_id!==request.companyId) return false; if(rule.project_id&&rule.project_id!==request.projectId) return false; if(rule.task_id&&rule.task_id!==request.taskId) return false; if(rule.network!==null&&Boolean(rule.network)!==Boolean(request.network)) return false; if(rule.subprocess!==null&&Boolean(rule.subprocess)!==Boolean(request.subprocess)) return false; return true; }
