@@ -26,6 +26,8 @@ import {
   getPluginRow,
 } from '../domain/plugin-install';
 import { McpClientPool } from '../executors/tools/mcp/client-pool';
+import { searchMarketplace, installMarketplaceEntry, type MarketplaceEntry, type InstallScope } from '../domain/marketplace';
+import { authorSkill } from '../domain/skill-author';
 import { realtime } from '../realtime';
 import { makeLifecycleEvent } from '../../shared/lifecycle-events';
 import { AppError, ErrorCode } from '../../shared/errors';
@@ -146,5 +148,61 @@ pluginsRouter.get(
   '/companies/:companyId/plugins/enabled',
   asyncHandler(async (req, res) => {
     res.json(listEnabledCompanyPlugins(getDb(), param(req, 'companyId')));
+  }),
+);
+
+// ── Marketplace 检索 + 安装（B3b）─────────────────────────────────────────
+
+pluginsRouter.get(
+  '/marketplace/search',
+  asyncHandler(async (req, res) => {
+    const query = (req.query.q as string) ?? '';
+    const includeGithub = req.query.github !== '0';
+    res.json(searchMarketplace(query, { includeGithub }));
+  }),
+);
+
+const installEntrySchema = z.object({
+  entry: z.object({
+    id: z.string(),
+    name: z.string(),
+    description: z.string(),
+    source: z.enum(['local', 'github']),
+    ref: z.string(),
+    kind: z.enum(['skill', 'mcp-server']),
+    maturity: z.enum(['experimental', 'stable', 'deprecated']),
+  }),
+  scope: z.object({ level: z.enum(['platform', 'company', 'project', 'employee']) }).passthrough(),
+});
+
+pluginsRouter.post(
+  '/marketplace/install',
+  asyncHandler(async (req, res) => {
+    const input = installEntrySchema.parse(req.body);
+    const plugin = installMarketplaceEntry(
+      getDb(),
+      input.entry as MarketplaceEntry,
+      input.scope as InstallScope,
+    );
+    realtime.publish(makeLifecycleEvent('plugin.installed', { pluginId: plugin.id }, {}));
+    res.status(201).json(plugin);
+  }),
+);
+
+// ── AI 兜底起草（B3b）─────────────────────────────────────────────────────
+
+pluginsRouter.post(
+  '/author/skill',
+  asyncHandler(async (req, res) => {
+    const input = z
+      .object({
+        capability: z.string().min(1),
+        context: z.string().optional(),
+        companyId: z.string().optional(),
+      })
+      .parse(req.body);
+    const plugin = await authorSkill(getDb(), input);
+    realtime.publish(makeLifecycleEvent('plugin.installed', { pluginId: plugin.id }, {}));
+    res.status(201).json(plugin);
   }),
 );
