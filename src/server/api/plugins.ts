@@ -98,7 +98,7 @@ pluginsRouter.delete(
   }),
 );
 
-// 测试 MCP server 连接（不落库，仅探测）
+// 测试 MCP server 连接（不落库，仅探测）。支持 stdio/sse/http 三种 transport。
 pluginsRouter.post(
   '/:id/test',
   asyncHandler(async (req, res) => {
@@ -107,19 +107,23 @@ pluginsRouter.post(
       throw new AppError(ErrorCode.VALIDATION, '仅 MCP server 类 plugin 支持测试连接');
     }
     const mcp = plugin.manifest.mcp;
-    if (mcp.transport !== 'stdio') {
-      throw new AppError(ErrorCode.VALIDATION, '仅支持 stdio transport 测试');
-    }
-    if (!mcp.command) {
-      throw new AppError(ErrorCode.VALIDATION, 'MCP server 缺少 command');
+    if (mcp.transport === 'stdio') {
+      if (!mcp.command) throw new AppError(ErrorCode.VALIDATION, 'MCP server 缺少 command');
+    } else if (mcp.transport === 'sse' || mcp.transport === 'http') {
+      if (!mcp.url) throw new AppError(ErrorCode.VALIDATION, `MCP server 缺少 url（${mcp.transport} transport）`);
+    } else {
+      throw new AppError(ErrorCode.VALIDATION, `不支持的 transport：${mcp.transport as string}`);
     }
     const pool = new McpClientPool();
     try {
       const tools = await pool.connect({
         id: plugin.id,
+        transport: mcp.transport,
         command: mcp.command,
         args: mcp.args,
         env: mcp.env,
+        url: mcp.url,
+        headers: mcp.headers,
       });
       res.json({ ok: true, tools });
     } catch (e) {

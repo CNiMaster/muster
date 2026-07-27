@@ -53,6 +53,14 @@ export interface SkillManifest {
  * MCP server 类插件的 manifest（B3 批次填充）。
  * 第一版仅 stdio 本地 server。
  */
+/**
+ * MCP server 类插件的 manifest（B3a stdio + B6 SSE/HTTP）。
+ *
+ * transport 决定连接方式：
+ * - stdio：spawn 本地子进程（command/args/env）
+ * - sse：Server-Sent Events 远程 server（url + 可选 headers）
+ * - http：Streamable HTTP 远程 server（url + 可选 headers，MCP 推荐的现代 transport）
+ */
 export interface McpServerManifest {
   transport: 'stdio' | 'sse' | 'http';
   /** stdio: 启动命令。 */
@@ -60,7 +68,10 @@ export interface McpServerManifest {
   args?: string[];
   /** sse/http: server URL。 */
   url?: string;
+  /** stdio: 子进程环境变量。 */
   env?: Record<string, string>;
+  /** sse/http: 请求头（如 Authorization: Bearer xxx）。 */
+  headers?: Record<string, string>;
   /** server 暴露的工具列表（连接后探测填充）。 */
   tools?: Array<{ name: string; description?: string }>;
 }

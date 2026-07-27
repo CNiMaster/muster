@@ -1,26 +1,39 @@
 /**
- * MCP Client 连接池（B3a）。
+ * MCP Client 连接池（B3a stdio + B6 SSE/HTTP）。
  *
- * 管理 stdio MCP server 的连接生命周期：
- * - 懒连接：首次需要某 server 的工具时才 spawn 子进程
+ * 管理 MCP server 的连接生命周期（三种 transport）：
+ * - stdio：spawn 本地子进程（command/args/env）
+ * - sse：Server-Sent Events 远程 server（url/headers）
+ * - http：Streamable HTTP 远程 server（url/headers，MCP 推荐的现代 transport）
+ *
+ * - 懒连接：首次需要某 server 的工具时才建立连接
  * - 复用：同一 server 在同一 task 内复用连接
  * - 探测：连接后 listTools 获取工具清单
  * - 超时：连接/请求超时由调用方（watchdog）兜底，池内设上限
- * - 关闭：task 结束时统一 close 所有子进程
+ * - 关闭：task 结束时统一 close 所有连接
  *
- * 仅支持 stdio transport（B3a 范围）。HTTP/SSE 后续。
  * 完全通用：接收任意 MCP server 配置，不绑定特定 server。
  */
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { log } from '../../../logger';
 
 /** MCP server 配置（对应 Plugin.manifest.mcp 的运行时形态）。 */
 export interface McpServerConfig {
   id: string;
-  command: string;
+  /** 连接方式。stdio=本地子进程；sse/http=远程 server。 */
+  transport: 'stdio' | 'sse' | 'http';
+  /** stdio: 启动命令。 */
+  command?: string;
   args?: string[];
+  /** stdio: 子进程环境变量。 */
   env?: Record<string, string>;
+  /** sse/http: server URL。 */
+  url?: string;
+  /** sse/http: 请求头（如 Authorization）。 */
+  headers?: Record<string, string>;
   /** 工具调用超时 ms（单次 request）。 */
   requestTimeoutMs?: number;
 }
@@ -34,13 +47,44 @@ export interface McpToolDescriptor {
 
 interface PooledConnection {
   client: Client;
-  transport: StdioClientTransport;
   tools: McpToolDescriptor[];
   connectedAt: number;
 }
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const CONNECT_TIMEOUT_MS = 15_000;
+
+/**
+ * 根据 config 创建对应 transport 实例（stdio/sse/http 分发）。
+ * 抽出来便于测试 mock。
+ */
+function createTransport(config: McpServerConfig):
+  | StdioClientTransport
+  | SSEClientTransport
+  | StreamableHTTPClientTransport {
+  const requestInit = config.headers
+    ? { headers: config.headers }
+    : undefined;
+  switch (config.transport) {
+    case 'sse': {
+      if (!config.url) throw new Error(`MCP server ${config.id} 缺少 url（sse transport）`);
+      return new SSEClientTransport(new URL(config.url), requestInit ? { requestInit } : {});
+    }
+    case 'http': {
+      if (!config.url) throw new Error(`MCP server ${config.id} 缺少 url（http transport）`);
+      return new StreamableHTTPClientTransport(new URL(config.url), requestInit ? { requestInit } : {});
+    }
+    case 'stdio':
+    default: {
+      if (!config.command) throw new Error(`MCP server ${config.id} 缺少 command（stdio transport）`);
+      return new StdioClientTransport({
+        command: config.command,
+        args: config.args ?? [],
+        env: { ...process.env, ...(config.env ?? {}) } as Record<string, string>,
+      });
+    }
+  }
+}
 
 /**
  * 单 task 范围的 MCP 连接池。
@@ -60,11 +104,7 @@ export class McpClientPool {
     const existing = this.connections.get(config.id);
     if (existing) return existing.tools;
 
-    const transport = new StdioClientTransport({
-      command: config.command,
-      args: config.args ?? [],
-      env: { ...process.env, ...(config.env ?? {}) } as Record<string, string>,
-    });
+    const transport = createTransport(config);
 
     const client = new Client(
       { name: 'muster-executor', version: '1.0.0' },
@@ -109,7 +149,6 @@ export class McpClientPool {
 
     this.connections.set(config.id, {
       client,
-      transport,
       tools,
       connectedAt: Date.now(),
     });

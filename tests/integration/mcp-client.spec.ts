@@ -14,10 +14,64 @@ import { describe, it, expect } from 'vitest';
 import { McpClientPool } from '../../src/server/executors/tools/mcp/client-pool';
 
 describe('McpClientPool 失败与清理', () => {
-  it('连接不存在的 command 抛错（连接失败被正确捕获）', async () => {
+  it('stdio 连接不存在的 command 抛错（连接失败被正确捕获）', async () => {
     const pool = new McpClientPool();
     await expect(
-      pool.connect({ id: 'bad', command: 'nonexistent-command-xyz-muster-test', args: [] }),
+      pool.connect({ id: 'bad', transport: 'stdio', command: 'nonexistent-command-xyz-muster-test', args: [] }),
+    ).rejects.toThrow();
+    await pool.close();
+  });
+
+  it('stdio 缺 command 抛错', async () => {
+    const pool = new McpClientPool();
+    await expect(
+      pool.connect({ id: 'nocmd', transport: 'stdio' }),
+    ).rejects.toThrow('缺少 command');
+    await pool.close();
+  });
+
+  it('sse 缺 url 抛错', async () => {
+    const pool = new McpClientPool();
+    await expect(
+      pool.connect({ id: 'ssenourl', transport: 'sse' }),
+    ).rejects.toThrow('缺少 url');
+    await pool.close();
+  });
+
+  it('http 缺 url 抛错', async () => {
+    const pool = new McpClientPool();
+    await expect(
+      pool.connect({ id: 'httpnourl', transport: 'http' }),
+    ).rejects.toThrow('缺少 url');
+    await pool.close();
+  });
+
+  it('sse 连接不存在的 server 抛错', async () => {
+    const pool = new McpClientPool();
+    await expect(
+      pool.connect({ id: 'ssebad', transport: 'sse', url: 'http://127.0.0.1:1/nonexistent' }),
+    ).rejects.toThrow();
+    await pool.close();
+  });
+
+  it('http 连接不存在的 server 抛错', async () => {
+    const pool = new McpClientPool();
+    await expect(
+      pool.connect({ id: 'httpbad', transport: 'http', url: 'http://127.0.0.1:1/nonexistent' }),
+    ).rejects.toThrow();
+    await pool.close();
+  });
+
+  it('sse/http headers 透传到配置（不报错构造）', async () => {
+    const pool = new McpClientPool();
+    // 带 headers 构造不抛错（连接会失败但 headers 已传入）
+    await expect(
+      pool.connect({
+        id: 'sseauth',
+        transport: 'sse',
+        url: 'http://127.0.0.1:1/x',
+        headers: { Authorization: 'Bearer test-token' },
+      }),
     ).rejects.toThrow();
     await pool.close();
   });
@@ -25,7 +79,7 @@ describe('McpClientPool 失败与清理', () => {
   it('close 后再 connect 抛错', async () => {
     const pool = new McpClientPool();
     await pool.close();
-    await expect(pool.connect({ id: 'x', command: 'echo', args: [] })).rejects.toThrow(
+    await expect(pool.connect({ id: 'x', transport: 'stdio', command: 'echo', args: [] })).rejects.toThrow(
       'McpClientPool 已关闭',
     );
   });
@@ -47,7 +101,7 @@ describe('McpClientPool 失败与清理', () => {
     expect(pool.has('any')).toBe(false);
     // 连接失败的 server 不会进入连接池
     try {
-      await pool.connect({ id: 'bad', command: 'nonexistent-xyz', args: [] });
+      await pool.connect({ id: 'bad', transport: 'stdio', command: 'nonexistent-xyz', args: [] });
     } catch {
       /* expected */
     }

@@ -64,17 +64,33 @@ export async function assembleTools(db: DB, companyId: string): Promise<Assemble
   return { registry, pool };
 }
 
-/** 把 Plugin（kind=mcp-server）转成 McpServerConfig。非 stdio 或缺 command 返回 null。 */
+/**
+ * 把 Plugin（kind=mcp-server）转成 McpServerConfig。
+ * 支持三种 transport（stdio/sse/http）。缺少必要字段（stdio 缺 command、sse/http 缺 url）返回 null。
+ */
 function pluginToServerConfig(plugin: Plugin): McpServerConfig | null {
   if (plugin.manifest.kind !== 'mcp-server') return null;
   const mcp = plugin.manifest.mcp;
-  if (mcp.transport !== 'stdio') return null; // B3a 仅 stdio
-  if (!mcp.command) return null;
-  return {
-    id: plugin.id,
-    command: mcp.command,
-    args: mcp.args,
-    env: mcp.env,
-    requestTimeoutMs: 30_000,
-  };
+  if (mcp.transport === 'stdio') {
+    if (!mcp.command) return null;
+    return {
+      id: plugin.id,
+      transport: 'stdio',
+      command: mcp.command,
+      args: mcp.args,
+      env: mcp.env,
+      requestTimeoutMs: 30_000,
+    };
+  }
+  if (mcp.transport === 'sse' || mcp.transport === 'http') {
+    if (!mcp.url) return null;
+    return {
+      id: plugin.id,
+      transport: mcp.transport,
+      url: mcp.url,
+      headers: mcp.headers,
+      requestTimeoutMs: 30_000,
+    };
+  }
+  return null;
 }
