@@ -65,6 +65,10 @@ export interface Task {
   completedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** B5：失败累计次数（failTask 自增），达 TASK_CIRCUIT_BREAKER_THRESHOLD 触发熔断回流。 */
+  failureCount: number;
+  /** B5：最近失败时间，配合 failureCount 用于诊断。 */
+  lastFailedAt: string | null;
 }
 
 interface TaskRow {
@@ -101,6 +105,8 @@ interface TaskRow {
   completed_at: string | null;
   created_at: string;
   updated_at: string;
+  failure_count: number;
+  last_failed_at: string | null;
 }
 
 function fromRow(r: TaskRow): Task {
@@ -138,6 +144,8 @@ function fromRow(r: TaskRow): Task {
     completedAt: r.completed_at,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
+    failureCount: r.failure_count,
+    lastFailedAt: r.last_failed_at,
   };
 }
 
@@ -528,15 +536,15 @@ export function recoverExpiredLeases(db: DB): number {
 }
 
 // ===== 取消 / 暂停 / 恢复 =====
-/** 标记 Task 失败（引擎异常专用，区别于 blocked）。 */
+/** 标记 Task 失败（引擎异常专用，区别于 blocked）。B5：自增 failure_count。 */
 export function failTask(db: DB, taskId: string, message: string): Task {
   const cur = getTask(db, taskId);
   const now = nowIso();
   db.prepare(
-    `UPDATE task SET state='failed', summary=?, lease_owner_thread_id=NULL, lease_expires_at=NULL, updated_at=? WHERE id=?`,
-  ).run(message.slice(0, 2000), now, taskId);
-  appendTaskEvent(db, taskId, 'failed', { message });
-  void cur;
+    `UPDATE task SET state='failed', summary=?, lease_owner_thread_id=NULL, lease_expires_at=NULL,
+     failure_count=failure_count+1, last_failed_at=?, updated_at=? WHERE id=?`,
+  ).run(message.slice(0, 2000), now, now, taskId);
+  appendTaskEvent(db, taskId, 'failed', { message, failureCount: cur.failureCount + 1 });
   return getTask(db, taskId);
 }
 

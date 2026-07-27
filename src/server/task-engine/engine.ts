@@ -34,6 +34,7 @@ import { getAgent } from '../domain/agent';
 import { assembleContext } from '../executors/context';
 import { assertSafeToRun } from '../executors/safety';
 import { getProject, listProjectReferences } from '../domain/project';
+import { transitionProjectPhase } from '../domain/project-readiness';
 import { getCompany } from '../domain/company';
 import { createWorktree, removeWorktree } from '../worktree/manager';
 import { commitAll } from '../worktree/manager';
@@ -41,6 +42,7 @@ import { PublishQueue } from '../worktree/publish-queue';
 import { checkBudget, recordUsage, recordUsageBatch } from '../domain/usage';
 import { log } from '../logger';
 import { AppError, ErrorCode } from '../../shared/errors';
+import { TASK_CIRCUIT_BREAKER_THRESHOLD } from '../../shared/constants';
 import type { AgentRunResult } from '../../shared/types';
 import { realtime } from '../realtime';
 import { upsertPublishedArtifact } from '../domain/artifact';
@@ -893,7 +895,33 @@ export class TaskEngine {
 
     // timeout / 结构错误 / spawn 错 → failed（可重试或观察后重试）
     log.error('task failed', { taskId, err: msg });
-    failTask(this.db, taskId, `执行异常：${msg}`);
+    const failed = failTask(this.db, taskId, `执行异常：${msg}`);
+
+    // B5 熔断回流：连续失败 ≥ TASK_CIRCUIT_BREAKER_THRESHOLD 且项目处于 active → 回流到 researching
+    // 对齐 systematic-debugging:195（3 次失败熔断，怀疑架构而非继续打补丁）
+    if (failed.failureCount >= TASK_CIRCUIT_BREAKER_THRESHOLD) {
+      try {
+        const project = getProject(this.db, failed.projectId);
+        if (project.state === 'active') {
+          const { previousState } = transitionProjectPhase(this.db, project.id, 'researching');
+          // 回流是 active→researching（toIdx<fromIdx），validatePhaseExit 不校验产物，安全
+          realtime.publish(
+            makeLifecycleEvent(
+              'project.rollback',
+              { projectId: project.id, from: previousState, to: 'researching', reason: 'rollback-3x' },
+              { companyId: project.companyId, projectId: project.id },
+            ),
+          );
+          log.warn('circuit breaker tripped, rolled back project to researching', {
+            taskId,
+            projectId: project.id,
+            failureCount: failed.failureCount,
+          });
+        }
+      } catch (e) {
+        log.warn('circuit breaker rollback failed', { taskId, err: e instanceof Error ? e.message : String(e) });
+      }
+    }
   }
 
   /** 拉动所有活跃线程，并发泵（限并发上限）。 */

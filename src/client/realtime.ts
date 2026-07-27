@@ -14,6 +14,10 @@ export function queryKeysForRealtimeEvent(event: RealtimeEvent): QueryKey[] {
   if (event.type?.startsWith('bridge.')) {
     keys.push(['project-events'], ['company-events']);
   }
+  // B5：项目阶段事件刷 project query（驱动 wizard stepper 自动刷新）
+  if (event.type.startsWith('project.')) keys.push(['projects']);
+  // B4：plugin 启停事件刷 plugin 列表
+  if (event.type.startsWith('plugin.')) keys.push(['plugins']);
   if (event.projectId) {
     keys.push(
       ['tasks', event.projectId],
@@ -21,6 +25,8 @@ export function queryKeysForRealtimeEvent(event: RealtimeEvent): QueryKey[] {
       ['usage', event.projectId],
       ['project-events', event.projectId],
     );
+    // B5：project.phase-* / rollback / readiness-passed 事件刷单个 project（wizard 消费）
+    if (event.type.startsWith('project.')) keys.push(['project', event.projectId]);
     if (event.type.startsWith('project-task.') || event.type.startsWith('project-task-thread.')) {
       keys.push(['project-tasks', event.projectId]);
       const projectTaskId = (event.payload as { projectTaskId?: unknown } | undefined)?.projectTaskId;
@@ -30,6 +36,8 @@ export function queryKeysForRealtimeEvent(event: RealtimeEvent): QueryKey[] {
   if (event.companyId) {
     keys.push(['company-events', event.companyId]);
     if (event.type.startsWith('approval.') || event.type.startsWith('project-task.') || event.type.startsWith('session.')) keys.push(['company-cockpit', event.companyId]);
+    // task.* 事件秒级刷新工位墙/员工状态看板（不再依赖 5s 轮询）
+    if (event.type.startsWith('task.')) keys.push(['status-board', event.companyId]);
   }
   if (event.taskId) {
     keys.splice(

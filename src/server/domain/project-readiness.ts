@@ -12,6 +12,7 @@ import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { getProject, updateProject, type Project } from './project';
 import { validatePhaseExit } from './project-onboarding';
+import { recordPhaseEnter } from './project-plan';
 
 /**
  * 断言 state 转换合法。
@@ -66,6 +67,9 @@ export function transitionProjectPhase(
   assertCanTransition(previousState, target);
   // B4：向前跃迁校验阶段产物完整性（回流不校验，全允许）
   validatePhaseExit(db, projectId, previousState, target);
+  // B5：记录阶段进入（含回流标记），关闭上一条未关闭记录
+  const isRollback = PHASE_ORDER.indexOf(target) < PHASE_ORDER.indexOf(previousState);
+  recordPhaseEnter(db, projectId, target, { rollbackFrom: isRollback ? previousState : undefined });
   const updated = updateProject(db, projectId, { state: target });
   return { project: updated, previousState };
 }

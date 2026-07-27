@@ -108,11 +108,35 @@ projectById.patch(
       const target = patch.state as ProjectState;
       const { project, previousState } = transitionProjectPhase(getDb(), param(req, 'id'), target);
       const isRollback = PHASE_ORDER.indexOf(target) < PHASE_ORDER.indexOf(previousState);
+      // B5：先发布前序 phase 退出
+      if (previousState !== project.state) {
+        realtime.publish(
+          makeLifecycleEvent(
+            'project.phase-exited',
+            {
+              projectId: project.id,
+              phase: previousState,
+              outcome: isRollback ? 'rollback' : 'forward',
+            },
+            { companyId: project.companyId, projectId: project.id },
+          ),
+        );
+      }
       if (isRollback) {
         realtime.publish(
           makeLifecycleEvent(
             'project.rollback',
             { projectId: project.id, from: previousState as ProjectState, to: project.state, reason: 'manual' },
+            { companyId: project.companyId, projectId: project.id },
+          ),
+        );
+      }
+      // ready→active 时发布就绪通过
+      if (previousState === 'ready' && target === 'active') {
+        realtime.publish(
+          makeLifecycleEvent(
+            'project.readiness-passed',
+            { projectId: project.id },
             { companyId: project.companyId, projectId: project.id },
           ),
         );
