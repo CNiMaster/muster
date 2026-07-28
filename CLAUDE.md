@@ -48,6 +48,10 @@ npm run test:product-acceptance # 无真实模型请求的成品领域验收
 npm run test:e2e         # Playwright 端到端
 npm run test:claude-smoke # 真实 Claude 两轮 Task/session/artifact/usage 冒烟
 npm run build            # tsup 编译 server + vite build 客户端 → dist/
+node scripts/smoke/capability-platform.mjs  # 能力平台 API 冒烟（需先 npm run dev，12 项 B1-B5 + transport 链路）
+```
+
+> **冒烟测试约定**：改 capability/plugin/project-readiness/mcp 相关代码后，启动 `npm run dev` 跑一次 `node scripts/smoke/capability-platform.mjs`，确认建项目→准备流程→plugin CRUD→marketplace→MCP transport 端到端可用。单测覆盖代码逻辑，冒烟覆盖真实 HTTP 链路。
 ```
 
 ## Configuration (Environment Variables)
@@ -109,6 +113,7 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 ### 核心运行模型
 
 - **公司状态机** `off | online | draining | review_paused`：上班锁定正式组织配置；镜像扩缩容例外。
+- **项目状态机（准备流程）** `idle(兼容) | drafting | researching | equipping | staffing | ready | active | paused | completed | archived`：新建项目默认进 `drafting`，经六阶段准备流程（构思→调研→装备→员工→就绪）到 `active` 才能派工。`transitionProjectPhase` + `assertCanTransition` 做状态转换校验（向前需按序，回流任意允许），`validatePhaseExit` 校验向前跃迁的阶段产物（drafting 需 goal、researching 需摘要+候选能力、equipping 需启用 plugin、staffing 需分配员工）。readiness 存 `project.settings.onboarding`。任务连续失败 3 次（`failure_count >= TASK_CIRCUIT_BREAKER_THRESHOLD`）且项目 active 时自动熔断回流到 `researching`。`createProject` 接受可选 `initialState` 跳过准备流程（测试/模板用）。
 - **Task 是唯一运行单元**：10 态状态机 `queued|claimed|running|waiting_input|waiting_dependency|paused|blocked|completed|failed|cancelled`。
 - **项目任务边界由用户控制**：后台自动规划只能进入已有的 active `project_task`；没有用户项目任务时不得暗中创建新的上下文边界。
 - **原子领取**：`BEGIN IMMEDIATE` + `UPDATE ... WHERE state='queued' ... RETURNING`，租约 + 心跳 + 过期恢复。
@@ -127,6 +132,9 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 - **长篇小说公司**：5 基础岗位（lead/writer/character/plot/inspector），第一负责人≠主写手；章节完成事件触发人物/情节维护；定时一致性检查；强制复盘按根员工聚合；闲置头脑风暴受限。
 - **镜像**：项目内临时并行线程，共享根员工职责/上下文/Task 池，不重复领取；成果归入根员工。
 - **能力中心（工具档案库）**：平台是"搬运工不是提供者"。`tools/` 目录是"能力→可用实现"的备选目录（不是安装清单），每个档案含 frontmatter（capability/implementation local|api/executor_kind/credential_keys/install/check/maturity）+ 正文。启动时 `syncToolRegistry()` 扫描入库到 `tool_registry` 表；后台设默认项，创建公司时 `dispatchDefaultToolsToCompany()` 派发到 `company_tool`。`assembleContext` 按"员工名下所有 capabilityBindings 的 recommendedToolIds"注入 `# 能力中心` system prompt 段，员工已具备相似工具时优先用自己的，缺少时参考推荐。是否安装/调用由员工自行决定，平台不做强制门禁，只做软诊断（`capability_tool_unavailable`/`capability_executor_mismatch` finding）。`capabilityBindingDefinitionSchema` 已扩展 `recommendedToolIds` 和 `requiresExecutorKind` 两字段。
+- **Plugin 体系（能力接入/下载/自定义）**：统一 Plugin 模型（kind: skill/mcp-server/tool/bridge-action/ai-generated；source: builtin/executor-native/company/project/marketplace/ai-generated；scope: platform/company/project/employee）。现有 skill/tool/bridge 通过 `plugin-adapter.ts` 包装为只读 Plugin 视图，零迁移。`plugin` 表 + `company_plugin` 启停表（启停需 `company.state==='off'`）。**接入**：`POST /api/plugins` 存任意 MCP 配置，`assembleTools` 在 pumpThread 时按公司启用列表连接 MCP server、探测工具、注册进 RuntimeToolRegistry。**下载**：`marketplace.ts` 检索本地 `~/.zcode/skills` + GitHub(`gh search`)，`installMarketplaceEntry` 落库。**自定义**：`skill-author.ts` 调 LLM（`llm-call.ts`，OpenAI 兼容，三层凭据解析）起草 SKILL.md 作为兜底。RuntimeToolRegistry 替代原 FILE_TOOLS 硬编码 switch，内置 7 工具变注册项，第三方/MCP 工具同接口注册。
+- **MCP 接入（三种 transport）**：`McpClientPool` 支持 stdio（本地子进程 command/args/env）、sse（SSEClientTransport，url/headers）、http（StreamableHTTPClientTransport，url/headers）。按 `McpServerConfig.transport` 分发到对应 SDK transport。MCP 工具经 `mcp/adapter.ts` 适配成 RuntimeTool 注册，命名 `mcp_<serverId>__<toolName>`，默认走 `network` 权限动作。连接失败的单个 server 不致命，记 health 错误后跳过。
+- **项目准备流程编排（PlanVersion + 阶段历史）**：`project_plan` 表记录每次 spec/plan 版本（回流时开新版本，created_reason: initial/rollback-3x/scope-change/manual），`project_phase_history` 记录阶段进出（含 rollbackFrom/reason）。lifecycle 事件 `project.phase-entered/exited/readiness-passed/rollback` 驱动前端 wizard stepper 自动刷新（`realtime.ts` 的 `project.*` 事件 invalidate `['project', id]`）。
 - **凭据库（平台级基本能力）**：所有 API/CLI 接入的凭据凌驾于公司之上，统一管理。启动时 `seedDefaultCredentialDefinitions()` 幂等注入 LLM 默认凭据定义（Anthropic/OpenAI/Google 三家，`credential_definition` 表）；后台可设默认派发项；创建公司时 `dispatchDefaultCredentialsToCompany()` 派发到 `company_credential`。执行时三层解析环境变量名：① 员工级覆盖（Agent Home `profile/credentials.json`，只存变量名不存明文）→ ② 公司级覆盖（`company_credential.override_key`）→ ③ 平台默认（`credential_definition.credential_key`）→ ④ 系统回退（`PROVIDER_DEFAULT_API_KEY_ENV` 或 legacy `agent.executor.apiKeyEnv`）。`engine.ts` 的 `resolveExecutorCredentialForTask()` 统一装配，三个 adapter（Claude/OpenAI/Gemini）无需改动——它们已消费 `ctx.apiKeyEnv`。明文值始终由系统环境变量提供，不进 DB、不进日志、不进迁移。
 - **素材区（项目级）**：每个项目有素材库（原料/需求/源文件），三选一导入：link（存路径/URL 引用，不复制文件，源不动）→ moved（copy+unlink 移入，源删除）→ copied（copyFile 复制，源保留）。素材存储在 `{project.rootDir}/materials/_copied/`，路径校验防目录穿越（对照 `resolveArtifactPath`）。`assembleContext` 注入 `# 项目素材` 摘要清单让员工知道可用素材。素材健康检查（link 型本地源文件是否存在）。
 - **成品区泛化 + 多媒体**：`ArtifactKind` 从小说专用 12 种枚举泛化为 `NovelArtifactKind | GenericArtifactKind | string`（通用公司可用 video/audio/image/markdown/binary 等）。`artifactTypeDefinitionSchema.format` 扩展 `video|audio`。`publish-queue` 的 `isBinaryPath` 扩展音视频扩展名，video/audio/binary kind 走 `exclusive_lock`（整文件替换，不走三方合并）。ArtifactsPage 前端按格式渲染：image(`<img>`)、video(`<video controls>`)、audio(`<audio controls>`)、pdf(`<iframe>`)。成品画廊聚合查询（`artifactGallery` 按 time/type 分组，`companyArtifactGallery` 跨项目聚合）。
@@ -165,6 +173,24 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 | `src/server/domain/tool-registry.ts` | 工具档案扫描/CRUD/默认派发（`syncToolRegistry`/`listTools`/`dispatchDefaultToolsToCompany`） |
 | `src/server/domain/tool-recommendation.ts` | Task 执行时工具推荐解析 + `# 能力中心` system prompt 段构建 |
 | `src/server/api/tools.ts` | 工具档案管理 REST 路由 |
+| `src/server/executors/tools/registry.ts` | **RuntimeToolRegistry** — 运行时工具注册表（替代 FILE_TOOLS 硬编码），register/resolve/definitions + 7 内置工具 handler |
+| `src/server/executors/tools/mcp/client-pool.ts` | **McpClientPool** — stdio/sse/http 三种 transport 的 MCP 连接池（懒连接/复用/探测/超时/关闭） |
+| `src/server/executors/tools/mcp/adapter.ts` | MCP 工具 → RuntimeTool 适配（注册进 registry） |
+| `src/server/executors/tool-assembly.ts` | 装配函数：内置工具 + 已启用 MCP 工具 → 合并 RuntimeToolRegistry（pumpThread 调用） |
+| `src/shared/plugin.ts` | **Plugin 统一模型**（kind/source/scope/manifest 判别联合） |
+| `src/server/domain/plugin-adapter.ts` | Plugin 读侧：skill/tool/bridge 三源包装为 Plugin 只读视图 + parsePluginRow |
+| `src/server/domain/plugin-install.ts` | Plugin 写侧：install/remove/upsert + 公司启停 + 健康检查 |
+| `src/server/domain/marketplace.ts` | 能力市场检索（local ~/.zcode/skills + github gh search）+ installMarketplaceEntry |
+| `src/server/domain/skill-author.ts` | AI 兜底起草 SKILL.md（调 llm-call） |
+| `src/server/domain/llm-call.ts` | 平台级 LLM 调用（OpenAI 兼容 fetch，三层凭据解析） |
+| `src/server/domain/project-readiness.ts` | **HARD-GATE**：assertCanTransition + transitionProjectPhase + assertProjectActive（派工闸门） |
+| `src/server/domain/project-onboarding.ts` | readiness 读写（存 settings.onboarding）+ validatePhaseExit 阶段产物校验 |
+| `src/server/domain/project-plan.ts` | PlanVersion CRUD（版本自增+supersede）+ phase history 记录 |
+| `src/server/api/plugins.ts` | Plugin CRUD + MCP 连接测试 + 公司启停 + marketplace 检索/安装 + AI 起草路由 |
+| `src/client/components/project/ProjectOnboardingWizard.tsx` | 六阶段准备流程 wizard（drafting→researching→equipping→staffing→ready→active，允许回流） |
+| `src/client/components/project/phases/` | 5 个阶段表单组件（DraftingPhase/ResearchingPhase/EquippingPhase/StaffingPhase/ReadyPhase） |
+| `scripts/smoke/capability-platform.mjs` | 能力平台 API 冒烟测试（12 项，覆盖 B1-B5 + transport 关键链路） |
+| `docs/superpowers/specs/2026-07-26-capability-platform-design.md` | 能力与流程平台总架构 spec（4 子系统 A/B/C/D + 6 批次 B1-B6） |
 | `src/server/domain/credential-store.ts` | 凭据库（平台级）：三层解析 + CRUD + seed + 公司派发 |
 | `src/server/api/credentials.ts` | 凭据库管理 REST 路由（平台级 + 公司级） |
 | `src/server/db/migrations/0003_settings.sql` | 系统设置表 |
@@ -189,7 +215,7 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 
 ### 测试
 
-- Vitest 单元与集成测试覆盖运行闭环、workspace 引导、全局员工档案、跨公司任职、Agent Home、分层记忆、项目任务会话、CLI 探测、审批桥、上下文恢复、复用与安全重置；准确数量以 `npm test` 当前输出为准。
+- Vitest 单元与集成测试覆盖运行闭环、workspace 引导、全局员工档案、跨公司任职、Agent Home、分层记忆、项目任务会话、CLI 探测、审批桥、上下文恢复、复用与安全重置；准确数量以 `npm test` 当前输出为准（当前 98 文件 / 575 测试，含能力平台 B1-B5：RuntimeToolRegistry、Plugin CRUD、MCP client 三种 transport、项目状态机+HARD-GATE、readiness 校验、PlanVersion+熔断、marketplace+AI 起草）。
   - 测试环境需要真实 git 仓库作为 `project.rootDir`（`createWorktree` 需要 `git rev-parse HEAD` 成功）。`tests/integration/setup.ts` 的 `makeTempGitRepo()` 创建临时 git 仓库（含初始 commit）供测试使用。
   - `project.rootDir` 与 `firstAgentId` 均为可选：建项目时留空，`createProject` 自动使用当前激活总工作区，并生成 `{workspace}/companies/{公司名}/projects/{项目名}-{项目ID}`；项目 ID 后缀保证同名项目不会共享目录。`ensureGitRepo()` 会在首个 worktree 创建时自动 `mkdir + git init`。
 - Playwright 覆盖建司→团队→项目→首 Task、在线建项目、最近项目恢复、公司上下文导航、员工库、执行器中心、权限中心以及窄屏设置页；准确数量以 `npm run test:e2e` 当前输出为准。
@@ -198,6 +224,9 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 `publish_record` 由 `0002_conversation.sql` 创建，记录 Task 发布提交、合并文件、冲突与阻塞状态，供成果修改历史页读取。
 
 ### 已知工程取舍
+- **工具注册表优先于硬编码**：新增可执行工具（MCP/自定义/AI 生成）一律走 `RuntimeToolRegistry.register()`，不要再扩展 `file-tools.ts` 的 FILE_TOOLS 或 `executeFileTool` switch。`file-tools.ts` 已瘦身为"类型定义 + 工具定义数据"，运行时分发在 `registry.ts` 的 `executeTool`。
+- **Plugin 体系是新能力的统一入口**：接入 MCP/skill/tool 都经 `POST /api/plugins` 落库 + `company_plugin` 启停 + `assembleTools` 装配。不要再为单个能力写硬编码 adapter。
+- **项目状态机改动需同步三处**：`server/domain/project.ts`（ProjectState 类型）+ `server/db/migrations`（CHECK 约束）+ `client/api/types.ts`（前端字面量）+ `shared/lifecycle-events.ts`（ProjectPhase 内联类型）。漏一处会 typecheck 或运行时失败。
 - `noUncheckedIndexedAccess` 关闭（为绕过 express `req.params` 类型摩擦）。代价：数组下标访问不强制 undefined 检查。如需更严格，重开后主要修 `src/shared/utils.ts` 和 domain 的 row 映射。
 - Claude Code 的模型可用性由用户本机或代理服务决定。先在“系统设置”填写实际支持的模型标识并运行桥接测试；错误模型会直接返回诊断，不会用 FakeExecutor 冒充成功。
 - 当前认证接入包含 Codex CLI、Claude Code、Antigravity CLI、OpenAI-compatible API 和 Gemini API，并完成统一 Manifest/Profile、项目任务会话、审批/Turbo 权限、分层记忆和平台化公司入口。
