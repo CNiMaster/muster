@@ -10,6 +10,7 @@ import { openReportCycle, shouldTriggerReport } from '../domain/report';
 import { isSoftCapReached, type Budget } from '../domain/usage';
 import { updateProject } from '../domain/project';
 import { settleDrainingAgents } from '../domain/agent';
+import { drainReflectionQueue, recoverStuckReflections } from '../domain/reflection';
 
 export interface RuntimeTickResult {
   recoveredLeases: number;
@@ -22,6 +23,8 @@ export interface RuntimeTickResult {
 /** 统一驱动公司生命周期和项目任务执行。 */
 export class ProjectRuntimeCoordinator {
   private timer: NodeJS.Timeout | null = null;
+  /** 反思队列消化定时器——独立于 tick，避免 LLM 慢调用阻塞租约恢复/任务泵送。 */
+  private reflectionTimer: NodeJS.Timeout | null = null;
   private ticking = false;
 
   constructor(
@@ -89,6 +92,7 @@ export class ProjectRuntimeCoordinator {
         }
       }
 
+      // 双 Loop P3：反思队列由独立定时器 drainReflectionLoop 消化，不在此处 await（避免阻塞调度）。
       const settledCompanies = this.settleDrainingCompanies();
       return { recoveredLeases, plannedTasks, pumpedTasks, settledCompanies, releasedMirrors };
     } finally {
@@ -125,16 +129,34 @@ export class ProjectRuntimeCoordinator {
 
   start(): void {
     if (this.timer) return;
+    // 启动时复位上一轮进程崩溃留下的卡死反思记录。
+    try {
+      const stuck = recoverStuckReflections(this.db);
+      if (stuck > 0) log.info('reflections recovered from stuck running state', { count: stuck });
+    } catch (error) {
+      log.warn('recover stuck reflections failed', { error: error instanceof Error ? error.message : String(error) });
+    }
     void this.tick();
     this.timer = setInterval(() => {
       void this.tick().catch((error) => log.error('runtime coordinator tick failed', { error: String(error) }));
     }, this.intervalMs);
     this.timer.unref?.();
+
+    // 反思队列独立消化循环：与 tick 解耦，LLM 慢调用不阻塞租约恢复/任务泵送。
+    // 间隔较长（10s），反思是低优先级离线任务；detached 执行不持有 ticking 锁。
+    this.reflectionTimer = setInterval(() => {
+      void drainReflectionQueue(this.db, { maxPerTick: 3 }).catch((error) =>
+        log.warn('reflection drain failed', { error: error instanceof Error ? error.message : String(error) }),
+      );
+    }, 10_000);
+    this.reflectionTimer.unref?.();
   }
 
   stop(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    if (this.reflectionTimer) clearInterval(this.reflectionTimer);
+    this.reflectionTimer = null;
   }
 
   private settleDrainingCompanies(): string[] {

@@ -17,6 +17,7 @@ import {
   getTask,
   listTasks,
   answerClarification,
+  answerAlignment,
   cancelTask,
   pauseTask,
   resumeTask,
@@ -67,6 +68,8 @@ const createTaskSchema = z.object({
   contextRefs: z.array(z.string()).optional(),
   outputProtocol: z.record(z.unknown()).optional(),
   priority: z.number().optional(),
+  /** 双 Loop 地基 P0.1：验收标准 checklist（用户只填 criterion 文本，id 自动生成）。 */
+  acceptanceCriteria: z.array(z.object({ id: z.string().optional(), criterion: z.string().min(1) })).optional(),
 });
 
 taskByProjectRouter.get(
@@ -81,7 +84,12 @@ taskByProjectRouter.post(
   '/',
   asyncHandler(async (req, res) => {
     const input = createTaskSchema.parse(req.body);
-    res.status(201).json(createTask(getDb(), { projectId: param(req, 'id'), ...input }));
+    // 双 Loop P0.1：验收标准条目补稳定 id（用户只填 criterion 文本），供后续 acceptanceMet 写回对照。
+    const acceptanceCriteria = input.acceptanceCriteria?.map((c, i) => ({
+      id: c.id ?? `ac_${Date.now().toString(36)}_${i}`,
+      criterion: c.criterion,
+    }));
+    res.status(201).json(createTask(getDb(), { projectId: param(req, 'id'), ...input, acceptanceCriteria }));
   }),
 );
 
@@ -119,6 +127,22 @@ taskByIdRouter.post(
   asyncHandler(async (req, res) => {
     const { answer } = z.object({ answer: z.string().min(1) }).parse(req.body);
     res.json(answerClarification(getDb(), param(req, 'id'), answer));
+  }),
+);
+
+/** 双 Loop P1：回答开始段对齐。可携带新增验收标准条目（补全 acceptance checklist）。 */
+taskByIdRouter.post(
+  '/align',
+  asyncHandler(async (req, res) => {
+    const parsed = z.object({
+      answer: z.string().min(1),
+      additionalCriteria: z.array(z.object({ id: z.string().optional(), criterion: z.string().min(1) })).optional(),
+    }).parse(req.body);
+    const additionalCriteria = parsed.additionalCriteria?.map((c, i) => ({
+      id: c.id ?? `ac_${Date.now().toString(36)}_${i}`,
+      criterion: c.criterion,
+    }));
+    res.json(answerAlignment(getDb(), param(req, 'id'), parsed.answer, additionalCriteria));
   }),
 );
 

@@ -93,6 +93,8 @@ export interface AgentRunResult {
   checkpoint?: string;
   /** 工作流决策节点存在多个后继时，明确选择的连线标签。 */
   workflowNextEdgeLabel?: string;
+  /** 双 Loop P2：agent 对每条验收标准的自评（对照 acceptance_criteria.id），供验收段半自动判定。 */
+  acceptanceMet?: { id: string; met: boolean }[];
 }
 
 // ===== 实时事件契约 =====

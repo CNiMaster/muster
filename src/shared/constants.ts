@@ -6,6 +6,8 @@
 export const LEASE_TTL_MS = 5 * 60_000; // 5 分钟租约
 export const HEARTBEAT_INTERVAL_MS = 60_000;
 export const MAX_CLARIFY_ROUNDS = 3;
+/** 双 Loop P1：开始段对齐澄清上限。用「1 轮高质量对齐」替代「N 轮零散追问」，独立于执行中追问。 */
+export const MAX_ALIGNMENT_ROUNDS = 2;
 export const AGENT_TIMEOUT_MS = 10 * 60_000;
 export const MAX_TOOL_CALLS = 50;
 /** B5：任务连续失败达此阈值触发熔断，项目自动回流到准备阶段（对齐 systematic-debugging:195）。 */

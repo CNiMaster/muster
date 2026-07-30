@@ -29,6 +29,8 @@ export const agentRunResultSchema = z.object({
   artifacts: z.array(artifactSchema).default([]),
   checkpoint: z.string().optional(),
   workflowNextEdgeLabel: z.string().optional(),
+  /** 双 Loop P2：agent 对每条验收标准的自评（对照 acceptance_criteria 的 id），供验收段半自动判定。 */
+  acceptanceMet: z.array(z.object({ id: z.string(), met: z.boolean() })).optional(),
 });
 
 /** JSON Schema 描述，传给模型的 structured output 约束。 */
@@ -66,6 +68,17 @@ export const AGENT_RESULT_JSON_SCHEMA = {
     },
     checkpoint: { type: 'string' },
     workflowNextEdgeLabel: { type: 'string' },
+    acceptanceMet: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          met: { type: 'boolean' },
+        },
+        required: ['id', 'met'],
+      },
+    },
   },
   required: ['outcome', 'summary'],
 } as const;
