@@ -58,6 +58,25 @@ export function assembleContext(
     sp.push('# 公司章程', company.charter, '');
   }
   sp.push('# 项目说明', project.description || project.name, '');
+  // 双 Loop 地基 P0.3：验收标准全程锚定——让 agent 明确"什么算好结果"。
+  if (task.acceptanceCriteria.length > 0) {
+    sp.push(
+      '# 验收标准',
+      '这是本任务"什么算好结果"的判定依据。你必须以此为准绳，完工时在 acceptanceMet 里逐条自评达标情况。',
+      ...task.acceptanceCriteria.map((item) => {
+        const tag = item.met === undefined ? '' : item.met ? ' [已达标]' : ' [未达标]';
+        return `- [${item.id}] ${item.criterion}${tag}`;
+      }),
+      '',
+    );
+  } else {
+    // 无验收标准时引导对齐：开始段若标准不充分，应发起有界对齐而非散点追问。
+    sp.push(
+      '# 验收标准',
+      '本任务尚未明确验收标准。若关键结果无法判定，请在正式执行前用 outcome=waiting_input 一次性、结构化地提出对齐问题（聚焦补全"什么算好结果"），避免执行中反复打断用户。',
+      '',
+    );
+  }
   if (agent) {
     sp.push('# 你的职责', `岗位：${agent.role}`, agent.responsibilities || '', '');
     if (agent.stance) {
@@ -101,9 +120,10 @@ export function assembleContext(
   sp.push(
     '# 输出契约',
     '你必须返回 JSON，符合 AgentRunResult 结构：',
-    '{ outcome, summary, question?, outboundTasks[], artifacts[], checkpoint? }',
+    '{ outcome, summary, question?, outboundTasks[], artifacts[], checkpoint?, acceptanceMet? }',
     'outcome ∈ completed | waiting_input | waiting_dependency | blocked',
     '信息不足时用 waiting_input + question 在原 Task 中追问，不要编造。',
+    'completed 时请在 acceptanceMet 里逐条自评验收标准（对照 # 验收标准 的 id，met=true/false）。',
     '',
   );
   // 会话压缩摘要（PRD Phase 3.6）：thread 经过压缩后保留的过往会话要点。

@@ -17,8 +17,9 @@
 import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { nowIso, shortId } from '../../shared/utils';
-import { createTask, type CreateTaskInput } from './task';
+import { createTask, getTask, type CreateTaskInput, type AcceptanceItem } from './task';
 import { getCompany } from './company';
+import { recordSuspension, resolveSuspensionByTask } from './task-suspension';
 
 export type BusinessReviewKind = 'material' | 'artifact' | 'character' | 'skill' | 'relationship' | 'plot' | 'custom';
 export type BusinessReviewStatus = 'pending' | 'approved' | 'rejected' | 'changes_requested';
@@ -114,8 +115,16 @@ export function submitBusinessReview(db: DB, input: SubmitReviewInput): Business
 
   // blocking 模式：阻塞提交来源 Task
   if (company.reviewMode === 'blocking' && input.taskId) {
-    db.prepare("UPDATE task SET state='waiting_input', wait_state=NULL, updated_at=? WHERE id=? AND state IN ('running','claimed')")
+    db.prepare("UPDATE task SET state='waiting_input', wait_state=NULL, interruption_count=interruption_count+1, updated_at=? WHERE id=? AND state IN ('running','claimed')")
       .run(now, input.taskId);
+    recordSuspension(db, {
+      taskId: input.taskId,
+      kind: 'review',
+      reason: `业务审批阻塞：${input.title}（${id}）`,
+      refId: id,
+      resumeSnapshot: { reviewId: id, reviewKind: input.reviewKind, subjectId: input.subjectId },
+      taskState: 'waiting_input',
+    });
   }
 
   return getBusinessReview(db, id);
@@ -164,6 +173,7 @@ export function decideBusinessReview(db: DB, id: string, input: DecideReviewInpu
     // 恢复原阻塞 Task
     if (review.taskId) {
       db.prepare("UPDATE task SET state='queued', updated_at=? WHERE id=? AND state='waiting_input'").run(now, review.taskId);
+      resolveSuspensionByTask(db, review.taskId, { resolution: 'resumed' });
     }
     db.prepare('UPDATE business_review SET status=?, feedback=?, decided_by=?, decided_at=? WHERE id=?')
       .run('approved', input.feedback ?? null, input.decidedBy ?? null, now, id);
@@ -172,6 +182,15 @@ export function decideBusinessReview(db: DB, id: string, input: DecideReviewInpu
     let reworkTaskId: string | null = null;
     if (review.projectId) {
       const reworkTitle = `[返工] ${review.title}`;
+      // 双 Loop P2：从原阻塞 Task 继承验收标准，让返工不"丢锚"。
+      let inheritedCriteria: AcceptanceItem[] = [];
+      if (review.taskId) {
+        try {
+          inheritedCriteria = getTask(db, review.taskId).acceptanceCriteria;
+        } catch {
+          // 原 task 不存在则不继承（仅记录）
+        }
+      }
       const feedbackPayload: Record<string, unknown> = {
         reviewKind: review.reviewKind,
         subjectId: review.subjectId,
@@ -186,6 +205,7 @@ export function decideBusinessReview(db: DB, id: string, input: DecideReviewInpu
         assigneeAgentId: review.employeeId,
         inputProtocol: { type: 'business_rework', payload: feedbackPayload },
         contextRefs: [`business_review:${id}`],
+        acceptanceCriteria: inheritedCriteria,
       };
       try {
         const reworkTask = createTask(db, taskInput);
@@ -196,6 +216,7 @@ export function decideBusinessReview(db: DB, id: string, input: DecideReviewInpu
     }
     // 原阻塞 Task 标记 cancelled（返工另起）
     if (review.taskId) {
+      resolveSuspensionByTask(db, review.taskId, { resolution: 'cancelled' });
       db.prepare("UPDATE task SET state='cancelled', updated_at=? WHERE id=? AND state='waiting_input'").run(now, review.taskId);
     }
     db.prepare('UPDATE business_review SET status=?, feedback=?, decided_by=?, decided_at=?, rework_task_id=? WHERE id=?')

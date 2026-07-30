@@ -19,7 +19,7 @@ import type { DB } from '../db/client';
 import { immediateTransaction } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
-import { LEASE_TTL_MS, MAX_CLARIFY_ROUNDS } from '../../shared/constants';
+import { LEASE_TTL_MS, MAX_CLARIFY_ROUNDS, MAX_ALIGNMENT_ROUNDS } from '../../shared/constants';
 import type { AgentRunResult, ArtifactChange, TaskOutcome, TaskState } from '../../shared/types';
 import { getProject } from './project';
 import { getAgent } from './agent';
@@ -30,6 +30,23 @@ import {assertProjectTaskActive,createProjectTask} from './project-task';
 import {assertProjectLaunchConfirmed} from './project-launch';
 import {assertProjectActive} from './project-readiness';
 import { getCompany } from './company';
+import { recordSuspension, resolveSuspensionByTask } from './task-suspension';
+
+/**
+ * 验收标准条目（双 Loop 地基 P0.1）。
+ * 把"什么算好结果"从无 schema 的 inputProtocol 自由文本升为一等结构化数据：
+ * - id：稳定标识，供执行后写回 met 状态、供反思/验收逐条对照。
+ * - criterion：人可读的达标条件。
+ * - met：完成态时由 agent 自评写回（true/false），未评时缺省。
+ */
+export interface AcceptanceItem {
+  id: string;
+  criterion: string;
+  met?: boolean;
+}
+
+/** 对齐子状态（双 Loop P1）：开始段对齐澄清，主状态机不变，仅作元数据标记。 */
+export type AlignmentState = 'awaiting_alignment' | null;
 
 export interface Task {
   id: string;
@@ -69,6 +86,14 @@ export interface Task {
   failureCount: number;
   /** B5：最近失败时间，配合 failureCount 用于诊断。 */
   lastFailedAt: string | null;
+  /** 双 Loop 地基 P0.1：验收标准 checklist（一等结构化数据）。 */
+  acceptanceCriteria: AcceptanceItem[];
+  /** 双 Loop 地基 P0.2：进入任意阻塞态的累计次数，反思 loop 的根因探针。 */
+  interruptionCount: number;
+  /** 双 Loop P1：开始段对齐澄清轮次，独立于 clarification_rounds。 */
+  alignmentRounds: number;
+  /** 双 Loop P1：对齐子状态标记，不污染主状态机。 */
+  alignmentState: AlignmentState;
 }
 
 interface TaskRow {
@@ -107,6 +132,10 @@ interface TaskRow {
   updated_at: string;
   failure_count: number;
   last_failed_at: string | null;
+  acceptance_criteria: string;
+  interruption_count: number;
+  alignment_rounds: number;
+  alignment_state: AlignmentState;
 }
 
 function fromRow(r: TaskRow): Task {
@@ -146,6 +175,10 @@ function fromRow(r: TaskRow): Task {
     updatedAt: r.updated_at,
     failureCount: r.failure_count,
     lastFailedAt: r.last_failed_at,
+    acceptanceCriteria: JSON.parse(r.acceptance_criteria ?? '[]') as AcceptanceItem[],
+    interruptionCount: r.interruption_count ?? 0,
+    alignmentRounds: r.alignment_rounds ?? 0,
+    alignmentState: (r.alignment_state ?? null) as AlignmentState,
   };
 }
 
@@ -167,6 +200,8 @@ export interface CreateTaskInput {
   isDiscussion?: boolean;
   /** 标记为建议 Task（PRD Phase 8.4）：来自讨论结论，等待用户采纳后才参与执行。 */
   isSuggestion?: boolean;
+  /** 双 Loop 地基 P0.1：验收标准 checklist，升为一等数据。 */
+  acceptanceCriteria?: AcceptanceItem[];
   deadlineAt?: string;
 }
 
@@ -247,8 +282,8 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
        assignee_thread_id, assignee_task_thread_id, title, input_protocol_json, context_refs_json, output_protocol_json,
        priority, state, lease_owner_thread_id, lease_expires_at, heartbeat_at, outcome, summary,
        question, artifacts_json, checkpoint, clarification_rounds, is_discussion, is_suggestion, budget_json,
-       deadline_at, completed_at, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?, ?,?,'queued',NULL,NULL,NULL,NULL,'',NULL,'[]',NULL,0,?,?,'{}',?,NULL,?,?)`,
+       deadline_at, completed_at, created_at, updated_at, acceptance_criteria)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?, ?,?,'queued',NULL,NULL,NULL,NULL,'',NULL,'[]',NULL,0,?,?,'{}',?,NULL,?, ?,?)`,
   ).run(
     id, input.projectId,projectTaskId, seq, rootTaskId, input.parentTaskId ?? null, input.dispatcherAgentId ?? null,
     input.assigneeAgentId ?? null, null,null, input.title,
@@ -258,6 +293,7 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
     input.isDiscussion ? 1 : 0,
     input.isSuggestion ? 1 : 0,
     input.deadlineAt ?? null, now, now,
+    JSON.stringify(input.acceptanceCriteria ?? []),
   );
   // 修正 root_task_id 自引用
   if (!input.parentTaskId && !input.rootTaskId) {
@@ -274,9 +310,9 @@ export function getTask(db: DB, id: string): Task {
 }
 
 export function bindTaskToProjectTaskThread(db:DB,taskId:string,threadId:string):Task{db.prepare('UPDATE task SET assignee_task_thread_id=?,updated_at=? WHERE id=?').run(threadId,nowIso(),taskId);return getTask(db,taskId);}
-export function markTaskWaitingApproval(db:DB,taskId:string,approvalId:string,mode:'online'|'persistent'='persistent'):Task{const now=nowIso();if(mode==='online')db.prepare("UPDATE task SET wait_state='waiting_approval',summary=?,updated_at=? WHERE id=?").run(`等待审批 ${approvalId}`,now,taskId);else db.prepare("UPDATE task SET state='paused',wait_state='waiting_approval',summary=?,lease_owner_thread_id=NULL,lease_expires_at=NULL,heartbeat_at=NULL,updated_at=? WHERE id=?").run(`等待审批 ${approvalId}`,now,taskId);appendTaskEvent(db,taskId,'waiting_approval',{approvalId,mode});return getTask(db,taskId);}
-export function clearTaskApprovalWait(db:DB,taskId:string):Task{db.prepare("UPDATE task SET wait_state=NULL,updated_at=? WHERE id=? AND wait_state='waiting_approval'").run(nowIso(),taskId);return getTask(db,taskId);}
-export function resumeTaskAfterApproval(db:DB,taskId:string):Task|null{const result=db.prepare("UPDATE task SET state='queued',wait_state=NULL,updated_at=? WHERE id=? AND wait_state='waiting_approval'").run(nowIso(),taskId);return result.changes?getTask(db,taskId):null;}
+export function markTaskWaitingApproval(db:DB,taskId:string,approvalId:string,mode:'online'|'persistent'='persistent'):Task{const now=nowIso();if(mode==='online')db.prepare("UPDATE task SET wait_state='waiting_approval',summary=?,interruption_count=interruption_count+1,updated_at=? WHERE id=?").run(`等待审批 ${approvalId}`,now,taskId);else db.prepare("UPDATE task SET state='paused',wait_state='waiting_approval',summary=?,interruption_count=interruption_count+1,lease_owner_thread_id=NULL,lease_expires_at=NULL,heartbeat_at=NULL,updated_at=? WHERE id=?").run(`等待审批 ${approvalId}`,now,taskId);appendTaskEvent(db,taskId,'waiting_approval',{approvalId,mode});recordSuspension(db,{taskId,kind:'approval',reason:`等待审批 ${approvalId}（${mode}）`,refId:approvalId,resumeSnapshot:{approvalId,mode},taskState:'waiting_approval'});return getTask(db,taskId);}
+export function clearTaskApprovalWait(db:DB,taskId:string):Task{db.prepare("UPDATE task SET wait_state=NULL,updated_at=? WHERE id=? AND wait_state='waiting_approval'").run(nowIso(),taskId);resolveSuspensionByTask(db,taskId,{resolution:'resumed'});return getTask(db,taskId);}
+export function resumeTaskAfterApproval(db:DB,taskId:string):Task|null{const result=db.prepare("UPDATE task SET state='queued',wait_state=NULL,updated_at=? WHERE id=? AND wait_state='waiting_approval'").run(nowIso(),taskId);if(result.changes)resolveSuspensionByTask(db,taskId,{resolution:'resumed'});return result.changes?getTask(db,taskId):null;}
 
 export function listTasks(db: DB, projectId: string, state?: TaskState): Task[] {
   const sql = state
@@ -413,7 +449,9 @@ export function completeTask(db: DB, taskId: string, result: AgentRunResult): Ta
 
     db.prepare(
       `UPDATE task SET state=?, outcome=?, summary=?, question=?, artifacts_json=?, checkpoint=?,
-        completed_at=?, lease_owner_thread_id=NULL, lease_expires_at=NULL, updated_at=?
+        completed_at=?, lease_owner_thread_id=NULL, lease_expires_at=NULL,
+        interruption_count=interruption_count+?,
+        updated_at=?
        WHERE id=?`,
     ).run(
       nextState,
@@ -423,10 +461,35 @@ export function completeTask(db: DB, taskId: string, result: AgentRunResult): Ta
       JSON.stringify(result.artifacts ?? []),
       result.checkpoint ?? null,
       result.outcome === 'completed' ? now : null,
+      // 只把"打断用户"的阻塞态计入 interruption_count：waiting_input（等人澄清）/ blocked（人工介入）。
+      // waiting_dependency 是内部派发子任务后等待，属调度行为不算打断；completed 也不计。
+      (result.outcome === 'waiting_input' || result.outcome === 'blocked') ? 1 : 0,
       now,
       taskId,
     );
     appendTaskEvent(db, taskId, nextState, { outcome: result.outcome });
+
+    // 双 Loop P2：completed 时把 agent 自评的验收达标状态写回 acceptance_criteria。
+    if (result.outcome === 'completed' && result.acceptanceMet?.length) {
+      const metMap = new Map(result.acceptanceMet.map((m) => [m.id, m.met]));
+      const merged = cur.acceptanceCriteria.map((item) => ({
+        ...item,
+        met: metMap.has(item.id) ? metMap.get(item.id) : item.met,
+      }));
+      db.prepare('UPDATE task SET acceptance_criteria=?, updated_at=? WHERE id=?')
+        .run(JSON.stringify(merged), now, taskId);
+    }
+
+    // 追问挂起：记录统一挂起表（outcome=waiting_input 时）
+    if (result.outcome === 'waiting_input') {
+      recordSuspension(db, {
+        taskId,
+        kind: 'clarification',
+        reason: result.question ? `追问：${result.question}` : '追问更多信息',
+        resumeSnapshot: { question: result.question ?? null },
+        taskState: 'waiting_input',
+      });
+    }
 
     // 派生 outbound Task（含 loop protection）
     if (result.outboundTasks?.length) {
@@ -496,9 +559,11 @@ export function answerClarification(db: DB, taskId: string, answer: string): Tas
   }
   const now = nowIso();
   db.transaction(() => {
-    db.prepare(`UPDATE task SET clarification_rounds=clarification_rounds+1, state='queued', updated_at=? WHERE id=?`).run(now, taskId);
+    // 若用户用 /clarify 回答了一个对齐态 task，清掉 alignment_state 避免孤儿标记（与 answerAlignment 对称）。
+    db.prepare(`UPDATE task SET clarification_rounds=clarification_rounds+1, state='queued', alignment_state=NULL, updated_at=? WHERE id=?`).run(now, taskId);
     addTaskMessage(db, taskId, { author: 'user', role: 'user', content: answer });
     appendTaskEvent(db, taskId, 'clarification_answered', {});
+    resolveSuspensionByTask(db, taskId, { resolution: 'resumed' });
   })();
   return getTask(db, taskId);
 }
@@ -516,6 +581,73 @@ function escalateToFirstResponder(db: DB, task: Task): void {
     priority: 8,
   });
   appendTaskEvent(db, task.id, 'escalated', { to: project.firstAgentId });
+}
+
+// ===== 双 Loop P1：开始段有界对齐 =====
+//
+// 设计精髓：用「1 轮高质量对齐」替代「N 轮零散追问」。把理解前置、集中、结构化，聚焦"补全验收标准"。
+// 与执行中追问（clarification_rounds）分离：开始段对齐用 alignment_rounds 计数、awaiting_alignment 子状态标记。
+// 主状态机不变：对齐态仍以 waiting_input 为主 state，alignment_state 仅作语义标记，不污染 wait_state 覆盖逻辑。
+
+/**
+ * 发起开始段对齐：agent 领取后、正式执行前，判定验收标准不充分时调用。
+ * - 主状态 → waiting_input，alignment_state='awaiting_alignment'，interruption_count +1。
+ * - alignment_rounds +1，超 MAX_ALIGNMENT_ROUNDS 上报第一负责人（沿用 escalateToFirstResponder）。
+ * - question 聚焦"补全 acceptance checklist"，由 assembleContext 注入的引导约束一次性结构化提问。
+ */
+export function requestAlignment(db: DB, taskId: string, question: string): Task {
+  const cur = getTask(db, taskId);
+  if (cur.state !== 'running' && cur.state !== 'claimed') {
+    throw new AppError(ErrorCode.TASK_INVALID_TRANSITION, `task ${taskId} 状态 ${cur.state} 不可发起对齐`);
+  }
+  const now = nowIso();
+  const nextRounds = cur.alignmentRounds + 1;
+  db.prepare(
+    `UPDATE task SET state='waiting_input', alignment_state='awaiting_alignment',
+      question=?, summary=?, alignment_rounds=?, interruption_count=interruption_count+1,
+      lease_owner_thread_id=NULL, lease_expires_at=NULL, updated_at=? WHERE id=?`,
+  ).run(question.slice(0, 2000), `[对齐] ${question.slice(0, 100)}`, nextRounds, now, taskId);
+  appendTaskEvent(db, taskId, 'alignment_requested', { round: nextRounds });
+  recordSuspension(db, {
+    taskId,
+    kind: 'clarification',
+    reason: `开始段对齐（第 ${nextRounds} 轮）：${question}`,
+    resumeSnapshot: { question, round: nextRounds, alignment: true },
+    taskState: 'waiting_input',
+  });
+
+  const updated = getTask(db, taskId);
+  if (nextRounds >= MAX_ALIGNMENT_ROUNDS) {
+    escalateToFirstResponder(db, updated);
+  }
+  return updated;
+}
+
+/**
+ * 回答开始段对齐：把用户补全的验收标准合并进 acceptance_criteria，清对齐态，回 queued。
+ * 与 answerClarification 平级——用户回答的对齐轮直接可携带结构化的 acceptance 增补项。
+ */
+export function answerAlignment(db: DB, taskId: string, answer: string, additionalCriteria?: AcceptanceItem[]): Task {
+  const cur = getTask(db, taskId);
+  if (cur.state !== 'waiting_input' || cur.alignmentState !== 'awaiting_alignment') {
+    throw new AppError(ErrorCode.TASK_INVALID_TRANSITION, `task ${taskId} 不在对齐态`);
+  }
+  const now = nowIso();
+  db.transaction(() => {
+    // 合并用户新增的验收条目（去重 by id）
+    const existing = cur.acceptanceCriteria;
+    const merged = additionalCriteria?.length
+      ? [...existing, ...additionalCriteria.filter((c) => !existing.some((e) => e.id === c.id))]
+      : existing;
+    db.prepare(
+      `UPDATE task SET state='queued', alignment_state=NULL, acceptance_criteria=?,
+        updated_at=? WHERE id=?`,
+    ).run(JSON.stringify(merged), now, taskId);
+    addTaskMessage(db, taskId, { author: 'user', role: 'user', content: answer });
+    appendTaskEvent(db, taskId, 'alignment_answered', { addedCriteria: additionalCriteria?.length ?? 0 });
+    resolveSuspensionByTask(db, taskId, { resolution: 'resumed' });
+  })();
+  return getTask(db, taskId);
 }
 
 // ===== 租约恢复（启动时 + 定期） =====
@@ -536,6 +668,16 @@ export function recoverExpiredLeases(db: DB): number {
 }
 
 // ===== 取消 / 暂停 / 恢复 =====
+/**
+ * 双 Loop 地基 P0.2：打断计数自增。
+ * 在 task 进入任意阻塞态（waiting_input/waiting_dependency/paused/blocked/waiting_approval）时调用。
+ * interruption_count 是反思 loop 的根因探针——"中间打断频率高 = 开始没对齐"。
+ * 注：实际自增已内联进各阻塞入口的 UPDATE SQL（原子），此函数供非阻塞入口或测试显式调用。
+ */
+export function recordInterruption(db: DB, taskId: string): void {
+  db.prepare('UPDATE task SET interruption_count=interruption_count+1 WHERE id=?').run(taskId);
+}
+
 /** 标记 Task 失败（引擎异常专用，区别于 blocked）。B5：自增 failure_count。 */
 export function failTask(db: DB, taskId: string, message: string): Task {
   const cur = getTask(db, taskId);
@@ -557,7 +699,8 @@ export function blockTask(db: DB, taskId: string, message: string, checkpoint?: 
   const now = nowIso();
   db.prepare(
     `UPDATE task SET state='blocked', outcome='blocked', summary=?, checkpoint=?,
-      completed_at=NULL, lease_owner_thread_id=NULL, lease_expires_at=NULL, updated_at=? WHERE id=?`,
+      completed_at=NULL, lease_owner_thread_id=NULL, lease_expires_at=NULL,
+      interruption_count=interruption_count+1, updated_at=? WHERE id=?`,
   ).run(message.slice(0, 2000), checkpoint ?? cur.checkpoint, now, taskId);
   appendTaskEvent(db, taskId, 'blocked', { message });
   return getTask(db, taskId);
@@ -681,7 +824,7 @@ export function acceptSuggestion(db: DB, taskId: string): Task {
 export function pauseTask(db: DB, taskId: string): Task {
   const cur = getTask(db, taskId);
   assertTransition(cur.state, 'paused');
-  db.prepare(`UPDATE task SET state='paused', checkpoint=?, updated_at=? WHERE id=?`).run(cur.checkpoint ?? null, nowIso(), taskId);
+  db.prepare(`UPDATE task SET state='paused', checkpoint=?, interruption_count=interruption_count+1, updated_at=? WHERE id=?`).run(cur.checkpoint ?? null, nowIso(), taskId);
   appendTaskEvent(db, taskId, 'paused', {});
   return getTask(db, taskId);
 }

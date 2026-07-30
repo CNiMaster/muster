@@ -51,6 +51,7 @@ import { isDuplicateContent } from '../domain/speech-queue';
 import { handleChapterCompleted } from '../domain/triggers';
 import { advanceWorkflowTask } from '../domain/workflow';
 import { createSuggestionTasksFromBrainstorm } from '../domain/brainstorm';
+import { enqueueReflection } from '../domain/reflection';
 import { deleteTaskRuntime, getTaskRuntime, saveTaskRuntime } from '../domain/task-runtime';
 import { existsSync } from 'node:fs';
 import { mkdirSync } from 'node:fs';
@@ -195,6 +196,17 @@ export class TaskEngine {
         outboundTasks: [],
         artifacts: [],
       });
+      // 双 Loop P3：安全阻断是强失败信号，入队反思。
+      try {
+        enqueueReflection(this.db, {
+          task: getTask(this.db, task.id),
+          outcome: 'blocked',
+          signal: 'blocked-safety',
+          extraContext: { safetyReason: msg },
+        });
+      } catch (e) {
+        log.warn('reflection enqueue failed (safety)', { taskId: task.id, err: e instanceof Error ? e.message : String(e) });
+      }
       realtime.publish({
         id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         type: 'task.blocked',
@@ -579,6 +591,17 @@ export class TaskEngine {
       const approvalMatch=result.outcome==='blocked'?/审批请求\s+(approval_[A-Za-z0-9_-]+)/.exec(result.summary):null;
       if(approvalMatch){commitAll(worktreeInfo.path,`muster: approval checkpoint ${task.id}`,{excludePaths:resolutionContext?['.muster-conflicts']:[]});preserveWorktree=true;markTaskWaitingApproval(this.db,task.id,approvalMatch[1]!);updateThreadState(this.db,thread.id,'paused');return true;}
       completeTask(this.db, task.id, result);
+      // 双 Loop P3：终态入队反思（completed/blocked/waiting_input 均入队，drain 时按信号分类推理）。
+      try {
+        const reflected = getTask(this.db, task.id);
+        enqueueReflection(this.db, {
+          task: reflected,
+          outcome: result.outcome,
+          signal: result.outcome === 'completed' ? 'completed' : 'failed',
+        });
+      } catch (e) {
+        log.warn('reflection enqueue failed (complete)', { taskId: task.id, err: e instanceof Error ? e.message : String(e) });
+      }
       // 讨论结论→建议 Task（PRD Phase 8.4）：brainstorm 完成且 outputProtocol.suggestions 存在时派生建议
       if (
         result.outcome === 'completed'
@@ -874,21 +897,33 @@ export class TaskEngine {
     if (err instanceof AppError) {
       if (err.code === ErrorCode.EXECUTOR_BUDGET_EXCEEDED) {
         log.warn('task hit budget', { taskId });
-        completeTask(this.db, taskId, {
+        const blocked = completeTask(this.db, taskId, {
           outcome: 'blocked',
           summary: `预算超限：${msg}`,
           outboundTasks: [],
           artifacts: [],
         });
+        // 双 Loop P3：预算超限是强根因信号，入队反思。
+        try {
+          enqueueReflection(this.db, { task: blocked, outcome: 'blocked', signal: 'blocked-safety', extraContext: { error: msg, reason: 'budget' } });
+        } catch (e) {
+          log.warn('reflection enqueue failed (budget)', { taskId, err: e instanceof Error ? e.message : String(e) });
+        }
         return;
       }
       if (err.code === ErrorCode.EXECUTOR_NO_PROGRESS) {
-        completeTask(this.db, taskId, {
+        const blocked = completeTask(this.db, taskId, {
           outcome: 'blocked',
           summary: `无进展：${msg}`,
           outboundTasks: [],
           artifacts: [],
         });
+        // 双 Loop P3：无进展是强根因信号，入队反思。
+        try {
+          enqueueReflection(this.db, { task: blocked, outcome: 'blocked', signal: 'blocked-safety', extraContext: { error: msg, reason: 'no_progress' } });
+        } catch (e) {
+          log.warn('reflection enqueue failed (no_progress)', { taskId, err: e instanceof Error ? e.message : String(e) });
+        }
         return;
       }
     }
@@ -899,11 +934,13 @@ export class TaskEngine {
 
     // B5 熔断回流：连续失败 ≥ TASK_CIRCUIT_BREAKER_THRESHOLD 且项目处于 active → 回流到 researching
     // 对齐 systematic-debugging:195（3 次失败熔断，怀疑架构而非继续打补丁）
+    let rolledBack = false;
     if (failed.failureCount >= TASK_CIRCUIT_BREAKER_THRESHOLD) {
       try {
         const project = getProject(this.db, failed.projectId);
         if (project.state === 'active') {
           const { previousState } = transitionProjectPhase(this.db, project.id, 'researching');
+          rolledBack = true;
           // 回流是 active→researching（toIdx<fromIdx），validatePhaseExit 不校验产物，安全
           realtime.publish(
             makeLifecycleEvent(
@@ -921,6 +958,17 @@ export class TaskEngine {
       } catch (e) {
         log.warn('circuit breaker rollback failed', { taskId, err: e instanceof Error ? e.message : String(e) });
       }
+    }
+    // 双 Loop P3：失败/熔断是强根因信号，入队反思。
+    try {
+      enqueueReflection(this.db, {
+        task: failed,
+        outcome: 'failed',
+        signal: rolledBack ? 'circuit-break-rollback' : 'failed',
+        extraContext: { error: msg, rolledBack },
+      });
+    } catch (e) {
+      log.warn('reflection enqueue failed (error)', { taskId, err: e instanceof Error ? e.message : String(e) });
     }
   }
 
