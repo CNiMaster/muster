@@ -13,3 +13,4 @@ dist/
 /tmp-muster-dev.log
 .tsbuildinfo/
 test-results/
+muster-db-backup-*/
