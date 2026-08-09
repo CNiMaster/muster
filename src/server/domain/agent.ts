@@ -126,9 +126,13 @@ export interface CreateAgentInput {
   executor?: Record<string, unknown>;
   isInspector?: boolean;
   stance?: string;
+  /** 临时工招聘豁免：跳过 org lock（允许 online 态招临时工）。仅 temp-worker.ts 走此路径。 */
+  tempRecruit?: boolean;
 }
 
-function assertUnlocked(db: DB, companyId: string): void {
+function assertUnlocked(db: DB, companyId: string, opts?: { tempRecruit?: boolean }): void {
+  // 临时工招聘豁免：允许公司 online 态招临时工（B2B 决策树 recruit 路径自动触发）
+  if (opts?.tempRecruit) return;
   if (isOrgLocked(db, companyId)) {
     throw new AppError(ErrorCode.COMPANY_LOCKED, '上班期间不能修改员工配置');
   }
@@ -197,9 +201,12 @@ function assertExecutorValid(executor: Record<string, unknown> | undefined): voi
 
 export function createAgent(db: DB, input: CreateAgentInput): AgentDefinition {
   getCompany(db, input.companyId); // 校验存在
-  assertUnlocked(db, input.companyId);
+  assertUnlocked(db, input.companyId, { tempRecruit: input.tempRecruit });
   assertDepartmentInCompany(db, input.companyId, input.departmentId ?? null);
-  assertContactAllow(db, input.companyId, input.contactAllow ?? []);
+  // 临时工招聘豁免 contactAllow 校验（临时工的工作关系仅限发起者，可能跨公司）
+  if (!input.tempRecruit) {
+    assertContactAllow(db, input.companyId, input.contactAllow ?? []);
+  }
   assertExecutorValid(input.executor);
 
   return db.transaction(() => {
@@ -334,7 +341,12 @@ export function deleteAgent(db: DB, id: string): void {
   if (cur.isInspector) {
     throw new AppError(ErrorCode.CONFLICT, '监察员工是系统稳定性岗位，不能删除；可以修改配置');
   }
-  db.prepare('DELETE FROM agent_definition WHERE id=?').run(id);
+  // 若该员工是公司/项目的第一负责人，先清除（防 DEFERRABLE FK 冲突）
+  db.transaction(() => {
+    db.prepare('UPDATE company SET first_agent_id=NULL WHERE first_agent_id=?').run(id);
+    db.prepare('UPDATE project SET first_agent_id=NULL WHERE first_agent_id=?').run(id);
+    db.prepare('DELETE FROM agent_definition WHERE id=?').run(id);
+  })();
 }
 
 /** 员工独立上班；不改变公司组织配置。 */

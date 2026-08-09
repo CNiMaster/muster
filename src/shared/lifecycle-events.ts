@@ -81,6 +81,21 @@ export interface LifecycleEventPayloadMap {
   'plugin.enabled': { pluginId: string };
   'plugin.disabled': { pluginId: string };
   'plugin.health-failed': { pluginId: string; error: string };
+  // B2B 外包：契约生命周期
+  'outsource.requested': { contractId: string; sourceCompanyId: string; targetCompanyId: string; decisionPath: string };
+  'outsource.accepted': { contractId: string; vendorLiaisonAgentId: string };
+  'outsource.delivered': { contractId: string; outsourcedTaskId: string };
+  'outsource.reviewed': { contractId: string; decision: string; revisionRound?: number };
+  'outsource.completed': { contractId: string };
+  // 临时工生命周期（批次 A）
+  'employee.temp-recruited': { agentId: string; profileId: string; companyId: string; isNewProfile: boolean };
+  'employee.converted': { agentId: string; profileId: string; companyId: string };
+  'employee.greyed': { agentId: string; profileId: string; companyId: string };
+  'employee.dismissed': { agentId: string; profileId: string; companyId: string; profileDeleted: boolean };
+  'employee.rating-adjusted': { profileId: string; oldRating: number; newRating: number };
+  // 离职交接（批次 C）
+  'handover.created': { handoverId: string; departingEmployeeId: string };
+  'handover.completed': { handoverId: string; departingEmployeeId: string; receiverEmployeeId: string };
 }
 
 /**

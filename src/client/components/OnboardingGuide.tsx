@@ -32,33 +32,43 @@ export function OnboardingGuide({ hasCompany }: { hasCompany: boolean }): React.
 
   return (
     <div className="mu-onboarding" style={{
-      border: '1px solid var(--accent)',
-      borderRadius: 'var(--radius-md)',
-      padding: 'var(--space-4)',
+      border: '1px solid var(--border)',
+      borderRadius: 'var(--radius-lg, 12px)',
+      padding: 'var(--space-4, 16px)',
       background: 'var(--bg-elevated)',
-      marginBottom: 'var(--space-4)',
+      marginTop: 'var(--space-4, 16px)',
+      marginBottom: 'var(--space-4, 16px)',
+      boxShadow: 'var(--shadow-sm, 0 2px 8px rgba(0,0,0,0.04))',
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 'var(--space-3)' }}>
-        <h3 style={{ margin: 0 }}>👋 欢迎使用 Muster Agent 公司工作台</h3>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-3, 12px)' }}>
+        <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600 }}>欢迎使用 Muster Agent 公司工作台</h3>
         <Button size="sm" variant="ghost" onClick={dismiss}>我知道了</Button>
       </div>
-      <p className="muted" style={{ margin: '0 0 var(--space-3)' }}>
-        按顺序完成四步，就能让团队开始工作：
-      </p>
-      <ol style={{ margin: 0, paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <li>
-          <strong>创建公司</strong>：描述目标并选择合适的公司模板。
-        </li>
-        <li>
-          <strong>组建团队</strong>：确认模板自带的岗位，也可以按需要增减员工。
-        </li>
-        <li>
-          <strong>创建项目</strong>：为实际工作建立独立目录和任务沙盒。
-        </li>
-        <li>
-          <strong>发布 Task</strong>：告诉团队要完成什么，Muster 会分配、执行并跟踪结果。
-        </li>
-      </ol>
+      <div style={{ margin: 'var(--space-2, 8px) 0 var(--space-4, 16px)', borderRadius: 'var(--radius-md, 8px)', overflow: 'hidden', border: '1px solid var(--border-subtle, #eee)' }}>
+        <img
+          src="/images/onboarding_flow.jpg"
+          alt="4步上手指引流程图：1.创建公司 2.组建团队 3.创建项目 4.发布任务"
+          style={{ width: '100%', height: 'auto', display: 'block', maxHeight: '280px', objectFit: 'cover' }}
+        />
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
+        <div style={{ padding: '8px 12px', background: 'var(--bg-subtle, rgba(0,0,0,0.02))', borderRadius: '6px' }}>
+          <strong style={{ display: 'block', color: 'var(--fg-heading)', marginBottom: '2px' }}>1. 创建公司</strong>
+          <span className="muted" style={{ fontSize: '0.85rem' }}>选择模板并设定团队目标</span>
+        </div>
+        <div style={{ padding: '8px 12px', background: 'var(--bg-subtle, rgba(0,0,0,0.02))', borderRadius: '6px' }}>
+          <strong style={{ display: 'block', color: 'var(--fg-heading)', marginBottom: '2px' }}>2. 组建团队</strong>
+          <span className="muted" style={{ fontSize: '0.85rem' }}>确认岗位并分配各角色员工</span>
+        </div>
+        <div style={{ padding: '8px 12px', background: 'var(--bg-subtle, rgba(0,0,0,0.02))', borderRadius: '6px' }}>
+          <strong style={{ display: 'block', color: 'var(--fg-heading)', marginBottom: '2px' }}>3. 创建项目</strong>
+          <span className="muted" style={{ fontSize: '0.85rem' }}>建立工作目录与独立任务沙盒</span>
+        </div>
+        <div style={{ padding: '8px 12px', background: 'var(--bg-subtle, rgba(0,0,0,0.02))', borderRadius: '6px' }}>
+          <strong style={{ display: 'block', color: 'var(--fg-heading)', marginBottom: '2px' }}>4. 发布 Task</strong>
+          <span className="muted" style={{ fontSize: '0.85rem' }}>派发工作单并持续追踪进度</span>
+        </div>
+      </div>
     </div>
   );
 }

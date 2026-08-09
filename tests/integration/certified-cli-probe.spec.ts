@@ -9,7 +9,7 @@ describe('certified CLI manifests and real probes',()=>{
   it('certifies agy while keeping Gemini CLI legacy',()=>{
     const agy=getExecutorManifest('antigravity-cli');
     expect(agy).toMatchObject({displayName:'Antigravity CLI',certification:'certified',approvalBridge:'hook',detection:{command:'agy'}});
-    expect(getExecutorManifest('gemini-cli')).toMatchObject({legacy:true,certification:'experimental'});
+    expect(getExecutorManifest('opencode-cli')).toMatchObject({certification:'experimental',approvalBridge:'none',detection:{command:'opencode'}});
   });
 
   it('runs a real non-mutating probe and caches success for 24 hours',async()=>{

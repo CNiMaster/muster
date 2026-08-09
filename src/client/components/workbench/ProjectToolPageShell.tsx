@@ -42,6 +42,15 @@ export function ProjectToolPageShell({ tool, children, projectIdOverride, select
     primaryAction={<Link className="mu-btn mu-btn-primary mu-btn-sm" to={`/projects/${projectId}${selectedId ? `?projectTask=${selectedId}` : ''}`}>返回员工中心</Link>}
     navigation={<ProjectWorkNavigation projectId={projectId} projectTasks={projectTasks ?? []} tasks={tasks ?? []} agents={agents ?? []} departments={departments ?? []} firstAgentId={project?.firstAgentId ?? company?.firstAgentId} selectedProjectTaskId={selectedId} view="tool" activeTool={tool} attentionCount={attentionCount} novel={company?.kind === 'novel'} />}
     inspector={<ProjectContextInspector projectId={projectId} companyId={project?.companyId} projectState={project?.state ?? 'setup'} selectedTask={selectedTask} agents={agents ?? []} tasks={tasks ?? []} cockpit={cockpit} />}
+    commandOptions={[
+      ...(projectTasks ?? []).slice(0, 5).map((item) => ({ label: `任务：${item.title}`, href: `/projects/${projectId}?view=task&projectTask=${item.id}`, group: '项目任务' })),
+      ...(agents ?? []).slice(0, 5).map((agent) => ({ label: `员工：${agent.name}`, href: `/projects/${projectId}?view=employee&agent=${agent.id}`, group: '团队成员' })),
+      { label: '任务领取清单', href: `/projects/${projectId}/tasks`, group: '项目工具' },
+      { label: '运行概览', href: `/projects/${projectId}/dashboard`, group: '项目工具' },
+      { label: '成果与文件', href: `/projects/${projectId}/artifacts`, group: '项目工具' },
+      { label: '计划与自动化', href: `/projects/${projectId}/plans`, group: '项目工具' },
+      { label: '项目设置', href: `/projects/${projectId}/settings`, group: '项目工具' },
+    ]}
   >
     <div className="project-tool-surface">{children}</div>
   </WorkbenchShell>;

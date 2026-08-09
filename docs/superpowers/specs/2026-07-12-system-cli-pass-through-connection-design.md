@@ -119,7 +119,7 @@ Diagnostics retain sanitized stdout/stderr and vendor error codes. They redact t
 
 The built-in Google CLI Manifest becomes `antigravity-cli`, display name “Antigravity CLI”, command `agy`, and provider `antigravity-cli`. Its official install guide and command replace Gemini CLI guidance for new profiles. The adapter must be derived from the current `agy --help` and machine-readable/headless capabilities rather than assuming Gemini CLI flags remain compatible.
 
-Legacy `gemini-cli` profiles are preserved for enterprise/API users. They are labelled legacy and remain executable if the `gemini` binary still works. New automatic discovery prioritizes `agy`.
+Legacy `gemini-cli` has been removed (Google sunset it on 2026-06-18 in favor of Antigravity CLI); its manifest, adapter, provider entry, and credential seed were dropped. `opencode-cli` is added as an experimental provider using `opencode run --format json --auto` headless output (approval via opencode deny rules). New automatic discovery prioritizes `agy` and keeps `codex-cli` / `claude-code-cli`.
 
 ## API and UI
 

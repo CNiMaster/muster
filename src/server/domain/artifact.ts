@@ -13,6 +13,7 @@ import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
 import { getProject } from './project';
+import { logArtifactChange } from './artifact-audit';
 
 /** 小说场景的成果 kind（向后兼容）。 */
 export type NovelArtifactKind =
@@ -229,6 +230,14 @@ export function upsertPublishedArtifact(
     db.prepare(
       'UPDATE artifact SET kind=?, owner_agent_id=COALESCE(owner_agent_id, ?), updated_at=? WHERE id=?',
     ).run(input.kind, input.ownerAgentId ?? null, nowIso(), existing.id);
+    // 审计日志：update
+    logArtifactChange(db, {
+      projectId: input.projectId,
+      artifactPath: input.path,
+      agentId: existing.ownerAgentId ?? input.ownerAgentId ?? null,
+      action: 'update',
+      taskId: input.taskId,
+    });
     return getArtifact(db, existing.id);
   }
   const id = shortId('ar_');
@@ -238,5 +247,58 @@ export function upsertPublishedArtifact(
       (id, project_id, kind, path, owner_agent_id, merge_strategy, props_json, created_task_id, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, 'three_way', '{}', ?, ?, ?)`,
   ).run(id, input.projectId, input.kind, input.path, input.ownerAgentId ?? null, input.taskId, now, now);
+  // 审计日志：create
+  logArtifactChange(db, {
+    projectId: input.projectId,
+    artifactPath: input.path,
+    agentId: input.ownerAgentId ?? null,
+    action: 'create',
+    taskId: input.taskId,
+  });
   return getArtifact(db, id);
+}
+
+/**
+ * 转移产物所有权（交接时用）。
+ * 单一指针更新：owner_agent_id 从离职员工改为接手人（不叠加）。
+ * 记录 transfer 审计日志（含接手人），可追溯。
+ */
+export function transferArtifactOwnership(
+  db: DB,
+  artifactId: string,
+  newOwnerId: string,
+  opts?: { oldOwnerId?: string; detail?: string },
+): Artifact {
+  const artifact = getArtifact(db, artifactId);
+  const oldOwner = opts?.oldOwnerId ?? artifact.ownerAgentId;
+  db.prepare('UPDATE artifact SET owner_agent_id=?, updated_at=? WHERE id=?').run(
+    newOwnerId,
+    nowIso(),
+    artifactId,
+  );
+  logArtifactChange(db, {
+    projectId: artifact.projectId,
+    artifactPath: artifact.path,
+    agentId: oldOwner,
+    action: 'transfer',
+    detail: opts?.detail ?? `所有权转移：${oldOwner ?? 'NULL'} → ${newOwnerId}`,
+    transferredTo: newOwnerId,
+  });
+  return getArtifact(db, artifactId);
+}
+
+/** 批量转移某员工在某项目的全部产物所有权（交接时用）。返回转移数量。 */
+export function transferAllArtifactsOfOwner(
+  db: DB,
+  projectId: string,
+  oldOwnerId: string,
+  newOwnerId: string,
+): number {
+  const artifacts = db
+    .prepare('SELECT id FROM artifact WHERE project_id=? AND owner_agent_id=?')
+    .all(projectId, oldOwnerId) as { id: string }[];
+  for (const a of artifacts) {
+    transferArtifactOwnership(db, a.id, newOwnerId, { oldOwnerId });
+  }
+  return artifacts.length;
 }

@@ -94,6 +94,8 @@ export interface Task {
   alignmentRounds: number;
   /** 双 Loop P1：对齐子状态标记，不污染主状态机。 */
   alignmentState: AlignmentState;
+  /** B2B 外包：本 task 所属的外包契约 id（承接任务才有，普通任务为 null）。 */
+  outsourcingContractId: string | null;
 }
 
 interface TaskRow {
@@ -136,6 +138,7 @@ interface TaskRow {
   interruption_count: number;
   alignment_rounds: number;
   alignment_state: AlignmentState;
+  outsourcing_contract_id: string | null;
 }
 
 function fromRow(r: TaskRow): Task {
@@ -179,6 +182,7 @@ function fromRow(r: TaskRow): Task {
     interruptionCount: r.interruption_count ?? 0,
     alignmentRounds: r.alignment_rounds ?? 0,
     alignmentState: (r.alignment_state ?? null) as AlignmentState,
+    outsourcingContractId: r.outsourcing_contract_id ?? null,
   };
 }
 
@@ -203,6 +207,19 @@ export interface CreateTaskInput {
   /** 双 Loop 地基 P0.1：验收标准 checklist，升为一等数据。 */
   acceptanceCriteria?: AcceptanceItem[];
   deadlineAt?: string;
+  /**
+   * B2B 外包上下文：当本 task 是某外包契约的承接任务时传入。
+   * 存在则跳过同公司守卫（assignee/dispatcher 可跨公司）+ contactAllow 检查，
+   * 并把 outsourcing_contract_id 写入 task 行（engine.ts 据此切换 worktree 源 repo 与 publish 目标）。
+   * 默认不传 = 完全保持原行为，零回归。
+   */
+  outsourcingContext?: {
+    contractId: string;
+    /** 显式标记绕过同公司守卫（语义清晰，避免误用）。 */
+    bypassCompanyGuard: true;
+  };
+  /** 系统规划任务豁免：跳过 launch-confirmed 门禁（ensurePlanningTask 用）。 */
+  skipLaunchGate?: boolean;
 }
 
 const ALLOWED_TRANSITIONS: Record<TaskState, TaskState[]> = {
@@ -247,17 +264,22 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
   };
   const assignee = input.assigneeAgentId ? getAgent(db, input.assigneeAgentId) : null;
   const dispatcher = input.dispatcherAgentId ? getAgent(db, input.dispatcherAgentId) : null;
-  if (assignee && assignee.companyId !== project.companyId) {
-    throw new AppError(ErrorCode.UNAUTHORIZED, `员工 ${assignee.id} 不属于项目所在公司`);
-  }
-  if (dispatcher && dispatcher.companyId !== project.companyId) {
-    throw new AppError(ErrorCode.UNAUTHORIZED, `派发者 ${dispatcher.id} 不属于项目所在公司`);
-  }
-  if (dispatcher && assignee && dispatcher.id !== assignee.id && !dispatcher.contactAllow.includes(assignee.id)) {
-    throw new AppError(
-      ErrorCode.UNAUTHORIZED,
-      `员工 ${dispatcher.id} 未授权联系 ${assignee.id}`,
-    );
+  // B2B 外包上下文：承接任务允许 assignee/dispatcher 跨公司，跳过同公司 + contactAllow 守卫。
+  // outsourcingContext 仅由 createOutsourcedTask（外包专用入口）显式传入，普通调用不受影响。
+  const bypassGuards = !!input.outsourcingContext;
+  if (!bypassGuards) {
+    if (assignee && assignee.companyId !== project.companyId) {
+      throw new AppError(ErrorCode.UNAUTHORIZED, `员工 ${assignee.id} 不属于项目所在公司`);
+    }
+    if (dispatcher && dispatcher.companyId !== project.companyId) {
+      throw new AppError(ErrorCode.UNAUTHORIZED, `派发者 ${dispatcher.id} 不属于项目所在公司`);
+    }
+    if (dispatcher && assignee && dispatcher.id !== assignee.id && !dispatcher.contactAllow.includes(assignee.id)) {
+      throw new AppError(
+        ErrorCode.UNAUTHORIZED,
+        `员工 ${dispatcher.id} 未授权联系 ${assignee.id}`,
+      );
+    }
   }
   const id = shortId('tk_');
   const now = nowIso();
@@ -266,7 +288,7 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
   let rootTaskId = input.rootTaskId ?? null;
   let projectTaskId=input.projectTaskId;
   if(input.parentTaskId){const parent=getTask(db,input.parentTaskId);projectTaskId??=parent.projectTaskId;if(projectTaskId!==parent.projectTaskId)throw new AppError(ErrorCode.VALIDATION,'子工作单必须属于父工作单的项目任务');}
-  if(projectTaskId){assertProjectTaskActive(db,projectTaskId,input.projectId);assertProjectLaunchConfirmed(db,projectTaskId);assertProjectActive(db,input.projectId);}
+  if(projectTaskId){assertProjectTaskActive(db,projectTaskId,input.projectId);if(!input.skipLaunchGate)assertProjectLaunchConfirmed(db,projectTaskId);assertProjectActive(db,input.projectId);}
   else projectTaskId=createProjectTask(db,{projectId:input.projectId,title:input.title}).id;
   if (!rootTaskId) {
     if (input.parentTaskId) {
@@ -282,8 +304,8 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
        assignee_thread_id, assignee_task_thread_id, title, input_protocol_json, context_refs_json, output_protocol_json,
        priority, state, lease_owner_thread_id, lease_expires_at, heartbeat_at, outcome, summary,
        question, artifacts_json, checkpoint, clarification_rounds, is_discussion, is_suggestion, budget_json,
-       deadline_at, completed_at, created_at, updated_at, acceptance_criteria)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?, ?,?,'queued',NULL,NULL,NULL,NULL,'',NULL,'[]',NULL,0,?,?,'{}',?,NULL,?, ?,?)`,
+       deadline_at, completed_at, created_at, updated_at, acceptance_criteria, outsourcing_contract_id)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?, ?,?,'queued',NULL,NULL,NULL,NULL,'',NULL,'[]',NULL,0,?,?,'{}',?,NULL,?, ?,?,?)`,
   ).run(
     id, input.projectId,projectTaskId, seq, rootTaskId, input.parentTaskId ?? null, input.dispatcherAgentId ?? null,
     input.assigneeAgentId ?? null, null,null, input.title,
@@ -294,6 +316,7 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
     input.isSuggestion ? 1 : 0,
     input.deadlineAt ?? null, now, now,
     JSON.stringify(input.acceptanceCriteria ?? []),
+    input.outsourcingContext?.contractId ?? null,
   );
   // 修正 root_task_id 自引用
   if (!input.parentTaskId && !input.rootTaskId) {
@@ -340,6 +363,36 @@ export function areDependenciesMet(db: DB, taskId: string): boolean {
   return row.blocked === 0;
 }
 
+/**
+ * 唤醒所有因依赖本 task 而处于 waiting_dependency 的任务（扫描 task_dependency 全表，不限于 parentTaskId）。
+ *
+ * 现有 completeTask 的恢复逻辑只走 parentTaskId 单链（task.ts:537-543），
+ * 无法唤醒通过 addDependency 显式建立的跨公司依赖（B2B 外包场景）。
+ * 本函数补齐这个缺口：在 completeTask 的 completed 分支调用。
+ */
+export function resumeDependents(db: DB, completedTaskId: string): string[] {
+  const now = nowIso();
+  // 查所有依赖本 task 且处于 waiting_dependency 的任务
+  const dependents = db
+    .prepare(
+      `SELECT d.task_id FROM task_dependency d
+       JOIN task t ON t.id = d.task_id
+       WHERE d.depends_on_id = ? AND t.state = 'waiting_dependency'`,
+    )
+    .all(completedTaskId) as { task_id: string }[];
+  const resumed: string[] = [];
+  for (const dep of dependents) {
+    if (areDependenciesMet(db, dep.task_id)) {
+      db.prepare(
+        `UPDATE task SET state='queued', updated_at=? WHERE id=? AND state='waiting_dependency'`,
+      ).run(now, dep.task_id);
+      appendTaskEvent(db, dep.task_id, 'resumed', { from: 'waiting_dependency', triggeredBy: completedTaskId });
+      resumed.push(dep.task_id);
+    }
+  }
+  return resumed;
+}
+
 // ===== 原子领取 =====
 export interface ClaimResult {
   task: Task;
@@ -374,6 +427,13 @@ export function claimNextTask(db: DB, threadId: string, assigneeAgentId?: string
              AND t.is_suggestion = 0
              AND (SELECT availability_state FROM agent_definition
                   WHERE id = (SELECT agent_id FROM project_agent_thread WHERE id = ?)) = 'online'
+             -- B2B 临时工：greyed/dismissed 不参与派工（只有 active 的临时工可领任务）
+             AND NOT EXISTS (
+               SELECT 1 FROM company_employee ce
+               WHERE ce.legacy_agent_id = (SELECT agent_id FROM project_agent_thread WHERE id = ?)
+                 AND ce.employment_type = 'temp'
+                 AND ce.temp_status != 'active'
+             )
              AND (
                t.assignee_agent_id = (SELECT agent_id FROM project_agent_thread WHERE id = ?)
                OR (
@@ -392,7 +452,7 @@ export function claimNextTask(db: DB, threadId: string, assigneeAgentId?: string
          AND state = 'queued'
          RETURNING id`,
       )
-      .get(threadId, leaseExpiresAt, heartbeatAt, threadId, threadId, stamp, threadId, threadId, threadId, threadId) as
+      .get(threadId, leaseExpiresAt, heartbeatAt, threadId, threadId, stamp, threadId, threadId, threadId, threadId, threadId) as
       | { id: string }
       | undefined;
     if (!info) return null;
@@ -540,6 +600,11 @@ export function completeTask(db: DB, taskId: string, result: AgentRunResult): Ta
         db.prepare(`UPDATE task SET state='queued', updated_at=? WHERE id=? AND state='waiting_dependency'`).run(now, parent.id);
         appendTaskEvent(db, parent.id, 'resumed', { from: 'waiting_dependency' });
       }
+    }
+    // B2B 外包：completed 时扫描 task_dependency 全表，唤醒任何因依赖本 task 而 waiting 的任务
+    // （补齐 parentTaskId 单链之外的跨公司依赖恢复）
+    if (result.outcome === 'completed') {
+      resumeDependents(db, cur.id);
     }
   })();
 
@@ -848,6 +913,8 @@ export function resumeTask(db: DB, taskId: string): Task {
 export function ensurePlanningTask(db: DB, projectId: string): Task | null {
   const project = getProject(db, projectId);
   if (!project.firstAgentId) return null;
+  // 仅 active 项目才后台规划（drafting/researching 等准备阶段不规划）
+  if (project.state !== 'active') return null;
   // 项目任务是用户定义的上下文边界。后台规划只能进入已有边界，不能暗中创建新的项目任务。
   const activeProjectTask = db.prepare(
     `SELECT id FROM project_task WHERE project_id=? AND state='active' ORDER BY updated_at DESC, seq DESC LIMIT 1`,
@@ -869,5 +936,6 @@ export function ensurePlanningTask(db: DB, projectId: string): Task | null {
     title: '[规划] 当前阶段工作拆解',
     inputProtocol: { reason: 'no_active_tasks' },
     priority: 5,
+    skipLaunchGate: true, // 系统规划任务不要求用户确认 launch
   });
 }

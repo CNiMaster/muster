@@ -142,3 +142,109 @@ describe('markPluginHealth', () => {
     expect(p.healthError).toBe('连接超时');
   });
 });
+
+// ── opt-out 治理测试（20260809100000 迁移后语义）──────────────────────────
+import {
+  setCompanyPluginDecision,
+  listDisabledCompanyPlugins,
+  getCompanyPluginDecisions,
+  getEffectivePluginsForCompany,
+} from '../../src/server/domain/plugin-install';
+
+describe('opt-out 治理：平台插件默认全开', () => {
+  it('平台插件默认对公司生效（无需显式启用）', () => {
+    installPlugin(db, {
+      id: 'plg_platform1',
+      name: '平台 MCP',
+      kind: 'mcp-server',
+      source: { kind: 'builtin' },
+      scope: { level: 'platform' },
+      manifest: { kind: 'mcp-server', mcp: { transport: 'stdio', command: 'echo' } },
+    });
+    // 不做任何启用操作，effective 仍应包含它
+    const effective = getEffectivePluginsForCompany(db, companyId);
+    expect(effective.find((p) => p.id === 'plg_platform1')).toBeTruthy();
+  });
+
+  it('显式禁用平台插件后从 effective 移除', () => {
+    installPlugin(db, {
+      id: 'plg_platform2',
+      name: '平台 MCP',
+      kind: 'mcp-server',
+      source: { kind: 'builtin' },
+      scope: { level: 'platform' },
+      manifest: { kind: 'mcp-server', mcp: { transport: 'stdio', command: 'echo' } },
+    });
+    setCompanyPluginDecision(db, companyId, 'plg_platform2', 'disabled');
+    const effective = getEffectivePluginsForCompany(db, companyId);
+    expect(effective.find((p) => p.id === 'plg_platform2')).toBeFalsy();
+    // listDisabledCompanyPlugins 应返回禁用集合
+    expect(listDisabledCompanyPlugins(db, companyId).has('plg_platform2')).toBe(true);
+  });
+
+  it('撤销禁用（decision=enabled）后恢复生效', () => {
+    installPlugin(db, {
+      id: 'plg_platform3',
+      name: '平台 MCP',
+      kind: 'mcp-server',
+      source: { kind: 'builtin' },
+      scope: { level: 'platform' },
+      manifest: { kind: 'mcp-server', mcp: { transport: 'stdio', command: 'echo' } },
+    });
+    setCompanyPluginDecision(db, companyId, 'plg_platform3', 'disabled');
+    setCompanyPluginDecision(db, companyId, 'plg_platform3', 'enabled');
+    const effective = getEffectivePluginsForCompany(db, companyId);
+    expect(effective.find((p) => p.id === 'plg_platform3')).toBeTruthy();
+  });
+
+  it('A 公司禁用不影响 B 公司', () => {
+    const company2 = createCompany(db, { name: 'coB' }).id;
+    installPlugin(db, {
+      id: 'plg_platform4',
+      name: '平台 MCP',
+      kind: 'mcp-server',
+      source: { kind: 'builtin' },
+      scope: { level: 'platform' },
+      manifest: { kind: 'mcp-server', mcp: { transport: 'stdio', command: 'echo' } },
+    });
+    setCompanyPluginDecision(db, companyId, 'plg_platform4', 'disabled');
+    // A 公司被禁用
+    expect(getEffectivePluginsForCompany(db, companyId).find((p) => p.id === 'plg_platform4')).toBeFalsy();
+    // B 公司仍生效
+    expect(getEffectivePluginsForCompany(db, company2).find((p) => p.id === 'plg_platform4')).toBeTruthy();
+  });
+});
+
+describe('opt-out 治理：公司独占插件', () => {
+  it('公司独占插件仅对目标公司生效', () => {
+    const company2 = createCompany(db, { name: 'coB' }).id;
+    installPlugin(db, {
+      id: 'plg_exclusive1',
+      name: '专属法律 Skill',
+      kind: 'skill',
+      source: { kind: 'company', companyId },
+      scope: { level: 'company', companyId },
+      manifest: { kind: 'skill', skill: { body: '专属能力' } },
+    });
+    // 目标公司能看到
+    expect(getEffectivePluginsForCompany(db, companyId).find((p) => p.id === 'plg_exclusive1')).toBeTruthy();
+    // 其他公司看不到
+    expect(getEffectivePluginsForCompany(db, company2).find((p) => p.id === 'plg_exclusive1')).toBeFalsy();
+  });
+
+  it('getCompanyPluginDecisions 返回三态标注', () => {
+    installPlugin(db, {
+      id: 'plg_dec1',
+      name: 'P1',
+      kind: 'skill',
+      source: { kind: 'builtin' },
+      scope: { level: 'platform' },
+      manifest: { kind: 'skill', skill: { body: 'x' } },
+    });
+    setCompanyPluginDecision(db, companyId, 'plg_dec1', 'disabled');
+    const decisions = getCompanyPluginDecisions(db, companyId);
+    expect(decisions.get('plg_dec1')).toBe('disabled');
+    // 未决策的插件不在 map 中（UI 据此显示 'default'）
+    expect(decisions.has('plg_undecided')).toBe(false);
+  });
+});

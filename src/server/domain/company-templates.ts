@@ -4,7 +4,7 @@ import type {
   CompanyTemplateWorkflow,
 } from '../../shared/company-template';
 
-export type CompanyTemplateId = 'general' | 'software' | 'content' | 'novel';
+export type CompanyTemplateId = 'general' | 'software' | 'content' | 'novel' | 'marketing' | 'consulting';
 
 export type { CompanyTaskProtocol, CompanyTemplateRelationship, CompanyTemplateWorkflow };
 
@@ -150,6 +150,28 @@ const TEMPLATE_BASES: Record<CompanyTemplateId, CompanyTemplateBase> = {
     ],
     projectName: '首部长篇作品', firstTaskTitle: '明确题材、读者与故事核心',
   },
+  marketing: {
+    id: 'marketing', name: '品牌营销公司', description: '适合市场调研、公关传播与增长推广',
+    departments: [{ key: 'strategy', name: '策略部' }, { key: 'creative', name: '创意部' }, { key: 'growth', name: '增长部' }],
+    employees: [
+      { key: 'lead', name: '营销总监', role: 'lead', responsibilities: '制定品牌战略、调配资源并把控传播节奏', departmentKey: 'strategy', isLead: true },
+      { key: 'analyst', name: '市场分析师', role: 'analyst', responsibilities: '调研竞品、分析目标受众与洞察市场趋势', departmentKey: 'strategy' },
+      { key: 'copywriter', name: '文案创意师', role: 'copywriter', responsibilities: '撰写品牌文案、活动策划案与宣传素材', departmentKey: 'creative' },
+      { key: 'pr_specialist', name: '公关专家', role: 'pr_specialist', responsibilities: '对接媒体、起草公关稿件与维护品牌声誉', departmentKey: 'growth' },
+    ],
+    projectName: '首个营销企划', firstTaskTitle: '分析目标受众并撰写整合营销方案',
+  },
+  consulting: {
+    id: 'consulting', name: '行业咨询公司', description: '适合行业研报、竞争分析与战略咨询',
+    departments: [{ key: 'research', name: '研究部' }, { key: 'analytics', name: '分析部' }, { key: 'editorial', name: '主编部' }],
+    employees: [
+      { key: 'lead', name: '研报总监', role: 'lead', responsibilities: '定义研究课题、搭建分析框架与审阅最终报告', departmentKey: 'research', isLead: true },
+      { key: 'expert', name: '行业专家', role: 'expert', responsibilities: '深度访谈、行业趋势洞察与战略建议提炼', departmentKey: 'research' },
+      { key: 'data_analyst', name: '数据分析师', role: 'data_analyst', responsibilities: '收集海量行业数据、搭建定量模型与图标绘制', departmentKey: 'analytics' },
+      { key: 'editor', name: '报告总编辑', role: 'editor', responsibilities: '校对报告逻辑、润色文字并排版最终 PDF/Doc 成果', departmentKey: 'editorial' },
+    ],
+    projectName: '首份行业咨询报告', firstTaskTitle: '确定研究课题与分析框架',
+  },
 };
 
 export const BUILTIN_COMPANY_TEMPLATES: Record<CompanyTemplateId, CompanyTemplate> = {
@@ -157,6 +179,8 @@ export const BUILTIN_COMPANY_TEMPLATES: Record<CompanyTemplateId, CompanyTemplat
   software: withCollaboration(TEMPLATE_BASES.software),
   content: withCollaboration(TEMPLATE_BASES.content),
   novel: withCollaboration(TEMPLATE_BASES.novel),
+  marketing: withCollaboration(TEMPLATE_BASES.marketing),
+  consulting: withCollaboration(TEMPLATE_BASES.consulting),
 };
 
 export function getBuiltinCompanyTemplate(id: CompanyTemplateId): CompanyTemplate {

@@ -204,6 +204,34 @@ const KNOWLEDGE_MODELS: Record<BuiltinTemplateId, KnowledgeModelDefinition> = {
       { key: 'foreshadowing_board', label: '伏笔看板', kind: 'board', sourceTypeKey: 'foreshadowing', fields: ['setup', 'status'], relationTypeKeys: [], groupByField: 'status' },
     ],
   },
+  marketing: {
+    recordTypes: [
+      {
+        key: 'campaign_plan', label: '营销活动', description: '整合营销传播方案与排期', fields: [
+          field('title', '活动标题', 'text', 'lead', 'marketing-campaign', 'planning-and-task-breakdown', { required: true }),
+          field('channel', '传播渠道', 'text', 'pr_specialist', 'media-pr', 'idea-refine', { required: true }),
+        ],
+      },
+    ],
+    relationTypes: [],
+    eventTypes: [{ key: 'campaign_launch', label: '营销上线', participantTypeKeys: ['campaign_plan'], ownerRoleKey: 'lead' }],
+    artifactTypes: [{ key: 'marketing_deck', label: '营销方案文稿', format: 'markdown', ownerRoleKey: 'copywriter', readonly: false }],
+    views: [{ key: 'campaign_board', label: '营销企划看板', kind: 'board', sourceTypeKey: 'campaign_plan', fields: ['title', 'channel'], relationTypeKeys: [] }],
+  },
+  consulting: {
+    recordTypes: [
+      {
+        key: 'report_topic', label: '研究课题', description: '咨询报告课题与研究模型', fields: [
+          field('title', '课题名称', 'text', 'lead', 'research-lead', 'planning-and-task-breakdown', { required: true }),
+          field('framework', '分析框架', 'long_text', 'expert', 'industry-research', 'idea-refine', { required: true }),
+        ],
+      },
+    ],
+    relationTypes: [],
+    eventTypes: [{ key: 'report_publish', label: '报告发布', participantTypeKeys: ['report_topic'], ownerRoleKey: 'editor' }],
+    artifactTypes: [{ key: 'consulting_report', label: '咨询研究报告', format: 'markdown', ownerRoleKey: 'expert', readonly: false }],
+    views: [{ key: 'report_board', label: '研究课题看板', kind: 'board', sourceTypeKey: 'report_topic', fields: ['title', 'framework'], relationTypeKeys: [] }],
+  },
 };
 
 const TEMPLATE_META: Record<BuiltinTemplateId, {
@@ -227,6 +255,14 @@ const TEMPLATE_META: Record<BuiltinTemplateId, {
   novel: {
     summary: { positioning: '长篇小说持续创作与设定维护团队', deliverables: ['章节正文', '人物与世界设定', '剧情和连续性资料'], operatingModel: '主编统筹，作者写作，人物与情节负责人维护设定，监察员检查连续性' },
     maturity: 'ready', recommendedUse: '需要多人设协作、长期设定维护和连续性检查的小说项目', presentation: { density: 'visual', mark: '文', colorToken: 'red' },
+  },
+  marketing: {
+    summary: { positioning: '整合营销、品牌公关与增长传播团队', deliverables: ['市场分析报告', '整合营销文案', '公关发稿规划'], operatingModel: '营销总监制定战略，分析师洞察受众，文案创作表达，公关推进传播' },
+    maturity: 'ready', recommendedUse: '品牌推广、新品发布、公关传播与增长企划', presentation: { density: 'guided', mark: '销', colorToken: 'orange' },
+  },
+  consulting: {
+    summary: { positioning: '行业研报、深度竞争分析与战略咨询团队', deliverables: ['行业研究报告', '数据定量模型', '战略咨询建议'], operatingModel: '总监定义课题，专家提炼洞察，分析师处理数据，主编校对润色' },
+    maturity: 'ready', recommendedUse: '行业研究、竞争情报、商业计划书与战略咨询', presentation: { density: 'guided', mark: '询', colorToken: 'purple' },
   },
 };
 
@@ -298,7 +334,7 @@ function buildPackage(id: BuiltinTemplateId): CompanyTemplatePackage {
   });
 }
 
-const BUILTIN_TEMPLATE_PACKAGES = (['general', 'software', 'content', 'novel'] as const).map(buildPackage);
+const BUILTIN_TEMPLATE_PACKAGES = (['general', 'software', 'content', 'novel', 'marketing', 'consulting'] as const).map(buildPackage);
 
 export function listBuiltinCompanyTemplates(): CompanyTemplatePackage[] {
   return structuredClone(BUILTIN_TEMPLATE_PACKAGES);

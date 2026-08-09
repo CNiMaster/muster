@@ -55,7 +55,7 @@ export function ProjectTaskWorkspace({ selectedTask, tasks, agents, draft, creat
           <Field label="负责人"><Select value={workOrder.assigneeId} disabled={selectedTask.state === 'archived'} onChange={(event) => onWorkOrderChange({ ...workOrder, assigneeId: event.target.value })}><option value="">自动选择合适员工</option>{agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name} · {agent.role}</option>)}</Select></Field>
           <Button className="work-order-submit" disabled={selectedTask.state === 'archived' || !workOrder.title.trim()} onClick={onPublishWorkOrder}>派发工作单</Button>
         </div>
-      </div> : <div className="work-order-composer work-order-launch-blocked"><strong>制作尚未开始</strong><p>完成上方的需求、能力和（如需要）视觉参考确认后，才能派发员工工作单。</p></div>}
+      </div> : <div id="work-order-composer" className="work-order-composer work-order-launch-blocked"><strong>制作尚未开始</strong><p>完成上方的需求、能力和（如需要）视觉参考确认后，才能派发员工工作单。</p></div>}
     </section> : <section className="project-task-stage project-task-empty"><EmptyState icon={Icons.empty} title="还没有项目任务" hint="先创建一个目标，Muster 才能为员工建立独立工作上下文。" /></section>}
 
     <div className="project-task-secondary">

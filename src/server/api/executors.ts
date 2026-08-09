@@ -6,10 +6,78 @@ import { BUILTIN_EXECUTOR_MANIFESTS } from '../executors/manifests';
 import { bindDetectedSystemExecutor, detectSystemExecutor, testExecutorProfileConnection } from '../domain/executor-discovery';
 import { bindEmployeeExecutorProfile, createExecutorProfile, listExecutorProfiles } from '../domain/executor-profile';
 import{getConnectionProbe,startConnectionProbe}from'../domain/connection-probe';
+import { ClaudeSetupGenerator } from '../domain/setup-assistant';
+import { generateCliProposal } from '../domain/cli-assistant';
+import { diagnoseInstallError, runInstallStream, type InstallEvent } from '../domain/executor-install';
 
 export const executorsRouter = Router();
 
+// AI 引导自定义 CLI 接入：描述 CLI → 生成检测命令/参数模板/安装说明（内置模板或 Claude 生成）
+executorsRouter.post('/assistant/cli-proposal', asyncHandler(async (req, res) => {
+  const input = z.object({ prompt: z.string().min(1).max(500) }).parse(req.body);
+  res.json(await generateCliProposal(input, new ClaudeSetupGenerator(getDb())));
+}));
+
 executorsRouter.get('/manifests', asyncHandler(async (_req,res)=>res.json(BUILTIN_EXECUTOR_MANIFESTS)));
+
+// 一键检测全部可检测的 CLI（并行），返回每个的 found/path/version。
+// 用 allSettled 隔离单个检测失败（如异常路径），避免一个 CLI 检测出错拖垮全部。
+executorsRouter.post('/detect-all', asyncHandler(async (_req,res)=>{
+  const manifests = BUILTIN_EXECUTOR_MANIFESTS.filter((m) => m.detection);
+  const settled = await Promise.allSettled(
+    manifests.map(async (m) => ({
+      manifestId: m.id,
+      displayName: m.displayName,
+      ...(await detectSystemExecutor(m.id)),
+    })),
+  );
+  res.json(settled.map((s, i) => s.status === 'fulfilled'
+    ? s.value
+    : { manifestId: manifests[i].id, displayName: manifests[i].displayName, found: false, path: null, version: null, managed: false }));
+}));
+
+// 一键安装 CLI：SSE 流式推送安装日志；完成后自动检测+绑定。
+// 安装失败的 AI 诊断由前端在收到 error 事件后调用 /install-diagnose 端点完成。
+executorsRouter.post('/:manifestId/install', async (req, res) => {
+  const manifestId = param(req, 'manifestId');
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders?.();
+  let closed = false;
+  // 客户端断开（如安装途中关页面）时 res.write 会抛错；静默停止推送，避免未处理异常。
+  req.on('close', () => { closed = true; });
+  const send = (event: InstallEvent): void => {
+    if (closed) return;
+    try {
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
+    } catch {
+      closed = true;
+    }
+  };
+  try {
+    await runInstallStream(getDb(), manifestId, undefined, send);
+  } catch (error) {
+    send({ type: 'error', message: error instanceof Error ? error.message : String(error), exitCode: null });
+  }
+  if (!closed) res.end();
+});
+
+// AI 诊断安装失败：body: { manifestId, command, output, exitCode }
+executorsRouter.post('/install-diagnose', asyncHandler(async (req,res)=>{
+  const input = z.object({
+    manifestId: z.string().min(1),
+    command: z.string().min(1),
+    output: z.string().default(''),
+    exitCode: z.number().nullish(),
+  }).parse(req.body);
+  res.json(await diagnoseInstallError({
+    manifestId: input.manifestId,
+    command: input.command,
+    output: input.output,
+    exitCode: input.exitCode ?? null,
+  }, new ClaudeSetupGenerator(getDb())));
+}));
 executorsRouter.get('/profiles', asyncHandler(async (_req,res)=>{
   const db=getDb();
   res.json(listExecutorProfiles(db).map((profile)=>({

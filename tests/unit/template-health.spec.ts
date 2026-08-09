@@ -4,7 +4,7 @@ import { validateCompanyTemplateDraft } from '../../src/server/domain/template-h
 
 describe('company template registry', () => {
   it('registers four schema-valid built-in packages with industry knowledge models', () => {
-    expect(listBuiltinCompanyTemplates().map((template) => template.id)).toEqual(['general', 'software', 'content', 'novel']);
+    expect(listBuiltinCompanyTemplates().map((template) => template.id)).toEqual(['general', 'software', 'content', 'novel', 'marketing', 'consulting']);
     expect(getCompanyTemplatePackage('software').knowledgeModel.recordTypes.map((type) => type.key)).toContain('requirement');
     expect(getCompanyTemplatePackage('novel').knowledgeModel.recordTypes.map((type) => type.key)).toContain('character');
   });

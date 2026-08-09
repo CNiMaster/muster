@@ -16,8 +16,8 @@ describe('company template installation', () => {
       syncBuiltinTemplateVersions(db);
       syncBuiltinTemplateVersions(db);
 
-      expect((db.prepare('SELECT COUNT(*) count FROM template_definition').get() as { count: number }).count).toBe(4);
-      expect((db.prepare('SELECT COUNT(*) count FROM template_version').get() as { count: number }).count).toBe(4);
+      expect((db.prepare('SELECT COUNT(*) count FROM template_definition').get() as { count: number }).count).toBe(6);
+      expect((db.prepare('SELECT COUNT(*) count FROM template_version').get() as { count: number }).count).toBe(6);
       expect((db.prepare("SELECT version FROM template_version WHERE template_id='novel'").get() as { version: number }).version).toBe(1);
     } finally {
       close();

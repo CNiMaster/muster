@@ -443,7 +443,9 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
       inspectorLabel="项目任务与运行"
       attentionCount={attentionCount + (cockpit?.approvals.pending ?? 0)}
       primaryAction={projectView === 'task'
-        ? <a className="mu-btn mu-btn-primary mu-btn-sm workbench-publish-action" href="#work-order-composer">＋ 派发工作</a>
+        ? (selectedProjectTask
+          ? <a className="mu-btn mu-btn-primary mu-btn-sm workbench-publish-action" href="#work-order-composer">＋ 派发工作</a>
+          : <a className="mu-btn mu-btn-primary mu-btn-sm workbench-publish-action" href="#project-tasks">＋ 新建项目任务</a>)
         : projectView === 'employee'
           ? <a className="mu-btn mu-btn-primary mu-btn-sm workbench-publish-action" href="#employee-dispatch">＋ 派发工作</a>
           : selectedAgentId
@@ -451,6 +453,15 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
             : undefined}
       navigation={<ProjectWorkNavigation projectId={projectId} projectTasks={projectTasks ?? []} tasks={tasks ?? []} agents={agents ?? []} departments={departments ?? []} firstAgentId={project.firstAgentId ?? company?.firstAgentId} selectedProjectTaskId={selectedProjectTaskId} selectedAgentId={selectedAgentId} view={projectView} attentionCount={attentionCount} novel={company?.kind === 'novel'} />}
       inspector={<ProjectContextInspector projectId={projectId} companyId={project.companyId} projectState={project.state} selectedTask={selectedProjectTask} selectedAgentId={projectView === 'employee' ? selectedAgentId : undefined} agents={agents ?? []} tasks={tasks ?? []} cockpit={cockpit} />}
+      commandOptions={[
+        ...(projectTasks ?? []).slice(0, 5).map((item) => ({ label: `任务：${item.title}`, href: `/projects/${projectId}?view=task&projectTask=${item.id}`, group: '项目任务' })),
+        ...(agents ?? []).slice(0, 5).map((agent) => ({ label: `员工：${agent.name}`, href: `/projects/${projectId}?view=employee&agent=${agent.id}`, group: '团队成员' })),
+        { label: '任务领取清单', href: `/projects/${projectId}/tasks`, group: '项目工具' },
+        { label: '运行概览', href: `/projects/${projectId}/dashboard`, group: '项目工具' },
+        { label: '成果与文件', href: `/projects/${projectId}/artifacts`, group: '项目工具' },
+        { label: '计划与自动化', href: `/projects/${projectId}/plans`, group: '项目工具' },
+        { label: '项目设置', href: `/projects/${projectId}/settings`, group: '项目工具' },
+      ]}
     >
     <div className="project-page work-surface-page" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
       {(projectView === 'group' || projectView === 'activity') && <header className="work-surface-heading">

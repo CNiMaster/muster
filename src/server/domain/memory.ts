@@ -232,25 +232,82 @@ export function searchMemory(db: DB, input: {
   return rows.map(entryFromRow);
 }
 
+/**
+ * 将查询拆成匹配词元：按空白分词；中文连续段保留整段并生成重叠二元组（bigram），
+ * 英文/数字词保持整词。中文无空格，整句 LIKE/FTS 前缀无法命中语义相关的记忆
+ * （如任务"实现事件模块" vs 记忆"决定采用事件驱动架构"），二元组可跨句命中子串。
+ */
+function expandMatchTokens(query: string): string[] {
+  const tokens: string[] = [];
+  const seen = new Set<string>();
+  const push = (t: string) => { if (t && !seen.has(t)) { seen.add(t); tokens.push(t); } };
+  for (const segment of query.split(/\s+/)) {
+    if (!segment) continue;
+    // 按 CJK / 非 CJK 连续段切分（如 '前端React' → ['前端', 'React']）
+    for (const run of segment.match(/[\u4e00-\u9fff]+|[^\u4e00-\u9fff]+/g) ?? [segment]) {
+      if (/[\u4e00-\u9fff]/.test(run)) {
+        push(run); // 整段（含单字查询）
+        for (let i = 0; i + 2 <= run.length; i += 1) push(run.slice(i, i + 2)); // 重叠二元组
+      } else {
+        push(run);
+      }
+    }
+  }
+  return tokens;
+}
+
 export function loadContextMemories(db: DB, input: {
   profileId: string; companyId: string; projectId: string; limit?: number;
+/**
+   * 渐进式加载：当传入 query 时，company/project 记忆仅注入与当前任务相关的（词元级 LIKE + FTS5 命中），
+   * 避免把全量记忆塞进 system prompt 淹没上下文；为空则回退全量（按 scope 优先级）。
+   * 注意：personal/skill 是用户的稳定偏好与核心身份，**永远全量注入**，不受 query 筛选——
+   * 否则 agent 会因任务不相关而忘记用户的固定偏好（如"用中文回复"）。
+   * 不引入 embedding/向量——复用 searchMemory 已验证的 FTS5 路径即可。
+   */
+  query?: string;
 }): MemoryEntry[] {
   const now = nowIso();
+  const trimmedQuery = (input.query ?? '').trim();
+  const limit = Math.min(Math.max(input.limit ?? 8, 1), 20);
+  const orderClause = 'CASE scope WHEN \'personal\' THEN 1 WHEN \'company\' THEN 2 WHEN \'project\' THEN 3 ELSE 4 END, updated_at DESC';
+  // query 为空 → 原全量逻辑（向后兼容，零破坏）。
+  if (!trimmedQuery) {
+    return (db.prepare(
+      `SELECT * FROM memory_entry
+       WHERE profile_id=? AND state IN ('active','locked')
+         AND can_influence=1 AND (expires_at IS NULL OR expires_at > ?)
+         AND (
+           scope IN ('personal','skill')
+           OR (scope='company' AND company_id=?)
+           OR (scope='project' AND company_id=? AND project_id=?)
+         )
+       ORDER BY ${orderClause} LIMIT ?`,
+    ).all(input.profileId, now, input.companyId, input.companyId, input.projectId, limit) as EntryRow[])
+      .map(entryFromRow);
+  }
+  // query 非空 → personal/skill 仍全量；company/project 仅注入相关记忆。
+  // 每个词元独立 OR 命中（英文整词、中文整段 + 二元组），既渐进又不丢用户的稳定偏好。
+  const tokens = expandMatchTokens(trimmedQuery);
+  const matchOrs = tokens
+    .map(() => '(content LIKE ? OR id IN (SELECT entry_id FROM memory_fts WHERE memory_fts MATCH ?))')
+    .join(' OR ');
+  const values: unknown[] = [input.profileId, now, input.companyId, input.companyId, input.projectId];
+  for (const token of tokens) {
+    values.push(`%${token}%`, `${escapeFtsQuery(token)}*`);
+  }
+  values.push(limit);
   return (db.prepare(
     `SELECT * FROM memory_entry
      WHERE profile_id=? AND state IN ('active','locked')
        AND can_influence=1 AND (expires_at IS NULL OR expires_at > ?)
        AND (
          scope IN ('personal','skill')
-         OR (scope='company' AND company_id=?)
-         OR (scope='project' AND company_id=? AND project_id=?)
+         OR ((scope='company' AND company_id=?) OR (scope='project' AND company_id=? AND project_id=?))
+             AND (${matchOrs})
        )
-     ORDER BY CASE scope WHEN 'personal' THEN 1 WHEN 'company' THEN 2 WHEN 'project' THEN 3 ELSE 4 END,
-       updated_at DESC LIMIT ?`,
-  ).all(
-    input.profileId, now, input.companyId, input.companyId, input.projectId,
-    Math.min(Math.max(input.limit ?? 8, 1), 20),
-  ) as EntryRow[]).map(entryFromRow);
+     ORDER BY ${orderClause} LIMIT ?`,
+  ).all(...values) as EntryRow[]).map(entryFromRow);
 }
 
 export function flushThreadMemory(db: DB, input: {

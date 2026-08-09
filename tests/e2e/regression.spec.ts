@@ -23,18 +23,17 @@ test('核心功能端到端完整回归流', async ({ page }) => {
   await page.getByRole('button', { name: '继续到完成' }).click();
   await page.getByRole('button', { name: '按推荐方案创建并进入项目 →' }).click();
   await page.waitForURL(/\/projects\/pr_[^?]+\?projectTask=pt_[^&]+&onboarding=done/);
-  await expect(page.getByRole('navigation', { name: '项目组织与联系人' })).toBeVisible();
-  await page.getByRole('navigation', { name: '项目组织与联系人' }).getByRole('link', { name: /项目任务/ }).click();
-  await expect(page.getByRole('region', { name: '完成产品回归验收' })).toContainText('项目任务 #1');
+  // New projects enter the phased onboarding wizard (drafting → active) before the workbench.
+  await expect(page.getByRole('heading', { name: '项目准备流程' })).toBeVisible();
 
   const companies = await (await page.request.get('/api/companies')).json() as Array<{id:string;name:string}>;
   const company = companies.find((item) => item.name === companyName)!;
   await page.goto(`/companies/${company.id}`);
   await expect(page.getByText('公司驾驶舱')).toBeVisible();
   await expect(page.getByRole('navigation',{name:'公司工作列表'})).toBeVisible();
-  await page.getByRole('button',{name:/组织架构/}).click();
+  await page.getByRole('button',{name:/^团队/}).click();
   await expect(page.getByText('项目负责人', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('待命').first()).toBeVisible();
-  await page.getByRole('button',{name:/项目/}).click();
+  await page.getByRole('button',{name:/^项目/}).click();
   await expect(page.getByText(`回归项目-${timestamp}`, { exact: true })).toBeVisible();
 });

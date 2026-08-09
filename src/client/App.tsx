@@ -40,6 +40,8 @@ function ContextNavigation(): React.ReactElement {
       <NavLink to="/agents">人才市场</NavLink>
       <NavLink to="/reviews">审批</NavLink>
       <NavLink to="/executors">执行器</NavLink>
+      <NavLink to="/capabilities">能力中心</NavLink>
+      <NavLink to="/outsourcing">外包</NavLink>
       <NavLink to="/permissions">权限</NavLink>
       <NavLink to="/settings">设置</NavLink>
       </nav>
@@ -54,6 +56,8 @@ function ContextNavigation(): React.ReactElement {
       <NavLink to="/agents">人才市场</NavLink>
       <NavLink to="/reviews">审批</NavLink>
       <NavLink to="/executors">执行器</NavLink>
+      <NavLink to="/capabilities">能力中心</NavLink>
+      <NavLink to="/outsourcing">外包</NavLink>
       <NavLink to="/permissions">权限</NavLink>
       <NavLink to="/settings">设置</NavLink>
       {company.archivedAt

@@ -21,17 +21,25 @@ describe('workbench preferences', () => {
     expect(readWorkbenchPreferences({ getItem: () => '{broken' }, 'company:1')).toEqual(DEFAULT_WORKBENCH_PREFERENCES);
   });
 
-  it('normalizes saved desktop drawers for tablet and mobile widths', () => {
+  it('collapses desktop panes only when the work surface would be squeezed, leaving overlay drawers to toggle control', () => {
     const saved = { ...DEFAULT_WORKBENCH_PREFERENCES };
     expect(normalizeWorkbenchPreferencesForWidth(saved, 1440)).toEqual(saved);
-    expect(normalizeWorkbenchPreferencesForWidth(saved, 1000)).toEqual({ ...saved, rightOpen: false });
-    expect(normalizeWorkbenchPreferencesForWidth(saved, 390)).toEqual({ ...saved, leftOpen: false, rightOpen: false });
+    // On a crowded desktop (>= 1180) the right pane auto-collapses before the surface is squeezed.
+    expect(normalizeWorkbenchPreferencesForWidth({ ...saved, leftWidth: 360, rightWidth: 420 }, 1200)).toEqual({ ...saved, leftWidth: 360, rightWidth: 420, rightOpen: false });
+    // Below the desktop breakpoint, panes are overlays; normalize must not force-close them,
+    // otherwise a user's drawer toggle is immediately overridden.
+    expect(normalizeWorkbenchPreferencesForWidth(saved, 1000)).toEqual(saved);
+    expect(normalizeWorkbenchPreferencesForWidth(saved, 390)).toEqual(saved);
   });
 
-  it('never keeps more panes open than the viewport can fit around the minimum work surface', () => {
+  it('never keeps more panes open than the viewport can fit around the minimum work surface on desktop', () => {
     const widePanes = { ...DEFAULT_WORKBENCH_PREFERENCES, leftWidth: 360, rightWidth: 420 };
     expect(normalizeWorkbenchPreferencesForWidth(widePanes, 1_200)).toEqual({ ...widePanes, rightOpen: false });
-    expect(normalizeWorkbenchPreferencesForWidth(widePanes, 360 + MIN_WORKBENCH_SURFACE_WIDTH - 1)).toEqual({ ...widePanes, leftOpen: false, rightOpen: false });
+    // On desktop, if even the left pane plus the minimum surface no longer fits, collapse both.
+    const hugeLeft = { ...DEFAULT_WORKBENCH_PREFERENCES, leftWidth: 700, rightWidth: 420 };
+    expect(normalizeWorkbenchPreferencesForWidth(hugeLeft, 1180)).toEqual({ ...hugeLeft, leftOpen: false, rightOpen: false });
+    // But once below the desktop breakpoint, the same constraint no longer force-closes drawers.
+    expect(normalizeWorkbenchPreferencesForWidth(widePanes, 700)).toEqual(widePanes);
   });
 
   it('keeps only one overlay pane open below the desktop breakpoint', () => {

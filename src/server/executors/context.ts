@@ -136,10 +136,14 @@ export function assembleContext(
     }
   }
   if (agent) {
+    // 渐进式加载：仅注入与当前任务相关的记忆（按 title/summary 做 FTS+LIKE 命中），
+    // 而非全量塞入——避免上下文被无关记忆淹没。query 为空时 loadContextMemories 回退全量。
+    const query = [task.title, task.summary].filter(Boolean).join(' ').slice(0, 120);
     const memories = loadContextMemories(db, {
       profileId: agent.profileId,
       companyId: company.id,
       projectId: project.id,
+      query,
     });
     if (memories.length > 0) {
       sp.push('# 已批准的相关记忆', ...memories.map((memory) => `- [${memory.scope}] ${memory.content}`), '');

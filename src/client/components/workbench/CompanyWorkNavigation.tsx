@@ -1,13 +1,31 @@
 import type React from 'react';
 import type { CompanySectionKey } from '../company/CompanySections';
 
-const items: Array<{ key: CompanySectionKey; label: string; icon: string }> = [
-  { key: 'overview', label: '公司概览', icon: '◎' },
+const dailyItems: Array<{ key: CompanySectionKey; label: string; icon: string }> = [
+  { key: 'overview', label: '公司总览', icon: '◎' },
   { key: 'projects', label: '项目', icon: '▣' },
-  { key: 'team', label: '组织架构', icon: '人' },
+  { key: 'attention', label: '需要处理', icon: '!' },
+];
+const teamItems: Array<{ key: CompanySectionKey; label: string; icon: string }> = [
+  { key: 'team', label: '团队', icon: '人' },
   { key: 'activity', label: '沟通与活动', icon: '◌' },
+];
+const fixedItems: Array<{ key: CompanySectionKey; label: string; icon: string }> = [
   { key: 'settings', label: '更多设置', icon: '…' },
 ];
+
+function itemButton({ item, active, counts, onChange }: {
+  item: { key: CompanySectionKey; label: string; icon: string };
+  active: CompanySectionKey;
+  counts: Partial<Record<CompanySectionKey, number>>;
+  onChange: (key: CompanySectionKey) => void;
+}): React.ReactElement {
+  const count = counts[item.key];
+  return <button key={item.key} type="button" className={`work-nav-item ${active === item.key ? 'is-active' : ''}`} aria-current={active === item.key ? 'page' : undefined} onClick={() => onChange(item.key)}>
+    <span className="work-nav-icon" aria-hidden="true">{item.icon}</span><span className="work-nav-label">{item.label}</span>
+    {count !== undefined && count > 0 && <span className="work-nav-count">{count}</span>}
+  </button>;
+}
 
 export function CompanyWorkNavigation({ active, projectCount, employeeCount, attentionCount, onChange }: {
   active: CompanySectionKey;
@@ -16,13 +34,18 @@ export function CompanyWorkNavigation({ active, projectCount, employeeCount, att
   attentionCount: number;
   onChange: (key: CompanySectionKey) => void;
 }): React.ReactElement {
-  return <div className="work-nav-section">
-    <div className="work-nav-heading"><span>公司工作</span>{attentionCount > 0 && <span>{attentionCount} 待处理</span>}</div>
-    {items.map((item) => <button key={item.key} type="button" className={`work-nav-item ${active === item.key ? 'is-active' : ''}`} aria-current={active === item.key ? 'page' : undefined} onClick={() => onChange(item.key)}>
-      <span className="work-nav-icon" aria-hidden="true">{item.icon}</span><span className="work-nav-label">{item.label}</span>
-      {item.key === 'projects' && <span className="work-nav-count">{projectCount}</span>}
-      {item.key === 'team' && <span className="work-nav-count">{employeeCount}</span>}
-      {item.key === 'overview' && attentionCount > 0 && <span className="work-nav-count">{attentionCount}</span>}
-    </button>)}
-  </div>;
+  return <>
+    <div className="work-nav-section">
+      <div className="work-nav-heading"><span>日常工作</span></div>
+      {dailyItems.map((item) => itemButton({ item, active, counts: { projects: projectCount, attention: attentionCount }, onChange }))}
+    </div>
+    <div className="work-nav-section">
+      <div className="work-nav-heading"><span>团队与沟通</span></div>
+      {teamItems.map((item) => itemButton({ item, active, counts: { team: employeeCount }, onChange }))}
+    </div>
+    <div className="work-nav-section">
+      <div className="work-nav-heading"><span>固定入口</span></div>
+      {fixedItems.map((item) => itemButton({ item, active, counts: {}, onChange }))}
+    </div>
+  </>;
 }

@@ -59,7 +59,6 @@ export function ProjectEmployeeWorkspace({
       <div><strong>{activeTasks.length}</strong><span>当前工作</span></div>
       <div><strong>{employeeTasks.filter((task) => task.state === 'queued').length}</strong><span>等待领取</span></div>
       <div><strong>{completedCount}</strong><span>已完成</span></div>
-      <div><strong>{agent.canDispatch ? '可' : '不可'}</strong><span>向下派发</span></div>
     </section>
 
     <section className="employee-task-strip">

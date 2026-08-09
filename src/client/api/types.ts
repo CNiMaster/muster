@@ -59,6 +59,10 @@ export interface AgentProfile {
   recommendedExecutor: Record<string, unknown>;
   recommendedPermission: Record<string, unknown>;
   baseVersion: number;
+  /** 1-5 星评级（经验越多越高）。 */
+  rating: number;
+  /** 1=临时新建、未转正（人才市场过滤掉）。 */
+  isTempOnly: number;
   createdAt: string;
   updatedAt: string;
   /** 该档案在多少家公司任职（人才市场用，由 /api/agent-profiles 聚合返回）。 */
@@ -77,6 +81,10 @@ export interface CompanyEmployee {
   permission: Record<string, unknown>;
   executorProfileId: string | null;
   permissionPolicyId: string | null;
+  /** 'permanent' | 'temp'（临时工模型）。 */
+  employmentType: 'permanent' | 'temp';
+  /** 临时工状态（仅 temp 有意义）。 */
+  tempStatus: 'active' | 'greyed' | 'dismissed' | null;
   createdAt: string;
   updatedAt: string;
   health?: import('../../shared/types').EmploymentHealthDTO;
@@ -246,4 +254,60 @@ export type {
   PluginKind,
   PluginStatus,
   PluginMaturity,
+  PluginScope,
 } from '../../shared/plugin';
+
+// 本地引用：EffectivePlugin 定义需要 Plugin 类型，re-export 不产生本地绑定，需显式 import。
+import type { Plugin as PluginType } from '../../shared/plugin';
+
+/**
+ * 公司对某插件的决策三态（opt-out 治理）。
+ * - 'default'   平台默认全开（无 company_plugin 覆盖行）
+ * - 'enabled'   公司曾显式确认启用（有覆盖行但未禁用）
+ * - 'disabled'  公司显式禁用（opt-out 后该平台插件不对该公司生效）
+ * - 'exclusive' 公司独占插件（scope=company，仅此公司可见）
+ */
+export type CompanyPluginDecision = 'default' | 'enabled' | 'disabled' | 'exclusive';
+
+/** 带 companyDecision 标注的插件（effective 查询返回）。 */
+export interface EffectivePlugin extends PluginType {
+  companyDecision: CompanyPluginDecision;
+}
+
+// ── B2B 外包契约 ──────────────────────────────────────────────────────────
+
+/** 外包契约状态。 */
+export type ContractState =
+  | 'pending'
+  | 'accepted'
+  | 'in_progress'
+  | 'delivered'
+  | 'reviewing'
+  | 'changes_requested'
+  | 'completed'
+  | 'rejected'
+  | 'cancelled';
+
+/** 外包契约（甲方 source → 乙方 target 的任务委派）。 */
+export interface OutsourcingContract {
+  id: string;
+  sourceCompanyId: string;
+  targetCompanyId: string;
+  sourceProjectId: string;
+  sourceTaskId: string | null;
+  outsourcedTaskId: string | null;
+  title: string;
+  brief: string;
+  acceptanceCriteria: Array<{ id: string; criterion: string; met?: boolean }>;
+  requiredCapabilityIds: string[];
+  deliverableDir: string | null;
+  readonlyRefs: string[];
+  state: ContractState;
+  vendorLiaisonAgentId: string | null;
+  dispatcherAgentId: string | null;
+  feedback: string | null;
+  revisionRound: number;
+  createdAt: string;
+  updatedAt: string;
+}
+

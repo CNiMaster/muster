@@ -132,9 +132,13 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 - **长篇小说公司**：5 基础岗位（lead/writer/character/plot/inspector），第一负责人≠主写手；章节完成事件触发人物/情节维护；定时一致性检查；强制复盘按根员工聚合；闲置头脑风暴受限。
 - **镜像**：项目内临时并行线程，共享根员工职责/上下文/Task 池，不重复领取；成果归入根员工。
 - **能力中心（工具档案库）**：平台是"搬运工不是提供者"。`tools/` 目录是"能力→可用实现"的备选目录（不是安装清单），每个档案含 frontmatter（capability/implementation local|api/executor_kind/credential_keys/install/check/maturity）+ 正文。启动时 `syncToolRegistry()` 扫描入库到 `tool_registry` 表；后台设默认项，创建公司时 `dispatchDefaultToolsToCompany()` 派发到 `company_tool`。`assembleContext` 按"员工名下所有 capabilityBindings 的 recommendedToolIds"注入 `# 能力中心` system prompt 段，员工已具备相似工具时优先用自己的，缺少时参考推荐。是否安装/调用由员工自行决定，平台不做强制门禁，只做软诊断（`capability_tool_unavailable`/`capability_executor_mismatch` finding）。`capabilityBindingDefinitionSchema` 已扩展 `recommendedToolIds` 和 `requiresExecutorKind` 两字段。
-- **Plugin 体系（能力接入/下载/自定义）**：统一 Plugin 模型（kind: skill/mcp-server/tool/bridge-action/ai-generated；source: builtin/executor-native/company/project/marketplace/ai-generated；scope: platform/company/project/employee）。现有 skill/tool/bridge 通过 `plugin-adapter.ts` 包装为只读 Plugin 视图，零迁移。`plugin` 表 + `company_plugin` 启停表（启停需 `company.state==='off'`）。**接入**：`POST /api/plugins` 存任意 MCP 配置，`assembleTools` 在 pumpThread 时按公司启用列表连接 MCP server、探测工具、注册进 RuntimeToolRegistry。**下载**：`marketplace.ts` 检索本地 `~/.zcode/skills` + GitHub(`gh search`)，`installMarketplaceEntry` 落库。**自定义**：`skill-author.ts` 调 LLM（`llm-call.ts`，OpenAI 兼容，三层凭据解析）起草 SKILL.md 作为兜底。RuntimeToolRegistry 替代原 FILE_TOOLS 硬编码 switch，内置 7 工具变注册项，第三方/MCP 工具同接口注册。
+- **Plugin 体系（能力接入/下载/自定义 + opt-out 治理）**：统一 Plugin 模型（kind: skill/mcp-server/tool/bridge-action/ai-generated；source: builtin/executor-native/company/project/marketplace/ai-generated；scope: platform/company/project/employee）。现有 skill/tool/bridge 通过 `plugin-adapter.ts` 包装为只读 Plugin 视图，零迁移。`plugin` 表 + `company_plugin` 决策表（启停需 `company.state==='off'`）。**opt-out 治理**（迁移 `20260809100000`）：平台插件默认对所有公司启用，公司可显式禁用（`company_plugin.decision='disabled'`）；公司独占插件（scope=company）仅目标公司可见。`getEffectivePluginsForCompany` 计算 effective = 平台插件 MINUS 禁用集 ∪ 公司独占插件。**接入**：`POST /api/plugins` 存任意 MCP 配置，`assembleTools` 在 pumpThread 时按 effective 列表连接 MCP server、探测工具、注册进 RuntimeToolRegistry。**管理页**：`/capabilities`（CapabilityCenterPage）按 kind 分 Tab，每插件展开后是公司开关矩阵（三态：default/enabled/disabled/exclusive）。**下载**：`marketplace.ts` 检索本地 `~/.zcode/skills` + GitHub(`gh search`)，`installMarketplaceEntry` 落库。**自定义**：`skill-author.ts` 调 LLM（`llm-call.ts`，OpenAI 兼容，三层凭据解析）起草 SKILL.md 作为兜底。RuntimeToolRegistry 替代原 FILE_TOOLS 硬编码 switch，内置 7 工具变注册项，第三方/MCP 工具同接口注册。
 - **MCP 接入（三种 transport）**：`McpClientPool` 支持 stdio（本地子进程 command/args/env）、sse（SSEClientTransport，url/headers）、http（StreamableHTTPClientTransport，url/headers）。按 `McpServerConfig.transport` 分发到对应 SDK transport。MCP 工具经 `mcp/adapter.ts` 适配成 RuntimeTool 注册，命名 `mcp_<serverId>__<toolName>`，默认走 `network` 权限动作。连接失败的单个 server 不致命，记 health 错误后跳过。
 - **项目准备流程编排（PlanVersion + 阶段历史）**：`project_plan` 表记录每次 spec/plan 版本（回流时开新版本，created_reason: initial/rollback-3x/scope-change/manual），`project_phase_history` 记录阶段进出（含 rollbackFrom/reason）。lifecycle 事件 `project.phase-entered/exited/readiness-passed/rollback` 驱动前端 wizard stepper 自动刷新（`realtime.ts` 的 `project.*` 事件 invalidate `['project', id]`）。
+- **B2B 跨组织任务委派（外包）**：「公司」是软件内本地组织概念。`outsourcing_contract` 契约表（迁移 `20260810100000`）记录甲方 source → 乙方 target 的委派全生命周期：pending→accepted→in_progress→delivered→reviewing→completed/changes_requested/rejected。task 表增 `outsourcing_contract_id` 列标记承接任务。**全自动决策树**（`outsourcing-decision.ts`）：内部能做（`capability_binding` 有 employee_id 命中）→ 外包（跨公司扫描找具备能力的乙方）→ 招聘。**跨公司守卫旁路**：createTask 的同公司检查通过 `outsourcingContext` 显式参数绕过（默认不传=零回归），唯一跨公司入口是 `createOutsourcedTask`。承接任务在乙方项目里（assignee/project 同属乙方，thread 守卫自然通过）。**文件交付**：engine.ts 检测 `outsourcing_contract_id`，承接任务 worktree 基于**甲方 source project 的 git repo** 切出（`createWorktree(sourceProject.rootDir,...)`），publish 目标指向甲方 rootDir，readonlyDirs 追加甲方资料路径（复用全部三方合并管线，baseCommit 在甲方 repo 有效）。**跨公司依赖恢复**：`resumeDependents`（task.ts）扫描 `task_dependency` 全表唤醒等待方（补齐 parentTaskId 单链之外的跨公司依赖），在 completeTask completed 分支调用。验收返工（changes_requested）复用 business-review 模式：继承 acceptanceCriteria 另起返工任务。API：`POST /api/companies/:id/outsource/dispatch`（含决策树）/ `contracts/:id/accept|review|cancel`。管理页 `/outsourcing`（OutsourcingCenterPage）两栏契约看板。
+- **临时工模型 + 员工评级（批次 A）**：`company_employee` 增 `employment_type`('permanent'|'temp')/`temp_status`('active'|'greyed'|'dismissed')/`source_contract_id`（迁移 `20260811000000`）；`agent_profile` 增 `is_temp_only`(0|1)/`rating`(1-5)。临时工是 B2B 决策树 recruit 路径落地。**选拔优先级链**（`selectTempForNeed`）：公司内部→复用 greyed 临时工（`reactivateGreyedTemp`，高星优先）→人才库（`is_temp_only=0`）→创建新临时工（`is_temp_only=1`）。**临时工小范围关系**：`contactAllow` 仅含发起者（对其他人隐形）。**招聘豁免**：temp 招聘允许 online 态（`assertUnlocked` 的 `tempRecruit` 参数），**绝不导致公司离线**。**两种开除**：`is_temp_only=0`（人才市场来的）开除保留 profile+Home、只清公司记忆分区；`is_temp_only=1`（临时新建未转正）开除连 profile+Agent Home 一起删、不进人才市场。**完成→greyed**：承接任务完成后（`onOutsourcedTaskCompleted`）temp+active 自动 greyed，不参与派工（`claimNextTask` 排除非 active temp）。**评级**（`employee-rating.ts`）：多维度自动计算（任务完成+记忆+任职+外包验收加权）→ 1-5 星，任务完成时 `applyRating` 异步重算；用户可 `adjustRating` 手动调；影响人才市场推荐排序与外包优先。API：`POST /companies/:id/employees/temp|:id/convert|:id/dismiss|:id/reactivate`、`POST /agent-profiles/:id/rating`。
+- **权限委托链 + 审计（批次 B）**：`permission_change_request` 表（迁移 `20260812000000`）记录下级申请权限变更（临时/项目/永久+原因），上级审批后生成 `permission_rule`。**委托链路由**（`permission-delegation.ts`）：员工超权→`findDirectManager`（org 边上溯 source_id）→公司第一负责人→用户，不让人逐个批。**审计日志**（`artifact_change_log`）：`upsertPublishedArtifact` 自动记 create/update；`transferArtifactOwnership`/`transferAllArtifactsOfOwner` 记 transfer（含接手人），交接时 owner 单一指针更新（不叠加）。**按角色模板**（`permission-templates.ts`）：经理(project/no-approval)/员工(task/ask-by-rule)/临时工(task/deny)三档幂等种子。API：`/permission-changes` CRUD、`/projects/:id/audit-log`、`/permission-templates/seed`。
+- **离职交接工作流（批次 C）**：`handover_record` 表（迁移 `20260812010000`），按人整体交接（跨所有项目）。**四阶段**（`handover.ts`）：drafting（系统自动汇总产物清单+审计）→awaiting（用户选接手人）→receiving（逐项目 `transferArtifactsInHandover` 转移 owner）→completed（删任职+归档记忆分区）。`completeHandover` 处理 first_agent 转移（防 FK 冲突）。**连环交接**：previous_handover_id 链表追溯，但 owner 始终单一指针（A→B→C 最终 owner=C）。`offboardEmployee` 创建交接入口。产物留项目原路径（检索不遗漏），owner 指针指向接手人。Agent Home 记忆分区归档到 archive/{companyId}-{date}/。API：`/handover` CRUD + assign/receive/transfer/complete、`/companies/:id/employees/:id/offboard`。
 - **凭据库（平台级基本能力）**：所有 API/CLI 接入的凭据凌驾于公司之上，统一管理。启动时 `seedDefaultCredentialDefinitions()` 幂等注入 LLM 默认凭据定义（Anthropic/OpenAI/Google 三家，`credential_definition` 表）；后台可设默认派发项；创建公司时 `dispatchDefaultCredentialsToCompany()` 派发到 `company_credential`。执行时三层解析环境变量名：① 员工级覆盖（Agent Home `profile/credentials.json`，只存变量名不存明文）→ ② 公司级覆盖（`company_credential.override_key`）→ ③ 平台默认（`credential_definition.credential_key`）→ ④ 系统回退（`PROVIDER_DEFAULT_API_KEY_ENV` 或 legacy `agent.executor.apiKeyEnv`）。`engine.ts` 的 `resolveExecutorCredentialForTask()` 统一装配，三个 adapter（Claude/OpenAI/Gemini）无需改动——它们已消费 `ctx.apiKeyEnv`。明文值始终由系统环境变量提供，不进 DB、不进日志、不进迁移。
 - **素材区（项目级）**：每个项目有素材库（原料/需求/源文件），三选一导入：link（存路径/URL 引用，不复制文件，源不动）→ moved（copy+unlink 移入，源删除）→ copied（copyFile 复制，源保留）。素材存储在 `{project.rootDir}/materials/_copied/`，路径校验防目录穿越（对照 `resolveArtifactPath`）。`assembleContext` 注入 `# 项目素材` 摘要清单让员工知道可用素材。素材健康检查（link 型本地源文件是否存在）。
 - **成品区泛化 + 多媒体**：`ArtifactKind` 从小说专用 12 种枚举泛化为 `NovelArtifactKind | GenericArtifactKind | string`（通用公司可用 video/audio/image/markdown/binary 等）。`artifactTypeDefinitionSchema.format` 扩展 `video|audio`。`publish-queue` 的 `isBinaryPath` 扩展音视频扩展名，video/audio/binary kind 走 `exclusive_lock`（整文件替换，不走三方合并）。ArtifactsPage 前端按格式渲染：image(`<img>`)、video(`<video controls>`)、audio(`<audio controls>`)、pdf(`<iframe>`)。成品画廊聚合查询（`artifactGallery` 按 time/type 分组，`companyArtifactGallery` 跨项目聚合）。
@@ -183,10 +187,33 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 | `src/server/domain/marketplace.ts` | 能力市场检索（local ~/.zcode/skills + github gh search）+ installMarketplaceEntry |
 | `src/server/domain/skill-author.ts` | AI 兜底起草 SKILL.md（调 llm-call） |
 | `src/server/domain/llm-call.ts` | 平台级 LLM 调用（OpenAI 兼容 fetch，三层凭据解析） |
+| `src/server/domain/outsourcing-contract.ts` | **B2B 外包契约**：状态机 CRUD + accept/review/deliver + createOutsourcedTask（跨公司任务唯一入口） |
+| `src/server/domain/outsourcing-decision.ts` | **B2B 决策树**：hasInternalCapability / findVendorCompany / runOutsourcingDecisionTree（内部→外包→招聘） |
+| `src/server/domain/outsourcing-delivery.ts` | **B2B 交付协调**：onOutsourcedTaskCompleted（承接任务完成→契约 delivered + 临时工 greyed，幂等） |
+| `src/server/domain/temp-worker.ts` | **临时工生命周期**：createTempEmployment/convertTempToPermanent/markTempGreyed/reactivateGreyedTemp/dismissTempWorker/findGreyedTempForReuse |
+| `src/server/domain/employee-rating.ts` | **员工评级**：calculateRating（多维度加权）/applyRating/adjustRating/recalculateAllRatings |
+| `src/server/api/outsourcing.ts` | B2B REST 路由：dispatch（含决策树+选拔链）/ contracts / accept / review / cancel |
+| `src/server/api/temp-worker.ts` | 临时工 + 评级 REST 路由：temp/convert/dismiss/reactivate/rating |
+| `src/server/domain/permission-delegation.ts` | **权限委托链**：findDirectManager（org 上溯）/createPermissionChangeRequest/approveChangeRequest |
+| `src/server/domain/artifact-audit.ts` | **产物审计**：logArtifactChange/listArtifactHistory/listProjectAuditLog |
+| `src/server/domain/permission-templates.ts` | **按角色权限模板**：经理/员工/临时工三档幂等种子 |
+| `src/server/domain/handover.ts` | **离职交接四阶段**：createHandover/assignReceiver/startReceiving/transferArtifacts/completeHandover |
+| `src/server/api/permission-delegation.ts` | 权限委托 + 审计 REST 路由：permission-changes/audit-log/permission-templates |
+| `src/server/api/handover.ts` | 离职交接 REST 路由：handover CRUD + assign/receive/transfer/complete |
 | `src/server/domain/project-readiness.ts` | **HARD-GATE**：assertCanTransition + transitionProjectPhase + assertProjectActive（派工闸门） |
 | `src/server/domain/project-onboarding.ts` | readiness 读写（存 settings.onboarding）+ validatePhaseExit 阶段产物校验 |
 | `src/server/domain/project-plan.ts` | PlanVersion CRUD（版本自增+supersede）+ phase history 记录 |
 | `src/server/api/plugins.ts` | Plugin CRUD + MCP 连接测试 + 公司启停 + marketplace 检索/安装 + AI 起草路由 |
+| `src/client/components/workbench/WorkbenchShell.tsx` | 三栏工作台唯一壳层：顶栏（品牌菜单+栏位开关+面包屑+⌘K 命令面板+主操作）、三栏 grid、抽屉遮罩、WorkbenchGuide |
+| `src/client/components/workbench/useWorkbenchPreferences.ts` | 栏位偏好：桌面持久化（localStorage `muster:workbench:{scopeKey}`）+ 移动 ephemeral 抽屉状态解耦；`normalizeWorkbenchPreferencesForWidth` 只在 ≥1180px 收起被挤压栏 |
+| `src/client/components/workbench/ProjectWorkNavigation.tsx` | 项目左栏：正在进行/需要处理/团队与沟通/固定入口+更多（按工作状态组织，非系统模块） |
+| `src/client/components/workbench/CompanyWorkNavigation.tsx` | 公司左栏：日常工作/团队与沟通/固定入口 |
+| `src/client/components/workbench/ProjectContextInspector.tsx` | 项目右栏：当前对象摘要（联系人/任务/运行/待处理 + 折叠协作设置） |
+| `src/client/components/workbench/CompanyContextInspector.tsx` | 公司右栏：当前公司摘要 + 团队现场 SeatWall 折叠 |
+| `src/client/components/workbench/WorkbenchContextSwitcher.tsx` | 面包屑切换器：公司/项目/当前对象（不承载完整功能目录） |
+| `src/client/components/workbench/ProjectToolPageShell.tsx` | 项目工具页（tasks/plans/dashboard/artifacts/...）复用同一三栏壳，不重新出现全局顶栏 |
+| `src/client/components/company/CompanyAttention.tsx` | 公司"需要处理"视图（`?view=attention`）：聚合审批/配置缺口/项目关注/风险/下一步 |
+| `src/client/components/workbench/WorkbenchGuide.tsx` | 一次性三步引导（选择工作/完成工作/查看现场） |
 | `src/client/components/project/ProjectOnboardingWizard.tsx` | 六阶段准备流程 wizard（drafting→researching→equipping→staffing→ready→active，允许回流） |
 | `src/client/components/project/phases/` | 5 个阶段表单组件（DraftingPhase/ResearchingPhase/EquippingPhase/StaffingPhase/ReadyPhase） |
 | `scripts/smoke/capability-platform.mjs` | 能力平台 API 冒烟测试（12 项，覆盖 B1-B5 + transport 关键链路） |
@@ -215,10 +242,10 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 
 ### 测试
 
-- Vitest 单元与集成测试覆盖运行闭环、workspace 引导、全局员工档案、跨公司任职、Agent Home、分层记忆、项目任务会话、CLI 探测、审批桥、上下文恢复、复用与安全重置；准确数量以 `npm test` 当前输出为准（当前 98 文件 / 575 测试，含能力平台 B1-B5：RuntimeToolRegistry、Plugin CRUD、MCP client 三种 transport、项目状态机+HARD-GATE、readiness 校验、PlanVersion+熔断、marketplace+AI 起草）。
+- Vitest 单元与集成测试覆盖运行闭环、workspace 引导、全局员工档案、跨公司任职、Agent Home、分层记忆、项目任务会话、CLI 探测、审批桥、上下文恢复、复用与安全重置；准确数量以 `npm test` 当前输出为准（当前 100 文件 / 613 测试，含能力平台 B1-B5：RuntimeToolRegistry、Plugin CRUD、MCP client 三种 transport、项目状态机+HARD-GATE、readiness 校验、PlanVersion+熔断、marketplace+AI 起草，以及三栏工作台 shell/导航/inspector/响应式偏好）。
   - 测试环境需要真实 git 仓库作为 `project.rootDir`（`createWorktree` 需要 `git rev-parse HEAD` 成功）。`tests/integration/setup.ts` 的 `makeTempGitRepo()` 创建临时 git 仓库（含初始 commit）供测试使用。
   - `project.rootDir` 与 `firstAgentId` 均为可选：建项目时留空，`createProject` 自动使用当前激活总工作区，并生成 `{workspace}/companies/{公司名}/projects/{项目名}-{项目ID}`；项目 ID 后缀保证同名项目不会共享目录。`ensureGitRepo()` 会在首个 worktree 创建时自动 `mkdir + git init`。
-- Playwright 覆盖建司→团队→项目→首 Task、在线建项目、最近项目恢复、公司上下文导航、员工库、执行器中心、权限中心以及窄屏设置页；准确数量以 `npm run test:e2e` 当前输出为准。
+- Playwright 覆盖建司→团队→项目→首 Task、向导式创建完整公司、在线建项目、最近项目恢复、公司上下文导航与工作台信息架构（总览/需要处理/团队/项目）、员工库、执行器中心（折叠式安装引导）、权限中心、窄屏工作台抽屉以及窄屏设置页；准确数量以 `npm run test:e2e` 当前输出为准（当前 4 文件 / 15 测试）。
 - `npm run test:claude-smoke` 已使用真实 Claude Code 连续完成两个 Task，验证跨 worktree 的 `--session-id`/`--resume`、文件发布、Artifact 登记和 Token/缓存用量。
 
 `publish_record` 由 `0002_conversation.sql` 创建，记录 Task 发布提交、合并文件、冲突与阻塞状态，供成果修改历史页读取。
@@ -236,13 +263,25 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 - **低门槛优先**：首次主流程固定为“创建公司→组建团队→创建项目→发布 Task”；首屏只提供一个状态相关主行动，rootDir/firstAgentId 后端自动。
 - **看板纯前端增强**：DashboardPage 用 `useProjectEvents`/`useStatusBoard`/`useTasks` reduce/`useProjectUsage.byModel` 在客户端做状态分布条、负载柱状图、事件时间线、模型用量拆分；不引入图表库，用 CSS（`.dashboard-*` 类）可视化。新增聚合趋势（吞吐/费用时序）需后端补端点，不属于前端职责。
 - **低频配置收口**：项目目录、说明、复盘阈值和讨论预算集中到“项目设置”；项目页仅将线程扩容和脑暴收进协作工具折叠区。员工编辑折叠立场/技能/权限/执行器；系统设置首屏只显示默认执行器、连接测试与保存。
-- **员工中心的项目工作台**：项目仍是工作空间与上下文边界，但日常观察对象是员工。左栏固定为组织与联系人树（第一负责人置顶、固定项目群聊、部门员工及其名下工作单）；中栏展示员工单聊/派发、项目任务、群聊或工具；右栏只放可点击的员工工作与项目运行入口。项目任务是用户目标边界，员工工作单归在员工名下。
+- **三栏工作台信息架构（公司页 + 项目页统一）**：`WorkbenchShell` 是唯一壳层，三栏语义固定——左栏"选择工作"、中栏"完成工作"、右栏"查看当前对象状态"。设计规格见 `docs/superpowers/specs/2026-07-13-three-pane-workbench-design.md`。重构后的入口纪律：
+  - **左栏按工作状态组织，不按系统模块组织**。项目左栏四组：正在进行（活跃项目任务 + 任务领取清单 + 新建入口）/ 需要处理（阻塞·等待补充·待审批）/ 团队与沟通（项目群聊 + 第一负责人 + 部门员工树）/ 固定入口（运行概览·成果·**更多**）。公司左栏三组：日常工作（总览·项目·需要处理）/ 团队与沟通（团队·沟通活动）/ 固定入口（更多设置）。低频工具（计划·素材·复盘·用量·人物关系·设置）收入单层**更多**（`work-nav-more`，内联展开列表，**不**做 popover——左栏 `overflow:auto` 会裁剪绝对定位弹出层）。
+  - **右栏是对象摘要不是运营仪表盘**。`ProjectContextInspector`/`CompanyContextInspector` 统一为：当前对象 + 状态 + 1~3 关键指标 + 一个主行动 + 紧急待处理直显 + 折叠的协作/设置/团队现场。空状态不显示空告警卡。
+  - **中栏只突出一条主线**：项目任务工作面 = 任务标题+状态+目标 → 制作前提 → 工作单 Composer → 高级协作折叠。有活跃任务时"新建项目任务"默认收起。员工工作面统计卡收敛为 3 项。
+  - **顶部工具栏唯一**：品牌入口是全局菜单（首页·公司·员工库·执行器·权限·审批·设置），`WorkbenchContextSwitcher` 只切公司/项目/当前对象，不再承载完整功能目录。`⌘K` 是可搜索命令面板（`WorkbenchShell` 接 `commandOptions` prop，按 group 分组，公司页/项目页/工具页各传入上下文相关选项）。
+  - **响应式分层**：`useWorkbenchPreferences` 区分**桌面栏位**（持久化到 localStorage `muster:workbench:{scopeKey}`，`normalizeWorkbenchPreferencesForWidth` 只在 ≥1180px 收起被挤压的栏）和**移动抽屉**（<1180px 的 ephemeral `drawers` 状态，不持久化、互斥单开、遮罩+Escape 关闭）。两者解耦是为了：窄屏 toggle 抽屉不被 normalize 立即覆盖，回到桌面时桌面偏好完整恢复。
+  - **新增公司"需要处理"视图**：`CompanyAttention`（`?view=attention`）聚合权限审批、员工配置缺口、项目关注、风险和下一步行动，是 `CompanySectionKey` 的第六个值。
 - **工作流与计划边界**：员工上下级、引用许可、步骤条件与任务交接格式属于公司级配置，项目暂不覆盖公司工作流；项目只配置计划任务、任务领取清单和运行状态。所有项目工具页复用同一个三栏外壳，子工具页不得重新出现全局顶栏。
 - **模板优先创建**：员工库默认先展示与四类公司模板对应的整套团队，再展示单岗位快捷模板，空白自定义表单只作为低频入口；公司创建继续以模板向导为主入口。
 - **Schema 驱动公司蓝图**：行业模板必须输出 `CompanyTemplateDraft` 结构化数据并通过服务端确定性校验；客户端只用受信任 React 模块渲染，不接收或执行模型 HTML。创建必须经过“生成蓝图→六模块确认→运行配置→创建”，不可恢复一键绕过确认。
 - **Skill 绑定与加载边界**：系统级 `company-template-architect` 只生成公司草案，不生成或审核新 Skill。业务 Skill 绑定到员工、字段或 Task，并只在 Task 明确 Skill、能力或知识目标命中时加载；缺失项进入诊断，禁止执行时搜索或自动安装外部 Skill。
 - **模板运行健康**：公司模板安装必须保存确认快照与版本。字段负责人、能力绑定、Skill 和计划目标的运行问题使用稳定 fingerprint 去重，向用户解释原因、影响、建议与配置入口；修复不得静默覆盖用户调整。
 - **内联 style**：历史代码大量 `style={{...}}`，新增复杂区块优先抽 `.details-collapse` 等语义类进 `global.css`；简单 grid/gap 保留内联可接受。
+- **工作台改动约束**：
+  - 改三栏布局/栏宽/折叠阈值，同步三处：`global.css` 的 `--work-left`/`--work-right`/`--work-surface-min` + `useWorkbenchPreferences.ts` 的 `normalizeWorkbenchPreferencesForWidth`/`MIN_WORKBENCH_SURFACE_WIDTH` + 响应式断点（1179px/819px）。桌面栏位收起只由 normalize 决定，移动抽屉开关只由 ephemeral `drawers` 状态决定——两者不可交叉干预，否则窄屏 toggle 会被立即覆盖。
+  - 左栏"更多"用内联展开列表（`work-nav-more-list`），**不要**用 `position:absolute` popover——左栏 `overflow:auto` 会裁剪。
+  - `⌘K` 命令面板选项经 `WorkbenchShell` 的 `commandOptions` prop 注入，按 `group` 分组渲染；公司页/项目页/`ProjectToolPageShell` 各自传入上下文相关选项，全局选项（首页/公司/员工库/执行器/权限/审批/设置）由 shell 自动追加。
+  - 工作台相关测试：`workbench-shell.spec.tsx`（壳层/抽屉/命令面板）、`workbench-preferences.spec.ts`（偏好 normalize/toggle 语义）、`project-workbench.spec.tsx`（左栏导航）、`project-context-layout.spec.tsx`（任务工作面+右栏）、`company-page-layout.spec.tsx`（公司导航）。改左栏分组/文案/视图时同步这些测试。
+  - 改产品流程（如项目创建后是否直接进工作台 vs onboarding wizard）会连锁影响 E2E：`smoke.spec.ts`、`regression.spec.ts`、`product-completion.spec.ts` 假设了特定入口路径，流程变更后需同步断言。
 
 旧 Leader/Worker/Verifier、临时群聊、`.muster/config.json` 文件持久化等已全部废弃，不再参与运行。
 

@@ -70,6 +70,13 @@ export function ProjectOnboardingWizard({
         <p className="muted">
           按阶段推进，可随时回到前序阶段补充。完成全部阶段并确认后，项目即可开工并派发员工工作单。
         </p>
+        <div style={{ margin: '16px 0', borderRadius: '12px', overflow: 'hidden', border: '1px solid var(--border-subtle, #eee)', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
+          <img
+            src="/images/project_flow.jpg"
+            alt="项目准备流程全景：1.构思 2.调研 3.装备 4.员工 5.就绪"
+            style={{ width: '100%', height: 'auto', display: 'block', maxHeight: '240px', objectFit: 'cover' }}
+          />
+        </div>
       </header>
 
       <nav className="setup-steps" aria-label="准备阶段">

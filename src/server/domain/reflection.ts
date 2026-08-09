@@ -195,6 +195,12 @@ export function recoverStuckReflections(db: DB): number {
  * 对单条反思执行推理 + 沉淀。
  * 返回 done（已沉淀）/ skipped（去重命中或无价值）。
  * 注：进入此函数前 drainReflectionQueue 已原子领取并标 running。
+ *
+ * 单轮 LLM 产两类沉淀（避免双倍调用成本）：
+ * - LESSON：单任务经验（"下次同类任务怎么做更好"）。
+ * - RULE：协作规则（"涉及他人/其他岗位协同时应遵循的约定"）。这是 ontology 的薄形态——
+ *   不独立成模块，融进反思作为产出物，沉淀进 project memory，下次执行自动注入，让协作有共识。
+ *   允许只有 LESSON 没有 RULE（反之亦然）；两者都 SKIPPED 才算整条反思 skipped。
  */
 async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done' | 'skipped'> {
   // 无 profileId（无 assignee）的 task 无法沉淀到任何 profile，直接 skip，不浪费 LLM 调用。
@@ -208,7 +214,6 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
   const task = getTask(db, reflection.taskId);
   // 组装反思 prompt：目标 + 执行 trace + 根因信号（打断/对齐/验收/失败）+ 已有相关记忆去重。
   const signalHint = describeSignal(reflection.signal);
-  const snap = reflection.contextSnapshot;
   const acceptanceLine = task.acceptanceCriteria.length
     ? task.acceptanceCriteria
         .map((a) => `- [${a.id}] ${a.criterion}${a.met === undefined ? '' : a.met ? ' (达标)' : ' (未达标)'}`)
@@ -230,9 +235,11 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
     : '（无）';
 
   const system =
-    '你是一个任务反思助手。从单个任务的执行结果中提炼"对未来同类任务有复用价值"的经验教训。' +
-    '只产出具体、可操作、能影响下次执行的经验，不要空泛总结，不要复述任务本身。' +
-    '如果这次执行没有值得沉淀的新经验（与已有记忆重复或纯属偶发），直接返回 SKIPPED。';
+    '你是一个任务反思助手。从单个任务的执行结果中提炼两类沉淀：经验教训（LESSON）与协作规则（RULE）。' +
+    'LESSON 聚焦"下次同类任务怎么做更好"的单任务经验；' +
+    'RULE 聚焦"涉及他人或其他岗位协同时应遵循的约定"（如交付前通知测试、加急任务在标题标注等）。' +
+    '只产出具体、可操作、能影响下次执行的内容，不要空泛总结，不要复述任务本身。' +
+    '如果某一类没有值得沉淀的新内容（与已有记忆重复或纯属偶发），那一类写 SKIPPED。';
   const user = [
     `任务：#${task.seq} ${task.title}`,
     `结果信号：${signalHint}`,
@@ -241,15 +248,19 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
     `验收标准：\n${acceptanceLine}`,
     `已有相关经验：\n${existingLine}`,
     '',
-    '请输出一条经验教训（50-150 字），聚焦"下次如何做得更好/如何避免本次问题"。',
-    '若经验与已有记忆高度重复或无复用价值，返回：SKIPPED',
-    '格式：先单行写置信度（0-1 的小数，如 0.8），下一行写经验正文。',
+    '请按以下格式输出（两类都可省略，没有价值的写 SKIPPED）：',
+    '[LESSON]',
+    '<置信度 0-1 的小数>',
+    '<经验正文 50-150 字>',
+    '[RULE]',
+    '<置信度 0-1 的小数>',
+    '<协作规则正文 50-150 字>',
   ].join('\n');
 
   const llm = await callLlm(db, { system, user, companyId: reflection.companyId, timeoutMs: 45_000 });
   const text = llm.content.trim();
 
-  // SKIPPED：去重或无价值
+  // 全局 SKIPPED（兼容老格式：模型直接回 SKIPPED）
   if (/^SKIPPED/i.test(text)) {
     db.prepare(
       `UPDATE task_reflection SET status='skipped', reflection_text=?, reflected_at=? WHERE id=?`,
@@ -257,44 +268,86 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
     return 'skipped';
   }
 
-  // 解析：首行置信度，其余为正文
-  const lines = text.split('\n').filter((l) => l.trim());
-  let confidence = 0.7;
-  let body = text;
-  if (lines.length >= 2) {
-    const firstNum = parseFloat(lines[0]!);
-    if (!Number.isNaN(firstNum) && firstNum >= 0 && firstNum <= 1) {
-      confidence = firstNum;
-      body = lines.slice(1).join('\n').trim();
-    }
-  }
-  body = body.slice(0, 500);
-  if (!body) {
+  const lesson = parseSection(text, 'LESSON');
+  const rule = parseSection(text, 'RULE');
+
+  // 两类都没有有效内容 → skipped
+  if (!lesson.body && !rule.body) {
     db.prepare(
-      `UPDATE task_reflection SET status='skipped', reflection_text='空正文', reflected_at=? WHERE id=?`,
-    ).run(nowIso(), reflection.id);
+      `UPDATE task_reflection SET status='skipped', reflection_text=?, reflected_at=? WHERE id=?`,
+    ).run(text.slice(0, 500), nowIso(), reflection.id);
     return 'skipped';
   }
 
-  // 沉淀为 memory candidate。scope=project（与 flushThreadMemory 一致，auto-approvable，影响面可控）。
-  // 高置信（>=0.8）才自动批准生效；低置信进 pending 待用户审（不自动影响未来操作）。
-  const candidate = createMemoryCandidate(db, {
-    profileId: reflection.profileId,
-    scope: 'project',
-    companyId: reflection.companyId,
-    projectId: reflection.projectId,
-    content: body,
-    sourceTaskId: reflection.taskId,
-    author: 'agent',
-    confidence,
-    canInfluence: true,
-    allowAutoApprove: confidence >= 0.8,
-  });
+  // 沉淀 LESSON（原有逻辑）：scope=project，高置信（>=0.8）自动批准生效。
+  // candidate_id 字段记 LESSON（保留向后兼容：现有 schema 只有一个 candidate_id 列）。
+  let lessonCandidateId: string | null = null;
+  if (lesson.body) {
+    const candidate = createMemoryCandidate(db, {
+      profileId: reflection.profileId,
+      scope: 'project',
+      companyId: reflection.companyId,
+      projectId: reflection.projectId,
+      content: lesson.body,
+      sourceTaskId: reflection.taskId,
+      author: 'agent',
+      confidence: lesson.confidence,
+      canInfluence: true,
+      allowAutoApprove: lesson.confidence >= 0.8,
+    });
+    lessonCandidateId = candidate.id;
+  }
 
+  // 沉淀 RULE（协作规则 / ontology 薄形态）：同 project scope，同样高置信自动批准。
+  // 正文加【协作规则】前缀——与 LESSON 区分，便于在 memory 面板识别和将来按类型过滤。
+  // 不单独记 candidate_id——可经 memory_candidate.source_task_id 反查（同 task 的第二条 candidate）。
+  if (rule.body) {
+    createMemoryCandidate(db, {
+      profileId: reflection.profileId,
+      scope: 'project',
+      companyId: reflection.companyId,
+      projectId: reflection.projectId,
+      content: `【协作规则】${rule.body}`,
+      sourceTaskId: reflection.taskId,
+      author: 'agent',
+      confidence: rule.confidence,
+      canInfluence: true,
+      allowAutoApprove: rule.confidence >= 0.8,
+    });
+  }
+
+  const summary = [lesson.body && `[LESSON] ${lesson.body}`, rule.body && `[RULE] ${rule.body}`]
+    .filter(Boolean)
+    .join('\n');
   db.prepare(
     `UPDATE task_reflection SET status='done', candidate_id=?, reflection_text=?, reflected_at=? WHERE id=?`,
-  ).run(candidate.id, body, nowIso(), reflection.id);
+  ).run(lessonCandidateId, summary.slice(0, 500), nowIso(), reflection.id);
   return 'done';
+}
+
+/**
+ * 解析双段输出中的某一段（LESSON / RULE）。
+ * 格式：[SECTION] 头 → 置信度行 → 正文行。置信度缺省 0.7，正文截断 500 字。
+ * 找不到段头或正文为 SKIPPED/空 → 返回空 body（表示该类无沉淀）。
+ */
+function parseSection(text: string, section: 'LESSON' | 'RULE'): { confidence: number; body: string } {
+  const re = new RegExp(`\\[${section}\\]\\s*([\\s\\S]*?)(?=\\[(?:LESSON|RULE)\\]|$)`, 'i');
+  const match = re.exec(text);
+  if (!match) return { confidence: 0.7, body: '' };
+  const block = match[1]!.trim();
+  if (!block || /^SKIPPED/i.test(block)) return { confidence: 0.7, body: '' };
+  const lines = block.split('\n').filter((l) => l.trim());
+  if (lines.length === 0) return { confidence: 0.7, body: '' };
+  let confidence = 0.7;
+  let body = block;
+  const firstNum = parseFloat(lines[0]!);
+  if (!Number.isNaN(firstNum) && firstNum >= 0 && firstNum <= 1) {
+    confidence = firstNum;
+    body = lines.slice(1).join('\n').trim();
+  }
+  body = body.slice(0, 500);
+  if (!body || /^SKIPPED/i.test(body)) return { confidence: 0.7, body: '' };
+  return { confidence, body };
 }
 
 function describeSignal(signal: ReflectionSignal): string {

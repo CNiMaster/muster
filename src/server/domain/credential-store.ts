@@ -391,7 +391,7 @@ export function seedDefaultCredentialDefinitions(db: DB): { added: number } {
   const defaults: Array<Omit<CredentialDefinitionRow, 'created_at' | 'updated_at'>> = [
     { id: 'cred_anthropic_key', name: 'Anthropic API Key', credential_key: 'ANTHROPIC_API_KEY', kind: 'env', category: 'llm', description: 'Claude Code CLI 凭据', applicable_executors: 'claude-cli', is_default: 1 },
     { id: 'cred_openai_key', name: 'OpenAI API Key', credential_key: 'OPENAI_API_KEY', kind: 'env', category: 'llm', description: 'OpenAI API 与 Codex CLI 凭据', applicable_executors: 'openai,codex-cli', is_default: 1 },
-    { id: 'cred_google_key', name: 'Google API Key', credential_key: 'GOOGLE_API_KEY', kind: 'env', category: 'llm', description: 'Gemini API/CLI 与 Antigravity 凭据', applicable_executors: 'gemini,gemini-cli,antigravity-cli', is_default: 1 },
+    { id: 'cred_google_key', name: 'Google API Key', credential_key: 'GOOGLE_API_KEY', kind: 'env', category: 'llm', description: 'Gemini API 与 Antigravity 凭据', applicable_executors: 'gemini,antigravity-cli', is_default: 1 },
     { id: 'cred_deepseek_key', name: 'DeepSeek API Key', credential_key: 'DEEPSEEK_API_KEY', kind: 'env', category: 'llm', description: 'DeepSeek(OpenAI 兼容)', applicable_executors: 'openai', is_default: 0 },
   ];
   let added = 0;

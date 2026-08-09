@@ -1,5 +1,5 @@
 /**
- * 项目素材区 API(挂在 /api/projects/:projectId/materials)。
+ * 项目素材区 API(挂在 /api/projects/:id/materials，注意 param 名是 id 不是 projectId)。
  * GET    /           列表(支持 kind/tag 筛选)
  * POST   /           导入(body: mode=link|moved|copied + sourcePath/sourceUrl)
  * DELETE /:id        删除素材(moved/copied 型连同文件删除)
@@ -15,18 +15,18 @@ import { asyncHandler, param } from './middleware';
 export const materialsRouter = Router({ mergeParams: true });
 
 materialsRouter.get('/', asyncHandler(async (req, res) => {
-  const projectId = param(req, 'projectId');
+  const projectId = param(req, 'id');
   const kind = typeof req.query.kind === 'string' ? (req.query.kind as MaterialKind) : undefined;
   const tag = typeof req.query.tag === 'string' ? req.query.tag : undefined;
   res.json(listMaterials(getDb(), projectId, { kind, tag }));
 }));
 
 materialsRouter.get('/health', asyncHandler(async (req, res) => {
-  res.json(checkMaterialHealth(getDb(), param(req, 'projectId')));
+  res.json(checkMaterialHealth(getDb(), param(req, 'id')));
 }));
 
 materialsRouter.post('/', asyncHandler(async (req, res) => {
-  const projectId = param(req, 'projectId');
+  const projectId = param(req, 'id');
   const { mode, sourcePath, sourceUrl, name, tags, createdBy } = req.body ?? {};
   if (mode !== 'link' && mode !== 'moved' && mode !== 'copied') {
     throw new AppError(ErrorCode.VALIDATION, 'mode 必须是 link/moved/copied');

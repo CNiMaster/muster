@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
@@ -27,7 +27,7 @@ describe('calm workbench shell', () => {
     render(<MemoryRouter><WorkbenchShell scopeKey="company:1" breadcrumb="公司" navigationLabel="公司工作列表" inspectorLabel="公司现场" navigation={<p>导航</p>} inspector={<p>现场</p>}><p>内容</p></WorkbenchShell></MemoryRouter>);
     await user.click(screen.getByRole('button', { name: '搜索或跳转' }));
     expect(screen.getByRole('dialog', { name: '搜索或跳转' })).toBeVisible();
-    expect(screen.getByRole('link', { name: '执行器' })).toBeVisible();
+    expect(within(screen.getByRole('dialog', { name: '搜索或跳转' })).getByRole('link', { name: '执行器' })).toBeVisible();
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('dialog', { name: '搜索或跳转' })).not.toBeInTheDocument();
   });

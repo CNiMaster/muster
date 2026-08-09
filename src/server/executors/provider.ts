@@ -6,7 +6,7 @@
  */
 
 /** 所有支持的执行器 provider。 */
-export const PROVIDERS = ['claude-cli', 'codex-cli','antigravity-cli', 'gemini-cli', 'custom-cli', 'openai', 'gemini'] as const;
+export const PROVIDERS = ['claude-cli', 'codex-cli','antigravity-cli', 'opencode-cli', 'custom-cli', 'openai', 'gemini'] as const;
 export type Provider = (typeof PROVIDERS)[number];
 
 export const DEFAULT_PROVIDER: Provider = 'claude-cli';
@@ -16,7 +16,7 @@ export const PROVIDER_DEFAULT_API_KEY_ENV: Record<Provider, string> = {
   'claude-cli': 'ANTHROPIC_API_KEY',
   'codex-cli': 'OPENAI_API_KEY',
   'antigravity-cli':'GOOGLE_API_KEY',
-  'gemini-cli': 'GOOGLE_API_KEY',
+  'opencode-cli': '',
   'custom-cli': 'CUSTOM_CLI_API_KEY',
   openai: 'OPENAI_API_KEY',
   gemini: 'GOOGLE_API_KEY',
@@ -27,7 +27,7 @@ export const PROVIDER_DEFAULT_MODEL: Record<Provider, string> = {
   'claude-cli': 'sonnet',
   'codex-cli': 'gpt-5',
   'antigravity-cli':'',
-  'gemini-cli': 'gemini-2.5-pro',
+  'opencode-cli': '',
   'custom-cli': '',
   openai: 'gpt-4o',
   gemini: 'gemini-2.0-flash',
@@ -38,7 +38,7 @@ export const PROVIDER_DEFAULT_BASE_URL: Record<Provider, string | undefined> = {
   'claude-cli': undefined,
   'codex-cli': undefined,
   'antigravity-cli':undefined,
-  'gemini-cli': undefined,
+  'opencode-cli': undefined,
   'custom-cli': undefined,
   openai: 'https://api.openai.com/v1',
   gemini: 'https://generativelanguage.googleapis.com/v1beta',

@@ -17,5 +17,5 @@ describe('official system executor onboarding',()=>{
       expect(connection.authentication.output).toContain('Logged in');
     }finally{close();}
   });
-  it('does not create a binding when the official CLI is missing',async()=>{const{db,close}=makeTestDb();try{await expect(bindDetectedSystemExecutor(db,'gemini-cli',{which:vi.fn(async()=>null),run:vi.fn()} as any)).rejects.toThrow(/尚未安装/);}finally{close();}});
+  it('does not create a binding when the official CLI is missing',async()=>{const{db,close}=makeTestDb();try{await expect(bindDetectedSystemExecutor(db,'opencode-cli',{which:vi.fn(async()=>null),run:vi.fn()} as any)).rejects.toThrow(/尚未安装/);}finally{close();}});
 });

@@ -12,6 +12,10 @@ export interface AgentProfile {
   recommendedExecutor: Record<string, unknown>;
   recommendedPermission: Record<string, unknown>;
   baseVersion: number;
+  /** 1-5 星评级（经验越多越高）。 */
+  rating: number;
+  /** 1=临时新建、未转正（人才市场过滤掉）；转正时清零。 */
+  isTempOnly: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -28,6 +32,10 @@ export interface CompanyEmployee {
   permission: Record<string, unknown>;
   executorProfileId: string | null;
   permissionPolicyId: string | null;
+  /** 'permanent' | 'temp'（临时工模型）。 */
+  employmentType: 'permanent' | 'temp';
+  /** 临时工状态（仅 temp 有意义）。 */
+  tempStatus: 'active' | 'greyed' | 'dismissed' | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -41,6 +49,8 @@ interface ProfileRow {
   recommended_executor_json: string;
   recommended_permission_json: string;
   base_version: number;
+  rating: number;
+  is_temp_only: number;
   created_at: string;
   updated_at: string;
 }
@@ -57,6 +67,8 @@ interface EmployeeRow {
   permission_json: string;
   executor_profile_id: string | null;
   permission_policy_id: string | null;
+  employment_type: 'permanent' | 'temp';
+  temp_status: 'active' | 'greyed' | 'dismissed' | null;
   created_at: string;
   updated_at: string;
 }
@@ -71,6 +83,8 @@ function profileFromRow(row: ProfileRow): AgentProfile {
     recommendedExecutor: JSON.parse(row.recommended_executor_json),
     recommendedPermission: JSON.parse(row.recommended_permission_json),
     baseVersion: row.base_version,
+    rating: row.rating ?? 1,
+    isTempOnly: row.is_temp_only ?? 0,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -89,6 +103,8 @@ function employeeFromRow(row: EmployeeRow): CompanyEmployee {
     permission: JSON.parse(row.permission_json),
     executorProfileId: row.executor_profile_id,
     permissionPolicyId: row.permission_policy_id,
+    employmentType: (row.employment_type as 'permanent' | 'temp') ?? 'permanent',
+    tempStatus: (row.temp_status as 'active' | 'greyed' | 'dismissed' | null) ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -142,8 +158,12 @@ export function getAgentProfile(db: DB, id: string): AgentProfile {
   return profileFromRow(row);
 }
 
-export function listAgentProfiles(db: DB): AgentProfile[] {
-  return (db.prepare('SELECT * FROM agent_profile ORDER BY created_at, id').all() as ProfileRow[]).map(profileFromRow);
+export function listAgentProfiles(db: DB, opts?: { includeTempOnly?: boolean }): AgentProfile[] {
+  // 人才市场默认过滤掉 is_temp_only=1（临时新建、未转正），避免污染人才池
+  const sql = opts?.includeTempOnly
+    ? 'SELECT * FROM agent_profile ORDER BY created_at, id'
+    : 'SELECT * FROM agent_profile WHERE is_temp_only = 0 ORDER BY rating DESC, created_at, id';
+  return (db.prepare(sql).all() as ProfileRow[]).map(profileFromRow);
 }
 
 export function updateAgentProfile(db: DB, id: string, patch: Partial<Pick<AgentProfile,

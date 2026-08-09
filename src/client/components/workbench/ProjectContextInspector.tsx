@@ -8,6 +8,7 @@ import { Badge, StateBadge, stateLabel, taskStateTone } from '../Badge';
 import { Button, toast } from '../Button';
 
 const OPEN_STATES = new Set(['queued', 'claimed', 'running', 'waiting_input', 'waiting_dependency', 'waiting_approval', 'paused', 'blocked']);
+const ATTENTION_STATES = new Set(['waiting_input', 'waiting_approval', 'blocked', 'waiting_dependency']);
 
 export function ProjectContextInspector({ projectId, companyId, projectState, selectedTask, selectedAgentId, agents, tasks, cockpit }: {
   projectId: string;
@@ -24,11 +25,11 @@ export function ProjectContextInspector({ projectId, companyId, projectState, se
   const selectedAgent = agents.find((agent) => agent.id === selectedAgentId);
   const employeeTasks = selectedAgent ? tasks.filter((task) => task.assigneeAgentId === selectedAgent.id) : [];
   const openEmployeeTasks = employeeTasks.filter((task) => OPEN_STATES.has(task.state));
-  const waitingWorkOrders = tasks.filter((task) => task.state === 'waiting_input' || task.state === 'waiting_approval' || task.state === 'blocked');
+  const attentionTasks = tasks.filter((task) => ATTENTION_STATES.has(task.state));
   const runningCount = tasks.filter((task) => task.state === 'running' || task.state === 'claimed').length;
   const claimCount = tasks.filter((task) => task.state === 'queued').length;
   const contextNeedsAttention = selectedTask?.threads?.some((thread) => thread.transcriptBytes > 2_000_000) ?? false;
-  const attentionTotal = waitingWorkOrders.length + (cockpit?.approvals.pending ?? 0) + (contextNeedsAttention ? 1 : 0);
+  const attentionTotal = attentionTasks.length + (cockpit?.approvals.pending ?? 0) + (contextNeedsAttention ? 1 : 0);
 
   const completeTask = (): void => {
     if (!selectedTask) return;
@@ -46,7 +47,7 @@ export function ProjectContextInspector({ projectId, companyId, projectState, se
   };
 
   return <div className="context-inspector project-action-inspector">
-    {selectedAgent && <section className="inspector-person-focus">
+    {selectedAgent && <section className="inspector-section inspector-person-focus">
       <div className="inspector-person-head">
         <span className="inspector-avatar" aria-hidden="true">{selectedAgent.name.slice(0, 1)}</span>
         <div><div className="inspector-eyebrow">当前联系人</div><h2>{selectedAgent.name}</h2><p>{selectedAgent.role}</p></div>
@@ -70,7 +71,7 @@ export function ProjectContextInspector({ projectId, companyId, projectState, se
     </section>
 
     {selectedTask && <section className="inspector-section inspector-project-context">
-      <div className="inspector-section-heading"><h3>工作上下文</h3><StateBadge domain="project-task" state={selectedTask.state} /></div>
+      <div className="inspector-section-heading"><h3>当前任务</h3><StateBadge domain="project-task" state={selectedTask.state} /></div>
       <Link className="inspector-context-link" to={`/projects/${projectId}?view=task&projectTask=${selectedTask.id}`}><strong>#{selectedTask.seq} {selectedTask.title}</strong><span>查看项目任务与参与员工</span></Link>
       {selectedTask.state === 'active' && <div className="inspector-task-actions">
         <Button size="sm" variant="ghost" loading={taskAction.isPending} onClick={completeTask}>完成</Button>
@@ -80,19 +81,19 @@ export function ProjectContextInspector({ projectId, companyId, projectState, se
 
     {attentionTotal > 0 && <section className="inspector-section inspector-attention-section">
       <div className="inspector-section-heading"><h3>需要处理</h3><span>{attentionTotal}</span></div>
-      {waitingWorkOrders.slice(0, 3).map((task) => <Link key={task.id} to={`/tasks/${task.id}`}><span>{task.state === 'waiting_input' ? '员工等待补充' : task.state === 'blocked' ? '工作单阻塞' : '等待审批'}</span><span>#{task.seq}</span></Link>)}
+      {attentionTasks.slice(0, 3).map((task) => <Link key={task.id} to={`/tasks/${task.id}`}><span>{task.state === 'waiting_input' ? '员工等待补充' : task.state === 'blocked' ? '工作单阻塞' : '等待审批'}</span><span>#{task.seq}</span></Link>)}
       {(cockpit?.approvals.pending ?? 0) > 0 && <Link to="/permissions"><span>处理权限审批</span><span>{cockpit!.approvals.pending}</span></Link>}
       {contextNeedsAttention && <Link to={`/projects/${projectId}/dashboard`}><span>会话上下文需关注</span><span>查看</span></Link>}
     </section>}
 
-    <section className="inspector-section inspector-quick-actions">
-      <h3>协作规则</h3>
+    <details className="inspector-collapse">
+      <summary>协作与设置</summary>
       <div>
         {companyId && <Link to={`/companies/${companyId}/graphs/org`}>组织上下级</Link>}
         {companyId && <Link to={`/companies/${companyId}/graphs/communication`}>员工引用关系</Link>}
         {companyId && <Link to={`/companies/${companyId}/workflows/main`}>员工协作流程</Link>}
         <Link to={`/projects/${projectId}/settings`}>项目设置</Link>
       </div>
-    </section>
+    </details>
   </div>;
 }

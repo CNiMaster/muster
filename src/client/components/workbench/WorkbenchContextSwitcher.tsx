@@ -18,11 +18,12 @@ const GLOBAL_OPTIONS: WorkbenchSectionOption[] = [
 
 export function companySectionOptions(companyId: string): WorkbenchSectionOption[] {
   return [
-    { key: 'overview', label: '公司概览', href: `/companies/${companyId}` },
+    { key: 'overview', label: '公司总览', href: `/companies/${companyId}` },
+    { key: 'attention', label: '需要处理', href: `/companies/${companyId}?view=attention` },
     { key: 'projects', label: '项目', href: `/companies/${companyId}?view=projects` },
-    { key: 'team', label: '员工看板', href: `/companies/${companyId}?view=team` },
+    { key: 'team', label: '团队', href: `/companies/${companyId}?view=team` },
     { key: 'activity', label: '沟通与活动', href: `/companies/${companyId}?view=activity` },
-    { key: 'settings', label: '公司设置', href: `/companies/${companyId}?view=settings` },
+    { key: 'settings', label: '更多设置', href: `/companies/${companyId}?view=settings` },
   ];
 }
 
@@ -30,16 +31,14 @@ export function projectSectionOptions(projectId: string, projectTaskId?: string,
   const taskQuery = `?view=task${projectTaskId ? `&projectTask=${projectTaskId}` : ''}`;
   const viewQuery = (view: string): string => `?view=${view}${projectTaskId ? `&projectTask=${projectTaskId}` : ''}`;
   return [
-    { key: 'employee', label: '第一负责人', href: `/projects/${projectId}${viewQuery('employee')}` },
-    { key: 'group', label: '项目群聊', href: `/projects/${projectId}${viewQuery('group')}` },
     { key: 'task', label: '项目任务', href: `/projects/${projectId}${taskQuery}` },
-    { key: 'activity', label: '协作活动', href: `/projects/${projectId}${viewQuery('activity')}` },
+    { key: 'group', label: '项目群聊', href: `/projects/${projectId}${viewQuery('group')}` },
+    { key: 'employee', label: '第一负责人', href: `/projects/${projectId}${viewQuery('employee')}` },
     { key: 'tasks', label: '任务领取清单', href: `/projects/${projectId}/tasks` },
-    { key: 'plans', label: '计划与自动化', href: `/projects/${projectId}/plans` },
     { key: 'dashboard', label: '运行概览', href: `/projects/${projectId}/dashboard` },
     { key: 'artifacts', label: '成果与文件', href: `/projects/${projectId}/artifacts` },
-    { key: 'reports', label: '复盘', href: `/projects/${projectId}/reports` },
-    { key: 'usage', label: '用量', href: `/projects/${projectId}/usage` },
+    { key: 'activity', label: '协作活动', href: `/projects/${projectId}${viewQuery('activity')}` },
+    { key: 'plans', label: '计划与自动化', href: `/projects/${projectId}/plans` },
     ...(novel ? [{ key: 'character', label: '人物关系', href: `/projects/${projectId}/character-graph` }] : []),
     { key: 'settings', label: '项目设置', href: `/projects/${projectId}/settings` },
   ];

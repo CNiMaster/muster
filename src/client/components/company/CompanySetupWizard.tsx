@@ -22,6 +22,15 @@ function readSavedState(): Partial<SavedState> {
   try { return JSON.parse(sessionStorage.getItem(STORAGE_KEY) ?? '{}') as Partial<SavedState>; } catch { return {}; }
 }
 
+const TEMPLATE_IMAGES: Record<string, string> = {
+  general: '/images/tmpl_general.jpg',
+  software: '/images/tmpl_software.jpg',
+  content: '/images/tmpl_content.jpg',
+  novel: '/images/tmpl_novel.jpg',
+  marketing: '/images/tmpl_marketing.jpg',
+  consulting: '/images/tmpl_consulting.jpg',
+};
+
 export function CompanySetupWizard({ templates = COMPANY_TEMPLATE_OPTIONS, profiles, policies, previewing, committing, refreshingResources, onRefreshResources, onPreview, onCommit }: {
   templates?: CompanyTemplateOption[];
   profiles: ExecutorProfileDTO[];
@@ -35,6 +44,7 @@ export function CompanySetupWizard({ templates = COMPANY_TEMPLATE_OPTIONS, profi
 }): React.ReactElement {
   const [saved] = useState(readSavedState);
   const [step, setStep] = useState<SetupStep>(saved.step ?? 'template');
+  const [selectedCategory, setSelectedCategory] = useState<'all' | 'engineering' | 'creative' | 'business'>('all');
   const [templateId, setTemplateId] = useState<CompanyTemplateId>(saved.templateId ?? templates[0]?.id ?? 'general');
   const [name, setName] = useState(saved.name ?? '');
   const [goal, setGoal] = useState(saved.goal ?? '');
@@ -44,6 +54,10 @@ export function CompanySetupWizard({ templates = COMPANY_TEMPLATE_OPTIONS, profi
   const resourcesReady = profiles.length > 0 && policies.length > 0;
   const preferredExecutor = selectPreferredExecutor(profiles);
   const bindingsComplete = Boolean(draft?.employees.every((employee) => bindings[employee.key]?.executorProfileId && bindings[employee.key]?.permissionPolicyId));
+
+  const visibleTemplates = selectedCategory === 'all'
+    ? templates
+    : templates.filter((template) => template.category === selectedCategory);
 
   useEffect(() => {
     if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ step, templateId, name, goal, draft, bindings } satisfies SavedState));
@@ -83,12 +97,41 @@ export function CompanySetupWizard({ templates = COMPANY_TEMPLATE_OPTIONS, profi
 
     <div className="setup-stage">
       {step === 'template' && <Card className="setup-card" title={<><span className="step-kicker">01</span> 你想组建什么团队？</>}><div className="form-stack">
+        <div className="template-categories" style={{ display: 'flex', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
+          {[
+            { key: 'all', label: '全部分类' },
+            { key: 'engineering', label: '软件与工程' },
+            { key: 'creative', label: '内容与写作' },
+            { key: 'business', label: '商业与营销' },
+          ].map((cat) => (
+            <button
+              key={cat.key}
+              type="button"
+              className={`mu-btn mu-btn-sm ${selectedCategory === cat.key ? 'mu-btn-primary' : 'mu-btn-ghost'}`}
+              onClick={() => setSelectedCategory(cat.key as any)}
+              style={{ borderRadius: '20px', padding: '4px 14px' }}
+            >
+              {cat.label}
+            </button>
+          ))}
+        </div>
         <div className="template-grid" role="group" aria-label="公司模板">
-          {templates.map((template) => <button key={template.id} type="button" className={`template-choice is-${template.colorToken || 'neutral'} ${template.id === templateId ? 'is-selected' : ''}`} aria-label={`选择${template.name}`} aria-pressed={template.id === templateId} onClick={() => setTemplateId(template.id)}>
-            <span className="template-mark" aria-hidden="true">{template.mark || template.name.slice(0, 1)}</span>
-            <span><strong>{template.name}</strong><small>{template.description}</small></span>
-            <span className="template-check" aria-hidden="true">✓</span>
-          </button>)}
+          {visibleTemplates.map((template) => {
+            const imgSrc = TEMPLATE_IMAGES[template.id];
+            return (
+              <button key={template.id} type="button" className={`template-choice is-${template.colorToken || 'neutral'} ${template.id === templateId ? 'is-selected' : ''}`} aria-label={`选择${template.name}`} aria-pressed={template.id === templateId} onClick={() => setTemplateId(template.id)}>
+                <span className="template-mark" aria-hidden="true" style={{ overflow: 'hidden', padding: 0 }}>
+                  {imgSrc ? (
+                    <img src={imgSrc} alt={template.name} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+                  ) : (
+                    template.mark || template.name.slice(0, 1)
+                  )}
+                </span>
+                <span><strong>{template.name}</strong><small>{template.description}</small></span>
+                <span className="template-check" aria-hidden="true">✓</span>
+              </button>
+            );
+          })}
         </div>
         <div className="setup-input-grid"><Field label="公司名称" required><Input value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：Acme 工作室" /></Field><Field label="一句话目标" required><Textarea value={goal} onChange={(event) => setGoal(event.target.value)} placeholder="我们要持续完成什么？" /></Field></div>
         <div className={`resource-strip ${resourcesReady ? 'is-ready' : ''}`} aria-live="polite"><span className="resource-orbit" aria-hidden="true"><i/><i/><i/></span><div><strong>{resourcesReady ? '运行环境已准备' : '还差一个执行器'}</strong><small>{resourcesReady ? `将自动使用 ${preferredExecutor!.name} · ${policies[0]!.name}` : '草稿会自动保存，接入后回来刷新即可'}</small></div>{!resourcesReady && <a className="mu-btn mu-btn-subtle mu-btn-sm" href="/executors" target="_blank" rel="noreferrer">接入执行器 ↗</a>}{onRefreshResources && <Button size="sm" variant="ghost" loading={refreshingResources} onClick={() => void onRefreshResources()}>刷新</Button>}</div>

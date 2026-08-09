@@ -277,6 +277,10 @@ export interface ListPluginsOptions {
   kind?: PluginKind;
   /** 按 status 过滤。 */
   status?: PluginStatus;
+  /** 按 scope.level 过滤（platform/company/project/employee）。 */
+  scopeLevel?: PluginScope['level'];
+  /** 按 scope.companyId 过滤（仅 level='company' 时有意义）。 */
+  scopeCompanyId?: string;
 }
 
 /**
@@ -318,6 +322,14 @@ export function listPlugins(db: DB, opts: ListPluginsOptions = {}): Plugin[] {
   }
   if (opts.status) {
     result = result.filter((p) => p.status === opts.status);
+  }
+  if (opts.scopeLevel) {
+    result = result.filter((p) => p.scope.level === opts.scopeLevel);
+  }
+  if (opts.scopeCompanyId) {
+    result = result.filter(
+      (p) => p.scope.level === 'company' && p.scope.companyId === opts.scopeCompanyId,
+    );
   }
 
   return result;

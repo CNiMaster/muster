@@ -1,10 +1,10 @@
 import type React from 'react';
 import { Tabs } from '../Tabs';
 
-export type CompanySectionKey = 'overview' | 'team' | 'projects' | 'activity' | 'settings';
+export type CompanySectionKey = 'overview' | 'team' | 'projects' | 'activity' | 'settings' | 'attention';
 
 export function isCompanySectionKey(value: string | null): value is CompanySectionKey {
-  return value === 'overview' || value === 'team' || value === 'projects' || value === 'activity' || value === 'settings';
+  return value === 'overview' || value === 'team' || value === 'projects' || value === 'activity' || value === 'settings' || value === 'attention';
 }
 
 export function CompanySections({

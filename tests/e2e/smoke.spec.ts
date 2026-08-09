@@ -16,7 +16,7 @@ test('创建通用公司并出现在列表', async ({ page }) => {
   const response = await page.request.post('/api/companies', { data: { name, kind: 'general' } });
   expect(response.status()).toBe(201);
   await page.goto('/');
-  await expect(page.getByRole('link', { name: new RegExp(name) })).toBeVisible({ timeout: 5000 });
+  await expect(page.getByRole('link', { name, exact: true })).toBeVisible({ timeout: 5000 });
 });
 
 test('健康接口 200', async ({ request }) => {
@@ -65,8 +65,9 @@ test('向导式创建完整公司并进入首个项目任务', async ({ page }) 
   await page.getByRole('button', { name: '按推荐方案创建并进入项目 →' }).click();
 
   await page.waitForURL(/\/projects\/pr_[^?]+\?projectTask=pt_[^&]+&onboarding=done/);
-  await expect(page.getByRole('navigation', { name: '项目组织与联系人' })).toBeVisible();
-  await expect(page.getByRole('button', { name: '人物关系' })).toHaveCount(0);
+  // New projects enter the phased onboarding wizard (drafting → active) before the workbench.
+  await expect(page.getByRole('heading', { name: '项目准备流程' })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: '准备阶段' })).toBeVisible();
 });
 
 test('company blueprint health links a runtime issue to its configuration surface', async ({ page }) => {
@@ -92,9 +93,9 @@ test('项目路由保留公司导航并能从首页继续上次项目', async ({
   const project = await projectResponse.json();
 
   await page.goto(`/projects/${project.id}`);
-  await expect(page.getByRole('navigation', { name: '项目组织与联系人' })).toBeVisible();
-  await expect(page.locator('.workbench-breadcrumb')).toContainText(company.name);
-  await expect(page.locator('.workbench-breadcrumb')).toContainText(project.name);
+  // New projects enter the phased onboarding wizard before the workbench is shown.
+  await expect(page.getByRole('heading', { name: '项目准备流程' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: project.name })).toBeVisible();
 
   await page.goto(`/projects/${project.id}/dashboard`);
   await expect(page.getByRole('navigation', { name: '项目组织与联系人' })).toBeVisible();
@@ -103,7 +104,7 @@ test('项目路由保留公司导航并能从首页继续上次项目', async ({
 
   await page.goto('/');
   await expect(page.getByText('继续上次项目')).toBeVisible();
-  await expect(page.getByRole('link', { name: '继续工作' })).toHaveAttribute('href', `/projects/${project.id}`);
+  await expect(page.getByRole('link', { name: /回到工作现场/ })).toHaveAttribute('href', `/projects/${project.id}`);
 });
 
 test('设置页默认只展示常用操作，高级参数折叠且窄屏不溢出', async ({ page }) => {
@@ -164,7 +165,7 @@ test('执行器中心检测系统安装并提供官方安装引导', async ({ pa
   await expect(page.getByText('Claude Code CLI', { exact: true })).toBeVisible();
   await expect(page.getByText('Antigravity CLI', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: '检测系统安装' }).first()).toBeVisible();
-  await expect(page.getByText('选择官方支持的安装方式：').first()).toBeVisible();
+  await expect(page.getByText('未检测到安装').first()).toBeVisible();
 });
 
 test('权限中心明确展示策略与范围并提供审批入口', async ({ page }) => {

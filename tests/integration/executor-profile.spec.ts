@@ -16,7 +16,7 @@ describe('unified executor profiles', () => {
       'codex-cli',
       'claude-code-cli',
       'antigravity-cli',
-      'gemini-cli',
+      'opencode-cli',
       'openai-compatible-api',
       'gemini-api',
       'custom-cli',

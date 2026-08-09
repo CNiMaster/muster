@@ -34,6 +34,9 @@ import { getAgent } from '../domain/agent';
 import { assembleContext } from '../executors/context';
 import { assertSafeToRun } from '../executors/safety';
 import { getProject, listProjectReferences } from '../domain/project';
+import { getOutsourcingContract } from '../domain/outsourcing-contract';
+import { onOutsourcedTaskCompleted } from '../domain/outsourcing-delivery';
+import { applyRating } from '../domain/employee-rating';
 import { transitionProjectPhase } from '../domain/project-readiness';
 import { getCompany } from '../domain/company';
 import { createWorktree, removeWorktree } from '../worktree/manager';
@@ -226,6 +229,17 @@ export class TaskEngine {
     // B3a：MCP 连接池提升到 try 外，确保 finally 能清理（ctx 在 try 内定义，作用域不达 finally）
     let mcpPool: import('../executors/tools/mcp/client-pool').McpClientPool | undefined;
     const resolutionContext = getPublishConflictResolutionContext(task.inputProtocol);
+    // B2B 外包：承接任务的 worktree 基于甲方 source project 的 git repo 切出，
+    // publish 目标也指向甲方 rootDir（让乙方直接在甲方目录内工作）。
+    // 普通任务 outsourcingContractId 为 null，完全走原逻辑（零回归）。
+    const outsourcingContract = task.outsourcingContractId
+      ? getOutsourcingContract(this.db, task.outsourcingContractId)
+      : null;
+    const sourceProject = outsourcingContract
+      ? getProject(this.db, outsourcingContract.sourceProjectId)
+      : null;
+    // worktree 源 repo：外包任务用甲方 repo（baseCommit 才在 publish 目标 repo 有效），普通任务用自身项目
+    const worktreeSourceRoot = sourceProject?.rootDir ?? project.rootDir;
     try {
       worktreeInfo = getTaskRuntime(this.db, task.id) ?? null;
       if (worktreeInfo && !existsSync(worktreeInfo.path)) {
@@ -234,7 +248,7 @@ export class TaskEngine {
         return true;
       }
       if (!worktreeInfo) {
-        worktreeInfo = createWorktree(project.rootDir, project.id, task.id);
+        worktreeInfo = createWorktree(worktreeSourceRoot, project.id, task.id);
         saveTaskRuntime(this.db, worktreeInfo);
       }
       workingDir = worktreeInfo.path;
@@ -308,7 +322,18 @@ export class TaskEngine {
         threadId: projectTaskThread.id,
         sessionIdHint: projectTaskThread.vendorSessionId ?? undefined,
         // PRD Phase 3.4：收集授权参考项目根目录，让 Claude 直接只读访问（--add-dir）。
-        readonlyDirs: collectReadonlyReferenceDirs(this.db, task.projectId),
+        // B2B 外包：追加甲方 source project 的授权只读资料路径 + 甲方项目根（便于乙方参考甲方既有资料）
+        readonlyDirs: [
+          ...collectReadonlyReferenceDirs(this.db, task.projectId),
+          ...(outsourcingContract && sourceProject
+            ? [
+                sourceProject.rootDir,
+                ...outsourcingContract.readonlyRefs.map((r) =>
+                  r.startsWith('/') ? r : `${sourceProject.rootDir}/${r}`,
+                ),
+              ]
+            : []),
+        ],
         // PRD Phase 3：员工级执行器配置 + 凭据三层解析(员工覆盖 > 公司覆盖 > 平台默认 > legacy/系统回退)
         agentExecutor: effectiveExecutor,
         apiKeyEnv: resolveExecutorCredentialForTask(this.db, agent, company.id, executorProfile, effectiveExecutor, this.defaultProvider),
@@ -482,7 +507,9 @@ export class TaskEngine {
       }
 
       if (result.outcome === 'completed' && result.artifacts.length > 0 && worktreeInfo) {
-        const pub = this.publishArtifacts(task.id, thread.id, project.rootDir, worktreeInfo, result);
+        // B2B 外包：承接任务产物 publish 到甲方 source project 的 rootDir（让乙方工作直接落到甲方目录）
+        const publishTargetRoot = sourceProject?.rootDir ?? project.rootDir;
+        const pub = this.publishArtifacts(task.id, thread.id, publishTargetRoot, worktreeInfo, result);
         if (pub.blocked) {
           blockTaskForPublishConflict(
             this.db,
@@ -591,6 +618,25 @@ export class TaskEngine {
       const approvalMatch=result.outcome==='blocked'?/审批请求\s+(approval_[A-Za-z0-9_-]+)/.exec(result.summary):null;
       if(approvalMatch){commitAll(worktreeInfo.path,`muster: approval checkpoint ${task.id}`,{excludePaths:resolutionContext?['.muster-conflicts']:[]});preserveWorktree=true;markTaskWaitingApproval(this.db,task.id,approvalMatch[1]!);updateThreadState(this.db,thread.id,'paused');return true;}
       completeTask(this.db, task.id, result);
+      // B2B 外包：承接任务完成后触发交付（契约标记 delivered，通知甲方验收）。
+      // 幂等：非外包任务或契约非 in_progress 时返回 null，无副作用。
+      if (result.outcome === 'completed') {
+        const deliveredContract = onOutsourcedTaskCompleted(this.db, task.id);
+        if (deliveredContract) {
+          realtime.publish(makeLifecycleEvent('outsource.delivered', {
+            contractId: deliveredContract.id,
+            outsourcedTaskId: task.id,
+          }, { companyId: deliveredContract.sourceCompanyId, taskId: task.id }));
+        }
+      }
+      // 员工评级：任务完成时重算 assignee 的 profile 评级（异步感——非阻塞，失败不回滚任务）
+      if (result.outcome === 'completed' && agent.profileId) {
+        try {
+          applyRating(this.db, agent.profileId);
+        } catch (e) {
+          log.warn('rating apply failed', { taskId: task.id, err: e instanceof Error ? e.message : String(e) });
+        }
+      }
       // 双 Loop P3：终态入队反思（completed/blocked/waiting_input 均入队，drain 时按信号分类推理）。
       try {
         const reflected = getTask(this.db, task.id);
@@ -799,7 +845,8 @@ export class TaskEngine {
       // 清理 worktree（已 publish 或失败都不再保留工作目录）
       if (worktreeInfo && !preserveWorktree) {
         try {
-          removeWorktree(project.rootDir, worktreeInfo);
+          // B2B 外包：worktree 基于甲方 repo 切出，清理也用甲方 rootDir
+          removeWorktree(worktreeSourceRoot, worktreeInfo);
           deleteTaskRuntime(this.db, task.id);
         } catch (e) {
           log.warn('worktree cleanup failed', { taskId: task.id, err: String(e) });

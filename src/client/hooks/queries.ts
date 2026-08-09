@@ -1,7 +1,7 @@
 /** React Query hooks：所有数据获取集中在此。 */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
-import type { Company, Agent, AgentExecutorJson, AgentProfile, CompanyEmployee, MemoryCandidate, MemoryEntry, Department, Project, Relationship, Task, UsageSummary, ProjectAgentThread, Workspace, BusinessReview, Plugin } from '../api/types';
+import type { Company, Agent, AgentExecutorJson, AgentProfile, CompanyEmployee, MemoryCandidate, MemoryEntry, Department, Project, Relationship, Task, UsageSummary, ProjectAgentThread, Workspace, BusinessReview, Plugin, EffectivePlugin, OutsourcingContract } from '../api/types';
 import type { CompanyCockpitDTO, TemplateRuntimeHealthFinding } from '../../shared/types';
 import type { ProjectLaunchBrief, ProjectLaunchDiscovery } from '../../shared/project-launch';
 import type { CompanySetupDraft, CompanyTemplateOption, SetupBindings } from '../domain/company-templates';
@@ -24,9 +24,21 @@ export interface PermissionPolicyDTO {
 }
 
 export interface ProposalResult<T> {
-  source: 'claude' | 'offline_template';
+  source: 'claude' | 'offline_template' | 'builtin_template';
   proposal: T;
   warning?: string;
+}
+
+/** AI 引导自定义 CLI 接入方案（与 server/domain/cli-assistant.ts 的 cliProposalSchema 对应）。 */
+export interface CliProposal {
+  displayName: string;
+  binaryName: string;
+  detectionArgs: string[];
+  installCommands: string[];
+  loginCommand: string;
+  guideUrl: string;
+  argTemplate: string[];
+  notes: string;
 }
 
 export interface CompanyProposal {
@@ -146,6 +158,13 @@ export function useGenerateProjectProposal() {
   return useMutation({
     mutationFn: (input: { prompt: string }) =>
       api.post<ProposalResult<ProjectProposal>>('/api/setup-assistant/project', input),
+  });
+}
+
+export function useGenerateCliProposal() {
+  return useMutation({
+    mutationFn: (input: { prompt: string }) =>
+      api.post<ProposalResult<CliProposal>>('/api/executors/assistant/cli-proposal', input),
   });
 }
 
@@ -1538,7 +1557,7 @@ export function usePlugins() {
   });
 }
 
-/** 公司已启用的 plugin id 列表。 */
+/** 公司已启用的 plugin id 列表（opt-out 迁移后语义=effective）。 */
 export function useEnabledCompanyPlugins(companyId: string | undefined) {
   return useQuery({
     queryKey: ['enabled-plugins', companyId],
@@ -1547,7 +1566,28 @@ export function useEnabledCompanyPlugins(companyId: string | undefined) {
   });
 }
 
-/** 公司级启停 plugin（需公司下班）。 */
+/**
+ * 公司实际生效的插件列表（opt-out：平台默认 - 显式禁用 + 公司独占），
+ * 每个插件带 companyDecision 三态标注，供 UI 渲染开关。
+ */
+export function useEffectiveCompanyPlugins(companyId: string | undefined) {
+  return useQuery({
+    queryKey: ['effective-plugins', companyId],
+    queryFn: () => api.get<EffectivePlugin[]>(`/api/plugins/companies/${companyId}/plugins/effective`),
+    enabled: !!companyId,
+  });
+}
+
+/** 公司独占插件列表（scope=company，仅此公司可见）。 */
+export function useCompanyScopedPlugins(companyId: string | undefined) {
+  return useQuery({
+    queryKey: ['company-scoped-plugins', companyId],
+    queryFn: () => api.get<Plugin[]>(`/api/plugins/company-scoped/${companyId}`),
+    enabled: !!companyId,
+  });
+}
+
+/** 公司级启停 plugin（需公司下班）。opt-out：enabled=true 撤销禁用，false 显式禁用。 */
 export function useToggleCompanyPlugin() {
   const qc = useQueryClient();
   return useMutation({
@@ -1555,7 +1595,181 @@ export function useToggleCompanyPlugin() {
       api.post<{ ok: boolean }>(`/api/plugins/companies/${companyId}/plugins/${pluginId}/${enabled ? 'enable' : 'disable'}`, {}),
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: ['enabled-plugins', vars.companyId] });
+      qc.invalidateQueries({ queryKey: ['effective-plugins', vars.companyId] });
       qc.invalidateQueries({ queryKey: ['plugins'] });
+    },
+  });
+}
+
+/** 安装公司独占插件（scope=company，仅目标公司可见可用）。 */
+export function useInstallExclusivePlugin() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ companyId, input }: { companyId: string; input: InstallExclusiveInput }) =>
+      api.post<Plugin>(`/api/plugins/companies/${companyId}/plugins/exclusive`, input),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ['company-scoped-plugins', vars.companyId] });
+      qc.invalidateQueries({ queryKey: ['effective-plugins', vars.companyId] });
+      qc.invalidateQueries({ queryKey: ['plugins'] });
+    },
+  });
+}
+
+interface InstallExclusiveInput {
+  id?: string;
+  name: string;
+  kind: 'skill' | 'mcp-server' | 'tool' | 'bridge-action' | 'ai-generated';
+  source: unknown;
+  manifest: Record<string, unknown>;
+  permissions?: string[];
+  credentialKeys?: string[];
+  maturity?: 'experimental' | 'stable' | 'deprecated';
+}
+
+// ── B2B 外包 hooks ────────────────────────────────────────────────────────
+
+/** 列出公司参与的外包契约（role=source 甲方委派 / target 乙方承接）。 */
+export function useOutsourceContracts(companyId: string | undefined, role: 'source' | 'target') {
+  return useQuery({
+    queryKey: ['outsource-contracts', companyId, role],
+    queryFn: () => api.get<OutsourcingContract[]>(`/api/companies/${companyId}/outsource/contracts?role=${role}`),
+    enabled: !!companyId,
+  });
+}
+
+/** 甲方发起委派（含全自动决策树）。 */
+export function useDispatchOutsource() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ companyId, input }: { companyId: string; input: DispatchOutsourceInput }) =>
+      api.post<{ contract: OutsourcingContract | null; decision: { path: string; internalAssigneeId?: string; reason?: string; missingCapabilityIds?: string[] } }>(
+        `/api/companies/${companyId}/outsource/dispatch`,
+        input,
+      ),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ['outsource-contracts', vars.companyId] });
+    },
+  });
+}
+
+interface DispatchOutsourceInput {
+  sourceProjectId: string;
+  title: string;
+  brief: string;
+  acceptanceCriteria?: Array<{ id?: string; criterion: string }>;
+  requiredCapabilityIds?: string[];
+  deliverableDir?: string;
+  readonlyRefs?: string[];
+  vendorCompanyId?: string;
+  autoDecide?: boolean;
+}
+
+/** 乙方接受契约。 */
+export function useAcceptContract() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ contractId, vendorLiaisonAgentId }: { contractId: string; vendorLiaisonAgentId: string }) =>
+      api.post<{ contract: OutsourcingContract; task: { id: string } }>(`/api/outsource/contracts/${contractId}/accept`, { vendorLiaisonAgentId }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ['outsource-contracts'] });
+    },
+  });
+}
+
+/** 甲方验收（completed/changes_requested/rejected）。 */
+export function useReviewContract() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ contractId, decision, feedback }: { contractId: string; decision: 'completed' | 'changes_requested' | 'rejected'; feedback?: string }) =>
+      api.post<{ contract: OutsourcingContract }>(`/api/outsource/contracts/${contractId}/review`, { decision, feedback }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['outsource-contracts'] });
+    },
+  });
+}
+
+/** 取消契约。 */
+export function useCancelContract() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (contractId: string) =>
+      api.post<{ contract: OutsourcingContract }>(`/api/outsource/contracts/${contractId}/cancel`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['outsource-contracts'] });
+    },
+  });
+}
+
+// ── 临时工 + 评级 hooks（批次 A）───────────────────────────────────────────
+
+/** 列出公司临时工（含 greyed）。 */
+export function useTempEmployees(companyId: string | undefined) {
+  return useQuery({
+    queryKey: ['temp-employees', companyId],
+    queryFn: () => api.get<Array<{ legacy_agent_id: string; profile_id: string; display_name: string; role: string; rating: number; employment_type: string; temp_status: string | null }>>(`/api/companies/${companyId}/employees/temp`),
+    enabled: !!companyId,
+  });
+}
+
+/** 招聘临时工。 */
+export function useRecruitTemp() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ companyId, input }: { companyId: string; input: { role: string; responsibilities?: string; profileId?: string; requesterAgentId?: string } }) =>
+      api.post<{ agentId: string; profileId: string; isNewProfile: boolean }>(`/api/companies/${companyId}/employees/temp`, input),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ['temp-employees', vars.companyId] });
+    },
+  });
+}
+
+/** 转正。 */
+export function useConvertTemp() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ companyId, agentId }: { companyId: string; agentId: string }) =>
+      api.post<{ ok: boolean }>(`/api/companies/${companyId}/employees/${agentId}/convert`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['temp-employees'] });
+      qc.invalidateQueries({ queryKey: ['agents'] });
+    },
+  });
+}
+
+/** 开除临时工（二次确认）。 */
+export function useDismissTemp() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ companyId, agentId }: { companyId: string; agentId: string }) =>
+      api.post<{ ok: boolean; profileDeleted: boolean }>(`/api/companies/${companyId}/employees/${agentId}/dismiss`, { confirm: true }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['temp-employees'] });
+      qc.invalidateQueries({ queryKey: ['agents'] });
+    },
+  });
+}
+
+/** 重新激活 greyed 临时工。 */
+export function useReactivateTemp() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ companyId, agentId }: { companyId: string; agentId: string }) =>
+      api.post<{ ok: boolean }>(`/api/companies/${companyId}/employees/${agentId}/reactivate`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['temp-employees'] });
+    },
+  });
+}
+
+/** 手动调星级。 */
+export function useAdjustRating() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ profileId, rating }: { profileId: string; rating: number }) =>
+      api.post<{ ok: boolean; rating: number }>(`/api/agent-profiles/${profileId}/rating`, { rating }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['agents'] });
+      qc.invalidateQueries({ queryKey: ['temp-employees'] });
     },
   });
 }

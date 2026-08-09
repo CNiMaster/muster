@@ -191,7 +191,7 @@ async function generateWithFallback<T>(
   }
 }
 
-function zodObjectToJsonSchema(schema: z.ZodType<unknown>): Record<string, unknown> {
+export function zodObjectToJsonSchema(schema: z.ZodType<unknown>): Record<string, unknown> {
   const shape = (schema as z.AnyZodObject).shape;
   const properties: Record<string, unknown> = {};
   const required: string[] = [];

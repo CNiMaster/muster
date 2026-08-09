@@ -1,5 +1,5 @@
 /**
- * Plugin 写侧（B3a）。
+ * Plugin 写侧（B3a + opt-out 治理）。
  *
  * 把用户/系统配置的能力（MCP server / skill / tool）落库到 plugin 表，
  * 并支持公司级启停。读侧在 plugin-adapter.ts（listPlugins）。
@@ -8,6 +8,11 @@
  * 是哪个 MCP server、哪个 skill，只做 CRUD + 启停。
  *
  * 遵循「上班期间组织配置锁」：启停需 company.state === 'off'（由调用方 API 校验）。
+ *
+ * opt-out 语义（20260809100000 迁移后）：
+ *   平台级插件（scope.level='platform'）默认对所有公司启用；
+ *   公司可显式禁用（company_plugin.decision='disabled'）。
+ *   公司级插件（scope.level='company'）仅对 scope.companyId 可见（公司独占绑定）。
  */
 import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
@@ -20,7 +25,7 @@ import type {
   PluginMaturity,
   PluginRow,
 } from '../../shared/plugin';
-import { parsePluginRow } from './plugin-adapter';
+import { listPlugins, parsePluginRow } from './plugin-adapter';
 
 export interface InstallPluginInput {
   id?: string; // 缺省自动生成
@@ -115,8 +120,43 @@ export function removePlugin(db: DB, id: string): void {
 }
 
 /**
- * 公司级启停。
- * enabled=true 时在 company_plugin 置 enabled=1，false 时置 0。
+ * 公司级启停（opt-out 语义）。
+ *
+ * decision='disabled' → 显式禁用某平台插件（写入覆盖行）
+ * decision='enabled'  → 显式启用（撤销禁用：删除覆盖行，恢复默认）
+ *
+ * 语义：opt-out 下"启用"= 删除 decision 行（回到平台默认全开）；
+ *       "禁用"= 写入 decision='disabled' 行。
+ */
+export function setCompanyPluginDecision(
+  db: DB,
+  companyId: string,
+  pluginId: string,
+  decision: 'enabled' | 'disabled',
+  enabledBy?: string,
+): void {
+  // 确认 plugin 存在
+  getPluginRow(db, pluginId);
+  const now = nowIso();
+  if (decision === 'enabled') {
+    // 撤销禁用：删除覆盖行，回到平台默认全开
+    db.prepare('DELETE FROM company_plugin WHERE company_id = ? AND plugin_id = ?').run(
+      companyId,
+      pluginId,
+    );
+  } else {
+    // 显式禁用：upsert decision='disabled'
+    db.prepare(
+      `INSERT INTO company_plugin (company_id, plugin_id, enabled, decision, enabled_by, enabled_at)
+       VALUES (?, ?, 0, 'disabled', ?, ?)
+       ON CONFLICT(company_id, plugin_id) DO UPDATE SET enabled=0, decision='disabled', enabled_by=excluded.enabled_by, enabled_at=excluded.enabled_at`,
+    ).run(companyId, pluginId, enabledBy ?? null, now);
+  }
+}
+
+/**
+ * 公司级启停（旧 API，opt-out 迁移后内部转调 setCompanyPluginDecision）。
+ * @deprecated 改用 setCompanyPluginDecision（语义更清晰）。
  */
 export function setCompanyPluginEnabled(
   db: DB,
@@ -125,22 +165,71 @@ export function setCompanyPluginEnabled(
   enabled: boolean,
   enabledBy?: string,
 ): void {
-  // 确认 plugin 存在
-  getPluginRow(db, pluginId);
-  const now = nowIso();
-  db.prepare(
-    `INSERT INTO company_plugin (company_id, plugin_id, enabled, enabled_by, enabled_at)
-     VALUES (?, ?, ?, ?, ?)
-     ON CONFLICT(company_id, plugin_id) DO UPDATE SET enabled=excluded.enabled, enabled_by=excluded.enabled_by, enabled_at=excluded.enabled_at`,
-  ).run(companyId, pluginId, enabled ? 1 : 0, enabledBy ?? null, now);
+  setCompanyPluginDecision(db, companyId, pluginId, enabled ? 'enabled' : 'disabled', enabledBy);
 }
 
-/** 查询某公司启用的 plugin id 列表。 */
-export function listEnabledCompanyPlugins(db: DB, companyId: string): string[] {
+/**
+ * 查询某公司显式禁用的平台插件 id 集合（opt-out 计算用）。
+ * 这是 opt-out 模型的热路径：effective = 平台插件 MINUS 这个集合。
+ */
+export function listDisabledCompanyPlugins(db: DB, companyId: string): Set<string> {
   const rows = db
-    .prepare('SELECT plugin_id FROM company_plugin WHERE company_id = ? AND enabled = 1')
+    .prepare(
+      `SELECT plugin_id FROM company_plugin WHERE company_id = ? AND decision = 'disabled'`,
+    )
     .all(companyId) as { plugin_id: string }[];
-  return rows.map((r) => r.plugin_id);
+  return new Set(rows.map((r) => r.plugin_id));
+}
+
+/**
+ * 查询某公司对每个 plugin 的决策状态（供 UI 渲染三态）。
+ * 返回 Map<pluginId, 'enabled' | 'disabled'> —— 仅含显式决策的行。
+ * 未出现在 Map 中的插件 = 'default'（平台默认）。
+ */
+export function getCompanyPluginDecisions(
+  db: DB,
+  companyId: string,
+): Map<string, 'enabled' | 'disabled'> {
+  const rows = db
+    .prepare('SELECT plugin_id, decision FROM company_plugin WHERE company_id = ?')
+    .all(companyId) as { plugin_id: string; decision: 'enabled' | 'disabled' }[];
+  return new Map(rows.map((r) => [r.plugin_id, r.decision]));
+}
+
+/**
+ * 计算某公司「实际生效」的插件列表（opt-out 核心）。
+ *
+ * 生效规则：
+ *   - 平台插件（scope.level='platform'）：默认启用，减去该公司显式禁用的
+ *   - 公司插件（scope.level='company', scope.companyId===companyId）：公司独占，生效；
+ *     但仍可被该公司显式禁用（与历史 opt-in 语义兼容）
+ *   - 其他公司独占插件：不生效
+ *
+ * assembleTools 调用此函数决定加载哪些 MCP server。
+ */
+export function getEffectivePluginsForCompany(db: DB, companyId: string): Plugin[] {
+  const disabledSet = listDisabledCompanyPlugins(db, companyId);
+  // 平台级插件：默认全开，减去显式禁用
+  const platformPlugins = listPlugins(db, { scopeLevel: 'platform' }).filter(
+    (p) => !disabledSet.has(p.id),
+  );
+  // 公司独占插件：仅 scope 匹配的本公司，且未被显式禁用
+  const companyPlugins = listPlugins(db, { scopeLevel: 'company', scopeCompanyId: companyId }).filter(
+    (p) => !disabledSet.has(p.id),
+  );
+  // 按 id 去重（理论上两类不会重叠，防御性）
+  const byId = new Map<string, Plugin>();
+  for (const p of platformPlugins) byId.set(p.id, p);
+  for (const p of companyPlugins) byId.set(p.id, p);
+  return Array.from(byId.values());
+}
+
+/**
+ * 查询某公司启用的 plugin id 列表（opt-out 迁移后语义=effective）。
+ * 保留旧函数名供 assembleTools 等历史调用方使用，内部转 effective 计算。
+ */
+export function listEnabledCompanyPlugins(db: DB, companyId: string): string[] {
+  return getEffectivePluginsForCompany(db, companyId).map((p) => p.id);
 }
 
 /** 标记 plugin 健康检查结果（连不上时记 health_error）。 */

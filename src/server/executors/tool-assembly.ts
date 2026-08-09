@@ -1,22 +1,23 @@
 /**
- * 工具装配（B3a）。
+ * 工具装配（B3a + opt-out 治理）。
  *
  * 在 pumpThread 构建 ExecutionContext 时调用：
  * 1. 创建 RuntimeToolRegistry，注册 7 个内置工具
- * 2. 查询项目所属公司启用的 MCP plugin
+ * 2. 查询公司「实际生效」的 MCP plugin（opt-out：平台默认全开 - 显式禁用 + 公司独占）
  * 3. 对每个 MCP server：解析配置 → 连接 McpClientPool → 探测工具 → 注册
  * 4. 返回 { registry, pool }，pool 由 task 结束时关闭
  *
  * 连接失败的单个 server 不致命：记 health 错误，跳过，继续装配其余。
- * 完全通用：按 company_plugin 启用列表动态装配，不写死任何 server。
+ * 完全通用：按 effective 计算动态装配，不写死任何 server。
+ *
+ * opt-out 行为变化：未配置的公司现在默认加载所有平台级 MCP（除非显式禁用）。
  */
 import { createBuiltinToolRegistry, type RuntimeToolRegistry } from './tools/registry';
 import { McpClientPool, type McpServerConfig } from './tools/mcp/client-pool';
 import { registerMcpServerTools } from './tools/mcp/adapter';
 import type { Plugin } from '../../shared/plugin';
 import type { DB } from '../db/client';
-import { listPlugins } from '../domain/plugin-adapter';
-import { listEnabledCompanyPlugins, markPluginHealth } from '../domain/plugin-install';
+import { getEffectivePluginsForCompany, markPluginHealth } from '../domain/plugin-install';
 import { log } from '../logger';
 
 export interface AssembledTools {
@@ -26,24 +27,18 @@ export interface AssembledTools {
 
 /**
  * 为一次 task 执行装配工具集。
- * companyId 决定哪些 MCP plugin 生效（公司级启停）。
- * 无启用 plugin 时返回纯内置 registry（向后兼容 B1/B2）。
+ * companyId 决定哪些 MCP plugin 生效（opt-out：平台默认 - 显式禁用 + 公司独占）。
+ * 无生效 plugin 时返回纯内置 registry（向后兼容 B1/B2）。
  */
 export async function assembleTools(db: DB, companyId: string): Promise<AssembledTools> {
   const registry = createBuiltinToolRegistry();
   const pool = new McpClientPool();
 
-  // 查启用 plugin（公司级）
-  const enabledPluginIds = listEnabledCompanyPlugins(db, companyId);
-  if (enabledPluginIds.length === 0) {
-    return { registry, pool };
-  }
+  // 查实际生效的 plugin（opt-out 计算：平台默认全开 - 显式禁用 + 公司独占）
+  const effectivePlugins = getEffectivePluginsForCompany(db, companyId);
 
   // 过滤出 MCP server 类型的 plugin
-  const allPlugins = listPlugins(db);
-  const mcpPlugins = allPlugins.filter(
-    (p) => p.kind === 'mcp-server' && enabledPluginIds.includes(p.id),
-  );
+  const mcpPlugins = effectivePlugins.filter((p) => p.kind === 'mcp-server');
 
   for (const plugin of mcpPlugins) {
     const config = pluginToServerConfig(plugin);
