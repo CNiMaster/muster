@@ -43,6 +43,11 @@ export class RunWatchdog {
 
   constructor(private readonly options: RunWatchdogOptions) {
     this.failure = new Promise<never>((_resolve, reject) => { this.rejectFailure = reject; });
+    // 关键防御：failure 是被 Promise.race 竞态消费的 promise。一旦主路径（adapter.run）
+    // 先 resolve/race 定型，race 不再监听本 promise，但已排队的 timer 回调仍可能在之后
+    // 触发 rejectFailure，从而变成「未处理的 rejected promise」(Node 默认 throw 会杀进程)。
+    // 这里挂一个永久的 no-op catch 吸收孤儿 rejection；engine 侧用 race 监听时仍能正常拿到错误。
+    this.failure.catch(() => {});
     this.startupTimer = setTimeout(() => { void this.timeout('startup_timeout'); }, options.startupTimeoutMs);
     this.runtimeTimer = setTimeout(() => { void this.timeout('max_runtime'); }, options.maxRuntimeMs);
   }

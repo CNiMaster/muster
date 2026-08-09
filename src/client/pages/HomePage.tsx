@@ -5,6 +5,7 @@ import { useCompanies, useCompanyCockpit, useProject, useBusinessReviews } from 
 import { Badge, companyStateTone, stateLabel } from '../components/Badge';
 import { EmptyState, Icons } from '../components/EmptyState';
 import { OnboardingGuide } from '../components/OnboardingGuide';
+import { FirstRunWizard } from '../components/FirstRunWizard';
 import { CardSkeleton } from '../components/Skeleton';
 import { readRecentProjectId, writeRecentProjectId } from '../hooks/useRecentProject';
 import type { Company } from '../api/types';
@@ -20,13 +21,17 @@ const COMPANY_KIND_LABELS: Record<string, string> = {
   software: '软件研发',
   content: '内容创作',
   novel: '长篇小说',
+  marketing: '品牌营销',
+  consulting: '行业咨询',
 };
 
 const COMPANY_KIND_MARKS: Record<string, string> = {
-  general: '通',
-  software: '码',
-  content: '创',
-  novel: '文',
+  general: '/images/tmpl_general.jpg',
+  software: '/images/tmpl_software.jpg',
+  content: '/images/tmpl_content.jpg',
+  novel: '/images/tmpl_novel.jpg',
+  marketing: '/images/tmpl_marketing.jpg',
+  consulting: '/images/tmpl_consulting.jpg',
 };
 
 const COMPANY_KIND_DESCRIPTIONS: Record<string, string> = {
@@ -34,6 +39,8 @@ const COMPANY_KIND_DESCRIPTIONS: Record<string, string> = {
   software: '产品、研发与质量协同',
   content: '策划、创作与内容发布',
   novel: '长篇故事与连续性创作',
+  marketing: '调研、策划、文案与公关传播',
+  consulting: '课题研究、数据分析与研报咨询',
 };
 
 export function HomePage(): React.ReactElement {
@@ -87,6 +94,7 @@ export function HomePage(): React.ReactElement {
       </header>
 
       <OnboardingGuide hasCompany={activeCompanies.length > 0} />
+      <FirstRunWizard />
 
       {recentProject.data && (
         <div className="home-resume-project">
@@ -166,7 +174,13 @@ function CompanyCard({ company, index }: { company: Company; index: number }): R
     >
       <div className="home-company-card-topline" aria-hidden="true" />
       <header>
-        <div className="home-company-mark" aria-hidden="true">{COMPANY_KIND_MARKS[company.kind] ?? company.name.slice(0, 1)}</div>
+        <div className="home-company-mark" aria-hidden="true" style={{ overflow: 'hidden', padding: 0 }}>
+          {COMPANY_KIND_MARKS[company.kind] ? (
+            <img src={COMPANY_KIND_MARKS[company.kind]} alt={company.kind} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+          ) : (
+            company.name.slice(0, 1)
+          )}
+        </div>
         <div className="home-company-identity">
           <span>{COMPANY_KIND_LABELS[company.kind] ?? company.kind}</span>
           <Link to={`/companies/${company.id}`}>{company.name}</Link>

@@ -27,6 +27,10 @@ import { novelRouter, projectScopedNovel } from './api/novel';
 import { projectPhase7, reportByIdRouter } from './api/phase7';
 import { companyMessagesRouter, projectMessagesRouter } from './api/conversation';
 import { pluginsRouter } from './api/plugins';
+import { outsourcingRouter } from './api/outsourcing';
+import { tempWorkerRouter } from './api/temp-worker';
+import { delegationRouter } from './api/permission-delegation';
+import { handoverRouter } from './api/handover';
 import { projectArtifactsRouter } from './api/artifacts';
 import { companyEventsRouter, projectEventsRouter } from './api/events';
 import { workflowsRouter } from './api/workflows';
@@ -39,8 +43,8 @@ import { memoryRouter } from './api/memory';
 import { permissionsRouter } from './api/permissions';
 import { executorsRouter } from './api/executors';
 import { CodexCliAdapter } from './executors/codex-cli-adapter';
-import{AntigravityCliAdapter}from'./executors/antigravity-cli-adapter';
-import { GeminiCliAdapter } from './executors/gemini-cli-adapter';
+import { AntigravityCliAdapter } from './executors/antigravity-cli-adapter';
+import { OpenCodeCliAdapter } from './executors/opencode-cli-adapter';
 import { CustomCliAdapter } from './executors/custom-cli-adapter';
 import { bridgeRouter } from './bridge';
 import { asyncHandler, errorMiddleware, param } from './api/middleware';
@@ -65,6 +69,8 @@ import { toolsRouter } from './api/tools';
 import { credentialsRouter, companyCredentialsRouter } from './api/credentials';
 import { materialsRouter } from './api/materials';
 import { businessReviewsRouter } from './api/business-reviews';
+import { backupRouter } from './api/backup';
+import { setupRouter } from './api/setup';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -122,15 +128,16 @@ async function createApp(): Promise<AppHandle> {
     adapterRegistry.set('openai', fake);
     adapterRegistry.set('gemini', fake);
     adapterRegistry.set('codex-cli', fake);
-    adapterRegistry.set('gemini-cli', fake);
+    adapterRegistry.set('antigravity-cli', fake);
+    adapterRegistry.set('opencode-cli', fake);
     adapterRegistry.set('custom-cli', fake);
   } else {
     adapterRegistry.set('claude-cli', new ClaudeCodeAdapter());
     adapterRegistry.set('openai', new OpenAICompatibleAdapter());
     adapterRegistry.set('gemini', new GeminiAdapter());
     adapterRegistry.set('codex-cli', new CodexCliAdapter());
-    adapterRegistry.set('antigravity-cli',new AntigravityCliAdapter());
-    adapterRegistry.set('gemini-cli', new GeminiCliAdapter());
+    adapterRegistry.set('antigravity-cli', new AntigravityCliAdapter());
+    adapterRegistry.set('opencode-cli', new OpenCodeCliAdapter());
     adapterRegistry.set('custom-cli', new CustomCliAdapter());
   }
   const engine = new TaskEngine(getDb(), adapterRegistry, {
@@ -183,6 +190,10 @@ async function createApp(): Promise<AppHandle> {
   app.use('/api/companies/:companyId/credentials', companyCredentialsRouter);
   app.use('/api/projects/:id', projectById);
   app.use('/api/plugins', pluginsRouter);
+  app.use('/api', outsourcingRouter);
+  app.use('/api', tempWorkerRouter);
+  app.use('/api', delegationRouter);
+  app.use('/api', handoverRouter);
   app.use('/api/reports/:id', reportByIdRouter);
   app.use('/api/tasks/:id', taskByIdRouter);
   app.use('/api/settings', settingsRouter);
@@ -196,6 +207,8 @@ async function createApp(): Promise<AppHandle> {
   app.use('/api/tools', toolsRouter);
   app.use('/api/credentials', credentialsRouter);
   app.use('/api/business-reviews', businessReviewsRouter);
+  app.use('/api/backup', backupRouter);
+  app.use('/api/setup', setupRouter);
 
   // Agent Bridge：Agent 通过 curl 调用 /bridge/<action> 反馈进度
   app.use('/bridge', bridgeRouter);
@@ -256,6 +269,21 @@ async function main(): Promise<void> {
   };
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+  // 全局兜底：避免未被 await 的 rejected promise（如 watchdog 竞态）或 Express 之外的
+  // 未捕获异常直接杀掉 dev 服务进程——这正是「动态 import failed / 服务器突然关闭」的
+  // 典型根因。这里只记录日志、不退出，让单次异常不要拖垮整个平台。
+  process.on('unhandledRejection', (reason) => {
+    log.error('unhandledRejection (suppressed, process kept alive)', {
+      error: reason instanceof Error ? `${reason.name}: ${reason.message}` : String(reason),
+    });
+  });
+  process.on('uncaughtException', (err) => {
+    log.error('uncaughtException (suppressed, process kept alive)', {
+      error: `${err.name}: ${err.message}`,
+      stack: err.stack,
+    });
+  });
 }
 
 main().catch((err) => {

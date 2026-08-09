@@ -6,6 +6,7 @@ import { Badge, StateBadge } from '../components/Badge';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
 import { Field, Input, Select } from '../components/Form';
+import { useGenerateCliProposal, type CliProposal, type ProposalResult } from '../hooks/queries';
 import {
   concurrencyLabel,
   probeClassificationLabel,
@@ -30,10 +31,19 @@ export function ExecutorCenterPage(): React.ReactElement {
   const [detections, setDetections] = useState<Record<string, ExecutorDetection>>({});
   const [probeIds, setProbeIds] = useState<Record<string, string>>({});
 
+  // CLI 一键安装：每个 manifestId 一份状态（running/成功/失败 + 日志 + AI 诊断）
+  const [installStates, setInstallStates] = useState<Record<string, {
+    status: 'idle' | 'running' | 'done' | 'error';
+    logs: string[];
+    diagnosis: { reason: string; suggestions: string[] } | null;
+  }>>({});
+
   // 自定义 CLI
   const [customName, setCustomName] = useState('自定义 CLI');
   const [customPath, setCustomPath] = useState('');
   const [customArgs, setCustomArgs] = useState('{prompt}');
+  const generateCli = useGenerateCliProposal();
+  const [assistantPrompt, setAssistantPrompt] = useState('');
 
   // API 凭据执行器
   const [apiKind, setApiKind] = useState<'openai-compatible-api' | 'gemini-api'>('openai-compatible-api');
@@ -52,6 +62,95 @@ export function ExecutorCenterPage(): React.ReactElement {
     onSuccess: (profile) => { void qc.invalidateQueries({ queryKey: ['executor-profiles'] }); toast('success', `已绑定 ${profile.name}`); },
     onError: (e: unknown) => toast('error', (e as Error).message ?? '绑定失败'),
   });
+  // 一键检测全部：并行检测所有可检测 CLI，合并进 detections
+  const detectAll = useMutation({
+    mutationFn: () => api.post<Array<ExecutorDetection & { manifestId: string }>>('/api/executors/detect-all'),
+    onSuccess: (results) => {
+      setDetections((old) => {
+        const next = { ...old };
+        for (const r of results) {
+          const { manifestId, ...rest } = r;
+          next[manifestId] = rest;
+        }
+        return next;
+      });
+      const found = results.filter((r) => r.found).length;
+      toast('success', `检测完成：${results.length} 个 CLI，检测到 ${found} 个已安装`);
+    },
+    onError: (e: unknown) => toast('error', (e as Error).message ?? '检测失败'),
+  });
+
+  /** 一键安装 CLI：fetch POST 后手动解析 SSE 事件流，逐行更新日志。 */
+  const installCli = async (manifestId: string): Promise<void> => {
+    setInstallStates((old) => ({ ...old, [manifestId]: { status: 'running', logs: ['正在连接安装通道…'], diagnosis: null } }));
+    // 提升到 try 外：正常流与 catch 分支共用（避免日志重复拼装）
+    const appendLog = (line: string): void => setInstallStates((old) => ({
+      ...old,
+      [manifestId]: { ...old[manifestId], logs: [...(old[manifestId]?.logs ?? []), line] },
+    }));
+    try {
+      const res = await fetch(`/api/executors/${manifestId}/install`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      if (!res.ok || !res.body) throw new Error(`安装请求失败：${res.status} ${res.statusText}`);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let finished = false;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop() ?? '';
+        for (const chunk of parts) {
+          const dataLine = chunk.split('\n').find((l) => l.startsWith('data: '));
+          if (!dataLine) continue;
+          try {
+            const event = JSON.parse(dataLine.slice(6)) as { type: string; line?: string; message?: string; exitCode?: number | null; env?: { platform: string; hasBrew: boolean; hasNpm: boolean; hasCurl: boolean; nodeVersion: string | null } };
+            if (event.type === 'log' && event.line) appendLog(event.line);
+            else if (event.type === 'env' && event.env) appendLog(`环境：${event.env.platform} · brew:${event.env.hasBrew ? '有' : '无'} · npm:${event.env.hasNpm ? '有' : '无'} · node:${event.env.nodeVersion ?? '未知'}`);
+            else if (event.type === 'exit' && event.exitCode != null) appendLog(`退出码：${event.exitCode}`);
+            else if (event.type === 'done' && event.message) {
+              appendLog(`✓ ${event.message}`);
+              setInstallStates((old) => ({ ...old, [manifestId]: { ...old[manifestId], status: 'done' } }));
+              finished = true;
+              void qc.invalidateQueries({ queryKey: ['executor-profiles'] });
+            } else if (event.type === 'error' && event.message) {
+              appendLog(`✗ ${event.message}`);
+              setInstallStates((old) => ({ ...old, [manifestId]: { ...old[manifestId], status: 'error' } }));
+              finished = true;
+              void diagnose(manifestId, event.message, event.exitCode);
+            }
+          } catch {
+            // 忽略非 JSON 事件行
+          }
+        }
+      }
+      if (!finished) {
+        appendLog('✗ 连接中断，安装状态未知。');
+        setInstallStates((old) => ({ ...old, [manifestId]: { ...old[manifestId], status: 'error' } }));
+      }
+    } catch (error) {
+      appendLog(`✗ ${(error as Error).message}`);
+      setInstallStates((old) => ({ ...old, [manifestId]: { ...old[manifestId], status: 'error' } }));
+    }
+  };
+
+  /** 安装失败后的 AI 诊断。 */
+  const diagnose = async (manifestId: string, errorMessage: string, exitCode: number | null | undefined): Promise<void> => {
+    try {
+      const manifest = manifests.data?.find((m) => m.id === manifestId);
+      const command = manifest?.officialInstall?.commands[0] ?? '';
+      const result = await api.post<{ reason: string; suggestions: string[] }>('/api/executors/install-diagnose', {
+        manifestId,
+        command,
+        output: errorMessage,
+        exitCode,
+      });
+      setInstallStates((old) => ({ ...old, [manifestId]: { ...old[manifestId], diagnosis: result } }));
+    } catch {
+      // 诊断失败不阻塞：保留安装错误信息即可
+    }
+  };
   const createCustom = useMutation({
     mutationFn: () => api.post<ExecutorProfile>('/api/executors/profiles', {
       name: customName,
@@ -89,6 +188,12 @@ export function ExecutorCenterPage(): React.ReactElement {
     await navigator.clipboard.writeText(command);
     toast('success', '命令已复制');
   };
+  const fillCustomForm = (proposal: CliProposal): void => {
+    setCustomName(proposal.displayName);
+    setCustomPath(proposal.binaryName);
+    setCustomArgs(proposal.argTemplate.join('\n'));
+    toast('success', '已填入下方表单，确认路径后创建');
+  };
 
   return (
     <div className="settings-page">
@@ -99,47 +204,97 @@ export function ExecutorCenterPage(): React.ReactElement {
         </div>
       </header>
 
-      <Card title="执行器库（CLI）">
-        <p className="muted">CLI 由官方安装到系统位置。Muster 只记录检测到的可执行文件路径和版本，不保存账号密码。</p>
+      <Card
+        title="执行器库（CLI）"
+        actions={
+          <Button variant="ghost" size="sm" onClick={() => detectAll.mutate()} loading={detectAll.isPending}>
+            {detectAll.isPending ? '正在检测全部…' : '一键检测全部'}
+          </Button>
+        }
+      >
+        <p className="muted">点击「一键检测全部」自动扫描系统里的 CLI；未安装的可用「一键安装」用官方方式自动安装，无需手动复制命令。</p>
         <div className="executor-grid">
           {(manifests.data ?? []).filter((m) => m.kind === 'cli').map((manifest) => {
             const detection = detections[manifest.id];
             const install = manifest.officialInstall;
             const bound = profiles.data?.some((profile) => profile.manifestId === manifest.id && (!detection?.path || profile.config.binaryPath === detection.path));
+            const installState = installStates[manifest.id];
+            const installing = installState?.status === 'running';
             return (
               <article className="executor-card" key={manifest.id}>
                 <div className="executor-card-head">
-                  <div>
+                  <span className="executor-mark" aria-hidden="true">{manifest.displayName.slice(0, 1)}</span>
+                  <div className="executor-card-title">
                     <strong>{manifest.displayName}</strong>
                     <div className="muted">官方系统安装 · {concurrencyLabel(manifest.concurrency)}</div>
                   </div>
                   <Badge tone={bound ? 'ok' : detection?.found ? 'info' : 'neutral'}>{bound ? '已绑定' : detection?.found ? '已安装' : '待检测'}</Badge>
                 </div>
-                {detection?.found ? (
-                  <div>
-                    <p className="diagnostic-text">{detection.version}<br /><span className="muted">{detection.path}</span></p>
-                    {install && (
-                      <div className="install-command">
-                        <code>{install.loginCommand}</code>
-                        <Button size="sm" variant="ghost" onClick={() => void copy(install.loginCommand)}>复制登录命令</Button>
-                      </div>
+                <div className="executor-card-body">
+                  {detection?.found ? (
+                    <>
+                      <p className="diagnostic-text">{detection.version}<br /><span className="muted">{detection.path}</span></p>
+                      {install?.loginCommand && (
+                        <div className="install-command">
+                          <code>{install.loginCommand}</code>
+                          <Button size="sm" variant="ghost" onClick={() => void copy(install.loginCommand)}>复制登录命令</Button>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      {!installState?.status || installState.status === 'idle' ? (
+                        <>
+                          <p className="muted">未检测到安装。可一键自动安装（官方方式），或展开手动复制命令。</p>
+                          {install && (
+                            <details className="install-collapse">
+                              <summary>官方安装方式（{install.commands.length} 种）</summary>
+                              <div className="official-install-guide">
+                                {install.commands.map((command: string) => (
+                                  <div className="install-command" key={command}>
+                                    <code>{command}</code>
+                                    <Button size="sm" variant="ghost" onClick={() => void copy(command)}>复制</Button>
+                                  </div>
+                                ))}
+                              </div>
+                            </details>
+                          )}
+                        </>
+                      ) : (
+                        <div className="install-progress">
+                          <div className="install-progress-head">
+                            <Badge tone={installState.status === 'running' ? 'warn' : installState.status === 'done' ? 'ok' : 'err'}>
+                              {installState.status === 'running' ? '安装中' : installState.status === 'done' ? '已安装' : '失败'}
+                            </Badge>
+                            <span>{installing ? '正在安装…' : installState.status === 'done' ? '安装完成' : '安装失败'}</span>
+                          </div>
+                          <pre className="install-log" aria-live="polite">{(installState.logs ?? []).join('\n')}</pre>
+                          {installState.diagnosis && (
+                            <div className="install-diagnosis">
+                              <strong>AI 诊断：</strong>
+                              <p>{installState.diagnosis.reason}</p>
+                              <ul>{installState.diagnosis.suggestions.map((s, i) => <li key={i}>{s}</li>)}</ul>
+                            </div>
+                          )}
+                          {installState.status === 'error' && !installState.diagnosis && (
+                            <p className="muted">正在调用 AI 分析失败原因…</p>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+                <div className="executor-card-foot">
+                  <a href={install?.guideUrl ?? manifest.officialSource} target="_blank" rel="noreferrer">打开官方安装说明</a>
+                  <div className="settings-primary-actions">
+                    <Button variant="ghost" onClick={() => detect.mutate(manifest.id)} loading={detect.isPending}>检测系统安装</Button>
+                    {detection?.found && !bound && <Button onClick={() => bind.mutate(manifest.id)} loading={bind.isPending}>绑定此安装</Button>}
+                    {!detection?.found && install && (
+                      <Button onClick={() => void installCli(manifest.id)} loading={installing} disabled={installing}>
+                        {installing ? '安装中…' : installState?.status === 'error' ? '重试安装' : '一键安装'}
+                      </Button>
                     )}
                   </div>
-                ) : install && (
-                  <div className="official-install-guide">
-                    <p className="muted">选择官方支持的安装方式：</p>
-                    {install.commands.map((command: string) => (
-                      <div className="install-command" key={command}>
-                        <code>{command}</code>
-                        <Button size="sm" variant="ghost" onClick={() => void copy(command)}>复制</Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <a href={install?.guideUrl ?? manifest.officialSource} target="_blank" rel="noreferrer">打开官方安装说明</a>
-                <div className="settings-primary-actions">
-                  <Button variant="ghost" onClick={() => detect.mutate(manifest.id)} loading={detect.isPending}>检测系统安装</Button>
-                  {detection?.found && !bound && <Button onClick={() => bind.mutate(manifest.id)} loading={bind.isPending}>绑定此安装</Button>}
                 </div>
               </article>
             );
@@ -149,30 +304,34 @@ export function ExecutorCenterPage(): React.ReactElement {
 
       <Card title="API 凭据执行器" className="section">
         <p className="muted">OpenAI 兼容 / Gemini API 执行器。Muster 只存环境变量名（不存明文），实际密钥由系统环境变量提供。绑定到员工后即可使用。</p>
-        <div className="form-row">
-          <Field label="执行器类型">
-            <Select value={apiKind} onChange={(e) => {
-              const v = (e.target as HTMLSelectElement).value as typeof apiKind;
-              setApiKind(v);
-              if (v === 'openai-compatible-api') { setApiName('OpenAI 兼容 API'); setApiBaseURL('https://api.openai.com/v1'); setApiModel('gpt-4o'); setApiKeyEnv('OPENAI_API_KEY'); }
-              else { setApiName('Gemini API'); setApiModel('gemini-2.0-flash'); setApiKeyEnv('GEMINI_API_KEY'); }
-            }}>
-              <option value="openai-compatible-api">OpenAI 兼容 API</option>
-              <option value="gemini-api">Gemini API</option>
-            </Select>
-          </Field>
-          <Field label="档案名称"><Input value={apiName} onChange={(e) => setApiName(e.target.value)} /></Field>
+        <div className="form-stack">
+          <div className="form-row">
+            <Field label="执行器类型">
+              <Select value={apiKind} onChange={(e) => {
+                const v = (e.target as HTMLSelectElement).value as typeof apiKind;
+                setApiKind(v);
+                if (v === 'openai-compatible-api') { setApiName('OpenAI 兼容 API'); setApiBaseURL('https://api.openai.com/v1'); setApiModel('gpt-4o'); setApiKeyEnv('OPENAI_API_KEY'); }
+                else { setApiName('Gemini API'); setApiModel('gemini-2.0-flash'); setApiKeyEnv('GEMINI_API_KEY'); }
+              }}>
+                <option value="openai-compatible-api">OpenAI 兼容 API</option>
+                <option value="gemini-api">Gemini API</option>
+              </Select>
+            </Field>
+            <Field label="档案名称"><Input value={apiName} onChange={(e) => setApiName(e.target.value)} /></Field>
+          </div>
+          {apiKind === 'openai-compatible-api' && (
+            <Field label="Base URL"><Input value={apiBaseURL} onChange={(e) => setApiBaseURL(e.target.value)} placeholder="https://api.openai.com/v1" /></Field>
+          )}
+          <div className="form-row">
+            <Field label="默认模型"><Input value={apiModel} onChange={(e) => setApiModel(e.target.value)} /></Field>
+            <Field label="API Key 环境变量名（不存明文）">
+              <Input value={apiKeyEnv} onChange={(e) => setApiKeyEnv(e.target.value)} placeholder="如 OPENAI_API_KEY" />
+            </Field>
+          </div>
+          <div className="settings-primary-actions">
+            <Button onClick={() => createApi.mutate()} loading={createApi.isPending} disabled={!apiName.trim() || !apiKeyEnv.trim()}>创建 API 执行器</Button>
+          </div>
         </div>
-        {apiKind === 'openai-compatible-api' && (
-          <Field label="Base URL"><Input value={apiBaseURL} onChange={(e) => setApiBaseURL(e.target.value)} placeholder="https://api.openai.com/v1" /></Field>
-        )}
-        <div className="form-row">
-          <Field label="默认模型"><Input value={apiModel} onChange={(e) => setApiModel(e.target.value)} /></Field>
-          <Field label="API Key 环境变量名（不存明文）">
-            <Input value={apiKeyEnv} onChange={(e) => setApiKeyEnv(e.target.value)} placeholder="如 OPENAI_API_KEY" />
-          </Field>
-        </div>
-        <Button onClick={() => createApi.mutate()} loading={createApi.isPending} disabled={!apiName.trim() || !apiKeyEnv.trim()}>创建 API 执行器</Button>
       </Card>
 
       <Card title="已绑定执行器" className="section">
@@ -200,16 +359,44 @@ export function ExecutorCenterPage(): React.ReactElement {
       </Card>
 
       <Card title="接入其他 CLI" className="section">
-        <p className="muted">参数每行一项，只支持整项占位符：{'{prompt}'}、{'{cwd}'}、{'{taskId}'}、{'{sessionId}'}。Muster 使用参数数组启动，不经过 shell。</p>
-        <div className="settings-field-grid">
-          <Field label="档案名称"><Input value={customName} onChange={(e) => setCustomName(e.target.value)} /></Field>
-          <Field label="可执行文件绝对路径"><Input value={customPath} onChange={(e) => setCustomPath(e.target.value)} placeholder="/usr/local/bin/my-agent" /></Field>
-          <Field label="参数模板（每行一项）"><textarea value={customArgs} onChange={(e) => setCustomArgs(e.target.value)} /></Field>
+        <p className="muted">
+          面向内置清单未收录的第三方 CLI（如 <code>aider</code>、<code>qwen-code</code>）。配置后 Muster 会以参数数组启动它，不经过 shell。
+          <strong>限制：</strong>非交互运行、退出码须为 0、且 stdout 必须是结构化 <code>AgentRunResult</code> JSON；不接管原生审批。不确定怎么填时，用下方「AI 引导接入」自动生成。
+        </p>
+        <details className="details-collapse">
+          <summary>AI 引导接入：描述你的 CLI，自动生成配置</summary>
+          <div className="form-stack">
+            <Field label="CLI 描述" hint="例如：opencode / aider / 我团队用的 qwen-code">
+              <textarea value={assistantPrompt} onChange={(e) => setAssistantPrompt(e.target.value)} placeholder="例如：opencode，模型无关的开源 agent" />
+            </Field>
+            <div className="settings-primary-actions">
+              <Button variant="ghost" onClick={() => generateCli.mutate({ prompt: assistantPrompt })} loading={generateCli.isPending} disabled={!assistantPrompt.trim()}>生成接入方案</Button>
+            </div>
+            {generateCli.data && <CliProposalView result={generateCli.data} onFill={fillCustomForm} onCopy={copy} />}
+          </div>
+        </details>
+        <div className="form-stack">
+          <div className="settings-field-grid">
+            <Field label="档案名称"><Input value={customName} onChange={(e) => setCustomName(e.target.value)} /></Field>
+            <Field label="可执行文件绝对路径或命令名"><Input value={customPath} onChange={(e) => setCustomPath(e.target.value)} placeholder="/usr/local/bin/my-agent 或命令名（如 opencode）" /></Field>
+          </div>
+          <Field label="参数模板（每行一项）" hint="只支持整项占位符：{prompt}、{cwd}、{taskId}、{sessionId}">
+            <textarea value={customArgs} onChange={(e) => setCustomArgs(e.target.value)} placeholder={'--print\n{prompt}\n--cwd\n{cwd}'} />
+          </Field>
+          <div className="settings-primary-actions">
+            <Button onClick={() => createCustom.mutate()} disabled={!customPath.trim()} loading={createCustom.isPending}>创建自定义执行器</Button>
+          </div>
         </div>
-        <Button onClick={() => createCustom.mutate()} disabled={!customPath.trim()} loading={createCustom.isPending}>创建自定义执行器</Button>
       </Card>
 
       <Card title="如何连接（接入流程）" className="section">
+        <div style={{ marginBottom: '16px', borderRadius: '10px', overflow: 'hidden', border: '1px solid var(--border-subtle, #eee)', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
+          <img
+            src="/images/executor_flow.jpg"
+            alt="执行器接入四步流程：1.检测系统安装 2.API凭据配置 3.连通测试 4.绑定到员工"
+            style={{ width: '100%', height: 'auto', display: 'block', maxHeight: '220px', objectFit: 'cover' }}
+          />
+        </div>
         <ol>
           <li><strong>CLI 类</strong>：点击「检测系统安装」。若未检测到，按卡片内官方命令安装并登录，完成后回到这里点「检测」→「绑定此安装」。</li>
           <li><strong>API 类</strong>：在「API 凭据执行器」填写 Base URL / 模型 / 环境变量名（如 <code>OPENAI_API_KEY</code>），创建档案。实际密钥需设置在系统环境变量中，Muster 不保存明文。</li>
@@ -221,6 +408,44 @@ export function ExecutorCenterPage(): React.ReactElement {
           <li>员工可共用同一执行器，但会话、工作目录、日志、记忆和中止状态仍按员工与 Task 隔离。</li>
         </ul>
       </Card>
+    </div>
+  );
+}
+
+function CliProposalView({ result, onFill, onCopy }: {
+  result: ProposalResult<CliProposal>;
+  onFill: (proposal: CliProposal) => void;
+  onCopy: (command: string) => Promise<void>;
+}): React.ReactElement {
+  const { proposal, source, warning } = result;
+  return (
+    <div className="assistant-proposal">
+      <div className="executor-card-head">
+        <div className="executor-card-title">
+          <strong>{proposal.displayName}</strong>
+          <div className="muted">检测命令：{proposal.binaryName} {proposal.detectionArgs.join(' ')}</div>
+        </div>
+        <Badge tone={source === 'claude' ? 'ok' : 'info'}>{source === 'claude' ? 'AI 生成' : source === 'builtin_template' ? '内置模板' : '离线模板'}</Badge>
+      </div>
+      {warning && <p className="muted">{warning}</p>}
+      {proposal.installCommands.map((command: string) => (
+        <div className="install-command" key={command}>
+          <code>{command}</code>
+          <Button size="sm" variant="ghost" onClick={() => void onCopy(command)}>复制</Button>
+        </div>
+      ))}
+      {proposal.loginCommand && (
+        <div className="install-command">
+          <code>{proposal.loginCommand}</code>
+          <Button size="sm" variant="ghost" onClick={() => void onCopy(proposal.loginCommand)}>复制登录命令</Button>
+        </div>
+      )}
+      <p className="muted">参数模板：<code>{proposal.argTemplate.join(' ')}</code></p>
+      {proposal.notes && <p className="muted">{proposal.notes}</p>}
+      <div className="settings-primary-actions">
+        <Button variant="ghost" onClick={() => void onCopy(proposal.argTemplate.join('\n'))}>复制参数模板</Button>
+        <Button onClick={() => onFill(proposal)}>填入下方表单</Button>
+      </div>
     </div>
   );
 }

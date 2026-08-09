@@ -8,6 +8,7 @@ import { Field, Input, Select } from '../components/Form';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ToolRegistryPanel } from '../components/settings/ToolRegistryPanel';
 import { CredentialStorePanel } from '../components/settings/CredentialStorePanel';
+import { BackupCenterPanel } from '../components/settings/BackupCenterPanel';
 
 export function SettingsPage(): React.ReactElement {
   const { data: settings, isLoading } = useSystemSettings();
@@ -74,7 +75,7 @@ export function SettingsPage(): React.ReactElement {
   const providerLabels: Record<string, string> = {
     'claude-cli': 'Claude Code CLI',
     'codex-cli': 'Codex CLI',
-    'gemini-cli': 'Gemini CLI',
+    'antigravity-cli': 'Antigravity CLI',
     openai: 'OpenAI 兼容 API',
     gemini: 'Gemini API',
   };
@@ -94,7 +95,7 @@ export function SettingsPage(): React.ReactElement {
             <Select value={defaultProvider} onChange={(event) => setDefaultProvider(event.target.value)}>
               <option value="claude-cli">Claude Code CLI</option>
               <option value="codex-cli">Codex CLI</option>
-              <option value="gemini-cli">Gemini CLI</option>
+              <option value="antigravity-cli">Antigravity CLI</option>
               <option value="openai">OpenAI 兼容 API</option>
               <option value="gemini">Gemini API</option>
             </Select>
@@ -162,6 +163,8 @@ export function SettingsPage(): React.ReactElement {
         <ToolRegistryPanel defaultOpen={focusTools} />
         <CredentialStorePanel defaultOpen={focusCredentials} />
       </div>
+
+      <BackupCenterPanel className="section" />
     </div>
   );
 }

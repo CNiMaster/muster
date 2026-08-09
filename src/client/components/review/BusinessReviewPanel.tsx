@@ -134,28 +134,59 @@ function PlotView({ snapshot }: { snapshot: Record<string, unknown> }): React.Re
 
 /** 素材/成品：按格式渲染（图片/视频/音频/PDF/文本）。 */
 function MediaView({ snapshot, projectId, kind }: { snapshot: Record<string, unknown>; projectId?: string; kind: 'material' | 'artifact' }): React.ReactElement {
-  const path = snapshot.path ? String(snapshot.path) : null;
-  const format = snapshot.format ? String(snapshot.format) : null;
-  const content = snapshot.content ? String(snapshot.content) : null;
   const label = kind === 'material' ? '素材' : '成品';
+  // 兼容多组字段名：Agent 提交的 snapshot 字段命名不一致（path / storagePath / filePath / sourceUrl），
+  // 素材库用 storagePath/sourceUrl/kind，成品库用 path。这里统一解析，避免字段错配导致整块不渲染。
+  const resolveString = (keys: string[]): string | null => {
+    for (const k of keys) {
+      const v = snapshot[k];
+      if (typeof v === 'string' && v.trim()) return v.trim();
+    }
+    return null;
+  };
+  const rawPath = resolveString(['path', 'storagePath', 'filePath', 'sourceUrl', 'url']);
+  const format = resolveString(['format', 'kind', 'mimeType', 'contentType', 'type']);
+  const name = resolveString(['name', 'fileName', 'title']);
+  const content = snapshot.content ? String(snapshot.content) : null;
+
+  // 判定 path 是否是外部 http(s) URL（link 类型素材或外部资源直接用 URL，不走 /artifacts/raw）
+  const isHttpUrl = rawPath ? /^https?:\/\//i.test(rawPath) : false;
+  const mediaSrc = rawPath
+    ? (isHttpUrl || !projectId
+      ? rawPath
+      : `/api/projects/${projectId}/artifacts/raw?path=${encodeURIComponent(rawPath)}`)
+    : null;
+  const isKind = (kinds: string[], extRegex: RegExp): boolean =>
+    (format != null && kinds.some((k) => format.toLowerCase().includes(k))) || (rawPath != null && extRegex.test(rawPath));
+
   return (
     <div className="form-stack" style={{ gap: 6 }}>
-      <p><strong>{label}格式：</strong>{format ?? '未知'}</p>
-      {path && projectId && (format === 'image' || /\.(png|jpe?g|gif|webp)$/i.test(path)) && (
-        <img src={`/api/projects/${projectId}/artifacts/raw?path=${encodeURIComponent(path)}`} alt={path} style={{ maxWidth: '100%', borderRadius: 4 }} />
+      {name && <p><strong>{label}：</strong>{name}</p>}
+      <p><strong>{label}格式：</strong>{format ?? (rawPath ? inferExt(rawPath) : '未知')}</p>
+      {mediaSrc && isKind(['image'], /\.(png|jpe?g|gif|webp|svg)$/i) && (
+        <img src={mediaSrc} alt={name ?? rawPath ?? ''} style={{ maxWidth: '100%', borderRadius: 4 }} />
       )}
-      {path && projectId && (format === 'video' || /\.(mp4|mov|webm)$/i.test(path)) && (
-        <video controls preload="metadata" src={`/api/projects/${projectId}/artifacts/raw?path=${encodeURIComponent(path)}`} style={{ maxWidth: '100%', borderRadius: 4 }} />
+      {mediaSrc && isKind(['video'], /\.(mp4|mov|webm|mkv)$/i) && (
+        <video controls preload="metadata" src={mediaSrc} style={{ maxWidth: '100%', borderRadius: 4 }} />
       )}
-      {path && projectId && (format === 'audio' || /\.(mp3|wav|m4a)$/i.test(path)) && (
-        <audio controls src={`/api/projects/${projectId}/artifacts/raw?path=${encodeURIComponent(path)}`} />
+      {mediaSrc && isKind(['audio'], /\.(mp3|wav|m4a|aac|ogg)$/i) && (
+        <audio controls src={mediaSrc} />
       )}
-      {path && projectId && (format === 'pdf' || /\.pdf$/i.test(path)) && (
-        <iframe src={`/api/projects/${projectId}/artifacts/raw?path=${encodeURIComponent(path)}`} title={path} style={{ width: '100%', height: 400, border: 0 }} />
+      {mediaSrc && isKind(['pdf'], /\.pdf$/i) && (
+        <iframe src={mediaSrc} title={name ?? rawPath ?? ''} style={{ width: '100%', height: 400, border: 0 }} />
       )}
+      {mediaSrc && isHttpUrl && !isKind(['image', 'video', 'audio', 'pdf'], /\.(png|jpe?g|gif|webp|svg|mp4|mov|webm|mkv|mp3|wav|m4a|aac|ogg|pdf)$/i) && (
+        <p><a href={mediaSrc} target="_blank" rel="noreferrer">{mediaSrc}</a></p>
+      )}
+      {!mediaSrc && !content && <p className="muted">未提供可渲染的{label}路径或内容（可能字段名不匹配）。</p>}
       {content && <pre style={{ whiteSpace: 'pre-wrap', maxHeight: 300, overflow: 'auto', background: 'var(--mu-surface-2, #f7f7f8)', padding: 8, borderRadius: 4 }}>{content}</pre>}
     </div>
   );
+}
+
+function inferExt(path: string): string {
+  const m = path.match(/\.([a-z0-9]+)$/i);
+  return m ? m[1].toLowerCase() : '未知';
 }
 
 /** 自定义类型：JSON 展开。 */

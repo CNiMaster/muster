@@ -14,6 +14,8 @@ import type { RealtimeEvent } from '../shared/types';
 import { shortId, nowIso } from '../shared/utils';
 import { getDb } from './db/client';
 import { submitBusinessReview, type BusinessReviewKind } from './domain/business-review';
+import { getMaterial } from './domain/material';
+import { getArtifact, getArtifactByPath } from './domain/artifact';
 
 export interface BridgeActionParam {
   name: string;
@@ -187,14 +189,19 @@ bridgeRouter.post('/submit-review', (req, res) => {
       res.status(400).json({ error: `Invalid review_kind: ${reviewKind}` });
       return;
     }
+    // 补全 snapshot：Agent 提交审批时常漏传或字段名不一致。若 subjectId 能查到素材/成品，
+    // 用库内真实 storagePath/sourceUrl/kind/path 回填，保证前端 MediaView 能正确渲染。
+    const subjectId = String(req.body?.subject_id ?? '');
+    const agentSnapshot = (req.body?.snapshot as Record<string, unknown>) ?? {};
+    const enrichedSnapshot = enrichReviewSnapshot(db, projectRow.id, reviewKind, subjectId, agentSnapshot);
     const review = submitBusinessReview(db, {
       companyId: projectRow.company_id,
       projectId: projectRow.id,
       taskId,
       employeeId: taskRow.assignee_agent_id ?? '',
       reviewKind,
-      subjectId: String(req.body?.subject_id ?? ''),
-      subjectSnapshot: (req.body?.snapshot as Record<string, unknown>) ?? {},
+      subjectId,
+      subjectSnapshot: enrichedSnapshot,
       title: String(req.body?.title ?? ''),
       summary: req.body?.summary ? String(req.body.summary) : undefined,
     });
@@ -203,3 +210,55 @@ bridgeRouter.post('/submit-review', (req, res) => {
     res.status(500).json({ error: (e as Error).message });
   }
 });
+
+/**
+ * 审批快照补全：根据 reviewKind + subjectId 从素材库/成品库查真实记录，
+ * 把 storagePath/sourceUrl/kind/path 等字段补进 snapshot。
+ *
+ * 前端 MediaView 兼容多组字段名，这里统一写入规范字段（path/format/name），
+ * 同时保留素材库原生字段（storagePath/sourceUrl/kind）以提高鲁棒性。
+ * Agent 已提交的字段优先（不覆盖），仅补缺失项。
+ */
+function enrichReviewSnapshot(
+  db: ReturnType<typeof getDb>,
+  projectId: string,
+  reviewKind: BusinessReviewKind,
+  subjectId: string,
+  agentSnapshot: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!subjectId || (reviewKind !== 'material' && reviewKind !== 'artifact')) return agentSnapshot;
+  const snapshot: Record<string, unknown> = { ...agentSnapshot };
+  try {
+    if (reviewKind === 'material') {
+      const m = getMaterial(db, subjectId);
+      if (m) {
+        if (m.storagePath) snapshot.path ??= m.storagePath;
+        if (m.sourceUrl && !snapshot.path) snapshot.path ??= m.sourceUrl;
+        snapshot.format ??= m.kind;
+        snapshot.name ??= m.name;
+        snapshot.storagePath ??= m.storagePath;
+        snapshot.sourceUrl ??= m.sourceUrl;
+        snapshot.kind ??= m.kind;
+      }
+    } else {
+      // artifact：subjectId 可能是 artifact.id，也可能是 path；两种都试。
+      // getArtifact 对不存在的 id 会抛 AppError（不是返回 null），需 try 包裹。
+      let byId: ReturnType<typeof getArtifact> | null = null;
+      try {
+        byId = getArtifact(db, subjectId);
+      } catch {
+        byId = null;
+      }
+      const a = byId ?? (agentSnapshot.path ? getArtifactByPath(db, projectId, String(agentSnapshot.path)) : null);
+      if (a) {
+        snapshot.path ??= a.path;
+        snapshot.format ??= a.kind;
+        snapshot.name ??= a.path.split('/').pop() ?? a.path;
+        snapshot.kind ??= a.kind;
+      }
+    }
+  } catch {
+    // 补全失败不影响审批提交，原样返回 Agent 提交的 snapshot
+  }
+  return snapshot;
+}

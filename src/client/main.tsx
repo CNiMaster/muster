@@ -6,33 +6,56 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import './styles/global.css';
 import { App } from './App';
 import { useToasts, ToastHost } from './components/Button';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { RealtimeSync } from './realtime';
 import { ProjectToolPageShell, TaskDetailProjectShell } from './components/workbench/ProjectToolPageShell';
 
-const HomePage = lazy(() => import('./pages/HomePage').then((m) => ({ default: m.HomePage })));
-const NotFoundPage = lazy(() => import('./pages/NotFoundPage').then((m) => ({ default: m.NotFoundPage })));
-const CompanyPage = lazy(() => import('./pages/CompanyPage').then((m) => ({ default: m.CompanyPage })));
-const CompanyListPage = lazy(() => import('./pages/CompanyListPage').then((m) => ({ default: m.CompanyListPage })));
-const GraphPage = lazy(() => import('./pages/GraphPage').then((m) => ({ default: m.GraphPage })));
-const ProjectPage = lazy(() => import('./pages/ProjectPage').then((m) => ({ default: m.ProjectPage })));
-const TasksPage = lazy(() => import('./pages/TasksPage').then((m) => ({ default: m.TasksPage })));
-const UsagePage = lazy(() => import('./pages/UsagePage').then((m) => ({ default: m.UsagePage })));
-const TaskDetailPage = lazy(() => import('./pages/TaskDetailPage').then((m) => ({ default: m.TaskDetailPage })));
-const ArtifactsPage = lazy(() => import('./pages/ArtifactsPage').then((m) => ({ default: m.ArtifactsPage })));
-const MaterialsPage = lazy(() => import('./pages/MaterialsPage').then((m) => ({ default: m.MaterialsPage })));
-const ReportsPage = lazy(() => import('./pages/ReportsPage').then((m) => ({ default: m.ReportsPage })));
-const DashboardPage = lazy(() => import('./pages/DashboardPage').then((m) => ({ default: m.DashboardPage })));
-const WorkflowGraphPage = lazy(() => import('./pages/WorkflowGraphPage').then((m) => ({ default: m.WorkflowGraphPage })));
-const CharacterGraphPage = lazy(() => import('./pages/CharacterGraphPage').then((m) => ({ default: m.CharacterGraphPage })));
-const CompanyWizardPage = lazy(() => import('./pages/CompanyWizardPage').then((m) => ({ default: m.CompanyWizardPage })));
-const SettingsPage = lazy(() => import('./pages/SettingsPage').then((m) => ({ default: m.SettingsPage })));
-const AgentLibraryPage = lazy(() => import('./pages/AgentLibraryPage').then((m) => ({ default: m.AgentLibraryPage })));
-const AgentProfilePage = lazy(() => import('./pages/AgentProfilePage').then((m) => ({ default: m.AgentProfilePage })));
-const ExecutorCenterPage = lazy(() => import('./pages/ExecutorCenterPage').then((m) => ({ default: m.ExecutorCenterPage })));
-const PermissionCenterPage = lazy(() => import('./pages/PermissionCenterPage').then((m) => ({ default: m.PermissionCenterPage })));
-const BusinessReviewPage = lazy(() => import('./pages/BusinessReviewPage').then((m) => ({ default: m.BusinessReviewPage })));
-const ProjectSettingsPage = lazy(() => import('./pages/ProjectSettingsPage').then((m) => ({ default: m.ProjectSettingsPage })));
-const ProjectPlansPage = lazy(() => import('./pages/ProjectPlansPage').then((m) => ({ default: m.ProjectPlansPage })));
+/**
+ * 包裹 React.lazy 的动态 import，失败时自动重试一次。
+ *
+ * 动态 import 失败的最常见原因是 dev server 在请求瞬间不可达（崩溃/重启）。
+ * 这类瞬时错误重试通常即可恢复；即便重试仍失败，外层 ErrorBoundary 会渲染友好兜底，
+ * 而不是把裸的 "Failed to fetch dynamically imported module" 抛给用户。
+ */
+function lazyRetry<T extends React.ComponentType<any>>(loader: () => Promise<{ default: T }>): React.LazyExoticComponent<T> {
+  const retried = { current: false };
+  const load = (): Promise<{ default: T }> => {
+    const attempt = (): Promise<{ default: T }> => loader();
+    return attempt().catch((err) => {
+      if (retried.current) throw err;
+      retried.current = true;
+      return attempt();
+    });
+  };
+  return lazy(load);
+}
+
+const HomePage = lazyRetry(() => import('./pages/HomePage').then((m) => ({ default: m.HomePage })));
+const NotFoundPage = lazyRetry(() => import('./pages/NotFoundPage').then((m) => ({ default: m.NotFoundPage })));
+const CompanyPage = lazyRetry(() => import('./pages/CompanyPage').then((m) => ({ default: m.CompanyPage })));
+const CompanyListPage = lazyRetry(() => import('./pages/CompanyListPage').then((m) => ({ default: m.CompanyListPage })));
+const GraphPage = lazyRetry(() => import('./pages/GraphPage').then((m) => ({ default: m.GraphPage })));
+const ProjectPage = lazyRetry(() => import('./pages/ProjectPage').then((m) => ({ default: m.ProjectPage })));
+const TasksPage = lazyRetry(() => import('./pages/TasksPage').then((m) => ({ default: m.TasksPage })));
+const UsagePage = lazyRetry(() => import('./pages/UsagePage').then((m) => ({ default: m.UsagePage })));
+const TaskDetailPage = lazyRetry(() => import('./pages/TaskDetailPage').then((m) => ({ default: m.TaskDetailPage })));
+const ArtifactsPage = lazyRetry(() => import('./pages/ArtifactsPage').then((m) => ({ default: m.ArtifactsPage })));
+const MaterialsPage = lazyRetry(() => import('./pages/MaterialsPage').then((m) => ({ default: m.MaterialsPage })));
+const ReportsPage = lazyRetry(() => import('./pages/ReportsPage').then((m) => ({ default: m.ReportsPage })));
+const DashboardPage = lazyRetry(() => import('./pages/DashboardPage').then((m) => ({ default: m.DashboardPage })));
+const WorkflowGraphPage = lazyRetry(() => import('./pages/WorkflowGraphPage').then((m) => ({ default: m.WorkflowGraphPage })));
+const CharacterGraphPage = lazyRetry(() => import('./pages/CharacterGraphPage').then((m) => ({ default: m.CharacterGraphPage })));
+const CompanyWizardPage = lazyRetry(() => import('./pages/CompanyWizardPage').then((m) => ({ default: m.CompanyWizardPage })));
+const SettingsPage = lazyRetry(() => import('./pages/SettingsPage').then((m) => ({ default: m.SettingsPage })));
+const AgentLibraryPage = lazyRetry(() => import('./pages/AgentLibraryPage').then((m) => ({ default: m.AgentLibraryPage })));
+const AgentProfilePage = lazyRetry(() => import('./pages/AgentProfilePage').then((m) => ({ default: m.AgentProfilePage })));
+const ExecutorCenterPage = lazyRetry(() => import('./pages/ExecutorCenterPage').then((m) => ({ default: m.ExecutorCenterPage })));
+const PermissionCenterPage = lazyRetry(() => import('./pages/PermissionCenterPage').then((m) => ({ default: m.PermissionCenterPage })));
+const CapabilityCenterPage = lazyRetry(() => import('./pages/CapabilityCenterPage').then((m) => ({ default: m.CapabilityCenterPage })));
+const OutsourcingCenterPage = lazyRetry(() => import('./pages/OutsourcingCenterPage').then((m) => ({ default: m.OutsourcingCenterPage })));
+const BusinessReviewPage = lazyRetry(() => import('./pages/BusinessReviewPage').then((m) => ({ default: m.BusinessReviewPage })));
+const ProjectSettingsPage = lazyRetry(() => import('./pages/ProjectSettingsPage').then((m) => ({ default: m.ProjectSettingsPage })));
+const ProjectPlansPage = lazyRetry(() => import('./pages/ProjectPlansPage').then((m) => ({ default: m.ProjectPlansPage })));
 
 function ToastLayer(): React.ReactElement {
   const { toasts, dismiss } = useToasts();
@@ -73,6 +96,8 @@ const router = createBrowserRouter([
       { path: 'agents/:profileId', element: <AgentProfilePage /> },
       { path: 'executors', element: <ExecutorCenterPage /> },
       { path: 'permissions', element: <PermissionCenterPage /> },
+      { path: 'capabilities', element: <CapabilityCenterPage /> },
+      { path: 'outsourcing', element: <OutsourcingCenterPage /> },
       { path: 'reviews', element: <BusinessReviewPage /> },
       { path: '*', element: <NotFoundPage /> },
     ],
@@ -86,9 +111,11 @@ createRoot(rootEl).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <RealtimeSync />
-      <Suspense fallback={<div className="loading">加载中…</div>}>
-        <RouterProvider router={router} />
-      </Suspense>
+      <ErrorBoundary label="页面加载">
+        <Suspense fallback={<div className="loading">加载中…</div>}>
+          <RouterProvider router={router} />
+        </Suspense>
+      </ErrorBoundary>
       <ToastLayer />
     </QueryClientProvider>
   </StrictMode>,
