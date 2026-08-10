@@ -215,5 +215,61 @@
       "testing-tool-evaluator",
       "testing-workflow-optimizer"
     ]
+  },
+  "visual": {
+    "label": "图片制作",
+    "count": 8,
+    "personas": [
+      "visual-creative-director",
+      "visual-graphic-designer",
+      "visual-illustrator",
+      "visual-ai-image-engineer",
+      "visual-retoucher",
+      "visual-typography-designer",
+      "visual-brand-visual-designer",
+      "visual-quality-reviewer"
+    ]
+  },
+  "video": {
+    "label": "影视制作",
+    "count": 9,
+    "personas": [
+      "video-producer",
+      "video-director",
+      "video-screenwriter",
+      "video-storyboard-artist",
+      "video-editor",
+      "video-colorist",
+      "video-sound-designer",
+      "video-subtitle-designer",
+      "video-post-synthesist"
+    ]
+  },
+  "publishing": {
+    "label": "编辑出版",
+    "count": 7,
+    "personas": [
+      "publishing-editor-in-chief",
+      "publishing-content-planner",
+      "publishing-copy-editor",
+      "publishing-fact-checker",
+      "publishing-proofreader",
+      "publishing-layout-designer",
+      "publishing-rights-specialist"
+    ]
+  },
+  "social": {
+    "label": "社媒发布",
+    "count": 8,
+    "personas": [
+      "social-redbook-operator",
+      "social-douyin-planner",
+      "social-bilibili-planner",
+      "social-wechat-video-operator",
+      "social-weibo-operator",
+      "social-data-analyst",
+      "social-viral-title-writer",
+      "social-cover-designer"
+    ]
   }
 }
