@@ -18,7 +18,8 @@ import { AppError, ErrorCode } from '../../shared/errors';
 import { nowIso, shortId } from '../../shared/utils';
 import { getCompany } from './company';
 import { createProject, getProject } from './project';
-import { createTask, getTask, type AcceptanceItem, type CreateTaskInput } from './task';
+import { createTask, getTask, addDependency, type AcceptanceItem, type CreateTaskInput } from './task';
+import { appendTaskEvent } from './task-event';
 import { listAgents } from './agent';
 
 /** 契约状态。 */
@@ -400,6 +401,26 @@ export function createOutsourcedTask(db: DB, contractId: string): { task: Return
   const task = createTask(db, taskInput);
   // 3. 契约标记 in_progress + 回填 outsourcedTaskId
   markInProgress(db, contractId, task.id);
+  // 阶段四任务 4.3：与甲方源任务建立 task_dependency（跨公司依赖）。
+  // - 源任务执行中（running/claimed）：置 waiting_dependency，交付验收通过后自动唤醒。
+  // - 源任务排队中（queued）：仅建依赖——依赖满足后 claimNextTask 自然放行，无需状态变化。
+  if (contract.sourceTaskId) {
+    try {
+      const source = getTask(db, contract.sourceTaskId);
+      if (source && source.state === 'running' || source?.state === 'claimed') {
+        const now2 = nowIso();
+        db.prepare(
+          `UPDATE task SET state='waiting_dependency', outcome='waiting_dependency',
+            lease_owner_thread_id=NULL, lease_expires_at=NULL, updated_at=? WHERE id=?`,
+        ).run(now2, source.id);
+        appendTaskEvent(db, source.id, 'waiting_dependency', { reason: 'outsourcing', contractId });
+      }
+      addDependency(db, contract.sourceTaskId, task.id);
+    } catch (e) {
+      // 源任务已不存在或状态异常：依赖建立失败不影响外包主流程
+      console.warn('outsourcing dependency link failed', { contractId, err: e instanceof Error ? e.message : String(e) });
+    }
+  }
   return { task: getTask(db, task.id), project: getProject(db, project.id) };
 }
 
