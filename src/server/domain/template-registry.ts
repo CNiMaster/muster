@@ -232,6 +232,123 @@ const KNOWLEDGE_MODELS: Record<BuiltinTemplateId, KnowledgeModelDefinition> = {
     artifactTypes: [{ key: 'consulting_report', label: '咨询研究报告', format: 'markdown', ownerRoleKey: 'expert', readonly: false }],
     views: [{ key: 'report_board', label: '研究课题看板', kind: 'board', sourceTypeKey: 'report_topic', fields: ['title', 'framework'], relationTypeKeys: [] }],
   },
+  // ===== 阶段六任务 6.1：多类型公司模板知识模型 =====
+  visual: {
+    recordTypes: [
+      {
+        key: 'visual_brief', label: '视觉需求', description: '视觉任务的创意需求与交付边界', fields: [
+          field('title', '需求标题', 'text', 'lead', 'visual-direction', 'idea-refine', { required: true }),
+          field('style', '风格方向', 'long_text', 'lead', 'visual-direction', 'idea-refine', { required: true }),
+          field('status', '状态', 'enum', 'reviewer', 'visual-quality', 'code-review-and-quality', { choices: ['构思', '制作中', '待审核', '已交付'] }),
+        ],
+      },
+      {
+        key: 'visual_asset', label: '视觉素材', description: '设计稿/插画/AI 图像等视觉成果', fields: [
+          field('name', '素材名称', 'text', 'designer', 'visual-design', 'source-driven-development', { required: true }),
+          field('format', '格式与规格', 'text', 'designer', 'visual-design', 'source-driven-development'),
+          field('review', '审核意见', 'long_text', 'reviewer', 'visual-quality', 'code-review-and-quality', { collaborators: ['designer'] }),
+        ],
+      },
+    ],
+    relationTypes: [{ key: 'asset_brief', label: '素材服务需求', sourceTypeKey: 'visual_asset', targetTypeKey: 'visual_brief', directed: true, ownerRoleKey: 'designer' }],
+    eventTypes: [{ key: 'visual_delivery', label: '素材交付', participantTypeKeys: ['visual_asset', 'visual_brief'], ownerRoleKey: 'reviewer' }],
+    artifactTypes: [
+      { key: 'design_deliverable', label: '设计交付物', format: 'binary', ownerRoleKey: 'designer', readonly: false },
+      { key: 'ai_image_set', label: 'AI 图像集', format: 'binary', ownerRoleKey: 'ai_engineer', readonly: false },
+    ],
+    views: [
+      { key: 'visual_board', label: '视觉任务看板', kind: 'board', sourceTypeKey: 'visual_brief', fields: ['title', 'style', 'status'], relationTypeKeys: ['asset_brief'], groupByField: 'status' },
+      { key: 'asset_list', label: '素材清单', kind: 'list', sourceTypeKey: 'visual_asset', fields: ['name', 'format', 'review'], relationTypeKeys: [] },
+    ],
+  },
+  video: {
+    recordTypes: [
+      {
+        key: 'video_brief', label: '视频需求', description: '视频项目的目标、受众与交付边界', fields: [
+          field('title', '项目标题', 'text', 'lead', 'video-production', 'planning-and-task-breakdown', { required: true }),
+          field('duration', '目标时长', 'text', 'lead', 'video-production', 'planning-and-task-breakdown'),
+          field('status', '状态', 'enum', 'editor', 'video-editing', 'source-driven-development', { choices: ['策划', '制作中', '后期', '待审核', '已交付'] }),
+        ],
+      },
+      {
+        key: 'script', label: '脚本', description: '剧本/分镜/短视频脚本', fields: [
+          field('title', '脚本名称', 'text', 'screenwriter', 'screenwriting', 'idea-refine', { required: true }),
+          field('outline', '故事大纲', 'long_text', 'screenwriter', 'screenwriting', 'idea-refine', { required: true }),
+          field('storyboard', '分镜说明', 'long_text', 'storyboard', 'storyboarding', 'idea-refine', { collaborators: ['director'] }),
+        ],
+      },
+      {
+        key: 'video_asset', label: '成片素材', description: '剪辑/调色/合成后的视频素材', fields: [
+          field('name', '素材名称', 'text', 'editor', 'video-editing', 'source-driven-development', { required: true }),
+          field('version', '版本', 'text', 'editor', 'video-editing', 'source-driven-development'),
+        ],
+      },
+    ],
+    relationTypes: [{ key: 'script_brief', label: '脚本服务项目', sourceTypeKey: 'script', targetTypeKey: 'video_brief', directed: true, ownerRoleKey: 'screenwriter' }],
+    eventTypes: [{ key: 'video_delivery', label: '成片交付', participantTypeKeys: ['video_asset', 'video_brief'], ownerRoleKey: 'lead' }],
+    artifactTypes: [
+      { key: 'final_cut', label: '成片', format: 'binary', ownerRoleKey: 'synthesist', readonly: false },
+      { key: 'script_doc', label: '脚本文档', format: 'markdown', ownerRoleKey: 'screenwriter', readonly: false },
+    ],
+    views: [
+      { key: 'video_board', label: '视频项目看板', kind: 'board', sourceTypeKey: 'video_brief', fields: ['title', 'status'], relationTypeKeys: ['script_brief'], groupByField: 'status' },
+      { key: 'script_list', label: '脚本清单', kind: 'list', sourceTypeKey: 'script', fields: ['title', 'outline'], relationTypeKeys: [] },
+    ],
+  },
+  publishing: {
+    recordTypes: [
+      {
+        key: 'publication', label: '出版项目', description: '图书/刊物选题与出版计划', fields: [
+          field('title', '选题标题', 'text', 'lead', 'editorial-direction', 'planning-and-task-breakdown', { required: true }),
+          field('plan', '内容规划', 'long_text', 'planner', 'content-planning', 'idea-refine', { required: true }),
+          field('status', '状态', 'enum', 'editor', 'copy-editing', 'source-driven-development', { choices: ['选题', '写作中', '编辑中', '校审中', '已出版'] }),
+        ],
+      },
+      {
+        key: 'manuscript', label: '稿件', description: '编辑与校对中的稿件版本', fields: [
+          field('title', '稿件名称', 'text', 'editor', 'copy-editing', 'source-driven-development', { required: true }),
+          field('version', '版本', 'text', 'editor', 'copy-editing', 'source-driven-development'),
+          field('review', '核查意见', 'long_text', 'fact_checker', 'fact-checking', 'code-review-and-quality', { collaborators: ['editor'] }),
+        ],
+      },
+    ],
+    relationTypes: [{ key: 'manuscript_publication', label: '稿件属于出版项目', sourceTypeKey: 'manuscript', targetTypeKey: 'publication', directed: true, ownerRoleKey: 'editor' }],
+    eventTypes: [{ key: 'publication_release', label: '出版发布', participantTypeKeys: ['publication', 'manuscript'], ownerRoleKey: 'lead' }],
+    artifactTypes: [
+      { key: 'final_manuscript', label: '定稿', format: 'markdown', ownerRoleKey: 'editor', readonly: false },
+      { key: 'layout_file', label: '排版文件', format: 'binary', ownerRoleKey: 'layout', readonly: false },
+    ],
+    views: [
+      { key: 'publication_board', label: '出版看板', kind: 'board', sourceTypeKey: 'publication', fields: ['title', 'status'], relationTypeKeys: ['manuscript_publication'], groupByField: 'status' },
+      { key: 'manuscript_list', label: '稿件清单', kind: 'list', sourceTypeKey: 'manuscript', fields: ['title', 'version', 'review'], relationTypeKeys: [] },
+    ],
+  },
+  social: {
+    recordTypes: [
+      {
+        key: 'social_plan', label: '社媒排期', description: '账号内容发布计划与排期', fields: [
+          field('title', '内容标题', 'text', 'planner', 'content-planning', 'planning-and-task-breakdown', { required: true }),
+          field('platform', '目标平台', 'text', 'planner', 'content-planning', 'idea-refine', { required: true }),
+          field('schedule', '发布时间', 'text', 'operator', 'social-operation', 'source-driven-development'),
+          field('status', '状态', 'enum', 'operator', 'social-operation', 'source-driven-development', { choices: ['策划', '制作中', '待发布', '已发布', '复盘'] }),
+        ],
+      },
+      {
+        key: 'social_post', label: '发布内容', description: '文案/封面/视频等已制作内容', fields: [
+          field('title', '内容名称', 'text', 'copywriter', 'copywriting', 'idea-refine', { required: true }),
+          field('hook', '钩子文案', 'long_text', 'copywriter', 'copywriting', 'idea-refine', { required: true }),
+          field('data', '数据表现', 'long_text', 'analyst', 'data-analysis', 'code-review-and-quality', { collaborators: ['operator'] }),
+        ],
+      },
+    ],
+    relationTypes: [{ key: 'post_plan', label: '内容属于排期', sourceTypeKey: 'social_post', targetTypeKey: 'social_plan', directed: true, ownerRoleKey: 'operator' }],
+    eventTypes: [{ key: 'social_publish', label: '内容发布', participantTypeKeys: ['social_plan', 'social_post'], ownerRoleKey: 'operator' }],
+    artifactTypes: [{ key: 'social_content', label: '发布内容包', format: 'markdown', ownerRoleKey: 'copywriter', readonly: false }],
+    views: [
+      { key: 'social_calendar', label: '发布日历', kind: 'board', sourceTypeKey: 'social_plan', fields: ['title', 'platform', 'schedule', 'status'], relationTypeKeys: ['post_plan'], groupByField: 'status' },
+      { key: 'post_list', label: '内容清单', kind: 'list', sourceTypeKey: 'social_post', fields: ['title', 'hook', 'data'], relationTypeKeys: [] },
+    ],
+  },
 };
 
 const TEMPLATE_META: Record<BuiltinTemplateId, {
@@ -263,6 +380,22 @@ const TEMPLATE_META: Record<BuiltinTemplateId, {
   consulting: {
     summary: { positioning: '行业研报、深度竞争分析与战略咨询团队', deliverables: ['行业研究报告', '数据定量模型', '战略咨询建议'], operatingModel: '总监定义课题，专家提炼洞察，分析师处理数据，主编校对润色' },
     maturity: 'ready', recommendedUse: '行业研究、竞争情报、商业计划书与战略咨询', presentation: { density: 'guided', mark: '询', colorToken: 'purple' },
+  },
+  visual: {
+    summary: { positioning: '插画、平面设计与 AI 绘图视觉素材制作团队', deliverables: ['创意概念方案', '设计稿与插画', 'AI 图像与精修成果'], operatingModel: '创意总监定方向，设计师/插画师/AI 工程师产出，质量审核员把关' },
+    maturity: 'needs_configuration', recommendedUse: '海报/主视觉/插画/AI 图像等视觉素材制作', presentation: { density: 'guided', mark: '图', colorToken: 'blue' },
+  },
+  video: {
+    summary: { positioning: '脚本、分镜、剪辑与成片制作团队', deliverables: ['剧本与分镜', '剪辑成片', '调色与后期包装'], operatingModel: '制片人统筹，编剧与导演创作，剪辑/调色/合成完成成片' },
+    maturity: 'needs_configuration', recommendedUse: '短视频、宣传片与影视成片制作', presentation: { density: 'visual', mark: '影', colorToken: 'red' },
+  },
+  publishing: {
+    summary: { positioning: '选题策划、编辑校对与出版发行团队', deliverables: ['选题方案', '编辑定稿', '排版文件'], operatingModel: '主编定方向，策划编辑规划，文字编辑优化，核查与校对把关' },
+    maturity: 'ready', recommendedUse: '图书、刊物与长内容编辑出版', presentation: { density: 'guided', mark: '版', colorToken: 'green' },
+  },
+  social: {
+    summary: { positioning: '小红书/抖音/B 站等内容发布与账号运营团队', deliverables: ['内容排期', '文案与封面', '数据复盘'], operatingModel: '运营总监定策略，策划排期，写手与设计师创作，专员发布互动，分析师复盘' },
+    maturity: 'ready', recommendedUse: '社媒账号运营、内容发布与增长', presentation: { density: 'guided', mark: '社', colorToken: 'orange' },
   },
 };
 
@@ -334,7 +467,7 @@ function buildPackage(id: BuiltinTemplateId): CompanyTemplatePackage {
   });
 }
 
-const BUILTIN_TEMPLATE_PACKAGES = (['general', 'software', 'content', 'novel', 'marketing', 'consulting'] as const).map(buildPackage);
+const BUILTIN_TEMPLATE_PACKAGES = (['general', 'software', 'content', 'novel', 'marketing', 'consulting', 'visual', 'video', 'publishing', 'social'] as const).map(buildPackage);
 
 export function listBuiltinCompanyTemplates(): CompanyTemplatePackage[] {
   return structuredClone(BUILTIN_TEMPLATE_PACKAGES);

@@ -3,7 +3,7 @@ import { COMPANY_TEMPLATE_OPTIONS, getCompanyTemplate, getProjectCreationPreset 
 
 describe('company templates', () => {
   it('提供平台化模板并保留小说公司', () => {
-    expect(COMPANY_TEMPLATE_OPTIONS.map((item) => item.id)).toEqual(['general', 'software', 'content', 'novel', 'marketing', 'consulting']);
+    expect(COMPANY_TEMPLATE_OPTIONS.map((item) => item.id)).toEqual(['general', 'software', 'content', 'novel', 'marketing', 'consulting', 'visual', 'video', 'publishing', 'social']);
     expect(getCompanyTemplate('software').roles).toContain('engineer');
     expect(getCompanyTemplate('novel').roles).toContain('writer');
   });
