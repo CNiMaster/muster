@@ -19,6 +19,7 @@ import { nowIso, shortId } from '../../shared/utils';
 import { getCompany } from './company';
 import { createProject, getProject } from './project';
 import { createTask, getTask, type AcceptanceItem, type CreateTaskInput } from './task';
+import { listAgents } from './agent';
 
 /** 契约状态。 */
 export type ContractState =
@@ -232,6 +233,39 @@ export function acceptContract(db: DB, id: string, vendorLiaisonAgentId: string)
   }
   updateState(db, id, 'accepted', { vendor_liaison_agent_id: vendorLiaisonAgentId });
   return getOutsourcingContract(db, id);
+}
+
+/**
+ * 阶段四任务 4.1：乙方自动接受契约（AI 对 AI 全自动对接）。
+ * - 乙方必须在线（online）。
+ * - 公司可关闭自动接受：contractJson.autoAcceptOutsourcing === false 时不自动接。
+ * - 对接人选择：按 requiredCapabilityIds 匹配乙方在线员工 skills；
+ *   无匹配时选乙方第一负责人；乙方无在线员工则等待人工。
+ * 返回 null 表示未接受（条件不满足），返回契约表示已接受（或已非 pending）。
+ */
+export function autoAcceptContract(db: DB, id: string): OutsourcingContract | null {
+  const contract = getOutsourcingContract(db, id);
+  if (contract.state !== 'pending') return contract;
+  const targetCompany = getCompany(db, contract.targetCompanyId);
+  if (targetCompany.state !== 'online') return null;
+  // 自动接受开关（公司章程可配），默认开启
+  const contractJson = (targetCompany.contractJson ?? {}) as Record<string, unknown>;
+  if (contractJson.autoAcceptOutsourcing === false) return null;
+
+  const required = contract.requiredCapabilityIds ?? [];
+  const agents = listAgents(db, contract.targetCompanyId);
+  const online = agents.filter((a) => a.availabilityState === 'online');
+  // 优先：能力匹配（requiredCapabilityIds ∩ skills）
+  let liaison = online.find((a) =>
+    required.length === 0 || required.some((cap) => (a.skills ?? []).includes(cap)),
+  );
+  if (!liaison) {
+    // 次选：乙方第一负责人
+    const firstAgentId = targetCompany.firstAgentId;
+    liaison = online.find((a) => a.id === firstAgentId) ?? online[0];
+  }
+  if (!liaison) return null; // 乙方无在线员工：等待人工
+  return acceptContract(db, id, liaison.id);
 }
 
 /**

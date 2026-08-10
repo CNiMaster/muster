@@ -12,6 +12,7 @@ import { updateProject, getProject } from '../domain/project';
 import { settleDrainingAgents } from '../domain/agent';
 import { drainReflectionQueue, recoverStuckReflections } from '../domain/reflection';
 import { generateInspectorSuggestions } from '../domain/inspector';
+import { autoAcceptContract } from '../domain/outsourcing-contract';
 import { shortId } from '../../shared/utils';
 import {
   STALE_WAITING_INPUT_MS,
@@ -65,6 +66,12 @@ export class ProjectRuntimeCoordinator {
         } catch (error) {
           log.warn('inspector alert scan failed', { error: error instanceof Error ? error.message : String(error) });
         }
+      }
+      // 阶段四任务 4.1：pending 外包契约自动接受（乙方在线且未关闭自动接受时）。
+      try {
+        this.acceptPendingOutsourcing();
+      } catch (error) {
+        log.warn('auto accept outsourcing scan failed', { error: error instanceof Error ? error.message : String(error) });
       }
       const plannedTasks: string[] = [];
       const releasedMirrors: string[] = [];
@@ -307,6 +314,29 @@ export class ProjectRuntimeCoordinator {
       }
     }
     return alerts;
+  }
+
+  /** 阶段四任务 4.1：扫描 pending 外包契约，条件满足时自动接受（AI 对 AI）。 */
+  private acceptPendingOutsourcing(): number {
+    let accepted = 0;
+    const rows = this.db
+      .prepare(`SELECT id FROM outsourcing_contract WHERE state='pending'`)
+      .all() as { id: string }[];
+    for (const { id } of rows) {
+      try {
+        const contract = autoAcceptContract(this.db, id);
+        if (contract && contract.state === 'accepted') {
+          accepted++;
+          log.info('outsourcing contract auto-accepted', { contractId: id, liaisonAgentId: contract.vendorLiaisonAgentId });
+        }
+      } catch (error) {
+        log.warn('auto accept outsourcing failed', {
+          contractId: id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    return accepted;
   }
 
   private settleDrainingCompanies(): string[] {
