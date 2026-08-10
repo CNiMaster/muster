@@ -13,6 +13,7 @@ import { settleDrainingAgents } from '../domain/agent';
 import { drainReflectionQueue, recoverStuckReflections } from '../domain/reflection';
 import { generateInspectorSuggestions } from '../domain/inspector';
 import { autoAcceptContract } from '../domain/outsourcing-contract';
+import { generateOptimizationReport } from '../domain/optimization-report';
 import { shortId } from '../../shared/utils';
 import {
   STALE_WAITING_INPUT_MS,
@@ -28,6 +29,13 @@ export interface RuntimeTickResult {
   releasedMirrors: string[];
 }
 
+/** 今日零点 ISO（用于"今天已生成过"判断）。 */
+function dbToday(db: DB): string {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString();
+}
+
 /** 统一驱动公司生命周期和项目任务执行。 */
 export class ProjectRuntimeCoordinator {
   private timer: NodeJS.Timeout | null = null;
@@ -37,6 +45,9 @@ export class ProjectRuntimeCoordinator {
   /** 阶段一任务 1.3：Inspector 定时运行（默认每 60 秒扫描一次，5 分钟冷却去重）。 */
   private lastInspectorRun = 0;
   private readonly inspectorIntervalMs = 60_000;
+  /** 阶段五任务 5.1：运营优化报告定时生成（默认每 24 小时一次，AI 生成异步不阻塞 tick）。 */
+  private lastOptimizationReportRun = 0;
+  private readonly optimizationReportIntervalMs = 24 * 3600_000;
 
   constructor(
     private readonly db: DB,
@@ -72,6 +83,15 @@ export class ProjectRuntimeCoordinator {
         this.acceptPendingOutsourcing();
       } catch (error) {
         log.warn('auto accept outsourcing scan failed', { error: error instanceof Error ? error.message : String(error) });
+      }
+      // 阶段五任务 5.1：每 24 小时为 online 公司异步生成运营优化报告（不阻塞 tick）。
+      if (Date.now() - this.lastOptimizationReportRun >= this.optimizationReportIntervalMs) {
+        this.lastOptimizationReportRun = Date.now();
+        try {
+          this.scheduleOptimizationReports();
+        } catch (error) {
+          log.warn('optimization report scan failed', { error: error instanceof Error ? error.message : String(error) });
+        }
       }
       const plannedTasks: string[] = [];
       const releasedMirrors: string[] = [];
@@ -337,6 +357,33 @@ export class ProjectRuntimeCoordinator {
       }
     }
     return accepted;
+  }
+
+  /** 阶段五任务 5.1：为 online 公司异步生成运营优化报告（LLM 调用不阻塞 tick）。 */
+  private scheduleOptimizationReports(): void {
+    for (const company of listCompanies(this.db)) {
+      if (company.state !== 'online') continue;
+      // 今天已生成过的不重复
+      const today = dbToday(this.db);
+      const existing = this.db
+        .prepare(`SELECT 1 FROM company_optimization_report WHERE company_id=? AND created_at >= ? LIMIT 1`)
+        .get(company.id, today);
+      if (existing) continue;
+      // fire-and-forget：AI 生成可能耗时数秒，异步执行
+      queueMicrotask(() => {
+        void (async () => {
+          try {
+            const report = await generateOptimizationReport(this.db, company.id);
+            log.info('optimization report generated', { companyId: company.id, reportId: report.id });
+          } catch (error) {
+            log.warn('optimization report generation failed', {
+              companyId: company.id,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        })();
+      });
+    }
   }
 
   private settleDrainingCompanies(): string[] {
