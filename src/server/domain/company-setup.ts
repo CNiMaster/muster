@@ -13,7 +13,7 @@ import { registerDefaultNovelScheduleTriggers } from './triggers';
 import { ensureProjectThreads } from './thread';
 import { addRelationship } from './graph';
 import { saveWorkflow } from './workflow';
-import { createBuiltinCompanyTemplateDraft } from './template-registry';
+import { createBuiltinCompanyTemplateDraft, getCompanyTemplatePackage } from './template-registry';
 import { validateCompanyTemplateDraft } from './template-health';
 import { installCompanyTemplate } from './template-installation';
 import { dispatchDefaultToolsToCompany } from './tool-registry';
@@ -63,6 +63,20 @@ export function commitCompanySetup(db: DB, draft: CompanySetupDraft, bindings: S
       const created = createDepartment(db, { companyId: company.id, name: department.name });
       return [department.key, created] as const;
     }));
+    // 阶段七任务 7.2：从模板 capabilityBindings 提取每岗能力 id（capabilityId），
+    // 建司时写入员工 skills，让能力路由（findBestAssignee）能按能力自动匹配专家。
+    const skillsByRole = new Map<string, string[]>();
+    try {
+      const templatePackage = getCompanyTemplatePackage(draft.templateId);
+      for (const binding of templatePackage.capabilityBindings) {
+        const role = binding.roleKey;
+        const skills = skillsByRole.get(role) ?? [];
+        if (!skills.includes(binding.capabilityId)) skills.push(binding.capabilityId);
+        skillsByRole.set(role, skills);
+      }
+    } catch {
+      // 模板包获取失败不阻断建司（skills 留空，能力路由回退第一负责人）
+    }
     const employees = draft.employees.map((employee) => {
       const binding = bindings[employee.key];
       if (!binding) throw new Error(`员工「${employee.name}」缺少执行器或权限绑定`);
@@ -78,6 +92,7 @@ export function commitCompanySetup(db: DB, draft: CompanySetupDraft, bindings: S
         responsibilities: employee.responsibilities,
         systemPrompt: `你是${draft.name}的${employee.name}。你的职责是：${employee.responsibilities}`,
         isInspector: employee.role === 'inspector',
+        skills: skillsByRole.get(employee.role) ?? [],
       });
       bindEmployeeExecutorProfile(db, agent.id, binding.executorProfileId);
       bindEmployeePermissionPolicy(db, agent.id, binding.permissionPolicyId);
