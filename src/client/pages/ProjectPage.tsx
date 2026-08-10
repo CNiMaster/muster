@@ -42,6 +42,7 @@ import { ProjectTaskWorkspace } from '../components/project/ProjectTaskWorkspace
 import { ProjectEmployeeWorkspace } from '../components/project/ProjectEmployeeWorkspace';
 import { WorkbenchContextSwitcher } from '../components/workbench/WorkbenchContextSwitcher';
 import { getProjectCreationPreset } from '../domain/company-templates';
+import { usePlaybooksForTemplate } from '../hooks/queries';
 
 export type ProjectWorkbenchView = 'task' | 'employee' | 'group' | 'activity';
 
@@ -69,6 +70,8 @@ function NewProject({ companyId }: { companyId: string }): React.ReactElement {
   const createProjectTask = useCreateProjectTask();
   const generateProjectProposal = useGenerateProjectProposal();
   const creationPreset = getProjectCreationPreset(company?.kind);
+  // 阶段六任务 6.2：项目 Playbook 选项（按公司模板推荐）
+  const { data: playbookOptions } = usePlaybooksForTemplate(company?.kind);
 
   const [mode, setMode] = useState<'standard' | 'wizard'>('wizard');
   const effectiveMode = creationPreset.allowNovelWizard ? mode : 'standard';
@@ -77,6 +80,7 @@ function NewProject({ companyId }: { companyId: string }): React.ReactElement {
   const [name, setName] = useState('');
   const [desc, setDesc] = useState('');
   const [rootDir, setRootDir] = useState('');
+  const [playbookId, setPlaybookId] = useState('');
 
   // 对话式向导状态
   const [prompt, setPrompt] = useState('');
@@ -121,7 +125,7 @@ function NewProject({ companyId }: { companyId: string }): React.ReactElement {
     }
 
     createProject.mutate(
-      { companyId, name, description: desc, ...(rootDir.trim() ? { rootDir: rootDir.trim() } : {}) },
+      { companyId, name, description: desc, ...(rootDir.trim() ? { rootDir: rootDir.trim() } : {}), ...(playbookId ? { playbookId } : {}) },
       {
         onSuccess: (p) => {
           // 新项目只建立「待确认」的项目任务；确认需求与能力前不派发制作工作单。
@@ -264,6 +268,15 @@ function NewProject({ companyId }: { companyId: string }): React.ReactElement {
             </Field>
             <Field label="项目说明">
               <Textarea value={desc} onChange={(e) => setDesc(e.target.value)} placeholder={creationPreset.descriptionPlaceholder} />
+            </Field>
+            {/* 阶段六任务 6.2：项目 Playbook（工作模式） */}
+            <Field label="项目工作模式" hint="决定项目阶段、成果类型与审批节点；同一公司可运行不同模式的项目">
+              <Select value={playbookId} onChange={(e) => setPlaybookId(e.target.value)}>
+                <option value="">跟随公司默认流程</option>
+                {(playbookOptions ?? []).map((playbook) => (
+                  <option key={playbook.id} value={playbook.id}>{playbook.name} — {playbook.description}</option>
+                ))}
+              </Select>
             </Field>
             <Field label="项目目录（可选）" hint="留空则在默认工作区自动生成。一个公司可同时跑多个项目，每个项目独立目录。必须填绝对路径，且在 MUSTER_ALLOWED_ROOTS 允许范围内。">
               <Input value={rootDir} onChange={(e) => setRootDir(e.target.value)} placeholder="例如：/Users/you/code/my-project" />

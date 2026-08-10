@@ -57,6 +57,8 @@ const createProjectSchema = z.object({
   description: z.string().optional(),
   rootDir: z.string().optional(),
   firstAgentId: z.string().optional(),
+  /** 阶段六任务 6.2：项目 Playbook（工作模式），可空。 */
+  playbookId: z.string().optional(),
 });
 
 projectsRouter.get(
@@ -327,3 +329,29 @@ projectById.post(
 );
 
 export { projectById };
+
+// ===== 阶段六任务 6.2：项目 Playbook =====
+import { Router as PlaybookRouter } from 'express';
+import { listPlaybooks, getPlaybook, playbooksForCompanyTemplate } from '../domain/playbooks';
+
+export const playbooksRouter = PlaybookRouter();
+
+/** 全部 Playbook（前端下拉用）。 */
+playbooksRouter.get('/', asyncHandler(async (_req, res) => {
+  res.json(listPlaybooks());
+}));
+
+/** 按公司模板推荐：/api/playbooks/by-template/:templateId */
+playbooksRouter.get('/by-template/:templateId', asyncHandler(async (req, res) => {
+  res.json(playbooksForCompanyTemplate(param(req, 'templateId')));
+}));
+
+/** 详情：/api/playbooks/:id */
+playbooksRouter.get('/:id', asyncHandler(async (req, res) => {
+  const playbook = getPlaybook(param(req, 'id'));
+  if (!playbook) {
+    res.status(404).json({ error: 'Playbook 不存在' });
+    return;
+  }
+  res.json(playbook);
+}));

@@ -704,9 +704,39 @@ export function useContextSize(projectId: string | undefined, threadId: string |
 export function useCreateProject() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ companyId, ...input }: { companyId: string; name: string; rootDir?: string; description?: string; firstAgentId?: string }) =>
+    mutationFn: ({ companyId, ...input }: { companyId: string; name: string; rootDir?: string; description?: string; firstAgentId?: string; playbookId?: string }) =>
       api.post<Project>(`/api/companies/${companyId}/projects`, input),
     onSuccess: (data) => qc.invalidateQueries({ queryKey: ['projects', data.companyId] }),
+  });
+}
+
+// ===== 项目 Playbook（阶段六任务 6.2） =====
+
+export interface PlaybookPhaseDTO {
+  key: string;
+  label: string;
+  deliverables: string[];
+  approvalGate: boolean;
+}
+
+export interface ProjectPlaybookDTO {
+  id: string;
+  name: string;
+  description: string;
+  companyTemplateIds: string[];
+  phases: PlaybookPhaseDTO[];
+  artifactTypes: string[];
+}
+
+export function usePlaybooks() {
+  return useQuery({ queryKey: ['playbooks'], queryFn: () => api.get<ProjectPlaybookDTO[]>('/api/playbooks') });
+}
+
+export function usePlaybooksForTemplate(templateId: string | undefined) {
+  return useQuery({
+    queryKey: ['playbooks', 'by-template', templateId],
+    queryFn: () => api.get<ProjectPlaybookDTO[]>(`/api/playbooks/by-template/${templateId}`),
+    enabled: !!templateId,
   });
 }
 

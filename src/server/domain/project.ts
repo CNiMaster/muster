@@ -69,6 +69,8 @@ export interface Project {
   firstAgentId: string | null;
   state: ProjectState;
   settings: Record<string, unknown>;
+  /** 阶段六任务 6.2：项目 Playbook（工作模式），可空。 */
+  playbookId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -82,6 +84,7 @@ interface ProjectRow {
   first_agent_id: string | null;
   state: string;
   settings_json: string;
+  playbook_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -96,6 +99,7 @@ function fromRow(r: ProjectRow): Project {
     firstAgentId: r.first_agent_id,
     state: r.state as ProjectState,
     settings: JSON.parse(r.settings_json ?? '{}'),
+    playbookId: r.playbook_id ?? null,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -111,6 +115,8 @@ export function createProject(
     firstAgentId?: string;
     /** 初始状态，默认 drafting（进入准备流程）。测试/模板/迁移场景可传 active 跳过。 */
     initialState?: ProjectState;
+    /** 阶段六任务 6.2：项目 Playbook（工作模式），可空。 */
+    playbookId?: string;
   },
 ): Project {
   const company = getCompany(db, input.companyId);
@@ -134,9 +140,9 @@ export function createProject(
   const state = input.initialState ?? 'drafting';
   const now = nowIso();
   db.prepare(
-    `INSERT INTO project (id, company_id, name, description, root_dir, first_agent_id, state, settings_json, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, '{}', ?, ?)`,
-  ).run(id, input.companyId, input.name, input.description ?? '', rootDir, firstAgentId ?? null, state, now, now);
+    `INSERT INTO project (id, company_id, name, description, root_dir, first_agent_id, state, settings_json, playbook_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, '{}', ?, ?, ?)`,
+  ).run(id, input.companyId, input.name, input.description ?? '', rootDir, firstAgentId ?? null, state, input.playbookId ?? null, now, now);
   return getProject(db, id);
 }
 

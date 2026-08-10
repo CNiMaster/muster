@@ -20,6 +20,7 @@ import { healthRouter } from './api/health';
 import { companiesRouter } from './api/companies';
 import { agentsRouter } from './api/agents';
 import { projectsRouter, projectById } from './api/projects';
+import { playbooksRouter } from './api/projects';
 import { graphsRouter } from './api/graphs';
 import { taskByProjectRouter, taskByIdRouter } from './api/tasks';
 import { usageRouter } from './api/reports-usage';
@@ -193,6 +194,7 @@ async function createApp(): Promise<AppHandle> {
   app.use('/api/companies/:companyId/credentials', companyCredentialsRouter);
   // 阶段五任务 5.1/5.2：公司运营优化报告（/optimization-report、/optimization-reports）
   app.use('/api/companies/:companyId', optimizationReportRouter);
+  app.use('/api/playbooks', playbooksRouter);
   app.use('/api/projects/:id', projectById);
   app.use('/api/plugins', pluginsRouter);
   app.use('/api', outsourcingRouter);
