@@ -626,9 +626,47 @@ export function completeTask(db: DB, taskId: string, result: AgentRunResult): Ta
         void asker; // author 已用 assignee；asker 仅作上下文保留
       }
       const parent = getTask(db, cur.parentTaskId);
-      if (parent.state === 'waiting_dependency' && areDependenciesMet(db, parent.id)) {
-        db.prepare(`UPDATE task SET state='queued', updated_at=? WHERE id=? AND state='waiting_dependency'`).run(now, parent.id);
-        appendTaskEvent(db, parent.id, 'resumed', { from: 'waiting_dependency' });
+      if (parent.state === 'waiting_dependency') {
+        // 阶段七任务 7.1：spawn_tasks 的 join 策略（any/quorum）——按策略提前恢复并取消其余子任务
+        const parentProto = (parent.inputProtocol ?? {}) as Record<string, unknown>;
+        const joinPolicy = parentProto.spawnJoinPolicy;
+        if (joinPolicy === 'any' || joinPolicy === 'quorum') {
+          const children = db
+            .prepare(
+              `SELECT t.id, t.state, t.summary, t.seq, t.title FROM task_dependency d
+               JOIN task t ON t.id = d.depends_on_id
+               WHERE d.task_id = ?`,
+            )
+            .all(parent.id) as Array<{ id: string; state: string; summary: string; seq: number; title: string }>;
+          const completedChildren = children.filter((c) => c.state === 'completed');
+          const shouldResume = joinPolicy === 'any'
+            ? completedChildren.length >= 1
+            : completedChildren.length >= Math.ceil(children.length / 2);
+          if (shouldResume && children.length > 0) {
+            // 恢复父任务 + 取消其余未完成子任务 + 写汇总消息
+            db.prepare(`UPDATE task SET state='queued', updated_at=? WHERE id=? AND state='waiting_dependency'`).run(now, parent.id);
+            appendTaskEvent(db, parent.id, 'resumed', { from: 'waiting_dependency', joinPolicy });
+            for (const child of children) {
+              if (child.state === 'completed' || child.state === 'cancelled') continue;
+              try {
+                cancelTask(db, child.id);
+              } catch {
+                // 状态不可取消时跳过
+              }
+            }
+            const summaries = completedChildren
+              .map((c) => `- Task #${c.seq}「${c.title}」：${(c.summary ?? '').slice(0, 200)}`)
+              .join('\n');
+            addTaskMessage(db, parent.id, {
+              author: 'system',
+              role: 'dispatch',
+              content: `[子任务汇总] ${joinPolicy === 'any' ? '任一子任务已完成' : '多数子任务已完成'}（${completedChildren.length}/${children.length}）：\n${summaries}`,
+            });
+          }
+        } else if (areDependenciesMet(db, parent.id)) {
+          db.prepare(`UPDATE task SET state='queued', updated_at=? WHERE id=? AND state='waiting_dependency'`).run(now, parent.id);
+          appendTaskEvent(db, parent.id, 'resumed', { from: 'waiting_dependency' });
+        }
       }
     }
     // B2B 外包：completed 时扫描 task_dependency 全表，唤醒任何因依赖本 task 而 waiting 的任务

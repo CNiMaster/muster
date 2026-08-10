@@ -619,6 +619,88 @@ async function cancelChildTaskHandler(call: ToolCall, ctx: ToolContext): Promise
 }
 
 /**
+ * spawn_tasks handler（阶段七任务 7.1）：一次并行派发多个子任务 + join 策略。
+ *
+ * - all（默认）：父任务等待全部子任务完成（waiting_dependency）。
+ * - any：任一完成即恢复父任务，其余自动取消。
+ * - quorum：多数完成即恢复父任务，其余自动取消。
+ * - best-effort：不等待，子任务异步执行，父任务直接完成。
+ * join 策略记录在父任务 inputProtocol.spawnJoinPolicy，由 completeTask 恢复逻辑消费。
+ */
+async function spawnTasksHandler(call: ToolCall, ctx: ToolContext): Promise<ToolResult> {
+  const cctx = ctx.consultationContext;
+  if (!cctx) {
+    return { toolCallId: call.id, name: call.name, content: '并行派发通道未配置（当前执行器不支持 spawn_tasks）' };
+  }
+  const rawTasks = Array.isArray(call.args.tasks) ? (call.args.tasks as unknown[]) : [];
+  const joinPolicy = ['all', 'any', 'quorum', 'best-effort'].includes(String(call.args.join_policy))
+    ? String(call.args.join_policy) as 'all' | 'any' | 'quorum' | 'best-effort'
+    : 'all';
+  if (rawTasks.length === 0) {
+    return { toolCallId: call.id, name: call.name, content: '错误：tasks 至少 1 项' };
+  }
+  if (rawTasks.length > 10) {
+    return { toolCallId: call.id, name: call.name, content: '错误：一次最多并行派发 10 个子任务' };
+  }
+  try {
+    const { db, askerTaskId, askerProjectId, askerProjectTaskId, askerAgentId } = cctx;
+    const asker = getAgent(db, askerAgentId);
+    const created: Array<{ id: string; seq: number; title: string; assignee: string }> = [];
+    for (const raw of rawTasks) {
+      const item = raw as Record<string, unknown>;
+      const title = String(item.title ?? '').trim();
+      const recipientId = String(item.assignee_agent_id ?? '').trim();
+      if (!title || !recipientId) continue;
+      const recipient = getAgent(db, recipientId);
+      if (recipient.companyId !== asker.companyId) {
+        return { toolCallId: call.id, name: call.name, content: `错误：${recipient.name} 不属于本公司，不能派发` };
+      }
+      const child = createTask(db, {
+        projectId: askerProjectId,
+        projectTaskId: askerProjectTaskId,
+        parentTaskId: askerTaskId,
+        dispatcherAgentId: askerAgentId,
+        assigneeAgentId: recipientId,
+        title,
+        inputProtocol: (item.input_protocol && typeof item.input_protocol === 'object')
+          ? { ...(item.input_protocol as Record<string, unknown>), spawned: true }
+          : { spawned: true },
+        priority: typeof item.priority === 'number' ? item.priority : 5,
+      });
+      created.push({ id: child.id, seq: child.seq, title: child.title, assignee: recipient.name });
+    }
+    if (created.length === 0) {
+      return { toolCallId: call.id, name: call.name, content: '错误：没有可派发的有效子任务（检查 title 与 assignee_agent_id）' };
+    }
+    if (joinPolicy === 'best-effort') {
+      return {
+        toolCallId: call.id,
+        name: call.name,
+        content: `已并行派发 ${created.length} 个子任务（best-effort，不等待）：${created.map((c) => `#${c.seq}「${c.title}」→${c.assignee}`).join('、')}。你可继续完成本任务其余工作。`,
+      };
+    }
+    // 建依赖 + 记录 join 策略
+    for (const child of created) {
+      addDependency(db, askerTaskId, child.id);
+    }
+    const current = getTask(db, askerTaskId);
+    const proto = (current.inputProtocol ?? {}) as Record<string, unknown>;
+    db.prepare('UPDATE task SET input_protocol_json=?, updated_at=? WHERE id=?')
+      .run(JSON.stringify({ ...proto, spawnJoinPolicy: joinPolicy, spawnCount: created.length }), new Date().toISOString(), askerTaskId);
+    const joinLabel = joinPolicy === 'any' ? '任一完成即恢复（其余自动取消）' : joinPolicy === 'quorum' ? '多数完成即恢复（其余自动取消）' : '全部完成才恢复';
+    return {
+      toolCallId: call.id,
+      name: call.name,
+      content:
+        `已并行派发 ${created.length} 个子任务（join=${joinPolicy}，${joinLabel}）：${created.map((c) => `#${c.seq}「${c.title}」→${c.assignee}`).join('、')}。` +
+        `请立即调用 done 工具，outcome=waiting_dependency，summary 简述你在等子任务汇总。`,
+    };
+  } catch (e) {
+    return { toolCallId: call.id, name: call.name, content: `并行派发失败：${(e as Error).message}` };
+  }
+}
+
+/**
  * start_discussion handler（设计二-方案B）：发起多人讨论室。
  * 创建讨论室 + 注册参与者 + 立即启动第一轮发言 + 把当前任务标为依赖第一轮发言任务。
  */
@@ -905,6 +987,33 @@ const BUILTIN_TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     type: 'function',
     function: {
+      name: 'spawn_tasks',
+      description: '一次并行派发多个子任务给不同专家（fan-out），并按 join 策略等待汇总（fan-in）。join_policy=all 全部完成才恢复父任务；any 任一完成即恢复（其余自动取消）；quorum 多数完成即恢复（其余自动取消）；best-effort 不等待、子任务异步执行。用于将大任务拆成可并行的研究/分析/制作子任务。',
+      parameters: {
+        type: 'object',
+        properties: {
+          tasks: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                title: { type: 'string', description: '子任务标题' },
+                assignee_agent_id: { type: 'string', description: '接收子任务的员工 id（同公司）' },
+                input_protocol: { type: 'object', description: '可选：子任务的输入协议（目标/参考/要求）' },
+                priority: { type: 'number', description: '可选：优先级 1-10，默认 5' },
+              },
+              required: ['title', 'assignee_agent_id'],
+            },
+          },
+          join_policy: { type: 'string', enum: ['all', 'any', 'quorum', 'best-effort'], description: '汇总策略，默认 all' },
+        },
+        required: ['tasks'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'start_discussion',
       description: '发起多人讨论室（设计二-方案B）。参与者按顺序轮流发言（用分身参与，不阻塞主任务）。7 种场景：help-request（难题求助）/task-clarification（任务澄清）/quality-review（质量评审）/task-breakdown（任务细分）/standard-alignment（标准对齐）/conflict-resolution（冲突协调）/brainstorm（头脑风暴）。讨论结束后由发起者调用 conclude_discussion 总结。',
       parameters: {
@@ -1094,6 +1203,12 @@ export function createBuiltinToolRegistry(): RuntimeToolRegistry {
     handler: cancelChildTaskHandler,
     // 取消子任务不涉及文件/网络，不走 permissionGuard
     source: { pluginId: BUILTIN_PLUGIN_ID, toolName: 'cancel_child_task' },
+  });
+  registry.register({
+    definition: defByName('spawn_tasks'),
+    handler: spawnTasksHandler,
+    // 派发子任务不涉及文件/网络，不走 permissionGuard
+    source: { pluginId: BUILTIN_PLUGIN_ID, toolName: 'spawn_tasks' },
   });
   registry.register({
     definition: defByName('start_discussion'),
