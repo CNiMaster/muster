@@ -20,6 +20,7 @@ import { immediateTransaction } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
 import { LEASE_TTL_MS, MAX_CLARIFY_ROUNDS, MAX_ALIGNMENT_ROUNDS } from '../../shared/constants';
+import { isRecoverableSessionError, MAX_AUTO_RETRY, AUTO_RETRY_DELAY_MS } from '../../shared/retry-policy';
 import type { AgentRunResult, ArtifactChange, TaskOutcome, TaskState } from '../../shared/types';
 import { getProject } from './project';
 import { getAgent } from './agent';
@@ -86,6 +87,10 @@ export interface Task {
   failureCount: number;
   /** B5：最近失败时间，配合 failureCount 用于诊断。 */
   lastFailedAt: string | null;
+  /** 阶段一任务 1.4：自动重试累计次数（区别于 failure_count 总失败数）。 */
+  autoRetryCount: number;
+  /** 阶段一任务 1.4：下一次可被领取的时间（NULL=立即可领；第二次重试延迟）。 */
+  retryAfterAt: string | null;
   /** 双 Loop 地基 P0.1：验收标准 checklist（一等结构化数据）。 */
   acceptanceCriteria: AcceptanceItem[];
   /** 双 Loop 地基 P0.2：进入任意阻塞态的累计次数，反思 loop 的根因探针。 */
@@ -134,6 +139,8 @@ interface TaskRow {
   updated_at: string;
   failure_count: number;
   last_failed_at: string | null;
+  auto_retry_count: number;
+  retry_after_at: string | null;
   acceptance_criteria: string;
   interruption_count: number;
   alignment_rounds: number;
@@ -178,6 +185,8 @@ function fromRow(r: TaskRow): Task {
     updatedAt: r.updated_at,
     failureCount: r.failure_count,
     lastFailedAt: r.last_failed_at,
+    autoRetryCount: r.auto_retry_count ?? 0,
+    retryAfterAt: r.retry_after_at ?? null,
     acceptanceCriteria: JSON.parse(r.acceptance_criteria ?? '[]') as AcceptanceItem[],
     interruptionCount: r.interruption_count ?? 0,
     alignmentRounds: r.alignment_rounds ?? 0,
@@ -452,13 +461,15 @@ export function claimNextTask(db: DB, threadId: string, assigneeAgentId?: string
                SELECT 1 FROM task_dependency d
                JOIN task dep ON dep.id = d.depends_on_id
                WHERE d.task_id = t.id AND dep.state NOT IN ('completed','cancelled'))
+             -- 阶段一任务 1.4：自动重试延迟未到不可领取
+             AND (t.retry_after_at IS NULL OR t.retry_after_at <= ?)
            ORDER BY t.priority DESC, t.seq ASC
            LIMIT 1
          )
          AND state = 'queued'
          RETURNING id`,
       )
-      .get(threadId, leaseExpiresAt, heartbeatAt, threadId, threadId, stamp, threadId, threadId, threadId, threadId, threadId) as
+      .get(threadId, leaseExpiresAt, heartbeatAt, threadId, threadId, stamp, threadId, threadId, threadId, threadId, threadId, stamp) as
       | { id: string }
       | undefined;
     if (!info) return null;
@@ -801,6 +812,28 @@ export function failTask(db: DB, taskId: string, message: string): Task {
      failure_count=failure_count+1, last_failed_at=?, updated_at=? WHERE id=?`,
   ).run(message.slice(0, 2000), now, now, taskId);
   appendTaskEvent(db, taskId, 'failed', { message, failureCount: cur.failureCount + 1 });
+
+  // 阶段一任务 1.4：非永久性失败自动重试（有限次数），避免 watchdog 停下来的任务无人重领。
+  // 可重试（超时/网络/会话崩溃）且未超过上限 → 自动回 queued 等待再次领取；
+  // 不可重试（权限拒绝/安全阻断/逻辑错误）或次数用尽 → 保持 failed，走失败传播上报第一负责人。
+  const retryable = isRecoverableSessionError(message);
+  const nextRetry = cur.autoRetryCount + 1;
+  if (retryable && nextRetry <= MAX_AUTO_RETRY) {
+    const retryAfterAt = nextRetry >= MAX_AUTO_RETRY
+      ? new Date(Date.now() + AUTO_RETRY_DELAY_MS).toISOString() // 最后一次自动重试延迟 30 秒
+      : null;
+    db.prepare(
+      `UPDATE task SET state='queued', outcome=NULL, auto_retry_count=?, retry_after_at=?,
+        lease_owner_thread_id=NULL, lease_expires_at=NULL, heartbeat_at=NULL, updated_at=? WHERE id=?`,
+    ).run(nextRetry, retryAfterAt, now, taskId);
+    appendTaskEvent(db, taskId, 'auto_retry_scheduled', {
+      retryCount: nextRetry,
+      retryAfterAt,
+      reason: message.slice(0, 300),
+    });
+    return getTask(db, taskId);
+  }
+
   const failed = getTask(db, taskId);
   // 阶段一任务 1.1：子任务失败时通知父任务并上报第一负责人，
   // 避免父任务永久卡在 waiting_dependency 无人发现。

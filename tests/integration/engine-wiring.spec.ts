@@ -568,7 +568,7 @@ describe('engine → worktree → publish wiring', () => {
     expect(statuses.every((status) => status === 'escalated')).toBe(true);
   });
 
-  it('执行器抛 timeout → Task 标 failed（区别于 blocked）', async () => {
+  it('执行器抛 timeout → 自动重试，3 次后 Task 标 failed（阶段一任务 1.4）', async () => {
     const r = createNovelCompany(db, { name: 'co' });
     clockIn(db, r.company.id);
     const project = createProject(db, {
@@ -587,9 +587,21 @@ describe('engine → worktree → publish wiring', () => {
 
     const fake = new FakeExecutor().script([{ throw: 'claude timed out after 600s' }]);
     const engine = new TaskEngine(db, fake);
+    // 第一次 timeout：自动重试，task 回 queued
     await engine.pumpThread(thread.id);
-
-    const t = listTasks(db, project.id)[0];
+    let t = listTasks(db, project.id)[0];
+    expect(t.state).toBe('queued');
+    expect(t.autoRetryCount).toBe(1);
+    // 第二次 timeout：自动重试（延迟 30 秒后领取）
+    await engine.pumpThread(thread.id);
+    t = getTask(db, t.id);
+    expect(t.state).toBe('queued');
+    expect(t.autoRetryCount).toBe(2);
+    expect(t.retryAfterAt).not.toBeNull();
+    // 延迟已过，第三次 timeout：超过自动重试上限 → failed
+    db.prepare('UPDATE task SET retry_after_at=? WHERE id=?').run(new Date(Date.now() - 1000).toISOString(), t.id);
+    await engine.pumpThread(thread.id);
+    t = getTask(db, t.id);
     expect(t.state).toBe('failed');
     expect(t.summary).toMatch(/timed out|超时/);
     expect(getThread(db, thread.id).state).toBe('failed');

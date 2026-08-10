@@ -104,7 +104,7 @@ function getPublishConflictResolutionContext(input: Record<string, unknown>): Pu
   };
 }
 
-function isRecoverableSessionError(error:unknown):boolean{return/(context|overflow|too many tokens|network|econn|timeout|timed out|no output|process.*exit)/i.test(error instanceof Error?error.message:String(error));}
+import { isRecoverableSessionError } from '../../shared/retry-policy';
 
 export class TaskEngine {
   private publishQueue: PublishQueue;
