@@ -22,3 +22,7 @@ export const STALE_WAITING_REPORT_COOLDOWN_MS = 30 * 60_000;
 // 复盘
 export const REPORT_TIME_INTERVAL_MS = 60 * 60_000; // 默认 1h
 export const REPORT_TASK_COUNT_INTERVAL = 20;
+
+// 外包验收（阶段四）
+/** 默认自动验收/返工轮次上限（超过后转人工）。submitReview 与自动验收共用，防返工环无限循环。 */
+export const DEFAULT_MAX_AUTO_REVIEW_ROUNDS = 3;

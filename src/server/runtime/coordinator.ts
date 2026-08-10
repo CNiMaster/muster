@@ -12,7 +12,7 @@ import { updateProject, getProject } from '../domain/project';
 import { settleDrainingAgents } from '../domain/agent';
 import { drainReflectionQueue, recoverStuckReflections } from '../domain/reflection';
 import { generateInspectorSuggestions } from '../domain/inspector';
-import { autoAcceptContract, createOutsourcedTask } from '../domain/outsourcing-contract';
+import { autoAcceptContract, createOutsourcedTask, revertAcceptToPending } from '../domain/outsourcing-contract';
 import { generateOptimizationReport } from '../domain/optimization-report';
 import { shortId } from '../../shared/utils';
 import {
@@ -364,13 +364,23 @@ export class ProjectRuntimeCoordinator {
         if (contract && contract.state === 'accepted') {
           // 阶段四任务 4.1 补全：接受后立即创建乙方承接任务（与 API /accept 端点流程对齐），
           // 否则契约停在 accepted，乙方永不执行。
-          const { task } = createOutsourcedTask(this.db, id);
-          accepted++;
-          log.info('outsourcing contract auto-accepted', {
-            contractId: id,
-            liaisonAgentId: contract.vendorLiaisonAgentId,
-            outsourcedTaskId: task.id,
-          });
+          try {
+            const { task } = createOutsourcedTask(this.db, id);
+            accepted++;
+            log.info('outsourcing contract auto-accepted', {
+              contractId: id,
+              liaisonAgentId: contract.vendorLiaisonAgentId,
+              outsourcedTaskId: task.id,
+            });
+          } catch (taskError) {
+            // Review 修复（M-1）：承接任务创建失败时回滚到 pending（清空对接人），
+            // 契约可被下次 tick 重新接受，不再永久卡在 accepted。
+            revertAcceptToPending(this.db, id);
+            log.warn('auto accept outsourcing: createOutsourcedTask failed, contract reverted to pending', {
+              contractId: id,
+              error: taskError instanceof Error ? taskError.message : String(taskError),
+            });
+          }
         }
       } catch (error) {
         log.warn('auto accept outsourcing failed', {

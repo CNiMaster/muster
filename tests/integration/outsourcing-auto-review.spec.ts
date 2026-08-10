@@ -21,6 +21,8 @@ import {
   getOutsourcingContract,
   acceptContract,
   createOutsourcedTask,
+  createReworkTask,
+  submitReview,
   markDelivered,
 } from '../../src/server/domain/outsourcing-contract';
 import { createTask, addDependency } from '../../src/server/domain/task';
@@ -153,5 +155,21 @@ describe('handleOutsourcingReviewTaskCompleted（验收结论落地）', () => {
     // 项目对话窗口有转人工提示
     const msgs = db.prepare("SELECT content FROM conversation_message WHERE scope_id=? ORDER BY created_at DESC").all(contract.sourceProjectId) as Array<{ content: string }>;
     expect(msgs.some((m) => m.content.includes('转人工验收'))).toBe(true);
+  });
+
+  it('M-3：手动验收超返工上限被 submitReview 拒绝（手动路径兜底）', () => {
+    const { contract } = deliveredContract();
+    // 默认 maxRounds=3：连做 3 轮返工（revisionRound 0→3）
+    for (let i = 0; i < 3; i++) {
+      submitReview(db, contract.id, 'changes_requested', `反馈 ${i}`);
+      createReworkTask(db, contract.id, `反馈 ${i}`);
+      markDelivered(db, contract.id);
+    }
+    expect(getOutsourcingContract(db, contract.id).revisionRound).toBe(3);
+    // 第 4 次 changes_requested 被拒绝（此前手动 API 路径可无限返工）
+    expect(() => submitReview(db, contract.id, 'changes_requested', '再来一轮')).toThrow(/返工上限/);
+    // 契约仍可正常结束（completed 不受返工上限限制）
+    submitReview(db, contract.id, 'completed');
+    expect(getOutsourcingContract(db, contract.id).state).toBe('completed');
   });
 });

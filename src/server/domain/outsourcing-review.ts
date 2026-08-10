@@ -28,9 +28,9 @@ import { createTask, resumeDependents, type Task } from './task';
 import { getAgent } from './agent';
 import { postSystemMessage } from './conversation';
 import { log } from '../logger';
+import { DEFAULT_MAX_AUTO_REVIEW_ROUNDS } from '../../shared/constants';
 
-/** 默认自动验收轮次上限（超过后转人工）。 */
-export const DEFAULT_MAX_AUTO_REVIEW_ROUNDS = 3;
+// 默认自动验收轮次上限（超过后转人工）。常量已上移到 shared/constants.ts，与 submitReview 共用。
 
 const VERDICT_RE = /^VERDICT=(completed|changes_requested|rejected)/i;
 

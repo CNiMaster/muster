@@ -16,6 +16,7 @@
 import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { nowIso, shortId } from '../../shared/utils';
+import { DEFAULT_MAX_AUTO_REVIEW_ROUNDS } from '../../shared/constants';
 import { getCompany } from './company';
 import { createProject, getProject } from './project';
 import { createTask, getTask, addDependency, type AcceptanceItem, type CreateTaskInput } from './task';
@@ -106,7 +107,9 @@ function fromRow(r: ContractRow): OutsourcingContract {
 /** 允许的状态迁移。 */
 const ALLOWED_TRANSITIONS: Record<ContractState, ContractState[]> = {
   pending: ['accepted', 'cancelled'],
-  accepted: ['in_progress', 'cancelled'],
+  // Review 修复（M-1）：accepted → pending 仅供接受端失败回滚（revertAcceptToPending），
+  // 使契约可重新接受，避免 createOutsourcedTask 失败后契约永久卡在 accepted。
+  accepted: ['in_progress', 'cancelled', 'pending'],
   in_progress: ['delivered', 'cancelled'],
   delivered: ['reviewing', 'cancelled'],
   reviewing: ['completed', 'changes_requested', 'rejected'],
@@ -237,6 +240,17 @@ export function acceptContract(db: DB, id: string, vendorLiaisonAgentId: string)
 }
 
 /**
+ * Review 修复（M-1）：接受端失败回滚——把已 accepted 的契约退回 pending 并清空对接人，
+ * 使契约可被重新接受。仅供 accept 后创建承接任务失败时恢复用（coordinator / API 调用）。
+ */
+export function revertAcceptToPending(db: DB, id: string): OutsourcingContract {
+  const contract = getOutsourcingContract(db, id);
+  if (contract.state !== 'accepted') return contract; // 非 accepted 状态无需回滚（幂等）
+  updateState(db, id, 'pending', { vendor_liaison_agent_id: null });
+  return getOutsourcingContract(db, id);
+}
+
+/**
  * 阶段四任务 4.1：乙方自动接受契约（AI 对 AI 全自动对接）。
  * - 乙方必须在线（online）。
  * - 公司可关闭自动接受：contractJson.autoAcceptOutsourcing === false 时不自动接。
@@ -322,6 +336,15 @@ export function submitReview(
   if (decision === 'completed') {
     updateState(db, id, 'completed', { feedback_json: feedback ?? null });
   } else if (decision === 'changes_requested') {
+    // Review 修复（M-3）：返工上限下沉到 submitReview——手动 API 路径此前绕过 maxAutoReviewRounds，
+    // 可无限往返返工环。这里与自动验收共用同一阈值（甲方公司 contractJson.maxAutoReviewRounds，默认 3）。
+    const maxRounds = getMaxReviewRounds(db, contract);
+    if (contract.revisionRound + 1 > maxRounds) {
+      throw new AppError(
+        ErrorCode.VALIDATION,
+        `已达返工上限 ${maxRounds} 轮，请改选 completed 或 rejected 结束验收`,
+      );
+    }
     // changes_requested 先置中间态，再回流 in_progress（由调用方调 createReworkTask 创建返工任务）
     // 注意：保留 outsourcedTaskId 不清空 —— createReworkTask 需读它定位承接项目，
     // 创建返工任务后由 markInProgress 覆盖为新的返工任务 id。
@@ -334,6 +357,20 @@ export function submitReview(
     updateState(db, id, 'rejected', { feedback_json: feedback ?? null });
   }
   return getOutsourcingContract(db, id);
+}
+
+/** 读取甲方公司配置的返工轮次上限（contractJson.maxAutoReviewRounds，默认 3）。 */
+function getMaxReviewRounds(db: DB, contract: OutsourcingContract): number {
+  try {
+    const project = getProject(db, contract.sourceProjectId);
+    const company = project ? getCompany(db, project.companyId) : null;
+    const contractJson = (company?.contractJson ?? {}) as Record<string, unknown>;
+    return typeof contractJson.maxAutoReviewRounds === 'number' && contractJson.maxAutoReviewRounds > 0
+      ? Math.floor(contractJson.maxAutoReviewRounds)
+      : DEFAULT_MAX_AUTO_REVIEW_ROUNDS;
+  } catch {
+    return DEFAULT_MAX_AUTO_REVIEW_ROUNDS;
+  }
 }
 
 /** 取消契约（任一方）。 */

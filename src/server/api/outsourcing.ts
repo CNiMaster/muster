@@ -25,6 +25,7 @@ import {
   cancelContract,
   createOutsourcedTask,
   createReworkTask,
+  revertAcceptToPending,
   type ReviewDecision,
 } from '../domain/outsourcing-contract';
 import { runOutsourcingDecisionTree, selectTempForNeed } from '../domain/outsourcing-decision';
@@ -169,8 +170,15 @@ outsourcingRouter.post(
     const db = getDb();
     const input = acceptSchema.parse(req.body);
     const contract = acceptContract(db, param(req, 'id'), input.vendorLiaisonAgentId);
-    // 接受后立即创建承接任务 + 契约进 in_progress
-    const { task } = createOutsourcedTask(db, contract.id);
+    // 接受后立即创建承接任务 + 契约进 in_progress；
+    // Review 修复（M-1）：创建失败时回滚到 pending，契约可重新接受，不再卡在 accepted。
+    let task: ReturnType<typeof createOutsourcedTask>['task'];
+    try {
+      ({ task } = createOutsourcedTask(db, contract.id));
+    } catch (error) {
+      revertAcceptToPending(db, contract.id);
+      throw error;
+    }
     realtime.publish(makeLifecycleEvent('outsource.accepted', {
       contractId: contract.id,
       vendorLiaisonAgentId: input.vendorLiaisonAgentId,

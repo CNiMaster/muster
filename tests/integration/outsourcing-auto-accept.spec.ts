@@ -8,13 +8,14 @@
  * 4. contractJson.autoAcceptOutsourcing=false → 不自动接受
  * 5. coordinator tick 自动触发
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { makeTestDb, makeTempGitRepo } from './setup';
 import { setDbForTest } from '../../src/server/db/client';
 import { createCompany, transitionCompany, updateCompany } from '../../src/server/domain/company';
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject } from '../../src/server/domain/project';
 import { createOutsourcingContract, autoAcceptContract, getOutsourcingContract } from '../../src/server/domain/outsourcing-contract';
+import * as outsourcingContractModule from '../../src/server/domain/outsourcing-contract';
 import { createTask } from '../../src/server/domain/task';
 import { FakeExecutor } from '../../src/server/task-engine/fake-executor';
 import { TaskEngine } from '../../src/server/task-engine/engine';
@@ -130,5 +131,35 @@ describe('外包自动接受（阶段四任务 4.1）', () => {
     expect(after.vendorLiaisonAgentId).toBe(bLead.id);
     expect(after.outsourcedTaskId).not.toBeNull();
     void a;
+  });
+
+  it('M-1：承接任务创建失败时契约回滚 pending，下次 tick 重试成功', async () => {
+    const { a, b, project } = fixture();
+    transitionCompany(db, b.id, 'online');
+    const contract = createOutsourcingContract(db, {
+      sourceCompanyId: a.id,
+      targetCompanyId: b.id,
+      sourceProjectId: project.id,
+      title: 't',
+      brief: 'b',
+    });
+    const coordinator = new ProjectRuntimeCoordinator(db, new TaskEngine(db, new FakeExecutor()));
+
+    // 第一次 tick：createOutsourcedTask 抛错 → 契约应回滚 pending（不再卡在 accepted）
+    const spy = vi.spyOn(outsourcingContractModule, 'createOutsourcedTask').mockImplementation(() => {
+      throw new Error('simulated task creation failure');
+    });
+    await coordinator.tick({ pump: false });
+    spy.mockRestore();
+
+    const afterFirst = getOutsourcingContract(db, contract.id);
+    expect(afterFirst.state).toBe('pending');
+    expect(afterFirst.vendorLiaisonAgentId).toBeNull();
+
+    // 第二次 tick：恢复真实实现 → 自动接受并创建承接任务
+    await coordinator.tick({ pump: false });
+    const afterSecond = getOutsourcingContract(db, contract.id);
+    expect(afterSecond.state).toBe('in_progress');
+    expect(afterSecond.outsourcedTaskId).not.toBeNull();
   });
 });
