@@ -1239,10 +1239,31 @@ export class TaskEngine {
     log.error('task failed', { taskId, err: msg });
     const failed = failTask(this.db, taskId, `执行异常：${msg}`);
 
+    // Review 修复：讨论发言 task 失败时记录空发言，让讨论轮次能继续推进
+    // （否则 parallel 模式一轮发言凑不齐，讨论永久停滞；sequential 同样受益）。
+    if (failed.state === 'failed') {
+      try {
+        const proto = (failed.inputProtocol ?? {}) as Record<string, unknown>;
+        if (proto.discussionId && proto.isYourTurn) {
+          const discussionId = String(proto.discussionId);
+          // handleRunError 是同步路径：异步记录失败发言，不阻塞异常处理
+          void import('../domain/discussion').then((m) => {
+            m.completeDiscussionTurn(this.db, discussionId, taskId, '[本轮未发言（执行失败）]');
+          }).catch((e) => {
+            log.warn('discussion failure turn record failed', { taskId, err: e instanceof Error ? e.message : String(e) });
+          });
+        }
+      } catch (e) {
+        log.warn('discussion failure turn record failed', { taskId, err: e instanceof Error ? e.message : String(e) });
+      }
+    }
+
     // B5 熔断回流：连续失败 ≥ TASK_CIRCUIT_BREAKER_THRESHOLD 且项目处于 active → 回流到 researching
     // 对齐 systematic-debugging:195（3 次失败熔断，怀疑架构而非继续打补丁）
+    // Review 修复：仅当任务真正停留在 failed（自动重试耗尽或不可重试）时才熔断；
+    // 若 failTask 走了自动重试（返回 queued），任务还在排队等待重试，不应回滚项目。
     let rolledBack = false;
-    if (failed.failureCount >= TASK_CIRCUIT_BREAKER_THRESHOLD) {
+    if (failed.state === 'failed' && failed.failureCount >= TASK_CIRCUIT_BREAKER_THRESHOLD) {
       try {
         const project = getProject(this.db, failed.projectId);
         if (project.state === 'active') {

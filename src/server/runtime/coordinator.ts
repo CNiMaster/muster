@@ -12,7 +12,7 @@ import { updateProject, getProject } from '../domain/project';
 import { settleDrainingAgents } from '../domain/agent';
 import { drainReflectionQueue, recoverStuckReflections } from '../domain/reflection';
 import { generateInspectorSuggestions } from '../domain/inspector';
-import { autoAcceptContract } from '../domain/outsourcing-contract';
+import { autoAcceptContract, createOutsourcedTask } from '../domain/outsourcing-contract';
 import { generateOptimizationReport } from '../domain/optimization-report';
 import { shortId } from '../../shared/utils';
 import {
@@ -35,6 +35,13 @@ function dbToday(db: DB): string {
   d.setHours(0, 0, 0, 0);
   return d.toISOString();
 }
+
+/** 延迟 import 避免循环依赖（optimization-report-executor 依赖 coordinator 不存在的引用）。 */
+function requirePendingOffline() {
+  return { executePendingOfflineActions: executePendingOfflineActionsFn };
+}
+
+import { executePendingOfflineActions as executePendingOfflineActionsFn } from '../domain/optimization-report-executor';
 
 /** 统一驱动公司生命周期和项目任务执行。 */
 export class ProjectRuntimeCoordinator {
@@ -308,20 +315,29 @@ export class ProjectRuntimeCoordinator {
                 suggestion.createdAt,
               );
             alerts++;
-            // 高严重度：上报第一负责人处理
+            // 高严重度：上报第一负责人处理。
+            // Review 修复：近 30 分钟同 project+kind 已有未完成 [告警] Task 则不重复上报，
+            // 避免持续 stuck/absence 时负责人每 5 分钟收到一个新任务。
             if (suggestion.severity === 'high' && project.firstAgentId) {
-              createTask(this.db, {
-                projectId: project.id,
-                assigneeAgentId: project.firstAgentId,
-                title: `[告警] ${suggestion.kind === 'stuck' ? '心跳停滞' : '员工缺席'}`,
-                inputProtocol: {
-                  reason: 'inspector_alert',
-                  alertKind: suggestion.kind,
-                  message: suggestion.message.slice(0, 500),
-                },
-                priority: 8,
-                skipLaunchGate: true,
-              });
+              const recentAlertTask = this.db
+                .prepare(
+                  `SELECT 1 FROM task WHERE project_id=? AND title LIKE '[告警]%' AND state NOT IN ('completed','cancelled','failed') AND created_at > ? LIMIT 1`,
+                )
+                .get(project.id, new Date(Date.now() - 30 * 60_000).toISOString());
+              if (!recentAlertTask) {
+                createTask(this.db, {
+                  projectId: project.id,
+                  assigneeAgentId: project.firstAgentId,
+                  title: `[告警] ${suggestion.kind === 'stuck' ? '心跳停滞' : '员工缺席'}`,
+                  inputProtocol: {
+                    reason: 'inspector_alert',
+                    alertKind: suggestion.kind,
+                    message: suggestion.message.slice(0, 500),
+                  },
+                  priority: 8,
+                  skipLaunchGate: true,
+                });
+              }
             }
           } catch (error) {
             log.warn('inspector alert persist failed', {
@@ -346,8 +362,15 @@ export class ProjectRuntimeCoordinator {
       try {
         const contract = autoAcceptContract(this.db, id);
         if (contract && contract.state === 'accepted') {
+          // 阶段四任务 4.1 补全：接受后立即创建乙方承接任务（与 API /accept 端点流程对齐），
+          // 否则契约停在 accepted，乙方永不执行。
+          const { task } = createOutsourcedTask(this.db, id);
           accepted++;
-          log.info('outsourcing contract auto-accepted', { contractId: id, liaisonAgentId: contract.vendorLiaisonAgentId });
+          log.info('outsourcing contract auto-accepted', {
+            contractId: id,
+            liaisonAgentId: contract.vendorLiaisonAgentId,
+            outsourcedTaskId: task.id,
+          });
         }
       } catch (error) {
         log.warn('auto accept outsourcing failed', {
@@ -398,6 +421,16 @@ export class ProjectRuntimeCoordinator {
       if (!active) {
         transitionCompany(this.db, company.id, 'off');
         settled.push(company.id);
+        // Review 修复：公司下班后自动执行此前标记 pending_offline 的优化报告建议
+        try {
+          const { executePendingOfflineActions } = requirePendingOffline();
+          executePendingOfflineActions(this.db, company.id);
+        } catch (error) {
+          log.warn('pending offline actions execution failed', {
+            companyId: company.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
     }
     return settled;

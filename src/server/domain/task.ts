@@ -652,9 +652,10 @@ export function completeTask(db: DB, taskId: string, result: AgentRunResult): Ta
             )
             .all(parent.id) as Array<{ id: string; state: string; summary: string; seq: number; title: string }>;
           const completedChildren = children.filter((c) => c.state === 'completed');
+          // Review 修复：quorum 多数应为 floor(n/2)+1（2 个子任务时多数 = 2，避免半数即收口）
           const shouldResume = joinPolicy === 'any'
             ? completedChildren.length >= 1
-            : completedChildren.length >= Math.ceil(children.length / 2);
+            : completedChildren.length >= Math.floor(children.length / 2) + 1;
           if (shouldResume && children.length > 0) {
             // 恢复父任务 + 取消其余未完成子任务 + 写汇总消息
             db.prepare(`UPDATE task SET state='queued', updated_at=? WHERE id=? AND state='waiting_dependency'`).run(now, parent.id);
@@ -858,8 +859,9 @@ export function recordInterruption(db: DB, taskId: string): void {
 export function failTask(db: DB, taskId: string, message: string): Task {
   const cur = getTask(db, taskId);
   const now = nowIso();
+  // Review 修复：失败时清除旧 outcome（曾以 waiting_input/blocked 完成的任务再失败时不留误导性旧值）
   db.prepare(
-    `UPDATE task SET state='failed', summary=?, lease_owner_thread_id=NULL, lease_expires_at=NULL,
+    `UPDATE task SET state='failed', outcome=NULL, summary=?, lease_owner_thread_id=NULL, lease_expires_at=NULL,
      failure_count=failure_count+1, last_failed_at=?, updated_at=? WHERE id=?`,
   ).run(message.slice(0, 2000), now, now, taskId);
   appendTaskEvent(db, taskId, 'failed', { message, failureCount: cur.failureCount + 1 });
@@ -924,13 +926,31 @@ function propagateChildFailure(db: DB, failedTask: Task, message: string): void 
         `[子任务失败] 子任务 Task #${failedTask.seq}「${failedTask.title}」执行失败：${message.slice(0, 300)}。` +
         `请在下次执行时处理：恢复重试（resume_task）、换人重做（done 的 outboundTasks）、或取消该子任务（cancel_child_task）。`,
     });
-    // 去重：父任务已有未完成的 [兜底] Task 则不再重复派发
+    // 去重：父任务已有未完成的 [兜底] Task 则不再重复派发；
+    // Review 修复：但把本次失败信息追加进现有 [兜底] 任务的 inputProtocol（failedChildren 数组），
+    // 避免负责人只看到第一个失败子任务而漏掉后续失败。
     const existing = db
       .prepare(
-        `SELECT 1 FROM task WHERE parent_task_id=? AND title LIKE '[兜底]%' AND state NOT IN ('completed','cancelled','failed') LIMIT 1`,
+        `SELECT id, input_protocol_json FROM task WHERE parent_task_id=? AND title LIKE '[兜底]%' AND state NOT IN ('completed','cancelled','failed') LIMIT 1`,
       )
-      .get(parentId);
-    if (existing) continue;
+      .get(parentId) as { id: string; input_protocol_json: string } | undefined;
+    if (existing) {
+      try {
+        const proto = JSON.parse(existing.input_protocol_json ?? '{}') as Record<string, unknown>;
+        const children = Array.isArray(proto.failedChildren) ? proto.failedChildren as unknown[] : [];
+        children.push({
+          failedChildTaskId: failedTask.id,
+          failedChildSeq: failedTask.seq,
+          failedChildTitle: failedTask.title,
+          failureMessage: message.slice(0, 1000),
+        });
+        db.prepare('UPDATE task SET input_protocol_json=?, updated_at=? WHERE id=?')
+          .run(JSON.stringify({ ...proto, failedChildren: children }), nowIso(), existing.id);
+      } catch {
+        // 追加失败不影响主流程
+      }
+      continue;
+    }
     const project = getProject(db, parent.projectId);
     if (!project.firstAgentId) continue;
     createTask(db, {
@@ -1057,7 +1077,16 @@ export function getTaskChain(db: DB, taskId: string): Task[] {
 export function cancelTask(db: DB, taskId: string): Task {
   const cur = getTask(db, taskId);
   assertTransition(cur.state, 'cancelled');
-  db.prepare(`UPDATE task SET state='cancelled', lease_owner_thread_id=NULL, lease_expires_at=NULL, updated_at=? WHERE id=?`).run(nowIso(), taskId);
+  // Review 修复：取消时清理 wait_state 残留（fromRow 用 wait_state ?? state 覆盖主状态，
+  // 被取消的 waiting_approval 任务若不清 wait_state 会显示为 waiting_approval）+ 解除挂起记录
+  db.prepare(
+    `UPDATE task SET state='cancelled', wait_state=NULL, lease_owner_thread_id=NULL, lease_expires_at=NULL, updated_at=? WHERE id=?`,
+  ).run(nowIso(), taskId);
+  try {
+    resolveSuspensionByTask(db, taskId, { resolution: 'cancelled' });
+  } catch {
+    // 无挂起记录时忽略
+  }
   if (cur.inputProtocol.reason === 'publish_conflict') {
     const publishIds = [cur.inputProtocol.publishId, cur.inputProtocol.rootPublishId]
       .filter((value): value is string => typeof value === 'string');
@@ -1110,10 +1139,18 @@ export function resumeTask(db: DB, taskId: string): Task {
     throw new AppError(ErrorCode.TASK_INVALID_TRANSITION, `task ${taskId} 不可恢复（${cur.state}）`);
   }
   const next = cur.state === 'paused' ? 'claimed' : 'queued';
+  // Review 修复：恢复时重置自动重试预算（auto_retry_count/retry_after_at），
+  // 避免"手动救活一次后任何瞬态失败都直接上报"；也清理 wait_state 残留。
   db.prepare(
-    `UPDATE task SET state=?, outcome=NULL, completed_at=NULL,
+    `UPDATE task SET state=?, outcome=NULL, completed_at=NULL, wait_state=NULL,
+      auto_retry_count=0, retry_after_at=NULL,
       lease_owner_thread_id=NULL, lease_expires_at=NULL, heartbeat_at=NULL, updated_at=? WHERE id=?`,
   ).run(next, nowIso(), taskId);
+  try {
+    resolveSuspensionByTask(db, taskId, { resolution: 'resumed' });
+  } catch {
+    // 无挂起记录时忽略
+  }
   appendTaskEvent(db, taskId, 'resumed', { from: cur.state });
   return getTask(db, taskId);
 }

@@ -371,7 +371,10 @@ export function completeDiscussionTurn(db: DB, discussionId: string, taskId: str
     const isSynthesis = Boolean((getTaskInput(db, taskId) ?? {}).synthesis);
     db.prepare('INSERT INTO discussion_turn (id,discussion_id,task_id,speaker_agent_id,turn_index,content,created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
       .run(turnId, discussionId, taskId, speakerId, turnIndex, content, now);
-    db.prepare('UPDATE discussion SET current_speaker_agent_id=NULL, current_turn_task_id=NULL, turn_count=turn_count+1, updated_at=? WHERE id=?')
+    // Review 修复：turn_count 只统计发言次数（synthesis 汇总不计数），
+    // 保证 parallel 的 roundCompleted = turnCount % roundSize === 0 相位不漂移。
+    db.prepare(`UPDATE discussion SET current_speaker_agent_id=NULL, current_turn_task_id=NULL,
+      turn_count=turn_count+${isSynthesis ? 0 : 1}, updated_at=? WHERE id=?`)
       .run(now, discussionId);
     const updated = getDiscussion(db, discussionId);
 

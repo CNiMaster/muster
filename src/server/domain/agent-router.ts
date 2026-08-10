@@ -6,6 +6,8 @@
  *           + 在线状态 +5
  *           + 历史质量（profile rating，1-5）
  *           - 负载惩罚（当前排队 task 数，上限 10）
+ *
+ * Review 修复：匹配时统一 trim + toLowerCase，避免大小写/空白导致静默路由失败。
  */
 import type { DB } from '../db/client';
 import { listAgents } from './agent';
@@ -19,6 +21,11 @@ export interface AssigneeCandidate {
   matchedCapabilities: string[];
 }
 
+/** 归一化能力标识：trim + 小写。 */
+function normalizeCapability(value: string): string {
+  return value.trim().toLowerCase();
+}
+
 /**
  * 按 requiredCapabilities 自动选专家。
  * - 只考虑本公司员工，在线优先。
@@ -30,7 +37,9 @@ export function findBestAssignee(
   requiredCapabilities: string[],
   options: { excludeAgentId?: string; taskType?: string } = {},
 ): AssigneeCandidate | null {
-  const capabilities = (requiredCapabilities ?? []).filter((c) => typeof c === 'string' && c.trim());
+  const capabilities = (requiredCapabilities ?? [])
+    .filter((c) => typeof c === 'string' && c.trim())
+    .map(normalizeCapability);
   const agents = listAgents(db, companyId).filter((agent) => agent.id !== options.excludeAgentId);
   if (agents.length === 0) return null;
 
@@ -52,7 +61,8 @@ export function findBestAssignee(
 
   let best: AssigneeCandidate | null = null;
   for (const agent of agents) {
-    const matched = capabilities.filter((cap) => (agent.skills ?? []).includes(cap));
+    const agentSkills = (agent.skills ?? []).map(normalizeCapability);
+    const matched = capabilities.filter((cap) => agentSkills.includes(cap));
     // 硬性要求：至少匹配一个能力（无能力要求时不做硬限制）
     if (capabilities.length > 0 && matched.length === 0) continue;
     const rating = ratings.get(agent.profileId) ?? 1;

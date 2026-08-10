@@ -100,6 +100,11 @@ function executeAction(
         : candidates[0];
       const role = typeof params.role === 'string' && params.role ? params.role : (persona?.name ?? '新员工');
       const displayName = typeof params.displayName === 'string' && params.displayName ? params.displayName : (persona?.name ?? role);
+      // Review 修复：先查重（agent_definition.name 无唯一约束，避免重复招募同名员工）
+      const existingAgent = db.prepare('SELECT id FROM agent_definition WHERE company_id=? AND name=?').get(companyId, displayName);
+      if (existingAgent) {
+        return { ...base, status: 'skipped', message: `员工「${displayName}」已存在，跳过招募` };
+      }
       // 复用 recruitFromDraft：需要固定执行器和权限策略
       const executors = listExecutorProfiles(db);
       const policies = listPermissionPolicies(db);
@@ -108,23 +113,22 @@ function executeAction(
       }
       const executorProfileId = executors[0]!.id;
       const permissionPolicyId = policies[0]!.id;
-      recruitFromDraft(db, companyId, {
-        source: persona ? 'new-profile' : 'new-profile',
+      const created = recruitFromDraft(db, companyId, {
+        source: 'new-profile',
         profileId: undefined,
         displayName,
         role,
         responsibilities: item.description,
-        capabilities: { skills: [], tools: [] },
+        capabilities: persona
+          ? { skills: (persona.capabilities.skills as string[]) ?? [], tools: [] }
+          : { skills: [], tools: [] },
         departmentId: null,
         executorProfileId,
         permissionPolicyId,
       });
-      // persona 填充 soul（recruitFromDraft 的 new-profile 用字符串拼接，这里补 persona 提示词）
-      if (persona) {
-        const agent = db.prepare("SELECT profile_id FROM agent_definition WHERE company_id=? AND name=?").get(companyId, displayName) as { profile_id: string } | undefined;
-        if (agent) {
-          updateAgentProfile(db, agent.profile_id, { soul: persona.soul, principles: persona.principles, capabilities: persona.capabilities });
-        }
+      // Review 修复：persona 填充用 recruitFromDraft 返回的 profileId（不再按名字反查，避免改错档案）
+      if (persona && created.profileId) {
+        updateAgentProfile(db, created.profileId, { soul: persona.soul, principles: persona.principles, capabilities: persona.capabilities });
       }
       return { ...base, status: 'executed', message: `已招募「${displayName}」（岗位：${role}）` };
     }
@@ -256,4 +260,34 @@ export function notifyExecutionResults(db: DB, companyId: string, results: Actio
   } catch (e) {
     log.warn('notify execution results failed', { companyId, err: e instanceof Error ? e.message : String(e) });
   }
+}
+
+/**
+ * Review 修复：公司下班（off）时自动执行此前标记 pending_offline 的建议。
+ * 由 coordinator 在公司转 off 后调用。
+ */
+export function executePendingOfflineActions(db: DB, companyId: string): number {
+  const rows = db
+    .prepare(
+      `SELECT rai.report_id, rai.id FROM report_action_item rai
+       JOIN company_optimization_report cor ON cor.id = rai.report_id
+       WHERE cor.company_id=? AND rai.status='pending_offline'`,
+    )
+    .all(companyId) as Array<{ report_id: string; id: string }>;
+  let executed = 0;
+  for (const row of rows) {
+    try {
+      const results = executeApprovedActions(db, row.report_id, [row.id]);
+      if (results[0]?.status === 'executed') executed++;
+    } catch (e) {
+      log.warn('pending offline action execution failed', {
+        itemId: row.id,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
+  if (executed > 0) {
+    log.info('pending offline actions executed', { companyId, count: executed });
+  }
+  return executed;
 }

@@ -109,6 +109,12 @@ describe('子任务失败兜底（阶段一任务 1.1）', () => {
     const msgs = listTaskMessages(db, parent.id);
     const failMsgs = msgs.filter((m) => m.content.includes('子任务失败'));
     expect(failMsgs.length).toBe(2); // 两次失败都写消息，但只派一次兜底
+    // Review 修复：第二次失败的信息被追加进现有 [兜底] 任务的 failedChildren
+    const bailout = db.prepare('SELECT input_protocol_json FROM task WHERE id=?').get(bailouts[0]!.id) as { input_protocol_json: string };
+    const proto = JSON.parse(bailout.input_protocol_json);
+    expect(Array.isArray(proto.failedChildren)).toBe(true);
+    expect(proto.failedChildren.length).toBe(1); // 第二次失败追加了 1 条
+    expect(proto.failedChildren[0]!.failedChildTaskId).toBe(child2.id);
   });
 
   it('取消失败子任务后父任务恢复 queued（cancelled 依赖视为已处理）', () => {

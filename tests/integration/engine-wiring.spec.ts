@@ -594,12 +594,15 @@ describe('engine → worktree → publish wiring', () => {
     let t = listTasks(db, project.id)[0];
     expect(t.state).toBe('queued');
     expect(t.autoRetryCount).toBe(1);
+    // Review 修复：自动重试中的失败不触发熔断回滚（项目保持 active）
+    expect(db.prepare('SELECT state FROM project WHERE id=?').get(project.id)).toMatchObject({ state: 'active' });
     // 第二次 timeout：自动重试（延迟 30 秒后领取）
     await engine.pumpThread(thread.id);
     t = getTask(db, t.id);
     expect(t.state).toBe('queued');
     expect(t.autoRetryCount).toBe(2);
     expect(t.retryAfterAt).not.toBeNull();
+    expect(db.prepare('SELECT state FROM project WHERE id=?').get(project.id)).toMatchObject({ state: 'active' });
     // 延迟已过，第三次 timeout：超过自动重试上限 → failed
     db.prepare('UPDATE task SET retry_after_at=? WHERE id=?').run(new Date(Date.now() - 1000).toISOString(), t.id);
     await engine.pumpThread(thread.id);

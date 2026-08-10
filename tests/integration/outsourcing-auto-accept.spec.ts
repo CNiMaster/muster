@@ -125,8 +125,10 @@ describe('外包自动接受（阶段四任务 4.1）', () => {
     await coordinator.tick({ pump: false });
 
     const after = getOutsourcingContract(db, contract.id);
-    expect(after.state).toBe('accepted');
+    // Review 修复：自动接受后立即创建乙方承接任务 → 契约进入 in_progress（闭环完整）
+    expect(after.state).toBe('in_progress');
     expect(after.vendorLiaisonAgentId).toBe(bLead.id);
+    expect(after.outsourcedTaskId).not.toBeNull();
     void a;
   });
 });

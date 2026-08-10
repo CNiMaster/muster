@@ -646,13 +646,14 @@ async function spawnTasksHandler(call: ToolCall, ctx: ToolContext): Promise<Tool
   try {
     const { db, askerTaskId, askerProjectId, askerProjectTaskId, askerAgentId } = cctx;
     const asker = getAgent(db, askerAgentId);
-    const created: Array<{ id: string; seq: number; title: string; assignee: string }> = [];
+    // Review 修复：循环前预校验全部接收者（同公司 + contactAllow），
+    // 避免中途 createTask 抛错导致前序子任务成为孤儿（无依赖关联、无人等待）。
+    const resolvedTasks: Array<{ title: string; recipientId: string; recipientName: string; requiredCaps: string[]; inputProtocol: Record<string, unknown> | undefined; priority: number | undefined }> = [];
     for (const raw of rawTasks) {
       const item = raw as Record<string, unknown>;
       const title = String(item.title ?? '').trim();
-      let recipientId = String(item.assignee_agent_id ?? '').trim();
       if (!title) continue;
-      // 阶段七任务 7.2：未指定 assignee 时按 required_capabilities 自动路由
+      let recipientId = String(item.assignee_agent_id ?? '').trim();
       const requiredCaps = Array.isArray(item.required_capabilities)
         ? (item.required_capabilities as unknown[]).filter((c): c is string => typeof c === 'string' && c.trim().length > 0)
         : [];
@@ -668,23 +669,37 @@ async function spawnTasksHandler(call: ToolCall, ctx: ToolContext): Promise<Tool
       if (recipient.companyId !== asker.companyId) {
         return { toolCallId: call.id, name: call.name, content: `错误：${recipient.name} 不属于本公司，不能派发` };
       }
+      if (recipientId !== askerAgentId && !asker.contactAllow.includes(recipientId)) {
+        return { toolCallId: call.id, name: call.name, content: `错误：员工 ${asker.name} 未授权联系 ${recipient.name}，不能派发` };
+      }
+      resolvedTasks.push({
+        title,
+        recipientId,
+        recipientName: recipient.name,
+        requiredCaps,
+        inputProtocol: (item.input_protocol && typeof item.input_protocol === 'object')
+          ? (item.input_protocol as Record<string, unknown>)
+          : undefined,
+        priority: typeof item.priority === 'number' ? item.priority : undefined,
+      });
+    }
+    if (resolvedTasks.length === 0) {
+      return { toolCallId: call.id, name: call.name, content: '错误：没有可派发的有效子任务（检查 title 与 assignee_agent_id / required_capabilities）' };
+    }
+    const created: Array<{ id: string; seq: number; title: string; assignee: string }> = [];
+    for (const taskItem of resolvedTasks) {
       const child = createTask(db, {
         projectId: askerProjectId,
         projectTaskId: askerProjectTaskId,
         parentTaskId: askerTaskId,
         dispatcherAgentId: askerAgentId,
-        assigneeAgentId: recipientId,
-        title,
-        requiredCapabilityIds: requiredCaps.length > 0 ? requiredCaps : undefined,
-        inputProtocol: (item.input_protocol && typeof item.input_protocol === 'object')
-          ? { ...(item.input_protocol as Record<string, unknown>), spawned: true }
-          : { spawned: true },
-        priority: typeof item.priority === 'number' ? item.priority : 5,
+        assigneeAgentId: taskItem.recipientId,
+        title: taskItem.title,
+        requiredCapabilityIds: taskItem.requiredCaps.length > 0 ? taskItem.requiredCaps : undefined,
+        inputProtocol: taskItem.inputProtocol ? { ...taskItem.inputProtocol, spawned: true } : { spawned: true },
+        priority: taskItem.priority ?? 5,
       });
-      created.push({ id: child.id, seq: child.seq, title: child.title, assignee: recipient.name });
-    }
-    if (created.length === 0) {
-      return { toolCallId: call.id, name: call.name, content: '错误：没有可派发的有效子任务（检查 title 与 assignee_agent_id）' };
+      created.push({ id: child.id, seq: child.seq, title: child.title, assignee: taskItem.recipientName });
     }
     if (joinPolicy === 'best-effort') {
       return {

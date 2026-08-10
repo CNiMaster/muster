@@ -154,6 +154,31 @@ describe('spawn_tasks 工具（阶段七任务 7.1）', () => {
     expect(getTask(db, children[2]!.id).state).toBe('cancelled');
   });
 
+  it('join=quorum：偶数子任务时多数 = 半数+1（2 个子任务需 2 个都完成）', async () => {
+    const { lead, explorer, librarian, project } = fixture();
+    const parent = createTask(db, { projectId: project.id, assigneeAgentId: lead.id, title: '调研任务' });
+    const call: ToolCall = {
+      id: 'tc_spawn',
+      name: 'spawn_tasks',
+      args: {
+        join_policy: 'quorum',
+        tasks: [
+          { title: 'A', assignee_agent_id: explorer.id },
+          { title: 'B', assignee_agent_id: librarian.id },
+        ],
+      },
+    };
+    await executeTool(call, makeContext(parent.id, project.id, parent.projectTaskId, lead.id));
+    const children = db.prepare('SELECT id FROM task WHERE parent_task_id=? ORDER BY seq').all(parent.id) as Array<{ id: string }>;
+    markWaitingDep(parent.id);
+    // 1 个完成 → 未达多数（2 个的多数 = 2），父任务保持等待
+    completeChild(children[0]!.id, 'A 完成');
+    expect(getTask(db, parent.id).state).toBe('waiting_dependency');
+    // 2 个完成 → 达多数 → 恢复
+    completeChild(children[1]!.id, 'B 完成');
+    expect(getTask(db, parent.id).state).toBe('queued');
+  });
+
   it('join=best-effort：不建依赖，父任务不等待', async () => {
     const { lead, explorer, project } = fixture();
     const parent = createTask(db, { projectId: project.id, assigneeAgentId: lead.id, title: '主任务' });
