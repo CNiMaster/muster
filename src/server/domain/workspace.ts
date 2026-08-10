@@ -18,6 +18,8 @@ interface WorkspaceRow {
   name: string;
   root_dir: string;
   is_active: number;
+  status: string; // 'normal' | 'migrating'（迁移 20260812130000 新增，DEFAULT 'normal'）
+  migrate_target_dir: string | null; // 迁移中断恢复用（20260812130000 新增，可空）
   created_at: string;
   updated_at: string;
 }
@@ -267,9 +269,7 @@ export function migrateWorkspace(db: DB, id: string, newRootDir: string): Migrat
  * 由 server.ts 在 migrations 之后调用一次。
  */
 export function recoverInterruptedMigrations(db: DB): number {
-  const rows = db.prepare(`SELECT * FROM workspace WHERE status='migrating'`).all() as Array<
-    WorkspaceRow & { migrate_target_dir: string | null }
-  >;
+  const rows = db.prepare(`SELECT * FROM workspace WHERE status='migrating'`).all() as WorkspaceRow[];
   let recovered = 0;
   for (const row of rows) {
     const target = row.migrate_target_dir;
