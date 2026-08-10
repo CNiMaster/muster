@@ -234,7 +234,9 @@ const ALLOWED_TRANSITIONS: Record<TaskState, TaskState[]> = {
   paused: ['claimed', 'cancelled'],
   blocked: ['queued', 'cancelled'],
   completed: [],
-  failed: ['queued'],
+  // failed → cancelled：第一负责人处理子任务失败时可选择「放弃」（cancel_child_task），
+  // 而非只能重试；取消失败子任务后其依赖视为已处理（见 areDependenciesMet）。
+  failed: ['queued', 'cancelled'],
   cancelled: [],
 };
 
@@ -355,12 +357,13 @@ export function addDependency(db: DB, taskId: string, dependsOnId: string): void
 }
 
 export function areDependenciesMet(db: DB, taskId: string): boolean {
+  // cancelled 视为已处理（不阻塞）：第一负责人取消失败/多余的子任务后，父任务依赖解除。
   const row = db
     .prepare(
       `SELECT EXISTS(
         SELECT 1 FROM task_dependency d
         JOIN task t ON t.id = d.depends_on_id
-        WHERE d.task_id = ? AND t.state NOT IN ('completed')) AS blocked`,
+        WHERE d.task_id = ? AND t.state NOT IN ('completed','cancelled')) AS blocked`,
     )
     .get(taskId) as { blocked: number };
   return row.blocked === 0;
@@ -448,7 +451,7 @@ export function claimNextTask(db: DB, threadId: string, assigneeAgentId?: string
              AND NOT EXISTS(
                SELECT 1 FROM task_dependency d
                JOIN task dep ON dep.id = d.depends_on_id
-               WHERE d.task_id = t.id AND dep.state NOT IN ('completed'))
+               WHERE d.task_id = t.id AND dep.state NOT IN ('completed','cancelled'))
            ORDER BY t.priority DESC, t.seq ASC
            LIMIT 1
          )
@@ -768,7 +771,77 @@ export function failTask(db: DB, taskId: string, message: string): Task {
      failure_count=failure_count+1, last_failed_at=?, updated_at=? WHERE id=?`,
   ).run(message.slice(0, 2000), now, now, taskId);
   appendTaskEvent(db, taskId, 'failed', { message, failureCount: cur.failureCount + 1 });
-  return getTask(db, taskId);
+  const failed = getTask(db, taskId);
+  // 阶段一任务 1.1：子任务失败时通知父任务并上报第一负责人，
+  // 避免父任务永久卡在 waiting_dependency 无人发现。
+  try {
+    propagateChildFailure(db, failed, message);
+  } catch (e) {
+    // 失败传播是兜底增强，不影响失败本身的结果；出错只记录不抛出。
+    console.warn('propagateChildFailure failed', { taskId, err: e instanceof Error ? e.message : String(e) });
+  }
+  return failed;
+}
+
+/**
+ * 子任务失败传播（阶段一任务 1.1）：
+ * 1. 向所有因依赖本 task 而处于 waiting_dependency 的父任务写失败通知（task_message role='dispatch'）。
+ * 2. 给项目第一负责人派一个 [兜底] 子任务失败 上报 Task（priority=8），由负责人决定：恢复重试 / 换人重做 / 取消。
+ * 去重：同一父任务已存在未完成的 [兜底] Task 时只更新消息、不重复派发。
+ */
+function propagateChildFailure(db: DB, failedTask: Task, message: string): void {
+  const dependents = db
+    .prepare(
+      `SELECT t.id FROM task t
+       WHERE t.state = 'waiting_dependency'
+         AND (
+           t.id IN (SELECT d.task_id FROM task_dependency d WHERE d.depends_on_id = ?)
+           OR t.id = (SELECT parent_task_id FROM task WHERE id = ?)
+         )`,
+    )
+    .all(failedTask.id, failedTask.id) as { id: string }[];
+
+  for (const { id: parentId } of dependents) {
+    const parent = getTask(db, parentId);
+    addTaskMessage(db, parentId, {
+      author: failedTask.assigneeAgentId ?? 'system',
+      role: 'dispatch',
+      content:
+        `[子任务失败] 子任务 Task #${failedTask.seq}「${failedTask.title}」执行失败：${message.slice(0, 300)}。` +
+        `请在下次执行时处理：恢复重试（resume_task）、换人重做（done 的 outboundTasks）、或取消该子任务（cancel_child_task）。`,
+    });
+    // 去重：父任务已有未完成的 [兜底] Task 则不再重复派发
+    const existing = db
+      .prepare(
+        `SELECT 1 FROM task WHERE parent_task_id=? AND title LIKE '[兜底]%' AND state NOT IN ('completed','cancelled','failed') LIMIT 1`,
+      )
+      .get(parentId);
+    if (existing) continue;
+    const project = getProject(db, parent.projectId);
+    if (!project.firstAgentId) continue;
+    createTask(db, {
+      projectId: parent.projectId,
+      projectTaskId: parent.projectTaskId,
+      parentTaskId: parentId,
+      rootTaskId: parent.rootTaskId ?? parent.id,
+      assigneeAgentId: project.firstAgentId,
+      title: `[兜底] 子任务失败 #${failedTask.seq}`,
+      inputProtocol: {
+        reason: 'child_task_failed',
+        sourceTaskId: parentId,
+        failedChildTaskId: failedTask.id,
+        failedChildSeq: failedTask.seq,
+        failedChildTitle: failedTask.title,
+        failureMessage: message.slice(0, 1000),
+      },
+      priority: 8,
+      skipLaunchGate: true, // 系统兜底任务，不要求用户确认 launch
+    });
+    appendTaskEvent(db, parentId, 'child_failed_reported', {
+      failedChildTaskId: failedTask.id,
+      failedChildSeq: failedTask.seq,
+    });
+  }
 }
 
 /** 将尚未安全落地的 Task 标记为 blocked，保留检查点供人工处理。 */
@@ -878,6 +951,13 @@ export function cancelTask(db: DB, taskId: string): Task {
     for (const publishId of new Set(publishIds)) {
       db.prepare(`UPDATE publish_record SET status='escalated' WHERE id=? AND status='open'`).run(publishId);
     }
+  }
+  // 阶段一任务 1.1：取消子任务后唤醒因依赖本 task 而等待的父任务
+  // （areDependenciesMet 已把 cancelled 视为已处理，此处仅当父任务其余依赖也满足时才恢复）。
+  try {
+    resumeDependents(db, taskId);
+  } catch (e) {
+    console.warn('resumeDependents after cancel failed', { taskId, err: e instanceof Error ? e.message : String(e) });
   }
   appendTaskEvent(db, taskId, 'cancelled', {});
   return getTask(db, taskId);

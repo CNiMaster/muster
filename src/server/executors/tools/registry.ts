@@ -24,10 +24,13 @@ import { isWithinWorkspace, checkBashCommand } from '../../sandbox';
 import { classifyCommand } from '../cli-permission-bridge';
 import { agentRunResultSchema } from '../result-schema';
 import { submitBusinessReview, type BusinessReviewKind } from '../../domain/business-review';
-import { createTask, addDependency } from '../../domain/task';
+import { createTask, addDependency, getTask, cancelTask, areDependenciesMet, resumeDependents } from '../../domain/task';
 import { addTaskMessage } from '../../domain/task-message';
 import { postSystemMessage } from '../../domain/conversation';
 import { getAgent } from '../../domain/agent';
+import { getProject } from '../../domain/project';
+import { appendTaskEvent } from '../../domain/task-event';
+import { nowIso } from '../../../shared/utils';
 import { createDiscussion, startDiscussion, concludeDiscussion, type DiscussionScenario } from '../../domain/discussion';
 import type { AgentRunResult } from '../../../shared/types';
 import type {
@@ -556,6 +559,66 @@ async function notifyColleagueHandler(call: ToolCall, ctx: ToolContext): Promise
 }
 
 /**
+ * cancel_child_task handler（阶段一任务 1.1）：取消一个失败/卡住/不再需要的子任务。
+ *
+ * 用途：第一负责人处理 [兜底] 子任务失败 / [上报] 上报任务时，决定「放弃」某个子任务。
+ * 取消后：
+ * - 子任务进入 cancelled（failed → cancelled 状态机已放开）。
+ * - areDependenciesMet 已把 cancelled 视为已处理；若父任务其余依赖也满足，
+ *   cancelTask 内部 resumeDependents 会把父任务从 waiting_dependency 恢复为 queued。
+ * 权限：仅第一负责人或子任务派发者可取消，且子任务必须在当前项目内。
+ */
+async function cancelChildTaskHandler(call: ToolCall, ctx: ToolContext): Promise<ToolResult> {
+  const childTaskId = String(call.args.child_task_id ?? '').trim();
+  if (!childTaskId) {
+    return { toolCallId: call.id, name: call.name, content: '错误：child_task_id 必填' };
+  }
+  const cctx = ctx.consultationContext;
+  if (!cctx) {
+    return { toolCallId: call.id, name: call.name, content: '错误：取消子任务通道未配置（当前执行器不支持 cancel_child_task）' };
+  }
+  try {
+    const { db, askerTaskId, askerProjectId, askerAgentId } = cctx;
+    const child = getTask(db, childTaskId);
+    if (child.projectId !== askerProjectId) {
+      return { toolCallId: call.id, name: call.name, content: `错误：子任务 ${childTaskId} 不属于当前项目` };
+    }
+    // 权限：第一负责人 或 子任务派发者
+    const asker = getAgent(db, askerAgentId);
+    const project = getProject(db, askerProjectId);
+    const isFirstResponder = project.firstAgentId === asker.id;
+    const isDispatcher = child.dispatcherAgentId === asker.id;
+    if (!isFirstResponder && !isDispatcher) {
+      return { toolCallId: call.id, name: call.name, content: '错误：只有第一负责人或子任务派发者可以取消该子任务' };
+    }
+    if (child.state === 'completed' || child.state === 'cancelled') {
+      return { toolCallId: call.id, name: call.name, content: `子任务已是 ${child.state} 状态，无需取消` };
+    }
+    const reason = String(call.args.reason ?? '').trim() || '负责人决定放弃该子任务';
+    const cancelled = cancelTask(db, childTaskId);
+    // 通知父任务（取消已触发 resumeDependents 唤醒）
+    if (child.parentTaskId) {
+      addTaskMessage(db, child.parentTaskId, {
+        author: askerAgentId,
+        role: 'dispatch',
+        content: `[子任务取消] Task #${child.seq}「${child.title}」已被取消（${reason}）。`,
+      });
+    }
+    void askerTaskId;
+    void cancelled;
+    return {
+      toolCallId: call.id,
+      name: call.name,
+      content:
+        `已取消子任务 Task #${child.seq}「${child.title}」（${reason}）。若父任务其余依赖已满足，父任务已恢复排队；` +
+        `若还有未完成依赖，父任务继续等待。`,
+    };
+  } catch (e) {
+    return { toolCallId: call.id, name: call.name, content: `取消子任务失败：${(e as Error).message}` };
+  }
+}
+
+/**
  * start_discussion handler（设计二-方案B）：发起多人讨论室。
  * 创建讨论室 + 注册参与者 + 立即启动第一轮发言 + 把当前任务标为依赖第一轮发言任务。
  */
@@ -827,6 +890,21 @@ const BUILTIN_TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     type: 'function',
     function: {
+      name: 'cancel_child_task',
+      description: '取消一个失败/卡住/不再需要的子任务，并解除它对父任务的依赖阻塞（父任务其余依赖满足时自动恢复排队）。用于处理 [兜底] 子任务失败 / [上报] 任务时决定放弃某个子任务；不要用于正在正常执行的任务。',
+      parameters: {
+        type: 'object',
+        properties: {
+          child_task_id: { type: 'string', description: '要取消的子任务 id（形如 tk_xxx）' },
+          reason: { type: 'string', description: '可选：取消原因（写入父任务讨论记录，便于追溯）' },
+        },
+        required: ['child_task_id'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'start_discussion',
       description: '发起多人讨论室（设计二-方案B）。参与者按顺序轮流发言（用分身参与，不阻塞主任务）。7 种场景：help-request（难题求助）/task-clarification（任务澄清）/quality-review（质量评审）/task-breakdown（任务细分）/standard-alignment（标准对齐）/conflict-resolution（冲突协调）/brainstorm（头脑风暴）。讨论结束后由发起者调用 conclude_discussion 总结。',
       parameters: {
@@ -1010,6 +1088,12 @@ export function createBuiltinToolRegistry(): RuntimeToolRegistry {
     definition: defByName('notify_colleague'),
     handler: notifyColleagueHandler,
     source: { pluginId: BUILTIN_PLUGIN_ID, toolName: 'notify_colleague' },
+  });
+  registry.register({
+    definition: defByName('cancel_child_task'),
+    handler: cancelChildTaskHandler,
+    // 取消子任务不涉及文件/网络，不走 permissionGuard
+    source: { pluginId: BUILTIN_PLUGIN_ID, toolName: 'cancel_child_task' },
   });
   registry.register({
     definition: defByName('start_discussion'),
