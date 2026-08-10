@@ -27,6 +27,7 @@ import { getAgent } from './agent';
 import { appendTaskEvent } from './task-event';
 import { addTaskMessage } from './task-message';
 import { isDispatchLoop } from './speech-queue';
+import { findBestAssignee } from './agent-router';
 import {assertProjectTaskActive,createProjectTask} from './project-task';
 import {assertProjectLaunchConfirmed} from './project-launch';
 import {assertProjectActive} from './project-readiness';
@@ -264,18 +265,30 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
   const project = getProject(db, input.projectId);
   const company = getCompany(db, project.companyId);
   const taskProtocol = (company.contractJson.taskProtocol ?? {}) as { inputFields?: unknown; outputFields?: unknown };
+  // 阶段七任务 7.2：未指定 assignee 但声明了 requiredCapabilityIds 时，自动按能力路由选专家；
+  // 无匹配候选时 fallback 到项目第一负责人（路由结果记录进 inputProtocol，可审计）。
+  let routedAssigneeId = input.assigneeAgentId ?? null;
+  let routedMeta: Record<string, unknown> = {};
+  if (!routedAssigneeId && Array.isArray(input.requiredCapabilityIds) && input.requiredCapabilityIds.length > 0) {
+    const candidate = findBestAssignee(db, project.companyId, input.requiredCapabilityIds);
+    routedAssigneeId = candidate?.agentId ?? project.firstAgentId;
+    if (candidate) {
+      routedMeta = { routedByCapability: true, routedCandidate: candidate.name, routedScore: candidate.score };
+    }
+  }
   const inputProtocol = {
     ...(Array.isArray(taskProtocol.inputFields) ? { requiredFields: taskProtocol.inputFields } : {}),
     ...(input.inputProtocol ?? {}),
     ...(input.requiredSkillIds ? { requiredSkillIds: input.requiredSkillIds } : {}),
     ...(input.requiredCapabilityIds ? { requiredCapabilityIds: input.requiredCapabilityIds } : {}),
     ...(input.knowledgeTargets ? { knowledgeTargets: input.knowledgeTargets } : {}),
+    ...routedMeta,
   };
   const outputProtocol = {
     ...(Array.isArray(taskProtocol.outputFields) ? { requiredFields: taskProtocol.outputFields } : {}),
     ...(input.outputProtocol ?? {}),
   };
-  const assignee = input.assigneeAgentId ? getAgent(db, input.assigneeAgentId) : null;
+  const assignee = routedAssigneeId ? getAgent(db, routedAssigneeId) : null;
   const dispatcher = input.dispatcherAgentId ? getAgent(db, input.dispatcherAgentId) : null;
   // B2B 外包上下文：承接任务允许 assignee/dispatcher 跨公司，跳过同公司 + contactAllow 守卫。
   // outsourcingContext 仅由 createOutsourcedTask（外包专用入口）显式传入，普通调用不受影响。
@@ -322,7 +335,7 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?, ?,?,'queued',NULL,NULL,NULL,NULL,'',NULL,'[]',NULL,0,?,?,'{}',?,NULL,?, ?,?,?)`,
   ).run(
     id, input.projectId,projectTaskId, seq, rootTaskId, input.parentTaskId ?? null, input.dispatcherAgentId ?? null,
-    input.assigneeAgentId ?? null, null,null, input.title,
+    routedAssigneeId, null,null, input.title,
     JSON.stringify(inputProtocol), JSON.stringify(input.contextRefs ?? []),
     JSON.stringify(outputProtocol),
     input.priority ?? 5,

@@ -31,6 +31,7 @@ import { getAgent } from '../../domain/agent';
 import { getProject } from '../../domain/project';
 import { appendTaskEvent } from '../../domain/task-event';
 import { nowIso } from '../../../shared/utils';
+import { findBestAssignee } from '../../domain/agent-router';
 import { createDiscussion, startDiscussion, concludeDiscussion, type DiscussionScenario } from '../../domain/discussion';
 import type { AgentRunResult } from '../../../shared/types';
 import type {
@@ -649,8 +650,20 @@ async function spawnTasksHandler(call: ToolCall, ctx: ToolContext): Promise<Tool
     for (const raw of rawTasks) {
       const item = raw as Record<string, unknown>;
       const title = String(item.title ?? '').trim();
-      const recipientId = String(item.assignee_agent_id ?? '').trim();
-      if (!title || !recipientId) continue;
+      let recipientId = String(item.assignee_agent_id ?? '').trim();
+      if (!title) continue;
+      // 阶段七任务 7.2：未指定 assignee 时按 required_capabilities 自动路由
+      const requiredCaps = Array.isArray(item.required_capabilities)
+        ? (item.required_capabilities as unknown[]).filter((c): c is string => typeof c === 'string' && c.trim().length > 0)
+        : [];
+      if (!recipientId && requiredCaps.length > 0) {
+        const candidate = findBestAssignee(db, asker.companyId, requiredCaps);
+        if (candidate) {
+          recipientId = candidate.agentId;
+          item.routed_candidate = candidate.name;
+        }
+      }
+      if (!recipientId) continue;
       const recipient = getAgent(db, recipientId);
       if (recipient.companyId !== asker.companyId) {
         return { toolCallId: call.id, name: call.name, content: `错误：${recipient.name} 不属于本公司，不能派发` };
@@ -662,6 +675,7 @@ async function spawnTasksHandler(call: ToolCall, ctx: ToolContext): Promise<Tool
         dispatcherAgentId: askerAgentId,
         assigneeAgentId: recipientId,
         title,
+        requiredCapabilityIds: requiredCaps.length > 0 ? requiredCaps : undefined,
         inputProtocol: (item.input_protocol && typeof item.input_protocol === 'object')
           ? { ...(item.input_protocol as Record<string, unknown>), spawned: true }
           : { spawned: true },
@@ -999,6 +1013,7 @@ const BUILTIN_TOOL_DEFINITIONS: ToolDefinition[] = [
               properties: {
                 title: { type: 'string', description: '子任务标题' },
                 assignee_agent_id: { type: 'string', description: '接收子任务的员工 id（同公司）' },
+                required_capabilities: { type: 'array', items: { type: 'string' }, description: '可选：所需能力（未指定 assignee_agent_id 时自动路由匹配的专家）' },
                 input_protocol: { type: 'object', description: '可选：子任务的输入协议（目标/参考/要求）' },
                 priority: { type: 'number', description: '可选：优先级 1-10，默认 5' },
               },
