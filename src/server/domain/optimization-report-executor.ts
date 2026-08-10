@@ -38,6 +38,9 @@ export interface ActionExecutionResult {
 /** Review 修复（H-3）：单次审批允许执行的 remove_employee 数量上限。 */
 export const MAX_REMOVE_EMPLOYEE_PER_APPROVAL = 3;
 
+/** Review 修复（M-2）：pending_offline 项连续失败超过该次数后转死信（failed），不再自动重试。 */
+export const MAX_PENDING_OFFLINE_RETRY = 3;
+
 /**
  * 执行被批准的报告建议。
  * @param selectedItemIds 选中的 item id 列表；不传 = 全部 pending 项。
@@ -64,17 +67,9 @@ export function executeApprovedActions(db: DB, reportId: string, selectedItemIds
       continue;
     }
     try {
-      const result = executeAction(db, report.companyId, companyOnline, company.firstAgentId, item);
+      const result = executeItem(db, report.companyId, companyOnline, company.firstAgentId, item);
       results.push(result);
       if (result.actionType === 'remove_employee' && result.status === 'executed') removeExecuted++;
-      // 标记执行结果
-      if (result.status === 'executed') {
-        db.prepare("UPDATE report_action_item SET status='executed', result=?, updated_at=? WHERE id=?").run(result.message, nowIso(), item.id);
-      } else if (result.status === 'pending_offline') {
-        db.prepare("UPDATE report_action_item SET status='pending_offline', result=?, updated_at=? WHERE id=?").run(result.message, nowIso(), item.id);
-      } else if (result.status === 'failed') {
-        db.prepare("UPDATE report_action_item SET status='failed', result=?, updated_at=? WHERE id=?").run(result.message, nowIso(), item.id);
-      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       results.push({
@@ -91,7 +86,29 @@ export function executeApprovedActions(db: DB, reportId: string, selectedItemIds
   if (results.some((r) => r.status === 'executed' || r.status === 'pending_offline')) {
     db.prepare("UPDATE company_optimization_report SET status='approved', updated_at=? WHERE id=?").run(nowIso(), reportId);
   }
+  // Review 修复（L-2）：执行结果通知写公司对话窗口（防噪声过滤在函数内部）
+  notifyExecutionResults(db, report.companyId, results);
   return results;
+}
+
+/** 执行单条建议并回写结果状态（审批执行与下班补执行共用）。 */
+function executeItem(
+  db: DB,
+  companyId: string,
+  companyOnline: boolean,
+  firstAgentId: string | null,
+  item: ReportActionItem,
+): ActionExecutionResult {
+  const result = executeAction(db, companyId, companyOnline, firstAgentId, item);
+  // 标记执行结果
+  if (result.status === 'executed') {
+    db.prepare("UPDATE report_action_item SET status='executed', result=?, updated_at=? WHERE id=?").run(result.message, nowIso(), item.id);
+  } else if (result.status === 'pending_offline') {
+    db.prepare("UPDATE report_action_item SET status='pending_offline', result=?, updated_at=? WHERE id=?").run(result.message, nowIso(), item.id);
+  } else if (result.status === 'failed') {
+    db.prepare("UPDATE report_action_item SET status='failed', result=?, updated_at=? WHERE id=?").run(result.message, nowIso(), item.id);
+  }
+  return result;
 }
 
 /** 执行单条建议。 */
@@ -270,6 +287,8 @@ import { createMirror as createMirrorFn } from './thread';
 /** 报告执行结果通知（写公司对话窗口）。 */
 export function notifyExecutionResults(db: DB, companyId: string, results: ActionExecutionResult[]): void {
   if (results.length === 0) return;
+  // 防噪声：全部是 pending_offline（仅标记未真正执行）时不通知
+  if (results.every((r) => r.status === 'pending_offline')) return;
   const lines = results.map((r) => {
     const label = r.status === 'executed' ? '✅' : r.status === 'pending_offline' ? '⏳' : r.status === 'failed' ? '❌' : '⏭️';
     return `${label} ${r.description}：${r.message}`;
@@ -288,23 +307,53 @@ export function notifyExecutionResults(db: DB, companyId: string, results: Actio
 }
 
 /**
- * Review 修复：公司下班（off）时自动执行此前标记 pending_offline 的建议。
+ * Review 修复（M-2）：公司下班（off）时自动执行此前标记 pending_offline 的建议。
  * 由 coordinator 在公司转 off 后调用。
+ *
+ * 说明：此前的实现把 pending_offline 项再传给 executeApprovedActions，但后者只处理
+ * status='pending' 的项，导致补执行永远落空（死代码）。这里直接按项执行并回写：
+ * - 成功 → executed，重试计数清零
+ * - 失败 → retry_count+1；连续失败达到上限转 failed（死信），不再自动重试
+ * - 跳过（如员工已存在）→ 转 executed（已处理终态），避免每次下班都重试
  */
 export function executePendingOfflineActions(db: DB, companyId: string): number {
+  const company = getCompany(db, companyId);
   const rows = db
     .prepare(
-      `SELECT rai.report_id, rai.id FROM report_action_item rai
+      `SELECT rai.report_id, rai.id, rai.retry_count FROM report_action_item rai
        JOIN company_optimization_report cor ON cor.id = rai.report_id
        WHERE cor.company_id=? AND rai.status='pending_offline'
          AND cor.status NOT IN ('dismissed','rejected')`,
     )
-    .all(companyId) as Array<{ report_id: string; id: string }>;
+    .all(companyId) as Array<{ report_id: string; id: string; retry_count: number }>;
+  const results: ActionExecutionResult[] = [];
   let executed = 0;
   for (const row of rows) {
     try {
-      const results = executeApprovedActions(db, row.report_id, [row.id]);
-      if (results[0]?.status === 'executed') executed++;
+      const item = listReportActionItems(db, row.report_id).find((i) => i.id === row.id);
+      if (!item) continue;
+      const result = executeItem(db, companyId, false, company.firstAgentId, item);
+      results.push(result);
+      if (result.status === 'executed') {
+        executed++;
+        db.prepare('UPDATE report_action_item SET retry_count=0, updated_at=? WHERE id=?').run(nowIso(), row.id);
+      } else if (result.status === 'failed') {
+        const nextRetry = row.retry_count + 1;
+        if (nextRetry >= MAX_PENDING_OFFLINE_RETRY) {
+          // 达到上限：转 failed 死信，不再自动重试（executeItem 已写 failed，这里补计数）
+          db.prepare('UPDATE report_action_item SET retry_count=?, last_retry_at=?, result=?, updated_at=? WHERE id=?')
+            .run(nextRetry, nowIso(), `连续失败 ${nextRetry} 次，停止自动重试：${result.message.slice(0, 300)}`, nowIso(), row.id);
+        } else {
+          // 未达上限：executeItem 已把状态写为 failed，覆盖回 pending_offline 以便下次下班重试
+          db.prepare("UPDATE report_action_item SET status='pending_offline', retry_count=?, last_retry_at=?, result=?, updated_at=? WHERE id=?")
+            .run(nextRetry, nowIso(), result.message.slice(0, 500), nowIso(), row.id);
+        }
+      } else if (result.status === 'skipped') {
+        // 已处理（如员工已存在被跳过）：转终态 executed，避免每次下班都重试
+        db.prepare("UPDATE report_action_item SET status='executed', result=?, updated_at=? WHERE id=?")
+          .run(result.message, nowIso(), row.id);
+      }
+      // pending_offline：companyOnline=false 下不会出现，保持原状
     } catch (e) {
       log.warn('pending offline action execution failed', {
         itemId: row.id,
@@ -312,6 +361,8 @@ export function executePendingOfflineActions(db: DB, companyId: string): number 
       });
     }
   }
+  // Review 修复（L-2）：执行结果通知写公司对话窗口
+  notifyExecutionResults(db, companyId, results);
   if (executed > 0) {
     log.info('pending offline actions executed', { companyId, count: executed });
   }

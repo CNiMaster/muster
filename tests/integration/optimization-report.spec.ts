@@ -275,4 +275,73 @@ describe('executeApprovedActions（一键审批执行）', () => {
     const agents = db.prepare("SELECT name FROM agent_definition WHERE company_id=?").all(c.id) as Array<{ name: string }>;
     expect(agents.some((a) => a.name === '设计师')).toBe(false);
   });
+
+  it('M-2：pending_offline 项在下班后真正执行（此前为死代码）', async () => {
+    const { c } = fixture();
+    createExecutorProfile(db, { name: 'CLI', manifestId: 'claude-code-cli', config: { binaryPath: '/usr/local/bin/claude' } });
+    createPermissionPolicy(db, { name: '项目权限', approvalStrategy: 'ask-by-rule', scope: 'project' });
+    const report = await generateOptimizationReport(db, c.id, {
+      generator: new StaticGenerator({
+        summary: '缺人',
+        actionItems: [{ actionType: 'add_employee', description: '招募设计师', reason: '缺口', expectedEffect: '补齐', params: { role: 'designer', displayName: '设计师' } }],
+      }),
+    });
+    // 上班时审批 → pending_offline
+    transitionCompany(db, c.id, 'online');
+    executeApprovedActions(db, report.id);
+    expect(listReportActionItems(db, report.id)[0]!.status).toBe('pending_offline');
+    // 下班 → 自动执行真正招募
+    transitionCompany(db, c.id, 'off');
+    const executed = executePendingOfflineActions(db, c.id);
+    expect(executed).toBe(1);
+    const after = listReportActionItems(db, report.id);
+    expect(after[0]!.status).toBe('executed');
+    const agents = db.prepare("SELECT name FROM agent_definition WHERE company_id=?").all(c.id) as Array<{ name: string }>;
+    expect(agents.some((a) => a.name === '设计师')).toBe(true);
+  });
+
+  it('M-2：pending_offline 连续失败 3 次转 failed 死信，不再重试', async () => {
+    const { c } = fixture();
+    const report = await generateOptimizationReport(db, c.id, {
+      generator: new StaticGenerator({
+        summary: '缺人',
+        actionItems: [{ actionType: 'add_employee', description: '招募设计师', reason: '缺口', expectedEffect: '补齐', params: { role: 'designer', displayName: '设计师' } }],
+      }),
+    });
+    // 直接造一条 pending_offline 项（无执行器档案 → 执行必失败）
+    db.prepare("UPDATE report_action_item SET status='pending_offline', updated_at=? WHERE id=?").run(new Date().toISOString(), listReportActionItems(db, report.id)[0]!.id);
+    // 连续 3 次下班自动执行（每次失败）
+    for (let i = 1; i <= 3; i++) {
+      executePendingOfflineActions(db, c.id);
+      const items = listReportActionItems(db, report.id);
+      if (i < 3) {
+        expect(items[0]!.status).toBe('pending_offline');
+        const row = db.prepare('SELECT retry_count FROM report_action_item WHERE id=?').get(items[0]!.id) as { retry_count: number };
+        expect(row.retry_count).toBe(i);
+      } else {
+        expect(items[0]!.status).toBe('failed');
+        expect(items[0]!.result).toContain('停止自动重试');
+      }
+    }
+    // 第 4 次：已是 failed，不再执行
+    const executed = executePendingOfflineActions(db, c.id);
+    expect(executed).toBe(0);
+  });
+
+  it('L-2：执行结果写公司对话窗口（系统消息通知）', async () => {
+    const { c } = fixture();
+    createExecutorProfile(db, { name: 'CLI', manifestId: 'claude-code-cli', config: { binaryPath: '/usr/local/bin/claude' } });
+    createPermissionPolicy(db, { name: '项目权限', approvalStrategy: 'ask-by-rule', scope: 'project' });
+    const report = await generateOptimizationReport(db, c.id, {
+      generator: new StaticGenerator({
+        summary: '缺人',
+        actionItems: [{ actionType: 'add_employee', description: '招募设计师', reason: '缺口', expectedEffect: '补齐', params: { role: 'designer', displayName: '设计师' } }],
+      }),
+    });
+    executeApprovedActions(db, report.id);
+    const messages = db.prepare(
+      "SELECT content FROM conversation_message WHERE scope_kind='company' AND scope_id=? AND author='system'",
+    ).all(c.id) as Array<{ content: string }>;
+    expect(messages.some((m) => m.content.includes('[优化报告执行]'))).toBe(true);
+  });
 });
