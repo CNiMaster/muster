@@ -147,23 +147,28 @@ function executeAction(
       }
       const executorProfileId = executors[0]!.id;
       const permissionPolicyId = policies[0]!.id;
-      const created = recruitFromDraft(db, companyId, {
-        source: 'new-profile',
-        profileId: undefined,
-        displayName,
-        role,
-        responsibilities: item.description,
-        capabilities: persona
-          ? { skills: (persona.capabilities.skills as string[]) ?? [], tools: [] }
-          : { skills: [], tools: [] },
-        departmentId: null,
-        executorProfileId,
-        permissionPolicyId,
-      });
-      // Review 修复：persona 填充用 recruitFromDraft 返回的 profileId（不再按名字反查，避免改错档案）
-      if (persona && created.profileId) {
-        updateAgentProfile(db, created.profileId, { soul: persona.soul, principles: persona.principles, capabilities: persona.capabilities });
-      }
+      // Review 修复（L-4）：招募 + persona 档案填充包进同一事务——此前 updateAgentProfile 抛错时
+      // 会留下已招募但档案为空的半成品员工，且 item 被标 failed 误导用户重试。
+      const created = db.transaction(() => {
+        const result = recruitFromDraft(db, companyId, {
+          source: 'new-profile',
+          profileId: undefined,
+          displayName,
+          role,
+          responsibilities: item.description,
+          capabilities: persona
+            ? { skills: (persona.capabilities.skills as string[]) ?? [], tools: [] }
+            : { skills: [], tools: [] },
+          departmentId: null,
+          executorProfileId,
+          permissionPolicyId,
+        });
+        // Review 修复：persona 填充用 recruitFromDraft 返回的 profileId（不再按名字反查，避免改错档案）
+        if (persona && result.profileId) {
+          updateAgentProfile(db, result.profileId, { soul: persona.soul, principles: persona.principles, capabilities: persona.capabilities });
+        }
+        return result;
+      })();
       return { ...base, status: 'executed', message: `已招募「${displayName}」（岗位：${role}）` };
     }
     case 'adjust_employee': {

@@ -50,7 +50,7 @@ export function findBestAssignee(
       .prepare(
         `SELECT assignee_agent_id, COUNT(*) AS n FROM task
          WHERE assignee_agent_id IN (${agents.map(() => '?').join(',')})
-           AND state IN ('queued','claimed','running','waiting_input','waiting_dependency','paused')
+           AND state IN ('queued','claimed','running','waiting_input','waiting_dependency','paused','waiting_approval')
          GROUP BY assignee_agent_id`,
       )
       .all(...agents.map((a) => a.id)) as Array<{ assignee_agent_id: string; n: number }>;
@@ -71,7 +71,9 @@ export function findBestAssignee(
       + (agent.availabilityState === 'online' ? 5 : 0)
       + Math.min(rating, 5)
       - load;
-    if (!best || score > best.score) {
+    // Review 修复（L-5）：同分时按 agent.id 字典序取小——批量建司的员工 created_at 可能同毫秒，
+    // SQLite 行序未定义，不加 tiebreak 会导致路由决策跨重启翻转。
+    if (!best || score > best.score || (score === best.score && agent.id < best.agentId)) {
       best = { agentId: agent.id, name: agent.name, role: agent.role, score, matchedCapabilities: matched };
     }
   }

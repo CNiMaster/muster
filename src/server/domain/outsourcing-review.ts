@@ -80,11 +80,16 @@ export function triggerAutoReview(db: DB, contract: OutsourcingContract): Task |
   const assignee = getAgent(db, project.firstAgentId);
   if (assignee.companyId !== contract.sourceCompanyId) return null;
   // 已存在未完成的验收 Task 不重复派（按 contractId 精确过滤，避免契约间互相阻塞）
+  // Review 修复（L-7）：用 JSON_EXTRACT 参数化替代 LIKE 拼接——contract.id 进 LIKE 模式
+  // 若含 %/_ 等通配符会静默误匹配，JSON 字段精确等值查询无此隐患。
   const existing = db
     .prepare(
-      `SELECT 1 FROM task WHERE input_protocol_json LIKE ? AND input_protocol_json LIKE ? AND state NOT IN ('completed','cancelled','failed') LIMIT 1`,
+      `SELECT 1 FROM task
+       WHERE JSON_EXTRACT(input_protocol_json, '$.reason') = 'outsourcing_review'
+         AND JSON_EXTRACT(input_protocol_json, '$.contractId') = ?
+         AND state NOT IN ('completed','cancelled','failed') LIMIT 1`,
     )
-    .get(`%"reason":"outsourcing_review"%`, `%"contractId":"${contract.id}"%`);
+    .get(contract.id);
   if (existing) return null;
   const reviewTask = createTask(db, {
     projectId: contract.sourceProjectId,

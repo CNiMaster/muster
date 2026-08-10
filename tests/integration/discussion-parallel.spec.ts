@@ -162,6 +162,32 @@ describe('Discussion 并行轮次（阶段七任务 7.3）', () => {
     expect(getDiscussion(db, disc.id).state).toBe('concluding');
   });
 
+  it('L-3：maxTurns 非 roundSize 整数倍时准时收尾且无孤儿发言任务', () => {
+    const { lead, writer, designer, project } = fixture();
+    const disc = createDiscussion(db, {
+      projectId: project.id,
+      topic: '三人小会',
+      participantAgentIds: [lead.id, writer.id, designer.id],
+      scenario: 'brainstorm',
+      mode: 'parallel',
+      maxTurns: 2, // 3 参与者但只允许 2 次发言（非整数倍）
+    });
+    startDiscussion(db, disc.id);
+    // clamp 后只预建 2 个发言任务（min(3, 2-0)）
+    const turnTasks = pendingTurnTasks(disc.id);
+    expect(turnTasks.length).toBe(2);
+    for (let i = 0; i < 2; i++) {
+      finishTurn(disc.id, turnTasks[i]!, `发言${i + 1}`);
+    }
+    // 2 次发言后 turnCount=2 >= maxTurns=2 → concluding
+    expect(getDiscussion(db, disc.id).state).toBe('concluding');
+    // 无孤儿：没有仍处于 queued 的预建发言任务（clamp 未超额预建）
+    const orphans = db.prepare(
+      `SELECT id FROM task WHERE input_protocol_json LIKE ? AND state='queued'`,
+    ).all(`%"discussionId":"${disc.id}"%`) as Array<{ id: string }>;
+    expect(orphans.length).toBe(0);
+  });
+
   it('sequential 模式行为不变（串行轮流发言）', () => {
     const { lead, writer, designer, project } = fixture();
     const disc = createDiscussion(db, {

@@ -279,7 +279,13 @@ export function startDiscussion(db: DB, discussionId: string): { discussion: Dis
         return `[${agent.name}（${agent.role}）第${t.turnIndex + 1}轮] ${t.content ?? ''}`;
       });
       const createdTaskIds: string[] = [];
-      for (const participant of participants) {
+      // Review 修复（L-3）：预建任务数按剩余发言额度 clamp——若 maxTurns 不是 roundSize 整数倍，
+      // 最后一轮只建额度内的任务数，避免本轮结束后仍有已预建发言任务成为孤儿（completeDiscussionTurn 会因
+      // 讨论室已 concluding 抛错，任务被引擎标记 failed）。
+      const remaining = disc.maxTurns - disc.turnCount;
+      const toSpawn = Math.min(participants.length, Math.max(remaining, 0));
+      for (let i = 0; i < toSpawn; i++) {
+        const participant = participants[i]!;
         const task = createTask(db, {
           projectId: disc.projectId,
           assigneeAgentId: participant.agentId,
@@ -391,6 +397,13 @@ export function completeDiscussionTurn(db: DB, discussionId: string, taskId: str
         const started = startDiscussion(db, discussionId);
         return { discussion: started.discussion, nextTurnTaskId: started.turnTaskId as string | null, autoConcluded: false };
       }
+      // Review 修复（L-3）：先判发言上限再判本轮完成——原顺序在 turnCount 达 maxTurns 但本轮未凑齐
+      // （maxTurns 不是 roundSize 整数倍）时提前 return 等待，配合下方 clamp 后讨论能准时收尾。
+      if (updated.turnCount >= updated.maxTurns) {
+        // 已达到发言上限：不再汇总，直接 concluding
+        db.prepare("UPDATE discussion SET state='concluding', updated_at=? WHERE id=?").run(now, discussionId);
+        return { discussion: getDiscussion(db, discussionId), nextTurnTaskId: null as string | null, autoConcluded: false };
+      }
       // 普通发言完成：检查本轮是否全部完成（turn_count 是 roundSize 的整数倍）
       const roundCompleted = updated.turnCount % roundSize === 0;
       if (!roundCompleted) {
@@ -399,11 +412,6 @@ export function completeDiscussionTurn(db: DB, discussionId: string, taskId: str
       }
       // 本轮全部发言完成 → 创建 synthesis task（moderator 汇总）
       const moderator = participants.find((p) => p.role === 'moderator') ?? participants[0]!;
-      if (updated.turnCount >= updated.maxTurns) {
-        // 已达到发言上限：不再汇总，直接 concluding
-        db.prepare("UPDATE discussion SET state='concluding', updated_at=? WHERE id=?").run(now, discussionId);
-        return { discussion: getDiscussion(db, discussionId), nextTurnTaskId: null as string | null, autoConcluded: false };
-      }
       const prevTurns = listTurns(db, discussionId);
       const recentTurnsText = prevTurns.map((t) => {
         const agent = getAgent(db, t.speakerAgentId);

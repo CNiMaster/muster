@@ -65,6 +65,17 @@ describe('findBestAssignee（能力路由）', () => {
     const result = findBestAssignee(db, c.id, ['code-search']);
     expect(result!.agentId).toBe(twin.id);
   });
+
+  it('L-5：同分时按 agent.id 字典序取小（路由确定性，不依赖行序）', () => {
+    const { c, explorer } = fixture();
+    const twin = createAgent(db, { companyId: c.id, name: 'twin', role: 'explorer', skills: ['code-search'] });
+    // 两个员工同能力、同在线、同 rating、同负载（默认 0）→ 完全同分
+    const first = findBestAssignee(db, c.id, ['code-search'])!;
+    const second = findBestAssignee(db, c.id, ['code-search'])!;
+    expect(first.agentId).toBe(second.agentId); // 两次调用结果一致
+    // 且等于两者中 id 字典序较小者
+    expect(first.agentId).toBe([explorer.id, twin.id].sort()[0]);
+  });
 });
 
 describe('createTask 自动路由（阶段七任务 7.2）', () => {

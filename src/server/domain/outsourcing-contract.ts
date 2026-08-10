@@ -270,12 +270,14 @@ export function autoAcceptContract(db: DB, id: string): OutsourcingContract | nu
   const required = contract.requiredCapabilityIds ?? [];
   const agents = listAgents(db, contract.targetCompanyId);
   const online = agents.filter((a) => a.availabilityState === 'online');
-  // 优先：能力匹配（requiredCapabilityIds ∩ skills）
-  let liaison = online.find((a) =>
-    required.length === 0 || required.some((cap) => (a.skills ?? []).includes(cap)),
-  );
+  // 优先：能力匹配（requiredCapabilityIds ∩ skills）；
+  // Review 修复（L-8）：required 为空时原写法 `.find(() => true)` 直接取 online[0]（创建顺序），
+  // 「次选第一负责人」分支永远走不到——改为无能力要求时不走能力匹配，直接进第一负责人优选。
+  let liaison = required.length > 0
+    ? online.find((a) => required.some((cap) => (a.skills ?? []).includes(cap)))
+    : undefined;
   if (!liaison) {
-    // 次选：乙方第一负责人
+    // 次选：乙方第一负责人（无能力要求或能力无匹配时都走这里）
     const firstAgentId = targetCompany.firstAgentId;
     liaison = online.find((a) => a.id === firstAgentId) ?? online[0];
   }

@@ -78,6 +78,31 @@ describe('外包自动接受（阶段四任务 4.1）', () => {
     expect(result?.vendorLiaisonAgentId).toBe(bLead.id);
   });
 
+  it('L-8：无能力要求时优先选在线的第一负责人（而非创建顺序第一个）', () => {
+    const a = createCompany(db, { name: '甲方' });
+    const b = createCompany(db, { name: '乙方' });
+    const aLead = createAgent(db, { companyId: a.id, name: 'a-lead', role: 'lead' });
+    // bDesigner 先创建（会在 online 列表第一位），bLead 后创建但设为公司第一负责人
+    const bDesigner = createAgent(db, { companyId: b.id, name: 'b-designer', role: 'designer', skills: ['design'] });
+    const bLead = createAgent(db, { companyId: b.id, name: 'b-lead', role: 'lead' });
+    updateCompany(db, b.id, { firstAgentId: bLead.id });
+    transitionCompany(db, a.id, 'online');
+    transitionCompany(db, b.id, 'online');
+    const project = createProject(db, { companyId: a.id, name: 'p', rootDir: makeTempGitRepo(), firstAgentId: aLead.id, initialState: 'active' });
+    const contract = createOutsourcingContract(db, {
+      sourceCompanyId: a.id,
+      targetCompanyId: b.id,
+      sourceProjectId: project.id,
+      title: '普通任务',
+      brief: '无能力要求',
+    });
+
+    // 原逻辑 required 为空时直接取 online[0]（bDesigner）；修复后应优先第一负责人 bLead
+    const result = autoAcceptContract(db, contract.id);
+    expect(result?.state).toBe('accepted');
+    expect(result?.vendorLiaisonAgentId).toBe(bLead.id);
+  });
+
   it('乙方不在线时不自动接受', () => {
     const { a, b, project } = fixture();
     // 乙方未上线（off）

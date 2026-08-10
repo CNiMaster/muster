@@ -14,6 +14,7 @@ import { drainReflectionQueue, recoverStuckReflections } from '../domain/reflect
 import { generateInspectorSuggestions } from '../domain/inspector';
 import { autoAcceptContract, createOutsourcedTask, revertAcceptToPending } from '../domain/outsourcing-contract';
 import { generateOptimizationReport } from '../domain/optimization-report';
+import { executePendingOfflineActions } from '../domain/optimization-report-executor';
 import { shortId } from '../../shared/utils';
 import {
   STALE_WAITING_INPUT_MS,
@@ -35,13 +36,6 @@ function dbToday(db: DB): string {
   d.setHours(0, 0, 0, 0);
   return d.toISOString();
 }
-
-/** 延迟 import 避免循环依赖（optimization-report-executor 依赖 coordinator 不存在的引用）。 */
-function requirePendingOffline() {
-  return { executePendingOfflineActions: executePendingOfflineActionsFn };
-}
-
-import { executePendingOfflineActions as executePendingOfflineActionsFn } from '../domain/optimization-report-executor';
 
 /** 统一驱动公司生命周期和项目任务执行。 */
 export class ProjectRuntimeCoordinator {
@@ -433,7 +427,6 @@ export class ProjectRuntimeCoordinator {
         settled.push(company.id);
         // Review 修复：公司下班后自动执行此前标记 pending_offline 的优化报告建议
         try {
-          const { executePendingOfflineActions } = requirePendingOffline();
           executePendingOfflineActions(this.db, company.id);
         } catch (error) {
           log.warn('pending offline actions execution failed', {
