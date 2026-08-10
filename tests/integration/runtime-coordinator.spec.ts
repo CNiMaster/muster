@@ -15,6 +15,7 @@ import { startBrainstorm } from '../../src/server/domain/brainstorm';
 import { createProjectTask } from '../../src/server/domain/project-task';
 import { getAgent } from '../../src/server/domain/agent';
 import { addDependency } from '../../src/server/domain/task';
+import { listInspectorAlerts, resolveInspectorAlert } from '../../src/server/domain/inspector';
 
 let db: DB;
 
@@ -212,5 +213,81 @@ describe('ProjectRuntimeCoordinator', () => {
 
     const timeouts = listTasks(db, project.id).filter((task) => task.title.startsWith('[超时]'));
     expect(timeouts).toHaveLength(1); // 冷却期去重，不重复派发
+  });
+
+  it('Inspector 定时运行：心跳停滞告警持久化并上报第一负责人（阶段一任务 1.3）', async () => {
+    const novel = createNovelCompany(db, { name: 'co' });
+    const project = createProject(db, {
+      companyId: novel.company.id,
+      name: 'book',
+      rootDir: makeTempGitRepo(),
+      initialState: 'active',
+    });
+    createProjectTask(db, { projectId: project.id, title: '启动作品' });
+    // 构造心跳停滞的 claimed task（20 分钟前心跳，租约未过期避免被 recoverExpiredLeases 恢复）
+    const stuck = createTask(db, { projectId: project.id, assigneeAgentId: novel.agents.writer.id, title: '卡住的任务' });
+    db.prepare(
+      `UPDATE task SET state='claimed', heartbeat_at=?, lease_expires_at=?, lease_owner_thread_id='th_x', updated_at=? WHERE id=?`,
+    )
+      .run(
+        new Date(Date.now() - 20 * 60_000).toISOString(),
+        new Date(Date.now() + 5 * 60_000).toISOString(),
+        new Date(Date.now() - 20 * 60_000).toISOString(),
+        stuck.id,
+      );
+    transitionCompany(db, novel.company.id, 'online');
+    const coordinator = new ProjectRuntimeCoordinator(db, new TaskEngine(db, new FakeExecutor()));
+    await coordinator.tick({ pump: false });
+
+    // 告警已持久化（stuck + high）
+    const alerts = db.prepare('SELECT * FROM inspector_alert WHERE project_id=?').all(project.id) as Array<{
+      kind: string;
+      severity: string;
+      message: string;
+    }>;
+    expect(alerts.length).toBeGreaterThan(0);
+    expect(alerts.some((a) => a.kind === 'stuck' && a.severity === 'high')).toBe(true);
+    // 第一负责人收到 [告警] Task
+    const alertTasks = listTasks(db, project.id).filter((task) => task.title.startsWith('[告警]'));
+    expect(alertTasks.length).toBeGreaterThan(0);
+    expect(alertTasks[0].assigneeAgentId).toBe(novel.agents.lead.id);
+    expect(alertTasks[0].priority).toBe(8);
+    // domain 查询与标记已处理
+    const pending = listInspectorAlerts(db, project.id);
+    expect(pending.length).toBeGreaterThan(0);
+    const resolved = resolveInspectorAlert(db, pending[0].id);
+    expect(resolved?.resolvedAt).not.toBeNull();
+    expect(listInspectorAlerts(db, project.id)).toHaveLength(pending.length - 1);
+  });
+
+  it('Inspector 告警 5 分钟冷却期去重（阶段一任务 1.3）', async () => {
+    const novel = createNovelCompany(db, { name: 'co' });
+    const project = createProject(db, {
+      companyId: novel.company.id,
+      name: 'book',
+      rootDir: makeTempGitRepo(),
+      initialState: 'active',
+    });
+    createProjectTask(db, { projectId: project.id, title: '启动作品' });
+    const stuck = createTask(db, { projectId: project.id, assigneeAgentId: novel.agents.writer.id, title: '卡住的任务' });
+    db.prepare(
+      `UPDATE task SET state='claimed', heartbeat_at=?, lease_expires_at=?, lease_owner_thread_id='th_x', updated_at=? WHERE id=?`,
+    )
+      .run(
+        new Date(Date.now() - 20 * 60_000).toISOString(),
+        new Date(Date.now() + 5 * 60_000).toISOString(),
+        new Date(Date.now() - 20 * 60_000).toISOString(),
+        stuck.id,
+      );
+    transitionCompany(db, novel.company.id, 'online');
+    const coordinator = new ProjectRuntimeCoordinator(db, new TaskEngine(db, new FakeExecutor()));
+    // 连续两次 tick：第二次在 60 秒 Inspector 间隔内不会重扫
+    await coordinator.tick({ pump: false });
+    await coordinator.tick({ pump: false });
+
+    const alerts = db.prepare('SELECT * FROM inspector_alert WHERE project_id=?').all(project.id) as Array<{ id: string }>;
+    expect(alerts).toHaveLength(1);
+    const alertTasks = listTasks(db, project.id).filter((task) => task.title.startsWith('[告警]'));
+    expect(alertTasks).toHaveLength(1);
   });
 });

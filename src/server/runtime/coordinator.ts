@@ -2,15 +2,17 @@ import type { DB } from '../db/client';
 import { listCompanies, transitionCompany } from '../domain/company';
 import { listProjects } from '../domain/project';
 import { ensureProjectThreads, releaseProjectMirrors } from '../domain/thread';
-import { ensurePlanningTask, listTasks, recoverExpiredLeases, findStaleWaitingTasks, escalateToFirstResponder } from '../domain/task';
+import { ensurePlanningTask, listTasks, recoverExpiredLeases, findStaleWaitingTasks, escalateToFirstResponder, createTask } from '../domain/task';
 import type { TaskEngine } from '../task-engine/engine';
 import { log } from '../logger';
 import { interruptActiveBrainstorms } from '../domain/brainstorm';
 import { openReportCycle, shouldTriggerReport } from '../domain/report';
 import { isSoftCapReached, type Budget } from '../domain/usage';
-import { updateProject } from '../domain/project';
+import { updateProject, getProject } from '../domain/project';
 import { settleDrainingAgents } from '../domain/agent';
 import { drainReflectionQueue, recoverStuckReflections } from '../domain/reflection';
+import { generateInspectorSuggestions } from '../domain/inspector';
+import { shortId } from '../../shared/utils';
 import {
   STALE_WAITING_INPUT_MS,
   STALE_WAITING_DEPENDENCY_MS,
@@ -31,6 +33,9 @@ export class ProjectRuntimeCoordinator {
   /** 反思队列消化定时器——独立于 tick，避免 LLM 慢调用阻塞租约恢复/任务泵送。 */
   private reflectionTimer: NodeJS.Timeout | null = null;
   private ticking = false;
+  /** 阶段一任务 1.3：Inspector 定时运行（默认每 60 秒扫描一次，5 分钟冷却去重）。 */
+  private lastInspectorRun = 0;
+  private readonly inspectorIntervalMs = 60_000;
 
   constructor(
     private readonly db: DB,
@@ -51,6 +56,15 @@ export class ProjectRuntimeCoordinator {
         this.reportStaleWaitingTasks();
       } catch (error) {
         log.warn('stale waiting task scan failed', { error: error instanceof Error ? error.message : String(error) });
+      }
+      // 阶段一任务 1.3：Inspector 定时扫描（默认每 60 秒），发现异常持久化告警 + 高严重度上报。
+      if (Date.now() - this.lastInspectorRun >= this.inspectorIntervalMs) {
+        this.lastInspectorRun = Date.now();
+        try {
+          this.runInspectorAlerts();
+        } catch (error) {
+          log.warn('inspector alert scan failed', { error: error instanceof Error ? error.message : String(error) });
+        }
       }
       const plannedTasks: string[] = [];
       const releasedMirrors: string[] = [];
@@ -227,6 +241,72 @@ export class ProjectRuntimeCoordinator {
       }
     }
     return reported;
+  }
+
+  /**
+   * 阶段一任务 1.3：Inspector 定时自动运行。
+   * 对 online 公司 active 项目生成监察建议：
+   * - 非 ok 建议持久化到 inspector_alert（5 分钟同 kind+project 去重）。
+   * - 高严重度（stuck/absence）同时给第一负责人派 [告警] 上报 Task。
+   */
+  private runInspectorAlerts(): number {
+    let alerts = 0;
+    const cooldownCutoff = new Date(Date.now() - 5 * 60_000).toISOString();
+    for (const company of listCompanies(this.db)) {
+      if (company.state !== 'online') continue;
+      for (const project of listProjects(this.db, company.id)) {
+        if (project.state !== 'active') continue;
+        const suggestions = generateInspectorSuggestions(this.db, project.id);
+        for (const suggestion of suggestions) {
+          if (suggestion.kind === 'ok') continue;
+          try {
+            const recent = this.db
+              .prepare(
+                `SELECT 1 FROM inspector_alert WHERE project_id=? AND kind=? AND resolved_at IS NULL AND created_at > ? LIMIT 1`,
+              )
+              .get(project.id, suggestion.kind, cooldownCutoff);
+            if (recent) continue;
+            this.db
+              .prepare(
+                `INSERT INTO inspector_alert (id, project_id, kind, message, severity, target_agent_id, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+              )
+              .run(
+                shortId('ia_'),
+                project.id,
+                suggestion.kind,
+                suggestion.message.slice(0, 500),
+                suggestion.severity,
+                suggestion.targetAgentId,
+                suggestion.createdAt,
+              );
+            alerts++;
+            // 高严重度：上报第一负责人处理
+            if (suggestion.severity === 'high' && project.firstAgentId) {
+              createTask(this.db, {
+                projectId: project.id,
+                assigneeAgentId: project.firstAgentId,
+                title: `[告警] ${suggestion.kind === 'stuck' ? '心跳停滞' : '员工缺席'}`,
+                inputProtocol: {
+                  reason: 'inspector_alert',
+                  alertKind: suggestion.kind,
+                  message: suggestion.message.slice(0, 500),
+                },
+                priority: 8,
+                skipLaunchGate: true,
+              });
+            }
+          } catch (error) {
+            log.warn('inspector alert persist failed', {
+              projectId: project.id,
+              kind: suggestion.kind,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+      }
+    }
+    return alerts;
   }
 
   private settleDrainingCompanies(): string[] {

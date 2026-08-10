@@ -19,13 +19,15 @@ import {
   addReportNote,
   closeReport,
 } from '../domain/report';
-import { generateInspectorSuggestions } from '../domain/inspector';
+import { generateInspectorSuggestions, listInspectorAlerts, resolveInspectorAlert } from '../domain/inspector';
 import { startBrainstorm, getTodayDiscussionSpendUSD } from '../domain/brainstorm';
 import { dispatchCorrectionTask } from '../domain/triggers';
 import { getProject } from '../domain/project';
 
 export const projectPhase7 = Router({ mergeParams: true });
 export const reportByIdRouter = Router({ mergeParams: true });
+/** 阶段一任务 1.3：告警处理独立路由（无需 project 前缀），由 server.ts 挂载到 /api/inspector/alerts。 */
+export const inspectorAlertRouter = Router({ mergeParams: true });
 
 projectPhase7.get(
   '/reports',
@@ -46,6 +48,28 @@ projectPhase7.get(
   '/inspector',
   asyncHandler(async (req, res) => {
     res.json(generateInspectorSuggestions(getDb(), param(req, 'id')));
+  }),
+);
+
+/** 未解决告警列表（阶段一任务 1.3）：?resolved=1 查全部。 */
+projectPhase7.get(
+  '/inspector/alerts',
+  asyncHandler(async (req, res) => {
+    const includeResolved = req.query.resolved === '1' || req.query.resolved === 'true';
+    res.json(listInspectorAlerts(getDb(), param(req, 'id'), includeResolved));
+  }),
+);
+
+/** 手动标记告警已处理（阶段一任务 1.3）：/api/inspector/alerts/:alertId/resolve。 */
+inspectorAlertRouter.post(
+  '/:alertId/resolve',
+  asyncHandler(async (req, res) => {
+    const alert = resolveInspectorAlert(getDb(), param(req, 'alertId'));
+    if (!alert) {
+      res.status(404).json({ error: '告警不存在或已处理' });
+      return;
+    }
+    res.json(alert);
   }),
 );
 

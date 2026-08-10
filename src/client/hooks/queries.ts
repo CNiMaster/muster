@@ -1163,10 +1163,23 @@ export interface ReportSummary {
 export interface InspectorSuggestion {
   id: string;
   projectId: string;
-  kind: 'congestion' | 'absence' | 'loop' | 'suggest_mirror' | 'ok';
+  kind: 'congestion' | 'absence' | 'loop' | 'suggest_mirror' | 'stuck' | 'ok';
+  /** 阶段一任务 1.3：告警严重度（high=上报第一负责人 / medium=仅展示）。 */
+  severity?: 'high' | 'medium';
   message: string;
   targetAgentId: string | null;
   createdAt: string;
+}
+
+export interface InspectorAlert {
+  id: string;
+  projectId: string;
+  kind: string;
+  severity: 'high' | 'medium';
+  message: string;
+  targetAgentId: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
 }
 
 export function useReports(projectId: string | undefined) {
@@ -1230,6 +1243,28 @@ export function useInspectorSuggestions(projectId: string | undefined) {
     queryFn: () => api.get<InspectorSuggestion[]>(`/api/projects/${projectId}/inspector`),
     enabled: !!projectId,
     refetchInterval: 5000,
+  });
+}
+
+/** 未解决告警列表（阶段一任务 1.3，Inspector 定时运行落库结果）。 */
+export function useInspectorAlerts(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ['inspector-alerts', projectId],
+    queryFn: () => api.get<InspectorAlert[]>(`/api/projects/${projectId}/inspector/alerts`),
+    enabled: !!projectId,
+    refetchInterval: 15000,
+  });
+}
+
+export function useResolveInspectorAlert() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (alertId: string) => api.post<InspectorAlert>(`/api/inspector/alerts/${alertId}/resolve`),
+    onSuccess: (_d, alertId) => {
+      // 刷新所有项目的告警列表（告警 id 不知道 projectId，广播失效即可）
+      qc.invalidateQueries({ queryKey: ['inspector-alerts'] });
+      void alertId;
+    },
   });
 }
 

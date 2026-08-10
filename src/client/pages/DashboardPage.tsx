@@ -7,6 +7,8 @@ import {
   useThreads,
   useProjectUsage,
   useInspectorSuggestions,
+  useInspectorAlerts,
+  useResolveInspectorAlert,
   useAgents,
   useProjectEvents,
   useStatusBoard,
@@ -73,6 +75,8 @@ export function DashboardPage(): React.ReactElement {
   const { data: threads } = useThreads(projectId);
   const { data: usage } = useProjectUsage(projectId);
   const { data: suggestions } = useInspectorSuggestions(projectId);
+  const { data: alerts } = useInspectorAlerts(projectId);
+  const resolveAlert = useResolveInspectorAlert();
   const { data: agents } = useAgents(project?.companyId);
   const { data: events } = useProjectEvents(projectId);
   const { data: statusBoard } = useStatusBoard(project?.companyId);
@@ -147,6 +151,35 @@ export function DashboardPage(): React.ReactElement {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* 持久化系统告警（阶段一任务 1.3：Inspector 定时运行落库结果） */}
+      {alerts && alerts.length > 0 && (
+        <div className="dashboard-warnings" style={{ marginTop: 'var(--space-2)' }}>
+          <div className="dashboard-warning-item">
+            <span className="dashboard-warning-dot" style={{ background: 'var(--err)' }} />
+            <div style={{ flex: 1 }}>
+              <strong style={{ color: 'var(--err)' }}>系统告警（{alerts.length}）</strong>
+              <div className="muted" style={{ marginTop: 4 }}>
+                {alerts.map((a) => (
+                  <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                    <span>
+                      {SUGGESTION_META[a.kind]?.label ?? a.kind}
+                      {a.severity === 'high' ? ' · 已上报负责人' : ''}：{a.message}
+                    </span>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => resolveAlert.mutate(a.id)}
+                      disabled={resolveAlert.isPending}
+                    >
+                      已处理
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

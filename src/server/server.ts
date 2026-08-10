@@ -24,7 +24,7 @@ import { graphsRouter } from './api/graphs';
 import { taskByProjectRouter, taskByIdRouter } from './api/tasks';
 import { usageRouter } from './api/reports-usage';
 import { novelRouter, projectScopedNovel } from './api/novel';
-import { projectPhase7, reportByIdRouter } from './api/phase7';
+import { projectPhase7, reportByIdRouter, inspectorAlertRouter } from './api/phase7';
 import { companyMessagesRouter, projectMessagesRouter } from './api/conversation';
 import { pluginsRouter } from './api/plugins';
 import { outsourcingRouter } from './api/outsourcing';
@@ -197,6 +197,7 @@ async function createApp(): Promise<AppHandle> {
   app.use('/api', delegationRouter);
   app.use('/api', handoverRouter);
   app.use('/api/reports/:id', reportByIdRouter);
+  app.use('/api/inspector/alerts', inspectorAlertRouter);
   app.use('/api/tasks/:id', taskByIdRouter);
   app.use('/api/settings', settingsRouter);
   app.use('/api/workspaces', workspacesRouter);

@@ -15,10 +15,14 @@ import { listAgents } from './agent';
 
 export type SuggestionKind = 'congestion' | 'absence' | 'loop' | 'suggest_mirror' | 'stuck' | 'ok';
 
+/** 告警严重度：high（stuck/absence → 上报第一负责人）/ medium（其余 → 仅持久化展示）。 */
+export type SuggestionSeverity = 'high' | 'medium';
+
 export interface InspectorSuggestion {
   id: string;
   projectId: string;
   kind: SuggestionKind;
+  severity: SuggestionSeverity;
   message: string;
   targetAgentId: string | null;
   createdAt: string;
@@ -45,6 +49,7 @@ export function generateInspectorSuggestions(db: DB, projectId: string): Inspect
         id: shortId('sg_'),
         projectId,
         kind: 'congestion',
+        severity: 'medium',
         message: `员工 ${agentId} 队列拥堵（${count} 个排队中），建议扩容镜像`,
         targetAgentId: agentId,
         createdAt: now,
@@ -61,6 +66,7 @@ export function generateInspectorSuggestions(db: DB, projectId: string): Inspect
           id: shortId('sg_'),
           projectId,
           kind: 'absence',
+          severity: 'high',
           message: `员工 ${t.agentId} 主线程 idle 但有排队 Task`,
           targetAgentId: t.agentId,
           createdAt: now,
@@ -76,6 +82,7 @@ export function generateInspectorSuggestions(db: DB, projectId: string): Inspect
         id: shortId('sg_'),
         projectId,
         kind: 'absence',
+        severity: 'high',
         message: `员工 ${agent.name} 当前${agent.availabilityState === 'draining' ? '排空中' : '下班'}，${queued} 个 Task 正在等待`,
         targetAgentId: agent.id,
         createdAt: now,
@@ -90,6 +97,7 @@ export function generateInspectorSuggestions(db: DB, projectId: string): Inspect
       id: shortId('sg_'),
       projectId,
       kind: 'loop',
+      severity: 'medium',
       message: `Task #${t.seq} 出现追问循环（${t.clarificationRounds} 轮）`,
       targetAgentId: t.assigneeAgentId,
       createdAt: now,
@@ -108,6 +116,7 @@ export function generateInspectorSuggestions(db: DB, projectId: string): Inspect
         id: shortId('sg_'),
         projectId,
         kind: 'stuck',
+        severity: 'high',
         message: `Task #${t.seq} 处于 ${t.state} 但无心跳记录`,
         targetAgentId: t.assigneeAgentId,
         createdAt: now,
@@ -120,6 +129,7 @@ export function generateInspectorSuggestions(db: DB, projectId: string): Inspect
         id: shortId('sg_'),
         projectId,
         kind: 'stuck',
+        severity: 'high',
         message: `Task #${t.seq} 心跳停滞 ${Math.round(age / 1000)}s（超过 ${Math.round(stuckThresholdMs / 1000)}s 阈值）`,
         targetAgentId: t.assigneeAgentId,
         createdAt: now,
@@ -128,7 +138,73 @@ export function generateInspectorSuggestions(db: DB, projectId: string): Inspect
   }
 
   if (out.length === 0) {
-    out.push({ id: shortId('sg_'), projectId, kind: 'ok', message: '项目运行正常', targetAgentId: null, createdAt: now });
+    out.push({
+      id: shortId('sg_'),
+      projectId,
+      kind: 'ok',
+      severity: 'medium',
+      message: '项目运行正常',
+      targetAgentId: null,
+      createdAt: now,
+    });
   }
   return out;
+}
+
+// ===== 告警持久化（阶段一任务 1.3） =====
+
+export interface InspectorAlert {
+  id: string;
+  projectId: string;
+  kind: SuggestionKind;
+  severity: SuggestionSeverity;
+  message: string;
+  targetAgentId: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+}
+
+interface AlertRow {
+  id: string;
+  project_id: string;
+  kind: string;
+  severity: string;
+  message: string;
+  target_agent_id: string | null;
+  created_at: string;
+  resolved_at: string | null;
+}
+
+function alertFromRow(r: AlertRow): InspectorAlert {
+  return {
+    id: r.id,
+    projectId: r.project_id,
+    kind: r.kind as SuggestionKind,
+    severity: r.severity as SuggestionSeverity,
+    message: r.message,
+    targetAgentId: r.target_agent_id,
+    createdAt: r.created_at,
+    resolvedAt: r.resolved_at,
+  };
+}
+
+/** 查询项目告警：默认只查未解决的；includeResolved=true 查全部。 */
+export function listInspectorAlerts(db: DB, projectId: string, includeResolved = false): InspectorAlert[] {
+  const sql = includeResolved
+    ? 'SELECT * FROM inspector_alert WHERE project_id=? ORDER BY created_at DESC LIMIT 100'
+    : 'SELECT * FROM inspector_alert WHERE project_id=? AND resolved_at IS NULL ORDER BY created_at DESC LIMIT 100';
+  return (db.prepare(sql).all(projectId) as AlertRow[]).map(alertFromRow);
+}
+
+/** 手动标记告警已处理。 */
+export function resolveInspectorAlert(db: DB, alertId: string): InspectorAlert | null {
+  const row = db
+    .prepare('UPDATE inspector_alert SET resolved_at=? WHERE id=? AND resolved_at IS NULL')
+    .run(nowIso(), alertId);
+  if (!row.changes) return null;
+  const projectRow = db.prepare('SELECT project_id FROM inspector_alert WHERE id=?').get(alertId) as
+    | { project_id: string }
+    | undefined;
+  if (!projectRow) return null;
+  return listInspectorAlerts(db, projectRow.project_id, true).find((a) => a.id === alertId) ?? null;
 }
