@@ -88,8 +88,21 @@ export function isKnownBridgeAction(action: string): boolean {
 
 /**
  * 构建 prompt 注入用的桥接能力清单（中文）。
+ *
+ * kind='api' 时（OpenAI/Gemini 等无 Bash 能力的执行器），改指引使用内置
+ * notify_host / submit_review 工具，而不是发 curl 命令——避免注入无法执行的死指令。
  */
-export function buildBridgePromptSection(baseUrl: string): string {
+export function buildBridgePromptSection(baseUrl: string, kind?: 'cli' | 'api'): string {
+  if (kind === 'api') {
+    return [
+      '# 宿主桥接（Agent Bridge）',
+      '',
+      '当前执行器为 API 模式，没有命令执行能力，请使用内置工具通知宿主：',
+      '- `notify_host` 工具：action=progress 汇报进度 / action=notify 发送通知 / action=preview 请求预览文件',
+      '- `submit_review` 工具：提交业务产物等待人工审批',
+      '',
+    ].join('\n');
+  }
   const lines: string[] = [
     '# 宿主桥接（Agent Bridge）',
     '',

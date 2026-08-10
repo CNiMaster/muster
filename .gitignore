@@ -14,3 +14,21 @@ dist/
 .tsbuildinfo/
 test-results/
 muster-db-backup-*/
+# 环境与密钥
+.env
+.env.*
+*.pem
+*.key
+secrets/
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+
+# 系统
+Thumbs.db
+Desktop.ini
+
+# 覆盖率
+coverage/

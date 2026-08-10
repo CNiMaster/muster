@@ -1,6 +1,6 @@
 import type React from 'react';
 
-export type StateDomain = 'company'|'employee'|'project'|'project-task'|'thread'|'probe'|'approval';
+export type StateDomain = 'company'|'employee'|'project'|'project-task'|'thread'|'probe'|'approval'|'discussion';
 export interface StateExplanationValue { title:string;description:string;impact:string;action:string|null }
 
 const explanations:Record<StateDomain,Record<string,StateExplanationValue>>={
@@ -11,6 +11,7 @@ const explanations:Record<StateDomain,Record<string,StateExplanationValue>>={
   thread:{idle:{title:'员工会话空闲',description:'当前没有运行中的工作单。',impact:'下次工作会显式恢复同一任务会话。',action:null},running:{title:'员工正在运行',description:'执行器正在处理当前工作单。',impact:'同一 vendor session 不会被另一个 Run 同时写入。',action:null},waiting:{title:'员工会话等待中',description:'工作需要输入、依赖或审批才能继续。',impact:'上下文和工作区会被保留。',action:'查看等待原因'},paused:{title:'员工会话已暂停',description:'运行已安全停止，状态仍可恢复。',impact:'不会在后台隐藏等待。',action:'处理阻塞后恢复'},failed:{title:'员工会话运行失败',description:'执行器或运行保护停止了本次工作。',impact:'任务记录和诊断仍保留。',action:'查看诊断并重试'},archived:{title:'员工会话已归档',description:'所属项目任务已归档。',impact:'会话只读，不会再次恢复。',action:null},rotating:{title:'员工会话正在换代',description:'旧上下文已接近上限，正在用交接包创建替代会话。',impact:'仍在同一项目任务内继续工作。',action:'等待换代完成'}},
   probe:{queued:{title:'联通测试已排队',description:'测试会在后台开始，不阻塞软件启动。',impact:'完成前不能确认执行器可运行。',action:'等待测试开始'},testing:{title:'正在测试联通',description:'Muster 正在用只读空目录请求验证默认模型。',impact:'不会修改用户 CLI 全局配置。',action:'等待测试完成'},connected:{title:'执行器联通正常',description:'本机 CLI 或 API 已成功返回约定结果。',impact:'仍需绑定权限策略后员工才能工作。',action:null},failed:{title:'执行器联通失败',description:'路径、版本、认证、模型、网络或审批桥存在问题。',impact:'绑定此执行器的员工暂时不能运行。',action:'查看脱敏诊断并重新测试'}},
   approval:{pending:{title:'等待你的审批',description:'执行器申请执行超出自动允许范围的操作。',impact:'在线运行最多等待十分钟，超时后安全停止。',action:'允许、拒绝或保存规则'},allowed:{title:'审批已允许',description:'决定已回传在线执行器，或工作单已重新排队。',impact:'运行将按原会话继续。',action:null},denied:{title:'审批已拒绝',description:'本次操作不会执行。',impact:'员工会收到拒绝结果并调整工作。',action:null},'timed-out':{title:'审批等待已超时',description:'Muster 未在等待窗口内收到决定，已安全拒绝并停止运行。',impact:'会话和工作单保留，稍后允许后可显式恢复。',action:'查看审批并决定'}},
+  discussion:{open:{title:'讨论进行中',description:'参与者正按顺序轮流发言，分身参与不阻塞各自主任务。',impact:'发言会自动轮转到下一位参与者。',action:'查看发言流或关闭归档'},concluding:{title:'讨论待总结',description:'已达发言上限，等待发起者总结或系统自动进入人工确认。',impact:'总结后派发实施任务或移交人工。',action:'等待组织者总结'},concluded:{title:'讨论已总结',description:'纪要已写入项目对话，结论按场景落地。',impact:'参与者分身已释放回各自岗位。',action:'查看纪要'},closed:{title:'讨论已关闭归档',description:'记录只读保留，可随时查看。',impact:'不再接受新发言。',action:null}},
 };
 
 export function getStateExplanation(domain:StateDomain,state:string):StateExplanationValue{return explanations[domain][state]??{title:'状态需要确认',description:`Muster 暂时无法解释状态“${state}”。`,impact:'请查看相关详情和最近活动。',action:'查看详情'};}

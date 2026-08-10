@@ -33,6 +33,51 @@ export interface LifecycleEventPayloadMap {
     taskId: string;
     classification: string;
   };
+  // 设计一-3：API 执行器执行需要 CLI 的任务时的能力边界提示（软提示，不阻断）
+  'executor.capability-warning': {
+    taskId: string;
+    projectTaskId: string;
+    threadId: string;
+    message: string;
+    skills: string[];
+  };
+  // 设计二-方案B：讨论室发言完成（自动轮转到下一位）
+  'discussion.turn-completed': {
+    discussionId: string;
+    taskId: string;
+    speakerAgentId: string;
+  };
+  // 设计二-方案B：讨论室总结完成
+  'discussion.concluded': {
+    discussionId: string;
+    minutes: string;
+    dispatchedTaskCount: number;
+  };
+  // AI 审批：自动放行（safe）
+  'approval.ai-approved': {
+    approvalId: string | null;
+    taskId: string;
+    action: string;
+    command?: string;
+    reason: string;
+    /** AI 判定的安全级别：execute_once/project_scope/company_scope/permanent */
+    level?: string;
+  };
+  // AI 审批：自动拒绝（unsafe）
+  'approval.ai-denied': {
+    approvalId: string | null;
+    taskId: string;
+    action: string;
+    command?: string;
+    reason: string;
+  };
+  // 讨论室：系统自动触发（失败3次/冲突等）
+  'discussion.auto-triggered': {
+    discussionId: string;
+    scenario: string;
+    taskId: string;
+    projectId: string;
+  };
   'publish.conflict-assigned': {
     publishId: string;
     rootPublishId: string;

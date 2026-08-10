@@ -32,6 +32,7 @@ import {
 import { getThread, listOnlineThreads, updateThreadState } from '../domain/thread';
 import { getAgent } from '../domain/agent';
 import { assembleContext } from '../executors/context';
+import { getExecutorManifest } from '../executors/manifests';
 import { assertSafeToRun } from '../executors/safety';
 import { getProject, listProjectReferences } from '../domain/project';
 import { getOutsourcingContract } from '../domain/outsourcing-contract';
@@ -54,6 +55,7 @@ import { isDuplicateContent } from '../domain/speech-queue';
 import { handleChapterCompleted } from '../domain/triggers';
 import { advanceWorkflowTask } from '../domain/workflow';
 import { createSuggestionTasksFromBrainstorm } from '../domain/brainstorm';
+import { createDiscussion, startDiscussion as startDiscussionRoom } from '../domain/discussion';
 import { enqueueReflection } from '../domain/reflection';
 import { deleteTaskRuntime, getTaskRuntime, saveTaskRuntime } from '../domain/task-runtime';
 import { existsSync } from 'node:fs';
@@ -355,6 +357,71 @@ export class TaskEngine {
           });
           if (decision.decision === 'allow') return { allowed: true };
           if (decision.decision === 'approval-required') {
+            // AI 审批辅助（四级递进）：高频操作先调 AI 判断。
+            // - safe + project_scope 及以下 → 自动放行 + 自动建项目内规则
+            // - safe + company_scope/permanent → 单次执行 + 入批量审批队列（等人工升级）
+            // - unsafe → 拒绝 + 记录拒绝原因供学习
+            // - uncertain/硬高危 → 转人工审批
+            try {
+              const { evaluateWithAi, recordRejectionForLearning } = await import('../domain/ai-approval');
+              const { savePermissionRule } = await import('../domain/permission');
+              const aiResult = await evaluateWithAi(this.db, {
+                action: request.action, command: request.command, path: request.path,
+                workingDir, employeeRole: agent.role, taskTitle: task.title,
+                companyId: company.id, projectId: project.id, policyId: permissionPolicy.id,
+              });
+              if (aiResult.verdict === 'unsafe') {
+                recordRejectionForLearning(this.db, { policyId: permissionPolicy.id, action: request.action, command: request.command, reason: aiResult.reason });
+                realtime.publish(makeLifecycleEvent('approval.ai-denied', {
+                  approvalId: null, taskId: task.id, action: request.action,
+                  command: request.command?.slice(0, 100), reason: aiResult.reason,
+                }, { companyId: company.id, projectId: project.id, taskId: task.id }));
+                return { allowed: false, message: `AI 审批拒绝：${aiResult.reason}` };
+              }
+              if (aiResult.verdict === 'safe') {
+                // project_scope 及以下 → 自动建规则（极安全，AI 明确判可重复）
+                if (aiResult.highestSafeLevel === 'execute_once') {
+                  // 单次执行，不建规则（AI 认为有一定影响，参数敏感）
+                  realtime.publish(makeLifecycleEvent('approval.ai-approved', {
+                    approvalId: null, taskId: task.id, action: request.action,
+                    command: request.command?.slice(0, 100), reason: `单次执行：${aiResult.reason}`,
+                    level: 'execute_once',
+                  }, { companyId: company.id, projectId: project.id, taskId: task.id }));
+                  return { allowed: true };
+                }
+                if (aiResult.highestSafeLevel === 'project_scope') {
+                  // 自动建项目内 allow 规则（commandPattern 精确匹配 + projectId 限定）
+                  if (request.command) {
+                    try {
+                      const escaped = request.command.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                      savePermissionRule(this.db, permissionPolicy.id, {
+                        effect: 'allow', action: request.action,
+                        commandPattern: `^${escaped}$`, projectId: project.id,
+                      });
+                    } catch { /* 建规则失败不阻塞单次执行 */ }
+                  }
+                  realtime.publish(makeLifecycleEvent('approval.ai-approved', {
+                    approvalId: null, taskId: task.id, action: request.action,
+                    command: request.command?.slice(0, 100), reason: `项目内放行：${aiResult.reason}`,
+                    level: 'project_scope',
+                  }, { companyId: company.id, projectId: project.id, taskId: task.id }));
+                  return { allowed: true };
+                }
+                // company_scope/permanent → 单次执行 + 入批量审批队列等人工升级
+                const batchApproval = ensureApprovalRequest(this.db, { policyId: permissionPolicy.id, employeeId: agent.id, taskId: task.id, action: request.action, command: request.command, path: request.path });
+                this.db.prepare('UPDATE permission_approval SET ai_verdict=?, ai_suggestion=?, ai_reason=?, ai_confidence=?, safety_category=?, highest_safe_level=? WHERE id=?')
+                  .run(aiResult.verdict, 'batch-approve', aiResult.reason, aiResult.confidence, aiResult.safetyCategory, aiResult.highestSafeLevel, batchApproval.id);
+                realtime.publish(makeLifecycleEvent('approval.ai-approved', {
+                  approvalId: batchApproval.id, taskId: task.id, action: request.action,
+                  command: request.command?.slice(0, 100), reason: `单次执行，已入批量审批队列（建议升级到 ${aiResult.highestSafeLevel}）：${aiResult.reason}`,
+                  level: aiResult.highestSafeLevel,
+                }, { companyId: company.id, projectId: project.id, taskId: task.id }));
+                return { allowed: true }; // 单次执行不阻塞，批量升级等人工
+              }
+              // uncertain → 继续走人工审批
+            } catch (e) {
+              log.warn('AI 审批异常，转人工', { taskId: task.id, err: e instanceof Error ? e.message : String(e) });
+            }
             const approval = ensureApprovalRequest(this.db, { policyId: permissionPolicy.id, employeeId: agent.id, taskId: task.id, action: request.action, command: request.command, path: request.path });
             this.db.prepare('UPDATE permission_approval SET execution_run_id=?,project_task_thread_id=?,executor_profile_id=?,expires_at=?,recovery_json=? WHERE id=?').run(executionRun?.id??null,projectTaskThread.id,executorProfile?.id??null,new Date(Date.now()+600_000).toISOString(),JSON.stringify({vendorSessionId:projectTaskThread.vendorSessionId}),approval.id);
             markTaskWaitingApproval(this.db,task.id,approval.id,'online');
@@ -404,13 +471,37 @@ export class TaskEngine {
         abort: () => runController.abort('executor-watchdog'),
       });
       ctx.reportActivity = () => watchdog.activity();
+      // 执行器类型：API 型无命令执行能力，systemPrompt 的桥接提示按此分化（P0-b）
+      let executorKind: 'cli' | 'api' | undefined;
+      if (executorProfile?.manifestId) {
+        try {
+          executorKind = getExecutorManifest(executorProfile.manifestId).kind;
+        } catch {
+          executorKind = undefined; // 未知 manifest：不分化，保持默认 CLI 指引
+        }
+      }
       const assembled = assembleContext(this.db, ctx.task, {
         threadId: thread.id,
         sessionIdHint: ctx.sessionIdHint,
         loopback: ctx.loopback,
+        executorKind,
+        lightweight: (task.inputProtocol as Record<string, unknown>)?.lightweight === true,
       });
       ctx.systemPrompt = assembled.systemPrompt;
       ctx.inputPacket = Object.keys(projectTaskThread.handoff).length?{...assembled.inputPacket,sessionHandoff:projectTaskThread.handoff}:assembled.inputPacket;
+      // 设计一-3：API 型执行器执行需要 CLI 的任务时，发软提示事件（不阻断派发）
+      if (executorKind === 'api') {
+        try {
+          const skillsRequiringCli = assembled.loadedSkillsRequiringCli;
+          if (skillsRequiringCli.length > 0) {
+            realtime.publish(makeLifecycleEvent('executor.capability-warning', {
+              taskId: task.id, projectTaskId: task.projectTaskId, threadId: projectTaskThread.id,
+              message: `当前为 API 执行器，以下技能需要命令执行能力但无法使用：${skillsRequiringCli.join('、')}（建议连接 CLI 执行器以获得完整能力）`,
+              skills: skillsRequiringCli,
+            }, { companyId: company.id, projectId: project.id, taskId: task.id }));
+          }
+        } catch { /* 软提示失败不阻塞执行 */ }
+      }
 
       const adapter = this.selectAdapter(providerForManifest(executorProfile?.manifestId) ?? effectiveExecutor?.provider);
       if (executionRun) updateExecutionRunStatus(this.db, executionRun.id, 'running');
@@ -506,6 +597,14 @@ export class TaskEngine {
         this.publishQueue.cleanupResolutionWorkspace(resolutionContext.publishId, worktreeInfo.path);
       }
 
+      // 轻量化-2：咨询/讨论发言（lightweight）不允许产出文件——防止绕过正常派活流程。
+      // 必须在 publishArtifacts 之前剥离（否则文件已提交到项目目录但无 artifact 记录，产生孤儿文件）
+      const inputProtocol = (task.inputProtocol ?? {}) as Record<string, unknown>;
+      if (inputProtocol.lightweight === true && result.artifacts?.length) {
+        log.warn('lightweight task attempted to publish artifacts, stripped', { taskId: task.id, count: result.artifacts.length });
+        result = { ...result, artifacts: [] };
+      }
+
       if (result.outcome === 'completed' && result.artifacts.length > 0 && worktreeInfo) {
         // B2B 外包：承接任务产物 publish 到甲方 source project 的 rootDir（让乙方工作直接落到甲方目录）
         const publishTargetRoot = sourceProject?.rootDir ?? project.rootDir;
@@ -545,6 +644,8 @@ export class TaskEngine {
               conflicts: pub.conflicts,
               attempt: nextAttempt,
             }, { companyId: company.id, projectId: project.id, taskId: task.id }));
+            // 自动触发2：发布冲突 → conflict-resolution 讨论（冲突方+裁决者协商）
+            try { this.triggerConflictResolutionDiscussion(task, project, company.id, pub.conflicts, sourceTaskIds); } catch (e) { log.warn('conflict-resolution discussion trigger failed', { taskId: task.id, err: e instanceof Error ? e.message : String(e) }); }
           } else {
             const escalationIds = [pub.id, rootPublishId, resolutionContext?.publishId].filter(
               (value): value is string => Boolean(value),
@@ -618,6 +719,23 @@ export class TaskEngine {
       const approvalMatch=result.outcome==='blocked'?/审批请求\s+(approval_[A-Za-z0-9_-]+)/.exec(result.summary):null;
       if(approvalMatch){commitAll(worktreeInfo.path,`muster: approval checkpoint ${task.id}`,{excludePaths:resolutionContext?['.muster-conflicts']:[]});preserveWorktree=true;markTaskWaitingApproval(this.db,task.id,approvalMatch[1]!);updateThreadState(this.db,thread.id,'paused');return true;}
       completeTask(this.db, task.id, result);
+      // 设计二-方案B：讨论发言任务完成时记录发言 + 自动轮转到下一位发言者。
+      // 放在引擎层（非 completeTask 内部）因为 completeTask 是同步函数，无法用动态 import。
+      if (result.outcome === 'completed') {
+        const inputProtocol = (task.inputProtocol ?? {}) as Record<string, unknown>;
+        const discussionId = typeof inputProtocol.discussionId === 'string' ? inputProtocol.discussionId : null;
+        if (discussionId && inputProtocol.isYourTurn) {
+          try {
+            const { completeDiscussionTurn } = await import('../domain/discussion');
+            completeDiscussionTurn(this.db, discussionId, task.id, (result.summary ?? '').slice(0, 2000));
+            realtime.publish(makeLifecycleEvent('discussion.turn-completed', {
+              discussionId, taskId: task.id, speakerAgentId: task.assigneeAgentId ?? '',
+            }, { companyId: company.id, projectId: project.id, taskId: task.id }));
+          } catch (e) {
+            log.warn('discussion turn record failed', { discussionId, taskId: task.id, err: e instanceof Error ? e.message : String(e) });
+          }
+        }
+      }
       // B2B 外包：承接任务完成后触发交付（契约标记 delivered，通知甲方验收）。
       // 幂等：非外包任务或契约非 in_progress 时返回 null，无副作用。
       if (result.outcome === 'completed') {
@@ -627,7 +745,13 @@ export class TaskEngine {
             contractId: deliveredContract.id,
             outsourcedTaskId: task.id,
           }, { companyId: deliveredContract.sourceCompanyId, taskId: task.id }));
+          // 自动触发3：跨公司契约 delivered → 甲乙双方 task-clarification 讨论辅助交接验收
+          try { this.triggerHandoverDiscussion(deliveredContract, task, company.id, project); } catch (e) { log.warn('handover discussion trigger failed', { taskId: task.id, err: e instanceof Error ? e.message : String(e) }); }
         }
+      }
+      // 自动触发1：验收不达标（acceptance_criteria 有 met=false）→ quality-review 讨论
+      if (result.outcome === 'completed' && result.acceptanceMet?.some((m) => m.met === false)) {
+        try { this.triggerQualityReviewDiscussion(task, result.acceptanceMet!, agent, project, company.id); } catch (e) { log.warn('quality-review discussion trigger failed', { taskId: task.id, err: e instanceof Error ? e.message : String(e) }); }
       }
       // 员工评级：任务完成时重算 assignee 的 profile 评级（异步感——非阻塞，失败不回滚任务）
       if (result.outcome === 'completed' && agent.profileId) {
@@ -885,6 +1009,109 @@ export class TaskEngine {
       });
   }
 
+  /**
+   * 自动触发1：验收不达标 → quality-review 讨论。
+   * 产出者 + 第一负责人（评审者）参与，讨论如何改进。
+   */
+  private triggerQualityReviewDiscussion(task: ReturnType<typeof getTask>, acceptanceMet: Array<{ id: string; met: boolean }>, agent: ReturnType<typeof getAgent>, project: ReturnType<typeof getProject>, companyId: string): void {
+    const failedCriteria = acceptanceMet.filter((m) => m.met === false).map((m) => m.id);
+    const participants: string[] = [];
+    if (project.firstAgentId) participants.push(project.firstAgentId);
+    if (task.assigneeAgentId && !participants.includes(task.assigneeAgentId)) participants.push(task.assigneeAgentId);
+    if (participants.length < 2) return;
+    const disc = createDiscussion(this.db, {
+      projectId: project.id, topic: `任务 #${task.seq} 验收不达标评审`,
+      participantAgentIds: participants, sourceTaskId: task.id,
+      scenario: 'quality-review', maxTurns: 6,
+      context: { taskId: task.id, failedCriteria, taskTitle: task.title },
+    });
+    startDiscussionRoom(this.db, disc.id);
+    realtime.publish(makeLifecycleEvent('discussion.auto-triggered', {
+      discussionId: disc.id, scenario: 'quality-review', taskId: task.id, projectId: project.id,
+    }, { companyId, projectId: project.id, taskId: task.id }));
+    log.info('auto quality-review discussion triggered', { taskId: task.id, discussionId: disc.id, failedCriteria });
+  }
+
+  /**
+   * 自动触发2：发布冲突 → conflict-resolution 讨论。
+   * 冲突方（sourceTaskIds 的 assignee）+ 裁决者（第一负责人）协商。
+   */
+  private triggerConflictResolutionDiscussion(task: ReturnType<typeof getTask>, project: ReturnType<typeof getProject>, companyId: string, conflicts: string[], sourceTaskIds: string[]): void {
+    const participants: string[] = [];
+    if (project.firstAgentId) participants.push(project.firstAgentId);
+    // 加入冲突方的 assignee
+    for (const sid of sourceTaskIds) {
+      try {
+        const st = getTask(this.db, sid);
+        if (st.assigneeAgentId && !participants.includes(st.assigneeAgentId)) participants.push(st.assigneeAgentId);
+      } catch { /* task 不存在跳过 */ }
+    }
+    if (participants.length < 2) return;
+    const disc = createDiscussion(this.db, {
+      projectId: project.id, topic: `发布冲突协调（${conflicts.length} 处）`,
+      participantAgentIds: participants, sourceTaskId: task.id,
+      scenario: 'conflict-resolution', maxTurns: 8,
+      context: { taskId: task.id, conflicts, sourceTaskIds },
+    });
+    startDiscussionRoom(this.db, disc.id);
+    realtime.publish(makeLifecycleEvent('discussion.auto-triggered', {
+      discussionId: disc.id, scenario: 'conflict-resolution', taskId: task.id, projectId: project.id,
+    }, { companyId, projectId: project.id, taskId: task.id }));
+    log.info('auto conflict-resolution discussion triggered', { taskId: task.id, discussionId: disc.id, conflictsCount: conflicts.length });
+  }
+
+  /**
+   * 自动触发3：跨公司契约 delivered → task-clarification 讨论辅助交接验收。
+   * 乙方交付后、甲方验收前，甲乙双方讨论对齐交付预期（避免验收返工）。
+   * 跨公司讨论：参与者在甲方公司侧（第一负责人），议题含乙方交付信息。
+   */
+  private triggerHandoverDiscussion(contract: NonNullable<ReturnType<typeof onOutsourcedTaskCompleted>>, task: ReturnType<typeof getTask>, providerCompanyId: string, providerProject: ReturnType<typeof getProject>): void {
+    // 讨论建在甲方公司项目下（契约的 sourceCompanyId 是甲方）
+    try {
+      const sourceProject = getProject(this.db, contract.sourceProjectId);
+      const participants: string[] = [];
+      if (sourceProject.firstAgentId) participants.push(sourceProject.firstAgentId);
+      // 加入甲方原任务 assignee（如果有）
+      if (contract.sourceTaskId) {
+        try {
+          const sourceTask = getTask(this.db, contract.sourceTaskId);
+          if (sourceTask.assigneeAgentId && !participants.includes(sourceTask.assigneeAgentId)) participants.push(sourceTask.assigneeAgentId);
+        } catch { /* */ }
+      }
+      if (participants.length < 1) return;
+      // 单方也可发起（甲方内部先对齐验收标准），不强制 2 人——createDiscussion 会校验
+      // 这里用甲方第一负责人自讨论（若只有 1 人则跳过，避免 < 2 报错）
+      if (participants.length < 2) {
+        log.info('handover discussion skipped: only 1 participant on source side', { contractId: contract.id });
+        return;
+      }
+      const disc = createDiscussion(this.db, {
+        projectId: sourceProject.id,
+        topic: `外包交付验收对齐：${contract.title}`,
+        participantAgentIds: participants,
+        sourceTaskId: contract.sourceTaskId ?? task.id,
+        scenario: 'task-clarification',
+        maxTurns: 6,
+        context: {
+          contractId: contract.id,
+          providerCompanyId,
+          providerProjectId: providerProject.id,
+          outsourcedTaskId: task.id,
+          deliverableDir: contract.deliverableDir,
+          acceptanceCriteria: contract.acceptanceCriteria,
+          instruction: '乙方已完成外包任务并交付产物。请甲乙双方对齐验收标准与交付预期，确保验收一次通过、减少返工。',
+        },
+      });
+      startDiscussionRoom(this.db, disc.id);
+      realtime.publish(makeLifecycleEvent('discussion.auto-triggered', {
+        discussionId: disc.id, scenario: 'task-clarification', taskId: task.id, projectId: sourceProject.id,
+      }, { companyId: contract.sourceCompanyId, projectId: sourceProject.id, taskId: task.id }));
+      log.info('auto handover discussion triggered', { contractId: contract.id, discussionId: disc.id });
+    } catch (e) {
+      log.warn('handover discussion failed', { contractId: contract.id, err: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
   private createPublishConflictResolutionTask(input: {
     task: ReturnType<typeof getTask>;
     assigneeAgentId: string;
@@ -1001,6 +1228,31 @@ export class TaskEngine {
             projectId: project.id,
             failureCount: failed.failureCount,
           });
+          // 系统自动触发：失败 3 次 → 自动发起 help-request 讨论（执行者+第一负责人+相关同事）
+          try {
+            const assigneeId = failed.assigneeAgentId;
+            const participants: string[] = [];
+            if (project.firstAgentId) participants.push(project.firstAgentId);
+            if (assigneeId && !participants.includes(assigneeId)) participants.push(assigneeId);
+            if (participants.length < 2) { /* 不足 2 人无法讨论，跳过 */ }
+            else {
+            const disc = createDiscussion(this.db, {
+              projectId: project.id,
+              topic: `任务 #${failed.seq} 连续失败 ${failed.failureCount} 次求助`,
+              participantAgentIds: participants,
+              sourceTaskId: taskId,
+              scenario: 'help-request',
+              maxTurns: 6,
+              context: { failedTaskId: taskId, failureCount: failed.failureCount, error: msg.slice(0, 500) },
+            });
+            startDiscussionRoom(this.db, disc.id);
+            realtime.publish(makeLifecycleEvent('discussion.auto-triggered', {
+              discussionId: disc.id, scenario: 'help-request', taskId, projectId: project.id,
+            }, { companyId: project.companyId, projectId: project.id, taskId }));
+            }
+          } catch (e) {
+            log.warn('auto help-request discussion failed', { taskId, err: e instanceof Error ? e.message : String(e) });
+          }
         }
       } catch (e) {
         log.warn('circuit breaker rollback failed', { taskId, err: e instanceof Error ? e.message : String(e) });

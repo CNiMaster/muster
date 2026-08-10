@@ -50,9 +50,22 @@ export interface ExecutorProfile {
   updatedAt: string;
   /** 列表端点附带的最近一次连通测试结果。 */
   connection?: { status: string; classification: string | null; version: string | null; completedAt: string | null } | null;
+  /** 列表端点附带的最近一次能力探针结果（仅 API 型执行器）。 */
+  capability?: { status: string; classification: string | null; capabilityJson: CapabilityProbeResult | null; completedAt: string | null } | null;
 }
 
-export type ExecutorProbeKind = 'connectivity' | 'model';
+/** 能力探针结果（仅 API 型执行器）。 */
+export interface CapabilityProbeResult {
+  functionCalling: boolean;
+  toolLoop: boolean;
+  structuredOutput: boolean;
+  instructionLevel: 'low' | 'medium' | 'high';
+  supportedTasks: string[];
+  unsupportedTasks: string[];
+  note: string;
+}
+
+export type ExecutorProbeKind = 'connectivity' | 'model' | 'capability';
 export type ExecutorProbeStatus = 'queued' | 'testing' | 'connected' | 'failed';
 
 export interface ExecutorProbe {
@@ -64,6 +77,8 @@ export interface ExecutorProbe {
   stderr: string;
   durationMs: number;
   completedAt: string | null;
+  /** 能力探针结果（kind='capability' 时由后端回填）。 */
+  capability?: CapabilityProbeResult | null;
 }
 
 /** probe classification → 中文诊断标签。 */

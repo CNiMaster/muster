@@ -41,6 +41,7 @@ import { workspacesRouter } from './api/workspaces';
 import { agentProfilesRouter, companyEmployeesRouter } from './api/agent-profiles';
 import { memoryRouter } from './api/memory';
 import { permissionsRouter } from './api/permissions';
+import { discussionsRouter } from './api/discussions';
 import { executorsRouter } from './api/executors';
 import { CodexCliAdapter } from './executors/codex-cli-adapter';
 import { AntigravityCliAdapter } from './executors/antigravity-cli-adapter';
@@ -103,6 +104,7 @@ async function createApp(): Promise<AppHandle> {
   projectById.use('/messages', projectMessagesRouter);
   projectById.use('/events', projectEventsRouter);
   projectById.use('/artifacts', projectArtifactsRouter);
+  projectById.use('/discussions', discussionsRouter);
   projectById.use('/materials', materialsRouter);
   projectById.use('/', projectScopedNovel);   // chapter-completed / correction / check
   projectById.use('/', projectPhase7);         // reports / inspector / brainstorm

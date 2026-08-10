@@ -1786,3 +1786,81 @@ export function useStaffProject() {
     },
   });
 }
+
+// ===== 讨论室（设计二-方案B）=====
+
+export interface DiscussionParticipantDTO {
+  agentId: string;
+  name: string;
+  role: 'member' | 'moderator';
+  turnIndex?: number;
+}
+
+export interface DiscussionSummaryDTO {
+  id: string;
+  topic: string;
+  state: 'open' | 'concluding' | 'concluded' | 'closed';
+  scenario: string;
+  turnCount: number;
+  maxTurns: number;
+  currentSpeakerAgentId: string | null;
+  minutes: string | null;
+  initiatorAgentId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  participants: DiscussionParticipantDTO[];
+}
+
+export interface DiscussionTurnDTO {
+  id: string;
+  discussionId: string;
+  taskId: string;
+  speakerAgentId: string;
+  speakerName: string;
+  turnIndex: number;
+  content: string | null;
+  createdAt: string;
+}
+
+export interface DiscussionDetailDTO extends DiscussionSummaryDTO {
+  context: Record<string, unknown>;
+  conclusion: { keyPoints: string[]; actions: Array<{ title: string; assigneeAgentId?: string }>; memoryNotes: string[] } | null;
+  turns: DiscussionTurnDTO[];
+}
+
+/** 项目讨论列表（默认进行中，state=all 含归档）。 */
+export function useProjectDiscussions(projectId: string | undefined, state?: string) {
+  return useQuery({
+    queryKey: ['project-discussions', projectId, state ?? 'open'],
+    queryFn: () => api.get<DiscussionSummaryDTO[]>(`/api/projects/${projectId}/discussions${state ? `?state=${state}` : ''}`),
+    enabled: !!projectId,
+    refetchInterval: (query) => {
+      // 有进行中的讨论时每 4s 刷新（发言轮转/新发言可见）
+      const hasOpen = (query.state.data ?? []).some((d) => d.state === 'open' || d.state === 'concluding');
+      return hasOpen ? 4000 : false;
+    },
+  });
+}
+
+/** 讨论详情（含完整发言流 + 纪要 + 结论）。 */
+export function useDiscussionDetail(projectId: string | undefined, discussionId: string | undefined) {
+  return useQuery({
+    queryKey: ['discussion-detail', discussionId],
+    queryFn: () => api.get<DiscussionDetailDTO>(`/api/projects/${projectId}/discussions/${discussionId}`),
+    enabled: !!projectId && !!discussionId,
+    refetchInterval: (query) => (query.state.data && ['open', 'concluding'].includes(query.state.data.state) ? 4000 : false),
+  });
+}
+
+/** 关闭讨论（归档）。 */
+export function useCloseDiscussion() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, discussionId }: { projectId: string; discussionId: string }) =>
+      api.post<{ ok: boolean; state: string }>(`/api/projects/${projectId}/discussions/${discussionId}/close`),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ['project-discussions', vars.projectId] });
+      qc.invalidateQueries({ queryKey: ['discussion-detail', vars.discussionId] });
+    },
+  });
+}

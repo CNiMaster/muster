@@ -220,6 +220,8 @@ export interface CreateTaskInput {
   };
   /** 系统规划任务豁免：跳过 launch-confirmed 门禁（ensurePlanningTask 用）。 */
   skipLaunchGate?: boolean;
+  /** 咨询任务豁免（设计二-方案A）：跳过 contactAllow 守卫（同事咨询属正常协作）。 */
+  isConsultation?: boolean;
 }
 
 const ALLOWED_TRANSITIONS: Record<TaskState, TaskState[]> = {
@@ -266,7 +268,8 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
   const dispatcher = input.dispatcherAgentId ? getAgent(db, input.dispatcherAgentId) : null;
   // B2B 外包上下文：承接任务允许 assignee/dispatcher 跨公司，跳过同公司 + contactAllow 守卫。
   // outsourcingContext 仅由 createOutsourcedTask（外包专用入口）显式传入，普通调用不受影响。
-  const bypassGuards = !!input.outsourcingContext;
+  // 咨询任务（isConsultation）也跳过 contactAllow（同事咨询属正常协作，已在 ask_colleague handler 内校验同公司）。
+  const bypassGuards = !!input.outsourcingContext || !!input.isConsultation;
   if (!bypassGuards) {
     if (assignee && assignee.companyId !== project.companyId) {
       throw new AppError(ErrorCode.UNAUTHORIZED, `员工 ${assignee.id} 不属于项目所在公司`);
@@ -595,6 +598,19 @@ export function completeTask(db: DB, taskId: string, result: AgentRunResult): Ta
 
     // completed → 解除父 task 的 waiting_dependency（如果父 task 仅等待本 task）
     if (result.outcome === 'completed' && cur.parentTaskId) {
+      // 设计二-方案A：咨询任务完成时把回复写回父任务的讨论流（task_message role='dispatch'），
+      // 父任务下次执行经 recentDiscussion 注入即可看到回复。
+      const isConsultation = Boolean((cur.inputProtocol as Record<string, unknown>)?.consultation);
+      if (isConsultation) {
+        const asker = cur.dispatcherAgentId ?? (cur.inputProtocol as Record<string, unknown>)?.askerAgentId ?? 'system';
+        const replyPreview = (result.summary ?? '').slice(0, 500);
+        addTaskMessage(db, cur.parentTaskId, {
+          author: cur.assigneeAgentId ?? 'system',
+          role: 'dispatch',
+          content: `[咨询回复] ${replyPreview}`,
+        });
+        void asker; // author 已用 assignee；asker 仅作上下文保留
+      }
       const parent = getTask(db, cur.parentTaskId);
       if (parent.state === 'waiting_dependency' && areDependenciesMet(db, parent.id)) {
         db.prepare(`UPDATE task SET state='queued', updated_at=? WHERE id=? AND state='waiting_dependency'`).run(now, parent.id);

@@ -7,7 +7,8 @@
  *
  * 工作区内（cwd 之内）允许 Edit/Write/NotebookEdit/Bash；Bash 仍受黑名单约束。
  */
-import { resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
+import { realpathSync } from 'node:fs';
 
 export interface SandboxOverrides {
   allowedTools: string[] | null;
@@ -48,6 +49,43 @@ const BLACKLISTED_PATTERNS: RegExp[] = [
   /\bexport\s+PATH\s*=\s*(?!\$PATH:)/i,
   /\b\/etc\/(?:passwd|shadow|hosts)/i,
   /\.ssh\//i,
+  // —— 解释器包装绕过（黑名单是第一道防线；完整保障依赖权限审批）——
+  /\bshutil\.rmtree\s*\(/i,
+  /\bpython\s+-c\s+[^\n]*(?:os\.(?:system|remove|unlink|rmdir|removedirs)|subprocess|shutil|importlib)/i,
+  /\bpython\s+-m\s+(?:shutil|os|subprocess)\b/i,
+  /\bnode\s+(?:-e|-p)\s+[^\n]*(?:child_process|fs\.(?:rmSync|\brm\b|unlinkSync|unlink|rmdirSync)|require\(\s*['"]fs['"]\s*\))/i,
+  /\bruby\s+(?:-e|-r)\s+[^\n]*(?:FileUtils\.(?:rm_rf|rm|remove)|File\.(?:delete|unlink))/i,
+  /\bperl\s+-e\s+[^\n]*\bunlink\b/i,
+  /\bfind\s+(?:\/|~|\$)[^\n]*\s-(?:delete|exec\s+rm\b)/i,
+  /\bxargs\s+[^\n]*\brm\s+-rf/i,
+  /\brm\s+-rf\s+["']?\$[A-Za-z_{]/i,
+  /\brm\s+-rf\s+[^\s"']*\$\{?[A-Za-z_]/i,
+  // —— 命令执行/代码注入绕过 ——
+  /\beval\s+["'\$({]/i,              // eval 任意代码执行
+  /\bsource\s+\/(?:[~a-z])/i,        // source 加载外部脚本（绝对路径）
+  /(?:^|\s)\.\s+\/(?:[~a-z])/i,      // . 加载外部脚本（等价 source）
+  /\bexec\s+\/[a-z]/i,               // exec 替换进程
+  /\bbash\s+-c\s+["']/i,             // 嵌套 shell 包装（可能绕过黑名单）
+  /\bsh\s+-c\s+["']/i,               // 嵌套 shell 包装
+  // —— 设备/磁盘直写 ——
+  /\bdd\s+of=\/dev\//i,              // dd 写块设备（dd if= 已拦，补 of=）
+  /(?:^|[\s;|&])>\s*\/dev\/(?:sd|disk|nvme|hd)/i,  // 重定向写块设备（> 前是空白或分隔符）
+  /\bmkdev\b|\bhdparm\b|\bsfdisk\b|\bparted\b/i,  // 分区/低级磁盘工具
+  // —— 进程/服务管理 ——
+  /\bkill(?:all)?\s+-9\b/i,          // 强杀进程（-9）
+  /\bkillall\b/i,                    // killall 按名杀进程
+  /\bpkill\b/i,
+  /\bcrontab\b/i,                    // 定时任务（持久化）
+  /\blaunchctl\b/i,                  // macOS 服务管理
+  /\bat\b\s+\d/i,                    // at 定时任务（at 1:00 形式）
+  // —— 管道绕过（编码/变形传输到解释器）——
+  /\b(?:base64|openssl)\s+.*\|\s*(?:sh|bash|python)/i,  // base64 解码后执行
+  /\bprintf\s+['"]?[^|]*\|\s*(?:sh|bash)/i,             // printf 管道执行
+  /\bcurl\s+.*(?:-o|--output)\s+\/[^|]*&&\s*(?:sh|bash)/i,  // curl 下载后执行
+  // —— 删除类工具变体 ——
+  /\btar\s+.*--remove-files/i,
+  /\brsync\s+.*--delete\b/i,
+  /\bfind\s+.*-exec\s+rm/i,          // find -exec rm（已有 -delete/-exec rm 但 -exec rm 需单独覆盖）
 ];
 
 const SANDBOX_ALLOWED_TOOLS = [
@@ -86,11 +124,37 @@ export function getSandboxTools(
   return tools;
 }
 
+/**
+ * realpath 解析；路径尚不存在时回退到"最深已存在祖先"再拼接剩余段。
+ * 保证新建文件场景（write_file 目标不存在）也能正确解析，同时不放过已存在
+ * 路径段的符号链接（逃逸检查的关键）。
+ */
+function realpathOrDeepestAncestor(p: string): string | null {
+  const suffix: string[] = [];
+  let cur = p;
+  for (;;) {
+    try {
+      return join(realpathSync(cur), ...suffix);
+    } catch {
+      const parent = dirname(cur);
+      if (parent === cur) return null; // 已到根仍失败
+      suffix.unshift(basename(cur));
+      cur = parent;
+    }
+  }
+}
+
 export function isWithinWorkspace(cwd: string, targetPath: string): boolean {
   try {
     const absCwd = resolve(cwd);
     const absTarget = resolve(targetPath);
-    return absTarget === absCwd || absTarget.startsWith(`${absCwd}/`);
+    // 快速路径：朴素前缀检查
+    if (!(absTarget === absCwd || absTarget.startsWith(`${absCwd}/`))) return false;
+    // 防符号链接逃逸：解析真实路径后再次做前缀检查。
+    // 两侧都解析，因此 cwd 本身是 symlink（如 macOS /tmp → /private/tmp）也不会误伤。
+    const realCwd = realpathOrDeepestAncestor(absCwd) ?? absCwd;
+    const realTarget = realpathOrDeepestAncestor(absTarget) ?? absTarget;
+    return realTarget === realCwd || realTarget.startsWith(`${realCwd}/`);
   } catch {
     return false;
   }

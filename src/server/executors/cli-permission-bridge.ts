@@ -30,6 +30,6 @@ export function classifyCommand(command:string):string{
   if(/(^|[\s'";&|])git\s+push(?:\s|$)/.test(normalized))return'git-push';
   if(/(^|[;&|]\s*)(npm\s+(publish|install\s+-g)|brew\s+install|sudo\s+.*install|curl\b.*\|\s*(sh|bash))/.test(normalized))return'system-install';
   if(/(^|[;&|]\s*)(vercel|netlify|flyctl|kubectl)\b.*\b(deploy|apply|push)\b/.test(normalized))return'deploy';
-  if(/\b(keychain|credentials?|auth\.json|\.ssh\/|\.aws\/|\.config\/gcloud)\b/.test(normalized))return'credential-access';
+  if(/\b(keychain|credentials?|auth\.json)|(?:^|[\s\/])(?:\.ssh\/|\.aws\/|\.config\/gcloud)/.test(normalized))return'credential-access';
   return'run-command';
 }

@@ -77,13 +77,18 @@ export function ensurePrimaryThread(db: DB, projectId: string, agentId: string):
 }
 
 /** 创建镜像 thread（同一项目同一员工的临时并行）。 */
-export function createMirror(db: DB, projectId: string, agentId: string): ProjectAgentThread {
+export function createMirror(db: DB, projectId: string, agentId: string, options?: { reuseIdle?: boolean }): ProjectAgentThread {
   const project = getProject(db, projectId);
   const agent = getAgent(db, agentId);
   if (agent.companyId !== project.companyId) {
     throw new AppError(ErrorCode.VALIDATION, '镜像员工必须属于项目所在公司');
   }
   const root = ensurePrimaryThread(db, projectId, agentId);
+  // 讨论分身上限（仅 reuseIdle=true 时）：同一员工同一项目复用空闲 mirror，防止失控
+  if (options?.reuseIdle) {
+    const existing = listMirrorsOfRoot(db, root.id).filter((m) => m.state === 'idle');
+    if (existing.length >= 1) return existing[0];
+  }
   const id = shortId('th_');
   const now = nowIso();
   db.prepare(

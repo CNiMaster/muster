@@ -10,6 +10,7 @@ import { useGenerateCliProposal, type CliProposal, type ProposalResult } from '.
 import {
   concurrencyLabel,
   probeClassificationLabel,
+  type CapabilityProbeResult,
   type ExecutorDetection,
   type ExecutorManifest,
   type ExecutorProbe,
@@ -179,7 +180,7 @@ export function ExecutorCenterPage(): React.ReactElement {
     onError: (e: unknown) => toast('error', (e as Error).message ?? '创建失败'),
   });
   const testConnection = useMutation({
-    mutationFn: ({ id, kind }: { id: string; kind: 'connectivity' | 'model' }) =>
+    mutationFn: ({ id, kind }: { id: string; kind: 'connectivity' | 'model' | 'capability' }) =>
       api.post<ExecutorProbe>(`/api/executors/profiles/${id}/probes`, { force: true, kind }),
     onSuccess: (probe, input) => setProbeIds((old) => ({ ...old, [`${input.id}:${input.kind}`]: probe.id })),
     onError: (e: unknown) => toast('error', (e as Error).message ?? '联通测试失败'),
@@ -339,6 +340,8 @@ export function ExecutorCenterPage(): React.ReactElement {
         <ul className="entity-list">
           {profiles.data?.map((profile) => {
             const hasModel = typeof profile.config.model === 'string' && Boolean(String(profile.config.model).trim());
+            const manifestKind = manifests.data?.find((m) => m.id === profile.manifestId)?.kind;
+            const isApi = manifestKind === 'api';
             return (
               <li key={profile.id} style={{ display: 'block' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -348,9 +351,12 @@ export function ExecutorCenterPage(): React.ReactElement {
                   </div>
                   <Button size="sm" variant="ghost" onClick={() => testConnection.mutate({ id: profile.id, kind: 'connectivity' })} loading={testConnection.isPending}>联通测试</Button>
                   {hasModel && <Button size="sm" variant="ghost" onClick={() => testConnection.mutate({ id: profile.id, kind: 'model' })} loading={testConnection.isPending}>测试模型</Button>}
+                  {isApi && <Button size="sm" variant="ghost" onClick={() => testConnection.mutate({ id: profile.id, kind: 'capability' })} loading={testConnection.isPending}>测试能力</Button>}
                 </div>
                 <ProbeResult probeId={probeIds[`${profile.id}:connectivity`]} />
                 {hasModel && <ProbeResult probeId={probeIds[`${profile.id}:model`]} />}
+                {isApi && <ProbeResult probeId={probeIds[`${profile.id}:capability`]} />}
+                {isApi && <CapabilityBadges capability={profile.capability?.capabilityJson ?? null} />}
               </li>
             );
           })}
@@ -460,13 +466,44 @@ function ProbeResult({ probeId }: { probeId?: string }): React.ReactElement | nu
   if (!probeId) return null;
   const value = probe.data;
   if (!value) return <div className="diagnostic-text" aria-live="polite">正在启动测试…</div>;
+  const kindLabel = value.kind === 'model' ? '指定模型' : value.kind === 'capability' ? '能力探针' : '基础联通';
   return (
     <div className="diagnostic-text" aria-live="polite">
-      <span>{value.kind === 'model' ? '指定模型' : '基础联通'}：</span>
+      <span>{kindLabel}：</span>
       <StateBadge domain="probe" state={value.status} />
       {value.model && <span> {value.model}</span>}
       {value.classification && <><br />{probeClassificationLabel(value.classification)}{value.stderr ? `：${value.stderr}` : ''}</>}
+      {value.kind === 'capability' && value.status === 'connected' && value.capability && <CapabilityBadges capability={value.capability} />}
       {value.completedAt && <><br /><span className="muted">{new Date(value.completedAt).toLocaleString()} · {value.durationMs}ms</span></>}
+    </div>
+  );
+}
+
+/**
+ * 能力徽章：展示 API 执行器的能力矩阵（function calling / 工具循环 / 结构化输出 / 指令遵循），
+ * 并明确标注能力边界（不能执行命令/构建/部署等需连接 CLI）。
+ */
+function CapabilityBadges({ capability }: { capability: CapabilityProbeResult | null }): React.ReactElement | null {
+  if (!capability) return null;
+  const levelTone = capability.instructionLevel === 'high' ? 'ok' : capability.instructionLevel === 'medium' ? 'info' : 'warn';
+  const levelLabel = capability.instructionLevel === 'high' ? '高' : capability.instructionLevel === 'medium' ? '中' : '低';
+  return (
+    <div className="diagnostic-text" style={{ marginTop: 4 }}>
+      <span className="muted">能力：</span>
+      <Badge tone={capability.functionCalling ? 'ok' : 'warn'}>{capability.functionCalling ? '✓ 函数调用' : '✗ 函数调用'}</Badge>{' '}
+      <Badge tone={capability.toolLoop ? 'ok' : 'warn'}>{capability.toolLoop ? '✓ 工具循环' : '✗ 工具循环'}</Badge>{' '}
+      <Badge tone={capability.structuredOutput ? 'ok' : 'warn'}>{capability.structuredOutput ? '✓ 结构化输出' : '✗ 结构化输出'}</Badge>{' '}
+      <Badge tone={levelTone}>指令遵循：{levelLabel}</Badge>
+      <div className="muted" style={{ marginTop: 4 }}>{capability.note}</div>
+      <details style={{ marginTop: 4 }}>
+        <summary className="muted">可执行 {capability.supportedTasks.length} 项 · 不可执行 {capability.unsupportedTasks.length} 项</summary>
+        <div style={{ marginTop: 4 }}>
+          <div className="muted">✓ 可执行：</div>
+          <ul style={{ margin: '2px 0 6px 18px' }}>{capability.supportedTasks.map((t) => <li key={t}>{t}</li>)}</ul>
+          <div className="muted">✗ 不可执行（建议连接 CLI）：</div>
+          <ul style={{ margin: '2px 0 6px 18px' }}>{capability.unsupportedTasks.map((t) => <li key={t}>{t}</li>)}</ul>
+        </div>
+      </details>
     </div>
   );
 }

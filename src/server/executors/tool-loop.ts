@@ -68,6 +68,8 @@ export interface ToolLoopOptions {
   loopback?: { baseUrl: string; taskId: string };
   /** 业务审批上下文（submit_review 工具用）。 */
   reviewContext?: ReviewContext;
+  /** 咨询上下文（ask_colleague 工具用）。 */
+  consultationContext?: ToolContext['consultationContext'];
   /** 最大工具调用轮数。 */
   maxToolCalls: number;
   /** 超时 ms。 */
@@ -139,8 +141,9 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult
           readonlyDirs: opts.readonlyDirs ?? [],
           loopback: opts.loopback,
           reviewContext: opts.reviewContext,
+          consultationContext: opts.consultationContext,
+          toolRegistry: opts.toolRegistry ?? createBuiltinToolRegistry(),
           permissionGuard: opts.permissionGuard,
-          toolRegistry,
         };
         const tr: ToolResult = await executeTool(call, ctx);
         // 把 tool result 加回 messages

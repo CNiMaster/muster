@@ -47,12 +47,12 @@ function ctx(registry: RuntimeToolRegistry, overrides: Partial<ToolContext> = {}
 }
 
 describe('RuntimeToolRegistry 基础', () => {
-  it('createBuiltinToolRegistry 注册 7 个内置工具', () => {
+  it('createBuiltinToolRegistry 注册 12 个内置工具', () => {
     const reg = createBuiltinToolRegistry();
-    expect(reg.size()).toBe(7);
+    expect(reg.size()).toBe(12);
     const names = reg.definitions().map((d) => d.function.name).sort();
     expect(names).toEqual(
-      ['done', 'edit_file', 'list_files', 'notify_host', 'read_file', 'submit_review', 'write_file'],
+      ['ask_colleague', 'conclude_discussion', 'done', 'edit_file', 'list_files', 'notify_colleague', 'notify_host', 'read_file', 'run_command', 'start_discussion', 'submit_review', 'write_file'],
     );
   });
 
@@ -88,7 +88,7 @@ describe('RuntimeToolRegistry 基础', () => {
       source: { pluginId: 'custom', toolName: 'read_file' },
     });
     expect(reg.resolve('read_file')?.definition.function.description).toBe('自定义 read_file');
-    expect(reg.size()).toBe(7); // 覆盖不新增
+    expect(reg.size()).toBe(12); // 覆盖不新增
   });
 });
 
@@ -217,7 +217,7 @@ describe('第三方工具注册（B1 核心价值）', () => {
       permissionAction: 'network',
       source: { pluginId: 'mcp:browser-use', toolName: 'browser_navigate' },
     });
-    expect(reg.size()).toBe(8);
+    expect(reg.size()).toBe(13);
     expect(reg.definitions().map((d) => d.function.name)).toContain('browser_navigate');
 
     const call: ToolCall = { id: '1', name: 'browser_navigate', args: { url: 'https://example.com' } };

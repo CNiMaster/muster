@@ -6,6 +6,7 @@ import { useProjectAutomations, useProjectTaskAction } from '../../hooks/queries
 import type { CompanyCockpitDTO } from '../../../shared/types';
 import { Badge, StateBadge, stateLabel, taskStateTone } from '../Badge';
 import { Button, toast } from '../Button';
+import { DiscussionPanel } from './DiscussionPanel';
 
 const OPEN_STATES = new Set(['queued', 'claimed', 'running', 'waiting_input', 'waiting_dependency', 'waiting_approval', 'paused', 'blocked']);
 const ATTENTION_STATES = new Set(['waiting_input', 'waiting_approval', 'blocked', 'waiting_dependency']);
@@ -85,6 +86,9 @@ export function ProjectContextInspector({ projectId, companyId, projectState, se
       {(cockpit?.approvals.pending ?? 0) > 0 && <Link to="/permissions"><span>处理权限审批</span><span>{cockpit!.approvals.pending}</span></Link>}
       {contextNeedsAttention && <Link to={`/projects/${projectId}/dashboard`}><span>会话上下文需关注</span><span>查看</span></Link>}
     </section>}
+
+    {/* 讨论室分区（设计二-方案B）：后台讨论，有记录可查归档，窗口小不抢占主信息 */}
+    <DiscussionPanel projectId={projectId} />
 
     <details className="inspector-collapse">
       <summary>协作与设置</summary>

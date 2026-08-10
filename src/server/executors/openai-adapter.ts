@@ -129,6 +129,13 @@ export class OpenAICompatibleAdapter implements ExecutionAdapter {
         loopback: ctx.loopback,
         permissionGuard: ctx.permissionGuard,
         reviewContext: { db: getDb(), taskId: ctx.task.id },
+        consultationContext: {
+          db: getDb(),
+          askerTaskId: ctx.task.id,
+          askerProjectId: ctx.task.projectId,
+          askerProjectTaskId: ctx.task.projectTaskId,
+          askerAgentId: ctx.task.assigneeAgentId ?? '',
+        },
       });
 
       const durationMs = Date.now() - start;

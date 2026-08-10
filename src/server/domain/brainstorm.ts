@@ -134,16 +134,32 @@ export function startBrainstorm(db: DB, setup: BrainstormSetup): BrainstormResul
   return { taskId: task.id, state: 'started' };
 }
 
-/** 正式 Task 到达时，活跃头脑风暴自动取消（执行引擎负责中止对应进程）。 */
+/**
+ * 正式 Task 到达时的讨论让位策略：
+ * - brainstorm（头脑风暴，inputProtocol.type='brainstorm'）：纯建议性、低价值，queued/claimed/running 全部中止
+ * - discussion（正式讨论，inputProtocol.discussionId）：有结论落地价值，仅 queued 让位，进行中不打断
+ */
 export function interruptActiveBrainstorms(db: DB, projectId: string): string[] {
-  const discussions = listTasks(db, projectId).filter(
-    (t) => t.isDiscussion === 1 && ['queued', 'claimed', 'running'].includes(t.state),
-  );
+  const allDiscussions = listTasks(db, projectId).filter((t) => t.isDiscussion === 1);
   const interrupted: string[] = [];
-  for (const d of discussions) {
-    cancelTask(db, d.id);
-    db.prepare("UPDATE task SET summary='被正式 Task 打断，已取消讨论', updated_at=? WHERE id=?").run(new Date().toISOString(), d.id);
-    interrupted.push(d.id);
+  for (const d of allDiscussions) {
+    const proto = (d.inputProtocol ?? {}) as Record<string, unknown>;
+    const isBrainstorm = proto.type === 'brainstorm';
+    const isFormalDiscussion = typeof proto.discussionId === 'string';
+    // brainstorm：queued/claimed/running 全中止
+    if (isBrainstorm && ['queued', 'claimed', 'running'].includes(d.state)) {
+      cancelTask(db, d.id);
+      db.prepare("UPDATE task SET summary='被正式 Task 打断，已取消头脑风暴', updated_at=? WHERE id=?").run(new Date().toISOString(), d.id);
+      interrupted.push(d.id);
+      continue;
+    }
+    // 正式 discussion：仅 queued 让位，claimed/running 不打断
+    if (isFormalDiscussion && d.state === 'queued') {
+      cancelTask(db, d.id);
+      db.prepare("UPDATE task SET summary='被正式 Task 让位，已取消排队中的讨论', updated_at=? WHERE id=?").run(new Date().toISOString(), d.id);
+      interrupted.push(d.id);
+      continue;
+    }
   }
   return interrupted;
 }

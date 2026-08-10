@@ -5,6 +5,7 @@
  不把整份组织/流程定义塞入每次模型上下文。
  */
 import type { DB } from '../db/client';
+import type { ResolvedTaskSkill } from '../../shared/types';
 import { getCompany } from '../domain/company';
 import { getProject } from '../domain/project';
 import { getAgent, listAgents } from '../domain/agent';
@@ -25,11 +26,34 @@ import { listMaterials } from '../domain/material';
 const MAX_REFERENCE_BYTES = 64 * 1024;
 const MAX_TOTAL_REFERENCE_BYTES = 256 * 1024;
 
+/**
+ * 需要 CLI（命令执行能力）的 skill（设计一-3）。
+ * 这些 skill 正文依赖跑测试/构建/git/部署等命令，API 型执行器无法真正执行。
+ * 后续可迁移到 SKILL.md frontmatter 的 requiresExecutor 字段；现阶段内联维护。
+ */
+export const REQUIRES_CLI_SKILLS: ReadonlySet<string> = new Set([
+  'test-driven-development',
+  'ci-cd-and-automation',
+  'git-workflow-and-versioning',
+  'shipping-and-launch',
+  'browser-testing-with-devtools',
+  'debugging-and-error-recovery',
+  'performance-optimization',
+  'security-and-hardening',
+]);
+
+/** 判断 skillId 是否需要 CLI 执行器。 */
+export function skillRequiresCli(skillId: string): boolean {
+  return REQUIRES_CLI_SKILLS.has(skillId);
+}
+
 export interface AssembledContext {
   systemPrompt: string;
   inputPacket: Record<string, unknown>;
   /** 上下文里明确引用的成果内容（path → content）。Phase 4 接入文件读取。 */
   referencedArtifacts: Record<string, string>;
+  /** 本次加载且需要 CLI 执行能力的 skillId 列表（供引擎派发校验提示用）。 */
+  loadedSkillsRequiringCli: string[];
 }
 
 export function assembleContext(
@@ -41,11 +65,16 @@ export function assembleContext(
     referencedArtifactPaths?: string[];
     /** Agent Bridge loopback 配置（注入到 systemPrompt 的能力清单）。 */
     loopback?: { baseUrl: string; taskId: string };
+    /** 执行器类型：API 型无命令执行能力，桥接提示按此分化。 */
+    executorKind?: 'cli' | 'api';
+    /** 轻量模式（咨询/讨论发言）：只注入身份/议题/职责/契约，跳过素材/技能/记忆/验收等大段上下文。 */
+    lightweight?: boolean;
   } = {},
 ): AssembledContext {
   const project = getProject(db, task.projectId);
   const company = getCompany(db, project.companyId);
   const agent = task.assigneeAgentId ? getAgent(db, task.assigneeAgentId) : null;
+  const lightweight = options.lightweight === true;
 
   // ===== System Prompt =====
   const sp: string[] = [];
@@ -54,10 +83,12 @@ export function assembleContext(
     sp.push('# 员工身份', profile.soul || profile.displayName, '');
     if (profile.principles.length > 0) sp.push('# 工作原则', profile.principles.map((item) => `- ${item}`).join('\n'), '');
   }
-  if (company.charter) {
-    sp.push('# 公司章程', company.charter, '');
-  }
-  sp.push('# 项目说明', project.description || project.name, '');
+  // 轻量模式：身份/职责/议题之后直接进入输出契约，跳过组织级大段上下文
+  if (!lightweight) {
+    if (company.charter) {
+      sp.push('# 公司章程', company.charter, '');
+    }
+    sp.push('# 项目说明', project.description || project.name, '');
   // 双 Loop 地基 P0.3：验收标准全程锚定——让 agent 明确"什么算好结果"。
   if (task.acceptanceCriteria.length > 0) {
     sp.push(
@@ -77,6 +108,7 @@ export function assembleContext(
       '',
     );
   }
+  }
   if (agent) {
     sp.push('# 你的职责', `岗位：${agent.role}`, agent.responsibilities || '', '');
     if (agent.stance) {
@@ -90,8 +122,23 @@ export function assembleContext(
     if (agent.tools.length > 0) sp.push('# 可用能力声明', agent.tools.join('、'), '');
     if (agent.systemPrompt) sp.push(agent.systemPrompt);
   }
+  // 轻量模式（咨询/讨论发言）：注入议题与前序发言后直接进入输出契约，跳过技能/能力中心/桥接/记忆/素材
+  const loadedSkills: ResolvedTaskSkill[] = [];
+  if (lightweight) {
+    const proto = (task.inputProtocol ?? {}) as Record<string, unknown>;
+    if (typeof proto.instruction === 'string' && proto.instruction) sp.push('# 本任务说明', proto.instruction, '');
+    if (typeof proto.question === 'string' && proto.question) sp.push('# 待答复问题', proto.question, '');
+    // 讨论发言：注入议题背景（topic + context），保证发言者看到完整议题
+    if (typeof proto.topic === 'string' && proto.topic) sp.push('# 讨论议题', proto.topic, '');
+    if (proto.context && typeof proto.context === 'object' && Object.keys(proto.context as Record<string, unknown>).length > 0) {
+      sp.push('# 议题背景', JSON.stringify(proto.context, null, 2), '');
+    }
+    if (Array.isArray(proto.recentTurns) && proto.recentTurns.length > 0) {
+      sp.push('# 前序发言', ...(proto.recentTurns as unknown[]).map((t) => `- ${String(t)}`), '');
+    }
+  } else {
   const resolvedSkills = resolveTaskSkills(db, task);
-  const loadedSkills = resolvedSkills.filter((skill) => skill.status === 'loaded');
+  loadedSkills.push(...resolvedSkills.filter((skill) => skill.status === 'loaded'));
   const skillDiagnostics = resolvedSkills.filter((skill) => skill.status !== 'loaded');
   if (loadedSkills.length > 0) {
     sp.push('# 本 Task 按需加载的 Skill');
@@ -112,20 +159,31 @@ export function assembleContext(
     const capabilityCenter = buildCapabilityCenterSection(toolRecommendations);
     if (capabilityCenter) sp.push(capabilityCenter, '');
   }
+  // 设计一-3：执行器能力边界提示（API 型无 Bash；任务加载了需要 CLI 的 skill 时明确告知）
+  if (options.executorKind === 'api') {
+    const cliOnlySkills = loadedSkills
+      .map((skill) => skill.skillId)
+      .filter((skillId) => REQUIRES_CLI_SKILLS.has(skillId));
+    if (cliOnlySkills.length > 0) {
+      sp.push(
+        '# 执行器能力边界提示',
+        `当前为 API 型执行器，没有命令执行能力。以下技能依赖命令执行（测试/构建/git 等），你只能完成其中的设计/分析/编写部分，无法真正运行：${cliOnlySkills.join('、')}`,
+        '如需完整执行（跑测试、构建、git 操作），请通知宿主连接 CLI 执行器（Codex CLI / Claude Code CLI 等）。',
+        '',
+      );
+    } else {
+      sp.push(
+        '# 执行器能力边界提示',
+        '当前为 API 型执行器，没有命令执行能力：不能安装依赖、运行测试、构建、git 操作、部署。请只完成文件读写与分析类工作。',
+        '',
+      );
+    }
+  }
   // Agent Bridge：注入桥接能力清单（让 Agent 可主动通知宿主进度）
   if (options.loopback) {
-    sp.push(buildBridgePromptSection(options.loopback.baseUrl), '');
+    sp.push(buildBridgePromptSection(options.loopback.baseUrl, options.executorKind), '');
   }
 
-  sp.push(
-    '# 输出契约',
-    '你必须返回 JSON，符合 AgentRunResult 结构：',
-    '{ outcome, summary, question?, outboundTasks[], artifacts[], checkpoint?, acceptanceMet? }',
-    'outcome ∈ completed | waiting_input | waiting_dependency | blocked',
-    '信息不足时用 waiting_input + question 在原 Task 中追问，不要编造。',
-    'completed 时请在 acceptanceMet 里逐条自评验收标准（对照 # 验收标准 的 id，met=true/false）。',
-    '',
-  );
   // 会话压缩摘要（PRD Phase 3.6）：thread 经过压缩后保留的过往会话要点。
   if (options.threadId) {
     const compaction = db
@@ -159,20 +217,45 @@ export function assembleContext(
     }
     sp.push('');
   }
+  } // else 闭合（非 lightweight 的完整上下文段）
+
+  // 轻量任务（咨询/发言）用精简契约：无验收标准、无产物（产物会被系统剥离，必须走派活）
+  if (lightweight) {
+    sp.push(
+      '# 输出契约',
+      '你必须返回 JSON，符合 AgentRunResult 结构：',
+      '{ outcome, summary, question?, outboundTasks[], artifacts[] }',
+      'outcome ∈ completed | waiting_input | waiting_dependency | blocked',
+      '信息不足时用 waiting_input + question 追问，不要编造。',
+      '本任务为轻量任务（咨询/发言），不支持产出 artifacts（系统会剥离）；需要产出请用 done 的 outboundTasks 派发正式任务。',
+      '',
+    );
+  } else {
+    sp.push(
+      '# 输出契约',
+      '你必须返回 JSON，符合 AgentRunResult 结构：',
+      '{ outcome, summary, question?, outboundTasks[], artifacts[], checkpoint?, acceptanceMet? }',
+      'outcome ∈ completed | waiting_input | waiting_dependency | blocked',
+      '信息不足时用 waiting_input + question 在原 Task 中追问，不要编造。',
+      'completed 时请在 acceptanceMet 里逐条自评验收标准（对照 # 验收标准 的 id，met=true/false）。',
+      '',
+    );
+  }
   const systemPrompt = sp.join('\n');
 
   // ===== Input Packet =====
   const recentMessages = listTaskMessages(db, task.id).slice(-6);
-  const referencedArtifacts = loadReferencedArtifacts(db, task);
+  // 轻量模式：跳过 referencedArtifacts 全量加载（咨询/发言不需要引用大文件）
+  const referencedArtifacts = lightweight ? {} : loadReferencedArtifacts(db, task);
   const companyAgents = listAgents(db, company.id);
-  const availableContacts = agent
+  const availableContacts = lightweight ? [] : (agent
     ? agent.contactAllow.flatMap((contactId) => {
         const contact = companyAgents.find((candidate) => candidate.id === contactId);
         return contact
           ? [{ id: contact.id, name: contact.name, role: contact.role, responsibilities: contact.responsibilities }]
           : [];
       })
-    : [];
+    : []);
   const inputPacket: Record<string, unknown> = {
     ...task.inputProtocol,
     taskId: task.id,
@@ -213,6 +296,7 @@ export function assembleContext(
     systemPrompt,
     inputPacket,
     referencedArtifacts,
+    loadedSkillsRequiringCli: loadedSkills.map((s) => s.skillId).filter((id) => REQUIRES_CLI_SKILLS.has(id)),
   };
 }
 

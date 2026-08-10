@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { OpenCodeCliAdapter } from '../../src/server/executors/opencode-cli-adapter';
+import { mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { OpenCodeCliAdapter, OPENCODE_DENY_PATTERNS, injectOpenCodeDenyGuard } from '../../src/server/executors/opencode-cli-adapter';
 
 describe('OpenCode CLI adapter', () => {
   it('uses run --format json --auto and parses text events into AgentRunResult', async () => {
@@ -35,5 +38,56 @@ describe('OpenCode CLI adapter', () => {
     await expect(
       new OpenCodeCliAdapter({ runner }).run({ task: { id: 't' } as any, systemPrompt: 'p', workingDir: '/project', inputPacket: {} } as any),
     ).rejects.toThrow(/未输出有效的文本事件/);
+  });
+
+  describe('injectOpenCodeDenyGuard（P0-c）', () => {
+    it('新建 opencode.json 注入 deny 守卫，清理后恢复原状', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'muster-opencode-'));
+      try {
+        const cleanup = await injectOpenCodeDenyGuard(dir);
+        const cfg = JSON.parse(readFileSync(join(dir, 'opencode.json'), 'utf8'));
+        expect(cfg.permission.deny).toEqual(expect.arrayContaining(['Bash(rm -rf /)', 'Bash(mkfs*)', 'Bash(git push --force*)']));
+        expect(cfg.permission.deny.length).toBeGreaterThanOrEqual(OPENCODE_DENY_PATTERNS.length);
+        cleanup();
+        expect(existsSync(join(dir, 'opencode.json'))).toBe(false); // 新建的守卫被删除
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('已存在用户配置时合并 deny 并保留其余字段，清理后恢复原配置', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'muster-opencode-'));
+      try {
+        const userCfg = { model: 'gpt-5', permission: { allow: ['Bash(ls *)'] } };
+        writeFileSync(join(dir, 'opencode.json'), JSON.stringify(userCfg));
+        const cleanup = await injectOpenCodeDenyGuard(dir);
+        const cfg = JSON.parse(readFileSync(join(dir, 'opencode.json'), 'utf8'));
+        expect(cfg.model).toBe('gpt-5'); // 用户字段保留
+        expect(cfg.permission.allow).toEqual(['Bash(ls *)']);
+        expect(cfg.permission.deny).toContain('Bash(rm -rf /)');
+        cleanup();
+        expect(readFileSync(join(dir, 'opencode.json'), 'utf8')).toBe(JSON.stringify(userCfg)); // 原样恢复
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('工作目录不存在时安全跳过（不抛错）', async () => {
+      const cleanup = await injectOpenCodeDenyGuard('/nonexistent-dir-' + Date.now());
+      expect(typeof cleanup).toBe('function');
+      cleanup(); // no-op
+    });
+
+    it('用户配置损坏时不覆盖（安全跳过）', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'muster-opencode-'));
+      try {
+        writeFileSync(join(dir, 'opencode.json'), '{broken json');
+        const cleanup = await injectOpenCodeDenyGuard(dir);
+        cleanup();
+        expect(readFileSync(join(dir, 'opencode.json'), 'utf8')).toBe('{broken json'); // 未被破坏
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
   });
 });

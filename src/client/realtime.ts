@@ -9,6 +9,12 @@ export type QueryKey = readonly unknown[];
 export function queryKeysForRealtimeEvent(event: RealtimeEvent): QueryKey[] {
   const keys: QueryKey[] = [];
   if (event.type.startsWith('approval.')) keys.push(['permission-approvals']);
+  // 讨论室事件：刷项目讨论列表 + 详情
+  if (event.type.startsWith('discussion.')) {
+    if (event.projectId) keys.push(['project-discussions', event.projectId]);
+    const discussionId = (event.payload as { discussionId?: unknown } | undefined)?.discussionId;
+    if (typeof discussionId === 'string') keys.push(['discussion-detail', discussionId]);
+  }
   if (event.type.startsWith('session.') || event.type === 'run.watchdog-stopped') keys.push(['employee-runtime']);
   // Agent Bridge 事件：刷活动流
   if (event.type?.startsWith('bridge.')) {
@@ -78,6 +84,20 @@ export function RealtimeSync(): null {
             if (payload && typeof payload.text === 'string') {
               toast('info', payload.text);
             }
+          }
+          // AI 审批自动放行/拒绝 → 弹 toast（3 秒短暂提示，有记录可查）
+          if (event.type === 'approval.ai-approved') {
+            const p = event.payload as Record<string, unknown> | undefined;
+            toast('success', `AI 审批通过${p?.level ? `（${p.level}）` : ''}：${String(p?.command ?? p?.reason ?? '').slice(0, 60)}`);
+          }
+          if (event.type === 'approval.ai-denied') {
+            const p = event.payload as Record<string, unknown> | undefined;
+            toast('error', `AI 审批拒绝：${String(p?.command ?? p?.reason ?? '').slice(0, 60)}`);
+          }
+          // 讨论室事件 → 轻提示（新讨论触发/发言轮转）
+          if (event.type === 'discussion.auto-triggered') {
+            const p = event.payload as Record<string, unknown> | undefined;
+            toast('info', `已发起讨论（${String(p?.scenario ?? '')}）：${String(p?.discussionId ?? '').slice(0, 12)}`);
           }
         } catch {
           // 忽略非协议消息，保持连接继续处理后续事件。

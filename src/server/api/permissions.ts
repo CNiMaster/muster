@@ -20,3 +20,31 @@ permissionsRouter.post('/approvals/:id/decision', asyncHandler(async (req,res)=>
 permissionsRouter.put('/employees/:employeeId/policy/:policyId', asyncHandler(async (req,res)=>{ bindEmployeePermissionPolicy(getDb(),param(req,'employeeId'),param(req,'policyId')); res.json({ok:true}); }));
 /** 按公司批量绑定权限策略到所有员工（要求公司下班）。 */
 permissionsRouter.post('/companies/:companyId/binding', asyncHandler(async (req,res)=>{ const input=z.object({policyId:z.string().min(1)}).parse(req.body); const result=bindCompanyEmployeesPermission(getDb(),param(req,'companyId'),input.policyId); res.json(result); }));
+
+/**
+ * 批量审批：列出 pending 审批（含 AI 字段），AI 分类为"建议批量通过"/"有风险逐条审"。
+ * 用于公司级/永久通过的人工批量处理（AI 判 safe 但需人工升级的高级别规则）。
+ */
+permissionsRouter.get('/approvals/batch-review', asyncHandler(async (_req,res)=>{
+  const db=getDb();
+  const rows=db.prepare(`SELECT pa.id,pa.action,pa.command,pa.path,pa.ai_verdict,pa.ai_suggestion,pa.ai_reason,pa.ai_confidence,pa.safety_category,pa.highest_safe_level,pa.created_at,pa.policy_id,t.title taskTitle,e.name employeeName FROM permission_approval pa LEFT JOIN task t ON t.id=pa.task_id LEFT JOIN company_employee e ON e.id=pa.employee_id WHERE pa.status='pending' ORDER BY pa.created_at DESC`).all() as Array<Record<string,unknown>>;
+  // 按 highest_safe_level 分组：company_scope/permanent 的进入"建议批量通过"
+  const suggestBatch=rows.filter(r=>r.highest_safe_level==='company_scope'||r.highest_safe_level==='permanent');
+  const needsManual=rows.filter(r=>!r.highest_safe_level||r.highest_safe_level==='execute_once'||r.highest_safe_level==='project_scope');
+  res.json({suggestBatch,needsManual,total:rows.length});
+}));
+
+/** 批量决策：一键通过"建议批量通过"组的多个审批（建对应级别规则）。 */
+permissionsRouter.post('/approvals/batch-decision', asyncHandler(async (req,res)=>{
+  const input=z.object({approvalIds:z.array(z.string()).min(1),decision:z.enum(['allow-command','allow-directory','deny'])}).parse(req.body);
+  const db=getDb();
+  const results:Array<{id:string;ok:boolean;error?:string}>=[];
+  for(const id of input.approvalIds){
+    try{
+      recordApprovalDecision(db,id,{decision:input.decision},{resumeTask:false});
+      approvalBroker.resolve(id,input.decision==='deny'?'deny':'allow');
+      results.push({id,ok:true});
+    }catch(e){results.push({id,ok:false,error:(e as Error).message});}
+  }
+  res.json({results});
+}));
