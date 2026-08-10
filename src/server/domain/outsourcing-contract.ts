@@ -21,6 +21,7 @@ import { getCompany } from './company';
 import { createProject, getProject } from './project';
 import { createTask, getTask, addDependency, type AcceptanceItem, type CreateTaskInput } from './task';
 import { appendTaskEvent } from './task-event';
+import { listAgents } from './agent';
 
 /**
  * 自动接受失败的退避表（毫秒）：第 1/2/3/4+ 次失败的等待间隔。
@@ -28,7 +29,6 @@ import { appendTaskEvent } from './task-event';
  * 上限 15 分钟——足够让运维发现并修复配置问题，又不至于过久卡住可恢复的瞬态失败。
  */
 const AUTO_ACCEPT_BACKOFF_MS = [30_000, 60_000, 300_000, 900_000];
-import { listAgents } from './agent';
 
 /** 契约状态。 */
 export type ContractState =
