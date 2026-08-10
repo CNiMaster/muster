@@ -24,7 +24,7 @@ import {
   listOptimizationReports,
   listReportActionItems,
 } from '../../src/server/domain/optimization-report';
-import { executeApprovedActions } from '../../src/server/domain/optimization-report-executor';
+import { executeApprovedActions, executePendingOfflineActions } from '../../src/server/domain/optimization-report-executor';
 import type { SetupGenerator } from '../../src/server/domain/setup-assistant';
 import type { DB } from '../../src/server/db/client';
 
@@ -202,5 +202,77 @@ describe('executeApprovedActions（一键审批执行）', () => {
     expect(results[0]!.status).toBe('executed');
     const profile = db.prepare('SELECT principles_json FROM agent_profile WHERE id=?').get(writer.profileId) as { principles_json: string };
     expect(JSON.parse(profile.principles_json).length).toBeGreaterThan(0);
+  });
+
+  it('H-3：remove_employee 不能裁撤公司第一负责人', async () => {
+    const { c, lead } = fixture();
+    // 把 lead 设为公司第一负责人
+    updateCompany(db, c.id, { firstAgentId: lead.id });
+    // 公司默认 off（下班），remove_employee 可直接执行
+    const report = await generateOptimizationReport(db, c.id, {
+      generator: new StaticGenerator({
+        summary: 'lead 冗余',
+        actionItems: [{ actionType: 'remove_employee', description: '裁撤 lead', reason: '冗余', expectedEffect: '降本', params: { agentName: 'lead' } }],
+      }),
+    });
+    const results = executeApprovedActions(db, report.id);
+    expect(results[0]!.status).toBe('failed');
+    expect(results[0]!.message).toContain('第一负责人');
+    // 未创建离职交接记录
+    const handovers = db.prepare('SELECT id FROM handover_record WHERE departing_employee_id=?').all(lead.id) as Array<{ id: string }>;
+    expect(handovers.length).toBe(0);
+  });
+
+  it('H-3：单次审批最多裁撤 3 人，第 4 个被跳过', async () => {
+    const { c } = fixture();
+    const others = ['e1', 'e2', 'e3', 'e4'].map((n) => createAgent(db, { companyId: c.id, name: n, role: 'writer' }));
+    const report = await generateOptimizationReport(db, c.id, {
+      generator: new StaticGenerator({
+        summary: '多人冗余',
+        actionItems: others.map((a) => ({
+          actionType: 'remove_employee',
+          description: `裁撤 ${a.name}`,
+          reason: '冗余',
+          expectedEffect: '降本',
+          params: { agentName: a.name },
+        })),
+      }),
+    });
+    const results = executeApprovedActions(db, report.id);
+    expect(results.length).toBe(4);
+    expect(results.slice(0, 3).every((r) => r.status === 'executed')).toBe(true);
+    expect(results[3]!.status).toBe('skipped');
+    expect(results[3]!.message).toContain('最多裁撤 3 人');
+    // 只有前 3 人创建了交接记录
+    const handovers = db.prepare('SELECT departing_employee_id FROM handover_record').all() as Array<{ departing_employee_id: string }>;
+    expect(handovers.map((h) => h.departing_employee_id).sort()).toEqual(others.slice(0, 3).map((a) => a.id).sort());
+  });
+
+  it('H-1：dismissed 报告的 pending_offline 项不会被自动执行', async () => {
+    const { c } = fixture();
+    createExecutorProfile(db, { name: 'CLI', manifestId: 'claude-code-cli', config: { binaryPath: '/usr/local/bin/claude' } });
+    createPermissionPolicy(db, { name: '项目权限', approvalStrategy: 'ask-by-rule', scope: 'project' });
+    const report = await generateOptimizationReport(db, c.id, {
+      generator: new StaticGenerator({
+        summary: '缺人',
+        actionItems: [{ actionType: 'add_employee', description: '招募设计师', reason: '缺口', expectedEffect: '补齐', params: { role: 'designer', displayName: '设计师' } }],
+      }),
+    });
+    // 上班时审批 → pending_offline
+    transitionCompany(db, c.id, 'online');
+    executeApprovedActions(db, report.id);
+    const items = listReportActionItems(db, report.id);
+    expect(items[0]!.status).toBe('pending_offline');
+    // 用户驳回报告（模拟 /dismiss 端点）
+    db.prepare("UPDATE company_optimization_report SET status='dismissed', updated_at=? WHERE id=?").run(new Date().toISOString(), report.id);
+    // 下班 → 自动执行应跳过 dismissed 报告
+    transitionCompany(db, c.id, 'off');
+    const executed = executePendingOfflineActions(db, c.id);
+    expect(executed).toBe(0);
+    const after = listReportActionItems(db, report.id);
+    expect(after[0]!.status).toBe('pending_offline');
+    // 员工未被招募
+    const agents = db.prepare("SELECT name FROM agent_definition WHERE company_id=?").all(c.id) as Array<{ name: string }>;
+    expect(agents.some((a) => a.name === '设计师')).toBe(false);
   });
 });

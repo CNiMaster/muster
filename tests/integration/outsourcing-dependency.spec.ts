@@ -80,6 +80,17 @@ describe('外包与 task_dependency 打通（阶段四任务 4.3）', () => {
     expect(areDependenciesMet(db, sourceTask.id)).toBe(true);
   });
 
+  it('H-2：claimed 源任务同样进入 waiting_dependency 并建立依赖', () => {
+    const { sourceTask, contract } = fixture('queued');
+    // 源任务处于 claimed 状态（引擎已领取但未 running）
+    db.prepare("UPDATE task SET state='claimed', lease_owner_thread_id='th_x', updated_at=? WHERE id=?").run(new Date().toISOString(), sourceTask.id);
+    const outsourced = createOutsourcedTask(db, contract.id);
+
+    expect(getTask(db, sourceTask.id).state).toBe('waiting_dependency');
+    const dep = db.prepare('SELECT 1 FROM task_dependency WHERE task_id=? AND depends_on_id=?').get(sourceTask.id, outsourced.task.id);
+    expect(dep).toBeDefined();
+  });
+
   it('乙方承接任务完成后 resumeDependents 唤醒甲方源任务', () => {
     const { sourceTask, contract } = fixture('running');
     const outsourced = createOutsourcedTask(db, contract.id);

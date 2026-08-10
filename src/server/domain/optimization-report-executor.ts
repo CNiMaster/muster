@@ -35,6 +35,9 @@ export interface ActionExecutionResult {
   message: string;
 }
 
+/** Review 修复（H-3）：单次审批允许执行的 remove_employee 数量上限。 */
+export const MAX_REMOVE_EMPLOYEE_PER_APPROVAL = 3;
+
 /**
  * 执行被批准的报告建议。
  * @param selectedItemIds 选中的 item id 列表；不传 = 全部 pending 项。
@@ -47,10 +50,23 @@ export function executeApprovedActions(db: DB, reportId: string, selectedItemIds
   const company = getCompany(db, report.companyId);
   const companyOnline = company.state === 'online';
   const results: ActionExecutionResult[] = [];
+  // Review 修复（H-3）：单次审批内 remove_employee 已执行数上限，防止 AI 报告一键裁撤全部员工
+  let removeExecuted = 0;
   for (const item of items) {
+    if (item.actionType === 'remove_employee' && removeExecuted >= MAX_REMOVE_EMPLOYEE_PER_APPROVAL) {
+      results.push({
+        itemId: item.id,
+        actionType: item.actionType,
+        description: item.description,
+        status: 'skipped',
+        message: `单次最多裁撤 ${MAX_REMOVE_EMPLOYEE_PER_APPROVAL} 人，请分批审批`,
+      });
+      continue;
+    }
     try {
-      const result = executeAction(db, report.companyId, companyOnline, item);
+      const result = executeAction(db, report.companyId, companyOnline, company.firstAgentId, item);
       results.push(result);
+      if (result.actionType === 'remove_employee' && result.status === 'executed') removeExecuted++;
       // 标记执行结果
       if (result.status === 'executed') {
         db.prepare("UPDATE report_action_item SET status='executed', result=?, updated_at=? WHERE id=?").run(result.message, nowIso(), item.id);
@@ -83,6 +99,7 @@ function executeAction(
   db: DB,
   companyId: string,
   companyOnline: boolean,
+  firstAgentId: string | null,
   item: ReportActionItem,
 ): ActionExecutionResult {
   const base = { itemId: item.id, actionType: item.actionType, description: item.description };
@@ -179,9 +196,17 @@ function executeAction(
       return { ...base, status: 'skipped', message: '工作流调整需要具体修改内容，请在「流程图」页手动调整后确认' };
     }
     case 'remove_employee': {
+      // Review 修复（H-3）：与其他需下班的操作对齐——公司上班中仅标记，下班后自动执行
+      if (companyOnline) {
+        return { ...base, status: 'pending_offline', message: '公司上班中，将在下班后启动离职交接' };
+      }
       const agentName = typeof params.agentName === 'string' ? params.agentName : '';
       const agent = findAgent(db, companyId, agentName, params);
       if (!agent) return { ...base, status: 'failed', message: `未找到员工：${agentName}` };
+      // Review 修复（H-3）：不允许裁撤公司第一负责人（否则公司对话/调度失去驱动者）
+      if (firstAgentId && agent.id === firstAgentId) {
+        return { ...base, status: 'failed', message: `「${agent.name}」是公司第一负责人，不能自动裁撤，请人工处理` };
+      }
       offboardEmployee(db, companyId, agent.id);
       return { ...base, status: 'executed', message: `已为「${agent.name}」启动离职交接流程` };
     }
@@ -271,7 +296,8 @@ export function executePendingOfflineActions(db: DB, companyId: string): number 
     .prepare(
       `SELECT rai.report_id, rai.id FROM report_action_item rai
        JOIN company_optimization_report cor ON cor.id = rai.report_id
-       WHERE cor.company_id=? AND rai.status='pending_offline'`,
+       WHERE cor.company_id=? AND rai.status='pending_offline'
+         AND cor.status NOT IN ('dismissed','rejected')`,
     )
     .all(companyId) as Array<{ report_id: string; id: string }>;
   let executed = 0;

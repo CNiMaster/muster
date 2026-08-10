@@ -407,7 +407,8 @@ export function createOutsourcedTask(db: DB, contractId: string): { task: Return
   if (contract.sourceTaskId) {
     try {
       const source = getTask(db, contract.sourceTaskId);
-      if (source && source.state === 'running' || source?.state === 'claimed') {
+      // Review 修复（H-2）：显式括号——`&&` 优先级高于 `||`，原写法把 running/claimed 拆到了不同分支
+      if (source && (source.state === 'running' || source.state === 'claimed')) {
         const now2 = nowIso();
         db.prepare(
           `UPDATE task SET state='waiting_dependency', outcome='waiting_dependency',
