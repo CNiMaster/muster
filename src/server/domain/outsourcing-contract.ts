@@ -21,6 +21,13 @@ import { getCompany } from './company';
 import { createProject, getProject } from './project';
 import { createTask, getTask, addDependency, type AcceptanceItem, type CreateTaskInput } from './task';
 import { appendTaskEvent } from './task-event';
+
+/**
+ * 自动接受失败的退避表（毫秒）：第 1/2/3/4+ 次失败的等待间隔。
+ * 避免 coordinator 每 2s tick 反复 accept→失败→revert 空转。
+ * 上限 15 分钟——足够让运维发现并修复配置问题，又不至于过久卡住可恢复的瞬态失败。
+ */
+const AUTO_ACCEPT_BACKOFF_MS = [30_000, 60_000, 300_000, 900_000];
 import { listAgents } from './agent';
 
 /** 契约状态。 */
@@ -54,6 +61,10 @@ export interface OutsourcingContract {
   dispatcherAgentId: string | null; // 甲方发起对接人
   feedback: string | null; // 验收反馈
   revisionRound: number;
+  /** 自动接受连续失败次数（成功接受后清零，仅 coordinator 自动路径维护）。 */
+  autoAcceptAttemptCount: number;
+  /** 下次允许自动接受的时间（ISO）；未设置则无限制。退避避免每 tick 空转。 */
+  autoAcceptAfterAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -76,6 +87,8 @@ interface ContractRow {
   dispatcher_agent_id: string | null;
   feedback_json: string | null;
   revision_round: number;
+  auto_accept_attempt_count: number;
+  auto_accept_after_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -99,6 +112,8 @@ function fromRow(r: ContractRow): OutsourcingContract {
     dispatcherAgentId: r.dispatcher_agent_id,
     feedback: r.feedback_json,
     revisionRound: r.revision_round,
+    autoAcceptAttemptCount: r.auto_accept_attempt_count ?? 0,
+    autoAcceptAfterAt: r.auto_accept_after_at ?? null,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -235,18 +250,38 @@ export function acceptContract(db: DB, id: string, vendorLiaisonAgentId: string)
   if (liaison.company_id !== contract.targetCompanyId) {
     throw new AppError(ErrorCode.UNAUTHORIZED, '对接人不属于乙方公司');
   }
-  updateState(db, id, 'accepted', { vendor_liaison_agent_id: vendorLiaisonAgentId });
+  // Review 修复（M-1 退避）：成功接受即清零自动接受退避计数（无论手动/自动路径）。
+  updateState(db, id, 'accepted', {
+    vendor_liaison_agent_id: vendorLiaisonAgentId,
+    auto_accept_attempt_count: 0,
+    auto_accept_after_at: null,
+  });
   return getOutsourcingContract(db, id);
 }
 
 /**
  * Review 修复（M-1）：接受端失败回滚——把已 accepted 的契约退回 pending 并清空对接人，
  * 使契约可被重新接受。仅供 accept 后创建承接任务失败时恢复用（coordinator / API 调用）。
+ *
+ * @param autoBackoff 自动路径（coordinator）传 true：累加 auto_accept_attempt_count 并按
+ *   AUTO_ACCEPT_BACKOFF_MS 设下次允许自动接受的时间，避免每 tick 空转。手动路径（API）传
+ *   false（默认）：用户主动重试，不加退避。
  */
-export function revertAcceptToPending(db: DB, id: string): OutsourcingContract {
+export function revertAcceptToPending(db: DB, id: string, autoBackoff = false): OutsourcingContract {
   const contract = getOutsourcingContract(db, id);
   if (contract.state !== 'accepted') return contract; // 非 accepted 状态无需回滚（幂等）
-  updateState(db, id, 'pending', { vendor_liaison_agent_id: null });
+  if (autoBackoff) {
+    const nextAttempt = contract.autoAcceptAttemptCount + 1;
+    const backoffMs = AUTO_ACCEPT_BACKOFF_MS[Math.min(nextAttempt - 1, AUTO_ACCEPT_BACKOFF_MS.length - 1)]!;
+    const afterAt = new Date(Date.now() + backoffMs).toISOString();
+    updateState(db, id, 'pending', {
+      vendor_liaison_agent_id: null,
+      auto_accept_attempt_count: nextAttempt,
+      auto_accept_after_at: afterAt,
+    });
+  } else {
+    updateState(db, id, 'pending', { vendor_liaison_agent_id: null });
+  }
   return getOutsourcingContract(db, id);
 }
 
@@ -261,6 +296,10 @@ export function revertAcceptToPending(db: DB, id: string): OutsourcingContract {
 export function autoAcceptContract(db: DB, id: string): OutsourcingContract | null {
   const contract = getOutsourcingContract(db, id);
   if (contract.state !== 'pending') return contract;
+  // Review 修复（M-1 退避）：未到退避释放时间则跳过，避免每 tick 反复尝试持续失败的契约。
+  if (contract.autoAcceptAfterAt && new Date(contract.autoAcceptAfterAt).getTime() > Date.now()) {
+    return null;
+  }
   const targetCompany = getCompany(db, contract.targetCompanyId);
   if (targetCompany.state !== 'online') return null;
   // 自动接受开关（公司章程可配），默认开启

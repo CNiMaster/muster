@@ -27,6 +27,20 @@ function normalizeCapability(value: string): string {
 }
 
 /**
+ * 同分 tiebreak：返回是否应用新候选替换当前最佳。
+ * 高分胜出；同分时取 agent.id 字典序较小者（确定性，不依赖 DB 行序）。
+ * 导出以便单元测试 tiebreak 逻辑——集成测试因 id/created_at 生成随机性无法可靠区分。
+ */
+export function shouldReplaceBest(
+  newScore: number,
+  newAgentId: string,
+  bestScore: number,
+  bestAgentId: string,
+): boolean {
+  return newScore > bestScore || (newScore === bestScore && newAgentId < bestAgentId);
+}
+
+/**
  * 按 requiredCapabilities 自动选专家。
  * - 只考虑本公司员工，在线优先。
  * - 无任何匹配时返回 null（调用方 fallback 第一负责人）。
@@ -73,7 +87,7 @@ export function findBestAssignee(
       - load;
     // Review 修复（L-5）：同分时按 agent.id 字典序取小——批量建司的员工 created_at 可能同毫秒，
     // SQLite 行序未定义，不加 tiebreak 会导致路由决策跨重启翻转。
-    if (!best || score > best.score || (score === best.score && agent.id < best.agentId)) {
+    if (!best || shouldReplaceBest(score, agent.id, best.score, best.agentId)) {
       best = { agentId: agent.id, name: agent.name, role: agent.role, score, matchedCapabilities: matched };
     }
   }

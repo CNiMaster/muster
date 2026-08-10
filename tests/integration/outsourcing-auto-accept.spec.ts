@@ -158,7 +158,7 @@ describe('外包自动接受（阶段四任务 4.1）', () => {
     void a;
   });
 
-  it('M-1：承接任务创建失败时契约回滚 pending，下次 tick 重试成功', async () => {
+  it('M-1：承接任务创建失败时契约回滚 pending + 退避，退避释放后重试成功', async () => {
     const { a, b, project } = fixture();
     transitionCompany(db, b.id, 'online');
     const contract = createOutsourcingContract(db, {
@@ -170,7 +170,7 @@ describe('外包自动接受（阶段四任务 4.1）', () => {
     });
     const coordinator = new ProjectRuntimeCoordinator(db, new TaskEngine(db, new FakeExecutor()));
 
-    // 第一次 tick：createOutsourcedTask 抛错 → 契约应回滚 pending（不再卡在 accepted）
+    // 第一次 tick：createOutsourcedTask 抛错 → 契约应回滚 pending + 设退避（不再卡在 accepted）
     const spy = vi.spyOn(outsourcingContractModule, 'createOutsourcedTask').mockImplementation(() => {
       throw new Error('simulated task creation failure');
     });
@@ -180,11 +180,22 @@ describe('外包自动接受（阶段四任务 4.1）', () => {
     const afterFirst = getOutsourcingContract(db, contract.id);
     expect(afterFirst.state).toBe('pending');
     expect(afterFirst.vendorLiaisonAgentId).toBeNull();
-
-    // 第二次 tick：恢复真实实现 → 自动接受并创建承接任务
+    // M-1 退避：失败后累加计数 + 设下次允许时间，避免每 2s tick 反复空转
+    expect(afterFirst.autoAcceptAttemptCount).toBe(1);
+    expect(afterFirst.autoAcceptAfterAt).not.toBeNull();
+    // 退避未释放：第二次 tick 不应重试（契约仍 pending）
     await coordinator.tick({ pump: false });
-    const afterSecond = getOutsourcingContract(db, contract.id);
-    expect(afterSecond.state).toBe('in_progress');
-    expect(afterSecond.outsourcedTaskId).not.toBeNull();
+    expect(getOutsourcingContract(db, contract.id).state).toBe('pending');
+
+    // 模拟退避时间已过 → 第三次 tick 恢复真实实现，自动接受并创建承接任务
+    db.prepare('UPDATE outsourcing_contract SET auto_accept_after_at=? WHERE id=?')
+      .run(new Date(Date.now() - 1000).toISOString(), contract.id);
+    await coordinator.tick({ pump: false });
+    const afterThird = getOutsourcingContract(db, contract.id);
+    expect(afterThird.state).toBe('in_progress');
+    expect(afterThird.outsourcedTaskId).not.toBeNull();
+    // 成功接受后退避计数清零
+    expect(afterThird.autoAcceptAttemptCount).toBe(0);
+    expect(afterThird.autoAcceptAfterAt).toBeNull();
   });
 });

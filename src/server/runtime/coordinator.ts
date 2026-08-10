@@ -369,8 +369,9 @@ export class ProjectRuntimeCoordinator {
           } catch (taskError) {
             // Review 修复（M-1）：承接任务创建失败时回滚到 pending（清空对接人），
             // 契约可被下次 tick 重新接受，不再永久卡在 accepted。
-            revertAcceptToPending(this.db, id);
-            log.warn('auto accept outsourcing: createOutsourcedTask failed, contract reverted to pending', {
+            // M-1 退避：传 autoBackoff 累加失败计数 + 设下次允许时间，避免每 2s tick 反复空转。
+            revertAcceptToPending(this.db, id, true);
+            log.warn('auto accept outsourcing: createOutsourcedTask failed, contract reverted to pending (backoff applied)', {
               contractId: id,
               error: taskError instanceof Error ? taskError.message : String(taskError),
             });

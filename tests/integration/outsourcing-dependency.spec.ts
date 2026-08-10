@@ -80,7 +80,11 @@ describe('外包与 task_dependency 打通（阶段四任务 4.3）', () => {
     expect(areDependenciesMet(db, sourceTask.id)).toBe(true);
   });
 
-  it('H-2：claimed 源任务同样进入 waiting_dependency 并建立依赖', () => {
+  it('claimed 源任务在创建承接任务后同样进入 waiting_dependency 并建立依赖', () => {
+    // 行为覆盖（claimed 路径）：claimed 源任务应被置为 waiting_dependency + 建依赖。
+    // 注意：本测试不区分 H-2 修复前后——原优先级 bug `(source && running) || (source?.claimed)`
+    // 在 claimed 场景下右半短路成立，行为恰好正确。H-2 是 latent 修复（防未来重构引爆），
+    // 其正确性由 typecheck + 代码审查保证，无法用行为测试覆盖。
     const { sourceTask, contract } = fixture('queued');
     // 源任务处于 claimed 状态（引擎已领取但未 running）
     db.prepare("UPDATE task SET state='claimed', lease_owner_thread_id='th_x', updated_at=? WHERE id=?").run(new Date().toISOString(), sourceTask.id);

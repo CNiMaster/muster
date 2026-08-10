@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import { mkdtempSync, mkdirSync, rmSync, existsSync, readdirSync } from 'node:fs';
+import { cpSync, mkdtempSync, mkdirSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { DB } from '../../src/server/db/client';
@@ -71,17 +71,8 @@ describe('workspace domain', () => {
     const newProjectDir = project.rootDir.replace(oldPrefix, newPrefix);
     rmSync(newRoot, { recursive: true, force: true });
     mkdirSync(newRoot, { recursive: true });
-    // 用 fs 复制目录树模拟"文件已移动"
-    const copyDir = (src: string, dest: string): void => {
-      mkdirSync(dest, { recursive: true });
-      for (const entry of readdirSync(src, { withFileTypes: true })) {
-        const s = resolve(src, entry.name);
-        const d = resolve(dest, entry.name);
-        if (entry.isDirectory()) copyDir(s, d);
-        else mkdirSync(d, { recursive: true });
-      }
-    };
-    copyDir(oldRoot, newRoot);
+    // 用 Node 内置 cpSync 递归复制，模拟"文件已移动到新目录"（替代手写 copyDir，避免重复实现）
+    cpSync(oldRoot, newRoot, { recursive: true });
     db.prepare("UPDATE workspace SET status='migrating', migrate_target_dir=? WHERE id=?").run(newRoot, workspace.id);
 
     // 启动自愈

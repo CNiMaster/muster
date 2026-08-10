@@ -292,8 +292,10 @@ import { createMirror as createMirrorFn } from './thread';
 /** 报告执行结果通知（写公司对话窗口）。 */
 export function notifyExecutionResults(db: DB, companyId: string, results: ActionExecutionResult[]): void {
   if (results.length === 0) return;
-  // 防噪声：全部是 pending_offline（仅标记未真正执行）时不通知
-  if (results.every((r) => r.status === 'pending_offline')) return;
+  // Review 修复（L-2 噪声治理）：仅当有真正状态变化（executed/failed）时才通知。
+  // 全是 skipped（如员工已存在）或 pending_offline（仅标记未执行）时不发系统消息，
+  // 避免每次审批/下班都因无害结果刷屏。
+  if (!results.some((r) => r.status === 'executed' || r.status === 'failed')) return;
   const lines = results.map((r) => {
     const label = r.status === 'executed' ? '✅' : r.status === 'pending_offline' ? '⏳' : r.status === 'failed' ? '❌' : '⏭️';
     return `${label} ${r.description}：${r.message}`;
@@ -333,9 +335,17 @@ export function executePendingOfflineActions(db: DB, companyId: string): number 
     .all(companyId) as Array<{ report_id: string; id: string; retry_count: number }>;
   const results: ActionExecutionResult[] = [];
   let executed = 0;
+  // Review 修复（M-2 性能）：按 report_id 缓存 item 列表——此前每行都全量读一次，
+  // 同一报告 N 个 pending_offline 项会重复读 N 次。这里每个报告只读一次。
+  const itemsByReport = new Map<string, ReportActionItem[]>();
   for (const row of rows) {
     try {
-      const item = listReportActionItems(db, row.report_id).find((i) => i.id === row.id);
+      let items = itemsByReport.get(row.report_id);
+      if (!items) {
+        items = listReportActionItems(db, row.report_id);
+        itemsByReport.set(row.report_id, items);
+      }
+      const item = items.find((i) => i.id === row.id);
       if (!item) continue;
       const result = executeItem(db, companyId, false, company.firstAgentId, item);
       results.push(result);
