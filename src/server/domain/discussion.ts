@@ -94,6 +94,8 @@ export const DISCUSSION_SCENARIOS: Record<DiscussionScenario, DiscussionScenario
   },
 };
 
+export type DiscussionMode = 'sequential' | 'parallel';
+
 export interface Discussion {
   id: string;
   projectId: string;
@@ -101,6 +103,8 @@ export interface Discussion {
   topic: string;
   initiatorAgentId: string | null;
   state: DiscussionState;
+  /** 阶段七任务 7.3：讨论模式（sequential 串行 / parallel 同轮并行 + moderator 汇总）。 */
+  mode: DiscussionMode;
   currentSpeakerAgentId: string | null;
   currentTurnTaskId: string | null;
   turnCount: number;
@@ -143,7 +147,7 @@ interface DiscussionRow {
   id: string; project_id: string; company_id: string; topic: string; initiator_agent_id: string | null;
   state: DiscussionState; current_speaker_agent_id: string | null; current_turn_task_id: string | null;
   turn_count: number; max_turns: number; context_json: string; minutes: string | null; conclusion_json: string | null;
-  source_task_id: string | null; created_at: string; updated_at: string;
+  source_task_id: string | null; mode: DiscussionMode | null; created_at: string; updated_at: string;
 }
 interface ParticipantRow { discussion_id: string; agent_id: string; role: ParticipantRole; turn_index: number; joined_at: string }
 interface TurnRow { id: string; discussion_id: string; task_id: string; speaker_agent_id: string; turn_index: number; content: string | null; created_at: string }
@@ -155,7 +159,9 @@ function fromRow(r: DiscussionRow): Discussion {
     currentSpeakerAgentId: r.current_speaker_agent_id, currentTurnTaskId: r.current_turn_task_id,
     turnCount: r.turn_count, maxTurns: r.max_turns, context: JSON.parse(r.context_json ?? '{}'),
     minutes: r.minutes, conclusion: r.conclusion_json ? JSON.parse(r.conclusion_json) : null,
-    sourceTaskId: r.source_task_id, createdAt: r.created_at, updatedAt: r.updated_at,
+    sourceTaskId: r.source_task_id,
+    mode: (r.mode ?? 'sequential') as DiscussionMode,
+    createdAt: r.created_at, updatedAt: r.updated_at,
   };
 }
 
@@ -212,6 +218,8 @@ export function createDiscussion(db: DB, input: {
   maxTurns?: number;
   sourceTaskId?: string;
   scenario?: DiscussionScenario;
+  /** 阶段七任务 7.3：sequential（串行）/ parallel（同轮并行 + moderator 汇总），默认 sequential。 */
+  mode?: DiscussionMode;
 }): Discussion {
   const project = getProject(db, input.projectId);
   const scenario = input.scenario ?? 'help-request';
@@ -235,8 +243,8 @@ export function createDiscussion(db: DB, input: {
   const id = shortId('disc_');
   const now = nowIso();
   const contextWithScenario = { ...(input.context ?? {}), scenario, scenarioGuidance: scenarioConfig.conclusionAction };
-  db.prepare(`INSERT INTO discussion (id,project_id,company_id,topic,initiator_agent_id,state,max_turns,context_json,source_task_id,created_at,updated_at) VALUES (?,?,?,?,?, 'open', ?, ?, ?, ?, ?)`)
-    .run(id, project.id, project.companyId, input.topic, input.initiatorAgentId ?? null, input.maxTurns ?? 12, JSON.stringify(contextWithScenario), input.sourceTaskId ?? null, now, now);
+  db.prepare(`INSERT INTO discussion (id,project_id,company_id,topic,initiator_agent_id,state,max_turns,context_json,source_task_id,mode,created_at,updated_at) VALUES (?,?,?,?,?, 'open', ?, ?, ?, ?, ?, ?)`)
+    .run(id, project.id, project.companyId, input.topic, input.initiatorAgentId ?? null, input.maxTurns ?? 12, JSON.stringify(contextWithScenario), input.sourceTaskId ?? null, input.mode ?? 'sequential', now, now);
   // 注册参与者（第一个是 moderator）
   ordered.forEach((agentId, idx) => {
     db.prepare('INSERT INTO discussion_participant (discussion_id,agent_id,role,turn_index,joined_at) VALUES (?, ?, ?, ?, ?)')
@@ -261,6 +269,46 @@ export function startDiscussion(db: DB, discussionId: string): { discussion: Dis
   if (disc.turnCount >= disc.maxTurns) throw new AppError(ErrorCode.CONFLICT, `已达发言上限 ${disc.maxTurns}`);
   const participants = listParticipants(db, discussionId);
   if (participants.length === 0) throw new AppError(ErrorCode.VALIDATION, '讨论室无参与者');
+
+  // 阶段七任务 7.3：parallel 模式为所有参与者各建一个发言 task（同轮并行）
+  if (disc.mode === 'parallel') {
+    const tx = db.transaction(() => {
+      const prevTurns = listTurns(db, discussionId);
+      const recentTurnsText = prevTurns.map((t) => {
+        const agent = getAgent(db, t.speakerAgentId);
+        return `[${agent.name}（${agent.role}）第${t.turnIndex + 1}轮] ${t.content ?? ''}`;
+      });
+      const createdTaskIds: string[] = [];
+      for (const participant of participants) {
+        const task = createTask(db, {
+          projectId: disc.projectId,
+          assigneeAgentId: participant.agentId,
+          title: `讨论：${disc.topic.slice(0, 30)}（第${disc.turnCount + 1}轮·并行）`,
+          inputProtocol: {
+            discussion: true,
+            lightweight: true,
+            discussionId,
+            topic: disc.topic,
+            context: disc.context,
+            recentTurns: recentTurnsText.slice(-6),
+            turnIndex: disc.turnCount,
+            isYourTurn: true,
+            instruction: `这是多人讨论室"${disc.topic}"。本轮所有参与者同时发言。请基于你的职责和专业就当前议题发表看法，回复写在 done 工具的 summary 字段里。简洁明确，聚焦议题。`,
+          },
+          priority: 1,
+          isDiscussion: true,
+        });
+        createdTaskIds.push(task.id);
+      }
+      const now = nowIso();
+      // 占位：current 指向第一个发言（语义标记"本轮进行中"）
+      db.prepare('UPDATE discussion SET current_speaker_agent_id=?, current_turn_task_id=?, updated_at=? WHERE id=?')
+        .run(participants[0]!.agentId, createdTaskIds[0]!, now, discussionId);
+      return { discussion: getDiscussion(db, discussionId), turnTaskId: createdTaskIds[0]! };
+    });
+    return tx();
+  }
+
   const speakerIdx = disc.turnCount % participants.length;
   const speaker = participants[speakerIdx];
   const tx = db.transaction(() => {
@@ -314,12 +362,75 @@ export function completeDiscussionTurn(db: DB, discussionId: string, taskId: str
     const now = nowIso();
     const turnId = shortId('dturn_');
     const turnIndex = disc.turnCount;
+    // 发言者：优先取发言 task 的 assignee（parallel 模式 current_speaker 只是占位，
+    // 第一个发言完成后即被清空，不能作为后续发言者身份）。
+    const taskAssignee = db.prepare('SELECT assignee_agent_id FROM task WHERE id=?').get(taskId) as
+      | { assignee_agent_id: string | null }
+      | undefined;
+    const speakerId = taskAssignee?.assignee_agent_id ?? disc.currentSpeakerAgentId ?? '';
+    const isSynthesis = Boolean((getTaskInput(db, taskId) ?? {}).synthesis);
     db.prepare('INSERT INTO discussion_turn (id,discussion_id,task_id,speaker_agent_id,turn_index,content,created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run(turnId, discussionId, taskId, disc.currentSpeakerAgentId ?? '', turnIndex, content, now);
+      .run(turnId, discussionId, taskId, speakerId, turnIndex, content, now);
     db.prepare('UPDATE discussion SET current_speaker_agent_id=NULL, current_turn_task_id=NULL, turn_count=turn_count+1, updated_at=? WHERE id=?')
       .run(now, discussionId);
     const updated = getDiscussion(db, discussionId);
-    // 达上限 → 自动进入 concluding
+
+    // 阶段七任务 7.3：parallel 模式——同轮并行发言 + moderator 汇总
+    if (disc.mode === 'parallel') {
+      const participants = listParticipants(db, discussionId);
+      const roundSize = participants.length;
+      // synthesis task 完成 → 本轮汇总结束，进入下一轮或 concluding
+      if (isSynthesis) {
+        if (updated.turnCount >= updated.maxTurns) {
+          db.prepare("UPDATE discussion SET state='concluding', updated_at=? WHERE id=?").run(now, discussionId);
+          return { discussion: getDiscussion(db, discussionId), nextTurnTaskId: null as string | null, autoConcluded: false };
+        }
+        const started = startDiscussion(db, discussionId);
+        return { discussion: started.discussion, nextTurnTaskId: started.turnTaskId as string | null, autoConcluded: false };
+      }
+      // 普通发言完成：检查本轮是否全部完成（turn_count 是 roundSize 的整数倍）
+      const roundCompleted = updated.turnCount % roundSize === 0;
+      if (!roundCompleted) {
+        // 本轮还有成员未发言：等待（不启动新发言）
+        return { discussion: updated, nextTurnTaskId: null as string | null, autoConcluded: false };
+      }
+      // 本轮全部发言完成 → 创建 synthesis task（moderator 汇总）
+      const moderator = participants.find((p) => p.role === 'moderator') ?? participants[0]!;
+      if (updated.turnCount >= updated.maxTurns) {
+        // 已达到发言上限：不再汇总，直接 concluding
+        db.prepare("UPDATE discussion SET state='concluding', updated_at=? WHERE id=?").run(now, discussionId);
+        return { discussion: getDiscussion(db, discussionId), nextTurnTaskId: null as string | null, autoConcluded: false };
+      }
+      const prevTurns = listTurns(db, discussionId);
+      const recentTurnsText = prevTurns.map((t) => {
+        const agent = getAgent(db, t.speakerAgentId);
+        return `[${agent.name}（${agent.role}）第${t.turnIndex + 1}轮] ${t.content ?? ''}`;
+      });
+      const synthesisTask = createTask(db, {
+        projectId: disc.projectId,
+        assigneeAgentId: moderator.agentId,
+        title: `讨论汇总：${disc.topic.slice(0, 30)}（第${Math.floor(updated.turnCount / roundSize)}轮）`,
+        inputProtocol: {
+          discussion: true,
+          lightweight: true,
+          discussionId,
+          topic: disc.topic,
+          context: disc.context,
+          recentTurns: recentTurnsText.slice(-12),
+          turnIndex: updated.turnCount,
+          isYourTurn: true,
+          synthesis: true,
+          instruction: `你是讨论室"${disc.topic}"的 moderator。本轮参与者已全部发言，请汇总各方观点：提炼共识、分歧与下一步建议，回复写在 done 工具的 summary 字段里。`,
+        },
+        priority: 2,
+        isDiscussion: true,
+      });
+      db.prepare('UPDATE discussion SET current_speaker_agent_id=?, current_turn_task_id=?, updated_at=? WHERE id=?')
+        .run(moderator.agentId, synthesisTask.id, now, discussionId);
+      return { discussion: getDiscussion(db, discussionId), nextTurnTaskId: synthesisTask.id as string | null, autoConcluded: false };
+    }
+
+    // sequential：达上限 → concluding；否则下一轮
     if (updated.turnCount >= updated.maxTurns) {
       db.prepare("UPDATE discussion SET state='concluding', updated_at=? WHERE id=?").run(now, discussionId);
       return { discussion: getDiscussion(db, discussionId), nextTurnTaskId: null as string | null, autoConcluded: false };
@@ -329,6 +440,17 @@ export function completeDiscussionTurn(db: DB, discussionId: string, taskId: str
     return { discussion: started.discussion, nextTurnTaskId: started.turnTaskId as string | null, autoConcluded: false };
   });
   return tx();
+}
+
+/** 读取 task inputProtocol（仅取 synthesis 标记用，避免引入 getTask 全量依赖）。 */
+function getTaskInput(db: DB, taskId: string): Record<string, unknown> | null {
+  const row = db.prepare('SELECT input_protocol_json FROM task WHERE id=?').get(taskId) as { input_protocol_json: string } | undefined;
+  if (!row) return null;
+  try {
+    return JSON.parse(row.input_protocol_json ?? '{}') as Record<string, unknown>;
+  } catch {
+    return null;
+  }
 }
 
 /**

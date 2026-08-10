@@ -739,6 +739,7 @@ async function startDiscussionHandler(call: ToolCall, ctx: ToolContext): Promise
     const context = (call.args.context && typeof call.args.context === 'object') ? call.args.context as Record<string, unknown> : {};
     const maxTurns = typeof call.args.max_turns === 'number' ? Math.min(Math.max(call.args.max_turns, 2), 24) : 12;
     const scenario = typeof call.args.scenario === 'string' ? call.args.scenario as DiscussionScenario : 'help-request';
+    const mode = call.args.mode === 'parallel' ? 'parallel' as const : 'sequential' as const;
     const disc = createDiscussion(db, {
       projectId: askerProjectId,
       topic,
@@ -748,6 +749,7 @@ async function startDiscussionHandler(call: ToolCall, ctx: ToolContext): Promise
       maxTurns,
       sourceTaskId: askerTaskId,
       scenario,
+      mode,
     });
     // 启动第一轮发言
     const started = startDiscussion(db, disc.id);
@@ -1047,6 +1049,7 @@ const BUILTIN_TOOL_DEFINITIONS: ToolDefinition[] = [
           },
           context: { type: 'object', description: '可选：讨论背景信息（注入给每个发言者）' },
           max_turns: { type: 'number', description: '可选：最大发言轮次，默认 12' },
+          mode: { type: 'string', enum: ['sequential', 'parallel'], description: '可选：sequential=串行轮流发言（默认）；parallel=同轮多人并行发言，轮次结束后 moderator 汇总（适合 brainstorm/quality-review）' },
         },
         required: ['topic', 'participant_agent_ids'],
       },
