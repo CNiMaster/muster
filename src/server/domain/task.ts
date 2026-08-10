@@ -652,7 +652,36 @@ export function answerClarification(db: DB, taskId: string, answer: string): Tas
   return getTask(db, taskId);
 }
 
-function escalateToFirstResponder(db: DB, task: Task): void {
+/**
+ * 查找等待超时的 task（阶段一任务 1.2）：coordinator 定时扫描 waiting_input /
+ * waiting_dependency 状态且 updated_at 早于各自阈值的 task，供上报第一负责人。
+ */
+export function findStaleWaitingTasks(
+  db: DB,
+  options: { waitingInputMaxAgeMs: number; waitingDependencyMaxAgeMs: number },
+): Task[] {
+  const now = Date.now();
+  const inputCutoff = new Date(now - options.waitingInputMaxAgeMs).toISOString();
+  const depCutoff = new Date(now - options.waitingDependencyMaxAgeMs).toISOString();
+  const rows = db
+    .prepare(
+      `SELECT * FROM task
+       WHERE (state='waiting_input' AND updated_at < ?)
+          OR (state='waiting_dependency' AND updated_at < ?)
+       ORDER BY updated_at ASC`,
+    )
+    .all(inputCutoff, depCutoff) as TaskRow[];
+  return rows.map(fromRow);
+}
+
+export function escalateToFirstResponder(
+  db: DB,
+  task: Task,
+  options?: {
+    title?: string;
+    inputProtocol?: Record<string, unknown>;
+  },
+): void {
   const project = getProject(db, task.projectId);
   if (!project.firstAgentId) return;
   createTask(db, {
@@ -660,9 +689,10 @@ function escalateToFirstResponder(db: DB, task: Task): void {
     parentTaskId: task.id,
     rootTaskId: task.rootTaskId ?? task.id,
     assigneeAgentId: project.firstAgentId,
-    title: `[上报] Task #${task.seq} 追问超限`,
-    inputProtocol: { reason: 'clarification_rounds_exceeded', sourceTaskId: task.id, question: task.question },
+    title: options?.title ?? `[上报] Task #${task.seq} 追问超限`,
+    inputProtocol: options?.inputProtocol ?? { reason: 'clarification_rounds_exceeded', sourceTaskId: task.id, question: task.question },
     priority: 8,
+    skipLaunchGate: true, // 系统上报任务，不要求用户确认 launch
   });
   appendTaskEvent(db, task.id, 'escalated', { to: project.firstAgentId });
 }
@@ -821,7 +851,6 @@ function propagateChildFailure(db: DB, failedTask: Task, message: string): void 
     if (!project.firstAgentId) continue;
     createTask(db, {
       projectId: parent.projectId,
-      projectTaskId: parent.projectTaskId,
       parentTaskId: parentId,
       rootTaskId: parent.rootTaskId ?? parent.id,
       assigneeAgentId: project.firstAgentId,

@@ -2,7 +2,7 @@ import type { DB } from '../db/client';
 import { listCompanies, transitionCompany } from '../domain/company';
 import { listProjects } from '../domain/project';
 import { ensureProjectThreads, releaseProjectMirrors } from '../domain/thread';
-import { ensurePlanningTask, listTasks, recoverExpiredLeases } from '../domain/task';
+import { ensurePlanningTask, listTasks, recoverExpiredLeases, findStaleWaitingTasks, escalateToFirstResponder } from '../domain/task';
 import type { TaskEngine } from '../task-engine/engine';
 import { log } from '../logger';
 import { interruptActiveBrainstorms } from '../domain/brainstorm';
@@ -11,6 +11,11 @@ import { isSoftCapReached, type Budget } from '../domain/usage';
 import { updateProject } from '../domain/project';
 import { settleDrainingAgents } from '../domain/agent';
 import { drainReflectionQueue, recoverStuckReflections } from '../domain/reflection';
+import {
+  STALE_WAITING_INPUT_MS,
+  STALE_WAITING_DEPENDENCY_MS,
+  STALE_WAITING_REPORT_COOLDOWN_MS,
+} from '../../shared/constants';
 
 export interface RuntimeTickResult {
   recoveredLeases: number;
@@ -40,6 +45,13 @@ export class ProjectRuntimeCoordinator {
     this.ticking = true;
     try {
       const recoveredLeases = recoverExpiredLeases(this.db);
+      // 阶段一任务 1.2：扫描 waiting_input/waiting_dependency 超时任务并上报第一负责人。
+      // 独立 try/catch：超时上报失败不影响租约恢复与任务泵送。
+      try {
+        this.reportStaleWaitingTasks();
+      } catch (error) {
+        log.warn('stale waiting task scan failed', { error: error instanceof Error ? error.message : String(error) });
+      }
       const plannedTasks: string[] = [];
       const releasedMirrors: string[] = [];
       let pumpedTasks = 0;
@@ -157,6 +169,64 @@ export class ProjectRuntimeCoordinator {
     this.timer = null;
     if (this.reflectionTimer) clearInterval(this.reflectionTimer);
     this.reflectionTimer = null;
+  }
+
+  /**
+   * 阶段一任务 1.2：扫描等待超时的 task（waiting_input / waiting_dependency），
+   * 超阈值则给第一负责人派 [超时] 上报 Task。
+   * 冷却期（STALE_WAITING_REPORT_COOLDOWN_MS）内同一 task 不重复上报。
+   */
+  private reportStaleWaitingTasks(): number {
+    let reported = 0;
+    const stale = findStaleWaitingTasks(this.db, {
+      waitingInputMaxAgeMs: STALE_WAITING_INPUT_MS,
+      waitingDependencyMaxAgeMs: STALE_WAITING_DEPENDENCY_MS,
+    });
+    const cooldownCutoff = new Date(Date.now() - STALE_WAITING_REPORT_COOLDOWN_MS).toISOString();
+    for (const task of stale) {
+      try {
+        const recent = this.db
+          .prepare(
+            `SELECT 1 FROM task WHERE parent_task_id=? AND title LIKE '[超时]%' AND created_at > ? LIMIT 1`,
+          )
+          .get(task.id, cooldownCutoff);
+        if (recent) continue;
+        const waitMinutes = Math.max(1, Math.round((Date.now() - new Date(task.updatedAt).getTime()) / 60_000));
+        const extra = task.state === 'waiting_dependency'
+          ? {
+              pendingDependencies: (this.db
+                .prepare(
+                  `SELECT t.id, t.title, t.state FROM task_dependency d
+                   JOIN task t ON t.id = d.depends_on_id
+                   WHERE d.task_id = ? AND t.state NOT IN ('completed','cancelled')`,
+                )
+                .all(task.id) as Array<{ id: string; title: string; state: string }>),
+            }
+          : {};
+        escalateToFirstResponder(this.db, task, {
+          title: `[超时] Task #${task.seq} 长时间等待`,
+          inputProtocol: {
+            reason: task.state === 'waiting_input' ? 'waiting_input_stale' : 'waiting_dependency_stale',
+            sourceTaskId: task.id,
+            state: task.state,
+            waitMinutes,
+            ...extra,
+          },
+        });
+        reported++;
+        log.warn('stale waiting task reported to first responder', {
+          taskId: task.id,
+          state: task.state,
+          waitMinutes,
+        });
+      } catch (error) {
+        log.warn('stale waiting task report failed', {
+          taskId: task.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    return reported;
   }
 
   private settleDrainingCompanies(): string[] {

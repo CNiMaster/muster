@@ -13,6 +13,8 @@ import { ProjectRuntimeCoordinator } from '../../src/server/runtime/coordinator'
 import { listReports } from '../../src/server/domain/report';
 import { startBrainstorm } from '../../src/server/domain/brainstorm';
 import { createProjectTask } from '../../src/server/domain/project-task';
+import { getAgent } from '../../src/server/domain/agent';
+import { addDependency } from '../../src/server/domain/task';
 
 let db: DB;
 
@@ -147,5 +149,68 @@ describe('ProjectRuntimeCoordinator', () => {
     const interrupted = listTasks(db, project.id).find((task) => task.id === discussion.taskId)!;
     expect(interrupted.state).toBe('cancelled');
     expect(interrupted.summary).not.toContain('迟到结论');
+  });
+
+  it('waiting 状态超时任务自动上报第一负责人（阶段一任务 1.2）', async () => {
+    const novel = createNovelCompany(db, { name: 'co' });
+    const project = createProject(db, {
+      companyId: novel.company.id,
+      name: 'book',
+      rootDir: makeTempGitRepo(),
+      initialState: 'active',
+    });
+    createProjectTask(db, { projectId: project.id, title: '启动作品' });
+    transitionCompany(db, novel.company.id, 'online');
+    // 超时的 waiting_input（40 分钟前更新）
+    const staleInput = createTask(db, { projectId: project.id, assigneeAgentId: novel.agents.writer.id, title: '等澄清的活' });
+    db.prepare("UPDATE task SET state='waiting_input', updated_at=? WHERE id=?")
+      .run(new Date(Date.now() - 40 * 60_000).toISOString(), staleInput.id);
+    // 超时的 waiting_dependency（70 分钟前更新）
+    const staleDep = createTask(db, { projectId: project.id, assigneeAgentId: novel.agents.writer.id, title: '等依赖的活' });
+    addDependency(db, staleDep.id, staleInput.id);
+    db.prepare("UPDATE task SET state='waiting_dependency', updated_at=? WHERE id=?")
+      .run(new Date(Date.now() - 70 * 60_000).toISOString(), staleDep.id);
+    // 未超时的 waiting_input（5 分钟前）
+    const fresh = createTask(db, { projectId: project.id, assigneeAgentId: novel.agents.writer.id, title: '刚等待的活' });
+    db.prepare("UPDATE task SET state='waiting_input', updated_at=? WHERE id=?")
+      .run(new Date(Date.now() - 5 * 60_000).toISOString(), fresh.id);
+
+    const coordinator = new ProjectRuntimeCoordinator(db, new TaskEngine(db, new FakeExecutor()));
+    await coordinator.tick({ pump: false });
+
+    // lead 收到 2 个 [超时] 上报 Task
+    const timeouts = listTasks(db, project.id).filter((task) => task.title.startsWith('[超时]'));
+    expect(timeouts).toHaveLength(2);
+    const seqs = timeouts.map((task) => (task.inputProtocol as { sourceTaskId?: string }).sourceTaskId).sort();
+    expect(seqs).toEqual([staleDep.id, staleInput.id].sort());
+    // 上报给第一负责人
+    const lead = getAgent(db, novel.agents.lead.id);
+    for (const t of timeouts) {
+      expect(t.assigneeAgentId).toBe(lead.id);
+      expect(t.priority).toBe(8);
+    }
+  });
+
+  it('冷却期内同一 task 不重复上报超时（阶段一任务 1.2）', async () => {
+    const novel = createNovelCompany(db, { name: 'co' });
+    const project = createProject(db, {
+      companyId: novel.company.id,
+      name: 'book',
+      rootDir: makeTempGitRepo(),
+      initialState: 'active',
+    });
+    createProjectTask(db, { projectId: project.id, title: '启动作品' });
+    transitionCompany(db, novel.company.id, 'online');
+    const stale = createTask(db, { projectId: project.id, assigneeAgentId: novel.agents.writer.id, title: '等澄清的活' });
+    db.prepare("UPDATE task SET state='waiting_input', updated_at=? WHERE id=?")
+      .run(new Date(Date.now() - 40 * 60_000).toISOString(), stale.id);
+
+    const coordinator = new ProjectRuntimeCoordinator(db, new TaskEngine(db, new FakeExecutor()));
+    await coordinator.tick({ pump: false });
+    await coordinator.tick({ pump: false });
+    await coordinator.tick({ pump: false });
+
+    const timeouts = listTasks(db, project.id).filter((task) => task.title.startsWith('[超时]'));
+    expect(timeouts).toHaveLength(1); // 冷却期去重，不重复派发
   });
 });

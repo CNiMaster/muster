@@ -13,6 +13,12 @@ export const MAX_TOOL_CALLS = 50;
 /** B5：任务连续失败达此阈值触发熔断，项目自动回流到准备阶段（对齐 systematic-debugging:195）。 */
 export const TASK_CIRCUIT_BREAKER_THRESHOLD = 3;
 
+// 阶段一任务 1.2：waiting 状态超时检测（coordinator 定时扫描，超时上报第一负责人）
+export const STALE_WAITING_INPUT_MS = 30 * 60_000; // waiting_input 默认 30 分钟
+export const STALE_WAITING_DEPENDENCY_MS = 60 * 60_000; // waiting_dependency 默认 60 分钟
+/** 同一 task 超时上报冷却期：30 分钟内不重复上报同一 task。 */
+export const STALE_WAITING_REPORT_COOLDOWN_MS = 30 * 60_000;
+
 // 复盘
 export const REPORT_TIME_INTERVAL_MS = 60 * 60_000; // 默认 1h
 export const REPORT_TASK_COUNT_INTERVAL = 20;
