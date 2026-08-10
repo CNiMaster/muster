@@ -361,7 +361,33 @@ export function useStatusBoard(companyId: string | undefined) {
 
 // ===== Agents =====
 export function useAgentProfiles() {
-  return useQuery({ queryKey: ['agent-profiles'], queryFn: () => api.get<AgentProfile[]>('/api/agent-profiles') });
+  return useQuery({ queryKey: ['agent-profiles'], queryFn: () => api.get<AgentProfile[]>(`/api/agent-profiles`) });
+}
+
+// ===== Persona 专家库（阶段三任务 3.1） =====
+
+export interface PersonaDTO {
+  id: string;
+  domain: string | null;
+  name: string;
+  description: string;
+  emoji: string;
+  color: string;
+  soul: string;
+  principles: string[];
+  capabilities: Record<string, unknown>;
+}
+
+export function usePersonaDomains() {
+  return useQuery({ queryKey: ['persona-domains'], queryFn: () => api.get<Array<{ domain: string; label: string; count: number }>>('/api/agent-profiles/personas/domains') });
+}
+
+export function usePersonas(domain?: string, q?: string) {
+  const params = new URLSearchParams();
+  if (domain) params.set('domain', domain);
+  if (q) params.set('q', q);
+  const qs = params.toString();
+  return useQuery({ queryKey: ['personas', domain, q], queryFn: () => api.get<PersonaDTO[]>(`/api/agent-profiles/personas${qs ? `?${qs}` : ''}`) });
 }
 export function useAgentProfile(id: string | undefined) {
   return useQuery({
@@ -388,7 +414,7 @@ export function useEmployeeRuntime(id: string | undefined) {
 export function useCreateAgentProfile() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { displayName: string; soul?: string; principles?: string[]; capabilities?: Record<string, unknown> }) => api.post<AgentProfile>('/api/agent-profiles', input),
+    mutationFn: (input: { displayName: string; soul?: string; principles?: string[]; capabilities?: Record<string, unknown>; personaId?: string }) => api.post<AgentProfile>('/api/agent-profiles', input),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['agent-profiles'] }),
   });
 }

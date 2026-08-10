@@ -17,6 +17,7 @@ import { resetPersonalMemory } from '../domain/memory';
 import { recruitFromDraft } from '../domain/recruitment';
 import { getEmployeeRuntime } from '../domain/employee-runtime';
 import { getEmploymentHealth } from '../domain/executor-health';
+import { listPersonas, getPersona, listPersonaDomains, searchPersonas } from '../domain/persona-library';
 
 export const agentProfilesRouter = Router();
 export const companyEmployeesRouter = Router({ mergeParams: true });
@@ -40,6 +41,8 @@ const profileSchema = z.object({
   capabilities: z.record(z.unknown()).optional(),
   recommendedExecutor: z.record(z.unknown()).optional(),
   recommendedPermission: z.record(z.unknown()).optional(),
+  /** 阶段三任务 3.1：从 personas 专家库自动填充（用户显式字段覆盖）。 */
+  personaId: z.string().optional(),
 });
 
 agentProfilesRouter.get('/', asyncHandler(async (_req, res) => {
@@ -53,8 +56,33 @@ agentProfilesRouter.get('/', asyncHandler(async (_req, res) => {
   res.json(profiles.map((p) => ({ ...p, employmentCount: countMap.get(p.id) ?? 0 })));
 }));
 
+// ===== Persona 专家库（阶段三任务 3.1） =====
+
+agentProfilesRouter.get('/personas/domains', asyncHandler(async (_req, res) => {
+  res.json(listPersonaDomains());
+}));
+
+/** 列表/搜索：?domain=marketing&q=关键词 */
+agentProfilesRouter.get('/personas', asyncHandler(async (req, res) => {
+  const domain = typeof req.query.domain === 'string' && req.query.domain ? req.query.domain : undefined;
+  const q = typeof req.query.q === 'string' ? req.query.q : '';
+  const result = q ? searchPersonas(q) : listPersonas(domain);
+  res.json(result);
+}));
+
+agentProfilesRouter.get('/personas/:personaId', asyncHandler(async (req, res) => {
+  const persona = getPersona(param(req, 'personaId'));
+  if (!persona) {
+    res.status(404).json({ error: '专家不存在' });
+    return;
+  }
+  res.json(persona);
+}));
+
 agentProfilesRouter.post('/', asyncHandler(async (req, res) => {
-  const profile = createAgentProfile(getDb(), profileSchema.parse(req.body));
+  const input = profileSchema.parse(req.body);
+  // personaId 由 createAgentProfile 内部自动填充 soul/principles/capabilities
+  const profile = createAgentProfile(getDb(), input);
   materializeAgentHome(profile);
   res.status(201).json(profile);
 }));

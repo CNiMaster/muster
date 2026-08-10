@@ -9,7 +9,7 @@ import type React from 'react';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ROLE_TEMPLATES, type RoleTemplate } from '../../shared/role-templates';
-import { useAgentProfiles, useCompanies, useCreateAgentProfile, useRecruitFromDraft } from '../hooks/queries';
+import { useAgentProfiles, useCompanies, useCreateAgentProfile, useRecruitFromDraft, usePersonas, usePersonaDomains } from '../hooks/queries';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
 import { Badge } from '../components/Badge';
@@ -34,6 +34,11 @@ export function AgentLibraryPage(): React.ReactElement {
   const [displayName, setDisplayName] = useState('');
   const [soul, setSoul] = useState('');
   const [q, setQ] = useState('');
+  // 阶段三任务 3.1：专家库（personas）
+  const [personaDomain, setPersonaDomain] = useState<string>('');
+  const [personaQ, setPersonaQ] = useState('');
+  const { data: personaDomains } = usePersonaDomains();
+  const { data: personas } = usePersonas(personaDomain || undefined, personaQ || undefined);
   const existingNames = useMemo(() => new Set((profiles ?? []).map((item) => item.displayName)), [profiles]);
 
   const filtered = useMemo(() => {
@@ -59,6 +64,16 @@ export function AgentLibraryPage(): React.ReactElement {
       onSuccess: () => { setDisplayName(''); setSoul(''); toast('success', '员工档案已创建，已进入人才市场'); },
       onError: (error) => toast('error', (error as Error).message),
     });
+  };
+
+  // 阶段三任务 3.1：从专家库添加（自动填充 soul/principles/capabilities）
+  const addFromPersona = async (persona: { id: string; name: string }): Promise<void> => {
+    if (existingNames.has(persona.name)) {
+      toast('info', `${persona.name} 已在人才市场中`);
+      return;
+    }
+    await createProfile.mutateAsync({ displayName: persona.name, personaId: persona.id });
+    toast('success', `已添加专家「${persona.name}」，提示词已自动填充`);
   };
 
   return (
@@ -124,6 +139,51 @@ export function AgentLibraryPage(): React.ReactElement {
           </div>
         </div>
       </details>
+
+      {/* 阶段三任务 3.1：专家库（211+ 专家人设，提示词自动填充） */}
+      <section className="section" aria-labelledby="persona-library-title">
+        <div className="section-heading">
+          <div><span className="step-kicker">02</span><h2 id="persona-library-title">专家库</h2></div>
+          <small>211+ 领域专家人设，添加后自动填充身份与能力提示词</small>
+        </div>
+        <div className="form-row" style={{ marginBottom: 12 }}>
+          <Select value={personaDomain} onChange={(e) => setPersonaDomain((e.target as HTMLSelectElement).value)} style={{ maxWidth: 220 }}>
+            <option value="">全部领域（{personaDomains?.reduce((sum, d) => sum + d.count, 0) ?? '…'}）</option>
+            {(personaDomains ?? []).map((d) => (
+              <option key={d.domain} value={d.domain}>{d.label}（{d.count}）</option>
+            ))}
+          </Select>
+          <Input placeholder="搜索专家…" value={personaQ} onChange={(e) => setPersonaQ((e.target as HTMLInputElement).value)} style={{ maxWidth: 260 }} />
+        </div>
+        <div className="persona-library-grid">
+          {(personas ?? []).slice(0, 60).map((persona) => {
+            const exists = existingNames.has(persona.name);
+            return (
+              <article key={persona.id} className="persona-library-card">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span className="employee-avatar">{persona.emoji || persona.name.slice(0, 1)}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <strong>{persona.name}</strong>
+                    <small className="muted">{persona.domain}</small>
+                  </div>
+                </div>
+                <p className="muted" style={{ fontSize: 12, margin: '6px 0' }}>{persona.description}</p>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={exists || createProfile.isPending}
+                  onClick={() => void addFromPersona(persona).catch((error: Error) => toast('error', error.message))}
+                >
+                  {exists ? '已有' : '添加'}
+                </Button>
+              </article>
+            );
+          })}
+          {(personas ?? []).length === 0 && (
+            <EmptyState icon={Icons.empty} title="没有匹配的专家" hint="换个关键词或领域试试。" />
+          )}
+        </div>
+      </section>
 
       <Card title="人才列表" className="section" actions={profiles ? <Badge>{profiles.length}</Badge> : undefined}>
         {!isLoading && filtered.length === 0 && (

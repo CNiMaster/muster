@@ -2,6 +2,7 @@ import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { nowIso, shortId } from '../../shared/utils';
 import { copyPersonalMemoryEntries } from './memory';
+import { getPersona } from './persona-library';
 
 export interface AgentProfile {
   id: string;
@@ -117,9 +118,23 @@ export function createAgentProfile(db: DB, input: {
   capabilities?: Record<string, unknown>;
   recommendedExecutor?: Record<string, unknown>;
   recommendedPermission?: Record<string, unknown>;
+  /** 阶段三任务 3.1：从 personas 专家库自动填充（用户显式字段优先）。 */
+  personaId?: string;
 }): AgentProfile {
   const displayName = input.displayName.trim();
   if (!displayName) throw new AppError(ErrorCode.VALIDATION, '员工档案名称不能为空');
+  // personaId 提供时自动填充 soul/principles/capabilities（用户显式字段优先）
+  let soul = input.soul;
+  let principles = input.principles;
+  let capabilities = input.capabilities;
+  if (input.personaId) {
+    const persona = getPersona(input.personaId);
+    if (persona) {
+      soul ??= persona.soul;
+      principles ??= persona.principles;
+      capabilities ??= persona.capabilities;
+    }
+  }
   const id = shortId('ap_');
   const now = nowIso();
   db.prepare(
@@ -130,9 +145,9 @@ export function createAgentProfile(db: DB, input: {
   ).run(
     id,
     displayName,
-    input.soul ?? '',
-    JSON.stringify(input.principles ?? []),
-    JSON.stringify(input.capabilities ?? {}),
+    soul ?? '',
+    JSON.stringify(principles ?? []),
+    JSON.stringify(capabilities ?? {}),
     JSON.stringify(input.recommendedExecutor ?? {}),
     JSON.stringify(input.recommendedPermission ?? {}),
     now,
@@ -140,9 +155,9 @@ export function createAgentProfile(db: DB, input: {
   );
   const snapshot = {
     displayName,
-    soul: input.soul ?? '',
-    principles: input.principles ?? [],
-    capabilities: input.capabilities ?? {},
+    soul: soul ?? '',
+    principles: principles ?? [],
+    capabilities: capabilities ?? {},
     recommendedExecutor: input.recommendedExecutor ?? {},
     recommendedPermission: input.recommendedPermission ?? {},
   };
