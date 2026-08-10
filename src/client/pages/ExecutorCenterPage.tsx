@@ -6,7 +6,7 @@ import { Badge, StateBadge } from '../components/Badge';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
 import { Field, Input, Select } from '../components/Form';
-import { useGenerateCliProposal, type CliProposal, type ProposalResult } from '../hooks/queries';
+import { useGenerateCliProposal, useCredentialDefinitions, type CliProposal, type ProposalResult } from '../hooks/queries';
 import {
   concurrencyLabel,
   probeClassificationLabel,
@@ -52,6 +52,11 @@ export function ExecutorCenterPage(): React.ReactElement {
   const [apiBaseURL, setApiBaseURL] = useState('https://api.openai.com/v1');
   const [apiModel, setApiModel] = useState('gpt-4o');
   const [apiKeyEnv, setApiKeyEnv] = useState('OPENAI_API_KEY');
+  // 阶段二任务 2.2：凭据引用支持从 credential_definition 下拉选择 + 并发模式选择 + 编辑模式
+  const { data: credentialDefs } = useCredentialDefinitions({ category: 'llm' });
+  const [apiConcurrency, setApiConcurrency] = useState<'parallel' | 'profile-serial' | 'global-serial'>('parallel');
+  const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   const detect = useMutation({
     mutationFn: (id: string) => api.post<ExecutorDetection>(`/api/executors/${id}/detect`),
@@ -173,11 +178,43 @@ export function ExecutorCenterPage(): React.ReactElement {
         manifestId: apiKind,
         config,
         credentialRef,
-        concurrencyMode: 'profile-serial',
+        concurrencyMode: apiConcurrency,
       });
     },
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['executor-profiles'] }); toast('success', 'API 执行器已创建，可在公司组织架构绑定给员工'); },
     onError: (e: unknown) => toast('error', (e as Error).message ?? '创建失败'),
+  });
+  // 阶段二任务 2.2：编辑 API profile
+  const updateApi = useMutation({
+    mutationFn: (profileId: string) => {
+      const credentialRef: CredentialReference = { kind: 'env', reference: apiKeyEnv.trim() };
+      const config: Record<string, unknown> = apiKind === 'openai-compatible-api'
+        ? { provider: 'openai', baseURL: apiBaseURL.trim(), model: apiModel.trim() }
+        : { provider: 'gemini', model: apiModel.trim() };
+      return api.put<ExecutorProfile>(`/api/executors/profiles/${profileId}`, {
+        name: apiName.trim(),
+        config,
+        credentialRef,
+        concurrencyMode: apiConcurrency,
+      });
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['executor-profiles'] });
+      setEditingProfileId(null);
+      toast('success', '执行器档案已更新');
+    },
+    onError: (e: unknown) => toast('error', (e as Error).message ?? '更新失败'),
+  });
+  // 阶段二任务 2.2：删除 profile（解除员工绑定 + 清理探针）
+  const deleteProfile = useMutation({
+    mutationFn: (profileId: string) => api.delete<{ ok: boolean }>(`/api/executors/profiles/${profileId}`),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['executor-profiles'] });
+      setDeleteConfirmId(null);
+      setEditingProfileId(null);
+      toast('success', '执行器档案已删除');
+    },
+    onError: (e: unknown) => toast('error', (e as Error).message ?? '删除失败'),
   });
   const testConnection = useMutation({
     mutationFn: ({ id, kind }: { id: string; kind: 'connectivity' | 'model' | 'capability' }) =>
@@ -304,7 +341,7 @@ export function ExecutorCenterPage(): React.ReactElement {
       </Card>
 
       <Card title="API 凭据执行器" className="section">
-        <p className="muted">OpenAI 兼容 / Gemini API 执行器。Muster 只存环境变量名（不存明文），实际密钥由系统环境变量提供。绑定到员工后即可使用。</p>
+        <p className="muted">OpenAI 兼容 / Gemini API 执行器。Muster 只存环境变量名（不存明文），实际密钥由系统环境变量提供。可创建多个档案（不同供应商/模型/用途），绑定到员工后即可使用；删除档案会自动解除员工绑定。</p>
         <div className="form-stack">
           <div className="form-row">
             <Field label="执行器类型">
@@ -318,19 +355,41 @@ export function ExecutorCenterPage(): React.ReactElement {
                 <option value="gemini-api">Gemini API</option>
               </Select>
             </Field>
-            <Field label="档案名称"><Input value={apiName} onChange={(e) => setApiName(e.target.value)} /></Field>
+            <Field label="档案名称"><Input value={apiName} onChange={(e) => setApiName(e.target.value)} placeholder="如 DeepSeek / 通义 / 智谱 / Kimi" /></Field>
           </div>
           {apiKind === 'openai-compatible-api' && (
             <Field label="Base URL"><Input value={apiBaseURL} onChange={(e) => setApiBaseURL(e.target.value)} placeholder="https://api.openai.com/v1" /></Field>
           )}
           <div className="form-row">
             <Field label="默认模型"><Input value={apiModel} onChange={(e) => setApiModel(e.target.value)} /></Field>
-            <Field label="API Key 环境变量名（不存明文）">
-              <Input value={apiKeyEnv} onChange={(e) => setApiKeyEnv(e.target.value)} placeholder="如 OPENAI_API_KEY" />
+            <Field label="并发模式">
+              <Select value={apiConcurrency} onChange={(e) => setApiConcurrency((e.target as HTMLSelectElement).value as typeof apiConcurrency)}>
+                <option value="parallel">支持员工并行</option>
+                <option value="profile-serial">同一配置串行</option>
+                <option value="global-serial">全局串行</option>
+              </Select>
             </Field>
           </div>
+          <Field label="API Key 环境变量名（不存明文）" hint="可从左侧凭据库选择，或手填自定义环境变量名">
+            <div className="form-row">
+              <Select value={apiKeyEnv} onChange={(e) => setApiKeyEnv((e.target as HTMLSelectElement).value)}>
+                <option value={apiKeyEnv}>自定义：{apiKeyEnv || '（填写下方输入框）'}</option>
+                {(credentialDefs ?? []).map((def) => (
+                  <option key={def.id} value={def.credentialKey}>{def.name}（{def.credentialKey}）</option>
+                ))}
+              </Select>
+              <Input value={apiKeyEnv} onChange={(e) => setApiKeyEnv(e.target.value)} placeholder="如 OPENAI_API_KEY" />
+            </div>
+          </Field>
           <div className="settings-primary-actions">
-            <Button onClick={() => createApi.mutate()} loading={createApi.isPending} disabled={!apiName.trim() || !apiKeyEnv.trim()}>创建 API 执行器</Button>
+            {editingProfileId ? (
+              <>
+                <Button variant="ghost" onClick={() => setEditingProfileId(null)}>取消编辑</Button>
+                <Button onClick={() => updateApi.mutate(editingProfileId)} loading={updateApi.isPending} disabled={!apiName.trim() || !apiKeyEnv.trim()}>保存修改</Button>
+              </>
+            ) : (
+              <Button onClick={() => createApi.mutate()} loading={createApi.isPending} disabled={!apiName.trim() || !apiKeyEnv.trim()}>创建 API 执行器</Button>
+            )}
           </div>
         </div>
       </Card>
@@ -352,6 +411,27 @@ export function ExecutorCenterPage(): React.ReactElement {
                   <Button size="sm" variant="ghost" onClick={() => testConnection.mutate({ id: profile.id, kind: 'connectivity' })} loading={testConnection.isPending}>联通测试</Button>
                   {hasModel && <Button size="sm" variant="ghost" onClick={() => testConnection.mutate({ id: profile.id, kind: 'model' })} loading={testConnection.isPending}>测试模型</Button>}
                   {isApi && <Button size="sm" variant="ghost" onClick={() => testConnection.mutate({ id: profile.id, kind: 'capability' })} loading={testConnection.isPending}>测试能力</Button>}
+                  {/* 阶段二任务 2.2：编辑（回填到 API 表单）/ 删除（二次确认） */}
+                  {isApi && (
+                    <Button size="sm" variant="ghost" onClick={() => {
+                      setEditingProfileId(profile.id);
+                      setApiKind(profile.manifestId as 'openai-compatible-api' | 'gemini-api');
+                      setApiName(profile.name);
+                      setApiBaseURL(String(profile.config.baseURL ?? 'https://api.openai.com/v1'));
+                      setApiModel(String(profile.config.model ?? ''));
+                      setApiKeyEnv(String(profile.credentialRef?.reference ?? ''));
+                      setApiConcurrency(profile.concurrencyMode ?? 'parallel');
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}>编辑</Button>
+                  )}
+                  {deleteConfirmId === profile.id ? (
+                    <>
+                      <Button size="sm" variant="ghost" onClick={() => setDeleteConfirmId(null)}>取消</Button>
+                      <Button size="sm" onClick={() => deleteProfile.mutate(profile.id)} loading={deleteProfile.isPending}>确认删除</Button>
+                    </>
+                  ) : (
+                    <Button size="sm" variant="ghost" onClick={() => setDeleteConfirmId(profile.id)}>删除</Button>
+                  )}
                 </div>
                 <ProbeResult probeId={probeIds[`${profile.id}:connectivity`]} />
                 {hasModel && <ProbeResult probeId={probeIds[`${profile.id}:model`]} />}

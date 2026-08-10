@@ -102,6 +102,42 @@ export function getEmployeeExecutorProfile(db: DB, employeeId: string): Executor
   return row.executor_profile_id ? getExecutorProfile(db, row.executor_profile_id) : null;
 }
 
+/** 阶段二任务 2.2：更新执行器档案（名称/配置/凭据引用/并发模式）。 */
+export function updateExecutorProfile(
+  db: DB,
+  id: string,
+  patch: { name?: string; config?: Record<string, unknown>; credentialRef?: CredentialReference; concurrencyMode?: ExecutorConcurrency },
+): ExecutorProfile {
+  const cur = getExecutorProfile(db, id);
+  const nextName = patch.name?.trim() || cur.name;
+  if (!nextName) throw new AppError(ErrorCode.VALIDATION, '执行器档案名称不能为空');
+  if (patch.config !== undefined) assertNoSecretValues(patch.config);
+  if (patch.credentialRef && !/^[A-Z][A-Z0-9_]*$/.test(patch.credentialRef.reference) && patch.credentialRef.kind === 'env') {
+    throw new AppError(ErrorCode.VALIDATION, '环境变量凭据引用格式无效');
+  }
+  db.prepare(
+    `UPDATE executor_profile SET name=?, config_json=?, credential_ref_json=?, concurrency_mode=?, updated_at=? WHERE id=?`,
+  ).run(
+    nextName,
+    JSON.stringify(patch.config ?? cur.config),
+    JSON.stringify(patch.credentialRef ?? cur.credentialRef),
+    patch.concurrencyMode ?? cur.concurrencyMode,
+    nowIso(),
+    id,
+  );
+  return getExecutorProfile(db, id);
+}
+
+/** 阶段二任务 2.2：删除执行器档案（先解除所有员工绑定引用）。 */
+export function deleteExecutorProfile(db: DB, id: string): void {
+  getExecutorProfile(db, id);
+  // 解除员工绑定（executor_profile_id 置空），避免悬挂引用
+  db.prepare('UPDATE company_employee SET executor_profile_id=NULL, updated_at=? WHERE executor_profile_id=?')
+    .run(nowIso(), id);
+  db.prepare('DELETE FROM connection_probe WHERE executor_profile_id=?').run(id);
+  db.prepare('DELETE FROM executor_profile WHERE id=?').run(id);
+}
+
 export function createExecutionRun(db: DB, input: { executorProfileId: string; employeeId: string; projectId: string; taskId: string }): ExecutionRun {
   const profile = getExecutorProfile(db, input.executorProfileId);
   const manifest = getExecutorManifest(profile.manifestId);

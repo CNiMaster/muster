@@ -178,7 +178,8 @@ export function SettingsPage(): React.ReactElement {
         <details className="details-collapse">
           <summary>Provider 与 API 默认值</summary>
           <div className="form-stack">
-            <p className="muted">API Key 只从环境变量读取，不在此处保存明文。</p>
+            <p className="muted">API Key 只从环境变量读取，不在此处保存明文。多供应商/多模型档案请在「执行器接入中心」创建，此处仅作为快速入门默认值。</p>
+            <div className="settings-primary-actions"><Link to="/executors">打开执行器接入中心</Link></div>
             <div className="settings-field-grid">
               <Field label="OpenAI 默认 baseURL">
                 <Input value={openaiBaseURL} onChange={(event) => setOpenaiBaseURL(event.target.value)} placeholder="https://api.openai.com/v1" />

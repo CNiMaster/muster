@@ -4,7 +4,7 @@ import { getDb } from '../db/client';
 import { asyncHandler, param } from './middleware';
 import { BUILTIN_EXECUTOR_MANIFESTS } from '../executors/manifests';
 import { bindDetectedSystemExecutor, detectSystemExecutor, testExecutorProfileConnection } from '../domain/executor-discovery';
-import { bindEmployeeExecutorProfile, createExecutorProfile, listExecutorProfiles } from '../domain/executor-profile';
+import { bindEmployeeExecutorProfile, createExecutorProfile, deleteExecutorProfile, listExecutorProfiles, updateExecutorProfile } from '../domain/executor-profile';
 import{getConnectionProbe,startConnectionProbe}from'../domain/connection-probe';
 import { ClaudeSetupGenerator } from '../domain/setup-assistant';
 import { generateCliProposal } from '../domain/cli-assistant';
@@ -87,6 +87,23 @@ executorsRouter.get('/profiles', asyncHandler(async (_req,res)=>{
   })));
 }));
 executorsRouter.post('/profiles', asyncHandler(async (req,res)=>{const input=z.object({name:z.string().min(1),manifestId:z.string(),config:z.record(z.unknown()).optional(),credentialRef:z.object({kind:z.enum(['env','keychain','cli-login','encrypted-local']),reference:z.string().min(1)}).optional(),install:z.record(z.unknown()).optional(),concurrencyMode:z.enum(['parallel','profile-serial','global-serial']).optional()}).parse(req.body);res.status(201).json(createExecutorProfile(getDb(),input));}));
+
+// 阶段二任务 2.2：更新执行器档案（名称/配置/凭据/并发模式）
+executorsRouter.put('/profiles/:id', asyncHandler(async (req,res)=>{
+  const input = z.object({
+    name: z.string().min(1).optional(),
+    config: z.record(z.unknown()).optional(),
+    credentialRef: z.object({ kind: z.enum(['env','keychain','cli-login','encrypted-local']), reference: z.string().min(1) }).optional(),
+    concurrencyMode: z.enum(['parallel','profile-serial','global-serial']).optional(),
+  }).parse(req.body);
+  res.json(updateExecutorProfile(getDb(), param(req, 'id'), input));
+}));
+
+// 阶段二任务 2.2：删除执行器档案（解除员工绑定 + 清理探针记录）
+executorsRouter.delete('/profiles/:id', asyncHandler(async (req,res)=>{
+  deleteExecutorProfile(getDb(), param(req, 'id'));
+  res.json({ ok: true });
+}));
 executorsRouter.put('/employees/:employeeId/profile/:executorProfileId', asyncHandler(async (req,res)=>{bindEmployeeExecutorProfile(getDb(),param(req,'employeeId'),param(req,'executorProfileId'));res.json({ok:true});}));
 executorsRouter.post('/:manifestId/detect', asyncHandler(async (req,res)=>res.json(await detectSystemExecutor(param(req,'manifestId')))));
 executorsRouter.post('/:manifestId/bind-system', asyncHandler(async (req,res)=>{const profile=await bindDetectedSystemExecutor(getDb(),param(req,'manifestId'));startConnectionProbe(getDb(),{profileId:profile.id,force:false,kind:'connectivity'});res.status(201).json(profile);}));
