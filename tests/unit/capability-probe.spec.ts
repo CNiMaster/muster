@@ -35,7 +35,9 @@ describe('runApiCapabilityProbe (openai 兼容)', () => {
     expect(result.instructionLevel).toBe('high');
     expect(result.supportedTasks).toContain('多轮工具调用（文件操作闭环）');
     expect(result.unsupportedTasks).toContain('执行命令（安装依赖 / 运行测试 / 构建）');
-    expect(result.note).toContain('无命令执行能力');
+    // 阶段二任务 2.3：全能力模型判定为具备命令执行能力（不再固定提示无命令）
+    expect(result.note).toContain('具备命令执行能力');
+    expect(result.note).not.toContain('无命令执行能力');
     // 验证请求 URL/headers
     expect(fetchMock.mock.calls[0][0]).toBe('https://api.test/v1/chat/completions');
     expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe('Bearer sk-test');

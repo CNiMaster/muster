@@ -68,6 +68,7 @@ import { ensureApprovalRequest, evaluatePermission, getEmployeePermissionPolicy 
 import { getActiveWorkspace } from '../domain/workspace';
 import { ensureProjectTaskThread, setProjectTaskThreadSession } from '../domain/project-task-thread';
 import { selectTieredExecutorProfile } from '../domain/executor-tier';
+import { hasCommandCapability } from '../domain/capability-probe';
 import{SessionManager}from'../domain/session-manager';
 import{approvalBroker}from'../domain/approval-broker';
 import { classifyRunFailure, RunFailure, RunWatchdog } from './run-watchdog';
@@ -489,15 +490,21 @@ export class TaskEngine {
         sessionIdHint: ctx.sessionIdHint,
         loopback: ctx.loopback,
         executorKind,
+        // 阶段二任务 2.3：API 型按能力探针真实结果判定命令能力，不再一刀切禁用
+        executorHasCommandCapability: executorProfile
+          ? hasCommandCapability(this.db, executorProfile.id, executorKind)
+          : undefined,
         lightweight: (task.inputProtocol as Record<string, unknown>)?.lightweight === true,
       });
       ctx.systemPrompt = assembled.systemPrompt;
       ctx.inputPacket = Object.keys(projectTaskThread.handoff).length?{...assembled.inputPacket,sessionHandoff:projectTaskThread.handoff}:assembled.inputPacket;
-      // 设计一-3：API 型执行器执行需要 CLI 的任务时，发软提示事件（不阻断派发）
+      // 设计一-3：API 型执行器执行需要 CLI 的任务时，发软提示事件（不阻断派发）。
+      // 阶段二任务 2.3：具备命令能力的 API 执行器不再发"无法使用"警告。
       if (executorKind === 'api') {
         try {
           const skillsRequiringCli = assembled.loadedSkillsRequiringCli;
-          if (skillsRequiringCli.length > 0) {
+          const hasCmd = executorProfile ? hasCommandCapability(this.db, executorProfile.id, executorKind) : false;
+          if (!hasCmd && skillsRequiringCli.length > 0) {
             realtime.publish(makeLifecycleEvent('executor.capability-warning', {
               taskId: task.id, projectTaskId: task.projectTaskId, threadId: projectTaskThread.id,
               message: `当前为 API 执行器，以下技能需要命令执行能力但无法使用：${skillsRequiringCli.join('、')}（建议连接 CLI 执行器以获得完整能力）`,

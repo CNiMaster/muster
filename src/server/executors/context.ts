@@ -67,6 +67,8 @@ export function assembleContext(
     loopback?: { baseUrl: string; taskId: string };
     /** 执行器类型：API 型无命令执行能力，桥接提示按此分化。 */
     executorKind?: 'cli' | 'api';
+    /** 阶段二任务 2.3：API 型执行器是否具备命令执行能力（由能力探针判定）。undefined = 不按此分化。 */
+    executorHasCommandCapability?: boolean;
     /** 轻量模式（咨询/讨论发言）：只注入身份/议题/职责/契约，跳过素材/技能/记忆/验收等大段上下文。 */
     lightweight?: boolean;
   } = {},
@@ -159,12 +161,20 @@ export function assembleContext(
     const capabilityCenter = buildCapabilityCenterSection(toolRecommendations);
     if (capabilityCenter) sp.push(capabilityCenter, '');
   }
-  // 设计一-3：执行器能力边界提示（API 型无 Bash；任务加载了需要 CLI 的 skill 时明确告知）
+  // 设计一-3：执行器能力边界提示（API 型按能力探针真实结果分化；具备命令能力的 API 不再被引导禁用 run_command）
   if (options.executorKind === 'api') {
     const cliOnlySkills = loadedSkills
       .map((skill) => skill.skillId)
       .filter((skillId) => REQUIRES_CLI_SKILLS.has(skillId));
-    if (cliOnlySkills.length > 0) {
+    if (options.executorHasCommandCapability === true) {
+      // 能力探针显示 function calling + 工具循环完整：允许使用 run_command，只提示沙盒边界
+      sp.push(
+        '# 执行器能力边界提示',
+        '当前为 API 型执行器，但能力探针显示你具备命令执行能力（function calling + 工具循环完整）。',
+        '你可以调用 run_command 在沙盒内执行命令（如 npm test、git status），命令会经过黑名单与权限审批；只读目录不可写入。',
+        '',
+      );
+    } else if (cliOnlySkills.length > 0) {
       sp.push(
         '# 执行器能力边界提示',
         `当前为 API 型执行器，没有命令执行能力。以下技能依赖命令执行（测试/构建/git 等），你只能完成其中的设计/分析/编写部分，无法真正运行：${cliOnlySkills.join('、')}`,

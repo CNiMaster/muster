@@ -10,6 +10,41 @@
  * 无副作用：只发 HTTP 请求，不碰文件。
  */
 import { PROVIDER_DEFAULT_API_KEY_ENV, PROVIDER_DEFAULT_BASE_URL, PROVIDER_DEFAULT_MODEL, type Provider } from '../executors/provider';
+import type { DB } from '../db/client';
+
+/** 读取某执行器档案最新的能力探针结果（无有效结果返回 null）。 */
+export function getCapabilityProbeForProfile(db: DB, executorProfileId: string): CapabilityProbeResult | null {
+  const row = db
+    .prepare(
+      `SELECT capability_json FROM connection_probe
+       WHERE executor_profile_id=? AND kind='capability' AND status='connected' AND capability_json IS NOT NULL
+       ORDER BY completed_at DESC, id DESC LIMIT 1`,
+    )
+    .get(executorProfileId) as { capability_json: string } | undefined;
+  if (!row) return null;
+  try {
+    return JSON.parse(row.capability_json) as CapabilityProbeResult;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 判定执行器是否具备命令执行能力（阶段二任务 2.3）：
+ * - CLI 型天然具备（manifest kind 非 api）。
+ * - API 型按能力探针真实结果：function calling + 工具循环完整才算具备；
+ *   未探过或探针失败一律视为不具备（保持保守）。
+ */
+export function hasCommandCapability(
+  db: DB,
+  executorProfileId: string | null,
+  manifestKind: 'cli' | 'api' | undefined,
+): boolean {
+  if (manifestKind !== 'api') return true;
+  if (!executorProfileId) return false;
+  const probe = getCapabilityProbeForProfile(db, executorProfileId);
+  return Boolean(probe?.functionCalling && probe.toolLoop);
+}
 
 export interface CapabilityProbeResult {
   functionCalling: boolean;
@@ -210,7 +245,12 @@ export async function runApiCapabilityProbe(opts: ApiCapabilityProbeOptions): Pr
   if (functionCalling && !toolLoop) noteParts.push('支持函数调用但工具结果回填后无法继续收敛，长任务可能中途终止');
   if (!structuredOutput) noteParts.push('不支持结构化输出约束，最终结果可能不是合法 JSON');
   if (instructionLevel === 'low') noteParts.push('指令遵循能力弱，建议换更强模型或连接 CLI');
-  noteParts.push('无命令执行能力：测试 / 构建 / 安装依赖 / git 操作需连接 CLI 执行器（Codex CLI / Claude Code CLI 等）');
+  // 阶段二任务 2.3：按真实能力推导命令执行结论，不再固定写"无命令执行能力"
+  if (functionCalling && toolLoop) {
+    noteParts.push('具备命令执行能力（function calling + 工具循环完整），可调用 run_command 在沙盒内执行命令（经过黑名单与权限审批）');
+  } else {
+    noteParts.push('无命令执行能力：测试 / 构建 / 安装依赖 / git 操作需连接 CLI 执行器（Codex CLI / Claude Code CLI 等）');
+  }
   return {
     functionCalling,
     toolLoop,
