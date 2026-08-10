@@ -23,6 +23,8 @@ import { clockIn } from '../../src/server/domain/company';
 import { TaskEngine } from '../../src/server/task-engine/engine';
 import { FakeExecutor } from '../../src/server/task-engine/fake-executor';
 import { getProjectTaskThread } from '../../src/server/domain/project-task-thread';
+import { createExecutorProfile } from '../../src/server/domain/executor-profile';
+import { setSetting } from '../../src/server/domain/setting';
 import { ensureGitRepo, commitAll } from '../../src/server/worktree/manager';
 import { listArtifacts } from '../../src/server/domain/artifact';
 import { summarizeProjectUsage } from '../../src/server/domain/usage';
@@ -672,5 +674,37 @@ describe('engine → worktree → publish wiring', () => {
     expect(ran).toBe(false);
     expect(fake.callCount).toBe(0);
     expect(listTasks(db, project.id)[0].state).toBe('queued');
+  });
+
+  it('员工未绑定时按任务标签走三级默认执行器（阶段二任务 2.1）', async () => {
+    const r = createNovelCompany(db, { name: 'co' });
+    clockIn(db, r.company.id);
+    const project = createProject(db, {
+      companyId: r.company.id,
+      name: 'novel',
+      rootDir: projectRoot,
+      firstAgentId: r.agents.lead.id,
+      initialState: 'active',
+    });
+    ensureGitRepo(projectRoot);
+    writeFileSync(path.join(projectRoot, 'README.md'), '#\n');
+    commitAll(projectRoot, 'baseline');
+
+    // 配置三级默认：primary/secondary/tertiary 各一个 profile
+    const primary = createExecutorProfile(db, { name: '主力', manifestId: 'claude-code-cli', config: { binaryPath: '/usr/local/bin/claude' } });
+    const secondary = createExecutorProfile(db, { name: '标准', manifestId: 'openai-compatible-api', config: { model: 'deepseek-chat' } });
+    const tertiary = createExecutorProfile(db, { name: '小活', manifestId: 'gemini-api', config: { model: 'gemini-2.0-flash' } });
+    setSetting(db, 'executor_tier_primary_id', primary.id);
+    setSetting(db, 'executor_tier_secondary_id', secondary.id);
+    setSetting(db, 'executor_tier_tertiary_id', tertiary.id);
+
+    const thread = ensurePrimaryThread(db, project.id, r.agents.writer.id);
+    // 标准任务 → secondary
+    createTask(db, { projectId: project.id, assigneeAgentId: r.agents.writer.id, title: '普通写作任务' });
+    const fake = new FakeExecutor().script([]);
+    const engine = new TaskEngine(db, fake);
+    await engine.pumpThread(thread.id);
+    const run = db.prepare('SELECT executor_profile_id FROM execution_run ORDER BY created_at DESC LIMIT 1').get() as { executor_profile_id: string } | undefined;
+    expect(run?.executor_profile_id).toBe(secondary.id);
   });
 });

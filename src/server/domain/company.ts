@@ -29,6 +29,10 @@ export interface Company {
   archivedReason: string | null;
   /** 业务审批模式：blocking | parallel。 */
   reviewMode: 'blocking' | 'parallel';
+  /** 阶段二任务 2.1：公司级三级默认执行器 profile id（NULL = 继承全局 system_settings）。 */
+  executorTierPrimaryId: string | null;
+  executorTierSecondaryId: string | null;
+  executorTierTertiaryId: string | null;
 }
 
 interface CompanyRow {
@@ -44,6 +48,9 @@ interface CompanyRow {
   archived_at: string | null;
   archived_reason: string | null;
   review_mode: string | null;
+  executor_tier_primary_id: string | null;
+  executor_tier_secondary_id: string | null;
+  executor_tier_tertiary_id: string | null;
 }
 
 function fromRow(r: CompanyRow): Company {
@@ -60,6 +67,9 @@ function fromRow(r: CompanyRow): Company {
     archivedAt: r.archived_at,
     archivedReason: r.archived_reason,
     reviewMode: (r.review_mode === 'parallel' ? 'parallel' : 'blocking'),
+    executorTierPrimaryId: r.executor_tier_primary_id ?? null,
+    executorTierSecondaryId: r.executor_tier_secondary_id ?? null,
+    executorTierTertiaryId: r.executor_tier_tertiary_id ?? null,
   };
 }
 

@@ -36,6 +36,10 @@ settingsRouter.post(
       openaiBaseURL: z.string().max(500).optional(),
       openaiModel: z.string().max(200).optional(),
       geminiModel: z.string().max(200).optional(),
+      // 阶段二任务 2.1：三级默认执行器 profile id（空串 = 未配置）
+      executorTierPrimaryId: z.string().max(100).optional(),
+      executorTierSecondaryId: z.string().max(100).optional(),
+      executorTierTertiaryId: z.string().max(100).optional(),
     });
     const input = schema.parse(req.body);
     const db = getDb();

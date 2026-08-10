@@ -18,6 +18,10 @@ export interface SystemSettings {
   openaiModel: string;
   /** Gemini 默认模型。 */
   geminiModel: string;
+  /** 阶段二任务 2.1：三级默认执行器 profile id（primary 大活 / secondary 标准 / tertiary 小活）。空 = 未配置。 */
+  executorTierPrimaryId: string;
+  executorTierSecondaryId: string;
+  executorTierTertiaryId: string;
 }
 
 export function getSetting(db: DB, key: string, defaultValue: string): string {
@@ -45,6 +49,9 @@ export function getSystemSettings(db: DB): SystemSettings {
     openaiBaseURL: getSetting(db, 'openai_base_url', PROVIDER_DEFAULT_BASE_URL.openai!),
     openaiModel: getSetting(db, 'openai_model', PROVIDER_DEFAULT_MODEL.openai),
     geminiModel: getSetting(db, 'gemini_model', PROVIDER_DEFAULT_MODEL.gemini),
+    executorTierPrimaryId: getSetting(db, 'executor_tier_primary_id', ''),
+    executorTierSecondaryId: getSetting(db, 'executor_tier_secondary_id', ''),
+    executorTierTertiaryId: getSetting(db, 'executor_tier_tertiary_id', ''),
   };
 }
 
@@ -76,5 +83,14 @@ export function saveSystemSettings(db: DB, settings: Partial<SystemSettings>): v
   }
   if (settings.geminiModel !== undefined) {
     setSetting(db, 'gemini_model', settings.geminiModel);
+  }
+  if (settings.executorTierPrimaryId !== undefined) {
+    setSetting(db, 'executor_tier_primary_id', settings.executorTierPrimaryId);
+  }
+  if (settings.executorTierSecondaryId !== undefined) {
+    setSetting(db, 'executor_tier_secondary_id', settings.executorTierSecondaryId);
+  }
+  if (settings.executorTierTertiaryId !== undefined) {
+    setSetting(db, 'executor_tier_tertiary_id', settings.executorTierTertiaryId);
   }
 }

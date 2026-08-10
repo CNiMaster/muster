@@ -66,7 +66,8 @@ import { resolveExecutorCredentialEnv } from '../domain/credential-store';
 import { buildRunIsolation, withExecutorConcurrency } from '../executors/run-isolation';
 import { ensureApprovalRequest, evaluatePermission, getEmployeePermissionPolicy } from '../domain/permission';
 import { getActiveWorkspace } from '../domain/workspace';
-import {ensureProjectTaskThread,setProjectTaskThreadSession} from '../domain/project-task-thread';
+import { ensureProjectTaskThread, setProjectTaskThreadSession } from '../domain/project-task-thread';
+import { selectTieredExecutorProfile } from '../domain/executor-tier';
 import{SessionManager}from'../domain/session-manager';
 import{approvalBroker}from'../domain/approval-broker';
 import { classifyRunFailure, RunFailure, RunWatchdog } from './run-watchdog';
@@ -287,7 +288,10 @@ export class TaskEngine {
       });
       checkBudget(this.db, project.id, task.budget);
 
-      const executorProfile = getEmployeeExecutorProfile(this.db, agent.id);
+      const boundProfile = getEmployeeExecutorProfile(this.db, agent.id);
+      // 阶段二任务 2.1：员工未显式绑定执行器时，按任务标签走三级默认（公司级 > 全局级）。
+      // 绑定的优先级高于三级默认（绑定 = 固定执行器，不参与路由）。
+      const executorProfile = boundProfile ?? selectTieredExecutorProfile(this.db, task, company.id);
       const projectTaskThread=ensureProjectTaskThread(this.db,{projectTaskId:task.projectTaskId,employeeId:agent.id,executorProfileId:executorProfile?.id??null});
       bindTaskToProjectTaskThread(this.db,task.id,projectTaskThread.id);
       const executionRun = executorProfile ? createExecutionRun(this.db, {

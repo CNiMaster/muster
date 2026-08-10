@@ -1,6 +1,6 @@
 import type React from 'react';
 import { useEffect, useState } from 'react';
-import { useSaveSystemSettings, useSystemSettings, useTestConnection, useTools, useSyncTools, useUpdateTool } from '../hooks/queries';
+import { useSaveSystemSettings, useSystemSettings, useTestConnection, useTools, useSyncTools, useUpdateTool, useExecutorProfiles } from '../hooks/queries';
 import { Badge } from '../components/Badge';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
@@ -14,6 +14,7 @@ export function SettingsPage(): React.ReactElement {
   const { data: settings, isLoading } = useSystemSettings();
   const saveSettings = useSaveSystemSettings();
   const testConnection = useTestConnection();
+  const { data: executorProfiles } = useExecutorProfiles();
   // 注意：所有 hook（含 useSearchParams）必须在任何早期 return 之前调用，
   // 否则 React 会抛 "Rendered fewer hooks than expected"。
   const [searchParams] = useSearchParams();
@@ -28,6 +29,9 @@ export function SettingsPage(): React.ReactElement {
   const [openaiBaseURL, setOpenaiBaseURL] = useState('https://api.openai.com/v1');
   const [openaiModel, setOpenaiModel] = useState('gpt-4o');
   const [geminiModel, setGeminiModel] = useState('gemini-2.0-flash');
+  const [tierPrimary, setTierPrimary] = useState('');
+  const [tierSecondary, setTierSecondary] = useState('');
+  const [tierTertiary, setTierTertiary] = useState('');
   const [testResult, setTestResult] = useState<any | null>(null);
 
   useEffect(() => {
@@ -41,6 +45,9 @@ export function SettingsPage(): React.ReactElement {
     setOpenaiBaseURL(settings.openaiBaseURL ?? 'https://api.openai.com/v1');
     setOpenaiModel(settings.openaiModel ?? 'gpt-4o');
     setGeminiModel(settings.geminiModel ?? 'gemini-2.0-flash');
+    setTierPrimary(settings.executorTierPrimaryId ?? '');
+    setTierSecondary(settings.executorTierSecondaryId ?? '');
+    setTierTertiary(settings.executorTierTertiaryId ?? '');
   }, [settings]);
 
   const handleSave = (): void => {
@@ -49,7 +56,7 @@ export function SettingsPage(): React.ReactElement {
       return;
     }
     saveSettings.mutate(
-      { claudeBin, model, skipPermissions, timeoutMs, maxToolCalls, defaultProvider, openaiBaseURL, openaiModel, geminiModel },
+      { claudeBin, model, skipPermissions, timeoutMs, maxToolCalls, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierPrimaryId: tierPrimary, executorTierSecondaryId: tierSecondary, executorTierTertiaryId: tierTertiary },
       {
         onSuccess: () => toast('success', '系统设置已保存并实时生效'),
         onError: (error: any) => toast('error', error.message ?? '保存设置失败'),
@@ -105,6 +112,32 @@ export function SettingsPage(): React.ReactElement {
             <strong>{providerLabels[defaultProvider] ?? defaultProvider}</strong>
             <span className="muted">{testResult ? (testResult.overallSuccess ? '最近测试成功' : '最近测试失败') : '运行测试以确认配置'}</span>
           </div>
+        </div>
+        <div className="settings-tier-grid">
+          <Field label="大活默认执行器" hint="复杂/需要命令执行的任务（未配置时自动降级）">
+            <Select value={tierPrimary} onChange={(event) => setTierPrimary(event.target.value)}>
+              <option value="">未配置（继承默认执行器）</option>
+              {(executorProfiles ?? []).map((profile) => (
+                <option key={profile.id} value={profile.id}>{profile.name}{profile.connection?.status === 'connected' ? ' ✓' : profile.connection ? ' ⚠' : ''}</option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="标准默认执行器" hint="普通任务">
+            <Select value={tierSecondary} onChange={(event) => setTierSecondary(event.target.value)}>
+              <option value="">未配置（继承默认执行器）</option>
+              {(executorProfiles ?? []).map((profile) => (
+                <option key={profile.id} value={profile.id}>{profile.name}{profile.connection?.status === 'connected' ? ' ✓' : profile.connection ? ' ⚠' : ''}</option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="小活默认执行器" hint="讨论/咨询/轻量任务（低成本模型）">
+            <Select value={tierTertiary} onChange={(event) => setTierTertiary(event.target.value)}>
+              <option value="">未配置（继承默认执行器）</option>
+              {(executorProfiles ?? []).map((profile) => (
+                <option key={profile.id} value={profile.id}>{profile.name}{profile.connection?.status === 'connected' ? ' ✓' : profile.connection ? ' ⚠' : ''}</option>
+              ))}
+            </Select>
+          </Field>
         </div>
         <div className="settings-primary-actions">
           <Button variant="ghost" onClick={handleTest} loading={testConnection.isPending}>运行连接测试</Button>

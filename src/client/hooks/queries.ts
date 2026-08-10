@@ -1410,6 +1410,9 @@ export function useSaveSystemSettings() {
       openaiBaseURL?: string;
       openaiModel?: string;
       geminiModel?: string;
+      executorTierPrimaryId?: string;
+      executorTierSecondaryId?: string;
+      executorTierTertiaryId?: string;
     }) => api.post<any>('/api/settings', settings),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['systemSettings'] });
