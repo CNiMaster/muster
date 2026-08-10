@@ -29,10 +29,15 @@ describe('setup assistant', () => {
         skills: ['proofreading'],
         tools: [],
         contactRoles: ['writer'],
+        // 阶段三任务 3.2：AI 生成完整提示词
+        soul: '你是润色员，专注于章节语言统一与文风一致。',
+        principles: ['以文风锚点为基准', '改动最小化', '保留作者语气'],
+        capabilities: { skills: ['proofreading', 'styling'], tools: [] },
       }),
     );
     expect(result.source).toBe('claude');
     expect(result.proposal.role).toBe('editor');
+    expect(result.proposal.soul).toContain('润色员');
     expect(result.warning).toBeUndefined();
   });
 

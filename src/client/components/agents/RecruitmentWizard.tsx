@@ -2,9 +2,10 @@ import type React from 'react';
 import { useMemo, useState } from 'react';
 import type { AgentProfile, Department } from '../../api/types';
 import type { ExecutorProfileDTO, PermissionPolicyDTO } from '../../hooks/queries';
+import { useGenerateAgentProposal } from '../../hooks/queries';
 import { ROLE_TEMPLATES, type RecruitmentDraft, type RecruitmentSource } from '../../../shared/role-templates';
 import { Badge } from '../Badge';
-import { Button } from '../Button';
+import { Button, toast } from '../Button';
 import { Card } from '../Card';
 import { Field, Input, Select, Textarea } from '../Form';
 
@@ -34,6 +35,9 @@ export function RecruitmentWizard({
   const [executorProfileId, setExecutorProfileId] = useState('');
   const [permissionPolicyId, setPermissionPolicyId] = useState('');
   const [reviewing, setReviewing] = useState(false);
+  // 阶段三任务 3.2：AI 智能填充（new-profile 分支）
+  const [aiCapabilities, setAiCapabilities] = useState<{ skills: string[]; tools: string[] }>({ skills: [], tools: [] });
+  const generateProposal = useGenerateAgentProposal();
 
   const chooseSource = (next: RecruitmentSource): void => {
     setSource(next);
@@ -56,13 +60,34 @@ export function RecruitmentWizard({
     const selected = profiles.find((profile) => profile.id === id);
     if (selected) setDisplayName(selected.displayName);
   };
+  // 阶段三任务 3.2：AI 根据名称+职责生成完整提示词并回填
+  const aiFill = async (): Promise<void> => {
+    if (!displayName.trim()) {
+      toast('error', '请先填写员工名称');
+      return;
+    }
+    try {
+      const result = await generateProposal.mutateAsync({
+        name: displayName.trim(),
+        duty: responsibilities.trim(),
+        existingRoles: profiles.map((p) => p.displayName),
+      });
+      const proposal = result.proposal;
+      setRole(proposal.role || role);
+      setResponsibilities(proposal.responsibilities || responsibilities);
+      if (proposal.capabilities) setAiCapabilities(proposal.capabilities);
+      toast('success', '已按 AI 建议填充岗位与职责，可继续微调');
+    } catch (error) {
+      toast('error', (error as Error).message ?? 'AI 填充失败');
+    }
+  };
   const draft: RecruitmentDraft = {
     source,
     profileId: source === 'reuse-profile' ? profileId : undefined,
     displayName,
     role,
     responsibilities,
-    capabilities: source === 'role-template' ? { skills: template.skills, tools: template.tools } : { skills: [], tools: [] },
+    capabilities: source === 'role-template' ? { skills: template.skills, tools: template.tools } : aiCapabilities,
     departmentId: departmentId || null,
     executorProfileId: executorProfileId || null,
     permissionPolicyId: permissionPolicyId || null,
@@ -88,7 +113,16 @@ export function RecruitmentWizard({
     {source === 'reuse-profile' && <Field label="员工档案"><Select value={profileId} onChange={(event) => selectProfile(event.target.value)}><option value="">请选择</option>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.displayName}</option>)}</Select></Field>}
     {source !== 'reuse-profile' && <Field label="员工名称"><Input value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></Field>}
     <Field label="本公司岗位"><Input value={role} onChange={(event) => setRole(event.target.value)} /></Field>
-    <Field label="岗位职责"><Textarea value={responsibilities} onChange={(event) => setResponsibilities(event.target.value)} /></Field>
+    <Field label="岗位职责">
+      <div className="form-row">
+        <Textarea value={responsibilities} onChange={(event) => setResponsibilities(event.target.value)} />
+        {source === 'new-profile' && (
+          <Button variant="ghost" size="sm" onClick={() => void aiFill()} loading={generateProposal.isPending} disabled={!displayName.trim()}>
+            ✨ AI 智能填充
+          </Button>
+        )}
+      </div>
+    </Field>
     <div className="form-row">
       <Field label="所属部门"><Select value={departmentId} onChange={(event) => setDepartmentId(event.target.value)}><option value="">未分配</option>{departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}</Select></Field>
       <Field label="固定执行器"><Select value={executorProfileId} onChange={(event) => setExecutorProfileId(event.target.value)}><option value="">请选择</option>{executors.map((executor) => <option key={executor.id} value={executor.id}>{executor.name}</option>)}</Select></Field>

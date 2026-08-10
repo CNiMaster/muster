@@ -9,7 +9,7 @@ import type React from 'react';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ROLE_TEMPLATES, type RoleTemplate } from '../../shared/role-templates';
-import { useAgentProfiles, useCompanies, useCreateAgentProfile, useRecruitFromDraft, usePersonas, usePersonaDomains } from '../hooks/queries';
+import { useAgentProfiles, useCompanies, useCreateAgentProfile, useRecruitFromDraft, usePersonas, usePersonaDomains, useGenerateAgentProposal } from '../hooks/queries';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
 import { Badge } from '../components/Badge';
@@ -39,6 +39,8 @@ export function AgentLibraryPage(): React.ReactElement {
   const [personaQ, setPersonaQ] = useState('');
   const { data: personaDomains } = usePersonaDomains();
   const { data: personas } = usePersonas(personaDomain || undefined, personaQ || undefined);
+  // 阶段三任务 3.2：AI 智能填充空白创建
+  const generateProposal = useGenerateAgentProposal();
   const existingNames = useMemo(() => new Set((profiles ?? []).map((item) => item.displayName)), [profiles]);
 
   const filtered = useMemo(() => {
@@ -74,6 +76,21 @@ export function AgentLibraryPage(): React.ReactElement {
     }
     await createProfile.mutateAsync({ displayName: persona.name, personaId: persona.id });
     toast('success', `已添加专家「${persona.name}」，提示词已自动填充`);
+  };
+
+  // 阶段三任务 3.2：AI 生成空白创建的提示词
+  const aiFill = async (): Promise<void> => {
+    if (!displayName.trim()) {
+      toast('error', '请先填写员工名称');
+      return;
+    }
+    try {
+      const result = await generateProposal.mutateAsync({ name: displayName.trim(), duty: soul.trim() });
+      setSoul(result.proposal.soul);
+      toast('success', '已按 AI 建议填充稳定身份 / 工作原则，可继续微调');
+    } catch (error) {
+      toast('error', (error as Error).message ?? 'AI 填充失败');
+    }
   };
 
   return (
@@ -134,7 +151,8 @@ export function AgentLibraryPage(): React.ReactElement {
           <Field label="稳定身份 / 工作原则">
             <Textarea value={soul} onChange={(event) => setSoul(event.target.value)} placeholder="可选；稍后仍可在员工档案中设置" />
           </Field>
-          <div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Button variant="ghost" onClick={() => void aiFill()} loading={generateProposal.isPending} disabled={!displayName.trim()}>✨ AI 智能填充</Button>
             <Button onClick={submit} disabled={!displayName.trim()} loading={createProfile.isPending}>创建员工</Button>
           </div>
         </div>

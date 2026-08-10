@@ -32,6 +32,10 @@ const agentProposalSchema = z.object({
   skills: z.array(z.string()),
   tools: z.array(z.string()),
   contactRoles: z.array(z.string()),
+  // 阶段三任务 3.2：AI 生成完整员工提示词（soul/principles/capabilities）
+  soul: z.string().min(1),
+  principles: z.array(z.string()).min(1),
+  capabilities: z.object({ skills: z.array(z.string()), tools: z.array(z.string()) }),
 });
 export type AgentProposal = z.infer<typeof agentProposalSchema>;
 
@@ -132,12 +136,16 @@ export async function generateAgentProposal(
     skills: [],
     tools: [],
     contactRoles: [],
+    // 阶段三任务 3.2：离线兜底模板（与现有人才市场 profileInput 风格一致）
+    soul: `你是${input.name}。${input.duty || '按项目 Task 完成指定职责，并向派发者反馈可追踪结果'}。面对任务时先澄清目标，再给出可验证成果。`,
+    principles: ['围绕目标工作', '主动暴露风险', '用成果而不是过程证明完成'],
+    capabilities: { skills: [], tools: [] },
   };
   return generateWithFallback(
     'agent',
     generator,
     agentProposalSchema,
-    `为 Agent 员工“${input.name}”生成配置。用户期望职责：${input.duty}。现有岗位：${(input.existingRoles ?? []).join(', ')}。role 使用简短英文标识；职责聚焦；只建议确有必要的技能、工具和对接岗位。`,
+    `为 Agent 员工“${input.name}”生成配置。用户期望职责：${input.duty}。现有岗位：${(input.existingRoles ?? []).join(', ')}。role 使用简短英文标识；职责聚焦；只建议确有必要的技能、工具和对接岗位。另外生成：soul（一段稳定人格与工作方式描述，150 字以内）、principles（3-5 条工作原则）、capabilities（skills 为该岗位核心能力关键词，tools 为所需工具）。`,
     offline,
   );
 }

@@ -54,6 +54,10 @@ export interface AgentProposal {
   skills: string[];
   tools: string[];
   contactRoles: string[];
+  /** 阶段三任务 3.2：AI 生成的完整员工提示词。 */
+  soul: string;
+  principles: string[];
+  capabilities: { skills: string[]; tools: string[] };
 }
 export interface ProjectProposal {
   name: string;
