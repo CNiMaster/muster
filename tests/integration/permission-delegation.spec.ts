@@ -122,6 +122,27 @@ describe('权限委托链：申请→审批', () => {
     expect(() => approveChangeRequest(db, req.id, other)).toThrow(/审批人/);
   });
 
+  it('M-4：审批人未解析时（approverEmployeeId 为 null）不能批准/拒绝', () => {
+    // 无 org 边 + 公司无第一负责人 → resolveApprover 返回 null
+    db.prepare("UPDATE company SET state='off', first_agent_id=NULL WHERE id=?").run(companyId);
+    const loner = createAgent(db, {
+      companyId, name: '无负责人员工', role: 'temp', systemPrompt: '', skills: [], tools: [], permissions: {}, executor: {},
+    }).id;
+    db.prepare("UPDATE company SET state='online' WHERE id=?").run(companyId);
+    const req = createPermissionChangeRequest(db, {
+      companyId,
+      requesterEmployeeId: loner,
+      requestedScope: 'permanent',
+      reason: '想要',
+    });
+    expect(req.approverEmployeeId).toBeNull();
+    // 任何 approverId 都不能批准（此前 null 会短路守卫放行任意人）
+    expect(() => approveChangeRequest(db, req.id, loner)).toThrow(/未解析到审批人/);
+    expect(() => rejectChangeRequest(db, req.id, loner)).toThrow(/未解析到审批人/);
+    const after = db.prepare('SELECT state FROM permission_change_request WHERE id=?').get(req.id) as { state: string };
+    expect(after.state).toBe('pending');
+  });
+
   it('listPendingApprovals 列出待审批', () => {
     createPermissionChangeRequest(db, {
       companyId,

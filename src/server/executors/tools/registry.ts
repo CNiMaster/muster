@@ -237,7 +237,10 @@ async function listFilesHandler(call: ToolCall, ctx: ToolContext): Promise<ToolR
  *    自动进审批队列等用户确认。
  * 3. 工作目录隔离：spawn 的 cwd 固定为 ctx.workingDir，命令默认只能在该目录内操作。
  *
- * 不经 shell 解释（spawn 直接调 /bin/sh -c 限定为单条命令字符串，不做管道到第二条命令的注入）。
+ * Review 修复（M-5）：更正安全边界说明——命令经 `sh -c` 走完整 shell 解释，`;`、`&&`、`|`、`$(...)`、
+ * 反引号等拼接均有效；黑名单是正则匹配（可被变量拼接/$IFS/八进制等绕过），只作纵深防御的一层，
+ * 不是硬边界；cwd 也非真沙箱（子进程可 cd / 或读写用户权限内的任意路径）。高风险命令最终依赖
+ * permissionGuard 人工审批兜底。
  * 超时默认 60s，上限 5 分钟；stdout+stderr 截断到 16KB。
  */
 async function runCommandHandler(call: ToolCall, ctx: ToolContext): Promise<ToolResult> {

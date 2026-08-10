@@ -189,7 +189,12 @@ export function approveChangeRequest(db: DB, requestId: string, approverId: stri
     throw new AppError(ErrorCode.VALIDATION, `申请 ${requestId} 状态 ${req.state}，不可审批`);
   }
   // 校验审批人
-  if (req.approverEmployeeId && req.approverEmployeeId !== approverId) {
+  // Review 修复（M-4）：审批人未解析（approverEmployeeId 为 null，如公司无第一负责人且无 org 边）时
+  // 拒绝自动批准——原守卫用 `req.approverEmployeeId &&` 短路，null 时任何 approverId 都能批准（越权）。
+  if (!req.approverEmployeeId) {
+    throw new AppError(ErrorCode.UNAUTHORIZED, '该申请未解析到审批人，需用户人工处理');
+  }
+  if (req.approverEmployeeId !== approverId) {
     throw new AppError(ErrorCode.UNAUTHORIZED, '只有指定的审批人可批准此申请');
   }
   // 获取申请人的权限策略，生成规则
@@ -220,7 +225,11 @@ export function rejectChangeRequest(db: DB, requestId: string, approverId: strin
   if (req.state !== 'pending') {
     throw new AppError(ErrorCode.VALIDATION, `申请 ${requestId} 状态 ${req.state}，不可审批`);
   }
-  if (req.approverEmployeeId && req.approverEmployeeId !== approverId) {
+  // Review 修复（M-4）：与 approveChangeRequest 对齐——审批人未解析时拒绝，防止任意人拒绝/批准
+  if (!req.approverEmployeeId) {
+    throw new AppError(ErrorCode.UNAUTHORIZED, '该申请未解析到审批人，需用户人工处理');
+  }
+  if (req.approverEmployeeId !== approverId) {
     throw new AppError(ErrorCode.UNAUTHORIZED, '只有指定的审批人可拒绝此申请');
   }
   const now = nowIso();

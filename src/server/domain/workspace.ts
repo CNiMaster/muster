@@ -188,61 +188,109 @@ export function migrateWorkspace(db: DB, id: string, newRootDir: string): Migrat
     }
   }
 
-  // 1. 物理移动（跨文件系统 fallback 到复制+删除）。
-  //    注意顺序：先移动文件并校验完整，再更新 DB——若文件操作失败，DB 保持旧路径不变，
-  //    不会出现「DB 指向新路径但文件缺失」的不一致状态。
+  // Review 修复（M-6）：先标记 migrating 并记录目标路径——若此后进程中断（文件已移动而 DB 未提交），
+  // 启动时 recoverInterruptedMigrations 可依据标记补提路径更新，不再留下「文件在新目录、DB 指向旧路径」的孤儿。
+  db.prepare('UPDATE workspace SET status=?, migrate_target_dir=?, updated_at=? WHERE id=?')
+    .run('migrating', newRoot, nowIso(), id);
   let usedCopyFallback = false;
-  if (fs.existsSync(oldRoot)) {
-    try {
-      fs.mkdirSync(dirname(newRoot), { recursive: true });
-      fs.renameSync(oldRoot, newRoot);
-    } catch {
-      usedCopyFallback = true;
-      copyDirSync(oldRoot, newRoot);
-      // 复制完成后再删旧目录；若删除失败，文件双份存在但 DB 未更新（旧路径仍有效），
-      // 用户可手动清理旧目录，不影响一致性。
+  try {
+    // 1. 物理移动（跨文件系统 fallback 到复制+删除）。
+    //    注意顺序：先移动文件并校验完整，再更新 DB——若文件操作失败，DB 保持旧路径不变，
+    //    不会出现「DB 指向新路径但文件缺失」的不一致状态。
+    if (fs.existsSync(oldRoot)) {
       try {
-        fs.rmSync(oldRoot, { recursive: true, force: true });
-      } catch (rmErr) {
-        throw new AppError(
-          ErrorCode.INTERNAL,
-          `文件已复制到新位置，但删除旧目录失败：${(rmErr as Error).message}。请手动删除 ${oldRoot} 后重试。`,
-        );
+        fs.mkdirSync(dirname(newRoot), { recursive: true });
+        fs.renameSync(oldRoot, newRoot);
+      } catch {
+        usedCopyFallback = true;
+        copyDirSync(oldRoot, newRoot);
+        // 复制完成后再删旧目录；若删除失败，文件双份存在但 DB 未更新（旧路径仍有效），
+        // 用户可手动清理旧目录，不影响一致性。
+        try {
+          fs.rmSync(oldRoot, { recursive: true, force: true });
+        } catch (rmErr) {
+          throw new AppError(
+            ErrorCode.INTERNAL,
+            `文件已复制到新位置，但删除旧目录失败：${(rmErr as Error).message}。请手动删除 ${oldRoot} 后重试。`,
+          );
+        }
       }
+    } else {
+      // 旧目录不存在：仅登记新路径（可能是纯登记场景）
+      fs.mkdirSync(newRoot, { recursive: true });
     }
-  } else {
-    // 旧目录不存在：仅登记新路径（可能是纯登记场景）
-    fs.mkdirSync(newRoot, { recursive: true });
+
+    // 2. 文件完整性校验：确认新目录存在 + 所有项目目录物理文件确实存在（在 DB 更新前完成）。
+    if (!fs.existsSync(newRoot)) {
+      throw new AppError(ErrorCode.INTERNAL, `迁移后目标目录不存在：${newRoot}（文件可能未移动成功）`);
+    }
+    const projectDirs = db.prepare('SELECT root_dir FROM project').all() as Array<{ root_dir: string }>;
+    const missing = projectDirs
+      .map((p) => ({ old: p.root_dir, new: p.root_dir.replace(new RegExp(`^${escapeRegExp(oldRoot)}`), newRoot) }))
+      .filter((p) => !fs.existsSync(p.new))
+      .slice(0, 3);
+    if (missing.length > 0) {
+      throw new AppError(
+        ErrorCode.INTERNAL,
+        `迁移后 ${missing.length} 个项目目录不存在（如 ${missing.map((m) => m.new).join('、')}）。文件移动可能不完整，请检查磁盘空间或手动恢复。`,
+      );
+    }
+  } catch (fileError) {
+    // 文件移动/校验失败：DB 未改，恢复 normal 标记（无中断残留）
+    db.prepare("UPDATE workspace SET status='normal', migrate_target_dir=NULL, updated_at=? WHERE id=?").run(nowIso(), id);
+    throw fileError;
   }
 
-  // 2. 文件完整性校验：确认新目录存在 + 所有项目目录物理文件确实存在（在 DB 更新前完成）。
-  if (!fs.existsSync(newRoot)) {
-    throw new AppError(ErrorCode.INTERNAL, `迁移后目标目录不存在：${newRoot}（文件可能未移动成功）`);
-  }
-  const projectDirs = db.prepare('SELECT root_dir FROM project').all() as Array<{ root_dir: string }>;
-  const missing = projectDirs
-    .map((p) => ({ old: p.root_dir, new: p.root_dir.replace(new RegExp(`^${escapeRegExp(oldRoot)}`), newRoot) }))
-    .filter((p) => !fs.existsSync(p.new))
-    .slice(0, 3);
-  if (missing.length > 0) {
-    throw new AppError(
-      ErrorCode.INTERNAL,
-      `迁移后 ${missing.length} 个项目目录不存在（如 ${missing.map((m) => m.new).join('、')}）。文件移动可能不完整，请检查磁盘空间或手动恢复。`,
-    );
-  }
-
-  // 3. DB 更新（事务原子）：workspace.root_dir + 所有项目 root_dir 前缀重映射。
+  // 3. DB 更新（事务原子）：workspace.root_dir + 所有项目 root_dir 前缀重映射 + 标记完成。
+  //    若此步抛错或进程中断，workspace 保持 migrating，由启动时 recoverInterruptedMigrations 补提。
   const oldPrefix = `${oldRoot}${oldRoot.endsWith('/') ? '' : '/'}`;
   const newPrefix = `${newRoot}${newRoot.endsWith('/') ? '' : '/'}`;
   const remapped = db.transaction(() => {
     const now = nowIso();
-    db.prepare('UPDATE workspace SET root_dir=?, updated_at=? WHERE id=?').run(newRoot, now, id);
+    db.prepare("UPDATE workspace SET root_dir=?, status='normal', migrate_target_dir=NULL, updated_at=? WHERE id=?")
+      .run(newRoot, now, id);
     return db.prepare(
       'UPDATE project SET root_dir = ? || substr(root_dir, ?) WHERE root_dir LIKE ?',
     ).run(newPrefix, oldPrefix.length + 1, `${oldPrefix}%`).changes;
   })();
 
   return { workspace: getWorkspace(db, id), movedDirs: 1, remappedProjects: remapped, usedCopyFallback };
+}
+
+/**
+ * Review 修复（M-6）：启动自愈——修复中断的 workspace 迁移。
+ *
+ * 场景：migrateWorkspace 在文件移动完成后、DB 事务提交前进程中断/抛错，workspace 停留在
+ * status='migrating' 且 migrate_target_dir 记录了目标路径。启动时调用本函数：
+ * - 目标目录存在（文件已移动）→ 补提 DB 路径更新（workspace.root_dir + project 前缀重映射），标记完成。
+ * - 目标目录不存在（文件未移动）→ 无变化，仅清除标记。
+ * 由 server.ts 在 migrations 之后调用一次。
+ */
+export function recoverInterruptedMigrations(db: DB): number {
+  const rows = db.prepare(`SELECT * FROM workspace WHERE status='migrating'`).all() as Array<
+    WorkspaceRow & { migrate_target_dir: string | null }
+  >;
+  let recovered = 0;
+  for (const row of rows) {
+    const target = row.migrate_target_dir;
+    const now = nowIso();
+    if (!target || !fs.existsSync(target)) {
+      // 无法得知目标路径或文件未移动：无中断残留，仅清除标记
+      db.prepare("UPDATE workspace SET status='normal', migrate_target_dir=NULL, updated_at=? WHERE id=?").run(now, row.id);
+      continue;
+    }
+    const oldRoot = row.root_dir;
+    const oldPrefix = `${oldRoot}${oldRoot.endsWith('/') ? '' : '/'}`;
+    const newPrefix = `${target}${target.endsWith('/') ? '' : '/'}`;
+    db.transaction(() => {
+      db.prepare("UPDATE workspace SET root_dir=?, status='normal', migrate_target_dir=NULL, updated_at=? WHERE id=?")
+        .run(target, now, row.id);
+      db.prepare('UPDATE project SET root_dir = ? || substr(root_dir, ?) WHERE root_dir LIKE ?')
+        .run(newPrefix, oldPrefix.length + 1, `${oldPrefix}%`);
+    })();
+    recovered++;
+  }
+  return recovered;
 }
 
 function escapeRegExp(s: string): string {
