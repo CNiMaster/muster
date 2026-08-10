@@ -132,6 +132,8 @@ export interface LifecycleEventPayloadMap {
   'outsource.delivered': { contractId: string; outsourcedTaskId: string };
   'outsource.reviewed': { contractId: string; decision: string; revisionRound?: number };
   'outsource.completed': { contractId: string };
+  /** 阶段四任务 4.2：自动验收已派发 [验收] Task。 */
+  'outsource.review-auto-triggered': { contractId: string; reviewTaskId: string };
   // 临时工生命周期（批次 A）
   'employee.temp-recruited': { agentId: string; profileId: string; companyId: string; isNewProfile: boolean };
   'employee.converted': { agentId: string; profileId: string; companyId: string };

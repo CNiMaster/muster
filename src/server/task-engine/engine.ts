@@ -747,6 +747,15 @@ export class TaskEngine {
           }
         }
       }
+      // 阶段四任务 4.2：外包验收 Task 完成 → 自动验收闭环（completed/返工/rejected/转人工）
+      if (result.outcome === 'completed') {
+        try {
+          const { handleOutsourcingReviewTaskCompleted } = await import('../domain/outsourcing-review');
+          handleOutsourcingReviewTaskCompleted(this.db, task);
+        } catch (e) {
+          log.warn('outsourcing review completion handling failed', { taskId: task.id, err: e instanceof Error ? e.message : String(e) });
+        }
+      }
       // B2B 外包：承接任务完成后触发交付（契约标记 delivered，通知甲方验收）。
       // 幂等：非外包任务或契约非 in_progress 时返回 null，无副作用。
       if (result.outcome === 'completed') {
@@ -758,6 +767,19 @@ export class TaskEngine {
           }, { companyId: deliveredContract.sourceCompanyId, taskId: task.id }));
           // 自动触发3：跨公司契约 delivered → 甲乙双方 task-clarification 讨论辅助交接验收
           try { this.triggerHandoverDiscussion(deliveredContract, task, company.id, project); } catch (e) { log.warn('handover discussion trigger failed', { taskId: task.id, err: e instanceof Error ? e.message : String(e) }); }
+          // 阶段四任务 4.2：自动验收——给甲方第一负责人派 [验收] Task（条件不满足时静默跳过）
+          try {
+            const { triggerAutoReview } = await import('../domain/outsourcing-review');
+            const reviewTask = triggerAutoReview(this.db, deliveredContract);
+            if (reviewTask) {
+              realtime.publish(makeLifecycleEvent('outsource.review-auto-triggered', {
+                contractId: deliveredContract.id,
+                reviewTaskId: reviewTask.id,
+              }, { companyId: deliveredContract.sourceCompanyId, projectId: deliveredContract.sourceProjectId, taskId: task.id }));
+            }
+          } catch (e) {
+            log.warn('auto review trigger failed', { taskId: task.id, err: e instanceof Error ? e.message : String(e) });
+          }
         }
       }
       // 自动触发1：验收不达标（acceptance_criteria 有 met=false）→ quality-review 讨论

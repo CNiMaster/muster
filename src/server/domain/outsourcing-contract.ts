@@ -277,6 +277,20 @@ export function markInProgress(db: DB, id: string, outsourcedTaskId: string): Ou
 }
 
 /**
+ * 标记契约进入验收中（reviewing）。
+ * 阶段四任务 4.2：自动验收派发 [验收] Task 时调用（与 submitReview 的隐式 reviewing 等效）。
+ */
+export function markReviewing(db: DB, id: string): OutsourcingContract {
+  const contract = getOutsourcingContract(db, id);
+  if (contract.state !== 'delivered') {
+    // 幂等：已是 reviewing 或更后状态时不重复迁移
+    return contract;
+  }
+  updateState(db, id, 'reviewing');
+  return getOutsourcingContract(db, id);
+}
+
+/**
  * 乙方完工标记，状态 → delivered（待甲方验收）。
  * 由 outsourcing-delivery.ts 在乙方承接任务完成后调用。
  */
