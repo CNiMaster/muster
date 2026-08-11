@@ -36,6 +36,11 @@ export function SettingsPage(): React.ReactElement {
   const [proxyBypass, setProxyBypass] = useState('');
   const [caCertPath, setCaCertPath] = useState('');
   const [egressTimeoutMs, setEgressTimeoutMs] = useState(30000);
+  const [theme, setTheme] = useState<'dark' | 'light' | 'system'>('system');
+  const [fontFamily, setFontFamily] = useState('');
+  const [fontSize, setFontSize] = useState(14);
+  const [locale, setLocale] = useState<'zh' | 'en'>('zh');
+  const [codeTheme, setCodeTheme] = useState('default');
   const [testResult, setTestResult] = useState<any | null>(null);
 
   useEffect(() => {
@@ -56,6 +61,11 @@ export function SettingsPage(): React.ReactElement {
     setProxyBypass(settings.proxyBypass ?? '');
     setCaCertPath(settings.caCertPath ?? '');
     setEgressTimeoutMs(settings.egressTimeoutMs ?? 30000);
+    setTheme(settings.theme ?? 'system');
+    setFontFamily(settings.fontFamily ?? '');
+    setFontSize(settings.fontSize ?? 14);
+    setLocale(settings.locale ?? 'zh');
+    setCodeTheme(settings.codeTheme ?? 'default');
   }, [settings]);
 
   const handleSave = (): void => {
@@ -64,7 +74,7 @@ export function SettingsPage(): React.ReactElement {
       return;
     }
     saveSettings.mutate(
-      { claudeBin, model, skipPermissions, timeoutMs, maxToolCalls, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierPrimaryId: tierPrimary, executorTierSecondaryId: tierSecondary, executorTierTertiaryId: tierTertiary, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs },
+      { claudeBin, model, skipPermissions, timeoutMs, maxToolCalls, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierPrimaryId: tierPrimary, executorTierSecondaryId: tierSecondary, executorTierTertiaryId: tierTertiary, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs, theme, fontFamily, fontSize, locale, codeTheme },
       {
         onSuccess: () => toast('success', '系统设置已保存并实时生效'),
         onError: (error: any) => toast('error', error.message ?? '保存设置失败'),
@@ -221,6 +231,40 @@ export function SettingsPage(): React.ReactElement {
               </Field>
             </div>
             <p className="muted">⚠ 以上网络配置修改后需重启应用生效（不实时热更）。</p>
+          </div>
+        </details>
+
+        <details className="details-collapse">
+          <summary>外观（主题 / 字体 / 语言）</summary>
+          <div className="form-stack">
+            <div className="settings-field-grid">
+              <Field label="主题">
+                <Select value={theme} onChange={(event) => setTheme(event.target.value as 'dark' | 'light' | 'system')}>
+                  <option value="system">跟随系统</option>
+                  <option value="dark">深色</option>
+                  <option value="light">浅色</option>
+                </Select>
+              </Field>
+              <Field label="界面语言">
+                <Select value={locale} onChange={(event) => setLocale(event.target.value as 'zh' | 'en')}>
+                  <option value="zh">中文</option>
+                  <option value="en">English</option>
+                </Select>
+              </Field>
+              <Field label="界面字体" hint="留空使用默认字体">
+                <Input value={fontFamily} onChange={(event) => setFontFamily(event.target.value)} placeholder="例如: Avenir Next, PingFang SC" />
+              </Field>
+              <Field label="主文本字号（px）">
+                <Input type="number" value={fontSize} onChange={(event) => setFontSize(Number(event.target.value))} />
+              </Field>
+              <Field label="代码块主题" hint="default / dark 等（简单映射）">
+                <Select value={codeTheme} onChange={(event) => setCodeTheme(event.target.value)}>
+                  <option value="default">default</option>
+                  <option value="dark">dark</option>
+                </Select>
+              </Field>
+            </div>
+            <p className="muted">外观修改即时生效（主题/字体/字号/语言）。</p>
           </div>
         </details>
 
