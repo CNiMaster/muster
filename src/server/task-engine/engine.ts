@@ -39,6 +39,10 @@ import { getOutsourcingContract } from '../domain/outsourcing-contract';
 import { onOutsourcedTaskCompleted } from '../domain/outsourcing-delivery';
 import { applyRating } from '../domain/employee-rating';
 import { transitionProjectPhase } from '../domain/project-readiness';
+import { appendTaskEvent } from '../domain/task-event';
+import { performCapabilityPrecheck, buildCapabilityGapSection } from '../domain/tool-recommendation';
+import { recommendStrategy, buildStrategySection } from '../domain/strategy-recommender';
+import { dispatchGapResearch } from '../domain/gap-research';
 import { getCompany } from '../domain/company';
 import { createWorktree, removeWorktree } from '../worktree/manager';
 import { commitAll } from '../worktree/manager';
@@ -224,6 +228,27 @@ export class TaskEngine {
         payload: { reason: msg, threadId: thread.id, agentId: agent.id },
       });
       return true;
+    }
+
+    // spec 2026-08-12-task-investigation-capability-provisioning B2：任务级能力预检门。
+    // claim 后、assembleContext 前检测员工能力缺口并落 task_event（持久可见）；不阻断执行，
+    // 缺口稍后注入 systemPrompt。自愈派 Researcher 子任务留待后续。
+    let capabilityGaps: ReturnType<typeof performCapabilityPrecheck> = [];
+    try {
+      capabilityGaps = performCapabilityPrecheck(this.db, task);
+    } catch (e) {
+      log.warn('capability precheck failed', { taskId: task.id, err: e instanceof Error ? e.message : String(e) });
+    }
+    // spec B3：按任务形态推荐策略（skill + 角色原型 + playbook），建议非强制。
+    const strategyRec = recommendStrategy(task);
+    // spec B2：能力缺口自愈——opt-in（contractJson.autoGapResearch）才派 Researcher 咨询子任务，
+    // 默认关 → 零行为变化；结论只形成建议，不自动安装（对齐 PRD）。
+    if (capabilityGaps.length > 0) {
+      try {
+        dispatchGapResearch(this.db, task, capabilityGaps);
+      } catch (e) {
+        log.warn('gap research dispatch failed', { taskId: task.id, err: e instanceof Error ? e.message : String(e) });
+      }
     }
 
     // 创建 Task worktree（PRD：每个 Task 隔离 worktree）
@@ -497,6 +522,14 @@ export class TaskEngine {
         lightweight: (task.inputProtocol as Record<string, unknown>)?.lightweight === true,
       });
       ctx.systemPrompt = assembled.systemPrompt;
+      // spec B2：注入能力缺口提示（执行期可见，不阻断）。
+      if (capabilityGaps.length > 0) {
+        ctx.systemPrompt += buildCapabilityGapSection(capabilityGaps);
+      }
+      // spec B3：注入策略建议（非强制）。
+      if (strategyRec) {
+        ctx.systemPrompt += buildStrategySection(strategyRec);
+      }
       ctx.inputPacket = Object.keys(projectTaskThread.handoff).length?{...assembled.inputPacket,sessionHandoff:projectTaskThread.handoff}:assembled.inputPacket;
       // 设计一-3：API 型执行器执行需要 CLI 的任务时，发软提示事件（不阻断派发）。
       // 阶段二任务 2.3：具备命令能力的 API 执行器不再发"无法使用"警告。
@@ -1215,6 +1248,7 @@ export class TaskEngine {
           enqueueReflection(this.db, { task: blocked, outcome: 'blocked', signal: 'blocked-safety', extraContext: { error: msg, reason: 'budget' } });
         } catch (e) {
           log.warn('reflection enqueue failed (budget)', { taskId, err: e instanceof Error ? e.message : String(e) });
+          appendTaskEvent(this.db, taskId, 'ancillary_failure', { source: 'reflection_enqueue_budget', error: e instanceof Error ? e.message : String(e) });
         }
         return;
       }
@@ -1230,6 +1264,7 @@ export class TaskEngine {
           enqueueReflection(this.db, { task: blocked, outcome: 'blocked', signal: 'blocked-safety', extraContext: { error: msg, reason: 'no_progress' } });
         } catch (e) {
           log.warn('reflection enqueue failed (no_progress)', { taskId, err: e instanceof Error ? e.message : String(e) });
+          appendTaskEvent(this.db, taskId, 'ancillary_failure', { source: 'reflection_enqueue_no_progress', error: e instanceof Error ? e.message : String(e) });
         }
         return;
       }

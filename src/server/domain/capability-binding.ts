@@ -6,11 +6,13 @@ import { getAgent } from './agent';
 import { getProject } from './project';
 import type { Task } from './task';
 import { listCapabilityBindings, type CapabilityBinding } from './template-installation';
+import { retrieveSkillsByContent } from './skill-retrieval';
 
 const SOURCE_PRIORITY: Record<ResolvedTaskSkill['source'], number> = {
-  task: 4,
-  field: 3,
-  employee: 2,
+  task: 5,
+  field: 4,
+  employee: 3,
+  retrieved: 2,
   legacy: 1,
 };
 
@@ -30,6 +32,7 @@ export function resolveTaskSkills(
   const agent = task.assigneeAgentId ? getAgent(db, task.assigneeAgentId) : null;
   const metadata = readRequirements(task.inputProtocol);
   const disabled = new Set(metadata.disabledSkillIds ?? []);
+  const skillsRoot = options.skillsRoot ?? path.join(process.cwd(), 'skills');
   const candidates: SkillCandidate[] = [];
 
   for (const skillId of metadata.requiredSkillIds ?? []) {
@@ -78,6 +81,12 @@ export function resolveTaskSkills(
     }
   }
 
+  // spec 2026-08-12 B1：按任务内容从 skills/ 库检索相关 skill，作为低优先级 retrieved 来源补进上下文。
+  // 显式声明（task/field/employee）优先级更高会覆盖；retrieved 仅在未命中声明时补位，避免噪声。
+  for (const skillId of retrieveSkillsByContent(task, skillsRoot)) {
+    candidates.push({ skillId, source: 'retrieved', required: false, reason: '按任务内容检索匹配' });
+  }
+
   const selected = new Map<string, SkillCandidate>();
   for (const candidate of candidates) {
     const current = selected.get(candidate.skillId);
@@ -86,7 +95,6 @@ export function resolveTaskSkills(
     }
   }
 
-  const skillsRoot = options.skillsRoot ?? path.join(process.cwd(), 'skills');
   return [...selected.values()].map((candidate) => {
     if (disabled.has(candidate.skillId)) return { ...candidate, status: 'disabled' as const };
     const content = readBundledSkill(candidate.skillId, skillsRoot);

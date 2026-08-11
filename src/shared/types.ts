@@ -36,7 +36,7 @@ export interface TaskCapabilityRequirements {
 
 export interface ResolvedTaskSkill {
   skillId: string;
-  source: 'task' | 'field' | 'employee' | 'legacy';
+  source: 'task' | 'field' | 'employee' | 'retrieved' | 'legacy';
   required: boolean;
   reason: string;
   content?: string;

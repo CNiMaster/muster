@@ -26,3 +26,9 @@ export const REPORT_TASK_COUNT_INTERVAL = 20;
 // 外包验收（阶段四）
 /** 默认自动验收/返工轮次上限（超过后转人工）。submitReview 与自动验收共用，防返工环无限循环。 */
 export const DEFAULT_MAX_AUTO_REVIEW_ROUNDS = 3;
+/**
+ * 外包自动接受连续失败上限（spec 2026-08-12-subagent-observability B3）。
+ * 达到上限后契约转入 auto_accept_disabled 终态，停止反复 accept→失败→revert 空转。
+ * 新契约的 auto_accept_max_attempts 列默认值即此值；可按契约覆盖。
+ */
+export const DEFAULT_AUTO_ACCEPT_MAX_ATTEMPTS = 8;

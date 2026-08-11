@@ -13,6 +13,8 @@ import { getProject } from './project';
 import type { Task } from './task';
 import { listCapabilityBindings } from './template-installation';
 import { getTool, readToolFile, type ToolRegistryEntry } from './tool-registry';
+import { getAllCapabilityQuality, type CapabilityQuality } from './capability-quality';
+import { appendTaskEvent } from './task-event';
 
 export interface ToolRecommendation {
   toolId: string;
@@ -25,6 +27,15 @@ export interface ToolRecommendation {
   checkHint: string | null;
   credentialKeys: string[];
   /** 来源说明,如"员工能力 speech-to-text"。 */
+  reason: string;
+  /** 真实使用质量(来自 capability_usage_stat);null 表示无数据,非 null 低 successRate 应排名靠后/提示更换。 */
+  quality: { successRate: number | null; totalCalls: number } | null;
+}
+
+export interface CapabilityGap {
+  capabilityId: string;
+  purpose: string;
+  /** 员工是否声明需要该能力但无任何已启用工具实现。 */
   reason: string;
 }
 
@@ -48,6 +59,9 @@ export function resolveToolRecommendations(db: DB, task: Task): ToolRecommendati
   // 只取该员工名下的绑定(employeeId 匹配,或 role 维度但无具体 employee)
   const myBindings = bindings.filter((b) => !b.employeeId || b.employeeId === agent.id);
 
+  // B2:一次性取全部能力质量,反哺推荐(质量差的成功率低/无数据时仍展示但可被排序降权)。
+  const qualityMap: Map<string, CapabilityQuality> = getAllCapabilityQuality(db);
+
   const seen = new Set<string>();
   const recommendations: ToolRecommendation[] = [];
 
@@ -57,7 +71,7 @@ export function resolveToolRecommendations(db: DB, task: Task): ToolRecommendati
       const tool = getTool(db, toolId);
       if (!tool || !tool.isActive) continue;
       seen.add(toolId);
-      recommendations.push(buildRecommendation(tool, binding.capabilityId, binding.purpose));
+      recommendations.push(buildRecommendation(tool, binding.capabilityId, binding.purpose, qualityMap.get(binding.capabilityId) ?? null));
     }
   }
 
@@ -68,6 +82,7 @@ function buildRecommendation(
   tool: ToolRegistryEntry,
   capabilityId: string,
   purpose: string,
+  quality: CapabilityQuality | null,
 ): ToolRecommendation {
   let snippet = '';
   const content = readToolFile(tool.filePath);
@@ -89,7 +104,75 @@ function buildRecommendation(
     checkHint: tool.checkHint,
     credentialKeys: tool.credentialKeys ? tool.credentialKeys.split(',').filter(Boolean) : [],
     reason: `员工能力 ${capabilityId}(${purpose})`,
+    quality: quality ? { successRate: quality.successRate, totalCalls: quality.totalCalls } : null,
   };
+}
+
+/**
+ * B3 跨类型缺口检测:列出员工名下"声明了能力但没有任何已启用工具实现"的能力。
+ * 这是任务级能力预检(spec 2026-08-12-task-investigation-capability-provisioning B1)的输入信号。
+ */
+export function findCapabilityGaps(db: DB, task: Task): CapabilityGap[] {
+  if (!task.assigneeAgentId) return [];
+  const agent = getAgent(db, task.assigneeAgentId);
+  if (!agent) return [];
+  const project = getProject(db, task.projectId);
+
+  let bindings;
+  try {
+    bindings = listCapabilityBindings(db, project.companyId);
+  } catch {
+    return [];
+  }
+  const myBindings = bindings.filter((b) => !b.employeeId || b.employeeId === agent.id);
+
+  const gaps: CapabilityGap[] = [];
+  for (const binding of myBindings) {
+    const activeToolIds = (binding.recommendedToolIds ?? []).filter((id) => {
+      const t = getTool(db, id);
+      return t?.isActive === true;
+    });
+    if (activeToolIds.length === 0) {
+      gaps.push({
+        capabilityId: binding.capabilityId,
+        purpose: binding.purpose,
+        reason: `员工能力 ${binding.capabilityId} 无任何已启用工具实现`,
+      });
+    }
+  }
+  return gaps;
+}
+
+/**
+ * spec 2026-08-12-task-investigation-capability-provisioning B2：任务级能力预检门。
+ *
+ * 在任务 claim 后、assembleContext 前调用：检测员工名下的能力缺口，落 task_event
+ * （capability_precheck）使其持久可见，并返回缺口供上下文注入。
+ *
+ * 设计原则：不阻断执行（缺口只提示、不卡死），让缺口在执行期可见；自愈派 Researcher
+ * 子任务留待后续。记录失败不抛出（预检是增强，不影响主流程）。
+ */
+export function performCapabilityPrecheck(db: DB, task: Task): CapabilityGap[] {
+  const gaps = findCapabilityGaps(db, task);
+  try {
+    appendTaskEvent(db, task.id, 'capability_precheck', {
+      gapCount: gaps.length,
+      gaps: gaps.map((g) => ({ capabilityId: g.capabilityId, purpose: g.purpose })),
+    });
+  } catch {
+    // 记录失败不阻断执行。
+  }
+  return gaps;
+}
+
+/** 渲染「能力缺口」system prompt 段，注入执行上下文让员工知晓缺失（仍可继续工作）。 */
+export function buildCapabilityGapSection(gaps: CapabilityGap[]): string {
+  if (gaps.length === 0) return '';
+  const lines = ['', '# 能力缺口（执行前预检）', '以下能力已声明但当前无任何已启用工具实现；优先用你已有的相似能力完成工作，必要时在工作包内说明缺失：'];
+  for (const g of gaps) {
+    lines.push(`- ${g.capabilityId}：${g.reason}`);
+  }
+  return lines.join('\n');
 }
 
 /**

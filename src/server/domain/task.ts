@@ -20,7 +20,7 @@ import { immediateTransaction } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
 import { LEASE_TTL_MS, MAX_CLARIFY_ROUNDS, MAX_ALIGNMENT_ROUNDS } from '../../shared/constants';
-import { isRecoverableSessionError, MAX_AUTO_RETRY, AUTO_RETRY_DELAY_MS } from '../../shared/retry-policy';
+import { classifyFailureCategory, isRecoverableSessionError, MAX_AUTO_RETRY, AUTO_RETRY_DELAY_MS } from '../../shared/retry-policy';
 import type { AgentRunResult, ArtifactChange, TaskOutcome, TaskState } from '../../shared/types';
 import { getProject } from './project';
 import { getAgent } from './agent';
@@ -864,7 +864,7 @@ export function failTask(db: DB, taskId: string, message: string): Task {
     `UPDATE task SET state='failed', outcome=NULL, summary=?, lease_owner_thread_id=NULL, lease_expires_at=NULL,
      failure_count=failure_count+1, last_failed_at=?, updated_at=? WHERE id=?`,
   ).run(message.slice(0, 2000), now, now, taskId);
-  appendTaskEvent(db, taskId, 'failed', { message, failureCount: cur.failureCount + 1 });
+  appendTaskEvent(db, taskId, 'failed', { message, failureCount: cur.failureCount + 1, failureCategory: classifyFailureCategory(message) });
 
   // 阶段一任务 1.4：非永久性失败自动重试（有限次数），避免 watchdog 停下来的任务无人重领。
   // 可重试（超时/网络/会话崩溃）且未超过上限 → 自动回 queued 等待再次领取；

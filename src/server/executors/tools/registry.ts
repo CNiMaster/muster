@@ -40,6 +40,7 @@ import type {
   ToolResult,
   ReviewContext,
 } from './file-tools';
+import { WEB_TOOL_DEFINITIONS, webFetchHandler, webSearchHandler } from './web-tools';
 
 // 复用 file-tools.ts 的类型定义（稳定，多处引用）
 export type { ToolDefinition, ToolCall, ToolResult, ReviewContext } from './file-tools';
@@ -1256,6 +1257,20 @@ export function createBuiltinToolRegistry(): RuntimeToolRegistry {
     handler: concludeDiscussionHandler,
     source: { pluginId: BUILTIN_PLUGIN_ID, toolName: 'conclude_discussion' },
   });
+  // spec 2026-08-12 B2：原生联网 builtin（API 执行器用）。统一 permissionAction='network'，
+  // 在 executeTool 内过 network 守卫（与 MCP 联网工具同一审批流），handler 内含 SSRF 基础防护。
+  registry.register({
+    definition: WEB_TOOL_DEFINITIONS[0]!,
+    handler: webFetchHandler,
+    permissionAction: 'network',
+    source: { pluginId: BUILTIN_PLUGIN_ID, toolName: 'web_fetch' },
+  });
+  registry.register({
+    definition: WEB_TOOL_DEFINITIONS[1]!,
+    handler: webSearchHandler,
+    permissionAction: 'network',
+    source: { pluginId: BUILTIN_PLUGIN_ID, toolName: 'web_search' },
+  });
   return registry;
 }
 
@@ -1287,6 +1302,20 @@ export async function executeTool(call: ToolCall, ctx: ToolContext): Promise<Too
           toolCallId: call.id,
           name: call.name,
           content: `需要用户审批：${decision.message ?? '权限策略未允许此命令执行'}`,
+        };
+      }
+    } else if (tool.permissionAction === 'network') {
+      // spec 2026-08-12 B2：原生联网 builtin（web_fetch/web_search）与 MCP 联网工具统一走 network 守卫。
+      // 把 url 作为 command 透传给 evaluatePermission + AI 审批（语义=被访问的目标），path 保留 workingDir
+      // 以维持与既有 MCP network 工具一致的 inScope 判定（MCP 工具无 url 参数 → command undefined，行为不变）。
+      // 注意：web_search 的 args.query 是搜索词、非 URL，不应作为 command（其目标是平台配置的搜索端点）→ 仅取 url/endpoint。
+      const url = String(call.args.url ?? call.args.endpoint ?? '');
+      const decision = await ctx.permissionGuard({ action: 'network', command: url || undefined, path: ctx.workingDir });
+      if (!decision.allowed) {
+        return {
+          toolCallId: call.id,
+          name: call.name,
+          content: `需要用户审批：${decision.message ?? '权限策略未允许联网操作'}`,
         };
       }
     } else {
