@@ -1473,6 +1473,15 @@ export function useSaveSystemSettings() {
       executorTierPrimaryId?: string;
       executorTierSecondaryId?: string;
       executorTierTertiaryId?: string;
+      proxyUrl?: string;
+      proxyBypass?: string;
+      caCertPath?: string;
+      egressTimeoutMs?: number;
+      theme?: 'dark' | 'light' | 'system';
+      fontFamily?: string;
+      fontSize?: number;
+      locale?: 'zh' | 'en';
+      codeTheme?: string;
     }) => api.post<any>('/api/settings', settings),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['systemSettings'] });

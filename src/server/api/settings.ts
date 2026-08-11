@@ -40,6 +40,16 @@ settingsRouter.post(
       executorTierPrimaryId: z.string().max(100).optional(),
       executorTierSecondaryId: z.string().max(100).optional(),
       executorTierTertiaryId: z.string().max(100).optional(),
+      // settings-overhaul（spec 2026-08-12-settings-overhaul-design）
+      proxyUrl: z.string().max(500).optional(),
+      proxyBypass: z.string().max(1000).optional(),
+      caCertPath: z.string().max(1000).optional(),
+      egressTimeoutMs: z.number().min(1000).max(600000).optional(),
+      theme: z.enum(['dark', 'light', 'system']).optional(),
+      fontFamily: z.string().max(200).optional(),
+      fontSize: z.number().min(8).max(32).optional(),
+      locale: z.enum(['zh', 'en']).optional(),
+      codeTheme: z.string().max(100).optional(),
     });
     const input = schema.parse(req.body);
     const db = getDb();

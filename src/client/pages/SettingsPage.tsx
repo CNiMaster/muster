@@ -32,6 +32,10 @@ export function SettingsPage(): React.ReactElement {
   const [tierPrimary, setTierPrimary] = useState('');
   const [tierSecondary, setTierSecondary] = useState('');
   const [tierTertiary, setTierTertiary] = useState('');
+  const [proxyUrl, setProxyUrl] = useState('');
+  const [proxyBypass, setProxyBypass] = useState('');
+  const [caCertPath, setCaCertPath] = useState('');
+  const [egressTimeoutMs, setEgressTimeoutMs] = useState(30000);
   const [testResult, setTestResult] = useState<any | null>(null);
 
   useEffect(() => {
@@ -48,6 +52,10 @@ export function SettingsPage(): React.ReactElement {
     setTierPrimary(settings.executorTierPrimaryId ?? '');
     setTierSecondary(settings.executorTierSecondaryId ?? '');
     setTierTertiary(settings.executorTierTertiaryId ?? '');
+    setProxyUrl(settings.proxyUrl ?? '');
+    setProxyBypass(settings.proxyBypass ?? '');
+    setCaCertPath(settings.caCertPath ?? '');
+    setEgressTimeoutMs(settings.egressTimeoutMs ?? 30000);
   }, [settings]);
 
   const handleSave = (): void => {
@@ -56,7 +64,7 @@ export function SettingsPage(): React.ReactElement {
       return;
     }
     saveSettings.mutate(
-      { claudeBin, model, skipPermissions, timeoutMs, maxToolCalls, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierPrimaryId: tierPrimary, executorTierSecondaryId: tierSecondary, executorTierTertiaryId: tierTertiary },
+      { claudeBin, model, skipPermissions, timeoutMs, maxToolCalls, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierPrimaryId: tierPrimary, executorTierSecondaryId: tierSecondary, executorTierTertiaryId: tierTertiary, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs },
       {
         onSuccess: () => toast('success', '系统设置已保存并实时生效'),
         onError: (error: any) => toast('error', error.message ?? '保存设置失败'),
@@ -191,6 +199,28 @@ export function SettingsPage(): React.ReactElement {
             <Field label="Gemini 默认模型">
               <Input value={geminiModel} onChange={(event) => setGeminiModel(event.target.value)} placeholder="gemini-2.0-flash" />
             </Field>
+          </div>
+        </details>
+
+        <details className="details-collapse">
+          <summary>网络（代理 / 证书）</summary>
+          <div className="form-stack">
+            <p className="muted">模型、MCP、命令工具与应用渲染层的出口流量将经此代理。留空时直连，不读取系统环境变量。修改后需重启应用生效。</p>
+            <div className="settings-field-grid">
+              <Field label="HTTP 代理" hint="留空直连，例如 http://127.0.0.1:7890">
+                <Input value={proxyUrl} onChange={(event) => setProxyUrl(event.target.value)} placeholder="http://127.0.0.1:7890" />
+              </Field>
+              <Field label="代理例外" hint="匹配这些主机的请求将直连，不经过代理。逗号分隔，例如 localhost,127.0.0.1,.example.com">
+                <Input value={proxyBypass} onChange={(event) => setProxyBypass(event.target.value)} placeholder="localhost,127.0.0.1,.example.com" />
+              </Field>
+              <Field label="自定义证书（PEM 路径）" hint="作为 NODE_EXTRA_CA_CERTS 注入模型、MCP 与命令工具，并用于渲染层证书校验">
+                <Input value={caCertPath} onChange={(event) => setCaCertPath(event.target.value)} placeholder="/Users/name/certs/root-ca.pem" />
+              </Field>
+              <Field label="出口请求超时（毫秒）">
+                <Input type="number" value={egressTimeoutMs} onChange={(event) => setEgressTimeoutMs(Number(event.target.value))} />
+              </Field>
+            </div>
+            <p className="muted">⚠ 以上网络配置修改后需重启应用生效（不实时热更）。</p>
           </div>
         </details>
 
