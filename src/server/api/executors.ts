@@ -86,7 +86,7 @@ executorsRouter.get('/profiles', asyncHandler(async (_req,res)=>{
     capability:db.prepare("SELECT status,classification,capability_json capabilityJson,completed_at completedAt FROM connection_probe WHERE executor_profile_id=? AND kind='capability' ORDER BY created_at DESC,id DESC LIMIT 1").get(profile.id)??null,
   })));
 }));
-executorsRouter.post('/profiles', asyncHandler(async (req,res)=>{const input=z.object({name:z.string().min(1),manifestId:z.string(),config:z.record(z.unknown()).optional(),credentialRef:z.object({kind:z.enum(['env','keychain','cli-login','encrypted-local']),reference:z.string().min(1)}).optional(),install:z.record(z.unknown()).optional(),concurrencyMode:z.enum(['parallel','profile-serial','global-serial']).optional()}).parse(req.body);res.status(201).json(createExecutorProfile(getDb(),input));}));
+executorsRouter.post('/profiles', asyncHandler(async (req,res)=>{const input=z.object({name:z.string().min(1),manifestId:z.string(),config:z.record(z.unknown()).optional(),credentialRef:z.object({kind:z.enum(['env','keychain','cli-login','encrypted-local']),reference:z.string().min(1)}).optional(),install:z.record(z.unknown()).optional(),concurrencyMode:z.enum(['parallel','profile-serial','global-serial']).optional(),maxConcurrency:z.number().int().min(1).max(64).optional(),concurrencyLocked:z.boolean().optional()}).parse(req.body);res.status(201).json(createExecutorProfile(getDb(),input));}));
 
 // 阶段二任务 2.2：更新执行器档案（名称/配置/凭据/并发模式）
 executorsRouter.put('/profiles/:id', asyncHandler(async (req,res)=>{
@@ -95,6 +95,8 @@ executorsRouter.put('/profiles/:id', asyncHandler(async (req,res)=>{
     config: z.record(z.unknown()).optional(),
     credentialRef: z.object({ kind: z.enum(['env','keychain','cli-login','encrypted-local']), reference: z.string().min(1) }).optional(),
     concurrencyMode: z.enum(['parallel','profile-serial','global-serial']).optional(),
+    maxConcurrency: z.number().int().min(1).max(64).optional(),
+    concurrencyLocked: z.boolean().optional(),
   }).parse(req.body);
   res.json(updateExecutorProfile(getDb(), param(req, 'id'), input));
 }));

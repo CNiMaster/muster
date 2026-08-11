@@ -43,6 +43,7 @@ import { appendTaskEvent } from '../domain/task-event';
 import { performCapabilityPrecheck, buildCapabilityGapSection } from '../domain/tool-recommendation';
 import { recommendStrategy, buildStrategySection } from '../domain/strategy-recommender';
 import { dispatchGapResearch } from '../domain/gap-research';
+import { applyAdaptiveAdjustment, canRunMore } from '../domain/executor-concurrency';
 import { getCompany } from '../domain/company';
 import { createWorktree, removeWorktree } from '../worktree/manager';
 import { commitAll } from '../worktree/manager';
@@ -179,6 +180,26 @@ export class TaskEngine {
     if (company.state !== 'online') return false;
 
     const agent = getAgent(this.db, thread.agentId);
+    // spec 2026-08-12-settings-overhaul B4：按执行器并发门控——每次 pump 先做自适应调整，
+    // 再检查"在跑数 < effective"才放行领取；锁定后 effective 冻结在 max，不越界不上调。
+    // 在领取前解析员工绑定执行器（不存在/异常则跳过门控，零行为变化）。
+    let profileForGate: { id: string } | null = null;
+    try {
+      profileForGate = getEmployeeExecutorProfile(this.db, agent.id);
+    } catch {
+      profileForGate = null;
+    }
+    if (profileForGate) {
+      try {
+        applyAdaptiveAdjustment(this.db, profileForGate.id);
+        if (!canRunMore(this.db, profileForGate.id)) {
+          log.info('executor concurrency gate: skipped claim', { threadId, agent: agent.name, profileId: profileForGate.id });
+          return false;
+        }
+      } catch (e) {
+        log.warn('executor concurrency gate failed', { threadId, err: e instanceof Error ? e.message : String(e) });
+      }
+    }
     const claimed = claimNextTask(this.db, threadId, thread.agentId);
     if (!claimed) return false;
 

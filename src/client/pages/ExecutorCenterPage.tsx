@@ -55,6 +55,9 @@ export function ExecutorCenterPage(): React.ReactElement {
   // 阶段二任务 2.2：凭据引用支持从 credential_definition 下拉选择 + 并发模式选择 + 编辑模式
   const { data: credentialDefs } = useCredentialDefinitions({ category: 'llm' });
   const [apiConcurrency, setApiConcurrency] = useState<'parallel' | 'profile-serial' | 'global-serial'>('parallel');
+  // settings-overhaul B4：并发硬上限 + 锁定（如 coding 套餐=1 就设 1 并锁定，杜绝高并发卡死）
+  const [apiMaxConcurrency, setApiMaxConcurrency] = useState(4);
+  const [apiConcurrencyLocked, setApiConcurrencyLocked] = useState(false);
   // settings-overhaul B3：思考深度（归一化档位，仅支持的模型生效）+ 上下文缓存模式
   const [apiThinkingDepth, setApiThinkingDepth] = useState<'off' | 'low' | 'medium' | 'high'>('off');
   const [apiContextCache, setApiContextCache] = useState<'auto' | 'on' | 'off'>('auto');
@@ -184,6 +187,8 @@ export function ExecutorCenterPage(): React.ReactElement {
         config,
         credentialRef,
         concurrencyMode: apiConcurrency,
+        maxConcurrency: apiMaxConcurrency,
+        concurrencyLocked: apiConcurrencyLocked,
       });
     },
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['executor-profiles'] }); toast('success', 'API 执行器已创建，可在公司组织架构绑定给员工'); },
@@ -203,6 +208,8 @@ export function ExecutorCenterPage(): React.ReactElement {
         config,
         credentialRef,
         concurrencyMode: apiConcurrency,
+        maxConcurrency: apiMaxConcurrency,
+        concurrencyLocked: apiConcurrencyLocked,
       });
     },
     onSuccess: () => {
@@ -392,6 +399,14 @@ export function ExecutorCenterPage(): React.ReactElement {
                 <option value="on">开启</option>
                 <option value="off">关闭</option>
               </Select>
+            </Field>
+          </div>
+          <div className="form-row">
+            <Field label="最大并发" hint="该执行器同时运行的任务数上限（如套餐只允许 1 个并发就填 1）">
+              <Input type="number" min={1} max={64} value={apiMaxConcurrency} onChange={(e) => setApiMaxConcurrency(Number(e.target.value))} />
+            </Field>
+            <Field label="锁定并发" hint="锁定后始终用满「最大并发」，不会被自适应降低或自动上调（防高并发卡死）">
+              <label className="checkbox-row"><input type="checkbox" checked={apiConcurrencyLocked} onChange={(e) => setApiConcurrencyLocked(e.target.checked)} /> 锁定</label>
             </Field>
           </div>
           <Field label="API Key 环境变量名（不存明文）" hint="可从左侧凭据库选择，或手填自定义环境变量名">
