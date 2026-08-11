@@ -13,6 +13,7 @@ import { estimateCostUSD } from './model-pricing';
 import { PROVIDER_DEFAULT_API_KEY_ENV, PROVIDER_DEFAULT_BASE_URL, PROVIDER_DEFAULT_MODEL } from './provider';
 import { getDb } from '../db/client';
 import { getSystemSettings } from '../domain/setting';
+import { buildThinkingParams, normalizeThinkingDepth, normalizeContextCache, thinkingSupportedByModel } from '../domain/thinking-params';
 import { log } from '../logger';
 
 export interface GeminiAdapterOptions {
@@ -49,6 +50,10 @@ export class GeminiAdapter implements ExecutionAdapter {
     if (!apiKey) {
       return this.blocked(`Gemini API key 未配置：环境变量 ${apiKeyEnv} 未设置`, start);
     }
+    // spec 2026-08-12-settings-overhaul B3：思考深度归一化 → Gemini thinkingConfig。
+    // 仅模型支持时生效（自动识别），否则强制 off，避免把 thinkingConfig 发给不支持的模型导致 400。
+    const thinkingDepth = thinkingSupportedByModel('gemini', model) ? normalizeThinkingDepth(agentEx?.thinkingDepth) : 'off';
+    const thinking = buildThinkingParams('gemini', thinkingDepth, normalizeContextCache(agentEx?.contextCache));
 
     const messages = this.buildMessages(ctx);
     const baseURL = this.opts.baseURL;
@@ -67,6 +72,9 @@ export class GeminiAdapter implements ExecutionAdapter {
       };
       if (systemInstruction) {
         body.systemInstruction = { parts: [{ text: systemInstruction }] };
+      }
+      if (thinking.applied && thinking.extraBody) {
+        Object.assign(body, thinking.extraBody); // generationConfig.thinkingConfig
       }
 
       const url = `${baseURL}/models/${encodeURIComponent(model)}:generateContent?key=${apiKey}`;

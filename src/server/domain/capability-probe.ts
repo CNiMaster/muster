@@ -10,6 +10,7 @@
  * 无副作用：只发 HTTP 请求，不碰文件。
  */
 import { PROVIDER_DEFAULT_API_KEY_ENV, PROVIDER_DEFAULT_BASE_URL, PROVIDER_DEFAULT_MODEL, type Provider } from '../executors/provider';
+import { thinkingSupportedByModel } from './thinking-params';
 import type { DB } from '../db/client';
 
 /** 读取某执行器档案最新的能力探针结果（无有效结果返回 null）。 */
@@ -57,6 +58,8 @@ export interface CapabilityProbeResult {
   unsupportedTasks: string[];
   /** 人话提示（能力边界说明）。 */
   note: string;
+  /** 是否支持思考深度调节（settings-overhaul B3，按 provider+model 启发式）。 */
+  thinkingSupported: boolean;
 }
 
 export interface ApiCapabilityProbeOptions {
@@ -251,6 +254,9 @@ export async function runApiCapabilityProbe(opts: ApiCapabilityProbeOptions): Pr
   } else {
     noteParts.push('无命令执行能力：测试 / 构建 / 安装依赖 / git 操作需连接 CLI 执行器（Codex CLI / Claude Code CLI 等）');
   }
+  // spec 2026-08-12-settings-overhaul B3：思考深度自动识别（按 provider+model 启发式）。
+  const thinkingSupported = thinkingSupportedByModel(provider, model);
+  if (thinkingSupported) noteParts.push('支持思考深度调节（reasoning/thinking），可在执行器档案中设置');
   return {
     functionCalling,
     toolLoop,
@@ -259,6 +265,7 @@ export async function runApiCapabilityProbe(opts: ApiCapabilityProbeOptions): Pr
     supportedTasks,
     unsupportedTasks,
     note: noteParts.join('；'),
+    thinkingSupported,
   };
 }
 

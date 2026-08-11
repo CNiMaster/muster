@@ -80,6 +80,10 @@ export interface AgentExecutorConfig {
   skipPermissions?: boolean;
   /** OpenAI 兼容 API 的 baseURL（provider=openai 时生效，可切 DeepSeek/通义/智谱等）。 */
   baseURL?: string;
+  /** 思考深度归一化档位（settings-overhaul B3；仅支持的模型生效，off=不传思考参数）。 */
+  thinkingDepth?: 'off' | 'low' | 'medium' | 'high';
+  /** 上下文缓存模式（settings-overhaul B3；auto/on 保持 provider 默认缓存，off 文档化 no-op）。 */
+  contextCache?: 'auto' | 'on' | 'off';
 }
 
 export interface ExecutionEvents {

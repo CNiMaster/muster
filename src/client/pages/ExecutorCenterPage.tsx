@@ -55,6 +55,9 @@ export function ExecutorCenterPage(): React.ReactElement {
   // 阶段二任务 2.2：凭据引用支持从 credential_definition 下拉选择 + 并发模式选择 + 编辑模式
   const { data: credentialDefs } = useCredentialDefinitions({ category: 'llm' });
   const [apiConcurrency, setApiConcurrency] = useState<'parallel' | 'profile-serial' | 'global-serial'>('parallel');
+  // settings-overhaul B3：思考深度（归一化档位，仅支持的模型生效）+ 上下文缓存模式
+  const [apiThinkingDepth, setApiThinkingDepth] = useState<'off' | 'low' | 'medium' | 'high'>('off');
+  const [apiContextCache, setApiContextCache] = useState<'auto' | 'on' | 'off'>('auto');
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
@@ -173,6 +176,8 @@ export function ExecutorCenterPage(): React.ReactElement {
       const config: Record<string, unknown> = apiKind === 'openai-compatible-api'
         ? { provider: 'openai', baseURL: apiBaseURL.trim(), model: apiModel.trim() }
         : { provider: 'gemini', model: apiModel.trim() };
+      config.thinkingDepth = apiThinkingDepth;
+      config.contextCache = apiContextCache;
       return api.post<ExecutorProfile>('/api/executors/profiles', {
         name: apiName.trim(),
         manifestId: apiKind,
@@ -191,6 +196,8 @@ export function ExecutorCenterPage(): React.ReactElement {
       const config: Record<string, unknown> = apiKind === 'openai-compatible-api'
         ? { provider: 'openai', baseURL: apiBaseURL.trim(), model: apiModel.trim() }
         : { provider: 'gemini', model: apiModel.trim() };
+      config.thinkingDepth = apiThinkingDepth;
+      config.contextCache = apiContextCache;
       return api.put<ExecutorProfile>(`/api/executors/profiles/${profileId}`, {
         name: apiName.trim(),
         config,
@@ -367,6 +374,23 @@ export function ExecutorCenterPage(): React.ReactElement {
                 <option value="parallel">支持员工并行</option>
                 <option value="profile-serial">同一配置串行</option>
                 <option value="global-serial">全局串行</option>
+              </Select>
+            </Field>
+          </div>
+          <div className="form-row">
+            <Field label="思考深度" hint="仅支持的模型生效（o 系列 / thinking 模型自动识别，不支持的模型自动忽略）">
+              <Select value={apiThinkingDepth} onChange={(e) => setApiThinkingDepth((e.target as HTMLSelectElement).value as typeof apiThinkingDepth)}>
+                <option value="off">关闭</option>
+                <option value="low">低</option>
+                <option value="medium">中</option>
+                <option value="high">高</option>
+              </Select>
+            </Field>
+            <Field label="上下文缓存" hint="auto/on 保持 provider 默认缓存（节省成本），off 关闭">
+              <Select value={apiContextCache} onChange={(e) => setApiContextCache((e.target as HTMLSelectElement).value as typeof apiContextCache)}>
+                <option value="auto">自动</option>
+                <option value="on">开启</option>
+                <option value="off">关闭</option>
               </Select>
             </Field>
           </div>
