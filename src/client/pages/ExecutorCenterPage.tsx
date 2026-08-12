@@ -460,6 +460,19 @@ export function ExecutorCenterPage(): React.ReactElement {
                       setApiModel(String(profile.config.model ?? ''));
                       setApiKeyEnv(String(profile.credentialRef?.reference ?? ''));
                       setApiConcurrency(profile.concurrencyMode ?? 'parallel');
+                      // settings-overhaul B3/B4：回填新字段，避免编辑保存时被默认值覆盖（数据丢失修复）。
+                      setApiMaxConcurrency(profile.maxConcurrency ?? 4);
+                      setApiConcurrencyLocked(profile.concurrencyLocked ?? false);
+                      setApiThinkingDepth(
+                        (['off', 'low', 'medium', 'high'] as const).includes(profile.config.thinkingDepth as never)
+                          ? (profile.config.thinkingDepth as 'off' | 'low' | 'medium' | 'high')
+                          : 'off',
+                      );
+                      setApiContextCache(
+                        (['auto', 'on', 'off'] as const).includes(profile.config.contextCache as never)
+                          ? (profile.config.contextCache as 'auto' | 'on' | 'off')
+                          : 'auto',
+                      );
                       window.scrollTo({ top: 0, behavior: 'smooth' });
                     }}>编辑</Button>
                   )}
