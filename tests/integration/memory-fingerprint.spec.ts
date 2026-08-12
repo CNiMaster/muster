@@ -19,6 +19,7 @@ import {
   createMemoryCandidate,
   approveMemoryCandidate,
   listMemoryCandidates,
+  copyPersonalMemoryEntries,
 } from '../../src/server/domain/memory';
 
 let tdb: ReturnType<typeof makeTestDb>;
@@ -110,5 +111,20 @@ describe('E2.1 memory fingerprint', () => {
     const pref = listMemoryCandidates(db, { profileId: lead.profileId }).find((x) => x.scope === 'personal');
     expect(pref).toBeDefined();
     expect(pref!.fingerprint).toBe('style:business');
+  });
+
+  it('copyPersonalMemoryEntries 保留 fingerprint（review 修复回归）', () => {
+    const { c, lead } = seed();
+    const other = createAgent(db, { companyId: c.id, name: 'other', role: 'worker' });
+    const cand = createMemoryCandidate(db, {
+      profileId: lead.profileId, scope: 'personal',
+      content: '偏好商务风', author: 'user', confidence: 0.9, canInfluence: true,
+      allowAutoApprove: true, fingerprint: 'style:business',
+    });
+    // allowAutoApprove + author=user → 已自动批准为 active entry，无需再 approve
+    expect(cand.status).toBe('approved');
+    const copies = copyPersonalMemoryEntries(db, lead.profileId, other.profileId);
+    expect(copies).toHaveLength(1);
+    expect(copies[0].fingerprint).toBe('style:business');
   });
 });

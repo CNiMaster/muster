@@ -178,8 +178,8 @@ export async function drainReflectionQueue(
       log.warn('reflection failed', { reflectionId: row.id, taskId: row.task_id, error: message });
     }
   }
-  // E2.2 drain 完成后检测晋升：新入库的 lesson/preference 可能使某 fingerprint 跨阈值。
-  const promotions = detectPromotions(db);
+  // E2.2 drain 完成后检测晋升：仅在本轮处理了反思时才扫，避免每 10s 空跑全表 + UPSERT 写放大。
+  const promotions = rows.length > 0 ? detectPromotions(db) : { processed: 0 };
   return { processed: rows.length, lessons, promotions: promotions.processed };
 }
 
@@ -391,7 +391,7 @@ function parseSection(text: string, section: 'LESSON' | 'RULE' | 'PREFERENCE'): 
   // E2.1 fingerprint 行：紧跟置信度后，形如 "domain:topic"（如 design:color）；匹配则提取，body 取剩余（兼容旧格式无标签）。
   let fingerprint: string | null = null;
   const bodyLines = body.split('\n').filter((l) => l.trim());
-  if (bodyLines.length > 0 && /^[a-z0-9_]+:[a-z0-9_\u4e00-\u9fa5-]+$/i.test(bodyLines[0]!)) {
+  if (bodyLines.length > 0 && /^[a-z0-9_\u4e00-\u9fa5]+:[a-z0-9_\u4e00-\u9fa5-]+$/i.test(bodyLines[0]!)) {
     fingerprint = bodyLines[0]!.trim().toLowerCase();
     body = bodyLines.slice(1).join('\n').trim();
   }

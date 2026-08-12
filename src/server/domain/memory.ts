@@ -401,6 +401,7 @@ export function copyPersonalMemoryEntries(db: DB, sourceProfileId: string, targe
       canInfluence: source.canInfluence,
       expiresAt: source.expiresAt ?? undefined,
       allowAutoApprove: true,
+      fingerprint: source.fingerprint,
     });
     const entry = db.prepare('SELECT * FROM memory_entry WHERE source_candidate_id=?').get(candidate.id) as EntryRow | undefined;
     if (entry) copies.push(entryFromRow(entry));
