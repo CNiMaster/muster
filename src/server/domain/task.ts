@@ -102,6 +102,8 @@ export interface Task {
   alignmentState: AlignmentState;
   /** B2B 外包：本 task 所属的外包契约 id（承接任务才有，普通任务为 null）。 */
   outsourcingContractId: string | null;
+  /** E1.4 返工累计次数：business_review changes_requested/rejected 派返工 Task 时递增（记在被返工的原 task 上）。 */
+  reworkCount: number;
 }
 
 interface TaskRow {
@@ -147,6 +149,7 @@ interface TaskRow {
   alignment_rounds: number;
   alignment_state: AlignmentState;
   outsourcing_contract_id: string | null;
+  rework_count: number;
 }
 
 function fromRow(r: TaskRow): Task {
@@ -193,6 +196,7 @@ function fromRow(r: TaskRow): Task {
     alignmentRounds: r.alignment_rounds ?? 0,
     alignmentState: (r.alignment_state ?? null) as AlignmentState,
     outsourcingContractId: r.outsourcing_contract_id ?? null,
+    reworkCount: r.rework_count ?? 0,
   };
 }
 

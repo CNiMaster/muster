@@ -134,6 +134,7 @@ export class OpenAICompatibleAdapter implements ExecutionAdapter {
         model,
         loopback: ctx.loopback,
         permissionGuard: ctx.permissionGuard,
+        usageTracking: { db: getDb(), taskId: ctx.task.id },
         reviewContext: { db: getDb(), taskId: ctx.task.id },
         consultationContext: {
           db: getDb(),

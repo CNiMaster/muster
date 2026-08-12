@@ -18,6 +18,7 @@ import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { nowIso, shortId } from '../../shared/utils';
 import { createTask, getTask, type CreateTaskInput, type AcceptanceItem } from './task';
+import { enqueueReflection } from './reflection';
 import { getCompany } from './company';
 import { recordSuspension, resolveSuspensionByTask } from './task-suspension';
 
@@ -210,8 +211,29 @@ export function decideBusinessReview(db: DB, id: string, input: DecideReviewInpu
       try {
         const reworkTask = createTask(db, taskInput);
         reworkTaskId = reworkTask.id;
+        // E1.3 接线 rework 反思信号：验收被打回时对返工 Task 入队反思（学习"为何被打回、如何一次做对"）。
+        // 用返工 Task 入队避免与原 Task 的 completed 反思 UNIQUE 冲突；extraContext 带打回反馈。
+        try {
+          enqueueReflection(db, {
+            task: reworkTask,
+            outcome: 'rework',
+            signal: 'rework',
+            extraContext: { reworkFeedback: input.feedback ?? '', originalTaskTitle: review.title },
+          });
+        } catch {
+          /* 反思入队失败不阻塞 review 决策 */
+        }
       } catch {
         // 派发失败不阻塞决定本身，仅记录
+      }
+    }
+    // E1.4 递增原 task 返工计数：记在被返工的工作上，供一次通过率与评级质量维度消费。
+    // rejected 与 changes_requested 都算被打回；即使原 task 后续被 cancel，计数仍作为历史质量信号保留。
+    if (review.taskId) {
+      try {
+        db.prepare('UPDATE task SET rework_count = rework_count + 1, updated_at=? WHERE id=?').run(now, review.taskId);
+      } catch {
+        /* 计数失败不阻塞 review 决策 */
       }
     }
     // 原阻塞 Task 标记 cancelled（返工另起）
