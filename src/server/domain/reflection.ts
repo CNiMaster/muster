@@ -23,6 +23,7 @@ import { getTask, type Task } from './task';
 import { getProject } from './project';
 import { getAgent } from './agent';
 import { createMemoryCandidate, searchMemory } from './memory';
+import { detectPromotions } from './promotion';
 
 /** 反思信号来源（兼作根因分类标签，喂给 prompt 与归因分析）。 */
 export type ReflectionSignal =
@@ -147,7 +148,7 @@ export function enqueueReflection(db: DB, input: EnqueueReflectionInput): void {
 export async function drainReflectionQueue(
   db: DB,
   options: { maxPerTick?: number; companyId?: string } = {},
-): Promise<{ processed: number; lessons: number }> {
+): Promise<{ processed: number; lessons: number; promotions: number }> {
   const maxPerTick = Math.min(Math.max(options.maxPerTick ?? 3, 1), 10);
   // 原子领取：UPDATE...RETURNING 把 pending 翻成 running 并返回被领取的行。
   const claimSql = options.companyId
@@ -177,7 +178,9 @@ export async function drainReflectionQueue(
       log.warn('reflection failed', { reflectionId: row.id, taskId: row.task_id, error: message });
     }
   }
-  return { processed: rows.length, lessons };
+  // E2.2 drain 完成后检测晋升：新入库的 lesson/preference 可能使某 fingerprint 跨阈值。
+  const promotions = detectPromotions(db);
+  return { processed: rows.length, lessons, promotions: promotions.processed };
 }
 
 /**
@@ -240,6 +243,7 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
     'RULE 聚焦"涉及他人或其他岗位协同时应遵循的约定"（如交付前通知测试、加急任务在标题标注等）。' +
     'PREFERENCE 聚焦"用户明确表达过的个人偏好或忌讳"（如风格、语气、格式、内容、流程倾向），必须是用户视角的喜好陈述，不要把单次请求泛化为通用偏好；' +
     'PREFERENCE 正文必须以【domain】开头，domain ∈ 风格/语气/格式/内容/流程。' +
+    'E2.1 每条沉淀附带一个 fingerprint 标签（形如 "domain:topic"，例如 design:color、workflow:handoff、style:business、tone:formal），紧跟置信度行后单独一行，用于后续识别跨任务的重复模式；无明确归类时该行可省略。' +
     '只产出具体、可操作、能影响下次执行的内容，不要空泛总结，不要复述任务本身。' +
     '如果某一类没有值得沉淀的新内容（与已有记忆重复或纯属偶发，或用户反馈中无明显偏好信号），那一类写 SKIPPED。';
   // E1.2 收集用户反馈原文；无反馈时不强求 PREFERENCE（prompt 要求 LLM 写 SKIPPED）。
@@ -256,12 +260,15 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
     '请按以下格式输出（三类都可省略，没有价值的写 SKIPPED；无用户反馈时 PREFERENCE 必须 SKIPPED）：',
     '[LESSON]',
     '<置信度 0-1 的小数>',
+    '<fingerprint：domain:topic 形如 design:color，可省略>',
     '<经验正文 50-150 字>',
     '[RULE]',
     '<置信度 0-1 的小数>',
+    '<fingerprint：domain:topic，可省略>',
     '<协作规则正文 50-150 字>',
     '[PREFERENCE]',
     '<置信度 0-1 的小数>',
+    '<fingerprint：domain:topic，如 style:business>',
     '<【domain】偏好正文 30-100 字，domain ∈ 风格/语气/格式/内容/流程>',
   ].join('\n');
 
@@ -279,7 +286,7 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
   const lesson = parseSection(text, 'LESSON');
   const rule = parseSection(text, 'RULE');
   // E1.2 PREFERENCE 仅在存在用户反馈时解析（无反馈时 LLM 应已 SKIPPED，这里兜底忽略）。
-  const preference = feedbackText ? parseSection(text, 'PREFERENCE') : { confidence: 0, body: '' };
+  const preference = feedbackText ? parseSection(text, 'PREFERENCE') : { confidence: 0, body: '', fingerprint: null as string | null };
   const preferenceValid = Boolean(preference.body) && preference.confidence >= 0.7;
 
   // 三类都没有有效内容 → skipped
@@ -305,6 +312,7 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
       confidence: lesson.confidence,
       canInfluence: true,
       allowAutoApprove: lesson.confidence >= 0.8,
+      fingerprint: lesson.fingerprint,
     });
     lessonCandidateId = candidate.id;
   }
@@ -324,6 +332,7 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
       confidence: rule.confidence,
       canInfluence: true,
       allowAutoApprove: rule.confidence >= 0.8,
+      fingerprint: rule.fingerprint,
     });
   }
 
@@ -341,6 +350,7 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
       confidence: preference.confidence,
       canInfluence: true,
       allowAutoApprove: true,
+      fingerprint: preference.fingerprint,
     });
     preferenceBody = preference.body;
   }
@@ -363,14 +373,14 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
  * 格式：[SECTION] 头 → 置信度行 → 正文行。置信度缺省 0.7，正文截断 500 字。
  * 找不到段头或正文为 SKIPPED/空 → 返回空 body（表示该类无沉淀）。
  */
-function parseSection(text: string, section: 'LESSON' | 'RULE' | 'PREFERENCE'): { confidence: number; body: string } {
+function parseSection(text: string, section: 'LESSON' | 'RULE' | 'PREFERENCE'): { confidence: number; fingerprint: string | null; body: string } {
   const re = new RegExp(`\\[${section}\\]\\s*([\\s\\S]*?)(?=\\[(?:LESSON|RULE|PREFERENCE)\\]|$)`, 'i');
   const match = re.exec(text);
-  if (!match) return { confidence: 0.7, body: '' };
+  if (!match) return { confidence: 0.7, fingerprint: null, body: '' };
   const block = match[1]!.trim();
-  if (!block || /^SKIPPED/i.test(block)) return { confidence: 0.7, body: '' };
+  if (!block || /^SKIPPED/i.test(block)) return { confidence: 0.7, fingerprint: null, body: '' };
   const lines = block.split('\n').filter((l) => l.trim());
-  if (lines.length === 0) return { confidence: 0.7, body: '' };
+  if (lines.length === 0) return { confidence: 0.7, fingerprint: null, body: '' };
   let confidence = 0.7;
   let body = block;
   const firstNum = parseFloat(lines[0]!);
@@ -378,9 +388,16 @@ function parseSection(text: string, section: 'LESSON' | 'RULE' | 'PREFERENCE'): 
     confidence = firstNum;
     body = lines.slice(1).join('\n').trim();
   }
+  // E2.1 fingerprint 行：紧跟置信度后，形如 "domain:topic"（如 design:color）；匹配则提取，body 取剩余（兼容旧格式无标签）。
+  let fingerprint: string | null = null;
+  const bodyLines = body.split('\n').filter((l) => l.trim());
+  if (bodyLines.length > 0 && /^[a-z0-9_]+:[a-z0-9_\u4e00-\u9fa5-]+$/i.test(bodyLines[0]!)) {
+    fingerprint = bodyLines[0]!.trim().toLowerCase();
+    body = bodyLines.slice(1).join('\n').trim();
+  }
   body = body.slice(0, 500);
-  if (!body || /^SKIPPED/i.test(body)) return { confidence: 0.7, body: '' };
-  return { confidence, body };
+  if (!body || /^SKIPPED/i.test(body)) return { confidence: 0.7, fingerprint: null, body: '' };
+  return { confidence, fingerprint, body };
 }
 
 /**

@@ -164,22 +164,37 @@
 
 ---
 
-# 批次 E2：晋升流（gated — 待 E1 数据回流后细化为 checkbox）
+# 批次 E2：晋升流（执行中）
 
-**准入条件：** E1 数据回流检查点通过，观察到可聚类的 lesson/偏好模式。
+**调整（实施时判断）：** E1 数据回流主要用于调阈值/粒度，不是前置硬门槛。fingerprint 策略改由 reflection 产经验时 LLM 同时产结构化 category 标签（`domain:topic`），聚类 = group by + count + distinct profile，初版用保守阈值，真实数据回流后再调优。这绕开了"必须先有数据才能定 fingerprint"的循环。
 
-**方向（待细化）：**
-- 新建 `src/server/domain/promotion.ts`：lesson/preference 按 `${domain}:${target}:${intent}` fingerprint 聚类（复用 `template-health-findings.ts:170` 模式）。
-- 晋升触发：频次 ≥ N / 跨员工 ≥ 2 / 质量阈值 / 用户强信号 ≥ M，四类触发 → 产 `promotion_candidate` → 达阈值转 `report_action_item`（复用载体）。
-- 结构记忆版本化：新建 `structure_change_log`（仿 `artifact_change_log`）+ entity 版本号 + 回滚 API。
-- 锁定：`entity_lock`（个人/组织作用域），晋升流查 lock 清单降级为信息性 finding。
-- 新 migration：`lesson_cluster` / `promotion_candidate` / `structure_change_log` / `entity_lock`。
+## Task E2.1 — memory fingerprint 基础设施
+- [ ] migration：memory_candidate + memory_entry 加 `fingerprint TEXT`（nullable，向后兼容）
+- [ ] createMemoryCandidate 接受 fingerprint；approveMemoryCandidate 透传到 entry；类型 + fromRow 映射
+- [ ] reflection prompt 让 LLM 为每条 LESSON/RULE/PREFERENCE 产 `domain:topic` 标签；parseSection 兼容解析（fingerprint 行可选，旧格式无标签时 null）
+- Test `tests/integration/memory-fingerprint.spec.ts`
+- Commit: `feat(E2): memory fingerprint — 结构化标签供晋升聚类`
 
-**E2 关键风险（需在细化计划中直面）：**
-- fingerprint 设计是 E2 最难、最不确定的部分。细化计划必须包含一个"原型聚类"子任务：对 E1 产出的真实 lesson 跑几版 fingerprint 策略，对比噪声/误合并率，再定稿。
-- 自动落地 + 回滚的连续偏移风险：细化计划需明确"自动变更频率上限"与"用户回看界面"。
+## Task E2.2 — lesson 聚类 + 晋升触发
+- [ ] migration：promotion_candidate 表（fingerprint + scope + count + distinct_profiles + sample_entry_ids + status + created_at）
+- [ ] 新建 `src/server/domain/promotion.ts`：聚合查询 + 晋升触发（达阈值幂等 insert）+ 列表查询
+- [ ] reflection drain 完成后调用 `detectPromotions(db)`（检查未晋升 fingerprint 是否达阈值）
+- [ ] 保守阈值：同 fingerprint count ≥ 3 或 distinct profile ≥ 2（跨员工重复 = 组织级信号）
+- Test `tests/integration/promotion.spec.ts`
+- Commit: `feat(E2): lesson 聚类 + 晋升触发 → promotion_candidate`
 
-**E2 准出：** 同一 lesson 出现 N 次后自动生成 promotion_candidate；任何结构变更在 `structure_change_log` 可回滚；锁定字段不被自动优化。
+## Task E2.3 — 结构记忆版本化 + 回滚（护栏，为 E3 自动落地铺路）
+- [ ] migration：structure_change_log（仿 artifact_change_log）
+- [ ] recordStructureChange + listStructureHistory + rollbackStructure(to version)
+- Test + Commit: `feat(E2): 结构记忆版本化 + 回滚`
+
+## Task E2.4 — 锁定豁免
+- [ ] migration：entity_lock（entity_type/entity_id/scope: personal|org/locked_fields）
+- [ ] 晋升流生成 action item 前查 lock 清单，命中降级为信息性 finding
+- [ ] 锁定/解锁记 structure_change_log
+- Test + Commit: `feat(E2): 锁定豁免`
+
+**E2 准出：** 同 fingerprint 达阈值后自动生成 promotion_candidate；结构变更有审计可回滚；锁定字段不被自动优化。晋升→report_action_item 的落地衔接在 E3。
 
 ---
 

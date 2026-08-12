@@ -25,6 +25,8 @@ export interface MemoryCandidate {
   reviewedBy: string | null;
   reviewedAt: string | null;
   createdAt: string;
+  /** E2.1 结构化 category 标签（形如 "design:color"），供晋升流聚类；旧数据/null 无标签。 */
+  fingerprint: string | null;
 }
 
 export interface MemoryEntry {
@@ -41,6 +43,8 @@ export interface MemoryEntry {
   expiresAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** E2.1 结构化 category 标签，供晋升流聚类。 */
+  fingerprint: string | null;
 }
 
 type CandidateRow = {
@@ -48,11 +52,13 @@ type CandidateRow = {
   content: string; source_task_id: string | null; source_message_id: string | null; author: string;
   confidence: number; can_influence: number; status: MemoryCandidateStatus; quarantine_reason: string | null;
   expires_at: string | null; reviewed_by: string | null; reviewed_at: string | null; created_at: string;
+  fingerprint: string | null;
 };
 type EntryRow = {
   id: string; profile_id: string; scope: MemoryScope; company_id: string | null; project_id: string | null;
   content: string; version: number; state: MemoryEntryState; can_influence: number;
   source_candidate_id: string | null; expires_at: string | null; created_at: string; updated_at: string;
+  fingerprint: string | null;
 };
 
 function candidateFromRow(row: CandidateRow): MemoryCandidate {
@@ -61,7 +67,7 @@ function candidateFromRow(row: CandidateRow): MemoryCandidate {
     content: row.content, sourceTaskId: row.source_task_id, sourceMessageId: row.source_message_id,
     author: row.author, confidence: row.confidence, canInfluence: row.can_influence === 1, status: row.status,
     quarantineReason: row.quarantine_reason, expiresAt: row.expires_at, reviewedBy: row.reviewed_by,
-    reviewedAt: row.reviewed_at, createdAt: row.created_at,
+    reviewedAt: row.reviewed_at, createdAt: row.created_at, fingerprint: row.fingerprint,
   };
 }
 
@@ -70,6 +76,7 @@ function entryFromRow(row: EntryRow): MemoryEntry {
     id: row.id, profileId: row.profile_id, scope: row.scope, companyId: row.company_id, projectId: row.project_id,
     content: row.content, version: row.version, state: row.state, canInfluence: row.can_influence === 1,
     sourceCandidateId: row.source_candidate_id, expiresAt: row.expires_at, createdAt: row.created_at, updatedAt: row.updated_at,
+    fingerprint: row.fingerprint,
   };
 }
 
@@ -77,6 +84,8 @@ export function createMemoryCandidate(db: DB, input: {
   profileId: string; scope: MemoryScope; companyId?: string; projectId?: string; content: string;
   sourceTaskId?: string; sourceMessageId?: string; author: string; confidence: number;
   canInfluence: boolean; expiresAt?: string; allowAutoApprove?: boolean;
+  /** E2.1 结构化 category 标签（形如 "design:color"），供晋升流聚类；省略则无标签。 */
+  fingerprint?: string | null;
 }): MemoryCandidate {
   getAgentProfile(db, input.profileId);
   validateScope(input.scope, input.companyId, input.projectId);
@@ -89,12 +98,12 @@ export function createMemoryCandidate(db: DB, input: {
   db.prepare(
     `INSERT INTO memory_candidate (
       id, profile_id, scope, company_id, project_id, content, source_task_id, source_message_id,
-      author, confidence, can_influence, status, quarantine_reason, expires_at, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
+      author, confidence, can_influence, status, quarantine_reason, expires_at, created_at, fingerprint
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`,
   ).run(
     id, input.profileId, input.scope, input.companyId ?? null, input.projectId ?? null, content,
     input.sourceTaskId ?? null, input.sourceMessageId ?? null, input.author, input.confidence,
-    input.canInfluence ? 1 : 0, quarantineReason, input.expiresAt ?? null, now,
+    input.canInfluence ? 1 : 0, quarantineReason, input.expiresAt ?? null, now, input.fingerprint ?? null,
   );
   const canAutoApprove = !quarantineReason && input.allowAutoApprove === true && (
     input.scope === 'project' || input.author === 'user'
@@ -128,11 +137,11 @@ export function approveMemoryCandidate(db: DB, id: string, reviewer: string): Me
     db.prepare(
       `INSERT INTO memory_entry (
         id, profile_id, scope, company_id, project_id, content, version, state,
-        can_influence, source_candidate_id, expires_at, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 1, 'active', ?, ?, ?, ?, ?)`,
+        can_influence, source_candidate_id, expires_at, created_at, updated_at, fingerprint
+      ) VALUES (?, ?, ?, ?, ?, ?, 1, 'active', ?, ?, ?, ?, ?, ?)`,
     ).run(
       entryId, candidate.profileId, candidate.scope, candidate.companyId, candidate.projectId,
-      candidate.content, candidate.canInfluence ? 1 : 0, candidate.id, candidate.expiresAt, now, now,
+      candidate.content, candidate.canInfluence ? 1 : 0, candidate.id, candidate.expiresAt, now, now, candidate.fingerprint,
     );
     insertMemoryVersion(db, entryId, 1, candidate.content, reviewer, candidate.id, now);
     indexMemory(db, entryId, candidate.profileId, candidate.content);
