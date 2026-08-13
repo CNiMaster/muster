@@ -50,7 +50,7 @@ export function CompanyTeam({
   const { data: pendingReviews = [] } = useBusinessReviews({ companyId, status: 'pending' });
 
   const doDismiss = (agent: Agent): void => {
-    if (!window.confirm(`确认从本公司移除「${agent.name}」？\n该员工的全局档案保留，可随时从人才市场重新聘用。`)) return;
+    if (!window.confirm(`确认从本公司移除「${agent.name}」？\n该员工的全局档案保留，可随时从员工库重新聘用。`)) return;
     dismiss.mutate(
       { companyId, employeeId: agent.id },
       {
@@ -94,7 +94,7 @@ export function CompanyTeam({
       onError: (error) => toast('error', (error as Error).message),
     })} />}
     <Card title="员工" actions={<Badge>{agents.length}</Badge>}>
-      {agents.length === 0 && <EmptyState icon={Icons.empty} title="还没有员工" hint={isOff ? '招募员工以组建团队，或从人才市场聘用。' : '请先让公司下班，再调整组织。'} />}
+      {agents.length === 0 && <EmptyState icon={Icons.empty} title="还没有员工" hint={isOff ? '招募员工以组建团队，或从员工库聘用。' : '请先让公司下班，再调整组织。'} />}
       <ul className="entity-list">
         {agents.map((agent) => {
           const isOpen = expanded === agent.id;

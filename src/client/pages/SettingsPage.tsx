@@ -291,7 +291,7 @@ export function SettingsPage(): React.ReactElement {
         </details>
 
         <details className="details-collapse">
-          <summary>自主进化（空闲反思 / 白日梦）</summary>
+          <summary>自主进化（空闲反思）</summary>
           <div className="form-stack">
             <label className="checkbox-row">
               <input

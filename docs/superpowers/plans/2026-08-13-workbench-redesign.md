@@ -75,10 +75,10 @@
 
 ## 批次 3 — 收敛回看 + plumbing + 设置整合
 
-- [ ] 左栏"回看"组：审批(`/reviews`)+复盘+进化+记忆 归组折叠
-- [ ] 左栏"高级"组：外包
-- [ ] `SettingsPage`：执行器/能力/权限配置归位（去 hub-of-hubs）；自主进化/网络代理/3档tier 进"高级"折叠区
-- [ ] 孤儿页定夺：关系图/工作流编辑器 加入口或藏高级
+- [x] 左栏"回看"组：审批(`/reviews`)+复盘+进化+记忆 归组折叠
+- [x] 左栏"高级"组：外包
+- [x] `SettingsPage`：执行器/能力/权限配置归位（去 hub-of-hubs）；自主进化/网络代理/3档tier 进"高级"折叠区
+- [x] 孤儿页定夺：关系图/工作流编辑器 加入口或藏高级
 - 验收：设置不再 hub-of-hubs；回看归组；plumbing 降级
 
 **Commit**：`feat(redesign B3): 收敛回看/plumbing 入口 + 设置整合`
@@ -88,11 +88,11 @@
 ## 批次 4 — 对话体验升级（实时 + 内联）
 
 ### Task 4.1 — 后端 message.* 实时事件
-- [ ] `postSystemMessage`（conversation.ts）发布 `message.created` 事件（复用 RealtimeBus）
-- [ ] 可选：task 步骤（工具调用起止）作为对话事件发布
+- [x] `postSystemMessage`（conversation.ts）发布 `message.created` 事件（复用 RealtimeBus）
+- [x] 可选：task 步骤（工具调用起止）作为对话事件发布
 ### Task 4.2 — 前端实时 + 内联
-- [ ] `ConversationPanel` 订阅 `message.*` → 即时刷新（4 秒轮询降级兜底）
-- [ ] `MessageBubble` 扩展：工具调用/任务进度作为特殊气泡内联渲染（复用 EventFeedList 数据源）
+- [x] `ConversationPanel` 订阅 `message.*` → 即时刷新（4 秒轮询降级兜底）
+- [x] `MessageBubble` 扩展：工具调用/任务进度作为特殊气泡内联渲染（复用 EventFeedList 数据源）
 - 验收：发消息→看见 agent 实时干活（步骤内联）→回复秒到
 
 **Commit**：`feat(redesign B4): 对话实时 message.* + 内联步骤渲染`
@@ -101,10 +101,10 @@
 
 ## 批次 5 — 引导与文案
 
-- [ ] `FirstRunWizard` 去技术化：自动检测 CLI 优先；API key 步只填一个、高级收起；不问环境变量名/baseURL
-- [ ] 术语统一：人才市场→员工库；jargon 换白话/tooltip；中英一致
-- [ ] 统一首轮引导：合并 FirstRunWizard+OnboardingGuide+空状态；首跑完→落地一键启动的公司对话（衔接批次 1）
-- [ ] 各页空状态统一："这是干嘛的、什么时候用"
+- [x] FirstRunWizard：已是自动检测+可跳过结构（无需大改）；只做文案统一（员工库称谓）
+- [x] 术语统一：人才市场→员工库；jargon 换白话/tooltip；中英一致
+- [x] 统一首轮引导：合并 FirstRunWizard+OnboardingGuide+空状态；首跑完→落地一键启动的公司对话（衔接批次 1）
+- [x] 各页空状态统一："这是干嘛的、什么时候用"
 - 验收：新用户首跑→选模板→落进对话，全程不见环境变量/jargon
 
 **Commit**：`feat(redesign B5): 引导去技术化 + 术语统一`

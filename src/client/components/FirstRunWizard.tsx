@@ -348,7 +348,7 @@ export function FirstRunWizard(): React.ReactNode {
               <p className="muted">设置已就绪。接下来可以：</p>
               <ul className="first-run-todo">
                 <li>创建你的第一家公司（从团队蓝图开始）</li>
-                <li>或先浏览人才市场，看看可用的员工档案</li>
+                <li>或先浏览员工库，看看可用的员工档案</li>
                 <li>随时回「设置」调整目录、CLI 与 API</li>
               </ul>
               <div className="settings-primary-actions">
