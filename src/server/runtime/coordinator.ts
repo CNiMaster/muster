@@ -14,6 +14,7 @@ import { drainReflectionQueue, recoverStuckReflections } from '../domain/reflect
 import { generateInspectorSuggestions } from '../domain/inspector';
 import { autoAcceptContract, createOutsourcedTask, revertAcceptToPending } from '../domain/outsourcing-contract';
 import { generateOptimizationReport } from '../domain/optimization-report';
+import { promoteCandidatesToActions } from '../domain/promotion';
 import { executePendingOfflineActions } from '../domain/optimization-report-executor';
 import { shortId } from '../../shared/utils';
 import {
@@ -403,6 +404,21 @@ export class ProjectRuntimeCoordinator {
           try {
             const report = await generateOptimizationReport(this.db, company.id);
             log.info('optimization report generated', { companyId: company.id, reportId: report.id });
+            // E4.1 孤岛打通：报告生成后把晋升候选转成 action item（低风险自动执行、高风险进报告等审批）。
+            // 这是 promoteCandidatesToActions 的运行时调用点——补上后整条进化闭环才真正跑起来。
+            try {
+              const promoted = promoteCandidatesToActions(this.db, company.id);
+              if (promoted.created > 0) {
+                log.info('promotion candidates promoted to actions', {
+                  companyId: company.id, reportId: promoted.reportId, created: promoted.created,
+                });
+              }
+            } catch (error) {
+              log.warn('promoteCandidatesToActions failed', {
+                companyId: company.id,
+                error: error instanceof Error ? error.message : String(error),
+              });
+            }
           } catch (error) {
             log.warn('optimization report generation failed', {
               companyId: company.id,

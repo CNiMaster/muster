@@ -232,19 +232,29 @@
 
 ---
 
-# 批次 E4：做梦自主回路 + 孤岛打通（gated — 依赖 E1–E3）
+# 批次 E4：孤岛打通 + 可选做梦回路（执行中）
 
-**准入条件：** E1–E3 跑通，观察进化效果后再定自主回路的 ROI 与频率。
+**范围聚焦（实施时判断）：** E4 拆成两半。**孤岛打通**（promoteCandidatesToActions 接进每日调度）是确定性高价值、零 LLM 成本的，必须做。**idle 自主 brainstorm**（做梦）有烧钱风险、ROI 需真实数据观察，做成**默认关闭的可配开关**，不贸然全自动。
 
-**方向（待细化）：**
-- `coordinator.ts` idle 检测（online 且无活跃 task）→ 自主触发轻量 reflection/brainstorm，复用 `brainstorm.ts:64-71` 预算 + `:142-165` 让位护栏 + `:91-101` autoSelectParticipants。
-- 打通孤岛：`optimization-report.collectCompanyStats` 消费 reflection 的 lesson + report 的纠正 + brainstorm 的 suggestion。
-- 反思/优化频率可配（系统设置或公司设置）。
-- 结构变更通知进公司对话窗（复用 `notifyExecutionResults`）。
+## Task E4.1 — 孤岛打通：promoteCandidatesToActions 接进每日 optimization-report 调度
+- [ ] coordinator.scheduleOptimizationReports：每日报告生成后调 `promoteCandidatesToActions(db, company.id)`，把晋升候选转成 action item（低风险自动执行、高风险进报告等用户审批）
+- [ ] 这是 promoteCandidatesToActions 此前零调用方的唯一接入点——补上后整条 感知→反思→晋升→落地 闭环才真正在运行时跑起来
+- Test tests/integration/coordinator-e4.spec.ts（调度后 promotion_candidate 被 consume + action item 产生）
+- Commit: `feat(E4): 孤岛打通——promoteCandidatesToActions 接进每日调度`
 
-**E4 关键风险：** idle 自主反思的 LLM 成本与打扰感。细化计划必须含预算上限与"用户可关闭自主回路"开关。brainstorm 现在手动触发可能是有意为之（控成本），不可贸然全自动。
+## Task E4.2 — collectCompanyStats 消费反思/复盘产物（孤岛打通 2）
+- [ ] optimization-report.collectCompanyStats 增读：reflection 产出的 lesson 数、rework lesson 数、pending promotion_candidate 数（让 AI 报告看到进化信号）
+- [ ] 不改 AI prompt 结构（stats 是 AI 输入），只补字段
+- Test 补 collectCompanyStats 含新字段
+- Commit: `feat(E4): collectCompanyStats 消费反思/晋升信号`
 
-**E4 准出：** 公司 idle 时自主反思受预算约束、让位正式 Task；optimization-report 事实基础包含三套孤岛产物。
+## Task E4.3 — idle 自主反思开关（默认关闭，可选）
+- [ ] 系统设置加 `autonomousReflectionEnabled`（默认 false）+ `autonomousReflectionBudgetUSD`（默认 0）
+- [ ] coordinator 检测公司 idle（online 且无活跃 task）且开关开 → 触发轻量 reflection（复用 drainReflectionQueue 对近期 completed task 补反思）；受预算约束、正式 Task 到达让位
+- [ ] 不做全自动 brainstorm（烧钱风险），只补 reflection（已有 LLM 成本控制）
+- Test + Commit: `feat(E4): idle 自主反思开关（默认关闭）`
+
+**E4 准出：** 每日调度自动消费晋升候选 → action item（闭环在运行时跑通）；optimization-report 能看到反思/晋升信号；自主反思默认关闭、用户可开。
 
 ---
 

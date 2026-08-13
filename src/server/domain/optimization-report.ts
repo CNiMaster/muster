@@ -99,6 +99,13 @@ export interface CompanyStats {
   issues: string[];
   roleGaps: string[];
   cockpit: ReturnType<typeof getCompanyCockpit>;
+  /** E4.2 组织进化信号：让 AI 报告看到反思/晋升流的产物，避免孤岛。 */
+  evolution: {
+    lessonsLearned: number;       // 已批准的经验记忆条数（memory_entry scope=project/skill）
+    reworkReflections: number;    // 返工反思次数（task_reflection signal=rework）
+    pendingPromotions: number;    // 待晋升候选数（promotion_candidate status=pending，该公司）
+    promotedActions: number;      // 已晋升为 action item 的数（promotion_candidate status=promoted，该公司）
+  };
 }
 
 /** 聚合公司近期的运营数据（报告的事实基础）。 */
@@ -193,6 +200,22 @@ export function collectCompanyStats(db: DB, companyId: string): CompanyStats {
   const firstAgent = company.firstAgentId
     ? agentRows.find((a) => a.id === company.firstAgentId)
     : undefined;
+
+  // E4.2 组织进化信号：反思/晋升产物（让 AI 报告看到进化闭环的运行情况，避免孤岛）。
+  const lessonsLearned = db
+    .prepare(`SELECT COUNT(*) AS n FROM memory_entry WHERE scope IN ('project','skill') AND state='active'
+              AND profile_id IN (SELECT profile_id FROM agent_definition WHERE company_id=?)`)
+    .get(companyId) as { n: number };
+  const reworkReflections = db
+    .prepare(`SELECT COUNT(*) AS n FROM task_reflection WHERE signal='rework' AND company_id=?`)
+    .get(companyId) as { n: number };
+  const pendingPromotions = db
+    .prepare(`SELECT COUNT(*) AS n FROM promotion_candidate WHERE company_id=? AND status='pending'`)
+    .get(companyId) as { n: number };
+  const promotedActions = db
+    .prepare(`SELECT COUNT(*) AS n FROM promotion_candidate WHERE company_id=? AND status='promoted'`)
+    .get(companyId) as { n: number };
+
   return {
     company: {
       name: company.name,
@@ -205,6 +228,12 @@ export function collectCompanyStats(db: DB, companyId: string): CompanyStats {
     issues,
     roleGaps: cockpit.roleGaps.map((g) => g.reason),
     cockpit,
+    evolution: {
+      lessonsLearned: lessonsLearned?.n ?? 0,
+      reworkReflections: reworkReflections?.n ?? 0,
+      pendingPromotions: pendingPromotions?.n ?? 0,
+      promotedActions: promotedActions?.n ?? 0,
+    },
   };
 }
 
