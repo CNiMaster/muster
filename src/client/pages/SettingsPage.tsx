@@ -135,32 +135,6 @@ export function SettingsPage(): React.ReactElement {
             <span className="muted">{testResult ? (testResult.overallSuccess ? '最近测试成功' : '最近测试失败') : '运行测试以确认配置'}</span>
           </div>
         </div>
-        <div className="settings-tier-grid">
-          <Field label="大活默认执行器" hint="复杂/需要命令执行的任务（未配置时自动降级）">
-            <Select value={tierPrimary} onChange={(event) => setTierPrimary(event.target.value)}>
-              <option value="">未配置（继承默认执行器）</option>
-              {(executorProfiles ?? []).map((profile) => (
-                <option key={profile.id} value={profile.id}>{profile.name}{profile.connection?.status === 'connected' ? ' ✓' : profile.connection ? ' ⚠' : ''}</option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="标准默认执行器" hint="普通任务">
-            <Select value={tierSecondary} onChange={(event) => setTierSecondary(event.target.value)}>
-              <option value="">未配置（继承默认执行器）</option>
-              {(executorProfiles ?? []).map((profile) => (
-                <option key={profile.id} value={profile.id}>{profile.name}{profile.connection?.status === 'connected' ? ' ✓' : profile.connection ? ' ⚠' : ''}</option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="小活默认执行器" hint="讨论/咨询/轻量任务（低成本模型）">
-            <Select value={tierTertiary} onChange={(event) => setTierTertiary(event.target.value)}>
-              <option value="">未配置（继承默认执行器）</option>
-              {(executorProfiles ?? []).map((profile) => (
-                <option key={profile.id} value={profile.id}>{profile.name}{profile.connection?.status === 'connected' ? ' ✓' : profile.connection ? ' ⚠' : ''}</option>
-              ))}
-            </Select>
-          </Field>
-        </div>
         <div className="settings-primary-actions">
           <Button variant="ghost" onClick={handleTest} loading={testConnection.isPending}>运行连接测试</Button>
           <Button onClick={handleSave} loading={saveSettings.isPending}>保存设置</Button>
@@ -169,6 +143,19 @@ export function SettingsPage(): React.ReactElement {
       </Card>
 
       <div className="settings-advanced section">
+        {/* 改版 B3：配置中心——执行器/能力/权限的入口归位到设置页（去 hub-of-hubs 弹跳） */}
+        <details className="details-collapse" open>
+          <summary>配置中心（执行器 / 能力 / 权限）</summary>
+          <div className="form-stack">
+            <p className="muted">员工的运行环境、可用工具与审批规则都在这里配置；公司按员工绑定。</p>
+            <div className="settings-primary-actions">
+              <Link to="/executors">执行器接入中心</Link>
+              <Link to="/capabilities">能力中心</Link>
+              <Link to="/permissions">权限与审批中心</Link>
+            </div>
+          </div>
+        </details>
+
         <details className="details-collapse">
           <summary>CLI 运行时</summary>
           <div className="form-stack">
@@ -181,11 +168,43 @@ export function SettingsPage(): React.ReactElement {
           </div>
         </details>
 
+        {/* 改版 B3：执行器分级从常用卡移入折叠区（power-user 项不再默认裸露） */}
+        <details className="details-collapse">
+          <summary>执行器分级（大活 / 标准 / 小活）</summary>
+          <div className="form-stack">
+            <div className="settings-tier-grid">
+              <Field label="大活默认执行器" hint="复杂/需要命令执行的任务（未配置时自动降级）">
+                <Select value={tierPrimary} onChange={(event) => setTierPrimary(event.target.value)}>
+                  <option value="">未配置（继承默认执行器）</option>
+                  {(executorProfiles ?? []).map((profile) => (
+                    <option key={profile.id} value={profile.id}>{profile.name}{profile.connection?.status === 'connected' ? ' ✓' : profile.connection ? ' ⚠' : ''}</option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="标准默认执行器" hint="普通任务">
+                <Select value={tierSecondary} onChange={(event) => setTierSecondary(event.target.value)}>
+                  <option value="">未配置（继承默认执行器）</option>
+                  {(executorProfiles ?? []).map((profile) => (
+                    <option key={profile.id} value={profile.id}>{profile.name}{profile.connection?.status === 'connected' ? ' ✓' : profile.connection ? ' ⚠' : ''}</option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="小活默认执行器" hint="讨论/咨询/轻量任务（低成本模型）">
+                <Select value={tierTertiary} onChange={(event) => setTierTertiary(event.target.value)}>
+                  <option value="">未配置（继承默认执行器）</option>
+                  {(executorProfiles ?? []).map((profile) => (
+                    <option key={profile.id} value={profile.id}>{profile.name}{profile.connection?.status === 'connected' ? ' ✓' : profile.connection ? ' ⚠' : ''}</option>
+                  ))}
+                </Select>
+              </Field>
+            </div>
+          </div>
+        </details>
+
         <details className="details-collapse">
           <summary>权限与运行限制</summary>
           <div className="form-stack">
             <p>权限现已按员工使用“审批策略 × 允许范围”配置。Turbo 也必须选择范围。</p>
-            <div className="settings-primary-actions"><Link to="/permissions">打开权限与审批中心</Link><Link to="/executors">打开执行器接入中心</Link></div>
             <div className="settings-field-grid">
               <Field label="单次 Task 超时（毫秒）">
                 <Input type="number" value={timeoutMs} onChange={(event) => setTimeoutMs(Number(event.target.value))} />
@@ -201,7 +220,6 @@ export function SettingsPage(): React.ReactElement {
           <summary>Provider 与 API 默认值</summary>
           <div className="form-stack">
             <p className="muted">API Key 只从环境变量读取，不在此处保存明文。多供应商/多模型档案请在「执行器接入中心」创建，此处仅作为快速入门默认值。</p>
-            <div className="settings-primary-actions"><Link to="/executors">打开执行器接入中心</Link></div>
             <div className="settings-field-grid">
               <Field label="OpenAI 默认 baseURL">
                 <Input value={openaiBaseURL} onChange={(event) => setOpenaiBaseURL(event.target.value)} placeholder="https://api.openai.com/v1" />

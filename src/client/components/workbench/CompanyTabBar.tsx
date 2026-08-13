@@ -66,10 +66,7 @@ export function CompanyTabBar(): React.ReactElement {
           <div className="tab-overflow-menu">
             <NavLink to="/agents">员工库</NavLink>
             <NavLink to="/reviews">审批</NavLink>
-            <NavLink to="/executors">执行器</NavLink>
-            <NavLink to="/capabilities">能力中心</NavLink>
             <NavLink to="/outsourcing">外包</NavLink>
-            <NavLink to="/permissions">权限</NavLink>
           </div>
         </details>
         <NavLink to="/settings">设置</NavLink>
