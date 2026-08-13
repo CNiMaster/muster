@@ -92,4 +92,25 @@ describe('E5.1 promotion 候选控制', () => {
     expect(listPromotionCandidates(db, { status: 'dismissed' })).toHaveLength(1);
     expect(listPromotionCandidates(db, { status: 'pending' })).toHaveLength(1);
   });
+
+  it('E5 补齐：listPromotionCandidates 按 companyId 过滤（公司页只显示本公司的候选）', () => {
+    const { c } = seedCandidate();
+    const c2 = createCompany(db, { name: 'E51公司2' });
+    const lead2 = createAgent(db, { companyId: c2.id, name: 'lead2', role: 'lead' });
+    const p2 = createProject(db, { companyId: c2.id, name: 'p2', rootDir: '/tmp/p2', firstAgentId: lead2.id, initialState: 'active' });
+    for (let i = 0; i < 3; i++) {
+      const cand = createMemoryCandidate(db, {
+        profileId: lead2.profileId, scope: 'project', companyId: c2.id, projectId: p2.id,
+        content: `style:business 经验 #${i}`, author: 'agent', confidence: 0.85, canInfluence: true, fingerprint: 'style:business',
+      });
+      approveMemoryCandidate(db, cand.id, 'agent');
+    }
+    detectPromotions(db);
+    expect(listPromotionCandidates(db)).toHaveLength(2);
+
+    expect(listPromotionCandidates(db, { companyId: c.id })).toHaveLength(1);
+    expect(listPromotionCandidates(db, { companyId: c.id })[0]!.fingerprint).toBe('design:color');
+    expect(listPromotionCandidates(db, { companyId: c2.id })[0]!.fingerprint).toBe('style:business');
+    expect(listPromotionCandidates(db, { companyId: 'no-such-company' })).toHaveLength(0);
+  });
 });

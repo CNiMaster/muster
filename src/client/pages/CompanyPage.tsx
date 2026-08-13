@@ -72,7 +72,7 @@ export function CompanyPage(): React.ReactElement {
     inspectorLabel="公司现场"
     attentionCount={(cockpit?.approvals.pending ?? 0) + (cockpit?.projects.attention ?? 0)}
     primaryAction={companyAction}
-    navigation={<CompanyWorkNavigation active={activeTab} projectCount={projects.length} employeeCount={agents.length} attentionCount={(cockpit?.approvals.pending ?? 0) + (cockpit?.projects.attention ?? 0)} onChange={(view) => setSearchParams(view === 'overview' ? {} : { view })} />}
+    navigation={<CompanyWorkNavigation active={activeTab} projectCount={projects.length} employeeCount={agents.length} attentionCount={(cockpit?.approvals.pending ?? 0) + (cockpit?.projects.attention ?? 0)} evolutionCount={cockpit?.optimization?.pendingActions ?? 0} onChange={(view) => setSearchParams(view === 'overview' ? {} : { view })} />}
     inspector={<CompanyContextInspector cockpit={cockpit} statusBoard={statusBoard} statusBoardLoading={statusBoardLoading} />}
     commandOptions={[
       ...projects.slice(0, 5).map((project) => ({ label: `进入项目：${project.name}`, href: `/projects/${project.id}`, group: '项目' })),

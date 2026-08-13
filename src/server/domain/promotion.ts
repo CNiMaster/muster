@@ -135,10 +135,20 @@ export function detectPromotions(db: DB): { processed: number } {
   return { processed };
 }
 
-export function listPromotionCandidates(db: DB, filter?: { status?: PromotionStatus }): PromotionCandidate[] {
-  const rows = filter?.status
-    ? db.prepare('SELECT * FROM promotion_candidate WHERE status=? ORDER BY updated_at DESC').all(filter.status)
-    : db.prepare('SELECT * FROM promotion_candidate ORDER BY updated_at DESC').all();
+export function listPromotionCandidates(db: DB, filter?: { status?: PromotionStatus; companyId?: string }): PromotionCandidate[] {
+  const clauses: string[] = [];
+  const values: unknown[] = [];
+  if (filter?.status) {
+    clauses.push('status=?');
+    values.push(filter.status);
+  }
+  // E5 补齐：按公司过滤（公司页只显示本公司的候选；company_id 为 null 的跨公司候选不在任何公司页出现）。
+  if (filter?.companyId !== undefined) {
+    clauses.push('company_id=?');
+    values.push(filter.companyId);
+  }
+  const where = clauses.length > 0 ? ` WHERE ${clauses.join(' AND ')}` : '';
+  const rows = db.prepare(`SELECT * FROM promotion_candidate${where} ORDER BY updated_at DESC`).all(...values);
   return (rows as PromoRow[]).map(rowToCandidate);
 }
 

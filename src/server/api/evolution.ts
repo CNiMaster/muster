@@ -36,7 +36,8 @@ promotionCandidatesRouter.get(
     const status = typeof req.query.status === 'string' && ['pending', 'promoted', 'dismissed'].includes(req.query.status)
       ? (req.query.status as PromotionStatus)
       : undefined;
-    res.json(listPromotionCandidates(getDb(), status ? { status } : undefined));
+    const companyId = typeof req.query.companyId === 'string' && req.query.companyId ? req.query.companyId : undefined;
+    res.json(listPromotionCandidates(getDb(), { ...(status ? { status } : {}), ...(companyId ? { companyId } : {}) }));
   }),
 );
 

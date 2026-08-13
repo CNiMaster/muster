@@ -28,11 +28,13 @@ function itemButton({ item, active, counts, onChange }: {
   </button>;
 }
 
-export function CompanyWorkNavigation({ active, projectCount, employeeCount, attentionCount, onChange }: {
+export function CompanyWorkNavigation({ active, projectCount, employeeCount, attentionCount, evolutionCount, onChange }: {
   active: CompanySectionKey;
   projectCount: number;
   employeeCount: number;
   attentionCount: number;
+  /** E5 补齐：待审批的组织优化建议数（进化 tab 红点）。 */
+  evolutionCount: number;
   onChange: (key: CompanySectionKey) => void;
 }): React.ReactElement {
   return <>
@@ -46,7 +48,7 @@ export function CompanyWorkNavigation({ active, projectCount, employeeCount, att
     </div>
     <div className="work-nav-section">
       <div className="work-nav-heading"><span>固定入口</span></div>
-      {fixedItems.map((item) => itemButton({ item, active, counts: {}, onChange }))}
+      {fixedItems.map((item) => itemButton({ item, active, counts: { evolution: evolutionCount }, onChange }))}
     </div>
   </>;
 }

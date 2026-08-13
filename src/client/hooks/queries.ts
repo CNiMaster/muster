@@ -2036,10 +2036,14 @@ export function useRejectReportItem() {
   });
 }
 
-export function usePromotionCandidates(status?: string) {
+export function usePromotionCandidates(status?: string, companyId?: string) {
+  const qs = [
+    status ? `status=${status}` : '',
+    companyId ? `companyId=${encodeURIComponent(companyId)}` : '',
+  ].filter(Boolean).join('&');
   return useQuery({
-    queryKey: ['promotionCandidates', status ?? 'all'],
-    queryFn: () => api.get<any>(`/api/promotion-candidates${status ? `?status=${status}` : ''}`),
+    queryKey: ['promotionCandidates', status ?? 'all', companyId ?? 'all'],
+    queryFn: () => api.get<any>(`/api/promotion-candidates${qs ? `?${qs}` : ''}`),
   });
 }
 

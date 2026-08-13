@@ -26,6 +26,7 @@ import {
   useLocks,
   useCreateLock,
   useDeleteLock,
+  useCompanyCockpit,
 } from '../../hooks/queries';
 
 const ITEM_STATUS_TONE: Record<string, 'ok' | 'warn' | 'err' | 'info' | 'neutral'> = {
@@ -45,7 +46,7 @@ export function CompanyEvolution({ companyId }: { companyId: string }): React.Re
   return (
     <div className="form-stack">
       <OptimizationReportsBlock companyId={companyId} />
-      <PromotionCandidatesBlock />
+      <PromotionCandidatesBlock companyId={companyId} />
       <StructureHistoryBlock />
       <LocksBlock />
     </div>
@@ -56,11 +57,13 @@ export function CompanyEvolution({ companyId }: { companyId: string }): React.Re
 
 function OptimizationReportsBlock({ companyId }: { companyId: string }): React.ReactElement {
   const { data: reports = [], isLoading } = useOptimizationReports(companyId);
+  const { data: cockpit } = useCompanyCockpit(companyId);
   const [activeId, setActiveId] = useState<string | null>(null);
   const active = reports.find((r: any) => r.id === activeId) ?? null;
+  const pendingCount = cockpit?.optimization?.pendingActions ?? 0;
 
   return (
-    <Card title="运营优化报告">
+    <Card title={<>运营优化报告{pendingCount > 0 ? <> <Badge tone="warn">{pendingCount} 条待审批</Badge></> : null}</>}>
       <p className="muted">每日自动生成 + 晋升批次；审批后按建议自动调整组织</p>
       {isLoading ? <p className="muted">加载中…</p> : reports.length === 0 ? (
         <EmptyState icon="◌" title="还没有报告" hint="公司上线运行后，每天会生成一份运营优化报告；经验记忆达晋升阈值时也会产生晋升批次。" />
@@ -144,14 +147,15 @@ function ReportDetail({ reportId }: { reportId: string }): React.ReactElement {
 
 // ── 晋升候选 ─────────────────────────────────────────────────────────
 
-function PromotionCandidatesBlock(): React.ReactElement {
-  const { data: candidates = [], isLoading } = usePromotionCandidates();
+function PromotionCandidatesBlock({ companyId }: { companyId: string }): React.ReactElement {
+  // E5 补齐：按公司过滤（跨公司/未归属候选不显示在任何公司页——它们也不进任何 promote 批次）。
+  const { data: candidates = [], isLoading } = usePromotionCandidates(undefined, companyId);
   const dismiss = useDismissCandidate();
   const reopen = useReopenCandidate();
 
   return (
     <Card title="晋升候选">
-      <p className="muted">重复经验达阈值后自动聚类；pending 会在每日报告后自动落地，可忽略/恢复</p>
+      <p className="muted">本公司重复经验达阈值后自动聚类；pending 会在每日报告后自动落地，可忽略/恢复</p>
       {isLoading ? <p className="muted">加载中…</p> : candidates.length === 0 ? (
         <EmptyState icon="◌" title="暂无晋升候选" hint="员工积累经验记忆后，同 fingerprint 重复 3 次或跨 2 人会生成候选。" />
       ) : (
@@ -179,12 +183,35 @@ function PromotionCandidatesBlock(): React.ReactElement {
 // ── 结构变更历史（回滚）──────────────────────────────────────────────
 
 function StructureHistoryBlock(): React.ReactElement {
-  const { data: changes = [], isLoading } = useStructureChanges();
+  // E5 补齐：按实体过滤（API 支持 entityType/entityId；全局列表默认最近 50 条）。
+  const [filterType, setFilterType] = useState('');
+  const [filterId, setFilterId] = useState('');
+  const appliedFilter = filterType.trim() && filterId.trim()
+    ? { entityType: filterType.trim(), entityId: filterId.trim() }
+    : {};
+  const { data: changes = [], isLoading } = useStructureChanges(appliedFilter);
   const rollback = useRollbackStructure();
 
   return (
     <Card title="结构变更历史">
       <p className="muted">自动落地改了什么、何时、为何；支持的类型可一键回滚</p>
+      <div className="settings-field-grid">
+        <Field label="按实体类型过滤">
+          <Select value={filterType} onChange={(e) => setFilterType(e.target.value)}>
+            <option value="">全部类型</option>
+            <option value="tool_registry">tool_registry</option>
+            <option value="capability_binding">capability_binding</option>
+            <option value="memory_entry">memory_entry</option>
+            <option value="workflow">workflow</option>
+          </Select>
+        </Field>
+        <Field label="实体 ID" hint="与类型同时填写才生效">
+          <Input value={filterId} onChange={(e) => setFilterId(e.target.value)} placeholder="entityId（可选）" />
+        </Field>
+        {Object.keys(appliedFilter).length > 0 && (
+          <div><Button variant="ghost" size="sm" onClick={() => { setFilterType(''); setFilterId(''); }}>清除过滤</Button></div>
+        )}
+      </div>
       {isLoading ? <p className="muted">加载中…</p> : changes.length === 0 ? (
         <EmptyState icon="◌" title="还没有结构变更" hint="晋升建议自动落地或回滚时会记录到这里。" />
       ) : (
