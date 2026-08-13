@@ -204,6 +204,10 @@ test('工作台改版 B1：一键开跑——选模板→点击→进入公司',
   await page.getByRole('button', { name: '一键开跑' }).click();
   // 落地到公司对话中心（改版 2a：对话为默认落地）
   await expect(page).toHaveURL(/\/companies\/[^?]+\?view=conversation/, { timeout: 15000 });
+  // 优化②：对话里有第一负责人的打招呼（"这里可以打字"心智）
+  await expect(page.getByText(/告诉我你想做什么/)).toBeVisible({ timeout: 10000 });
+  // 优化①：一键开跑后公司直接上线（状态徽章"上班"，标签栏+页面徽章各一处）
+  await expect(page.getByText('上班', { exact: true }).first()).toBeVisible();
 });
 
 test('工作台改版 B2b：公司标签栏——公司作为标签出现 + 当前高亮 + 新建入口', async ({ page }) => {

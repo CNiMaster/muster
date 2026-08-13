@@ -17,6 +17,8 @@ import { listExecutorProfiles } from './executor-profile';
 import { createPermissionPolicy, listPermissionPolicies } from './permission';
 import { searchPersonas, type Persona } from './persona-library';
 import { updateAgentProfile } from './agent-profile';
+import { transitionCompany } from './company';
+import { postSystemMessage } from './conversation';
 
 export interface QuickStartInput {
   templateId: string;
@@ -67,6 +69,27 @@ export function quickStartCompany(db: DB, input: QuickStartInput): CompanySetupR
     if (persona && employee.profileId) {
       updateAgentProfile(db, employee.profileId, { soul: persona.soul, principles: persona.principles });
     }
+  }
+
+  // 优化②：对话首条引导消息——落地对话即有第一负责人打招呼，建立"这里可以打字"心智。
+  try {
+    const lead = result.employees.find((e) => e.id === result.company.firstAgentId);
+    postSystemMessage(db, {
+      scopeKind: 'company',
+      scopeId: result.company.id,
+      role: 'assistant',
+      author: result.company.firstAgentId ?? 'system',
+      content: `我是「${lead?.name ?? '第一负责人'}」。告诉我你想做什么，我会安排团队开工（@员工 可以点名）。`,
+    });
+  } catch {
+    /* 引导消息失败不阻断建司 */
+  }
+
+  // 优化①：一键开跑 = 公司直接上线（"开跑"名副其实；执行器未连通时任务会如实失败回写对话）
+  try {
+    result.company = transitionCompany(db, result.company.id, 'online');
+  } catch {
+    /* 状态迁移失败不阻断（公司保持待命，用户可手动启动） */
   }
 
   return result;

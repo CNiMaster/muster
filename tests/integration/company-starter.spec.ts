@@ -12,6 +12,7 @@ import { createExecutorProfile } from '../../src/server/domain/executor-profile'
 import { listPermissionPolicies } from '../../src/server/domain/permission';
 import { getAgentProfile } from '../../src/server/domain/agent-profile';
 import { getCompany } from '../../src/server/domain/company';
+import { listMessages } from '../../src/server/domain/conversation';
 
 let tdb: ReturnType<typeof makeTestDb>;
 let db: DB;
@@ -41,6 +42,12 @@ describe('quickStartCompany（一键模板启动）', () => {
     expect(result.projectTask.title).toBeTruthy();
     // 公司可查
     expect(getCompany(db, result.company.id).id).toBe(result.company.id);
+    // 优化①：一键开跑后公司直接上线
+    expect(result.company.state).toBe('online');
+    // 优化②：对话首条引导消息（第一负责人打招呼）
+    const messages = listMessages(db, 'company', result.company.id);
+    expect(messages.length).toBeGreaterThanOrEqual(1);
+    expect(messages[0]!.role).toBe('assistant');
   });
 
   it('无执行器档案→清晰错误（不静默失败）', () => {
