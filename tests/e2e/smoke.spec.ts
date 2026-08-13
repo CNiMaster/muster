@@ -143,7 +143,7 @@ test('员工库展示全局档案与公司任职', async ({ page }) => {
   });
 
   await page.goto('/agents');
-  await expect(page.getByRole('heading', { name: '人才市场' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '员工库' })).toBeVisible();
   await expect(page.getByRole('heading', { name: '添加人才' })).toBeVisible();
   await expect(page.getByRole('heading', { name: '软件研发团队' })).toBeVisible();
   await page.getByRole('link', { name: new RegExp(`全局员工-${suffix}`) }).first().click();
