@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { DB } from '../../src/server/db/client';
 import { makeTestDb, makeTempGitRepo } from './setup';
 import { createNovelCompany } from '../../src/server/domain/novel-template';
+import { createCompany } from '../../src/server/domain/company';
+import { createAgent } from '../../src/server/domain/agent';
 import { createProject, updateProject } from '../../src/server/domain/project';
 import { transitionCompany, getCompany } from '../../src/server/domain/company';
 import { listThreads } from '../../src/server/domain/thread';
@@ -9,13 +11,23 @@ import { listTasks } from '../../src/server/domain/task';
 import { createTask } from '../../src/server/domain/task';
 import { FakeExecutor } from '../../src/server/task-engine/fake-executor';
 import { TaskEngine } from '../../src/server/task-engine/engine';
-import { ProjectRuntimeCoordinator } from '../../src/server/runtime/coordinator';
+import { ProjectRuntimeCoordinator, runDailyOptimizationReport } from '../../src/server/runtime/coordinator';
 import { listReports } from '../../src/server/domain/report';
 import { startBrainstorm } from '../../src/server/domain/brainstorm';
 import { createProjectTask } from '../../src/server/domain/project-task';
 import { getAgent } from '../../src/server/domain/agent';
 import { addDependency } from '../../src/server/domain/task';
 import { listInspectorAlerts, resolveInspectorAlert } from '../../src/server/domain/inspector';
+import { createMemoryCandidate, approveMemoryCandidate, listMemoryEntries } from '../../src/server/domain/memory';
+import { detectPromotions } from '../../src/server/domain/promotion';
+import { listReportActionItems } from '../../src/server/domain/optimization-report';
+import type { SetupGenerator } from '../../src/server/domain/setup-assistant';
+
+class NoopGenerator implements SetupGenerator {
+  async generate(): Promise<unknown> {
+    return { summary: 'ok', actionItems: [] };
+  }
+}
 
 let db: DB;
 
@@ -289,5 +301,36 @@ describe('ProjectRuntimeCoordinator', () => {
     expect(alerts).toHaveLength(1);
     const alertTasks = listTasks(db, project.id).filter((task) => task.title.startsWith('[告警]'));
     expect(alertTasks).toHaveLength(1);
+  });
+});
+
+describe('runDailyOptimizationReport（E4.1 每日报告→晋升落地串接）', () => {
+  it('报告生成后自动把 pending 晋升候选转 action item 并低风险自动落地', async () => {
+    const c = createCompany(db, { name: 'ev' });
+    const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
+    const project = createProject(db, {
+      companyId: c.id, name: 'p', rootDir: makeTempGitRepo(), firstAgentId: lead.id, initialState: 'active',
+    });
+    // 3 条同 fingerprint 的经验记忆 → 达晋升阈值
+    for (let i = 0; i < 3; i++) {
+      const cand = createMemoryCandidate(db, {
+        profileId: lead.profileId, scope: 'project', companyId: c.id, projectId: project.id,
+        content: `design:color 经验 #${i}`, author: 'agent', confidence: 0.85, canInfluence: true, fingerprint: 'design:color',
+      });
+      approveMemoryCandidate(db, cand.id, 'agent');
+    }
+    detectPromotions(db);
+
+    const { reportId, promoted } = await runDailyOptimizationReport(db, c.id, { generator: new NoopGenerator() });
+
+    expect(reportId).toBeTruthy();
+    expect(promoted.created).toBe(1);
+    expect(promoted.reportId).not.toBeNull();
+    const items = listReportActionItems(db, promoted.reportId!);
+    expect(items[0]!.actionType).toBe('update_user_preference');
+    // 低风险自动落地：item executed + 主导员工新增 personal 偏好记忆
+    expect(items[0]!.status).toBe('executed');
+    const personal = listMemoryEntries(db, { profileId: lead.profileId, scope: 'personal' });
+    expect(personal.some((m) => m.fingerprint === 'design:color')).toBe(true);
   });
 });

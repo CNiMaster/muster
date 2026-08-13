@@ -111,6 +111,10 @@ export function executeItem(
     db.prepare("UPDATE report_action_item SET status='pending_offline', result=?, updated_at=? WHERE id=?").run(result.message, nowIso(), item.id);
   } else if (result.status === 'failed') {
     db.prepare("UPDATE report_action_item SET status='failed', result=?, updated_at=? WHERE id=?").run(result.message, nowIso(), item.id);
+  } else if (result.status === 'skipped') {
+    // 回访修复：skipped（锁定豁免/已存在等"已处理但不执行"）也要持久化——
+    // 此前 skipped 不回写，item 永远停在 pending，锁定的 item 会反复进入审批执行流程且无迹可查。
+    db.prepare("UPDATE report_action_item SET status='skipped', result=?, updated_at=? WHERE id=?").run(result.message, nowIso(), item.id);
   }
   return result;
 }

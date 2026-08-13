@@ -219,6 +219,16 @@ muster 当前最缺的一环，也是"做梦"真正的工程价值。
 | 晋升 | 重复能力缺口 → 建议补 skill；高返工 → 建议调提示词原则或换执行器 |
 | 固化 | actionType `adjust_skill_binding`（新，写 `capability_binding.skill_ids_json`）/ 复用 `prompt_optimization`（`optimization-report-executor.ts:241-260`）/ `adjust_executor` |
 
+### 实现修正（2026-08-13 回访审计）
+
+实现后回访发现，按上表直译的 fingerprint→actionType 映射让"低风险自动落地"成了死代码，故做如下修正（代码权威）：
+
+1. **默认映射**：非 `tool:`/`workflow:` 的 fingerprint → `update_user_preference`（重复经验固化为主导员工 personal 偏好记忆，自动批准全量注入）。原设计默认 `adjust_skill_binding`，但晋升流不提供 agentName/skillId/capabilityId，该 actionType 永远 failed/pending——低风险自动落地不可达。
+2. **tool 映射**：`tool:<toolId>` → `bind_habitual_tool`，toolId 取主题段；不在 `tool_registry` 时诚实返回 failed（不误报 executed）。
+3. **workflow 映射**：`workflow:`/`handoff` → `learn_workflow_pattern`，保持 pending 人工确认（工作流改动风险高）。
+4. **skipped 持久化**：锁定豁免/已存在的执行结果回写 `skipped` 状态（原只存在内存返回值，item 永远停在 pending）。
+5. **evolution 消费**：`collectCompanyStats` 的 `evolution` 信号同时进规则报告（summary + stats）与 AI 提示词——原来只采集不消费。
+
 ---
 
 ## 质量指标双用途

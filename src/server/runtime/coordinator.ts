@@ -14,6 +14,7 @@ import { drainReflectionQueue, recoverStuckReflections } from '../domain/reflect
 import { generateInspectorSuggestions } from '../domain/inspector';
 import { autoAcceptContract, createOutsourcedTask, revertAcceptToPending } from '../domain/outsourcing-contract';
 import { generateOptimizationReport } from '../domain/optimization-report';
+import type { SetupGenerator } from '../domain/setup-assistant';
 import { promoteCandidatesToActions } from '../domain/promotion';
 import { executePendingOfflineActions } from '../domain/optimization-report-executor';
 import { shortId } from '../../shared/utils';
@@ -36,6 +37,33 @@ function dbToday(db: DB): string {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
   return d.toISOString();
+}
+
+/**
+ * E4.1 每日优化报告 + 晋升落地串接（孤岛打通）。
+ *
+ * 生成运营优化报告后立即把该公司 pending 的 promotion_candidate 翻译成 action item：
+ * 低风险（update_user_preference / bind_habitual_tool）自动执行，高风险保持 pending 等用户审批。
+ * 晋升失败不阻塞报告（记录日志），报告生成失败则上抛由调用方兜底。
+ *
+ * 单独导出以便测试直接验证"报告→晋升"串接（scheduleOptimizationReports 只是调度外壳）。
+ */
+export async function runDailyOptimizationReport(
+  db: DB,
+  companyId: string,
+  options: { generator?: SetupGenerator } = {},
+): Promise<{ reportId: string; promoted: { reportId: string | null; created: number } }> {
+  const report = await generateOptimizationReport(db, companyId, options.generator ? { generator: options.generator } : {});
+  let promoted: { reportId: string | null; created: number } = { reportId: null, created: 0 };
+  try {
+    promoted = promoteCandidatesToActions(db, companyId);
+  } catch (error) {
+    log.warn('promoteCandidatesToActions failed', {
+      companyId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  return { reportId: report.id, promoted };
 }
 
 /** 统一驱动公司生命周期和项目任务执行。 */
@@ -402,21 +430,11 @@ export class ProjectRuntimeCoordinator {
       queueMicrotask(() => {
         void (async () => {
           try {
-            const report = await generateOptimizationReport(this.db, company.id);
-            log.info('optimization report generated', { companyId: company.id, reportId: report.id });
-            // E4.1 孤岛打通：报告生成后把晋升候选转成 action item（低风险自动执行、高风险进报告等审批）。
-            // 这是 promoteCandidatesToActions 的运行时调用点——补上后整条进化闭环才真正跑起来。
-            try {
-              const promoted = promoteCandidatesToActions(this.db, company.id);
-              if (promoted.created > 0) {
-                log.info('promotion candidates promoted to actions', {
-                  companyId: company.id, reportId: promoted.reportId, created: promoted.created,
-                });
-              }
-            } catch (error) {
-              log.warn('promoteCandidatesToActions failed', {
-                companyId: company.id,
-                error: error instanceof Error ? error.message : String(error),
+            const { reportId, promoted } = await runDailyOptimizationReport(this.db, company.id);
+            log.info('optimization report generated', { companyId: company.id, reportId });
+            if (promoted.created > 0) {
+              log.info('promotion candidates promoted to actions', {
+                companyId: company.id, reportId: promoted.reportId, created: promoted.created,
               });
             }
           } catch (error) {

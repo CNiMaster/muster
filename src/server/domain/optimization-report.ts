@@ -46,7 +46,7 @@ export interface ReportActionItem {
   reason: string;
   expectedEffect: string;
   params: Record<string, unknown>;
-  status: 'pending' | 'approved' | 'rejected' | 'executed' | 'failed' | 'pending_offline';
+  status: 'pending' | 'approved' | 'rejected' | 'executed' | 'failed' | 'pending_offline' | 'skipped';
   result: string | null;
   createdAt: string;
 }
@@ -298,9 +298,20 @@ function buildRuleBasedReport(stats: CompanyStats): OptimizationReport['report']
       params: {},
     });
   }
+  // E4.2 修复：消费组织进化信号（此前 collectCompanyStats 采集了 evolution 但报告从不展示——孤岛未通）。
+  const ev = stats.evolution;
+  if (ev.lessonsLearned > 0 || ev.reworkReflections > 0 || ev.pendingPromotions > 0 || ev.promotedActions > 0) {
+    summaryParts.push(
+      `组织记忆：经验 ${ev.lessonsLearned} 条、返工反思 ${ev.reworkReflections} 次、待晋升候选 ${ev.pendingPromotions} 个、已固化建议 ${ev.promotedActions} 条。`,
+    );
+  }
   return {
     summary: summaryParts.join(' ') || '公司运行平稳。',
-    stats: { tasks: stats.tasks, employees: stats.employees.map((e) => ({ name: e.name, role: e.role, rating: e.rating, failureRate: e.failureRate })) },
+    stats: {
+      tasks: stats.tasks,
+      employees: stats.employees.map((e) => ({ name: e.name, role: e.role, rating: e.rating, failureRate: e.failureRate })),
+      evolution: stats.evolution,
+    },
     actionItems,
   };
 }
@@ -323,7 +334,8 @@ export async function generateOptimizationReport(
       `1. summary：100 字内概述（工作概况 + 最值得注意的问题）。\n` +
       `2. actionItems：最多 8 条可执行建议，每条包含 actionType（∈ ${ACTION_TYPES.join('|')}）、description（一句话）、reason（为什么）、expectedEffect（预期效果）、params（执行参数对象，如 add_employee 可含 personaDomain 建议）。\n` +
       `建议要具体、克制、可执行；没有问题就不建议，不要为了凑数编造建议。\n\n` +
-      `运营数据：\n${JSON.stringify({ company: stats.company, tasks: stats.tasks, employees: stats.employees, issues: stats.issues, roleGaps: stats.roleGaps }, null, 2)}`;
+      `evolution 是组织记忆系统信号（lessonsLearned 已批准经验记忆数、reworkReflections 返工反思次数、pendingPromotions 待晋升候选数、promotedActions 已固化建议数）；返工反思多可建议 learn_workflow_pattern / adjust_workflow，待晋升候选多说明重复经验值得固化。\n\n` +
+      `运营数据：\n${JSON.stringify({ company: stats.company, tasks: stats.tasks, employees: stats.employees, issues: stats.issues, roleGaps: stats.roleGaps, evolution: stats.evolution }, null, 2)}`;
     const result = await generator.generate({
       prompt,
       jsonSchema: {
@@ -343,7 +355,7 @@ export async function generateOptimizationReport(
     if (typeof parsed?.summary === 'string' && Array.isArray(parsed.actionItems)) {
       report = {
         summary: parsed.summary,
-        stats: { tasks: stats.tasks, employees: stats.employees, issues: stats.issues },
+        stats: { tasks: stats.tasks, employees: stats.employees, issues: stats.issues, evolution: stats.evolution },
         actionItems: (parsed.actionItems as Array<Record<string, unknown>>)
           .filter((item) => ACTION_TYPES.includes(item.actionType as ActionType) && typeof item.description === 'string')
           .slice(0, 8)

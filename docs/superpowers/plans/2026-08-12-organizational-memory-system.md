@@ -53,17 +53,17 @@
 - Test `tests/integration/capability-usage-recording.spec.ts`
 
 **Steps:**
-- [ ] 确认埋点位置：优先 `runToolLoop`（每个 `executeTool` 调用前后包 try/finally），因其持有 db/taskId；若 `runToolLoop` 拿不到 capability_id，则在 `executeTool` 埋点并给 `ToolContext` 加可选 `db?: DB` / `taskId?: string`（不破坏现有调用方）。
-- [ ] 埋点逻辑：记录 `outcome`（success/fail，按 `ToolResult` 是否 error 判定）、`durationMs`（`Date.now()` 差）、`capabilityId`（从 `RuntimeTool.source`/`capabilityId` 字段取）、`toolId`（`call.name`）、`taskId`（ctx）。
-- [ ] 用 `try { ... } finally { try { recordCapabilityUsage(...) } catch { /* 吞掉 */ } }` 包裹，**绝不**让埋点异常冒泡影响工具执行。
-- [ ] 仅对有 capability_id 的工具记录（内置 file 工具若无 capability 归属可跳过或归入 `builtin`）。
+- [x] 确认埋点位置：优先 `runToolLoop`（每个 `executeTool` 调用前后包 try/finally），因其持有 db/taskId；若 `runToolLoop` 拿不到 capability_id，则在 `executeTool` 埋点并给 `ToolContext` 加可选 `db?: DB` / `taskId?: string`（不破坏现有调用方）。
+- [x] 埋点逻辑：记录 `outcome`（success/fail，按 `ToolResult` 是否 error 判定）、`durationMs`（`Date.now()` 差）、`capabilityId`（从 `RuntimeTool.source`/`capabilityId` 字段取）、`toolId`（`call.name`）、`taskId`（ctx）。
+- [x] 用 `try { ... } finally { try { recordCapabilityUsage(...) } catch { /* 吞掉 */ } }` 包裹，**绝不**让埋点异常冒泡影响工具执行。
+- [x] 仅对有 capability_id 的工具记录（内置 file 工具若无 capability 归属可跳过或归入 `builtin`）。
 
 **TDD acceptance:**
-- [ ] 执行一次成功工具调用后，`capability_usage_stat` 多一行 `outcome='success'` 且 `duration_ms > 0`。
-- [ ] 工具抛异常时记 `outcome='fail'`，且主流程行为不变（错误照常上报）。
-- [ ] `getAllCapabilityQuality` 返回非空，`tool-recommendation` 的 `quality` 字段非 null。
-- [ ] 埋点自身失败不导致 task 失败（注入故意 throw 的 recordCapabilityUsage，task 仍正常完成）。
-- [ ] `npm run typecheck` green；新 vitest green。
+- [x] 执行一次成功工具调用后，`capability_usage_stat` 多一行 `outcome='success'` 且 `duration_ms > 0`。
+- [x] 工具抛异常时记 `outcome='fail'`，且主流程行为不变（错误照常上报）。
+- [x] `getAllCapabilityQuality` 返回非空，`tool-recommendation` 的 `quality` 字段非 null。
+- [x] 埋点自身失败不导致 task 失败（注入故意 throw 的 recordCapabilityUsage，task 仍正常完成）。
+- [x] `npm run typecheck` green；新 vitest green。
 
 **Commit:** `feat(E1): record capability usage on every tool call — activate quality feedback loop`
 
@@ -79,18 +79,18 @@
 - Test `tests/integration/reflection-feedback-extraction.spec.ts`
 
 **Steps:**
-- [ ] 在 `reflectOnTask` 里 `getTask` 之后，新增查询：拉取该 task 相关的 `business_review.feedback`（按 `review.taskId` 或 `contextRefs LIKE '%business_review:%'`）、最近若干条 `task_message`(role=user)、相关 `conversation_message`(role=user)。
-- [ ] 把反馈文本拼进反思 prompt（新增 `# 用户反馈` 段），让 LLM 在产 LESSON/RULE 之外，额外识别**用户偏好**信号（"用户明确喜欢/讨厌 X"）。
-- [ ] 扩展反思输出 schema：增加可选的 `PREFERENCE` 产物（{content, confidence, domain}），命中则 `createMemoryCandidate({scope:'personal', author:'user', sourceTaskId, confidence})` → 走 `memory.ts:99-101` 自动批准。
-- [ ] 偏好候选带 `domain` 标签（如 `style`/`tone`/`format`），为 E2 fingerprint 铺路。
-- [ ] 控量：单次反思最多产 1-2 条 preference，避免噪声；置信度 < 0.7 不产。
+- [x] 在 `reflectOnTask` 里 `getTask` 之后，新增查询：拉取该 task 相关的 `business_review.feedback`（按 `review.taskId` 或 `contextRefs LIKE '%business_review:%'`）、最近若干条 `task_message`(role=user)、相关 `conversation_message`(role=user)。
+- [x] 把反馈文本拼进反思 prompt（新增 `# 用户反馈` 段），让 LLM 在产 LESSON/RULE 之外，额外识别**用户偏好**信号（"用户明确喜欢/讨厌 X"）。
+- [x] 扩展反思输出 schema：增加可选的 `PREFERENCE` 产物（{content, confidence, domain}），命中则 `createMemoryCandidate({scope:'personal', author:'user', sourceTaskId, confidence})` → 走 `memory.ts:99-101` 自动批准。
+- [x] 偏好候选带 `domain` 标签（如 `style`/`tone`/`format`），为 E2 fingerprint 铺路。
+- [x] 控量：单次反思最多产 1-2 条 preference，避免噪声；置信度 < 0.7 不产。
 
 **TDD acceptance:**
-- [ ] 一个带 `business_review.feedback='太花了，要更商务'` 的 task 反思后，`memory_candidate` 多一条 scope=personal/author=user 的偏好候选。
-- [ ] 偏好候选命中自动批准条件，落 `memory_entry`。
-- [ ] 无反馈的 task 反思行为不变（不产 preference，仍产 LESSON/RULE）。
-- [ ] 下次该 profile 执行时，`loadContextMemories` 注入了该偏好（personal 全量注入）。
-- [ ] typecheck + vitest green。
+- [x] 一个带 `business_review.feedback='太花了，要更商务'` 的 task 反思后，`memory_candidate` 多一条 scope=personal/author=user 的偏好候选。
+- [x] 偏好候选命中自动批准条件，落 `memory_entry`。
+- [x] 无反馈的 task 反思行为不变（不产 preference，仍产 LESSON/RULE）。
+- [x] 下次该 profile 执行时，`loadContextMemories` 注入了该偏好（personal 全量注入）。
+- [x] typecheck + vitest green。
 
 **Commit:** `feat(E1): extract user preferences from feedback into personal memory during reflection`
 
@@ -106,15 +106,15 @@
 - Test `tests/integration/reflection-rework-signal.spec.ts`
 
 **Steps:**
-- [ ] `business-review.ts:211` `createTask` 成功后，调 `enqueueReflection({ taskId, signal: 'rework', ... })`（反思对象是原 task + 返工反馈，根因在原 task）。
-- [ ] reflection prompt 按 signal 分支：`rework` 时强调根因分析与"一次做对"建议，并把 `business_review.feedback` 作为关键输入。
-- [ ] rework 反思产的 LESSON 带 `signal:rework` 溯源标签（为 E2 质量触发铺路）。
+- [x] `business-review.ts:211` `createTask` 成功后，调 `enqueueReflection({ taskId, signal: 'rework', ... })`（反思对象是原 task + 返工反馈，根因在原 task）。
+- [x] reflection prompt 按 signal 分支：`rework` 时强调根因分析与"一次做对"建议，并把 `business_review.feedback` 作为关键输入。
+- [x] rework 反思产的 LESSON 带 `signal:rework` 溯源标签（为 E2 质量触发铺路）。
 
 **TDD acceptance:**
-- [ ] 验收 changes_requested 后，`task_reflection` 多一条 `signal='rework'` 的 pending 记录。
-- [ ] drain 后产出的 LESSON 引用了返工反馈。
-- [ ] 不影响现有 completed/failed 信号路径。
-- [ ] typecheck + vitest green。
+- [x] 验收 changes_requested 后，`task_reflection` 多一条 `signal='rework'` 的 pending 记录。
+- [x] drain 后产出的 LESSON 引用了返工反馈。
+- [x] 不影响现有 completed/failed 信号路径。
+- [x] typecheck + vitest green。
 
 **Commit:** `feat(E1): enqueue reflection on rework — learn from rejected deliverables`
 
@@ -135,18 +135,18 @@
 - Test `tests/integration/employee-rating-quality.spec.ts`
 
 **Steps:**
-- [ ] Migration：`ALTER TABLE task ADD COLUMN rework_count INTEGER NOT NULL DEFAULT 0`。
-- [ ] `business-review.ts` 返工派发处：`UPDATE task SET rework_count = rework_count + 1 WHERE id = ?`（对原 task；即使原 task 被 cancel，rework_count 作为历史统计保留）。
-- [ ] `calculateRating` 加质量维度：查询该 profile 的 `SUM(rework_count)` 与 `COUNT(completed task)`，算返工率；纳入 score（负向权重，如 `score -= reworkCount * 0.8`，或单独质量分维度）。同步更新 `RatingBreakdown` 类型与 STAR 阈值（可能需微调阈值，用 `recalculateAllRatings` 验证不破坏现有星级分布）。
-- [ ] 一次通过率视图：新增查询函数 `getOnboardingPassRate(db, {profileId?|companyId?})` = `rework_count=0 的完成 task / 总完成 task`。
+- [x] Migration：`ALTER TABLE task ADD COLUMN rework_count INTEGER NOT NULL DEFAULT 0`。
+- [x] `business-review.ts` 返工派发处：`UPDATE task SET rework_count = rework_count + 1 WHERE id = ?`（对原 task；即使原 task 被 cancel，rework_count 作为历史统计保留）。
+- [x] `calculateRating` 加质量维度：查询该 profile 的 `SUM(rework_count)` 与 `COUNT(completed task)`，算返工率；纳入 score（负向权重，如 `score -= reworkCount * 0.8`，或单独质量分维度）。同步更新 `RatingBreakdown` 类型与 STAR 阈值（可能需微调阈值，用 `recalculateAllRatings` 验证不破坏现有星级分布）。
+- [x] 一次通过率视图：新增查询函数 `getOnboardingPassRate(db, {profileId?|companyId?})` = `rework_count=0 的完成 task / 总完成 task`。
 
 **TDD acceptance:**
-- [ ] Migration 后 `task.rework_count` 存在，默认 0。
-- [ ] 一次返工后原 task `rework_count=1`；两次返工后 `=2`。
-- [ ] `calculateRating` 对高返工 profile 给出更低 score（同等体量下）；高质量 profile 星级不低于现状。
-- [ ] `getOnboardingPassRate` 返回正确比率；无 task 时返回 null（区分"无数据"）。
-- [ ] `recalculateAllRatings` 不抛错；现有集成测试（依赖评级路由/外包排序）仍 green——必要时调整阈值。
-- [ ] typecheck + vitest green。
+- [x] Migration 后 `task.rework_count` 存在，默认 0。
+- [x] 一次返工后原 task `rework_count=1`；两次返工后 `=2`。
+- [x] `calculateRating` 对高返工 profile 给出更低 score（同等体量下）；高质量 profile 星级不低于现状。
+- [x] `getOnboardingPassRate` 返回正确比率；无 task 时返回 null（区分"无数据"）。
+- [x] `recalculateAllRatings` 不抛错；现有集成测试（依赖评级路由/外包排序）仍 green——必要时调整阈值。
+- [x] typecheck + vitest green。
 
 **Commit:** `feat(E1): add task.rework_count, feed quality dimension into employee rating`
 
@@ -154,9 +154,9 @@
 
 ## E1 整体验收
 
-- [ ] 跑一次真实 Task 流程（含一次返工），确认：`capability_usage_stat` 有数据、返工后 `rework_count` 递增、反思产出了偏好候选与 rework lesson、评级反映质量。
-- [ ] `npm run typecheck` + `npm test` 全 green。
-- [ ] **E1 数据回流检查点（E2 准入门）**：跑 1–2 天真实使用后，观察：
+- [x] 跑一次真实 Task 流程（含一次返工），确认：`capability_usage_stat` 有数据、返工后 `rework_count` 递增、反思产出了偏好候选与 rework lesson、评级反映质量。
+- [x] `npm run typecheck` + `npm test` 全 green。
+- [x] **E1 数据回流检查点（E2 准入门）**：跑 1–2 天真实使用后，观察：
   - `capability_usage_stat` 的分布（哪些工具高频/高失败）
   - `memory_candidate`(scope=personal) 的偏好候选数量与去重难度
   - `task_reflection`(signal=rework) 的 lesson 是否有可聚类的共性
@@ -169,29 +169,29 @@
 **调整（实施时判断）：** E1 数据回流主要用于调阈值/粒度，不是前置硬门槛。fingerprint 策略改由 reflection 产经验时 LLM 同时产结构化 category 标签（`domain:topic`），聚类 = group by + count + distinct profile，初版用保守阈值，真实数据回流后再调优。这绕开了"必须先有数据才能定 fingerprint"的循环。
 
 ## Task E2.1 — memory fingerprint 基础设施
-- [ ] migration：memory_candidate + memory_entry 加 `fingerprint TEXT`（nullable，向后兼容）
-- [ ] createMemoryCandidate 接受 fingerprint；approveMemoryCandidate 透传到 entry；类型 + fromRow 映射
-- [ ] reflection prompt 让 LLM 为每条 LESSON/RULE/PREFERENCE 产 `domain:topic` 标签；parseSection 兼容解析（fingerprint 行可选，旧格式无标签时 null）
+- [x] migration：memory_candidate + memory_entry 加 `fingerprint TEXT`（nullable，向后兼容）
+- [x] createMemoryCandidate 接受 fingerprint；approveMemoryCandidate 透传到 entry；类型 + fromRow 映射
+- [x] reflection prompt 让 LLM 为每条 LESSON/RULE/PREFERENCE 产 `domain:topic` 标签；parseSection 兼容解析（fingerprint 行可选，旧格式无标签时 null）
 - Test `tests/integration/memory-fingerprint.spec.ts`
 - Commit: `feat(E2): memory fingerprint — 结构化标签供晋升聚类`
 
 ## Task E2.2 — lesson 聚类 + 晋升触发
-- [ ] migration：promotion_candidate 表（fingerprint + scope + count + distinct_profiles + sample_entry_ids + status + created_at）
-- [ ] 新建 `src/server/domain/promotion.ts`：聚合查询 + 晋升触发（达阈值幂等 insert）+ 列表查询
-- [ ] reflection drain 完成后调用 `detectPromotions(db)`（检查未晋升 fingerprint 是否达阈值）
-- [ ] 保守阈值：同 fingerprint count ≥ 3 或 distinct profile ≥ 2（跨员工重复 = 组织级信号）
+- [x] migration：promotion_candidate 表（fingerprint + scope + count + distinct_profiles + sample_entry_ids + status + created_at）
+- [x] 新建 `src/server/domain/promotion.ts`：聚合查询 + 晋升触发（达阈值幂等 insert）+ 列表查询
+- [x] reflection drain 完成后调用 `detectPromotions(db)`（检查未晋升 fingerprint 是否达阈值）
+- [x] 保守阈值：同 fingerprint count ≥ 3 或 distinct profile ≥ 2（跨员工重复 = 组织级信号）
 - Test `tests/integration/promotion.spec.ts`
 - Commit: `feat(E2): lesson 聚类 + 晋升触发 → promotion_candidate`
 
 ## Task E2.3 — 结构记忆版本化 + 回滚（护栏，为 E3 自动落地铺路）
-- [ ] migration：structure_change_log（仿 artifact_change_log）
-- [ ] recordStructureChange + listStructureHistory + rollbackStructure(to version)
+- [x] migration：structure_change_log（仿 artifact_change_log）
+- [x] recordStructureChange + listStructureHistory + rollbackStructure(to version)
 - Test + Commit: `feat(E2): 结构记忆版本化 + 回滚`
 
 ## Task E2.4 — 锁定豁免
-- [ ] migration：entity_lock（entity_type/entity_id/scope: personal|org/locked_fields）
-- [ ] 晋升流生成 action item 前查 lock 清单，命中降级为信息性 finding
-- [ ] 锁定/解锁记 structure_change_log
+- [x] migration：entity_lock（entity_type/entity_id/scope: personal|org/locked_fields）
+- [x] 晋升流生成 action item 前查 lock 清单，命中降级为信息性 finding
+- [x] 锁定/解锁记 structure_change_log
 - Test + Commit: `feat(E2): 锁定豁免`
 
 **E2 准出：** 同 fingerprint 达阈值后自动生成 promotion_candidate；结构变更有审计可回滚；锁定字段不被自动优化。晋升→report_action_item 的落地衔接在 E3。
@@ -203,28 +203,28 @@
 **核心目标：** 把 promotion_candidate 衔接进既有 optimization-report 管线，并扩 4 个 actionType + apply 分支，让晋升流产出的候选能真正落地为结构变更。
 
 ## Task E3.1 — 扩 actionType 枚举 + executor 4 个 apply 分支
-- [ ] `optimization-report.ts:24` ACTION_TYPES 加 4 类：`update_user_preference` / `bind_habitual_tool` / `learn_workflow_pattern` / `adjust_skill_binding`
-- [ ] `optimization-report-executor.ts:115` executeAction switch 加 4 分支：
+- [x] `optimization-report.ts:24` ACTION_TYPES 加 4 类：`update_user_preference` / `bind_habitual_tool` / `learn_workflow_pattern` / `adjust_skill_binding`
+- [x] `optimization-report-executor.ts:115` executeAction switch 加 4 分支：
   - `update_user_preference` → createMemoryCandidate(scope=personal, author=user)（复用 reflection 偏好通路）
   - `bind_habitual_tool` → tool_registry.is_default=1 + capability_binding.recommended_tool_ids 重排
   - `learn_workflow_pattern` → 默认 skipped（只产建议，提示手动改流程图，与现有 adjust_workflow 一致的安全策略）
   - `adjust_skill_binding` → capability_binding.skill_ids_json 追加
-- [ ] 每个分支 apply 前查 isFieldLocked，命中则 skipped（复用 E2.4）
-- [ ] 每个分支 apply 后调 recordStructureChange（复用 E2.3 版本化）
+- [x] 每个分支 apply 前查 isFieldLocked，命中则 skipped（复用 E2.4）
+- [x] 每个分支 apply 后调 recordStructureChange（复用 E2.3 版本化）
 - Test tests/integration/optimization-report-executor-e3.spec.ts
 - Commit: `feat(E3): 扩 4 actionType + executor apply 分支（偏好/惯用工具/工作流/技能）`
 
 ## Task E3.2 — promotion_candidate → report_action_item 衔接
-- [ ] promotion.ts 新增 `promoteCandidatesToActions(db, companyId)`：读 pending promotion_candidate，按 scope/domain 翻译成对应 actionType 的 report_action_item（附在当日 optimization-report 或独立批次），写后 markPromoted
-- [ ] fingerprint→actionType 映射规则：scope=personal→update_user_preference；domain 含 tool→bind_habitual_tool；domain 含 workflow→learn_workflow_pattern；否则→adjust_skill_binding（附 sample contents 作 reason）
-- [ ] 由 coordinator 在 optimization-report 生成后调用（复用每日调度）
+- [x] promotion.ts 新增 `promoteCandidatesToActions(db, companyId)`：读 pending promotion_candidate，按 scope/domain 翻译成对应 actionType 的 report_action_item（附在当日 optimization-report 或独立批次），写后 markPromoted
+- [x] fingerprint→actionType 映射规则：scope=personal→update_user_preference；domain 含 tool→bind_habitual_tool；domain 含 workflow→learn_workflow_pattern；否则→adjust_skill_binding（附 sample contents 作 reason）
+- [x] 由 coordinator 在 optimization-report 生成后调用（复用每日调度）
 - Test tests/integration/promotion-to-action.spec.ts
 - Commit: `feat(E3): promotion_candidate → report_action_item 衔接`
 
 ## Task E3.3 — AI 预筛分级（低风险自动 / 高风险审批）+ 锁检查
-- [ ] 复用 ai-approval.ts：低风险（偏好/惯用工具/提示词）AI 预筛后自动 approved；高风险（工作流/技能绑定/增裁员工/权限）保持 pending 等用户审批
-- [ ] executeApprovedActions 前对每个 item 跑 isFieldLocked，命中跳过 + 记录原因
-- [ ] 自动落地项的 result 写 structure_change_log（已在 E3.1 做）+ 通知公司对话窗
+- [x] 复用 ai-approval.ts：低风险（偏好/惯用工具/提示词）AI 预筛后自动 approved；高风险（工作流/技能绑定/增裁员工/权限）保持 pending 等用户审批
+- [x] executeApprovedActions 前对每个 item 跑 isFieldLocked，命中跳过 + 记录原因
+- [x] 自动落地项的 result 写 structure_change_log（已在 E3.1 做）+ 通知公司对话窗
 - Test 补 AI 预筛分级 + 锁跳过用例
 - Commit: `feat(E3): AI 预筛分级 + 锁检查`
 
@@ -237,14 +237,14 @@
 **范围聚焦（实施时判断）：** E4 拆成两半。**孤岛打通**（promoteCandidatesToActions 接进每日调度）是确定性高价值、零 LLM 成本的，必须做。**idle 自主 brainstorm**（做梦）有烧钱风险、ROI 需真实数据观察，做成**默认关闭的可配开关**，不贸然全自动。
 
 ## Task E4.1 — 孤岛打通：promoteCandidatesToActions 接进每日 optimization-report 调度
-- [ ] coordinator.scheduleOptimizationReports：每日报告生成后调 `promoteCandidatesToActions(db, company.id)`，把晋升候选转成 action item（低风险自动执行、高风险进报告等用户审批）
-- [ ] 这是 promoteCandidatesToActions 此前零调用方的唯一接入点——补上后整条 感知→反思→晋升→落地 闭环才真正在运行时跑起来
+- [x] coordinator.scheduleOptimizationReports：每日报告生成后调 `promoteCandidatesToActions(db, company.id)`，把晋升候选转成 action item（低风险自动执行、高风险进报告等用户审批）
+- [x] 这是 promoteCandidatesToActions 此前零调用方的唯一接入点——补上后整条 感知→反思→晋升→落地 闭环才真正在运行时跑起来
 - Test tests/integration/coordinator-e4.spec.ts（调度后 promotion_candidate 被 consume + action item 产生）
 - Commit: `feat(E4): 孤岛打通——promoteCandidatesToActions 接进每日调度`
 
 ## Task E4.2 — collectCompanyStats 消费反思/复盘产物（孤岛打通 2）
-- [ ] optimization-report.collectCompanyStats 增读：reflection 产出的 lesson 数、rework lesson 数、pending promotion_candidate 数（让 AI 报告看到进化信号）
-- [ ] 不改 AI prompt 结构（stats 是 AI 输入），只补字段
+- [x] optimization-report.collectCompanyStats 增读：reflection 产出的 lesson 数、rework lesson 数、pending promotion_candidate 数（让 AI 报告看到进化信号）
+- [x] 不改 AI prompt 结构（stats 是 AI 输入），只补字段
 - Test 补 collectCompanyStats 含新字段
 - Commit: `feat(E4): collectCompanyStats 消费反思/晋升信号`
 
@@ -255,6 +255,19 @@
 - Test + Commit: `feat(E4): idle 自主反思开关（默认关闭）`
 
 **E4 准出：** 每日调度自动消费晋升候选 → action item（闭环在运行时跑通）；optimization-report 能看到反思/晋升信号；自主反思默认关闭、用户可开。
+
+---
+
+## 回访修复（2026-08-13，E4 提交后的深度审计）
+
+全部批次提交后做了一次深度审计（code-reviewer 两度因网络失败，改为人工逐文件复核 + 全量测试），发现并修复了 4 处问题——其中第 1 处意味着此前宣称的"自动落地闭环"实际是断的：
+
+- [x] **自动落地路径死代码（Critical）**：`fingerprintToActionType` 默认映射 `adjust_skill_binding`，但晋升流只产 `{fingerprint}` 参数，而该 actionType 需要 agentName/skillId/capabilityId——所有晋升 item 永远 failed/pending，`update_user_preference` 自动执行分支不可达。修复：默认映射改 `update_user_preference`（重复经验固化为主导员工 personal 偏好记忆）；`tool:<toolId>` 主题段作 toolId；`workflow:` 保持 pending。测试改写为端到端断言"真的落地了"（promotion-to-action.spec.ts）。
+- [x] **evolution 采集了但从不消费（High）**：`collectCompanyStats` 算 `evolution` 但规则报告与 AI 提示词都不读。修复：summary 提及 + stats 输出 + AI 提示词注入（optimization-report.ts）。
+- [x] **skipped 状态不持久化（Medium）**：锁定豁免/已存在等"已处理但不执行"的结果不回写，item 永远停在 pending。修复：`executeItem` 持久化 `skipped`，状态枚举扩展。
+- [x] **E4.1/E4.2 零测试（Medium）**：coordinator 串接与 evolution 消费无测试。修复：抽 `runDailyOptimizationReport` 可测 helper（coordinator.ts）+ 三类新测试（端到端落地 / evolution 入报告 / 每日链路串接）。
+
+全量验证：typecheck green；1076 tests 通过（+3）。
 
 ---
 

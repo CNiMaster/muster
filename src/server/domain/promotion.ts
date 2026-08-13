@@ -15,6 +15,7 @@ import type { DB } from '../db/client';
 import { shortId, nowIso } from '../../shared/utils';
 import { getCompany } from './company';
 import { executeItem } from './optimization-report-executor';
+import type { ActionType, ReportActionItem } from './optimization-report';
 
 export const PROMOTION_COUNT_THRESHOLD = 3;
 export const PROMOTION_PROFILE_THRESHOLD = 2;
@@ -155,15 +156,20 @@ export function markPromoted(db: DB, id: string): void {
 
 /**
  * E3.2 fingerprint → actionType 映射规则（personal scope 已在 detectPromotions 跳过，不进此映射）：
- * - domain 含 tool → bind_habitual_tool
- * - domain 含 workflow → learn_workflow_pattern
- * - 否则 → adjust_skill_binding（默认按能力缺口处理）
+ * - tool:<toolId> → bind_habitual_tool（低风险：固化默认工具，toolId 取主题段，不在 registry 时 executor 诚实返回 failed）
+ * - workflow: 开头或 handoff → learn_workflow_pattern（高风险：只产建议，不自动 apply）
+ * - 其余（design:color、style:business 等）→ update_user_preference（低风险：把重复经验固化为主导员工的
+ *   个人偏好记忆，personal scope 自动批准并全量注入）
+ *
+ * 回访修复：此前默认映射 adjust_skill_binding——它需要 agentName/skillId/capabilityId 才可执行，
+ * 晋升流从不提供这些参数，导致所有晋升 item 永远 failed/pending，低风险自动落地路径（update_user_preference）
+ * 完全不可达——"自动落地"闭环实际是断的。默认改为 update_user_preference 后自动路径真正可达。
  */
 function fingerprintToActionType(fingerprint: string): string {
   const fp = fingerprint.toLowerCase();
-  if (fp.startsWith('tool:') || fp.includes(':tool')) return 'bind_habitual_tool';
-  if (fp.startsWith('workflow:') || fp.includes(':workflow') || fp.startsWith('handoff')) return 'learn_workflow_pattern';
-  return 'adjust_skill_binding';
+  if (fp.startsWith('tool:')) return 'bind_habitual_tool';
+  if (fp.startsWith('workflow:') || fp.startsWith('handoff')) return 'learn_workflow_pattern';
+  return 'update_user_preference';
 }
 
 /**
@@ -212,21 +218,22 @@ export function promoteCandidatesToActions(db: DB, companyId: string): { reportI
     }
   })();
 
-  // E3 review 修复：低风险 item（偏好/惯用工具建议→但 toolId 缺失会 failed，属预期；update_user_preference 有 profileId 可执行）
-  // 在事务外直接执行——这些不改组织运行态，无需用户审批，executor 内有锁兜底、structure_change_log 可回滚。
+  // 回访修复：低风险 item（update_user_preference / bind_habitual_tool）在事务外直接执行——
+  // 这些不改组织运行态，无需用户审批；executor 内有 entity_lock 兜底、structure_change_log 可回滚。
+  // 高风险（learn_workflow_pattern）保持 pending 等用户确认（工作流改动需人工）。
   const company = getCompany(db, companyId);
   const companyOnline = company.state === 'online';
   for (const it of items) {
-    const lowRisk = it.actionType === 'update_user_preference';
+    const lowRisk = it.actionType === 'update_user_preference' || it.actionType === 'bind_habitual_tool';
     if (!lowRisk) continue;
     const itemRow = db.prepare('SELECT * FROM report_action_item WHERE id=?').get(it.id) as
       | { id: string; report_id: string; action_type: string; description: string; reason: string | null; expected_effect: string | null; params_json: string | null; status: string; result: string | null; created_at: string; updated_at: string }
       | undefined;
     if (!itemRow) continue;
-    const item = {
-      id: itemRow.id, reportId: itemRow.report_id, actionType: itemRow.action_type as never,
+    const item: ReportActionItem = {
+      id: itemRow.id, reportId: itemRow.report_id, actionType: itemRow.action_type as ActionType,
       description: itemRow.description, reason: itemRow.reason ?? '', expectedEffect: itemRow.expected_effect ?? '',
-      params: JSON.parse(itemRow.params_json ?? '{}'), status: itemRow.status as never, result: itemRow.result,
+      params: JSON.parse(itemRow.params_json ?? '{}'), status: itemRow.status as ReportActionItem['status'], result: itemRow.result,
       createdAt: itemRow.created_at,
     };
     try {
@@ -240,14 +247,16 @@ export function promoteCandidatesToActions(db: DB, companyId: string): { reportI
 }
 
 /** 按 actionType 产最小 params。
- *  E3 review 修复：update_user_preference 用 candidate.profileId（detectPromotions 采集的主导 profile）；
- *  bind_habitual_tool 不再从 sampleEntryIds 取 toolId（那是 memory_entry id，id 空间错）——
- *  留空让用户审批时补 toolId，executor changes=0 时返回 failed 而非误报 executed。 */
+ *  update_user_preference 用 candidate.profileId（detectPromotions 采集的主导 profile）+ 样本内容；
+ *  bind_habitual_tool 用 fingerprint 主题段作 toolId（"tool:<toolId>"），
+ *  不在 tool_registry 时 executor changes=0 返回 failed 而非误报 executed（诚实的失败）。 */
 function minimalParams(actionType: string, candidate: PromotionCandidate): Record<string, unknown> {
   const base: Record<string, unknown> = { fingerprint: candidate.fingerprint };
   if (actionType === 'update_user_preference') {
     base.content = candidate.sampleContents[0] ?? candidate.fingerprint;
     if (candidate.profileId) base.profileId = candidate.profileId;
+  } else if (actionType === 'bind_habitual_tool') {
+    base.toolId = candidate.fingerprint.split(':')[1] ?? candidate.fingerprint;
   }
   return base;
 }
