@@ -741,3 +741,25 @@
   background: var(--bg-input);
   border: 1px solid var(--border-subtle);
 }
+
+/* ===== E5 公司进化控制面 ===== */
+.mono { font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 0.9em; }
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.evolution-item {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  padding: 10px 12px; border: 1px solid var(--border, #ddd); border-radius: 8px;
+}
+.evolution-item .muted { margin: 4px 0 0; }
+.evolution-item-actions { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+.report-list { display: flex; flex-direction: column; gap: 6px; }
+.report-row {
+  display: flex; gap: 10px; align-items: center; text-align: left;
+  padding: 8px 10px; border: 1px solid var(--border, #ddd); border-radius: 8px;
+  background: transparent; cursor: pointer; font: inherit; color: inherit;
+}
+.report-row:hover { background: var(--hover, #f5f5f5); }
+.report-row.is-active { border-color: var(--accent, #4a7dff); }
+.report-row .truncate { flex: 1; }
+.evolution-block-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.evolution-block-head .muted { margin: 0; flex: 1; min-width: 200px; }
+.evolution-summary { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }

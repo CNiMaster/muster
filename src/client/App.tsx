@@ -1,11 +1,14 @@
 import type React from 'react';
 import { Outlet, NavLink, useLocation, useParams } from 'react-router-dom';
-import { useCompany, useProject } from './hooks/queries';
+import { useCompany, useProject, useSystemSettings } from './hooks/queries';
+import { useAppearance } from './hooks/useAppearance';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Badge, companyStateTone, stateLabel } from './components/Badge';
 
 export function App(): React.ReactElement {
   const location = useLocation();
+  const { data: systemSettings } = useSystemSettings();
+  useAppearance(systemSettings);
   const workbenchRoute = /^\/companies\/[^/]+\/?$/.test(location.pathname) || /^\/projects\/[^/]+(?:\/(?:tasks|plans|usage|artifacts|materials|reports|dashboard|character-graph|settings))?\/?$/.test(location.pathname) || /^\/tasks\/[^/]+\/?$/.test(location.pathname);
   return (
     <ErrorBoundary label="App">

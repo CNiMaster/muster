@@ -19,6 +19,8 @@ import {
   type ReviewContext,
 } from './tools/registry';
 import { FILE_TOOLS } from './tools/file-tools';
+import { recordCapabilityUsage } from '../domain/capability-quality';
+import type { DB } from '../db/client';
 import type { AgentRunResult } from '../../shared/types';
 import type { ExecutionUsage } from '../task-engine/executor';
 
@@ -79,6 +81,9 @@ export interface ToolLoopOptions {
   /** 模型名（用于 usage 记账）。 */
   model: string;
   permissionGuard?: (request: { action: string; path?: string; command?: string }) => { allowed: boolean; message?: string }|Promise<{ allowed: boolean; message?: string }>;
+  /** E1.1 工具调用埋点：传入则每次 executeTool 调用记录一条 capability_usage_stat，
+   * 激活工具质量反馈闭环（recordCapabilityUsage 此前为零调用方死代码）。 */
+  usageTracking?: { db: DB; taskId: string };
 }
 
 export interface ToolLoopResult {
@@ -145,7 +150,32 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult
           toolRegistry: opts.toolRegistry ?? createBuiltinToolRegistry(),
           permissionGuard: opts.permissionGuard,
         };
-        const tr: ToolResult = await executeTool(call, ctx);
+        const startedAt = Date.now();
+        let outcome: 'success' | 'fail' = 'success';
+        let tr: ToolResult;
+        try {
+          tr = await executeTool(call, ctx);
+        } catch (err) {
+          outcome = 'fail';
+          throw err;
+        } finally {
+          // E1.1 工具调用埋点：无论成功/失败都记录一条 usage，供质量反馈与惯用工具固化消费。
+          // 埋点异常必须吞掉，绝不影响主流程。
+          if (opts.usageTracking) {
+            try {
+              const resolvedTool = toolRegistry.resolve(call.name);
+              recordCapabilityUsage(opts.usageTracking.db, {
+                capabilityId: resolvedTool?.source.pluginId ?? call.name,
+                toolId: call.name,
+                outcome,
+                durationMs: Date.now() - startedAt,
+                taskId: opts.usageTracking.taskId,
+              });
+            } catch {
+              /* 吞掉埋点异常，绝不影响主流程 */
+            }
+          }
+        }
         // 把 tool result 加回 messages
         messages.push({
           role: 'tool',

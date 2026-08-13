@@ -5,6 +5,7 @@ import { Button, toast } from '../components/Button';
 import { CardSkeleton } from '../components/Skeleton';
 import { CompanyActivity } from '../components/company/CompanyActivity';
 import { CompanyAttention } from '../components/company/CompanyAttention';
+import { CompanyEvolution } from '../components/company/CompanyEvolution';
 import { CompanyOverview } from '../components/company/CompanyOverview';
 import { CompanyProjects } from '../components/company/CompanyProjects';
 import { isCompanySectionKey } from '../components/company/CompanySections';
@@ -56,7 +57,8 @@ export function CompanyPage(): React.ReactElement {
       : activeTab === 'team' ? <CompanyTeam companyId={companyId} isOff={company.state === 'off'} agents={agents} departments={departments} />
         : activeTab === 'projects' ? <CompanyProjects companyId={companyId} projects={projects} />
           : activeTab === 'activity' ? <CompanyActivity companyId={companyId} agents={agents} events={events} />
-            : <CompanySettings company={company} />;
+            : activeTab === 'evolution' ? <CompanyEvolution companyId={companyId} />
+              : <CompanySettings company={company} />;
   const companyAction = company.state === 'off'
     ? <Button icon={<span aria-hidden="true">▶</span>} onClick={() => doAction('clock-in')} loading={action.isPending}>启动公司</Button>
     : company.state === 'online'
@@ -65,18 +67,19 @@ export function CompanyPage(): React.ReactElement {
 
   return <WorkbenchShell
     scopeKey={`company:${companyId}`}
-    breadcrumb={<WorkbenchContextSwitcher companyId={companyId} companyName={company.name} companyKind={COMPANY_KIND_LABELS[company.kind] ?? company.kind} sectionKey={activeTab} sectionLabel={{ overview: '公司总览', projects: '项目', team: '团队', activity: '沟通与活动', settings: '公司设置', attention: '需要处理' }[activeTab]} />}
+    breadcrumb={<WorkbenchContextSwitcher companyId={companyId} companyName={company.name} companyKind={COMPANY_KIND_LABELS[company.kind] ?? company.kind} sectionKey={activeTab} sectionLabel={{ overview: '公司总览', projects: '项目', team: '团队', activity: '沟通与活动', evolution: '进化与报告', settings: '公司设置', attention: '需要处理' }[activeTab]} />}
     navigationLabel="公司工作列表"
     inspectorLabel="公司现场"
     attentionCount={(cockpit?.approvals.pending ?? 0) + (cockpit?.projects.attention ?? 0)}
     primaryAction={companyAction}
-    navigation={<CompanyWorkNavigation active={activeTab} projectCount={projects.length} employeeCount={agents.length} attentionCount={(cockpit?.approvals.pending ?? 0) + (cockpit?.projects.attention ?? 0)} onChange={(view) => setSearchParams(view === 'overview' ? {} : { view })} />}
+    navigation={<CompanyWorkNavigation active={activeTab} projectCount={projects.length} employeeCount={agents.length} attentionCount={(cockpit?.approvals.pending ?? 0) + (cockpit?.projects.attention ?? 0)} evolutionCount={cockpit?.optimization?.pendingActions ?? 0} onChange={(view) => setSearchParams(view === 'overview' ? {} : { view })} />}
     inspector={<CompanyContextInspector cockpit={cockpit} statusBoard={statusBoard} statusBoardLoading={statusBoardLoading} />}
     commandOptions={[
       ...projects.slice(0, 5).map((project) => ({ label: `进入项目：${project.name}`, href: `/projects/${project.id}`, group: '项目' })),
       ...agents.slice(0, 5).map((agent) => ({ label: `查看员工：${agent.name}`, href: `/companies/${companyId}?view=team`, group: '团队' })),
       { label: '需要处理', href: `/companies/${companyId}?view=attention`, group: '当前公司' },
       { label: '沟通与活动', href: `/companies/${companyId}?view=activity`, group: '当前公司' },
+      { label: '进化与报告', href: `/companies/${companyId}?view=evolution`, group: '当前公司' },
       { label: '更多设置', href: `/companies/${companyId}?view=settings`, group: '当前公司' },
     ]}
   >

@@ -25,6 +25,7 @@ import {
   listReportActionItems,
 } from '../../src/server/domain/optimization-report';
 import { executeApprovedActions, executePendingOfflineActions } from '../../src/server/domain/optimization-report-executor';
+import { createMemoryCandidate, approveMemoryCandidate } from '../../src/server/domain/memory';
 import type { SetupGenerator } from '../../src/server/domain/setup-assistant';
 import type { DB } from '../../src/server/db/client';
 
@@ -55,6 +56,14 @@ class StaticGenerator implements SetupGenerator {
 class FailingGenerator implements SetupGenerator {
   async generate(): Promise<unknown> {
     throw new Error('AI unavailable');
+  }
+}
+
+class CapturingGenerator implements SetupGenerator {
+  lastPrompt = '';
+  async generate(input: { prompt: string; jsonSchema: Record<string, unknown> }): Promise<unknown> {
+    this.lastPrompt = input.prompt;
+    return { summary: 'ok', actionItems: [] };
   }
 }
 
@@ -343,5 +352,61 @@ describe('executeApprovedActions（一键审批执行）', () => {
       "SELECT content FROM conversation_message WHERE scope_kind='company' AND scope_id=? AND author='system'",
     ).all(c.id) as Array<{ content: string }>;
     expect(messages.some((m) => m.content.includes('[优化报告执行]'))).toBe(true);
+  });
+});
+
+describe('组织进化信号（E4.2）', () => {
+  function seedEvolution(companyId: string, leadProfileId: string, projectId: string) {
+    // 2 条 project scope 经验记忆（已批准，state=active）
+    for (let i = 0; i < 2; i++) {
+      const cand = createMemoryCandidate(db, {
+        profileId: leadProfileId, scope: 'project', companyId, projectId,
+        content: `design:color 经验 #${i}`, author: 'agent', confidence: 0.85, canInfluence: true, fingerprint: 'design:color',
+      });
+      approveMemoryCandidate(db, cand.id, 'agent');
+    }
+    // 1 次返工反思（挂真实 task，避免 FK 失败）
+    const t = createTask(db, { projectId, assigneeAgentId: createAgent(db, { companyId, name: 'reworker', role: 'worker' }).id, title: '进化测试任务' });
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO task_reflection (id, task_id, company_id, project_id, profile_id, outcome, signal, context_snapshot, status, created_at)
+       VALUES ('tr_ev1', ?, ?, ?, ?, 'rework', 'rework', '{}', 'done', ?)`,
+    ).run(t.id, companyId, projectId, leadProfileId, now);
+    // 1 个 pending + 1 个 promoted 晋升候选
+    db.prepare(
+      `INSERT INTO promotion_candidate (id, fingerprint, scope, count, distinct_profiles, sample_entry_ids_json, sample_contents_json, status, company_id, profile_id, created_at, updated_at)
+       VALUES ('pc_ev1', 'design:color', 'project', 3, 1, '[]', '[]', 'pending', ?, ?, ?, ?)`,
+    ).run(companyId, leadProfileId, now, now);
+    db.prepare(
+      `INSERT INTO promotion_candidate (id, fingerprint, scope, count, distinct_profiles, sample_entry_ids_json, sample_contents_json, status, company_id, profile_id, created_at, updated_at)
+       VALUES ('pc_ev2', 'workflow:handoff', 'project', 3, 1, '[]', '[]', 'promoted', ?, ?, ?, ?)`,
+    ).run(companyId, leadProfileId, now, now);
+  }
+
+  it('collectCompanyStats 聚合 lessonsLearned/reworkReflections/pendingPromotions/promotedActions', () => {
+    const { c, lead, project } = fixture();
+    seedEvolution(c.id, lead.profileId, project.id);
+    const stats = collectCompanyStats(db, c.id);
+    expect(stats.evolution.lessonsLearned).toBe(2);
+    expect(stats.evolution.reworkReflections).toBe(1);
+    expect(stats.evolution.pendingPromotions).toBe(1);
+    expect(stats.evolution.promotedActions).toBe(1);
+  });
+
+  it('规则回退报告消费 evolution（summary 提及 + stats 输出）', async () => {
+    const { c, lead, project } = fixture();
+    seedEvolution(c.id, lead.profileId, project.id);
+    const report = await generateOptimizationReport(db, c.id, { generator: new FailingGenerator() });
+    expect(report.report.summary).toContain('组织记忆');
+    expect((report.report.stats as { evolution?: unknown }).evolution).toBeDefined();
+  });
+
+  it('AI 提示词包含 evolution 信号', async () => {
+    const { c, lead, project } = fixture();
+    seedEvolution(c.id, lead.profileId, project.id);
+    const gen = new CapturingGenerator();
+    await generateOptimizationReport(db, c.id, { generator: gen });
+    expect(gen.lastPrompt).toContain('evolution');
+    expect(gen.lastPrompt).toContain('lessonsLearned');
   });
 });

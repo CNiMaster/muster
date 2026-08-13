@@ -46,6 +46,10 @@ export interface ExecutorProfile {
   credentialRef: Partial<CredentialReference>;
   install: Record<string, unknown>;
   concurrencyMode: ExecutorConcurrency;
+  /** 并发硬上限（settings-overhaul B4；默认 4）。 */
+  maxConcurrency?: number;
+  /** 锁定后自适应不越界不上调（B4）。 */
+  concurrencyLocked?: boolean;
   createdAt: string;
   updatedAt: string;
   /** 列表端点附带的最近一次连通测试结果。 */

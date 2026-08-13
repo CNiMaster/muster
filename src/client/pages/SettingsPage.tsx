@@ -32,6 +32,17 @@ export function SettingsPage(): React.ReactElement {
   const [tierPrimary, setTierPrimary] = useState('');
   const [tierSecondary, setTierSecondary] = useState('');
   const [tierTertiary, setTierTertiary] = useState('');
+  const [proxyUrl, setProxyUrl] = useState('');
+  const [proxyBypass, setProxyBypass] = useState('');
+  const [caCertPath, setCaCertPath] = useState('');
+  const [egressTimeoutMs, setEgressTimeoutMs] = useState(30000);
+  const [theme, setTheme] = useState<'dark' | 'light' | 'system'>('system');
+  const [fontFamily, setFontFamily] = useState('');
+  const [fontSize, setFontSize] = useState(14);
+  const [locale, setLocale] = useState<'zh' | 'en'>('zh');
+  const [codeTheme, setCodeTheme] = useState('default');
+  const [autonomousReflectionEnabled, setAutonomousReflectionEnabled] = useState(false);
+  const [autonomousReflectionBudgetUSD, setAutonomousReflectionBudgetUSD] = useState(0);
   const [testResult, setTestResult] = useState<any | null>(null);
 
   useEffect(() => {
@@ -48,6 +59,17 @@ export function SettingsPage(): React.ReactElement {
     setTierPrimary(settings.executorTierPrimaryId ?? '');
     setTierSecondary(settings.executorTierSecondaryId ?? '');
     setTierTertiary(settings.executorTierTertiaryId ?? '');
+    setProxyUrl(settings.proxyUrl ?? '');
+    setProxyBypass(settings.proxyBypass ?? '');
+    setCaCertPath(settings.caCertPath ?? '');
+    setEgressTimeoutMs(settings.egressTimeoutMs ?? 30000);
+    setTheme(settings.theme ?? 'system');
+    setFontFamily(settings.fontFamily ?? '');
+    setFontSize(settings.fontSize ?? 14);
+    setLocale(settings.locale ?? 'zh');
+    setCodeTheme(settings.codeTheme ?? 'default');
+    setAutonomousReflectionEnabled(settings.autonomousReflectionEnabled ?? false);
+    setAutonomousReflectionBudgetUSD(settings.autonomousReflectionBudgetUSD ?? 0);
   }, [settings]);
 
   const handleSave = (): void => {
@@ -56,7 +78,7 @@ export function SettingsPage(): React.ReactElement {
       return;
     }
     saveSettings.mutate(
-      { claudeBin, model, skipPermissions, timeoutMs, maxToolCalls, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierPrimaryId: tierPrimary, executorTierSecondaryId: tierSecondary, executorTierTertiaryId: tierTertiary },
+      { claudeBin, model, skipPermissions, timeoutMs, maxToolCalls, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierPrimaryId: tierPrimary, executorTierSecondaryId: tierSecondary, executorTierTertiaryId: tierTertiary, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs, theme, fontFamily, fontSize, locale, codeTheme, autonomousReflectionEnabled, autonomousReflectionBudgetUSD },
       {
         onSuccess: () => toast('success', '系统设置已保存并实时生效'),
         onError: (error: any) => toast('error', error.message ?? '保存设置失败'),
@@ -191,6 +213,89 @@ export function SettingsPage(): React.ReactElement {
             <Field label="Gemini 默认模型">
               <Input value={geminiModel} onChange={(event) => setGeminiModel(event.target.value)} placeholder="gemini-2.0-flash" />
             </Field>
+          </div>
+        </details>
+
+        <details className="details-collapse">
+          <summary>网络（代理 / 证书）</summary>
+          <div className="form-stack">
+            <p className="muted">模型、MCP、命令工具与应用渲染层的出口流量将经此代理。留空时直连，不读取系统环境变量。修改后需重启应用生效。</p>
+            <div className="settings-field-grid">
+              <Field label="HTTP 代理" hint="留空直连，例如 http://127.0.0.1:7890">
+                <Input value={proxyUrl} onChange={(event) => setProxyUrl(event.target.value)} placeholder="http://127.0.0.1:7890" />
+              </Field>
+              <Field label="代理例外" hint="匹配这些主机的请求将直连，不经过代理。逗号分隔，例如 localhost,127.0.0.1,.example.com">
+                <Input value={proxyBypass} onChange={(event) => setProxyBypass(event.target.value)} placeholder="localhost,127.0.0.1,.example.com" />
+              </Field>
+              <Field label="自定义证书（PEM 路径）" hint="作为 NODE_EXTRA_CA_CERTS 注入模型、MCP 与命令工具，并用于渲染层证书校验">
+                <Input value={caCertPath} onChange={(event) => setCaCertPath(event.target.value)} placeholder="/Users/name/certs/root-ca.pem" />
+              </Field>
+              <Field label="出口请求超时（毫秒）">
+                <Input type="number" value={egressTimeoutMs} onChange={(event) => setEgressTimeoutMs(Number(event.target.value))} />
+              </Field>
+            </div>
+            <p className="muted">⚠ 以上网络配置修改后需重启应用生效（不实时热更）。</p>
+          </div>
+        </details>
+
+        <details className="details-collapse">
+          <summary>外观（主题 / 字体 / 语言）</summary>
+          <div className="form-stack">
+            <div className="settings-field-grid">
+              <Field label="主题">
+                <Select value={theme} onChange={(event) => setTheme(event.target.value as 'dark' | 'light' | 'system')}>
+                  <option value="system">跟随系统</option>
+                  <option value="dark">深色</option>
+                  <option value="light">浅色</option>
+                </Select>
+              </Field>
+              <Field label="界面语言">
+                <Select value={locale} onChange={(event) => setLocale(event.target.value as 'zh' | 'en')}>
+                  <option value="zh">中文</option>
+                  <option value="en">English</option>
+                </Select>
+              </Field>
+              <Field label="界面字体" hint="留空使用默认字体">
+                <Input value={fontFamily} onChange={(event) => setFontFamily(event.target.value)} placeholder="例如: Avenir Next, PingFang SC" />
+              </Field>
+              <Field label="主文本字号（px）">
+                <Input type="number" value={fontSize} onChange={(event) => setFontSize(Number(event.target.value))} />
+              </Field>
+              <Field label="代码块主题" hint="default / dark 等（简单映射）">
+                <Select value={codeTheme} onChange={(event) => setCodeTheme(event.target.value)}>
+                  <option value="default">default</option>
+                  <option value="dark">dark</option>
+                </Select>
+              </Field>
+            </div>
+            <p className="muted">外观修改即时生效（主题/字体/字号/语言）。</p>
+          </div>
+        </details>
+
+        <details className="details-collapse">
+          <summary>自主进化（空闲反思 / 白日梦）</summary>
+          <div className="form-stack">
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={autonomousReflectionEnabled}
+                onChange={(event) => setAutonomousReflectionEnabled(event.target.checked)}
+              />
+              公司空闲时自动补做任务反思（沉淀经验进记忆）
+            </label>
+            <Field label="每日自主反思预算（USD）" hint="公司当日总花费低于该值时才允许自动反思；0 = 关闭">
+              <Input
+                type="number"
+                min={0}
+                step={0.1}
+                value={autonomousReflectionBudgetUSD}
+                onChange={(event) => setAutonomousReflectionBudgetUSD(Number(event.target.value))}
+              />
+            </Field>
+            <p className="muted">
+              默认关闭（反思有 LLM 成本）。开启后：公司在线且无活跃任务时，对近期已完成/失败但未反思过的任务补排队反思；
+              正式任务到达自动让位，单次最多补 2 条。
+            </p>
           </div>
         </details>
 

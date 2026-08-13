@@ -20,6 +20,8 @@ import {
   listReportActionItems,
 } from '../domain/optimization-report';
 import { getCompany } from '../domain/company';
+import { promoteCandidatesToActions } from '../domain/promotion';
+import { getEvolutionSummary } from '../domain/evolution-summary';
 
 export const optimizationReportRouter = Router({ mergeParams: true });
 export const optimizationReportByIdRouter = Router({ mergeParams: true });
@@ -41,6 +43,25 @@ optimizationReportRouter.get(
   '/optimization-reports',
   asyncHandler(async (req, res) => {
     res.json(listOptimizationReports(getDb(), param(req, 'companyId')));
+  }),
+);
+
+/** E5 补齐（晨醒模型）：手动执行晋升批次——把 pending 晋升候选立即转 action item（低风险自动落地）。 */
+optimizationReportRouter.post(
+  '/promote',
+  asyncHandler(async (req, res) => {
+    const db = getDb();
+    const companyId = param(req, 'companyId');
+    getCompany(db, companyId);
+    res.json(promoteCandidatesToActions(db, companyId));
+  }),
+);
+
+/** E5 补齐（晨醒模型）：进化积压总览（待审批建议/待晋升/已固化/待反思）。 */
+optimizationReportRouter.get(
+  '/evolution-summary',
+  asyncHandler(async (req, res) => {
+    res.json(getEvolutionSummary(getDb(), param(req, 'companyId')));
   }),
 );
 

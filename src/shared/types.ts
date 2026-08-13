@@ -121,6 +121,8 @@ export interface CompanyCockpitDTO {
   employees: { total: number; online: number; blocked: number };
   projects: { total: number; active: number; attention: number };
   approvals: { pending: number };
+  /** E5 补齐：公司待审批的组织优化建议数（optimization-report action items）。 */
+  optimization: { pendingActions: number };
   roleGaps: Array<{ role: string; reason: string }>;
   risks: Array<{ kind: string; label: string; href: string }>;
   nextAction: {

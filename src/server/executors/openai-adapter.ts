@@ -20,6 +20,7 @@ import { estimateCostUSD } from './model-pricing';
 import { PROVIDER_DEFAULT_API_KEY_ENV, PROVIDER_DEFAULT_BASE_URL, PROVIDER_DEFAULT_MODEL } from './provider';
 import { getDb } from '../db/client';
 import { getSystemSettings } from '../domain/setting';
+import { buildThinkingParams, normalizeThinkingDepth, normalizeContextCache, thinkingSupportedByModel } from '../domain/thinking-params';
 import { log } from '../logger';
 import { agentRunResultSchema } from './result-schema';
 
@@ -61,6 +62,10 @@ export class OpenAICompatibleAdapter implements ExecutionAdapter {
     if (!apiKey) {
       return this.blocked(`OpenAI API key 未配置：环境变量 ${apiKeyEnv} 未设置`, start);
     }
+    // spec 2026-08-12-settings-overhaul B3：思考深度归一化 → reasoning_effort。
+    // 仅模型支持时生效（自动识别），否则强制 off，避免把 reasoning_effort 发给不支持的模型导致 400。
+    const thinkingDepth = thinkingSupportedByModel('openai', model) ? normalizeThinkingDepth(agentEx?.thinkingDepth) : 'off';
+    const thinking = buildThinkingParams('openai', thinkingDepth, normalizeContextCache(agentEx?.contextCache));
 
     // 组装 messages
     const messages = this.buildMessages(ctx);
@@ -73,6 +78,7 @@ export class OpenAICompatibleAdapter implements ExecutionAdapter {
         tools,
         tool_choice: 'auto',
         stream: false,
+        ...(thinking.applied && thinking.extraBody ? thinking.extraBody : {}), // reasoning_effort
       };
       const res = await fetch(`${baseURL}/chat/completions`, {
         method: 'POST',
@@ -128,6 +134,7 @@ export class OpenAICompatibleAdapter implements ExecutionAdapter {
         model,
         loopback: ctx.loopback,
         permissionGuard: ctx.permissionGuard,
+        usageTracking: { db: getDb(), taskId: ctx.task.id },
         reviewContext: { db: getDb(), taskId: ctx.task.id },
         consultationContext: {
           db: getDb(),

@@ -22,6 +22,29 @@ export interface SystemSettings {
   executorTierPrimaryId: string;
   executorTierSecondaryId: string;
   executorTierTertiaryId: string;
+  // ── settings-overhaul（spec 2026-08-12-settings-overhaul-design）──
+  /** HTTP 代理；空 = 直连且不读系统环境变量。修改后重启生效。 */
+  proxyUrl: string;
+  /** 代理例外主机，逗号分隔（localhost,127.0.0.1,.example.com）。修改后重启生效。 */
+  proxyBypass: string;
+  /** PEM 根证书路径；注入 NODE_EXTRA_CA_CERTS 语义。修改后重启生效。 */
+  caCertPath: string;
+  /** 出口请求超时（ms）。 */
+  egressTimeoutMs: number;
+  /** 外观主题。 */
+  theme: 'dark' | 'light' | 'system';
+  /** 界面字体族。 */
+  fontFamily: string;
+  /** 界面字号（px）。 */
+  fontSize: number;
+  /** 界面语言。 */
+  locale: 'zh' | 'en';
+  /** 代码块高亮主题。 */
+  codeTheme: string;
+  /** E4.3 空闲自主反思开关（默认关——自动反思有 LLM 成本，需用户显式开启）。 */
+  autonomousReflectionEnabled: boolean;
+  /** E4.3 空闲自主反思预算（USD/日）：公司当日总花费低于该值时才允许自动反思；0 = 关闭。 */
+  autonomousReflectionBudgetUSD: number;
 }
 
 export function getSetting(db: DB, key: string, defaultValue: string): string {
@@ -52,6 +75,17 @@ export function getSystemSettings(db: DB): SystemSettings {
     executorTierPrimaryId: getSetting(db, 'executor_tier_primary_id', ''),
     executorTierSecondaryId: getSetting(db, 'executor_tier_secondary_id', ''),
     executorTierTertiaryId: getSetting(db, 'executor_tier_tertiary_id', ''),
+    proxyUrl: getSetting(db, 'proxy_url', ''),
+    proxyBypass: getSetting(db, 'proxy_bypass', ''),
+    caCertPath: getSetting(db, 'ca_cert_path', ''),
+    egressTimeoutMs: Number(getSetting(db, 'egress_timeout_ms', '30000')),
+    theme: getSetting(db, 'theme', 'system') as SystemSettings['theme'],
+    fontFamily: getSetting(db, 'font_family', 'system-ui'),
+    fontSize: Number(getSetting(db, 'font_size', '14')),
+    locale: getSetting(db, 'locale', 'zh') as SystemSettings['locale'],
+    codeTheme: getSetting(db, 'code_theme', 'default'),
+    autonomousReflectionEnabled: getSetting(db, 'autonomous_reflection_enabled', 'false') === 'true',
+    autonomousReflectionBudgetUSD: Number(getSetting(db, 'autonomous_reflection_budget_usd', '0')),
   };
 }
 
@@ -92,5 +126,20 @@ export function saveSystemSettings(db: DB, settings: Partial<SystemSettings>): v
   }
   if (settings.executorTierTertiaryId !== undefined) {
     setSetting(db, 'executor_tier_tertiary_id', settings.executorTierTertiaryId);
+  }
+  if (settings.proxyUrl !== undefined) setSetting(db, 'proxy_url', settings.proxyUrl.trim());
+  if (settings.proxyBypass !== undefined) setSetting(db, 'proxy_bypass', settings.proxyBypass.trim());
+  if (settings.caCertPath !== undefined) setSetting(db, 'ca_cert_path', settings.caCertPath.trim());
+  if (settings.egressTimeoutMs !== undefined) setSetting(db, 'egress_timeout_ms', String(settings.egressTimeoutMs));
+  if (settings.theme !== undefined) setSetting(db, 'theme', settings.theme);
+  if (settings.fontFamily !== undefined) setSetting(db, 'font_family', settings.fontFamily);
+  if (settings.fontSize !== undefined) setSetting(db, 'font_size', String(settings.fontSize));
+  if (settings.locale !== undefined) setSetting(db, 'locale', settings.locale);
+  if (settings.codeTheme !== undefined) setSetting(db, 'code_theme', settings.codeTheme);
+  if (settings.autonomousReflectionEnabled !== undefined) {
+    setSetting(db, 'autonomous_reflection_enabled', settings.autonomousReflectionEnabled ? 'true' : 'false');
+  }
+  if (settings.autonomousReflectionBudgetUSD !== undefined) {
+    setSetting(db, 'autonomous_reflection_budget_usd', String(settings.autonomousReflectionBudgetUSD));
   }
 }

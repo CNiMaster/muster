@@ -27,6 +27,7 @@ import { usageRouter } from './api/reports-usage';
 import { novelRouter, projectScopedNovel } from './api/novel';
 import { projectPhase7, reportByIdRouter, inspectorAlertRouter } from './api/phase7';
 import { optimizationReportRouter, optimizationReportByIdRouter } from './api/optimization-report';
+import { promotionCandidatesRouter, structureChangesRouter, locksRouter } from './api/evolution';
 import { companyMessagesRouter, projectMessagesRouter } from './api/conversation';
 import { pluginsRouter } from './api/plugins';
 import { outsourcingRouter } from './api/outsourcing';
@@ -60,6 +61,7 @@ import { OpenAICompatibleAdapter } from './executors/openai-adapter';
 import { GeminiAdapter } from './executors/gemini-adapter';
 import { FakeExecutor } from './task-engine/fake-executor';
 import { getSystemSettings } from './domain/setting';
+import { applyGlobalEgress, buildEgressEnv } from './runtime/egress';
 import { TriggerScheduler } from './trigger-scheduler';
 import { ProjectRuntimeCoordinator } from './runtime/coordinator';
 import { listAgentProfiles } from './domain/agent-profile';
@@ -208,6 +210,10 @@ async function createApp(): Promise<AppHandle> {
   app.use('/api/reports/:id', reportByIdRouter);
   app.use('/api/inspector/alerts', inspectorAlertRouter);
   app.use('/api/optimization-reports/:id', optimizationReportByIdRouter);
+  // E5 用户控制面：晋升候选 / 结构历史+回滚 / 锁定管理
+  app.use('/api/promotion-candidates', promotionCandidatesRouter);
+  app.use('/api/structure-changes', structureChangesRouter);
+  app.use('/api/locks', locksRouter);
   app.use('/api/tasks/:id', taskByIdRouter);
   app.use('/api/settings', settingsRouter);
   app.use('/api/workspaces', workspacesRouter);
@@ -250,6 +256,23 @@ async function createApp(): Promise<AppHandle> {
 }
 
 async function main(): Promise<void> {
+  // spec 2026-08-12-settings-overhaul B1：出口网络统一配置（代理/例外/证书），启动时一次性生效。
+  // 设置变更需重启：dispatcher 在进程启动时全局设置；NODE_EXTRA_CA_CERTS 供 CLI/MCP/命令工具子进程继承。
+  {
+    const sysSettings = getSystemSettings(getDb());
+    applyGlobalEgress({
+      proxyUrl: sysSettings.proxyUrl,
+      proxyBypass: sysSettings.proxyBypass,
+      caCertPath: sysSettings.caCertPath,
+    });
+    const egressEnv = buildEgressEnv({ caCertPath: sysSettings.caCertPath });
+    if (egressEnv.NODE_EXTRA_CA_CERTS) process.env.NODE_EXTRA_CA_CERTS = egressEnv.NODE_EXTRA_CA_CERTS;
+    log.info('egress configured', {
+      proxy: sysSettings.proxyUrl ? 'configured' : 'direct',
+      caCert: sysSettings.caCertPath ? 'configured' : 'none',
+    });
+  }
+
   const { app, engine, triggerScheduler, coordinator } = await createApp();
   const httpServer = createServer(app);
 

@@ -30,6 +30,11 @@ export const ACTION_TYPES = [
   'remove_employee',
   'adjust_permission',
   'prompt_optimization',
+  // E3：组织记忆系统晋升流落地的 4 类结构变更
+  'update_user_preference',
+  'bind_habitual_tool',
+  'learn_workflow_pattern',
+  'adjust_skill_binding',
 ] as const;
 export type ActionType = (typeof ACTION_TYPES)[number];
 
@@ -41,7 +46,7 @@ export interface ReportActionItem {
   reason: string;
   expectedEffect: string;
   params: Record<string, unknown>;
-  status: 'pending' | 'approved' | 'rejected' | 'executed' | 'failed' | 'pending_offline';
+  status: 'pending' | 'approved' | 'rejected' | 'executed' | 'failed' | 'pending_offline' | 'skipped';
   result: string | null;
   createdAt: string;
 }
@@ -94,6 +99,13 @@ export interface CompanyStats {
   issues: string[];
   roleGaps: string[];
   cockpit: ReturnType<typeof getCompanyCockpit>;
+  /** E4.2 组织进化信号：让 AI 报告看到反思/晋升流的产物，避免孤岛。 */
+  evolution: {
+    lessonsLearned: number;       // 已批准的经验记忆条数（memory_entry scope=project/skill）
+    reworkReflections: number;    // 返工反思次数（task_reflection signal=rework）
+    pendingPromotions: number;    // 待晋升候选数（promotion_candidate status=pending，该公司）
+    promotedActions: number;      // 已晋升为 action item 的数（promotion_candidate status=promoted，该公司）
+  };
 }
 
 /** 聚合公司近期的运营数据（报告的事实基础）。 */
@@ -188,6 +200,22 @@ export function collectCompanyStats(db: DB, companyId: string): CompanyStats {
   const firstAgent = company.firstAgentId
     ? agentRows.find((a) => a.id === company.firstAgentId)
     : undefined;
+
+  // E4.2 组织进化信号：反思/晋升产物（让 AI 报告看到进化闭环的运行情况，避免孤岛）。
+  const lessonsLearned = db
+    .prepare(`SELECT COUNT(*) AS n FROM memory_entry WHERE scope IN ('project','skill') AND state='active'
+              AND profile_id IN (SELECT profile_id FROM agent_definition WHERE company_id=?)`)
+    .get(companyId) as { n: number };
+  const reworkReflections = db
+    .prepare(`SELECT COUNT(*) AS n FROM task_reflection WHERE signal='rework' AND company_id=?`)
+    .get(companyId) as { n: number };
+  const pendingPromotions = db
+    .prepare(`SELECT COUNT(*) AS n FROM promotion_candidate WHERE company_id=? AND status='pending'`)
+    .get(companyId) as { n: number };
+  const promotedActions = db
+    .prepare(`SELECT COUNT(*) AS n FROM promotion_candidate WHERE company_id=? AND status='promoted'`)
+    .get(companyId) as { n: number };
+
   return {
     company: {
       name: company.name,
@@ -200,6 +228,12 @@ export function collectCompanyStats(db: DB, companyId: string): CompanyStats {
     issues,
     roleGaps: cockpit.roleGaps.map((g) => g.reason),
     cockpit,
+    evolution: {
+      lessonsLearned: lessonsLearned?.n ?? 0,
+      reworkReflections: reworkReflections?.n ?? 0,
+      pendingPromotions: pendingPromotions?.n ?? 0,
+      promotedActions: promotedActions?.n ?? 0,
+    },
   };
 }
 
@@ -264,9 +298,20 @@ function buildRuleBasedReport(stats: CompanyStats): OptimizationReport['report']
       params: {},
     });
   }
+  // E4.2 修复：消费组织进化信号（此前 collectCompanyStats 采集了 evolution 但报告从不展示——孤岛未通）。
+  const ev = stats.evolution;
+  if (ev.lessonsLearned > 0 || ev.reworkReflections > 0 || ev.pendingPromotions > 0 || ev.promotedActions > 0) {
+    summaryParts.push(
+      `组织记忆：经验 ${ev.lessonsLearned} 条、返工反思 ${ev.reworkReflections} 次、待晋升候选 ${ev.pendingPromotions} 个、已固化建议 ${ev.promotedActions} 条。`,
+    );
+  }
   return {
     summary: summaryParts.join(' ') || '公司运行平稳。',
-    stats: { tasks: stats.tasks, employees: stats.employees.map((e) => ({ name: e.name, role: e.role, rating: e.rating, failureRate: e.failureRate })) },
+    stats: {
+      tasks: stats.tasks,
+      employees: stats.employees.map((e) => ({ name: e.name, role: e.role, rating: e.rating, failureRate: e.failureRate })),
+      evolution: stats.evolution,
+    },
     actionItems,
   };
 }
@@ -289,7 +334,8 @@ export async function generateOptimizationReport(
       `1. summary：100 字内概述（工作概况 + 最值得注意的问题）。\n` +
       `2. actionItems：最多 8 条可执行建议，每条包含 actionType（∈ ${ACTION_TYPES.join('|')}）、description（一句话）、reason（为什么）、expectedEffect（预期效果）、params（执行参数对象，如 add_employee 可含 personaDomain 建议）。\n` +
       `建议要具体、克制、可执行；没有问题就不建议，不要为了凑数编造建议。\n\n` +
-      `运营数据：\n${JSON.stringify({ company: stats.company, tasks: stats.tasks, employees: stats.employees, issues: stats.issues, roleGaps: stats.roleGaps }, null, 2)}`;
+      `evolution 是组织记忆系统信号（lessonsLearned 已批准经验记忆数、reworkReflections 返工反思次数、pendingPromotions 待晋升候选数、promotedActions 已固化建议数）；返工反思多可建议 learn_workflow_pattern / adjust_workflow，待晋升候选多说明重复经验值得固化。\n\n` +
+      `运营数据：\n${JSON.stringify({ company: stats.company, tasks: stats.tasks, employees: stats.employees, issues: stats.issues, roleGaps: stats.roleGaps, evolution: stats.evolution }, null, 2)}`;
     const result = await generator.generate({
       prompt,
       jsonSchema: {
@@ -309,7 +355,7 @@ export async function generateOptimizationReport(
     if (typeof parsed?.summary === 'string' && Array.isArray(parsed.actionItems)) {
       report = {
         summary: parsed.summary,
-        stats: { tasks: stats.tasks, employees: stats.employees, issues: stats.issues },
+        stats: { tasks: stats.tasks, employees: stats.employees, issues: stats.issues, evolution: stats.evolution },
         actionItems: (parsed.actionItems as Array<Record<string, unknown>>)
           .filter((item) => ACTION_TYPES.includes(item.actionType as ActionType) && typeof item.description === 'string')
           .slice(0, 8)

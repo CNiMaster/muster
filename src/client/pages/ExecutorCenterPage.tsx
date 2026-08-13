@@ -55,6 +55,12 @@ export function ExecutorCenterPage(): React.ReactElement {
   // 阶段二任务 2.2：凭据引用支持从 credential_definition 下拉选择 + 并发模式选择 + 编辑模式
   const { data: credentialDefs } = useCredentialDefinitions({ category: 'llm' });
   const [apiConcurrency, setApiConcurrency] = useState<'parallel' | 'profile-serial' | 'global-serial'>('parallel');
+  // settings-overhaul B4：并发硬上限 + 锁定（如 coding 套餐=1 就设 1 并锁定，杜绝高并发卡死）
+  const [apiMaxConcurrency, setApiMaxConcurrency] = useState(4);
+  const [apiConcurrencyLocked, setApiConcurrencyLocked] = useState(false);
+  // settings-overhaul B3：思考深度（归一化档位，仅支持的模型生效）+ 上下文缓存模式
+  const [apiThinkingDepth, setApiThinkingDepth] = useState<'off' | 'low' | 'medium' | 'high'>('off');
+  const [apiContextCache, setApiContextCache] = useState<'auto' | 'on' | 'off'>('auto');
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
@@ -173,12 +179,16 @@ export function ExecutorCenterPage(): React.ReactElement {
       const config: Record<string, unknown> = apiKind === 'openai-compatible-api'
         ? { provider: 'openai', baseURL: apiBaseURL.trim(), model: apiModel.trim() }
         : { provider: 'gemini', model: apiModel.trim() };
+      config.thinkingDepth = apiThinkingDepth;
+      config.contextCache = apiContextCache;
       return api.post<ExecutorProfile>('/api/executors/profiles', {
         name: apiName.trim(),
         manifestId: apiKind,
         config,
         credentialRef,
         concurrencyMode: apiConcurrency,
+        maxConcurrency: apiMaxConcurrency,
+        concurrencyLocked: apiConcurrencyLocked,
       });
     },
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['executor-profiles'] }); toast('success', 'API 执行器已创建，可在公司组织架构绑定给员工'); },
@@ -191,11 +201,15 @@ export function ExecutorCenterPage(): React.ReactElement {
       const config: Record<string, unknown> = apiKind === 'openai-compatible-api'
         ? { provider: 'openai', baseURL: apiBaseURL.trim(), model: apiModel.trim() }
         : { provider: 'gemini', model: apiModel.trim() };
+      config.thinkingDepth = apiThinkingDepth;
+      config.contextCache = apiContextCache;
       return api.put<ExecutorProfile>(`/api/executors/profiles/${profileId}`, {
         name: apiName.trim(),
         config,
         credentialRef,
         concurrencyMode: apiConcurrency,
+        maxConcurrency: apiMaxConcurrency,
+        concurrencyLocked: apiConcurrencyLocked,
       });
     },
     onSuccess: () => {
@@ -370,6 +384,31 @@ export function ExecutorCenterPage(): React.ReactElement {
               </Select>
             </Field>
           </div>
+          <div className="form-row">
+            <Field label="思考深度" hint="仅支持的模型生效（o 系列 / thinking 模型自动识别，不支持的模型自动忽略）">
+              <Select value={apiThinkingDepth} onChange={(e) => setApiThinkingDepth((e.target as HTMLSelectElement).value as typeof apiThinkingDepth)}>
+                <option value="off">关闭</option>
+                <option value="low">低</option>
+                <option value="medium">中</option>
+                <option value="high">高</option>
+              </Select>
+            </Field>
+            <Field label="上下文缓存" hint="auto/on 保持 provider 默认缓存（节省成本），off 关闭">
+              <Select value={apiContextCache} onChange={(e) => setApiContextCache((e.target as HTMLSelectElement).value as typeof apiContextCache)}>
+                <option value="auto">自动</option>
+                <option value="on">开启</option>
+                <option value="off">关闭</option>
+              </Select>
+            </Field>
+          </div>
+          <div className="form-row">
+            <Field label="最大并发" hint="该执行器同时运行的任务数上限（如套餐只允许 1 个并发就填 1）">
+              <Input type="number" min={1} max={64} value={apiMaxConcurrency} onChange={(e) => setApiMaxConcurrency(Number(e.target.value))} />
+            </Field>
+            <Field label="锁定并发" hint="锁定后始终用满「最大并发」，不会被自适应降低或自动上调（防高并发卡死）">
+              <label className="checkbox-row"><input type="checkbox" checked={apiConcurrencyLocked} onChange={(e) => setApiConcurrencyLocked(e.target.checked)} /> 锁定</label>
+            </Field>
+          </div>
           <Field label="API Key 环境变量名（不存明文）" hint="可从左侧凭据库选择，或手填自定义环境变量名">
             <div className="form-row">
               <Select value={apiKeyEnv} onChange={(e) => setApiKeyEnv((e.target as HTMLSelectElement).value)}>
@@ -421,6 +460,19 @@ export function ExecutorCenterPage(): React.ReactElement {
                       setApiModel(String(profile.config.model ?? ''));
                       setApiKeyEnv(String(profile.credentialRef?.reference ?? ''));
                       setApiConcurrency(profile.concurrencyMode ?? 'parallel');
+                      // settings-overhaul B3/B4：回填新字段，避免编辑保存时被默认值覆盖（数据丢失修复）。
+                      setApiMaxConcurrency(profile.maxConcurrency ?? 4);
+                      setApiConcurrencyLocked(profile.concurrencyLocked ?? false);
+                      setApiThinkingDepth(
+                        (['off', 'low', 'medium', 'high'] as const).includes(profile.config.thinkingDepth as never)
+                          ? (profile.config.thinkingDepth as 'off' | 'low' | 'medium' | 'high')
+                          : 'off',
+                      );
+                      setApiContextCache(
+                        (['auto', 'on', 'off'] as const).includes(profile.config.contextCache as never)
+                          ? (profile.config.contextCache as 'auto' | 'on' | 'off')
+                          : 'auto',
+                      );
                       window.scrollTo({ top: 0, behavior: 'smooth' });
                     }}>编辑</Button>
                   )}

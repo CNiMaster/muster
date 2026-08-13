@@ -5,6 +5,7 @@ import { getExecutorManifest, type ExecutorConcurrency, type ExecutorManifest } 
 import { existsSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { redactSensitiveText } from '../../shared/redaction';
+import { DEFAULT_MAX_CONCURRENCY } from './executor-concurrency';
 
 export type CredentialReference = { kind: 'env' | 'keychain' | 'cli-login' | 'encrypted-local'; reference: string };
 
@@ -17,6 +18,10 @@ export interface ExecutorProfile {
   credentialRef: Partial<CredentialReference>;
   install: Record<string, unknown>;
   concurrencyMode: ExecutorConcurrency;
+  /** 并发硬上限（settings-overhaul B4；默认 4）。 */
+  maxConcurrency: number;
+  /** 锁定后自适应不越界不上调（B4）。 */
+  concurrencyLocked: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -37,11 +42,11 @@ export interface ExecutionRun {
   createdAt: string;
 }
 
-type ProfileRow = { id: string; name: string; manifest_id: string; manifest_version: number; config_json: string; credential_ref_json: string; install_json: string; concurrency_mode: ExecutorConcurrency; created_at: string; updated_at: string };
+type ProfileRow = { id: string; name: string; manifest_id: string; manifest_version: number; config_json: string; credential_ref_json: string; install_json: string; concurrency_mode: ExecutorConcurrency; max_concurrency: number | null; concurrency_locked: number | null; effective_concurrency: number | null; created_at: string; updated_at: string };
 type RunRow = { id: string; executor_profile_id: string; employee_id: string; project_id: string; task_id: string; status: ExecutionRun['status']; manifest_snapshot_json: string; profile_snapshot_json: string; started_at: string | null; finished_at: string | null; failure_classification: string | null; failure_message: string | null; created_at: string };
 
 function profileFromRow(row: ProfileRow): ExecutorProfile {
-  return { id: row.id, name: row.name, manifestId: row.manifest_id, manifestVersion: row.manifest_version, config: JSON.parse(row.config_json), credentialRef: JSON.parse(row.credential_ref_json), install: JSON.parse(row.install_json), concurrencyMode: row.concurrency_mode, createdAt: row.created_at, updatedAt: row.updated_at };
+  return { id: row.id, name: row.name, manifestId: row.manifest_id, manifestVersion: row.manifest_version, config: JSON.parse(row.config_json), credentialRef: JSON.parse(row.credential_ref_json), install: JSON.parse(row.install_json), concurrencyMode: row.concurrency_mode, maxConcurrency: row.max_concurrency ?? DEFAULT_MAX_CONCURRENCY, concurrencyLocked: (row.concurrency_locked ?? 0) === 1, createdAt: row.created_at, updatedAt: row.updated_at };
 }
 
 function assertNoSecretValues(value: unknown, path = 'config'): void {
@@ -54,7 +59,7 @@ function assertNoSecretValues(value: unknown, path = 'config'): void {
   }
 }
 
-export function createExecutorProfile(db: DB, input: { name: string; manifestId: string; config?: Record<string, unknown>; credentialRef?: CredentialReference; install?: Record<string, unknown>; concurrencyMode?: ExecutorConcurrency }): ExecutorProfile {
+export function createExecutorProfile(db: DB, input: { name: string; manifestId: string; config?: Record<string, unknown>; credentialRef?: CredentialReference; install?: Record<string, unknown>; concurrencyMode?: ExecutorConcurrency; maxConcurrency?: number; concurrencyLocked?: boolean }): ExecutorProfile {
   const name = input.name.trim();
   if (!name) throw new AppError(ErrorCode.VALIDATION, '执行器档案名称不能为空');
   const manifest = getExecutorManifest(input.manifestId);
@@ -73,7 +78,9 @@ export function createExecutorProfile(db: DB, input: { name: string; manifestId:
   }
   const now = nowIso();
   const id = shortId('ep_');
-  db.prepare(`INSERT INTO executor_profile (id,name,manifest_id,manifest_version,config_json,credential_ref_json,install_json,concurrency_mode,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).run(id, name, manifest.id, manifest.version, JSON.stringify(input.config ?? {}), JSON.stringify(input.credentialRef ?? {}), JSON.stringify(input.install ?? {}), input.concurrencyMode ?? manifest.concurrency, now, now);
+  const maxConcurrency = input.maxConcurrency ?? DEFAULT_MAX_CONCURRENCY;
+  // effective_concurrency 初始化为 max：新档案从满并发开始（自适应只会下调/试探上调，不越过 max）。
+  db.prepare(`INSERT INTO executor_profile (id,name,manifest_id,manifest_version,config_json,credential_ref_json,install_json,concurrency_mode,max_concurrency,concurrency_locked,effective_concurrency,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id, name, manifest.id, manifest.version, JSON.stringify(input.config ?? {}), JSON.stringify(input.credentialRef ?? {}), JSON.stringify(input.install ?? {}), input.concurrencyMode ?? manifest.concurrency, maxConcurrency, input.concurrencyLocked ? 1 : 0, maxConcurrency, now, now);
   return getExecutorProfile(db, id);
 }
 
@@ -102,11 +109,11 @@ export function getEmployeeExecutorProfile(db: DB, employeeId: string): Executor
   return row.executor_profile_id ? getExecutorProfile(db, row.executor_profile_id) : null;
 }
 
-/** 阶段二任务 2.2：更新执行器档案（名称/配置/凭据引用/并发模式）。 */
+/** 阶段二任务 2.2：更新执行器档案（名称/配置/凭据引用/并发模式/并发上限与锁定）。 */
 export function updateExecutorProfile(
   db: DB,
   id: string,
-  patch: { name?: string; config?: Record<string, unknown>; credentialRef?: CredentialReference; concurrencyMode?: ExecutorConcurrency },
+  patch: { name?: string; config?: Record<string, unknown>; credentialRef?: CredentialReference; concurrencyMode?: ExecutorConcurrency; maxConcurrency?: number; concurrencyLocked?: boolean },
 ): ExecutorProfile {
   const cur = getExecutorProfile(db, id);
   const nextName = patch.name?.trim() || cur.name;
@@ -115,16 +122,21 @@ export function updateExecutorProfile(
   if (patch.credentialRef && !/^[A-Z][A-Z0-9_]*$/.test(patch.credentialRef.reference) && patch.credentialRef.kind === 'env') {
     throw new AppError(ErrorCode.VALIDATION, '环境变量凭据引用格式无效');
   }
+  const nextMax = patch.maxConcurrency ?? cur.maxConcurrency;
   db.prepare(
-    `UPDATE executor_profile SET name=?, config_json=?, credential_ref_json=?, concurrency_mode=?, updated_at=? WHERE id=?`,
+    `UPDATE executor_profile SET name=?, config_json=?, credential_ref_json=?, concurrency_mode=?, max_concurrency=?, concurrency_locked=?, updated_at=? WHERE id=?`,
   ).run(
     nextName,
     JSON.stringify(patch.config ?? cur.config),
     JSON.stringify(patch.credentialRef ?? cur.credentialRef),
     patch.concurrencyMode ?? cur.concurrencyMode,
+    nextMax,
+    patch.concurrencyLocked !== undefined ? (patch.concurrencyLocked ? 1 : 0) : (cur.concurrencyLocked ? 1 : 0),
     nowIso(),
     id,
   );
+  // 锁定/下调上限时同步收住 effective（不越界）；解锁时恢复 max 作为试探起点。
+  db.prepare('UPDATE executor_profile SET effective_concurrency = MIN(effective_concurrency, ?) WHERE id = ?').run(nextMax, id);
   return getExecutorProfile(db, id);
 }
 
