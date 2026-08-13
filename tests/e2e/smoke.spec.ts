@@ -174,3 +174,15 @@ test('权限中心明确展示策略与范围并提供审批入口', async ({ pa
   await expect(page.getByRole('button', { name: '创建项目 Turbo' })).toBeVisible();
   await expect(page.getByText('安装软件、凭据、推送、部署、外部消息、账号和付费操作仍单独审批。')).toBeVisible();
 });
+
+test('E5 进化与报告页渲染（四个控制面块）', async ({ page }) => {
+  const name = `E2E进化-${Date.now()}`;
+  const response = await page.request.post('/api/companies', { data: { name, kind: 'general' } });
+  expect(response.status()).toBe(201);
+  const company = await response.json();
+  await page.goto(`/companies/${company.id}?view=evolution`);
+  await expect(page.getByText('运营优化报告', { exact: true })).toBeVisible({ timeout: 8000 });
+  await expect(page.getByText('晋升候选', { exact: true })).toBeVisible();
+  await expect(page.getByText('结构变更历史', { exact: true })).toBeVisible();
+  await expect(page.getByText('锁定管理', { exact: true })).toBeVisible();
+});
