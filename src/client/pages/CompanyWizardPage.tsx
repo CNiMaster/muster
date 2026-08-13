@@ -11,12 +11,14 @@ import {
   useExecutorProfiles,
   usePermissionPolicies,
   usePreviewCompanySetup,
+  useQuickStartCompany,
 } from '../hooks/queries';
 
 export function CompanyWizardPage(): React.ReactElement {
   const navigate = useNavigate();
   const preview = usePreviewCompanySetup();
   const commit = useCommitCompanySetup();
+  const quickStart = useQuickStartCompany();
   const templatesQuery = useCompanyTemplateCatalog();
   const profilesQuery = useExecutorProfiles();
   const policiesQuery = usePermissionPolicies();
@@ -43,6 +45,20 @@ export function CompanyWizardPage(): React.ReactElement {
     }
   };
 
+  // 工作台改版 批次 1：一键开跑——跳过蓝图确认，直接进公司对话。
+  const quickFinish = async (input: { templateId: string; name?: string; goal?: string }): Promise<boolean> => {
+    try {
+      const result = await quickStart.mutateAsync(input);
+      toast('success', `「${result.company.name}」已就绪，开始对话吧`);
+      // 批次 2 前，对话在公司"活动"tab；批次 2 后改为 ?view=conversation（对话为中心）。
+      navigate(`/companies/${result.company.id}?view=activity`);
+      return true;
+    } catch (error) {
+      toast('error', (error as Error).message);
+      return false;
+    }
+  };
+
   return <div className="wizard-page">
     <header className="setup-hero"><div><span className="setup-hero-mark" aria-hidden="true">M</span><div><h1>组建你的 Agent 公司</h1><p>选一个模板，剩下的交给 Muster。</p></div></div><Link to="/" className="setup-close" aria-label="退出公司创建">×</Link></header>
     <CompanySetupWizard
@@ -51,6 +67,7 @@ export function CompanyWizardPage(): React.ReactElement {
       policies={policies}
       previewing={preview.isPending}
       committing={commit.isPending}
+      quickStarting={quickStart.isPending}
       refreshingResources={profilesQuery.isRefetching || policiesQuery.isRefetching}
       onRefreshResources={async () => { await Promise.all([profilesQuery.refetch(), policiesQuery.refetch()]); }}
       onPreview={async (input) => {
@@ -62,6 +79,7 @@ export function CompanyWizardPage(): React.ReactElement {
         }
       }}
       onCommit={finish}
+      onQuickStart={quickFinish}
     />
   </div>;
 }

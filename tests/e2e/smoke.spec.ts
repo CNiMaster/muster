@@ -190,3 +190,18 @@ test('E5 进化与报告页渲染（四个控制面块）', async ({ page }) => 
   await expect(page.getByText('结构变更历史', { exact: true })).toBeVisible();
   await expect(page.getByText('锁定管理', { exact: true })).toBeVisible();
 });
+
+test('工作台改版 B1：一键开跑——选模板→点击→进入公司', async ({ page }) => {
+  // 前置：需要一个执行器档案（quick-start 无执行器会报错）
+  const executorResponse = await page.request.post('/api/executors/profiles', { data: {
+    name: `E2E 快速启动执行器-${Date.now()}`,
+    manifestId: 'openai-compatible-api',
+  } });
+  expect(executorResponse.status()).toBe(201);
+
+  await page.goto('/companies/wizard');
+  await expect(page.getByRole('button', { name: '一键开跑' })).toBeVisible({ timeout: 8000 });
+  await page.getByRole('button', { name: '一键开跑' }).click();
+  // 落地到公司页（活动 tab，批次 2 前对话的临时住所）
+  await expect(page).toHaveURL(/\/companies\/[^?]+\?view=activity/, { timeout: 15000 });
+});

@@ -293,6 +293,23 @@ export function useCommitCompanySetup() {
     },
   });
 }
+
+/** 工作台改版 批次 1：一键模板启动（选模板→可选改名→开跑）。 */
+export function useQuickStartCompany() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { templateId: string; name?: string; goal?: string }) => api.post<{
+      company: Company;
+      employees: Agent[];
+      project: Project;
+      projectTask: ProjectTaskDTO;
+    }>('/api/company-setup/quick-start', input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['companies'] });
+      qc.invalidateQueries({ queryKey: ['agent-profiles'] });
+    },
+  });
+}
 export function useExecutorProfiles() {
   return useQuery({ queryKey: ['executor-profiles'], queryFn: () => api.get<ExecutorProfileDTO[]>('/api/executors/profiles') });
 }
