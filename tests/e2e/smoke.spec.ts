@@ -202,6 +202,6 @@ test('工作台改版 B1：一键开跑——选模板→点击→进入公司',
   await page.goto('/companies/wizard');
   await expect(page.getByRole('button', { name: '一键开跑' })).toBeVisible({ timeout: 8000 });
   await page.getByRole('button', { name: '一键开跑' }).click();
-  // 落地到公司页（活动 tab，批次 2 前对话的临时住所）
-  await expect(page).toHaveURL(/\/companies\/[^?]+\?view=activity/, { timeout: 15000 });
+  // 落地到公司对话中心（改版 2a：对话为默认落地）
+  await expect(page).toHaveURL(/\/companies\/[^?]+\?view=conversation/, { timeout: 15000 });
 });

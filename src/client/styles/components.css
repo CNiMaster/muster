@@ -763,3 +763,10 @@
 .evolution-block-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .evolution-block-head .muted { margin: 0; flex: 1; min-width: 200px; }
 .evolution-summary { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+
+/* 改版 2a：公司对话中心——对话作为默认主面，撑满中栏 */
+.company-conversation-center { display: flex; flex-direction: column; gap: 12px; height: 100%; min-height: 0; }
+.company-conversation-center > :last-child { flex: 1; min-height: 0; display: flex; }
+.company-conversation-center > :last-child > * { flex: 1; min-height: 0; }
+.conversation-context-hint { display: flex; gap: 8px; align-items: baseline; padding: 6px 12px; border-radius: 8px; background: var(--surface-2, #f7f7f8); }
+.conversation-context-hint strong { font-size: 0.9em; }

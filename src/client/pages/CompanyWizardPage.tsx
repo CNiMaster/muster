@@ -50,8 +50,8 @@ export function CompanyWizardPage(): React.ReactElement {
     try {
       const result = await quickStart.mutateAsync(input);
       toast('success', `「${result.company.name}」已就绪，开始对话吧`);
-      // 批次 2 前，对话在公司"活动"tab；批次 2 后改为 ?view=conversation（对话为中心）。
-      navigate(`/companies/${result.company.id}?view=activity`);
+      // 改版 2a：落地公司对话中心。
+      navigate(`/companies/${result.company.id}?view=conversation`);
       return true;
     } catch (error) {
       toast('error', (error as Error).message);

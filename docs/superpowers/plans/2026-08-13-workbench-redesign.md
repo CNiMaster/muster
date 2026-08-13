@@ -43,6 +43,12 @@
 
 ## 批次 2 — 三栏 IA 落地（对话为中心）
 
+### Task 2.1a — 对话成为公司默认中心（已先行落地）
+- [x] CompanySectionKey 加 `conversation`；CompanyWorkNavigation 主区置顶"对话"
+- [x] 新 CompanyConversation 组件：ConversationPanel 提为公司默认落地 + slim next-action 提示
+- [x] CompanyPage 默认 activeTab → conversation；一键开跑落地 ?view=conversation
+- [x] CSS 对话中心撑满中栏；e2e 验证一键开跑→对话中心
+
 ### Task 2.1 — UnifiedRail 左栏
 - [ ] 新 `src/client/components/workbench/UnifiedRail.tsx`：主区（对话/项目/员工/产物）+ 回看折叠组（审批/复盘/进化/记忆）+ 高级折叠组（外包）+ 设置；按 scope（无公司/公司/项目）自适应
 - [ ] 替代 `CompanyWorkNavigation` / `ProjectWorkNavigation`；收编顶栏 9 项
