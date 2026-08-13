@@ -21,7 +21,7 @@ export const PROMOTION_COUNT_THRESHOLD = 3;
 export const PROMOTION_PROFILE_THRESHOLD = 2;
 const SAMPLE_LIMIT = 3;
 
-export type PromotionStatus = 'pending' | 'promoted';
+export type PromotionStatus = 'pending' | 'promoted' | 'dismissed';
 
 export interface PromotionCandidate {
   id: string;
@@ -152,6 +152,21 @@ export function getPromotionCandidate(db: DB, id: string): PromotionCandidate {
 export function markPromoted(db: DB, id: string): void {
   db.prepare("UPDATE promotion_candidate SET status='promoted', promoted_at=?, updated_at=? WHERE id=?")
     .run(nowIso(), nowIso(), id);
+}
+
+/**
+ * E5.1 忽略晋升候选（用户控制面）。dismiss 后：
+ * - detectPromotions 的 UPSERT（WHERE status='pending'）不会复活它；
+ * - promoteCandidatesToActions 只取 pending，也不会处理它。
+ * 除非手动 reopen，否则该 fingerprint 永久退出晋升流。
+ */
+export function dismissPromotionCandidate(db: DB, id: string): void {
+  db.prepare("UPDATE promotion_candidate SET status='dismissed', updated_at=? WHERE id=?").run(nowIso(), id);
+}
+
+/** E5.1 恢复被忽略的晋升候选（用户反悔）。 */
+export function reopenPromotionCandidate(db: DB, id: string): void {
+  db.prepare("UPDATE promotion_candidate SET status='pending', updated_at=? WHERE id=?").run(nowIso(), id);
 }
 
 /**

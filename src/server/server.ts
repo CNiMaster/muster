@@ -27,6 +27,7 @@ import { usageRouter } from './api/reports-usage';
 import { novelRouter, projectScopedNovel } from './api/novel';
 import { projectPhase7, reportByIdRouter, inspectorAlertRouter } from './api/phase7';
 import { optimizationReportRouter, optimizationReportByIdRouter } from './api/optimization-report';
+import { promotionCandidatesRouter, structureChangesRouter, locksRouter } from './api/evolution';
 import { companyMessagesRouter, projectMessagesRouter } from './api/conversation';
 import { pluginsRouter } from './api/plugins';
 import { outsourcingRouter } from './api/outsourcing';
@@ -209,6 +210,10 @@ async function createApp(): Promise<AppHandle> {
   app.use('/api/reports/:id', reportByIdRouter);
   app.use('/api/inspector/alerts', inspectorAlertRouter);
   app.use('/api/optimization-reports/:id', optimizationReportByIdRouter);
+  // E5 用户控制面：晋升候选 / 结构历史+回滚 / 锁定管理
+  app.use('/api/promotion-candidates', promotionCandidatesRouter);
+  app.use('/api/structure-changes', structureChangesRouter);
+  app.use('/api/locks', locksRouter);
   app.use('/api/tasks/:id', taskByIdRouter);
   app.use('/api/settings', settingsRouter);
   app.use('/api/workspaces', workspacesRouter);

@@ -66,6 +66,12 @@ export function listLocks(db: DB, filter: { entityType: string; entityId: string
   return rows.map(rowToLock);
 }
 
+/** E5.3 全部锁（控制面 UI 列表）。 */
+export function listAllLocks(db: DB): EntityLock[] {
+  const rows = db.prepare('SELECT * FROM entity_lock ORDER BY created_at DESC').all() as LockRow[];
+  return rows.map(rowToLock);
+}
+
 /**
  * 判断某 entity 的某 field 是否被锁定。任一 lock 命中即锁定：
  * - lockedFields 为空数组 = 全锁（任意 field 锁定）

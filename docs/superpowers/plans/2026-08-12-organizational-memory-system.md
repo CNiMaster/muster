@@ -272,6 +272,45 @@
 
 ---
 
+# 批次 E5：用户控制面（可见性 + 回滚 + 锁定 UI）
+
+**动机**：用户拍板的自主模型是"自动落地 + 保留历史可还原 + 手动锁定"。E1–E4 把后端三件套（structure_change_log / entity_lock / promotion_candidate）都建好了，但**用户侧控制面完全缺失**：optimization-report 无 UI（阶段五遗留，src/client 对 API 零调用）；structure 历史/回滚/锁定/promotion 候选连 API 端点都没有。自动落地在无头运行 = 黑盒，且"可还原/手动锁定"承诺只兑现了一半。E5 补齐控制面，同时让"真实使用观察"成为可能（用户能看到信号才能判断信号质量）。
+
+## Task E5.1 — promotion 候选控制 API
+- [ ] promotion.ts：`PromotionStatus` 扩 `'dismissed'`；新增 `dismissPromotionCandidate` / `reopenPromotionCandidate`
+- [ ] detectPromotions 的 UPSERT `WHERE status='pending'` 天然阻止 dismissed 复活（dismiss = 永久忽略，除非手动 reopen）——无需改 detect
+- [ ] API：`GET /api/promotion-candidates?status=`、`POST /api/promotion-candidates/:id/dismiss`、`POST /api/promotion-candidates/:id/reopen`
+- Test promotion-api.spec.ts（dismiss 后不再进 promote 批次；reopen 后恢复）
+
+## Task E5.2 — 结构历史 + 回滚 API
+- [ ] 新 domain `applyStructureRollback(db, { entityType, entityId, toVersion })`：按 entityType 恢复（只支持 org-memory 自动落地的类型）：
+  - `tool_registry` → 恢复 `is_default` 为该 field 在目标版本的 oldValue
+  - `capability_binding` → 恢复 `skill_ids_json` / `recommended_tool_ids_json`（按 capability_id 定位）
+  - `memory_entry` → 删除该 profile 的该 fingerprint 的 personal 偏好（promotion 产物）
+  - 其他类型 → 返回"不支持自动回滚，请手动处理"（诚实，不假装万能）
+- [ ] 回滚动作本身记一条 `structure_change_log`（source='rollback'）——回滚也可审计/再回滚
+- [ ] API：`GET /api/structure-changes?entityType&entityId&limit`、`POST /api/structure-changes/rollback`
+- Test structure-rollback.spec.ts（含不支持类型、rollback 留痕）
+
+## Task E5.3 — 锁定 CRUD API
+- [ ] API：`GET /api/locks`（全量）、`POST /api/locks`（entityType/entityId/scope/lockedFields/reason）、`DELETE /api/locks`（三元组）
+- Test locks-api.spec.ts（创建/幂等 upsert/删除/全锁语义）
+
+## Task E5.4 — 前端「公司进化」tab
+- [ ] CompanyPage 加 tab `evolution`（进化），四块：
+  - **优化报告**：列表 + 详情（summary / stats.evolution / action items 状态徽章）+ 逐条审批/拒绝/修改 params（补阶段五遗留缺口）
+  - **晋升候选**：pending/dismissed 列表 + dismiss/reopen
+  - **结构变更历史**：列表（entityType/entityId/field/oldValue→newValue/source/时间）+「回滚到此版本」（支持的类型才显示按钮）
+  - **锁定管理**：列表 + 添加（entityType/entityId/scope/字段清单）+ 删除
+- 复用 hooks/useQuery/useMutation 既有模式；新 hooks 放 queries.ts
+- Test 组件冒烟（company-page-layout 模式，保证 tab 渲染不炸）
+
+## E5 准出
+- 用户能看见自动落地改了什么（报告 + 结构历史）、能回滚（支持类型）、能锁定/解锁、能忽略晋升候选
+- typecheck + 全量 test green；API 全部 domain 级测试（项目既有惯例：REST 是薄壳）
+
+---
+
 ## 风险与回滚（贯穿）
 
 - **E1 低风险**：纯数据采集与既有管线接入，不动组织结构，不动 hot-path 语义。最坏情况是埋点多耗一点写入开销（可接受）。
