@@ -95,7 +95,8 @@ export function executeApprovedActions(db: DB, reportId: string, selectedItemIds
 }
 
 /** 执行单条建议并回写结果状态（审批执行与下班补执行共用）。 */
-function executeItem(
+/** E3 review 修复：export 出来供 promoteCandidatesToActions 对低风险 item 直接执行（不走 approved 死路）。 */
+export function executeItem(
   db: DB,
   companyId: string,
   companyOnline: boolean,
@@ -290,7 +291,9 @@ function executeAction(
         return { ...base, status: 'skipped', message: `工具「${toolId}」已被锁定，跳过` };
       }
       const before = db.prepare('SELECT is_default FROM tool_registry WHERE id=?').get(toolId) as { is_default: number } | undefined;
-      db.prepare('UPDATE tool_registry SET is_default=1, updated_at=? WHERE id=?').run(nowIso(), toolId);
+      const upd = db.prepare('UPDATE tool_registry SET is_default=1, updated_at=? WHERE id=?').run(nowIso(), toolId);
+      // E3 review 修复：toolId 不存在时 UPDATE 命中 0 行——返回 failed 而非误报 executed + 写虚假审计
+      if (upd.changes === 0) return { ...base, status: 'failed', message: `未找到工具：${toolId}（请确认 toolId 是否正确）` };
       if (capabilityId) {
         const row = db.prepare('SELECT recommended_tool_ids_json FROM capability_binding WHERE company_id=? AND capability_id=? ORDER BY id LIMIT 1')
           .get(companyId, capabilityId) as { recommended_tool_ids_json: string } | undefined;

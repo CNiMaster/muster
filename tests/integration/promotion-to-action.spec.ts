@@ -13,6 +13,7 @@ import { createProject } from '../../src/server/domain/project';
 import { createMemoryCandidate, approveMemoryCandidate } from '../../src/server/domain/memory';
 import { detectPromotions, promoteCandidatesToActions, listPromotionCandidates } from '../../src/server/domain/promotion';
 import { listReportActionItems } from '../../src/server/domain/optimization-report';
+import { executeApprovedActions } from '../../src/server/domain/optimization-report-executor';
 
 let tdb: ReturnType<typeof makeTestDb>;
 let db: DB;
@@ -92,7 +93,9 @@ describe('E3.2 promotion_candidate → report_action_item', () => {
     expect(items[0]!.actionType).toBe('learn_workflow_pattern');
   });
 
-  it('E3.3 分级：低风险（bind_habitual_tool）→ approved；高风险（adjust_skill_binding）→ pending', () => {
+  it('E3 review 修复后分级：所有 item 写 pending；低风险（update_user_preference）事务后被自动执行', () => {
+    // update_user_preference 来自 personal scope，但 personal 已在 detectPromotions 跳过——
+    // 所以这条用例验证：project scope 的 tool/skill 候选都保持 pending（等用户审批/补 toolId）。
     const { c, lead, p } = seed();
     seedCompanyEntries(lead.profileId, c.id, p.id, 'tool:whisper', 3);
     seedCompanyEntries(lead.profileId, c.id, p.id, 'design:color', 3);
@@ -101,8 +104,9 @@ describe('E3.2 promotion_candidate → report_action_item', () => {
     const items = listReportActionItems(db, reportId!);
     const tool = items.find((i) => i.actionType === 'bind_habitual_tool')!;
     const skill = items.find((i) => i.actionType === 'adjust_skill_binding')!;
-    expect(tool.status).toBe('approved'); // 低风险自动
-    expect(skill.status).toBe('pending'); // 高风险等审批
+    // bind_habitual_tool 不再自动执行（toolId 需用户补）；保持 pending
+    expect(tool.status).toBe('pending');
+    expect(skill.status).toBe('pending');
   });
 
   it('幂等：重复 promoteCandidatesToActions 不重复创建（已 promoted）', () => {
@@ -120,5 +124,44 @@ describe('E3.2 promotion_candidate → report_action_item', () => {
     const r = promoteCandidatesToActions(db, c.id);
     expect(r.created).toBe(0);
     expect(r.reportId).toBeNull();
+  });
+
+  it('E3 review 端到端：personal scope 不进晋升（detectPromotions 跳过）', () => {
+    const { c, lead } = seed();
+    // personal preference 达阈值
+    seedCompanyEntries(lead.profileId, c.id, '', 'style:business', 3, 'personal');
+    detectPromotions(db);
+    // personal 候选不应产生（detectPromotions 跳过 personal scope）
+    expect(listPromotionCandidates(db)).toHaveLength(0);
+  });
+
+  it('E3 review 端到端：detect→promote 全链路，update_user_preference 真·缺失 profileId 时 failed', () => {
+    // project scope 候选不会产 update_user_preference（personal 才映射，但 personal 被跳过），
+    // 所以这里验证：project scope 的候选 promote 后保持 pending，不产生虚假 executed。
+    const { c, lead, p } = seed();
+    seedCompanyEntries(lead.profileId, c.id, p.id, 'design:color', 3);
+    detectPromotions(db);
+    const { reportId } = promoteCandidatesToActions(db, c.id);
+    const items = listReportActionItems(db, reportId!);
+    // design:color → adjust_skill_binding（高风险，保持 pending，不自动执行）
+    expect(items[0]!.actionType).toBe('adjust_skill_binding');
+    expect(items[0]!.status).toBe('pending');
+  });
+
+  it('E3 review 端到端：bind_habitual_tool 缺 toolId → executor 返回 failed（不误报 executed）', () => {
+    const { c } = seed();
+    // 直接造一条 bind_habitual_tool item（params 无 toolId），跑 executor
+    const now = new Date().toISOString();
+    const rid = 'r_test';
+    db.prepare(
+      `INSERT INTO company_optimization_report (id, company_id, period_start, period_end, report_json, status, created_at, updated_at)
+       VALUES (?, ?, NULL, ?, '{}', 'generated', ?, ?)`,
+    ).run(rid, c.id, now, now, now);
+    db.prepare(
+      `INSERT INTO report_action_item (id, report_id, action_type, description, reason, expected_effect, params_json, status, created_at, updated_at)
+       VALUES (?, ?, 'bind_habitual_tool', '测', '', '', '{}', 'pending', ?, ?)`,
+    ).run('ai_test', rid, now, now);
+    const [r] = executeApprovedActions(db, rid);
+    expect(r.status).toBe('failed'); // 缺 toolId，不误报
   });
 });

@@ -13,6 +13,8 @@
  */
 import type { DB } from '../db/client';
 import { shortId, nowIso } from '../../shared/utils';
+import { getCompany } from './company';
+import { executeItem } from './optimization-report-executor';
 
 export const PROMOTION_COUNT_THRESHOLD = 3;
 export const PROMOTION_PROFILE_THRESHOLD = 2;
@@ -32,6 +34,8 @@ export interface PromotionCandidate {
   promotedAt: string | null;
   /** E3.2：多数 entry 的公司归属；personal 跨公司画像时为 null（不进按公司报告）。 */
   companyId: string | null;
+  /** E3 review 修复：多数 entry 的 profile 归属，供 update_user_preference 等需要 profileId 的 action 定位目标。 */
+  profileId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -39,7 +43,8 @@ export interface PromotionCandidate {
 type PromoRow = {
   id: string; fingerprint: string; scope: string; count: number; distinct_profiles: number;
   sample_entry_ids_json: string; sample_contents_json: string; status: string;
-  promoted_at: string | null; company_id: string | null; created_at: string; updated_at: string;
+  promoted_at: string | null; company_id: string | null; profile_id: string | null;
+  created_at: string; updated_at: string;
 };
 
 function rowToCandidate(r: PromoRow): PromotionCandidate {
@@ -49,7 +54,7 @@ function rowToCandidate(r: PromoRow): PromotionCandidate {
     sampleEntryIds: JSON.parse(r.sample_entry_ids_json) as string[],
     sampleContents: JSON.parse(r.sample_contents_json) as string[],
     status: r.status as PromotionStatus, promotedAt: r.promoted_at,
-    companyId: r.company_id,
+    companyId: r.company_id, profileId: r.profile_id,
     createdAt: r.created_at, updatedAt: r.updated_at,
   };
 }
@@ -64,7 +69,7 @@ export function detectPromotions(db: DB): { processed: number } {
     .prepare(
       `SELECT fingerprint, COUNT(*) AS cnt, COUNT(DISTINCT profile_id) AS dp
        FROM memory_entry
-       WHERE fingerprint IS NOT NULL AND state='active'
+       WHERE fingerprint IS NOT NULL AND state='active' AND scope != 'personal'
        GROUP BY fingerprint
        HAVING cnt >= ? OR dp >= ?`,
     )
@@ -83,7 +88,7 @@ export function detectPromotions(db: DB): { processed: number } {
       )
       .get(t.fingerprint) as { scope: string } | undefined;
     const scope = scopeRow?.scope ?? 'project';
-    // E3.2：多数 entry 的 company_id（personal 跨公司画像时为 null）
+    // E3.2：多数 entry 的 company_id
     const coRow = db
       .prepare(
         `SELECT company_id FROM memory_entry WHERE fingerprint=? AND state='active' AND company_id IS NOT NULL
@@ -91,6 +96,14 @@ export function detectPromotions(db: DB): { processed: number } {
       )
       .get(t.fingerprint) as { company_id: string | null } | undefined;
     const companyId = coRow?.company_id ?? null;
+    // E3 review 修复：多数 entry 的 profile_id（供 update_user_preference 定位目标）
+    const profileRow = db
+      .prepare(
+        `SELECT profile_id FROM memory_entry WHERE fingerprint=? AND state='active'
+         GROUP BY profile_id ORDER BY COUNT(*) DESC LIMIT 1`,
+      )
+      .get(t.fingerprint) as { profile_id: string | null } | undefined;
+    const profileId = profileRow?.profile_id ?? null;
     const samples = db
       .prepare(
         `SELECT id, content FROM memory_entry WHERE fingerprint=? AND state='active' LIMIT ?`,
@@ -99,13 +112,14 @@ export function detectPromotions(db: DB): { processed: number } {
     const r = db
       .prepare(
         `INSERT INTO promotion_candidate
-           (id, fingerprint, scope, count, distinct_profiles, sample_entry_ids_json, sample_contents_json, status, company_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+           (id, fingerprint, scope, count, distinct_profiles, sample_entry_ids_json, sample_contents_json, status, company_id, profile_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)
          ON CONFLICT(fingerprint) DO UPDATE SET
            count=excluded.count, distinct_profiles=excluded.distinct_profiles,
            sample_entry_ids_json=excluded.sample_entry_ids_json,
            sample_contents_json=excluded.sample_contents_json,
            company_id=COALESCE(promotion_candidate.company_id, excluded.company_id),
+           profile_id=COALESCE(promotion_candidate.profile_id, excluded.profile_id),
            updated_at=excluded.updated_at
          WHERE promotion_candidate.status='pending'`,
       )
@@ -113,7 +127,7 @@ export function detectPromotions(db: DB): { processed: number } {
         shortId('pc_'), t.fingerprint, scope, t.cnt, t.dp,
         JSON.stringify(samples.map((s) => s.id)),
         JSON.stringify(samples.map((s) => s.content.slice(0, 120))),
-        companyId, now, now,
+        companyId, profileId, now, now,
       );
     if (r.changes > 0) processed++;
   }
@@ -140,15 +154,13 @@ export function markPromoted(db: DB, id: string): void {
 }
 
 /**
- * E3.2 fingerprint → actionType 映射规则：
- * - scope=personal → update_user_preference（用户偏好画像）
+ * E3.2 fingerprint → actionType 映射规则（personal scope 已在 detectPromotions 跳过，不进此映射）：
  * - domain 含 tool → bind_habitual_tool
  * - domain 含 workflow → learn_workflow_pattern
  * - 否则 → adjust_skill_binding（默认按能力缺口处理）
  */
-function fingerprintToActionType(fingerprint: string, scope: string): string {
+function fingerprintToActionType(fingerprint: string): string {
   const fp = fingerprint.toLowerCase();
-  if (scope === 'personal') return 'update_user_preference';
   if (fp.startsWith('tool:') || fp.includes(':tool')) return 'bind_habitual_tool';
   if (fp.startsWith('workflow:') || fp.includes(':workflow') || fp.startsWith('handoff')) return 'learn_workflow_pattern';
   return 'adjust_skill_binding';
@@ -170,7 +182,7 @@ export function promoteCandidatesToActions(db: DB, companyId: string): { reportI
   const now = nowIso();
   const items = pending.map((c) => {
     const candidate = rowToCandidate(c);
-    const actionType = fingerprintToActionType(candidate.fingerprint, candidate.scope);
+    const actionType = fingerprintToActionType(candidate.fingerprint);
     const sample = candidate.sampleContents[0] ?? candidate.fingerprint;
     return {
       id: shortId('rai_'),
@@ -189,29 +201,53 @@ export function promoteCandidatesToActions(db: DB, companyId: string): { reportI
        VALUES (?, ?, NULL, ?, ?, 'generated', ?, ?)`,
     ).run(reportId, companyId, now, JSON.stringify({ summary, stats: { promotedCount: pending.length }, actionItems: items }), now, now);
     for (const it of items) {
-      // E3.3 轻量分级：低风险（偏好/惯用工具）直接 approved（用户可回滚，executor 内有锁兜底）；
-      // 高风险（工作流/技能/增裁员工/权限）保持 pending 等用户审批。
-      const lowRisk = it.actionType === 'update_user_preference' || it.actionType === 'bind_habitual_tool';
+      // 所有 item 都写 pending；低风险的在事务后由 executeItem 直接执行（review 修复：approved 状态在现有执行器里是死路）。
       db.prepare(
         `INSERT INTO report_action_item (id, report_id, action_type, description, reason, expected_effect, params_json, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).run(it.id, reportId, it.actionType, it.description, it.reason, it.expectedEffect, JSON.stringify(it.params), lowRisk ? 'approved' : 'pending', now, now);
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
+      ).run(it.id, reportId, it.actionType, it.description, it.reason, it.expectedEffect, JSON.stringify(it.params), now, now);
     }
     for (const c of pending) {
       markPromoted(db, c.id);
     }
   })();
 
+  // E3 review 修复：低风险 item（偏好/惯用工具建议→但 toolId 缺失会 failed，属预期；update_user_preference 有 profileId 可执行）
+  // 在事务外直接执行——这些不改组织运行态，无需用户审批，executor 内有锁兜底、structure_change_log 可回滚。
+  const company = getCompany(db, companyId);
+  const companyOnline = company.state === 'online';
+  for (const it of items) {
+    const lowRisk = it.actionType === 'update_user_preference';
+    if (!lowRisk) continue;
+    const itemRow = db.prepare('SELECT * FROM report_action_item WHERE id=?').get(it.id) as
+      | { id: string; report_id: string; action_type: string; description: string; reason: string | null; expected_effect: string | null; params_json: string | null; status: string; result: string | null; created_at: string; updated_at: string }
+      | undefined;
+    if (!itemRow) continue;
+    const item = {
+      id: itemRow.id, reportId: itemRow.report_id, actionType: itemRow.action_type as never,
+      description: itemRow.description, reason: itemRow.reason ?? '', expectedEffect: itemRow.expected_effect ?? '',
+      params: JSON.parse(itemRow.params_json ?? '{}'), status: itemRow.status as never, result: itemRow.result,
+      createdAt: itemRow.created_at,
+    };
+    try {
+      executeItem(db, companyId, companyOnline, company.firstAgentId, item);
+    } catch {
+      /* 单条执行失败不阻塞批次；executeItem 内部已写 failed 状态 */
+    }
+  }
+
   return { reportId, created: items.length };
 }
 
-/** 按 actionType 产最小 params（让 executor 能定位目标；具体 profileId/toolId 等留给用户在审批时补全）。 */
+/** 按 actionType 产最小 params。
+ *  E3 review 修复：update_user_preference 用 candidate.profileId（detectPromotions 采集的主导 profile）；
+ *  bind_habitual_tool 不再从 sampleEntryIds 取 toolId（那是 memory_entry id，id 空间错）——
+ *  留空让用户审批时补 toolId，executor changes=0 时返回 failed 而非误报 executed。 */
 function minimalParams(actionType: string, candidate: PromotionCandidate): Record<string, unknown> {
   const base: Record<string, unknown> = { fingerprint: candidate.fingerprint };
   if (actionType === 'update_user_preference') {
     base.content = candidate.sampleContents[0] ?? candidate.fingerprint;
-  } else if (actionType === 'bind_habitual_tool') {
-    base.toolId = candidate.sampleEntryIds[0];
+    if (candidate.profileId) base.profileId = candidate.profileId;
   }
   return base;
 }
