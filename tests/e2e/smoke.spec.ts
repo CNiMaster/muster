@@ -181,7 +181,11 @@ test('E5 进化与报告页渲染（四个控制面块）', async ({ page }) => 
   expect(response.status()).toBe(201);
   const company = await response.json();
   await page.goto(`/companies/${company.id}?view=evolution`);
-  await expect(page.getByText('运营优化报告', { exact: true })).toBeVisible({ timeout: 8000 });
+  // 晨醒模型：进化总览积压条 + 手动触发器 + 四块
+  await expect(page.getByText('进化总览', { exact: true })).toBeVisible({ timeout: 8000 });
+  await expect(page.getByRole('button', { name: '立即执行晋升' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '立即生成报告' })).toBeVisible();
+  await expect(page.getByText('运营优化报告', { exact: true })).toBeVisible();
   await expect(page.getByText('晋升候选', { exact: true })).toBeVisible();
   await expect(page.getByText('结构变更历史', { exact: true })).toBeVisible();
   await expect(page.getByText('锁定管理', { exact: true })).toBeVisible();

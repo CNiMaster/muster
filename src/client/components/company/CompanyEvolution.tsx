@@ -27,6 +27,9 @@ import {
   useCreateLock,
   useDeleteLock,
   useCompanyCockpit,
+  useGenerateReport,
+  usePromoteNow,
+  useEvolutionSummary,
 } from '../../hooks/queries';
 
 const ITEM_STATUS_TONE: Record<string, 'ok' | 'warn' | 'err' | 'info' | 'neutral'> = {
@@ -45,6 +48,7 @@ const ROLLBACKABLE_ENTITY_TYPES = ['tool_registry', 'capability_binding', 'memor
 export function CompanyEvolution({ companyId }: { companyId: string }): React.ReactElement {
   return (
     <div className="form-stack">
+      <EvolutionSummaryBar companyId={companyId} />
       <OptimizationReportsBlock companyId={companyId} />
       <PromotionCandidatesBlock companyId={companyId} />
       <StructureHistoryBlock />
@@ -53,18 +57,46 @@ export function CompanyEvolution({ companyId }: { companyId: string }): React.Re
   );
 }
 
+// ── 进化总览（晨醒积压）──────────────────────────────────────────────
+
+/** 打开即"晨醒"：回答"攒了哪些升级资料"。 */
+function EvolutionSummaryBar({ companyId }: { companyId: string }): React.ReactElement {
+  const { data: summary } = useEvolutionSummary(companyId);
+  if (!summary) return <Card title="进化总览"><p className="muted">加载中…</p></Card>;
+  const hasBacklog = summary.pendingActions > 0 || summary.pendingPromotions > 0;
+  return (
+    <Card title={<>进化总览{hasBacklog ? <> <Badge tone="warn">有积压</Badge></> : null}</>}>
+      <div className="evolution-summary">
+        <Badge tone={summary.pendingActions > 0 ? 'warn' : 'neutral'}>待审批建议 {summary.pendingActions}</Badge>
+        <Badge tone={summary.pendingPromotions > 0 ? 'warn' : 'neutral'}>待晋升候选 {summary.pendingPromotions}</Badge>
+        <Badge tone="info">已固化 {summary.promotedActions}</Badge>
+        <Badge tone="neutral">待反思 {summary.pendingReflections}</Badge>
+      </div>
+    </Card>
+  );
+}
+
 // ── 优化报告（审批）──────────────────────────────────────────────────
 
 function OptimizationReportsBlock({ companyId }: { companyId: string }): React.ReactElement {
   const { data: reports = [], isLoading } = useOptimizationReports(companyId);
   const { data: cockpit } = useCompanyCockpit(companyId);
+  const generateReport = useGenerateReport();
+  const promoteNow = usePromoteNow();
   const [activeId, setActiveId] = useState<string | null>(null);
   const active = reports.find((r: any) => r.id === activeId) ?? null;
   const pendingCount = cockpit?.optimization?.pendingActions ?? 0;
 
   return (
     <Card title={<>运营优化报告{pendingCount > 0 ? <> <Badge tone="warn">{pendingCount} 条待审批</Badge></> : null}</>}>
-      <p className="muted">每日自动生成 + 晋升批次；审批后按建议自动调整组织</p>
+      <div className="evolution-block-head">
+        <p className="muted">每日自动生成 + 晋升批次；审批后按建议自动调整组织</p>
+        {/* 晨醒模型手动触发器：不常开程序的用户可以随时"检查更新"式地立即升级。 */}
+        <div className="evolution-item-actions">
+          <Button variant="ghost" size="sm" loading={promoteNow.isPending} onClick={() => promoteNow.mutate(companyId, { onSuccess: (r: any) => toast('success', r.created > 0 ? `已落地 ${r.created} 条晋升建议` : '暂无待晋升候选'), onError: (e) => toast('error', (e as Error).message) })}>立即执行晋升</Button>
+          <Button variant="ghost" size="sm" loading={generateReport.isPending} onClick={() => generateReport.mutate(companyId, { onSuccess: () => toast('success', '报告已生成'), onError: (e) => toast('error', (e as Error).message) })}>立即生成报告</Button>
+        </div>
+      </div>
       {isLoading ? <p className="muted">加载中…</p> : reports.length === 0 ? (
         <EmptyState icon="◌" title="还没有报告" hint="公司上线运行后，每天会生成一份运营优化报告；经验记忆达晋升阈值时也会产生晋升批次。" />
       ) : (

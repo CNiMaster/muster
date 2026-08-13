@@ -760,3 +760,6 @@
 .report-row:hover { background: var(--hover, #f5f5f5); }
 .report-row.is-active { border-color: var(--accent, #4a7dff); }
 .report-row .truncate { flex: 1; }
+.evolution-block-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.evolution-block-head .muted { margin: 0; flex: 1; min-width: 200px; }
+.evolution-summary { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }

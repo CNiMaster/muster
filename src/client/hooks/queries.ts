@@ -1983,6 +1983,41 @@ export function useOptimizationReports(companyId: string) {
   });
 }
 
+/** E5 补齐：手动生成当日报告（"检查更新"按钮；API 已有，纯接线）。 */
+export function useGenerateReport() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (companyId: string) => api.post<any>(`/api/companies/${companyId}/optimization-report`),
+    onSuccess: (_data, companyId) => {
+      qc.invalidateQueries({ queryKey: ['optimizationReports', companyId] });
+      qc.invalidateQueries({ queryKey: ['company-cockpit', companyId] });
+      qc.invalidateQueries({ queryKey: ['evolution-summary', companyId] });
+    },
+  });
+}
+
+/** E5 补齐：手动执行晋升批次（"立即升级"按钮）。 */
+export function usePromoteNow() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (companyId: string) => api.post<any>(`/api/companies/${companyId}/promote`),
+    onSuccess: (_data, companyId) => {
+      qc.invalidateQueries({ queryKey: ['promotionCandidates'] });
+      qc.invalidateQueries({ queryKey: ['optimizationReports', companyId] });
+      qc.invalidateQueries({ queryKey: ['company-cockpit', companyId] });
+      qc.invalidateQueries({ queryKey: ['evolution-summary', companyId] });
+    },
+  });
+}
+
+/** E5 补齐（晨醒模型）：进化积压总览。 */
+export function useEvolutionSummary(companyId: string) {
+  return useQuery({
+    queryKey: ['evolution-summary', companyId],
+    queryFn: () => api.get<any>(`/api/companies/${companyId}/evolution-summary`),
+  });
+}
+
 export function useOptimizationReport(id: string | null) {
   return useQuery({
     queryKey: ['optimizationReport', id],
@@ -1999,6 +2034,7 @@ export function useApproveReport() {
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: ['optimizationReport', vars.id] });
       qc.invalidateQueries({ queryKey: ['optimizationReports'] });
+      qc.invalidateQueries({ queryKey: ['evolution-summary'] });
     },
   });
 }
@@ -2010,6 +2046,7 @@ export function useDismissReport() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['optimizationReport'] });
       qc.invalidateQueries({ queryKey: ['optimizationReports'] });
+      qc.invalidateQueries({ queryKey: ['evolution-summary'] });
     },
   });
 }
@@ -2032,6 +2069,7 @@ export function useRejectReportItem() {
       api.post<any>(`/api/optimization-reports/${id}/items/${itemId}/reject`),
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: ['optimizationReport', vars.id] });
+      qc.invalidateQueries({ queryKey: ['evolution-summary'] });
     },
   });
 }

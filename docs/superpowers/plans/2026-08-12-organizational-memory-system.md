@@ -309,6 +309,7 @@
 - [x] 用户能看见自动落地改了什么（报告 + 结构历史）、能回滚（支持类型）、能锁定/解锁、能忽略晋升候选
 - [x] typecheck + 全量 test green（1098）；API 全部 domain 级测试（项目既有惯例：REST 是薄壳）
 - [x] 实现即修正：locks DELETE 改为 query 参数（client api.delete 不支持 body）；useModifyReportItem/useRejectReportItem 补 report id 路径段
+- [x] **三缺口补齐（2026-08-13，commit a7e594b）**：① 待审批可见性——cockpit.optimization.pendingActions + 总览 risks 入口 + 导航「进化与报告」红点 + 报告块徽章；② 结构历史 UI 实体过滤；③ 晋升候选按公司过滤（domain/API/UI）。1101 tests + e2e 冒烟 green。
 
 ---
 
