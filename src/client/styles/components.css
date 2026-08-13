@@ -781,7 +781,7 @@
   position: sticky; top: 0; z-index: 50;
 }
 .tabbar-brand { display: flex; align-items: center; flex-shrink: 0; }
-.company-tabs { display: flex; align-items: center; gap: 2px; flex: 1; min-width: 0; overflow-x: auto; }
+.company-tabs { display: flex; align-items: center; gap: 2px; flex: 1; min-width: 0; }
 .company-tab {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 4px 12px; border-radius: 8px 8px 0 0;
@@ -819,3 +819,10 @@
 .setup-checklist li span:nth-child(2) { flex: 1; }
 .setup-checklist li a { font-size: 0.85em; }
 .workbench-context-static { font-size: 0.9em; color: var(--text, #111); padding: 2px 6px; white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+
+
+/* 标签栏评审修复：审批计数徽章 */
+.tabbar-review { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; font-size: 0.85em; color: var(--text-muted, #666); text-decoration: none; border-radius: 6px; }
+.tabbar-review:hover, .tabbar-review.active { background: var(--surface-2, #f0f0f3); color: var(--text, #111); }
+.tabbar-count { font-style: normal; font-size: 0.8em; line-height: 1; padding: 2px 6px; border-radius: 999px; background: #ff3b30; color: #fff; }
+.conversation-state-callout { display: flex; gap: 8px; align-items: center; padding: 8px 12px; border-radius: 8px; background: #fff7e6; border: 1px solid #ffe3a1; color: #8a6d00; font-size: 0.9em; }
