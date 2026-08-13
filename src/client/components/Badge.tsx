@@ -42,10 +42,10 @@ export function companyStateTone(state: string): BadgeTone {
 }
 
 const STATE_LABELS: Record<string, string> = {
-  off: '下班',
-  online: '上班',
-  draining: '排空',
-  review_paused: '复盘',
+  off: '已暂停',
+  online: '工作中',
+  draining: '收尾中',
+  review_paused: '复盘暂停',
   queued: '排队',
   claimed: '已领取',
   running: '执行中',

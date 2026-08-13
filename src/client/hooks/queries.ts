@@ -2161,3 +2161,30 @@ export function useDeleteLock() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['locks'] }),
   });
 }
+
+// ===== L1 优雅关机 / 一键恢复 =====
+
+export function useBeginShutdown() {
+  return useMutation({
+    mutationFn: () => api.post<{ affected: Array<{ id: string; name: string }>; total: number }>('/api/companies/shutdown/begin'),
+  });
+}
+
+export function useResumeShutdownPaused() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<{ resumed: number }>('/api/companies/shutdown/resume'),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['companies'] });
+    },
+  });
+}
+
+/** L3：各公司活跃任务数（标签栏"工作中/空闲"信号）。 */
+export function useCompaniesActivity() {
+  return useQuery({
+    queryKey: ['companies-activity'],
+    queryFn: () => api.get<Record<string, number>>('/api/companies/activity'),
+    refetchInterval: 15000,
+  });
+}

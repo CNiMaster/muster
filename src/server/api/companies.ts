@@ -28,7 +28,10 @@ import {
   archiveCompany,
   unarchiveCompany,
   deleteCompany,
+  resumeShutdownPaused,
+  getCompaniesActivity,
 } from '../domain/company';
+import { startGracefulShutdownSequence } from '../runtime/shutdown';
 import type { CompanyState } from '../../shared/types';
 import { listProjects } from '../domain/project';
 import { ensureProjectThreads } from '../domain/thread';
@@ -69,6 +72,14 @@ companiesRouter.post(
   asyncHandler(async (req, res) => {
     const input = createCompanySchema.parse(req.body);
     res.status(201).json(createCompany(getDb(), input));
+  }),
+);
+
+/** L3：各公司活跃任务数（标签栏"工作中/空闲"信号）。注意必须在 /:id 之前注册。 */
+companiesRouter.get(
+  '/activity',
+  asyncHandler(async (_req, res) => {
+    res.json(getCompaniesActivity(getDb()));
   }),
 );
 
@@ -152,6 +163,25 @@ companiesRouter.post('/:id/clock-out', stateEndpoint('off'));
 companiesRouter.post('/:id/drain', stateEndpoint('draining'));
 companiesRouter.post('/:id/review-pause', stateEndpoint('review_paused'));
 companiesRouter.post('/:id/resume', stateEndpoint('online'));
+
+/** L1：优雅关机——所有 online 公司转入 draining，收尾完成后进程退出（进度由 company.state 事件广播）。 */
+companiesRouter.post(
+  '/shutdown/begin',
+  asyncHandler(async (_req, res) => {
+    const affected = startGracefulShutdownSequence({
+      onComplete: () => setTimeout(() => process.exit(0), 300),
+    });
+    res.json({ affected, total: affected.length });
+  }),
+);
+
+/** L1：一键恢复运营——所有上次优雅关机时正在运行的公司重新上线。 */
+companiesRouter.post(
+  '/shutdown/resume',
+  asyncHandler(async (_req, res) => {
+    res.json({ resumed: resumeShutdownPaused(getDb()) });
+  }),
+);
 
 /** 公司级用量聚合（PRD Phase 3.7）。 */
 companiesRouter.get(

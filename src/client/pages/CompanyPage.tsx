@@ -63,11 +63,11 @@ export function CompanyPage(): React.ReactElement {
             : activeTab === 'activity' ? <CompanyActivity companyId={companyId} agents={agents} events={events} />
               : activeTab === 'evolution' ? <CompanyEvolution companyId={companyId} />
                 : <CompanySettings company={company} />;
+  // L1 生命周期：运行中的公司不再展示时钟按钮（无"上下班"概念，程序代管）；
+  // 暂停的成本开关在「公司设置」tab 的「停止公司」；退出时统一优雅下班。
   const companyAction = company.state === 'off'
     ? <Button icon={<span aria-hidden="true">▶</span>} onClick={() => doAction('clock-in')} loading={action.isPending}>启动公司</Button>
-    : company.state === 'online'
-      ? <Button icon={<span aria-hidden="true">◷</span>} onClick={() => doAction('drain')} loading={action.isPending}>完成工作</Button>
-      : company.state === 'review_paused' ? <Button onClick={() => doAction('resume')} loading={action.isPending}>继续工作</Button> : undefined;
+    : company.state === 'review_paused' ? <Button onClick={() => doAction('resume')} loading={action.isPending}>继续工作</Button> : undefined;
 
   return <WorkbenchShell
     scopeKey={`company:${companyId}`}

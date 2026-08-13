@@ -16,6 +16,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SERVER_CONFIG } from './env';
 import { log } from './logger';
+import { startGracefulShutdownSequence } from './runtime/shutdown';
 import { healthRouter } from './api/health';
 import { companiesRouter } from './api/companies';
 import { agentsRouter } from './api/agents';
@@ -295,13 +296,19 @@ async function main(): Promise<void> {
   });
 
   const shutdown = (signal: string): void => {
-    log.info('shutting down', { signal });
-    engine.stop();
-    coordinator.stop();
-    triggerScheduler.stop();
-    httpServer.close();
-    wss.close();
-    setTimeout(() => process.exit(0), 500);
+    log.info('shutting down (graceful)', { signal });
+    // L1：优雅关机——先让所有 online 公司排空下班（coordinator 继续 tick 收尾），
+    // 全部完成后停止引擎并退出；超时兜底 60s（任务持久化，下次启动恢复）。
+    startGracefulShutdownSequence({
+      onComplete: () => {
+        engine.stop();
+        coordinator.stop();
+        triggerScheduler.stop();
+        httpServer.close();
+        wss.close();
+        setTimeout(() => process.exit(0), 500);
+      },
+    });
   };
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
