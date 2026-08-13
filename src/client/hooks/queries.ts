@@ -1482,6 +1482,8 @@ export function useSaveSystemSettings() {
       fontSize?: number;
       locale?: 'zh' | 'en';
       codeTheme?: string;
+      autonomousReflectionEnabled?: boolean;
+      autonomousReflectionBudgetUSD?: number;
     }) => api.post<any>('/api/settings', settings),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['systemSettings'] });

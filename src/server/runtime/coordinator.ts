@@ -10,12 +10,13 @@ import { openReportCycle, shouldTriggerReport } from '../domain/report';
 import { isSoftCapReached, type Budget } from '../domain/usage';
 import { updateProject, getProject } from '../domain/project';
 import { settleDrainingAgents } from '../domain/agent';
-import { drainReflectionQueue, recoverStuckReflections } from '../domain/reflection';
+import { drainReflectionQueue, recoverStuckReflections, enqueueIdleReflections } from '../domain/reflection';
 import { generateInspectorSuggestions } from '../domain/inspector';
 import { autoAcceptContract, createOutsourcedTask, revertAcceptToPending } from '../domain/outsourcing-contract';
 import { generateOptimizationReport } from '../domain/optimization-report';
 import type { SetupGenerator } from '../domain/setup-assistant';
 import { promoteCandidatesToActions } from '../domain/promotion';
+import { getSystemSettings } from '../domain/setting';
 import { executePendingOfflineActions } from '../domain/optimization-report-executor';
 import { shortId } from '../../shared/utils';
 import {
@@ -66,6 +67,45 @@ export async function runDailyOptimizationReport(
   return { reportId: report.id, promoted };
 }
 
+/**
+ * E4.3 空闲自主反思（白日梦，默认关闭）：对 online 且无活跃正式任务的公司，
+ * 在开关开启且当日花费未超预算时，补排队近期终态任务的反思。
+ * - 正式 Task 到达让位：有活跃任务的公司跳过；
+ * - 只补 reflection，不做全自动 brainstorm（烧钱风险，spec 明确排除）；
+ * - 预算语义：autonomousReflectionBudgetUSD 是"公司当日总 LLM 花费"上限，低于它才允许做梦（0 = 关闭）。
+ */
+export function runIdleReflectionPass(db: DB): Array<{ companyId: string; enqueued: number }> {
+  const settings = getSystemSettings(db);
+  if (!settings.autonomousReflectionEnabled) return [];
+  const budgetUSD = settings.autonomousReflectionBudgetUSD;
+  if (budgetUSD <= 0) return [];
+  const today = dbToday(db);
+  const results: Array<{ companyId: string; enqueued: number }> = [];
+  for (const company of listCompanies(db)) {
+    if (company.state !== 'online') continue;
+    const hasActive = listProjects(db, company.id).some((p) => {
+      if (p.state !== 'active') return false;
+      return listTasks(db, p.id).some(
+        (t) =>
+          t.isDiscussion === 0 &&
+          ['queued', 'claimed', 'running', 'waiting_input', 'waiting_dependency', 'paused'].includes(t.state),
+      );
+    });
+    if (hasActive) continue;
+    const spendToday = db
+      .prepare(
+        `SELECT COALESCE(SUM(u.cost_usd), 0) AS c FROM usage_record u
+         JOIN project p ON p.id = u.project_id
+         WHERE p.company_id=? AND u.recorded_at >= ?`,
+      )
+      .get(company.id, today) as { c: number };
+    if (spendToday.c >= budgetUSD) continue;
+    const enqueued = enqueueIdleReflections(db, company.id, 2);
+    if (enqueued > 0) results.push({ companyId: company.id, enqueued });
+  }
+  return results;
+}
+
 /** 统一驱动公司生命周期和项目任务执行。 */
 export class ProjectRuntimeCoordinator {
   private timer: NodeJS.Timeout | null = null;
@@ -78,6 +118,9 @@ export class ProjectRuntimeCoordinator {
   /** 阶段五任务 5.1：运营优化报告定时生成（默认每 24 小时一次，AI 生成异步不阻塞 tick）。 */
   private lastOptimizationReportRun = 0;
   private readonly optimizationReportIntervalMs = 24 * 3600_000;
+  /** E4.3 空闲自主反思扫描（默认关；每 60 秒检查一次，只入队不调 LLM）。 */
+  private lastIdleReflectionRun = 0;
+  private readonly idleReflectionIntervalMs = 60_000;
 
   constructor(
     private readonly db: DB,
@@ -121,6 +164,18 @@ export class ProjectRuntimeCoordinator {
           this.scheduleOptimizationReports();
         } catch (error) {
           log.warn('optimization report scan failed', { error: error instanceof Error ? error.message : String(error) });
+        }
+      }
+      // E4.3 空闲自主反思（默认关）：每 60 秒扫描一次；只入队（LLM 消化走独立反思定时器）。
+      if (Date.now() - this.lastIdleReflectionRun >= this.idleReflectionIntervalMs) {
+        this.lastIdleReflectionRun = Date.now();
+        try {
+          const idleDone = runIdleReflectionPass(this.db);
+          for (const r of idleDone) {
+            log.info('idle autonomous reflection enqueued', { companyId: r.companyId, enqueued: r.enqueued });
+          }
+        } catch (error) {
+          log.warn('idle reflection pass failed', { error: error instanceof Error ? error.message : String(error) });
         }
       }
       const plannedTasks: string[] = [];

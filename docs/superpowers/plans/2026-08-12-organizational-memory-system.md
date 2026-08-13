@@ -249,10 +249,11 @@
 - Commit: `feat(E4): collectCompanyStats 消费反思/晋升信号`
 
 ## Task E4.3 — idle 自主反思开关（默认关闭，可选）
-- [ ] 系统设置加 `autonomousReflectionEnabled`（默认 false）+ `autonomousReflectionBudgetUSD`（默认 0）
-- [ ] coordinator 检测公司 idle（online 且无活跃 task）且开关开 → 触发轻量 reflection（复用 drainReflectionQueue 对近期 completed task 补反思）；受预算约束、正式 Task 到达让位
-- [ ] 不做全自动 brainstorm（烧钱风险），只补 reflection（已有 LLM 成本控制）
-- Test + Commit: `feat(E4): idle 自主反思开关（默认关闭）`
+- [x] 系统设置加 `autonomousReflectionEnabled`（默认 false）+ `autonomousReflectionBudgetUSD`（默认 0 = 关闭）
+- [x] coordinator 检测公司 idle（online 且无活跃正式 task）且开关开 → 对近期 completed/failed 且未反思过的任务补排队（`enqueueIdleReflections`，INSERT OR IGNORE 幂等）；当日公司花费 < 预算才允许（"做梦"只发生在低花费日）、正式 Task 到达让位
+- [x] 不做全自动 brainstorm（烧钱风险），只补 reflection（已有 LLM 成本控制）
+- [x] 前端 SettingsPage 新增「自主进化（空闲反思/白日梦）」段（开关 + 预算）+ API zod 字段
+- [x] Test tests/integration/reflection-idle.spec.ts（10 用例）+ Commit: `feat(E4.3): idle 自主反思开关（默认关闭）`
 
 **E4 准出：** 每日调度自动消费晋升候选 → action item（闭环在运行时跑通）；optimization-report 能看到反思/晋升信号；自主反思默认关闭、用户可开。
 

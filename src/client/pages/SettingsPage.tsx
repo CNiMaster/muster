@@ -41,6 +41,8 @@ export function SettingsPage(): React.ReactElement {
   const [fontSize, setFontSize] = useState(14);
   const [locale, setLocale] = useState<'zh' | 'en'>('zh');
   const [codeTheme, setCodeTheme] = useState('default');
+  const [autonomousReflectionEnabled, setAutonomousReflectionEnabled] = useState(false);
+  const [autonomousReflectionBudgetUSD, setAutonomousReflectionBudgetUSD] = useState(0);
   const [testResult, setTestResult] = useState<any | null>(null);
 
   useEffect(() => {
@@ -66,6 +68,8 @@ export function SettingsPage(): React.ReactElement {
     setFontSize(settings.fontSize ?? 14);
     setLocale(settings.locale ?? 'zh');
     setCodeTheme(settings.codeTheme ?? 'default');
+    setAutonomousReflectionEnabled(settings.autonomousReflectionEnabled ?? false);
+    setAutonomousReflectionBudgetUSD(settings.autonomousReflectionBudgetUSD ?? 0);
   }, [settings]);
 
   const handleSave = (): void => {
@@ -74,7 +78,7 @@ export function SettingsPage(): React.ReactElement {
       return;
     }
     saveSettings.mutate(
-      { claudeBin, model, skipPermissions, timeoutMs, maxToolCalls, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierPrimaryId: tierPrimary, executorTierSecondaryId: tierSecondary, executorTierTertiaryId: tierTertiary, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs, theme, fontFamily, fontSize, locale, codeTheme },
+      { claudeBin, model, skipPermissions, timeoutMs, maxToolCalls, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierPrimaryId: tierPrimary, executorTierSecondaryId: tierSecondary, executorTierTertiaryId: tierTertiary, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs, theme, fontFamily, fontSize, locale, codeTheme, autonomousReflectionEnabled, autonomousReflectionBudgetUSD },
       {
         onSuccess: () => toast('success', '系统设置已保存并实时生效'),
         onError: (error: any) => toast('error', error.message ?? '保存设置失败'),
@@ -265,6 +269,33 @@ export function SettingsPage(): React.ReactElement {
               </Field>
             </div>
             <p className="muted">外观修改即时生效（主题/字体/字号/语言）。</p>
+          </div>
+        </details>
+
+        <details className="details-collapse">
+          <summary>自主进化（空闲反思 / 白日梦）</summary>
+          <div className="form-stack">
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={autonomousReflectionEnabled}
+                onChange={(event) => setAutonomousReflectionEnabled(event.target.checked)}
+              />
+              公司空闲时自动补做任务反思（沉淀经验进记忆）
+            </label>
+            <Field label="每日自主反思预算（USD）" hint="公司当日总花费低于该值时才允许自动反思；0 = 关闭">
+              <Input
+                type="number"
+                min={0}
+                step={0.1}
+                value={autonomousReflectionBudgetUSD}
+                onChange={(event) => setAutonomousReflectionBudgetUSD(Number(event.target.value))}
+              />
+            </Field>
+            <p className="muted">
+              默认关闭（反思有 LLM 成本）。开启后：公司在线且无活跃任务时，对近期已完成/失败但未反思过的任务补排队反思；
+              正式任务到达自动让位，单次最多补 2 条。
+            </p>
           </div>
         </details>
 

@@ -50,6 +50,9 @@ settingsRouter.post(
       fontSize: z.number().min(8).max(32).optional(),
       locale: z.enum(['zh', 'en']).optional(),
       codeTheme: z.string().max(100).optional(),
+      // E4.3 空闲自主反思（默认关）
+      autonomousReflectionEnabled: z.boolean().optional(),
+      autonomousReflectionBudgetUSD: z.number().min(0).optional(),
     });
     const input = schema.parse(req.body);
     const db = getDb();

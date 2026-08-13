@@ -41,6 +41,10 @@ export interface SystemSettings {
   locale: 'zh' | 'en';
   /** 代码块高亮主题。 */
   codeTheme: string;
+  /** E4.3 空闲自主反思开关（默认关——自动反思有 LLM 成本，需用户显式开启）。 */
+  autonomousReflectionEnabled: boolean;
+  /** E4.3 空闲自主反思预算（USD/日）：公司当日总花费低于该值时才允许自动反思；0 = 关闭。 */
+  autonomousReflectionBudgetUSD: number;
 }
 
 export function getSetting(db: DB, key: string, defaultValue: string): string {
@@ -80,6 +84,8 @@ export function getSystemSettings(db: DB): SystemSettings {
     fontSize: Number(getSetting(db, 'font_size', '14')),
     locale: getSetting(db, 'locale', 'zh') as SystemSettings['locale'],
     codeTheme: getSetting(db, 'code_theme', 'default'),
+    autonomousReflectionEnabled: getSetting(db, 'autonomous_reflection_enabled', 'false') === 'true',
+    autonomousReflectionBudgetUSD: Number(getSetting(db, 'autonomous_reflection_budget_usd', '0')),
   };
 }
 
@@ -130,4 +136,10 @@ export function saveSystemSettings(db: DB, settings: Partial<SystemSettings>): v
   if (settings.fontSize !== undefined) setSetting(db, 'font_size', String(settings.fontSize));
   if (settings.locale !== undefined) setSetting(db, 'locale', settings.locale);
   if (settings.codeTheme !== undefined) setSetting(db, 'code_theme', settings.codeTheme);
+  if (settings.autonomousReflectionEnabled !== undefined) {
+    setSetting(db, 'autonomous_reflection_enabled', settings.autonomousReflectionEnabled ? 'true' : 'false');
+  }
+  if (settings.autonomousReflectionBudgetUSD !== undefined) {
+    setSetting(db, 'autonomous_reflection_budget_usd', String(settings.autonomousReflectionBudgetUSD));
+  }
 }

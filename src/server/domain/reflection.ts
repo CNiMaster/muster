@@ -139,6 +139,36 @@ export function enqueueReflection(db: DB, input: EnqueueReflectionInput): void {
 }
 
 /**
+ * E4.3 空闲自主反思（白日梦，默认关闭）：公司空闲时对近期终态（completed/failed）但
+ * 从未反思过的任务补排队反思。task_reflection UNIQUE(task_id) + NOT EXISTS 保证幂等；
+ * cancelled（被返工取消的原 task 已由 rework 反思覆盖）与未终态任务跳过。
+ * 返回本次入队数（0 = 没有可反思的任务）。
+ */
+export function enqueueIdleReflections(db: DB, companyId: string, limit = 2): number {
+  const rows = db
+    .prepare(
+      `SELECT t.id, t.state FROM task t
+       WHERE t.project_id IN (SELECT id FROM project WHERE company_id=?)
+         AND t.state IN ('completed','failed')
+         AND t.is_discussion = 0
+         AND NOT EXISTS (SELECT 1 FROM task_reflection tr WHERE tr.task_id = t.id)
+       ORDER BY t.updated_at DESC LIMIT ?`,
+    )
+    .all(companyId, limit) as Array<{ id: string; state: string }>;
+  let enqueued = 0;
+  for (const row of rows) {
+    enqueueReflection(db, {
+      task: getTask(db, row.id),
+      outcome: row.state,
+      signal: row.state === 'failed' ? 'failed' : 'completed',
+      extraContext: { idleReflection: true },
+    });
+    enqueued++;
+  }
+  return enqueued;
+}
+
+/**
  * 离线消化反思队列。由 coordinator 的独立反思定时器调用（不在 tick 同步路径内，
  * 避免 LLM 慢调用阻塞租约恢复/任务泵送）。
  *
