@@ -151,6 +151,29 @@ export class TaskEngine {
     if (isProvider(provider)) this.defaultProvider = provider;
   }
 
+  /**
+   * 改版收尾：user_message 任务的关键里程碑回写对话（开始/阻塞/失败）。
+   * 此前只有 completed 才回一条 assistant 消息——失败/阻塞时用户永远沉默。
+   * 只对 user_message 触发且带 scope 的任务生效；失败绝不影响引擎主流程。
+   */
+  private notifyUserMessageMilestone(task: { inputProtocol?: unknown }, content: string, taskId?: string): void {
+    try {
+      const proto = (task.inputProtocol ?? {}) as Record<string, unknown>;
+      if (proto.trigger !== 'user_message') return;
+      if (typeof proto.scope !== 'string' || typeof proto.scopeId !== 'string') return;
+      postSystemMessage(this.db, {
+        scopeKind: proto.scope as 'company' | 'project',
+        scopeId: proto.scopeId,
+        role: 'event',
+        author: 'system',
+        content,
+        refTaskId: taskId ?? undefined,
+      });
+    } catch (e) {
+      log.warn('conversation milestone post failed', { err: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
   /** 按 agent executor 配置选择 adapter，未知 provider 回退默认。 */
   private selectAdapter(agentExecutorProvider?: string): ExecutionAdapter {
     const provider = isProvider(agentExecutorProvider) ? agentExecutorProvider : this.defaultProvider;
@@ -215,6 +238,8 @@ export class TaskEngine {
       occurredAt: new Date().toISOString(),
       payload: { threadId, agentId: agent.id, seq: task.seq },
     });
+    // 改版收尾：对话里给即时反馈"已开始处理"（此前只有完成后才回一条）
+    this.notifyUserMessageMilestone(task, `⏳ 已开始处理你的消息：${task.title}`, task.id);
 
     // 安全检查：重复失败/无进展
     try {
@@ -248,6 +273,8 @@ export class TaskEngine {
         occurredAt: new Date().toISOString(),
         payload: { reason: msg, threadId: thread.id, agentId: agent.id },
       });
+      // 改版收尾：安全检查阻断也回写对话（避免用户发消息后被无声阻断）
+      this.notifyUserMessageMilestone(task, `⛔ 处理被安全规则阻断：${msg.slice(0, 120)}`, task.id);
       return true;
     }
 
@@ -1264,6 +1291,7 @@ export class TaskEngine {
           outboundTasks: [],
           artifacts: [],
         });
+        this.notifyUserMessageMilestone(blocked, `⛔ 处理中止（预算超限）：${msg.slice(0, 120)}`, taskId);
         // 双 Loop P3：预算超限是强根因信号，入队反思。
         try {
           enqueueReflection(this.db, { task: blocked, outcome: 'blocked', signal: 'blocked-safety', extraContext: { error: msg, reason: 'budget' } });
@@ -1280,6 +1308,7 @@ export class TaskEngine {
           outboundTasks: [],
           artifacts: [],
         });
+        this.notifyUserMessageMilestone(blocked, `⛔ 处理中止（无进展）：${msg.slice(0, 120)}`, taskId);
         // 双 Loop P3：无进展是强根因信号，入队反思。
         try {
           enqueueReflection(this.db, { task: blocked, outcome: 'blocked', signal: 'blocked-safety', extraContext: { error: msg, reason: 'no_progress' } });
@@ -1294,6 +1323,10 @@ export class TaskEngine {
     // timeout / 结构错误 / spawn 错 → failed（可重试或观察后重试）
     log.error('task failed', { taskId, err: msg });
     const failed = failTask(this.db, taskId, `执行异常：${msg}`);
+    // 改版收尾：user_message 任务失败回写对话（未走自动重试的终态失败才回写，避免刷屏）
+    if (failed.state === 'failed') {
+      this.notifyUserMessageMilestone(failed, `❌ 处理未完成：${msg.slice(0, 200)}`, taskId);
+    }
 
     // Review 修复：讨论发言 task 失败时记录空发言，让讨论轮次能继续推进
     // （否则 parallel 模式一轮发言凑不齐，讨论永久停滞；sequential 同样受益）。
