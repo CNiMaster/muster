@@ -176,6 +176,8 @@ function applyRollbackField(db: DB, entityType: string, entityId: string, field:
     }
     case 'memory_entry': {
       // entityId=profileId，field=fingerprint；恢复 = 删除该 profile 该 fingerprint 的 personal 偏好（promotion 产物）。
+      // 语义说明：按 fingerprint 删除会连带同 fingerprint 的真实用户偏好（E1.2 提取的 personal 条目）——
+      // 两者内容不同但标签相同；UI 会展示 fingerprint 供用户判断，条目只标 deleted 不做硬删。
       db.prepare(
         "UPDATE memory_entry SET state='deleted', updated_at=? WHERE profile_id=? AND scope='personal' AND fingerprint=? AND state!='deleted'",
       ).run(nowIso(), entityId, field);

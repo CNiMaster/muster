@@ -200,7 +200,9 @@ function StructureHistoryBlock(): React.ReactElement {
                     {' · '}{ch.source}{ch.reason ? ` · ${ch.reason}` : ''}{' · v'}{ch.version}{' · '}{ch.changedAt?.slice(0, 16)}
                   </p>
                 </div>
-                {rollbackable && ch.version > 1 && (
+                {/* 复核修复：v1 记录也要能回滚（toVersion=0 即"撤销这次变更"——最常见的 undo）。
+                    此前 `ch.version > 1` 把 v1 挡掉，导致单次自动落地根本无法在 UI 撤销。 */}
+                {rollbackable && (
                   <Button
                     variant="ghost"
                     size="sm"
