@@ -770,3 +770,42 @@
 .company-conversation-center > :last-child > * { flex: 1; min-height: 0; }
 .conversation-context-hint { display: flex; gap: 8px; align-items: baseline; padding: 6px 12px; border-radius: 8px; background: var(--surface-2, #f7f7f8); }
 .conversation-context-hint strong { font-size: 0.9em; }
+
+/* 改版 2b：公司标签栏（顶部常驻，浏览器式） */
+.company-tabbar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 0 12px; height: 40px;
+  border-bottom: 1px solid var(--border, #e2e2e4);
+  background: var(--surface, #fff);
+  flex-shrink: 0; overflow-x: auto;
+  position: sticky; top: 0; z-index: 50;
+}
+.tabbar-brand { display: flex; align-items: center; flex-shrink: 0; }
+.company-tabs { display: flex; align-items: center; gap: 2px; flex: 1; min-width: 0; overflow-x: auto; }
+.company-tab {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 12px; border-radius: 8px 8px 0 0;
+  font-size: 0.85em; color: var(--text-muted, #666); white-space: nowrap;
+  border: 1px solid transparent; border-bottom: none; text-decoration: none;
+}
+.company-tab:hover { background: var(--surface-2, #f5f5f7); color: var(--text, #111); }
+.company-tab.is-active { background: var(--surface-2, #f0f0f3); color: var(--text, #111); border-color: var(--border, #e2e2e4); }
+.company-tab-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted, #999); flex-shrink: 0; }
+.company-tab-dot.tone-ok { background: #34c759; }
+.company-tab-dot.tone-warn { background: #ff9f0a; }
+.company-tab-dot.tone-err { background: #ff3b30; }
+.company-tab-dot.tone-info { background: #007aff; }
+.company-tab-state { font-size: 0.85em; opacity: 0.7; }
+.company-tab-new { font-size: 1.1em; padding: 4px 10px; color: var(--text-muted, #888); }
+.tabbar-global { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.tabbar-global a { padding: 4px 10px; font-size: 0.85em; color: var(--text-muted, #666); text-decoration: none; border-radius: 6px; }
+.tabbar-global a:hover, .tabbar-global a.active { background: var(--surface-2, #f0f0f3); color: var(--text, #111); }
+.tab-overflow { position: relative; }
+.tab-overflow summary { cursor: pointer; padding: 4px 10px; font-size: 0.85em; color: var(--text-muted, #666); border-radius: 6px; list-style: none; }
+.tab-overflow summary:hover { background: var(--surface-2, #f0f0f3); }
+.tab-overflow[open] summary { background: var(--surface-2, #f0f0f3); }
+.tab-overflow-menu { position: absolute; right: 0; top: 100%; min-width: 160px; padding: 4px; background: var(--surface, #fff); border: 1px solid var(--border, #e2e2e4); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); display: flex; flex-direction: column; gap: 2px; z-index: 20; }
+.tab-overflow-menu a { padding: 6px 10px; font-size: 0.85em; color: var(--text, #111); text-decoration: none; border-radius: 6px; display: flex; align-items: center; gap: 6px; }
+.tab-overflow-menu a:hover { background: var(--surface-2, #f0f0f3); }
+/* 让主区不被顶部标签栏挤掉 */
+.app-shell { display: flex; flex-direction: column; min-height: 100vh; }

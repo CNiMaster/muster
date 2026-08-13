@@ -205,3 +205,17 @@ test('工作台改版 B1：一键开跑——选模板→点击→进入公司',
   // 落地到公司对话中心（改版 2a：对话为默认落地）
   await expect(page).toHaveURL(/\/companies\/[^?]+\?view=conversation/, { timeout: 15000 });
 });
+
+test('工作台改版 B2b：公司标签栏——公司作为标签出现 + 当前高亮 + 新建入口', async ({ page }) => {
+  const a = await (await page.request.post('/api/companies', { data: { name: `标签A-${Date.now()}`, kind: 'general' } })).json();
+  const b = await (await page.request.post('/api/companies', { data: { name: `标签B-${Date.now()}`, kind: 'software' } })).json();
+  await page.goto(`/companies/${a.id}?view=conversation`);
+  // 两个公司都成为标签链接（>6 家时会收进 overflow details，用 locator 而非可见性断言）
+  await expect(page.locator(`.company-tab[href="/companies/${a.id}"]`)).toHaveCount(1, { timeout: 8000 });
+  await expect(page.locator(`.company-tab[href="/companies/${b.id}"]`)).toHaveCount(1);
+  // 当前公司标签高亮
+  await expect(page.locator(`.company-tab[href="/companies/${a.id}"]`)).toHaveClass(/is-active/);
+  // 新建入口
+  await expect(page.getByRole('link', { name: '新建公司' })).toBeVisible();
+});
+

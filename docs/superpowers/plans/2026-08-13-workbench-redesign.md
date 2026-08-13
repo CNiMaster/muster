@@ -49,6 +49,11 @@
 - [x] CompanyPage 默认 activeTab → conversation；一键开跑落地 ?view=conversation
 - [x] CSS 对话中心撑满中栏；e2e 验证一键开跑→对话中心
 
+### Task 2.2b — 公司标签栏（浏览器式切换，先行落地）
+- [x] 新 `CompanyTabBar`：全部在营公司自动为标签、当前高亮、>6 收进「▾更多」、行末「＋新建」；右侧 首页/设置/更多▾（员工库/审批/执行器/能力/外包/权限暂存，B3 归位）
+- [x] 所有路由常驻（App.tsx 替换旧扁平顶栏）——解决"切公司要点开多层菜单"痛点 + 双导航模型收敛第一步
+- [x] e2e：标签出现/当前高亮/新建入口（overflow 稳健断言）
+
 ### Task 2.1 — UnifiedRail 左栏
 - [ ] 新 `src/client/components/workbench/UnifiedRail.tsx`：主区（对话/项目/员工/产物）+ 回看折叠组（审批/复盘/进化/记忆）+ 高级折叠组（外包）+ 设置；按 scope（无公司/公司/项目）自适应
 - [ ] 替代 `CompanyWorkNavigation` / `ProjectWorkNavigation`；收编顶栏 9 项
