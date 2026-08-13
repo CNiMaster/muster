@@ -309,6 +309,7 @@
 - [x] 用户能看见自动落地改了什么（报告 + 结构历史）、能回滚（支持类型）、能锁定/解锁、能忽略晋升候选
 - [x] typecheck + 全量 test green（1098）；API 全部 domain 级测试（项目既有惯例：REST 是薄壳）
 - [x] 实现即修正：locks DELETE 改为 query 参数（client api.delete 不支持 body）；useModifyReportItem/useRejectReportItem 补 report id 路径段
+- [x] **晨醒模型（2026-08-13，commits 088db01/f85ea18）**：用户不常开程序时——每日报告改自然日语义（打开=晨醒，dbToday 幂等门唯一守卫，删 24h 进程计时）；进化页加「立即执行晋升」「立即生成报告」手动触发（检查更新式）+「进化总览」积压条（待审批/待晋升/已固化/待反思）。1107 tests + e2e green。
 - [x] **三缺口补齐（2026-08-13，commit a7e594b）**：① 待审批可见性——cockpit.optimization.pendingActions + 总览 risks 入口 + 导航「进化与报告」红点 + 报告块徽章；② 结构历史 UI 实体过滤；③ 晋升候选按公司过滤（domain/API/UI）。1101 tests + e2e 冒烟 green。
 
 ---
