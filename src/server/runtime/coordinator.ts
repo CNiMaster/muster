@@ -115,9 +115,11 @@ export class ProjectRuntimeCoordinator {
   /** 阶段一任务 1.3：Inspector 定时运行（默认每 60 秒扫描一次，5 分钟冷却去重）。 */
   private lastInspectorRun = 0;
   private readonly inspectorIntervalMs = 60_000;
-  /** 阶段五任务 5.1：运营优化报告定时生成（默认每 24 小时一次，AI 生成异步不阻塞 tick）。 */
-  private lastOptimizationReportRun = 0;
-  private readonly optimizationReportIntervalMs = 24 * 3600_000;
+  /** 阶段五任务 5.1：运营优化报告——自然日语义（"晨醒 = 打开程序"模型）。
+   *  每 60 秒问一次"今天生成过吗"，没生成就补：短开用户每天打开一次即触发当日报告+晋升批次，
+   *  长开用户午夜后首个检查进入新一天。AI 生成异步不阻塞 tick。 */
+  private lastDailyReportCheck = 0;
+  private readonly dailyReportCheckIntervalMs: number;
   /** E4.3 空闲自主反思扫描（默认关；每 60 秒检查一次，只入队不调 LLM）。 */
   private lastIdleReflectionRun = 0;
   private readonly idleReflectionIntervalMs = 60_000;
@@ -126,7 +128,11 @@ export class ProjectRuntimeCoordinator {
     private readonly db: DB,
     private readonly engine: TaskEngine,
     private readonly intervalMs = 2_000,
-  ) {}
+    /** 测试注入：报告生成器 + 自然日检查间隔（默认 60s；测试传 0 让每次 tick 都检查）。 */
+    private readonly options: { generator?: SetupGenerator; dailyReportCheckIntervalMs?: number } = {},
+  ) {
+    this.dailyReportCheckIntervalMs = options.dailyReportCheckIntervalMs ?? 60_000;
+  }
 
   async tick(options: { pump?: boolean } = {}): Promise<RuntimeTickResult> {
     if (this.ticking) {
@@ -157,9 +163,10 @@ export class ProjectRuntimeCoordinator {
       } catch (error) {
         log.warn('auto accept outsourcing scan failed', { error: error instanceof Error ? error.message : String(error) });
       }
-      // 阶段五任务 5.1：每 24 小时为 online 公司异步生成运营优化报告（不阻塞 tick）。
-      if (Date.now() - this.lastOptimizationReportRun >= this.optimizationReportIntervalMs) {
-        this.lastOptimizationReportRun = Date.now();
+      // 阶段五任务 5.1：自然日语义——"今天已生成"检查本身就是幂等门（scheduleOptimizationReports 内部
+      // 按 dbToday 跳过已生成的），此处只做 60 秒节流。进程启动后首个 tick 立即检查 = 打开即晨醒。
+      if (Date.now() - this.lastDailyReportCheck >= this.dailyReportCheckIntervalMs) {
+        this.lastDailyReportCheck = Date.now();
         try {
           this.scheduleOptimizationReports();
         } catch (error) {
@@ -471,7 +478,8 @@ export class ProjectRuntimeCoordinator {
     return accepted;
   }
 
-  /** 阶段五任务 5.1：为 online 公司异步生成运营优化报告（LLM 调用不阻塞 tick）。 */
+  /** 阶段五任务 5.1：为 online 公司异步生成运营优化报告（LLM 调用不阻塞 tick）。
+   *  自然日语义：dbToday 幂等门是唯一守卫——"今天已生成"就跳过，进程重启/短开都能正确补做当天。 */
   private scheduleOptimizationReports(): void {
     for (const company of listCompanies(this.db)) {
       if (company.state !== 'online') continue;
@@ -485,7 +493,7 @@ export class ProjectRuntimeCoordinator {
       queueMicrotask(() => {
         void (async () => {
           try {
-            const { reportId, promoted } = await runDailyOptimizationReport(this.db, company.id);
+            const { reportId, promoted } = await runDailyOptimizationReport(this.db, company.id, this.options);
             log.info('optimization report generated', { companyId: company.id, reportId });
             if (promoted.created > 0) {
               log.info('promotion candidates promoted to actions', {

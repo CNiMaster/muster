@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DB } from '../../src/server/db/client';
 import { makeTestDb, makeTempGitRepo } from './setup';
 import { createNovelCompany } from '../../src/server/domain/novel-template';
@@ -20,7 +20,7 @@ import { addDependency } from '../../src/server/domain/task';
 import { listInspectorAlerts, resolveInspectorAlert } from '../../src/server/domain/inspector';
 import { createMemoryCandidate, approveMemoryCandidate, listMemoryEntries } from '../../src/server/domain/memory';
 import { detectPromotions } from '../../src/server/domain/promotion';
-import { listReportActionItems } from '../../src/server/domain/optimization-report';
+import { listReportActionItems, listOptimizationReports } from '../../src/server/domain/optimization-report';
 import type { SetupGenerator } from '../../src/server/domain/setup-assistant';
 
 class NoopGenerator implements SetupGenerator {
@@ -332,5 +332,62 @@ describe('runDailyOptimizationReport（E4.1 每日报告→晋升落地串接）
     expect(items[0]!.status).toBe('executed');
     const personal = listMemoryEntries(db, { profileId: lead.profileId, scope: 'personal' });
     expect(personal.some((m) => m.fingerprint === 'design:color')).toBe(true);
+  });
+});
+
+describe('自然日报告调度（晨醒模型）', () => {
+  it('打开即晨醒：进程首个 tick 立即补做当日报告', async () => {
+    const novel = createNovelCompany(db, { name: 'co' });
+    transitionCompany(db, novel.company.id, 'online');
+    const coordinator = new ProjectRuntimeCoordinator(db, new TaskEngine(db, new FakeExecutor()), 2_000, { generator: new NoopGenerator(), dailyReportCheckIntervalMs: 0 });
+
+    await coordinator.tick({ pump: false });
+
+    await vi.waitFor(() => {
+      expect(listOptimizationReports(db, novel.company.id)).toHaveLength(1);
+    });
+  });
+
+  it('同日幂等：再多次 tick 不重复生成', async () => {
+    const novel = createNovelCompany(db, { name: 'co' });
+    transitionCompany(db, novel.company.id, 'online');
+    const coordinator = new ProjectRuntimeCoordinator(db, new TaskEngine(db, new FakeExecutor()), 2_000, { generator: new NoopGenerator(), dailyReportCheckIntervalMs: 0 });
+
+    await coordinator.tick({ pump: false });
+    await vi.waitFor(() => {
+      expect(listOptimizationReports(db, novel.company.id)).toHaveLength(1);
+    });
+    await coordinator.tick({ pump: false });
+    await new Promise((r) => setTimeout(r, 150));
+    expect(listOptimizationReports(db, novel.company.id)).toHaveLength(1);
+  });
+
+  it('跨天：昨天的报告不挡今天（自然日语义）', async () => {
+    const novel = createNovelCompany(db, { name: 'co' });
+    transitionCompany(db, novel.company.id, 'online');
+    const coordinator = new ProjectRuntimeCoordinator(db, new TaskEngine(db, new FakeExecutor()), 2_000, { generator: new NoopGenerator(), dailyReportCheckIntervalMs: 0 });
+
+    await coordinator.tick({ pump: false });
+    await vi.waitFor(() => {
+      expect(listOptimizationReports(db, novel.company.id)).toHaveLength(1);
+    });
+    // 把昨天的报告时间拨回昨天 → 下一次 tick 视为新的一天，再生成一份
+    const yesterday = new Date(Date.now() - 24 * 3600_000).toISOString();
+    db.prepare('UPDATE company_optimization_report SET created_at=? WHERE company_id=?').run(yesterday, novel.company.id);
+    await coordinator.tick({ pump: false });
+
+    await vi.waitFor(() => {
+      expect(listOptimizationReports(db, novel.company.id)).toHaveLength(2);
+    });
+  });
+
+  it('公司离线不生成', async () => {
+    const novel = createNovelCompany(db, { name: 'co' });
+    // 不上线
+    const coordinator = new ProjectRuntimeCoordinator(db, new TaskEngine(db, new FakeExecutor()), 2_000, { generator: new NoopGenerator(), dailyReportCheckIntervalMs: 0 });
+
+    await coordinator.tick({ pump: false });
+
+    expect(listOptimizationReports(db, novel.company.id)).toHaveLength(0);
   });
 });
