@@ -809,3 +809,13 @@
 .tab-overflow-menu a:hover { background: var(--surface-2, #f0f0f3); }
 /* 让主区不被顶部标签栏挤掉 */
 .app-shell { display: flex; flex-direction: column; min-height: 100vh; }
+
+/* 优化⑤：设置就绪清单 */
+.setup-checklist { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.setup-checklist li { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 8px; background: var(--surface-2, #f7f7f8); }
+.setup-checklist li.is-done { opacity: 0.65; }
+.setup-checklist-mark { width: 18px; text-align: center; color: var(--text-muted, #999); }
+.setup-checklist li.is-done .setup-checklist-mark { color: #34c759; }
+.setup-checklist li span:nth-child(2) { flex: 1; }
+.setup-checklist li a { font-size: 0.85em; }
+.workbench-context-static { font-size: 0.9em; color: var(--text, #111); padding: 2px 6px; white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }

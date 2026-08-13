@@ -1,6 +1,6 @@
 import type React from 'react';
 import { Link } from 'react-router-dom';
-import { useCompanies, useProjects } from '../../hooks/queries';
+import { useProjects } from '../../hooks/queries';
 
 export interface WorkbenchSectionOption {
   key: string;
@@ -64,16 +64,15 @@ export function WorkbenchContextSwitcher({ companyId, companyName, companyKind, 
   sectionLabel: string;
   novel?: boolean;
 }): React.ReactElement {
-  const { data: companies = [] } = useCompanies();
   const { data: projects = [] } = useProjects(companyId);
   const sections = projectId ? projectSectionOptions(projectId, projectTaskId, novel) : companySectionOptions(companyId);
-  const companyOptions = companies.map((company) => ({ key: company.id, label: company.name, href: `/companies/${company.id}` }));
   const projectOptions = projects.map((project) => ({ key: project.id, label: project.name, href: `/projects/${project.id}` }));
 
   return <nav className="workbench-context-switcher" aria-label="工作区快速切换">
     <SwitchMenu label={projectId ? '项目' : companyKind || '公司'} options={GLOBAL_OPTIONS} ariaLabel="切换功能分类" />
     <span className="workbench-context-separator" aria-hidden="true">/</span>
-    <SwitchMenu label={companyName} options={companyOptions} activeKey={companyId} ariaLabel="切换公司" />
+    {/* 优化⑥：公司切换已由顶部标签栏接管，此处只作静态上下文展示（去菜单层） */}
+    <span className="workbench-context-static">{companyName}</span>
     {projectId && projectName && <>
       <span className="workbench-context-separator" aria-hidden="true">/</span>
       <SwitchMenu label={projectName} options={projectOptions} activeKey={projectId} ariaLabel="切换项目" />

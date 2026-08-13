@@ -9,6 +9,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { ToolRegistryPanel } from '../components/settings/ToolRegistryPanel';
 import { CredentialStorePanel } from '../components/settings/CredentialStorePanel';
 import { BackupCenterPanel } from '../components/settings/BackupCenterPanel';
+import { SetupChecklist } from '../components/settings/SetupChecklist';
 
 export function SettingsPage(): React.ReactElement {
   const { data: settings, isLoading } = useSystemSettings();
@@ -117,6 +118,9 @@ export function SettingsPage(): React.ReactElement {
           <p className="subtitle">先确认默认执行器可以连接；需要时再展开高级参数。</p>
         </div>
       </header>
+
+      {/* 优化⑤：就绪清单——动态提示下一步配什么（全就绪自动隐藏） */}
+      <SetupChecklist />
 
       <Card title="常用设置" actions={<Badge tone={testResult?.overallSuccess ? 'ok' : 'neutral'}>{testResult?.overallSuccess ? '连接正常' : '尚未测试'}</Badge>}>
         <div className="settings-basic-grid">
