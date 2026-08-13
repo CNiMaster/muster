@@ -11,6 +11,7 @@ const teamItems: Array<{ key: CompanySectionKey; label: string; icon: string }> 
   { key: 'activity', label: '沟通与活动', icon: '◌' },
 ];
 const fixedItems: Array<{ key: CompanySectionKey; label: string; icon: string }> = [
+  { key: 'evolution', label: '进化与报告', icon: '◈' },
   { key: 'settings', label: '更多设置', icon: '…' },
 ];
 

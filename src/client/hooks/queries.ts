@@ -1973,3 +1973,132 @@ export function useCloseDiscussion() {
     },
   });
 }
+
+// ===== E5 公司进化（组织记忆控制面）=====
+
+export function useOptimizationReports(companyId: string) {
+  return useQuery({
+    queryKey: ['optimizationReports', companyId],
+    queryFn: () => api.get<any>(`/api/companies/${companyId}/optimization-reports`),
+  });
+}
+
+export function useOptimizationReport(id: string | null) {
+  return useQuery({
+    queryKey: ['optimizationReport', id],
+    enabled: !!id,
+    queryFn: () => api.get<any>(`/api/optimization-reports/${id}`),
+  });
+}
+
+export function useApproveReport() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, selectedItemIds }: { id: string; selectedItemIds?: string[] }) =>
+      api.post<any>(`/api/optimization-reports/${id}/approve`, { selectedItemIds }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ['optimizationReport', vars.id] });
+      qc.invalidateQueries({ queryKey: ['optimizationReports'] });
+    },
+  });
+}
+
+export function useDismissReport() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.post<any>(`/api/optimization-reports/${id}/dismiss`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['optimizationReport'] });
+      qc.invalidateQueries({ queryKey: ['optimizationReports'] });
+    },
+  });
+}
+
+export function useModifyReportItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, itemId, params }: { id: string; itemId: string; params: Record<string, unknown> }) =>
+      api.post<any>(`/api/optimization-reports/${id}/items/${itemId}/modify`, { params }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ['optimizationReport', vars.id] });
+    },
+  });
+}
+
+export function useRejectReportItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, itemId }: { id: string; itemId: string }) =>
+      api.post<any>(`/api/optimization-reports/${id}/items/${itemId}/reject`),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ['optimizationReport', vars.id] });
+    },
+  });
+}
+
+export function usePromotionCandidates(status?: string) {
+  return useQuery({
+    queryKey: ['promotionCandidates', status ?? 'all'],
+    queryFn: () => api.get<any>(`/api/promotion-candidates${status ? `?status=${status}` : ''}`),
+  });
+}
+
+export function useDismissCandidate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.post<any>(`/api/promotion-candidates/${id}/dismiss`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['promotionCandidates'] }),
+  });
+}
+
+export function useReopenCandidate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.post<any>(`/api/promotion-candidates/${id}/reopen`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['promotionCandidates'] }),
+  });
+}
+
+export function useStructureChanges(filters: { entityType?: string; entityId?: string } = {}) {
+  const qs = filters.entityType && filters.entityId
+    ? `?entityType=${encodeURIComponent(filters.entityType)}&entityId=${encodeURIComponent(filters.entityId)}`
+    : '?limit=50';
+  return useQuery({
+    queryKey: ['structureChanges', qs],
+    queryFn: () => api.get<any>(`/api/structure-changes${qs}`),
+  });
+}
+
+export function useRollbackStructure() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { entityType: string; entityId: string; toVersion: number }) =>
+      api.post<any>('/api/structure-changes/rollback', input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['structureChanges'] }),
+  });
+}
+
+export function useLocks() {
+  return useQuery({
+    queryKey: ['locks'],
+    queryFn: () => api.get<any>('/api/locks'),
+  });
+}
+
+export function useCreateLock() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { entityType: string; entityId: string; scope: 'personal' | 'org'; lockedFields?: string[]; reason?: string }) =>
+      api.post<any>('/api/locks', input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['locks'] }),
+  });
+}
+
+export function useDeleteLock() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { entityType: string; entityId: string; scope: 'personal' | 'org' }) =>
+      api.delete<any>(`/api/locks?entityType=${encodeURIComponent(input.entityType)}&entityId=${encodeURIComponent(input.entityId)}&scope=${input.scope}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['locks'] }),
+  });
+}

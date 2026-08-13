@@ -128,7 +128,7 @@ locksRouter.delete(
       entityType: z.string().min(1).max(100),
       entityId: z.string().min(1).max(200),
       scope: z.enum(['personal', 'org']),
-    }).parse(req.body);
+    }).parse(req.query);
     const db = getDb();
     unlockEntity(db, { entityType: input.entityType, entityId: input.entityId, scope: input.scope as LockScope });
     res.json({ ok: true, locks: listAllLocks(db) });

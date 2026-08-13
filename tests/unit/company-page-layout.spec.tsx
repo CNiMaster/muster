@@ -14,4 +14,13 @@ describe('company page sections', () => {
     expect(selected).toBe('team');
     view.unmount();
   });
+
+  it('E5：固定入口含「进化与报告」并可选中', async () => {
+    const user = userEvent.setup();
+    let selected = 'overview';
+    const view = render(<CompanyWorkNavigation active="overview" projectCount={0} employeeCount={0} attentionCount={0} onChange={(value) => { selected = value; }} />);
+    await user.click(screen.getByRole('button', { name: /进化与报告/ }));
+    expect(selected).toBe('evolution');
+    view.unmount();
+  });
 });
