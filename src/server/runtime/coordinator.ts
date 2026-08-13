@@ -120,6 +120,8 @@ export class ProjectRuntimeCoordinator {
    *  长开用户午夜后首个检查进入新一天。AI 生成异步不阻塞 tick。 */
   private lastDailyReportCheck = 0;
   private readonly dailyReportCheckIntervalMs: number;
+  /** 晨醒模型 in-flight 去重：正在异步生成报告的公司集合（防 >60s 的生成被重复排队）。 */
+  private readonly reportsInFlight = new Set<string>();
   /** E4.3 空闲自主反思扫描（默认关；每 60 秒检查一次，只入队不调 LLM）。 */
   private lastIdleReflectionRun = 0;
   private readonly idleReflectionIntervalMs = 60_000;
@@ -489,6 +491,10 @@ export class ProjectRuntimeCoordinator {
         .prepare(`SELECT 1 FROM company_optimization_report WHERE company_id=? AND created_at >= ? LIMIT 1`)
         .get(company.id, today);
       if (existing) continue;
+      // 进程内 in-flight 去重：AI 生成 fire-and-forget 可能 >60s（一次扫描间隔），
+      // 若不拦，下一次扫描会在报告落库前再排一个重复任务（同日两份报告）。
+      if (this.reportsInFlight.has(company.id)) continue;
+      this.reportsInFlight.add(company.id);
       // fire-and-forget：AI 生成可能耗时数秒，异步执行
       queueMicrotask(() => {
         void (async () => {
@@ -505,6 +511,8 @@ export class ProjectRuntimeCoordinator {
               companyId: company.id,
               error: error instanceof Error ? error.message : String(error),
             });
+          } finally {
+            this.reportsInFlight.delete(company.id);
           }
         })();
       });

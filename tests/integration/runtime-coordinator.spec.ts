@@ -29,6 +29,15 @@ class NoopGenerator implements SetupGenerator {
   }
 }
 
+/** 模拟慢生成（>一次扫描间隔）：验证 in-flight 去重不重复排同日报告。 */
+class SlowGenerator implements SetupGenerator {
+  constructor(private readonly delayMs: number) {}
+  async generate(input: { prompt: string; jsonSchema: Record<string, unknown> }): Promise<unknown> {
+    await new Promise((r) => setTimeout(r, this.delayMs));
+    return { summary: 'ok', actionItems: [] };
+  }
+}
+
 let db: DB;
 
 beforeEach(() => {
@@ -389,5 +398,21 @@ describe('自然日报告调度（晨醒模型）', () => {
     await coordinator.tick({ pump: false });
 
     expect(listOptimizationReports(db, novel.company.id)).toHaveLength(0);
+  });
+
+  it('in-flight 去重：慢生成（>扫描间隔）不会被下一次扫描重复排队', async () => {
+    const novel = createNovelCompany(db, { name: 'co' });
+    transitionCompany(db, novel.company.id, 'online');
+    const coordinator = new ProjectRuntimeCoordinator(db, new TaskEngine(db, new FakeExecutor()), 2_000, { generator: new SlowGenerator(120), dailyReportCheckIntervalMs: 0 });
+
+    // 连续两次 tick（间隔 0，但生成需 120ms 还没落库）：第二次必须因 in-flight 标记跳过
+    await coordinator.tick({ pump: false });
+    await coordinator.tick({ pump: false });
+
+    await vi.waitFor(() => {
+      expect(listOptimizationReports(db, novel.company.id)).toHaveLength(1);
+    });
+    await new Promise((r) => setTimeout(r, 200));
+    expect(listOptimizationReports(db, novel.company.id)).toHaveLength(1);
   });
 });
