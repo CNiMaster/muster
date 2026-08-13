@@ -30,6 +30,11 @@ export const ACTION_TYPES = [
   'remove_employee',
   'adjust_permission',
   'prompt_optimization',
+  // E3：组织记忆系统晋升流落地的 4 类结构变更
+  'update_user_preference',
+  'bind_habitual_tool',
+  'learn_workflow_pattern',
+  'adjust_skill_binding',
 ] as const;
 export type ActionType = (typeof ACTION_TYPES)[number];
 

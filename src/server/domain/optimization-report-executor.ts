@@ -25,6 +25,9 @@ import { bindEmployeeExecutorProfile, listExecutorProfiles } from './executor-pr
 import { listPermissionPolicies } from './permission';
 import { offboardEmployee } from './handover';
 import { postSystemMessage } from './conversation';
+import { createMemoryCandidate } from './memory';
+import { isFieldLocked } from './entity-lock';
+import { recordStructureChange } from './structure-versioning';
 import { log } from '../logger';
 
 export interface ActionExecutionResult {
@@ -257,6 +260,93 @@ function executeAction(
         return { ...base, status: 'executed', message: `已为「${agent.name}」追加一条工作原则（可回滚）` };
       }
       return { ...base, status: 'skipped', message: `「${agent.name}」提示词已包含该原则` };
+    }
+    case 'update_user_preference': {
+      // E3：把晋升的用户偏好画像落为 personal memory（author=user 自动批准，全量注入）。
+      const profileId = typeof params.profileId === 'string' ? params.profileId : '';
+      const content = typeof params.content === 'string' ? params.content : item.description;
+      const fingerprint = typeof params.fingerprint === 'string' ? params.fingerprint : undefined;
+      if (!profileId) return { ...base, status: 'failed', message: '缺少 profileId，无法写入偏好记忆' };
+      if (isFieldLocked(db, { entityType: 'memory_entry', entityId: profileId, field: fingerprint ?? 'preference' })) {
+        return { ...base, status: 'skipped', message: '该偏好已被锁定，跳过自动写入（解锁后再试）' };
+      }
+      createMemoryCandidate(db, {
+        profileId, scope: 'personal', content, author: 'user',
+        confidence: 0.9, canInfluence: true, allowAutoApprove: true, fingerprint: fingerprint ?? null,
+      });
+      recordStructureChange(db, {
+        entityType: 'memory_entry', entityId: profileId, field: fingerprint ?? 'preference',
+        oldValue: null, newValue: content, source: 'promotion:user-feedback',
+        reason: item.description,
+      });
+      return { ...base, status: 'executed', message: '已写入用户偏好记忆（personal，下次执行自动注入）' };
+    }
+    case 'bind_habitual_tool': {
+      // E3：把高频高成功工具固化为默认/推荐（tool_registry.is_default + capability_binding.recommended_tool_ids）。
+      const toolId = typeof params.toolId === 'string' ? params.toolId : '';
+      const capabilityId = typeof params.capabilityId === 'string' ? params.capabilityId : '';
+      if (!toolId) return { ...base, status: 'failed', message: '缺少 toolId' };
+      if (isFieldLocked(db, { entityType: 'tool_registry', entityId: toolId, field: 'is_default' })) {
+        return { ...base, status: 'skipped', message: `工具「${toolId}」已被锁定，跳过` };
+      }
+      const before = db.prepare('SELECT is_default FROM tool_registry WHERE id=?').get(toolId) as { is_default: number } | undefined;
+      db.prepare('UPDATE tool_registry SET is_default=1, updated_at=? WHERE id=?').run(nowIso(), toolId);
+      if (capabilityId) {
+        const row = db.prepare('SELECT recommended_tool_ids_json FROM capability_binding WHERE company_id=? AND capability_id=? ORDER BY id LIMIT 1')
+          .get(companyId, capabilityId) as { recommended_tool_ids_json: string } | undefined;
+        const list = JSON.parse(row?.recommended_tool_ids_json ?? '[]') as string[];
+        if (!list.includes(toolId)) {
+          list.unshift(toolId);
+          db.prepare('UPDATE capability_binding SET recommended_tool_ids_json=?, updated_at=? WHERE company_id=? AND capability_id=?')
+            .run(JSON.stringify(list), nowIso(), companyId, capabilityId);
+        }
+        recordStructureChange(db, {
+          entityType: 'capability_binding', entityId: capabilityId, field: 'recommended_tool_ids_json',
+          oldValue: row?.recommended_tool_ids_json ?? null, newValue: JSON.stringify(list),
+          source: 'promotion:lesson-cluster', reason: item.description,
+        });
+      }
+      recordStructureChange(db, {
+        entityType: 'tool_registry', entityId: toolId, field: 'is_default',
+        oldValue: String(before?.is_default ?? 0), newValue: '1',
+        source: 'promotion:lesson-cluster', reason: item.description,
+      });
+      return { ...base, status: 'executed', message: `已把「${toolId}」固化为默认工具` };
+    }
+    case 'learn_workflow_pattern': {
+      // E3：工作流改动风险高，默认只产建议不自动 apply（与现有 adjust_workflow 安全策略一致）。
+      return { ...base, status: 'skipped', message: '工作流模式建议已记录，请在「流程图」页确认后手动调整' };
+    }
+    case 'adjust_skill_binding': {
+      // E3：给员工能力绑定追加 skill（capability_binding.skill_ids_json）。
+      const agentName = typeof params.agentName === 'string' ? params.agentName : '';
+      const skillId = typeof params.skillId === 'string' ? params.skillId : '';
+      const capabilityId = typeof params.capabilityId === 'string' ? params.capabilityId : '';
+      if (companyOnline) {
+        return { ...base, status: 'pending_offline', message: '公司上班中，将在下班后调整技能绑定' };
+      }
+      const agent = findAgent(db, companyId, agentName, params);
+      if (!agent) return { ...base, status: 'failed', message: `未找到员工：${agentName}` };
+      if (!capabilityId) return { ...base, status: 'failed', message: '缺少 capabilityId' };
+      if (isFieldLocked(db, { entityType: 'capability_binding', entityId: capabilityId, field: 'skill_ids_json' })) {
+        return { ...base, status: 'skipped', message: `能力「${capabilityId}」技能绑定已锁定，跳过` };
+      }
+      const binding = db.prepare('SELECT id, skill_ids_json FROM capability_binding WHERE company_id=? AND employee_id=? AND capability_id=? ORDER BY id LIMIT 1')
+        .get(companyId, agent.id, capabilityId) as { id: string; skill_ids_json: string } | undefined;
+      if (!binding) return { ...base, status: 'failed', message: `员工「${agent.name}」未绑定能力「${capabilityId}」` };
+      const skills = JSON.parse(binding.skill_ids_json ?? '[]') as string[];
+      if (!skillId || skills.includes(skillId)) {
+        return { ...base, status: 'skipped', message: `「${agent.name}」已具备该技能或未指定 skillId` };
+      }
+      skills.push(skillId);
+      db.prepare('UPDATE capability_binding SET skill_ids_json=?, updated_at=? WHERE id=?')
+        .run(JSON.stringify(skills), nowIso(), binding.id);
+      recordStructureChange(db, {
+        entityType: 'capability_binding', entityId: capabilityId, field: 'skill_ids_json',
+        oldValue: binding.skill_ids_json, newValue: JSON.stringify(skills),
+        source: 'promotion:lesson-cluster', reason: item.description,
+      });
+      return { ...base, status: 'executed', message: `已为「${agent.name}」的能力「${capabilityId}」追加技能 ${skillId}` };
     }
     default:
       return { ...base, status: 'failed', message: `未知建议类型：${item.actionType}` };

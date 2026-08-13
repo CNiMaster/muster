@@ -30,6 +30,8 @@ export interface PromotionCandidate {
   sampleContents: string[];
   status: PromotionStatus;
   promotedAt: string | null;
+  /** E3.2：多数 entry 的公司归属；personal 跨公司画像时为 null（不进按公司报告）。 */
+  companyId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -37,7 +39,7 @@ export interface PromotionCandidate {
 type PromoRow = {
   id: string; fingerprint: string; scope: string; count: number; distinct_profiles: number;
   sample_entry_ids_json: string; sample_contents_json: string; status: string;
-  promoted_at: string | null; created_at: string; updated_at: string;
+  promoted_at: string | null; company_id: string | null; created_at: string; updated_at: string;
 };
 
 function rowToCandidate(r: PromoRow): PromotionCandidate {
@@ -47,6 +49,7 @@ function rowToCandidate(r: PromoRow): PromotionCandidate {
     sampleEntryIds: JSON.parse(r.sample_entry_ids_json) as string[],
     sampleContents: JSON.parse(r.sample_contents_json) as string[],
     status: r.status as PromotionStatus, promotedAt: r.promoted_at,
+    companyId: r.company_id,
     createdAt: r.created_at, updatedAt: r.updated_at,
   };
 }
@@ -80,6 +83,14 @@ export function detectPromotions(db: DB): { processed: number } {
       )
       .get(t.fingerprint) as { scope: string } | undefined;
     const scope = scopeRow?.scope ?? 'project';
+    // E3.2：多数 entry 的 company_id（personal 跨公司画像时为 null）
+    const coRow = db
+      .prepare(
+        `SELECT company_id FROM memory_entry WHERE fingerprint=? AND state='active' AND company_id IS NOT NULL
+         GROUP BY company_id ORDER BY COUNT(*) DESC LIMIT 1`,
+      )
+      .get(t.fingerprint) as { company_id: string | null } | undefined;
+    const companyId = coRow?.company_id ?? null;
     const samples = db
       .prepare(
         `SELECT id, content FROM memory_entry WHERE fingerprint=? AND state='active' LIMIT ?`,
@@ -88,12 +99,13 @@ export function detectPromotions(db: DB): { processed: number } {
     const r = db
       .prepare(
         `INSERT INTO promotion_candidate
-           (id, fingerprint, scope, count, distinct_profiles, sample_entry_ids_json, sample_contents_json, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+           (id, fingerprint, scope, count, distinct_profiles, sample_entry_ids_json, sample_contents_json, status, company_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
          ON CONFLICT(fingerprint) DO UPDATE SET
            count=excluded.count, distinct_profiles=excluded.distinct_profiles,
            sample_entry_ids_json=excluded.sample_entry_ids_json,
            sample_contents_json=excluded.sample_contents_json,
+           company_id=COALESCE(promotion_candidate.company_id, excluded.company_id),
            updated_at=excluded.updated_at
          WHERE promotion_candidate.status='pending'`,
       )
@@ -101,7 +113,7 @@ export function detectPromotions(db: DB): { processed: number } {
         shortId('pc_'), t.fingerprint, scope, t.cnt, t.dp,
         JSON.stringify(samples.map((s) => s.id)),
         JSON.stringify(samples.map((s) => s.content.slice(0, 120))),
-        now, now,
+        companyId, now, now,
       );
     if (r.changes > 0) processed++;
   }
@@ -125,4 +137,81 @@ export function getPromotionCandidate(db: DB, id: string): PromotionCandidate {
 export function markPromoted(db: DB, id: string): void {
   db.prepare("UPDATE promotion_candidate SET status='promoted', promoted_at=?, updated_at=? WHERE id=?")
     .run(nowIso(), nowIso(), id);
+}
+
+/**
+ * E3.2 fingerprint → actionType 映射规则：
+ * - scope=personal → update_user_preference（用户偏好画像）
+ * - domain 含 tool → bind_habitual_tool
+ * - domain 含 workflow → learn_workflow_pattern
+ * - 否则 → adjust_skill_binding（默认按能力缺口处理）
+ */
+function fingerprintToActionType(fingerprint: string, scope: string): string {
+  const fp = fingerprint.toLowerCase();
+  if (scope === 'personal') return 'update_user_preference';
+  if (fp.startsWith('tool:') || fp.includes(':tool')) return 'bind_habitual_tool';
+  if (fp.startsWith('workflow:') || fp.includes(':workflow') || fp.startsWith('handoff')) return 'learn_workflow_pattern';
+  return 'adjust_skill_binding';
+}
+
+/**
+ * E3.2 把某公司 pending 的 promotion_candidate 翻译成 report_action_item：
+ * 为该公司建一个"晋升批次" optimization-report，每个候选产一条 action item，
+ * 写后 markPromoted（幂等：已 promoted 的不再处理）。
+ * 返回新建的 action item 数。personal/跨公司（company_id=null）的候选不在此处理。
+ */
+export function promoteCandidatesToActions(db: DB, companyId: string): { reportId: string | null; created: number } {
+  const pending = db
+    .prepare("SELECT * FROM promotion_candidate WHERE company_id=? AND status='pending' ORDER BY updated_at")
+    .all(companyId) as PromoRow[];
+  if (pending.length === 0) return { reportId: null, created: 0 };
+
+  const reportId = shortId('opr_');
+  const now = nowIso();
+  const items = pending.map((c) => {
+    const candidate = rowToCandidate(c);
+    const actionType = fingerprintToActionType(candidate.fingerprint, candidate.scope);
+    const sample = candidate.sampleContents[0] ?? candidate.fingerprint;
+    return {
+      id: shortId('rai_'),
+      actionType,
+      description: `晋升建议（${candidate.fingerprint}，重复 ${candidate.count} 次${candidate.distinctProfiles > 1 ? `，跨 ${candidate.distinctProfiles} 人` : ''}）：${sample.slice(0, 80)}`,
+      reason: `自动晋升流：经验记忆 fingerprint=${candidate.fingerprint} 达阈值`,
+      expectedEffect: '把重复经验固化为结构',
+      params: minimalParams(actionType, candidate),
+    };
+  });
+
+  db.transaction(() => {
+    const summary = `晋升批次：${pending.length} 条经验记忆达阈值，建议固化为结构（自动生成）`;
+    db.prepare(
+      `INSERT INTO company_optimization_report (id, company_id, period_start, period_end, report_json, status, created_at, updated_at)
+       VALUES (?, ?, NULL, ?, ?, 'generated', ?, ?)`,
+    ).run(reportId, companyId, now, JSON.stringify({ summary, stats: { promotedCount: pending.length }, actionItems: items }), now, now);
+    for (const it of items) {
+      // E3.3 轻量分级：低风险（偏好/惯用工具）直接 approved（用户可回滚，executor 内有锁兜底）；
+      // 高风险（工作流/技能/增裁员工/权限）保持 pending 等用户审批。
+      const lowRisk = it.actionType === 'update_user_preference' || it.actionType === 'bind_habitual_tool';
+      db.prepare(
+        `INSERT INTO report_action_item (id, report_id, action_type, description, reason, expected_effect, params_json, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(it.id, reportId, it.actionType, it.description, it.reason, it.expectedEffect, JSON.stringify(it.params), lowRisk ? 'approved' : 'pending', now, now);
+    }
+    for (const c of pending) {
+      markPromoted(db, c.id);
+    }
+  })();
+
+  return { reportId, created: items.length };
+}
+
+/** 按 actionType 产最小 params（让 executor 能定位目标；具体 profileId/toolId 等留给用户在审批时补全）。 */
+function minimalParams(actionType: string, candidate: PromotionCandidate): Record<string, unknown> {
+  const base: Record<string, unknown> = { fingerprint: candidate.fingerprint };
+  if (actionType === 'update_user_preference') {
+    base.content = candidate.sampleContents[0] ?? candidate.fingerprint;
+  } else if (actionType === 'bind_habitual_tool') {
+    base.toolId = candidate.sampleEntryIds[0];
+  }
+  return base;
 }

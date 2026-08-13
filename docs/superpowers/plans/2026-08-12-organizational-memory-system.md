@@ -198,17 +198,37 @@
 
 ---
 
-# 批次 E3：建议层扩展（gated — 依赖 E2）
+# 批次 E3：建议层扩展（执行中）
 
-**准入条件：** E2 能稳定产出有价值的 promotion_candidate。
+**核心目标：** 把 promotion_candidate 衔接进既有 optimization-report 管线，并扩 4 个 actionType + apply 分支，让晋升流产出的候选能真正落地为结构变更。
 
-**方向（待细化）：**
-- `report_action_item.actionType` 扩 4 类：`update_user_preference` / `bind_habitual_tool` / `learn_workflow_pattern` / `adjust_skill_binding`（`src/shared/` + `optimization-report.ts:24-33`）。
-- `optimization-report-executor.ts:115-263` 扩 apply 分支：偏好→`memory_entry`(personal) / 工具→`tool_registry.is_default`+`capability_binding.recommended_tool_ids` / 工作流→建议（默认不自动 apply）/ 技能→`capability_binding.skill_ids`。
-- AI 预筛分级（低风险自动、高风险审批），复用 `ai-approval.ts`。
-- 工作流边运行时统计列 `workflow_edge.traversal_count` + 从 task 交接链（`dispatcher_agent_id`/`assignee_agent_id`）生成工作流建议。
+## Task E3.1 — 扩 actionType 枚举 + executor 4 个 apply 分支
+- [ ] `optimization-report.ts:24` ACTION_TYPES 加 4 类：`update_user_preference` / `bind_habitual_tool` / `learn_workflow_pattern` / `adjust_skill_binding`
+- [ ] `optimization-report-executor.ts:115` executeAction switch 加 4 分支：
+  - `update_user_preference` → createMemoryCandidate(scope=personal, author=user)（复用 reflection 偏好通路）
+  - `bind_habitual_tool` → tool_registry.is_default=1 + capability_binding.recommended_tool_ids 重排
+  - `learn_workflow_pattern` → 默认 skipped（只产建议，提示手动改流程图，与现有 adjust_workflow 一致的安全策略）
+  - `adjust_skill_binding` → capability_binding.skill_ids_json 追加
+- [ ] 每个分支 apply 前查 isFieldLocked，命中则 skipped（复用 E2.4）
+- [ ] 每个分支 apply 后调 recordStructureChange（复用 E2.3 版本化）
+- Test tests/integration/optimization-report-executor-e3.spec.ts
+- Commit: `feat(E3): 扩 4 actionType + executor apply 分支（偏好/惯用工具/工作流/技能）`
 
-**E3 准出：** 四类 actionType 可生成、可落地（自动或审批）、可在 executor 执行；工作流建议基于真实交接频次。
+## Task E3.2 — promotion_candidate → report_action_item 衔接
+- [ ] promotion.ts 新增 `promoteCandidatesToActions(db, companyId)`：读 pending promotion_candidate，按 scope/domain 翻译成对应 actionType 的 report_action_item（附在当日 optimization-report 或独立批次），写后 markPromoted
+- [ ] fingerprint→actionType 映射规则：scope=personal→update_user_preference；domain 含 tool→bind_habitual_tool；domain 含 workflow→learn_workflow_pattern；否则→adjust_skill_binding（附 sample contents 作 reason）
+- [ ] 由 coordinator 在 optimization-report 生成后调用（复用每日调度）
+- Test tests/integration/promotion-to-action.spec.ts
+- Commit: `feat(E3): promotion_candidate → report_action_item 衔接`
+
+## Task E3.3 — AI 预筛分级（低风险自动 / 高风险审批）+ 锁检查
+- [ ] 复用 ai-approval.ts：低风险（偏好/惯用工具/提示词）AI 预筛后自动 approved；高风险（工作流/技能绑定/增裁员工/权限）保持 pending 等用户审批
+- [ ] executeApprovedActions 前对每个 item 跑 isFieldLocked，命中跳过 + 记录原因
+- [ ] 自动落地项的 result 写 structure_change_log（已在 E3.1 做）+ 通知公司对话窗
+- Test 补 AI 预筛分级 + 锁跳过用例
+- Commit: `feat(E3): AI 预筛分级 + 锁检查`
+
+**E3 准出：** promotion_candidate 可翻译为 4 类 actionType 并落地（低风险自动/高风险审批）；apply 受锁保护、有版本审计；用户可在公司对话窗看到自动变更结果。工作流边运行时统计（traversal_count）留作可选增强，不阻塞本批次。
 
 ---
 
