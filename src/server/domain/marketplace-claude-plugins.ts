@@ -70,14 +70,20 @@ async function resolvePluginMeta(name: string, f: ClaudeFetch): Promise<PluginMe
 
 /** 列 commands/ 与 agents/ 下的 markdown 指令文件（上限 FETCH_LIMIT）。 */
 async function listInstructionFiles(dirPath: string, f: ClaudeFetch): Promise<string[]> {
-  const url = `https://api.github.com/repos/anthropics/claude-code/contents/${encodeURIComponent(dirPath)}?ref=${CLAUDE_CODE_SHA}`;
+  // 逐段编码路径（encodeURIComponent 整路径会把 / 编成 %2F，GitHub API 兼容性不可靠）
+  const encodedPath = dirPath.split('/').map((seg) => encodeURIComponent(seg)).join('/');
+  const url = `https://api.github.com/repos/anthropics/claude-code/contents/${encodedPath}?ref=${CLAUDE_CODE_SHA}`;
   const res = await f(url, { signal: AbortSignal.timeout(12_000) });
   if (!res.ok) return [];
   const entries = (await res.json()) as DirEntry[] | { message?: string };
   if (!Array.isArray(entries)) return [];
   return entries
     .filter((e) => e.type === 'file' && e.name.endsWith('.md'))
-    .map((e) => e.download_url ?? `https://raw.githubusercontent.com/anthropics/claude-code/${CLAUDE_CODE_SHA}/${dirPath}/${e.name}`)
+    .map(
+      (e) =>
+        e.download_url ??
+        `https://raw.githubusercontent.com/anthropics/claude-code/${CLAUDE_CODE_SHA}/${encodedPath}/${encodeURIComponent(e.name)}`,
+    )
     .slice(0, FETCH_LIMIT);
 }
 

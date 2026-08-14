@@ -118,4 +118,29 @@ describe('installClaudeCodePlugin（安装为 skill 注入）', () => {
       installClaudeCodePlugin(db, 'commit-commands', { level: 'company', companyId: company.id }, { fetcher: bad }),
     ).rejects.toMatchObject({ code: 'validation' });
   });
+
+  it('contents 条目缺 download_url 时回退 raw 拼接（逐段编码），仍能组装 body', async () => {
+    const { db } = makeTestDb();
+    const company = createCompany(db, { name: 'C' });
+    // contents 返回不带 download_url 的条目 → fallback 拼接 raw URL
+    const f = mockFetcher();
+    const noDownloadUrl = (async (url: string) => {
+      if (url.includes('/contents/')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [{ type: 'file', name: 'commit.md' }],
+          text: async () => '',
+        };
+      }
+      if (url.includes('raw.githubusercontent.com') && url.endsWith('commit.md')) {
+        return { ok: true, status: 200, json: async () => ({}), text: async () => '# 提交工作流指令' };
+      }
+      return f(url);
+    }) as ClaudeFetch;
+    const plugin = await installClaudeCodePlugin(db, 'commit-commands', { level: 'company', companyId: company.id }, { fetcher: noDownloadUrl });
+    if (plugin.manifest.kind === 'skill') {
+      expect(plugin.manifest.skill.body).toContain('提交工作流指令');
+    }
+  });
 });
