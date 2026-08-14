@@ -328,6 +328,7 @@ export function finalizeDebate(db: DB, debateId: string, verdict: DebateVerdict)
   } else if (debate.originTaskId) {
     // 升级用户：任务保持 waiting_input；把致命伤补进选项 cons + 任务消息留差评清单
     const origin = getTask(db, debate.originTaskId);
+    // 用户已抢先回答/取消时不再打扰（对话播报也一并跳过——对着已解决的任务喊"拍板"是误导）
     if (origin.state === 'waiting_input') {
       const enriched = origin.questionOptions?.map((o) => {
         const flaw = verdict.flaws.find((f) => f.optionId === o.id)?.flaw;
@@ -341,18 +342,18 @@ export function finalizeDebate(db: DB, debateId: string, verdict: DebateVerdict)
         role: 'dispatch',
         content: `[评审庭未决] 置信 ${verdict.confidence.toFixed(2)} 低于阈值 ${minConfidence}，需要你拍板。\n${formatOptionsContent(debate.question, debate.options, verdict.flaws)}\n裁决理由：${verdict.rationale.slice(0, 300)}`,
       });
+      if (canPost) {
+        postSystemMessage(db, {
+          scopeKind: scopeInfo.k as 'company' | 'project',
+          scopeId: scopeInfo.s!,
+          role: 'assistant',
+          author: getJudgeAgentId(db, debate.companyId) ?? 'system',
+          content: `[需要你拍板] ${formatOptionsContent(debate.question, debate.options, verdict.flaws)}`,
+          refTaskId: debate.originTaskId,
+        });
+      }
     }
     appendTaskEvent(db, debate.originTaskId, 'debate_escalated', { debateId, confidence: verdict.confidence });
-    if (canPost) {
-      postSystemMessage(db, {
-        scopeKind: scopeInfo.k as 'company' | 'project',
-        scopeId: scopeInfo.s!,
-        role: 'assistant',
-        author: getJudgeAgentId(db, debate.companyId) ?? 'system',
-        content: `[需要你拍板] ${formatOptionsContent(debate.question, debate.options, verdict.flaws)}`,
-        refTaskId: debate.originTaskId,
-      });
-    }
   }
 
   dismissDebaters(db, debate.originTaskId ?? '');

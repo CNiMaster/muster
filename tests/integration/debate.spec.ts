@@ -188,6 +188,23 @@ describe('裁决分流', () => {
     const linked = db.prepare("SELECT debate_id FROM decision_record WHERE source='user'").get() as { debate_id: string | null };
     expect(linked.debate_id).toBe(started.debateId);
   });
+
+  it('用户已抢先回答后辩论才升级 → 不再打扰（无对话播报/无任务消息），仅事件留痕', () => {
+    const { company, origin, started } = makeOpenDebate();
+    answerClarification(db, origin.id, { optionId: 'b' }); // 用户手动选了 B，任务已 queued
+    const before = listMessages(db, 'company', company.id).length;
+    const msgBefore = listTaskMessages(db, origin.id).length;
+    finalizeDebate(db, started.debateId, {
+      recommendedOptionId: 'a',
+      confidence: 0.3,
+      rationale: '接近。',
+      flaws: [{ optionId: 'a', flaw: 'x' }],
+    });
+    expect(getTask(db, origin.id).state).toBe('queued'); // 保持用户的选择
+    expect(listMessages(db, 'company', company.id).length).toBe(before); // 无新对话消息
+    expect(listTaskMessages(db, origin.id)).toHaveLength(msgBefore); // 无新任务消息（不再打扰）
+    expect(listTaskEvents(db, origin.id).some((e) => e.kind === 'debate_escalated')).toBe(true); // 仅事件留痕
+  });
 });
 
 describe('引擎端到端：两难自动进评审庭 → 辩论 → 裁决', () => {
