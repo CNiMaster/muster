@@ -35,7 +35,7 @@
 
 - [x] migration：`marketplace_source` 表（kind official|manual / reviewed 未审核标记）
 - [x] MCP Registry 客户端：`GET https://registry.modelcontextprotocol.io/v0/servers`（分页/搜索/超时降级）→ 归一化 MarketplaceSearchEntry（namespace 名）
-- [x] 官方 repo 拉取：anthropics/skills 目录清单（claude-code marketplace.json 因网络抖动未实装——与 Claude Code 插件包同列后续，预置条目已覆盖其技能价值）
+- [x] 官方 repo 拉取：anthropics/skills 目录清单 + **Claude Code 官方插件 marketplace.json**（pin commit sha；13 个官方插件入目录，可一键安装）
 - [x] `GET /api/plugins/marketplace/catalog?q=`：返回来源分组（presets/registry/skillsCatalog）+ 已装/冲突标记
 - [x] 手动添加来源 API：official 白名单常驻展示；manual 未审核只登记展示，**搜索层绝不自动抓取手动端点（防 SSRF）**
 - [x] 商城页全局搜索框：策展命中可安装；Registry/skills 目录命中浏览型（来源链接，安装后续开放）
@@ -55,4 +55,4 @@ M1（数据+去重+装管道）→ M2（页面）→ M3（搜索来源）→ M4�
 
 - 拉取上游失败（GitHub raw/registry 网络）→ 降级为「暂不可安装/空结果」，不阻塞商城浏览。
 - pin 版本拉取：raw URL 带 commit sha；上游变化 → 安装报「来源已变更」而非静默装错。
-- 不做（本轮）：智能体包（员工系统另议）、~/.zcode 插件缓存扫描（已拍板）、社区站镜像、插件卸载/更新 UI、非预置条目的商城安装（M3 仅浏览，安装管道已有，开放留后续）。
+- 不做（本轮）：智能体包（员工系统另议）、~/.zcode 插件缓存扫描（已拍板）、社区站镜像、插件卸载/更新 UI、MCP Registry 条目的商城安装（M3 仅浏览；预置与 Claude Code 插件已可装）。

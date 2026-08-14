@@ -1,0 +1,121 @@
+/**
+ * Claude Code 官方插件集成测试（M3 补完）。
+ * 全部 mock fetcher：目录（marketplace.json）/ 元数据 / commands 目录列表 / 指令文件正文 /
+ * 三层去重 / 降级。
+ */
+import { describe, expect, it } from 'vitest';
+import { createCompany } from '../../src/server/domain/company';
+import { installPlugin } from '../../src/server/domain/plugin-install';
+import { listClaudeCodePluginsCatalog } from '../../src/server/domain/marketplace-search';
+import { installClaudeCodePlugin, type ClaudeFetch } from '../../src/server/domain/marketplace-claude-plugins';
+import { makeTestDb } from './setup';
+
+function mockFetcher(overrides: { mktBody?: unknown; commandFiles?: Record<string, string> } = {}): ClaudeFetch {
+  const commandFiles = overrides.commandFiles ?? { 'https://example.com/commit.md': '# 提交工作流指令' };
+  return async (url: string) => {
+    if (url.includes('marketplace.json')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => overrides.mktBody ?? {
+          plugins: [{ name: 'commit-commands', description: 'git 提交工作流', source: './plugins/commit-commands' }],
+        },
+        text: async () => '',
+      };
+    }
+    if (url.includes('/contents/')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => [{ type: 'file', name: 'commit.md', download_url: 'https://example.com/commit.md' }],
+        text: async () => '',
+      };
+    }
+    if (commandFiles[url] !== undefined) {
+      return { ok: true, status: 200, json: async () => ({}), text: async () => commandFiles[url] };
+    }
+    return { ok: false, status: 404, json: async () => ({}), text: async () => '' };
+  };
+}
+
+describe('listClaudeCodePluginsCatalog（官方插件目录）', () => {
+  it('归一化 marketplace.json 条目 + 状态标记', async () => {
+    const { db } = makeTestDb();
+    const out = await listClaudeCodePluginsCatalog(db, { fetcher: mockFetcher() });
+    expect(out).toHaveLength(1);
+    expect(out[0].name).toBe('commit-commands');
+    expect(out[0].source).toBe('claude-code-plugins');
+    expect(out[0].trust).toBe('official');
+    expect(out[0].installState).toBe('installable');
+  });
+
+  it('网络失败 → 降级空数组', async () => {
+    const { db } = makeTestDb();
+    const failing = (async () => { throw new Error('network down'); }) as unknown as ClaudeFetch;
+    expect(await listClaudeCodePluginsCatalog(db, { fetcher: failing })).toEqual([]);
+  });
+});
+
+describe('installClaudeCodePlugin（安装为 skill 注入）', () => {
+  it('组装 plugin 描述 + 命令正文，落库为 skill 插件', async () => {
+    const { db } = makeTestDb();
+    const company = createCompany(db, { name: 'C' });
+    const plugin = await installClaudeCodePlugin(db, 'commit-commands', { level: 'company', companyId: company.id }, { fetcher: mockFetcher() });
+    expect(plugin.kind).toBe('skill');
+    expect(plugin.name).toBe('commit-commands');
+    expect(plugin.source).toEqual({ kind: 'marketplace', registry: 'claude-code-plugins', ref: 'commit-commands' });
+    if (plugin.manifest.kind === 'skill') {
+      expect(plugin.manifest.skill.body).toContain('Claude Code 官方插件：commit-commands');
+      expect(plugin.manifest.skill.body).toContain('提交工作流指令');
+    }
+  });
+
+  it('同源重复安装 → CONFLICT', async () => {
+    const { db } = makeTestDb();
+    const company = createCompany(db, { name: 'C' });
+    await installClaudeCodePlugin(db, 'commit-commands', { level: 'company', companyId: company.id }, { fetcher: mockFetcher() });
+    await expect(
+      installClaudeCodePlugin(db, 'commit-commands', { level: 'company', companyId: company.id }, { fetcher: mockFetcher() }),
+    ).rejects.toMatchObject({ code: 'conflict' });
+  });
+
+  it('异源同名：不替换 CONFLICT；replaceExisting 装新停旧', async () => {
+    const { db } = makeTestDb();
+    const company = createCompany(db, { name: 'C' });
+    const old = installPlugin(db, {
+      name: 'commit-commands',
+      kind: 'skill',
+      source: { kind: 'builtin' },
+      scope: { level: 'platform' },
+      manifest: { kind: 'skill', skill: { body: '# 旧版' } },
+    });
+    await expect(
+      installClaudeCodePlugin(db, 'commit-commands', { level: 'company', companyId: company.id }, { fetcher: mockFetcher() }),
+    ).rejects.toMatchObject({ code: 'conflict' });
+    const fresh = await installClaudeCodePlugin(
+      db,
+      'commit-commands',
+      { level: 'company', companyId: company.id },
+      { fetcher: mockFetcher(), replaceExisting: true },
+    );
+    expect(fresh.id).not.toBe(old.id);
+    const disabled = db.prepare('SELECT decision FROM company_plugin WHERE company_id = ? AND plugin_id = ?').get(company.id, old.id) as { decision: string } | undefined;
+    expect(disabled?.decision).toBe('disabled');
+  });
+
+  it('目录中不存在的插件 → NOT_FOUND；坏目录 → VALIDATION', async () => {
+    const { db } = makeTestDb();
+    const company = createCompany(db, { name: 'C' });
+    await expect(
+      installClaudeCodePlugin(db, 'nope', { level: 'company', companyId: company.id }, { fetcher: mockFetcher() }),
+    ).rejects.toMatchObject({ code: 'not_found' });
+    const failing = mockFetcher();
+    const bad = (async (url: string) => {
+      if (url.includes('marketplace.json')) return { ok: false, status: 503, json: async () => ({}), text: async () => '' };
+      return failing(url);
+    }) as ClaudeFetch;
+    await expect(
+      installClaudeCodePlugin(db, 'commit-commands', { level: 'company', companyId: company.id }, { fetcher: bad }),
+    ).rejects.toMatchObject({ code: 'validation' });
+  });
+});

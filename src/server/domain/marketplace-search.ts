@@ -21,9 +21,9 @@ export interface MarketplaceSearchEntry {
   name: string;
   description: string;
   /** 来源分组。 */
-  source: 'preset' | 'mcp-registry' | 'anthropics-skills';
+  source: 'preset' | 'mcp-registry' | 'anthropics-skills' | 'claude-code-plugins';
   kind: 'skill' | 'mcp-server';
-  /** 安装定位（registry namespace / 仓库路径 / preset id）。 */
+  /** 安装定位（registry namespace / 仓库路径 / preset id / 插件名）。 */
   ref: string;
   /** 来源信任级别（官方策展 / 官方目录 / 社区）。 */
   trust: 'curated' | 'official' | 'community';
@@ -35,6 +35,8 @@ export interface MarketplaceSearchEntry {
 
 const REGISTRY_BASE = 'https://registry.modelcontextprotocol.io';
 const ANTHROPICS_SKILLS_SHA = 'f6656c1256d5a8adfa37db9110046ef20bac644c';
+/** anthropics/claude-code 官方插件 marketplace 的 pin（commit sha，不可变）。 */
+const CLAUDE_CODE_SHA = '1f6015b5d578adf79c8527443328a216d6b6a3f1';
 
 /** 注入型 fetch（测试用）。 */
 export type FetchLike = (url: string, init?: { signal?: AbortSignal }) => Promise<{ ok: boolean; status: number; text: () => Promise<string>; json: () => Promise<unknown> }>;
@@ -161,17 +163,64 @@ export async function listAnthropicsSkillsCatalog(
   }
 }
 
-/** 统一搜索：预置（同步）+ MCP Registry + anthropics skills（异步）。请求内只扫一遍全量插件。 */
+/** Claude Code 官方插件 marketplace（.claude-plugin/marketplace.json）。失败降级为空。 */
+export async function listClaudeCodePluginsCatalog(
+  db: DB,
+  options: { fetcher?: FetchLike; index?: Map<string, Plugin[]> } = {},
+): Promise<MarketplaceSearchEntry[]> {
+  const idx = options.index ?? buildPluginNameIndex(db);
+  const f = options.fetcher ?? (globalThis.fetch as unknown as FetchLike);
+  try {
+    const url = `https://raw.githubusercontent.com/anthropics/claude-code/${CLAUDE_CODE_SHA}/.claude-plugin/marketplace.json`;
+    const res = await f(url, { signal: AbortSignal.timeout(12_000) });
+    if (!res.ok) return [];
+    const body = (await res.json()) as { plugins?: Array<{ name?: string; description?: string; category?: string }> };
+    return (body.plugins ?? []).map((p) => {
+      const name = p.name ?? 'unknown';
+      const st = stateFor(idx, 'skill', name);
+      return {
+        id: `claude-code-plugins:${name}`,
+        name,
+        description: p.description ?? '',
+        source: 'claude-code-plugins' as const,
+        kind: 'skill' as const,
+        ref: name,
+        trust: 'official' as const,
+        installState: st.installState,
+        existingId: st.existingId,
+      };
+    });
+  } catch (e) {
+    log.warn('claude code plugins catalog degraded', { err: e instanceof Error ? e.message : String(e) });
+    return [];
+  }
+}
+
+/** 统一搜索：预置（同步）+ MCP Registry + anthropics skills + Claude Code 插件（异步）。请求内只扫一遍全量插件。 */
 export async function searchMarketplaceCatalog(
   db: DB,
   query: string,
   options: { fetcher?: FetchLike } = {},
-): Promise<{ presets: MarketplaceSearchEntry[]; registry: MarketplaceSearchEntry[]; skillsCatalog: MarketplaceSearchEntry[] }> {
+): Promise<{
+  presets: MarketplaceSearchEntry[];
+  registry: MarketplaceSearchEntry[];
+  skillsCatalog: MarketplaceSearchEntry[];
+  claudePlugins: MarketplaceSearchEntry[];
+}> {
   const index = buildPluginNameIndex(db);
   const presets = searchPresets(db, query, index);
-  const [registry, skillsCatalog] = await Promise.all([
+  const q = query.trim().toLowerCase();
+  const [registry, skillsCatalog, claudePlugins] = await Promise.all([
     searchMcpRegistry(db, query, { ...options, index }),
     listAnthropicsSkillsCatalog(db, { ...options, index }),
+    listClaudeCodePluginsCatalog(db, { ...options, index }),
   ]);
-  return { presets, registry, skillsCatalog };
+  const filterByQuery = (e: MarketplaceSearchEntry): boolean =>
+    !q || e.name.toLowerCase().includes(q) || e.description.toLowerCase().includes(q);
+  return {
+    presets,
+    registry,
+    skillsCatalog: skillsCatalog.filter(filterByQuery),
+    claudePlugins: claudePlugins.filter(filterByQuery),
+  };
 }

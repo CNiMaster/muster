@@ -1780,7 +1780,7 @@ export function useInstallPreset() {
   });
 }
 
-/** M3 官方源搜索（预置 + MCP Registry + anthropics skills 目录），分组 + 安装状态。 */
+/** M3 官方源搜索（预置 + MCP Registry + anthropics skills + Claude Code 插件），分组 + 安装状态。 */
 export function useMarketplaceCatalog(query: string) {
   return useQuery({
     queryKey: ['marketplace-catalog', query],
@@ -1789,8 +1789,26 @@ export function useMarketplaceCatalog(query: string) {
         presets: MarketplaceSearchEntry[];
         registry: MarketplaceSearchEntry[];
         skillsCatalog: MarketplaceSearchEntry[];
+        claudePlugins: MarketplaceSearchEntry[];
       }>(`/api/plugins/marketplace/catalog?q=${encodeURIComponent(query)}`),
     enabled: query.trim().length > 0,
+  });
+}
+
+/** 安装 Claude Code 官方插件（映射为 skill 注入；平台 scope 默认）。 */
+export function useInstallClaudePlugin() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { pluginName: string; scope?: { level: 'platform' | 'company'; companyId?: string }; replaceExisting?: boolean }) =>
+      api.post<Plugin>('/api/plugins/marketplace/install-claude-plugin', {
+        pluginName: input.pluginName,
+        scope: input.scope ?? { level: 'platform' },
+        replaceExisting: input.replaceExisting,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['marketplace-catalog'] });
+      qc.invalidateQueries({ queryKey: ['plugins'] });
+    },
   });
 }
 

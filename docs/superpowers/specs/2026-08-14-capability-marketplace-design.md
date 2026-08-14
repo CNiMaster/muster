@@ -66,7 +66,7 @@ interface MarketplacePreset {
 }
 ```
 
-首版策展清单（M1 数据，可增删）：
+首版策展清单（M1 数据，可增删；Claude Code 官方插件目录在 M3 以 marketplace.json 接入——13 个插件可浏览、安装映射为 skill 注入）：
 
 - Skill（来自 `anthropics/skills`，Document Skills 分类）：`docx` / `pdf` / `pptx` / `xlsx`（官方文档技能四件套）
 - MCP（来自 `modelcontextprotocol/servers` 官方参考实现）：`filesystem`（@modelcontextprotocol/server-filesystem）、`git`（uvx mcp-server-git）、`github`（@modelcontextprotocol/server-github）、`postgres`（@modelcontextprotocol/server-postgres）

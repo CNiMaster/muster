@@ -303,7 +303,7 @@ export interface MarketplaceSearchEntry {
   id: string;
   name: string;
   description: string;
-  source: 'preset' | 'mcp-registry' | 'anthropics-skills';
+  source: 'preset' | 'mcp-registry' | 'anthropics-skills' | 'claude-code-plugins';
   kind: 'skill' | 'mcp-server';
   ref: string;
   trust: 'curated' | 'official' | 'community';

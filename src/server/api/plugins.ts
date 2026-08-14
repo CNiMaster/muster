@@ -39,6 +39,7 @@ import { searchMarketplace, installMarketplaceEntry, type MarketplaceEntry, type
 import { listMarketplacePresets, installPreset } from '../domain/marketplace-presets';
 import { searchMarketplaceCatalog } from '../domain/marketplace-search';
 import { listMarketplaceSources, addMarketplaceSource } from '../domain/marketplace-sources';
+import { installClaudeCodePlugin } from '../domain/marketplace-claude-plugins';
 import { authorSkill } from '../domain/skill-author';
 import { getCompany } from '../domain/company';
 import { realtime } from '../realtime';
@@ -341,6 +342,33 @@ pluginsRouter.post(
     });
     realtime.publish(makeLifecycleEvent('plugin.installed', { pluginId: plugin.id }, {}));
     res.status(201).json({ ...plugin, presetId: input.presetId });
+  }),
+);
+
+/** Claude Code 官方插件安装（映射为 skill：plugin 描述 + commands/agents 指令组装注入）。 */
+const installClaudePluginSchema = z.object({
+  pluginName: z.string().min(1),
+  scope: z.discriminatedUnion('level', [
+    z.object({ level: z.literal('platform') }),
+    z.object({ level: z.literal('company'), companyId: z.string().min(1) }),
+  ]),
+  replaceExisting: z.boolean().optional(),
+});
+
+pluginsRouter.post(
+  '/marketplace/install-claude-plugin',
+  asyncHandler(async (req, res) => {
+    const input = installClaudePluginSchema.parse(req.body);
+    const db = getDb();
+    if (input.scope.level === 'company') assertCompanyOff(db, input.scope.companyId);
+    const scope = input.scope.level === 'platform'
+      ? { level: 'platform' as const }
+      : { level: 'company' as const, companyId: input.scope.companyId };
+    const plugin = await installClaudeCodePlugin(db, input.pluginName, scope, {
+      replaceExisting: input.replaceExisting,
+    });
+    realtime.publish(makeLifecycleEvent('plugin.installed', { pluginId: plugin.id }, {}));
+    res.status(201).json({ ...plugin, pluginName: input.pluginName });
   }),
 );
 

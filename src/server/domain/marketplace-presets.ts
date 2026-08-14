@@ -232,7 +232,7 @@ export async function installPreset(
 }
 
 /** 在所选 scope 停用旧同名条目（幂等）。实体行：company 写 decision / platform 置 status；视图行：company 直写覆盖行。 */
-function disableExistingForScope(
+export function disableExistingForScope(
   db: DB,
   existingIds: string[],
   scope: PresetInstallScope,
@@ -266,7 +266,7 @@ function disableExistingForScope(
   }
 }
 
-function isEntityId(id: string): boolean {
+export function isEntityId(id: string): boolean {
   return id.startsWith('plg_');
 }
 

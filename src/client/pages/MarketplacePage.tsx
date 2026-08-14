@@ -11,7 +11,7 @@
 import { useMemo, useState } from 'react';
 import type React from 'react';
 import { Link } from 'react-router-dom';
-import { useMarketplacePresets, useInstallPreset, useMarketplaceCatalog } from '../hooks/queries';
+import { useMarketplacePresets, useInstallPreset, useMarketplaceCatalog, useInstallClaudePlugin } from '../hooks/queries';
 import type { MarketplacePresetView, MarketplaceSearchEntry, PresetInstallState } from '../api/types';
 import { PRESET_CATEGORIES, type PresetCategory } from '../../shared/marketplace-presets';
 import { Badge } from '../components/Badge';
@@ -123,12 +123,28 @@ function CategoryGroup({ category, presets }: { category: PresetCategory; preset
   );
 }
 
-/** 非预置 catalog 条目（registry / 官方 skills 目录）：浏览型行，无安装按钮（M3 仅浏览，安装留后续）。 */
+/** 非预置 catalog 条目（registry / 官方 skills 目录 / Claude Code 插件）：浏览型行；Claude Code 插件可安装。 */
 function CatalogRow({ entry }: { entry: MarketplaceSearchEntry }): React.ReactElement {
-  const sourceLabel = entry.source === 'mcp-registry' ? 'MCP 官方 Registry' : 'Anthropic 官方 skills';
+  const installClaude = useInstallClaudePlugin();
+  const sourceLabel = entry.source === 'mcp-registry'
+    ? 'MCP 官方 Registry'
+    : entry.source === 'anthropics-skills' ? 'Anthropic 官方 skills' : 'Claude Code 官方插件';
   const href = entry.source === 'mcp-registry'
     ? `https://registry.modelcontextprotocol.io/servers/${encodeURIComponent(entry.ref)}`
-    : `https://github.com/anthropics/skills/tree/main/skills/${encodeURIComponent(entry.ref)}`;
+    : entry.source === 'anthropics-skills'
+      ? `https://github.com/anthropics/skills/tree/main/skills/${encodeURIComponent(entry.ref)}`
+      : `https://github.com/anthropics/claude-code/tree/main/plugins/${encodeURIComponent(entry.ref)}`;
+
+  const onInstall = async (replaceExisting: boolean): Promise<void> => {
+    try {
+      await installClaude.mutateAsync({ pluginName: entry.ref, replaceExisting });
+      toast('success', `已安装：${entry.name}（映射为 skill 注入；去能力中心管理）`);
+    } catch (error) {
+      toast('error', (error as Error).message ?? '安装失败');
+    }
+  };
+
+  const isClaude = entry.source === 'claude-code-plugins';
   return (
     <li className="marketplace-catalog-row">
       <div className="marketplace-catalog-main">
@@ -137,17 +153,39 @@ function CatalogRow({ entry }: { entry: MarketplaceSearchEntry }): React.ReactEl
         {stateBadge(entry.installState)}
       </div>
       <p className="muted">{entry.description}</p>
-      <a className="marketplace-catalog-link" href={href} target="_blank" rel="noreferrer">查看来源 ↗</a>
+      <div className="marketplace-catalog-actions">
+        {isClaude && entry.installState !== 'installed' && (
+          <Button
+            variant={entry.installState === 'conflict' ? 'danger' : 'primary'}
+            size="sm"
+            loading={installClaude.isPending}
+            onClick={() => {
+              if (entry.installState === 'conflict') {
+                if (!window.confirm(`muster 内已有同名条目「${entry.name}」——「装新停旧」将停用旧条目并安装。继续？`)) return;
+                void onInstall(true);
+              } else {
+                void onInstall(false);
+              }
+            }}
+          >
+            {entry.installState === 'conflict' ? '装新停旧' : '一键安装'}
+          </Button>
+        )}
+        {isClaude && entry.installState === 'installed' && (
+          <Link to="/capabilities" className="mu-btn mu-btn-ghost mu-btn-sm">去管理</Link>
+        )}
+        <a className="marketplace-catalog-link" href={href} target="_blank" rel="noreferrer">查看来源 ↗</a>
+      </div>
     </li>
   );
 }
 
-function CatalogResults({ catalog, presets }: { catalog: { presets: MarketplaceSearchEntry[]; registry: MarketplaceSearchEntry[]; skillsCatalog: MarketplaceSearchEntry[] }; presets: MarketplacePresetView[] }): React.ReactElement {
+function CatalogResults({ catalog, presets }: { catalog: { presets: MarketplaceSearchEntry[]; registry: MarketplaceSearchEntry[]; skillsCatalog: MarketplaceSearchEntry[]; claudePlugins: MarketplaceSearchEntry[] }; presets: MarketplacePresetView[] }): React.ReactElement {
   const presetById = useMemo(() => new Map(presets.map((p) => [p.id, p])), [presets]);
   const presetHits = catalog.presets
     .map((e) => presetById.get(e.ref))
     .filter((p): p is MarketplacePresetView => Boolean(p));
-  const hasAny = presetHits.length > 0 || catalog.registry.length > 0 || catalog.skillsCatalog.length > 0;
+  const hasAny = presetHits.length > 0 || catalog.registry.length > 0 || catalog.skillsCatalog.length > 0 || catalog.claudePlugins.length > 0;
   if (!hasAny) return <EmptyState type="general" title="没有找到匹配的能力" hint="换个关键词试试，或浏览上方策展目录。" />;
   return (
     <div className="marketplace-catalog">
@@ -155,6 +193,15 @@ function CatalogResults({ catalog, presets }: { catalog: { presets: MarketplaceS
         <section className="marketplace-group">
           <header><h2>策展精品 <span className="muted">({presetHits.length})</span></h2></header>
           <div className="marketplace-grid">{presetHits.map((p) => <PresetCard key={p.id} preset={p} />)}</div>
+        </section>
+      )}
+      {catalog.claudePlugins.length > 0 && (
+        <section className="marketplace-group">
+          <header>
+            <h2>Claude Code 官方插件 <span className="muted">({catalog.claudePlugins.length})</span></h2>
+            <p className="muted">来自 anthropics/claude-code 官方插件市场（Anthropic 策展）。安装后映射为 skill 注入——CLI 自带同名插件时用它自己的不影响目标，muster 副本给其它执行器兜底。</p>
+          </header>
+          <ul className="marketplace-catalog-list">{catalog.claudePlugins.map((e) => <CatalogRow key={e.id} entry={e} />)}</ul>
         </section>
       )}
       {catalog.registry.length > 0 && (
@@ -234,7 +281,7 @@ export function MarketplacePage(): React.ReactElement {
         catalog.isLoading ? (
           <p className="muted">搜索官方源中…</p>
         ) : (
-          <CatalogResults catalog={catalog.data ?? { presets: [], registry: [], skillsCatalog: [] }} presets={presets ?? []} />
+          <CatalogResults catalog={catalog.data ?? { presets: [], registry: [], skillsCatalog: [], claudePlugins: [] }} presets={presets ?? []} />
         )
       ) : (
         <>
