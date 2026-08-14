@@ -8,11 +8,13 @@ test('公司安静工作台和员工三层视图形成完整入口', async ({ pa
   const agent = await agentResponse.json();
 
   await page.goto(`/companies/${company.id}`);
+  // 改版 2a：默认落地 = 公司对话中心（和第一负责人对话），驾驶舱收进"公司总览"
+  await expect(page.getByText('与第一负责人对话')).toBeVisible();
+  await expect(page.getByPlaceholder(/发消息给第一负责人/)).toBeVisible();
   await expect(page.getByRole('navigation',{name:'公司工作列表'})).toBeVisible();
   await expect(page.getByRole('complementary',{name:'公司现场'})).toBeVisible();
   await expect(page.getByRole('button',{name:'公司总览'})).toBeVisible();
   await expect(page.getByRole('tab')).toHaveCount(0);
-  await expect(page.getByText('推荐下一步')).toBeVisible();
   await page.getByRole('button',{name:/^团队/}).click();
   await page.getByRole('link',{name:new RegExp(`成品员工-${suffix}`)}).click();
   await expect(page.getByRole('tab',{name:'身份与能力'})).toBeVisible();
@@ -23,12 +25,12 @@ test('公司安静工作台和员工三层视图形成完整入口', async ({ pa
   await expect(page).toHaveURL(`/agents/${agent.profileId}`);
 });
 
-test('390px 公司驾驶舱和团队列表没有横向溢出', async ({ page }) => {
+test('390px 公司对话中心和团队列表没有横向溢出', async ({ page }) => {
   const companyResponse = await page.request.post('/api/companies', { data: { name: `窄屏公司-${Date.now()}`, kind: 'general' } });
   const company = await companyResponse.json();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`/companies/${company.id}`);
-  await expect(page.getByText('公司驾驶舱')).toBeVisible();
+  await expect(page.getByText('与第一负责人对话')).toBeVisible();
   await expect(page.getByRole('button',{name:'展开工作列表'})).toBeVisible();
   await expect(page.locator('nav[aria-label="公司工作列表"]')).toBeHidden();
   await page.getByRole('button',{name:'展开工作列表'}).click();
