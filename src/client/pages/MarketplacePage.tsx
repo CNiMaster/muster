@@ -84,6 +84,14 @@ function PresetCard({ preset }: { preset: MarketplacePresetView }): React.ReactE
           ))}
         </div>
       )}
+      {preset.quality && preset.quality.successRate !== null && (
+        <div className="marketplace-quality">
+          <Badge tone={preset.quality.successRate >= 0.8 ? 'ok' : preset.quality.successRate >= 0.5 ? 'warn' : 'err'}>
+            成功率 {Math.round(preset.quality.successRate * 100)}%
+          </Badge>
+          <span className="muted">已用 {preset.quality.totalCalls} 次</span>
+        </div>
+      )}
       <div className="marketplace-actions">
         {preset.installState === 'installed' ? (
           <Link to="/capabilities" className="mu-btn mu-btn-ghost">去管理</Link>

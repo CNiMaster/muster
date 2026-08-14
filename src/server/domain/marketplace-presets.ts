@@ -16,6 +16,7 @@ import {
 import type { Plugin, PluginManifest, PluginScope } from '../../shared/plugin';
 import { installPlugin, setCompanyPluginDecision } from './plugin-install';
 import { listPlugins } from './plugin-adapter';
+import { getCapabilityQuality, type CapabilityQuality } from './capability-quality';
 import { log } from '../logger';
 
 /** 名称归一化（去重键用）。 */
@@ -41,6 +42,8 @@ export interface PresetWithStatus extends MarketplacePreset {
   installState: PresetInstallState;
   /** installed/conflict 时命中的现有条目（id/name/source）。 */
   existing?: { id: string; name: string; source: string };
+  /** M4：muster 内使用质量信号（installed 且有用量记录时；成功率/次数/耗时）。 */
+  quality?: CapabilityQuality;
 }
 
 /** 判断单条预置的安装状态。 */
@@ -63,9 +66,26 @@ export function getPresetInstallStatus(db: DB, preset: MarketplacePreset): Prese
   };
 }
 
-/** 列出全部预置 + 状态。 */
+/** M4 质量分：成功率主权重 + 使用量小权重（0~1）；无信号 = -1（排后，保持策展顺序）。 */
+function qualityScore(q?: CapabilityQuality): number {
+  if (!q || q.successRate === null) return -1;
+  return q.successRate * 0.8 + Math.min(1, q.totalCalls / 10) * 0.2;
+}
+
+/** 列出全部预置 + 状态 + 质量信号；有质量信号的条目按质量分浮到前部（推荐反映真实可用性）。 */
 export function listMarketplacePresets(db: DB): PresetWithStatus[] {
-  return MARKETPLACE_PRESETS.map((p) => getPresetInstallStatus(db, p));
+  const items = MARKETPLACE_PRESETS.map((p) => {
+    const withState = getPresetInstallStatus(db, p);
+    if (withState.installState === 'installed' && withState.existing) {
+      const quality = getCapabilityQuality(db, withState.existing.id);
+      if (quality.totalCalls > 0) return { ...withState, quality };
+    }
+    return withState;
+  });
+  return items
+    .map((it, idx) => ({ it, idx, score: qualityScore(it.quality) }))
+    .sort((a, b) => (b.score !== a.score ? b.score - a.score : a.idx - b.idx))
+    .map(({ it }) => it);
 }
 
 /** 安装范围（marketplace 仅支持 platform/company 两层）。 */

@@ -11,6 +11,7 @@ import { createAgent } from '../../src/server/domain/agent';
 import { createTask } from '../../src/server/domain/task';
 import { resolveTaskSkills } from '../../src/server/domain/capability-binding';
 import { installPlugin, getEffectivePluginsForCompany } from '../../src/server/domain/plugin-install';
+import { recordCapabilityUsage } from '../../src/server/domain/capability-quality';
 import {
   listMarketplacePresets,
   installPreset,
@@ -127,6 +128,34 @@ describe('注入链：安装的 skill 真实进入任务上下文', () => {
     const docx = resolved.find((s) => s.skillId === 'docx');
     expect(docx?.status).toBe('loaded');
     expect(docx?.content).toContain('模拟 SKILL.md 正文');
+  });
+});
+
+describe('M4 质量信号排序（推荐反映真实可用性）', () => {
+  it('有质量信号的条目浮到前部；信号变化 → 排序变化', async () => {
+    const { db } = makeTestDb();
+    const company = createCompany(db, { name: 'C' });
+    const fs = await installPreset(db, 'mcp-filesystem', { level: 'company', companyId: company.id });
+    const gh = await installPreset(db, 'mcp-github', { level: 'company', companyId: company.id });
+
+    // 无信号：保持策展目录顺序（filesystem 在 github 前）
+    const order0 = listMarketplacePresets(db).map((p) => p.id);
+    expect(order0.indexOf('mcp-filesystem')).toBeLessThan(order0.indexOf('mcp-github'));
+
+    // filesystem 5 成功（1.0 × 0.8 + 0.5 × 0.2 = 0.9）；github 3 失败（0.06）
+    for (let i = 0; i < 5; i++) recordCapabilityUsage(db, { capabilityId: fs.id, outcome: 'success' });
+    for (let i = 0; i < 3; i++) recordCapabilityUsage(db, { capabilityId: gh.id, outcome: 'fail' });
+
+    const scored0 = listMarketplacePresets(db).filter((p) => p.quality);
+    expect(scored0[0].id).toBe('mcp-filesystem');
+    // filesystem 浮到全列表最前（质量分最高）
+    expect(listMarketplacePresets(db)[0].id).toBe('mcp-filesystem');
+
+    // 信号变化：filesystem 追加 5 失败（0.5×0.8+0.2=0.6）；github 追加 5 成功（0.625×0.8+0.2=0.7）→ 反超
+    for (let i = 0; i < 5; i++) recordCapabilityUsage(db, { capabilityId: fs.id, outcome: 'fail' });
+    for (let i = 0; i < 5; i++) recordCapabilityUsage(db, { capabilityId: gh.id, outcome: 'success' });
+    const scored1 = listMarketplacePresets(db).filter((p) => p.quality);
+    expect(scored1[0].id).toBe('mcp-github');
   });
 });
 

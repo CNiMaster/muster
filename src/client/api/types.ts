@@ -288,6 +288,14 @@ export interface MarketplacePresetView extends MarketplacePreset {
   installState: PresetInstallState;
   /** installed/conflict 时命中的现有 muster 内条目。 */
   existing?: { id: string; name: string; source: string };
+  /** M4：muster 内使用质量信号（installed 且有用量记录时）。 */
+  quality?: {
+    totalCalls: number;
+    successCount: number;
+    failCount: number;
+    successRate: number | null;
+    avgDurationMs: number | null;
+  };
 }
 
 /** M3 官方源搜索条目（GET /api/plugins/marketplace/catalog 返回）。 */
