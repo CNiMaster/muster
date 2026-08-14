@@ -319,7 +319,10 @@ pluginsRouter.post(
 
 const installPresetSchema = z.object({
   presetId: z.string().min(1),
-  scope: z.object({ level: z.enum(['platform', 'company']) }).passthrough(),
+  scope: z.discriminatedUnion('level', [
+    z.object({ level: z.literal('platform') }),
+    z.object({ level: z.literal('company'), companyId: z.string().min(1) }),
+  ]),
   replaceExisting: z.boolean().optional(),
 });
 
@@ -327,10 +330,13 @@ pluginsRouter.post(
   '/marketplace/install-preset',
   asyncHandler(async (req, res) => {
     const input = installPresetSchema.parse(req.body);
+    const db = getDb();
+    // 公司级安装/停旧属于组织能力配置变更：与其它启停路由一致，要求公司下班（org 配置锁）
+    if (input.scope.level === 'company') assertCompanyOff(db, input.scope.companyId);
     const scope = input.scope.level === 'platform'
       ? { level: 'platform' as const }
-      : { level: 'company' as const, companyId: String((input.scope as { companyId?: string }).companyId ?? '') };
-    const plugin = await installPreset(getDb(), input.presetId, scope, {
+      : { level: 'company' as const, companyId: input.scope.companyId };
+    const plugin = await installPreset(db, input.presetId, scope, {
       replaceExisting: input.replaceExisting,
     });
     realtime.publish(makeLifecycleEvent('plugin.installed', { pluginId: plugin.id }, {}));

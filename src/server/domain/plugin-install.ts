@@ -210,13 +210,13 @@ export function getCompanyPluginDecisions(
  */
 export function getEffectivePluginsForCompany(db: DB, companyId: string): Plugin[] {
   const disabledSet = listDisabledCompanyPlugins(db, companyId);
-  // 平台级插件：默认全开，减去显式禁用
+  // 平台级插件：默认全开，减去显式禁用；status='disabled' 的实体行（商城平台级「装新停旧」）不生效
   const platformPlugins = listPlugins(db, { scopeLevel: 'platform' }).filter(
-    (p) => !disabledSet.has(p.id),
+    (p) => !disabledSet.has(p.id) && p.status !== 'disabled',
   );
-  // 公司独占插件：仅 scope 匹配的本公司，且未被显式禁用
+  // 公司独占插件：仅 scope 匹配的本公司，且未被显式禁用；同样排除 status='disabled'
   const companyPlugins = listPlugins(db, { scopeLevel: 'company', scopeCompanyId: companyId }).filter(
-    (p) => !disabledSet.has(p.id),
+    (p) => !disabledSet.has(p.id) && p.status !== 'disabled',
   );
   // 按 id 去重（理论上两类不会重叠，防御性）
   const byId = new Map<string, Plugin>();
@@ -240,22 +240,21 @@ export function getEffectivePluginsForCompany(db: DB, companyId: string): Plugin
 }
 
 /** 是否为 plugin 表实体行（plg_ 前缀）；否则为只读视图条目（skill:/tool:/bridge:）。 */
-function isEntityPlugin(p: Plugin): boolean {
+export function isEntityPlugin(p: Plugin): boolean {
   return p.id.startsWith('plg_');
 }
 
 /**
- * 读取某公司生效的某名 skill 正文（manifest.skill.body）。
- * 注入链用：resolveTaskSkills 命中 skillId 时先查 plugin 表，再回退 bundled 目录——
- * 否则商城装的 skill 永远不进任务上下文（spec M1 必修）。
+ * 一次查询构建该公司生效 skill 的（归一化 name → body）索引。
+ * 注入链热路径（resolveTaskSkills）只扫一遍全量插件，避免每个候选各扫一次。
  */
-export function getEffectivePluginSkillBody(db: DB, companyId: string, skillName: string): string | undefined {
-  const want = skillName.trim().toLowerCase();
-  const hit = getEffectivePluginsForCompany(db, companyId).find(
-    (p) => p.kind === 'skill' && p.name.trim().toLowerCase() === want,
-  );
-  if (!hit || hit.manifest.kind !== 'skill') return undefined;
-  return hit.manifest.skill.body;
+export function collectEffectivePluginSkills(db: DB, companyId: string): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const p of getEffectivePluginsForCompany(db, companyId)) {
+    if (p.kind !== 'skill' || p.manifest.kind !== 'skill') continue;
+    map.set(p.name.trim().toLowerCase(), p.manifest.skill.body);
+  }
+  return map;
 }
 
 /**

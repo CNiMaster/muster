@@ -11,7 +11,8 @@
  */
 import type { DB } from '../db/client';
 import { MARKETPLACE_PRESETS, type MarketplacePreset } from '../../shared/marketplace-presets';
-import { findExistingByName } from './marketplace-presets';
+import { buildPluginNameIndex } from './marketplace-presets';
+import type { Plugin } from '../../shared/plugin';
 import { log } from '../logger';
 
 /** 统一搜索条目（跨源）。 */
@@ -38,18 +39,30 @@ const ANTHROPICS_SKILLS_SHA = 'f6656c1256d5a8adfa37db9110046ef20bac644c';
 /** 注入型 fetch（测试用）。 */
 export type FetchLike = (url: string, init?: { signal?: AbortSignal }) => Promise<{ ok: boolean; status: number; text: () => Promise<string>; json: () => Promise<unknown> }>;
 
-/** 按 (kind, name) 计算 muster 内状态。 */
-function stateFor(db: DB, kind: 'skill' | 'mcp-server', name: string): { installState: 'installable' | 'installed' | 'conflict'; existingId?: string } {
-  const matches = findExistingByName(db, kind, name);
+/** 按 (kind, name) 计算 muster 内状态（用预构建索引，不再扫库）。
+ * 同名同源（marketplace 来源）→ installed；同名异源（内置/本地等）→ conflict（spec I4 语义）。 */
+function stateFor(
+  index: Map<string, Plugin[]>,
+  kind: 'skill' | 'mcp-server',
+  name: string,
+): { installState: 'installable' | 'installed' | 'conflict'; existingId?: string } {
+  const matches = index.get(`${kind}:${name.trim().toLowerCase()}`) ?? [];
   if (matches.length === 0) return { installState: 'installable' };
-  return { installState: 'installed', existingId: matches[0].id };
+  const marketplaceHit = matches.find((p) => p.source.kind === 'marketplace');
+  if (marketplaceHit) return { installState: 'installed', existingId: marketplaceHit.id };
+  return { installState: 'conflict', existingId: matches[0].id };
 }
 
 /** 预置目录搜索（本地静态，按 name/description/tags 命中）。 */
-export function searchPresets(db: DB, query: string): MarketplaceSearchEntry[] {
+export function searchPresets(
+  db: DB,
+  query: string,
+  index?: Map<string, Plugin[]>,
+): MarketplaceSearchEntry[] {
+  const idx = index ?? buildPluginNameIndex(db);
   const q = query.trim().toLowerCase();
   return MARKETPLACE_PRESETS.filter((p) => !q || hitPreset(p, q)).map((p) => {
-    const st = stateFor(db, p.kind, p.name);
+    const st = stateFor(idx, p.kind, p.name);
     return {
       id: `preset:${p.id}`,
       name: p.name,
@@ -80,8 +93,9 @@ interface RegistryServer {
 export async function searchMcpRegistry(
   db: DB,
   query: string,
-  options: { limit?: number; fetcher?: FetchLike } = {},
+  options: { limit?: number; fetcher?: FetchLike; index?: Map<string, Plugin[]> } = {},
 ): Promise<MarketplaceSearchEntry[]> {
+  const idx = options.index ?? buildPluginNameIndex(db);
   const q = query.trim();
   const limit = options.limit ?? 20;
   const f = options.fetcher ?? (globalThis.fetch as unknown as FetchLike);
@@ -94,7 +108,7 @@ export async function searchMcpRegistry(
     return servers.map((s) => {
       const fullName = s.server.name ?? 'unknown';
       const shortName = fullName.split('/').pop() ?? fullName;
-      const st = stateFor(db, 'mcp-server', shortName);
+      const st = stateFor(idx, 'mcp-server', shortName);
       return {
         id: `mcp-registry:${fullName}`,
         name: shortName,
@@ -116,8 +130,9 @@ export async function searchMcpRegistry(
 /** Anthropic 官方 skills 目录（GitHub contents API）。失败降级为空。 */
 export async function listAnthropicsSkillsCatalog(
   db: DB,
-  options: { fetcher?: FetchLike } = {},
+  options: { fetcher?: FetchLike; index?: Map<string, Plugin[]> } = {},
 ): Promise<MarketplaceSearchEntry[]> {
+  const idx = options.index ?? buildPluginNameIndex(db);
   const f = options.fetcher ?? (globalThis.fetch as unknown as FetchLike);
   try {
     const url = `https://api.github.com/repos/anthropics/skills/contents/skills?ref=${ANTHROPICS_SKILLS_SHA}`;
@@ -127,7 +142,7 @@ export async function listAnthropicsSkillsCatalog(
     return items
       .filter((it) => it.type === 'dir')
       .map((it) => {
-        const st = stateFor(db, 'skill', it.name);
+        const st = stateFor(idx, 'skill', it.name);
         return {
           id: `anthropics-skills:${it.name}`,
           name: it.name,
@@ -146,16 +161,17 @@ export async function listAnthropicsSkillsCatalog(
   }
 }
 
-/** 统一搜索：预置（同步）+ MCP Registry + anthropics skills（异步）。 */
+/** 统一搜索：预置（同步）+ MCP Registry + anthropics skills（异步）。请求内只扫一遍全量插件。 */
 export async function searchMarketplaceCatalog(
   db: DB,
   query: string,
   options: { fetcher?: FetchLike } = {},
 ): Promise<{ presets: MarketplaceSearchEntry[]; registry: MarketplaceSearchEntry[]; skillsCatalog: MarketplaceSearchEntry[] }> {
-  const presets = searchPresets(db, query);
+  const index = buildPluginNameIndex(db);
+  const presets = searchPresets(db, query, index);
   const [registry, skillsCatalog] = await Promise.all([
-    searchMcpRegistry(db, query, options),
-    listAnthropicsSkillsCatalog(db, options),
+    searchMcpRegistry(db, query, { ...options, index }),
+    listAnthropicsSkillsCatalog(db, { ...options, index }),
   ]);
   return { presets, registry, skillsCatalog };
 }

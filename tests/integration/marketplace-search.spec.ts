@@ -41,18 +41,33 @@ describe('searchPresets（本地策展搜索 + 安装状态）', () => {
     expect(hits.map((h) => h.name)).toContain('xlsx');
   });
 
-  it('已安装的预置标记 installed + existingId', async () => {
+  it('同名状态标注：同源（marketplace）installed；异源（builtin）conflict', async () => {
     const { db } = makeTestDb();
     const company = createCompany(db, { name: 'C' });
+    // 同源：marketplace 来源的 docx → installed
     installPlugin(db, {
       name: 'docx',
       kind: 'skill',
-      source: { kind: 'builtin' },
+      source: { kind: 'marketplace', registry: 'anthropics-skills', ref: 'skill-docx' },
       scope: { level: 'platform' },
       manifest: { kind: 'skill', skill: { body: '# docx' } },
     });
-    const hits = searchPresets(db, 'docx');
-    expect(hits[0].installState).toBe('installed');
+    const sameSourceHits = searchPresets(db, 'docx');
+    expect(sameSourceHits[0].installState).toBe('installed');
+    expect(sameSourceHits[0].existingId).toBeTruthy();
+  });
+
+  it('异源同名（builtin 等）→ conflict（不是 installed，review I4）', async () => {
+    const { db } = makeTestDb();
+    installPlugin(db, {
+      name: 'pdf',
+      kind: 'skill',
+      source: { kind: 'builtin' },
+      scope: { level: 'platform' },
+      manifest: { kind: 'skill', skill: { body: '# pdf' } },
+    });
+    const hits = searchPresets(db, 'pdf');
+    expect(hits[0].installState).toBe('conflict');
     expect(hits[0].existingId).toBeTruthy();
   });
 });
@@ -87,17 +102,29 @@ describe('searchMcpRegistry（官方 Registry 归一化 + 降级）', () => {
     expect(await searchMcpRegistry(db, 'x', { fetcher: mockFetch(() => 'throw') })).toEqual([]);
   });
 
-  it('同名已装 MCP 标记 installed', async () => {
+  it('同名 MCP 状态标注：marketplace 来源 installed；异源 conflict', async () => {
     const { db } = makeTestDb();
     installPlugin(db, {
+      name: 'weather',
+      kind: 'mcp-server',
+      source: { kind: 'marketplace', registry: 'mcp-official', ref: 'weather' },
+      scope: { level: 'platform' },
+      manifest: { kind: 'mcp-server', mcp: { transport: 'stdio', command: 'npx', args: ['w'] } },
+    });
+    const out = await searchMcpRegistry(db, 'weather', { fetcher: mockFetch(() => ({ ok: true, status: 200, body: registryBody })) });
+    expect(out[0].installState).toBe('installed');
+
+    // 异源（builtin）同名 → conflict（review I4）
+    const { db: db2 } = makeTestDb();
+    installPlugin(db2, {
       name: 'weather',
       kind: 'mcp-server',
       source: { kind: 'builtin' },
       scope: { level: 'platform' },
       manifest: { kind: 'mcp-server', mcp: { transport: 'stdio', command: 'npx', args: ['w'] } },
     });
-    const out = await searchMcpRegistry(db, 'weather', { fetcher: mockFetch(() => ({ ok: true, status: 200, body: registryBody })) });
-    expect(out[0].installState).toBe('installed');
+    const out2 = await searchMcpRegistry(db2, 'weather', { fetcher: mockFetch(() => ({ ok: true, status: 200, body: registryBody })) });
+    expect(out2[0].installState).toBe('conflict');
   });
 });
 

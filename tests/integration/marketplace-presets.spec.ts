@@ -159,6 +159,73 @@ describe('M4 质量信号排序（推荐反映真实可用性）', () => {
   });
 });
 
+describe('review 修复：平台级装新停旧 + 注入优先级 + winner 身份（C1/H1）', () => {
+  it('C1：平台 scope 装新停旧——旧条目 status=disabled 后，新条目成为 effective winner', async () => {
+    const { db } = makeTestDb();
+    const company = createCompany(db, { name: 'C' });
+    // 旧同名平台条目（模拟用户此前装过 github MCP）
+    const old = installPlugin(db, {
+      name: 'github',
+      kind: 'mcp-server',
+      source: { kind: 'builtin' },
+      scope: { level: 'platform' },
+      manifest: { kind: 'mcp-server', mcp: { transport: 'stdio', command: 'npx', args: ['old'] } },
+    });
+    // 平台级「装新停旧」
+    const fresh = await installPreset(db, 'mcp-github', { level: 'platform' }, { replaceExisting: true });
+    expect(fresh.id).not.toBe(old.id);
+    const effective = getEffectivePluginsForCompany(db, company.id);
+    const github = effective.find((p) => p.kind === 'mcp-server' && p.name === 'github');
+    // 旧条目被 status=disabled 排除，新条目成为唯一 winner（C1 曾失败：旧行先入者胜出）
+    expect(github?.id).toBe(fresh.id);
+    // 平台级替换后旧行确实被置 disabled
+    const oldRow = db.prepare('SELECT status FROM plugin WHERE id = ?').get(old.id) as { status: string };
+    expect(oldRow.status).toBe('disabled');
+  });
+
+  it('H1：注入链 plugin 优先于仓库 bundled 目录——商城新正文盖过内置同名 skill', async () => {
+    const { db } = makeTestDb();
+    const company = createCompany(db, { name: 'C' });
+    const lead = createAgent(db, { companyId: company.id, name: '负责人', role: 'lead' });
+    const project = createProject(db, { companyId: company.id, name: 'P', firstAgentId: lead.id });
+    // 装一个与仓库内置同名的 skill（incremental-implementation 在 skills/ 目录存在），正文标记商城版本
+    installPlugin(db, {
+      name: 'incremental-implementation',
+      kind: 'skill',
+      source: { kind: 'marketplace', registry: 'manual', ref: 'test' },
+      scope: { level: 'company', companyId: company.id },
+      manifest: { kind: 'skill', skill: { body: '# 商城新版正文' } },
+    });
+    const task = createTask(db, {
+      projectId: project.id,
+      assigneeAgentId: lead.id,
+      title: '实现需求',
+      requiredSkillIds: ['incremental-implementation'],
+    });
+    const resolved = resolveTaskSkills(db, task);
+    const hit = resolved.find((s) => s.skillId === 'incremental-implementation');
+    expect(hit?.status).toBe('loaded');
+    // plugin 表正文必须盖过 bundled 目录（H1 曾失败：bundled 优先，商城正文永远进不了上下文）
+    expect(hit?.content).toBe('# 商城新版正文');
+  });
+
+  it('winner 身份：实体行盖过只读视图同名条目（不只数量=1）', () => {
+    const { db } = makeTestDb();
+    const company = createCompany(db, { name: 'C' });
+    installPlugin(db, {
+      name: 'incremental-implementation',
+      kind: 'skill',
+      source: { kind: 'marketplace', registry: 'manual', ref: 'test' },
+      scope: { level: 'platform' },
+      manifest: { kind: 'skill', skill: { body: '# 实体行' } },
+    });
+    const effective = getEffectivePluginsForCompany(db, company.id);
+    const hits = effective.filter((p) => p.kind === 'skill' && p.name === 'incremental-implementation');
+    expect(hits.length).toBe(1);
+    expect(hits[0].id.startsWith('plg_')).toBe(true); // 胜者是实体行而非 skill:xxx 视图
+  });
+});
+
 describe('getEffectivePluginsForCompany 同名 winner 唯一（防御）', () => {
   it('实体行 > 只读视图：同名只返回实体行', () => {
     const { db } = makeTestDb();

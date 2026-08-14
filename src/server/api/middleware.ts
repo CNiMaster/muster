@@ -2,6 +2,7 @@
  * Express 错误处理中间件 + 异步包装。
  */
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
+import { ZodError } from 'zod';
 import { AppError } from '../../shared/errors';
 import { log, newCorrelationId } from '../logger';
 
@@ -20,6 +21,14 @@ export function asyncHandler(fn: (req: Request, res: Response, next: NextFunctio
 
 export function errorMiddleware(err: unknown, _req: Request, res: Response, _next: NextFunction): void {
   const correlationId = newCorrelationId();
+  // zod 校验失败统一 400（此前落入 500——参数错误不该报服务器异常）
+  if (err instanceof ZodError) {
+    log.warn('validation error', { msg: err.issues[0]?.message ?? 'invalid input', correlationId });
+    res.status(400).json({
+      error: { code: 'validation', message: err.issues[0]?.message ?? '请求参数不合法', correlationId },
+    });
+    return;
+  }
   if (err instanceof AppError) {
     if (err.status >= 500) {
       log.error('app error', { code: err.code, msg: err.message, correlationId });

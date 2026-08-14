@@ -1,7 +1,7 @@
 /**
  * 能力商城预置策展——后端域（M1）。
  *
- * - listMarketplacePresets：返回预置目录 + 每条的「muster 已安装」/「muster 内同名冲突」状态。
+ * - listMarketplacePresets：返回预置目录 + 每条的「muster 已安装」/「muster 内同名冲突」状态 + 质量信号。
  * - installPreset：三层去重判定（同源拒装 / 异源装新停旧 / 无同名直装）+ 拉取真实内容 + 落库。
  *
  * 去重范围严格限定在 muster 内部（见 spec「执行原则」）：CLI 环境同名能力不算冲突。
@@ -29,10 +29,31 @@ export function findPreset(id: string): MarketplacePreset | undefined {
   return MARKETPLACE_PRESETS.find((p) => p.id === id);
 }
 
-/** (kind, 归一化 name) 命中的现有 plugin（实体行 + 只读视图）。 */
-export function findExistingByName(db: DB, kind: string, name: string): Plugin[] {
-  const want = normalizeName(name);
-  return listPlugins(db).filter((p) => p.kind === kind && normalizeName(p.name) === want);
+/**
+ * 一次 listPlugins 构建 (kind:归一化name) → Plugin[] 索引。
+ * 请求内复用（listMarketplacePresets/searchMarketplaceCatalog 的热路径只扫一遍全量插件）。
+ */
+export function buildPluginNameIndex(db: DB): Map<string, Plugin[]> {
+  const index = new Map<string, Plugin[]>();
+  for (const p of listPlugins(db)) {
+    const key = `${p.kind}:${normalizeName(p.name)}`;
+    const arr = index.get(key) ?? [];
+    arr.push(p);
+    index.set(key, arr);
+  }
+  return index;
+}
+
+/** (kind, 归一化 name) 命中的现有 plugin（实体行 + 只读视图）。传入预构建索引避免重复扫描。 */
+export function findExistingByName(
+  db: DB,
+  kind: string,
+  name: string,
+  index?: Map<string, Plugin[]>,
+): Plugin[] {
+  const key = `${kind}:${normalizeName(name)}`;
+  if (index) return index.get(key) ?? [];
+  return (index ?? buildPluginNameIndex(db)).get(key) ?? [];
 }
 
 export type PresetInstallState = 'installable' | 'installed' | 'conflict';
@@ -46,9 +67,13 @@ export interface PresetWithStatus extends MarketplacePreset {
   quality?: CapabilityQuality;
 }
 
-/** 判断单条预置的安装状态。 */
-export function getPresetInstallStatus(db: DB, preset: MarketplacePreset): PresetWithStatus {
-  const matches = findExistingByName(db, preset.kind, preset.name);
+/** 判断单条预置的安装状态（接受预构建索引）。 */
+export function getPresetInstallStatus(
+  db: DB,
+  preset: MarketplacePreset,
+  index?: Map<string, Plugin[]>,
+): PresetWithStatus {
+  const matches = findExistingByName(db, preset.kind, preset.name, index);
   if (matches.length === 0) return { ...preset, installState: 'installable' };
   const sameSource = matches.find((p) => sameMarketplaceSource(p.source, preset));
   if (sameSource) {
@@ -74,8 +99,9 @@ function qualityScore(q?: CapabilityQuality): number {
 
 /** 列出全部预置 + 状态 + 质量信号；有质量信号的条目按质量分浮到前部（推荐反映真实可用性）。 */
 export function listMarketplacePresets(db: DB): PresetWithStatus[] {
+  const index = buildPluginNameIndex(db);
   const items = MARKETPLACE_PRESETS.map((p) => {
-    const withState = getPresetInstallStatus(db, p);
+    const withState = getPresetInstallStatus(db, p, index);
     if (withState.installState === 'installed' && withState.existing) {
       const quality = getCapabilityQuality(db, withState.existing.id);
       if (quality.totalCalls > 0) return { ...withState, quality };
@@ -132,6 +158,9 @@ export interface InstallPresetOptions {
  * 安装一个预置条目为 Plugin。
  * 三层判定：同源 → 409；异源 + replaceExisting → 装新停旧；异源 + 不替换 → conflict；
  * 无同名 → 直装。
+ *
+ * 并发安全：网络拉取发生在事务外；落库前在事务内对实体行**二次检查**并幂等停旧，
+ * 关闭「两个并发请求都通过检查后双插」的窗口（只读视图条目不落库，无此竞态）。
  */
 export async function installPreset(
   db: DB,
@@ -142,7 +171,9 @@ export async function installPreset(
   const preset = findPreset(presetId);
   if (!preset) throw new AppError(ErrorCode.NOT_FOUND, `未知预置条目：${presetId}`);
 
-  const matches = findExistingByName(db, preset.kind, preset.name);
+  // 预检查（尽早 409，避免无谓的网络拉取）
+  const index = buildPluginNameIndex(db);
+  const matches = findExistingByName(db, preset.kind, preset.name, index);
   const sameSource = matches.find((p) => sameMarketplaceSource(p.source, preset));
   if (sameSource) {
     throw new AppError(ErrorCode.CONFLICT, `已安装：${preset.name}（muster 内同名同源）`, {
@@ -156,55 +187,87 @@ export async function installPreset(
     });
   }
 
-  // 异源替换：在所选 scope 停用旧条目（muster 内唯一 winner）
-  if (matches.length > 0 && options.replaceExisting) {
-    disableExistingForScope(db, matches, scope, options.enabledBy);
-  }
-
   const manifest = await buildManifest(preset, options.fetcher ?? fetchRawSkill);
-  const plugin = installPlugin(db, {
-    name: preset.name,
-    kind: preset.kind,
-    // registry/ref 用不含 '@' 的干净标识（plugin 表 source_ref 用 `${registry}@${ref}` 编码，
-    // 含 @ 的 npm 包名会破坏 parseSource 的 split('@')）。registry=来源标签，ref=preset.id。
-    source: {
-      kind: 'marketplace',
-      registry: presetRegistry(preset),
-      ref: preset.id,
-    },
-    scope: toPluginScope(scope),
-    manifest,
-    permissions: preset.permissions,
-    credentialKeys: preset.install.type === 'mcp-command' ? preset.install.envKeys : undefined,
-    maturity: 'stable',
-  });
+
+  const plugin = db.transaction(() => {
+    // 二次检查：实体行级（拉取窗口内可能有并发安装）
+    const entityDups = db
+      .prepare('SELECT id, source_kind, source_ref FROM plugin WHERE kind = ? AND lower(name) = lower(?)')
+      .all(preset.kind, preset.name) as Array<{ id: string; source_kind: string; source_ref: string | null }>;
+    for (const row of entityDups) {
+      if (samePresetSourceRow(row, preset)) {
+        throw new AppError(ErrorCode.CONFLICT, `已安装：${preset.name}（muster 内同名同源）`, {
+          details: { existingId: row.id },
+        });
+      }
+      if (!options.replaceExisting) {
+        throw new AppError(ErrorCode.CONFLICT, `muster 内已有同名条目（并发安装）——请刷新后重试`, {
+          details: { existingId: row.id, conflict: true },
+        });
+      }
+    }
+    // 异源替换：幂等停旧（重复执行安全——事务内再执行一次，覆盖并发窗口）
+    if (entityDups.length > 0 && options.replaceExisting) {
+      disableExistingForScope(db, entityDups.map((r) => r.id), scope, options.enabledBy);
+    }
+    return installPlugin(db, {
+      name: preset.name,
+      kind: preset.kind,
+      // registry/ref 用不含 '@' 的干净标识（plugin 表 source_ref 用 `${registry}@${ref}` 编码，
+      // 含 @ 的 npm 包名会破坏 parseSource 的 split('@')）。registry=来源标签，ref=preset.id。
+      source: {
+        kind: 'marketplace',
+        registry: presetRegistry(preset),
+        ref: preset.id,
+      },
+      scope: toPluginScope(scope),
+      manifest,
+      permissions: preset.permissions,
+      credentialKeys: preset.install.type === 'mcp-command' ? preset.install.envKeys : undefined,
+      maturity: 'stable',
+    });
+  })();
   log.info('marketplace preset installed', { presetId, name: preset.name, scope: scope.level });
   return plugin;
 }
 
-/** 在所选 scope 停用旧同名条目（公司 scope 写 decision；平台 scope 置 status=disabled）。 */
+/** 在所选 scope 停用旧同名条目（幂等）。实体行：company 写 decision / platform 置 status；视图行：company 直写覆盖行。 */
 function disableExistingForScope(
   db: DB,
-  existing: Plugin[],
+  existingIds: string[],
   scope: PresetInstallScope,
   enabledBy?: string,
 ): void {
   const now = nowIso();
-  for (const p of existing) {
+  for (const id of existingIds) {
     if (scope.level === 'company') {
-      // company_plugin 覆盖行对所有 plugin id 有效（含只读视图条目）
-      try {
-        setCompanyPluginDecision(db, scope.companyId, p.id, 'disabled', enabledBy);
-      } catch {
-        /* 旧条目可能已删，忽略 */
+      if (isEntityId(id)) {
+        try {
+          setCompanyPluginDecision(db, scope.companyId, id, 'disabled', enabledBy);
+        } catch {
+          /* 旧条目可能已删，忽略 */
+        }
+      } else {
+        // 只读视图条目（skill:/tool:/bridge:）：setCompanyPluginDecision 会因 getPluginRow
+        // 查不到而抛错，这里直写 company_plugin 覆盖行（读路径 listDisabledCompanyPlugins 兼容视图 id）
+        db.prepare(
+          `INSERT INTO company_plugin (company_id, plugin_id, enabled, decision, enabled_by, enabled_at)
+           VALUES (?, ?, 0, 'disabled', ?, ?)
+           ON CONFLICT(company_id, plugin_id) DO UPDATE SET enabled=0, decision='disabled', enabled_by=excluded.enabled_by, enabled_at=excluded.enabled_at`,
+        ).run(scope.companyId, id, enabledBy ?? null, now);
       }
     } else {
-      // 平台级替换：实体行置 status=disabled；只读视图无 db 行跳过
-      if (!p.id.startsWith('builtin')) {
-        db.prepare('UPDATE plugin SET status = ?, updated_at = ? WHERE id = ?').run('disabled', now, p.id);
+      // 平台级替换：实体行置 status=disabled（effective 已按 status 过滤，旧行即失效）；
+      // 只读视图无 db 行——注入链 plugin 优先 + 去重实体>视图，新条目自然盖过，无需停用
+      if (isEntityId(id)) {
+        db.prepare('UPDATE plugin SET status = ?, updated_at = ? WHERE id = ?').run('disabled', now, id);
       }
     }
   }
+}
+
+function isEntityId(id: string): boolean {
+  return id.startsWith('plg_');
 }
 
 function toPluginScope(scope: PresetInstallScope): PluginScope {
@@ -215,6 +278,15 @@ function toPluginScope(scope: PresetInstallScope): PluginScope {
 function sameMarketplaceSource(source: Plugin['source'], preset: MarketplacePreset): boolean {
   if (source.kind !== 'marketplace') return false;
   return source.registry === presetRegistry(preset) && source.ref === preset.id;
+}
+
+/** 事务内重查用的行级同源判定（source_ref 编码 = registry@ref）。 */
+function samePresetSourceRow(
+  row: { source_kind: string; source_ref: string | null },
+  preset: MarketplacePreset,
+): boolean {
+  if (row.source_kind !== 'marketplace' || !row.source_ref) return false;
+  return row.source_ref === `${presetRegistry(preset)}@${preset.id}`;
 }
 
 /** 预置来源标签（不含 @，用作 marketplace source 的 registry；区分官方 skill / 官方 MCP）。 */

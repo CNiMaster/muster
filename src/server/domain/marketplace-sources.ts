@@ -51,7 +51,7 @@ export function listMarketplaceSources(db: DB): MarketplaceSource[] {
   return [...official, ...manual];
 }
 
-/** 添加手动来源（未审核）。端点需为 http(s) URL；重复登记返回既有记录。 */
+/** 添加手动来源（未审核）。端点需为 http(s) URL；重复登记返回既有记录（DB 唯一索引兜底）。 */
 export function addMarketplaceSource(db: DB, endpoint: string): MarketplaceSource {
   const trimmed = endpoint.trim();
   let url: URL;
@@ -63,19 +63,18 @@ export function addMarketplaceSource(db: DB, endpoint: string): MarketplaceSourc
   if (url.protocol !== 'https:' && url.protocol !== 'http:') {
     throw new AppError(ErrorCode.VALIDATION, '来源必须是 http(s) 地址');
   }
-  const existing = db
-    .prepare('SELECT id FROM marketplace_source WHERE endpoint = ?')
-    .get(trimmed) as { id: string } | undefined;
-  if (existing) {
-    const row = db.prepare('SELECT * FROM marketplace_source WHERE id = ?').get(existing.id) as {
-      id: string; endpoint: string; reviewed: number; refreshed_at: string | null; created_at: string;
-    };
-    return { id: row.id, kind: 'manual', name: row.endpoint, endpoint: row.endpoint, reviewed: row.reviewed === 1, refreshedAt: row.refreshed_at, createdAt: row.created_at };
-  }
   const id = shortId('msrc_');
   const now = nowIso();
-  db.prepare(
-    `INSERT INTO marketplace_source (id, kind, endpoint, reviewed, created_at) VALUES (?, 'manual', ?, 0, ?)`,
-  ).run(id, trimmed, now);
-  return { id, kind: 'manual', name: trimmed, endpoint: trimmed, reviewed: false, refreshedAt: null, createdAt: now };
+  // 事务 + 唯一索引：并发重复登记只会插入一条（ON CONFLICT 不新增）
+  db.transaction(() => {
+    db.prepare(
+      `INSERT INTO marketplace_source (id, kind, endpoint, reviewed, created_at)
+       VALUES (?, 'manual', ?, 0, ?)
+       ON CONFLICT(endpoint) DO NOTHING`,
+    ).run(id, trimmed, now);
+  })();
+  const row = db
+    .prepare('SELECT * FROM marketplace_source WHERE endpoint = ?')
+    .get(trimmed) as { id: string; endpoint: string; reviewed: number; refreshed_at: string | null; created_at: string };
+  return { id: row.id, kind: 'manual', name: row.endpoint, endpoint: row.endpoint, reviewed: row.reviewed === 1, refreshedAt: row.refreshed_at, createdAt: row.created_at };
 }
