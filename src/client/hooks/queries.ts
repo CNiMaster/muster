@@ -1,7 +1,7 @@
 /** React Query hooks：所有数据获取集中在此。 */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
-import type { Company, Agent, AgentExecutorJson, AgentProfile, CompanyEmployee, MemoryCandidate, MemoryEntry, Department, Project, Relationship, Task, UsageSummary, ProjectAgentThread, Workspace, BusinessReview, Plugin, EffectivePlugin, OutsourcingContract } from '../api/types';
+import type { Company, Agent, AgentExecutorJson, AgentProfile, CompanyEmployee, MemoryCandidate, MemoryEntry, Department, Project, Relationship, Task, UsageSummary, ProjectAgentThread, Workspace, BusinessReview, Plugin, EffectivePlugin, OutsourcingContract, MarketplacePresetView } from '../api/types';
 import type { CompanyCockpitDTO, TemplateRuntimeHealthFinding } from '../../shared/types';
 import type { ProjectLaunchBrief, ProjectLaunchDiscovery } from '../../shared/project-launch';
 import type { CompanySetupDraft, CompanyTemplateOption, SetupBindings } from '../domain/company-templates';
@@ -1750,6 +1750,33 @@ interface InstallExclusiveInput {
   permissions?: string[];
   credentialKeys?: string[];
   maturity?: 'experimental' | 'stable' | 'deprecated';
+}
+
+// ── 能力商城预置策展（M1）───────────────────────────────────────────────
+
+/** 列出预置策展目录（每条带 muster 内安装/冲突状态）。 */
+export function useMarketplacePresets() {
+  return useQuery({
+    queryKey: ['marketplace-presets'],
+    queryFn: () => api.get<MarketplacePresetView[]>('/api/plugins/marketplace/presets'),
+  });
+}
+
+/** 安装预置条目（平台 scope 默认；异源冲突时 replaceExisting=true 装新停旧）。 */
+export function useInstallPreset() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { presetId: string; scope?: { level: 'platform' | 'company'; companyId?: string }; replaceExisting?: boolean }) =>
+      api.post<Plugin>('/api/plugins/marketplace/install-preset', {
+        presetId: input.presetId,
+        scope: input.scope ?? { level: 'platform' },
+        replaceExisting: input.replaceExisting,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['marketplace-presets'] });
+      qc.invalidateQueries({ queryKey: ['plugins'] });
+    },
+  });
 }
 
 // ── B2B 外包 hooks ────────────────────────────────────────────────────────

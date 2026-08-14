@@ -14,6 +14,7 @@
  */
 import { useMemo, useState } from 'react';
 import type React from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useCompanies, usePlugins, useToggleCompanyPlugin } from '../hooks/queries';
 import { api } from '../api/client';
@@ -91,6 +92,11 @@ export function CapabilityCenterPage(): React.ReactElement {
       <div className="page-head">
         <h1>能力中心</h1>
         <p className="muted">Skill、MCP Server、工具的统一治理。平台级能力默认对所有公司启用，可按公司关闭；也可为指定公司安装独占能力。</p>
+      </div>
+      <div className="capability-entry-links">
+        <span className="muted">管理已安装</span>
+        <span className="sep">·</span>
+        <Link to="/marketplace">发现并安装 →</Link>
       </div>
       {isLoading ? (
         <p className="muted">加载能力清单…</p>

@@ -145,10 +145,12 @@ export async function installPreset(
   const plugin = installPlugin(db, {
     name: preset.name,
     kind: preset.kind,
+    // registry/ref 用不含 '@' 的干净标识（plugin 表 source_ref 用 `${registry}@${ref}` 编码，
+    // 含 @ 的 npm 包名会破坏 parseSource 的 split('@')）。registry=来源标签，ref=preset.id。
     source: {
       kind: 'marketplace',
-      registry: preset.source.kind === 'github' ? preset.source.ref : preset.source.ref,
-      ref: preset.source.pin,
+      registry: presetRegistry(preset),
+      ref: preset.id,
     },
     scope: toPluginScope(scope),
     manifest,
@@ -189,11 +191,15 @@ function toPluginScope(scope: PresetInstallScope): PluginScope {
   return scope.level === 'platform' ? { level: 'platform' } : { level: 'company', companyId: scope.companyId };
 }
 
-/** 判断现有 plugin 来源是否与预置同源（marketplace + 同 registry + 同 ref 基线）。 */
+/** 判断现有 plugin 来源是否与预置同源（marketplace + 同 registry 标签 + 同 preset id）。 */
 function sameMarketplaceSource(source: Plugin['source'], preset: MarketplacePreset): boolean {
   if (source.kind !== 'marketplace') return false;
-  const registry = preset.source.kind === 'github' ? preset.source.ref : preset.source.ref;
-  return source.registry === registry && source.ref === preset.source.pin;
+  return source.registry === presetRegistry(preset) && source.ref === preset.id;
+}
+
+/** 预置来源标签（不含 @，用作 marketplace source 的 registry；区分官方 skill / 官方 MCP）。 */
+function presetRegistry(preset: MarketplacePreset): string {
+  return preset.curatedBy === 'anthropic' ? 'anthropics-skills' : 'mcp-official';
 }
 
 function describeSource(source: Plugin['source']): string {
