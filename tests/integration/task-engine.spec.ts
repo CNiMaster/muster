@@ -12,7 +12,7 @@ import type { DB } from '../../src/server/db/client';
 import { createCompany, clockIn } from '../../src/server/domain/company';
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject, updateProject } from '../../src/server/domain/project';
-import { ensurePrimaryThread, createMirror } from '../../src/server/domain/thread';
+import { ensurePrimaryThread, createMirror, getThread } from '../../src/server/domain/thread';
 import {
   createTask,
   claimNextTask,
@@ -279,5 +279,36 @@ describe('fake executor end-to-end', () => {
     const { project } = fixture();
     expect(ensurePlanningTask(db, project.id)).toBeNull();
     expect(listTasks(db, project.id)).toHaveLength(0);
+  });
+});
+
+describe('engine stop：在跑任务回退 queued 而非 failed', () => {
+  it('stop() 中止在跑任务后任务回 queued（清租约），线程回 idle，下次启动可重跑', async () => {
+    const { c, project, writer } = fixture();
+    clockIn(db, c.id);
+    const t = createTask(db, { projectId: project.id, assigneeAgentId: writer.id, title: '写章节' });
+    const thread = ensurePrimaryThread(db, project.id, writer.id);
+
+    // 假执行器挂起 60s 直到被 abort，模拟长任务在跑
+    const fake = new FakeExecutor().script([{ delayMs: 60_000 }]);
+    const engine = new TaskEngine(db, fake);
+    const runPromise = engine.pumpThread(thread.id);
+
+    // 等执行器真正开跑（任务已 claimed/running）
+    const deadline = Date.now() + 5_000;
+    while (fake.callCount < 1 && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    expect(fake.callCount).toBe(1);
+
+    engine.stop();
+    await runPromise;
+
+    const after = getTask(db, t.id);
+    expect(after.state).toBe('queued');
+    expect(after.leaseOwnerThreadId).toBeNull();
+    expect(after.leaseExpiresAt).toBeNull();
+    // 线程不卡在 failed，下次启动可重新领取
+    expect(getThread(db, thread.id).state).toBe('idle');
   });
 });

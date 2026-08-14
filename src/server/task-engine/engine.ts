@@ -54,6 +54,7 @@ import { AppError, ErrorCode } from '../../shared/errors';
 import { TASK_CIRCUIT_BREAKER_THRESHOLD } from '../../shared/constants';
 import type { AgentRunResult } from '../../shared/types';
 import { realtime } from '../realtime';
+import { nowIso } from '../../shared/utils';
 import { upsertPublishedArtifact } from '../domain/artifact';
 import { postSystemMessage } from '../domain/conversation';
 import { isDuplicateContent } from '../domain/speech-queue';
@@ -238,8 +239,14 @@ export class TaskEngine {
       occurredAt: new Date().toISOString(),
       payload: { threadId, agentId: agent.id, seq: task.seq },
     });
-    // 改版收尾：对话里给即时反馈"已开始处理"（此前只有完成后才回一条）
-    this.notifyUserMessageMilestone(task, `⏳ 已开始处理你的消息：${task.title}`, task.id);
+    // 改版收尾：对话里给即时反馈"已开始处理"（此前只有完成后才回一条）。
+    // 自动重试重领（autoRetryCount>0）不再重复播报"已开始"——首次重试只提示一次，
+    // 与失败侧"未走自动重试的终态失败才回写"对称，避免一条消息刷出多条 ⏳。
+    if (task.autoRetryCount === 0) {
+      this.notifyUserMessageMilestone(task, `⏳ 已开始处理你的消息：${task.title}`, task.id);
+    } else if (task.autoRetryCount === 1) {
+      this.notifyUserMessageMilestone(task, `⏳ 处理未完成，正在自动重试：${task.title}`, task.id);
+    }
 
     // 安全检查：重复失败/无进展
     try {
@@ -1025,6 +1032,13 @@ export class TaskEngine {
 
       return true;
     } catch (err) {
+      // 引擎停止（优雅关机/强退）：stop() 已把任务退回 queued——不是执行失败，
+      // 直接让位（线程回 idle），下次启动重新领取；不走失败分类（否则被判永久 failed）。
+      if (getTask(this.db, task.id).state === 'queued') {
+        updateThreadState(this.db, thread.id, 'idle');
+        log.info('run aborted by engine stop, task re-queued for next start', { taskId: task.id });
+        return true;
+      }
       if (getTask(this.db, task.id).state === 'cancelled') {
         if (resolutionContext) {
           this.escalatePublishConflictResolution(resolutionContext, {
@@ -1452,6 +1466,22 @@ export class TaskEngine {
       log.info('task engine polling stopped');
     }
     approvalBroker.rejectAll();
+    // 优雅关机：先将在跑任务退回 queued（清租约），再中止执行。
+    // 若不回退，abort 的 AbortError 会被 classifyFailureCategory 判成 permanent
+    // （"aborted" 不匹配瞬时正则）→ failTask 永久失败且不自动重试——比直接断电更糟。
+    // 回退后 run loop 的 catch 会识别 queued 状态直接让位，下次启动重新领取。
+    const now = nowIso();
+    for (const taskId of this.activeRuns.keys()) {
+      // 审批等待中的任务保留现场（catch 的 waiting_approval 分支处理），不退回队列
+      if (getTask(this.db, taskId).waitState === 'waiting_approval') continue;
+      this.db
+        .prepare(
+          `UPDATE task SET state='queued', lease_owner_thread_id=NULL, lease_expires_at=NULL,
+             heartbeat_at=NULL, updated_at=? WHERE id=?`,
+        )
+        .run(now, taskId);
+      appendTaskEvent(this.db, taskId, 'lease_recovered', { reason: 'engine-stop' });
+    }
     for (const controller of this.activeRuns.values()) controller.abort('engine-stop');
     this.activeRuns.clear();
   }
