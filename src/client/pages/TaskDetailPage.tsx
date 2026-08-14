@@ -9,7 +9,10 @@ import {
   useTaskAction,
   useAgents,
   useProject,
+  useTaskSwarm,
+  useAbortSwarm,
 } from '../hooks/queries';
+import type { Task } from '../api/types';
 import { Card } from '../components/Card';
 import { Badge, taskStateTone, stateLabel } from '../components/Badge';
 import { Button, toast } from '../components/Button';
@@ -184,10 +187,67 @@ export function TaskDetailPage(): React.ReactElement {
               </Field>
             </div>
           </Card>
+          <SwarmTreeCard taskId={task.id} />
           <EventsCard taskId={task.id} />
         </div>
       </div>
     </div>
+  );
+}
+
+/** 指挥系统 W4：蜂群树视图——按 parentTaskId 建树、状态着色（失败红）、当前任务高亮、一键停群。 */
+function SwarmTreeCard({ taskId }: { taskId: string }): React.ReactElement | null {
+  const { data: view } = useTaskSwarm(taskId);
+  const abortSwarm = useAbortSwarm();
+  const swarm = view?.swarm;
+  const tasks = view?.tasks ?? [];
+  if (!swarm) return null;
+
+  const statusLabelMap: Record<string, string> = { active: '进行中', completed: '已收口', aborted: '已终止', failed: '已熔断' };
+  const statusToneMap: Record<string, 'ok' | 'info' | 'neutral' | 'err'> = { active: 'info', completed: 'ok', aborted: 'neutral', failed: 'err' };
+
+  const childrenOf = new Map<string | null, Task[]>();
+  for (const t of tasks) {
+    const list = childrenOf.get(t.parentTaskId) ?? [];
+    list.push(t);
+    childrenOf.set(t.parentTaskId, list);
+  }
+  const renderNode = (task: Task, depth: number): React.ReactElement => (
+    <div key={task.id} style={{ paddingLeft: depth * 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '2px 0' }}>
+        <Link to={`/tasks/${task.id}`} style={{ textDecoration: task.id === taskId ? 'underline' : undefined, fontWeight: task.id === taskId ? 600 : undefined, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          #{task.seq} {task.title}
+        </Link>
+        <Badge tone={taskStateTone(task.state)}>{stateLabel(task.state)}</Badge>
+      </div>
+      {(childrenOf.get(task.id) ?? []).map((child) => renderNode(child, depth + 1))}
+    </div>
+  );
+  const roots = tasks.filter((t) => !t.parentTaskId || !tasks.some((other) => other.id === t.parentTaskId));
+
+  return (
+    <Card
+      title="蜂群"
+      actions={
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <Badge tone={statusToneMap[swarm.status] ?? 'neutral'}>{statusLabelMap[swarm.status] ?? swarm.status}</Badge>
+          {swarm.status === 'active' && (
+            <Button size="sm" variant="ghost" loading={abortSwarm.isPending} onClick={() => {
+              abortSwarm.mutate(taskId, {
+                onSuccess: () => toast('success', '蜂群已停止，剩余工蜂已回收'),
+                onError: (e) => toast('error', (e as Error).message ?? '停止失败'),
+              });
+            }}>停止蜂群</Button>
+          )}
+        </div>
+      }
+    >
+      <p className="muted" style={{ margin: 0 }}>
+        {swarm.goal && <span>目标：{swarm.goal} · </span>}
+        收口 {swarm.nodesDone}/{swarm.nodesTotal}{swarm.nodesFailed > 0 && <span style={{ color: 'var(--err)' }}>（失败 {swarm.nodesFailed}）</span>}
+      </p>
+      <div style={{ fontSize: 'var(--text-sm)', marginTop: 8 }}>{roots.map((root) => renderNode(root, 0))}</div>
+    </Card>
   );
 }
 

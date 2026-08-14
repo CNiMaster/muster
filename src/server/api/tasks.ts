@@ -24,6 +24,8 @@ import {
   acceptSuggestion,
   getTaskChain,
 } from '../domain/task';
+import { abortSwarm, getSwarmRun } from '../domain/swarm';
+import { AppError, ErrorCode } from '../../shared/errors';
 import { listTaskEvents } from '../domain/task-event';
 import { listTaskMessages, addTaskMessage } from '../domain/task-message';
 import { getProject } from '../domain/project';
@@ -186,5 +188,35 @@ taskByIdRouter.get(
   '/chain',
   asyncHandler(async (req, res) => {
     res.json(getTaskChain(getDb(), param(req, 'id')));
+  }),
+);
+
+/** 指挥系统 W4：任务所属蜂群的树状视图数据（swarm 元信息 + 全部节点任务）。 */
+taskByIdRouter.get(
+  '/swarm',
+  asyncHandler(async (req, res) => {
+    const task = getTask(getDb(), param(req, 'id'));
+    if (!task.swarmId) {
+      res.json({ swarm: null, tasks: [] });
+      return;
+    }
+    const swarm = getSwarmRun(getDb(), task.swarmId);
+    const rows = getDb()
+      .prepare('SELECT * FROM task WHERE swarm_id=? ORDER BY seq')
+      .all(task.swarmId) as unknown[];
+    res.json({ swarm, tasks: rows });
+  }),
+);
+
+/** 指挥系统 W4：一键停群（含根调度任务一起取消，一切停止）。 */
+taskByIdRouter.post(
+  '/swarm/abort',
+  asyncHandler(async (req, res) => {
+    const task = getTask(getDb(), param(req, 'id'));
+    if (!task.swarmId) {
+      throw new AppError(ErrorCode.NOT_FOUND, '该任务不属于任何蜂群');
+    }
+    abortSwarm(getDb(), task.swarmId, { reason: '用户手动停止蜂群', status: 'aborted', includeRoot: true });
+    res.json({ ok: true, swarm: getSwarmRun(getDb(), task.swarmId!) });
   }),
 );

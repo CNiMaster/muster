@@ -1,7 +1,7 @@
 /** React Query hooks：所有数据获取集中在此。 */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
-import type { Company, Agent, AgentExecutorJson, AgentProfile, CompanyEmployee, MemoryCandidate, MemoryEntry, Department, Project, Relationship, Task, UsageSummary, ProjectAgentThread, Workspace, BusinessReview, Plugin, EffectivePlugin, OutsourcingContract, MarketplacePresetView, MarketplaceSearchEntry } from '../api/types';
+import type { Company, Agent, AgentExecutorJson, AgentProfile, CompanyEmployee, MemoryCandidate, MemoryEntry, Department, Project, Relationship, Task, UsageSummary, ProjectAgentThread, Workspace, BusinessReview, Plugin, EffectivePlugin, OutsourcingContract, MarketplacePresetView, MarketplaceSearchEntry, SwarmView } from '../api/types';
 import type { CompanyCockpitDTO, TemplateRuntimeHealthFinding } from '../../shared/types';
 import type { ProjectLaunchBrief, ProjectLaunchDiscovery } from '../../shared/project-launch';
 import type { CompanySetupDraft, CompanyTemplateOption, SetupBindings } from '../domain/company-templates';
@@ -975,6 +975,27 @@ export function useDeleteCompanyAutomation() {
     mutationFn: ({ companyId, triggerId }: { companyId: string; triggerId: string }) =>
       api.delete(`/api/companies/${companyId}/automation/${triggerId}`),
     onSuccess: (_data, input) => qc.invalidateQueries({ queryKey: ['company-automations', input.companyId] }),
+  });
+}
+
+// ===== 蜂群（指挥系统批次2）=====
+export function useTaskSwarm(taskId: string | undefined) {
+  return useQuery({
+    queryKey: ['task-swarm', taskId],
+    queryFn: () => api.get<SwarmView>(`/api/tasks/${taskId}/swarm`),
+    enabled: !!taskId,
+    refetchInterval: 4000,
+  });
+}
+
+export function useAbortSwarm() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (taskId: string) => api.post<{ ok: boolean }>(`/api/tasks/${taskId}/swarm/abort`, {}),
+    onSuccess: (_data, taskId) => {
+      qc.invalidateQueries({ queryKey: ['task-swarm', taskId] });
+      qc.invalidateQueries({ queryKey: ['task', taskId] });
+    },
   });
 }
 

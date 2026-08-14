@@ -32,6 +32,8 @@ import {
 import { getThread, listOnlineThreads, updateThreadState } from '../domain/thread';
 import { getAgent } from '../domain/agent';
 import { assembleContext } from '../executors/context';
+import { materializeSwarm } from '../domain/swarm';
+import { DISPATCHER_ROLE } from '../domain/system-agents';
 import { getExecutorManifest } from '../executors/manifests';
 import { assertSafeToRun } from '../executors/safety';
 import { getProject, listProjectReferences } from '../domain/project';
@@ -628,6 +630,23 @@ export class TaskEngine {
       // 持久化 Claude session id（首次返回后保存，后续 --resume 用）
       if (result._sessionIdHint && result._sessionIdHint !== projectTaskThread.vendorSessionId) {
         setProjectTaskThreadSession(this.db, projectTaskThread.id, result._sessionIdHint);
+      }
+
+      // 指挥系统 W3：调度中心返回 swarmPlan → 蜂群落地。
+      // 全执行器通用契约（done 结构化输出），不依赖工具循环；非调度中心的 swarmPlan 一律忽略。
+      if (result.swarmPlan && agent.isSystem && agent.role === DISPATCHER_ROLE) {
+        const plan = result.swarmPlan;
+        result.swarmPlan = undefined;
+        try {
+          const materialized = materializeSwarm(this.db, task, plan);
+          result.outcome = 'waiting_dependency';
+          if (!result.summary) {
+            result.summary = `已放出蜂群（${materialized.beeTaskIds.length} 只工蜂${materialized.truncated ? '，超出扇出上限已截断' : ''}），等待汇总收口。`;
+          }
+        } catch (error) {
+          result.outcome = 'blocked';
+          result.summary = `蜂群建立失败：${error instanceof Error ? error.message : String(error)}`;
+        }
       }
 
       if (result.outcome === 'completed') {

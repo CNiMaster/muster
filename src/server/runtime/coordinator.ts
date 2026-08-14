@@ -17,6 +17,7 @@ import { generateOptimizationReport } from '../domain/optimization-report';
 import type { SetupGenerator } from '../domain/setup-assistant';
 import { promoteCandidatesToActions } from '../domain/promotion';
 import { getSystemSettings } from '../domain/setting';
+import { ensureSystemAgents } from '../domain/system-agents';
 import { executePendingOfflineActions } from '../domain/optimization-report-executor';
 import { shortId } from '../../shared/utils';
 import {
@@ -197,6 +198,14 @@ export class ProjectRuntimeCoordinator {
       let pumpedTasks = 0;
 
       for (const company of listCompanies(this.db)) {
+        // 指挥系统 W0：online 公司幂等确保系统隐形岗（调度中心/评审中心）
+        if (company.state === 'online') {
+          try {
+            ensureSystemAgents(this.db, company.id);
+          } catch (error) {
+            log.warn('ensure system agents failed', { companyId: company.id, error: error instanceof Error ? error.message : String(error) });
+          }
+        }
         if (company.state !== 'online') continue;
         settleDrainingAgents(this.db, company.id);
         for (const project of listProjects(this.db, company.id)) {

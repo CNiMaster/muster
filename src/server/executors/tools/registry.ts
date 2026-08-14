@@ -25,6 +25,8 @@ import { classifyCommand } from '../cli-permission-bridge';
 import { agentRunResultSchema } from '../result-schema';
 import { submitBusinessReview, type BusinessReviewKind } from '../../domain/business-review';
 import { createTask, addDependency, getTask, cancelTask, areDependenciesMet, resumeDependents } from '../../domain/task';
+import { checkSwarmLimits } from '../../domain/swarm';
+import { isDispatchLoop } from '../../domain/speech-queue';
 import { addTaskMessage } from '../../domain/task-message';
 import { postSystemMessage } from '../../domain/conversation';
 import { getAgent } from '../../domain/agent';
@@ -650,7 +652,15 @@ async function spawnTasksHandler(call: ToolCall, ctx: ToolContext): Promise<Tool
   try {
     const { db, askerTaskId, askerProjectId, askerProjectTaskId, askerAgentId } = cctx;
     const asker = getAgent(db, askerAgentId);
-    // Review 修复：循环前预校验全部接收者（同公司 + contactAllow），
+    // 指挥系统 W1：蜂群上下文——spawn_tasks 也要过防环 + 蜂群限额 + 继承群与深度
+    const askerTask = getTask(db, askerTaskId);
+    if (askerTask.swarmId) {
+      const guard = checkSwarmLimits(db, askerTask.swarmId, { parentTaskId: askerTaskId, addCount: rawTasks.length });
+      if (!guard.ok) {
+        return { toolCallId: call.id, name: call.name, content: `错误：蜂群限额拦截——${guard.reason}。请缩减批量或直接汇报现有结果。` };
+      }
+    }
+    // Review 修复：循环前预校验全部接收者（同公司 + contactAllow + 防环），
     // 避免中途 createTask 抛错导致前序子任务成为孤儿（无依赖关联、无人等待）。
     const resolvedTasks: Array<{ title: string; recipientId: string; recipientName: string; requiredCaps: string[]; inputProtocol: Record<string, unknown> | undefined; priority: number | undefined }> = [];
     for (const raw of rawTasks) {
@@ -675,6 +685,10 @@ async function spawnTasksHandler(call: ToolCall, ctx: ToolContext): Promise<Tool
       }
       if (recipientId !== askerAgentId && !asker.contactAllow.includes(recipientId)) {
         return { toolCallId: call.id, name: call.name, content: `错误：员工 ${asker.name} 未授权联系 ${recipient.name}，不能派发` };
+      }
+      // 指挥系统 W1：spawn_tasks 此前不查防环（completeTask 的 outboundTasks 路径有、这里没有）
+      if (recipientId !== askerAgentId && isDispatchLoop(db, askerProjectId, askerAgentId, recipientId)) {
+        return { toolCallId: call.id, name: call.name, content: `错误：检测到 ${asker.name} → ${recipient.name} 可能形成调用循环，已阻断。请换人或直接汇报。` };
       }
       resolvedTasks.push({
         title,
@@ -702,6 +716,14 @@ async function spawnTasksHandler(call: ToolCall, ctx: ToolContext): Promise<Tool
         requiredCapabilityIds: taskItem.requiredCaps.length > 0 ? taskItem.requiredCaps : undefined,
         inputProtocol: taskItem.inputProtocol ? { ...taskItem.inputProtocol, spawned: true } : { spawned: true },
         priority: taskItem.priority ?? 5,
+        ...(askerTask.swarmId ? { swarmId: askerTask.swarmId, swarmDepth: askerTask.swarmDepth + 1 } : {}),
+      });
+      appendTaskEvent(db, askerTaskId, 'spawned_child', {
+        childId: child.id,
+        childSeq: child.seq,
+        childTitle: child.title,
+        recipient: taskItem.recipientId,
+        dispatcher: askerAgentId,
       });
       created.push({ id: child.id, seq: child.seq, title: child.title, assignee: taskItem.recipientName });
     }

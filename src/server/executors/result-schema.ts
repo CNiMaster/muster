@@ -21,6 +21,11 @@ const artifactSchema = z.object({
   operation: z.enum(['create', 'update', 'delete']),
 });
 
+const swarmPlanSchema = z.object({
+  goal: z.string(),
+  workers: z.array(z.object({ title: z.string(), brief: z.string() })).min(1),
+});
+
 export const agentRunResultSchema = z.object({
   outcome: z.enum(['completed', 'waiting_input', 'waiting_dependency', 'blocked']),
   summary: z.string(),
@@ -31,6 +36,8 @@ export const agentRunResultSchema = z.object({
   workflowNextEdgeLabel: z.string().optional(),
   /** 双 Loop P2：agent 对每条验收标准的自评（对照 acceptance_criteria 的 id），供验收段半自动判定。 */
   acceptanceMet: z.array(z.object({ id: z.string(), met: z.boolean() })).optional(),
+  /** 指挥系统 W3：蜂群计划（仅调度中心系统岗被兑现）。 */
+  swarmPlan: swarmPlanSchema.optional(),
 });
 
 /** JSON Schema 描述，传给模型的 structured output 约束。 */
@@ -78,6 +85,24 @@ export const AGENT_RESULT_JSON_SCHEMA = {
         },
         required: ['id', 'met'],
       },
+    },
+    swarmPlan: {
+      type: 'object',
+      properties: {
+        goal: { type: 'string' },
+        workers: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              title: { type: 'string' },
+              brief: { type: 'string' },
+            },
+            required: ['title', 'brief'],
+          },
+        },
+      },
+      required: ['goal', 'workers'],
     },
   },
   required: ['outcome', 'summary'],

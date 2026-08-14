@@ -45,6 +45,10 @@ export function SettingsPage(): React.ReactElement {
   const [autonomousReflectionEnabled, setAutonomousReflectionEnabled] = useState(false);
   const [autonomousReflectionBudgetUSD, setAutonomousReflectionBudgetUSD] = useState(0);
   const [morningReportEnabled, setMorningReportEnabled] = useState(true);
+  const [swarmMaxDepth, setSwarmMaxDepth] = useState(3);
+  const [swarmMaxWidth, setSwarmMaxWidth] = useState(5);
+  const [swarmMaxNodes, setSwarmMaxNodes] = useState(30);
+  const [swarmBudgetUSD, setSwarmBudgetUSD] = useState(5);
   const [testResult, setTestResult] = useState<any | null>(null);
 
   useEffect(() => {
@@ -73,6 +77,10 @@ export function SettingsPage(): React.ReactElement {
     setAutonomousReflectionEnabled(settings.autonomousReflectionEnabled ?? false);
     setAutonomousReflectionBudgetUSD(settings.autonomousReflectionBudgetUSD ?? 0);
     setMorningReportEnabled(settings.morningReportEnabled ?? true);
+    setSwarmMaxDepth(settings.swarmMaxDepth ?? 3);
+    setSwarmMaxWidth(settings.swarmMaxWidth ?? 5);
+    setSwarmMaxNodes(settings.swarmMaxNodes ?? 30);
+    setSwarmBudgetUSD(settings.swarmBudgetUSD ?? 5);
   }, [settings]);
 
   const handleSave = (): void => {
@@ -81,7 +89,7 @@ export function SettingsPage(): React.ReactElement {
       return;
     }
     saveSettings.mutate(
-      { claudeBin, model, skipPermissions, timeoutMs, maxToolCalls, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierPrimaryId: tierPrimary, executorTierSecondaryId: tierSecondary, executorTierTertiaryId: tierTertiary, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs, theme, fontFamily, fontSize, locale, codeTheme, autonomousReflectionEnabled, autonomousReflectionBudgetUSD, morningReportEnabled },
+      { claudeBin, model, skipPermissions, timeoutMs, maxToolCalls, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierPrimaryId: tierPrimary, executorTierSecondaryId: tierSecondary, executorTierTertiaryId: tierTertiary, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs, theme, fontFamily, fontSize, locale, codeTheme, autonomousReflectionEnabled, autonomousReflectionBudgetUSD, morningReportEnabled, swarmMaxDepth, swarmMaxWidth, swarmMaxNodes, swarmBudgetUSD },
       {
         onSuccess: () => toast('success', '系统设置已保存并实时生效'),
         onError: (error: any) => toast('error', error.message ?? '保存设置失败'),
@@ -309,6 +317,30 @@ export function SettingsPage(): React.ReactElement {
             </label>
             <p className="muted">
               关闭后不再每日自动扫描生成优化建议；各项目/公司自己配置的定时工作不受影响。
+            </p>
+          </div>
+        </details>
+
+        <details className="details-collapse">
+          <summary>蜂群（大规模并行）</summary>
+          <div className="form-stack">
+            <div className="settings-field-grid">
+              <Field label="最大下探深度（层）" hint="调度中心→工蜂→子蜂…；上限非目标，按需分解">
+                <Input type="number" min={1} max={5} value={swarmMaxDepth} onChange={(e) => setSwarmMaxDepth(Number(e.target.value))} />
+              </Field>
+              <Field label="每节点最大扇出（只）" hint="一个节点一次最多放出多少工蜂">
+                <Input type="number" min={1} max={20} value={swarmMaxWidth} onChange={(e) => setSwarmMaxWidth(Number(e.target.value))} />
+              </Field>
+              <Field label="单群总节点上限" hint="整群任务总数熔断线，可按需调大">
+                <Input type="number" min={1} max={300} value={swarmMaxNodes} onChange={(e) => setSwarmMaxNodes(Number(e.target.value))} />
+              </Field>
+              <Field label="单群预算（USD）" hint="整群累计花费达到上限即熔断；0 = 不限">
+                <Input type="number" min={0} step={0.5} value={swarmBudgetUSD} onChange={(e) => setSwarmBudgetUSD(Number(e.target.value))} />
+              </Field>
+            </div>
+            <p className="muted">
+              蜂群由隐形「调度中心」自动拆解放蜂（一次性工蜂，不出现在花名册）；失败自动告警给调度中心，
+              失败过半自动熔断。任务详情页可看蜂群树并一键停止。
             </p>
           </div>
         </details>

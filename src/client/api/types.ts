@@ -227,8 +227,31 @@ export interface Task {
   completedAt: string | null;
   clarificationRounds: number;
   isDiscussion: number;
+  /** 指挥系统：所属蜂群（null=普通任务）。 */
+  swarmId: string | null;
+  /** 指挥系统：蜂群树深度（根=0，蜂=1，子蜂递增）。 */
+  swarmDepth: number;
   createdAt: string;
   updatedAt: string;
+}
+
+/** 指挥系统：蜂群视图数据（GET /api/tasks/:id/swarm）。 */
+export interface SwarmView {
+  swarm: {
+    id: string;
+    goal: string;
+    status: 'active' | 'completed' | 'aborted' | 'failed';
+    nodesTotal: number;
+    nodesDone: number;
+    nodesFailed: number;
+    maxDepth: number;
+    maxWidth: number;
+    maxNodes: number;
+    budgetUsd: number;
+    createdAt: string;
+    finishedAt: string | null;
+  } | null;
+  tasks: Task[];
 }
 
 export interface UsageSummary {

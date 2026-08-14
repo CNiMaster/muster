@@ -95,6 +95,17 @@ export interface AgentRunResult {
   workflowNextEdgeLabel?: string;
   /** 双 Loop P2：agent 对每条验收标准的自评（对照 acceptance_criteria.id），供验收段半自动判定。 */
   acceptanceMet?: { id: string; met: boolean }[];
+  /**
+   * 指挥系统 W3：蜂群计划（仅调度中心系统岗的返回被兑现，其他 agent 返回会被忽略）。
+   * 全执行器通用契约（done 结构化输出），不依赖工具循环——CLI/API 执行器同构。
+   */
+  swarmPlan?: SwarmPlan;
+}
+
+/** 蜂群计划：调度中心把目标拆成一组独立工蜂任务。 */
+export interface SwarmPlan {
+  goal: string;
+  workers: Array<{ title: string; brief: string }>;
 }
 
 // ===== 实时事件契约 =====

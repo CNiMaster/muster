@@ -9,6 +9,7 @@ import type { ResolvedTaskSkill } from '../../shared/types';
 import { getCompany } from '../domain/company';
 import { getProject } from '../domain/project';
 import { getAgent, listAgents } from '../domain/agent';
+import { getDispatcherAgentId, DISPATCHER_ROLE } from '../domain/system-agents';
 import { listTaskMessages } from '../domain/task-message';
 import type { Task } from '../domain/task';
 import { getTask as loadTask } from '../domain/task';
@@ -251,6 +252,17 @@ export function assembleContext(
       '',
     );
   }
+  // 指挥系统 W3：调度中心专属——swarmPlan 契约教学（其他岗位不教，返回也会被忽略）
+  if (agent?.isSystem && agent.role === DISPATCHER_ROLE) {
+    sp.push(
+      '# 蜂群契约（你是调度中心，独有）',
+      '适合并行拆解的目标：在最终 JSON 里加 swarmPlan 字段并置 outcome="waiting_dependency"：',
+      'swarmPlan: { goal: "总目标", workers: [ { title: "子题", brief: "给这只蜂的具体指令与边界" } ] }',
+      '系统会为每只蜂创建一次性工蜂并行执行，全部完成后你收到 [蜂群汇总] 任务做收口报告。',
+      '工蜂数量按需（够用就好）；超出系统上限会被截断。不适合并行的目标不要用 swarmPlan。',
+      '',
+    );
+  }
   const systemPrompt = sp.join('\n');
 
   // ===== Input Packet =====
@@ -277,6 +289,21 @@ export function assembleContext(
     referencedArtifacts,
     availableContacts,
   };
+  // 指挥系统：大规模并行任务的专职入口（调度中心是隐形岗，不在 availableContacts 里）
+  if (!lightweight) {
+    try {
+      const dispatcherAgentId = getDispatcherAgentId(db, company.id);
+      if (dispatcherAgentId) {
+        inputPacket.swarmDispatcher = {
+          id: dispatcherAgentId,
+          name: '调度中心',
+          usage: '需要大规模并行（大范围调研/信息扫描/批量评估）时，用 done 的 outboundTasks 派给此 id（recipientAgentId）；调度中心会拆解成工蜂群并行执行并汇总。',
+        };
+      }
+    } catch {
+      // 调度中心不存在时跳过（公司尚未上线生成）
+    }
+  }
   if (task.parentTaskId) {
     const parent = loadTask(db, task.parentTaskId);
     inputPacket.parentTask = { id: parent.id, seq: parent.seq, title: parent.title, summary: parent.summary };

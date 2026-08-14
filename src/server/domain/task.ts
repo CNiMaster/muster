@@ -33,6 +33,7 @@ import {assertProjectLaunchConfirmed} from './project-launch';
 import {assertProjectActive} from './project-readiness';
 import { getCompany } from './company';
 import { recordSuspension, resolveSuspensionByTask } from './task-suspension';
+import { checkSwarmLimits, greyBeeAfterTask, handleSwarmTaskFailure, recordSwarmNodeOutcome, reportBeeCompletion } from './swarm';
 
 /**
  * 验收标准条目（双 Loop 地基 P0.1）。
@@ -104,6 +105,10 @@ export interface Task {
   outsourcingContractId: string | null;
   /** E1.4 返工累计次数：business_review changes_requested/rejected 派返工 Task 时递增（记在被返工的原 task 上）。 */
   reworkCount: number;
+  /** 指挥系统：所属蜂群（null=普通任务）。 */
+  swarmId: string | null;
+  /** 指挥系统：蜂群树深度（根调度任务=0，蜂=1，子蜂递增）。 */
+  swarmDepth: number;
 }
 
 interface TaskRow {
@@ -150,6 +155,8 @@ interface TaskRow {
   alignment_state: AlignmentState;
   outsourcing_contract_id: string | null;
   rework_count: number;
+  swarm_id: string | null;
+  swarm_depth: number;
 }
 
 function fromRow(r: TaskRow): Task {
@@ -197,6 +204,8 @@ function fromRow(r: TaskRow): Task {
     alignmentState: (r.alignment_state ?? null) as AlignmentState,
     outsourcingContractId: r.outsourcing_contract_id ?? null,
     reworkCount: r.rework_count ?? 0,
+    swarmId: (r as { swarm_id?: string | null }).swarm_id ?? null,
+    swarmDepth: (r as { swarm_depth?: number }).swarm_depth ?? 0,
   };
 }
 
@@ -236,6 +245,9 @@ export interface CreateTaskInput {
   skipLaunchGate?: boolean;
   /** 咨询任务豁免（设计二-方案A）：跳过 contactAllow 守卫（同事咨询属正常协作）。 */
   isConsultation?: boolean;
+  /** 指挥系统：蜂群归属与树深度（蜂任务/汇总任务/告警任务携带）。 */
+  swarmId?: string;
+  swarmDepth?: number;
 }
 
 const ALLOWED_TRANSITIONS: Record<TaskState, TaskState[]> = {
@@ -305,7 +317,8 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
     if (dispatcher && dispatcher.companyId !== project.companyId) {
       throw new AppError(ErrorCode.UNAUTHORIZED, `派发者 ${dispatcher.id} 不属于项目所在公司`);
     }
-    if (dispatcher && assignee && dispatcher.id !== assignee.id && !dispatcher.contactAllow.includes(assignee.id)) {
+    // 指挥系统：系统隐形岗（调度中心）的派发对象是一次性工蜂/汇总任务（系统管理），豁免 contactAllow
+    if (dispatcher && assignee && dispatcher.id !== assignee.id && !dispatcher.isSystem && !dispatcher.contactAllow.includes(assignee.id)) {
       throw new AppError(
         ErrorCode.UNAUTHORIZED,
         `员工 ${dispatcher.id} 未授权联系 ${assignee.id}`,
@@ -335,8 +348,8 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
        assignee_thread_id, assignee_task_thread_id, title, input_protocol_json, context_refs_json, output_protocol_json,
        priority, state, lease_owner_thread_id, lease_expires_at, heartbeat_at, outcome, summary,
        question, artifacts_json, checkpoint, clarification_rounds, is_discussion, is_suggestion, budget_json,
-       deadline_at, completed_at, created_at, updated_at, acceptance_criteria, outsourcing_contract_id)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?, ?,?,'queued',NULL,NULL,NULL,NULL,'',NULL,'[]',NULL,0,?,?,'{}',?,NULL,?, ?,?,?)`,
+       deadline_at, completed_at, created_at, updated_at, acceptance_criteria, outsourcing_contract_id, swarm_id, swarm_depth)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'queued',NULL,NULL,NULL,NULL,'',NULL,'[]',NULL,0,?,?,'{}',?,NULL,?,?,?,?,?,?)`,
   ).run(
     id, input.projectId,projectTaskId, seq, rootTaskId, input.parentTaskId ?? null, input.dispatcherAgentId ?? null,
     routedAssigneeId, null,null, input.title,
@@ -348,6 +361,8 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
     input.deadlineAt ?? null, now, now,
     JSON.stringify(input.acceptanceCriteria ?? []),
     input.outsourcingContext?.contractId ?? null,
+    input.swarmId ?? null,
+    input.swarmDepth ?? 0,
   );
   // 修正 root_task_id 自引用
   if (!input.parentTaskId && !input.rootTaskId) {
@@ -563,6 +578,18 @@ export function completeTask(db: DB, taskId: string, result: AgentRunResult): Ta
     );
     appendTaskEvent(db, taskId, nextState, { outcome: result.outcome });
 
+    // 指挥系统：蜂任务完成 → 汇总消息写回 + 蜂灰化 + 整群记账（可能触发关群）
+    if (result.outcome === 'completed' && cur.swarmId) {
+      try {
+        const settled = getTask(db, taskId);
+        reportBeeCompletion(db, settled);
+        greyBeeAfterTask(db, settled);
+        recordSwarmNodeOutcome(db, settled, 'done');
+      } catch (e) {
+        console.warn('swarm completion accounting failed', { taskId, err: e instanceof Error ? e.message : String(e) });
+      }
+    }
+
     // 双 Loop P2：completed 时把 agent 自评的验收达标状态写回 acceptance_criteria。
     if (result.outcome === 'completed' && result.acceptanceMet?.length) {
       const metMap = new Map(result.acceptanceMet.map((m) => [m.id, m.met]));
@@ -604,6 +631,19 @@ export function completeTask(db: DB, taskId: string, result: AgentRunResult): Ta
           continue;
         }
 
+        // 指挥系统：蜂群限额（深度/宽度/总量/预算）——超限阻断并留痕，子任务继承群与深度
+        if (cur.swarmId) {
+          const guard = checkSwarmLimits(db, cur.swarmId, { parentTaskId: cur.id, addCount: 1 });
+          if (!guard.ok) {
+            appendTaskEvent(db, cur.id, 'swarm_limit_blocked', {
+              recipient: out.recipientAgentId,
+              title: out.title,
+              reason: guard.reason,
+            });
+            continue;
+          }
+        }
+
         const child = createTask(db, {
           projectId: cur.projectId,
           parentTaskId: cur.id,
@@ -613,6 +653,7 @@ export function completeTask(db: DB, taskId: string, result: AgentRunResult): Ta
           title: out.title,
           inputProtocol: out.payload,
           priority: out.priority,
+          ...(cur.swarmId ? { swarmId: cur.swarmId, swarmDepth: cur.swarmDepth + 1 } : {}),
         });
         if (result.outcome === 'waiting_dependency') {
           addDependency(db, cur.id, child.id);
@@ -892,6 +933,16 @@ export function failTask(db: DB, taskId: string, message: string): Task {
   }
 
   const failed = getTask(db, taskId);
+  // 指挥系统：蜂群任务失败 → 改道调度中心处置（记账/告警/熔断/依赖解除），
+  // 不走 [兜底]（那会打扰第一负责人——蜂群的失败责任人是调度中心）
+  if (failed.swarmId) {
+    try {
+      handleSwarmTaskFailure(db, failed, message);
+    } catch (e) {
+      console.warn('swarm failure handling failed', { taskId, err: e instanceof Error ? e.message : String(e) });
+    }
+    return failed;
+  }
   // 阶段一任务 1.1：子任务失败时通知父任务并上报第一负责人，
   // 避免父任务永久卡在 waiting_dependency 无人发现。
   try {
@@ -1106,6 +1157,15 @@ export function cancelTask(db: DB, taskId: string): Task {
     console.warn('resumeDependents after cancel failed', { taskId, err: e instanceof Error ? e.message : String(e) });
   }
   appendTaskEvent(db, taskId, 'cancelled', {});
+  // 指挥系统：蜂群节点取消 → 记账（cancelled 计入已收口；蜂灰化）
+  if (cur.swarmId) {
+    try {
+      greyBeeAfterTask(db, cur);
+      recordSwarmNodeOutcome(db, cur, 'cancelled');
+    } catch (e) {
+      console.warn('swarm cancel accounting failed', { taskId, err: e instanceof Error ? e.message : String(e) });
+    }
+  }
   return getTask(db, taskId);
 }
 
