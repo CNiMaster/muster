@@ -34,11 +34,20 @@ const questionOptionSchema = z.object({
   cons: z.string().optional(),
 });
 
+const debateVerdictSchema = z.object({
+  debateId: z.string().optional(),
+  recommendedOptionId: z.string().optional(),
+  confidence: z.number().min(0).max(1),
+  rationale: z.string(),
+  flaws: z.array(z.object({ optionId: z.string(), flaw: z.string() })).default([]),
+});
+
 export const agentRunResultSchema = z.object({
   outcome: z.enum(['completed', 'waiting_input', 'waiting_dependency', 'blocked']),
   summary: z.string(),
   question: z.string().optional(),
   questionOptions: z.array(questionOptionSchema).optional(),
+  debateVerdict: debateVerdictSchema.optional(),
   outboundTasks: z.array(outboundTaskSchema).default([]),
   artifacts: z.array(artifactSchema).default([]),
   checkpoint: z.string().optional(),
@@ -126,6 +135,24 @@ export const AGENT_RESULT_JSON_SCHEMA = {
         },
         required: ['id', 'label'],
       },
+    },
+    debateVerdict: {
+      type: 'object',
+      properties: {
+        debateId: { type: 'string' },
+        recommendedOptionId: { type: 'string' },
+        confidence: { type: 'number' },
+        rationale: { type: 'string' },
+        flaws: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: { optionId: { type: 'string' }, flaw: { type: 'string' } },
+            required: ['optionId', 'flaw'],
+          },
+        },
+      },
+      required: ['confidence', 'rationale', 'flaws'],
     },
   },
   required: ['outcome', 'summary'],

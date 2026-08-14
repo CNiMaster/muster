@@ -33,7 +33,8 @@ import { getThread, listOnlineThreads, updateThreadState } from '../domain/threa
 import { getAgent } from '../domain/agent';
 import { assembleContext } from '../executors/context';
 import { materializeSwarm } from '../domain/swarm';
-import { DISPATCHER_ROLE } from '../domain/system-agents';
+import { finalizeDebate, startDebate } from '../domain/debate';
+import { DISPATCHER_ROLE, JUDGE_ROLE } from '../domain/system-agents';
 import { getExecutorManifest } from '../executors/manifests';
 import { assertSafeToRun } from '../executors/safety';
 import { getProject, listProjectReferences } from '../domain/project';
@@ -837,6 +838,52 @@ export class TaskEngine {
       const approvalMatch=result.outcome==='blocked'?/审批请求\s+(approval_[A-Za-z0-9_-]+)/.exec(result.summary):null;
       if(approvalMatch){commitAll(worktreeInfo.path,`muster: approval checkpoint ${task.id}`,{excludePaths:resolutionContext?['.muster-conflicts']:[]});preserveWorktree=true;markTaskWaitingApproval(this.db,task.id,approvalMatch[1]!);updateThreadState(this.db,thread.id,'paused');return true;}
       completeTask(this.db, task.id, result);
+
+      // 指挥系统批次4：评审中心返回 debateVerdict → 裁决落定（自动采纳/升级用户）
+      if (
+        result.debateVerdict
+        && agent.isSystem
+        && agent.role === JUDGE_ROLE
+        && typeof (task.inputProtocol as Record<string, unknown>)?.debate === 'object'
+      ) {
+        const debate = (task.inputProtocol as { debate?: { debateId?: string } }).debate;
+        const verdict = result.debateVerdict;
+        result.debateVerdict = undefined;
+        if (debate?.debateId) {
+          try {
+            finalizeDebate(this.db, debate.debateId, verdict);
+          } catch (error) {
+            log.warn('debate finalize failed', { taskId: task.id, debateId: debate.debateId, error: error instanceof Error ? error.message : String(error) });
+          }
+        }
+      }
+
+      // 指挥系统批次4：两难自动进评审庭——waiting_input 且带 ≥2 个选项先辩论，
+      // 辩不出（置信 < 阈值）才升级用户。无配额：两难即辩（用户拍板）。
+      let debateStarted = false;
+      if (
+        result.outcome === 'waiting_input'
+        && (result.questionOptions?.length ?? 0) >= 2
+        && task.inputProtocol.trigger !== 'debate_round'
+        && task.inputProtocol.trigger !== 'debate_verdict'
+      ) {
+        try {
+          const proto = task.inputProtocol as { scope?: unknown; scopeId?: unknown };
+          const scopeOk = proto.scope === 'company' || proto.scope === 'project';
+          startDebate(this.db, {
+            companyId: company.id,
+            projectId: project.id,
+            question: result.question ?? task.title,
+            options: result.questionOptions!,
+            originTaskId: task.id,
+            originScopeKind: scopeOk ? proto.scope as 'company' | 'project' : undefined,
+            originScopeId: scopeOk && typeof proto.scopeId === 'string' ? proto.scopeId : undefined,
+          });
+          debateStarted = true;
+        } catch (error) {
+          log.warn('debate start failed; asking user directly instead', { taskId: task.id, error: error instanceof Error ? error.message : String(error) });
+        }
+      }
       // 设计二-方案B：讨论发言任务完成时记录发言 + 自动轮转到下一位发言者。
       // 放在引擎层（非 completeTask 内部）因为 completeTask 是同步函数，无法用动态 import。
       if (result.outcome === 'completed') {
@@ -1003,11 +1050,22 @@ export class TaskEngine {
           });
         }
       }
-      if (
-        (result.outcome === 'completed' || result.outcome === 'waiting_input')
-        && task.inputProtocol.trigger === 'user_message'
+      const isConvTask = task.inputProtocol.trigger === 'user_message'
         && (task.inputProtocol.scope === 'project' || task.inputProtocol.scope === 'company')
-        && typeof task.inputProtocol.scopeId === 'string'
+        && typeof task.inputProtocol.scopeId === 'string';
+      if (debateStarted && isConvTask) {
+        // 两难已进评审庭：对话先收到启动播报，完整问题等辩论结论（自动采纳播报/升级时再发）
+        postSystemMessage(this.db, {
+          scopeKind: task.inputProtocol.scope,
+          scopeId: task.inputProtocol.scopeId,
+          role: 'event',
+          author: 'system',
+          content: `[评审庭] 遇到两难，已启动辩论：${(result.question ?? task.title).slice(0, 120)}（${result.questionOptions!.length} 个选项，辩手立论互攻后裁决；辩不出会来问你）`,
+          refTaskId: task.id,
+        });
+      } else if (
+        (result.outcome === 'completed' || result.outcome === 'waiting_input')
+        && isConvTask
       ) {
         // 指挥系统批次3：waiting_input（追问）也回写对话——否则用户在对话窗毫无感知。
         // 追问消息不做内容去重（问题本身必须送达）。

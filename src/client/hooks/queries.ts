@@ -999,6 +999,26 @@ export function useAbortSwarm() {
   });
 }
 
+// ===== 评审庭记录（指挥系统批次4）=====
+export interface DebateView {
+  id: string;
+  question: string;
+  options: { id: string; label: string; detail?: string }[];
+  status: 'open' | 'resolved' | 'escalated';
+  verdict: { recommendedOptionId?: string; confidence: number; rationale: string } | null;
+  originTaskId: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+}
+
+export function useCompanyDebates(companyId: string | undefined) {
+  return useQuery({
+    queryKey: ['company-debates', companyId],
+    queryFn: () => api.get<DebateView[]>(`/api/companies/${companyId}/debates`),
+    enabled: !!companyId,
+  });
+}
+
 // ===== Tasks =====
 export function useTasks(projectId: string | undefined) {
   return useQuery({

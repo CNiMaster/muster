@@ -111,6 +111,23 @@ export interface AgentRunResult {
    * 全执行器通用契约（done 结构化输出），不依赖工具循环——CLI/API 执行器同构。
    */
   swarmPlan?: SwarmPlan;
+  /**
+   * 指挥系统批次4：评审裁决（仅评审中心系统岗的返回被兑现）。
+   * confidence ≥ 设置阈值自动采纳；低于则升级用户（带优劣表）。
+   */
+  debateVerdict?: DebateVerdict;
+}
+
+/** 评审庭裁决。 */
+export interface DebateVerdict {
+  debateId?: string;
+  /** 推荐选项 id（都不推荐时留空 + 低置信）。 */
+  recommendedOptionId?: string;
+  /** 置信度 0~1。 */
+  confidence: number;
+  rationale: string;
+  /** 每个选项的致命缺点（差评清单）。 */
+  flaws: Array<{ optionId: string; flaw: string }>;
 }
 
 /** 蜂群计划：调度中心把目标拆成一组独立工蜂任务。 */

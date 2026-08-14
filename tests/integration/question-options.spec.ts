@@ -77,7 +77,7 @@ describe('落库与回答', () => {
 });
 
 describe('对话可见追问', () => {
-  it('waiting_input + 选项 → 对话窗收到带 A/B 列表的 assistant 消息（带 refTaskId）；completed 不带选项', async () => {
+  it('waiting_input 无选项 → 对话窗收到问题原文；completed 回复正常', async () => {
     const company = createCompany(db, { name: 'co' });
     const lead = createAgent(db, { companyId: company.id, name: 'lead', role: 'lead' });
     const project = createProject(db, { companyId: company.id, name: 'p', rootDir: makeTempGitRepo(), firstAgentId: lead.id, initialState: 'active' });
@@ -86,17 +86,13 @@ describe('对话可见追问', () => {
     const fake = new FakeExecutor();
     const engine = new TaskEngine(db, fake);
 
-    // 1) waiting_input 追问回写对话
+    // 1) waiting_input 追问（无结构化选项 → 不进评审庭，直接回写对话）
     fake.script([
       {
         result: {
           outcome: 'waiting_input' as const,
-          summary: '两个方向拿不准',
-          question: '走快糙路线还是稳妥路线？',
-          questionOptions: [
-            { id: 'a', label: '快速交付' },
-            { id: 'b', label: '稳妥重构', detail: '多两天' },
-          ],
+          summary: '信息不足',
+          question: '主角叫什么名字？',
           outboundTasks: [],
           artifacts: [],
         },
@@ -105,9 +101,9 @@ describe('对话可见追问', () => {
     const t1 = createTask(db, {
       projectId: project.id,
       assigneeAgentId: lead.id,
-      title: '决策',
+      title: '写作',
       priority: 9,
-      inputProtocol: { trigger: 'user_message', scope: 'company', scopeId: company.id, content: '帮我定方案' },
+      inputProtocol: { trigger: 'user_message', scope: 'company', scopeId: company.id, content: '写一章' },
     });
     db.prepare(
       `INSERT INTO project_agent_thread (id, project_id, agent_id, kind, root_thread_id, claude_session_id, context_json, state, created_at, updated_at)
@@ -119,15 +115,13 @@ describe('对话可见追问', () => {
     const companyMessages = listMessages(db, 'company', company.id);
     const questionMsg = companyMessages.find((m) => m.role === 'assistant' && m.refTaskId === t1.id);
     expect(questionMsg).toBeDefined();
-    expect(questionMsg!.content).toContain('走快糙路线还是稳妥路线？');
-    expect(questionMsg!.content).toContain('A. 快速交付');
-    expect(questionMsg!.content).toContain('B. 稳妥重构 — 多两天');
+    expect(questionMsg!.content).toContain('主角叫什么名字？');
 
-    // 2) completed 回复仍走原路径（无选项文本）
+    // 2) completed 回复仍走原路径
     fake.script([
       { result: { outcome: 'completed' as const, summary: '搞定了', outboundTasks: [], artifacts: [] } },
     ]);
-    const t2 = createTask(db, {
+    createTask(db, {
       projectId: project.id,
       assigneeAgentId: lead.id,
       title: '执行',
@@ -135,8 +129,47 @@ describe('对话可见追问', () => {
       inputProtocol: { trigger: 'user_message', scope: 'company', scopeId: company.id, content: '执行' },
     });
     await engine.pumpThread('th_q1');
-    void t2;
     const after = listMessages(db, 'company', company.id);
     expect(after.some((m) => m.role === 'assistant' && m.content === '搞定了')).toBe(true);
+  });
+
+  it('waiting_input 带 ≥2 选项 → 不发裸问题（自动进评审庭，见 debate.spec）；1 个选项 → 发原文+选项列表', async () => {
+    const company = createCompany(db, { name: 'co' });
+    const lead = createAgent(db, { companyId: company.id, name: 'lead', role: 'lead' });
+    const project = createProject(db, { companyId: company.id, name: 'p', rootDir: makeTempGitRepo(), firstAgentId: lead.id, initialState: 'active' });
+    clockIn(db, company.id);
+
+    const fake = new FakeExecutor();
+    const engine = new TaskEngine(db, fake);
+    fake.script([
+      {
+        result: {
+          outcome: 'waiting_input' as const,
+          summary: '确认一下',
+          question: '用默认配置吗？',
+          questionOptions: [{ id: 'yes', label: '用默认' }],
+          outboundTasks: [],
+          artifacts: [],
+        },
+      },
+    ]);
+    createTask(db, {
+      projectId: project.id,
+      assigneeAgentId: lead.id,
+      title: '配置',
+      priority: 9,
+      inputProtocol: { trigger: 'user_message', scope: 'company', scopeId: company.id, content: '初始化' },
+    });
+    db.prepare(
+      `INSERT INTO project_agent_thread (id, project_id, agent_id, kind, root_thread_id, claude_session_id, context_json, state, created_at, updated_at)
+       VALUES ('th_q2', ?, ?, 'primary', NULL, NULL, '{}', 'idle', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`,
+    ).run(project.id, lead.id);
+    await engine.pumpThread('th_q2');
+
+    const messages = listMessages(db, 'company', company.id);
+    const questionMsg = messages.find((m) => m.role === 'assistant');
+    expect(questionMsg).toBeDefined();
+    expect(questionMsg!.content).toContain('用默认配置吗？');
+    expect(questionMsg!.content).toContain('A. 用默认');
   });
 });

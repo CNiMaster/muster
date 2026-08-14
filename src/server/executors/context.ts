@@ -9,7 +9,7 @@ import type { ResolvedTaskSkill } from '../../shared/types';
 import { getCompany } from '../domain/company';
 import { getProject } from '../domain/project';
 import { getAgent, listAgents } from '../domain/agent';
-import { getDispatcherAgentId, DISPATCHER_ROLE } from '../domain/system-agents';
+import { getDispatcherAgentId, DISPATCHER_ROLE, JUDGE_ROLE } from '../domain/system-agents';
 import { listTaskMessages } from '../domain/task-message';
 import type { Task } from '../domain/task';
 import { getTask as loadTask } from '../domain/task';
@@ -261,6 +261,17 @@ export function assembleContext(
       'swarmPlan: { goal: "总目标", workers: [ { title: "子题", brief: "给这只蜂的具体指令与边界" } ] }',
       '系统会为每只蜂创建一次性工蜂并行执行，全部完成后你收到 [蜂群汇总] 任务做收口报告。',
       '工蜂数量按需（够用就好）；超出系统上限会被截断。不适合并行的目标不要用 swarmPlan。',
+      '',
+    );
+  }
+  // 指挥系统批次4：评审中心专属——debateVerdict 契约教学
+  if (agent?.isSystem && agent.role === JUDGE_ROLE) {
+    sp.push(
+      '# 裁决契约（你是评审中心，独有）',
+      '在最终 JSON 里加 debateVerdict 字段：',
+      'debateVerdict: { recommendedOptionId: "推荐选项id（都不推荐则省略）", confidence: 0~1, rationale: "理由", flaws: [ { optionId, flaw: "该选项的致命伤——最坏会发生什么、能否接受" } ] }',
+      '置信 ≥ 阈值会自动采纳并继续执行；低于阈值转用户拍板。各辩手的立论/互攻材料在你的任务讨论流（[上游输出]）里。',
+      '若输入带 userDecisions（用户历史选择），尊重其偏好方向。',
       '',
     );
   }

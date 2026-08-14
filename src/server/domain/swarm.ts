@@ -507,6 +507,8 @@ export function materializeSwarm(db: DB, sourceTask: Task, plan: SwarmPlan): Mat
   if (!rootDispatcherId) {
     throw new AppError(ErrorCode.VALIDATION, '调度任务缺少执行者，无法放蜂');
   }
+  // 调度中心是隐形岗，不在 ensureProjectThreads（按可见花名册）覆盖内——汇总/告警任务由它执行，显式建线程
+  ensurePrimaryThread(db, sourceTask.projectId, rootDispatcherId);
   const limits = getSwarmLimits(db);
   const proto = sourceTask.inputProtocol as Record<string, unknown>;
   const appendSwarmId = typeof proto.swarmId === 'string' ? proto.swarmId : null;

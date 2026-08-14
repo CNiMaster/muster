@@ -48,6 +48,7 @@ import {
   setCompanyTriggerEnabled,
   deleteCompanyTrigger,
 } from '../domain/triggers';
+import { listDebates } from '../domain/debate';
 import { AppError, ErrorCode } from '../../shared/errors';
 
 export const companiesRouter = Router();
@@ -202,6 +203,14 @@ companiesRouter.get(
   '/:id/usage',
   asyncHandler(async (req, res) => {
     res.json(summarizeCompanyUsage(getDb(), param(req, 'id')));
+  }),
+);
+
+/** 指挥系统批次4：评审庭记录（回看）。 */
+companiesRouter.get(
+  '/:id/debates',
+  asyncHandler(async (req, res) => {
+    res.json(listDebates(getDb(), param(req, 'id')));
   }),
 );
 

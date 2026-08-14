@@ -34,6 +34,7 @@ import {assertProjectActive} from './project-readiness';
 import { getCompany } from './company';
 import { recordSuspension, resolveSuspensionByTask } from './task-suspension';
 import { checkSwarmLimits, greyBeeAfterTask, handleSwarmTaskFailure, recordSwarmNodeOutcome, reportBeeCompletion } from './swarm';
+import { recordDecisionFromClarify } from './debate';
 
 /**
  * 验收标准条目（双 Loop 地基 P0.1）。
@@ -739,6 +740,19 @@ export function completeTask(db: DB, taskId: string, result: AgentRunResult): Ta
     // （补齐 parentTaskId 单链之外的跨公司依赖恢复）
     if (result.outcome === 'completed') {
       resumeDependents(db, cur.id);
+      // 指挥系统批次4：辩论轮任务的输出转发给等待它的下游任务（R1→R2→裁决的上下文通道）
+      if ((cur.inputProtocol as Record<string, unknown>)?.relayOutputToDependents) {
+        const dependents = db
+          .prepare('SELECT task_id FROM task_dependency WHERE depends_on_id=?')
+          .all(cur.id) as Array<{ task_id: string }>;
+        for (const dep of dependents) {
+          addTaskMessage(db, dep.task_id, {
+            author: cur.assigneeAgentId ?? 'system',
+            role: 'dispatch',
+            content: `[上游输出] Task #${cur.seq}「${cur.title}」：${(result.summary ?? '').slice(0, 600)}`,
+          });
+        }
+      }
     }
   })();
 
@@ -780,6 +794,14 @@ export function answerClarification(db: DB, taskId: string, input: { answer?: st
     appendTaskEvent(db, taskId, 'clarification_answered', option ? { optionId: option.id, optionLabel: option.label } : {});
     resolveSuspensionByTask(db, taskId, { resolution: 'resumed' });
   })();
+  // 指挥系统批次4：用户的选项选择沉淀为决策记录（偏好画像，注入后续评审庭）
+  if (option) {
+    try {
+      recordDecisionFromClarify(db, taskId, option);
+    } catch (e) {
+      console.warn('decision record failed', { taskId, err: e instanceof Error ? e.message : String(e) });
+    }
+  }
   return getTask(db, taskId);
 }
 
