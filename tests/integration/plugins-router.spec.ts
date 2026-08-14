@@ -67,4 +67,26 @@ describe('marketplace install-preset 路由', () => {
     });
     expect(res.status).toBe(409);
   });
+
+  it('install-claude-plugin：scope=company 缺 companyId → 400', async () => {
+    const res = await fetch(`${base}/api/plugins/marketplace/install-claude-plugin`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ pluginName: 'commit-commands', scope: { level: 'company' } }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('install-claude-plugin：公司上班 → 409（在发起任何网络拉取之前被锁拒绝）', async () => {
+    const company = createCompany(tdb.db, { name: 'C' });
+    transitionCompany(tdb.db, company.id, 'online');
+    const res = await fetch(`${base}/api/plugins/marketplace/install-claude-plugin`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ pluginName: 'commit-commands', scope: { level: 'company', companyId: company.id } }),
+    });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('company_locked');
+  });
 });

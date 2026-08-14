@@ -11,7 +11,7 @@
  */
 import type { DB } from '../db/client';
 import { MARKETPLACE_PRESETS, type MarketplacePreset } from '../../shared/marketplace-presets';
-import { buildPluginNameIndex } from './marketplace-presets';
+import { buildPluginNameIndex, presetRegistry } from './marketplace-presets';
 import type { Plugin } from '../../shared/plugin';
 import { log } from '../logger';
 
@@ -41,16 +41,22 @@ const CLAUDE_CODE_SHA = '1f6015b5d578adf79c8527443328a216d6b6a3f1';
 /** 注入型 fetch（测试用）。 */
 export type FetchLike = (url: string, init?: { signal?: AbortSignal }) => Promise<{ ok: boolean; status: number; text: () => Promise<string>; json: () => Promise<unknown> }>;
 
-/** 按 (kind, name) 计算 muster 内状态（用预构建索引，不再扫库）。
- * 同名同源（marketplace 来源）→ installed；同名异源（内置/本地等）→ conflict（spec I4 语义）。 */
+/** 按 (kind, name, 可选 registry) 计算 muster 内状态（用预构建索引，不再扫库）。
+ * 同名同源（marketplace + registry 匹配）→ installed；同名异源（内置/本地/其它 registry）→ conflict。
+ * registry 缺省时退回旧语义（任意 marketplace 来源即 installed）。 */
 function stateFor(
   index: Map<string, Plugin[]>,
   kind: 'skill' | 'mcp-server',
   name: string,
+  registry?: string,
 ): { installState: 'installable' | 'installed' | 'conflict'; existingId?: string } {
   const matches = index.get(`${kind}:${name.trim().toLowerCase()}`) ?? [];
   if (matches.length === 0) return { installState: 'installable' };
-  const marketplaceHit = matches.find((p) => p.source.kind === 'marketplace');
+  const marketplaceHit = registry
+    ? matches.find(
+        (p) => p.source.kind === 'marketplace' && p.source.registry === registry,
+      )
+    : matches.find((p) => p.source.kind === 'marketplace');
   if (marketplaceHit) return { installState: 'installed', existingId: marketplaceHit.id };
   return { installState: 'conflict', existingId: matches[0].id };
 }
@@ -64,7 +70,7 @@ export function searchPresets(
   const idx = index ?? buildPluginNameIndex(db);
   const q = query.trim().toLowerCase();
   return MARKETPLACE_PRESETS.filter((p) => !q || hitPreset(p, q)).map((p) => {
-    const st = stateFor(idx, p.kind, p.name);
+    const st = stateFor(idx, p.kind, p.name, presetRegistry(p));
     return {
       id: `preset:${p.id}`,
       name: p.name,
@@ -110,7 +116,7 @@ export async function searchMcpRegistry(
     return servers.map((s) => {
       const fullName = s.server.name ?? 'unknown';
       const shortName = fullName.split('/').pop() ?? fullName;
-      const st = stateFor(idx, 'mcp-server', shortName);
+      const st = stateFor(idx, 'mcp-server', shortName, 'mcp-official');
       return {
         id: `mcp-registry:${fullName}`,
         name: shortName,
@@ -144,7 +150,7 @@ export async function listAnthropicsSkillsCatalog(
     return items
       .filter((it) => it.type === 'dir')
       .map((it) => {
-        const st = stateFor(idx, 'skill', it.name);
+        const st = stateFor(idx, 'skill', it.name, 'anthropics-skills');
         return {
           id: `anthropics-skills:${it.name}`,
           name: it.name,
@@ -177,7 +183,7 @@ export async function listClaudeCodePluginsCatalog(
     const body = (await res.json()) as { plugins?: Array<{ name?: string; description?: string; category?: string }> };
     return (body.plugins ?? []).map((p) => {
       const name = p.name ?? 'unknown';
-      const st = stateFor(idx, 'skill', name);
+      const st = stateFor(idx, 'skill', name, 'claude-code-plugins');
       return {
         id: `claude-code-plugins:${name}`,
         name,

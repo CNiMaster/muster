@@ -54,13 +54,44 @@ describe('listClaudeCodePluginsCatalog（官方插件目录）', () => {
     const failing = (async () => { throw new Error('network down'); }) as unknown as ClaudeFetch;
     expect(await listClaudeCodePluginsCatalog(db, { fetcher: failing })).toEqual([]);
   });
+
+  it('同名 marketplace 但 registry 不同（如 local/github 来源）→ conflict 而非 installed（review H2）', async () => {
+    const { db } = makeTestDb();
+    installPlugin(db, {
+      name: 'commit-commands',
+      kind: 'skill',
+      source: { kind: 'marketplace', registry: 'local', ref: 'commit-commands' },
+      scope: { level: 'platform' },
+      manifest: { kind: 'skill', skill: { body: '# 本地同名' } },
+    });
+    const out = await listClaudeCodePluginsCatalog(db, { fetcher: mockFetcher() });
+    expect(out[0].installState).toBe('conflict');
+    // 同源（registry=claude-code-plugins）才是 installed
+    const { db: db2 } = makeTestDb();
+    installPlugin(db2, {
+      name: 'commit-commands',
+      kind: 'skill',
+      source: { kind: 'marketplace', registry: 'claude-code-plugins', ref: 'commit-commands' },
+      scope: { level: 'platform' },
+      manifest: { kind: 'skill', skill: { body: '# 同源' } },
+    });
+    const out2 = await listClaudeCodePluginsCatalog(db2, { fetcher: mockFetcher() });
+    expect(out2[0].installState).toBe('installed');
+  });
 });
 
 describe('installClaudeCodePlugin（安装为 skill 注入）', () => {
   it('组装 plugin 描述 + 命令正文，落库为 skill 插件', async () => {
     const { db } = makeTestDb();
     const company = createCompany(db, { name: 'C' });
-    const plugin = await installClaudeCodePlugin(db, 'commit-commands', { level: 'company', companyId: company.id }, { fetcher: mockFetcher() });
+    // 记录每次 fetch 收到的 init，断言超时信号透传进注入的 fetcher
+    const signals: Array<AbortSignal | undefined> = [];
+    const base = mockFetcher();
+    const recording = (async (url: string, init?: { signal?: AbortSignal }) => {
+      signals.push(init?.signal);
+      return base(url, init);
+    }) as ClaudeFetch;
+    const plugin = await installClaudeCodePlugin(db, 'commit-commands', { level: 'company', companyId: company.id }, { fetcher: recording });
     expect(plugin.kind).toBe('skill');
     expect(plugin.name).toBe('commit-commands');
     expect(plugin.source).toEqual({ kind: 'marketplace', registry: 'claude-code-plugins', ref: 'commit-commands' });
@@ -68,6 +99,9 @@ describe('installClaudeCodePlugin（安装为 skill 注入）', () => {
       expect(plugin.manifest.skill.body).toContain('Claude Code 官方插件：commit-commands');
       expect(plugin.manifest.skill.body).toContain('提交工作流指令');
     }
+    // 每次拉取都带超时信号（AbortSignal.timeout 构造）
+    expect(signals.length).toBeGreaterThan(0);
+    for (const sig of signals) expect(sig).toBeInstanceOf(AbortSignal);
   });
 
   it('同源重复安装 → CONFLICT', async () => {

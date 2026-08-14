@@ -290,7 +290,7 @@ function samePresetSourceRow(
 }
 
 /** 预置来源标签（不含 @，用作 marketplace source 的 registry；区分官方 skill / 官方 MCP）。 */
-function presetRegistry(preset: MarketplacePreset): string {
+export function presetRegistry(preset: MarketplacePreset): string {
   return preset.curatedBy === 'anthropic' ? 'anthropics-skills' : 'mcp-official';
 }
 

@@ -52,7 +52,8 @@ interface PluginMeta {
   source: string; // 仓库内路径，如 plugins/commit-commands
 }
 
-const FETCH_LIMIT = 10; // 单个插件最多拉取的命令/agent 文件数（防超大 bundle 拖垮安装）
+const FETCH_LIMIT = 10; // 单个插件最多拉取的命令/agent 文件总数（跨 commands/agents 两目录合并计数）
+const ASSEMBLE_DEADLINE_MS = 60_000; // 组装阶段整体截止（23 个请求串行，防单次安装悬挂数分钟）
 
 /** 拉 marketplace.json 找插件元数据（pin sha）。找不到/拉取失败抛错。 */
 async function resolvePluginMeta(name: string, f: ClaudeFetch): Promise<PluginMeta> {
@@ -68,7 +69,7 @@ async function resolvePluginMeta(name: string, f: ClaudeFetch): Promise<PluginMe
   return { name, description: hit.description ?? '', version: '1.0.0', source };
 }
 
-/** 列 commands/ 与 agents/ 下的 markdown 指令文件（上限 FETCH_LIMIT）。 */
+/** 列 commands/ 与 agents/ 下的 markdown 指令文件（两目录合并后统一上限 FETCH_LIMIT）。 */
 async function listInstructionFiles(dirPath: string, f: ClaudeFetch): Promise<string[]> {
   // 逐段编码路径（encodeURIComponent 整路径会把 / 编成 %2F，GitHub API 兼容性不可靠）
   const encodedPath = dirPath.split('/').map((seg) => encodeURIComponent(seg)).join('/');
@@ -83,26 +84,31 @@ async function listInstructionFiles(dirPath: string, f: ClaudeFetch): Promise<st
       (e) =>
         e.download_url ??
         `https://raw.githubusercontent.com/anthropics/claude-code/${CLAUDE_CODE_SHA}/${encodedPath}/${encodeURIComponent(e.name)}`,
-    )
-    .slice(0, FETCH_LIMIT);
+    );
 }
 
-/** 组装注入 body：plugin 描述 + 各命令/agent 正文（截断防过长）。 */
+/** 组装注入 body：plugin 描述 + 各命令/agent 正文（截断防过长），整体受截止时间约束。 */
 async function assembleBody(meta: PluginMeta, f: ClaudeFetch): Promise<string> {
   const parts: string[] = [
     `# Claude Code 官方插件：${meta.name}（v${meta.version}）\n${meta.description}`,
   ];
+  const files: string[] = [];
   for (const sub of ['commands', 'agents']) {
-    const files = await listInstructionFiles(`${meta.source}/${sub}`, f);
-    for (const fileUrl of files) {
-      try {
-        const res = await f(fileUrl, { signal: AbortSignal.timeout(12_000) });
-        if (!res.ok) continue;
-        const text = await res.text();
-        parts.push(text.slice(0, 4000));
-      } catch {
-        /* 单个文件失败不阻塞整体安装 */
-      }
+    files.push(...(await listInstructionFiles(`${meta.source}/${sub}`, f)));
+  }
+  const deadline = Date.now() + ASSEMBLE_DEADLINE_MS;
+  for (const fileUrl of files.slice(0, FETCH_LIMIT)) {
+    if (Date.now() > deadline) {
+      log.warn('claude plugin assemble deadline exceeded, stopping early', { pluginName: meta.name });
+      break;
+    }
+    try {
+      const res = await f(fileUrl, { signal: AbortSignal.timeout(Math.min(12_000, deadline - Date.now())) });
+      if (!res.ok) continue;
+      const text = await res.text();
+      parts.push(text.slice(0, 4000));
+    } catch {
+      /* 单个文件失败不阻塞整体安装 */
     }
   }
   return parts.join('\n\n---\n\n');
