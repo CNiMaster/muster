@@ -58,7 +58,7 @@ export function CompanyPage(): React.ReactElement {
     : activeTab === 'overview'
       ? (cockpit ? <CompanyOverview cockpit={cockpit} statusBoard={statusBoard} statusBoardLoading={statusBoardLoading} projects={projects} /> : <CardSkeleton />)
       : activeTab === 'attention' ? <CompanyAttention companyName={company.name} companyState={company.state} cockpit={cockpit} />
-        : activeTab === 'team' ? <CompanyTeam companyId={companyId} isOff={company.state === 'off'} agents={agents} departments={departments} />
+        : activeTab === 'team' ? <CompanyTeam companyId={companyId} companyState={company.state} agents={agents} departments={departments} />
           : activeTab === 'projects' ? <CompanyProjects companyId={companyId} projects={projects} />
             : activeTab === 'activity' ? <CompanyActivity companyId={companyId} agents={agents} events={events} />
               : activeTab === 'evolution' ? <CompanyEvolution companyId={companyId} />

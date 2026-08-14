@@ -21,8 +21,20 @@ import { Button, toast } from '../Button';
 import { companyStateTone, stateLabel } from '../Badge';
 
 const VISIBLE_LIMIT = 6;
+const ORDER_STORAGE_KEY = 'muster:company-tab-order';
 
 type ShutdownPhase = 'idle' | 'confirm' | 'draining' | 'bye';
+
+/** 读取用户拖拽排好的公司顺序（本地持久化）。 */
+function readTabOrder(): string[] {
+  try {
+    const raw = localStorage.getItem(ORDER_STORAGE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
 
 export function CompanyTabBar(): React.ReactElement {
   const { data: companies = [] } = useCompanies();
@@ -43,9 +55,35 @@ export function CompanyTabBar(): React.ReactElement {
   };
 
   const active = companies.filter((c) => !c.archivedAt);
-  const visible = active.slice(0, VISIBLE_LIMIT);
-  const overflow = active.slice(VISIBLE_LIMIT);
+  // 拖拽排序：用户排过的在前（保持顺序），新公司按创建序追加；状态变化永不改位置
+  const [tabOrder, setTabOrder] = useState<string[]>(readTabOrder);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const ordered = active.filter((c) => tabOrder.includes(c.id)).sort((a, b) => tabOrder.indexOf(a.id) - tabOrder.indexOf(b.id));
+  const rest = active.filter((c) => !tabOrder.includes(c.id));
+  const effectiveActive = [...ordered, ...rest];
+  const visible = effectiveActive.slice(0, VISIBLE_LIMIT);
+  const overflow = effectiveActive.slice(VISIBLE_LIMIT);
   const pausedCount = active.filter((c) => c.shutdownPaused === 1).length;
+
+  const persistOrder = (ids: string[]): void => {
+    setTabOrder(ids);
+    try {
+      localStorage.setItem(ORDER_STORAGE_KEY, JSON.stringify(ids));
+    } catch {
+      /* 存储失败不影响本次会话排序 */
+    }
+  };
+  const handleTabDrop = (targetId: string): void => {
+    if (!dragId || dragId === targetId) return;
+    const ids = effectiveActive.map((c) => c.id);
+    const from = ids.indexOf(dragId);
+    const to = ids.indexOf(targetId);
+    if (from < 0 || to < 0) return;
+    ids.splice(from, 1);
+    ids.splice(to, 0, dragId);
+    persistOrder(ids);
+    setDragId(null);
+  };
 
   const [phase, setPhase] = useState<ShutdownPhase>('idle');
   const [affected, setAffected] = useState<Array<{ id: string; name: string }>>([]);
@@ -98,7 +136,13 @@ export function CompanyTabBar(): React.ReactElement {
           <NavLink
             key={company.id}
             to={`/companies/${company.id}`}
-            className={`company-tab ${company.id === currentCompanyId ? 'is-active' : ''} ${company.state === 'off' ? 'is-paused' : ''}`}
+            draggable
+            onDragStart={() => setDragId(company.id)}
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={() => handleTabDrop(company.id)}
+            onDragEnd={() => setDragId(null)}
+            className={`company-tab ${company.id === currentCompanyId ? 'is-active' : ''} ${company.state === 'off' ? 'is-paused' : ''} ${dragId === company.id ? 'is-dragging' : ''}`}
+            title="拖动可调整顺序"
           >
             <span className="company-tab-name">{company.name}</span>
             <span className={`company-tab-dot tone-${companyStateTone(company.state)} ${company.state === 'online' && (activity[company.id] ?? 0) > 0 ? 'is-live' : ''}`} aria-hidden="true" />

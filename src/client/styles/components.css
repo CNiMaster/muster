@@ -843,3 +843,5 @@
 .shutdown-progress li .is-done { color: #1d7a3a; }
 .shutdown-bye { text-align: center; }
 .shutdown-bye h2 { font-size: 1.4em; }
+.company-tab.is-dragging { opacity: 0.4; }
+.company-tab[draggable="true"] { cursor: grab; }
