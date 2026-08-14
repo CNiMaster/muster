@@ -18,6 +18,9 @@ Authoritative planning documents:
 - `docs/superpowers/specs/2026-07-11-platform-workspace-agent-memory-templates-design.md` — confirmed vNext workspace, employee memory, executor, permission, template, and UX design
 - `docs/superpowers/plans/2026-07-11-vnext-guided-workspace-foundation.md` — delivered and verified vNext workspace/onboarding foundation
 - `docs/superpowers/plans/2026-07-11-vnext-agent-profile-memory.md` — delivered and verified Agent Profile, Agent Home, layered memory, and context recovery
+- `docs/superpowers/specs/2026-08-12-settings-overhaul-design.md` — 系统设置四域（网络/外观/生成参数/并发）
+- `docs/superpowers/specs/2026-08-14-capability-marketplace-design.md` — 能力商城（预置策展 + 官方源 + 质量回流）
+- `docs/superpowers/specs/2026-08-14-command-system-design.md` — 指挥系统（定时自动化 / 蜂群 / 对抗评审庭）
 - `docs/agent-company-implementation-checklist.md` — completed historical implementation checklist and acceptance record
 
 Key constraints for all new work:
@@ -85,7 +88,9 @@ src/
                  # task-event / task-message / artifact / usage / report /
                  # inspector / brainstorm / triggers / novel-template / workflow /
                  # event-feed（关键事件聚合）/ graph-proposal（自然语言改图）/
-                 # character-graph（只读人物关系图解析）/ speech-queue（loop protection + dedup）
+                 # character-graph（只读人物关系图解析）/ speech-queue（loop protection + dedup）/
+                 # swarm（蜂群）/ debate（评审庭）/ system-agents（隐形岗）/
+                 # temp-worker（临时工）/ setting（系统设置模型）/ tz（时区换算）
     task-engine/ # ExecutionAdapter 接口 + FakeExecutor + TaskEngine + RunWatchdog + agentExecutor 覆盖
     trigger-scheduler.ts # 轮询持久化 schedule trigger，原子推进并派发巡检 Task
     executors/   # Claude/Codex/Gemini CLI + OpenAICompatible/Gemini API adapters +
@@ -121,7 +126,7 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 - **执行器抽象**：统一 Manifest/Profile 已落地；认证执行器包含 Codex CLI、Claude Code、Antigravity CLI 与 Muster API，自定义 CLI 以受限非交互模式运行。员工任职固定绑定执行器，基础探测使用 CLI 默认模型。
 - **执行生命周期**：`RunWatchdog` 统一限制启动、空闲与总运行时长；`SessionManager` 独立处理上下文软阈值压缩、硬阈值换代和有限恢复链。
 - **引擎驱动**：`ProjectRuntimeCoordinator` 在 server 启动时定时轮询 online 公司，补线程、处理中断/排空/复盘并调用 `TaskEngine.pumpThread()` 完成领取→worktree→执行→发布；也提供 `POST /api/projects/:id/pump` 手动触发。
-- **定时触发**：`TriggerScheduler` 轮询 `trigger.next_run_at`；小说项目自动注册遗漏、连续性、长期一致性检查。下班期间不派发，上班后补派发；下一执行时间与 Task 创建在同一事务推进，避免重复。
+- **定时触发**：`TriggerScheduler` 轮询 `trigger.next_run_at`；小说项目自动注册遗漏、连续性、长期一致性检查。下班期间不派发，上班后补派发；下一执行时间与 Task 创建在同一事务推进，避免重复。**定时自动化补齐（指挥系统 B1）**：`trigger` 表已重建（`project_id` 可空 + `company_id` 公司级 + `schedule_kind('interval'|'daily')`/`time_of_day`/`timezone` 时刻语义 + `last_task_id` 防叠跑）；daily 的下一执行时间由 `tz.ts` 用 Intl 无依赖换算（DST 边界回程校验）；上次派发的 Task 仍 active 时本轮跳过（`trigger_skipped_overlap` 留痕）；公司级 trigger 派给第一负责人（载体=公司最早项目，无项目不消费本轮）；晨醒受 `morningReportEnabled` 设置键门控（默认开）。
 - **实时状态**：服务端通过 `/ws` 发布 Task、项目任务、审批、会话压缩/换代/恢复和 Watchdog 事件；前端精确失效项目任务、员工运行态、审批和公司驾驶舱缓存，轮询仅作断线兜底。
 - **通信边界**：带 `dispatcherAgentId` 的 Task 创建必须满足同公司和 `contact_allow`，不能绕过通信图直接派发。
 - **安全成果工作区**：每 Task 一个隐藏 Git worktree + 专用分支；串行发布队列做文本三方合并和二进制独占锁。冲突时保留原 worktree，自动给项目第一负责人派发带 base/ours/theirs 快照的交互式裁决 Task；临时快照不会进入 Git 提交，裁决失败或取消会升级并允许原 Task 重试。裁决发布前必须同步预检任务链，Git 发布后若数据库收口失败则自动回滚；连续两轮仍冲突时整条发布链统一升级人工。仅真正落盘且尚未回滚的发布可人工回滚。
@@ -142,6 +147,8 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 - **凭据库（平台级基本能力）**：所有 API/CLI 接入的凭据凌驾于公司之上，统一管理。启动时 `seedDefaultCredentialDefinitions()` 幂等注入 LLM 默认凭据定义（Anthropic/OpenAI/Google 三家，`credential_definition` 表）；后台可设默认派发项；创建公司时 `dispatchDefaultCredentialsToCompany()` 派发到 `company_credential`。执行时三层解析环境变量名：① 员工级覆盖（Agent Home `profile/credentials.json`，只存变量名不存明文）→ ② 公司级覆盖（`company_credential.override_key`）→ ③ 平台默认（`credential_definition.credential_key`）→ ④ 系统回退（`PROVIDER_DEFAULT_API_KEY_ENV` 或 legacy `agent.executor.apiKeyEnv`）。`engine.ts` 的 `resolveExecutorCredentialForTask()` 统一装配，三个 adapter（Claude/OpenAI/Gemini）无需改动——它们已消费 `ctx.apiKeyEnv`。明文值始终由系统环境变量提供，不进 DB、不进日志、不进迁移。
 - **素材区（项目级）**：每个项目有素材库（原料/需求/源文件），三选一导入：link（存路径/URL 引用，不复制文件，源不动）→ moved（copy+unlink 移入，源删除）→ copied（copyFile 复制，源保留）。素材存储在 `{project.rootDir}/materials/_copied/`，路径校验防目录穿越（对照 `resolveArtifactPath`）。`assembleContext` 注入 `# 项目素材` 摘要清单让员工知道可用素材。素材健康检查（link 型本地源文件是否存在）。
 - **成品区泛化 + 多媒体**：`ArtifactKind` 从小说专用 12 种枚举泛化为 `NovelArtifactKind | GenericArtifactKind | string`（通用公司可用 video/audio/image/markdown/binary 等）。`artifactTypeDefinitionSchema.format` 扩展 `video|audio`。`publish-queue` 的 `isBinaryPath` 扩展音视频扩展名，video/audio/binary kind 走 `exclusive_lock`（整文件替换，不走三方合并）。ArtifactsPage 前端按格式渲染：image(`<img>`)、video(`<video controls>`)、audio(`<audio controls>`)、pdf(`<iframe>`)。成品画廊聚合查询（`artifactGallery` 按 time/type 分组，`companyArtifactGallery` 跨项目聚合）。
+- **系统设置四域（settings overhaul，spec 2026-08-12）**：`setting.ts` 的 `SystemSettings` 是唯一设置模型（snake_case 存 `system_setting` 表）。**网络**：proxyUrl/proxyBypass/caCertPath/egressTimeoutMs，`runtime/egress.ts` undici 全局 dispatcher（启动时 setGlobalDispatcher，修改后重启生效）。**外观**：theme/fontFamily/fontSize/locale/codeTheme（useAppearance 实时应用）。**生成参数**：思考深度归一化(off/low/med/high)→各家参数翻译 + 上下文缓存 + thinkingSupported 探针。**并发**：executor_profile 的 max_concurrency（用户硬上限）/concurrency_locked/effective_concurrency（自适应：失败降/健康升），领取门在 engine pump 的 `canRunMore`。新增设置键六步链：setting.ts 接口+读默认+写分支 → api/settings.ts zod → queries.ts 类型 → SettingsPage 表单段 → 消费方读 getSystemSettings → 集成测试。
+- **能力商城（marketplace，spec 2026-08-14-capability-marketplace）**：预置策展 10 条官方精品（`marketplace-presets.ts`，pin 不可变 commit sha/npm 版本）+ 官方源搜索（MCP Registry API + anthropics/skills + Claude Code 官方插件包 marketplace.json，插件安装映射为 skill 注入）+ `marketplace_source` 表（手动来源未审核只登记、**绝不抓取防 SSRF**）。**注入链**：`resolveTaskSkills` 先查 plugin 表再 fallback 内置 skills/（否则商城 skill 装了白装）；(kind,normalize(name)) 三层去重（同源 409/异源替换/否则冲突）；runtime 按 (kind,name) 去重实体>只读视图且过滤 disabled。质量信号回流 `capability_usage_stat` 排序。安装走事务内二次检查 + endpoint 唯一索引防并发双装。
 
 ### 多 Agent 协作增强（平台级能力）
 
@@ -153,6 +160,15 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 - **去重（dedup）**：`speech-queue.ts` 的 `isDuplicateContent()` 用 Jaccard 关键词相似度检查 assistant 回复是否与近期消息重复（>80% 抑制），在 `engine.ts` 回复写入前调用。
 - **Agent Bridge**：`bridge.ts` 提供 loopback HTTP 通道（`/bridge/:action`，action=progress/notify/preview），让 Agent 执行中主动通知宿主进度。OpenAI/Gemini 通过 `notify_host` 工具调用，Claude-cli 通过 systemPrompt 中的 curl 指令。taskId 格式校验防注入。
 - **工作流条件边 + 受控回环**：`WorkflowEdge` 有 `condition`（5 种：always/auto_review/outcome_equals/manual_approval/agent_label）和 `maxTraversals`（回环保护）。`advanceWorkflowTask` 按条件优先级求值而非仅靠 LLM label 匹配；`auto_review` 解析 `REVIEW_STATUS: PASS/FAIL` 标记（借鉴 FreeBuddy）。`assembleContext` 注入 `workflowBranches` 让 Agent 看到可选出边。
+
+### 指挥系统（定时自动化 / 蜂群 / 对抗评审庭，spec 2026-08-14-command-system-design）
+
+三件事共享同一底座（N 个干净上下文的一次性子智能体并行 + 结构化回收 + 一个收口人）：
+
+- **系统隐形岗（W0）**：`agent_definition.is_system` + `company_employee.hidden`。coordinator tick 对 online 公司幂等创建「调度中心」（role=`swarm-dispatcher`，放蜂）与「评审中心」（role=`debate-judge`，裁决）。`listAgents` 默认过滤 hidden（花名册/能力路由/组织图一处生效，内部传 `includeHidden`），`claimNextTask` 不受影响（隐藏 ≠ 不可领取）。**隐岗不在 `ensureProjectThreads`（按可见花名册）覆盖内——创建隐岗任务前必须显式 `ensurePrimaryThread`**。
+- **蜂群（swarm）**：结构=树管控制面（`task.swarm_id/swarm_depth` + `swarm_run` 记账），依赖管执行面（`task_dependency` 收口）。调度中心经 done 结构化输出返回 `swarmPlan {goal, workers[]}`（全执行器通用契约，引擎仅在 assignee 是调度中心时兑现，engine.ts materializeSwarm 钩子）；系统建群（限额快照）+ 一次性工蜂（`createTempEmployment` + hidden，role=`swarm-worker`，干净上下文+结构化摘要纪律）+ **独立汇总任务**（依赖全蜂，避免父任务上下文已满）；蜂可经 outboundTasks 再下探。**四项限额**（设置键 swarmMaxDepth=3/MaxWidth=5/MaxNodes=30/BudgetUSD=5，上限非目标）：插入点在 `task.ts` completeTask 的 outbound 消费（超限 `swarm_limit_blocked` 留痕+continue）与 `spawn_tasks` handler；预算=usage_record 按 swarm_id 聚合。**失败可观测**（单一记账咽喉）：蜂终态统一过 `recordSwarmNodeOutcome`（completeTask/failTask/cancelTask 调用，根任务与告警任务不计数）；失败率 ≥30%（≥3 收口）→ 去重「蜂群告警」给调度中心（可返回新 swarmPlan 补蜂到原群）；失败 >50% → 自动熔断（取消剩余+status=failed+保留根任务产终局报告）；蜂失败视为已收口（`resumeSwarmDependentsAfterFailure` 解除依赖，汇总带着失败走）；蜂群内失败不走 [兜底] 改道调度中心。**管控**：`GET /api/tasks/:id/swarm`（树数据）+ `POST /api/tasks/:id/swarm/abort`（一键停群）；TaskDetailPage 右栏 SwarmTreeCard 树视图（状态着色/当前高亮/停群按钮）。
+- **结构化选项 + 对话可见（B3）**：`AgentRunResult.questionOptions`（id/label/detail/pros/cons）+ `task.question_options_json`；`answerClarification(db, taskId, {answer?|optionId?})`（**签名已改**，optionId 落「【选项】label」消息）；引擎回帖条件含 waiting_input（对话窗能看到追问+选项，追问不去重）；MessageBubble/ClarifyCard 一键选择（useTaskOnce 无轮询，靠 task.* realtime 失效）。两难契约教学在 context.ts 输出契约段。
+- **对抗评审庭（debate）**：**无配额，两难即辩**。引擎门控：waiting_input 且 ≥2 选项（且非辩论/裁决任务自身）→ `startDebate` 拦截组庭，对话先收启动播报不发裸问题。编排零引擎改动、全确定性：R1 立论（≤3 辩手各防御一选项，隐藏临时 agent role=`debater`，stance 注入立场，干净上下文防锚定）→ R2 互攻（依赖全部 R1，上下文经 `relayOutputToDependents` 把上游 summary 落下游任务消息）→ 裁决任务给评审中心（依赖全部 R2，返回 `debateVerdict {recommendedOptionId?/confidence/rationale/flaws[]}`，同样走 done 契约）。两轮封顶（外部研究：3 轮后从众塌缩/跑题漂移）。裁决分流：置信 ≥ `debateMinConfidence`(0.6) → 自动采纳（answerClarification 继续执行 + decision_record source=auto + 对话播报）；低于 → 升级用户（选项 cons 补致命伤 + 任务消息差评清单 + 对话差评消息一键选择）；用户已抢先回答则不再打扰。**偏好记忆**：用户每次选项回答 → decision_record(source=user, 关联 debate) → `recentDecisions` 注入后续辩手/裁决上下文（userDecisions）→ 升级次数随使用下降。评审记录：`GET /api/companies/:id/debates` + 进化与报告页卡片。
 
 ### 关键文件
 
@@ -231,6 +247,15 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 | `src/server/db/migrations/0019_agent_profile_base.sql` | 可恢复的员工基础能力快照 |
 | `src/server/domain/agent-home.ts` | 隔离 Agent Home、身份/能力导出和记忆文件同步 |
 | `src/server/domain/memory.ts` | 记忆审核、作用域、版本、检索与安全扫描 |
+| `src/server/domain/swarm.ts` | **蜂群**：swarm_run 记账/四项限额/工蜂创建/materializeSwarm/失败处置（告警·熔断·停群·回收） |
+| `src/server/domain/debate.ts` | **对抗评审庭**：startDebate 确定性编排（R1→R2→裁决）/finalizeDebate 分流（自动采纳/升级）/decision_record 偏好 |
+| `src/server/domain/system-agents.ts` | **系统隐形岗**：ensureSystemAgents（调度中心/评审中心）幂等创建 |
+| `src/server/domain/tz.ts` | 时区墙上时刻↔UTC 换算（Intl 无依赖，DST 回程校验）——daily 触发器用 |
+| `src/server/domain/setting.ts` | SystemSettings 唯一设置模型（网络/外观/生成参数/并发/蜂群/评审阈值）+ 六步链示例 |
+| `src/server/runtime/egress.ts` | undici 全局出口（代理分流 + CA 注入，修改后重启生效） |
+| `src/server/domain/executor-concurrency.ts` | 按执行器并发领取门（硬上限/锁定/自适应） |
+| `src/server/domain/marketplace-presets.ts` | 商城预置策展（10 条官方精品，pin 不可变版本）+ 安装状态判定 |
+| `src/server/domain/marketplace-search.ts` | 商城检索（官方源：MCP Registry/anthropics skills/Claude Code 插件包） |
 
 ### WebSocket 事件
 
@@ -242,15 +267,18 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 
 ### 测试
 
-- Vitest 单元与集成测试覆盖运行闭环、workspace 引导、全局员工档案、跨公司任职、Agent Home、分层记忆、项目任务会话、CLI 探测、审批桥、上下文恢复、复用与安全重置；准确数量以 `npm test` 当前输出为准（当前 100 文件 / 613 测试，含能力平台 B1-B5：RuntimeToolRegistry、Plugin CRUD、MCP client 三种 transport、项目状态机+HARD-GATE、readiness 校验、PlanVersion+熔断、marketplace+AI 起草，以及三栏工作台 shell/导航/inspector/响应式偏好）。
+- Vitest 单元与集成测试覆盖运行闭环、workspace 引导、全局员工档案、跨公司任职、Agent Home、分层记忆、项目任务会话、CLI 探测、审批桥、上下文恢复、复用与安全重置；准确数量以 `npm test` 当前输出为准（当前 174 文件 / 1202 测试，含能力平台 B1-B5、三栏工作台、定时自动化（tz 时区/schedule-automation）、蜂群 swarm.spec、结构化选项 question-options.spec、评审庭 debate.spec 等）。
   - 测试环境需要真实 git 仓库作为 `project.rootDir`（`createWorktree` 需要 `git rev-parse HEAD` 成功）。`tests/integration/setup.ts` 的 `makeTempGitRepo()` 创建临时 git 仓库（含初始 commit）供测试使用。
   - `project.rootDir` 与 `firstAgentId` 均为可选：建项目时留空，`createProject` 自动使用当前激活总工作区，并生成 `{workspace}/companies/{公司名}/projects/{项目名}-{项目ID}`；项目 ID 后缀保证同名项目不会共享目录。`ensureGitRepo()` 会在首个 worktree 创建时自动 `mkdir + git init`。
-- Playwright 覆盖建司→团队→项目→首 Task、向导式创建完整公司、在线建项目、最近项目恢复、公司上下文导航与工作台信息架构（总览/需要处理/团队/项目）、员工库、执行器中心（折叠式安装引导）、权限中心、窄屏工作台抽屉以及窄屏设置页；准确数量以 `npm run test:e2e` 当前输出为准（当前 4 文件 / 15 测试）。
+- Playwright 覆盖建司→团队→项目→首 Task、向导式创建完整公司、在线建项目、最近项目恢复、公司上下文导航与工作台信息架构（总览/需要处理/团队/项目）、员工库、执行器中心（折叠式安装引导）、权限中心、窄屏工作台抽屉以及窄屏设置页；准确数量以 `npm run test:e2e` 当前输出为准（当前 20 测试）。
 - `npm run test:claude-smoke` 已使用真实 Claude Code 连续完成两个 Task，验证跨 worktree 的 `--session-id`/`--resume`、文件发布、Artifact 登记和 Token/缓存用量。
 
 `publish_record` 由 `0002_conversation.sql` 创建，记录 Task 发布提交、合并文件、冲突与阻塞状态，供成果修改历史页读取。
 
 ### 已知工程取舍
+- **系统岗的结构化输出契约模式**：给系统隐形岗（调度中心/评审中心）扩展能力走 `AgentRunResult` 的可选字段（swarmPlan/debateVerdict）+ result-schema 同步，而不是注册工具——CLI 执行器没有工具循环，done 契约是全执行器唯一同构通道。引擎兑现前必须校验 assignee 的 isSystem+role（普通 agent 返回一律忽略）。
+- **隐岗与一次性 agent 的线程陷阱**：hidden 任职（系统岗/工蜂/辩手）不在 `ensureProjectThreads` 覆盖内；创建其任务前必须显式 `ensurePrimaryThread`，否则任务永远无人领取。蜂任务终态把蜂 grey（`markTempGreyed`），群/辩论关闭统一 `dismissTempWorker`（is_temp_only 硬删，审计留 task 行与事件）。
+- **better-sqlite3 嵌套事务安全但别滥用**：domain 钩子（swarm 记账/辩论收口）可能在 completeTask 事务内再开事务（自动 savepoint）；dismissTempWorker 内含 rmSync 文件 IO，事务内可用但慢，注意别在热路径。
 - **工具注册表优先于硬编码**：新增可执行工具（MCP/自定义/AI 生成）一律走 `RuntimeToolRegistry.register()`，不要再扩展 `file-tools.ts` 的 FILE_TOOLS 或 `executeFileTool` switch。`file-tools.ts` 已瘦身为"类型定义 + 工具定义数据"，运行时分发在 `registry.ts` 的 `executeTool`。
 - **Plugin 体系是新能力的统一入口**：接入 MCP/skill/tool 都经 `POST /api/plugins` 落库 + `company_plugin` 启停 + `assembleTools` 装配。不要再为单个能力写硬编码 adapter。
 - **项目状态机改动需同步三处**：`server/domain/project.ts`（ProjectState 类型）+ `server/db/migrations`（CHECK 约束）+ `client/api/types.ts`（前端字面量）+ `shared/lifecycle-events.ts`（ProjectPhase 内联类型）。漏一处会 typecheck 或运行时失败。
