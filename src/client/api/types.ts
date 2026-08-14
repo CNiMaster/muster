@@ -15,6 +15,8 @@ export interface Company {
   archivedReason: string | null;
   /** 业务审批模式：blocking=提交后阻塞等待；parallel=提交后继续。 */
   reviewMode: 'blocking' | 'parallel';
+  /** L1 优雅关机：上次优雅关机时正在运行（=1 时下次启动可"一键恢复运营"）。 */
+  shutdownPaused: number;
 }
 
 export interface Workspace {

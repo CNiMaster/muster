@@ -53,7 +53,7 @@ export function AgentLibraryPage(): React.ReactElement {
   const createFromTemplate = async (template: RoleTemplate, displayNameOverride?: string): Promise<boolean> => {
     const name = displayNameOverride ?? template.name;
     if (existingNames.has(name)) {
-      toast('info', `${name} 已在人才市场中`);
+      toast('info', `${name} 已在员工库中`);
       return false;
     }
     await createProfile.mutateAsync(profileInput(template, name));
@@ -63,7 +63,7 @@ export function AgentLibraryPage(): React.ReactElement {
   const submit = (): void => {
     if (!displayName.trim()) return;
     createProfile.mutate({ displayName: displayName.trim(), soul: soul.trim() }, {
-      onSuccess: () => { setDisplayName(''); setSoul(''); toast('success', '员工档案已创建，已进入人才市场'); },
+      onSuccess: () => { setDisplayName(''); setSoul(''); toast('success', '员工档案已创建，已进入员工库'); },
       onError: (error) => toast('error', (error as Error).message),
     });
   };
@@ -71,7 +71,7 @@ export function AgentLibraryPage(): React.ReactElement {
   // 阶段三任务 3.1：从专家库添加（自动填充 soul/principles/capabilities）
   const addFromPersona = async (persona: { id: string; name: string }): Promise<void> => {
     if (existingNames.has(persona.name)) {
-      toast('info', `${persona.name} 已在人才市场中`);
+      toast('info', `${persona.name} 已在员工库中`);
       return;
     }
     await createProfile.mutateAsync({ displayName: persona.name, personaId: persona.id });
@@ -98,7 +98,7 @@ export function AgentLibraryPage(): React.ReactElement {
       <header className="page-header library-hero">
         <div>
           <span className="page-kicker">TALENT MARKET</span>
-          <h1>人才市场</h1>
+          <h1>员工库</h1>
           <p className="subtitle">全局员工档案。新建员工自动进入此处，可被任意公司聘用（支持多家任职）。公司内员工管理请到对应公司的「组织架构」。</p>
         </div>
       </header>

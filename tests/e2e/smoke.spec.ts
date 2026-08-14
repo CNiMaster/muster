@@ -143,7 +143,7 @@ test('员工库展示全局档案与公司任职', async ({ page }) => {
   });
 
   await page.goto('/agents');
-  await expect(page.getByRole('heading', { name: '人才市场' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '员工库' })).toBeVisible();
   await expect(page.getByRole('heading', { name: '添加人才' })).toBeVisible();
   await expect(page.getByRole('heading', { name: '软件研发团队' })).toBeVisible();
   await page.getByRole('link', { name: new RegExp(`全局员工-${suffix}`) }).first().click();
@@ -190,3 +190,39 @@ test('E5 进化与报告页渲染（四个控制面块）', async ({ page }) => 
   await expect(page.getByText('结构变更历史', { exact: true })).toBeVisible();
   await expect(page.getByText('锁定管理', { exact: true })).toBeVisible();
 });
+
+test('工作台改版 B1：一键开跑——选模板→点击→进入公司', async ({ page }) => {
+  // 前置：需要一个执行器档案（quick-start 无执行器会报错）
+  const executorResponse = await page.request.post('/api/executors/profiles', { data: {
+    name: `E2E 快速启动执行器-${Date.now()}`,
+    manifestId: 'openai-compatible-api',
+  } });
+  expect(executorResponse.status()).toBe(201);
+
+  await page.goto('/companies/wizard');
+  await expect(page.getByRole('button', { name: '一键开跑' })).toBeVisible({ timeout: 8000 });
+  await page.getByRole('button', { name: '一键开跑' }).click();
+  // 落地到公司对话中心（改版 2a：对话为默认落地）
+  await expect(page).toHaveURL(/\/companies\/[^?]+\?view=conversation/, { timeout: 15000 });
+  // 优化②：对话里有第一负责人的打招呼（"这里可以打字"心智）
+  await expect(page.getByText(/告诉我你想做什么/)).toBeVisible({ timeout: 10000 });
+  // 优化①：一键开跑后公司直接上线（状态"工作中"，标签栏+页面徽章各一处）
+  await expect(page.getByText('工作中', { exact: true }).first()).toBeVisible();
+});
+
+test('工作台改版 B2b：公司标签栏——公司作为标签出现 + 当前高亮 + 新建入口', async ({ page }) => {
+  const a = await (await page.request.post('/api/companies', { data: { name: `标签A-${Date.now()}`, kind: 'general' } })).json();
+  const b = await (await page.request.post('/api/companies', { data: { name: `标签B-${Date.now()}`, kind: 'software' } })).json();
+  await page.goto(`/companies/${a.id}?view=conversation`);
+  // 两个公司都成为标签链接（>6 家时会收进 overflow details，用 locator 而非可见性断言）
+  await expect(page.locator(`.company-tab[href="/companies/${a.id}"]`)).toHaveCount(1, { timeout: 8000 });
+  await expect(page.locator(`.company-tab[href="/companies/${b.id}"]`)).toHaveCount(1);
+  // 当前公司标签高亮
+  await expect(page.locator(`.company-tab[href="/companies/${a.id}"]`)).toHaveClass(/is-active/);
+  // 新建入口
+  await expect(page.getByRole('link', { name: '新建公司' })).toBeVisible();
+  // L1：退出按钮（优雅关机入口）与审批入口存在
+  await expect(page.getByRole('button', { name: '退出并保存' })).toBeVisible();
+  await expect(page.getByRole('link', { name: '审批', exact: true })).toBeVisible();
+});
+

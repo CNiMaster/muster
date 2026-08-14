@@ -11,6 +11,7 @@
  */
 import type React from 'react';
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { Badge } from './Badge';
 import { Button, toast } from './Button';
@@ -55,6 +56,7 @@ export function FirstRunWizard(): React.ReactNode {
   const [step, setStep] = useState(0);
   const [customDir, setCustomDir] = useState('');
   const [dirInfo, setDirInfo] = useState<{ rootDir: string; nested: boolean } | null>(null);
+  const navigate = useNavigate();
 
   // 步骤 2：CLI 多选 + 绑定状态
   const [detections, setDetections] = useState<CliDetected[] | null>(null);
@@ -181,12 +183,12 @@ export function FirstRunWizard(): React.ReactNode {
     }
   };
 
-  /** 步骤 4：完成引导。 */
+  /** 步骤 4：完成引导（优化③：直接接续到公司创建，合成一条流）。 */
   const handleFinish = async (): Promise<void> => {
     setFinishing(true);
     try {
       await api.post('/api/setup/complete');
-      window.location.reload();
+      navigate('/companies/wizard');
     } catch (e) {
       toast('error', (e as Error).message ?? '完成失败');
       setFinishing(false);
@@ -341,18 +343,13 @@ export function FirstRunWizard(): React.ReactNode {
             </div>
           )}
 
-          {/* 步骤 4：完成 */}
+          {/* 步骤 4：完成（优化③：接续到公司创建） */}
           {step === 3 && (
             <div className="form-stack">
               <h2>4. 完成</h2>
-              <p className="muted">设置已就绪。接下来可以：</p>
-              <ul className="first-run-todo">
-                <li>创建你的第一家公司（从团队蓝图开始）</li>
-                <li>或先浏览人才市场，看看可用的员工档案</li>
-                <li>随时回「设置」调整目录、CLI 与 API</li>
-              </ul>
+              <p className="muted">环境已就绪，接下来选一个模板组建你的第一家公司（一键开跑）。</p>
               <div className="settings-primary-actions">
-                <Button onClick={() => void handleFinish()} loading={finishing}>进入工作台</Button>
+                <Button onClick={() => void handleFinish()} loading={finishing}>创建第一家公司 →</Button>
               </div>
             </div>
           )}

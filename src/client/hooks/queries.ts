@@ -293,6 +293,23 @@ export function useCommitCompanySetup() {
     },
   });
 }
+
+/** 工作台改版 批次 1：一键模板启动（选模板→可选改名→开跑）。 */
+export function useQuickStartCompany() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { templateId: string; name?: string; goal?: string }) => api.post<{
+      company: Company;
+      employees: Agent[];
+      project: Project;
+      projectTask: ProjectTaskDTO;
+    }>('/api/company-setup/quick-start', input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['companies'] });
+      qc.invalidateQueries({ queryKey: ['agent-profiles'] });
+    },
+  });
+}
 export function useExecutorProfiles() {
   return useQuery({ queryKey: ['executor-profiles'], queryFn: () => api.get<ExecutorProfileDTO[]>('/api/executors/profiles') });
 }
@@ -2142,5 +2159,32 @@ export function useDeleteLock() {
     mutationFn: (input: { entityType: string; entityId: string; scope: 'personal' | 'org' }) =>
       api.delete<any>(`/api/locks?entityType=${encodeURIComponent(input.entityType)}&entityId=${encodeURIComponent(input.entityId)}&scope=${input.scope}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['locks'] }),
+  });
+}
+
+// ===== L1 优雅关机 / 一键恢复 =====
+
+export function useBeginShutdown() {
+  return useMutation({
+    mutationFn: () => api.post<{ affected: Array<{ id: string; name: string }>; total: number }>('/api/companies/shutdown/begin'),
+  });
+}
+
+export function useResumeShutdownPaused() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<{ resumed: number }>('/api/companies/shutdown/resume'),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['companies'] });
+    },
+  });
+}
+
+/** L3：各公司活跃任务数（标签栏"工作中/空闲"信号）。 */
+export function useCompaniesActivity() {
+  return useQuery({
+    queryKey: ['companies-activity'],
+    queryFn: () => api.get<Record<string, number>>('/api/companies/activity'),
+    refetchInterval: 15000,
   });
 }

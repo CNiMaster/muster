@@ -14,9 +14,10 @@ describe('queryKeysForRealtimeEvent', () => {
         payload: {},
       }),
     ).toEqual([
-      ['tasks', 'pr_1'],
+      ['companies-activity'],
       ['task', 'tk_1'],
       ['task-events', 'tk_1'],
+      ['tasks', 'pr_1'],
       ['threads', 'pr_1'],
       ['usage', 'pr_1'],
       ['project-events', 'pr_1'],

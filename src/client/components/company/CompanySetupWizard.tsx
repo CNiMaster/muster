@@ -31,16 +31,19 @@ const TEMPLATE_IMAGES: Record<string, string> = {
   consulting: '/images/tmpl_consulting.jpg',
 };
 
-export function CompanySetupWizard({ templates = COMPANY_TEMPLATE_OPTIONS, profiles, policies, previewing, committing, refreshingResources, onRefreshResources, onPreview, onCommit }: {
+export function CompanySetupWizard({ templates = COMPANY_TEMPLATE_OPTIONS, profiles, policies, previewing, committing, quickStarting, refreshingResources, onRefreshResources, onPreview, onCommit, onQuickStart }: {
   templates?: CompanyTemplateOption[];
   profiles: ExecutorProfileDTO[];
   policies: PermissionPolicyDTO[];
   previewing?: boolean;
   committing?: boolean;
+  quickStarting?: boolean;
   refreshingResources?: boolean;
   onRefreshResources?: () => Promise<void>;
   onPreview: (input: { templateId: CompanyTemplateId; name: string; goal: string }) => Promise<CompanySetupDraft>;
   onCommit: (draft: CompanySetupDraft, bindings: SetupBindings) => Promise<boolean>;
+  /** 工作台改版 批次 1：一键开跑（跳过蓝图确认；执行器/权限/项目/任务/人设全自动）。 */
+  onQuickStart?: (input: { templateId: CompanyTemplateId; name?: string; goal?: string }) => Promise<boolean>;
 }): React.ReactElement {
   const [saved] = useState(readSavedState);
   const [step, setStep] = useState<SetupStep>(saved.step ?? 'template');
@@ -135,7 +138,15 @@ export function CompanySetupWizard({ templates = COMPANY_TEMPLATE_OPTIONS, profi
         </div>
         <div className="setup-input-grid"><Field label="公司名称" required><Input value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：Acme 工作室" /></Field><Field label="一句话目标" required><Textarea value={goal} onChange={(event) => setGoal(event.target.value)} placeholder="我们要持续完成什么？" /></Field></div>
         <div className={`resource-strip ${resourcesReady ? 'is-ready' : ''}`} aria-live="polite"><span className="resource-orbit" aria-hidden="true"><i/><i/><i/></span><div><strong>{resourcesReady ? '运行环境已准备' : '还差一个执行器'}</strong><small>{resourcesReady ? `将自动使用 ${preferredExecutor!.name} · ${policies[0]!.name}` : '草稿会自动保存，接入后回来刷新即可'}</small></div>{!resourcesReady && <a className="mu-btn mu-btn-subtle mu-btn-sm" href="/executors" target="_blank" rel="noreferrer">接入执行器 ↗</a>}{onRefreshResources && <Button size="sm" variant="ghost" loading={refreshingResources} onClick={() => void onRefreshResources()}>刷新</Button>}</div>
-        <div className="setup-primary-actions"><span className="muted">先生成可检查的完整蓝图，确认后再创建；创建后仍可继续调整。</span><Button disabled={!name.trim() || !goal.trim()} loading={previewing} onClick={() => void start()}>生成公司蓝图 →</Button></div>
+        <div className="setup-primary-actions">
+          <span className="muted">先生成可检查的完整蓝图，确认后再创建；创建后仍可继续调整。</span>
+          <div className="setup-action-buttons">
+            {onQuickStart && (
+              <Button variant="ghost" loading={quickStarting} onClick={() => void onQuickStart({ templateId, name: name.trim() || undefined, goal: goal.trim() || undefined })}>一键开跑</Button>
+            )}
+            <Button disabled={!name.trim() || !goal.trim()} loading={previewing} onClick={() => void start()}>生成公司蓝图 →</Button>
+          </div>
+        </div>
       </div></Card>}
 
       {draft && step === 'team' && <Card className="setup-card blueprint-setup-card" title={<><span className="step-kicker">02</span> 公司蓝图已生成，请确认</>} actions={<Badge tone="ok">{draft.employees.length} 人</Badge>}><CompanyBlueprintReview draft={draft} density={draft.presentation.density} onDensityChange={(density) => setDraft({ ...draft, presentation: { ...draft.presentation, density } })} /><details className="details-collapse blueprint-team-editor"><summary>手动调整员工姓名或岗位</summary><div className="edit-team-grid">{draft.employees.map((employee) => <div key={employee.key}><Field label={`${employee.name} · 姓名`}><Input value={employee.name} onChange={(event) => setDraft({ ...draft, employees: draft.employees.map((item) => item.key === employee.key ? { ...item, name: event.target.value } : item) })} /></Field><Field label="岗位"><Input value={employee.role} onChange={(event) => setDraft({ ...draft, employees: draft.employees.map((item) => item.key === employee.key ? { ...item, role: event.target.value } : item) })} /></Field></div>)}</div></details></Card>}

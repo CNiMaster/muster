@@ -13,6 +13,7 @@ import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
 import type { CompanyState } from '../../shared/types';
+import { realtime } from '../realtime';
 
 export interface Company {
   id: string;
@@ -33,6 +34,8 @@ export interface Company {
   executorTierPrimaryId: string | null;
   executorTierSecondaryId: string | null;
   executorTierTertiaryId: string | null;
+  /** L1 优雅关机：上次优雅关机时正在运行（=1 时下次启动可"一键恢复运营"）。 */
+  shutdownPaused: number;
 }
 
 interface CompanyRow {
@@ -51,6 +54,7 @@ interface CompanyRow {
   executor_tier_primary_id: string | null;
   executor_tier_secondary_id: string | null;
   executor_tier_tertiary_id: string | null;
+  shutdown_paused: number | null;
 }
 
 function fromRow(r: CompanyRow): Company {
@@ -70,6 +74,7 @@ function fromRow(r: CompanyRow): Company {
     executorTierPrimaryId: r.executor_tier_primary_id ?? null,
     executorTierSecondaryId: r.executor_tier_secondary_id ?? null,
     executorTierTertiaryId: r.executor_tier_tertiary_id ?? null,
+    shutdownPaused: r.shutdown_paused ?? 0,
   };
 }
 
@@ -224,8 +229,70 @@ export function transitionCompany(db: DB, id: string, target: CompanyState): Com
   if (!ALLOWED[cur.state]?.includes(target)) {
     throw new AppError(ErrorCode.CONFLICT, `非法状态迁移：${cur.state} → ${target}`);
   }
-  db.prepare('UPDATE company SET state=?, updated_at=? WHERE id=?').run(target, nowIso(), id);
-  return getCompany(db, id);
+  // L1：手动上线（任何来源）清除"上次优雅关机"标记——用户主动启动的公司不再属于自动恢复集
+  db.prepare('UPDATE company SET state=?, updated_at=?, shutdown_paused = CASE WHEN ? THEN 0 ELSE shutdown_paused END WHERE id=?')
+    .run(target, nowIso(), target === 'online' ? 1 : 0, id);
+  const updated = getCompany(db, id);
+  // L1：状态变更实时广播（关机进度动画 / 标签栏状态即时刷新）
+  try {
+    realtime.publish({
+      id: shortId('ev_'),
+      type: 'company.state',
+      companyId: id,
+      occurredAt: nowIso(),
+      payload: { state: updated.state },
+    });
+  } catch {
+    /* 实时广播失败不影响状态迁移 */
+  }
+  return updated;
+}
+
+/**
+ * L1 优雅关机：所有 online 公司标记 shutdown_paused 并转入 draining——
+ * 停止领取新任务，正在执行的完成/保存后由 coordinator 收尾到 off。
+ * 返回受影响公司清单（供关机进度动画）。
+ */
+export function beginGracefulShutdown(db: DB): Array<{ id: string; name: string }> {
+  const online = listCompanies(db, { activeOnly: true }).filter((c) => c.state === 'online');
+  for (const company of online) {
+    db.prepare('UPDATE company SET shutdown_paused=1 WHERE id=?').run(company.id);
+    try {
+      transitionCompany(db, company.id, 'draining');
+    } catch {
+      /* 状态竞态忽略（可能已被其他路径改走） */
+    }
+  }
+  return online.map((c) => ({ id: c.id, name: c.name }));
+}
+
+/** L1 一键恢复运营：所有 shutdown_paused=1 的公司重新上线（transition 上线时自动清除标记）。 */
+export function resumeShutdownPaused(db: DB): number {
+  const paused = listCompanies(db, { activeOnly: true }).filter((c) => c.shutdownPaused === 1);
+  for (const company of paused) {
+    try {
+      if (company.state === 'draining') transitionCompany(db, company.id, 'off');
+      transitionCompany(db, company.id, 'online');
+    } catch {
+      /* 单个失败不阻断其他公司恢复 */
+    }
+  }
+  return paused.length;
+}
+
+/** L3：各公司活跃任务数（claimed/running）——标签栏"工作中/空闲"信号。 */
+export function getCompaniesActivity(db: DB): Record<string, number> {
+  const rows = db
+    .prepare(
+      `SELECT p.company_id AS companyId, COUNT(*) AS n FROM task t
+       JOIN project p ON p.id = t.project_id
+       WHERE t.state IN ('claimed','running')
+       GROUP BY p.company_id`,
+    )
+    .all() as Array<{ companyId: string; n: number }>;
+  const map: Record<string, number> = {};
+  for (const row of rows) map[row.companyId] = row.n;
+  return map;
 }
 
 /** 上班 = off → online。 */

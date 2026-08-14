@@ -11,9 +11,37 @@ import { getCompany } from './company';
 import { getProject } from './project';
 import { createTask } from './task';
 import { getAgent } from './agent';
+import { realtime } from '../realtime';
 
 export type ScopeKind = 'company' | 'project';
 export type MessageRole = 'user' | 'assistant' | 'system' | 'event';
+
+/**
+ * 改版 B4：对话消息实时事件——postUserMessage / postSystemMessage 落库后发布
+ * `message.created`，前端据此即时刷新对话（替代 4 秒轮询为主路径）。
+ * 发布失败绝不影响主流程。
+ */
+function publishMessageCreated(message: ConversationMessage): void {
+  try {
+    realtime.publish({
+      id: shortId('ev_'),
+      type: 'message.created',
+      companyId: message.scopeKind === 'company' ? message.scopeId : undefined,
+      projectId: message.scopeKind === 'project' ? message.scopeId : undefined,
+      taskId: message.refTaskId ?? undefined,
+      occurredAt: message.createdAt,
+      payload: {
+        scopeKind: message.scopeKind,
+        scopeId: message.scopeId,
+        messageId: message.id,
+        role: message.role,
+        refTaskId: message.refTaskId ?? undefined,
+      },
+    });
+  } catch {
+    /* 实时发布失败不阻断对话 */
+  }
+}
 
 export interface ConversationMessage {
   id: string;
@@ -105,7 +133,7 @@ export function postUserMessage(db: DB, input: PostUserMessageInput): {
 } {
   if (!input.content.trim()) throw new AppError(ErrorCode.VALIDATION, '消息内容不能为空');
   assertScope(db, input.scopeKind, input.scopeId);
-  return db.transaction(() => {
+  const result = db.transaction(() => {
 
   const id = shortId('cm_');
   const now = nowIso();
@@ -185,6 +213,9 @@ export function postUserMessage(db: DB, input: PostUserMessageInput): {
 
   return { userMessage, task, tasks };
   })();
+  // 改版 B4：事务提交后发布（回滚时不会发出虚假事件）
+  publishMessageCreated(result.userMessage);
+  return result;
 }
 
 /** 写入 assistant/system/event 消息（由引擎或系统调用）。 */
@@ -198,7 +229,7 @@ export function postSystemMessage(
     `INSERT INTO conversation_message (id, scope_kind, scope_id, author, role, content, ref_task_id, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(id, input.scopeKind, input.scopeId, input.author, input.role, input.content, input.refTaskId ?? null, now);
-  return {
+  const message: ConversationMessage = {
     id,
     scopeKind: input.scopeKind,
     scopeId: input.scopeId,
@@ -208,4 +239,7 @@ export function postSystemMessage(
     refTaskId: input.refTaskId ?? null,
     createdAt: now,
   };
+  // 改版 B4：实时发布（assistant 回复/事件摘要即时到达对话）
+  publishMessageCreated(message);
+  return message;
 }

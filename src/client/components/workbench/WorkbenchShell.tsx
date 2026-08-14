@@ -21,8 +21,6 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
   const [commandQuery, setCommandQuery] = useState('');
   const commandOpenRef = useRef(false);
   commandOpenRef.current = commandOpen;
-  const brandMenuRef = useRef<HTMLDetailsElement>(null);
-  const closeBrandMenu = (): void => { if (brandMenuRef.current) brandMenuRef.current.open = false; };
 
   const globalOptions = [
     { label: '首页', href: '/', group: '全局' },
@@ -59,20 +57,10 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
   } as React.CSSProperties;
   return <section className={`workbench ${preferences.leftOpen ? 'has-left' : ''} ${preferences.rightOpen ? 'has-right' : ''}`} style={style}>
     <header className="workbench-header">
-      <details className="workbench-brand-menu" ref={(node) => { brandMenuRef.current = node; }}>
-        <summary className="workbench-brand" aria-label="全局入口菜单">
-          <img src="/images/brand_logo.jpg" alt="Muster" className="workbench-brand-logo-img" style={{ width: '100%', height: '100%', borderRadius: 'var(--radius-sm, 6px)', objectFit: 'cover' }} />
-        </summary>
-        <div className="workbench-brand-popover">
-          <Link to="/" onClick={() => closeBrandMenu()}>首页</Link>
-          <Link to="/companies" onClick={() => closeBrandMenu()}>公司</Link>
-          <Link to="/agents" onClick={() => closeBrandMenu()}>员工库</Link>
-          <Link to="/executors" onClick={() => closeBrandMenu()}>执行器</Link>
-          <Link to="/permissions" onClick={() => closeBrandMenu()}>权限</Link>
-          <Link to="/reviews" onClick={() => closeBrandMenu()}>审批</Link>
-          <Link to="/settings" onClick={() => closeBrandMenu()}>设置</Link>
-        </div>
-      </details>
+      {/* 改版收尾：品牌弹出菜单与顶部公司标签栏重复，收敛为纯首页链接 */}
+      <Link to="/" className="workbench-brand" aria-label="Muster 首页">
+        <img src="/images/brand_logo.jpg" alt="Muster" className="workbench-brand-logo-img" style={{ width: '100%', height: '100%', borderRadius: 'var(--radius-sm, 6px)', objectFit: 'cover' }} />
+      </Link>
       <button type="button" className="workbench-icon-button" title={preferences.leftOpen ? '收起左侧工作列表' : '展开左侧工作列表'} aria-label={preferences.leftOpen ? '收起工作列表' : '展开工作列表'} aria-expanded={preferences.leftOpen} aria-controls="work-navigation" onClick={preferences.toggleLeft}><span className="pane-toggle-glyph is-left" aria-hidden="true" /></button>
       <div className="workbench-breadcrumb">{breadcrumb}</div>
       <button type="button" className="workbench-command" aria-label="搜索或跳转" onClick={() => setCommandOpen(true)}><kbd>⌘ K</kbd><span>搜索或跳转</span></button>

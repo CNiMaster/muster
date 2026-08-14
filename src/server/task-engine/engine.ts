@@ -54,6 +54,7 @@ import { AppError, ErrorCode } from '../../shared/errors';
 import { TASK_CIRCUIT_BREAKER_THRESHOLD } from '../../shared/constants';
 import type { AgentRunResult } from '../../shared/types';
 import { realtime } from '../realtime';
+import { nowIso } from '../../shared/utils';
 import { upsertPublishedArtifact } from '../domain/artifact';
 import { postSystemMessage } from '../domain/conversation';
 import { isDuplicateContent } from '../domain/speech-queue';
@@ -151,6 +152,29 @@ export class TaskEngine {
     if (isProvider(provider)) this.defaultProvider = provider;
   }
 
+  /**
+   * 改版收尾：user_message 任务的关键里程碑回写对话（开始/阻塞/失败）。
+   * 此前只有 completed 才回一条 assistant 消息——失败/阻塞时用户永远沉默。
+   * 只对 user_message 触发且带 scope 的任务生效；失败绝不影响引擎主流程。
+   */
+  private notifyUserMessageMilestone(task: { inputProtocol?: unknown }, content: string, taskId?: string): void {
+    try {
+      const proto = (task.inputProtocol ?? {}) as Record<string, unknown>;
+      if (proto.trigger !== 'user_message') return;
+      if (typeof proto.scope !== 'string' || typeof proto.scopeId !== 'string') return;
+      postSystemMessage(this.db, {
+        scopeKind: proto.scope as 'company' | 'project',
+        scopeId: proto.scopeId,
+        role: 'event',
+        author: 'system',
+        content,
+        refTaskId: taskId ?? undefined,
+      });
+    } catch (e) {
+      log.warn('conversation milestone post failed', { err: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
   /** 按 agent executor 配置选择 adapter，未知 provider 回退默认。 */
   private selectAdapter(agentExecutorProvider?: string): ExecutionAdapter {
     const provider = isProvider(agentExecutorProvider) ? agentExecutorProvider : this.defaultProvider;
@@ -215,6 +239,14 @@ export class TaskEngine {
       occurredAt: new Date().toISOString(),
       payload: { threadId, agentId: agent.id, seq: task.seq },
     });
+    // 改版收尾：对话里给即时反馈"已开始处理"（此前只有完成后才回一条）。
+    // 自动重试重领（autoRetryCount>0）不再重复播报"已开始"——首次重试只提示一次，
+    // 与失败侧"未走自动重试的终态失败才回写"对称，避免一条消息刷出多条 ⏳。
+    if (task.autoRetryCount === 0) {
+      this.notifyUserMessageMilestone(task, `⏳ 已开始处理你的消息：${task.title}`, task.id);
+    } else if (task.autoRetryCount === 1) {
+      this.notifyUserMessageMilestone(task, `⏳ 处理未完成，正在自动重试：${task.title}`, task.id);
+    }
 
     // 安全检查：重复失败/无进展
     try {
@@ -248,6 +280,8 @@ export class TaskEngine {
         occurredAt: new Date().toISOString(),
         payload: { reason: msg, threadId: thread.id, agentId: agent.id },
       });
+      // 改版收尾：安全检查阻断也回写对话（避免用户发消息后被无声阻断）
+      this.notifyUserMessageMilestone(task, `⛔ 处理被安全规则阻断：${msg.slice(0, 120)}`, task.id);
       return true;
     }
 
@@ -998,6 +1032,13 @@ export class TaskEngine {
 
       return true;
     } catch (err) {
+      // 引擎停止（优雅关机/强退）：stop() 已把任务退回 queued——不是执行失败，
+      // 直接让位（线程回 idle），下次启动重新领取；不走失败分类（否则被判永久 failed）。
+      if (getTask(this.db, task.id).state === 'queued') {
+        updateThreadState(this.db, thread.id, 'idle');
+        log.info('run aborted by engine stop, task re-queued for next start', { taskId: task.id });
+        return true;
+      }
       if (getTask(this.db, task.id).state === 'cancelled') {
         if (resolutionContext) {
           this.escalatePublishConflictResolution(resolutionContext, {
@@ -1264,6 +1305,7 @@ export class TaskEngine {
           outboundTasks: [],
           artifacts: [],
         });
+        this.notifyUserMessageMilestone(blocked, `⛔ 处理中止（预算超限）：${msg.slice(0, 120)}`, taskId);
         // 双 Loop P3：预算超限是强根因信号，入队反思。
         try {
           enqueueReflection(this.db, { task: blocked, outcome: 'blocked', signal: 'blocked-safety', extraContext: { error: msg, reason: 'budget' } });
@@ -1280,6 +1322,7 @@ export class TaskEngine {
           outboundTasks: [],
           artifacts: [],
         });
+        this.notifyUserMessageMilestone(blocked, `⛔ 处理中止（无进展）：${msg.slice(0, 120)}`, taskId);
         // 双 Loop P3：无进展是强根因信号，入队反思。
         try {
           enqueueReflection(this.db, { task: blocked, outcome: 'blocked', signal: 'blocked-safety', extraContext: { error: msg, reason: 'no_progress' } });
@@ -1294,6 +1337,10 @@ export class TaskEngine {
     // timeout / 结构错误 / spawn 错 → failed（可重试或观察后重试）
     log.error('task failed', { taskId, err: msg });
     const failed = failTask(this.db, taskId, `执行异常：${msg}`);
+    // 改版收尾：user_message 任务失败回写对话（未走自动重试的终态失败才回写，避免刷屏）
+    if (failed.state === 'failed') {
+      this.notifyUserMessageMilestone(failed, `❌ 处理未完成：${msg.slice(0, 200)}`, taskId);
+    }
 
     // Review 修复：讨论发言 task 失败时记录空发言，让讨论轮次能继续推进
     // （否则 parallel 模式一轮发言凑不齐，讨论永久停滞；sequential 同样受益）。
@@ -1419,6 +1466,22 @@ export class TaskEngine {
       log.info('task engine polling stopped');
     }
     approvalBroker.rejectAll();
+    // 优雅关机：先将在跑任务退回 queued（清租约），再中止执行。
+    // 若不回退，abort 的 AbortError 会被 classifyFailureCategory 判成 permanent
+    // （"aborted" 不匹配瞬时正则）→ failTask 永久失败且不自动重试——比直接断电更糟。
+    // 回退后 run loop 的 catch 会识别 queued 状态直接让位，下次启动重新领取。
+    const now = nowIso();
+    for (const taskId of this.activeRuns.keys()) {
+      // 审批等待中的任务保留现场（catch 的 waiting_approval 分支处理），不退回队列
+      if (getTask(this.db, taskId).waitState === 'waiting_approval') continue;
+      this.db
+        .prepare(
+          `UPDATE task SET state='queued', lease_owner_thread_id=NULL, lease_expires_at=NULL,
+             heartbeat_at=NULL, updated_at=? WHERE id=?`,
+        )
+        .run(now, taskId);
+      appendTaskEvent(this.db, taskId, 'lease_recovered', { reason: 'engine-stop' });
+    }
     for (const controller of this.activeRuns.values()) controller.abort('engine-stop');
     this.activeRuns.clear();
   }

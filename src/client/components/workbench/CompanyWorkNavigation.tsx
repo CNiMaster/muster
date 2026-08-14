@@ -2,6 +2,7 @@ import type React from 'react';
 import type { CompanySectionKey } from '../company/CompanySections';
 
 const dailyItems: Array<{ key: CompanySectionKey; label: string; icon: string }> = [
+  { key: 'conversation', label: '对话', icon: '✎' },
   { key: 'overview', label: '公司总览', icon: '◎' },
   { key: 'projects', label: '项目', icon: '▣' },
   { key: 'attention', label: '需要处理', icon: '!' },

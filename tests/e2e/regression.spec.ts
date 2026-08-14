@@ -29,7 +29,9 @@ test('核心功能端到端完整回归流', async ({ page }) => {
   const companies = await (await page.request.get('/api/companies')).json() as Array<{id:string;name:string}>;
   const company = companies.find((item) => item.name === companyName)!;
   await page.goto(`/companies/${company.id}`);
-  await expect(page.getByText('公司驾驶舱')).toBeVisible();
+  // 改版 2a：默认落地 = 公司对话中心（和第一负责人对话），驾驶舱收进"公司总览"
+  await expect(page.getByText('与第一负责人对话')).toBeVisible();
+  await expect(page.getByPlaceholder(/发消息给第一负责人/)).toBeVisible();
   await expect(page.getByRole('navigation',{name:'公司工作列表'})).toBeVisible();
   await page.getByRole('button',{name:/^团队/}).click();
   await expect(page.getByText('项目负责人', { exact: true }).first()).toBeVisible();

@@ -9,6 +9,15 @@ export type QueryKey = readonly unknown[];
 export function queryKeysForRealtimeEvent(event: RealtimeEvent): QueryKey[] {
   const keys: QueryKey[] = [];
   if (event.type.startsWith('approval.')) keys.push(['permission-approvals']);
+  // 改版 B4：对话消息实时刷新——message.created 失效所有消息线程（4 秒轮询降级为兜底）
+  if (event.type === 'message.created') keys.push(['messages']);
+  // L1：公司状态实时刷新（关机进度/标签栏状态）
+  if (event.type === 'company.state') {
+    keys.push(['companies']);
+    if (event.companyId) keys.push(['company-cockpit', event.companyId]);
+  }
+  // L3：任务生命周期刷新公司活动信号（标签栏"工作中/空闲"）
+  if (event.type.startsWith('task.')) keys.push(['companies-activity']);
   // 讨论室事件：刷项目讨论列表 + 详情
   if (event.type.startsWith('discussion.')) {
     if (event.projectId) keys.push(['project-discussions', event.projectId]);
