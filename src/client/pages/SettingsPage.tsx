@@ -44,6 +44,7 @@ export function SettingsPage(): React.ReactElement {
   const [codeTheme, setCodeTheme] = useState('default');
   const [autonomousReflectionEnabled, setAutonomousReflectionEnabled] = useState(false);
   const [autonomousReflectionBudgetUSD, setAutonomousReflectionBudgetUSD] = useState(0);
+  const [morningReportEnabled, setMorningReportEnabled] = useState(true);
   const [testResult, setTestResult] = useState<any | null>(null);
 
   useEffect(() => {
@@ -71,6 +72,7 @@ export function SettingsPage(): React.ReactElement {
     setCodeTheme(settings.codeTheme ?? 'default');
     setAutonomousReflectionEnabled(settings.autonomousReflectionEnabled ?? false);
     setAutonomousReflectionBudgetUSD(settings.autonomousReflectionBudgetUSD ?? 0);
+    setMorningReportEnabled(settings.morningReportEnabled ?? true);
   }, [settings]);
 
   const handleSave = (): void => {
@@ -79,7 +81,7 @@ export function SettingsPage(): React.ReactElement {
       return;
     }
     saveSettings.mutate(
-      { claudeBin, model, skipPermissions, timeoutMs, maxToolCalls, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierPrimaryId: tierPrimary, executorTierSecondaryId: tierSecondary, executorTierTertiaryId: tierTertiary, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs, theme, fontFamily, fontSize, locale, codeTheme, autonomousReflectionEnabled, autonomousReflectionBudgetUSD },
+      { claudeBin, model, skipPermissions, timeoutMs, maxToolCalls, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierPrimaryId: tierPrimary, executorTierSecondaryId: tierSecondary, executorTierTertiaryId: tierTertiary, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs, theme, fontFamily, fontSize, locale, codeTheme, autonomousReflectionEnabled, autonomousReflectionBudgetUSD, morningReportEnabled },
       {
         onSuccess: () => toast('success', '系统设置已保存并实时生效'),
         onError: (error: any) => toast('error', error.message ?? '保存设置失败'),
@@ -291,6 +293,23 @@ export function SettingsPage(): React.ReactElement {
               </Field>
             </div>
             <p className="muted">外观修改即时生效（主题/字体/字号/语言）。</p>
+          </div>
+        </details>
+
+        <details className="details-collapse">
+          <summary>定时与自动化</summary>
+          <div className="form-stack">
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={morningReportEnabled}
+                onChange={(event) => setMorningReportEnabled(event.target.checked)}
+              />
+              晨醒：每天自动生成运营优化报告（进化与报告页）
+            </label>
+            <p className="muted">
+              关闭后不再每日自动扫描生成优化建议；各项目/公司自己配置的定时工作不受影响。
+            </p>
           </div>
         </details>
 

@@ -880,10 +880,15 @@ export function useStartWorkflow() {
 
 export interface ProjectAutomation {
   id: string;
-  projectId: string;
+  /** 公司级触发器无项目（companyId 必有）。 */
+  projectId: string | null;
+  companyId: string | null;
   kind: 'event' | 'schedule';
   eventName: string | null;
   intervalMs: number | null;
+  scheduleKind: 'interval' | 'daily';
+  timeOfDay: string | null;
+  timezone: string | null;
   template: Record<string, unknown>;
   enabled: boolean;
   lastFiredAt: string | null;
@@ -891,6 +896,16 @@ export interface ProjectAutomation {
   createdAt: string;
   updatedAt: string;
 }
+
+/** 定时计划的创建参数：interval（间隔分钟）或 daily（每天固定时刻）二选一。 */
+export type CreateScheduleInput = {
+  title: string;
+  intervalMinutes?: number;
+  timeOfDay?: string;
+  timezone?: string;
+  assigneeAgentId?: string;
+  priority?: number;
+} & ({ intervalMinutes: number } | { timeOfDay: string });
 
 export function useProjectAutomations(projectId: string | undefined) {
   return useQuery({
@@ -903,7 +918,7 @@ export function useProjectAutomations(projectId: string | undefined) {
 export function useCreateProjectSchedule() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ projectId, ...input }: { projectId: string; title: string; intervalMinutes: number; projectTaskId: string; assigneeAgentId?: string; priority?: number }) =>
+    mutationFn: ({ projectId, ...input }: { projectId: string; title: string; projectTaskId: string; intervalMinutes?: number; timeOfDay?: string; timezone?: string; assigneeAgentId?: string; priority?: number }) =>
       api.post<ProjectAutomation>(`/api/projects/${projectId}/automation/schedules`, input),
     onSuccess: (data) => qc.invalidateQueries({ queryKey: ['project-automations', data.projectId] }),
   });
@@ -924,6 +939,42 @@ export function useDeleteProjectAutomation() {
     mutationFn: ({ projectId, triggerId }: { projectId: string; triggerId: string }) =>
       api.delete(`/api/projects/${projectId}/automation/${triggerId}`),
     onSuccess: (_data, input) => qc.invalidateQueries({ queryKey: ['project-automations', input.projectId] }),
+  });
+}
+
+// ===== 公司级定时自动化（指挥系统批次1）=====
+export function useCompanyAutomations(companyId: string | undefined) {
+  return useQuery({
+    queryKey: ['company-automations', companyId],
+    queryFn: () => api.get<ProjectAutomation[]>(`/api/companies/${companyId}/automation`),
+    enabled: !!companyId,
+  });
+}
+
+export function useCreateCompanySchedule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ companyId, ...input }: { companyId: string } & CreateScheduleInput) =>
+      api.post<ProjectAutomation>(`/api/companies/${companyId}/automation/schedules`, input),
+    onSuccess: (_data, input) => qc.invalidateQueries({ queryKey: ['company-automations', input.companyId] }),
+  });
+}
+
+export function useUpdateCompanyAutomation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ companyId, triggerId, enabled }: { companyId: string; triggerId: string; enabled: boolean }) =>
+      api.patch<ProjectAutomation>(`/api/companies/${companyId}/automation/${triggerId}`, { enabled }),
+    onSuccess: (_data, input) => qc.invalidateQueries({ queryKey: ['company-automations', input.companyId] }),
+  });
+}
+
+export function useDeleteCompanyAutomation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ companyId, triggerId }: { companyId: string; triggerId: string }) =>
+      api.delete(`/api/companies/${companyId}/automation/${triggerId}`),
+    onSuccess: (_data, input) => qc.invalidateQueries({ queryKey: ['company-automations', input.companyId] }),
   });
 }
 
@@ -1501,6 +1552,12 @@ export function useSaveSystemSettings() {
       codeTheme?: string;
       autonomousReflectionEnabled?: boolean;
       autonomousReflectionBudgetUSD?: number;
+      morningReportEnabled?: boolean;
+      swarmMaxDepth?: number;
+      swarmMaxWidth?: number;
+      swarmMaxNodes?: number;
+      swarmBudgetUSD?: number;
+      debateMinConfidence?: number;
     }) => api.post<any>('/api/settings', settings),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['systemSettings'] });

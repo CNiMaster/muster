@@ -45,6 +45,18 @@ export interface SystemSettings {
   autonomousReflectionEnabled: boolean;
   /** E4.3 空闲自主反思预算（USD/日）：公司当日总花费低于该值时才允许自动反思；0 = 关闭。 */
   autonomousReflectionBudgetUSD: number;
+  /** 指挥系统批次1：晨醒（每日运营优化报告）开关，默认开（保持既有行为）。 */
+  morningReportEnabled: boolean;
+  /** 指挥系统批次2：蜂群最大下探深度（调度中心→蜂→子蜂…），上限非目标。 */
+  swarmMaxDepth: number;
+  /** 指挥系统批次2：蜂群每节点最大扇出宽度，上限非目标。 */
+  swarmMaxWidth: number;
+  /** 指挥系统批次2：蜂群单群总节点上限，可按需调大。 */
+  swarmMaxNodes: number;
+  /** 指挥系统批次2：蜂群单群美元预算，超限熔断。 */
+  swarmBudgetUSD: number;
+  /** 指挥系统批次4：对抗评审庭裁决自动采纳的最低置信度，低于则升级用户。 */
+  debateMinConfidence: number;
 }
 
 export function getSetting(db: DB, key: string, defaultValue: string): string {
@@ -86,6 +98,12 @@ export function getSystemSettings(db: DB): SystemSettings {
     codeTheme: getSetting(db, 'code_theme', 'default'),
     autonomousReflectionEnabled: getSetting(db, 'autonomous_reflection_enabled', 'false') === 'true',
     autonomousReflectionBudgetUSD: Number(getSetting(db, 'autonomous_reflection_budget_usd', '0')),
+    morningReportEnabled: getSetting(db, 'morning_report_enabled', 'true') === 'true',
+    swarmMaxDepth: Number(getSetting(db, 'swarm_max_depth', '3')),
+    swarmMaxWidth: Number(getSetting(db, 'swarm_max_width', '5')),
+    swarmMaxNodes: Number(getSetting(db, 'swarm_max_nodes', '30')),
+    swarmBudgetUSD: Number(getSetting(db, 'swarm_budget_usd', '5')),
+    debateMinConfidence: Number(getSetting(db, 'debate_min_confidence', '0.6')),
   };
 }
 
@@ -141,5 +159,23 @@ export function saveSystemSettings(db: DB, settings: Partial<SystemSettings>): v
   }
   if (settings.autonomousReflectionBudgetUSD !== undefined) {
     setSetting(db, 'autonomous_reflection_budget_usd', String(settings.autonomousReflectionBudgetUSD));
+  }
+  if (settings.morningReportEnabled !== undefined) {
+    setSetting(db, 'morning_report_enabled', settings.morningReportEnabled ? 'true' : 'false');
+  }
+  if (settings.swarmMaxDepth !== undefined) {
+    setSetting(db, 'swarm_max_depth', String(Math.max(1, Math.min(5, settings.swarmMaxDepth))));
+  }
+  if (settings.swarmMaxWidth !== undefined) {
+    setSetting(db, 'swarm_max_width', String(Math.max(1, Math.min(20, settings.swarmMaxWidth))));
+  }
+  if (settings.swarmMaxNodes !== undefined) {
+    setSetting(db, 'swarm_max_nodes', String(Math.max(1, Math.min(300, settings.swarmMaxNodes))));
+  }
+  if (settings.swarmBudgetUSD !== undefined) {
+    setSetting(db, 'swarm_budget_usd', String(Math.max(0, settings.swarmBudgetUSD)));
+  }
+  if (settings.debateMinConfidence !== undefined) {
+    setSetting(db, 'debate_min_confidence', String(Math.max(0.5, Math.min(0.95, settings.debateMinConfidence))));
   }
 }

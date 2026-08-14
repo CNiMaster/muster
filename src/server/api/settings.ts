@@ -53,6 +53,13 @@ settingsRouter.post(
       // E4.3 空闲自主反思（默认关）
       autonomousReflectionEnabled: z.boolean().optional(),
       autonomousReflectionBudgetUSD: z.number().min(0).optional(),
+      // 指挥系统：晨醒开关 + 蜂群限额 + 对抗评审置信阈值
+      morningReportEnabled: z.boolean().optional(),
+      swarmMaxDepth: z.number().int().min(1).max(5).optional(),
+      swarmMaxWidth: z.number().int().min(1).max(20).optional(),
+      swarmMaxNodes: z.number().int().min(1).max(300).optional(),
+      swarmBudgetUSD: z.number().min(0).optional(),
+      debateMinConfidence: z.number().min(0.5).max(0.95).optional(),
     });
     const input = schema.parse(req.body);
     const db = getDb();

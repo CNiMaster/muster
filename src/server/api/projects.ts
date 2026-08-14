@@ -180,13 +180,24 @@ projectById.get('/automation', asyncHandler(async (req, res) => {
   res.json(listProjectTriggers(getDb(), param(req, 'id')));
 }));
 projectById.post('/automation/schedules', asyncHandler(async (req, res) => {
-  const input = z.object({
-    title: z.string().min(1),
-    intervalMinutes: z.number().int().min(1).max(525_600),
-    projectTaskId: z.string().min(1),
-    assigneeAgentId: z.string().optional(),
-    priority: z.number().int().min(1).max(9).optional(),
-  }).parse(req.body);
+  // 指挥系统批次1：interval（间隔）或 daily（每天固定时刻 timeOfDay 'HH:mm' + 可选时区）二选一
+  const input = z.union([
+    z.object({
+      title: z.string().min(1),
+      intervalMinutes: z.number().int().min(1).max(525_600),
+      projectTaskId: z.string().min(1),
+      assigneeAgentId: z.string().optional(),
+      priority: z.number().int().min(1).max(9).optional(),
+    }),
+    z.object({
+      title: z.string().min(1),
+      timeOfDay: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, '时刻格式应为 HH:mm'),
+      timezone: z.string().max(100).optional(),
+      projectTaskId: z.string().min(1),
+      assigneeAgentId: z.string().optional(),
+      priority: z.number().int().min(1).max(9).optional(),
+    }),
+  ]).parse(req.body);
   const projectId = param(req, 'id');
   const project = getProject(getDb(), projectId);
   const projectTask = getProjectTaskInProject(getDb(), input.projectTaskId, projectId);
@@ -196,16 +207,15 @@ projectById.post('/automation/schedules', asyncHandler(async (req, res) => {
   if (input.assigneeAgentId && getAgent(getDb(), input.assigneeAgentId).companyId !== project.companyId) {
     throw new AppError(ErrorCode.VALIDATION, '计划任务的执行员工不属于当前项目公司');
   }
-  const created = registerScheduleTrigger(getDb(), {
-    projectId,
-    intervalMs: input.intervalMinutes * 60_000,
-    template: {
-      title: input.title,
-      projectTaskId: input.projectTaskId,
-      assigneeAgentId: input.assigneeAgentId,
-      priority: input.priority ?? 5,
-    },
-  });
+  const template = {
+    title: input.title,
+    projectTaskId: input.projectTaskId,
+    assigneeAgentId: input.assigneeAgentId,
+    priority: input.priority ?? 5,
+  };
+  const created = 'timeOfDay' in input
+    ? registerScheduleTrigger(getDb(), { projectId, timeOfDay: input.timeOfDay, timezone: input.timezone, template })
+    : registerScheduleTrigger(getDb(), { projectId, intervalMs: input.intervalMinutes * 60_000, template });
   res.status(201).json(listProjectTriggers(getDb(), projectId).find((item) => item.id === created.id));
 }));
 projectById.patch('/automation/:triggerId', asyncHandler(async (req, res) => {

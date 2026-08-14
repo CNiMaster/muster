@@ -8,6 +8,7 @@ import { Card } from '../Card';
 import { Field, Input } from '../Form';
 import { Badge } from '../Badge';
 import { TemplateHealthPanel } from './TemplateHealthPanel';
+import { CompanyAutomation } from './CompanyAutomation';
 
 const INPUT_FIELDS = [
   { key: 'goal', label: '目标' },
@@ -71,6 +72,7 @@ export function CompanySettings({ company }: { company: Company }): React.ReactE
         <div className="dir-explain-item"><span className="dir-explain-tag">执行沙盒</span><div><strong>~/.muster/worktrees/&lt;taskId&gt;</strong><p className="muted">每个任务执行时基于项目目录创建的临时隔离 worktree。Agent 不直接改正式目录，成果经发布合并回项目目录。任务结束自动清理。</p></div></div>
       </div>
     </Card>
+    <CompanyAutomation companyId={company.id} />
     <CompanyCredentialCard companyId={company.id} />
     <Card title="执行环境">
       <div className="settings-link-row"><Link className="mu-btn mu-btn-subtle" to="/executors">执行器中心</Link><Link className="mu-btn mu-btn-subtle" to="/permissions">权限中心</Link></div>
