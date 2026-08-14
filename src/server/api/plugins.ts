@@ -36,6 +36,10 @@ import {
 } from '../domain/plugin-install';
 import { McpClientPool } from '../executors/tools/mcp/client-pool';
 import { searchMarketplace, installMarketplaceEntry, type MarketplaceEntry, type InstallScope } from '../domain/marketplace';
+import { listMarketplacePresets, installPreset } from '../domain/marketplace-presets';
+import { searchMarketplaceCatalog } from '../domain/marketplace-search';
+import { listMarketplaceSources, addMarketplaceSource } from '../domain/marketplace-sources';
+import { installClaudeCodePlugin } from '../domain/marketplace-claude-plugins';
 import { authorSkill } from '../domain/skill-author';
 import { getCompany } from '../domain/company';
 import { realtime } from '../realtime';
@@ -274,6 +278,97 @@ pluginsRouter.post(
     );
     realtime.publish(makeLifecycleEvent('plugin.installed', { pluginId: plugin.id }, {}));
     res.status(201).json(plugin);
+  }),
+);
+
+// ── 预置策展目录（M1：官方精品 + muster 内去重）──────────────────────────
+
+pluginsRouter.get(
+  '/marketplace/presets',
+  asyncHandler(async (_req, res) => {
+    res.json(listMarketplacePresets(getDb()));
+  }),
+);
+
+/** M3 官方源搜索：预置 + MCP Registry + anthropics skills 目录（分组 + 安装状态）。 */
+pluginsRouter.get(
+  '/marketplace/catalog',
+  asyncHandler(async (req, res) => {
+    const query = (req.query.q as string) ?? '';
+    res.json(await searchMarketplaceCatalog(getDb(), query));
+  }),
+);
+
+// ── M3 来源登记（official 白名单展示 + manual 未审核登记）─────────────────
+
+pluginsRouter.get(
+  '/marketplace/sources',
+  asyncHandler(async (_req, res) => {
+    res.json(listMarketplaceSources(getDb()));
+  }),
+);
+
+const addSourceSchema = z.object({ endpoint: z.string().min(1) });
+
+pluginsRouter.post(
+  '/marketplace/sources',
+  asyncHandler(async (req, res) => {
+    const input = addSourceSchema.parse(req.body);
+    res.status(201).json(addMarketplaceSource(getDb(), input.endpoint));
+  }),
+);
+
+const installPresetSchema = z.object({
+  presetId: z.string().min(1),
+  scope: z.discriminatedUnion('level', [
+    z.object({ level: z.literal('platform') }),
+    z.object({ level: z.literal('company'), companyId: z.string().min(1) }),
+  ]),
+  replaceExisting: z.boolean().optional(),
+});
+
+pluginsRouter.post(
+  '/marketplace/install-preset',
+  asyncHandler(async (req, res) => {
+    const input = installPresetSchema.parse(req.body);
+    const db = getDb();
+    // 公司级安装/停旧属于组织能力配置变更：与其它启停路由一致，要求公司下班（org 配置锁）
+    if (input.scope.level === 'company') assertCompanyOff(db, input.scope.companyId);
+    const scope = input.scope.level === 'platform'
+      ? { level: 'platform' as const }
+      : { level: 'company' as const, companyId: input.scope.companyId };
+    const plugin = await installPreset(db, input.presetId, scope, {
+      replaceExisting: input.replaceExisting,
+    });
+    realtime.publish(makeLifecycleEvent('plugin.installed', { pluginId: plugin.id }, {}));
+    res.status(201).json({ ...plugin, presetId: input.presetId });
+  }),
+);
+
+/** Claude Code 官方插件安装（映射为 skill：plugin 描述 + commands/agents 指令组装注入）。 */
+const installClaudePluginSchema = z.object({
+  pluginName: z.string().min(1),
+  scope: z.discriminatedUnion('level', [
+    z.object({ level: z.literal('platform') }),
+    z.object({ level: z.literal('company'), companyId: z.string().min(1) }),
+  ]),
+  replaceExisting: z.boolean().optional(),
+});
+
+pluginsRouter.post(
+  '/marketplace/install-claude-plugin',
+  asyncHandler(async (req, res) => {
+    const input = installClaudePluginSchema.parse(req.body);
+    const db = getDb();
+    if (input.scope.level === 'company') assertCompanyOff(db, input.scope.companyId);
+    const scope = input.scope.level === 'platform'
+      ? { level: 'platform' as const }
+      : { level: 'company' as const, companyId: input.scope.companyId };
+    const plugin = await installClaudeCodePlugin(db, input.pluginName, scope, {
+      replaceExisting: input.replaceExisting,
+    });
+    realtime.publish(makeLifecycleEvent('plugin.installed', { pluginId: plugin.id }, {}));
+    res.status(201).json({ ...plugin, pluginName: input.pluginName });
   }),
 );
 

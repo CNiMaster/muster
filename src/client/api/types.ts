@@ -276,6 +276,41 @@ export interface EffectivePlugin extends PluginType {
   companyDecision: CompanyPluginDecision;
 }
 
+// ── 能力商城预置策展（M1）─────────────────────────────────────────────────
+
+import type { MarketplacePreset } from '../../shared/marketplace-presets';
+
+/** 预置条目在 muster 内的安装状态（不涉及 CLI 环境）。 */
+export type PresetInstallState = 'installable' | 'installed' | 'conflict';
+
+/** 商城预置条目 + 安装状态（GET /api/plugins/marketplace/presets 返回）。 */
+export interface MarketplacePresetView extends MarketplacePreset {
+  installState: PresetInstallState;
+  /** installed/conflict 时命中的现有 muster 内条目。 */
+  existing?: { id: string; name: string; source: string };
+  /** M4：muster 内使用质量信号（installed 且有用量记录时）。 */
+  quality?: {
+    totalCalls: number;
+    successCount: number;
+    failCount: number;
+    successRate: number | null;
+    avgDurationMs: number | null;
+  };
+}
+
+/** M3 官方源搜索条目（GET /api/plugins/marketplace/catalog 返回）。 */
+export interface MarketplaceSearchEntry {
+  id: string;
+  name: string;
+  description: string;
+  source: 'preset' | 'mcp-registry' | 'anthropics-skills' | 'claude-code-plugins';
+  kind: 'skill' | 'mcp-server';
+  ref: string;
+  trust: 'curated' | 'official' | 'community';
+  installState: PresetInstallState;
+  existingId?: string;
+}
+
 // ── B2B 外包契约 ──────────────────────────────────────────────────────────
 
 /** 外包契约状态。 */

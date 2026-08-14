@@ -26,6 +26,7 @@ import type {
   PluginRow,
 } from '../../shared/plugin';
 import { listPlugins, parsePluginRow } from './plugin-adapter';
+import { log } from '../logger';
 
 export interface InstallPluginInput {
   id?: string; // 缺省自动生成
@@ -209,19 +210,51 @@ export function getCompanyPluginDecisions(
  */
 export function getEffectivePluginsForCompany(db: DB, companyId: string): Plugin[] {
   const disabledSet = listDisabledCompanyPlugins(db, companyId);
-  // 平台级插件：默认全开，减去显式禁用
+  // 平台级插件：默认全开，减去显式禁用；status='disabled' 的实体行（商城平台级「装新停旧」）不生效
   const platformPlugins = listPlugins(db, { scopeLevel: 'platform' }).filter(
-    (p) => !disabledSet.has(p.id),
+    (p) => !disabledSet.has(p.id) && p.status !== 'disabled',
   );
-  // 公司独占插件：仅 scope 匹配的本公司，且未被显式禁用
+  // 公司独占插件：仅 scope 匹配的本公司，且未被显式禁用；同样排除 status='disabled'
   const companyPlugins = listPlugins(db, { scopeLevel: 'company', scopeCompanyId: companyId }).filter(
-    (p) => !disabledSet.has(p.id),
+    (p) => !disabledSet.has(p.id) && p.status !== 'disabled',
   );
   // 按 id 去重（理论上两类不会重叠，防御性）
   const byId = new Map<string, Plugin>();
   for (const p of platformPlugins) byId.set(p.id, p);
   for (const p of companyPlugins) byId.set(p.id, p);
-  return Array.from(byId.values());
+  // 商城去重兜底（spec「同名去重与冲突解决」）：muster 内部 (kind, 归一化 name) 唯一 winner，
+  // 防同名两条都生效造成上下文重复。实体行（plg_）> 只读视图（skill:/tool:/bridge:）；同秩保留先入者并告警。
+  const byName = new Map<string, Plugin>();
+  for (const p of byId.values()) {
+    const key = `${p.kind}:${p.name.trim().toLowerCase()}`;
+    const prev = byName.get(key);
+    if (!prev) {
+      byName.set(key, p);
+    } else if (isEntityPlugin(p) && !isEntityPlugin(prev)) {
+      byName.set(key, p);
+    } else if (isEntityPlugin(p) === isEntityPlugin(prev)) {
+      log.warn('plugin same-name duplicate kept first (defensive)', { kind: p.kind, name: p.name, kept: prev.id, dropped: p.id });
+    }
+  }
+  return Array.from(byName.values());
+}
+
+/** 是否为 plugin 表实体行（plg_ 前缀）；否则为只读视图条目（skill:/tool:/bridge:）。 */
+export function isEntityPlugin(p: Plugin): boolean {
+  return p.id.startsWith('plg_');
+}
+
+/**
+ * 一次查询构建该公司生效 skill 的（归一化 name → body）索引。
+ * 注入链热路径（resolveTaskSkills）只扫一遍全量插件，避免每个候选各扫一次。
+ */
+export function collectEffectivePluginSkills(db: DB, companyId: string): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const p of getEffectivePluginsForCompany(db, companyId)) {
+    if (p.kind !== 'skill' || p.manifest.kind !== 'skill') continue;
+    map.set(p.name.trim().toLowerCase(), p.manifest.skill.body);
+  }
+  return map;
 }
 
 /**

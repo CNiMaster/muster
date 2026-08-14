@@ -845,3 +845,33 @@
 .shutdown-bye h2 { font-size: 1.4em; }
 .company-tab.is-dragging { opacity: 0.4; }
 .company-tab[draggable="true"] { cursor: grab; }
+
+/* 能力商城（MarketplacePage） */
+.marketplace-page { max-width: 1180px; margin: 0 auto; padding: 4px 0 32px; }
+.marketplace-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 8px; }
+.marketplace-head h1 { margin: 0 0 4px; font-family: Georgia, 'Songti SC', serif; font-size: 26px; letter-spacing: -0.02em; }
+.marketplace-head p { margin: 0; max-width: 760px; font-size: 13px; line-height: 1.6; }
+.capability-entry-links { display: flex; align-items: center; gap: 8px; margin: 4px 0 14px; font-size: 13px; }
+.capability-entry-links .sep { color: var(--fg-subtle); }
+.marketplace-group { margin-top: 22px; }
+.marketplace-group > header h2 { margin: 0 0 2px; font-size: 16px; }
+.marketplace-group > header p { margin: 0 0 12px; font-size: 12px; }
+.marketplace-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.marketplace-card .mu-card-body { display: flex; flex-direction: column; gap: 8px; }
+.marketplace-desc { margin: 0; font-size: 13px; line-height: 1.5; min-height: 2.6em; }
+.marketplace-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.marketplace-tag { padding: 2px 8px; border-radius: 999px; background: var(--bg-soft); color: var(--fg-muted); font-size: 11px; }
+.marketplace-cmd { display: block; padding: 6px 8px; border-radius: 6px; background: var(--bg-soft); font-size: 11px; white-space: pre-wrap; word-break: break-all; }
+.marketplace-perms { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 11px; }
+.marketplace-perm { padding: 1px 7px; border-radius: 5px; border: 1px solid var(--border-subtle); color: var(--fg-muted); }
+.marketplace-actions { margin-top: 4px; display: flex; justify-content: flex-end; }
+
+/* 商城搜索 + catalog 结果（M3） */
+.marketplace-search { margin: 12px 0 4px; max-width: 640px; }
+.marketplace-catalog { margin-top: 14px; }
+.marketplace-catalog-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.marketplace-catalog-row { padding: 10px 12px; border: 1px solid var(--border-subtle); border-radius: 10px; background: var(--bg-elev); }
+.marketplace-catalog-main { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.marketplace-catalog-name { font-weight: 700; font-size: 14px; }
+.marketplace-catalog-row p { margin: 4px 0; font-size: 12px; }
+.marketplace-catalog-link { font-size: 12px; }
