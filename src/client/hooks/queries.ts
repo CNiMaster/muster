@@ -1032,6 +1032,15 @@ export function useTask(id: string | undefined) {
   });
 }
 
+/** 轻量任务查询（无轮询）：靠 task.* realtime 事件失效缓存刷新，对话气泡用。 */
+export function useTaskOnce(id: string | undefined) {
+  return useQuery({
+    queryKey: ['task', id],
+    queryFn: () => api.get<Task>(`/api/tasks/${id}`),
+    enabled: !!id,
+  });
+}
+
 export interface TaskEvent {
   id: string;
   taskId: string;
@@ -1074,11 +1083,12 @@ export function usePostTaskMessage() {
 export function useTaskAction() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ taskId, action, payload }: { taskId: string; action: 'cancel' | 'pause' | 'resume' | 'clarify'; payload?: { answer?: string } }) =>
+    mutationFn: ({ taskId, action, payload }: { taskId: string; action: 'cancel' | 'pause' | 'resume' | 'clarify'; payload?: { answer?: string; optionId?: string } }) =>
       api.post<Task>(`/api/tasks/${taskId}/${action}`, payload ?? {}),
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['task', data.id] });
       qc.invalidateQueries({ queryKey: ['task-events', data.id] });
+      qc.invalidateQueries({ queryKey: ['messages'] });
     },
   });
 }

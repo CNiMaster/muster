@@ -84,10 +84,21 @@ export interface ArtifactChange {
   operation: 'create' | 'update' | 'delete';
 }
 
+/** 决策追问的结构化选项（指挥系统批次3）：agent 给用户的 A/B/C 按钮。 */
+export interface QuestionOption {
+  id: string;
+  label: string;
+  detail?: string;
+  pros?: string;
+  cons?: string;
+}
+
 export interface AgentRunResult {
   outcome: TaskOutcome;
   summary: string;
   question?: string;
+  /** 指挥系统批次3：追问的候选选项（≥2 个时消费方可渲染为多选一）。 */
+  questionOptions?: QuestionOption[];
   outboundTasks: OutboundTaskRequest[];
   artifacts: ArtifactChange[];
   checkpoint?: string;

@@ -1004,29 +1004,47 @@ export class TaskEngine {
         }
       }
       if (
-        result.outcome === 'completed'
+        (result.outcome === 'completed' || result.outcome === 'waiting_input')
         && task.inputProtocol.trigger === 'user_message'
         && (task.inputProtocol.scope === 'project' || task.inputProtocol.scope === 'company')
         && typeof task.inputProtocol.scopeId === 'string'
       ) {
-        // 去重检查：如果回复内容与近期 assistant 消息高度相似，则跳过写入
-        const isDup = isDuplicateContent(
-          this.db,
-          task.inputProtocol.scope as string,
-          task.inputProtocol.scopeId as string,
-          result.summary,
-        );
-        if (!isDup) {
+        // 指挥系统批次3：waiting_input（追问）也回写对话——否则用户在对话窗毫无感知。
+        // 追问消息不做内容去重（问题本身必须送达）。
+        if (result.outcome === 'waiting_input') {
+          const options = result.questionOptions ?? [];
+          const content = (result.question || result.summary || '需要你的输入')
+            + (options.length
+              ? '\n' + options.map((o, i) => `${String.fromCharCode(65 + i)}. ${o.label}${o.detail ? ` — ${o.detail}` : ''}`).join('\n')
+              : '');
           postSystemMessage(this.db, {
             scopeKind: task.inputProtocol.scope,
             scopeId: task.inputProtocol.scopeId,
             role: 'assistant',
             author: agent.id,
-            content: result.summary,
+            content,
             refTaskId: task.id,
           });
         } else {
-          log.info('assistant reply deduplicated', { taskId: task.id, agentId: agent.id });
+          // 去重检查：如果回复内容与近期 assistant 消息高度相似，则跳过写入
+          const isDup = isDuplicateContent(
+            this.db,
+            task.inputProtocol.scope as string,
+            task.inputProtocol.scopeId as string,
+            result.summary,
+          );
+          if (!isDup) {
+            postSystemMessage(this.db, {
+              scopeKind: task.inputProtocol.scope,
+              scopeId: task.inputProtocol.scopeId,
+              role: 'assistant',
+              author: agent.id,
+              content: result.summary,
+              refTaskId: task.id,
+            });
+          } else {
+            log.info('assistant reply deduplicated', { taskId: task.id, agentId: agent.id });
+          }
         }
       }
       updateThreadState(

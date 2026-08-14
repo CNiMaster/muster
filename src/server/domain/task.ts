@@ -109,6 +109,8 @@ export interface Task {
   swarmId: string | null;
   /** 指挥系统：蜂群树深度（根调度任务=0，蜂=1，子蜂递增）。 */
   swarmDepth: number;
+  /** 指挥系统批次3：追问的结构化选项（null=自由文本追问）。 */
+  questionOptions: import('../../shared/types').QuestionOption[] | null;
 }
 
 interface TaskRow {
@@ -157,6 +159,7 @@ interface TaskRow {
   rework_count: number;
   swarm_id: string | null;
   swarm_depth: number;
+  question_options_json: string | null;
 }
 
 function fromRow(r: TaskRow): Task {
@@ -206,6 +209,9 @@ function fromRow(r: TaskRow): Task {
     reworkCount: r.rework_count ?? 0,
     swarmId: (r as { swarm_id?: string | null }).swarm_id ?? null,
     swarmDepth: (r as { swarm_depth?: number }).swarm_depth ?? 0,
+    questionOptions: r.question_options_json
+      ? (JSON.parse(r.question_options_json) as import('../../shared/types').QuestionOption[])
+      : null,
   };
 }
 
@@ -557,7 +563,7 @@ export function completeTask(db: DB, taskId: string, result: AgentRunResult): Ta
     else nextState = 'blocked';
 
     db.prepare(
-      `UPDATE task SET state=?, outcome=?, summary=?, question=?, artifacts_json=?, checkpoint=?,
+      `UPDATE task SET state=?, outcome=?, summary=?, question=?, question_options_json=?, artifacts_json=?, checkpoint=?,
         completed_at=?, lease_owner_thread_id=NULL, lease_expires_at=NULL,
         interruption_count=interruption_count+?,
         updated_at=?
@@ -567,6 +573,7 @@ export function completeTask(db: DB, taskId: string, result: AgentRunResult): Ta
       result.outcome,
       result.summary,
       result.question ?? null,
+      result.questionOptions?.length ? JSON.stringify(result.questionOptions) : null,
       JSON.stringify(result.artifacts ?? []),
       result.checkpoint ?? null,
       result.outcome === 'completed' ? now : null,
@@ -743,18 +750,34 @@ export function completeTask(db: DB, taskId: string, result: AgentRunResult): Ta
   return updated;
 }
 
-/** 派发者回答追问：把 task 重新入队（waiting_input → queued）。 */
-export function answerClarification(db: DB, taskId: string, answer: string): Task {
+/**
+ * 派发者回答追问：把 task 重新入队（waiting_input → queued）。
+ * 指挥系统批次3：支持结构化选项——optionId 命中时以「选项 {label}」作为回答落消息，
+ * 与自由文本 answer 二选一。
+ */
+export function answerClarification(db: DB, taskId: string, input: { answer?: string; optionId?: string }): Task {
   const cur = getTask(db, taskId);
   if (cur.state !== 'waiting_input') {
     throw new AppError(ErrorCode.TASK_INVALID_TRANSITION, `task ${taskId} 不在 waiting_input`);
+  }
+  const option = input.optionId
+    ? cur.questionOptions?.find((o) => o.id === input.optionId)
+    : undefined;
+  if (input.optionId && !option) {
+    throw new AppError(ErrorCode.NOT_FOUND, `选项 ${input.optionId} 不存在`);
+  }
+  const answer = option
+    ? `【选项】${option.label}${option.detail ? ` — ${option.detail}` : ''}`
+    : (input.answer ?? '').trim();
+  if (!answer) {
+    throw new AppError(ErrorCode.VALIDATION, '回答内容不能为空（answer 或 optionId 二选一）');
   }
   const now = nowIso();
   db.transaction(() => {
     // 若用户用 /clarify 回答了一个对齐态 task，清掉 alignment_state 避免孤儿标记（与 answerAlignment 对称）。
     db.prepare(`UPDATE task SET clarification_rounds=clarification_rounds+1, state='queued', alignment_state=NULL, updated_at=? WHERE id=?`).run(now, taskId);
     addTaskMessage(db, taskId, { author: 'user', role: 'user', content: answer });
-    appendTaskEvent(db, taskId, 'clarification_answered', {});
+    appendTaskEvent(db, taskId, 'clarification_answered', option ? { optionId: option.id, optionLabel: option.label } : {});
     resolveSuspensionByTask(db, taskId, { resolution: 'resumed' });
   })();
   return getTask(db, taskId);

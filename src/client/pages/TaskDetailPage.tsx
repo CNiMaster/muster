@@ -43,9 +43,9 @@ export function TaskDetailPage(): React.ReactElement {
     || task.state === 'failed'
     || (task.state === 'cancelled' && isConflictResolution);
 
-  const doAction = (a: 'cancel' | 'pause' | 'resume' | 'clarify', answer?: string): void => {
+  const doAction = (a: 'cancel' | 'pause' | 'resume' | 'clarify', answer?: string, optionId?: string): void => {
     action.mutate(
-      { taskId, action: a, payload: a === 'clarify' ? { answer } : undefined },
+      { taskId, action: a, payload: a === 'clarify' ? (optionId ? { optionId } : { answer }) : undefined },
       {
         onSuccess: () => toast('success', '操作成功'),
         onError: (e) => toast('error', (e as { message?: string }).message ?? '操作失败'),
@@ -93,7 +93,7 @@ export function TaskDetailPage(): React.ReactElement {
 
       <div className="task-detail-layout">
         <div>
-          {task.state === 'waiting_input' && <ClarifyCard taskId={task.id} onSubmit={(ans) => doAction('clarify', ans)} loading={action.isPending} />}
+          {task.state === 'waiting_input' && <ClarifyCard taskId={task.id} task={task} onSubmit={(ans) => doAction('clarify', ans)} onOption={(optionId) => doAction('clarify', undefined, optionId)} loading={action.isPending} />}
           
           {task.summary === '被正式 Task 打断，提前结束' && (
             <div style={{
@@ -260,12 +260,43 @@ function ProtocolCard({ title, protocol, emptyHint }: { title: string; protocol:
   </Card>;
 }
 
-function ClarifyCard({ taskId: _taskId, onSubmit, loading }: { taskId: string; onSubmit: (answer: string) => void; loading: boolean }): React.ReactElement {
+function ClarifyCard({ taskId, task, onSubmit, onOption, loading }: {
+  taskId: string;
+  task: import('../api/types').Task;
+  onSubmit: (answer: string) => void;
+  onOption: (optionId: string) => void;
+  loading: boolean;
+}): React.ReactElement {
   const [answer, setAnswer] = useState('');
+  void taskId;
+  const options = task.questionOptions ?? [];
   return (
     <Card title="回答追问" style={{ borderColor: 'var(--warn)' }}>
       <div className="form-stack">
-        <Textarea value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="补充信息…（回答后 Task 重新入队）" />
+        {options.length > 0 && (
+          <div className="form-stack" style={{ gap: 8 }}>
+            {options.map((option, index) => (
+              <button
+                key={option.id}
+                type="button"
+                className="mu-btn mu-btn-subtle"
+                style={{ textAlign: 'left', display: 'block', width: '100%' }}
+                disabled={loading}
+                onClick={() => onOption(option.id)}
+              >
+                <strong>{String.fromCharCode(65 + index)}. {option.label}</strong>
+                {option.detail && <span className="muted"> — {option.detail}</span>}
+                {(option.pros || option.cons) && (
+                  <div style={{ fontSize: 'var(--text-sm)', marginTop: 4 }}>
+                    {option.pros && <div style={{ color: 'var(--ok)' }}>优：{option.pros}</div>}
+                    {option.cons && <div style={{ color: 'var(--err)' }}>劣：{option.cons}</div>}
+                  </div>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+        <Textarea value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder={options.length ? '或自由补充…（也可直接点上面选项）' : '补充信息…（回答后 Task 重新入队）'} />
         <Button onClick={() => answer.trim() && onSubmit(answer)} disabled={!answer.trim()} loading={loading}>
           提交回答
         </Button>

@@ -245,9 +245,10 @@ export function assembleContext(
     sp.push(
       '# 输出契约',
       '你必须返回 JSON，符合 AgentRunResult 结构：',
-      '{ outcome, summary, question?, outboundTasks[], artifacts[], checkpoint?, acceptanceMet? }',
+      '{ outcome, summary, question?, questionOptions?, outboundTasks[], artifacts[], checkpoint?, acceptanceMet? }',
       'outcome ∈ completed | waiting_input | waiting_dependency | blocked',
       '信息不足时用 waiting_input + question 在原 Task 中追问，不要编造。',
+      '两难/需要用户拍板的选择题：用 questionOptions 给 2~4 个候选（id 稳定、label 简短、pros/cons 各一句），用户可一键选择；小问题自己定，不要什么都问。',
       'completed 时请在 acceptanceMet 里逐条自评验收标准（对照 # 验收标准 的 id，met=true/false）。',
       '',
     );

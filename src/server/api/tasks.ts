@@ -127,8 +127,12 @@ taskByIdRouter.post(
 taskByIdRouter.post(
   '/clarify',
   asyncHandler(async (req, res) => {
-    const { answer } = z.object({ answer: z.string().min(1) }).parse(req.body);
-    res.json(answerClarification(getDb(), param(req, 'id'), answer));
+    // 指挥系统批次3：结构化选项（optionId）或自由文本（answer）二选一
+    const input = z.object({
+      answer: z.string().min(1).optional(),
+      optionId: z.string().min(1).optional(),
+    }).refine((v) => !!v.answer !== !!v.optionId, { message: 'answer 与 optionId 必须二选一' }).parse(req.body);
+    res.json(answerClarification(getDb(), param(req, 'id'), input));
   }),
 );
 

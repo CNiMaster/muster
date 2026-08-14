@@ -26,10 +26,19 @@ const swarmPlanSchema = z.object({
   workers: z.array(z.object({ title: z.string(), brief: z.string() })).min(1),
 });
 
+const questionOptionSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  detail: z.string().optional(),
+  pros: z.string().optional(),
+  cons: z.string().optional(),
+});
+
 export const agentRunResultSchema = z.object({
   outcome: z.enum(['completed', 'waiting_input', 'waiting_dependency', 'blocked']),
   summary: z.string(),
   question: z.string().optional(),
+  questionOptions: z.array(questionOptionSchema).optional(),
   outboundTasks: z.array(outboundTaskSchema).default([]),
   artifacts: z.array(artifactSchema).default([]),
   checkpoint: z.string().optional(),
@@ -103,6 +112,20 @@ export const AGENT_RESULT_JSON_SCHEMA = {
         },
       },
       required: ['goal', 'workers'],
+    },
+    questionOptions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          label: { type: 'string' },
+          detail: { type: 'string' },
+          pros: { type: 'string' },
+          cons: { type: 'string' },
+        },
+        required: ['id', 'label'],
+      },
     },
   },
   required: ['outcome', 'summary'],

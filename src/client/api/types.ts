@@ -231,6 +231,8 @@ export interface Task {
   swarmId: string | null;
   /** 指挥系统：蜂群树深度（根=0，蜂=1，子蜂递增）。 */
   swarmDepth: number;
+  /** 指挥系统批次3：追问的结构化选项（null=自由文本追问）。 */
+  questionOptions: { id: string; label: string; detail?: string; pros?: string; cons?: string }[] | null;
   createdAt: string;
   updatedAt: string;
 }
