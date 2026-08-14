@@ -290,6 +290,19 @@ export interface MarketplacePresetView extends MarketplacePreset {
   existing?: { id: string; name: string; source: string };
 }
 
+/** M3 官方源搜索条目（GET /api/plugins/marketplace/catalog 返回）。 */
+export interface MarketplaceSearchEntry {
+  id: string;
+  name: string;
+  description: string;
+  source: 'preset' | 'mcp-registry' | 'anthropics-skills';
+  kind: 'skill' | 'mcp-server';
+  ref: string;
+  trust: 'curated' | 'official' | 'community';
+  installState: PresetInstallState;
+  existingId?: string;
+}
+
 // ── B2B 外包契约 ──────────────────────────────────────────────────────────
 
 /** 外包契约状态。 */

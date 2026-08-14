@@ -37,6 +37,8 @@ import {
 import { McpClientPool } from '../executors/tools/mcp/client-pool';
 import { searchMarketplace, installMarketplaceEntry, type MarketplaceEntry, type InstallScope } from '../domain/marketplace';
 import { listMarketplacePresets, installPreset } from '../domain/marketplace-presets';
+import { searchMarketplaceCatalog } from '../domain/marketplace-search';
+import { listMarketplaceSources, addMarketplaceSource } from '../domain/marketplace-sources';
 import { authorSkill } from '../domain/skill-author';
 import { getCompany } from '../domain/company';
 import { realtime } from '../realtime';
@@ -284,6 +286,34 @@ pluginsRouter.get(
   '/marketplace/presets',
   asyncHandler(async (_req, res) => {
     res.json(listMarketplacePresets(getDb()));
+  }),
+);
+
+/** M3 官方源搜索：预置 + MCP Registry + anthropics skills 目录（分组 + 安装状态）。 */
+pluginsRouter.get(
+  '/marketplace/catalog',
+  asyncHandler(async (req, res) => {
+    const query = (req.query.q as string) ?? '';
+    res.json(await searchMarketplaceCatalog(getDb(), query));
+  }),
+);
+
+// ── M3 来源登记（official 白名单展示 + manual 未审核登记）─────────────────
+
+pluginsRouter.get(
+  '/marketplace/sources',
+  asyncHandler(async (_req, res) => {
+    res.json(listMarketplaceSources(getDb()));
+  }),
+);
+
+const addSourceSchema = z.object({ endpoint: z.string().min(1) });
+
+pluginsRouter.post(
+  '/marketplace/sources',
+  asyncHandler(async (req, res) => {
+    const input = addSourceSchema.parse(req.body);
+    res.status(201).json(addMarketplaceSource(getDb(), input.endpoint));
   }),
 );
 

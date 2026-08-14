@@ -1,7 +1,7 @@
 /** React Query hooks：所有数据获取集中在此。 */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
-import type { Company, Agent, AgentExecutorJson, AgentProfile, CompanyEmployee, MemoryCandidate, MemoryEntry, Department, Project, Relationship, Task, UsageSummary, ProjectAgentThread, Workspace, BusinessReview, Plugin, EffectivePlugin, OutsourcingContract, MarketplacePresetView } from '../api/types';
+import type { Company, Agent, AgentExecutorJson, AgentProfile, CompanyEmployee, MemoryCandidate, MemoryEntry, Department, Project, Relationship, Task, UsageSummary, ProjectAgentThread, Workspace, BusinessReview, Plugin, EffectivePlugin, OutsourcingContract, MarketplacePresetView, MarketplaceSearchEntry } from '../api/types';
 import type { CompanyCockpitDTO, TemplateRuntimeHealthFinding } from '../../shared/types';
 import type { ProjectLaunchBrief, ProjectLaunchDiscovery } from '../../shared/project-launch';
 import type { CompanySetupDraft, CompanyTemplateOption, SetupBindings } from '../domain/company-templates';
@@ -1775,7 +1775,22 @@ export function useInstallPreset() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['marketplace-presets'] });
       qc.invalidateQueries({ queryKey: ['plugins'] });
+      qc.invalidateQueries({ queryKey: ['marketplace-catalog'] });
     },
+  });
+}
+
+/** M3 官方源搜索（预置 + MCP Registry + anthropics skills 目录），分组 + 安装状态。 */
+export function useMarketplaceCatalog(query: string) {
+  return useQuery({
+    queryKey: ['marketplace-catalog', query],
+    queryFn: () =>
+      api.get<{
+        presets: MarketplaceSearchEntry[];
+        registry: MarketplaceSearchEntry[];
+        skillsCatalog: MarketplaceSearchEntry[];
+      }>(`/api/plugins/marketplace/catalog?q=${encodeURIComponent(query)}`),
+    enabled: query.trim().length > 0,
   });
 }
 

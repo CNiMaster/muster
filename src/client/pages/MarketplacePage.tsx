@@ -11,14 +11,15 @@
 import { useMemo, useState } from 'react';
 import type React from 'react';
 import { Link } from 'react-router-dom';
-import { useMarketplacePresets, useInstallPreset } from '../hooks/queries';
-import type { MarketplacePresetView, PresetInstallState } from '../api/types';
+import { useMarketplacePresets, useInstallPreset, useMarketplaceCatalog } from '../hooks/queries';
+import type { MarketplacePresetView, MarketplaceSearchEntry, PresetInstallState } from '../api/types';
 import { PRESET_CATEGORIES, type PresetCategory } from '../../shared/marketplace-presets';
 import { Badge } from '../components/Badge';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
 import { Tabs } from '../components/Tabs';
 import { EmptyState } from '../components/EmptyState';
+import { Input } from '../components/Form';
 
 const KIND_LABEL: Record<'skill' | 'mcp-server', string> = { skill: 'Skill 技能', 'mcp-server': 'MCP Server 连接器' };
 
@@ -114,9 +115,67 @@ function CategoryGroup({ category, presets }: { category: PresetCategory; preset
   );
 }
 
+/** 非预置 catalog 条目（registry / 官方 skills 目录）：浏览型行，无安装按钮（M3 仅浏览，安装留后续）。 */
+function CatalogRow({ entry }: { entry: MarketplaceSearchEntry }): React.ReactElement {
+  const sourceLabel = entry.source === 'mcp-registry' ? 'MCP 官方 Registry' : 'Anthropic 官方 skills';
+  const href = entry.source === 'mcp-registry'
+    ? `https://registry.modelcontextprotocol.io/servers/${encodeURIComponent(entry.ref)}`
+    : `https://github.com/anthropics/skills/tree/main/skills/${encodeURIComponent(entry.ref)}`;
+  return (
+    <li className="marketplace-catalog-row">
+      <div className="marketplace-catalog-main">
+        <span className="marketplace-catalog-name">{entry.name}</span>
+        <Badge tone="info">{sourceLabel}</Badge>
+        {stateBadge(entry.installState)}
+      </div>
+      <p className="muted">{entry.description}</p>
+      <a className="marketplace-catalog-link" href={href} target="_blank" rel="noreferrer">查看来源 ↗</a>
+    </li>
+  );
+}
+
+function CatalogResults({ catalog, presets }: { catalog: { presets: MarketplaceSearchEntry[]; registry: MarketplaceSearchEntry[]; skillsCatalog: MarketplaceSearchEntry[] }; presets: MarketplacePresetView[] }): React.ReactElement {
+  const presetById = useMemo(() => new Map(presets.map((p) => [p.id, p])), [presets]);
+  const presetHits = catalog.presets
+    .map((e) => presetById.get(e.ref))
+    .filter((p): p is MarketplacePresetView => Boolean(p));
+  const hasAny = presetHits.length > 0 || catalog.registry.length > 0 || catalog.skillsCatalog.length > 0;
+  if (!hasAny) return <EmptyState type="general" title="没有找到匹配的能力" hint="换个关键词试试，或浏览上方策展目录。" />;
+  return (
+    <div className="marketplace-catalog">
+      {presetHits.length > 0 && (
+        <section className="marketplace-group">
+          <header><h2>策展精品 <span className="muted">({presetHits.length})</span></h2></header>
+          <div className="marketplace-grid">{presetHits.map((p) => <PresetCard key={p.id} preset={p} />)}</div>
+        </section>
+      )}
+      {catalog.registry.length > 0 && (
+        <section className="marketplace-group">
+          <header>
+            <h2>MCP 官方 Registry <span className="muted">({catalog.registry.length})</span></h2>
+            <p className="muted">来自 registry.modelcontextprotocol.io（namespace 认证 + 人工下架治理）。M3 仅浏览，安装后续开放。</p>
+          </header>
+          <ul className="marketplace-catalog-list">{catalog.registry.map((e) => <CatalogRow key={e.id} entry={e} />)}</ul>
+        </section>
+      )}
+      {catalog.skillsCatalog.length > 0 && (
+        <section className="marketplace-group">
+          <header>
+            <h2>Anthropic 官方 skills <span className="muted">({catalog.skillsCatalog.length})</span></h2>
+            <p className="muted">来自 anthropics/skills 官方仓库。M3 仅浏览，安装后续开放。</p>
+          </header>
+          <ul className="marketplace-catalog-list">{catalog.skillsCatalog.map((e) => <CatalogRow key={e.id} entry={e} />)}</ul>
+        </section>
+      )}
+    </div>
+  );
+}
+
 export function MarketplacePage(): React.ReactElement {
   const { data: presets, isLoading } = useMarketplacePresets();
   const [activeKind, setActiveKind] = useState<'skill' | 'mcp-server'>('skill');
+  const [query, setQuery] = useState('');
+  const catalog = useMarketplaceCatalog(query);
 
   const grouped = useMemo(() => {
     const byCat = new Map<PresetCategory, MarketplacePresetView[]>();
@@ -154,21 +213,40 @@ export function MarketplacePage(): React.ReactElement {
         <Link to="/capabilities" className="mu-btn mu-btn-ghost">← 返回能力中心</Link>
       </header>
 
-      <Tabs
-        activeKey={activeKind}
-        onChange={(k) => setActiveKind(k as 'skill' | 'mcp-server')}
-        items={[
-          { key: 'skill', label: `${KIND_LABEL.skill} (${counts.skill})`, content: <></> },
-          { key: 'mcp-server', label: `${KIND_LABEL['mcp-server']} (${counts['mcp-server']})`, content: <></> },
-        ]}
-      />
+      <div className="marketplace-search">
+        <Input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="搜索官方能力（名称 / 描述 / 标签）——命中 MCP Registry 与 Anthropic skills 目录…"
+          aria-label="搜索能力商城"
+        />
+      </div>
 
-      {categoryOrder.map((cat) => (
-        <CategoryGroup key={cat} category={cat} presets={grouped.get(cat) ?? []} />
-      ))}
+      {query.trim().length > 0 ? (
+        catalog.isLoading ? (
+          <p className="muted">搜索官方源中…</p>
+        ) : (
+          <CatalogResults catalog={catalog.data ?? { presets: [], registry: [], skillsCatalog: [] }} presets={presets ?? []} />
+        )
+      ) : (
+        <>
+          <Tabs
+            activeKey={activeKind}
+            onChange={(k) => setActiveKind(k as 'skill' | 'mcp-server')}
+            items={[
+              { key: 'skill', label: `${KIND_LABEL.skill} (${counts.skill})`, content: <></> },
+              { key: 'mcp-server', label: `${KIND_LABEL['mcp-server']} (${counts['mcp-server']})`, content: <></> },
+            ]}
+          />
 
-      {(presets ?? []).length === 0 && (
-        <EmptyState type="general" title="暂无策展条目" hint="预置目录为空。" />
+          {categoryOrder.map((cat) => (
+            <CategoryGroup key={cat} category={cat} presets={grouped.get(cat) ?? []} />
+          ))}
+
+          {(presets ?? []).length === 0 && (
+            <EmptyState type="general" title="暂无策展条目" hint="预置目录为空。" />
+          )}
+        </>
       )}
     </div>
   );

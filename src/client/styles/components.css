@@ -865,3 +865,13 @@
 .marketplace-perms { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 11px; }
 .marketplace-perm { padding: 1px 7px; border-radius: 5px; border: 1px solid var(--border-subtle); color: var(--fg-muted); }
 .marketplace-actions { margin-top: 4px; display: flex; justify-content: flex-end; }
+
+/* 商城搜索 + catalog 结果（M3） */
+.marketplace-search { margin: 12px 0 4px; max-width: 640px; }
+.marketplace-catalog { margin-top: 14px; }
+.marketplace-catalog-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.marketplace-catalog-row { padding: 10px 12px; border: 1px solid var(--border-subtle); border-radius: 10px; background: var(--bg-elev); }
+.marketplace-catalog-main { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.marketplace-catalog-name { font-weight: 700; font-size: 14px; }
+.marketplace-catalog-row p { margin: 4px 0; font-size: 12px; }
+.marketplace-catalog-link { font-size: 12px; }
