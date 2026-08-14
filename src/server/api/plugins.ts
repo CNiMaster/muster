@@ -36,6 +36,7 @@ import {
 } from '../domain/plugin-install';
 import { McpClientPool } from '../executors/tools/mcp/client-pool';
 import { searchMarketplace, installMarketplaceEntry, type MarketplaceEntry, type InstallScope } from '../domain/marketplace';
+import { listMarketplacePresets, installPreset } from '../domain/marketplace-presets';
 import { authorSkill } from '../domain/skill-author';
 import { getCompany } from '../domain/company';
 import { realtime } from '../realtime';
@@ -274,6 +275,36 @@ pluginsRouter.post(
     );
     realtime.publish(makeLifecycleEvent('plugin.installed', { pluginId: plugin.id }, {}));
     res.status(201).json(plugin);
+  }),
+);
+
+// ── 预置策展目录（M1：官方精品 + muster 内去重）──────────────────────────
+
+pluginsRouter.get(
+  '/marketplace/presets',
+  asyncHandler(async (_req, res) => {
+    res.json(listMarketplacePresets(getDb()));
+  }),
+);
+
+const installPresetSchema = z.object({
+  presetId: z.string().min(1),
+  scope: z.object({ level: z.enum(['platform', 'company']) }).passthrough(),
+  replaceExisting: z.boolean().optional(),
+});
+
+pluginsRouter.post(
+  '/marketplace/install-preset',
+  asyncHandler(async (req, res) => {
+    const input = installPresetSchema.parse(req.body);
+    const scope = input.scope.level === 'platform'
+      ? { level: 'platform' as const }
+      : { level: 'company' as const, companyId: String((input.scope as { companyId?: string }).companyId ?? '') };
+    const plugin = await installPreset(getDb(), input.presetId, scope, {
+      replaceExisting: input.replaceExisting,
+    });
+    realtime.publish(makeLifecycleEvent('plugin.installed', { pluginId: plugin.id }, {}));
+    res.status(201).json({ ...plugin, presetId: input.presetId });
   }),
 );
 

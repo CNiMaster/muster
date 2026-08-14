@@ -7,6 +7,7 @@ import { getProject } from './project';
 import type { Task } from './task';
 import { listCapabilityBindings, type CapabilityBinding } from './template-installation';
 import { retrieveSkillsByContent } from './skill-retrieval';
+import { getEffectivePluginSkillBody } from './plugin-install';
 
 const SOURCE_PRIORITY: Record<ResolvedTaskSkill['source'], number> = {
   task: 5,
@@ -97,7 +98,9 @@ export function resolveTaskSkills(
 
   return [...selected.values()].map((candidate) => {
     if (disabled.has(candidate.skillId)) return { ...candidate, status: 'disabled' as const };
-    const content = readBundledSkill(candidate.skillId, skillsRoot);
+    // 注入链（spec M1）：先读仓库 bundled skill，回退到该公司生效的 plugin 表 skill（商城安装的落这里）
+    const content = readBundledSkill(candidate.skillId, skillsRoot)
+      ?? getEffectivePluginSkillBody(db, project.companyId, candidate.skillId);
     return content
       ? { ...candidate, status: 'loaded' as const, content }
       : { ...candidate, status: 'missing' as const };

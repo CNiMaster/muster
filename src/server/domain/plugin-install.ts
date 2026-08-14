@@ -26,6 +26,7 @@ import type {
   PluginRow,
 } from '../../shared/plugin';
 import { listPlugins, parsePluginRow } from './plugin-adapter';
+import { log } from '../logger';
 
 export interface InstallPluginInput {
   id?: string; // 缺省自动生成
@@ -221,7 +222,40 @@ export function getEffectivePluginsForCompany(db: DB, companyId: string): Plugin
   const byId = new Map<string, Plugin>();
   for (const p of platformPlugins) byId.set(p.id, p);
   for (const p of companyPlugins) byId.set(p.id, p);
-  return Array.from(byId.values());
+  // 商城去重兜底（spec「同名去重与冲突解决」）：muster 内部 (kind, 归一化 name) 唯一 winner，
+  // 防同名两条都生效造成上下文重复。实体行（plg_）> 只读视图（skill:/tool:/bridge:）；同秩保留先入者并告警。
+  const byName = new Map<string, Plugin>();
+  for (const p of byId.values()) {
+    const key = `${p.kind}:${p.name.trim().toLowerCase()}`;
+    const prev = byName.get(key);
+    if (!prev) {
+      byName.set(key, p);
+    } else if (isEntityPlugin(p) && !isEntityPlugin(prev)) {
+      byName.set(key, p);
+    } else if (isEntityPlugin(p) === isEntityPlugin(prev)) {
+      log.warn('plugin same-name duplicate kept first (defensive)', { kind: p.kind, name: p.name, kept: prev.id, dropped: p.id });
+    }
+  }
+  return Array.from(byName.values());
+}
+
+/** 是否为 plugin 表实体行（plg_ 前缀）；否则为只读视图条目（skill:/tool:/bridge:）。 */
+function isEntityPlugin(p: Plugin): boolean {
+  return p.id.startsWith('plg_');
+}
+
+/**
+ * 读取某公司生效的某名 skill 正文（manifest.skill.body）。
+ * 注入链用：resolveTaskSkills 命中 skillId 时先查 plugin 表，再回退 bundled 目录——
+ * 否则商城装的 skill 永远不进任务上下文（spec M1 必修）。
+ */
+export function getEffectivePluginSkillBody(db: DB, companyId: string, skillName: string): string | undefined {
+  const want = skillName.trim().toLowerCase();
+  const hit = getEffectivePluginsForCompany(db, companyId).find(
+    (p) => p.kind === 'skill' && p.name.trim().toLowerCase() === want,
+  );
+  if (!hit || hit.manifest.kind !== 'skill') return undefined;
+  return hit.manifest.skill.body;
 }
 
 /**
