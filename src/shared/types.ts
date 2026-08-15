@@ -147,6 +147,20 @@ export interface RealtimeEvent<T = unknown> {
   payload: T;
 }
 
+/** 执行过程 trace 条目（GET /api/tasks/:id/trace）。 */
+export interface TraceItem {
+  id: string;
+  taskId: string;
+  runId: string | null;
+  seq: number;
+  kind: 'thinking' | 'text' | 'tool_call' | 'tool_result' | 'file_edit' | 'progress' | 'preview' | 'notice' | 'error';
+  name: string | null;
+  summary: string | null;
+  payload: Record<string, unknown>;
+  truncated: boolean;
+  occurredAt: string;
+}
+
 export type {
   LifecycleEvent,
   LifecycleEventPayloadMap,

@@ -233,8 +233,24 @@ export interface Task {
   swarmDepth: number;
   /** 指挥系统批次3：追问的结构化选项（null=自由文本追问）。 */
   questionOptions: { id: string; label: string; detail?: string; pros?: string; cons?: string }[] | null;
+  /** 执行过程展示批次4：失败蜂被自动修复重发后指向替补任务。 */
+  supersededBy: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/** 执行过程 trace 条目（与服务端 domain/execution-trace 对齐）。 */
+export interface TraceItem {
+  id: string;
+  taskId: string;
+  runId: string | null;
+  seq: number;
+  kind: 'thinking' | 'text' | 'tool_call' | 'tool_result' | 'file_edit' | 'progress' | 'preview' | 'notice' | 'error';
+  name: string | null;
+  summary: string | null;
+  payload: Record<string, unknown>;
+  truncated: boolean;
+  occurredAt: string;
 }
 
 /** 指挥系统：蜂群视图数据（GET /api/tasks/:id/swarm）。 */

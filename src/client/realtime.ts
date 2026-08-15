@@ -29,6 +29,10 @@ export function queryKeysForRealtimeEvent(event: RealtimeEvent): QueryKey[] {
   if (event.type?.startsWith('bridge.')) {
     keys.push(['project-events'], ['company-events']);
   }
+  // 执行过程 trace：精确失效任务时间线
+  if (event.type === 'trace.append') {
+    if (event.taskId) keys.push(['task-trace', event.taskId]);
+  }
   // B5：项目阶段事件刷 project query（驱动 wizard stepper 自动刷新）
   if (event.type.startsWith('project.')) keys.push(['projects']);
   // B4：plugin 启停事件刷 plugin 列表

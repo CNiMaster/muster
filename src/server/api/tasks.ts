@@ -4,6 +4,7 @@
  - POST  /api/projects/:id/tasks
  - GET   /api/tasks/:id
  - GET   /api/tasks/:id/events
+ - GET   /api/tasks/:id/trace?kind=&limit=
  - GET   /api/tasks/:id/messages
  - POST  /api/tasks/:id/clarify  (回答追问)
  - POST  /api/tasks/:id/cancel
@@ -28,6 +29,7 @@ import {
 import { abortSwarm, getSwarmRun } from '../domain/swarm';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { listTaskEvents } from '../domain/task-event';
+import { listTrace, type TraceKind } from '../domain/execution-trace';
 import { listTaskMessages, addTaskMessage } from '../domain/task-message';
 import { getProject } from '../domain/project';
 import { getCompany } from '../domain/company';
@@ -109,6 +111,15 @@ taskByIdRouter.get(
   '/events',
   asyncHandler(async (req, res) => {
     res.json(listTaskEvents(getDb(), param(req, 'id')));
+  }),
+);
+
+taskByIdRouter.get(
+  '/trace',
+  asyncHandler(async (req, res) => {
+    const kind = typeof req.query.kind === 'string' ? (req.query.kind as TraceKind) : undefined;
+    const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
+    res.json(listTrace(getDb(), param(req, 'id'), { kind, limit: Number.isFinite(limit) ? limit : undefined }));
   }),
 );
 

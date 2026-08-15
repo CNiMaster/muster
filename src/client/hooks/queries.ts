@@ -1,7 +1,7 @@
 /** React Query hooks：所有数据获取集中在此。 */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
-import type { Company, Agent, AgentExecutorJson, AgentProfile, CompanyEmployee, MemoryCandidate, MemoryEntry, Department, Project, Relationship, Task, UsageSummary, ProjectAgentThread, Workspace, BusinessReview, Plugin, EffectivePlugin, OutsourcingContract, MarketplacePresetView, MarketplaceSearchEntry, SwarmView } from '../api/types';
+import type { Company, Agent, AgentExecutorJson, AgentProfile, CompanyEmployee, MemoryCandidate, MemoryEntry, Department, Project, Relationship, Task, TraceItem, UsageSummary, ProjectAgentThread, Workspace, BusinessReview, Plugin, EffectivePlugin, OutsourcingContract, MarketplacePresetView, MarketplaceSearchEntry, SwarmView } from '../api/types';
 import type { CompanyCockpitDTO, TemplateRuntimeHealthFinding } from '../../shared/types';
 import type { ProjectLaunchBrief, ProjectLaunchDiscovery } from '../../shared/project-launch';
 import type { CompanySetupDraft, CompanyTemplateOption, SetupBindings } from '../domain/company-templates';
@@ -1093,6 +1093,13 @@ export function useTaskEvents(taskId: string | undefined) {
   return useQuery({
     queryKey: ['task-events', taskId],
     queryFn: () => api.get<TaskEvent[]>(`/api/tasks/${taskId}/events`),
+    enabled: !!taskId,
+  });
+}
+export function useTaskTrace(taskId: string | undefined) {
+  return useQuery({
+    queryKey: ['task-trace', taskId],
+    queryFn: () => api.get<TraceItem[]>(`/api/tasks/${taskId}/trace`),
     enabled: !!taskId,
   });
 }
