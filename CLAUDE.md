@@ -56,6 +56,15 @@ Key constraints for all new work:
 
 剩余（收尾项）：外包契约状态机 → 跨项目交付协议的改造（项目对项目，替代公司对公司，需为保留的契约域设计新入口）；公司页 section 结构重组（团队/章程并入蓝图字段的深度改造）视真实使用后再定。注意：批次6 文案变更同步改了 tests/e2e 断言但本机未跑 e2e（`npm run test:e2e`），首次提交前需本地跑一遍验收。
 
+## 补缺批次 R1-R3（2026-08-16 交付，配枪/验收员/资产库）
+
+- **R1 人设配枪**：persona frontmatter `tools` 键解析（persona-library.ts）；穿戴人设时上下文含「# 人设工具」文本段 + 注册表归一化命中的工具进「# 能力中心」推荐卡（tool-recommendation.ts `normalizeToolId`）；**一次性执行体权限缺口修复**——临时工/系统隐形岗创建即绑「临时工」deny 档（permission-templates.ts `bindDefaultDenyPolicy`，API 执行器上不再零拦截，CLI 侧 fail-closed 不变；已有显式策略不覆盖，greyed 复用补绑）。
+- **R2 验收员（收尾环节）**：`acceptance-officer.ts` `ensureAcceptanceOfficer`——**可见正式员工**（is_inspector 不可删、花名册可见、可对话、可 @、经理权限档、三级默认执行器）；`acceptance-review.ts` 泛化外包自动验收——任务 completed 且有验收标准、工作台 contractJson.autoReview 未关（默认开）、产出者非验收员 → 派「[验收]」Task；验收员按 `VERDICT=PASS|FAIL|CHANGES` + `CONFIDENCE` 判定：PASS 交付留痕 / FAIL|CHANGES 派「[返工]」（继承验收标准 + feedback + rework_count++）/ 低置信或解析失败升级用户（对话播报 + 事件）。验收是事后门：失败兜底走通用失败播报，不阻塞主任务。
+- **R3 资产库 + git 正确性**：upsert 登记时记录 props（size/mime，排序/预览的数据基础；按大小排序 UI 待接）；`deleteArtifact`（文件+登记+git 提交删除+审计，历史可回滚）；`POST /artifacts/reveal` 资源管理器定位（buildRevealCommand：open -R / explorer /select / xdg-open；防护同 /open：项目内 + 允许根）；前端 ArtifactsPage 列表与归档画廊显示「来源任务」链接（created_task_id 首次 UI 消费）+ 画廊类型筛选；**git 两修**——`writeArtifactContent` 保存即提交（"muster: user edit"，兑现 PRD 注释）+ 发布前主干未提交改动先提交为独立提交（"muster: user edits"，不再卷进 agent 发布提交）；context 注入「# 工作区与发布」教学段（勿自行 merge/push）。
+- **Review 修复（R1-R3 评审后）**：C1 验收员创建走 `internalRecruit` 豁免（org-lock 豁免但不 hidden——online 态可懒确保，此前真实运行态永远建不出）；I2 验收→返工轮回上限（`MAX_ACCEPTANCE_REWORK_ROUNDS=3`，超限升级用户）；I3 外包验收任务（reason=outsourcing_review）不再叠加验收员；I4 临时工转正时 deny 档自动重绑为员工档；I5 reveal/delete 补允许根校验；派发+留痕同事务；返工 assignee 预检；验收任务带显式 instruction。
+
+测试锚点：`tests/integration/r1-persona-tools.spec.ts`、`acceptance-review.spec.ts`、`r3-assets-git.spec.ts`（当前 190 文件 / 1303 测试）。实施位置：分支 execution-trace-display（工作树 /Users/master/Project/muster-execution-trace，含 2670793 重构 + f862eb0 trace 特性）；main 分支仍为重构前 028458a。
+
 明确不做（观察后决策）：knowledgeModel 数据实例与 views 渲染（ontology 只做蓝图分类轴）；能力包导入闭环；项目级导出；persona 正文深度激活（243 文件转换管线，待人设使用质量反馈）；工作室/手动班底固化（已被自动复盘蓝图取代）。
 
 ## Commands

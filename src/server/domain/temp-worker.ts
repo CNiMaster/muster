@@ -19,6 +19,8 @@ import { createAgent, getAgent } from './agent';
 import { createAgentProfile, getAgentProfile } from './agent-profile';
 import { getAgentHomePath } from './agent-home';
 import { getCompany } from './company';
+import { bindDefaultDenyPolicy, getRoleTemplate, TEMPLATE_NAMES } from './permission-templates';
+import { getEmployeePermissionPolicy, bindEmployeePermissionPolicy } from './permission';
 
 /** 临时工状态（仅 employment_type='temp' 有意义）。 */
 export type TempStatus = 'active' | 'greyed' | 'dismissed';
@@ -110,6 +112,9 @@ export function createTempEmployment(db: DB, input: CreateTempEmploymentInput): 
      WHERE legacy_agent_id=?`,
   ).run(now, input.sourceContractId ?? null, agent.id);
 
+  // R1：默认绑定「临时工」deny 权限档（API 执行器上不再零拦截；显式策略不覆盖）。
+  bindDefaultDenyPolicy(db, agent.id);
+
   return { agentId: agent.id, profileId, isNewProfile };
 }
 
@@ -132,6 +137,21 @@ export function convertTempToPermanent(db: DB, agentId: string): void {
   ).run(nowIso(), agentId);
   // 若是临时新建的 profile，转正时清零 is_temp_only，正式进入人才市场
   db.prepare('UPDATE agent_profile SET is_temp_only=0 WHERE id=?').run(agent.profileId);
+  // Review 修复 I4：转正时若仍绑着默认 deny 临时工档，重绑为「员工」档（ask-by-rule）——
+  // 否则转正员工在 API 执行器上持续全拒。显式绑定的其他策略不覆盖。
+  try {
+    const employment = db
+      .prepare('SELECT id FROM company_employee WHERE legacy_agent_id=?')
+      .get(agentId) as { id: string } | undefined;
+    if (employment) {
+      const current = getEmployeePermissionPolicy(db, employment.id);
+      if (current?.name === TEMPLATE_NAMES.temp) {
+        bindEmployeePermissionPolicy(db, employment.id, getRoleTemplate(db, 'employee').id, { skipLock: true });
+      }
+    }
+  } catch {
+    // 重绑失败不阻断转正（用户可手动调整权限档）
+  }
 }
 
 /**
@@ -207,6 +227,8 @@ export function reactivateGreyedTemp(db: DB, agentId: string): void {
   db.prepare(
     `UPDATE company_employee SET temp_status='active', updated_at=? WHERE legacy_agent_id=?`,
   ).run(nowIso(), agentId);
+  // R1：greyed 复用时确保 deny 档在（旧数据创建的临时工可能没有策略绑定）。
+  bindDefaultDenyPolicy(db, agentId);
 }
 
 export interface DismissTempOptions {

@@ -5,6 +5,8 @@
  - PUT    /api/projects/:id/artifacts/content   { path, content }
  - POST   /api/projects/:id/artifacts           { path, kind, content, ownerAgentId? }
  - POST   /api/projects/:id/artifacts/open      { path }  用系统默认应用打开（PRD:369）
+ - POST   /api/projects/:id/artifacts/reveal    { path }  资源管理器定位（R3）
+ - DELETE /api/projects/:id/artifacts           { path }  从资产库删除（R3，git 可回滚）
  - POST   /api/projects/:id/artifacts/rollback  { publishId }  回滚到指定发布（PRD:401）
 
  发布冲突不通过按钮强制覆盖：TaskEngine 会保留原 worktree，并给项目第一负责人派发可交互的裁决 Task。
@@ -16,7 +18,7 @@ import { existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { asyncHandler, param } from './middleware';
 import { getDb } from '../db/client';
-import { listArtifacts, artifactGallery } from '../domain/artifact';
+import { listArtifacts, artifactGallery, deleteArtifact, buildRevealCommand } from '../domain/artifact';
 import { getProject } from '../domain/project';
 import { PublishQueue } from '../worktree/publish-queue';
 import {
@@ -160,6 +162,56 @@ projectArtifactsRouter.post(
         },
       });
     }
+  }),
+);
+
+/**
+ R3：资源管理器定位（Finder / explorer / xdg-open 目录）。
+ 仅启动进程，不等待；路径防护同 /open（项目内 + MUSTER_ALLOWED_ROOTS 允许根）。
+ */
+projectArtifactsRouter.post(
+  '/reveal',
+  asyncHandler(async (req, res) => {
+    const input = z.object({ path: z.string().min(1) }).parse(req.body);
+    const db = getDb();
+    const project = getProject(db, param(req, 'id'));
+    const abs = resolveArtifactPath(project.rootDir, input.path);
+    if (!existsSync(abs)) {
+      res.status(404).json({ error: { code: 'not_found', message: '文件不存在' } });
+      return;
+    }
+    if (!isPathAllowed(abs)) {
+      res.status(403).json({ error: { code: 'unauthorized', message: '路径不在允许的根目录内' } });
+      return;
+    }
+    const { command, args } = buildRevealCommand(abs);
+    const child = spawn(command, args, { stdio: 'ignore', detached: true });
+    child.on('error', (err) => {
+      // eslint-disable-next-line no-console
+      console.error(`[artifacts/reveal] ${command} 启动失败:`, err.message);
+    });
+    child.unref();
+    res.json({ ok: true, command, path: input.path });
+  }),
+);
+
+/**
+ R3：从资产库删除成果（文件 + 登记 + git 提交删除，历史可回滚）。
+ 路径防护同 /open（项目内 + MUSTER_ALLOWED_ROOTS 允许根）。
+ */
+projectArtifactsRouter.delete(
+  '/',
+  asyncHandler(async (req, res) => {
+    const { path: relPath } = z.object({ path: z.string().min(1) }).parse(req.body);
+    const db = getDb();
+    const project = getProject(db, param(req, 'id'));
+    const abs = resolveArtifactPath(project.rootDir, relPath);
+    if (!isPathAllowed(abs)) {
+      res.status(403).json({ error: { code: 'unauthorized', message: '路径不在允许的根目录内' } });
+      return;
+    }
+    deleteArtifact(db, param(req, 'id'), relPath, 'user');
+    res.json({ ok: true });
   }),
 );
 

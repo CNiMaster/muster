@@ -102,6 +102,10 @@ export function assembleContext(
     if (personaSkills.length > 0) {
       sp.push('# 人设专长领域', personaSkills.slice(0, 12).join('、'), '');
     }
+    // R1：人设声明的工具（注册表命中的会以完整推荐卡进入 # 能力中心，此处为文本兜底提示）。
+    if (persona.tools.length > 0) {
+      sp.push('# 人设工具', `本任务按「${persona.name}」人设推荐以下工具（CLI 执行器为原生工具集，API 执行器经工具循环调用）：`, persona.tools.join('、'), '');
+    }
   }
   // 轻量模式：身份/职责/议题之后直接进入输出契约，跳过组织级大段上下文
   if (!lightweight) {
@@ -109,6 +113,15 @@ export function assembleContext(
       sp.push('# 公司章程', company.charter, '');
     }
     sp.push('# 项目说明', project.description || project.name, '');
+    // R3：worktree/发布语义教学——避免 agent 自行 merge/checkout 污染主干
+    sp.push(
+      '# 工作区与发布',
+      '你在任务专属的隔离 git worktree 中工作，分支与合并由系统管理：',
+      '1. 不要自行 git merge、push、checkout 主干或改动分支；',
+      '2. 你产出的文件经系统发布管线三方合并到项目主干，冲突时系统会发起裁决；',
+      '3. 需要版本控制时只做 git add/commit（提交即存档），提交信息保持简短。',
+      '',
+    );
   // 双 Loop 地基 P0.3：验收标准全程锚定——让 agent 明确"什么算好结果"。
   if (task.acceptanceCriteria.length > 0) {
     sp.push(

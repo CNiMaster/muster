@@ -11,6 +11,7 @@ import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
 import { assertEditable, getArtifact, getArtifactByPath, listArtifacts, registerArtifact, type Artifact, type ArtifactKind } from './artifact';
 import { getProject } from './project';
+import { commitAll } from '../worktree/manager';
 
 /** 解析项目内相对路径，使用 path.relative 避免 `/root-evil` 前缀绕过。 */
 export function resolveArtifactPath(rootDir: string, relPath: string): string {
@@ -50,6 +51,12 @@ export function writeArtifactContent(
   const dir = path.dirname(abs);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   writeFileSync(abs, content);
+  // R3：用户编辑即提交——兑现文件头 PRD 注释（可追踪提交），避免下次发布时被 git add -A 卷进 agent 发布提交。
+  try {
+    commitAll(project.rootDir, 'muster: user edit');
+  } catch {
+    // 提交失败不阻断保存（git 仓库异常时编辑仍生效，由下次发布的独立提交兜底）
+  }
 }
 
 /** 自动注册并写入：用于"快速新建章节"等场景。 */

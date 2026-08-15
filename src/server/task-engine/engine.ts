@@ -942,6 +942,15 @@ export class TaskEngine {
           log.warn('outsourcing review completion handling failed', { taskId: task.id, err: e instanceof Error ? e.message : String(e) });
         }
       }
+      // R2：任务级自动验收——验收 Task 完成 → 判定落地（PASS 交付 / FAIL 返工 / 低置信升级用户）
+      if (result.outcome === 'completed') {
+        try {
+          const { handleAcceptanceReviewTaskCompleted } = await import('../domain/acceptance-review');
+          handleAcceptanceReviewTaskCompleted(this.db, task);
+        } catch (e) {
+          log.warn('acceptance review completion handling failed', { taskId: task.id, err: e instanceof Error ? e.message : String(e) });
+        }
+      }
       // B2B 外包：承接任务完成后触发交付（契约标记 delivered，通知甲方验收）。
       // 幂等：非外包任务或契约非 in_progress 时返回 null，无副作用。
       if (result.outcome === 'completed') {
@@ -971,6 +980,22 @@ export class TaskEngine {
       // 自动触发1：验收不达标（acceptance_criteria 有 met=false）→ quality-review 讨论
       if (result.outcome === 'completed' && result.acceptanceMet?.some((m) => m.met === false)) {
         try { this.triggerQualityReviewDiscussion(task, result.acceptanceMet!, agent, project, company.id); } catch (e) { log.warn('quality-review discussion trigger failed', { taskId: task.id, err: e instanceof Error ? e.message : String(e) }); }
+      }
+      // R2：收尾验收——任务 completed（有验收标准、开关开、非验收任务自身）→ 派 [验收] Task 给验收员。
+      // 条件不满足时静默跳过（maybeTriggerAcceptanceReview 内部判定 + 幂等）。
+      if (result.outcome === 'completed') {
+        try {
+          const { maybeTriggerAcceptanceReview } = await import('../domain/acceptance-review');
+          const reviewTask = maybeTriggerAcceptanceReview(this.db, task);
+          if (reviewTask) {
+            realtime.publish(makeLifecycleEvent('acceptance.review-triggered', {
+              sourceTaskId: task.id,
+              reviewTaskId: reviewTask.id,
+            }, { companyId: company.id, projectId: project.id, taskId: task.id }));
+          }
+        } catch (e) {
+          log.warn('acceptance review trigger failed', { taskId: task.id, err: e instanceof Error ? e.message : String(e) });
+        }
       }
       // 员工评级：任务完成时重算 assignee 的 profile 评级（异步感——非阻塞，失败不回滚任务）
       if (result.outcome === 'completed' && agent.profileId) {

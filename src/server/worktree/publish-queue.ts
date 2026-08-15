@@ -188,6 +188,14 @@ export class PublishQueue {
     // 1. 在 worktree 提交所有改动，得到 commit hash
     const wtCommit = commitAll(req.worktreePath, `muster: task ${req.taskId} 成果`);
 
+    // R3：发布前把主干未提交的用户改动提交为独立提交（"muster: user edits"），
+    // 不再被本发布步骤 ③ 的 git add -A 卷进 agent 发布提交；历史可追踪。
+    try {
+      commitAll(req.projectRootDir, 'muster: user edits');
+    } catch {
+      // 主干仓库异常不阻断发布（三方合并仍以磁盘当前文件为 ours）
+    }
+
     // 2. 预计算整批变更。此阶段绝不修改正式目录，保证发现任一冲突时零落盘。
     for (const art of req.artifacts) {
       // 路径逃逸防护：所有 artifact path 必须在项目根目录内

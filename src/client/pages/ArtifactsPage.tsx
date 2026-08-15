@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import {
   useArtifacts,
@@ -208,7 +208,7 @@ function ArtifactList({
   onSelect,
   empty,
 }: {
-  items: { id: string; kind: string; path: string; ownerAgentId: string | null; updatedAt: string }[];
+  items: { id: string; kind: string; path: string; ownerAgentId: string | null; createdTaskId: string | null; updatedAt: string }[];
   agents: { id: string; name: string; role: string }[];
   onSelect: (path: string) => void;
   empty: React.ReactNode;
@@ -225,6 +225,12 @@ function ArtifactList({
               <strong>{a.path}</strong> <span className="muted">{KIND_LABELS[a.kind] ?? a.kind}</span>
             </div>
             {owner && <Badge tone="info">{owner.name} [{owner.role}]</Badge>}
+            {/* R3：来源任务维度——成果由哪个任务产出 */}
+            {a.createdTaskId && (
+              <Link className="mu-btn mu-btn-ghost mu-btn-sm" to={`/tasks/${a.createdTaskId}`} onClick={(e) => e.stopPropagation()}>
+                来源任务
+              </Link>
+            )}
             {readonly && <Badge tone="warn">只读</Badge>}
             <span className="subtle">{new Date(a.updatedAt).toLocaleDateString()}</span>
           </li>

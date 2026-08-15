@@ -12,9 +12,15 @@ import { getAgent } from './agent';
 import { getProject } from './project';
 import type { Task } from './task';
 import { listCapabilityBindings } from './template-installation';
-import { getTool, readToolFile, type ToolRegistryEntry } from './tool-registry';
+import { getTool, listTools, readToolFile, type ToolRegistryEntry } from './tool-registry';
 import { getAllCapabilityQuality, type CapabilityQuality } from './capability-quality';
 import { appendTaskEvent } from './task-event';
+import { getPersona } from './persona-library';
+
+/** R1：工具 id 归一化（大小写/下划线/空格 → 小写连字符），用于人设声明与注册表匹配。 */
+export function normalizeToolId(id: string): string {
+  return id.trim().toLowerCase().replace(/[\s_]+/g, '-');
+}
 
 export interface ToolRecommendation {
   toolId: string;
@@ -72,6 +78,22 @@ export function resolveToolRecommendations(db: DB, task: Task): ToolRecommendati
       if (!tool || !tool.isActive) continue;
       seen.add(toolId);
       recommendations.push(buildRecommendation(tool, binding.capabilityId, binding.purpose, qualityMap.get(binding.capabilityId) ?? null));
+    }
+  }
+
+  // R1：任务穿戴人设时，人设声明的工具按归一化 id 匹配注册表并入推荐（source='persona'）。
+  // 注册表外的人设工具（如 CLI 原生 WebFetch）由 assembleContext 的「# 人设工具」文本段兜底提示——
+  // 推荐是建议不是门禁，治理锚点仍在任职层。
+  if (task.personaId) {
+    const persona = getPersona(task.personaId);
+    if (persona && persona.tools.length > 0) {
+      const registry = new Map(listTools(db, { activeOnly: true }).map((t) => [normalizeToolId(t.id), t]));
+      for (const declared of persona.tools) {
+        const tool = registry.get(normalizeToolId(declared));
+        if (!tool || seen.has(tool.id)) continue;
+        seen.add(tool.id);
+        recommendations.push(buildRecommendation(tool, `人设·${persona.name}`, persona.name, null));
+      }
     }
   }
 

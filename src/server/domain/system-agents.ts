@@ -10,6 +10,7 @@
 import type { DB } from '../db/client';
 import { createAgent } from './agent';
 import { getCompany } from './company';
+import { bindDefaultDenyPolicy } from './permission-templates';
 
 export const DISPATCHER_ROLE = 'swarm-dispatcher';
 export const JUDGE_ROLE = 'debate-judge';
@@ -60,6 +61,9 @@ function ensureOne(db: DB, companyId: string, role: string, name: string, prompt
     canDispatch: true,
     isSystem: true,
   });
+  // R1：系统隐形岗默认绑 deny 档——它们只产结构化文本（swarmPlan/debateVerdict），
+  // API 执行器上不再零拦截（与 CLI 侧 fail-closed 对齐）。
+  bindDefaultDenyPolicy(db, agent.id);
   return agent.id;
 }
 

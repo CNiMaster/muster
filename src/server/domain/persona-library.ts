@@ -22,6 +22,8 @@ export interface Persona {
   description: string;
   emoji: string;
   color: string;
+  /** R1：人设声明的工具（frontmatter tools 键，逗号分隔），穿戴时作为工具推荐注入。 */
+  tools: string[];
   /** 转换后的 AgentProfile 结构。 */
   soul: string;
   principles: string[];
@@ -33,6 +35,7 @@ interface Frontmatter {
   description?: string;
   emoji?: string;
   color?: string;
+  tools?: string;
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -75,7 +78,7 @@ export function parsePersonaFile(rel: string, domain: string | null, content: st
       if (idx > 0) {
         const key = line.slice(0, idx).trim();
         const value = line.slice(idx + 1).trim().replace(/^["']|["']$/g, '');
-        if (key === 'name' || key === 'description' || key === 'emoji' || key === 'color') {
+        if (key === 'name' || key === 'description' || key === 'emoji' || key === 'color' || key === 'tools') {
           fm[key] = value;
         }
       }
@@ -136,6 +139,12 @@ export function parsePersonaFile(rel: string, domain: string | null, content: st
     description: fm.description ?? '',
     emoji: fm.emoji ?? '',
     color: fm.color ?? '',
+    // R1：tools 键解析——逗号分隔（容忍 YAML 风格 [a, b] 与裸列表），trim 后去空。
+    tools: (fm.tools ?? '')
+      .replace(/^\[|\]$/g, '')
+      .split(',')
+      .map((t) => t.trim())
+      .filter((t) => t.length > 0),
     soul,
     principles: principles.length > 0 ? principles : [`作为${fm.name}，遵循行业最佳实践，产出高质量交付物。`],
     capabilities: {

@@ -182,10 +182,13 @@ describe('公司级触发器', () => {
 
     const paused = setCompanyTriggerEnabled(db, company.id, list[0].id, false);
     expect(paused.enabled).toBe(false);
-    // 停用后重新启用会重算下一个 09:00 UTC
+    // 停用后重新启用会按真实时钟重算下一个 09:00 UTC（测试不得硬编码日期——否则过时即挂）
     const resumed = setCompanyTriggerEnabled(db, company.id, list[0].id, true);
     expect(resumed.enabled).toBe(true);
-    expect(resumed.nextRunAt).toBe('2026-08-15T09:00:00.000Z');
+    const next = new Date(Date.now());
+    next.setUTCHours(9, 0, 0, 0);
+    if (next.getTime() <= Date.now()) next.setUTCDate(next.getUTCDate() + 1);
+    expect(resumed.nextRunAt).toBe(next.toISOString());
 
     deleteCompanyTrigger(db, company.id, list[0].id);
     expect(listCompanyTriggers(db, company.id)).toHaveLength(0);

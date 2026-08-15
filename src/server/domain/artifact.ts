@@ -12,8 +12,11 @@
 import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
+import { existsSync, rmSync, statSync } from 'node:fs';
+import path from 'node:path';
 import { getProject } from './project';
 import { logArtifactChange } from './artifact-audit';
+import { commitAll } from '../worktree/manager';
 
 /** 小说场景的成果 kind（向后兼容）。 */
 export type NovelArtifactKind =
@@ -220,16 +223,40 @@ export function assertOwnerOrDispatch(db: DB, artifactId: string, agentId: strin
   }
 }
 
+const MIME_BY_EXT: Record<string, string> = {
+  '.md': 'text/markdown', '.txt': 'text/plain', '.json': 'application/json',
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml',
+  '.pdf': 'application/pdf', '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm',
+  '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+};
+
+/** R3：文件元数据（size/mime）——资产库排序/预览的依据。 */
+export function statArtifactProps(absPath: string): { size: number; mime: string } {
+  const stat = statSync(absPath);
+  return {
+    size: stat.size,
+    mime: MIME_BY_EXT[path.extname(absPath).toLowerCase()] ?? 'application/octet-stream',
+  };
+}
+
 /** Agent 成果发布后的幂等登记。 */
 export function upsertPublishedArtifact(
   db: DB,
   input: { projectId: string; path: string; kind: string; ownerAgentId?: string; taskId: string },
 ): Artifact {
+  // R3：登记时记录文件元数据（size/mime）——资产库排序/预览的依据。
+  const project = getProject(db, input.projectId);
+  const abs = path.resolve(project.rootDir, input.path);
+  const props = existsSync(abs) ? statArtifactProps(abs) : { size: 0, mime: 'application/octet-stream' };
+  const propsJson = JSON.stringify(props);
+
   const existing = getArtifactByPath(db, input.projectId, input.path);
   if (existing) {
     db.prepare(
-      'UPDATE artifact SET kind=?, owner_agent_id=COALESCE(owner_agent_id, ?), updated_at=? WHERE id=?',
-    ).run(input.kind, input.ownerAgentId ?? null, nowIso(), existing.id);
+      'UPDATE artifact SET kind=?, owner_agent_id=COALESCE(owner_agent_id, ?), props_json=?, updated_at=? WHERE id=?',
+    ).run(input.kind, input.ownerAgentId ?? null, propsJson, nowIso(), existing.id);
     // 审计日志：update
     logArtifactChange(db, {
       projectId: input.projectId,
@@ -245,8 +272,8 @@ export function upsertPublishedArtifact(
   db.prepare(
     `INSERT INTO artifact
       (id, project_id, kind, path, owner_agent_id, merge_strategy, props_json, created_task_id, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, 'three_way', '{}', ?, ?, ?)`,
-  ).run(id, input.projectId, input.kind, input.path, input.ownerAgentId ?? null, input.taskId, now, now);
+     VALUES (?, ?, ?, ?, ?, 'three_way', ?, ?, ?, ?)`,
+  ).run(id, input.projectId, input.kind, input.path, input.ownerAgentId ?? null, propsJson, input.taskId, now, now);
   // 审计日志：create
   logArtifactChange(db, {
     projectId: input.projectId,
@@ -256,6 +283,48 @@ export function upsertPublishedArtifact(
     taskId: input.taskId,
   });
   return getArtifact(db, id);
+}
+
+/**
+ * R3：从资产库删除成果（用户管理操作）。
+ * 删除文件 + 移除登记 + git 提交删除（历史在 git 中可回滚）+ 审计留痕。
+ */
+export function deleteArtifact(db: DB, projectId: string, relPath: string, changedBy: string): void {
+  const art = getArtifactByPath(db, projectId, relPath);
+  if (!art) throw new AppError(ErrorCode.NOT_FOUND, `成果未登记: ${relPath}`);
+  const project = getProject(db, projectId);
+  const abs = path.resolve(project.rootDir, relPath);
+  const relative = path.relative(project.rootDir, abs);
+  if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new AppError(ErrorCode.UNAUTHORIZED, '路径逃逸');
+  }
+  if (existsSync(abs)) rmSync(abs);
+  db.prepare('DELETE FROM artifact WHERE id=?').run(art.id);
+  logArtifactChange(db, {
+    projectId,
+    artifactPath: relPath,
+    action: 'delete',
+    detail: `by ${changedBy}`,
+  });
+  try {
+    commitAll(project.rootDir, `muster: delete artifact ${relPath}`);
+  } catch {
+    // git 仓库异常不阻断删除（删除已生效）
+  }
+}
+
+/**
+ * R3：资源管理器定位命令（纯函数，便于测试）。
+ * darwin=open -R（Finder 定位）/ win32=explorer /select / linux=xdg-open 目录。
+ */
+export function buildRevealCommand(absPath: string): { command: string; args: string[] } {
+  if (process.platform === 'darwin') {
+    return { command: 'open', args: ['-R', absPath] };
+  }
+  if (process.platform === 'win32') {
+    return { command: process.env.COMSPEC || 'cmd.exe', args: ['/C', 'explorer', `/select,${absPath}`] };
+  }
+  return { command: 'xdg-open', args: [path.dirname(absPath)] };
 }
 
 /**

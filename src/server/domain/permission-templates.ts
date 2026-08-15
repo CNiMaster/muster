@@ -12,7 +12,7 @@
  */
 import type { DB } from '../db/client';
 import type { PermissionPolicy } from '../../shared/permission';
-import { createPermissionPolicy, getPermissionPolicy, listPermissionPolicies } from './permission';
+import { createPermissionPolicy, getPermissionPolicy, listPermissionPolicies, bindEmployeePermissionPolicy } from './permission';
 
 /** 模板标识（存入 policy.name 做幂等去重）。 */
 export const TEMPLATE_NAMES = {
@@ -71,4 +71,22 @@ export function inferRoleTemplate(
   if (employmentType === 'temp') return 'temp';
   if (isLead) return 'manager';
   return 'employee';
+}
+
+/**
+ * R1：为一次性执行体（临时工/系统隐形岗）绑定默认 deny 档。
+ * 背景：此前这些执行体没有任何权限策略绑定——API 执行器上 guard undefined = 工具零拦截全放行。
+ * 幂等：已有显式策略不覆盖；skipLock 与 temp/isSystem 创建的 org-lock 豁免对齐（公司运行中可绑）。
+ * 绑定失败不阻断（CLI 侧 fail-closed 兜底，缺口下次创建时自愈）。
+ */
+export function bindDefaultDenyPolicy(db: DB, employmentLegacyAgentId: string): void {
+  try {
+    const employment = db
+      .prepare('SELECT id, permission_policy_id FROM company_employee WHERE legacy_agent_id=?')
+      .get(employmentLegacyAgentId) as { id: string; permission_policy_id: string | null } | undefined;
+    if (!employment || employment.permission_policy_id) return;
+    bindEmployeePermissionPolicy(db, employment.id, getRoleTemplate(db, 'temp').id, { skipLock: true });
+  } catch {
+    // 绑定失败不阻断执行体创建
+  }
 }

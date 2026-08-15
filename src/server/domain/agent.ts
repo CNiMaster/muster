@@ -134,12 +134,15 @@ export interface CreateAgentInput {
   tempRecruit?: boolean;
   /** 指挥系统：系统隐形岗创建（豁免 org lock，任职记录 hidden=1）。仅 system-agents.ts / swarm.ts 走此路径。 */
   isSystem?: boolean;
+  /** R2 内部固定岗豁免：验收员等可见岗位懒确保（豁免 org lock 但不 hidden——区别于 isSystem）。 */
+  internalRecruit?: boolean;
 }
 
-function assertUnlocked(db: DB, companyId: string, opts?: { tempRecruit?: boolean; isSystem?: boolean }): void {
+function assertUnlocked(db: DB, companyId: string, opts?: { tempRecruit?: boolean; isSystem?: boolean; internalRecruit?: boolean }): void {
   // 临时工招聘豁免：允许公司 online 态招临时工（B2B 决策树 recruit 路径自动触发）
   // 系统隐形岗豁免：调度中心/评审中心由 coordinator 在线幂等创建
-  if (opts?.tempRecruit || opts?.isSystem) return;
+  // R2 内部岗豁免：验收员等可见固定岗懒确保（任务完成时工作台通常 online，不豁免则永远建不出来）
+  if (opts?.tempRecruit || opts?.isSystem || opts?.internalRecruit) return;
   if (isOrgLocked(db, companyId)) {
     throw new AppError(ErrorCode.COMPANY_LOCKED, '上班期间不能修改员工配置');
   }
@@ -208,7 +211,7 @@ function assertExecutorValid(executor: Record<string, unknown> | undefined): voi
 
 export function createAgent(db: DB, input: CreateAgentInput): AgentDefinition {
   getCompany(db, input.companyId); // 校验存在
-  assertUnlocked(db, input.companyId, { tempRecruit: input.tempRecruit, isSystem: input.isSystem });
+  assertUnlocked(db, input.companyId, { tempRecruit: input.tempRecruit, isSystem: input.isSystem, internalRecruit: input.internalRecruit });
   assertDepartmentInCompany(db, input.companyId, input.departmentId ?? null);
   // 临时工招聘豁免 contactAllow 校验（临时工的工作关系仅限发起者，可能跨公司）
   if (!input.tempRecruit && !input.isSystem) {

@@ -24,6 +24,7 @@ const KIND_LABELS: Record<string, string> = {
 export function ArchivePage(): React.ReactElement {
   const { companyId } = useParams<{ companyId: string }>();
   const [tab, setTab] = useState<'search' | 'gallery'>('search');
+  const [kindFilter, setKindFilter] = useState('');
   const [q, setQ] = useState('');
   const [debouncedQ, setDebouncedQ] = useState('');
   const [groupBy, setGroupBy] = useState<'time' | 'type' | 'project'>('time');
@@ -106,43 +107,64 @@ export function ArchivePage(): React.ReactElement {
 
       {tab === 'gallery' && (
         <Card className="section">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
             <span style={{ fontWeight: 600 }}>跨项目成果</span>
-            <select
-              className="mu-input"
-              value={groupBy}
-              onChange={(e) => setGroupBy(e.target.value as 'time' | 'type' | 'project')}
-              style={{ width: 160 }}
-            >
-              <option value="time">按日期分组</option>
-              <option value="type">按类型分组</option>
-              <option value="project">按项目分组</option>
-            </select>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <select
+                className="mu-input"
+                value={kindFilter}
+                onChange={(e) => setKindFilter(e.target.value)}
+                style={{ width: 140 }}
+              >
+                <option value="">全部类型</option>
+                {[...new Set((gallery.data ?? []).flatMap((g) => g.items.map((a) => a.kind)))].sort().map((kind) => (
+                  <option key={kind} value={kind}>{kind}</option>
+                ))}
+              </select>
+              <select
+                className="mu-input"
+                value={groupBy}
+                onChange={(e) => setGroupBy(e.target.value as 'time' | 'type' | 'project')}
+                style={{ width: 160 }}
+              >
+                <option value="time">按日期分组</option>
+                <option value="type">按类型分组</option>
+                <option value="project">按项目分组</option>
+              </select>
+            </div>
           </div>
           {gallery.isLoading ? (
             <CardSkeleton count={3} />
           ) : (gallery.data ?? []).length === 0 ? (
             <EmptyState title="还没有成果" description="任务发布产物后会自动进入归档。" />
           ) : (
-            (gallery.data ?? []).map((group) => (
-              <div key={group.key} style={{ marginBottom: 20 }}>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', marginBottom: 8 }}>
-                  <span style={{ fontWeight: 600 }}>{group.label}</span>
-                  <Badge>{group.count}</Badge>
+            (gallery.data ?? []).map((group) => {
+              const filtered = kindFilter ? group.items.filter((a) => a.kind === kindFilter) : group.items;
+              if (filtered.length === 0) return null;
+              return (
+                <div key={group.key} style={{ marginBottom: 20 }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', marginBottom: 8 }}>
+                    <span style={{ fontWeight: 600 }}>{group.label}</span>
+                    <Badge>{filtered.length}</Badge>
+                  </div>
+                  <ul style={{ display: 'grid', gap: 6 }}>
+                    {filtered.map((art) => (
+                      <li key={art.id} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>
+                        <Badge tone="neutral">{art.kind}</Badge>
+                        <span style={{ fontFamily: 'var(--mu-mono)' }}>{art.path}</span>
+                        {/* R3：来源任务维度 */}
+                        {art.createdTaskId && (
+                          <Link to={`/tasks/${art.createdTaskId}`} style={{ fontSize: 12 }}>来源任务</Link>
+                        )}
+                        <Link to={`/projects/${art.projectId}/artifacts`} style={{ marginLeft: 'auto', fontSize: 12 }}>
+                          查看
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-                <ul style={{ display: 'grid', gap: 6 }}>
-                  {group.items.map((art) => (
-                    <li key={art.id} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>
-                      <Badge tone="neutral">{art.kind}</Badge>
-                      <span style={{ fontFamily: 'var(--mu-mono)' }}>{art.path}</span>
-                      <Link to={`/projects/${art.projectId}/artifacts`} style={{ marginLeft: 'auto', fontSize: 12 }}>
-                        查看
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))
+              );
+            })
           )}
         </Card>
       )}
