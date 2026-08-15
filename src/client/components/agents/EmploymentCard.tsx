@@ -17,7 +17,7 @@ export function EmploymentCard(props:{employment:Employment;companyName:string;e
   const completedAt='probeDetails' in health&&health.probeDetails?.completedAt?new Date(health.probeDetails.completedAt).toLocaleString():null;
   const executorName = props.executors.find((e) => e.id === props.employment.executorProfileId)?.name;
   const policy = props.policies.find((p) => p.id === props.employment.permissionPolicyId);
-  return <Card title={<Link to={`/companies/${props.employment.companyId}?view=team`}>{props.companyName}</Link>} actions={<Badge tone={health.state==='ready'?'ok':health.state==='checking'?'warn':'err'}>{health.label}</Badge>}>
+  return <Card title={props.companyName} actions={<Badge tone={health.state==='ready'?'ok':health.state==='checking'?'warn':'err'}>{health.label}</Badge>}>
     <p><strong>本工作台岗位：</strong>{props.employment.role}</p>
     <p><strong>固定执行器：</strong>{executorName ?? '未绑定'}{'executorName' in health&&health.executorName&&health.manifestId?` · ${health.manifestId}`:''}</p>
     <p><strong>权限策略：</strong>{policy ? `${policy.name}` : '未绑定'}{'permission' in health&&health.permission?` · ${health.permission.strategy} × ${health.permission.scope}`:''}</p>
@@ -27,9 +27,7 @@ export function EmploymentCard(props:{employment:Employment;companyName:string;e
     {'reasons' in health&&health.reasons?.length?<ul className="diagnostic-list">{health.reasons.map((reason)=><li key={reason}>{reason}</li>)}</ul>:null}
     {'action' in health && health.action ? <p><Link to={health.action.href}>{health.action.label}</Link></p> : null}
     <p className="muted" style={{ marginTop: 8 }}>
-      执行器与权限的绑定/修改请到{' '}
-      <Link to={`/companies/${props.employment.companyId}?view=team`}>该工作台组织架构</Link>
-      {' '}（需工作台下班）。
+      执行器与权限的绑定/修改在智能体对话或工作台设置中操作。
     </p>
   </Card>;
 }

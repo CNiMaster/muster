@@ -11,7 +11,7 @@ import type { DB } from '../db/client';
 import { getAgent } from './agent';
 import { getProject } from './project';
 import type { Task } from './task';
-import { listCapabilityBindings } from './template-installation';
+import { listCapabilityBindings } from './capability-binding';
 import { getTool, listTools, readToolFile, type ToolRegistryEntry } from './tool-registry';
 import { getAllCapabilityQuality, type CapabilityQuality } from './capability-quality';
 import { appendTaskEvent } from './task-event';

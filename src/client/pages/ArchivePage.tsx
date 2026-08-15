@@ -7,13 +7,13 @@
  */
 import type React from 'react';
 import { useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Badge } from '../components/Badge';
 import { Card } from '../components/Card';
 import { Input } from '../components/Form';
 import { EmptyState } from '../components/EmptyState';
 import { CardSkeleton } from '../components/Skeleton';
-import { useArchiveSearch, useCompanyArtifactGallery } from '../hooks/queries';
+import { useArchiveSearch, useCompanyArtifactGallery, useDefaultCompanyId } from '../hooks/queries';
 
 const KIND_LABELS: Record<string, string> = {
   memory: '经验',
@@ -22,7 +22,7 @@ const KIND_LABELS: Record<string, string> = {
 };
 
 export function ArchivePage(): React.ReactElement {
-  const { companyId } = useParams<{ companyId: string }>();
+  const companyId = useDefaultCompanyId();
   const [tab, setTab] = useState<'search' | 'gallery'>('search');
   const [kindFilter, setKindFilter] = useState('');
   const [q, setQ] = useState('');
@@ -35,6 +35,8 @@ export function ArchivePage(): React.ReactElement {
 
   const search = useArchiveSearch(companyId, debouncedQ);
   const gallery = useCompanyArtifactGallery(companyId, tab === 'gallery' ? groupBy : 'time');
+
+  if (!companyId) return <div className="loading">正在定位默认工作台…</div>;
 
   return (
     <div className="home">

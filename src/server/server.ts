@@ -68,8 +68,6 @@ import { ProjectRuntimeCoordinator } from './runtime/coordinator';
 import { listAgentProfiles } from './domain/agent-profile';
 import { materializeAgentHome, syncAgentMemoryFiles } from './domain/agent-home';
 import { autoDiscoverCertifiedExecutors } from './domain/executor-discovery';
-import { companySetupRouter } from './api/company-setup';
-import { templateHealthRouter } from './api/template-health';
 import { syncToolRegistry } from './domain/tool-registry';
 import { seedDefaultCredentialDefinitions } from './domain/credential-store';
 import { toolsRouter } from './api/tools';
@@ -197,7 +195,6 @@ async function createApp(): Promise<AppHandle> {
   app.use('/api/companies/:companyId/workflows', workflowsRouter);
   app.use('/api/companies/:id/messages', companyMessagesRouter);
   app.use('/api/companies/:companyId/events', companyEventsRouter);
-  app.use('/api/companies/:companyId/template-health', templateHealthRouter);
   app.use('/api/companies/:companyId/credentials', companyCredentialsRouter);
   // 阶段五任务 5.1/5.2：公司运营优化报告（/optimization-report、/optimization-reports）
   app.use('/api/companies/:companyId', optimizationReportRouter);
@@ -225,7 +222,6 @@ async function createApp(): Promise<AppHandle> {
   app.use('/api/permissions', permissionsRouter);
   app.use('/api/executors', executorsRouter);
   app.use('/api/setup-assistant', setupAssistantRouter);
-  app.use('/api/company-setup', companySetupRouter);
   app.use('/api/tools', toolsRouter);
   app.use('/api/credentials', credentialsRouter);
   app.use('/api/business-reviews', businessReviewsRouter);

@@ -23,7 +23,7 @@ export const agentProfilesRouter = Router();
 export const companyEmployeesRouter = Router({ mergeParams: true });
 
 const recruitmentDraftSchema = z.object({
-  source: z.enum(['reuse-profile', 'new-profile', 'role-template']),
+  source: z.enum(['reuse-profile', 'new-profile']),
   profileId: z.string().optional(),
   displayName: z.string().min(1),
   role: z.string().min(1),

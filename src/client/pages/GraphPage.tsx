@@ -23,6 +23,7 @@ import {
   useArchiveRelationship,
   useRestoreRelationship,
   useValidateGraph,
+  useDefaultCompanyId,
 } from '../hooks/queries';
 import { Button } from '../components/Button';
 import { Badge } from '../components/Badge';
@@ -41,7 +42,8 @@ const KIND_HELP: Record<string, string> = {
 };
 
 export function GraphPage(): React.ReactElement {
-  const { companyId = '', kind = 'org' } = useParams();
+  const { kind = 'org' } = useParams();
+  const companyId = useDefaultCompanyId() ?? '';
   const graphKind = kind as 'org' | 'communication';
   const { data: company } = useCompany(companyId);
   const { data: agents } = useAgents(companyId);

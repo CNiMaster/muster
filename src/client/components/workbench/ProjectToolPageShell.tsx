@@ -1,5 +1,5 @@
 import type React from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAgents, useCompany, useCompanyCockpit, useDepartments, useProject, useProjectTask, useProjectTasks, useTask, useTasks } from '../../hooks/queries';
 import { ProjectContextInspector } from './ProjectContextInspector';
 import { ProjectWorkNavigation, type ProjectToolKey } from './ProjectWorkNavigation';
@@ -21,6 +21,7 @@ const TOOL_LABELS: Record<ProjectToolKey, string> = {
 /** 让项目工具页继续处于同一个三栏工作现场，而不是跳回独立管理页面。 */
 export function ProjectToolPageShell({ tool, children, projectIdOverride, selectedProjectTaskId }: { tool: ProjectToolKey; children: React.ReactNode; projectIdOverride?: string; selectedProjectTaskId?: string }): React.ReactElement {
   const { projectId: routeProjectId = '' } = useParams();
+  const navigate = useNavigate();
   const projectId = projectIdOverride ?? routeProjectId;
   const { data: project } = useProject(projectId);
   const { data: company } = useCompany(project?.companyId);
@@ -35,12 +36,12 @@ export function ProjectToolPageShell({ tool, children, projectIdOverride, select
 
   return <WorkbenchShell
     scopeKey={`project:${projectId}`}
-    breadcrumb={<WorkbenchContextSwitcher companyId={project?.companyId ?? ''} companyName={company?.name ?? '工作台'} companyKind={company?.kind} projectId={projectId} projectName={project?.name ?? '项目'} projectTaskId={selectedId} sectionKey={tool} sectionLabel={TOOL_LABELS[tool]} novel={company?.kind === 'novel'} />}
+    breadcrumb={<WorkbenchContextSwitcher companyId={project?.companyId ?? ''} projectId={projectId} projectName={project?.name ?? '项目'} projectTaskId={selectedId} sectionKey={tool} sectionLabel={TOOL_LABELS[tool]} novel={company?.kind === 'novel'} />}
     navigationLabel="项目组织与联系人"
     inspectorLabel="项目任务与运行"
     attentionCount={attentionCount + (cockpit?.approvals.pending ?? 0)}
     primaryAction={<Link className="mu-btn mu-btn-primary mu-btn-sm" to={`/projects/${projectId}${selectedId ? `?projectTask=${selectedId}` : ''}`}>返回智能体中心</Link>}
-    navigation={<ProjectWorkNavigation projectId={projectId} projectTasks={projectTasks ?? []} tasks={tasks ?? []} agents={agents ?? []} departments={departments ?? []} firstAgentId={project?.firstAgentId ?? company?.firstAgentId} selectedProjectTaskId={selectedId} view="tool" activeTool={tool} attentionCount={attentionCount} novel={company?.kind === 'novel'} />}
+    navigation={<ProjectWorkNavigation projectId={projectId} projectTasks={projectTasks ?? []} tasks={tasks ?? []} agents={agents ?? []} departments={departments ?? []} firstAgentId={project?.firstAgentId ?? company?.firstAgentId} selectedProjectTaskId={selectedId} view="tool" activeTool={tool} attentionCount={attentionCount} novel={company?.kind === 'novel'} onNewTask={() => navigate(`/projects/${projectId}?view=task&projectTask=new`)} />}
     inspector={<ProjectContextInspector projectId={projectId} companyId={project?.companyId} projectState={project?.state ?? 'setup'} selectedTask={selectedTask} agents={agents ?? []} tasks={tasks ?? []} cockpit={cockpit} />}
     commandOptions={[
       ...(projectTasks ?? []).slice(0, 5).map((item) => ({ label: `任务：${item.title}`, href: `/projects/${projectId}?view=task&projectTask=${item.id}`, group: '项目任务' })),

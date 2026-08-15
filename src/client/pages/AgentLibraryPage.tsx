@@ -8,25 +8,14 @@
 import type React from 'react';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ROLE_TEMPLATES, type RoleTemplate } from '../../shared/role-templates';
 import { useAgentProfiles, useCompanies, useCreateAgentProfile, useRecruitFromDraft, usePersonas, usePersonaDomains, useGenerateAgentProposal } from '../hooks/queries';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
 import { Badge } from '../components/Badge';
 import { Field, Input, Select, Textarea } from '../components/Form';
 import { EmptyState, Icons } from '../components/EmptyState';
-import { TeamPackPicker } from '../components/marketplace/TeamPackPicker';
 import type { AgentProfile, Company } from '../api/types';
-import type { RecruitmentDraft } from '../../shared/role-templates';
-
-function profileInput(template: RoleTemplate, displayName = template.name): { displayName: string; soul: string; principles: string[]; capabilities: Record<string, unknown> } {
-  return {
-    displayName,
-    soul: `你是${displayName}。${template.responsibilities}。面对任务时先澄清目标，再给出可验证成果。`,
-    principles: ['围绕目标工作', '主动暴露风险', '用成果而不是过程证明完成'],
-    capabilities: { skills: template.skills, tools: template.tools, roleTemplateId: template.id },
-  };
-}
+import type { RecruitmentDraft } from '../../shared/types';
 
 export function AgentLibraryPage(): React.ReactElement {
   const { data: profiles, isLoading } = useAgentProfiles();
@@ -49,16 +38,6 @@ export function AgentLibraryPage(): React.ReactElement {
     const lower = q.toLowerCase();
     return list.filter((p) => p.displayName.toLowerCase().includes(lower));
   }, [profiles, q]);
-
-  const createFromTemplate = async (template: RoleTemplate, displayNameOverride?: string): Promise<boolean> => {
-    const name = displayNameOverride ?? template.name;
-    if (existingNames.has(name)) {
-      toast('info', `${name} 已在智能体库中`);
-      return false;
-    }
-    await createProfile.mutateAsync(profileInput(template, name));
-    return true;
-  };
 
   const submit = (): void => {
     if (!displayName.trim()) return;
@@ -113,37 +92,8 @@ export function AgentLibraryPage(): React.ReactElement {
         </Field>
       </Card>
 
-      <section className="section" aria-labelledby="role-template-title">
-        <div className="section-heading">
-          <div><span className="step-kicker">01</span><h2 id="role-template-title">添加人才</h2></div>
-          <small>{ROLE_TEMPLATES.length} 个快捷岗位模板</small>
-        </div>
-        <div className="role-template-strip">
-          {ROLE_TEMPLATES.map((template) => {
-            const exists = existingNames.has(template.name);
-            return (
-              <article key={template.id} className="role-template-card">
-                <span className="role-template-mark" aria-hidden="true">{template.name.slice(0, 1)}</span>
-                <div>
-                  <strong>{template.name}</strong>
-                  <small>{template.responsibilities}</small>
-                </div>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={exists || createProfile.isPending}
-                  onClick={() => void createFromTemplate(template).then(() => toast('success', `已添加${template.name}`)).catch((error: Error) => toast('error', error.message))}
-                >
-                  {exists ? '已有' : '添加'}
-                </Button>
-              </article>
-            );
-          })}
-        </div>
-      </section>
-
-      <details className="details-collapse custom-agent-create section">
-        <summary>从空白创建自定义智能体</summary>
+      <section className="section" aria-labelledby="add-talent-title">
+        <div className="section-heading"><div><span className="step-kicker">01</span><h2 id="add-talent-title">添加人才</h2></div><small>自定义智能体 · AI 可按名称生成岗位与职责</small></div>
         <div className="form-stack">
           <Field label="智能体名称" required>
             <Input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="例如：数据分析师" />
@@ -156,7 +106,7 @@ export function AgentLibraryPage(): React.ReactElement {
             <Button onClick={submit} disabled={!displayName.trim()} loading={createProfile.isPending}>创建智能体</Button>
           </div>
         </div>
-      </details>
+      </section>
 
       {/* 阶段三任务 3.1：专家库（211+ 专家人设，提示词自动填充） */}
       <section className="section" aria-labelledby="persona-library-title">
@@ -218,9 +168,6 @@ export function AgentLibraryPage(): React.ReactElement {
         </div>
       </Card>
 
-      <div className="section">
-        <TeamPackPicker />
-      </div>
     </div>
   );
 }

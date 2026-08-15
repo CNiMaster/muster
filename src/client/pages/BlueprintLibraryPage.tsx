@@ -7,13 +7,13 @@
  */
 import type React from 'react';
 import { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Badge } from '../components/Badge';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
 import { EmptyState } from '../components/EmptyState';
 import { CardSkeleton } from '../components/Skeleton';
-import { useBlueprints, useBlueprintStatus } from '../hooks/queries';
+import { useBlueprints, useBlueprintStatus, useDefaultCompanyId } from '../hooks/queries';
 
 const STATUS_META: Record<string, { label: string; tone: 'ok' | 'warn' | 'neutral' }> = {
   active: { label: '现役', tone: 'ok' },
@@ -22,12 +22,14 @@ const STATUS_META: Record<string, { label: string; tone: 'ok' | 'warn' | 'neutra
 };
 
 export function BlueprintLibraryPage(): React.ReactElement {
-  const { companyId } = useParams<{ companyId: string }>();
+  const companyId = useDefaultCompanyId();
   const { data: blueprints = [], isLoading } = useBlueprints(companyId);
   const statusMutation = useBlueprintStatus(companyId);
   const [showRetired, setShowRetired] = useState(false);
 
   const visible = showRetired ? blueprints : blueprints.filter((bp) => bp.status !== 'retired');
+
+  if (!companyId) return <div className="loading">正在定位默认工作台…</div>;
 
   const setStatus = (blueprintId: string, status: 'active' | 'locked' | 'retired'): void => {
     statusMutation.mutate({ blueprintId, status }, {
@@ -117,7 +119,7 @@ export function BlueprintLibraryPage(): React.ReactElement {
 
       <p style={{ marginTop: 12, fontSize: 12, color: 'var(--mu-text-tertiary)' }}>
         蓝图与{' '}
-        <Link to={`/companies/${companyId}/archive`}>归档</Link>
+        <Link to="/archive">归档</Link>
         {' '}同源：归档存做过什么，蓝图存怎么组织人。两者都随使用自动生长。
       </p>
     </div>

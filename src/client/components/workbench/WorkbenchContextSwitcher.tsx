@@ -8,17 +8,6 @@ export interface WorkbenchSectionOption {
   href: string;
 }
 
-export function companySectionOptions(companyId: string): WorkbenchSectionOption[] {
-  return [
-    { key: 'overview', label: '工作台总览', href: `/companies/${companyId}` },
-    { key: 'attention', label: '需要处理', href: `/companies/${companyId}?view=attention` },
-    { key: 'projects', label: '项目', href: `/companies/${companyId}?view=projects` },
-    { key: 'team', label: '团队', href: `/companies/${companyId}?view=team` },
-    { key: 'activity', label: '沟通与活动', href: `/companies/${companyId}?view=activity` },
-    { key: 'settings', label: '更多设置', href: `/companies/${companyId}?view=settings` },
-  ];
-}
-
 export function projectSectionOptions(projectId: string, projectTaskId?: string, novel = false): WorkbenchSectionOption[] {
   const taskQuery = `?view=task${projectTaskId ? `&projectTask=${projectTaskId}` : ''}`;
   const viewQuery = (view: string): string => `?view=${view}${projectTaskId ? `&projectTask=${projectTaskId}` : ''}`;
@@ -50,6 +39,9 @@ function SwitchMenu({ label, options, activeKey, ariaLabel }: { label: string; o
             {option.key === activeKey && <span aria-hidden="true">✓</span>}
           </Link>
         ))}
+        {ariaLabel === '切换项目' && (
+          <Link to="/projects/new" className="workbench-switch-new">＋ 新建项目</Link>
+        )}
       </div>
     </details>
   );
@@ -57,8 +49,6 @@ function SwitchMenu({ label, options, activeKey, ariaLabel }: { label: string; o
 
 export function WorkbenchContextSwitcher({ companyId, projectId, projectName, projectTaskId, sectionKey, sectionLabel, novel = false }: {
   companyId?: string;
-  companyName?: string;
-  companyKind?: string;
   projectId?: string;
   projectName?: string;
   projectTaskId?: string;

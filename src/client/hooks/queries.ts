@@ -2,10 +2,9 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
 import type { Company, Agent, AgentExecutorJson, AgentProfile, CompanyEmployee, MemoryCandidate, MemoryEntry, Department, Project, Relationship, Task, TraceItem, UsageSummary, ProjectAgentThread, Workspace, BusinessReview, Plugin, EffectivePlugin, OutsourcingContract, MarketplacePresetView, MarketplaceSearchEntry, SwarmView } from '../api/types';
-import type { CompanyCockpitDTO, TemplateRuntimeHealthFinding } from '../../shared/types';
+import type { CompanyCockpitDTO } from '../../shared/types';
 import type { ProjectLaunchBrief, ProjectLaunchDiscovery } from '../../shared/project-launch';
-import type { CompanySetupDraft, CompanyTemplateOption, SetupBindings } from '../domain/company-templates';
-import type { RecruitmentDraft } from '../../shared/role-templates';
+import type { RecruitmentDraft } from '../../shared/types';
 
 export interface ExecutorProfileDTO {
   id: string;
@@ -176,17 +175,13 @@ export function useGenerateCliProposal() {
 export function useCompanies() {
   return useQuery({ queryKey: ['companies'], queryFn: () => api.get<Company[]>('/api/companies') });
 }
-/** 带过滤的公司列表（在营/归档/类型/搜索）。 */
-export function useCompanyList(filter?: { status?: 'active' | 'archived'; kind?: string; q?: string }) {
-  const params = new URLSearchParams();
-  if (filter?.status) params.set('status', filter.status);
-  if (filter?.kind) params.set('kind', filter.kind);
-  if (filter?.q) params.set('q', filter.q);
-  const qs = params.toString();
-  return useQuery({
-    queryKey: ['companies', filter],
-    queryFn: () => api.get<Company[]>(`/api/companies${qs ? `?${qs}` : ''}`),
-  });
+/**
+ * 默认工作台 id（在营的第一个）。公司概念已从 UI 退场，company 仅作内部数据归组锚点；
+ * 归档/蓝图库/组织图等全局工具页用它在内部解析归属。
+ */
+export function useDefaultCompanyId() {
+  const { data: companies } = useCompanies();
+  return companies?.find((c) => !c.archivedAt)?.id ?? companies?.[0]?.id;
 }
 export function useCompany(id: string | undefined) {
   return useQuery({
@@ -202,114 +197,6 @@ export function useCompanyCockpit(id: string | undefined) {
     enabled: !!id,
   });
 }
-export function useCreateCompany() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (input: { name: string; kind?: string; charter?: string }) =>
-      api.post<Company>('/api/companies', input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['companies'] }),
-  });
-}
-export function useUpdateCompany() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, ...patch }: { id: string; name?: string; charter?: string; contractJson?: Record<string, unknown>; firstAgentId?: string | null; reviewMode?: 'blocking' | 'parallel' }) =>
-      api.patch<Company>(`/api/companies/${id}`, patch),
-    onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: ['company', data.id] });
-      qc.invalidateQueries({ queryKey: ['companies'] });
-    },
-  });
-}
-export function useArchiveCompany() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, reason }: { id: string; reason?: string }) =>
-      api.post<Company>(`/api/companies/${id}/archive`, { reason }),
-    onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: ['company', data.id] });
-      qc.invalidateQueries({ queryKey: ['companies'] });
-    },
-  });
-}
-export function useUnarchiveCompany() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id }: { id: string }) => api.post<Company>(`/api/companies/${id}/unarchive`, {}),
-    onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: ['company', data.id] });
-      qc.invalidateQueries({ queryKey: ['companies'] });
-    },
-  });
-}
-export function useDeleteCompany() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id }: { id: string }) => api.delete(`/api/companies/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['companies'] }),
-  });
-}
-export function usePreviewCompanySetup() {
-  return useMutation({
-    mutationFn: (input: { templateId: CompanySetupDraft['templateId']; name: string; goal: string }) =>
-      api.post<CompanySetupDraft>('/api/company-setup/preview', input),
-  });
-}
-export function useCompanyTemplateCatalog() {
-  return useQuery({
-    queryKey: ['company-template-catalog'],
-    queryFn: () => api.get<CompanyTemplateOption[]>('/api/company-setup/templates'),
-  });
-}
-export function useTemplateHealthFindings(companyId: string | undefined) {
-  return useQuery({ queryKey: ['template-health', companyId], queryFn: () => api.get<TemplateRuntimeHealthFinding[]>(`/api/companies/${companyId}/template-health`), enabled: !!companyId });
-}
-export function useRefreshTemplateHealth() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (companyId: string) => api.post<TemplateRuntimeHealthFinding[]>(`/api/companies/${companyId}/template-health/refresh`),
-    onSuccess: (data, companyId) => qc.setQueryData(['template-health', companyId], data),
-  });
-}
-export function useDismissTemplateHealthFinding() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ companyId, findingId }: { companyId: string; findingId: string }) => api.post<TemplateRuntimeHealthFinding>(`/api/companies/${companyId}/template-health/${findingId}/dismiss`),
-    onSuccess: (_data, input) => qc.invalidateQueries({ queryKey: ['template-health', input.companyId] }),
-  });
-}
-export function useCommitCompanySetup() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (input: { draft: CompanySetupDraft; bindings: SetupBindings }) => api.post<{
-      company: Company;
-      employees: Agent[];
-      project: Project;
-      projectTask: ProjectTaskDTO;
-    }>('/api/company-setup/commit', input),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['companies'] });
-      qc.invalidateQueries({ queryKey: ['agent-profiles'] });
-    },
-  });
-}
-
-/** 工作台改版 批次 1：一键模板启动（选模板→可选改名→开跑）。 */
-export function useQuickStartCompany() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (input: { templateId: string; name?: string; goal?: string }) => api.post<{
-      company: Company;
-      employees: Agent[];
-      project: Project;
-      projectTask: ProjectTaskDTO;
-    }>('/api/company-setup/quick-start', input),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['companies'] });
-      qc.invalidateQueries({ queryKey: ['agent-profiles'] });
-    },
-  });
-}
 export function useExecutorProfiles() {
   return useQuery({ queryKey: ['executor-profiles'], queryFn: () => api.get<ExecutorProfileDTO[]>('/api/executors/profiles') });
 }
@@ -322,18 +209,6 @@ export function useCreatePermissionPolicy() {
     mutationFn: (input: { name: string; approvalStrategy: PermissionPolicyDTO['approvalStrategy']; scope: PermissionPolicyDTO['scope'] }) =>
       api.post<PermissionPolicyDTO>('/api/permissions/policies', input),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['permission-policies'] }),
-  });
-}
-export function useCreateNovelCompany() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (input: {
-      name: string;
-      charter?: string;
-      departments?: Array<{ name: string; purpose?: string }>;
-    }) =>
-      api.post<{ company: Company; agents: Record<string, Agent> }>('/api/novel', input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['companies'] }),
   });
 }
 export function useCompanyAction() {

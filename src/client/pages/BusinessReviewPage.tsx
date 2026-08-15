@@ -11,7 +11,6 @@ import { Card } from '../components/Card';
 import { CardSkeleton } from '../components/Skeleton';
 import { EmptyState, Icons } from '../components/EmptyState';
 import { BusinessReviewPanel } from '../components/review/BusinessReviewPanel';
-import { Link } from 'react-router-dom';
 import type { BusinessReview } from '../api/types';
 
 export function BusinessReviewPage(): React.ReactElement {
@@ -75,7 +74,7 @@ export function BusinessReviewPage(): React.ReactElement {
       {byCompany.map(([companyId, { companyName, items }]) => (
         <Card
           key={companyId}
-          title={<Link to={`/companies/${companyId}`}>{companyName}</Link>}
+          title={companyName}
           className="section"
           actions={<Badge tone="warn">{items.length}</Badge>}
         >

@@ -24,6 +24,7 @@ import {
   useWorkflow,
   useSaveWorkflow,
   useValidateWorkflow,
+  useDefaultCompanyId,
 } from '../hooks/queries';
 import { Button } from '../components/Button';
 import { Badge } from '../components/Badge';
@@ -53,7 +54,8 @@ function parseConditionInput(type: string, label: string): Record<string, unknow
 }
 
 export function WorkflowGraphPage(): React.ReactElement {
-  const { companyId = '', workflowId = 'main' } = useParams();
+  const { workflowId = 'main' } = useParams();
+  const companyId = useDefaultCompanyId() ?? '';
   const { data: company } = useCompany(companyId);
   const { data: agents } = useAgents(companyId);
   const { data: projects } = useProjects(companyId);
@@ -368,8 +370,8 @@ export function WorkflowGraphPage(): React.ReactElement {
           >
             启动协作流程
           </Button>
-          <Link to={`/companies/${companyId}`}>
-            <Button variant="ghost" size="sm">返回工作台</Button>
+          <Link to="/">
+            <Button variant="ghost" size="sm">返回首页</Button>
           </Link>
           {!readonly && (
             <Button onClick={handleSave} loading={saveWorkflow.isPending} size="sm">

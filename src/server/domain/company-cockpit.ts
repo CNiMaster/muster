@@ -4,12 +4,6 @@ import { getCompany } from './company';
 import { listProjects } from './project';
 import { getEmploymentHealth } from './executor-health';
 
-function requiredRoles(contract: Record<string, unknown>): string[] {
-  const roles = contract.requiredRoles;
-  if (!Array.isArray(roles)) return [];
-  return [...new Set(roles.filter((role): role is string => typeof role === 'string' && role.trim().length > 0))];
-}
-
 export function getCompanyCockpit(db: DB, companyId: string): CompanyCockpitDTO {
   const company = getCompany(db, companyId);
   // Review 修复 I2：收件箱项目（settings.inbox）是对话基础设施，不进驾驶舱计数与"继续当前项目"建议。
@@ -29,17 +23,14 @@ export function getCompanyCockpit(db: DB, companyId: string): CompanyCockpitDTO 
     JOIN company_optimization_report cor ON cor.id = rai.report_id
     WHERE cor.company_id=? AND rai.status='pending'
   `).get(companyId) as { count: number }).count;
-  const roles = new Set((db.prepare('SELECT role FROM company_employee WHERE company_id=?').all(companyId) as Array<{ role: string }>).map((row) => row.role));
-  const roleGaps = requiredRoles(company.contractJson)
-    .filter((role) => !roles.has(role))
-    .map((role) => ({ role, reason: `公司模板要求岗位「${role}」，当前尚未任职` }));
+  // 组织 = f(活)：公司模板缺岗告警已随固定岗位模板移除，角色由任务穿戴人设动态生成。
+  const roleGaps: CompanyCockpitDTO['roleGaps'] = [];
   const active = projects.filter((project) => project.state === 'active').length;
   const attention = projects.filter((project) => project.state === 'paused').length;
   const risks: CompanyCockpitDTO['risks'] = [];
   if (pending > 0) risks.push({ kind: 'approval', label: `${pending} 项审批等待处理`, href: '/permissions' });
   if (pendingOptimizationActions > 0) risks.push({ kind: 'evolution', label: `${pendingOptimizationActions} 条组织建议等待审批`, href: `/companies/${companyId}?view=evolution` });
   if (employees.blocked > 0) risks.push({ kind: 'executor', label: `${employees.blocked} 位员工尚不能运行`, href: `/companies/${companyId}?tab=team` });
-  for (const gap of roleGaps) risks.push({ kind: 'role-gap', label: gap.reason, href: `/companies/${companyId}?tab=team` });
   if (attention > 0) risks.push({ kind: 'project', label: `${attention} 个项目需要处理`, href: `/companies/${companyId}?tab=projects` });
 
   let nextAction: CompanyCockpitDTO['nextAction'];

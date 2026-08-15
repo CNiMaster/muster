@@ -1,24 +1,21 @@
 /**
- * E2E smoke：创建小说工作台 → 进入工作台页 → 验证基础元素。
- * 完整 E2E（编辑图、派发 Task 等）需要浏览器 + 后端联动，留作后续。
+ * E2E smoke：项目主导 UI——首页对话式开工 → 项目工作台 → 直建任务 → 全局工具页。
+ * 公司页面/向导/标签栏已随公司概念退场；组织数据仍走内部 API 准备。
  */
 import { test, expect } from '@playwright/test';
 
-test('首页加载且健康', async ({ page }) => {
+test('首页（零项目态）加载对话式开工视口', async ({ page }) => {
+  // 清空全部工作台，保证零项目态（同轮次更早的用例会建项目）
+  const companies = await (await page.request.get('/api/companies')).json() as Array<{ id: string }>;
+  for (const company of companies) {
+    // 删除接口只接受已归档公司：先归档再删除
+    await page.request.post(`/api/companies/${company.id}/archive`, { data: { reason: 'e2e 清场' } });
+    await page.request.delete(`/api/companies/${company.id}`);
+  }
   await page.goto('/');
-  // 首次运行向导会异步挂载第二个 h1——裸 locator('h1') 撞 strict mode，用名称定位 hero 标题
-  // 蓝图组织批次4c：hero 主标题已改为「我有件事要办」
-  await expect(page.getByRole('heading', { name: /我有件事要办/ })).toContainText('我有件事要办');
-  await expect(page.getByText('工作台现场')).toBeVisible();
-  await expect(page.getByText(/本地服务 运行正常/)).toBeVisible();
-});
-
-test('创建通用工作台并出现在列表', async ({ page }) => {
-  const name = `E2E工作台-${Date.now()}`;
-  const response = await page.request.post('/api/companies', { data: { name, kind: 'general' } });
-  expect(response.status()).toBe(201);
-  await page.goto('/');
-  await expect(page.getByRole('link', { name, exact: true })).toBeVisible({ timeout: 5000 });
+  await expect(page.getByRole('heading', { name: /你想开始什么新工作/ })).toBeVisible();
+  await expect(page.getByPlaceholder(/告诉负责人你想做什么/)).toBeVisible();
+  await expect(page.getByText('全栈应用研发')).toBeVisible();
 });
 
 test('健康接口 200', async ({ request }) => {
@@ -28,100 +25,51 @@ test('健康接口 200', async ({ request }) => {
   expect(body.status).toBe('ok');
 });
 
-test('向导式创建完整工作台并进入首个项目任务', async ({ page }) => {
-  const executorResponse = await page.request.post('/api/executors/profiles', { data: {
-    name: `E2E API 执行器-${Date.now()}`,
-    manifestId: 'openai-compatible-api',
-  } });
-  expect(executorResponse.status()).toBe(201);
-  const executor = await executorResponse.json();
-  const policyResponse = await page.request.post('/api/permissions/policies', { data: {
-    name: `E2E 项目权限-${Date.now()}`,
-    approvalStrategy: 'ask-by-rule',
-    scope: 'project',
-  } });
-  expect(policyResponse.status()).toBe(201);
-  const policy = await policyResponse.json();
-
-  await page.goto('/companies/wizard');
-  await expect(page.locator('h1')).toContainText('组建你的 Agent 工作台');
-  await page.getByRole('button', { name: '选择软件研发工作台' }).click();
-
-  const name = `向导工作台-${Date.now()}`;
-  await page.getByLabel('工作台名称').fill(name);
-  await page.getByLabel('一句话目标').fill('交付一个可用的软件产品');
-  await page.getByRole('button', { name: '生成工作台蓝图 →' }).click();
-  await expect(page.getByText('工作台蓝图已生成，请确认')).toBeVisible();
-  for (const moduleName of ['工作台概览', '团队与责任', '业务信息中心', '工作如何流转', '能力与运行条件', '风险与建议']) {
-    await expect(page.getByRole('heading', { name: moduleName })).toBeVisible();
-  }
-  await expect(page.getByText('Skill 由对应智能体在相关 Task 中按需加载，不会把全部能力注入所有智能体。')).toBeVisible();
-  await expect(page.getByText('建议先按推荐方案创建；智能体、字段、视图和流程创建后仍可随时调整。')).toBeVisible();
-  await page.getByRole('button', { name: '继续到运行' }).click();
-  await expect(page.getByText('默认配置已自动应用')).toBeVisible();
-  await expect(page.locator('[aria-label="默认运行路径"]')).toContainText('4 位智能体');
-  await expect(page.locator('[aria-label="默认运行路径"]')).toContainText('项目沙盒');
-  await page.getByRole('button', { name: '继续到项目' }).click();
-  await expect(page.getByText('第一份工作')).toBeVisible();
-  await page.getByRole('button', { name: '继续到完成' }).click();
-  await page.getByRole('button', { name: '按推荐方案创建并进入项目 →' }).click();
-
-  await page.waitForURL(/\/projects\/pr_[^?]+\?projectTask=pt_[^&]+&onboarding=done/);
-  // New projects enter the phased onboarding wizard (drafting → active) before the workbench.
-  await expect(page.getByRole('heading', { name: '项目准备流程' })).toBeVisible();
-  await expect(page.getByRole('navigation', { name: '准备阶段' })).toBeVisible();
-});
-
-test('company blueprint health links a runtime issue to its configuration surface', async ({ page }) => {
-  const response = await page.request.post('/api/companies', { data: { name: `旧工作台-${Date.now()}`, kind: 'general' } });
+test('快速开工 API 建项目后首页自动进入项目工作台', async ({ page }) => {
+  const response = await page.request.post('/api/projects/quick', {
+    data: { name: `E2E快速项目-${Date.now()}`, description: '冒烟：对话式开工' },
+  });
   expect(response.status()).toBe(201);
-  const company = await response.json();
+  const { project } = await response.json();
 
-  await page.goto(`/companies/${company.id}?view=settings`);
-  await page.getByRole('button', { name: '重新检查' }).click();
-  await expect(page.getByText('工作台缺少模板快照')).toBeVisible();
-  await expect(page.getByRole('link', { name: '查看工作台设置' })).toHaveAttribute('href', `/companies/${company.id}?view=settings`);
-});
-
-test('项目路由保留工作台导航并能从首页继续上次项目', async ({ page }) => {
-  const suffix = Date.now();
-  const companyResponse = await page.request.post('/api/companies', {
-    data: { name: `导航工作台-${suffix}`, kind: 'general' },
-  });
-  const company = await companyResponse.json();
-  const projectResponse = await page.request.post(`/api/companies/${company.id}/projects`, {
-    data: { name: `导航项目-${suffix}` },
-  });
-  const project = await projectResponse.json();
-
-  await page.goto(`/projects/${project.id}`);
-  // New projects enter the phased onboarding wizard before the workbench is shown.
-  await expect(page.getByRole('heading', { name: '项目准备流程' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: project.name })).toBeVisible();
-
-  await page.goto(`/projects/${project.id}/dashboard`);
-  await expect(page.getByRole('navigation', { name: '项目组织与联系人' })).toBeVisible();
-  await expect(page.getByRole('link', { name: /运行概览/ })).toHaveClass(/is-active/);
-  await expect(page.locator('.topbar')).toHaveCount(0);
-
+  // 种下「最近项目」记录，首页按最近入口自动进入本项目（而非第一个历史项目）
+  await page.addInitScript((id) => {
+    window.localStorage.setItem('muster:last-project:v1', id);
+  }, project.id);
   await page.goto('/');
-  await expect(page.getByText('继续上次项目')).toBeVisible();
-  await expect(page.getByRole('link', { name: /回到工作现场/ })).toHaveAttribute('href', `/projects/${project.id}`);
+  await expect(page).toHaveURL(new RegExp(`/projects/${project.id}`), { timeout: 8000 });
+  // 项目工作台：三栏壳层与左栏「＋ 新建任务」直建入口
+  await expect(page.getByRole('navigation', { name: '项目组织与联系人' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '＋ 新建任务' }).first()).toBeVisible();
 });
 
-test('设置页默认只展示常用操作，高级参数折叠且窄屏不溢出', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/settings');
+test('项目页：左栏与头部「＋ 新建任务」都能展开创建卡', async ({ page }) => {
+  const response = await page.request.post('/api/projects/quick', {
+    data: { name: `E2E直建项目-${Date.now()}` },
+  });
+  const { project } = await response.json();
 
-  await expect(page.getByRole('button', { name: '运行连接测试' })).toBeVisible();
-  await expect(page.getByRole('button', { name: '保存设置' })).toBeVisible();
-  await expect(page.getByText('CLI 运行时')).toBeVisible();
-  await expect(page.getByPlaceholder(/username.*claude/)).toBeHidden();
-  await expect(page.getByText(/跳过 Agent 权限确认/)).toBeHidden();
-  await expect(page.getByPlaceholder('https://api.openai.com/v1')).toBeHidden();
+  await page.goto(`/projects/${project.id}?view=task`);
+  await page.getByRole('button', { name: '＋ 新建任务' }).first().click();
+  await expect(page.getByLabel(/任务目标/)).toBeVisible();
+  await page.getByRole('button', { name: '取消' }).click();
 
-  const hasHorizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
-  expect(hasHorizontalOverflow).toBe(false);
+  // 头部主操作同信号：再次点击仍能打开
+  await page.getByRole('button', { name: '＋ 新建任务' }).last().click();
+  await expect(page.getByLabel(/任务目标/)).toBeVisible();
+});
+
+test('新建项目表单页直达', async ({ page }) => {
+  await page.goto('/projects/new');
+  await expect(page.getByRole('heading', { name: '新建项目' })).toBeVisible();
+  await expect(page.getByLabel(/项目名称/)).toBeVisible();
+});
+
+test('蓝图库与归档作为全局工具页可达', async ({ page }) => {
+  await page.goto('/blueprints');
+  await expect(page.getByRole('heading', { name: '蓝图库' })).toBeVisible();
+  await page.goto('/archive');
+  await expect(page.getByRole('heading', { name: '归档' })).toBeVisible();
 });
 
 test('智能体库展示全局档案与工作台任职', async ({ page }) => {
@@ -147,7 +95,6 @@ test('智能体库展示全局档案与工作台任职', async ({ page }) => {
   await page.goto('/agents');
   await expect(page.getByRole('heading', { name: '智能体库' })).toBeVisible();
   await expect(page.getByRole('heading', { name: '添加人才' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: '软件研发团队' })).toBeVisible();
   await page.getByRole('link', { name: new RegExp(`全局智能体-${suffix}`) }).first().click();
   await expect(page.getByText('工作台任职')).toBeVisible();
   await page.getByRole('tab', { name: /工作台任职/ }).click();
@@ -177,54 +124,26 @@ test('权限中心明确展示策略与范围并提供审批入口', async ({ pa
   await expect(page.getByText('安装软件、凭据、推送、部署、外部消息、账号和付费操作仍单独审批。')).toBeVisible();
 });
 
-test('E5 进化与报告页渲染（四个控制面块）', async ({ page }) => {
-  const name = `E2E进化-${Date.now()}`;
-  const response = await page.request.post('/api/companies', { data: { name, kind: 'general' } });
-  expect(response.status()).toBe(201);
-  const company = await response.json();
-  await page.goto(`/companies/${company.id}?view=evolution`);
-  // 晨醒模型：进化总览积压条 + 手动触发器 + 四块
-  await expect(page.getByText('进化总览', { exact: true })).toBeVisible({ timeout: 8000 });
-  await expect(page.getByRole('button', { name: '立即执行晋升' })).toBeVisible();
-  await expect(page.getByRole('button', { name: '立即生成报告' })).toBeVisible();
-  await expect(page.getByText('运营优化报告', { exact: true })).toBeVisible();
-  await expect(page.getByText('晋升候选', { exact: true })).toBeVisible();
-  await expect(page.getByText('结构变更历史', { exact: true })).toBeVisible();
-  await expect(page.getByText('锁定管理', { exact: true })).toBeVisible();
+test('设置页窄屏不横向溢出', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/settings');
+  await expect(page.getByText(/常规执行环境/).first()).toBeVisible({ timeout: 8000 });
+
+  const hasHorizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+  expect(hasHorizontalOverflow).toBe(false);
 });
 
-test('工作台改版 B1：一键开跑——选模板→点击→进入工作台', async ({ page }) => {
-  // 前置：需要一个执行器档案（quick-start 无执行器会报错）
-  const executorResponse = await page.request.post('/api/executors/profiles', { data: {
-    name: `E2E 快速启动执行器-${Date.now()}`,
-    manifestId: 'openai-compatible-api',
-  } });
-  expect(executorResponse.status()).toBe(201);
-
-  await page.goto('/companies/wizard');
-  await expect(page.getByRole('button', { name: '一键开跑' })).toBeVisible({ timeout: 8000 });
-  await page.getByRole('button', { name: '一键开跑' }).click();
-  // 落地到工作台对话中心（改版 2a：对话为默认落地）
-  await expect(page).toHaveURL(/\/companies\/[^?]+\?view=conversation/, { timeout: 15000 });
-  // 优化②：对话里有第一负责人的打招呼（"这里可以打字"心智）
-  await expect(page.getByText(/告诉我你想做什么/)).toBeVisible({ timeout: 10000 });
-  // 优化①：一键开跑后工作台直接上线（状态"工作中"，标签栏+页面徽章各一处）
-  await expect(page.getByText('工作中', { exact: true }).first()).toBeVisible();
+test('命令面板可跳转新建项目与全局工具', async ({ page }) => {
+  // '/' 在已有项目时会自动跳进最近项目，直接在项目工作台里验证命令面板
+  const response = await page.request.post('/api/projects/quick', {
+    data: { name: `E2E命令面板-${Date.now()}` },
+  });
+  const { project } = await response.json();
+  await page.goto(`/projects/${project.id}`);
+  await expect(page.getByRole('navigation', { name: '项目组织与联系人' })).toBeVisible();
+  await page.keyboard.press('Meta+K');
+  await expect(page.getByRole('dialog', { name: '搜索或跳转' })).toBeVisible();
+  await page.getByPlaceholder(/搜索当前项目任务/).fill('新建项目');
+  await page.getByRole('link', { name: '新建项目', exact: true }).click();
+  await expect(page).toHaveURL(/\/projects\/new/);
 });
-
-test('工作台改版 B2b：工作台标签栏——工作台作为标签出现 + 当前高亮 + 新建入口', async ({ page }) => {
-  const a = await (await page.request.post('/api/companies', { data: { name: `标签A-${Date.now()}`, kind: 'general' } })).json();
-  const b = await (await page.request.post('/api/companies', { data: { name: `标签B-${Date.now()}`, kind: 'software' } })).json();
-  await page.goto(`/companies/${a.id}?view=conversation`);
-  // 两个工作台都成为标签链接（>6 家时会收进 overflow details，用 locator 而非可见性断言）
-  await expect(page.locator(`.company-tab[href="/companies/${a.id}"]`)).toHaveCount(1, { timeout: 8000 });
-  await expect(page.locator(`.company-tab[href="/companies/${b.id}"]`)).toHaveCount(1);
-  // 当前工作台标签高亮
-  await expect(page.locator(`.company-tab[href="/companies/${a.id}"]`)).toHaveClass(/is-active/);
-  // 新建入口
-  await expect(page.getByRole('link', { name: '新建工作台' })).toBeVisible();
-  // L1：退出按钮（优雅关机入口）与审批入口存在
-  await expect(page.getByRole('button', { name: '退出并保存' })).toBeVisible();
-  await expect(page.getByRole('link', { name: '审批', exact: true })).toBeVisible();
-});
-

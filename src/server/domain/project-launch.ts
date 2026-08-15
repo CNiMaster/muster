@@ -12,7 +12,7 @@ import { nowIso } from '../../shared/utils';
 import { getAgent, listAgents } from './agent';
 import { getEmployeeExecutorProfile } from './executor-profile';
 import { getExecutorManifest } from '../executors/manifests';
-import { listCapabilityBindings } from './template-installation';
+import { listCapabilityBindings } from './capability-binding';
 import { listCompanyTools } from './tool-registry';
 import { getProjectTask } from './project-task';
 import { getProject } from './project';

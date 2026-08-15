@@ -2,10 +2,65 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import type { ResolvedTaskSkill, TaskCapabilityRequirements } from '../../shared/types';
 import type { DB } from '../db/client';
+
+/** 能力绑定（capability_binding 表）：把能力/业务字段映射到 skill 与推荐工具。 */
+interface CapabilityBindingRow {
+  id: string;
+  company_id: string;
+  employee_id: string | null;
+  scope: CapabilityBinding['scope'];
+  scope_key: string;
+  capability_id: string;
+  skill_ids_json: string;
+  recommended_tool_ids_json: string;
+  requires_executor_kind: string;
+  purpose: string;
+  load_when: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CapabilityBinding {
+  id: string;
+  companyId: string;
+  employeeId: string | null;
+  scope: 'role' | 'employee' | 'field' | 'task';
+  scopeKey: string;
+  capabilityId: string;
+  skillIds: string[];
+  recommendedToolIds: string[];
+  requiresExecutorKind: '' | 'cli' | 'api';
+  purpose: string;
+  loadWhen: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function mapCapabilityBinding(row: CapabilityBindingRow): CapabilityBinding {
+  return {
+    id: row.id,
+    companyId: row.company_id,
+    employeeId: row.employee_id,
+    scope: row.scope,
+    scopeKey: row.scope_key,
+    capabilityId: row.capability_id,
+    skillIds: JSON.parse(row.skill_ids_json) as string[],
+    recommendedToolIds: JSON.parse(row.recommended_tool_ids_json) as string[],
+    requiresExecutorKind: (row.requires_executor_kind || '') as CapabilityBinding['requiresExecutorKind'],
+    purpose: row.purpose,
+    loadWhen: row.load_when,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function listCapabilityBindings(db: DB, companyId: string): CapabilityBinding[] {
+  const rows = db.prepare('SELECT * FROM capability_binding WHERE company_id=? ORDER BY scope, scope_key, capability_id').all(companyId) as CapabilityBindingRow[];
+  return rows.map(mapCapabilityBinding);
+}
 import { getAgent } from './agent';
 import { getProject } from './project';
 import type { Task } from './task';
-import { listCapabilityBindings, type CapabilityBinding } from './template-installation';
 import { retrieveSkillsByContent } from './skill-retrieval';
 import { collectEffectivePluginSkills } from './plugin-install';
 

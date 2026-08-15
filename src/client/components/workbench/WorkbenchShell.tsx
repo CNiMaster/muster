@@ -24,7 +24,9 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
 
   const globalOptions = [
     { label: '首页', href: '/', group: '全局' },
-    { label: '工作台', href: '/companies', group: '全局' },
+    { label: '新建项目', href: '/projects/new', group: '全局' },
+    { label: '蓝图库', href: '/blueprints', group: '全局' },
+    { label: '归档', href: '/archive', group: '全局' },
     { label: '智能体库', href: '/agents', group: '全局' },
     { label: '执行器', href: '/executors', group: '全局' },
     { label: '权限', href: '/permissions', group: '全局' },

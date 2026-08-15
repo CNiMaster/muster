@@ -256,3 +256,18 @@ export type ThreadKind = 'primary' | 'mirror';
 // ===== 复盘 =====
 export const REPORT_TRIGGERS = ['time', 'task_count', 'milestone'] as const;
 export type ReportTrigger = (typeof REPORT_TRIGGERS)[number];
+
+/** 招募来源：复用已有档案或新建档案（岗位模板快捷方式已随公司模板体系移除）。 */
+export type RecruitmentSource = 'reuse-profile' | 'new-profile';
+
+export interface RecruitmentDraft {
+  source: RecruitmentSource;
+  profileId?: string;
+  displayName: string;
+  role: string;
+  responsibilities: string;
+  capabilities: { skills: string[]; tools: string[] };
+  departmentId: string | null;
+  executorProfileId: string | null;
+  permissionPolicyId: string | null;
+}

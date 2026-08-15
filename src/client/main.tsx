@@ -32,8 +32,6 @@ function lazyRetry<T extends React.ComponentType<any>>(loader: () => Promise<{ d
 
 const HomePage = lazyRetry(() => import('./pages/HomePage').then((m) => ({ default: m.HomePage })));
 const NotFoundPage = lazyRetry(() => import('./pages/NotFoundPage').then((m) => ({ default: m.NotFoundPage })));
-const CompanyPage = lazyRetry(() => import('./pages/CompanyPage').then((m) => ({ default: m.CompanyPage })));
-const CompanyListPage = lazyRetry(() => import('./pages/CompanyListPage').then((m) => ({ default: m.CompanyListPage })));
 const GraphPage = lazyRetry(() => import('./pages/GraphPage').then((m) => ({ default: m.GraphPage })));
 const ProjectPage = lazyRetry(() => import('./pages/ProjectPage').then((m) => ({ default: m.ProjectPage })));
 const TasksPage = lazyRetry(() => import('./pages/TasksPage').then((m) => ({ default: m.TasksPage })));
@@ -45,7 +43,6 @@ const ReportsPage = lazyRetry(() => import('./pages/ReportsPage').then((m) => ({
 const DashboardPage = lazyRetry(() => import('./pages/DashboardPage').then((m) => ({ default: m.DashboardPage })));
 const WorkflowGraphPage = lazyRetry(() => import('./pages/WorkflowGraphPage').then((m) => ({ default: m.WorkflowGraphPage })));
 const CharacterGraphPage = lazyRetry(() => import('./pages/CharacterGraphPage').then((m) => ({ default: m.CharacterGraphPage })));
-const CompanyWizardPage = lazyRetry(() => import('./pages/CompanyWizardPage').then((m) => ({ default: m.CompanyWizardPage })));
 const SettingsPage = lazyRetry(() => import('./pages/SettingsPage').then((m) => ({ default: m.SettingsPage })));
 const AgentLibraryPage = lazyRetry(() => import('./pages/AgentLibraryPage').then((m) => ({ default: m.AgentLibraryPage })));
 const AgentProfilePage = lazyRetry(() => import('./pages/AgentProfilePage').then((m) => ({ default: m.AgentProfilePage })));
@@ -76,14 +73,11 @@ const router = createBrowserRouter([
     element: <App />,
     children: [
       { index: true, element: <HomePage /> },
-      { path: 'companies', element: <CompanyListPage /> },
-      { path: 'companies/wizard', element: <CompanyWizardPage /> },
-      { path: 'companies/:companyId', element: <CompanyPage /> },
-      { path: 'companies/:companyId/archive', element: <ArchivePage /> },
-      { path: 'companies/:companyId/blueprints', element: <BlueprintLibraryPage /> },
-      { path: 'companies/:companyId/graphs/:kind', element: <GraphPage /> },
-      { path: 'companies/:companyId/workflows/:workflowId', element: <WorkflowGraphPage /> },
-      { path: 'companies/:companyId/projects/new', element: <ProjectPage /> },
+      { path: 'projects/new', element: <ProjectPage /> },
+      { path: 'archive', element: <ArchivePage /> },
+      { path: 'blueprints', element: <BlueprintLibraryPage /> },
+      { path: 'graphs/:kind', element: <GraphPage /> },
+      { path: 'workflows/:workflowId', element: <WorkflowGraphPage /> },
       { path: 'projects/:projectId', element: <ProjectPage /> },
       { path: 'projects/:projectId/character-graph', element: <ProjectToolPageShell tool="character"><CharacterGraphPage /></ProjectToolPageShell> },
       { path: 'projects/:projectId/tasks', element: <ProjectToolPageShell tool="tasks"><TasksPage /></ProjectToolPageShell> },

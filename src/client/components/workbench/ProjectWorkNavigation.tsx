@@ -35,6 +35,7 @@ export function ProjectWorkNavigation({
   activeTool,
   attentionCount,
   novel,
+  onNewTask,
 }: {
   projectId: string;
   projectTasks: ProjectTaskDTO[];
@@ -48,6 +49,8 @@ export function ProjectWorkNavigation({
   activeTool?: ProjectToolKey;
   attentionCount: number;
   novel: boolean;
+  /** 「＋ 新建任务」直接展开任务视图创建卡（而非跳转） */
+  onNewTask: () => void;
 }): React.ReactElement {
   void novel;
 
@@ -91,15 +94,16 @@ export function ProjectWorkNavigation({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100%', justifyContent: 'space-between' }}>
       <div>
-        {/* 顶部主操作：新建任务 */}
+        {/* 顶部主操作：新建任务（直建，不跳转） */}
         <div style={{ padding: '12px 10px 8px' }}>
-          <Link
-            to={taskHref(projectId)}
+          <button
+            type="button"
             className="mu-btn mu-btn-primary mu-btn-sm"
             style={{ width: '100%', justifyContent: 'center', fontWeight: 600 }}
+            onClick={onNewTask}
           >
             <span>＋ 新建任务</span>
-          </Link>
+          </button>
         </div>
 
         {/* 核心项目任务列表 */}
@@ -189,7 +193,15 @@ export function ProjectWorkNavigation({
           </Link>
           <Link className={`work-nav-item ${activeTool === 'plans' ? 'is-active' : ''}`} to={`/projects/${projectId}/plans`}>
             <span className="work-nav-icon">⚡</span>
-            <span className="work-nav-label">自动化计划</span>
+            <span className="work-nav-label">自动化</span>
+          </Link>
+          <Link className="work-nav-item" to="/blueprints">
+            <span className="work-nav-icon">🧭</span>
+            <span className="work-nav-label">蓝图库</span>
+          </Link>
+          <Link className="work-nav-item" to="/archive">
+            <span className="work-nav-icon">🗂️</span>
+            <span className="work-nav-label">归档</span>
           </Link>
           <Link className="work-nav-item" to="/agents">
             <span className="work-nav-icon">👥</span>

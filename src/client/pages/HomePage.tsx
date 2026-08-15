@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useCompanies, useProjects, useProject, useQuickProject } from '../hooks/queries';
 import { readRecentProjectId, writeRecentProjectId } from '../hooks/useRecentProject';
 import { PromptComposer } from '../components/workbench/PromptComposer';
@@ -89,8 +89,9 @@ export function HomePage(): React.ReactElement {
           <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--accent)' }} />
           <strong style={{ fontSize: '13px', letterSpacing: '-0.01em' }}>Muster Studio</strong>
         </div>
-        <div style={{ fontSize: '12px', color: 'var(--fg-subtle)' }}>
-          自然语言项目工作台
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', fontSize: '12px', color: 'var(--fg-subtle)' }}>
+          <span>自然语言项目工作台</span>
+          <Link to="/projects/new" style={{ color: 'var(--fg-muted)', fontSize: '12px' }}>用表单新建项目 →</Link>
         </div>
       </header>
 

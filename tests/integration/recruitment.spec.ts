@@ -5,11 +5,11 @@ import { createDepartment } from '../../src/server/domain/department';
 import { createExecutorProfile } from '../../src/server/domain/executor-profile';
 import { createPermissionPolicy } from '../../src/server/domain/permission';
 import { recruitFromDraft } from '../../src/server/domain/recruitment';
-import type { RecruitmentDraft } from '../../src/shared/role-templates';
+import type { RecruitmentDraft } from '../../src/shared/types';
 import { makeTestDb } from './setup';
 
 describe('recruitment draft', () => {
-  it.each(['reuse-profile', 'new-profile', 'role-template'] as const)('recruits %s through the same bound employment contract', (source) => {
+  it.each(['reuse-profile', 'new-profile'] as const)('recruits %s through the same bound employment contract', (source) => {
     const { db, close } = makeTestDb();
     try {
       const company = createCompany(db, { name: 'Acme' });

@@ -1,5 +1,5 @@
 import type { DB } from '../db/client';
-import type { RecruitmentDraft } from '../../shared/role-templates';
+import type { RecruitmentDraft } from '../../shared/types';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { createAgentProfile } from './agent-profile';
 import { recruitAgentProfile, type AgentDefinition } from './agent';

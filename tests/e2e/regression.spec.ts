@@ -1,41 +1,20 @@
 import { test, expect } from '@playwright/test';
 
-test('核心功能端到端完整回归流', async ({ page }) => {
+test('核心功能端到端完整回归流：表单建项目 → 任务工作台 → 左栏组织', async ({ page }) => {
   const timestamp = Date.now();
-  const companyName = `回归工作台-${timestamp}`;
-  const executorResponse = await page.request.post('/api/executors/profiles', { data: { name: `回归执行器-${timestamp}`, manifestId: 'openai-compatible-api' } });
-  const executor = await executorResponse.json();
-  const policyResponse = await page.request.post('/api/permissions/policies', { data: { name: `回归权限-${timestamp}`, approvalStrategy: 'ask-by-rule', scope: 'project' } });
-  const policy = await policyResponse.json();
 
-  await page.goto('/companies/wizard');
-  await page.getByRole('button', { name: '选择通用项目工作台' }).click();
-  await page.getByLabel('工作台名称').fill(companyName);
-  await page.getByLabel('一句话目标').fill('验证从工作台、团队到项目任务的完整主流程');
-  await page.getByRole('button', { name: '生成工作台蓝图 →' }).click();
-  await expect(page.getByText('工作台蓝图已生成，请确认')).toBeVisible();
-  await page.getByRole('button', { name: '继续到运行' }).click();
-  await expect(page.getByLabel('项目负责人固定执行器')).toHaveValue(/.+/);
-  await expect(page.getByLabel('项目负责人权限范围')).toHaveValue(/.+/);
-  await page.getByRole('button', { name: '继续到项目' }).click();
-  await page.getByLabel('项目名称').fill(`回归项目-${timestamp}`);
-  await page.getByLabel('任务标题').fill('完成产品回归验收');
-  await page.getByRole('button', { name: '继续到完成' }).click();
-  await page.getByRole('button', { name: '按推荐方案创建并进入项目 →' }).click();
-  await page.waitForURL(/\/projects\/pr_[^?]+\?projectTask=pt_[^&]+&onboarding=done/);
-  // New projects enter the phased onboarding wizard (drafting → active) before the workbench.
-  await expect(page.getByRole('heading', { name: '项目准备流程' })).toBeVisible();
+  // 表单新建项目（项目主导入口，不再经过公司向导）
+  await page.goto('/projects/new');
+  await expect(page.getByRole('heading', { name: '新建项目' })).toBeVisible();
+  await page.getByLabel(/项目名称/).fill(`回归项目-${timestamp}`);
+  await page.getByLabel(/项目说明/).fill('验证从建项目到任务工作台的完整主流程');
+  await page.getByRole('button', { name: '创建项目' }).click();
 
-  const companies = await (await page.request.get('/api/companies')).json() as Array<{id:string;name:string}>;
-  const company = companies.find((item) => item.name === companyName)!;
-  await page.goto(`/companies/${company.id}`);
-  // 改版 2a：默认落地 = 工作台对话中心（和第一负责人对话），驾驶舱收进"工作台总览"
-  await expect(page.getByText('与第一负责人对话')).toBeVisible();
-  await expect(page.getByPlaceholder(/发消息给第一负责人/)).toBeVisible();
-  await expect(page.getByRole('navigation',{name:'工作台工作列表'})).toBeVisible();
-  await page.getByRole('button',{name:/^团队/}).click();
-  await expect(page.getByText('项目负责人', { exact: true }).first()).toBeVisible();
-  await expect(page.getByText('待命').first()).toBeVisible();
-  await page.getByRole('button',{name:/^项目/}).click();
-  await expect(page.getByText(`回归项目-${timestamp}`, { exact: true })).toBeVisible();
+  await page.waitForURL(/\/projects\/pr_[^?]+\?view=task&projectTask=pt_/, { timeout: 15000 });
+  // 落地即任务工作台：对话流 + 底部复合输入框 + 首个待确认任务
+  await expect(page.getByRole('navigation', { name: '项目组织与联系人' })).toBeVisible();
+  await expect(page.getByPlaceholder(/给智能体下达指令/)).toBeVisible();
+
+  // 左栏：项目任务列表出现初始任务；协作与沟通区有第一负责人
+  await expect(page.getByText(/明确目标并制定执行方案|编写第一章/).first()).toBeVisible({ timeout: 8000 });
 });

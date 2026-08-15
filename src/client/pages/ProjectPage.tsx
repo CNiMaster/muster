@@ -25,6 +25,7 @@ import {
   useConfirmProjectLaunch,
   useCompanyCockpit,
   useDepartments,
+  useDefaultCompanyId,
 } from '../hooks/queries';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
@@ -37,11 +38,9 @@ import { useRecentProject } from '../hooks/useRecentProject';
 import { WorkbenchShell } from '../components/workbench/WorkbenchShell';
 import { ProjectWorkNavigation } from '../components/workbench/ProjectWorkNavigation';
 import { ProjectContextInspector } from '../components/workbench/ProjectContextInspector';
-import { ProjectOnboardingWizard } from '../components/project/ProjectOnboardingWizard';
 import { ProjectTaskWorkspace } from '../components/project/ProjectTaskWorkspace';
 import { ProjectEmployeeWorkspace } from '../components/project/ProjectEmployeeWorkspace';
 import { WorkbenchContextSwitcher } from '../components/workbench/WorkbenchContextSwitcher';
-import { getProjectCreationPreset } from '../domain/company-templates';
 import { usePlaybooksForTemplate } from '../hooks/queries';
 
 export type ProjectWorkbenchView = 'task' | 'employee' | 'group' | 'activity';
@@ -57,24 +56,40 @@ export function resolveProjectWorkbenchView(requestedView: string | null): Proje
 }
 
 export function ProjectPage(): React.ReactElement {
-  const { projectId, companyId } = useParams();
+  const { projectId } = useParams();
   if (projectId) return <ProjectDetail projectId={projectId} />;
-  if (companyId) return <NewProject companyId={companyId} />;
-  return <div className="loading">参数缺失</div>;
+  return <NewProject />;
 }
 
-function NewProject({ companyId }: { companyId: string }): React.ReactElement {
+/** 新建项目预设（公司模板已退场，仅按工作台类型保留小说向导开关）。 */
+const GENERAL_PROJECT_PRESET = {
+  subtitle: '创建一个新的交付项目',
+  initialTaskTitle: '明确目标并制定执行方案',
+  namePlaceholder: '例如：季度运营改进',
+  descriptionPlaceholder: '一句话说明项目目标（选填）',
+};
+const NOVEL_PROJECT_PRESET = {
+  subtitle: '发布一个新的故事创作企划',
+  initialTaskTitle: '编写第一章',
+  namePlaceholder: '例如：星辰变',
+  descriptionPlaceholder: '一句话描述这本小说（选填）',
+};
+
+function NewProject(): React.ReactElement {
   const navigate = useNavigate();
+  // 公司概念已从 UI 退场：companyId 只是内部归组锚点，新建项目不感知工作台
+  const companyId = useDefaultCompanyId();
   const { data: company } = useCompany(companyId);
+  const isNovelWorkspace = company?.kind === 'novel';
+  const creationPreset = isNovelWorkspace ? NOVEL_PROJECT_PRESET : GENERAL_PROJECT_PRESET;
   const createProject = useCreateProject();
   const createProjectTask = useCreateProjectTask();
   const generateProjectProposal = useGenerateProjectProposal();
-  const creationPreset = getProjectCreationPreset(company?.kind);
-  // 阶段六任务 6.2：项目 Playbook 选项（按工作台模板推荐）
+  // 阶段六任务 6.2：项目 Playbook 选项
   const { data: playbookOptions } = usePlaybooksForTemplate(company?.kind);
 
   const [mode, setMode] = useState<'standard' | 'wizard'>('wizard');
-  const effectiveMode = creationPreset.allowNovelWizard ? mode : 'standard';
+  const effectiveMode = isNovelWorkspace ? mode : 'standard';
 
   // 基础表单状态
   const [name, setName] = useState('');
@@ -123,9 +138,14 @@ function NewProject({ companyId }: { companyId: string }): React.ReactElement {
       toast('error', '项目名称为必填项');
       return;
     }
+    if (!companyId) {
+      toast('info', '还没有工作区，先回首页用对话快速开工吧');
+      navigate('/', { replace: true });
+      return;
+    }
 
     createProject.mutate(
-      { companyId, name, description: desc, ...(rootDir.trim() ? { rootDir: rootDir.trim() } : {}), ...(playbookId ? { playbookId } : {}) },
+      { companyId: companyId ?? '', name, description: desc, ...(rootDir.trim() ? { rootDir: rootDir.trim() } : {}), ...(playbookId ? { playbookId } : {}) },
       {
         onSuccess: (p) => {
           // 新项目只建立「待确认」的项目任务；确认需求与能力前不派发制作工作单。
@@ -146,13 +166,13 @@ function NewProject({ companyId }: { companyId: string }): React.ReactElement {
     <div className="project-page" style={{ maxWidth: '800px', margin: '0 auto' }}>
       <header className="page-header">
         <div>
-          <h1>新建项目 · {company?.name}</h1>
+          <h1>新建项目</h1>
           <p className="subtitle">{creationPreset.subtitle}</p>
         </div>
       </header>
 
       {/* 模式切换 */}
-      {creationPreset.allowNovelWizard && <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-4)' }}>
+      {isNovelWorkspace && <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-4)' }}>
         <Button variant={mode === 'wizard' ? 'primary' : 'ghost'} onClick={() => setMode('wizard')} size="sm">
           智能对话向导
         </Button>
@@ -345,6 +365,16 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
     }
   }, [agents]);
 
+  // URL 携带 projectTask=new 时视为「打开新建任务卡」信号：消费掉参数并触发创建卡
+  useEffect(() => {
+    if (searchParams.get('projectTask') === 'new') {
+      const next = new URLSearchParams(searchParams);
+      next.delete('projectTask');
+      setSearchParams(next, { replace: true });
+      setNewTaskSignal((n) => n + 1);
+    }
+  }, [searchParams, setSearchParams]);
+
   useEffect(() => {
     if (!selectedProjectTaskId && projectTasks?.length) {
       const id = projectTasks.find((item)=>item.state==='active')?.id ?? projectTasks[0]?.id;
@@ -444,7 +474,7 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
   return (
     <WorkbenchShell
       scopeKey={`project:${projectId}`}
-      breadcrumb={<WorkbenchContextSwitcher companyId={project.companyId} companyName={company?.name ?? '工作台'} companyKind={company?.kind} projectId={project.id} projectName={project.name} projectTaskId={selectedProjectTaskId} sectionKey={projectView} sectionLabel={{ task: '项目任务', employee: selectedAgent?.name ?? '智能体', group: '项目群聊', activity: '协作活动' }[projectView]} novel={company?.kind === 'novel'} />}
+      breadcrumb={<WorkbenchContextSwitcher companyId={project.companyId} projectId={project.id} projectName={project.name} projectTaskId={selectedProjectTaskId} sectionKey={projectView} sectionLabel={{ task: '项目任务', employee: selectedAgent?.name ?? '智能体', group: '项目群聊', activity: '协作活动' }[projectView]} novel={company?.kind === 'novel'} />}
       navigationLabel="项目组织与联系人"
       inspectorLabel="项目任务与运行"
       attentionCount={attentionCount + (cockpit?.approvals.pending ?? 0)}
@@ -455,7 +485,7 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
           : selectedAgentId
             ? <Link className="mu-btn mu-btn-primary mu-btn-sm workbench-publish-action" to={`/projects/${projectId}?view=employee&agent=${selectedAgentId}${selectedProjectTaskId ? `&projectTask=${selectedProjectTaskId}` : ''}`}>联系负责人</Link>
             : undefined}
-      navigation={<ProjectWorkNavigation projectId={projectId} projectTasks={projectTasks ?? []} tasks={tasks ?? []} agents={agents ?? []} departments={departments ?? []} firstAgentId={project.firstAgentId ?? company?.firstAgentId} selectedProjectTaskId={selectedProjectTaskId} selectedAgentId={selectedAgentId} view={projectView} attentionCount={attentionCount} novel={company?.kind === 'novel'} />}
+      navigation={<ProjectWorkNavigation projectId={projectId} projectTasks={projectTasks ?? []} tasks={tasks ?? []} agents={agents ?? []} departments={departments ?? []} firstAgentId={project.firstAgentId ?? company?.firstAgentId} selectedProjectTaskId={selectedProjectTaskId} selectedAgentId={selectedAgentId} view={projectView} attentionCount={attentionCount} novel={company?.kind === 'novel'} onNewTask={openNewTaskCard} />}
       inspector={<ProjectContextInspector projectId={projectId} companyId={project.companyId} projectState={project.state} selectedTask={selectedProjectTask} selectedAgentId={projectView === 'employee' ? selectedAgentId : undefined} agents={agents ?? []} tasks={tasks ?? []} cockpit={cockpit} onChatWithAgent={(agentId) => { const next = new URLSearchParams(searchParams); next.set('view', 'employee'); next.set('agent', agentId); setSearchParams(next); }} />}
       commandOptions={[
         ...(projectTasks ?? []).slice(0, 5).map((item) => ({ label: `任务：${item.title}`, href: `/projects/${projectId}?view=task&projectTask=${item.id}`, group: '项目任务' })),
