@@ -50,11 +50,11 @@ export function BlueprintLibraryPage(): React.ReactElement {
 
       <Card className="section">
         {isLoading ? (
-          <CardSkeleton count={3} />
+          <CardSkeleton />
         ) : visible.length === 0 ? (
           <EmptyState
             title="还没有蓝图"
-            description="给人设的任务完成后，自动复盘会按任务类型聚类出蓝图。用得越多，蓝图越准。"
+            hint="给人设的任务完成后，自动复盘会按任务类型聚类出蓝图。用得越多，蓝图越准。"
           />
         ) : (
           <>

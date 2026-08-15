@@ -134,6 +134,8 @@ export interface LifecycleEventPayloadMap {
   'outsource.completed': { contractId: string };
   /** 阶段四任务 4.2：自动验收已派发 [验收] Task。 */
   'outsource.review-auto-triggered': { contractId: string; reviewTaskId: string };
+  /** R2：任务级自动验收已派发 [验收] Task 给验收员。 */
+  'acceptance.review-triggered': { sourceTaskId: string; reviewTaskId: string };
   // 临时工生命周期（批次 A）
   'employee.temp-recruited': { agentId: string; profileId: string; companyId: string; isNewProfile: boolean };
   'employee.converted': { agentId: string; profileId: string; companyId: string };

@@ -1110,11 +1110,14 @@ export class TaskEngine {
       const isConvTask = task.inputProtocol.trigger === 'user_message'
         && (task.inputProtocol.scope === 'project' || task.inputProtocol.scope === 'company')
         && typeof task.inputProtocol.scopeId === 'string';
+      // 类型窄化：isConvTask 复合条件不自动收窄 inputProtocol 字段类型，此处显式收窄供下方播报使用
+      const convScope = isConvTask ? (task.inputProtocol.scope as 'project' | 'company') : null;
+      const convScopeId = isConvTask ? (task.inputProtocol.scopeId as string) : null;
       if (debateStarted && isConvTask) {
         // 两难已进评审庭：对话先收到启动播报，完整问题等辩论结论（自动采纳播报/升级时再发）
         postSystemMessage(this.db, {
-          scopeKind: task.inputProtocol.scope,
-          scopeId: task.inputProtocol.scopeId,
+          scopeKind: convScope!,
+          scopeId: convScopeId!,
           role: 'event',
           author: 'system',
           content: `[评审庭] 遇到两难，已启动辩论：${(result.question ?? task.title).slice(0, 120)}（${result.questionOptions!.length} 个选项，辩手立论互攻后裁决；辩不出会来问你）`,
@@ -1133,8 +1136,8 @@ export class TaskEngine {
               ? '\n' + options.map((o, i) => `${String.fromCharCode(65 + i)}. ${o.label}${o.detail ? ` — ${o.detail}` : ''}`).join('\n')
               : '');
           postSystemMessage(this.db, {
-            scopeKind: task.inputProtocol.scope,
-            scopeId: task.inputProtocol.scopeId,
+            scopeKind: convScope!,
+            scopeId: convScopeId!,
             role: 'assistant',
             author: agent.id,
             content,
@@ -1150,8 +1153,8 @@ export class TaskEngine {
           );
           if (!isDup) {
             postSystemMessage(this.db, {
-              scopeKind: task.inputProtocol.scope,
-              scopeId: task.inputProtocol.scopeId,
+              scopeKind: convScope!,
+              scopeId: convScopeId!,
               role: 'assistant',
               author: agent.id,
               content: result.summary,

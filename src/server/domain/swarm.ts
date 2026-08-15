@@ -699,9 +699,9 @@ export function maybeAutoRepairBee(db: DB, failedTask: Task, message: string): v
   const originalBrief = (proto.swarm as Record<string, unknown> | undefined)?.brief ?? failedTask.title;
   const replacement = createTask(db, {
     projectId: swarm.projectId,
-    parentTaskId: failedTask.parentTaskId,
+    parentTaskId: failedTask.parentTaskId ?? undefined,
     rootTaskId: failedTask.rootTaskId ?? failedTask.id,
-    dispatcherAgentId: failedTask.dispatcherAgentId,
+    dispatcherAgentId: failedTask.dispatcherAgentId ?? undefined,
     assigneeAgentId: beeAgentId,
     title: `[替补] ${failedTask.title}`,
     inputProtocol: {

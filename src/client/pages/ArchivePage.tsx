@@ -74,12 +74,12 @@ export function ArchivePage(): React.ReactElement {
             {!debouncedQ ? (
               <EmptyState
                 title="输入关键词开始搜索"
-                description="搜索会命中：旧项目的已审批记忆、项目调研摘要、成果文件路径（按来源项目标注）。"
+                hint="搜索会命中：旧项目的已审批记忆、项目调研摘要、成果文件路径（按来源项目标注）。"
               />
             ) : search.isLoading ? (
-              <CardSkeleton count={3} />
+              <CardSkeleton />
             ) : (search.data ?? []).length === 0 ? (
-              <EmptyState title="没有命中" description="换个关键词试试；归档随项目复盘自动生长，无需手动维护。" />
+              <EmptyState title="没有命中" hint="换个关键词试试；归档随项目复盘自动生长，无需手动维护。" />
             ) : (
               <ul style={{ display: 'grid', gap: 10 }}>
                 {(search.data ?? []).map((hit, i) => (
@@ -134,9 +134,9 @@ export function ArchivePage(): React.ReactElement {
             </div>
           </div>
           {gallery.isLoading ? (
-            <CardSkeleton count={3} />
+            <CardSkeleton />
           ) : (gallery.data ?? []).length === 0 ? (
-            <EmptyState title="还没有成果" description="任务发布产物后会自动进入归档。" />
+            <EmptyState title="还没有成果" hint="任务发布产物后会自动进入归档。" />
           ) : (
             (gallery.data ?? []).map((group) => {
               const filtered = kindFilter ? group.items.filter((a) => a.kind === kindFilter) : group.items;
