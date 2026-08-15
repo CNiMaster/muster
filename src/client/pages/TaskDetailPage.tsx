@@ -19,6 +19,7 @@ import { Button, toast } from '../components/Button';
 import { Textarea, Field } from '../components/Form';
 import { EmptyState, Icons } from '../components/EmptyState';
 import { getTaskProtocolRows, TASK_PROTOCOL_FIELD_LABELS } from '../domain/task-protocol';
+import { ExecutionTraceCard } from '../components/workbench/ExecutionTraceCard';
 
 export function TaskDetailPage(): React.ReactElement {
   const { taskId = '' } = useParams();
@@ -118,6 +119,7 @@ export function TaskDetailPage(): React.ReactElement {
               <pre className="charter">{task.summary}</pre>
             </Card>
           )}
+          <ExecutionTraceCard task={task} />
           {task.question && (
             <Card title="追问" className="section">
               <p>{task.question}</p>
@@ -219,6 +221,9 @@ function SwarmTreeCard({ taskId }: { taskId: string }): React.ReactElement | nul
           #{task.seq} {task.title}
         </Link>
         <Badge tone={taskStateTone(task.state)}>{stateLabel(task.state)}</Badge>
+        {task.supersededBy && (
+          <Link to={`/tasks/${task.supersededBy}`} style={{ fontSize: 'var(--text-sm)' }}>已重发 → 替补</Link>
+        )}
       </div>
       {(childrenOf.get(task.id) ?? []).map((child) => renderNode(child, depth + 1))}
     </div>
