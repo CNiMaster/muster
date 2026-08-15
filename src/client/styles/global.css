@@ -1109,3 +1109,21 @@ p { margin: 0 0 var(--space-3) 0; }
 .first-run-ok{font-size:12px;color:var(--ok);font-weight:600}
 .first-run-todo{margin:6px 0 14px;padding-left:20px;font-size:13px;line-height:1.8}
 .first-run-foot{display:flex;justify-content:space-between;margin-top:22px;padding-top:16px;border-top:1px solid var(--border-subtle)}
+
+/* ── 执行过程时间线（ExecutionTraceCard）── */
+.mu-trace-list { display: flex; flex-direction: column; gap: 6px; margin-top: var(--space-3); }
+.mu-trace-item { display: flex; gap: var(--space-2); padding: var(--space-2) var(--space-2); border-radius: var(--radius); cursor: pointer; align-items: flex-start; }
+.mu-trace-item:hover { background: rgba(0,0,0,0.03); }
+.mu-trace-icon { flex: 0 0 auto; }
+.mu-trace-main { flex: 1; min-width: 0; }
+.mu-trace-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: var(--text-sm); }
+.mu-trace-name { font-family: monospace; font-size: var(--text-sm); font-weight: 600; }
+.mu-trace-summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mu-trace-time { font-size: 11px; }
+.mu-trace-text { margin: var(--space-2) 0 0; padding: var(--space-2); background: rgba(0,0,0,0.03); border-radius: var(--radius); font-size: 12px; white-space: pre-wrap; word-break: break-word; max-height: 260px; overflow: auto; }
+.mu-trace-thinking-text { opacity: 0.75; font-style: italic; }
+.mu-trace-plain { margin: var(--space-2) 0 0; font-size: var(--text-sm); }
+.mu-trace-error-text { margin: var(--space-2) 0 0; color: var(--err); font-size: var(--text-sm); }
+.mu-trace-preview-img { max-width: 220px; max-height: 160px; border-radius: var(--radius); cursor: zoom-in; margin-top: var(--space-2); display: block; }
+.mu-lightbox { position: fixed; inset: 0; background: rgba(0,0,0,0.78); display: flex; align-items: center; justify-content: center; z-index: 1000; cursor: zoom-out; }
+.mu-lightbox img { max-width: 90vw; max-height: 90vh; border-radius: var(--radius-lg); }
