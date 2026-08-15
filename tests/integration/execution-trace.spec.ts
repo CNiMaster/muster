@@ -116,3 +116,19 @@ describe('runToolLoop trace 埋点（API 执行器路径）', () => {
     expect(fileEdit.payload).toMatchObject({ path: 'a.md', operation: 'write' });
   });
 });
+
+import { processBridgeAction } from '../../src/server/bridge';
+
+describe('bridge 动作落 trace', () => {
+  it('progress→progress、notify→notice、preview→preview 且 taskId 为空不落库', () => {
+    processBridgeAction(db, { action: 'progress', taskId, text: '正在画图', filePath: '' });
+    processBridgeAction(db, { action: 'notify', taskId, text: '已到里程碑', filePath: '' });
+    processBridgeAction(db, { action: 'preview', taskId, text: '', filePath: 'posters/v2.png' });
+    processBridgeAction(db, { action: 'progress', taskId: null, text: '无主事件', filePath: '' });
+    const items = listTrace(db, taskId);
+    expect(items.map((x) => x.kind).sort()).toEqual(['notice', 'preview', 'progress']);
+    const preview = items.find((x) => x.kind === 'preview')!;
+    expect(preview.summary).toBe('posters/v2.png');
+    expect(preview.payload).toMatchObject({ path: 'posters/v2.png' });
+  });
+});

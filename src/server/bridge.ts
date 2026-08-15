@@ -16,6 +16,7 @@ import { getDb } from './db/client';
 import { submitBusinessReview, type BusinessReviewKind } from './domain/business-review';
 import { getMaterial } from './domain/material';
 import { getArtifact, getArtifactByPath } from './domain/artifact';
+import { appendTrace } from './domain/execution-trace';
 
 export interface BridgeActionParam {
   name: string;
@@ -138,6 +139,43 @@ export function buildBridgePromptSection(baseUrl: string, kind?: 'cli' | 'api'):
 
 export const bridgeRouter = Router();
 
+/**
+ * 处理 bridge GET 动作：落执行过程 trace（progress/notice/preview）+ 发 realtime 事件。测试可直接调用。
+ * trace 失败不影响桥接通知本身。
+ */
+export function processBridgeAction(
+  db: ReturnType<typeof getDb>,
+  input: { action: string; taskId: string | null; text: string; filePath: string },
+): RealtimeEvent {
+  const kind = input.action === 'progress' ? 'progress' : input.action === 'notify' ? 'notice' : 'preview';
+  if (input.taskId) {
+    try {
+      appendTrace(db, {
+        taskId: input.taskId,
+        kind,
+        summary: input.text || input.filePath || input.action,
+        payload: { text: input.text, path: input.filePath || undefined },
+      });
+    } catch {
+      // trace 失败不影响桥接通知
+    }
+  }
+  const event: RealtimeEvent = {
+    id: shortId('ev_'),
+    type: `bridge.${input.action}`,
+    taskId: input.taskId ?? undefined,
+    occurredAt: nowIso(),
+    payload: {
+      action: input.action,
+      text: input.text || input.filePath,
+      taskId: input.taskId,
+      path: input.filePath || undefined,
+    },
+  };
+  realtime.publish(event);
+  return event;
+}
+
 bridgeRouter.get('/:action', (req, res) => {
   const action = req.params.action;
   if (!isKnownBridgeAction(action)) {
@@ -154,20 +192,7 @@ bridgeRouter.get('/:action', (req, res) => {
   const text = (req.query.text as string | undefined) ?? '';
   const filePath = (req.query.path as string | undefined) ?? '';
 
-  // 构造实时事件推送到前端
-  const event: RealtimeEvent = {
-    id: shortId('ev_'),
-    type: `bridge.${action}`,
-    taskId: taskId ?? undefined,
-    occurredAt: nowIso(),
-    payload: {
-      action,
-      text: text || filePath,
-      taskId,
-      path: filePath || undefined,
-    },
-  };
-  realtime.publish(event);
+  processBridgeAction(getDb(), { action, taskId, text, filePath });
 
   res.json({ ok: true, action });
 });
