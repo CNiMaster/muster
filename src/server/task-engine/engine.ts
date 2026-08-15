@@ -607,7 +607,12 @@ export class TaskEngine {
         } catch { /* 软提示失败不阻塞执行 */ }
       }
 
-      const adapter = this.selectAdapter(providerForManifest(executorProfile?.manifestId) ?? effectiveExecutor?.provider);
+      const effectiveProvider = providerForManifest(executorProfile?.manifestId) ?? effectiveExecutor?.provider;
+      const adapter = this.selectAdapter(effectiveProvider);
+      // 执行过程 trace 的落库归属（review I3）：API 路径（openai/gemini，走 tool-loop 且已传 traceTracking）
+      // 由 tool-loop 落，engine 回调不重复记；CLI/未知/自定义 CLI（不经过 tool-loop）由 engine 落——
+      // 按 provider 判定而非仅 executorKind，避免"无 profile 的 API 执行器"双记或"无 profile 的 CLI"漏记。
+      const traceViaEngine = executorKind !== 'api' && effectiveProvider !== 'openai' && effectiveProvider !== 'gemini';
       if (executionRun) updateExecutionRunStatus(this.db, executionRun.id, 'running');
       let result: Awaited<ReturnType<ExecutionAdapter['run']>>;
       const sessionManager = new SessionManager(this.db);
@@ -622,12 +627,12 @@ export class TaskEngine {
           }
         };
         for(;;){try{result = await Promise.race([withExecutorConcurrency(executorProfile?.concurrencyMode ?? 'parallel', executorProfile?.id ?? agent.id, () => adapter.run(ctx, {
-            onOutput: (chunk) => { watchdog.activity(); log.debug('agent output', { taskId: task.id, chunk: chunk.slice(0, 120), executionRunId: executionRun?.id }); if (executorKind === 'cli') recordTrace({ kind: 'text', summary: chunk.slice(0, 120), payload: { text: chunk } }); },
+            onOutput: (chunk) => { watchdog.activity(); log.debug('agent output', { taskId: task.id, chunk: chunk.slice(0, 120), executionRunId: executionRun?.id }); if (traceViaEngine) recordTrace({ kind: 'text', summary: chunk.slice(0, 120), payload: { text: chunk } }); },
             onToolCall: (name, input, toolUseId) => {
               watchdog.activity();
               log.debug('agent tool', { taskId: task.id, name, executionRunId: executionRun?.id });
               // API 路径由 tool-loop 落 trace，这里只处理 CLI 路径避免重复
-              if (executorKind !== 'cli') return;
+              if (!traceViaEngine) return;
               const inputObj = (input ?? {}) as Record<string, unknown>;
               if (CLAUDE_FILE_TOOL_NAMES.has(name)) {
                 recordTrace({ kind: 'file_edit', name, summary: `${name}: ${String(inputObj.file_path ?? '')}`, payload: { toolCallId: toolUseId, path: inputObj.file_path, operation: name === 'Write' ? 'write' : 'edit' } });
@@ -635,8 +640,13 @@ export class TaskEngine {
                 recordTrace({ kind: 'tool_call', name, summary: `${name}(${JSON.stringify(input).slice(0, 80)})`, payload: { toolCallId: toolUseId, arguments: input } });
               }
             },
-            onThinking: (text) => { watchdog.activity(); if (executorKind === 'cli') recordTrace({ kind: 'thinking', summary: text.slice(0, 120), payload: { text } }); },
-            onToolResult: (toolUseId, name, content) => { if (executorKind === 'cli') recordTrace({ kind: 'tool_result', name, summary: content.slice(0, 120), payload: { toolCallId: toolUseId, content } }); },
+            onThinking: (text) => { watchdog.activity(); if (traceViaEngine) recordTrace({ kind: 'thinking', summary: text.slice(0, 120), payload: { text } }); },
+            onToolResult: (toolUseId, name, content) => {
+              // 文件工具的结果已并入 file_edit 条目（与 API 路径单条目语义一致，review M5）
+              if (traceViaEngine && name && !CLAUDE_FILE_TOOL_NAMES.has(name)) {
+                recordTrace({ kind: 'tool_result', name, summary: content.slice(0, 120), payload: { toolCallId: toolUseId, content } });
+              }
+            },
           })), watchdog.failure]);sessionManager.clearRecovery(projectTaskThread.id);break;}catch(error){if(/network|econn|dns|tls|proxy/i.test(error instanceof Error?error.message:String(error)))watchdog.networkError();if(!isRecoverableSessionError(error))throw error;recoveryAttempt+=1;const compactSupported=Boolean(adapter.compactSession);const recovery=recoveryAttempt===1?'retry':recoveryAttempt===2&&compactSupported?'compact':recoveryAttempt===(compactSupported?3:2)?'rotate':'stop';sessionManager.nextRecovery(projectTaskThread.id,compactSupported);if(recovery==='stop')throw error;if(recovery==='compact'&&adapter.compactSession&&ctx.sessionIdHint){try{await adapter.compactSession(ctx);}catch{const previousSessionId=ctx.sessionIdHint??null;sessionManager.rotate(projectTaskThread.id,{reason:'compact-failed',taskId:task.id});ctx.sessionIdHint=undefined;realtime.publish(makeLifecycleEvent('session.rotated',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,previousSessionId,reason:'compact-failed'},{companyId:company.id,projectId:project.id,taskId:task.id}));}}else if(recovery==='rotate'){const previousSessionId=ctx.sessionIdHint??null;sessionManager.rotate(projectTaskThread.id,{reason:'session-recovery',taskId:task.id});ctx.sessionIdHint=undefined;realtime.publish(makeLifecycleEvent('session.rotated',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,previousSessionId,reason:'session-recovery'},{companyId:company.id,projectId:project.id,taskId:task.id}));}realtime.publish(makeLifecycleEvent('session.recovered',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,taskId:task.id,recovery},{companyId:company.id,projectId:project.id,taskId:task.id}));log.warn('retrying recoverable executor failure',{taskId:task.id,recovery,error:String(error)});}}
         if(!result||typeof result.outcome!=='string')throw new RunFailure('empty_result','执行器没有返回有效的 AgentRunResult');
         if(approvalFailure)throw approvalFailure;

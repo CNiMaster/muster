@@ -14,6 +14,8 @@ export type TraceKind = (typeof TRACE_KINDS)[number];
 
 export const MAX_TRACE_PER_TASK = 500;
 export const MAX_PAYLOAD_CHARS = 8192;
+/** 单条 payload 的总字符预算（多键/数组的 payload 累计超限后逐串截断，review M7）。 */
+export const MAX_TOTAL_PAYLOAD_CHARS = 65536;
 
 export interface TraceItem {
   id: string;
@@ -45,7 +47,8 @@ export function appendTrace(db: DB, input: AppendTraceInput): TraceItem {
     .get(input.taskId) as { s: number };
   const seq = row.s + 1;
   // 对 payload 内的字符串值做深度截断（保持 JSON 始终合法，避免硬切序列化文本导致解析失败）
-  const { value: payloadValue, truncated } = truncatePayloadDeep(input.payload ?? {}, MAX_PAYLOAD_CHARS);
+  // 双重预算：单串 ≤8KB，整条累计 ≤64KB（多键 payload 不会无限膨胀，review M7）
+  const { value: payloadValue, truncated } = truncatePayloadDeep(input.payload ?? {}, MAX_PAYLOAD_CHARS, { remaining: MAX_TOTAL_PAYLOAD_CHARS });
   const payloadJson = JSON.stringify(payloadValue);
   db.prepare(
     `INSERT INTO execution_trace (id, task_id, run_id, seq, kind, name, summary, payload_json, truncated, occurred_at)
@@ -64,16 +67,18 @@ export function appendTrace(db: DB, input: AppendTraceInput): TraceItem {
   return item;
 }
 
-/** 深度截断：对象内所有字符串值超过 limit 时截断并置 truncated。 */
-function truncatePayloadDeep(value: unknown, limit: number): { value: unknown; truncated: boolean } {
+/** 深度截断：对象内所有字符串值超过 limit 时截断并置 truncated；budget.remaining 为整条累计预算。 */
+function truncatePayloadDeep(value: unknown, limit: number, budget: { remaining: number }): { value: unknown; truncated: boolean } {
   if (typeof value === 'string') {
-    if (value.length > limit) return { value: value.slice(0, limit), truncated: true };
+    const cut = Math.min(value.length, limit, Math.max(0, budget.remaining));
+    budget.remaining -= cut;
+    if (cut < value.length) return { value: value.slice(0, cut), truncated: true };
     return { value, truncated: false };
   }
   if (Array.isArray(value)) {
     let truncated = false;
     const out = value.map((v) => {
-      const r = truncatePayloadDeep(v, limit);
+      const r = truncatePayloadDeep(v, limit, budget);
       if (r.truncated) truncated = true;
       return r.value;
     });
@@ -83,7 +88,7 @@ function truncatePayloadDeep(value: unknown, limit: number): { value: unknown; t
     let truncated = false;
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      const r = truncatePayloadDeep(v, limit);
+      const r = truncatePayloadDeep(v, limit, budget);
       if (r.truncated) truncated = true;
       out[k] = r.value;
     }

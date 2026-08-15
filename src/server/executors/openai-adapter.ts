@@ -74,7 +74,11 @@ export class OpenAICompatibleAdapter implements ExecutionAdapter {
     const callModel: CallModelFn = async (msgs, signal, tools: ToolDefinition[]) => {
       const body = {
         model,
-        messages: msgs,
+        // thinking 是内部字段（trace 用），不回传给 API——严格兼容的 provider 会因未知字段 400（review M4）
+        messages: msgs.map((m) => {
+          const { thinking: _thinking, ...rest } = m;
+          return rest;
+        }),
         tools,
         tool_choice: 'auto',
         stream: false,

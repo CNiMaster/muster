@@ -11,6 +11,46 @@ const execFileAsync = promisify(execFile);
 
 export const settingsRouter = Router();
 
+/** 保存系统设置的 zod schema（导出供测试——六步链断点历史上就出在这里：zod 默认剥未知键）。 */
+export const settingsUpdateSchema = z.object({
+  claudeBin: z.string().min(1),
+  model: z.string().max(200),
+  skipPermissions: z.boolean(),
+  timeoutMs: z.number().min(1000),
+  maxToolCalls: z.number().min(1),
+  // Batch 14：多执行器配置（可选，向后兼容）
+  defaultProvider: z.enum(['claude-cli', 'codex-cli', 'antigravity-cli', 'custom-cli', 'openai', 'gemini']).optional(),
+  openaiBaseURL: z.string().max(500).optional(),
+  openaiModel: z.string().max(200).optional(),
+  geminiModel: z.string().max(200).optional(),
+  // 阶段二任务 2.1：三级默认执行器 profile id（空串 = 未配置）
+  executorTierPrimaryId: z.string().max(100).optional(),
+  executorTierSecondaryId: z.string().max(100).optional(),
+  executorTierTertiaryId: z.string().max(100).optional(),
+  // settings-overhaul（spec 2026-08-12-settings-overhaul-design）
+  proxyUrl: z.string().max(500).optional(),
+  proxyBypass: z.string().max(1000).optional(),
+  caCertPath: z.string().max(1000).optional(),
+  egressTimeoutMs: z.number().min(1000).max(600000).optional(),
+  theme: z.enum(['dark', 'light', 'system']).optional(),
+  fontFamily: z.string().max(200).optional(),
+  fontSize: z.number().min(8).max(32).optional(),
+  locale: z.enum(['zh', 'en']).optional(),
+  codeTheme: z.string().max(100).optional(),
+  // E4.3 空闲自主反思（默认关）
+  autonomousReflectionEnabled: z.boolean().optional(),
+  autonomousReflectionBudgetUSD: z.number().min(0).optional(),
+  // 指挥系统：晨醒开关 + 蜂群限额 + 对抗评审置信阈值
+  morningReportEnabled: z.boolean().optional(),
+  swarmMaxDepth: z.number().int().min(1).max(5).optional(),
+  swarmMaxWidth: z.number().int().min(1).max(20).optional(),
+  swarmMaxNodes: z.number().int().min(1).max(300).optional(),
+  swarmBudgetUSD: z.number().min(0).optional(),
+  debateMinConfidence: z.number().min(0.5).max(0.95).optional(),
+  // 执行过程展示批次4：蜂群失败自动修复全群上限
+  swarmRepairMax: z.number().int().min(1).max(100).optional(),
+});
+
 // 获取当前系统设置
 settingsRouter.get(
   '/',
@@ -25,43 +65,7 @@ settingsRouter.get(
 settingsRouter.post(
   '/',
   asyncHandler(async (req, res) => {
-    const schema = z.object({
-      claudeBin: z.string().min(1),
-      model: z.string().max(200),
-      skipPermissions: z.boolean(),
-      timeoutMs: z.number().min(1000),
-      maxToolCalls: z.number().min(1),
-      // Batch 14：多执行器配置（可选，向后兼容）
-      defaultProvider: z.enum(['claude-cli', 'codex-cli', 'antigravity-cli', 'custom-cli', 'openai', 'gemini']).optional(),
-      openaiBaseURL: z.string().max(500).optional(),
-      openaiModel: z.string().max(200).optional(),
-      geminiModel: z.string().max(200).optional(),
-      // 阶段二任务 2.1：三级默认执行器 profile id（空串 = 未配置）
-      executorTierPrimaryId: z.string().max(100).optional(),
-      executorTierSecondaryId: z.string().max(100).optional(),
-      executorTierTertiaryId: z.string().max(100).optional(),
-      // settings-overhaul（spec 2026-08-12-settings-overhaul-design）
-      proxyUrl: z.string().max(500).optional(),
-      proxyBypass: z.string().max(1000).optional(),
-      caCertPath: z.string().max(1000).optional(),
-      egressTimeoutMs: z.number().min(1000).max(600000).optional(),
-      theme: z.enum(['dark', 'light', 'system']).optional(),
-      fontFamily: z.string().max(200).optional(),
-      fontSize: z.number().min(8).max(32).optional(),
-      locale: z.enum(['zh', 'en']).optional(),
-      codeTheme: z.string().max(100).optional(),
-      // E4.3 空闲自主反思（默认关）
-      autonomousReflectionEnabled: z.boolean().optional(),
-      autonomousReflectionBudgetUSD: z.number().min(0).optional(),
-      // 指挥系统：晨醒开关 + 蜂群限额 + 对抗评审置信阈值
-      morningReportEnabled: z.boolean().optional(),
-      swarmMaxDepth: z.number().int().min(1).max(5).optional(),
-      swarmMaxWidth: z.number().int().min(1).max(20).optional(),
-      swarmMaxNodes: z.number().int().min(1).max(300).optional(),
-      swarmBudgetUSD: z.number().min(0).optional(),
-      debateMinConfidence: z.number().min(0.5).max(0.95).optional(),
-    });
-    const input = schema.parse(req.body);
+    const input = settingsUpdateSchema.parse(req.body);
     const db = getDb();
     saveSystemSettings(db, input);
     res.json({ ok: true, settings: getSystemSettings(db) });

@@ -1196,6 +1196,8 @@ export interface Artifact {
   ownerAgentId: string | null;
   mergeStrategy: 'three_way' | 'exclusive_lock';
   props: Record<string, unknown>;
+  /** R3：产出该成果的任务（资产库按任务维度浏览）。 */
+  createdTaskId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -1689,6 +1691,7 @@ export function useSaveSystemSettings() {
       swarmMaxWidth?: number;
       swarmMaxNodes?: number;
       swarmBudgetUSD?: number;
+      swarmRepairMax?: number;
       debateMinConfidence?: number;
     }) => api.post<any>('/api/settings', settings),
     onSuccess: () => {

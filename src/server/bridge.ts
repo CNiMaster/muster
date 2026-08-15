@@ -87,6 +87,11 @@ export function isKnownBridgeAction(action: string): boolean {
   return BRIDGE_ACTIONS.some((a) => a.name === action);
 }
 
+/** 仅 GET 语义的桥接动作（POST-only 如 submit-review 不进 GET 通道，review M9）。 */
+export function isGetBridgeAction(action: string): boolean {
+  return BRIDGE_ACTIONS.some((a) => a.name === action && a.method !== 'POST');
+}
+
 /**
  * 构建 prompt 注入用的桥接能力清单（中文）。
  *
@@ -178,7 +183,7 @@ export function processBridgeAction(
 
 bridgeRouter.get('/:action', (req, res) => {
   const action = req.params.action;
-  if (!isKnownBridgeAction(action)) {
+  if (!isGetBridgeAction(action)) {
     res.status(404).json({ error: `Unknown bridge action: ${action}` });
     return;
   }

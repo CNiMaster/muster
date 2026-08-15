@@ -12,7 +12,7 @@ import { clockIn, createCompany } from '../../src/server/domain/company';
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject } from '../../src/server/domain/project';
 import { createSwarmRun } from '../../src/server/domain/swarm';
-import { createTask, failTask, getTask } from '../../src/server/domain/task';
+import { createTask, failTask, getTask, addDependency } from '../../src/server/domain/task';
 import { listTaskEvents } from '../../src/server/domain/task-event';
 import { listTrace } from '../../src/server/domain/execution-trace';
 import { setSetting } from '../../src/server/domain/setting';
@@ -21,7 +21,7 @@ import { ensureSystemAgents } from '../../src/server/domain/system-agents';
 let tdb: ReturnType<typeof makeTestDb>;
 let db: DB;
 
-function makeSwarmFixture(): { rootId: string; beeId: string } {
+function makeSwarmFixture(): { rootId: string; beeId: string; synthesisId: string } {
   // 真实语义：蜂群由系统隐形岗「调度中心」派发（is_system 豁免 contactAllow 守卫）
   const company = createCompany(db, { name: 'co' });
   const lead = createAgent(db, { companyId: company.id, name: 'lead', role: 'lead' });
@@ -54,7 +54,26 @@ function makeSwarmFixture(): { rootId: string; beeId: string } {
   });
   // 生产语义：nodes_total = 蜂 + 汇总任务（materializeSwarm 的账），单蜂失败不会误触关群
   db.prepare('UPDATE swarm_run SET nodes_total=2 WHERE id=?').run(swarm.id);
-  return { rootId: root.id, beeId: bee.id };
+  // 汇总任务：依赖全部蜂，根依赖汇总（与 materializeSwarm 同构）
+  const synthesis = createTask(db, {
+    projectId: project.id,
+    parentTaskId: root.id,
+    rootTaskId: root.id,
+    assigneeAgentId: dispatcher,
+    dispatcherAgentId: dispatcher,
+    title: '[蜂群汇总] 宣发物料',
+    priority: 6,
+    skipLaunchGate: true,
+    swarmId: swarm.id,
+    swarmDepth: 0,
+    inputProtocol: { trigger: 'swarm_synthesis', swarm: { swarmId: swarm.id, goal: '宣发物料', beeCount: 1 }, swarmSynthesis: true, swarmNode: true },
+  });
+  addDependency(db, synthesis.id, bee.id);
+  addDependency(db, root.id, synthesis.id);
+  db.prepare('UPDATE swarm_run SET synthesis_task_id=? WHERE id=?').run(synthesis.id, swarm.id);
+  // 引擎语义：汇总任务因依赖未满足处于等待态（review I2 的放行场景载体）
+  db.prepare("UPDATE task SET state='waiting_dependency' WHERE id=?").run(synthesis.id);
+  return { rootId: root.id, beeId: bee.id, synthesisId: synthesis.id };
 }
 
 beforeEach(() => {
@@ -80,6 +99,19 @@ describe('蜂群失败自动修复', () => {
     // 计账：nodes_total 2（蜂+汇总）→ 修复 +1 = 3
     const swarm = db.prepare('SELECT nodes_total FROM swarm_run WHERE root_task_id=?').get(rootId) as { nodes_total: number };
     expect(swarm.nodes_total).toBe(3);
+  });
+
+  it('review I2 回归：替补接入汇总依赖——蜂失败后汇总仍等替补收口', () => {
+    const { rootId, beeId, synthesisId } = makeSwarmFixture();
+    failTask(db, beeId, '逻辑错误：需要替补');
+    const replacementId = getTask(db, beeId).supersededBy!;
+    expect(replacementId).not.toBeNull();
+    // 依赖行存在：汇总 → 替补
+    const dep = db.prepare('SELECT 1 AS x FROM task_dependency WHERE task_id=? AND depends_on_id=?').get(synthesisId, replacementId);
+    expect(dep).toBeTruthy();
+    // 汇总任务未被放行（仍等替补收口），根任务也未收口
+    expect(getTask(db, synthesisId).state).toBe('waiting_dependency');
+    expect(getTask(db, rootId).state).toBe('queued');
   });
 
   it('替补蜂再失败不再递归修复', () => {

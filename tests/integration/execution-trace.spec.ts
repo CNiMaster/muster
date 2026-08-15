@@ -132,3 +132,23 @@ describe('bridge 动作落 trace', () => {
     expect(preview.payload).toMatchObject({ path: 'posters/v2.png' });
   });
 });
+
+import { isGetBridgeAction } from '../../src/server/bridge';
+
+describe('bridge/trace 边界（review 修复回归）', () => {
+  it('review M9：GET 通道不放行 POST-only 动作（submit-review）', () => {
+    expect(isGetBridgeAction('submit-review')).toBe(false);
+    expect(isGetBridgeAction('progress')).toBe(true);
+    expect(isGetBridgeAction('notify')).toBe(true);
+    expect(isGetBridgeAction('preview')).toBe(true);
+  });
+
+  it('review M7：payload 总量超 64KB 预算后截断并标记 truncated', () => {
+    const payload: Record<string, unknown> = {};
+    for (let i = 0; i < 100; i++) payload[`k${i}`] = 'x'.repeat(1000); // 约 100KB
+    appendTrace(db, { taskId, kind: 'text', payload });
+    const [item] = listTrace(db, taskId);
+    expect(item.truncated).toBe(true);
+    expect(JSON.stringify(item.payload).length).toBeLessThanOrEqual(70000);
+  });
+});

@@ -1057,16 +1057,18 @@ export function failTask(db: DB, taskId: string, message: string): Task {
   // 指挥系统：蜂群任务失败 → 改道调度中心处置（记账/告警/熔断/依赖解除），
   // 不走 [兜底]（那会打扰第一负责人——蜂群的失败责任人是调度中心）
   if (failed.swarmId) {
-    try {
-      handleSwarmTaskFailure(db, failed, message);
-    } catch (e) {
-      console.warn('swarm failure handling failed', { taskId, err: e instanceof Error ? e.message : String(e) });
-    }
-    // 执行过程展示批次4：不可恢复失败 → 自动修复（换思路重发替补蜂）
+    // 执行过程展示批次4：先自动修复（替补蜂入依赖图），再走记账/告警/熔断/依赖释放——
+    // 顺序很重要：resumeSwarmDependentsAfterFailure 会把失败蜂的等待方视为已收口放行，
+    // 若修复在后，汇总任务会在替补产出前被放行（review I2）。
     try {
       maybeAutoRepairBee(db, failed, message);
     } catch (e) {
       console.warn('swarm auto repair failed', { taskId, err: e instanceof Error ? e.message : String(e) });
+    }
+    try {
+      handleSwarmTaskFailure(db, failed, message);
+    } catch (e) {
+      console.warn('swarm failure handling failed', { taskId, err: e instanceof Error ? e.message : String(e) });
     }
     return failed;
   }

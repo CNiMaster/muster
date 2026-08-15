@@ -685,10 +685,15 @@ export function maybeAutoRepairBee(db: DB, failedTask: Task, message: string): v
   const beeCount = (db.prepare(
     'SELECT COUNT(*) AS c FROM task WHERE swarm_id=? AND swarm_depth>0',
   ).get(swarmId) as { c: number }).c;
+  // 派发者回退链：原派发者 → 原执行者 → 根任务执行者（不再用任务 id 冒充 agent id，review M8）
+  const rootAssignee = (db.prepare('SELECT assignee_agent_id AS a FROM task WHERE id=?')
+    .get(swarm.rootTaskId) as { a: string | null } | undefined)?.a ?? null;
+  const requester = failedTask.dispatcherAgentId ?? failedTask.assigneeAgentId ?? rootAssignee;
+  if (!requester) return; // 无派发者无法建替补
   const beeAgentId = createWorkerBee(db, {
     companyId: swarm.companyId,
     projectId: swarm.projectId,
-    requesterAgentId: failedTask.dispatcherAgentId ?? failedTask.assigneeAgentId ?? swarm.rootTaskId,
+    requesterAgentId: requester,
     index: beeCount,
   });
   const originalBrief = (proto.swarm as Record<string, unknown> | undefined)?.brief ?? failedTask.title;
@@ -717,6 +722,19 @@ export function maybeAutoRepairBee(db: DB, failedTask: Task, message: string): v
   });
   db.prepare('UPDATE task SET superseded_by=? WHERE id=?').run(replacement.id, failedTask.id);
   db.prepare('UPDATE swarm_run SET nodes_total=nodes_total+1 WHERE id=?').run(swarmId);
+  // 接入汇总依赖图（review I2）：汇总任务等替补收口——否则失败蜂被视为已收口后，
+  // 汇总会在替补产出前被放行，修复只保证了记账而没保证产出覆盖。
+  if (swarm.synthesisTaskId) {
+    const synthesis = db.prepare('SELECT id, state FROM task WHERE id=?')
+      .get(swarm.synthesisTaskId) as { id: string; state: string } | undefined;
+    if (synthesis && !['completed', 'cancelled', 'failed'].includes(synthesis.state)) {
+      try {
+        addDependency(db, synthesis.id, replacement.id);
+      } catch {
+        // 依赖已存在等冲突不阻塞修复（替补自身失败时 resumeSwarmDependentsAfterFailure 会放行汇总）
+      }
+    }
+  }
   appendTaskEvent(db, swarm.rootTaskId, 'swarm_bee_repair_dispatched', {
     swarmId,
     failedTaskId: failedTask.id,
