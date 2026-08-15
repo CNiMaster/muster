@@ -97,9 +97,11 @@ export class OpenAICompatibleAdapter implements ExecutionAdapter {
       const choice = data.choices?.[0];
       const msg = choice?.message ?? { role: 'assistant', content: '' };
       // 转换为通用 ChatMessage
+      const thinkingText = String(msg.reasoning_content ?? msg.reasoning ?? '');
       const assistantMsg: ChatMessage = {
         role: 'assistant',
         content: msg.content ?? '',
+        thinking: thinkingText || undefined,
         tool_calls: msg.tool_calls?.map((tc: any) => ({
           id: tc.id,
           type: 'function',
@@ -109,7 +111,7 @@ export class OpenAICompatibleAdapter implements ExecutionAdapter {
       // 触发事件
       if (msg.content) events?.onOutput?.(msg.content);
       if (assistantMsg.tool_calls) {
-        for (const tc of assistantMsg.tool_calls) events?.onToolCall?.(tc.function.name, tc.function.arguments);
+        for (const tc of assistantMsg.tool_calls) events?.onToolCall?.(tc.function.name, tc.function.arguments, tc.id);
       }
       return {
         message: assistantMsg,
@@ -135,6 +137,7 @@ export class OpenAICompatibleAdapter implements ExecutionAdapter {
         loopback: ctx.loopback,
         permissionGuard: ctx.permissionGuard,
         usageTracking: { db: getDb(), taskId: ctx.task.id },
+        traceTracking: { db: getDb(), taskId: ctx.task.id },
         reviewContext: { db: getDb(), taskId: ctx.task.id },
         consultationContext: {
           db: getDb(),

@@ -10,6 +10,11 @@ import type { DB } from '../../src/server/db/client';
 import { appendTrace, listTrace, MAX_TRACE_PER_TASK } from '../../src/server/domain/execution-trace';
 import { createNovelCompany } from '../../src/server/domain/novel-template';
 import { createProject } from '../../src/server/domain/project';
+import { runToolLoop } from '../../src/server/executors/tool-loop';
+import type { ChatMessage } from '../../src/server/executors/tool-loop';
+import { mkdtempSync } from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
 
 let tdb: ReturnType<typeof makeTestDb>;
 let db: DB;
@@ -62,5 +67,52 @@ describe('execution_trace domain', () => {
     expect(items).toHaveLength(MAX_TRACE_PER_TASK);
     expect(items.some((x) => x.kind === 'tool_result')).toBe(false);
     expect(items.every((x) => x.kind === 'tool_call')).toBe(true);
+  });
+});
+
+describe('runToolLoop trace 埋点（API 执行器路径）', () => {
+  it('thinking/file_edit/text/tool_call 按序落库', async () => {
+    const workdir = mkdtempSync(path.join(os.tmpdir(), 'muster-loop-'));
+    const result = await runToolLoop({
+      workingDir: workdir,
+      maxToolCalls: 5,
+      timeoutMs: 5000,
+      model: 'test',
+      traceTracking: { db, taskId },
+      messages: [{ role: 'system', content: 'sys' }, { role: 'user', content: 'u' }],
+      callModel: async (msgs: ChatMessage[]) => {
+        const assistantCount = msgs.filter((m) => m.role === 'assistant').length;
+        if (assistantCount === 0) {
+          return {
+            message: {
+              role: 'assistant',
+              content: '',
+              thinking: '我先写文件再完成',
+              tool_calls: [
+                { id: 'tc_1', type: 'function', function: { name: 'write_file', arguments: JSON.stringify({ path: 'a.md', content: 'hello' }) } },
+              ],
+            },
+            usage: { promptTokens: 1, completionTokens: 1 },
+          };
+        }
+        return {
+          message: {
+            role: 'assistant',
+            content: '完成',
+            tool_calls: [
+              { id: 'tc_2', type: 'function', function: { name: 'done', arguments: JSON.stringify({ outcome: 'completed', summary: 'ok' }) } },
+            ],
+          },
+          usage: { promptTokens: 1, completionTokens: 1 },
+        };
+      },
+    });
+    expect(result.result?.outcome).toBe('completed');
+    const items = listTrace(db, taskId);
+    const kinds = items.map((x) => x.kind).reverse();
+    expect(kinds).toEqual(['thinking', 'file_edit', 'text', 'tool_call', 'tool_result']);
+    const fileEdit = items.find((x) => x.kind === 'file_edit')!;
+    expect(fileEdit.name).toBe('write_file');
+    expect(fileEdit.payload).toMatchObject({ path: 'a.md', operation: 'write' });
   });
 });

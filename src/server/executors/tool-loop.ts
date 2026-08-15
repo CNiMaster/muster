@@ -20,6 +20,7 @@ import {
 } from './tools/registry';
 import { FILE_TOOLS } from './tools/file-tools';
 import { recordCapabilityUsage } from '../domain/capability-quality';
+import { appendTrace } from '../domain/execution-trace';
 import type { DB } from '../db/client';
 import type { AgentRunResult } from '../../shared/types';
 import type { ExecutionUsage } from '../task-engine/executor';
@@ -28,6 +29,8 @@ import type { ExecutionUsage } from '../task-engine/executor';
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string;
+  /** 模型思考文本（OpenAI reasoning / Gemini thoughts；模型无思考能力时为 undefined）。 */
+  thinking?: string;
   /** assistant 角色携带的 tool_calls。 */
   tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>;
   /** tool 角色携带的 tool_call_id。 */
@@ -84,6 +87,8 @@ export interface ToolLoopOptions {
   /** E1.1 工具调用埋点：传入则每次 executeTool 调用记录一条 capability_usage_stat，
    * 激活工具质量反馈闭环（recordCapabilityUsage 此前为零调用方死代码）。 */
   usageTracking?: { db: DB; taskId: string };
+  /** 执行过程 trace 记录（区别于 usageTracking 的聚合埋点；失败必须吞掉不影响主流程）。 */
+  traceTracking?: { db: DB; taskId: string; runId?: string };
 }
 
 export interface ToolLoopResult {
@@ -125,6 +130,18 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult
       // 把 assistant 消息加回历史
       messages.push(modelResult.message);
 
+      // 执行过程 trace：思考与直接文本输出（有就记录；失败绝不影响主流程）
+      if (opts.traceTracking) {
+        const tt = opts.traceTracking;
+        const rec = (kind: 'thinking' | 'text', text: string): void => {
+          try {
+            appendTrace(tt.db, { taskId: tt.taskId, runId: tt.runId, kind, summary: firstLine(text, 120), payload: { text } });
+          } catch { /* trace 失败不影响执行 */ }
+        };
+        if (modelResult.message.thinking?.trim()) rec('thinking', modelResult.message.thinking);
+        if (modelResult.message.content?.trim()) rec('text', modelResult.message.content);
+      }
+
       const toolCalls = modelResult.message.tool_calls ?? [];
       if (toolCalls.length === 0) {
         // 无 tool_call：模型直接返回文本。尝试解析为 AgentRunResult，否则视为失败。
@@ -141,6 +158,18 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult
           // 参数解析失败，用空对象
         }
         const call: ToolCall = { id: tc.id, name: tc.function.name, args: parsedArgs };
+        const isFileOp = call.name === 'write_file' || call.name === 'edit_file';
+        // 文件操作合成单条 file_edit（含结果），其余先记 tool_call
+        if (opts.traceTracking && !isFileOp) {
+          try {
+            appendTrace(opts.traceTracking.db, {
+              taskId: opts.traceTracking.taskId, runId: opts.traceTracking.runId,
+              kind: 'tool_call', name: call.name,
+              summary: `${call.name}(${JSON.stringify(parsedArgs).slice(0, 80)})`,
+              payload: { toolCallId: tc.id, arguments: parsedArgs },
+            });
+          } catch { /* trace 失败不影响执行 */ }
+        }
         const ctx: ToolContext = {
           workingDir: opts.workingDir,
           readonlyDirs: opts.readonlyDirs ?? [],
@@ -157,6 +186,15 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult
           tr = await executeTool(call, ctx);
         } catch (err) {
           outcome = 'fail';
+          if (opts.traceTracking) {
+            try {
+              appendTrace(opts.traceTracking.db, {
+                taskId: opts.traceTracking.taskId, runId: opts.traceTracking.runId,
+                kind: 'error', name: call.name,
+                summary: `工具执行异常：${(err as Error).message.slice(0, 120)}`,
+              });
+            } catch { /* trace 失败不影响执行 */ }
+          }
           throw err;
         } finally {
           // E1.1 工具调用埋点：无论成功/失败都记录一条 usage，供质量反馈与惯用工具固化消费。
@@ -183,6 +221,21 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult
           name: tc.function.name,
           content: tr.content,
         });
+        if (opts.traceTracking) {
+          try {
+            appendTrace(opts.traceTracking.db, {
+              taskId: opts.traceTracking.taskId, runId: opts.traceTracking.runId,
+              kind: isFileOp ? 'file_edit' : 'tool_result',
+              name: call.name,
+              summary: isFileOp
+                ? `${call.name === 'write_file' ? '写入' : '编辑'} ${String(parsedArgs.path ?? '')}`
+                : firstLine(tr.content, 120),
+              payload: isFileOp
+                ? { path: parsedArgs.path, operation: call.name === 'write_file' ? 'write' : 'edit', result: tr.content.slice(0, 500) }
+                : { toolCallId: tc.id, content: tr.content },
+            });
+          } catch { /* trace 失败不影响执行 */ }
+        }
         if (tr.doneResult) {
           doneResult = tr.doneResult;
         }
@@ -224,6 +277,12 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult
     },
     rounds,
   };
+}
+
+/** 取首行并截断到 max 字符（trace summary 用）。 */
+function firstLine(s: string, max: number): string {
+  const one = s.split('\n')[0];
+  return one.length > max ? `${one.slice(0, max)}…` : one;
 }
 
 /**

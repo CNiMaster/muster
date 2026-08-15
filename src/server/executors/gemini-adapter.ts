@@ -92,31 +92,39 @@ export class GeminiAdapter implements ExecutionAdapter {
       const candidate = data.candidates?.[0];
       const parts = candidate?.content?.parts ?? [];
 
-      // 收集文本与 function call
+      // 收集文本与 function call（thought 块只进思考文本，不作为输出）
       let textContent = '';
+      let thinkingText = '';
       const toolCalls: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }> = [];
       let fcIdx = 0;
       for (const part of parts) {
         if (part.text) {
-          textContent += part.text;
-          events?.onOutput?.(part.text);
+          if (part.thought === true) {
+            thinkingText += part.text; // 思考块：只进 trace，不当作输出
+          } else {
+            textContent += part.text;
+            events?.onOutput?.(part.text);
+          }
         }
         if (part.functionCall) {
+          const id = `gemini-fc-${fcIdx}`;
           toolCalls.push({
-            id: `gemini-fc-${fcIdx++}`,
+            id,
             type: 'function',
             function: {
               name: part.functionCall.name,
               arguments: JSON.stringify(part.functionCall.args ?? {}),
             },
           });
-          events?.onToolCall?.(part.functionCall.name, part.functionCall.args);
+          events?.onToolCall?.(part.functionCall.name, part.functionCall.args, id);
+          fcIdx++;
         }
       }
 
       const assistantMsg: ChatMessage = {
         role: 'assistant',
         content: textContent,
+        thinking: thinkingText || undefined,
         tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
       };
 
@@ -144,6 +152,7 @@ export class GeminiAdapter implements ExecutionAdapter {
         loopback: ctx.loopback,
         permissionGuard: ctx.permissionGuard,
         usageTracking: { db: getDb(), taskId: ctx.task.id },
+        traceTracking: { db: getDb(), taskId: ctx.task.id },
         reviewContext: { db: getDb(), taskId: ctx.task.id },
         consultationContext: {
           db: getDb(),

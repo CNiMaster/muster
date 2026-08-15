@@ -88,7 +88,12 @@ export interface AgentExecutorConfig {
 
 export interface ExecutionEvents {
   onOutput?: (chunk: string) => void;
-  onToolCall?: (name: string, input: unknown) => void;
+  /** toolUseId 用于把 tool_result 关联回 tool_call（CLI 路径；API 路径为 tool_call id）。 */
+  onToolCall?: (name: string, input: unknown, toolUseId?: string) => void;
+  /** 思考块（Claude stream-json thinking；其他执行器暂不产生）。 */
+  onThinking?: (text: string) => void;
+  /** 工具结果（含 tool_use id 关联）。 */
+  onToolResult?: (toolUseId: string, name: string | undefined, content: string) => void;
 }
 
 export interface ExecutionUsage {
