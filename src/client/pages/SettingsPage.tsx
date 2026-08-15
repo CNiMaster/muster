@@ -49,6 +49,7 @@ export function SettingsPage(): React.ReactElement {
   const [swarmMaxWidth, setSwarmMaxWidth] = useState(5);
   const [swarmMaxNodes, setSwarmMaxNodes] = useState(30);
   const [swarmBudgetUSD, setSwarmBudgetUSD] = useState(5);
+  const [swarmRepairMax, setSwarmRepairMax] = useState(10);
   const [testResult, setTestResult] = useState<any | null>(null);
 
   useEffect(() => {
@@ -81,6 +82,7 @@ export function SettingsPage(): React.ReactElement {
     setSwarmMaxWidth(settings.swarmMaxWidth ?? 5);
     setSwarmMaxNodes(settings.swarmMaxNodes ?? 30);
     setSwarmBudgetUSD(settings.swarmBudgetUSD ?? 5);
+    setSwarmRepairMax(settings.swarmRepairMax ?? 10);
   }, [settings]);
 
   const handleSave = (): void => {
@@ -89,7 +91,7 @@ export function SettingsPage(): React.ReactElement {
       return;
     }
     saveSettings.mutate(
-      { claudeBin, model, skipPermissions, timeoutMs, maxToolCalls, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierPrimaryId: tierPrimary, executorTierSecondaryId: tierSecondary, executorTierTertiaryId: tierTertiary, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs, theme, fontFamily, fontSize, locale, codeTheme, autonomousReflectionEnabled, autonomousReflectionBudgetUSD, morningReportEnabled, swarmMaxDepth, swarmMaxWidth, swarmMaxNodes, swarmBudgetUSD },
+      { claudeBin, model, skipPermissions, timeoutMs, maxToolCalls, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierPrimaryId: tierPrimary, executorTierSecondaryId: tierSecondary, executorTierTertiaryId: tierTertiary, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs, theme, fontFamily, fontSize, locale, codeTheme, autonomousReflectionEnabled, autonomousReflectionBudgetUSD, morningReportEnabled, swarmMaxDepth, swarmMaxWidth, swarmMaxNodes, swarmBudgetUSD, swarmRepairMax },
       {
         onSuccess: () => toast('success', '系统设置已保存并实时生效'),
         onError: (error: any) => toast('error', error.message ?? '保存设置失败'),
@@ -336,6 +338,9 @@ export function SettingsPage(): React.ReactElement {
               </Field>
               <Field label="单群预算（USD）" hint="整群累计花费达到上限即熔断；0 = 不限">
                 <Input type="number" min={0} step={0.5} value={swarmBudgetUSD} onChange={(e) => setSwarmBudgetUSD(Number(e.target.value))} />
+              </Field>
+              <Field label="蜂群失败自动修复上限（全群）" hint="蜂失败后自动换思路重发替补，全群修复次数达上限即停；0 语义由 1 代替">
+                <Input type="number" min={1} max={100} value={swarmRepairMax} onChange={(e) => setSwarmRepairMax(Number(e.target.value))} />
               </Field>
             </div>
             <p className="muted">

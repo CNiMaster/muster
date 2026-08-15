@@ -33,7 +33,7 @@ import {assertProjectLaunchConfirmed} from './project-launch';
 import {assertProjectActive} from './project-readiness';
 import { getCompany } from './company';
 import { recordSuspension, resolveSuspensionByTask } from './task-suspension';
-import { checkSwarmLimits, greyBeeAfterTask, handleSwarmTaskFailure, recordSwarmNodeOutcome, reportBeeCompletion } from './swarm';
+import { checkSwarmLimits, greyBeeAfterTask, handleSwarmTaskFailure, maybeAutoRepairBee, recordSwarmNodeOutcome, reportBeeCompletion } from './swarm';
 import { handleDebateTaskFailure, recordDecisionFromClarify } from './debate';
 import { ensurePrimaryThread } from './thread';
 import { matchBlueprint } from './blueprint';
@@ -117,6 +117,8 @@ export interface Task {
   questionOptions: import('../../shared/types').QuestionOption[] | null;
   /** 蓝图组织批次1：本次穿戴的人设（personas/ 相对路径，null=不穿戴）。人设不产生任职。 */
   personaId: string | null;
+  /** 执行过程展示批次4：失败蜂被自动修复重发后指向替补任务。 */
+  supersededBy: string | null;
 }
 
 interface TaskRow {
@@ -216,6 +218,7 @@ function fromRow(r: TaskRow): Task {
     reworkCount: r.rework_count ?? 0,
     swarmId: (r as { swarm_id?: string | null }).swarm_id ?? null,
     swarmDepth: (r as { swarm_depth?: number }).swarm_depth ?? 0,
+    supersededBy: (r as { superseded_by?: string | null }).superseded_by ?? null,
     questionOptions: r.question_options_json
       ? (JSON.parse(r.question_options_json) as import('../../shared/types').QuestionOption[])
       : null,
@@ -1058,6 +1061,12 @@ export function failTask(db: DB, taskId: string, message: string): Task {
       handleSwarmTaskFailure(db, failed, message);
     } catch (e) {
       console.warn('swarm failure handling failed', { taskId, err: e instanceof Error ? e.message : String(e) });
+    }
+    // 执行过程展示批次4：不可恢复失败 → 自动修复（换思路重发替补蜂）
+    try {
+      maybeAutoRepairBee(db, failed, message);
+    } catch (e) {
+      console.warn('swarm auto repair failed', { taskId, err: e instanceof Error ? e.message : String(e) });
     }
     return failed;
   }

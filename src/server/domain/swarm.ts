@@ -17,6 +17,7 @@ import { AppError, ErrorCode } from '../../shared/errors';
 import { getSystemSettings } from './setting';
 import { addTaskMessage } from './task-message';
 import { appendTaskEvent } from './task-event';
+import { appendTrace } from './execution-trace';
 import { addDependency, cancelTask, createTask, getTask, type Task } from './task';
 import { createTempEmployment, dismissTempWorker, markTempGreyed } from './temp-worker';
 import { ensurePrimaryThread } from './thread';
@@ -649,4 +650,88 @@ export function materializeSwarm(db: DB, sourceTask: Task, plan: SwarmPlan): Mat
     });
   }
   return { swarmId, beeTaskIds, synthesisTaskId, truncated };
+}
+
+/**
+ * 蜂群失败自动修复（执行过程展示批次4）：
+ * 不可恢复失败的蜂（非替补、无已有替补、群未熔断、未超全群上限）→ 生成替补蜂。
+ * 换思路依据：原蜂的失败摘要（+ 若有反思则注入教训）写进替补的 inputPacket.repair。
+ * 原蜂标记 superseded_by；根任务留 notice trace 与 swarm_bee_repair_dispatched 事件。
+ */
+export function maybeAutoRepairBee(db: DB, failedTask: Task, message: string): void {
+  const swarmId = failedTask.swarmId;
+  if (!swarmId) return;
+  const swarm = getSwarmRun(db, swarmId);
+  if (!swarm || swarm.status !== 'active') return;
+  if (failedTask.supersededBy) return; // 已有替补
+  const proto = (failedTask.inputProtocol ?? {}) as Record<string, unknown>;
+  if (proto.repair) return; // 替补蜂不再递归修复
+  const repaired = (db.prepare(
+    'SELECT COUNT(*) AS c FROM task WHERE swarm_id=? AND superseded_by IS NOT NULL',
+  ).get(swarmId) as { c: number }).c;
+  if (repaired >= getSystemSettings(db).swarmRepairMax) return;
+
+  // 换思路依据：失败摘要 + 最近反思教训（有就注入）
+  let lesson = '';
+  try {
+    const row = db.prepare(
+      'SELECT reflection_text FROM task_reflection WHERE task_id=? ORDER BY created_at DESC LIMIT 1',
+    ).get(failedTask.id) as { reflection_text: string | null } | undefined;
+    lesson = row?.reflection_text ?? '';
+  } catch {
+    lesson = '';
+  }
+
+  const beeCount = (db.prepare(
+    'SELECT COUNT(*) AS c FROM task WHERE swarm_id=? AND swarm_depth>0',
+  ).get(swarmId) as { c: number }).c;
+  const beeAgentId = createWorkerBee(db, {
+    companyId: swarm.companyId,
+    projectId: swarm.projectId,
+    requesterAgentId: failedTask.dispatcherAgentId ?? failedTask.assigneeAgentId ?? swarm.rootTaskId,
+    index: beeCount,
+  });
+  const originalBrief = (proto.swarm as Record<string, unknown> | undefined)?.brief ?? failedTask.title;
+  const replacement = createTask(db, {
+    projectId: swarm.projectId,
+    parentTaskId: failedTask.parentTaskId,
+    rootTaskId: failedTask.rootTaskId ?? failedTask.id,
+    dispatcherAgentId: failedTask.dispatcherAgentId,
+    assigneeAgentId: beeAgentId,
+    title: `[替补] ${failedTask.title}`,
+    inputProtocol: {
+      trigger: 'swarm_bee',
+      swarm: { swarmId, goal: swarm.goal, brief: originalBrief, depth: failedTask.swarmDepth },
+      swarmNode: true,
+      repair: {
+        ofTaskId: failedTask.id,
+        ofSeq: failedTask.seq,
+        failure: message.slice(0, 500),
+        lesson: lesson.slice(0, 1000) || undefined,
+      },
+    },
+    priority: 5,
+    skipLaunchGate: true,
+    swarmId,
+    swarmDepth: failedTask.swarmDepth,
+  });
+  db.prepare('UPDATE task SET superseded_by=? WHERE id=?').run(replacement.id, failedTask.id);
+  db.prepare('UPDATE swarm_run SET nodes_total=nodes_total+1 WHERE id=?').run(swarmId);
+  appendTaskEvent(db, swarm.rootTaskId, 'swarm_bee_repair_dispatched', {
+    swarmId,
+    failedTaskId: failedTask.id,
+    failedSeq: failedTask.seq,
+    replacementTaskId: replacement.id,
+    replacementSeq: replacement.seq,
+  });
+  try {
+    appendTrace(db, {
+      taskId: swarm.rootTaskId,
+      kind: 'notice',
+      summary: `蜂成员失败 → 已换思路重发 #${replacement.seq}「${replacement.title}」`,
+      payload: { failedTaskId: failedTask.id, failedSeq: failedTask.seq, replacementTaskId: replacement.id, failure: message.slice(0, 300) },
+    });
+  } catch {
+    // trace 失败不影响修复
+  }
 }

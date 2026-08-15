@@ -57,6 +57,8 @@ export interface SystemSettings {
   swarmBudgetUSD: number;
   /** 指挥系统批次4：对抗评审庭裁决自动采纳的最低置信度，低于则升级用户。 */
   debateMinConfidence: number;
+  /** 执行过程展示批次4：蜂群失败自动修复的全群重发上限（防失控放大）。 */
+  swarmRepairMax: number;
 }
 
 export function getSetting(db: DB, key: string, defaultValue: string): string {
@@ -74,6 +76,7 @@ export function setSetting(db: DB, key: string, value: string): void {
 
 /** 获取生效 of the system settings. */
 export function getSystemSettings(db: DB): SystemSettings {
+  const swarmMaxNodes = Number(getSetting(db, 'swarm_max_nodes', '30'));
   return {
     claudeBin: getSetting(db, 'claude_bin', SERVER_CONFIG.claudeBin),
     model: getSetting(db, 'model', SERVER_CONFIG.model),
@@ -101,7 +104,8 @@ export function getSystemSettings(db: DB): SystemSettings {
     morningReportEnabled: getSetting(db, 'morning_report_enabled', 'true') === 'true',
     swarmMaxDepth: Number(getSetting(db, 'swarm_max_depth', '3')),
     swarmMaxWidth: Number(getSetting(db, 'swarm_max_width', '5')),
-    swarmMaxNodes: Number(getSetting(db, 'swarm_max_nodes', '30')),
+    swarmMaxNodes,
+    swarmRepairMax: Number(getSetting(db, 'swarm_repair_max', String(Math.max(1, Math.floor(swarmMaxNodes / 3))))),
     swarmBudgetUSD: Number(getSetting(db, 'swarm_budget_usd', '5')),
     debateMinConfidence: Number(getSetting(db, 'debate_min_confidence', '0.6')),
   };
@@ -174,6 +178,9 @@ export function saveSystemSettings(db: DB, settings: Partial<SystemSettings>): v
   }
   if (settings.swarmBudgetUSD !== undefined) {
     setSetting(db, 'swarm_budget_usd', String(Math.max(0, settings.swarmBudgetUSD)));
+  }
+  if (settings.swarmRepairMax !== undefined) {
+    setSetting(db, 'swarm_repair_max', String(Math.max(1, Math.min(100, settings.swarmRepairMax))));
   }
   if (settings.debateMinConfidence !== undefined) {
     setSetting(db, 'debate_min_confidence', String(Math.max(0.5, Math.min(0.95, settings.debateMinConfidence))));
