@@ -105,44 +105,30 @@ const r3 = await runSuite('B2B 外包决策树', async (check) => {
   });
 });
 
-const r4 = await runSuite('B2B 外包契约全流程', async (check) => {
-  const { companyId: coA, agentId: agentA } = await setupCompany(uname('contract-A'));
-  const { companyId: coB, agentId: agentB } = await setupCompany(uname('contract-B'));
-  const { projectId } = await setupProject(coA, agentA, uname('contract-proj'));
+// 蓝图组织批次5：B2B 外包拆件退役——dispatch 不再创建公司间契约（按公司找乙方已删除）。
+// 契约状态机保留待改造为跨项目协议，冒烟不再覆盖契约全流程。
+const r4 = await runSuite('用工决策 internal 路径', async (check) => {
+  const { companyId: coA, agentId: agentA } = await setupCompany(uname('internal-A'));
+  const { companyId: coB } = await setupCompany(uname('internal-B'));
 
-  let contractId;
-  await check('显式指定乙方创建契约', async () => {
+  await check('dispatch 无能力要求 → internal 建议', async () => {
     const r = await api.post(`/api/companies/${coA}/outsource/dispatch`, {
-      sourceProjectId: projectId,
-      title: '契约测试', brief: '外包给指定乙方',
-      vendorCompanyId: coB,
-      autoDecide: false,
+      title: '冒烟决策', brief: '内部可做',
     });
-    assertStatus(r, 201, '创建契约');
-    contractId = r.body.contract.id;
-    assertEq(r.body.contract.state, 'pending', '初始 pending');
+    assertStatus(r, 200, 'dispatch');
+    assertEq(r.body.decision.path, 'internal', '无能力要求应 internal');
+    assertEq(r.body.contract, null, '不再产生契约');
   });
 
-  await check('乙方接受契约', async () => {
-    const r = await api.post(`/api/outsource/contracts/${contractId}/accept`, { vendorLiaisonAgentId: agentB });
-    assertStatus(r, 200, '接受');
-    assertEq(r.body.contract.state, 'in_progress', '接受后 in_progress');
-    assert(!!r.body.task, '创建了承接任务');
-    // 接受后创建了承接任务
-    assert(!!r.body.contract.outsourcedTaskId, '有 outsourcedTaskId');
-  });
-
-  await check('契约详情可查', async () => {
-    const r = await api.get(`/api/outsource/contracts/${contractId}`);
-    assertStatus(r, 200, '契约详情');
-    assertEq(r.body.id, contractId, 'id 一致');
-    assertEq(r.body.state, 'in_progress', '接受后 in_progress');
-  });
-
-  await check('取消契约（非终态可取消）', async () => {
-    const r = await api.post(`/api/outsource/contracts/${contractId}/cancel`, {});
-    assertStatus(r, 200, '取消');
-    assertEq(r.body.contract.state, 'cancelled', 'cancelled');
+  await check('dispatch 稀有能力 → recruit（另一工作台有能力也不外包）', async () => {
+    const r = await api.post(`/api/companies/${coA}/outsource/dispatch`, {
+      title: '冒烟招聘', brief: '需要稀有能力',
+      requiredCapabilityIds: [uname('rare-cap-2')],
+    });
+    assertStatus(r, 200, 'dispatch');
+    assertEq(r.body.decision.path, 'recruit', '应 recruit（跨工作台外包已退役）');
+    assert(!!r.body.decision.tempAgentId, '有 tempAgentId');
+    void coB; void agentA;
   });
 });
 

@@ -94,6 +94,9 @@ export function maybeTriggerAcceptanceReview(db: DB, completedTask: Task): Task 
   const proto = (completedTask.inputProtocol ?? {}) as Record<string, unknown>;
   if (proto.acceptanceReview) return null; // 验收任务自身不再触发验收
   if (proto.reason === 'outsourcing_review') return null; // 外包验收闭环自成体系，不叠加
+  // Review 修复 I3（终审补全）：外包承接/返工任务由外包验收闭环负责（交付标记 + 甲方 triggerAutoReview），
+  // 再叠验收员会形成乙方侧双重返工生成器，且与交付播报存在竞态。
+  if (proto.type === 'outsourcing' || proto.type === 'outsourcing_rework') return null;
   // 幂等：已派过验收（事件留痕）不再重复派
   const dispatched = db.prepare(
     "SELECT 1 FROM task_event WHERE task_id=? AND kind='acceptance_dispatched' LIMIT 1",

@@ -78,10 +78,10 @@ function inspectCompanyTemplateHealth(db: DB, companyId: string): Candidate[] {
   const findings: Candidate[] = [];
   let installation: ReturnType<typeof getCompanyTemplateInstallation> | null = null;
   try { installation = getCompanyTemplateInstallation(db, companyId); } catch {
-    findings.push(makeCandidate('template_installation_missing', 'warning', '公司缺少模板快照',
-      '这家公司没有可追溯的模板安装记录。', '无法判断字段负责人、能力绑定和后续模板升级差异。',
-      '公司可能由旧版本创建，或模板安装过程没有完成。', '可以继续使用；建议重新生成一份可编辑蓝图后再确认迁移。',
-      'installation', { kind: 'open_module', label: '查看公司设置', href: `/companies/${companyId}?view=settings` }));
+    findings.push(makeCandidate('template_installation_missing', 'warning', '工作台缺少模板快照',
+      '这家工作台没有可追溯的模板安装记录。', '无法判断字段负责人、能力绑定和后续模板升级差异。',
+      '工作台可能由旧版本创建，或模板安装过程没有完成。', '可以继续使用；建议重新生成一份可编辑蓝图后再确认迁移。',
+      'installation', { kind: 'open_module', label: '查看工作台设置', href: `/companies/${companyId}?view=settings` }));
   }
 
   const agents = db.prepare('SELECT id, role FROM agent_definition WHERE company_id=?').all(companyId) as Array<{ id: string; role: string }>;
@@ -93,9 +93,9 @@ function inspectCompanyTemplateHealth(db: DB, companyId: string): Candidate[] {
         const ownerRole = field.maintenance.ownerRoleKey;
         if (roles.has(ownerRole)) continue;
         findings.push(makeCandidate('field_owner_missing', 'blocking', '业务字段缺少负责人',
-          `${record.label}·${field.label}原本由 ${ownerRole} 维护，但当前公司没有这个岗位。`,
-          '相关信息可能停止更新，其他员工会引用到过期内容。', '模板快照中的字段负责人和当前员工岗位已经不一致。',
-          '恢复该岗位，或在业务信息中心把字段转交给现有员工。', `field:${record.key}.${field.key}:${ownerRole}`,
+          `${record.label}·${field.label}原本由 ${ownerRole} 维护，但当前工作台没有这个岗位。`,
+          '相关信息可能停止更新，其他智能体会引用到过期内容。', '模板快照中的字段负责人和当前智能体岗位已经不一致。',
+          '恢复该岗位，或在业务信息中心把字段转交给现有智能体。', `field:${record.key}.${field.key}:${ownerRole}`,
           { kind: 'open_employee', label: '配置岗位负责人', href: `/companies/${companyId}?view=team` }));
       }
     }
@@ -104,25 +104,25 @@ function inspectCompanyTemplateHealth(db: DB, companyId: string): Candidate[] {
   const installedSkills = new Set(listBundledBusinessSkillIds());
   for (const binding of listCapabilityBindings(db, companyId)) {
     if (binding.employeeId && !agentIds.has(binding.employeeId)) {
-      findings.push(makeCandidate('capability_owner_missing', 'blocking', '能力绑定缺少员工', `${binding.purpose}仍指向已不存在的员工。`,
-        '相关 Task 无法确定应由谁加载能力。', '员工被移除或绑定没有随岗位调整。', '把这项能力重新绑定到现有员工。',
-        `binding-owner:${binding.id}`, { kind: 'open_employee', label: '重新绑定员工', href: `/companies/${companyId}?view=team` }));
+      findings.push(makeCandidate('capability_owner_missing', 'blocking', '能力绑定缺少智能体', `${binding.purpose}仍指向已不存在的智能体。`,
+        '相关 Task 无法确定应由谁加载能力。', '智能体被移除或绑定没有随岗位调整。', '把这项能力重新绑定到现有智能体。',
+        `binding-owner:${binding.id}`, { kind: 'open_employee', label: '重新绑定智能体', href: `/companies/${companyId}?view=team` }));
     }
     for (const skillId of binding.skillIds) {
       if (installedSkills.has(skillId)) continue;
       findings.push(makeCandidate('bound_skill_missing', 'warning', '绑定的 Skill 不可用', `${binding.purpose}引用的 ${skillId} 当前不可用。`,
-        '员工仍能执行，但方法约束和输出稳定性可能下降。', `模板能力 ${binding.capabilityId} 绑定了本机不存在的 Skill。`,
+        '智能体仍能执行，但方法约束和输出稳定性可能下降。', `模板能力 ${binding.capabilityId} 绑定了本机不存在的 Skill。`,
         '更换为已安装 Skill，或移除这项推荐绑定。', `skill:${binding.id}:${skillId}`,
-        { kind: 'open_employee', label: '配置员工能力', href: `/companies/${companyId}?view=team` }));
+        { kind: 'open_employee', label: '配置智能体能力', href: `/companies/${companyId}?view=team` }));
     }
-    // 能力中心软诊断:推荐工具不可用(非阻断,尊重员工自有工具)
+    // 能力中心软诊断:推荐工具不可用(非阻断,尊重智能体自有工具)
     for (const toolId of binding.recommendedToolIds) {
       const tool = getTool(db, toolId);
       if (tool && tool.isActive) continue;
       findings.push(makeCandidate('capability_tool_unavailable', 'info', '推荐工具暂不可用',
         `${binding.purpose}推荐的工具 ${toolId} 当前不在工具档案库或已停用。`,
-        '员工仍可使用自己已有的相似工具;仅缺少平台推荐实现。', `能力 ${binding.capabilityId} 的推荐工具 ${toolId} 不存在或已停用。`,
-        tool ? '在工具管理页启用该工具,或让员工使用自有工具。' : '确认工具档案 ID 是否正确,或在 tools/ 目录补充该档案。',
+        '智能体仍可使用自己已有的相似工具;仅缺少平台推荐实现。', `能力 ${binding.capabilityId} 的推荐工具 ${toolId} 不存在或已停用。`,
+        tool ? '在工具管理页启用该工具,或让智能体使用自有工具。' : '确认工具档案 ID 是否正确,或在 tools/ 目录补充该档案。',
         `tool:${binding.id}:${toolId}`,
         { kind: 'open_module', label: '工具管理', href: '/settings?view=tools' }));
     }
@@ -134,10 +134,10 @@ function inspectCompanyTemplateHealth(db: DB, companyId: string): Candidate[] {
           const manifest = getExecutorManifest(profile.manifestId);
           if (manifest.kind !== binding.requiresExecutorKind) {
             findings.push(makeCandidate('capability_executor_mismatch', 'warning', '能力要求的执行器类型不匹配',
-              `${binding.purpose}需要 ${binding.requiresExecutorKind} 型执行器,但该员工绑定的是 ${manifest.kind} 型(${manifest.displayName})。`,
+              `${binding.purpose}需要 ${binding.requiresExecutorKind} 型执行器,但该智能体绑定的是 ${manifest.kind} 型(${manifest.displayName})。`,
               '该能力依赖的工具(API 型无法跑 bash 装/调本地工具,CLI 型受限)可能无法正常执行。',
               `能力 ${binding.capabilityId} 声明 requiresExecutorKind=${binding.requiresExecutorKind}。`,
-              '为该员工改绑匹配的执行器,或移除该能力绑定。',
+              '为该智能体改绑匹配的执行器,或移除该能力绑定。',
               `executor-kind:${binding.id}:${profile.manifestId}`,
               { kind: 'open_employee', label: '调整执行器', href: `/companies/${companyId}?view=team` }));
           }
@@ -158,8 +158,8 @@ function inspectCompanyTemplateHealth(db: DB, companyId: string): Candidate[] {
     const projectTaskExists = projectTaskId ? Boolean(db.prepare("SELECT 1 FROM project_task WHERE id=? AND state='active'").get(projectTaskId)) : false;
     if ((!assigneeId || agentIds.has(assigneeId)) && projectTaskExists) continue;
     findings.push(makeCandidate('trigger_target_missing', 'warning', '计划任务目标已失效',
-      `计划 ${trigger.id} 指向不存在的员工或已关闭的项目任务。`, '到期后计划无法正常派发，可能造成例行维护遗漏。',
-      '员工、项目任务或计划配置发生变化后，触发目标没有同步更新。', '重新选择执行员工和有效项目任务，或停用该计划。',
+      `计划 ${trigger.id} 指向不存在的智能体或已关闭的项目任务。`, '到期后计划无法正常派发，可能造成例行维护遗漏。',
+      '智能体、项目任务或计划配置发生变化后，触发目标没有同步更新。', '重新选择执行智能体和有效项目任务，或停用该计划。',
       `trigger:${trigger.id}`, { kind: 'open_workflow', label: '检查计划与流程', href: `/companies/${companyId}/workflows/main` }));
   }
   return findings;

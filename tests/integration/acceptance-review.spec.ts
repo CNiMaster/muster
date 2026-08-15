@@ -266,6 +266,18 @@ describe('Review 修复 I2/I3：轮回上限与闭环排除', () => {
     expect(maybeTriggerAcceptanceReview(db, task)).toBeNull();
   });
 
+  it('Review 终审 I2：外包承接/返工任务不触发验收员（外包闭环自负）', () => {
+    const { lead, p } = seed();
+    for (const type of ['outsourcing', 'outsourcing_rework']) {
+      const task = createTask(db, {
+        projectId: p.id, assigneeAgentId: lead.id, title: `承接任务-${type}`,
+        acceptanceCriteria: CRITERIA.map((c) => ({ ...c })),
+        inputProtocol: { type, contractId: 'oc_test' },
+      });
+      expect(maybeTriggerAcceptanceReview(db, task)).toBeNull();
+    }
+  });
+
   it('验收任务带显式 instruction（判定契约 + 标准文本）', () => {
     const { lead, p } = seed();
     const source = taskWithCriteria(p.id, lead.id);
@@ -288,5 +300,76 @@ describe('parseAcceptanceVerdict 解析', () => {
 
   it('无法解析 → null', () => {
     expect(parseAcceptanceVerdict('完成')).toBeNull();
+  });
+});
+
+describe('引擎级回归（Review 终审 C1：完成行快照）', () => {
+  it('经 TaskEngine 完整跑通：源任务完成 → 派验收 → 验收员判定 → acceptance_passed（非 unparseable）', async () => {
+    const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const path = await import('node:path');
+    const { createNovelCompany } = await import('../../src/server/domain/novel-template');
+    const { createProject } = await import('../../src/server/domain/project');
+    const { ensurePrimaryThread } = await import('../../src/server/domain/thread');
+    const { clockIn } = await import('../../src/server/domain/company');
+    const { TaskEngine } = await import('../../src/server/task-engine/engine');
+    const { FakeExecutor } = await import('../../src/server/task-engine/fake-executor');
+    const { ensureGitRepo, commitAll } = await import('../../src/server/worktree/manager');
+    const { listTaskEvents } = await import('../../src/server/domain/task-event');
+
+    const projectRoot = mkdtempSync(path.join(tmpdir(), 'muster-accept-'));
+    try {
+      const r = createNovelCompany(db, { name: 'co' });
+      clockIn(db, r.company.id);
+      const project = createProject(db, {
+        companyId: r.company.id, name: 'novel', rootDir: projectRoot,
+        firstAgentId: r.agents.lead.id, initialState: 'active',
+      });
+      ensureGitRepo(projectRoot);
+      writeFileSync(path.join(projectRoot, 'README.md'), '# novel\n');
+      commitAll(projectRoot, 'baseline');
+
+      const leadThread = ensurePrimaryThread(db, project.id, r.agents.lead.id);
+      const source = createTask(db, {
+        projectId: project.id, assigneeAgentId: r.agents.lead.id, title: '有标准的任务',
+        acceptanceCriteria: [{ id: 'ac_1', criterion: '产物存在' }],
+      });
+
+      const fake = new FakeExecutor().script([
+        {
+          writeFiles: { 'out/result.md': '# 成果\n' },
+          result: {
+            outcome: 'completed', summary: '产出完成',
+            outboundTasks: [], acceptanceMet: [{ id: 'ac_1', met: true }],
+            artifacts: [{ path: 'out/result.md', kind: 'markdown', operation: 'create' }],
+          },
+        },
+        {
+          writeFiles: { 'out/verdict.md': '# 判定\n' },
+          result: {
+            outcome: 'completed', summary: 'VERDICT=PASS\nCONFIDENCE=0.9\n产物存在，达标',
+            outboundTasks: [],
+            artifacts: [{ path: 'out/verdict.md', kind: 'markdown', operation: 'create' }],
+          },
+        },
+      ]);
+      const engine = new TaskEngine(db, fake);
+
+      // 第一泵：源任务完成（引擎用 fresh 行派验收）
+      await engine.pumpThread(leadThread.id);
+      const reviewTask = (db.prepare("SELECT id FROM task WHERE title LIKE '[验收]%'").get() as { id: string } | undefined);
+      expect(reviewTask).toBeDefined();
+      const officerId = (db.prepare('SELECT assignee_agent_id FROM task WHERE id=?').get(reviewTask!.id) as { assignee_agent_id: string }).assignee_agent_id;
+      const officerThread = ensurePrimaryThread(db, project.id, officerId);
+
+      // 第二泵：验收员完成判定
+      await engine.pumpThread(officerThread.id);
+
+      const events = listTaskEvents(db, source.id);
+      expect(events.some((e) => e.kind === 'acceptance_passed')).toBe(true);
+      expect(events.some((e) => e.kind === 'acceptance_escalated')).toBe(false);
+    } finally {
+      rmSync(projectRoot, { recursive: true, force: true });
+    }
   });
 });

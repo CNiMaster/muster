@@ -9,6 +9,7 @@ import { getEmploymentHealth } from '../src/server/domain/executor-health';
 import { createPermissionPolicy } from '../src/server/domain/permission';
 import { archiveProjectTask } from '../src/server/domain/project-task';
 import { confirmProjectLaunch, discoverProjectLaunchCapabilities } from '../src/server/domain/project-launch';
+import { updateProject } from '../src/server/domain/project';
 import { createTask } from '../src/server/domain/task';
 import { nowIso } from '../src/shared/utils';
 import { getCompanyTemplateInstallation, listCapabilityBindings } from '../src/server/domain/template-installation';
@@ -45,6 +46,8 @@ try {
   const launchBrief = { ...result.projectTask.launchBrief, expectedOutcome: result.projectTask.brief || '交付一个可运行的产品', requiredSkillIds: ['planning-and-task-breakdown'] };
   assert.equal(discoverProjectLaunchCapabilities(db, result.projectTask.id, launchBrief).state, 'ready_for_confirmation', '项目任务必须先生成能力发现快照');
   assert.equal(confirmProjectLaunch(db, result.projectTask.id, launchBrief).state, 'confirmed', '用户确认后才允许进入制作');
+  // 六阶段门禁上线后，项目必须 active 才能创建任务；验收脚本直接置 active（跳过准备流程逐项填充）
+  updateProject(db, result.project.id, { state: 'active' });
   const workOrder = createTask(db, { projectId: result.project.id, projectTaskId: result.projectTask.id, assigneeAgentId: result.employees[0]!.id, title: '完成验收工作单', requiredSkillIds: ['planning-and-task-breakdown'] });
   assert.equal(workOrder.projectTaskId, result.projectTask.id, '员工工作单必须属于首个项目任务');
   assert.equal(resolveTaskSkills(db, workOrder)[0]?.status, 'loaded', 'Task 要求的本地 Skill 必须按需加载');

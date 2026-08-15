@@ -870,6 +870,9 @@ export class TaskEngine {
       const approvalMatch=result.outcome==='blocked'?/审批请求\s+(approval_[A-Za-z0-9_-]+)/.exec(result.summary):null;
       if(approvalMatch){commitAll(worktreeInfo.path,`muster: approval checkpoint ${task.id}`,{excludePaths:resolutionContext?['.muster-conflicts']:[]});preserveWorktree=true;markTaskWaitingApproval(this.db,task.id,approvalMatch[1]!);updateThreadState(this.db,thread.id,'paused');return true;}
       completeTask(this.db, task.id, result);
+      // Review 修复 C1（终审）：completeTask 把 summary/artifacts/自评写回 DB 但返回新对象被丢弃——
+      // 后续验收类钩子必须用重新读取的新行，否则读到领取时快照（summary 恒为空 → 判定全部误升级）。
+      const completedTask = getTask(this.db, task.id);
 
       // 指挥系统批次4：评审中心返回 debateVerdict → 裁决落定（自动采纳/升级用户）
       if (
@@ -937,7 +940,7 @@ export class TaskEngine {
       if (result.outcome === 'completed') {
         try {
           const { handleOutsourcingReviewTaskCompleted } = await import('../domain/outsourcing-review');
-          handleOutsourcingReviewTaskCompleted(this.db, task);
+          handleOutsourcingReviewTaskCompleted(this.db, completedTask);
         } catch (e) {
           log.warn('outsourcing review completion handling failed', { taskId: task.id, err: e instanceof Error ? e.message : String(e) });
         }
@@ -946,7 +949,7 @@ export class TaskEngine {
       if (result.outcome === 'completed') {
         try {
           const { handleAcceptanceReviewTaskCompleted } = await import('../domain/acceptance-review');
-          handleAcceptanceReviewTaskCompleted(this.db, task);
+          handleAcceptanceReviewTaskCompleted(this.db, completedTask);
         } catch (e) {
           log.warn('acceptance review completion handling failed', { taskId: task.id, err: e instanceof Error ? e.message : String(e) });
         }
@@ -986,7 +989,7 @@ export class TaskEngine {
       if (result.outcome === 'completed') {
         try {
           const { maybeTriggerAcceptanceReview } = await import('../domain/acceptance-review');
-          const reviewTask = maybeTriggerAcceptanceReview(this.db, task);
+          const reviewTask = maybeTriggerAcceptanceReview(this.db, completedTask);
           if (reviewTask) {
             realtime.publish(makeLifecycleEvent('acceptance.review-triggered', {
               sourceTaskId: task.id,
