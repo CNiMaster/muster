@@ -75,8 +75,8 @@ export function ProjectPlansPage(): React.ReactElement {
 
   return <div className="project-plans-page">
     <header className="page-header plans-page-header">
-      <div><h1>计划与自动化</h1><p className="subtitle">定时产生员工工作单；谁接单、交给谁和谁验收由员工协作流程决定。</p></div>
-      {project?.companyId && <Link className="mu-btn mu-btn-subtle" to={`/companies/${project.companyId}/workflows/main`}>查看员工协作流程</Link>}
+      <div><h1>计划与自动化</h1><p className="subtitle">定时产生智能体工作单；谁接单、交给谁和谁验收由智能体协作流程决定。</p></div>
+      {project?.companyId && <Link className="mu-btn mu-btn-subtle" to={`/companies/${project.companyId}/workflows/main`}>查看智能体协作流程</Link>}
     </header>
 
     <Card title="新建定时工作" className="section">
@@ -87,7 +87,7 @@ export function ProjectPlansPage(): React.ReactElement {
             <option value="">请选择</option>
             {activeProjectTasks.map((item) => <option key={item.id} value={item.id}>#{item.seq} {item.title}</option>)}
           </Select></Field>
-          <Field label="执行员工"><Select value={assigneeId} onChange={(event) => setAssigneeId(event.target.value)}>
+          <Field label="执行智能体"><Select value={assigneeId} onChange={(event) => setAssigneeId(event.target.value)}>
             <option value="">交给第一负责人分配</option>
             {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name} · {agent.role}</option>)}
           </Select></Field>
@@ -113,7 +113,7 @@ export function ProjectPlansPage(): React.ReactElement {
               <Button size="sm" variant="ghost" onClick={() => deleteAutomation.mutate({ projectId, triggerId: automation.id })}>删除</Button>
             </div>
           </article>;
-        })}</div> : <p className="muted">还没有自动化计划。临时工作仍可直接派给员工。</p>}
+        })}</div> : <p className="muted">还没有自动化计划。临时工作仍可直接派给智能体。</p>}
       </Card>
 
       <Card title="任务领取池" actions={<Link to={`/projects/${projectId}/tasks`}>完整清单</Link>}>

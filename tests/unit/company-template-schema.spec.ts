@@ -8,7 +8,7 @@ function makeBlueprint(): Record<string, unknown> {
     name: '证据实验室',
     goal: '持续产出可追溯的研究结论',
     summary: {
-      positioning: '面向复杂问题的研究公司',
+      positioning: '面向复杂问题的研究工作台',
       deliverables: ['研究报告'],
       operatingModel: '研究员收集证据，负责人审核结论',
     },

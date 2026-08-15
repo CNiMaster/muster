@@ -1,13 +1,13 @@
 /**
- * 工作台改版 批次 2b：公司标签栏（浏览器式）。
+ * 工作台改版 批次 2b：工作台标签栏（浏览器式）。
  *
- * 顶部常驻（所有路由）：公司标签切换 + 新建 + 恢复运营 + 全局项（审批带计数 / 更多 / 设置 / 退出）。
+ * 顶部常驻（所有路由）：工作台标签切换 + 新建 + 恢复运营 + 全局项（审批带计数 / 更多 / 设置 / 退出）。
  *
  * L1 生命周期模型（程序代管）：
- * - 公司状态由程序规划：运行中/收尾中/已暂停；关闭软件时优雅下班（先完成手头任务再退出）。
- * - 上次优雅关机时在运行的公司带「↻」标记，顶部提供「▶ 恢复运营（N）」一键续跑；
- *   用户手动暂停的公司只显示「已暂停」，单独手动启动。
- * - 退出按钮 → 进度动画（xx公司正在下班…✅）→ 全部完成 → "工作已保存，祝您生意兴隆" → 关闭。
+ * - 工作台状态由程序规划：运行中/收尾中/已暂停；关闭软件时优雅下班（先完成手头任务再退出）。
+ * - 上次优雅关机时在运行的工作台带「↻」标记，顶部提供「▶ 恢复运营（N）」一键续跑；
+ *   用户手动暂停的工作台只显示「已暂停」，单独手动启动。
+ * - 退出按钮 → 进度动画（xx工作台正在下班…✅）→ 全部完成 → "工作已保存，祝您生意兴隆" → 关闭。
  *
  * 标签排序：固定（创建序），状态变化绝不改变位置——只改样式表达（暂停=整体变灰）。
  */
@@ -25,7 +25,7 @@ const ORDER_STORAGE_KEY = 'muster:company-tab-order';
 
 type ShutdownPhase = 'idle' | 'confirm' | 'draining' | 'bye';
 
-/** 读取用户拖拽排好的公司顺序（本地持久化）。 */
+/** 读取用户拖拽排好的工作台顺序（本地持久化）。 */
 function readTabOrder(): string[] {
   try {
     const raw = localStorage.getItem(ORDER_STORAGE_KEY);
@@ -55,7 +55,7 @@ export function CompanyTabBar(): React.ReactElement {
   };
 
   const active = companies.filter((c) => !c.archivedAt);
-  // 拖拽排序：用户排过的在前（保持顺序），新公司按创建序追加；状态变化永不改位置
+  // 拖拽排序：用户排过的在前（保持顺序），新工作台按创建序追加；状态变化永不改位置
   const [tabOrder, setTabOrder] = useState<string[]>(readTabOrder);
   const [dragId, setDragId] = useState<string | null>(null);
   const ordered = active.filter((c) => tabOrder.includes(c.id)).sort((a, b) => tabOrder.indexOf(a.id) - tabOrder.indexOf(b.id));
@@ -131,7 +131,7 @@ export function CompanyTabBar(): React.ReactElement {
         <span className="brand-seal" aria-hidden="true">M</span>
       </NavLink>
 
-      <nav className="company-tabs" aria-label="公司切换">
+      <nav className="company-tabs" aria-label="工作台切换">
         {visible.map((company) => (
           <NavLink
             key={company.id}
@@ -154,7 +154,7 @@ export function CompanyTabBar(): React.ReactElement {
         ))}
         {overflow.length > 0 && (
           <details className="tab-overflow">
-            <summary aria-label="更多公司">▾</summary>
+            <summary aria-label="更多工作台">▾</summary>
             <div className="tab-overflow-menu">
               {overflow.map((company) => (
                 <NavLink key={company.id} to={`/companies/${company.id}`} className={`company-tab is-overflow ${company.id === currentCompanyId ? 'is-active' : ''} ${company.state === 'off' ? 'is-paused' : ''}`}>
@@ -168,13 +168,13 @@ export function CompanyTabBar(): React.ReactElement {
         )}
         {pausedCount > 0 && (
           <button type="button" className="tabbar-resume" onClick={() => resume.mutate(undefined, {
-            onSuccess: (r: { resumed: number }) => toast('success', r.resumed > 0 ? `已恢复 ${r.resumed} 家公司运营` : '没有需要恢复的公司'),
+            onSuccess: (r: { resumed: number }) => toast('success', r.resumed > 0 ? `已恢复 ${r.resumed} 家工作台运营` : '没有需要恢复的工作台'),
             onError: (error) => toast('error', (error as Error).message),
           })}>
             ▶ 恢复运营（{pausedCount}）
           </button>
         )}
-        <NavLink to="/companies/wizard" className="company-tab company-tab-new" aria-label="新建公司">＋</NavLink>
+        <NavLink to="/companies/wizard" className="company-tab company-tab-new" aria-label="新建工作台">＋</NavLink>
       </nav>
 
       <nav className="tabbar-global" aria-label="全局入口">
@@ -184,9 +184,8 @@ export function CompanyTabBar(): React.ReactElement {
         <details className="tab-overflow">
           <summary>更多</summary>
           <div className="tab-overflow-menu">
-            <NavLink to="/companies">公司名册</NavLink>
-            <NavLink to="/agents">员工库</NavLink>
-            <NavLink to="/outsourcing">外包</NavLink>
+            <NavLink to="/companies">工作台名册</NavLink>
+            <NavLink to="/agents">智能体库</NavLink>
           </div>
         </details>
         <NavLink to="/settings">设置</NavLink>
@@ -198,7 +197,7 @@ export function CompanyTabBar(): React.ReactElement {
           {phase === 'confirm' && (
             <div className="shutdown-dialog">
               <h2>退出并保存所有工作？</h2>
-              <p className="muted">所有公司会先完成手头任务再下班，之后安全退出。</p>
+              <p className="muted">所有工作台会先完成手头任务再下班，之后安全退出。</p>
               <div className="settings-primary-actions">
                 <Button variant="ghost" onClick={() => setPhase('idle')}>取消</Button>
                 <Button loading={beginShutdown.isPending} onClick={() => void doExit()}>退出</Button>

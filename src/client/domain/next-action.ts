@@ -21,9 +21,9 @@ export function deriveNextAction(input: NextActionInput): NextAction {
   if (input.companies.length === 0) {
     return {
       kind: 'create-company',
-      title: '先创建你的公司',
-      description: '选择一个公司模板，Muster 会帮你准备团队和第一套工作流程。',
-      label: '开始创建公司',
+      title: '先创建你的工作台',
+      description: '选择一个工作台模板，Muster 会帮你准备团队和第一套工作流程。',
+      label: '开始创建工作台',
       href: '/companies/wizard',
     };
   }
@@ -44,7 +44,7 @@ export function deriveNextAction(input: NextActionInput): NextAction {
     return {
       kind: 'handle-attention',
       title: `${input.attentionCount} 项工作需要你确认`,
-      description: '员工正在等待补充信息或处理阻塞，确认后才能继续。',
+      description: '智能体正在等待补充信息或处理阻塞，确认后才能继续。',
       label: '处理待确认',
       href: `/projects/${project.id}/tasks`,
     };
@@ -55,7 +55,7 @@ export function deriveNextAction(input: NextActionInput): NextAction {
     return {
       kind: 'fix-runtime',
       title: '先让团队准备好',
-      description: `${input.blockedEmployeeCount} 位员工还不能运行。完成联通后再启动公司。`,
+      description: `${input.blockedEmployeeCount} 位智能体还不能运行。完成联通后再启动工作台。`,
       label: '修复运行配置',
       href: `/companies/${company.id}?tab=team`,
     };
@@ -65,8 +65,8 @@ export function deriveNextAction(input: NextActionInput): NextAction {
     return {
       kind: 'start-company',
       title: '团队已经就绪',
-      description: '启动公司后，员工才会领取工作单。',
-      label: '启动公司',
+      description: '启动工作台后，智能体才会领取工作单。',
+      label: '启动工作台',
       href: `/companies/${company.id}`,
     };
   }
@@ -75,7 +75,7 @@ export function deriveNextAction(input: NextActionInput): NextAction {
     return {
       kind: 'continue-project-task',
       title: '继续当前项目任务',
-      description: '目标和上下文已经准备好，可以发布员工工作单。',
+      description: '目标和上下文已经准备好，可以发布智能体工作单。',
       label: '打开任务工作区',
       href: input.projectTaskId ? `/projects/${project.id}?projectTask=${input.projectTaskId}#project-tasks` : `/projects/${project.id}#project-tasks`,
     };

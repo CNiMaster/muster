@@ -1,5 +1,7 @@
 /**
- * B2B 外包决策树测试：内部能做 → 外包 → 招聘 三路径。
+ * 用工决策树测试（蓝图组织批次5：B2B 拆件后——内部 / 临时工选拔 两路径）。
+ * "跨公司找乙方"（findVendorCompany / outsource 路径）已退役：
+ * 能力缺口统一走临时工选拔（组队/复用路径），不再产生公司对公司契约。
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { makeTestDb } from './setup';
@@ -9,14 +11,13 @@ import { createAgent } from '../../src/server/domain/agent';
 import { nowIso, shortId } from '../../src/shared/utils';
 import {
   hasInternalCapability,
-  findVendorCompany,
   runOutsourcingDecisionTree,
 } from '../../src/server/domain/outsourcing-decision';
 
 let tdb: ReturnType<typeof makeTestDb>;
 let db: DB;
 let companyA: string; // 甲方
-let companyB: string; // 乙方（设计公司）
+let companyB: string; // 另一工作台（拆件后不再作为"乙方"被扫描）
 let agentA: string;
 let agentB: string;
 
@@ -55,7 +56,6 @@ beforeEach(() => {
     isInspector: false,
     stance: '',
   }).id;
-  // clock-in 让公司上线
   db.prepare("UPDATE company SET state='online', first_agent_id=? WHERE id=?").run(agentA, companyA);
   db.prepare("UPDATE company SET state='online', first_agent_id=? WHERE id=?").run(agentB, companyB);
   db.prepare("UPDATE agent_definition SET availability_state='online' WHERE id IN (?,?)").run(agentA, agentB);
@@ -81,7 +81,7 @@ describe('决策树：hasInternalCapability', () => {
   });
 
   it('公司内无员工绑定该能力 → false', () => {
-    bindCapability(companyB, agentB, 'game-art-design'); // 只有乙方有
+    bindCapability(companyB, agentB, 'game-art-design'); // 只有另一工作台有
     expect(hasInternalCapability(db, companyA, ['game-art-design'])).toBe(false);
   });
 
@@ -90,22 +90,8 @@ describe('决策树：hasInternalCapability', () => {
   });
 });
 
-describe('决策树：findVendorCompany', () => {
-  it('找到具备能力的乙方公司（排除自身）', () => {
-    bindCapability(companyB, agentB, 'game-art-design');
-    const vendor = findVendorCompany(db, companyA, ['game-art-design']);
-    expect(vendor).not.toBeNull();
-    expect(vendor!.id).toBe(companyB);
-  });
-
-  it('系统内无公司具备该能力 → null', () => {
-    const vendor = findVendorCompany(db, companyA, ['nonexistent-cap']);
-    expect(vendor).toBeNull();
-  });
-});
-
-describe('决策树：runOutsourcingDecisionTree 三路径', () => {
-  it('路径 internal：甲方内部有能力', () => {
+describe('决策树：两路径（批次5 拆件后）', () => {
+  it('路径 internal：工作台内部有能力', () => {
     bindCapability(companyA, agentA, 'game-art-design');
     const decision = runOutsourcingDecisionTree(db, companyA, ['game-art-design']);
     expect(decision.path).toBe('internal');
@@ -113,18 +99,16 @@ describe('决策树：runOutsourcingDecisionTree 三路径', () => {
     expect(decision.missingCapabilityIds).toEqual([]);
   });
 
-  it('路径 outsource：甲方无能力，乙方有', () => {
+  it('另一工作台有能力：不再走外包，直接走临时工选拔（recruit）', () => {
     bindCapability(companyB, agentB, 'game-art-design');
     const decision = runOutsourcingDecisionTree(db, companyA, ['game-art-design']);
-    expect(decision.path).toBe('outsource');
-    expect(decision.vendorCompany?.id).toBe(companyB);
+    expect(decision.path).toBe('recruit');
     expect(decision.missingCapabilityIds).toEqual(['game-art-design']);
   });
 
-  it('路径 recruit：系统内均无能力', () => {
+  it('系统内均无能力：recruit', () => {
     const decision = runOutsourcingDecisionTree(db, companyA, ['rare-capability']);
     expect(decision.path).toBe('recruit');
-    expect(decision.vendorCompany).toBeUndefined();
     expect(decision.missingCapabilityIds).toEqual(['rare-capability']);
   });
 });

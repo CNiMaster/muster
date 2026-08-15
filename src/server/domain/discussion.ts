@@ -545,3 +545,56 @@ export function closeDiscussion(db: DB, discussionId: string): Discussion {
   releaseDiscussionMirrors(db, discussionId);
   return getDiscussion(db, discussionId);
 }
+
+/**
+ * 蓝图组织批次4：用户主动发起探讨。
+ *
+ * 机制与智能体发起完全同构（分身参会、轮转发言、纪要回写项目群聊）；
+ * 场景固定 brainstorm（探索性议题，任何人可发起，结论落为建议 task）。
+ * 选择面规则：一次性执行体（系统隐形岗、hidden 任职的蜂群工蜂/辩手）不可被选为参与者——
+ * 数量会爆炸的瞬态执行体不进用户的选择面，它们只受直属调度控制。
+ */
+export function startUserDiscussion(db: DB, input: {
+  projectId: string;
+  topic: string;
+  participantAgentIds: string[];
+  context?: Record<string, unknown>;
+  maxTurns?: number;
+}): { discussion: Discussion; turnTaskId: string } {
+  const project = getProject(db, input.projectId);
+  for (const id of input.participantAgentIds) {
+    const agent = getAgent(db, id);
+    if (agent.companyId !== project.companyId) {
+      throw new AppError(ErrorCode.UNAUTHORIZED, `员工 ${id} 不属于项目所在公司`);
+    }
+    if (agent.isSystem) {
+      throw new AppError(ErrorCode.VALIDATION, `系统隐形岗（${agent.name}）不可参与探讨`);
+    }
+    const employment = db.prepare('SELECT hidden FROM company_employee WHERE legacy_agent_id=?').get(id) as
+      | { hidden: number }
+      | undefined;
+    if (employment?.hidden === 1) {
+      throw new AppError(ErrorCode.VALIDATION, `一次性执行体（${agent.name}）不可参与探讨：蜂群工蜂/辩手不进选择面，由其直属调度控制`);
+    }
+  }
+  const discussion = createDiscussion(db, {
+    projectId: input.projectId,
+    topic: input.topic,
+    participantAgentIds: input.participantAgentIds,
+    context: { ...(input.context ?? {}), userInitiated: true },
+    maxTurns: input.maxTurns,
+    scenario: 'brainstorm',
+  });
+  const started = startDiscussion(db, discussion.id);
+  // 开场播报到项目群聊：用户能看到探讨已开始、谁在参与（纪要结束时也会回写）。
+  postSystemMessage(db, {
+    scopeKind: 'project',
+    scopeId: input.projectId,
+    role: 'system',
+    author: 'user',
+    content: `[探讨开始] ${input.topic}\n参与者：${input.participantAgentIds
+      .map((id) => { try { return getAgent(db, id).name; } catch { return id; } })
+      .join('、')}`,
+  });
+  return started;
+}

@@ -29,8 +29,8 @@ function scheduleLabel(automation: { intervalMs: number | null; scheduleKind: 'i
 }
 
 /**
- * 公司级定时自动化（指挥系统批次1）：不绑定项目任务，到期派发给第一负责人
- * （任务载体 = 公司最早项目，与公司对话派发一致）。上一次没跑完本轮自动跳过。
+ * 工作台级定时自动化（指挥系统批次1）：不绑定项目任务，到期派发给第一负责人
+ * （任务载体 = 工作台最早项目，与工作台对话派发一致）。上一次没跑完本轮自动跳过。
  */
 export function CompanyAutomation({ companyId }: { companyId: string }): React.ReactElement {
   const { data: automations = [] } = useCompanyAutomations(companyId);
@@ -48,15 +48,15 @@ export function CompanyAutomation({ companyId }: { companyId: string }): React.R
         ? { companyId, title: title.trim(), timeOfDay }
         : { companyId, title: title.trim(), intervalMinutes: Number(intervalMinutes) },
       {
-        onSuccess: () => { setTitle(''); toast('success', '公司级计划已创建'); },
+        onSuccess: () => { setTitle(''); toast('success', '工作台级计划已创建'); },
         onError: (error) => toast('error', (error as Error).message),
       },
     );
   };
 
-  return <Card title="公司自动化" actions={<Badge>{automations.length}</Badge>}>
+  return <Card title="工作台自动化" actions={<Badge>{automations.length}</Badge>}>
     <div className="schedule-composer">
-      <Field label="要定期完成什么" hint="公司级计划不绑定具体项目任务，到期派给第一负责人统筹。">
+      <Field label="要定期完成什么" hint="工作台级计划不绑定具体项目任务，到期派给第一负责人统筹。">
         <Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="例如：汇总昨日各项目进展，给我一份日报" />
       </Field>
       <div className="schedule-composer-grid">
@@ -67,7 +67,7 @@ export function CompanyAutomation({ companyId }: { companyId: string }): React.R
         {intervalMinutes === DAILY_MODE && <Field label="时刻（HH:mm，服务器时区）"><Input type="time" value={timeOfDay} onChange={(event) => setTimeOfDay(event.target.value)} /></Field>}
       </div>
       <div className="schedule-composer-action">
-        <span>上一次没跑完时本轮自动跳过；公司下班期间到期的工作保留到上班后补发。</span>
+        <span>上一次没跑完时本轮自动跳过；工作台下班期间到期的工作保留到上班后补发。</span>
         <Button onClick={submit} loading={createSchedule.isPending} disabled={!title.trim() || (intervalMinutes === DAILY_MODE && !timeOfDay)}>创建计划</Button>
       </div>
     </div>
@@ -84,6 +84,6 @@ export function CompanyAutomation({ companyId }: { companyId: string }): React.R
           <Button size="sm" variant="ghost" onClick={() => deleteAutomation.mutate({ companyId, triggerId: automation.id })}>删除</Button>
         </div>
       </article>;
-    })}</div> : <p className="muted">还没有公司级计划。项目级的定时工作请在各项目的「计划与自动化」页配置。</p>}
+    })}</div> : <p className="muted">还没有工作台级计划。项目级的定时工作请在各项目的「计划与自动化」页配置。</p>}
   </Card>;
 }

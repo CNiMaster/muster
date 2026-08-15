@@ -1,6 +1,6 @@
 /**
- * 业务审批队列页：统一处理所有公司的待审批业务产物。
- * 按公司分组，每条用 BusinessReviewPanel 渲染对应内容，批准/打回（带反馈）。
+ * 业务审批队列页：统一处理所有工作台的待审批业务产物。
+ * 按工作台分组，每条用 BusinessReviewPanel 渲染对应内容，批准/打回（带反馈）。
  */
 import type React from 'react';
 import { useMemo, useState } from 'react';
@@ -35,7 +35,7 @@ export function BusinessReviewPage(): React.ReactElement {
   const doDecide = (review: BusinessReview, decision: 'approved' | 'rejected' | 'changes_requested'): void => {
     const feedback = feedbackMap[review.id]?.trim();
     if ((decision === 'rejected' || decision === 'changes_requested') && !feedback) {
-      toast('error', '打回请填写反馈，员工才知道怎么改');
+      toast('error', '打回请填写反馈，智能体才知道怎么改');
       return;
     }
     decide.mutate(
@@ -68,7 +68,7 @@ export function BusinessReviewPage(): React.ReactElement {
 
       {!isLoading && reviews.length === 0 && (
         <Card className="section">
-          <EmptyState icon={Icons.empty} title="没有待审批的业务产物" hint="员工提交素材、成品、人物、功法等产物后，会出现在这里等待你确认。" />
+          <EmptyState icon={Icons.empty} title="没有待审批的业务产物" hint="智能体提交素材、成品、人物、功法等产物后，会出现在这里等待你确认。" />
         </Card>
       )}
 

@@ -7,7 +7,7 @@
  *   3. API 接入：填表单创建 API 执行器 + 测试；可跳过，之后随时可配。
  *   4. 完成：进入工作台。
  *
- * 显示条件：服务端 setup_wizard_done 未标记 且 尚无公司。完成后不再弹出。
+ * 显示条件：服务端 setup_wizard_done 未标记 且 尚无工作台。完成后不再弹出。
  */
 import type React from 'react';
 import { useEffect, useState } from 'react';
@@ -183,7 +183,7 @@ export function FirstRunWizard(): React.ReactNode {
     }
   };
 
-  /** 步骤 4：完成引导（优化③：直接接续到公司创建，合成一条流）。 */
+  /** 步骤 4：完成引导（优化③：直接接续到工作台创建，合成一条流）。 */
   const handleFinish = async (): Promise<void> => {
     setFinishing(true);
     try {
@@ -206,7 +206,7 @@ export function FirstRunWizard(): React.ReactNode {
         <header className="first-run-head">
           <span className="first-run-kicker">MUSTER · 首次启动</span>
           <h1>欢迎使用 Muster</h1>
-          <p className="muted">先完成几个简单设置，就能开始组建你的 Agent 公司。</p>
+          <p className="muted">先完成几个简单设置，就能开始组建你的 Agent 工作台。</p>
         </header>
 
         <ol className="first-run-steps" aria-label="引导步骤">
@@ -222,7 +222,7 @@ export function FirstRunWizard(): React.ReactNode {
           {step === 0 && (
             <div className="form-stack">
               <h2>1. 程序目录</h2>
-              <p className="muted">你的公司文件（项目、产物、工作记录）存放在哪里？</p>
+              <p className="muted">你的工作台文件（项目、产物、工作记录）存放在哪里？</p>
               <div className="first-run-option">
                 <strong>使用推荐位置</strong>
                 <code>{defaultDir}</code>
@@ -232,7 +232,7 @@ export function FirstRunWizard(): React.ReactNode {
               <div className="first-run-option">
                 <strong>自定义位置</strong>
                 <p className="muted" style={{ fontSize: 12 }}>
-                  输入一个文件夹路径。若该文件夹为空或不存在，Muster 直接用它存放公司文件；
+                  输入一个文件夹路径。若该文件夹为空或不存在，Muster 直接用它存放工作台文件；
                   若已有其他文件，Muster 会在其中新建 <code>MusterWorkspace</code> 子文件夹，不打扰你的现有内容。
                 </p>
                 <div className="settings-field-grid">
@@ -343,13 +343,13 @@ export function FirstRunWizard(): React.ReactNode {
             </div>
           )}
 
-          {/* 步骤 4：完成（优化③：接续到公司创建） */}
+          {/* 步骤 4：完成（优化③：接续到工作台创建） */}
           {step === 3 && (
             <div className="form-stack">
               <h2>4. 完成</h2>
-              <p className="muted">环境已就绪，接下来选一个模板组建你的第一家公司（一键开跑）。</p>
+              <p className="muted">环境已就绪，接下来选一个模板组建你的第一家工作台（一键开跑）。</p>
               <div className="settings-primary-actions">
-                <Button onClick={() => void handleFinish()} loading={finishing}>创建第一家公司 →</Button>
+                <Button onClick={() => void handleFinish()} loading={finishing}>创建第一家工作台 →</Button>
               </div>
             </div>
           )}

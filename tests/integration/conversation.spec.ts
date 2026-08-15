@@ -1,7 +1,7 @@
 /**
  * 阶段 B 测试：对话窗口 domain
  - 用户消息派给第一负责人 Task（project scope）
- - company scope 无项目时不派 Task，仅记录消息
+ - company scope 落收件箱项目（蓝图组织批次4d：随手问载体，自动创建、不借用业务项目）
  - 消息按时间排序
  - @提及解析
  */
@@ -45,21 +45,28 @@ describe('conversation messages', () => {
     expect(tasks.some((t) => t.id === task!.id)).toBe(true);
   });
 
-  it('company scope 无项目时只记录消息，不派 Task', () => {
+  it('company scope 无项目时自动建收件箱项目并派 Task（蓝图组织批次4d：随手问载体）', () => {
     const r = createNovelCompany(db, { name: 'co' });
-    // 不创建项目
+    // 不预置任何项目
     const { userMessage, task } = postUserMessage(db, {
       scopeKind: 'company',
       scopeId: r.company.id,
       content: '你好',
     });
     expect(userMessage.role).toBe('user');
-    expect(task).toBeNull();
+    // 新语义：收件箱项目自动创建，消息派给公司第一负责人
+    expect(task).not.toBeNull();
+    expect(task!.assigneeAgentId).toBe(r.agents.lead.id);
+    const inbox = db.prepare('SELECT * FROM project WHERE company_id=?').all(r.company.id)
+      .map((row) => row as { name: string; settings_json: string })
+      .find((row) => (JSON.parse(row.settings_json ?? '{}') as Record<string, unknown>)?.inbox === true);
+    expect(inbox).toBeDefined();
+    expect(inbox!.name).toBe('收件箱');
   });
 
-  it('company scope 有项目时派给公司第一负责人 Task', () => {
+  it('company scope 有项目时 Task 落收件箱（不借用业务项目）', () => {
     const r = createNovelCompany(db, { name: 'co' });
-    createProject(db, {
+    const business = createProject(db, {
       companyId: r.company.id,
       name: 'novel',
       rootDir: '/tmp/n',
@@ -73,6 +80,13 @@ describe('conversation messages', () => {
     });
     expect(task).not.toBeNull();
     expect(task!.assigneeAgentId).toBe(r.agents.lead.id);
+    // 工作单落收件箱，业务项目保持干净
+    expect(task!.projectId).not.toBe(business.id);
+    const taskProjectName = (db.prepare('SELECT name FROM project WHERE id=?').get(task!.projectId) as { name: string }).name;
+    expect(taskProjectName).toBe('收件箱');
+    // 幂等：两次对话共用同一收件箱
+    const second = postUserMessage(db, { scopeKind: 'company', scopeId: r.company.id, content: '再问一句' });
+    expect(second.task!.projectId).toBe(task!.projectId);
   });
 
   it('@员工时直接派给被提及者，未提及时仍默认第一负责人', () => {

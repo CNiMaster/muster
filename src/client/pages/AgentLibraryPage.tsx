@@ -1,9 +1,9 @@
 /**
- * 人才市场：全局员工档案库。
- * - 新建的员工自动进入这里。
- * - 人才市场的员工可被任意公司聘用（可多家任职）。
- * - 公司内的员工管理在公司「组织架构」Tab 完成，不在这里。
- * - 团队市场（整套入职公司）在下方折叠区。
+ * 人才市场：全局智能体档案库。
+ * - 新建的智能体自动进入这里。
+ * - 人才市场的智能体可被任意工作台聘用（可多家任职）。
+ * - 工作台内的智能体管理在工作台「组织架构」Tab 完成，不在这里。
+ * - 团队市场（整套入职工作台）在下方折叠区。
  */
 import type React from 'react';
 import { useMemo, useState } from 'react';
@@ -53,7 +53,7 @@ export function AgentLibraryPage(): React.ReactElement {
   const createFromTemplate = async (template: RoleTemplate, displayNameOverride?: string): Promise<boolean> => {
     const name = displayNameOverride ?? template.name;
     if (existingNames.has(name)) {
-      toast('info', `${name} 已在员工库中`);
+      toast('info', `${name} 已在智能体库中`);
       return false;
     }
     await createProfile.mutateAsync(profileInput(template, name));
@@ -63,7 +63,7 @@ export function AgentLibraryPage(): React.ReactElement {
   const submit = (): void => {
     if (!displayName.trim()) return;
     createProfile.mutate({ displayName: displayName.trim(), soul: soul.trim() }, {
-      onSuccess: () => { setDisplayName(''); setSoul(''); toast('success', '员工档案已创建，已进入员工库'); },
+      onSuccess: () => { setDisplayName(''); setSoul(''); toast('success', '智能体档案已创建，已进入智能体库'); },
       onError: (error) => toast('error', (error as Error).message),
     });
   };
@@ -71,7 +71,7 @@ export function AgentLibraryPage(): React.ReactElement {
   // 阶段三任务 3.1：从专家库添加（自动填充 soul/principles/capabilities）
   const addFromPersona = async (persona: { id: string; name: string }): Promise<void> => {
     if (existingNames.has(persona.name)) {
-      toast('info', `${persona.name} 已在员工库中`);
+      toast('info', `${persona.name} 已在智能体库中`);
       return;
     }
     await createProfile.mutateAsync({ displayName: persona.name, personaId: persona.id });
@@ -81,7 +81,7 @@ export function AgentLibraryPage(): React.ReactElement {
   // 阶段三任务 3.2：AI 生成空白创建的提示词
   const aiFill = async (): Promise<void> => {
     if (!displayName.trim()) {
-      toast('error', '请先填写员工名称');
+      toast('error', '请先填写智能体名称');
       return;
     }
     try {
@@ -98,8 +98,8 @@ export function AgentLibraryPage(): React.ReactElement {
       <header className="page-header library-hero">
         <div>
           <span className="page-kicker">TALENT MARKET</span>
-          <h1>员工库</h1>
-          <p className="subtitle">全局员工档案。新建员工自动进入此处，可被任意公司聘用（支持多家任职）。公司内员工管理请到对应公司的「组织架构」。</p>
+          <h1>智能体库</h1>
+          <p className="subtitle">全局智能体档案。新建智能体自动进入此处，可被任意工作台聘用（支持多家任职）。工作台内智能体管理请到对应工作台的「组织架构」。</p>
         </div>
       </header>
 
@@ -143,17 +143,17 @@ export function AgentLibraryPage(): React.ReactElement {
       </section>
 
       <details className="details-collapse custom-agent-create section">
-        <summary>从空白创建自定义员工</summary>
+        <summary>从空白创建自定义智能体</summary>
         <div className="form-stack">
-          <Field label="员工名称" required>
+          <Field label="智能体名称" required>
             <Input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="例如：数据分析师" />
           </Field>
           <Field label="稳定身份 / 工作原则">
-            <Textarea value={soul} onChange={(event) => setSoul(event.target.value)} placeholder="可选；稍后仍可在员工档案中设置" />
+            <Textarea value={soul} onChange={(event) => setSoul(event.target.value)} placeholder="可选；稍后仍可在智能体档案中设置" />
           </Field>
           <div style={{ display: 'flex', gap: 8 }}>
             <Button variant="ghost" onClick={() => void aiFill()} loading={generateProposal.isPending} disabled={!displayName.trim()}>✨ AI 智能填充</Button>
-            <Button onClick={submit} disabled={!displayName.trim()} loading={createProfile.isPending}>创建员工</Button>
+            <Button onClick={submit} disabled={!displayName.trim()} loading={createProfile.isPending}>创建智能体</Button>
           </div>
         </div>
       </details>
@@ -207,8 +207,8 @@ export function AgentLibraryPage(): React.ReactElement {
         {!isLoading && filtered.length === 0 && (
           <EmptyState
             icon={Icons.empty}
-            title={q.trim() ? '没有匹配的人才' : '还没有员工档案'}
-            hint={q.trim() ? '试试调整搜索。' : '从上方添加岗位或创建自定义员工。'}
+            title={q.trim() ? '没有匹配的人才' : '还没有智能体档案'}
+            hint={q.trim() ? '试试调整搜索。' : '从上方添加岗位或创建自定义智能体。'}
           />
         )}
         <div className="employee-library-grid">
@@ -237,7 +237,7 @@ function TalentCard({ profile }: { profile: AgentProfile }): React.ReactElement 
 
   const joinCompany = async (): Promise<void> => {
     if (!targetCompanyId) {
-      toast('error', '请选择目标公司');
+      toast('error', '请选择目标工作台');
       return;
     }
     const draft: RecruitmentDraft = {
@@ -268,14 +268,14 @@ function TalentCard({ profile }: { profile: AgentProfile }): React.ReactElement 
       <div className="employee-library-card" style={{ display: 'block' }}>
         <div style={{ marginBottom: 8 }}>
           <strong>{profile.displayName}</strong>
-          <Badge tone="info" style={{ marginLeft: 8 }}>加入公司</Badge>
+          <Badge tone="info" style={{ marginLeft: 8 }}>加入工作台</Badge>
         </div>
         <div className="form-stack" style={{ gap: 6 }}>
           <Select value={targetCompanyId} onChange={(e) => setTargetCompanyId((e.target as HTMLSelectElement).value)}>
-            <option value="">选择公司（仅下班在营）</option>
+            <option value="">选择工作台（仅下班在营）</option>
             {activeCompanies.map((c: Company) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </Select>
-          <Input placeholder="本公司岗位（如：工程师）" value={role} onChange={(e) => setRole((e.target as HTMLInputElement).value)} />
+          <Input placeholder="本工作台岗位（如：工程师）" value={role} onChange={(e) => setRole((e.target as HTMLInputElement).value)} />
           <div style={{ display: 'flex', gap: 6 }}>
             <Button size="sm" onClick={() => void joinCompany()} loading={recruit.isPending}>确认聘用</Button>
             <Button size="sm" variant="ghost" onClick={() => setJoining(false)}>取消</Button>
@@ -298,7 +298,7 @@ function TalentCard({ profile }: { profile: AgentProfile }): React.ReactElement 
         <Badge tone={employmentCount > 0 ? 'ok' : 'neutral'}>
           {employmentCount > 0 ? `任职 ${employmentCount} 家` : '待聘用'}
         </Badge>
-        <Button size="sm" variant="ghost" onClick={() => setJoining(true)}>加入公司</Button>
+        <Button size="sm" variant="ghost" onClick={() => setJoining(true)}>加入工作台</Button>
       </div>
     </div>
   );

@@ -22,8 +22,8 @@ import {
  * 执行器接入中心。
  * 两块视图：
  *  1. 执行器库（CLI 类 + API 类）：检测/连通测试/如何连接说明。
- *  2. 已绑定执行器：测试结果，员工绑定在公司组织架构页做（不在此重复）。
- * 执行器连通测试只测一次，员工复用其结果，不再各自测试。
+ *  2. 已绑定执行器：测试结果，智能体绑定在工作台组织架构页做（不在此重复）。
+ * 执行器连通测试只测一次，智能体复用其结果，不再各自测试。
  */
 export function ExecutorCenterPage(): React.ReactElement {
   const qc = useQueryClient();
@@ -191,7 +191,7 @@ export function ExecutorCenterPage(): React.ReactElement {
         concurrencyLocked: apiConcurrencyLocked,
       });
     },
-    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['executor-profiles'] }); toast('success', 'API 执行器已创建，可在公司组织架构绑定给员工'); },
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['executor-profiles'] }); toast('success', 'API 执行器已创建，可在工作台组织架构绑定给智能体'); },
     onError: (e: unknown) => toast('error', (e as Error).message ?? '创建失败'),
   });
   // 阶段二任务 2.2：编辑 API profile
@@ -219,7 +219,7 @@ export function ExecutorCenterPage(): React.ReactElement {
     },
     onError: (e: unknown) => toast('error', (e as Error).message ?? '更新失败'),
   });
-  // 阶段二任务 2.2：删除 profile（解除员工绑定 + 清理探针）
+  // 阶段二任务 2.2：删除 profile（解除智能体绑定 + 清理探针）
   const deleteProfile = useMutation({
     mutationFn: (profileId: string) => api.delete<{ ok: boolean }>(`/api/executors/profiles/${profileId}`),
     onSuccess: () => {
@@ -252,7 +252,7 @@ export function ExecutorCenterPage(): React.ReactElement {
       <header className="page-header">
         <div>
           <h1>执行器接入中心</h1>
-          <p className="subtitle">在此统一检测执行器连通性、配置 API 凭据。员工在公司组织架构页绑定执行器，复用这里的测试结果，无需逐个测试。</p>
+          <p className="subtitle">在此统一检测执行器连通性、配置 API 凭据。智能体在工作台组织架构页绑定执行器，复用这里的测试结果，无需逐个测试。</p>
         </div>
       </header>
 
@@ -355,7 +355,7 @@ export function ExecutorCenterPage(): React.ReactElement {
       </Card>
 
       <Card title="API 凭据执行器" className="section">
-        <p className="muted">OpenAI 兼容 / Gemini API 执行器。Muster 只存环境变量名（不存明文），实际密钥由系统环境变量提供。可创建多个档案（不同供应商/模型/用途），绑定到员工后即可使用；删除档案会自动解除员工绑定。</p>
+        <p className="muted">OpenAI 兼容 / Gemini API 执行器。Muster 只存环境变量名（不存明文），实际密钥由系统环境变量提供。可创建多个档案（不同供应商/模型/用途），绑定到智能体后即可使用；删除档案会自动解除智能体绑定。</p>
         <div className="form-stack">
           <div className="form-row">
             <Field label="执行器类型">
@@ -378,7 +378,7 @@ export function ExecutorCenterPage(): React.ReactElement {
             <Field label="默认模型"><Input value={apiModel} onChange={(e) => setApiModel(e.target.value)} /></Field>
             <Field label="并发模式">
               <Select value={apiConcurrency} onChange={(e) => setApiConcurrency((e.target as HTMLSelectElement).value as typeof apiConcurrency)}>
-                <option value="parallel">支持员工并行</option>
+                <option value="parallel">支持智能体并行</option>
                 <option value="profile-serial">同一配置串行</option>
                 <option value="global-serial">全局串行</option>
               </Select>
@@ -434,7 +434,7 @@ export function ExecutorCenterPage(): React.ReactElement {
       </Card>
 
       <Card title="已绑定执行器" className="section">
-        <p className="muted">连通测试在这里做一次；员工绑定后复用结果。哪些员工在用某个执行器，请到对应公司的「组织架构」查看。</p>
+        <p className="muted">连通测试在这里做一次；智能体绑定后复用结果。哪些智能体在用某个执行器，请到对应工作台的「组织架构」查看。</p>
         <ul className="entity-list">
           {profiles.data?.map((profile) => {
             const hasModel = typeof profile.config.model === 'string' && Boolean(String(profile.config.model).trim());
@@ -531,7 +531,7 @@ export function ExecutorCenterPage(): React.ReactElement {
         <div style={{ marginBottom: '16px', borderRadius: '10px', overflow: 'hidden', border: '1px solid var(--border-subtle, #eee)', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
           <img
             src="/images/executor_flow.jpg"
-            alt="执行器接入四步流程：1.检测系统安装 2.API凭据配置 3.连通测试 4.绑定到员工"
+            alt="执行器接入四步流程：1.检测系统安装 2.API凭据配置 3.连通测试 4.绑定到智能体"
             style={{ width: '100%', height: 'auto', display: 'block', maxHeight: '220px', objectFit: 'cover' }}
           />
         </div>
@@ -539,11 +539,11 @@ export function ExecutorCenterPage(): React.ReactElement {
           <li><strong>CLI 类</strong>：点击「检测系统安装」。若未检测到，按卡片内官方命令安装并登录，完成后回到这里点「检测」→「绑定此安装」。</li>
           <li><strong>API 类</strong>：在「API 凭据执行器」填写 Base URL / 模型 / 环境变量名（如 <code>OPENAI_API_KEY</code>），创建档案。实际密钥需设置在系统环境变量中，Muster 不保存明文。</li>
           <li><strong>连通测试</strong>：在「已绑定执行器」点「联通测试」（验证 CLI 可执行 / API 可达）或「测试模型」（验证模型可用）。</li>
-          <li><strong>绑定到员工</strong>：进入公司「组织架构」页，展开员工配置，在「固定执行器」下拉选择。员工复用执行器的测试结果，无需各自测试。</li>
+          <li><strong>绑定到智能体</strong>：进入工作台「组织架构」页，展开智能体配置，在「固定执行器」下拉选择。智能体复用执行器的测试结果，无需各自测试。</li>
         </ol>
         <ul className="muted">
           <li>CLI 登录、签名和自动更新沿用官方机制；Muster 只记录路径和版本。</li>
-          <li>员工可共用同一执行器，但会话、工作目录、日志、记忆和中止状态仍按员工与 Task 隔离。</li>
+          <li>智能体可共用同一执行器，但会话、工作目录、日志、记忆和中止状态仍按智能体与 Task 隔离。</li>
         </ul>
       </Card>
     </div>

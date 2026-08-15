@@ -134,7 +134,7 @@ export function SettingsPage(): React.ReactElement {
 
       <Card title="常用设置" actions={<Badge tone={testResult?.overallSuccess ? 'ok' : 'neutral'}>{testResult?.overallSuccess ? '连接正常' : '尚未测试'}</Badge>}>
         <div className="settings-basic-grid">
-          <Field label="默认执行器" hint="员工没有单独指定执行器时使用">
+          <Field label="默认执行器" hint="智能体没有单独指定执行器时使用">
             <Select value={defaultProvider} onChange={(event) => setDefaultProvider(event.target.value)}>
               <option value="claude-cli">Claude Code CLI</option>
               <option value="codex-cli">Codex CLI</option>
@@ -161,7 +161,7 @@ export function SettingsPage(): React.ReactElement {
         <details className="details-collapse" open>
           <summary>配置中心（执行器 / 能力 / 权限）</summary>
           <div className="form-stack">
-            <p className="muted">员工的运行环境、可用工具与审批规则都在这里配置；公司按员工绑定。</p>
+            <p className="muted">智能体的运行环境、可用工具与审批规则都在这里配置；工作台按智能体绑定。</p>
             <div className="settings-primary-actions">
               <Link to="/executors">执行器接入中心</Link>
               <Link to="/capabilities">能力中心</Link>
@@ -218,7 +218,7 @@ export function SettingsPage(): React.ReactElement {
         <details className="details-collapse">
           <summary>权限与运行限制</summary>
           <div className="form-stack">
-            <p>权限现已按员工使用“审批策略 × 允许范围”配置。Turbo 也必须选择范围。</p>
+            <p>权限现已按智能体使用“审批策略 × 允许范围”配置。Turbo 也必须选择范围。</p>
             <div className="settings-field-grid">
               <Field label="单次 Task 超时（毫秒）">
                 <Input type="number" value={timeoutMs} onChange={(event) => setTimeoutMs(Number(event.target.value))} />
@@ -316,7 +316,7 @@ export function SettingsPage(): React.ReactElement {
               晨醒：每天自动生成运营优化报告（进化与报告页）
             </label>
             <p className="muted">
-              关闭后不再每日自动扫描生成优化建议；各项目/公司自己配置的定时工作不受影响。
+              关闭后不再每日自动扫描生成优化建议；各项目/工作台自己配置的定时工作不受影响。
             </p>
           </div>
         </details>
@@ -354,9 +354,9 @@ export function SettingsPage(): React.ReactElement {
                 checked={autonomousReflectionEnabled}
                 onChange={(event) => setAutonomousReflectionEnabled(event.target.checked)}
               />
-              公司空闲时自动补做任务反思（沉淀经验进记忆）
+              工作台空闲时自动补做任务反思（沉淀经验进记忆）
             </label>
-            <Field label="每日自主反思预算（USD）" hint="公司当日总花费低于该值时才允许自动反思；0 = 关闭">
+            <Field label="每日自主反思预算（USD）" hint="工作台当日总花费低于该值时才允许自动反思；0 = 关闭">
               <Input
                 type="number"
                 min={0}
@@ -366,7 +366,7 @@ export function SettingsPage(): React.ReactElement {
               />
             </Field>
             <p className="muted">
-              默认关闭（反思有 LLM 成本）。开启后：公司在线且无活跃任务时，对近期已完成/失败但未反思过的任务补排队反思；
+              默认关闭（反思有 LLM 成本）。开启后：工作台在线且无活跃任务时，对近期已完成/失败但未反思过的任务补排队反思；
               正式任务到达自动让位，单次最多补 2 条。
             </p>
           </div>

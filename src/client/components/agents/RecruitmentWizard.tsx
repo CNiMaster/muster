@@ -63,7 +63,7 @@ export function RecruitmentWizard({
   // 阶段三任务 3.2：AI 根据名称+职责生成完整提示词并回填
   const aiFill = async (): Promise<void> => {
     if (!displayName.trim()) {
-      toast('error', '请先填写员工名称');
+      toast('error', '请先填写智能体名称');
       return;
     }
     try {
@@ -103,16 +103,16 @@ export function RecruitmentWizard({
     </div>
   </Card>;
 
-  return <Card title="招募员工"><div className="form-stack">
-    <div role="group" aria-label="员工来源" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+  return <Card title="招募智能体"><div className="form-stack">
+    <div role="group" aria-label="智能体来源" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
       <Button size="sm" variant={source === 'role-template' ? 'primary' : 'ghost'} onClick={() => chooseSource('role-template')}>从岗位模板招募</Button>
-      <Button size="sm" variant={source === 'reuse-profile' ? 'primary' : 'ghost'} onClick={() => chooseSource('reuse-profile')}>从员工库招募</Button>
-      <Button size="sm" variant={source === 'new-profile' ? 'primary' : 'ghost'} onClick={() => chooseSource('new-profile')}>新建员工档案</Button>
+      <Button size="sm" variant={source === 'reuse-profile' ? 'primary' : 'ghost'} onClick={() => chooseSource('reuse-profile')}>从智能体库招募</Button>
+      <Button size="sm" variant={source === 'new-profile' ? 'primary' : 'ghost'} onClick={() => chooseSource('new-profile')}>新建智能体档案</Button>
     </div>
     {source === 'role-template' && <Field label="岗位模板"><Select value={templateId} onChange={(event) => chooseTemplate(event.target.value)}>{ROLE_TEMPLATES.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</Select></Field>}
-    {source === 'reuse-profile' && <Field label="员工档案"><Select value={profileId} onChange={(event) => selectProfile(event.target.value)}><option value="">请选择</option>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.displayName}</option>)}</Select></Field>}
-    {source !== 'reuse-profile' && <Field label="员工名称"><Input value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></Field>}
-    <Field label="本公司岗位"><Input value={role} onChange={(event) => setRole(event.target.value)} /></Field>
+    {source === 'reuse-profile' && <Field label="智能体档案"><Select value={profileId} onChange={(event) => selectProfile(event.target.value)}><option value="">请选择</option>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.displayName}</option>)}</Select></Field>}
+    {source !== 'reuse-profile' && <Field label="智能体名称"><Input value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></Field>}
+    <Field label="本工作台岗位"><Input value={role} onChange={(event) => setRole(event.target.value)} /></Field>
     <Field label="岗位职责">
       <div className="form-row">
         <Textarea value={responsibilities} onChange={(event) => setResponsibilities(event.target.value)} />

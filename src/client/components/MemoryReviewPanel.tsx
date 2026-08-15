@@ -33,7 +33,7 @@ export function MemoryReviewPanel({ profileId }: { profileId: string }): React.R
         <Select value={scope} onChange={(event) => setScope(event.target.value as typeof scope)} aria-label="记忆范围">
           <option value="all">全部范围</option>
           <option value="personal">个人</option>
-          <option value="company">公司</option>
+          <option value="company">工作台</option>
           <option value="project">项目</option>
           <option value="skill">Skill</option>
         </Select>
@@ -120,5 +120,5 @@ export function MemoryReviewPanel({ profileId }: { profileId: string }): React.R
 }
 
 function scopeLabel(scope: MemoryCandidate['scope']): string {
-  return ({ personal: '个人', company: '公司', project: '项目', skill: 'Skill' } as const)[scope];
+  return ({ personal: '个人', company: '工作台', project: '项目', skill: 'Skill' } as const)[scope];
 }

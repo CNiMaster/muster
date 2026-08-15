@@ -108,7 +108,7 @@ export function TaskDetailPage(): React.ReactElement {
               gap: 'var(--space-2)'
             }}>
               <span style={{ flex: 1 }}>
-                <strong>头脑风暴已终止：</strong> 该讨论由于任务队列中进入了高优先级的正式 Task，已自动中止以释放员工精力。
+                <strong>头脑风暴已终止：</strong> 该讨论由于任务队列中进入了高优先级的正式 Task，已自动中止以释放智能体精力。
               </span>
             </div>
           )}
@@ -138,7 +138,7 @@ export function TaskDetailPage(): React.ReactElement {
                     <div><strong>讨论准则：</strong><span className="muted">{bp.constraint}</span></div>
                   </div>
                   <div style={{ marginTop: '6px' }}>
-                    <strong>与会空闲员工：</strong>
+                    <strong>与会空闲智能体：</strong>
                     <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '4px' }}>
                       {(bp.participants as string[] ?? []).map(pId => {
                         const aName = agents?.find(x => x.id === pId)?.name ?? pId;

@@ -2,7 +2,7 @@
  * equipping 阶段：列出 plugin 让用户启用/禁用（B4）。
  *
  * 消费 B3 的 usePlugins + useEnabledCompanyPlugins + useToggleCompanyPlugin。
- * 公司下班期间才能启停（后端校验，UI 提示）。
+ * 工作台下班期间才能启停（后端校验，UI 提示）。
  */
 import { Card } from '../../Card';
 import { Badge } from '../../Badge';
@@ -50,7 +50,7 @@ export function EquippingPhase({
   return (
     <Card className="phase-content equipping-phase">
       <h3>装备阶段</h3>
-      <p className="muted">为项目启用所需能力（plugin）。启停需公司下班。至少启用一个才能继续。</p>
+      <p className="muted">为项目启用所需能力（plugin）。启停需工作台下班。至少启用一个才能继续。</p>
       {plugins.isLoading && <p className="muted">加载能力清单…</p>}
       {plugins.data?.length === 0 && <p className="muted">暂无可用能力。可到能力中心安装或用 AI 起草。</p>}
       <ul className="plugin-pick-list">

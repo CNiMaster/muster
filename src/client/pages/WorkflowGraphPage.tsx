@@ -333,15 +333,15 @@ export function WorkflowGraphPage(): React.ReactElement {
     );
   };
 
-  if (isLoading) return <div className="loading">加载员工协作流程中…</div>;
+  if (isLoading) return <div className="loading">加载智能体协作流程中…</div>;
 
   return (
     <div className="graph-page" style={{ height: 'calc(100vh - 100px)', display: 'flex', flexDirection: 'column' }}>
       <header className="page-header" style={{ marginBottom: 'var(--space-3)' }}>
         <div>
-          <h1>员工协作流程</h1>
+          <h1>智能体协作流程</h1>
           <p className="subtitle" style={{ margin: 0 }}>
-            员工节点表示谁接单，连线表示交给谁、何时交接；每一步都继承公司的任务需求与交付模板。
+            智能体节点表示谁接单，连线表示交给谁、何时交接；每一步都继承工作台的任务需求与交付模板。
             <Badge tone="info" style={{ marginLeft: 'var(--space-2)' }}>{workflowId}</Badge>
             {readonly && <Badge tone="warn" style={{ marginLeft: 'var(--space-2)' }}>上班只读</Badge>}
           </p>
@@ -369,7 +369,7 @@ export function WorkflowGraphPage(): React.ReactElement {
             启动协作流程
           </Button>
           <Link to={`/companies/${companyId}`}>
-            <Button variant="ghost" size="sm">返回公司</Button>
+            <Button variant="ghost" size="sm">返回工作台</Button>
           </Link>
           {!readonly && (
             <Button onClick={handleSave} loading={saveWorkflow.isPending} size="sm">
@@ -398,8 +398,8 @@ export function WorkflowGraphPage(): React.ReactElement {
             <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1, pointerEvents: 'none' }}>
               <EmptyState
                 icon={Icons.graph}
-                title="协作流程还没有员工交接节点"
-                hint={readonly ? '请先下班，再配置员工交接关系。' : '从右侧新增员工步骤，再拖动连线定义谁接单、交给谁和谁验收。'}
+                title="协作流程还没有智能体交接节点"
+                hint={readonly ? '请先下班，再配置智能体交接关系。' : '从右侧新增智能体步骤，再拖动连线定义谁接单、交给谁和谁验收。'}
               />
             </div>
           )}
@@ -423,10 +423,10 @@ export function WorkflowGraphPage(): React.ReactElement {
         </div>
 
         {/* 右侧属性侧边栏 */}
-        <Card title={selectedNode ? '编辑员工交接步骤' : '协作流程工具箱'} style={{ height: '100%', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+        <Card title={selectedNode ? '编辑智能体交接步骤' : '协作流程工具箱'} style={{ height: '100%', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
           {readonly ? (
             <div className="subtle" style={{ fontSize: 'var(--text-sm)' }}>
-              🔒 公司运行中（已上班），工作流图处于锁定只读状态。请在下班后再做调整。
+              🔒 工作台运行中（已上班），工作流图处于锁定只读状态。请在下班后再做调整。
             </div>
           ) : selectedNode ? (
             <div className="form-stack">
@@ -460,7 +460,7 @@ export function WorkflowGraphPage(): React.ReactElement {
                       onChange={(event) => updateSelectedProps({ title: event.target.value })}
                     />
                   </Field>
-                  <Field label="责任员工">
+                  <Field label="责任智能体">
                     <Select
                       value={String(selectedProps.assigneeAgentId ?? '')}
                       onChange={(event) => updateSelectedProps({

@@ -33,7 +33,7 @@ export function CompanyPage(): React.ReactElement {
   const { companyId = '' } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get('view') ?? searchParams.get('tab');
-  // 改版 2a：默认落地=对话（进公司即和第一负责人对话）；overview 等仍可达。
+  // 改版 2a：默认落地=对话（进工作台即和第一负责人对话）；overview 等仍可达。
   const activeTab = isCompanySectionKey(requestedTab) ? requestedTab : 'conversation';
   const { data: company, isLoading } = useCompany(companyId);
   const { data: cockpit } = useCompanyCockpit(companyId);
@@ -63,28 +63,28 @@ export function CompanyPage(): React.ReactElement {
             : activeTab === 'activity' ? <CompanyActivity companyId={companyId} agents={agents} events={events} />
               : activeTab === 'evolution' ? <CompanyEvolution companyId={companyId} />
                 : <CompanySettings company={company} />;
-  // L1 生命周期：运行中的公司不再展示时钟按钮（无"上下班"概念，程序代管）；
-  // 暂停的成本开关在「公司设置」tab 的「停止公司」；退出时统一优雅下班。
+  // L1 生命周期：运行中的工作台不再展示时钟按钮（无"上下班"概念，程序代管）；
+  // 暂停的成本开关在「工作台设置」tab 的「停止工作台」；退出时统一优雅下班。
   const companyAction = company.state === 'off'
-    ? <Button icon={<span aria-hidden="true">▶</span>} onClick={() => doAction('clock-in')} loading={action.isPending}>启动公司</Button>
+    ? <Button icon={<span aria-hidden="true">▶</span>} onClick={() => doAction('clock-in')} loading={action.isPending}>启动工作台</Button>
     : company.state === 'review_paused' ? <Button onClick={() => doAction('resume')} loading={action.isPending}>继续工作</Button> : undefined;
 
   return <WorkbenchShell
     scopeKey={`company:${companyId}`}
-    breadcrumb={<WorkbenchContextSwitcher companyId={companyId} companyName={company.name} companyKind={COMPANY_KIND_LABELS[company.kind] ?? company.kind} sectionKey={activeTab} sectionLabel={{ conversation: '对话', overview: '公司总览', projects: '项目', team: '团队', activity: '沟通与活动', evolution: '进化与报告', settings: '公司设置', attention: '需要处理' }[activeTab]} />}
-    navigationLabel="公司工作列表"
-    inspectorLabel="公司现场"
+    breadcrumb={<WorkbenchContextSwitcher companyId={companyId} companyName={company.name} companyKind={COMPANY_KIND_LABELS[company.kind] ?? company.kind} sectionKey={activeTab} sectionLabel={{ conversation: '对话', overview: '工作台总览', projects: '项目', team: '团队', activity: '沟通与活动', evolution: '进化与报告', settings: '工作台设置', attention: '需要处理' }[activeTab]} />}
+    navigationLabel="工作台工作列表"
+    inspectorLabel="工作台现场"
     attentionCount={(cockpit?.approvals.pending ?? 0) + (cockpit?.projects.attention ?? 0)}
     primaryAction={companyAction}
     navigation={<CompanyWorkNavigation active={activeTab} projectCount={projects.length} employeeCount={agents.length} attentionCount={(cockpit?.approvals.pending ?? 0) + (cockpit?.projects.attention ?? 0)} evolutionCount={cockpit?.optimization?.pendingActions ?? 0} onChange={(view) => setSearchParams(view === 'overview' ? {} : { view })} />}
     inspector={<CompanyContextInspector cockpit={cockpit} statusBoard={statusBoard} statusBoardLoading={statusBoardLoading} />}
     commandOptions={[
       ...projects.slice(0, 5).map((project) => ({ label: `进入项目：${project.name}`, href: `/projects/${project.id}`, group: '项目' })),
-      ...agents.slice(0, 5).map((agent) => ({ label: `查看员工：${agent.name}`, href: `/companies/${companyId}?view=team`, group: '团队' })),
-      { label: '需要处理', href: `/companies/${companyId}?view=attention`, group: '当前公司' },
-      { label: '沟通与活动', href: `/companies/${companyId}?view=activity`, group: '当前公司' },
-      { label: '进化与报告', href: `/companies/${companyId}?view=evolution`, group: '当前公司' },
-      { label: '更多设置', href: `/companies/${companyId}?view=settings`, group: '当前公司' },
+      ...agents.slice(0, 5).map((agent) => ({ label: `查看智能体：${agent.name}`, href: `/companies/${companyId}?view=team`, group: '团队' })),
+      { label: '需要处理', href: `/companies/${companyId}?view=attention`, group: '当前工作台' },
+      { label: '沟通与活动', href: `/companies/${companyId}?view=activity`, group: '当前工作台' },
+      { label: '进化与报告', href: `/companies/${companyId}?view=evolution`, group: '当前工作台' },
+      { label: '更多设置', href: `/companies/${companyId}?view=settings`, group: '当前工作台' },
     ]}
   >
     <div className="company-page work-surface-page">
@@ -98,7 +98,7 @@ export function CompanyPage(): React.ReactElement {
       </div>
     </header>
     {centerContent}
-    {company.state === 'online' && activeTab === 'settings' && <Button variant="danger" icon={<span aria-hidden="true">■</span>} onClick={() => doAction('clock-out')} loading={action.isPending}>停止公司</Button>}
+    {company.state === 'online' && activeTab === 'settings' && <Button variant="danger" icon={<span aria-hidden="true">■</span>} onClick={() => doAction('clock-out')} loading={action.isPending}>停止工作台</Button>}
   </div>
   </WorkbenchShell>;
 }

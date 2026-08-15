@@ -56,7 +56,7 @@ export function MaterialsPage(): React.ReactElement {
 
       {isLoading && <p className="muted">加载中…</p>}
       {!isLoading && filtered.length === 0 && (
-        <EmptyState icon="📦" title="素材库为空" hint="导入素材后,员工可在执行 Task 时引用这些素材。支持链接(不复制)、移入(删源)、复制(留源)三种方式。" />
+        <EmptyState icon="📦" title="素材库为空" hint="导入素材后,智能体可在执行 Task 时引用这些素材。支持链接(不复制)、移入(删源)、复制(留源)三种方式。" />
       )}
 
       {filtered.length > 0 && (

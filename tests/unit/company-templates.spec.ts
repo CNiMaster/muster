@@ -2,16 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { COMPANY_TEMPLATE_OPTIONS, getCompanyTemplate, getProjectCreationPreset } from '../../src/client/domain/company-templates';
 
 describe('company templates', () => {
-  it('提供平台化模板并保留小说公司', () => {
+  it('提供平台化模板并保留小说工作台', () => {
     expect(COMPANY_TEMPLATE_OPTIONS.map((item) => item.id)).toEqual(['general', 'software', 'content', 'novel', 'marketing', 'consulting', 'visual', 'video', 'publishing', 'social']);
     expect(getCompanyTemplate('software').roles).toContain('engineer');
     expect(getCompanyTemplate('novel').roles).toContain('writer');
   });
 
-  it('为非小说公司提供对应的项目创建语义', () => {
+  it('为非小说工作台提供对应的项目创建语义', () => {
     expect(getProjectCreationPreset('software')).toMatchObject({
       allowNovelWizard: false,
-      subtitle: '为软件研发公司创建一个新的交付项目',
+      subtitle: '为软件研发工作台创建一个新的交付项目',
       initialTaskTitle: '梳理需求并制定实施计划',
     });
     expect(getProjectCreationPreset('content')).toMatchObject({

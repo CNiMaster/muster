@@ -1,16 +1,16 @@
 /**
- * 能力中心：Skill / MCP / 工具的统一治理页（opt-out 默认全开 + 公司级开关）。
+ * 能力中心：Skill / MCP / 工具的统一治理页（opt-out 默认全开 + 工作台级开关）。
  *
  * 设计：
  * - 顶部 Tab 按 kind 分类（Skill / MCP Server / 工具 / Bridge）
- * - 每个插件一行，展示 scope（平台通用 / 公司独占:公司名）、成熟度、健康状态
- * - 展开后是「公司开关矩阵」：
- *   - 公司少（≤6）：横排公司名 + 三态开关
- *   - 公司多（>6）：折叠为「默认全开 ✓ | 已禁用 N 家」+ 展开搜索
- * - 三态：default（绿勾，平台默认）/ disabled（红叉，显式禁用）/ exclusive（蓝标，公司独占）
+ * - 每个插件一行，展示 scope（平台通用 / 工作台独占:工作台名）、成熟度、健康状态
+ * - 展开后是「工作台开关矩阵」：
+ *   - 工作台少（≤6）：横排工作台名 + 三态开关
+ *   - 工作台多（>6）：折叠为「默认全开 ✓ | 已禁用 N 家」+ 展开搜索
+ * - 三态：default（绿勾，平台默认）/ disabled（红叉，显式禁用）/ exclusive（蓝标，工作台独占）
  *
- * opt-out 语义：平台插件默认对所有公司启用；公司可显式禁用。
- * 组织配置锁：启停需公司下班（后端校验，前端 toast 提示）。
+ * opt-out 语义：平台插件默认对所有工作台启用；工作台可显式禁用。
+ * 组织配置锁：启停需工作台下班（后端校验，前端 toast 提示）。
  */
 import { useMemo, useState } from 'react';
 import type React from 'react';
@@ -91,7 +91,7 @@ export function CapabilityCenterPage(): React.ReactElement {
     <div className="page capability-center">
       <div className="page-head">
         <h1>能力中心</h1>
-        <p className="muted">Skill、MCP Server、工具的统一治理。平台级能力默认对所有公司启用，可按公司关闭；也可为指定公司安装独占能力。</p>
+        <p className="muted">Skill、MCP Server、工具的统一治理。平台级能力默认对所有工作台启用，可按工作台关闭；也可为指定工作台安装独占能力。</p>
       </div>
       <div className="capability-entry-links">
         <span className="muted">管理已安装</span>
@@ -107,7 +107,7 @@ export function CapabilityCenterPage(): React.ReactElement {
   );
 }
 
-/** 单个分类下的插件列表，每行带公司开关矩阵。 */
+/** 单个分类下的插件列表，每行带工作台开关矩阵。 */
 function PluginList({ plugins, companies }: { plugins: Plugin[]; companies: { id: string; name: string; state: string }[] }): React.ReactElement {
   return (
     <ul className="plugin-govern-list">
@@ -124,7 +124,7 @@ interface CompanyLite {
   state: string;
 }
 
-/** 单个插件行：展示 + 公司开关矩阵。 */
+/** 单个插件行：展示 + 工作台开关矩阵。 */
 function PluginGovernRow({ plugin, companies }: { plugin: Plugin; companies: CompanyLite[] }): React.ReactElement {
   const [expanded, setExpanded] = useState(false);
   const activeCompanies = companies.filter((c) => c.state !== 'archived');
@@ -147,7 +147,7 @@ function PluginGovernRow({ plugin, companies }: { plugin: Plugin; companies: Com
               <Badge tone={MATURITY_TONE[plugin.maturity]}>{MATURITY_LABEL[plugin.maturity]}</Badge>
             )}
             {isExclusive ? (
-              <Badge tone="info" title={`公司独占：${plugin.scope.level === 'company' ? plugin.scope.companyId : ''}`}>公司独占</Badge>
+              <Badge tone="info" title={`工作台独占：${plugin.scope.level === 'company' ? plugin.scope.companyId : ''}`}>工作台独占</Badge>
             ) : (
               <Badge tone="neutral">平台通用</Badge>
             )}
@@ -167,17 +167,17 @@ function PluginGovernRow({ plugin, companies }: { plugin: Plugin; companies: Com
   );
 }
 
-/** 公司开关矩阵（opt-out 三态）。 */
+/** 工作台开关矩阵（opt-out 三态）。 */
 function CompanyMatrix({ plugin, companies }: { plugin: Plugin; companies: CompanyLite[] }): React.ReactElement {
   const [filter, setFilter] = useState('');
   const [expanded, setExpanded] = useState(companies.length <= 6);
 
-  // 每个 CompanyToggle 内部用 useCompanyEffectiveDecision 查该公司决策；
-  // React Query 按 ['effective-plugins', companyId] 去重缓存，同公司只请求一次。
+  // 每个 CompanyToggle 内部用 useCompanyEffectiveDecision 查该工作台决策；
+  // React Query 按 ['effective-plugins', companyId] 去重缓存，同工作台只请求一次。
   const filtered = companies.filter((c) => c.name.toLowerCase().includes(filter.toLowerCase()));
 
   if (companies.length === 0) {
-    return <p className="muted">暂无在营公司。先创建公司后再来配置。</p>;
+    return <p className="muted">暂无在营工作台。先创建工作台后再来配置。</p>;
   }
 
   return (
@@ -185,7 +185,7 @@ function CompanyMatrix({ plugin, companies }: { plugin: Plugin; companies: Compa
       {companies.length > 6 && (
         <div className="company-matrix-head">
           <Input
-            placeholder="搜索公司…"
+            placeholder="搜索工作台…"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
           />
@@ -196,7 +196,7 @@ function CompanyMatrix({ plugin, companies }: { plugin: Plugin; companies: Compa
       )}
       {!expanded && companies.length > 6 ? (
         <p className="muted company-matrix-collapsed">
-          默认全开 ✓ · 点击「展开全部」逐公司管理
+          默认全开 ✓ · 点击「展开全部」逐工作台管理
         </p>
       ) : (
         <ul className="company-toggle-list">
@@ -209,7 +209,7 @@ function CompanyMatrix({ plugin, companies }: { plugin: Plugin; companies: Compa
   );
 }
 
-/** 单个公司的三态开关。 */
+/** 单个工作台的三态开关。 */
 function CompanyToggle({ plugin, company }: { plugin: Plugin; company: CompanyLite }): React.ReactElement {
   const toggle = useToggleCompanyPlugin();
   const effective = useCompanyEffectiveDecision(company.id, plugin.id);
@@ -226,7 +226,7 @@ function CompanyToggle({ plugin, company }: { plugin: Plugin; company: CompanyLi
         onError: (e: any) => {
           const msg = e?.message ?? '操作失败';
           if (msg.includes('上班期间')) {
-            toast('error', `${company.name} 上班中，请先让公司下班再修改能力配置`);
+            toast('error', `${company.name} 上班中，请先让工作台下班再修改能力配置`);
           } else {
             toast('error', msg);
           }
@@ -247,7 +247,7 @@ function CompanyToggle({ plugin, company }: { plugin: Plugin; company: CompanyLi
         className={`toggle-pill ${on ? 'is-on' : 'is-off'}`}
         onClick={handleToggle}
         disabled={toggle.isPending || !companyOff}
-        title={!companyOff ? '公司上班期间不能修改能力配置' : undefined}
+        title={!companyOff ? '工作台上班期间不能修改能力配置' : undefined}
         aria-label={`${on ? '禁用' : '启用'} ${plugin.name} for ${company.name}`}
       >
         <span className="toggle-pill-knob" />
@@ -257,11 +257,11 @@ function CompanyToggle({ plugin, company }: { plugin: Plugin; company: CompanyLi
   );
 }
 
-/** 公司独占插件详情。 */
+/** 工作台独占插件详情。 */
 function ExclusiveDetail({ plugin }: { plugin: Plugin }): React.ReactElement {
   return (
     <div className="exclusive-detail">
-      <p className="muted">公司独占插件，仅对 <code>{plugin.scope.level === 'company' ? plugin.scope.companyId : ''}</code> 可见可用。其他公司看不到此插件。</p>
+      <p className="muted">工作台独占插件，仅对 <code>{plugin.scope.level === 'company' ? plugin.scope.companyId : ''}</code> 可见可用。其他工作台看不到此插件。</p>
       {plugin.manifest.kind === 'mcp-server' && (
         <details>
           <summary>MCP 配置</summary>
@@ -272,8 +272,8 @@ function ExclusiveDetail({ plugin }: { plugin: Plugin }): React.ReactElement {
   );
 }
 
-// ── 辅助：单公司单插件决策查询 ─────────────────────────────────────────────
-// 当前用 effective endpoint 全量取一次再过滤（公司数适中时够用；公司极多时应改批量预取）。
+// ── 辅助：单工作台单插件决策查询 ─────────────────────────────────────────────
+// 当前用 effective endpoint 全量取一次再过滤（工作台数适中时够用；工作台极多时应改批量预取）。
 
 function useCompanyEffectiveDecision(companyId: string, pluginId: string): { decision: CompanyPluginDecision } {
   const { data } = useQuery({

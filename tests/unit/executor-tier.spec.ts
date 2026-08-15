@@ -3,8 +3,8 @@
  *
  * 验证：
  * 1. tierForTask：讨论/咨询/轻量 → tertiary；REQUIRES_CLI_SKILLS → primary；其他 → secondary
- * 2. selectTieredExecutorProfile：公司级覆盖 > 全局级；profile 缺失自动降级
- * 3. 员工显式绑定优先级高于三级默认（engine 集成验证见 engine-wiring）
+ * 2. selectTieredExecutorProfile：工作台级覆盖 > 全局级；profile 缺失自动降级
+ * 3. 智能体显式绑定优先级高于三级默认（engine 集成验证见 engine-wiring）
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { makeTestDb, makeTempGitRepo } from '../integration/setup';
@@ -124,11 +124,11 @@ describe('selectTieredExecutorProfile（三级默认选择 + 降级）', () => {
     expect(selectTieredExecutorProfile(db, light, project.companyId)?.id).toBe(tertiary.id);
   });
 
-  it('公司级覆盖优先于全局级', () => {
+  it('工作台级覆盖优先于全局级', () => {
     const { c, lead, project } = fixture();
     const { primary, secondary } = makeProfiles();
     setSetting(db, 'executor_tier_primary_id', primary.id);
-    // 公司级把 primary 覆盖为 secondary
+    // 工作台级把 primary 覆盖为 secondary
     db.prepare('UPDATE company SET executor_tier_primary_id=? WHERE id=?').run(secondary.id, c.id);
 
     const heavy = createTask(db, { projectId: project.id, assigneeAgentId: lead.id, title: '跑测试', requiredSkillIds: ['ci-cd-and-automation'] });

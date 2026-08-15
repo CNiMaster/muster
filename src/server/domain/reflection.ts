@@ -24,6 +24,8 @@ import { getProject } from './project';
 import { getAgent } from './agent';
 import { createMemoryCandidate, searchMemory } from './memory';
 import { detectPromotions } from './promotion';
+import { getPersona } from './persona-library';
+import { evolveBlueprint } from './blueprint';
 
 /** 反思信号来源（兼作根因分类标签，喂给 prompt 与归因分析）。 */
 export type ReflectionSignal =
@@ -208,6 +210,28 @@ export async function drainReflectionQueue(
       log.warn('reflection failed', { reflectionId: row.id, taskId: row.task_id, error: message });
     }
   }
+  // 蓝图组织批次3：反思消化后进化蓝图——按 (任务类型, 人设) 记账胜负、聚类合并（自动复盘的写入侧）。
+  // 不依赖 LLM 反思是否产出记忆：凡入队的终态任务（含 skipped）都计战绩；失败不阻断反思主流程。
+  for (const row of rows) {
+    try {
+      const task = getTask(db, row.task_id);
+      if (!task.personaId) continue;
+      const persona = getPersona(task.personaId);
+      evolveBlueprint(db, {
+        companyId: row.company_id,
+        projectId: task.projectId,
+        taskTitle: task.title,
+        personaId: task.personaId,
+        personaName: persona?.name ?? task.personaId,
+        win: row.outcome === 'completed',
+      });
+    } catch (err) {
+      log.warn('blueprint evolution failed', {
+        taskId: row.task_id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
   // E2.2 drain 完成后检测晋升：仅在本轮处理了反思时才扫，避免每 10s 空跑全表 + UPSERT 写放大。
   const promotions = rows.length > 0 ? detectPromotions(db) : { processed: 0 };
   return { processed: rows.length, lessons, promotions: promotions.processed };
@@ -267,12 +291,19 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
     ? existing.map((m) => `- ${m.content.slice(0, 120)}`).join('\n')
     : '（无）';
 
+  // 蓝图组织批次1：任务穿戴了人设时，追加 CRAFT 输出段（方法论挂到人设键上跨任务复用）。
+  const persona = task.personaId ? getPersona(task.personaId) : null;
+  const personaName = persona?.name ?? task.personaId;
+
   const system =
     '你是一个任务反思助手。从单个任务的执行结果中提炼沉淀：经验教训（LESSON）、协作规则（RULE），以及（仅当用户反馈含明确偏好信号时）用户偏好（PREFERENCE）。' +
     'LESSON 聚焦"下次同类任务怎么做更好"的单任务经验；' +
     'RULE 聚焦"涉及他人或其他岗位协同时应遵循的约定"（如交付前通知测试、加急任务在标题标注等）。' +
     'PREFERENCE 聚焦"用户明确表达过的个人偏好或忌讳"（如风格、语气、格式、内容、流程倾向），必须是用户视角的喜好陈述，不要把单次请求泛化为通用偏好；' +
     'PREFERENCE 正文必须以【domain】开头，domain ∈ 风格/语气/格式/内容/流程。' +
+    (persona
+      ? 'CRAFT（仅本次任务穿戴了专家人设时输出）聚焦"以该人设做这类任务的可复用方法论"——以后任何人穿戴同一人设做同类任务都适用的方法（如"写 PRD 先核对数据口径"）；只写方法，不写本项目的具体事实（那些归 LESSON）。'
+      : '') +
     'E2.1 每条沉淀附带一个 fingerprint 标签（形如 "domain:topic"，例如 design:color、workflow:handoff、style:business、tone:formal），紧跟置信度行后单独一行，用于后续识别跨任务的重复模式；无明确归类时该行可省略。' +
     '只产出具体、可操作、能影响下次执行的内容，不要空泛总结，不要复述任务本身。' +
     '如果某一类没有值得沉淀的新内容（与已有记忆重复或纯属偶发，或用户反馈中无明显偏好信号），那一类写 SKIPPED。';
@@ -280,6 +311,7 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
   const feedbackText = collectUserFeedback(db, reflection.taskId);
   const user = [
     `任务：#${task.seq} ${task.title}`,
+    task.personaId ? `执行人设：${personaName}（${task.personaId}）` : '',
     `结果信号：${signalHint}`,
     `执行摘要：${task.summary || '（无）'}`,
     `失败次数：${task.failureCount}；中间打断次数：${task.interruptionCount}；开始段对齐轮次：${task.alignmentRounds}`,
@@ -287,7 +319,7 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
     feedbackText ? `用户反馈（可用于提炼偏好）：\n${feedbackText}` : '用户反馈：（无显式反馈）',
     `已有相关经验：\n${existingLine}`,
     '',
-    '请按以下格式输出（三类都可省略，没有价值的写 SKIPPED；无用户反馈时 PREFERENCE 必须 SKIPPED）：',
+    '请按以下格式输出（各类都可省略，没有价值的写 SKIPPED；无用户反馈时 PREFERENCE 必须 SKIPPED）：',
     '[LESSON]',
     '<置信度 0-1 的小数>',
     '<fingerprint：domain:topic 形如 design:color，可省略>',
@@ -300,7 +332,10 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
     '<置信度 0-1 的小数>',
     '<fingerprint：domain:topic，如 style:business>',
     '<【domain】偏好正文 30-100 字，domain ∈ 风格/语气/格式/内容/流程>',
-  ].join('\n');
+    ...(task.personaId
+      ? ['[CRAFT]', '<置信度 0-1 的小数>', '<fingerprint：domain:topic，可省略>', `<以「${personaName}」人设做同类任务的方法论正文 50-150 字（无则写 SKIPPED）>`]
+      : []),
+  ].filter(Boolean).join('\n');
 
   const llm = await callLlm(db, { system, user, companyId: reflection.companyId, timeoutMs: 45_000 });
   const text = llm.content.trim();
@@ -318,9 +353,11 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
   // E1.2 PREFERENCE 仅在存在用户反馈时解析（无反馈时 LLM 应已 SKIPPED，这里兜底忽略）。
   const preference = feedbackText ? parseSection(text, 'PREFERENCE') : { confidence: 0, body: '', fingerprint: null as string | null };
   const preferenceValid = Boolean(preference.body) && preference.confidence >= 0.7;
+  // 蓝图组织批次1：CRAFT 仅在任务穿戴了人设时解析（无人设任务 prompt 不含该段，返回也会被忽略）。
+  const craft = task.personaId ? parseSection(text, 'CRAFT') : { confidence: 0, body: '', fingerprint: null as string | null };
 
-  // 三类都没有有效内容 → skipped
-  if (!lesson.body && !rule.body && !preferenceValid) {
+  // 各类都没有有效内容 → skipped
+  if (!lesson.body && !rule.body && !preferenceValid && !craft.body) {
     db.prepare(
       `UPDATE task_reflection SET status='skipped', reflection_text=?, reflected_at=? WHERE id=?`,
     ).run(text.slice(0, 500), nowIso(), reflection.id);
@@ -385,10 +422,31 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
     preferenceBody = preference.body;
   }
 
+  // 蓝图组织批次1：沉淀 CRAFT（人设方法论）：scope=skill + persona_key——挂在人设上跨任务、跨项目复用，
+  // 下次任何智能体穿戴同一人设执行任务时经 loadContextMemories 注入。
+  // 高置信（>=0.8）自动批准（命中 memory.ts 的人设键自动批准门）；低置信进候选队列人工审核。
+  let craftBody = '';
+  if (craft.body && task.personaId) {
+    createMemoryCandidate(db, {
+      profileId: reflection.profileId,
+      scope: 'skill',
+      personaKey: task.personaId,
+      content: craft.body,
+      sourceTaskId: reflection.taskId,
+      author: 'agent',
+      confidence: craft.confidence,
+      canInfluence: true,
+      allowAutoApprove: craft.confidence >= 0.8,
+      fingerprint: craft.fingerprint,
+    });
+    craftBody = craft.body;
+  }
+
   const summary = [
     lesson.body && `[LESSON] ${lesson.body}`,
     rule.body && `[RULE] ${rule.body}`,
     preferenceBody && `[PREFERENCE] ${preferenceBody}`,
+    craftBody && `[CRAFT] ${craftBody}`,
   ]
     .filter(Boolean)
     .join('\n');
@@ -403,8 +461,8 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
  * 格式：[SECTION] 头 → 置信度行 → 正文行。置信度缺省 0.7，正文截断 500 字。
  * 找不到段头或正文为 SKIPPED/空 → 返回空 body（表示该类无沉淀）。
  */
-function parseSection(text: string, section: 'LESSON' | 'RULE' | 'PREFERENCE'): { confidence: number; fingerprint: string | null; body: string } {
-  const re = new RegExp(`\\[${section}\\]\\s*([\\s\\S]*?)(?=\\[(?:LESSON|RULE|PREFERENCE)\\]|$)`, 'i');
+function parseSection(text: string, section: 'LESSON' | 'RULE' | 'PREFERENCE' | 'CRAFT'): { confidence: number; fingerprint: string | null; body: string } {
+  const re = new RegExp(`\\[${section}\\]\\s*([\\s\\S]*?)(?=\\[(?:LESSON|RULE|PREFERENCE|CRAFT)\\]|$)`, 'i');
   const match = re.exec(text);
   if (!match) return { confidence: 0.7, fingerprint: null, body: '' };
   const block = match[1]!.trim();

@@ -8,7 +8,7 @@ import type { DB } from '../db/client';
 import { shortId, nowIso } from '../../shared/utils';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { getCompany } from './company';
-import { getProject } from './project';
+import { getProject, ensureInboxProject } from './project';
 import { createTask } from './task';
 import { getAgent } from './agent';
 import { realtime } from '../realtime';
@@ -37,6 +37,21 @@ function publishMessageCreated(message: ConversationMessage): void {
         role: message.role,
         refTaskId: message.refTaskId ?? undefined,
       },
+    });
+  } catch {
+    /* 实时发布失败不阻断对话 */
+  }
+}
+
+/** Review 修复 I2：收件箱项目首次创建后补发 project.created，让项目列表/看板即时刷新。 */
+function publishInboxCreated(companyId: string, refTaskId?: string): void {
+  try {
+    realtime.publish({
+      id: shortId('ev_'),
+      type: 'project.created',
+      companyId,
+      occurredAt: nowIso(),
+      payload: { inbox: true, refTaskId },
     });
   } catch {
     /* 实时发布失败不阻断对话 */
@@ -157,13 +172,15 @@ export function postUserMessage(db: DB, input: PostUserMessageInput): {
   let firstAgentId: string | null = null;
   let projectId: string | null = null;
   let companyId: string;
+  let inboxCreated = false;
   if (input.scopeKind === 'company') {
     const c = getCompany(db, input.scopeId);
     companyId = c.id;
     firstAgentId = c.firstAgentId;
-    // 找公司下任意一个项目作为 Task 载体（若没有则不派 Task）
-    const anyProject = db.prepare('SELECT id FROM project WHERE company_id = ? ORDER BY created_at LIMIT 1').get(input.scopeId) as { id: string } | undefined;
-    if (anyProject) projectId = anyProject.id;
+    // 蓝图组织批次4d：公司对话落收件箱项目（随手问载体），不再随机借用第一个业务项目。
+    const inbox = ensureInboxProject(db, c.id);
+    projectId = inbox.project.id;
+    inboxCreated = inbox.created;
   } else {
     const p = getProject(db, input.scopeId);
     companyId = p.companyId;
@@ -211,10 +228,14 @@ export function postUserMessage(db: DB, input: PostUserMessageInput): {
     userMessage.refTaskId = task.id;
   }
 
-  return { userMessage, task, tasks };
+  return { userMessage, task, tasks, inboxCreated };
   })();
   // 改版 B4：事务提交后发布（回滚时不会发出虚假事件）
   publishMessageCreated(result.userMessage);
+  // Review 修复 I2：收件箱首次创建时补发 project.created（事务已提交，事件不会虚发）。
+  if (result.inboxCreated) {
+    publishInboxCreated(result.userMessage.scopeId, result.userMessage.refTaskId ?? undefined);
+  }
   return result;
 }
 

@@ -36,6 +36,8 @@ import { recordSuspension, resolveSuspensionByTask } from './task-suspension';
 import { checkSwarmLimits, greyBeeAfterTask, handleSwarmTaskFailure, recordSwarmNodeOutcome, reportBeeCompletion } from './swarm';
 import { handleDebateTaskFailure, recordDecisionFromClarify } from './debate';
 import { ensurePrimaryThread } from './thread';
+import { matchBlueprint } from './blueprint';
+import { getPersona } from './persona-library';
 
 /**
  * 验收标准条目（双 Loop 地基 P0.1）。
@@ -113,6 +115,8 @@ export interface Task {
   swarmDepth: number;
   /** 指挥系统批次3：追问的结构化选项（null=自由文本追问）。 */
   questionOptions: import('../../shared/types').QuestionOption[] | null;
+  /** 蓝图组织批次1：本次穿戴的人设（personas/ 相对路径，null=不穿戴）。人设不产生任职。 */
+  personaId: string | null;
 }
 
 interface TaskRow {
@@ -162,6 +166,7 @@ interface TaskRow {
   swarm_id: string | null;
   swarm_depth: number;
   question_options_json: string | null;
+  persona_id: string | null;
 }
 
 function fromRow(r: TaskRow): Task {
@@ -214,6 +219,7 @@ function fromRow(r: TaskRow): Task {
     questionOptions: r.question_options_json
       ? (JSON.parse(r.question_options_json) as import('../../shared/types').QuestionOption[])
       : null,
+    personaId: (r as { persona_id?: string | null }).persona_id ?? null,
   };
 }
 
@@ -256,6 +262,8 @@ export interface CreateTaskInput {
   /** 指挥系统：蜂群归属与树深度（蜂任务/汇总任务/告警任务携带）。 */
   swarmId?: string;
   swarmDepth?: number;
+  /** 蓝图组织批次1：本次穿戴的人设（personas/ 相对路径）。不校验存在性——persona 库可热变更，缺失时上下文优雅降级。 */
+  personaId?: string;
 }
 
 const ALLOWED_TRANSITIONS: Record<TaskState, TaskState[]> = {
@@ -300,6 +308,30 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
       routedMeta = { routedByCapability: true, routedCandidate: candidate.name, routedScore: candidate.score };
     }
   }
+  // 蓝图组织批次3：任务未显式指定人设/技能/能力且非讨论任务时，按蓝图匹配自动穿戴
+  // （组织 = f(活) 的读取侧）。匹配结果记入 inputProtocol 供审计；无命中/人设已不存在则不穿戴。
+  let personaId = input.personaId ?? null;
+  let blueprintMeta: Record<string, unknown> = {};
+  if (!personaId
+    && !input.isDiscussion
+    && !(Array.isArray(input.requiredSkillIds) && input.requiredSkillIds.length > 0)
+    && !(Array.isArray(input.requiredCapabilityIds) && input.requiredCapabilityIds.length > 0)
+    && !(Array.isArray(input.knowledgeTargets) && input.knowledgeTargets.length > 0)
+  ) {
+    const routedAgent = routedAssigneeId ? getAgent(db, routedAssigneeId) : null;
+    if (!routedAgent?.isSystem) {
+      const match = matchBlueprint(db, project.companyId, input.title);
+      const slot = match?.blueprint.staffing[0];
+      if (match && slot && getPersona(slot.personaId)) {
+        personaId = slot.personaId;
+        blueprintMeta = {
+          blueprintMatched: match.blueprint.id,
+          blueprintLabel: match.blueprint.label,
+          blueprintScore: Math.round(match.score * 100) / 100,
+        };
+      }
+    }
+  }
   const inputProtocol = {
     ...(Array.isArray(taskProtocol.inputFields) ? { requiredFields: taskProtocol.inputFields } : {}),
     ...(input.inputProtocol ?? {}),
@@ -307,6 +339,7 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
     ...(input.requiredCapabilityIds ? { requiredCapabilityIds: input.requiredCapabilityIds } : {}),
     ...(input.knowledgeTargets ? { knowledgeTargets: input.knowledgeTargets } : {}),
     ...routedMeta,
+    ...blueprintMeta,
   };
   const outputProtocol = {
     ...(Array.isArray(taskProtocol.outputFields) ? { requiredFields: taskProtocol.outputFields } : {}),
@@ -327,10 +360,25 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
     }
     // 指挥系统：系统隐形岗（调度中心）的派发对象是一次性工蜂/汇总任务（系统管理），豁免 contactAllow
     if (dispatcher && assignee && dispatcher.id !== assignee.id && !dispatcher.isSystem && !dispatcher.contactAllow.includes(assignee.id)) {
-      throw new AppError(
-        ErrorCode.UNAUTHORIZED,
-        `员工 ${dispatcher.id} 未授权联系 ${assignee.id}`,
-      );
+      // 蓝图组织批次3：动态通信图——同项目团队成员（在该项目有线程）互可派发，
+      // 固定白名单不再是唯一通路；loop 防护（isDispatchLoop）仍然兜底。
+      // Review 修复 I1：选择面/控制面分离——hidden 非系统执行体（蜂群工蜂/辩手）只受直属调度控制，
+      // 不进团队成员可派发范围；系统隐形岗（调度中心/评审中心）即使 hidden 任职也保持可派发（蜂群链路依赖）。
+      const crewMate = db.prepare(
+        `SELECT 1 FROM project_agent_thread t
+         WHERE t.project_id=? AND t.agent_id=?
+           AND (
+             EXISTS (SELECT 1 FROM agent_definition a WHERE a.id = t.agent_id AND a.is_system = 1)
+             OR NOT EXISTS (SELECT 1 FROM company_employee ce WHERE ce.legacy_agent_id = t.agent_id AND ce.hidden = 1)
+           )
+         LIMIT 1`,
+      ).get(input.projectId, assignee.id);
+      if (!crewMate) {
+        throw new AppError(
+          ErrorCode.UNAUTHORIZED,
+          `员工 ${dispatcher.id} 未授权联系 ${assignee.id}`,
+        );
+      }
     }
   }
   const id = shortId('tk_');
@@ -356,8 +404,8 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
        assignee_thread_id, assignee_task_thread_id, title, input_protocol_json, context_refs_json, output_protocol_json,
        priority, state, lease_owner_thread_id, lease_expires_at, heartbeat_at, outcome, summary,
        question, artifacts_json, checkpoint, clarification_rounds, is_discussion, is_suggestion, budget_json,
-       deadline_at, completed_at, created_at, updated_at, acceptance_criteria, outsourcing_contract_id, swarm_id, swarm_depth)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'queued',NULL,NULL,NULL,NULL,'',NULL,'[]',NULL,0,?,?,'{}',?,NULL,?,?,?,?,?,?)`,
+       deadline_at, completed_at, created_at, updated_at, acceptance_criteria, outsourcing_contract_id, swarm_id, swarm_depth, persona_id)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'queued',NULL,NULL,NULL,NULL,'',NULL,'[]',NULL,0,?,?,'{}',?,NULL,?,?,?,?,?,?,?)`,
   ).run(
     id, input.projectId,projectTaskId, seq, rootTaskId, input.parentTaskId ?? null, input.dispatcherAgentId ?? null,
     routedAssigneeId, null,null, input.title,
@@ -371,6 +419,7 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
     input.outsourcingContext?.contractId ?? null,
     input.swarmId ?? null,
     input.swarmDepth ?? 0,
+    personaId,
   );
   // 修正 root_task_id 自引用
   if (!input.parentTaskId && !input.rootTaskId) {

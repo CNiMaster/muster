@@ -62,7 +62,7 @@ describe('evaluateWithAi 四级递进判定', () => {
     expect(r.highestSafeLevel).toBe('project_scope');
   });
 
-  it('safe + company_scope：公司内放行（需人工批量升级）', async () => {
+  it('safe + company_scope：工作台内放行（需人工批量升级）', async () => {
     mockAiResponse('safe', { execute_once:{safe:true,reason:''}, project_scope:{safe:true,reason:''}, company_scope:{safe:true,reason:'组织级只读'}, permanent:{safe:false,reason:''} });
     const r = await evaluateWithAi(db, { action: 'run-command', command: 'git log', policyId });
     expect(r.highestSafeLevel).toBe('company_scope');

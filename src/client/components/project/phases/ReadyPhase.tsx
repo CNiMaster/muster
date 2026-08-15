@@ -26,14 +26,14 @@ export function ReadyPhase({
       label: '调研：已选定候选能力',
     },
     { ok: readiness.equipment.enabledPlugins.length > 0, label: `装备：已启用 ${readiness.equipment.enabledPlugins.length} 个能力` },
-    { ok: readiness.staffing.employeeIds.length > 0, label: `员工：已分配 ${readiness.staffing.employeeIds.length} 名员工` },
+    { ok: readiness.staffing.employeeIds.length > 0, label: `智能体：已分配 ${readiness.staffing.employeeIds.length} 名智能体` },
   ];
   const allOk = checks.every((c) => c.ok);
 
   return (
     <Card className="phase-content ready-phase">
       <h3>就绪阶段</h3>
-      <p className="muted">确认准备就绪后，点击「确认开工」进入执行。开工后才能派发员工工作单。</p>
+      <p className="muted">确认准备就绪后，点击「确认开工」进入执行。开工后才能派发智能体工作单。</p>
       <ul className="ready-check-list">
         {checks.map((c, i) => (
           <li key={i} className="ready-check-item">

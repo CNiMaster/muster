@@ -70,7 +70,7 @@ function NewProject({ companyId }: { companyId: string }): React.ReactElement {
   const createProjectTask = useCreateProjectTask();
   const generateProjectProposal = useGenerateProjectProposal();
   const creationPreset = getProjectCreationPreset(company?.kind);
-  // 阶段六任务 6.2：项目 Playbook 选项（按公司模板推荐）
+  // 阶段六任务 6.2：项目 Playbook 选项（按工作台模板推荐）
   const { data: playbookOptions } = usePlaybooksForTemplate(company?.kind);
 
   const [mode, setMode] = useState<'standard' | 'wizard'>('wizard');
@@ -270,15 +270,15 @@ function NewProject({ companyId }: { companyId: string }): React.ReactElement {
               <Textarea value={desc} onChange={(e) => setDesc(e.target.value)} placeholder={creationPreset.descriptionPlaceholder} />
             </Field>
             {/* 阶段六任务 6.2：项目 Playbook（工作模式） */}
-            <Field label="项目工作模式" hint="决定项目阶段、成果类型与审批节点；同一公司可运行不同模式的项目">
+            <Field label="项目工作模式" hint="决定项目阶段、成果类型与审批节点；同一工作台可运行不同模式的项目">
               <Select value={playbookId} onChange={(e) => setPlaybookId(e.target.value)}>
-                <option value="">跟随公司默认流程</option>
+                <option value="">跟随工作台默认流程</option>
                 {(playbookOptions ?? []).map((playbook) => (
                   <option key={playbook.id} value={playbook.id}>{playbook.name} — {playbook.description}</option>
                 ))}
               </Select>
             </Field>
-            <Field label="项目目录（可选）" hint="留空则在默认工作区自动生成。一个公司可同时跑多个项目，每个项目独立目录。必须填绝对路径，且在 MUSTER_ALLOWED_ROOTS 允许范围内。">
+            <Field label="项目目录（可选）" hint="留空则在默认工作区自动生成。一个工作台可同时跑多个项目，每个项目独立目录。必须填绝对路径，且在 MUSTER_ALLOWED_ROOTS 允许范围内。">
               <Input value={rootDir} onChange={(e) => setRootDir(e.target.value)} placeholder="例如：/Users/you/code/my-project" />
             </Field>
             <div>
@@ -330,7 +330,7 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
   const [maxRounds, setMaxRounds] = useState(3);
   const brainstormBudget = useBrainstormBudget(projectId);
 
-  // 初始化时默认全选所有员工作为脑暴参与者
+  // 初始化时默认全选所有智能体作为脑暴参与者
   useEffect(() => {
     if (agents && agents.length > 0 && selectedAgents.length === 0) {
       setSelectedAgents(agents.map(a => a.id));
@@ -357,7 +357,7 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
     return (
       <div className="project-page project-onboarding-container">
         <div className="project-page-header">
-          <Link to={`/companies/${project.companyId}`} className="back-link">← 返回公司</Link>
+          <Link to={`/companies/${project.companyId}`} className="back-link">← 返回工作台</Link>
           <h1>{project.name}</h1>
           <StateBadge domain="project" state={project.state} />
         </div>
@@ -400,7 +400,7 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
           if (res.state === 'skipped') {
             toast('info', `跳过：${res.reason}`);
           } else {
-            toast('success', '已随机召集 2 名闲置员工开始讨论');
+            toast('success', '已随机召集 2 名闲置智能体开始讨论');
             setTopic('');
           }
         },
@@ -421,7 +421,7 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
       return;
     }
     if (selectedAgents.length === 0) {
-      toast('error', '请至少选择 1 名参与员工');
+      toast('error', '请至少选择 1 名参与智能体');
       return;
     }
 
@@ -451,7 +451,7 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
   return (
     <WorkbenchShell
       scopeKey={`project:${projectId}`}
-      breadcrumb={<WorkbenchContextSwitcher companyId={project.companyId} companyName={company?.name ?? '公司'} companyKind={company?.kind} projectId={project.id} projectName={project.name} projectTaskId={selectedProjectTaskId} sectionKey={projectView} sectionLabel={{ task: '项目任务', employee: selectedAgent?.name ?? '员工', group: '项目群聊', activity: '协作活动' }[projectView]} novel={company?.kind === 'novel'} />}
+      breadcrumb={<WorkbenchContextSwitcher companyId={project.companyId} companyName={company?.name ?? '工作台'} companyKind={company?.kind} projectId={project.id} projectName={project.name} projectTaskId={selectedProjectTaskId} sectionKey={projectView} sectionLabel={{ task: '项目任务', employee: selectedAgent?.name ?? '智能体', group: '项目群聊', activity: '协作活动' }[projectView]} novel={company?.kind === 'novel'} />}
       navigationLabel="项目组织与联系人"
       inspectorLabel="项目任务与运行"
       attentionCount={attentionCount + (cockpit?.approvals.pending ?? 0)}
@@ -468,7 +468,7 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
       inspector={<ProjectContextInspector projectId={projectId} companyId={project.companyId} projectState={project.state} selectedTask={selectedProjectTask} selectedAgentId={projectView === 'employee' ? selectedAgentId : undefined} agents={agents ?? []} tasks={tasks ?? []} cockpit={cockpit} />}
       commandOptions={[
         ...(projectTasks ?? []).slice(0, 5).map((item) => ({ label: `任务：${item.title}`, href: `/projects/${projectId}?view=task&projectTask=${item.id}`, group: '项目任务' })),
-        ...(agents ?? []).slice(0, 5).map((agent) => ({ label: `员工：${agent.name}`, href: `/projects/${projectId}?view=employee&agent=${agent.id}`, group: '团队成员' })),
+        ...(agents ?? []).slice(0, 5).map((agent) => ({ label: `智能体：${agent.name}`, href: `/projects/${projectId}?view=employee&agent=${agent.id}`, group: '团队成员' })),
         { label: '任务领取清单', href: `/projects/${projectId}/tasks`, group: '项目工具' },
         { label: '运行概览', href: `/projects/${projectId}/dashboard`, group: '项目工具' },
         { label: '成果与文件', href: `/projects/${projectId}/artifacts`, group: '项目工具' },
@@ -512,7 +512,7 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
         onArchive={(id) => { if (window.confirm('归档后，本项目任务将只读保存；后续工作需要新建项目任务。确定归档吗？')) projectTaskAction.mutate({ projectId, id, action: 'archive' }); }}
         workOrder={{ title: workOrderTitle, assigneeId: workOrderAssignee }}
         onWorkOrderChange={(workOrder) => { setWorkOrderTitle(workOrder.title); setWorkOrderAssignee(workOrder.assigneeId); }}
-        onPublishWorkOrder={() => { if (!selectedProjectTask) return; createWorkOrder.mutate({ projectId, projectTaskId: selectedProjectTask.id, title: workOrderTitle, assigneeAgentId: workOrderAssignee || undefined }, { onSuccess: () => { setWorkOrderTitle(''); toast('success', '员工工作单已发布'); } }); }}
+        onPublishWorkOrder={() => { if (!selectedProjectTask) return; createWorkOrder.mutate({ projectId, projectTaskId: selectedProjectTask.id, title: workOrderTitle, assigneeAgentId: workOrderAssignee || undefined }, { onSuccess: () => { setWorkOrderTitle(''); toast('success', '智能体工作单已发布'); } }); }}
         discoveringLaunch={discoverProjectLaunch.isPending}
         confirmingLaunch={confirmProjectLaunch.isPending}
         onDiscoverLaunch={(id, launchBrief) => discoverProjectLaunch.mutate({ projectId, id, launchBrief }, { onSuccess: () => toast('success', '已检查当前执行器、能力绑定、Skill 与工具候选') , onError: (error) => toast('error', (error as Error).message) })}
@@ -521,7 +521,7 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
 
       {/* 高频：对话 + 活动上移到首屏 */}
       {projectView === 'group' && <Card id="project-conversation" title="项目成员群聊">
-        <ConversationPanel scope="project" scopeId={projectId} companyId={project.companyId} projectTaskId={selectedProjectTaskId} title="项目群 · 可 @ 指定员工" />
+        <ConversationPanel scope="project" scopeId={projectId} companyId={project.companyId} projectTaskId={selectedProjectTaskId} title="项目群 · 可 @ 指定智能体" />
       </Card>}
 
       {projectView === 'activity' && <Card title="协作活动">
@@ -534,10 +534,10 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', paddingTop: 'var(--space-3)' }}>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)', alignItems: 'start' }}>
-            {/* 项目员工线程与镜像管理 */}
-            <Card title="项目员工线程与扩容" actions={<Badge>{threads?.length ?? 0}</Badge>}>
+            {/* 项目智能体线程与镜像管理 */}
+            <Card title="项目智能体线程与扩容" actions={<Badge>{threads?.length ?? 0}</Badge>}>
           {threads && threads.length === 0 && (
-            <EmptyState icon={Icons.empty} title="还没有员工进入项目" hint="公司上班后，员工会自动进入项目开始领取 Task。" />
+            <EmptyState icon={Icons.empty} title="还没有智能体进入项目" hint="工作台上班后，智能体会自动进入项目开始领取 Task。" />
           )}
           <ul className="entity-list">
             {threads?.map((t) => {
@@ -603,7 +603,7 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
         <Card title="创意讨论 · 头脑风暴" actions={<Badge tone="info">闲置触发</Badge>}>
           <div className="form-stack">
             <p className="muted" style={{ fontSize: 'var(--text-sm)', margin: 0 }}>
-              当项目没有积压任务时，可主动召集闲置员工进行特定主题的头脑风暴，产出决策建议。
+              当项目没有积压任务时，可主动召集闲置智能体进行特定主题的头脑风暴，产出决策建议。
             </p>
             {brainstormBudget.data && (
               <p className="muted" style={{ fontSize: 'var(--text-sm)', margin: 0 }}>
@@ -618,7 +618,7 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
               />
             </Field>
             <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '12px' }}>
-              <Field label="参会员工 (多选)">
+              <Field label="参会智能体 (多选)">
                 <div style={{
                   maxHeight: '120px',
                   overflowY: 'auto',
@@ -652,8 +652,8 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
               </Field>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 'var(--space-2)' }}>
-              <Button variant="ghost" onClick={handleAutoBrainstorm} loading={startBrainstorm.isPending} title="随机选 2 名闲置员工参与">
-                随机选闲置员工
+              <Button variant="ghost" onClick={handleAutoBrainstorm} loading={startBrainstorm.isPending} title="随机选 2 名闲置智能体参与">
+                随机选闲置智能体
               </Button>
               <Button onClick={handleStartBrainstorm} loading={startBrainstorm.isPending}>
                 召集脑暴会议

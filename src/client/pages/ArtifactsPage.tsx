@@ -27,7 +27,7 @@ import { MarkdownPreview } from '../components/MarkdownPreview';
 const EDITABLE_KINDS = ['project_brief', 'synopsis', 'style_profile', 'outline', 'chapter', 'character_sheet', 'worldbuilding', 'timeline', 'foreshadowing'];
 const READONLY_KINDS = ['character_relation_view', 'plot_progress_view', 'timeline_view'];
 
-/** 通用成果类型(Phase 4 泛化:非小说公司也可见)。 */
+/** 通用成果类型(Phase 4 泛化:非小说工作台也可见)。 */
 const GENERIC_KINDS = ['markdown', 'text', 'json', 'image', 'pdf', 'video', 'audio', 'binary'];
 
 const KIND_LABELS: Record<string, string> = {

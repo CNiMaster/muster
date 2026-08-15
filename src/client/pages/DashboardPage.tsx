@@ -114,7 +114,7 @@ export function DashboardPage(): React.ReactElement {
         <div className="page-actions">
           <Link to={`/projects/${projectId}`}>
             <Badge tone={companyStateTone(company?.state ?? 'off')} dot={company?.state === 'online'}>
-              公司状态: {company ? stateLabel(company.state) : '...'}
+              工作台状态: {company ? stateLabel(company.state) : '...'}
             </Badge>
           </Link>
         </div>
@@ -314,10 +314,10 @@ export function DashboardPage(): React.ReactElement {
             </Card>
           </div>
 
-          {/* 双栏：员工负载 + 模型用量拆分 */}
+          {/* 双栏：智能体负载 + 模型用量拆分 */}
           <div className="dashboard-grid">
-            {/* 员工负载分布 */}
-            <Card title="员工负载分布">
+            {/* 智能体负载分布 */}
+            <Card title="智能体负载分布">
               {statusBoard && statusBoard.departments.length > 0 ? (
                 <div className="dashboard-load-chart">
                   {statusBoard.departments.flatMap((d) => d.agents).map((a) => {
@@ -340,7 +340,7 @@ export function DashboardPage(): React.ReactElement {
                   })}
                 </div>
               ) : (
-                <EmptyState icon={Icons.empty} title="暂无员工数据" hint="公司上班后员工负载会显示在这里。" />
+                <EmptyState icon={Icons.empty} title="暂无智能体数据" hint="工作台上班后智能体负载会显示在这里。" />
               )}
             </Card>
 
@@ -376,7 +376,7 @@ export function DashboardPage(): React.ReactElement {
           {/* 运行线程列表（保留，精简） */}
           <Card title="运行线程" className="section" actions={<Badge>{threads?.length ?? 0}</Badge>}>
             {threads && threads.length === 0 ? (
-              <EmptyState icon={Icons.empty} title="无运行线程" hint="公司上班后将自动为进入项目的员工开启线程。" />
+              <EmptyState icon={Icons.empty} title="无运行线程" hint="工作台上班后将自动为进入项目的智能体开启线程。" />
             ) : threads === undefined ? (
               <div className="mu-skel-stack"><Skeleton lines={3} /></div>
             ) : (

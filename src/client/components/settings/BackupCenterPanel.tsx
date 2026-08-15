@@ -2,8 +2,8 @@
  * 备份中心面板：导出/导入结构化配置、文件系统目录指引、扫描导入系统 CLI 能力。
  *
  * 设计原则（用户确认）：
- * - 备份「结构化数据」：公司/人员/技能/插件(MCP)配置（不含密钥明文、不含公司文件）。
- * - 公司文件（工作目录/素材产物）不进备份包，提供目录指引由用户自行备份文件系统。
+ * - 备份「结构化数据」：工作台/人员/技能/插件(MCP)配置（不含密钥明文、不含工作台文件）。
+ * - 工作台文件（工作目录/素材产物）不进备份包，提供目录指引由用户自行备份文件系统。
  */
 import type React from 'react';
 import { useEffect, useState } from 'react';
@@ -128,7 +128,7 @@ export function BackupCenterPanel({ defaultOpen = false, className }: { defaultO
       void (async () => {
         try {
           const r = await api.post<{ companiesCreated: number; employeesCreated: number; profilesCreated: number; warnings: string[] }>('/api/backup/import', backup);
-          toast('success', `导入完成：公司 ${r.companiesCreated}、员工 ${r.employeesCreated}、档案 ${r.profilesCreated}`);
+          toast('success', `导入完成：工作台 ${r.companiesCreated}、智能体 ${r.employeesCreated}、档案 ${r.profilesCreated}`);
           if (r.warnings.length > 0) {
             for (const w of r.warnings) toast('info', w);
           }
@@ -151,7 +151,7 @@ export function BackupCenterPanel({ defaultOpen = false, className }: { defaultO
     }
   };
 
-  /** 迁移公司文件目录：整个工作区目录（含全部项目文件）物理移动到新位置，DB 前缀同步重映射。 */
+  /** 迁移工作台文件目录：整个工作区目录（含全部项目文件）物理移动到新位置，DB 前缀同步重映射。 */
   const handleMigrateWorkspace = async (): Promise<void> => {
     const dir = newWorkspaceDir.trim();
     if (!dir) {
@@ -173,7 +173,7 @@ export function BackupCenterPanel({ defaultOpen = false, className }: { defaultO
       const ok = window.confirm(
         `迁移工作区：\n${active.rootDir} → ${dir}\n\n` +
         `涉及 ${status.existingProjectsInOldDir} 个项目，文件随目录搬走，路径自动更新。\n` +
-        '⚠ 需先让所有公司下班。目标目录需为空或不存在。' + warningLines,
+        '⚠ 需先让所有工作台下班。目标目录需为空或不存在。' + warningLines,
       );
       if (!ok) return;
       const result = await api.post<{ workspace: Workspace; remappedProjects: number; usedCopyFallback: boolean }>(`/api/workspaces/${active.id}/migrate`, { newRootDir: dir });
@@ -248,8 +248,8 @@ export function BackupCenterPanel({ defaultOpen = false, className }: { defaultO
       actions={<Button variant="ghost" size="sm" onClick={handleExport}>导出备份</Button>}
     >
       <p className="muted">
-        备份包含结构化配置：公司/部门/员工、人才档案（含你修改过的预置人）、技能（名称与安装来源）、插件与 MCP 配置
-        （<strong>不含密钥明文、不含公司文件</strong>）。公司文件请按下方目录指引自行备份。
+        备份包含结构化配置：工作台/部门/智能体、人才档案（含你修改过的预置人）、技能（名称与安装来源）、插件与 MCP 配置
+        （<strong>不含密钥明文、不含工作台文件</strong>）。工作台文件请按下方目录指引自行备份。
       </p>
 
       <div className="settings-primary-actions">
@@ -269,12 +269,12 @@ export function BackupCenterPanel({ defaultOpen = false, className }: { defaultO
       {dirs && (
         <div className="install-progress" style={{ marginTop: 12 }}>
           <div className="install-progress-head"><strong>文件系统目录指引</strong></div>
-          <p className="muted" style={{ fontSize: 12 }}>公司文件/素材产物不在备份包内，请自行备份以下目录（含隐私与体积考量）：</p>
+          <p className="muted" style={{ fontSize: 12 }}>工作台文件/素材产物不在备份包内，请自行备份以下目录（含隐私与体积考量）：</p>
           <ul style={{ fontSize: 12, margin: '4px 0', paddingLeft: 18 }}>
             <li><strong>程序数据</strong>：<code>{dirs.musterHome}</code>（数据库 <code>{dirs.dbPath}</code> 另存即完整备份）</li>
-            <li><strong>公司文件</strong>：<code>{dirs.companiesDir}</code>（工作目录与素材产物，可整体备份或排除隐私子目录）</li>
+            <li><strong>工作台文件</strong>：<code>{dirs.companiesDir}</code>（工作目录与素材产物，可整体备份或排除隐私子目录）</li>
             <li><strong>任务工作区</strong>：<code>{dirs.worktreesDir}</code></li>
-            <li><strong>员工空间</strong>：<code>{dirs.agentsDir}</code></li>
+            <li><strong>智能体空间</strong>：<code>{dirs.agentsDir}</code></li>
           </ul>
         </div>
       )}
@@ -286,7 +286,7 @@ export function BackupCenterPanel({ defaultOpen = false, className }: { defaultO
             当前：<code>{workspaces.find((w) => w.isActive)?.rootDir ?? '（无）'}</code>
           </p>
           <p className="muted" style={{ fontSize: 12 }}>
-            把整个工作区（含项目文件）搬到新位置，路径自动更新。需先让所有公司下班。
+            把整个工作区（含项目文件）搬到新位置，路径自动更新。需先让所有工作台下班。
           </p>
           <div className="settings-field-grid" style={{ marginTop: 8 }}>
             <Field label="新目录（需为空或不存在）">

@@ -1,7 +1,7 @@
 /**
  * ConversationPanel · 类群聊对话窗口
  *
- PRD：与第一负责人对话、@员工、关键事件摘要、Task 卡片可点开详情。
+ PRD：与第一负责人对话、@智能体、关键事件摘要、Task 卡片可点开详情。
  - 消息流（user/assistant/system/event）
  - 输入框（Enter 发送，Shift+Enter 换行）
  - @提及候选（来自 contactAllow，简化为前缀过滤）
@@ -20,10 +20,10 @@ import { EmptyState, Icons } from './EmptyState';
 export interface ConversationPanelProps {
   scope: 'company' | 'project';
   scopeId: string;
-  /** 用于解析 @提及候选员工的 companyId。 */
+  /** 用于解析 @提及候选智能体的 companyId。 */
   companyId: string;
   title?: string;
-  /** 固定联系人；设置后成为该员工的项目单聊，并只显示与其关联的消息。 */
+  /** 固定联系人；设置后成为该智能体的项目单聊，并只显示与其关联的消息。 */
   recipientAgentId?: string;
   /** 对话生成的工作单必须归入这个用户项目任务。 */
   projectTaskId?: string;
@@ -85,7 +85,7 @@ export function ConversationPanel({ scope, scopeId, companyId, title, recipientA
           <EmptyState
             icon={Icons.empty}
             title="还没有对话"
-            hint={recipient ? `在这里了解 ${recipient.name}、交代工作或继续追问。` : `向第一负责人发消息，开始协${scope === 'company' ? '调公司' : '作项目'}。`}
+            hint={recipient ? `在这里了解 ${recipient.name}、交代工作或继续追问。` : `向第一负责人发消息，开始协${scope === 'company' ? '调工作台' : '作项目'}。`}
           />
         )}
         {messages?.map((m) => (
@@ -107,7 +107,7 @@ export function ConversationPanel({ scope, scopeId, companyId, title, recipientA
             className="mu-input mu-textarea"
             value={text}
             onChange={(e) => onChange(e.target.value)}
-            placeholder={recipient ? `发消息给 ${recipient.name}…  Enter 发送，Shift+Enter 换行` : '发消息给第一负责人…  Enter 发送，Shift+Enter 换行，@ 提及员工'}
+            placeholder={recipient ? `发消息给 ${recipient.name}…  Enter 发送，Shift+Enter 换行` : '发消息给第一负责人…  Enter 发送，Shift+Enter 换行，@ 提及智能体'}
             rows={2}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {

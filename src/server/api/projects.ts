@@ -18,6 +18,7 @@ import { asyncHandler, param } from './middleware';
 import { getDb } from '../db/client';
 import {
   createProject,
+  createQuickProject,
   getProject,
   listProjects,
   updateProject,
@@ -52,6 +53,25 @@ import { PHASE_ORDER, type ProjectState } from '../domain/project';
 export const projectsRouter = Router({ mergeParams: true });
 export const projectScopedRouter = Router({ mergeParams: true });
 
+/**
+ * 蓝图组织批次4c：项目优先入口——POST /api/projects/quick。
+ * 零组织决策建项目：自动落在默认工作台（无则顺手创建），用户从"我有件事要办"直达项目。
+ */
+export const quickProjectsRouter = Router();
+quickProjectsRouter.post(
+  '/',
+  asyncHandler(async (req, res) => {
+    const input = z.object({
+      name: z.string().min(1).max(120),
+      description: z.string().max(2000).optional(),
+    }).parse(req.body);
+    const db = getDb();
+    const result = createQuickProject(db, input);
+    ensureProjectThreads(db, result.project.id);
+    res.status(201).json(result);
+  }),
+);
+
 const createProjectSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
@@ -64,7 +84,8 @@ const createProjectSchema = z.object({
 projectsRouter.get(
   '/',
   asyncHandler(async (req, res) => {
-    res.json(listProjects(getDb(), param(req,'companyId')));
+    // Review 修复 I2：收件箱项目是对话基础设施，不进项目列表。
+    res.json(listProjects(getDb(), param(req, 'companyId')).filter((p) => (p.settings as Record<string, unknown>)?.inbox !== true));
   }),
 );
 

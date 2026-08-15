@@ -15,7 +15,7 @@ export function CompanyProjects({ companyId, projects }: { companyId: string; pr
     title="项目"
     actions={<Link className="mu-btn mu-btn-primary mu-btn-sm" to={`/companies/${companyId}/projects/new`}>新建项目</Link>}
   >
-    {projects.length === 0 && <EmptyState icon={Icons.empty} title="还没有项目" hint="一个公司可以同时运行多个项目；每个项目有独立目录、沙盒和项目任务上下文。" />}
+    {projects.length === 0 && <EmptyState icon={Icons.empty} title="还没有项目" hint="一个工作台可以同时运行多个项目；每个项目有独立目录、沙盒和项目任务上下文。" />}
     <ul className="entity-list">
       {projects.map((project) => <li key={project.id} className="project-row">
         <div className="project-row-main">

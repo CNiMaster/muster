@@ -12,7 +12,8 @@ function requiredRoles(contract: Record<string, unknown>): string[] {
 
 export function getCompanyCockpit(db: DB, companyId: string): CompanyCockpitDTO {
   const company = getCompany(db, companyId);
-  const projects = listProjects(db, companyId);
+  // Review 修复 I2：收件箱项目（settings.inbox）是对话基础设施，不进驾驶舱计数与"继续当前项目"建议。
+  const projects = listProjects(db, companyId).filter((p) => (p.settings as Record<string, unknown>)?.inbox !== true);
   const employeeRows = db.prepare(`SELECT ce.id,ad.availability_state FROM company_employee ce JOIN agent_definition ad ON ad.id=ce.legacy_agent_id WHERE ce.company_id=?`).all(companyId) as Array<{id:string;availability_state:string}>;
   const employees = { total: employeeRows.length, online: company.state === 'online' ? employeeRows.filter((row) => row.availability_state === 'online').length : 0, blocked: employeeRows.filter((row) => getEmploymentHealth(db, row.id).state !== 'ready').length };
   const pending = (db.prepare(`

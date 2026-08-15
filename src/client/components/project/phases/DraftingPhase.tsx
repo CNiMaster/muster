@@ -21,7 +21,7 @@ export function DraftingPhase({
           value={value.goal}
           disabled={disabled}
           onChange={(e) => onUpdate({ ...value, goal: e.target.value })}
-          placeholder="这个项目要达成什么效果？（如：为公司官网制作 3 个落地页）"
+          placeholder="这个项目要达成什么效果？（如：为工作台官网制作 3 个落地页）"
           rows={3}
         />
       </Field>

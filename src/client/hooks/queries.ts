@@ -664,6 +664,18 @@ export function useProject(id: string | undefined) {
   });
 }
 
+/** 蓝图组织批次4c：项目优先入口——零组织决策建项目（自动落默认工作台，无则顺手创建）。 */
+export function useQuickProject() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { name: string; description?: string }) =>
+      api.post<{ project: Project; companyId: string; createdWorkspace: boolean }>('/api/projects/quick', input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['companies'] });
+    },
+  });
+}
+
 export interface CharacterGraphNode { id: string; label: string; description?: string; }
 export interface CharacterGraphEdge { id: string; source: string; target: string; label: string; }
 export interface CharacterGraph {
@@ -1280,6 +1292,68 @@ export function useArtifactGallery(projectId: string | undefined, groupBy: 'time
     queryKey: ['artifact-gallery', projectId, groupBy],
     queryFn: () => api.get<ArtifactGalleryGroup[]>(`/api/projects/${projectId}/artifacts/gallery?groupBy=${groupBy}`),
     enabled: !!projectId,
+  });
+}
+
+/** 公司级跨项目成品画廊分组（蓝图组织批次2：归档页用）。 */
+export function useCompanyArtifactGallery(companyId: string | undefined, groupBy: 'time' | 'type' | 'project' = 'time') {
+  return useQuery({
+    queryKey: ['company-artifact-gallery', companyId, groupBy],
+    queryFn: () => api.get<Array<ArtifactGalleryGroup & { projectId?: string; projectName?: string }>>(
+      `/api/companies/${companyId}/artifacts?groupBy=${groupBy}`,
+    ),
+    enabled: !!companyId,
+  });
+}
+
+/** 跨项目归档检索命中（记忆/调研摘要/成果元数据，带来源项目标注）。 */
+export interface ArchiveHit {
+  kind: 'memory' | 'research' | 'artifact';
+  projectId: string;
+  projectName: string;
+  text: string;
+  createdAt: string;
+}
+
+export function useArchiveSearch(companyId: string | undefined, query: string) {
+  return useQuery({
+    queryKey: ['archive-search', companyId, query],
+    queryFn: () => api.get<ArchiveHit[]>(`/api/companies/${companyId}/archive/search?q=${encodeURIComponent(query)}`),
+    enabled: !!companyId && query.trim().length > 0,
+  });
+}
+
+/** 蓝图（从使用中学出来的组织形状：任务类型 × 人设组合 × 战绩）。 */
+export interface Blueprint {
+  id: string;
+  companyId: string;
+  taskType: string;
+  label: string;
+  staffing: Array<{ personaId: string; personaName: string }>;
+  sourceProjectIds: string[];
+  wins: number;
+  losses: number;
+  status: 'active' | 'locked' | 'retired';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function useBlueprints(companyId: string | undefined) {
+  return useQuery({
+    queryKey: ['blueprints', companyId],
+    queryFn: () => api.get<Blueprint[]>(`/api/companies/${companyId}/blueprints`),
+    enabled: !!companyId,
+  });
+}
+
+export function useBlueprintStatus(companyId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ blueprintId, status }: { blueprintId: string; status: Blueprint['status'] }) =>
+      api.post<Blueprint>(`/api/companies/${companyId}/blueprints/${blueprintId}/status`, { status }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['blueprints', companyId] });
+    },
   });
 }
 
@@ -1920,79 +1994,10 @@ export function useInstallClaudePlugin() {
   });
 }
 
-// ── B2B 外包 hooks ────────────────────────────────────────────────────────
-
-/** 列出公司参与的外包契约（role=source 甲方委派 / target 乙方承接）。 */
-export function useOutsourceContracts(companyId: string | undefined, role: 'source' | 'target') {
-  return useQuery({
-    queryKey: ['outsource-contracts', companyId, role],
-    queryFn: () => api.get<OutsourcingContract[]>(`/api/companies/${companyId}/outsource/contracts?role=${role}`),
-    enabled: !!companyId,
-  });
-}
-
-/** 甲方发起委派（含全自动决策树）。 */
-export function useDispatchOutsource() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ companyId, input }: { companyId: string; input: DispatchOutsourceInput }) =>
-      api.post<{ contract: OutsourcingContract | null; decision: { path: string; internalAssigneeId?: string; reason?: string; missingCapabilityIds?: string[] } }>(
-        `/api/companies/${companyId}/outsource/dispatch`,
-        input,
-      ),
-    onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: ['outsource-contracts', vars.companyId] });
-    },
-  });
-}
-
-interface DispatchOutsourceInput {
-  sourceProjectId: string;
-  title: string;
-  brief: string;
-  acceptanceCriteria?: Array<{ id?: string; criterion: string }>;
-  requiredCapabilityIds?: string[];
-  deliverableDir?: string;
-  readonlyRefs?: string[];
-  vendorCompanyId?: string;
-  autoDecide?: boolean;
-}
-
-/** 乙方接受契约。 */
-export function useAcceptContract() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ contractId, vendorLiaisonAgentId }: { contractId: string; vendorLiaisonAgentId: string }) =>
-      api.post<{ contract: OutsourcingContract; task: { id: string } }>(`/api/outsource/contracts/${contractId}/accept`, { vendorLiaisonAgentId }),
-    onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: ['outsource-contracts'] });
-    },
-  });
-}
-
-/** 甲方验收（completed/changes_requested/rejected）。 */
-export function useReviewContract() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ contractId, decision, feedback }: { contractId: string; decision: 'completed' | 'changes_requested' | 'rejected'; feedback?: string }) =>
-      api.post<{ contract: OutsourcingContract }>(`/api/outsource/contracts/${contractId}/review`, { decision, feedback }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['outsource-contracts'] });
-    },
-  });
-}
-
-/** 取消契约。 */
-export function useCancelContract() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (contractId: string) =>
-      api.post<{ contract: OutsourcingContract }>(`/api/outsource/contracts/${contractId}/cancel`, {}),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['outsource-contracts'] });
-    },
-  });
-}
+/**
+ * 蓝图组织批次5：B2B 外包 hooks 删除（外包中心 UI 随"按公司找乙方"退役）。
+ * 契约状态机与交付管线保留在后端（outsourcing-contract.ts），待改造为跨项目交付协议后再出前端。
+ */
 
 // ── 临时工 + 评级 hooks（批次 A）───────────────────────────────────────────
 
@@ -2155,6 +2160,18 @@ export function useCloseDiscussion() {
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: ['project-discussions', vars.projectId] });
       qc.invalidateQueries({ queryKey: ['discussion-detail', vars.discussionId] });
+    },
+  });
+}
+
+/** 蓝图组织批次4：用户主动发起探讨（brainstorm 场景；参与者选择面排除一次性执行体）。 */
+export function useStartUserDiscussion(projectId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { topic: string; participantAgentIds: string[] }) =>
+      api.post<{ discussionId: string; turnTaskId: string }>(`/api/projects/${projectId}/discussions`, input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['project-discussions', projectId] });
     },
   });
 }

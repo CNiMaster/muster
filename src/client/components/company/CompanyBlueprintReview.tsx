@@ -35,10 +35,10 @@ export function CompanyBlueprintReview({ draft, density, onDensityChange }: {
 
     <div className="blueprint-modules">
       <article className="blueprint-module blueprint-overview">
-        <div className="blueprint-module-head"><span>01</span><h3>公司概览</h3></div>
+        <div className="blueprint-module-head"><span>01</span><h3>工作台概览</h3></div>
         <p className="blueprint-lead">{draft.summary.operatingModel}</p>
         <div className="blueprint-deliverables">{draft.summary.deliverables.map((item) => <span key={item}>{item}</span>)}</div>
-        <dl><div><dt>公司目标</dt><dd>{draft.goal}</dd></div><div><dt>首个项目</dt><dd>{draft.project.name}</dd></div><div><dt>第一份工作</dt><dd>{draft.firstProjectTask.title}</dd></div></dl>
+        <dl><div><dt>工作台目标</dt><dd>{draft.goal}</dd></div><div><dt>首个项目</dt><dd>{draft.project.name}</dd></div><div><dt>第一份工作</dt><dd>{draft.firstProjectTask.title}</dd></div></dl>
       </article>
 
       <article className="blueprint-module">
@@ -82,7 +82,7 @@ export function CompanyBlueprintReview({ draft, density, onDensityChange }: {
             <div className="blueprint-skill-list">{binding.skillIds.length > 0 ? binding.skillIds.map((skill) => <Badge key={skill} tone="info">{skill}</Badge>) : <Badge tone="neutral">按岗位协议执行</Badge>}</div>
           </section>;
         })}</div>
-        <p className="blueprint-footnote">Skill 由对应员工在相关 Task 中按需加载，不会把全部能力注入所有员工。</p>
+        <p className="blueprint-footnote">Skill 由对应智能体在相关 Task 中按需加载，不会把全部能力注入所有智能体。</p>
       </article>
 
       <article className="blueprint-module">
@@ -94,7 +94,7 @@ export function CompanyBlueprintReview({ draft, density, onDensityChange }: {
       </article>
     </div>
 
-    <div className="blueprint-create-hint"><span aria-hidden="true">i</span><strong>建议先按推荐方案创建；员工、字段、视图和流程创建后仍可随时调整。</strong></div>
+    <div className="blueprint-create-hint"><span aria-hidden="true">i</span><strong>建议先按推荐方案创建；智能体、字段、视图和流程创建后仍可随时调整。</strong></div>
 
     <details className="details-collapse blueprint-advanced">
       <summary>高级配置与协议</summary>

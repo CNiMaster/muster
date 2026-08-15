@@ -33,10 +33,10 @@ describe('project task workspace layout', () => {
   it('turns the inspector into an actionable task panel', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
     render(<QueryClientProvider client={client}><MemoryRouter><ProjectContextInspector projectId="pr_1" companyId="co_1" projectState="active" selectedTask={projectTask} selectedAgentId="ag_1" agents={[agent]} tasks={[workOrder]} cockpit={{ companyId: 'co_1', companyState: 'online', employees: { total: 1, online: 0, blocked: 1 }, projects: { total: 1, active: 1, attention: 0 }, approvals: { pending: 0 }, roleGaps: [], risks: [], nextAction: { kind: '', label: '', description: '', href: '' } }} /></MemoryRouter></QueryClientProvider>);
-    expect(screen.getByRole('link', { name: '派发给此员工' })).toHaveAttribute('href', '#employee-dispatch');
+    expect(screen.getByRole('link', { name: '派发给此智能体' })).toHaveAttribute('href', '#employee-dispatch');
     expect(screen.getByRole('link', { name: /补齐恢复测试/ })).toHaveAttribute('href', '/tasks/tk_1');
     expect(screen.getByRole('link', { name: /自动计划/ })).toHaveAttribute('href', '/projects/pr_1/plans');
-    expect(screen.getByRole('link', { name: '员工引用关系' })).toHaveAttribute('href', '/companies/co_1/graphs/communication');
+    expect(screen.getByRole('link', { name: '智能体引用关系' })).toHaveAttribute('href', '/companies/co_1/graphs/communication');
   });
 
   it('shows requirement and capability confirmation before exposing production dispatch', () => {

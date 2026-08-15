@@ -9,8 +9,8 @@ export interface WorkbenchSectionOption {
 }
 
 const GLOBAL_OPTIONS: WorkbenchSectionOption[] = [
-  { key: 'companies', label: '公司工作台', href: '/' },
-  { key: 'agents', label: '员工库', href: '/agents' },
+  { key: 'companies', label: '工作台工作台', href: '/' },
+  { key: 'agents', label: '智能体库', href: '/agents' },
   { key: 'executors', label: '执行器', href: '/executors' },
   { key: 'permissions', label: '权限', href: '/permissions' },
   { key: 'settings', label: '设置', href: '/settings' },
@@ -18,7 +18,7 @@ const GLOBAL_OPTIONS: WorkbenchSectionOption[] = [
 
 export function companySectionOptions(companyId: string): WorkbenchSectionOption[] {
   return [
-    { key: 'overview', label: '公司总览', href: `/companies/${companyId}` },
+    { key: 'overview', label: '工作台总览', href: `/companies/${companyId}` },
     { key: 'attention', label: '需要处理', href: `/companies/${companyId}?view=attention` },
     { key: 'projects', label: '项目', href: `/companies/${companyId}?view=projects` },
     { key: 'team', label: '团队', href: `/companies/${companyId}?view=team` },
@@ -69,9 +69,9 @@ export function WorkbenchContextSwitcher({ companyId, companyName, companyKind, 
   const projectOptions = projects.map((project) => ({ key: project.id, label: project.name, href: `/projects/${project.id}` }));
 
   return <nav className="workbench-context-switcher" aria-label="工作区快速切换">
-    <SwitchMenu label={projectId ? '项目' : companyKind || '公司'} options={GLOBAL_OPTIONS} ariaLabel="切换功能分类" />
+    <SwitchMenu label={projectId ? '项目' : companyKind || '工作台'} options={GLOBAL_OPTIONS} ariaLabel="切换功能分类" />
     <span className="workbench-context-separator" aria-hidden="true">/</span>
-    {/* 优化⑥：公司切换已由顶部标签栏接管，此处只作静态上下文展示（去菜单层） */}
+    {/* 优化⑥：工作台切换已由顶部标签栏接管，此处只作静态上下文展示（去菜单层） */}
     <span className="workbench-context-static">{companyName}</span>
     {projectId && projectName && <>
       <span className="workbench-context-separator" aria-hidden="true">/</span>

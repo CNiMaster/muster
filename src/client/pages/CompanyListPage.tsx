@@ -1,6 +1,6 @@
 /**
- * 公司列表页：搜索/筛选/改名/归档/删除/创建入口。
- * 在营公司默认展示；归档公司折叠展示（不隐藏）。
+ * 工作台列表页：搜索/筛选/改名/归档/删除/创建入口。
+ * 在营工作台默认展示；归档工作台折叠展示（不隐藏）。
  */
 import type React from 'react';
 import { useMemo, useState } from 'react';
@@ -55,18 +55,18 @@ export function CompanyListPage(): React.ReactElement {
     <div className="home">
       <header className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap' }}>
         <div>
-          <h1>我的公司</h1>
-          <p className="subtitle">管理所有公司：改名、归档（暂停营业）、删除或创建新公司。</p>
+          <h1>我的工作台</h1>
+          <p className="subtitle">管理所有工作台：改名、归档（暂停营业）、删除或创建新工作台。</p>
         </div>
         <Link className="mu-btn mu-btn-primary mu-btn-md" to="/companies/wizard">
-          <span>创建公司</span>
+          <span>创建工作台</span>
         </Link>
       </header>
 
       <Card className="section">
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
           <Input
-            placeholder="搜索公司名称…"
+            placeholder="搜索工作台名称…"
             value={q}
             onChange={(e) => setQ((e.target as HTMLInputElement).value)}
             style={{ flex: 1, minWidth: 200 }}
@@ -85,7 +85,7 @@ export function CompanyListPage(): React.ReactElement {
       </Card>
 
       <Card
-        title="在营公司"
+        title="在营工作台"
         className="section"
         actions={<Badge tone="ok">{active.length}</Badge>}
       >
@@ -99,8 +99,8 @@ export function CompanyListPage(): React.ReactElement {
         {!activeLoading && active.length === 0 && (
           <EmptyState
             icon={Icons.empty}
-            title={debouncedQ || kind ? '没有匹配的公司' : '还没有公司'}
-            hint={debouncedQ || kind ? '试试调整搜索或筛选条件。' : '选择公司模板，组建团队并创建首个项目。'}
+            title={debouncedQ || kind ? '没有匹配的工作台' : '还没有工作台'}
+            hint={debouncedQ || kind ? '试试调整搜索或筛选条件。' : '选择工作台模板，组建团队并创建首个项目。'}
           />
         )}
         <ul className="entity-list">
@@ -114,7 +114,7 @@ export function CompanyListPage(): React.ReactElement {
         <Card className="section">
           <details className="details-collapse" open={showArchived}>
             <summary onClick={() => setShowArchived((v) => !v)} style={{ cursor: 'pointer' }}>
-              <span style={{ marginRight: 8 }}>归档公司</span>
+              <span style={{ marginRight: 8 }}>归档工作台</span>
               <Badge tone="neutral">{archived.length}</Badge>
               <span className="muted" style={{ marginLeft: 12, fontSize: '0.85em' }}>
                 已暂停营业，可随时重开
@@ -149,7 +149,7 @@ function CompanyRow({ company }: { company: Company }): React.ReactElement {
   const saveName = (): void => {
     const trimmed = draftName.trim();
     if (!trimmed) {
-      toast('error', '公司名称不能为空');
+      toast('error', '工作台名称不能为空');
       return;
     }
     if (trimmed === company.name) {
@@ -189,11 +189,11 @@ function CompanyRow({ company }: { company: Company }): React.ReactElement {
     );
   };
   const doDelete = (): void => {
-    if (!window.confirm(`确认彻底删除公司「${company.name}」？\n此操作不可撤销，公司所有项目、Task、员工任职将被删除（全局员工档案保留）。`)) return;
+    if (!window.confirm(`确认彻底删除工作台「${company.name}」？\n此操作不可撤销，工作台所有项目、Task、智能体任职将被删除（全局智能体档案保留）。`)) return;
     remove.mutate(
       { id: company.id },
       {
-        onSuccess: () => toast('success', '公司已删除'),
+        onSuccess: () => toast('success', '工作台已删除'),
         onError: (err: unknown) => toast('error', (err as Error).message ?? '删除失败'),
       },
     );

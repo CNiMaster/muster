@@ -27,7 +27,7 @@ const PHASES: { state: Project['state']; label: string; hint: string }[] = [
   { state: 'drafting', label: '构思', hint: '明确目标、受众与约束' },
   { state: 'researching', label: '调研', hint: '收集资料、选定候选能力' },
   { state: 'equipping', label: '装备', hint: '启用所需能力与连接器' },
-  { state: 'staffing', label: '员工', hint: '为各岗位分配员工与工位' },
+  { state: 'staffing', label: '智能体', hint: '为各岗位分配智能体与工位' },
   { state: 'ready', label: '就绪', hint: '确认后即可开工' },
 ];
 
@@ -68,12 +68,12 @@ export function ProjectOnboardingWizard({
       <header className="onboarding-header">
         <h2>项目准备流程</h2>
         <p className="muted">
-          按阶段推进，可随时回到前序阶段补充。完成全部阶段并确认后，项目即可开工并派发员工工作单。
+          按阶段推进，可随时回到前序阶段补充。完成全部阶段并确认后，项目即可开工并派发智能体工作单。
         </p>
         <div style={{ margin: '16px 0', borderRadius: '12px', overflow: 'hidden', border: '1px solid var(--border-subtle, #eee)', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
           <img
             src="/images/project_flow.jpg"
-            alt="项目准备流程全景：1.构思 2.调研 3.装备 4.员工 5.就绪"
+            alt="项目准备流程全景：1.构思 2.调研 3.装备 4.智能体 5.就绪"
             style={{ width: '100%', height: 'auto', display: 'block', maxHeight: '240px', objectFit: 'cover' }}
           />
         </div>

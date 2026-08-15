@@ -111,7 +111,7 @@ export function ProjectWorkNavigation({
         <summary><span>{group.name}</span><span>{group.employees.length}</span></summary>
         <div>{group.employees.map(employeeRow)}</div>
       </details>)}
-      {!agents.length && <p className="muted work-nav-empty">公司还没有员工</p>}
+      {!agents.length && <p className="muted work-nav-empty">工作台还没有智能体</p>}
     </div>
 
     <div className="work-nav-section">

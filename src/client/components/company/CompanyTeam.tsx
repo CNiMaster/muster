@@ -31,7 +31,7 @@ export function CompanyTeam({
   departments,
 }: {
   companyId: string;
-  /** 公司状态；运行中修改会经 usePausedEdit 自动临时暂停再恢复。 */
+  /** 工作台状态；运行中修改会经 usePausedEdit 自动临时暂停再恢复。 */
   companyState: string;
   agents: Agent[];
   departments: Department[];
@@ -53,7 +53,7 @@ export function CompanyTeam({
   const pausedEdit = usePausedEdit(companyId, companyState);
 
   const doDismiss = (agent: Agent): void => {
-    if (!window.confirm(`确认从本公司移除「${agent.name}」？\n该员工的全局档案保留，可随时从员工库重新聘用。`)) return;
+    if (!window.confirm(`确认从本工作台移除「${agent.name}」？\n该智能体的全局档案保留，可随时从智能体库重新聘用。`)) return;
     void pausedEdit.run(() => dismiss.mutateAsync({ companyId, employeeId: agent.id })).then((ok) => {
       if (ok) toast('success', `已移除 ${agent.name}`);
     });
@@ -61,7 +61,7 @@ export function CompanyTeam({
 
   return <div className="form-stack">
     <Card title="组织架构" actions={<Badge>{agents.length} 人 · {departments.length} 部门</Badge>}>
-      <p className="muted">员工管理、执行器与权限绑定的唯一入口。运行中修改会自动临时暂停公司（先完成手头任务），完成后自动恢复。</p>
+      <p className="muted">智能体管理、执行器与权限绑定的唯一入口。运行中修改会自动临时暂停工作台（先完成手头任务），完成后自动恢复。</p>
       {pendingReviews.length > 0 && (
         <Link to="/reviews" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 8 }}>
           <Badge tone="warn" dot>{pendingReviews.length}</Badge>
@@ -85,9 +85,9 @@ export function CompanyTeam({
       </ul>
     </Card>
 
-    <RecruitmentWizard profiles={profiles} departments={departments} executors={executors} policies={policies} submitting={recruit.isPending || pausedEdit.pausing} onSubmit={(draft) => void pausedEdit.run(() => recruit.mutateAsync({ companyId, draft })).then((ok) => { if (ok) toast('success', '员工档案和公司任职已创建'); })} />
-    <Card title="员工" actions={<Badge>{agents.length}</Badge>}>
-      {agents.length === 0 && <EmptyState icon={Icons.empty} title="还没有员工" hint="招募员工以组建团队，或从员工库聘用。" />}
+    <RecruitmentWizard profiles={profiles} departments={departments} executors={executors} policies={policies} submitting={recruit.isPending || pausedEdit.pausing} onSubmit={(draft) => void pausedEdit.run(() => recruit.mutateAsync({ companyId, draft })).then((ok) => { if (ok) toast('success', '智能体档案和工作台任职已创建'); })} />
+    <Card title="智能体" actions={<Badge>{agents.length}</Badge>}>
+      {agents.length === 0 && <EmptyState icon={Icons.empty} title="还没有智能体" hint="招募智能体以组建团队，或从智能体库聘用。" />}
       <ul className="entity-list">
         {agents.map((agent) => {
           const isOpen = expanded === agent.id;
@@ -142,7 +142,7 @@ export function CompanyTeam({
                   </div>
                   {!agent.isInspector && (
                     <div>
-                      <Button size="sm" variant="danger" loading={dismiss.isPending || pausedEdit.pausing} onClick={() => doDismiss(agent)}>从本公司移除</Button>
+                      <Button size="sm" variant="danger" loading={dismiss.isPending || pausedEdit.pausing} onClick={() => doDismiss(agent)}>从本工作台移除</Button>
                     </div>
                   )}
                 </div>

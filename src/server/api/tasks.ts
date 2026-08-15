@@ -71,6 +71,8 @@ const createTaskSchema = z.object({
   contextRefs: z.array(z.string()).optional(),
   outputProtocol: z.record(z.unknown()).optional(),
   priority: z.number().optional(),
+  /** 蓝图组织批次1：本次穿戴的人设（personas/ 相对路径）。 */
+  personaId: z.string().min(1).optional(),
   /** 双 Loop 地基 P0.1：验收标准 checklist（用户只填 criterion 文本，id 自动生成）。 */
   acceptanceCriteria: z.array(z.object({ id: z.string().optional(), criterion: z.string().min(1) })).optional(),
 });

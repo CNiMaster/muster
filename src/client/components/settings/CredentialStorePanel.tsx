@@ -30,7 +30,7 @@ export function CredentialStorePanel({ defaultOpen = false }: { defaultOpen?: bo
     setDefault.mutate(
       { id: def.id, isDefault: !def.isDefault },
       {
-        onSuccess: () => toast('success', def.isDefault ? '已取消默认派发' : '已设为默认派发(新公司将继承)'),
+        onSuccess: () => toast('success', def.isDefault ? '已取消默认派发' : '已设为默认派发(新工作台将继承)'),
         onError: (e: any) => toast('error', e.message ?? '操作失败'),
       },
     );
@@ -51,7 +51,7 @@ export function CredentialStorePanel({ defaultOpen = false }: { defaultOpen?: bo
       </summary>
       <div className="form-stack">
         <p className="muted">
-          所有 API/CLI 接入的凭据作为平台基本能力统一管理,创建公司时从默认项派发。执行时按"员工覆盖 → 公司覆盖 → 平台默认 → 系统回退"解析环境变量名。明文值不存库,只存环境变量名引用。
+          所有 API/CLI 接入的凭据作为平台基本能力统一管理,创建工作台时从默认项派发。执行时按"智能体覆盖 → 工作台覆盖 → 平台默认 → 系统回退"解析环境变量名。明文值不存库,只存环境变量名引用。
         </p>
         <div className="settings-primary-actions">
           <Button variant="ghost" onClick={() => setShowCreate(!showCreate)}>{showCreate ? '取消' : '新增凭据定义'}</Button>

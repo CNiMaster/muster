@@ -1,9 +1,10 @@
 import type React from 'react';
+import { Link, useParams } from 'react-router-dom';
 import type { CompanySectionKey } from '../company/CompanySections';
 
 const dailyItems: Array<{ key: CompanySectionKey; label: string; icon: string }> = [
   { key: 'conversation', label: '对话', icon: '✎' },
-  { key: 'overview', label: '公司总览', icon: '◎' },
+  { key: 'overview', label: '工作台总览', icon: '◎' },
   { key: 'projects', label: '项目', icon: '▣' },
   { key: 'attention', label: '需要处理', icon: '!' },
 ];
@@ -38,6 +39,7 @@ export function CompanyWorkNavigation({ active, projectCount, employeeCount, att
   evolutionCount: number;
   onChange: (key: CompanySectionKey) => void;
 }): React.ReactElement {
+  const { companyId } = useParams<{ companyId: string }>();
   return <>
     <div className="work-nav-section">
       <div className="work-nav-heading"><span>日常工作</span></div>
@@ -50,6 +52,13 @@ export function CompanyWorkNavigation({ active, projectCount, employeeCount, att
     <div className="work-nav-section">
       <div className="work-nav-heading"><span>固定入口</span></div>
       {fixedItems.map((item) => itemButton({ item, active, counts: { evolution: evolutionCount }, onChange }))}
+      {/* 蓝图组织批次2/3：归档（跨项目知识库）与蓝图库（组织=f(活) 的可视化）入口。 */}
+      <Link className="work-nav-item" to={`/companies/${companyId}/archive`}>
+        <span className="work-nav-icon" aria-hidden="true">▦</span><span className="work-nav-label">归档</span>
+      </Link>
+      <Link className="work-nav-item" to={`/companies/${companyId}/blueprints`}>
+        <span className="work-nav-icon" aria-hidden="true">▦</span><span className="work-nav-label">蓝图库</span>
+      </Link>
     </div>
   </>;
 }

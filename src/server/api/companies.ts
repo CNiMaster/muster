@@ -39,6 +39,8 @@ import { listProjects } from '../domain/project';
 import { ensureProjectThreads } from '../domain/thread';
 import { summarizeCompanyUsage } from '../domain/usage';
 import { companyArtifactGallery } from '../domain/artifact';
+import { searchArchive } from '../domain/archive';
+import { listBlueprints, setBlueprintStatus } from '../domain/blueprint';
 import { listAgents, getAgent } from '../domain/agent';
 import { listDepartments } from '../domain/department';
 import { getCompanyCockpit } from '../domain/company-cockpit';
@@ -282,6 +284,36 @@ companiesRouter.get(
   asyncHandler(async (req, res) => {
     const groupBy = req.query.groupBy === 'type' ? 'type' : req.query.groupBy === 'project' ? 'project' : 'time';
     res.json(companyArtifactGallery(getDb(), param(req, 'id'), groupBy));
+  }),
+);
+
+/** 蓝图组织批次2：跨项目归档检索（记忆 + 调研摘要 + 成果元数据，带来源项目标注）。 */
+companiesRouter.get(
+  '/:id/archive/search',
+  asyncHandler(async (req, res) => {
+    const q = typeof req.query.q === 'string' ? req.query.q : '';
+    const limit = typeof req.query.limit === 'string' ? Number.parseInt(req.query.limit, 10) : undefined;
+    res.json(searchArchive(getDb(), {
+      companyId: param(req, 'id'),
+      query: q,
+      limit: Number.isFinite(limit) ? limit : 20,
+    }));
+  }),
+);
+
+/** 蓝图组织批次3：蓝图库列表（自动复盘进化，可见/可锁/可淘汰）。 */
+companiesRouter.get(
+  '/:id/blueprints',
+  asyncHandler(async (req, res) => {
+    res.json(listBlueprints(getDb(), param(req, 'id')));
+  }),
+);
+
+companiesRouter.post(
+  '/:id/blueprints/:blueprintId/status',
+  asyncHandler(async (req, res) => {
+    const { status } = z.object({ status: z.enum(['active', 'locked', 'retired']) }).parse(req.body);
+    res.json(setBlueprintStatus(getDb(), param(req, 'blueprintId'), status));
   }),
 );
 

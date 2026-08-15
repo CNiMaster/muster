@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## About Muster
 
-Muster is a local multi-agent company workbench. Persistent employees collaborate through project-scoped Tasks while fixed CLI or API executors run their work in isolated worktrees.
+Muster is a local multi-agent workbench. Persistent agents collaborate through project-scoped Tasks while fixed CLI or API executors run their work in isolated worktrees. Direction（2026-08-15 定案）：组织 = f(活)——智能体按任务穿戴人设，组织形状存在蓝图里（自动复盘进化），做完的东西进归档。详见下方「Blueprint Org Refactor」章节。
 
 **Agent personas and skills** — 3 local personas plus 200+ domain experts integrated from [jnMetaCode/agency-agents-zh](https://github.com/jnMetaCode/agency-agents-zh) into `personas/`. 20 skills from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) in `skills/`.
 
@@ -38,6 +38,25 @@ Key constraints for all new work:
 - Old `.muster` runtime data contains failed test runs, has no migration requirement, and may be removed when the new persistence layer is introduced.
 
 > 当前成品边界是本地单用户多 Agent 公司工作台：公司向导、团队与员工档案、项目任务、固定执行器/权限、审批、会话健康和实时状态均已形成代码级闭环。旧 Leader→Worker→Verifier 单次编排器不参与当前运行。
+
+## Blueprint Org Refactor（蓝图组织重构，2026-08-15 定案，分批落地）
+
+方向定案：**组织 = f(活)**。不再把"公司/员工"的人类组织隐喻当作一等概念——组织形状存在蓝图里，从真实使用中学出来。定案概念：
+
+- **智能体（agent）**= 有记忆的持久执行者（治理锚点：执行器/权限仍绑任职）；**人设（persona）**= `personas/` 库中按任务穿戴的身份，不产生任职（`task.persona_id`）。变身只是任务上下文的一部分。
+- **蓝图（blueprint）**= 任务类型 × 人设组合 × 战绩。反思队列消化后自动进化（`blueprint.ts` evolveBlueprint：Jaccard ≥0.4 聚类合并、胜负记账），新任务按标题词元匹配（≥0.2）自动穿戴（createTask 钩子，结果记 inputProtocol 审计）。用户零手动固化；蓝图库页可见/可锁/可淘汰。
+- **记忆归域三分类**：方法论→人设（skill scope + `persona_key`，反思 CRAFT 段产出，置信 ≥0.8 自动批准）、相处→智能体（personal，永远全量注入）、事实→项目（project）。skill 注入按当前任务人设过滤（人设方法论不串门）。
+- **归档（archive）= 知识库本体**：项目记忆 + 调研摘要 + 成果元数据共用一套跨项目检索（`archive.ts` searchArchive，公司隔离、排除当前项目）；干活时注入「# 相关旧档」，用户在归档页搜到的是同一套。
+- **选择面/控制面分离**：@候选、探讨参与者、单聊对象 = 花名册成员（listAgents 天然排除 hidden），永远排除蜂群工蜂/辩手/镜像；蜂群工蜂只受直属调度控制，用户侧只有聚合播报 + abort。
+- **动态通信图**：同项目团队成员（该项目有线程）互可派发，固定 contact_allow 白名单不再是唯一通路（createTask 守卫）；loop 防护不变。
+- **用户发起探讨**：`startUserDiscussion`（brainstorm 场景）——机制与智能体发起同构（分身参会/轮转/纪要回写群聊），参与者校验选择面规则。
+- **命名原则**：不造词。智能体/人设/蓝图/团队/临时工/转正/复用/复盘/调度中心/归档/工作台/记忆——全部为代码库现有词或行业通用词，中英文天然同对（agent/persona/blueprint/team/temp/convert/reactivate/retrospective/dispatcher/archive/workspace/memory）。
+
+已交付：批次1（人设原语+记忆归域）、批次2（归档检索+归档页）、批次3（蓝图环+动态通信图）、批次4a/4b（选择面规则+用户探讨）、批次4c（项目优先入口：`createQuickProject` 零组织决策 + 首页「我有件事要办」CTA）、批次4d（收件箱项目：公司对话落 `ensureInboxProject`）、批次4e（系统隐形岗懒确保：`ensureDispatcherAgentId`/`ensureJudgeAgentId` 首次使用即创建，与公司上线时机解耦；按工作台实例化而非全局单例——执行体必须同工作台是任务守卫的硬约束）、批次5（B2B 拆件：删外包中心 UI/路由/导航/hooks、删 `findVendorCompany` 与决策树 outsource 路径；dispatch 端点只留内部建议+临时工选拔；契约状态机/交付管线/返工/自动验收保留待改造为跨项目交付协议）、批次6（全量 UI 文案对齐：员工→智能体、公司→工作台，覆盖 src/client 全部用户可见文案与 tests/unit、tests/e2e 断言；服务端中文报错文案保持不动——被大量集成测试断言且属开发面）。Code review 修复：动态通信图排除 hidden 非系统执行体（蜂群工蜂/辩手只受直属调度，系统隐形岗保持可派发）；收件箱不进项目列表/驾驶舱计数并补 project.created 事件；退役蓝图遇同类新证据自动复活（避免 UNIQUE 冲突吞战绩）；归档检索空词元守卫。测试锚点：`tests/integration/task-persona.spec.ts`、`archive-search.spec.ts`、`blueprint.spec.ts`、`user-discussion.spec.ts`、`quick-project.spec.ts`、`conversation.spec.ts`（收件箱语义）、`system-agents-lazy.spec.ts`、`outsourcing-decision.spec.ts`（两路径）。
+
+剩余（收尾项）：外包契约状态机 → 跨项目交付协议的改造（项目对项目，替代公司对公司，需为保留的契约域设计新入口）；公司页 section 结构重组（团队/章程并入蓝图字段的深度改造）视真实使用后再定。注意：批次6 文案变更同步改了 tests/e2e 断言但本机未跑 e2e（`npm run test:e2e`），首次提交前需本地跑一遍验收。
+
+明确不做（观察后决策）：knowledgeModel 数据实例与 views 渲染（ontology 只做蓝图分类轴）；能力包导入闭环；项目级导出；persona 正文深度激活（243 文件转换管线，待人设使用质量反馈）；工作室/手动班底固化（已被自动复盘蓝图取代）。
 
 ## Commands
 
@@ -267,7 +286,7 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 
 ### 测试
 
-- Vitest 单元与集成测试覆盖运行闭环、workspace 引导、全局员工档案、跨公司任职、Agent Home、分层记忆、项目任务会话、CLI 探测、审批桥、上下文恢复、复用与安全重置；准确数量以 `npm test` 当前输出为准（当前 174 文件 / 1202 测试，含能力平台 B1-B5、三栏工作台、定时自动化（tz 时区/schedule-automation）、蜂群 swarm.spec、结构化选项 question-options.spec、评审庭 debate.spec 等）。
+- Vitest 单元与集成测试覆盖运行闭环、workspace 引导、全局员工档案、跨公司任职、Agent Home、分层记忆、项目任务会话、CLI 探测、审批桥、上下文恢复、复用与安全重置；准确数量以 `npm test` 当前输出为准（当前 181 文件 / 1250 测试，含能力平台 B1-B5、三栏工作台、定时自动化（tz 时区/schedule-automation）、蜂群 swarm.spec、结构化选项 question-options.spec、评审庭 debate.spec、蓝图组织重构 task-persona/archive-search/blueprint/user-discussion/quick-project/system-agents-lazy 等）。
   - 测试环境需要真实 git 仓库作为 `project.rootDir`（`createWorktree` 需要 `git rev-parse HEAD` 成功）。`tests/integration/setup.ts` 的 `makeTempGitRepo()` 创建临时 git 仓库（含初始 commit）供测试使用。
   - `project.rootDir` 与 `firstAgentId` 均为可选：建项目时留空，`createProject` 自动使用当前激活总工作区，并生成 `{workspace}/companies/{公司名}/projects/{项目名}-{项目ID}`；项目 ID 后缀保证同名项目不会共享目录。`ensureGitRepo()` 会在首个 worktree 创建时自动 `mkdir + git init`。
 - Playwright 覆盖建司→团队→项目→首 Task、向导式创建完整公司、在线建项目、最近项目恢复、公司上下文导航与工作台信息架构（总览/需要处理/团队/项目）、员工库、执行器中心（折叠式安装引导）、权限中心、窄屏工作台抽屉以及窄屏设置页；准确数量以 `npm run test:e2e` 当前输出为准（当前 20 测试）。

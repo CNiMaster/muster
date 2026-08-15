@@ -1,7 +1,7 @@
 /**
  * Badge · 状态徽章
  *
- 统一公司/Task/线程状态展示。
+ 统一工作台/Task/线程状态展示。
  tone: ok | warn | err | info | neutral
  */
 import type React from 'react';

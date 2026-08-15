@@ -54,7 +54,7 @@ export function ProjectContextInspector({ projectId, companyId, projectState, se
         <div><div className="inspector-eyebrow">当前联系人</div><h2>{selectedAgent.name}</h2><p>{selectedAgent.role}</p></div>
         <StateBadge domain="employee" state={selectedAgent.availabilityState} />
       </div>
-      <a className="mu-btn mu-btn-primary mu-btn-sm inspector-primary-action" href="#employee-dispatch">派发给此员工</a>
+      <a className="mu-btn mu-btn-primary mu-btn-sm inspector-primary-action" href="#employee-dispatch">派发给此智能体</a>
       <div className="inspector-section-heading"><h3>他的工作</h3><Link to={`/projects/${projectId}/tasks?agent=${selectedAgent.id}`}>全部 {employeeTasks.length}</Link></div>
       {openEmployeeTasks.length ? <div className="inspector-work-orders">{openEmployeeTasks.slice(0, 3).map((task) => <Link key={task.id} className="inspector-work-order" to={`/tasks/${task.id}`}>
         <span><strong>{task.title}</strong><small>工作单 #{task.seq}</small></span><Badge tone={taskStateTone(task.state)}>{stateLabel(task.state)}</Badge>
@@ -73,7 +73,7 @@ export function ProjectContextInspector({ projectId, companyId, projectState, se
 
     {selectedTask && <section className="inspector-section inspector-project-context">
       <div className="inspector-section-heading"><h3>当前任务</h3><StateBadge domain="project-task" state={selectedTask.state} /></div>
-      <Link className="inspector-context-link" to={`/projects/${projectId}?view=task&projectTask=${selectedTask.id}`}><strong>#{selectedTask.seq} {selectedTask.title}</strong><span>查看项目任务与参与员工</span></Link>
+      <Link className="inspector-context-link" to={`/projects/${projectId}?view=task&projectTask=${selectedTask.id}`}><strong>#{selectedTask.seq} {selectedTask.title}</strong><span>查看项目任务与参与智能体</span></Link>
       {selectedTask.state === 'active' && <div className="inspector-task-actions">
         <Button size="sm" variant="ghost" loading={taskAction.isPending} onClick={completeTask}>完成</Button>
         <Button size="sm" variant="ghost" loading={taskAction.isPending} onClick={archiveTask}>归档</Button>
@@ -82,20 +82,21 @@ export function ProjectContextInspector({ projectId, companyId, projectState, se
 
     {attentionTotal > 0 && <section className="inspector-section inspector-attention-section">
       <div className="inspector-section-heading"><h3>需要处理</h3><span>{attentionTotal}</span></div>
-      {attentionTasks.slice(0, 3).map((task) => <Link key={task.id} to={`/tasks/${task.id}`}><span>{task.state === 'waiting_input' ? '员工等待补充' : task.state === 'blocked' ? '工作单阻塞' : '等待审批'}</span><span>#{task.seq}</span></Link>)}
+      {attentionTasks.slice(0, 3).map((task) => <Link key={task.id} to={`/tasks/${task.id}`}><span>{task.state === 'waiting_input' ? '智能体等待补充' : task.state === 'blocked' ? '工作单阻塞' : '等待审批'}</span><span>#{task.seq}</span></Link>)}
       {(cockpit?.approvals.pending ?? 0) > 0 && <Link to="/permissions"><span>处理权限审批</span><span>{cockpit!.approvals.pending}</span></Link>}
       {contextNeedsAttention && <Link to={`/projects/${projectId}/dashboard`}><span>会话上下文需关注</span><span>查看</span></Link>}
     </section>}
 
-    {/* 讨论室分区（设计二-方案B）：后台讨论，有记录可查归档，窗口小不抢占主信息 */}
-    <DiscussionPanel projectId={projectId} />
+    {/* 讨论室分区（设计二-方案B）：后台讨论，有记录可查归档，窗口小不抢占主信息。
+        蓝图组织批次4：传入花名册 agents（listAgents 天然排除 hidden 一次性执行体），支持用户主动发起探讨。 */}
+    <DiscussionPanel projectId={projectId} agents={agents} />
 
     <details className="inspector-collapse">
       <summary>协作与设置</summary>
       <div>
         {companyId && <Link to={`/companies/${companyId}/graphs/org`}>组织上下级</Link>}
-        {companyId && <Link to={`/companies/${companyId}/graphs/communication`}>员工引用关系</Link>}
-        {companyId && <Link to={`/companies/${companyId}/workflows/main`}>员工协作流程</Link>}
+        {companyId && <Link to={`/companies/${companyId}/graphs/communication`}>智能体引用关系</Link>}
+        {companyId && <Link to={`/companies/${companyId}/workflows/main`}>智能体协作流程</Link>}
         <Link to={`/projects/${projectId}/settings`}>项目设置</Link>
       </div>
     </details>

@@ -36,7 +36,7 @@ export function CompanyWizardPage(): React.ReactElement {
   const finish = async (draft: CompanySetupDraft, bindings: SetupBindings): Promise<boolean> => {
     try {
       const result = await commit.mutateAsync({ draft, bindings });
-      toast('success', '公司、团队和首个项目任务已创建');
+      toast('success', '工作台、团队和首个项目任务已创建');
       navigate(`/projects/${result.project.id}?projectTask=${result.projectTask.id}&onboarding=done`);
       return true;
     } catch (error) {
@@ -45,12 +45,12 @@ export function CompanyWizardPage(): React.ReactElement {
     }
   };
 
-  // 工作台改版 批次 1：一键开跑——跳过蓝图确认，直接进公司对话。
+  // 工作台改版 批次 1：一键开跑——跳过蓝图确认，直接进工作台对话。
   const quickFinish = async (input: { templateId: string; name?: string; goal?: string }): Promise<boolean> => {
     try {
       const result = await quickStart.mutateAsync(input);
       toast('success', `「${result.company.name}」已就绪，开始对话吧`);
-      // 改版 2a：落地公司对话中心。
+      // 改版 2a：落地工作台对话中心。
       navigate(`/companies/${result.company.id}?view=conversation`);
       return true;
     } catch (error) {
@@ -60,7 +60,7 @@ export function CompanyWizardPage(): React.ReactElement {
   };
 
   return <div className="wizard-page">
-    <header className="setup-hero"><div><span className="setup-hero-mark" aria-hidden="true">M</span><div><h1>组建你的 Agent 公司</h1><p>选一个模板，剩下的交给 Muster。</p></div></div><Link to="/" className="setup-close" aria-label="退出公司创建">×</Link></header>
+    <header className="setup-hero"><div><span className="setup-hero-mark" aria-hidden="true">M</span><div><h1>组建你的 Agent 工作台</h1><p>选一个模板，剩下的交给 Muster。</p></div></div><Link to="/" className="setup-close" aria-label="退出工作台创建">×</Link></header>
     <CompanySetupWizard
       templates={templatesQuery.data}
       profiles={profiles}

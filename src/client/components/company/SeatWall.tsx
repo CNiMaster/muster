@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import type { StatusBoard as StatusBoardData, StatusBoardAgent } from '../../hooks/queries';
 
 /**
- 工位墙：每个员工一个格子，头像光晕实时反映任务状态。
+ 工位墙：每个智能体一个格子，头像光晕实时反映任务状态。
  - running  → 绿色脉动（正在干活）
  - waiting  → 黄色（等待输入/依赖/审批）
  - idle     → 灰色（待命）
@@ -15,7 +15,7 @@ import type { StatusBoard as StatusBoardData, StatusBoardAgent } from '../../hoo
 export interface SeatWallProps {
   data: StatusBoardData | undefined;
   loading?: boolean;
-  /** 公司整体状态：off 时所有工位灰显。 */
+  /** 工作台整体状态：off 时所有工位灰显。 */
   companyState?: string;
   /** compact = 仅头像 + 光晕（用于右侧 Inspector 等窄列）；standard = 头像 + 姓名 + 岗位（用于概览页）。 */
   density?: 'standard' | 'compact';
@@ -54,7 +54,7 @@ export function SeatWall({ data, loading = false, companyState, density = 'stand
     return <div className="seat-wall seat-wall-empty muted">工位加载中…</div>;
   }
   if (!data || data.departments.length === 0) {
-    return <div className="seat-wall seat-wall-empty muted">暂无员工工位</div>;
+    return <div className="seat-wall seat-wall-empty muted">暂无智能体工位</div>;
   }
 
   return (

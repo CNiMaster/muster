@@ -13,7 +13,7 @@ import { selectPreferredExecutor } from '../../domain/executor-selection';
 
 export type SetupStep = 'template' | 'team' | 'executors' | 'project' | 'confirm';
 const STEPS: SetupStep[] = ['template', 'team', 'executors', 'project', 'confirm'];
-const LABELS: Record<SetupStep, string> = { template: '公司', team: '团队', executors: '运行', project: '项目', confirm: '完成' };
+const LABELS: Record<SetupStep, string> = { template: '工作台', team: '团队', executors: '运行', project: '项目', confirm: '完成' };
 const STORAGE_KEY = 'muster:company-setup-draft:v1';
 
 interface SavedState { step: SetupStep; templateId: CompanyTemplateId; name: string; goal: string; draft: CompanySetupDraft | null; bindings: SetupBindings }
@@ -92,7 +92,7 @@ export function CompanySetupWizard({ templates = COMPANY_TEMPLATE_OPTIONS, profi
   const finish = async (): Promise<void> => { if (draft && await onCommit(draft, bindings)) sessionStorage.removeItem(STORAGE_KEY); };
 
   return <div className="setup-shell">
-    <nav className="setup-rail" aria-label="创建公司步骤">
+    <nav className="setup-rail" aria-label="创建工作台步骤">
       {STEPS.map((item, itemIndex) => <button key={item} type="button" className={`setup-step ${item === step ? 'is-active' : ''} ${itemIndex < index ? 'is-done' : ''}`} disabled={itemIndex > index || (!draft && itemIndex > 0)} onClick={() => itemIndex <= index && setStep(item)}>
         <span className="setup-step-dot">{itemIndex < index ? '✓' : itemIndex + 1}</span><span>{LABELS[item]}</span>
       </button>)}
@@ -118,7 +118,7 @@ export function CompanySetupWizard({ templates = COMPANY_TEMPLATE_OPTIONS, profi
             </button>
           ))}
         </div>
-        <div className="template-grid" role="group" aria-label="公司模板">
+        <div className="template-grid" role="group" aria-label="工作台模板">
           {visibleTemplates.map((template) => {
             const imgSrc = TEMPLATE_IMAGES[template.id];
             return (
@@ -136,7 +136,7 @@ export function CompanySetupWizard({ templates = COMPANY_TEMPLATE_OPTIONS, profi
             );
           })}
         </div>
-        <div className="setup-input-grid"><Field label="公司名称" required><Input value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：Acme 工作室" /></Field><Field label="一句话目标" required><Textarea value={goal} onChange={(event) => setGoal(event.target.value)} placeholder="我们要持续完成什么？" /></Field></div>
+        <div className="setup-input-grid"><Field label="工作台名称" required><Input value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：Acme 工作室" /></Field><Field label="一句话目标" required><Textarea value={goal} onChange={(event) => setGoal(event.target.value)} placeholder="我们要持续完成什么？" /></Field></div>
         <div className={`resource-strip ${resourcesReady ? 'is-ready' : ''}`} aria-live="polite"><span className="resource-orbit" aria-hidden="true"><i/><i/><i/></span><div><strong>{resourcesReady ? '运行环境已准备' : '还差一个执行器'}</strong><small>{resourcesReady ? `将自动使用 ${preferredExecutor!.name} · ${policies[0]!.name}` : '草稿会自动保存，接入后回来刷新即可'}</small></div>{!resourcesReady && <a className="mu-btn mu-btn-subtle mu-btn-sm" href="/executors" target="_blank" rel="noreferrer">接入执行器 ↗</a>}{onRefreshResources && <Button size="sm" variant="ghost" loading={refreshingResources} onClick={() => void onRefreshResources()}>刷新</Button>}</div>
         <div className="setup-primary-actions">
           <span className="muted">先生成可检查的完整蓝图，确认后再创建；创建后仍可继续调整。</span>
@@ -144,18 +144,18 @@ export function CompanySetupWizard({ templates = COMPANY_TEMPLATE_OPTIONS, profi
             {onQuickStart && (
               <Button variant="ghost" loading={quickStarting} onClick={() => void onQuickStart({ templateId, name: name.trim() || undefined, goal: goal.trim() || undefined })}>一键开跑</Button>
             )}
-            <Button disabled={!name.trim() || !goal.trim()} loading={previewing} onClick={() => void start()}>生成公司蓝图 →</Button>
+            <Button disabled={!name.trim() || !goal.trim()} loading={previewing} onClick={() => void start()}>生成工作台蓝图 →</Button>
           </div>
         </div>
       </div></Card>}
 
-      {draft && step === 'team' && <Card className="setup-card blueprint-setup-card" title={<><span className="step-kicker">02</span> 公司蓝图已生成，请确认</>} actions={<Badge tone="ok">{draft.employees.length} 人</Badge>}><CompanyBlueprintReview draft={draft} density={draft.presentation.density} onDensityChange={(density) => setDraft({ ...draft, presentation: { ...draft.presentation, density } })} /><details className="details-collapse blueprint-team-editor"><summary>手动调整员工姓名或岗位</summary><div className="edit-team-grid">{draft.employees.map((employee) => <div key={employee.key}><Field label={`${employee.name} · 姓名`}><Input value={employee.name} onChange={(event) => setDraft({ ...draft, employees: draft.employees.map((item) => item.key === employee.key ? { ...item, name: event.target.value } : item) })} /></Field><Field label="岗位"><Input value={employee.role} onChange={(event) => setDraft({ ...draft, employees: draft.employees.map((item) => item.key === employee.key ? { ...item, role: event.target.value } : item) })} /></Field></div>)}</div></details></Card>}
+      {draft && step === 'team' && <Card className="setup-card blueprint-setup-card" title={<><span className="step-kicker">02</span> 工作台蓝图已生成，请确认</>} actions={<Badge tone="ok">{draft.employees.length} 人</Badge>}><CompanyBlueprintReview draft={draft} density={draft.presentation.density} onDensityChange={(density) => setDraft({ ...draft, presentation: { ...draft.presentation, density } })} /><details className="details-collapse blueprint-team-editor"><summary>手动调整智能体姓名或岗位</summary><div className="edit-team-grid">{draft.employees.map((employee) => <div key={employee.key}><Field label={`${employee.name} · 姓名`}><Input value={employee.name} onChange={(event) => setDraft({ ...draft, employees: draft.employees.map((item) => item.key === employee.key ? { ...item, name: event.target.value } : item) })} /></Field><Field label="岗位"><Input value={employee.role} onChange={(event) => setDraft({ ...draft, employees: draft.employees.map((item) => item.key === employee.key ? { ...item, role: event.target.value } : item) })} /></Field></div>)}</div></details></Card>}
 
       {draft && step === 'executors' && <ExecutorReadinessStep draft={draft} bindings={bindings} profiles={profiles} policies={policies} onChange={setBindings} onRefresh={onRefreshResources} refreshing={refreshingResources} />}
 
       {draft && step === 'project' && <Card className="setup-card" title={<><span className="step-kicker">04</span> 第一份工作</>}><div className="project-flow"><div className="project-flow-node"><span aria-hidden="true">▣</span><strong>项目</strong><Field label="项目名称"><Input value={draft.project.name} onChange={(event) => setDraft({ ...draft, project: { ...draft.project, name: event.target.value } })} /></Field><Field label="项目说明"><Textarea value={draft.project.description} onChange={(event) => setDraft({ ...draft, project: { ...draft.project, description: event.target.value } })} /></Field></div><div className="project-flow-arrow" aria-hidden="true">→</div><div className="project-flow-node"><span aria-hidden="true">✓</span><strong>项目任务</strong><Field label="任务标题"><Input value={draft.firstProjectTask.title} onChange={(event) => setDraft({ ...draft, firstProjectTask: { ...draft.firstProjectTask, title: event.target.value } })} /></Field><Field label="完成标准"><Textarea value={draft.firstProjectTask.brief} onChange={(event) => setDraft({ ...draft, firstProjectTask: { ...draft.firstProjectTask, brief: event.target.value } })} /></Field></div></div></Card>}
 
-      {draft && step === 'confirm' && <Card className="setup-card setup-finish" title={<><span className="step-kicker">05</span> 准备完成</>}><div className="launch-preview"><div className="launch-ring" aria-hidden="true"><span>{draft.name.slice(0, 1)}</span></div><h2>{draft.name}</h2><p>{draft.employees.length} 位员工 · {draft.departments.length} 个部门</p><div className="launch-path"><span>公司</span><i>→</i><span>{draft.project.name}</span><i>→</i><span>{draft.firstProjectTask.title}</span></div><small>创建后先保持待命，你确认运行配置后再启动公司。</small></div></Card>}
+      {draft && step === 'confirm' && <Card className="setup-card setup-finish" title={<><span className="step-kicker">05</span> 准备完成</>}><div className="launch-preview"><div className="launch-ring" aria-hidden="true"><span>{draft.name.slice(0, 1)}</span></div><h2>{draft.name}</h2><p>{draft.employees.length} 位智能体 · {draft.departments.length} 个部门</p><div className="launch-path"><span>工作台</span><i>→</i><span>{draft.project.name}</span><i>→</i><span>{draft.firstProjectTask.title}</span></div><small>创建后先保持待命，你确认运行配置后再启动工作台。</small></div></Card>}
 
       {draft && step !== 'template' && <footer className="setup-footer"><Button variant="ghost" onClick={() => setStep(STEPS[Math.max(0, index - 1)]!)}>← 返回{LABELS[STEPS[Math.max(0, index - 1)]!]}</Button><span>{index + 1} / {STEPS.length}</span>{step === 'confirm' ? <Button loading={committing} onClick={() => void finish()}>按推荐方案创建并进入项目 →</Button> : <Button disabled={(step === 'team' && draft.healthFindings.some((finding) => finding.severity === 'blocking')) || (step === 'executors' && !bindingsComplete)} onClick={() => setStep(STEPS[index + 1]!)}>继续到{LABELS[STEPS[index + 1]!]}</Button>}</footer>}
     </div>

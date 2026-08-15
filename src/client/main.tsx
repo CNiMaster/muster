@@ -53,10 +53,11 @@ const ExecutorCenterPage = lazyRetry(() => import('./pages/ExecutorCenterPage').
 const PermissionCenterPage = lazyRetry(() => import('./pages/PermissionCenterPage').then((m) => ({ default: m.PermissionCenterPage })));
 const CapabilityCenterPage = lazyRetry(() => import('./pages/CapabilityCenterPage').then((m) => ({ default: m.CapabilityCenterPage })));
 const MarketplacePage = lazyRetry(() => import('./pages/MarketplacePage').then((m) => ({ default: m.MarketplacePage })));
-const OutsourcingCenterPage = lazyRetry(() => import('./pages/OutsourcingCenterPage').then((m) => ({ default: m.OutsourcingCenterPage })));
 const BusinessReviewPage = lazyRetry(() => import('./pages/BusinessReviewPage').then((m) => ({ default: m.BusinessReviewPage })));
 const ProjectSettingsPage = lazyRetry(() => import('./pages/ProjectSettingsPage').then((m) => ({ default: m.ProjectSettingsPage })));
 const ProjectPlansPage = lazyRetry(() => import('./pages/ProjectPlansPage').then((m) => ({ default: m.ProjectPlansPage })));
+const ArchivePage = lazyRetry(() => import('./pages/ArchivePage').then((m) => ({ default: m.ArchivePage })));
+const BlueprintLibraryPage = lazyRetry(() => import('./pages/BlueprintLibraryPage').then((m) => ({ default: m.BlueprintLibraryPage })));
 
 function ToastLayer(): React.ReactElement {
   const { toasts, dismiss } = useToasts();
@@ -78,6 +79,8 @@ const router = createBrowserRouter([
       { path: 'companies', element: <CompanyListPage /> },
       { path: 'companies/wizard', element: <CompanyWizardPage /> },
       { path: 'companies/:companyId', element: <CompanyPage /> },
+      { path: 'companies/:companyId/archive', element: <ArchivePage /> },
+      { path: 'companies/:companyId/blueprints', element: <BlueprintLibraryPage /> },
       { path: 'companies/:companyId/graphs/:kind', element: <GraphPage /> },
       { path: 'companies/:companyId/workflows/:workflowId', element: <WorkflowGraphPage /> },
       { path: 'companies/:companyId/projects/new', element: <ProjectPage /> },
@@ -99,7 +102,6 @@ const router = createBrowserRouter([
       { path: 'permissions', element: <PermissionCenterPage /> },
       { path: 'capabilities', element: <CapabilityCenterPage /> },
       { path: 'marketplace', element: <MarketplacePage /> },
-      { path: 'outsourcing', element: <OutsourcingCenterPage /> },
       { path: 'reviews', element: <BusinessReviewPage /> },
       { path: '*', element: <NotFoundPage /> },
     ],

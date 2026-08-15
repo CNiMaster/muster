@@ -30,7 +30,7 @@ export function AgentProfilePage(): React.ReactElement {
   const capabilities = profile.capabilities as { skills?: string[]; tools?: string[] };
   const identity = <div className="section-stack">
       <Card title="身份与能力">
-        <p className="muted">全局员工档案 · 基础版本 {profile.baseVersion}</p>
+        <p className="muted">全局智能体档案 · 基础版本 {profile.baseVersion}</p>
         <p>{profile.soul || '尚未设置稳定身份说明。'}</p>
         <div className="graph-links">
           {(capabilities.skills ?? []).map((skill) => <Badge key={skill} tone="info">{skill}</Badge>)}
@@ -49,7 +49,7 @@ export function AgentProfilePage(): React.ReactElement {
               resetProfile.mutate({ id: profile.id, target: 'base' });
             }}>恢复基础能力</Button>
             <Button size="sm" variant="danger" onClick={() => {
-              if (!window.confirm('确定清空该员工的全部个人记忆？公司和项目记忆不会被删除。')) return;
+              if (!window.confirm('确定清空该智能体的全部个人记忆？工作台和项目记忆不会被删除。')) return;
               resetProfile.mutate({ id: profile.id, target: 'personal-memory' });
             }}>清空个人记忆</Button>
           </div>
@@ -57,8 +57,8 @@ export function AgentProfilePage(): React.ReactElement {
       </Card>
       <MemoryReviewPanel profileId={profile.id} />
     </div>;
-  const employmentList = <Card title="公司任职">
-        <p className="muted">任职决定员工在某家公司负责什么、使用哪个执行器，以及允许操作的范围；不会改变全局身份和个人记忆。</p>
+  const employmentList = <Card title="工作台任职">
+        <p className="muted">任职决定智能体在某家工作台负责什么、使用哪个执行器，以及允许操作的范围；不会改变全局身份和个人记忆。</p>
         <div className="employment-grid">
           {employments?.map((employment) => {
             const company = companies?.find((item) => item.id === employment.companyId);
@@ -68,10 +68,10 @@ export function AgentProfilePage(): React.ReactElement {
       </Card>;
   return (
     <div className="agent-profile-page">
-      <header className="page-header"><div><h1>{profile.displayName}</h1><p className="subtitle">员工个人空间</p></div></header>
+      <header className="page-header"><div><h1>{profile.displayName}</h1><p className="subtitle">智能体个人空间</p></div></header>
       <Tabs items={[
         { key: 'identity', label: '身份与能力', content: identity },
-        { key: 'employments', label: `公司任职（${employments?.length ?? 0}）`, content: employmentList },
+        { key: 'employments', label: `工作台任职（${employments?.length ?? 0}）`, content: employmentList },
         { key: 'runtime', label: `项目工作状态（${runtime?.totals.threads ?? 0}）`, content: runtime ? <EmployeeRuntimePanel runtime={runtime} /> : <CardSkeleton /> },
       ]} />
     </div>

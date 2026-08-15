@@ -9,7 +9,7 @@ import type { ResolvedTaskSkill } from '../../shared/types';
 import { getCompany } from '../domain/company';
 import { getProject } from '../domain/project';
 import { getAgent, listAgents } from '../domain/agent';
-import { getDispatcherAgentId, DISPATCHER_ROLE, JUDGE_ROLE } from '../domain/system-agents';
+import { ensureDispatcherAgentId, DISPATCHER_ROLE, JUDGE_ROLE } from '../domain/system-agents';
 import { listTaskMessages } from '../domain/task-message';
 import type { Task } from '../domain/task';
 import { getTask as loadTask } from '../domain/task';
@@ -23,6 +23,8 @@ import { loadContextMemories } from '../domain/memory';
 import { resolveTaskSkills } from '../domain/capability-binding';
 import { resolveToolRecommendations, buildCapabilityCenterSection } from '../domain/tool-recommendation';
 import { listMaterials } from '../domain/material';
+import { getPersona } from '../domain/persona-library';
+import { searchArchive } from '../domain/archive';
 
 const MAX_REFERENCE_BYTES = 64 * 1024;
 const MAX_TOTAL_REFERENCE_BYTES = 256 * 1024;
@@ -85,6 +87,21 @@ export function assembleContext(
     const profile = getAgentProfile(db, agent.profileId);
     sp.push('# 员工身份', profile.soul || profile.displayName, '');
     if (profile.principles.length > 0) sp.push('# 工作原则', profile.principles.map((item) => `- ${item}`).join('\n'), '');
+  }
+  // 蓝图组织批次1：本次人设——身份层信息，轻量模式（咨询/讨论发言）同样注入。
+  // persona 库可热变更：任务指定的 persona 已不存在时优雅跳过（不阻断执行）。
+  const persona = task.personaId ? getPersona(task.personaId) : null;
+  if (persona) {
+    sp.push('# 本次人设', `你在本任务中穿戴专家人设「${persona.name}」，以该领域的专业标准分析、决策与交付。`, persona.soul, '');
+    if (persona.principles.length > 0) {
+      sp.push('# 人设工作要点', persona.principles.map((item) => `- ${item}`).join('\n'), '');
+    }
+    const personaSkills = Array.isArray((persona.capabilities as { skills?: unknown })?.skills)
+      ? (persona.capabilities as { skills: unknown[] }).skills.filter((s): s is string => typeof s === 'string')
+      : [];
+    if (personaSkills.length > 0) {
+      sp.push('# 人设专长领域', personaSkills.slice(0, 12).join('、'), '');
+    }
   }
   // 轻量模式：身份/职责/议题之后直接进入输出契约，跳过组织级大段上下文
   if (!lightweight) {
@@ -212,6 +229,7 @@ export function assembleContext(
       profileId: agent.profileId,
       companyId: company.id,
       projectId: project.id,
+      personaKey: task.personaId,
       query,
     });
     if (memories.length > 0) {
@@ -227,6 +245,25 @@ export function assembleContext(
       sp.push(`- [${m.kind}] ${m.name} — ${loc}${m.tags.length ? ` (标签: ${m.tags.join(', ')})` : ''}`);
     }
     sp.push('');
+  }
+  // 蓝图组织批次2：跨项目归档检索——旧项目的已审批经验/调研结论/成果元数据与当前任务相关时注入。
+  // 只读参考：不改变权限；旧项目成果文件不自动授权读取（需要时由用户经 project_reference 显式授权）。
+  const archiveQuery = [task.title, task.summary].filter(Boolean).join(' ').slice(0, 120);
+  if (archiveQuery) {
+    const archiveHits = searchArchive(db, {
+      companyId: company.id,
+      excludeProjectId: project.id,
+      query: archiveQuery,
+      limit: 5,
+    });
+    if (archiveHits.length > 0) {
+      sp.push('# 相关旧档', '以下旧项目的归档与当前任务相关，可作参考（以当前项目为准；成果文件未授权读取）：');
+      for (const hit of archiveHits) {
+        const kindLabel = hit.kind === 'memory' ? '经验' : hit.kind === 'research' ? '调研' : '成果';
+        sp.push(`- [${kindLabel}·${hit.projectName}] ${hit.text}`);
+      }
+      sp.push('');
+    }
   }
   } // else 闭合（非 lightweight 的完整上下文段）
 
@@ -302,18 +339,16 @@ export function assembleContext(
     availableContacts,
   };
   // 指挥系统：大规模并行任务的专职入口（调度中心是隐形岗，不在 availableContacts 里）
+  // 蓝图组织批次4e：懒确保——与公司上线时机解耦，首次装配上下文即自愈创建（幂等）。
   if (!lightweight) {
     try {
-      const dispatcherAgentId = getDispatcherAgentId(db, company.id);
-      if (dispatcherAgentId) {
-        inputPacket.swarmDispatcher = {
-          id: dispatcherAgentId,
-          name: '调度中心',
-          usage: '需要大规模并行（大范围调研/信息扫描/批量评估）时，用 done 的 outboundTasks 派给此 id（recipientAgentId）；调度中心会拆解成工蜂群并行执行并汇总。',
-        };
-      }
+      inputPacket.swarmDispatcher = {
+        id: ensureDispatcherAgentId(db, company.id),
+        name: '调度中心',
+        usage: '需要大规模并行（大范围调研/信息扫描/批量评估）时，用 done 的 outboundTasks 派给此 id（recipientAgentId）；调度中心会拆解成工蜂群并行执行并汇总。',
+      };
     } catch {
-      // 调度中心不存在时跳过（公司尚未上线生成）
+      // 防御：创建工作台异常时跳过注入，不阻断任务执行
     }
   }
   if (task.parentTaskId) {

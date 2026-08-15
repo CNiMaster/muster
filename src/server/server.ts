@@ -20,7 +20,7 @@ import { startGracefulShutdownSequence } from './runtime/shutdown';
 import { healthRouter } from './api/health';
 import { companiesRouter } from './api/companies';
 import { agentsRouter } from './api/agents';
-import { projectsRouter, projectById } from './api/projects';
+import { projectsRouter, projectById, quickProjectsRouter } from './api/projects';
 import { playbooksRouter } from './api/projects';
 import { graphsRouter } from './api/graphs';
 import { taskByProjectRouter, taskByIdRouter } from './api/tasks';
@@ -202,6 +202,8 @@ async function createApp(): Promise<AppHandle> {
   // 阶段五任务 5.1/5.2：公司运营优化报告（/optimization-report、/optimization-reports）
   app.use('/api/companies/:companyId', optimizationReportRouter);
   app.use('/api/playbooks', playbooksRouter);
+  // 蓝图组织批次4c：项目优先入口（须在 /api/projects/:id 之前挂载，避免被 :id 参数吞掉）
+  app.use('/api/projects/quick', quickProjectsRouter);
   app.use('/api/projects/:id', projectById);
   app.use('/api/plugins', pluginsRouter);
   app.use('/api', outsourcingRouter);

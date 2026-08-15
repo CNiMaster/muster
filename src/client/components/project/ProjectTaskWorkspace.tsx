@@ -49,14 +49,14 @@ export function ProjectTaskWorkspace({ selectedTask, tasks, agents, draft, creat
       <ProjectLaunchGate key={selectedTask.id} task={selectedTask} discovering={discoveringLaunch} confirming={confirmingLaunch} onDiscover={(brief) => onDiscoverLaunch(selectedTask.id, brief)} onConfirm={(brief) => onConfirmLaunch(selectedTask.id, brief)} />
 
       {selectedTask.launchState === 'confirmed' ? <div id="work-order-composer" className="work-order-composer">
-        <div className="work-order-composer-heading"><div><span>员工工作单</span><h2>交给团队完成</h2></div><small>{selectedTask.state === 'archived' ? '只读' : '当前项目任务内持续复用员工会话'}</small></div>
+        <div className="work-order-composer-heading"><div><span>智能体工作单</span><h2>交给团队完成</h2></div><small>{selectedTask.state === 'archived' ? '只读' : '当前项目任务内持续复用智能体会话'}</small></div>
         <Field label="工作内容"><Textarea rows={3} value={workOrder.title} disabled={selectedTask.state === 'archived'} onChange={(event) => onWorkOrderChange({ ...workOrder, title: event.target.value })} placeholder="例如：检查审批桥断线后的恢复流程，并补齐回归测试" /></Field>
         <div className="work-order-composer-footer">
-          <Field label="负责人"><Select value={workOrder.assigneeId} disabled={selectedTask.state === 'archived'} onChange={(event) => onWorkOrderChange({ ...workOrder, assigneeId: event.target.value })}><option value="">自动选择合适员工</option>{agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name} · {agent.role}</option>)}</Select></Field>
+          <Field label="负责人"><Select value={workOrder.assigneeId} disabled={selectedTask.state === 'archived'} onChange={(event) => onWorkOrderChange({ ...workOrder, assigneeId: event.target.value })}><option value="">自动选择合适智能体</option>{agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name} · {agent.role}</option>)}</Select></Field>
           <Button className="work-order-submit" disabled={selectedTask.state === 'archived' || !workOrder.title.trim()} onClick={onPublishWorkOrder}>派发工作单</Button>
         </div>
-      </div> : <div id="work-order-composer" className="work-order-composer work-order-launch-blocked"><strong>制作尚未开始</strong><p>完成上方的需求、能力和（如需要）视觉参考确认后，才能派发员工工作单。</p></div>}
-    </section> : <section className="project-task-stage project-task-empty"><EmptyState icon={Icons.empty} title="还没有项目任务" hint="先创建一个目标，Muster 才能为员工建立独立工作上下文。" /></section>}
+      </div> : <div id="work-order-composer" className="work-order-composer work-order-launch-blocked"><strong>制作尚未开始</strong><p>完成上方的需求、能力和（如需要）视觉参考确认后，才能派发智能体工作单。</p></div>}
+    </section> : <section className="project-task-stage project-task-empty"><EmptyState icon={Icons.empty} title="还没有项目任务" hint="先创建一个目标，Muster 才能为智能体建立独立工作上下文。" /></section>}
 
     <div className="project-task-secondary">
       <details className="task-context-create" open={!hasActiveTask}>

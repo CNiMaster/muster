@@ -21,11 +21,11 @@ describe('company setup wizard', () => {
       onCommit={vi.fn(async () => true)}
     /></MemoryRouter>);
 
-    await user.click(screen.getByRole('button',{name:'选择软件研发公司'}));
-    await user.type(screen.getByLabelText(/公司名称/), 'Acme');
+    await user.click(screen.getByRole('button',{name:'选择软件研发工作台'}));
+    await user.type(screen.getByLabelText(/工作台名称/), 'Acme');
     await user.type(screen.getByLabelText(/一句话目标/), '发布产品');
-    await user.click(screen.getByRole('button', { name: '生成公司蓝图 →' }));
-    expect(await screen.findByText('公司蓝图已生成，请确认')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: '生成工作台蓝图 →' }));
+    expect(await screen.findByText('工作台蓝图已生成，请确认')).toBeVisible();
     await user.click(screen.getByRole('button', { name: '继续到运行' }));
 
     expect(await screen.findByText('默认配置已自动应用')).toBeVisible();
@@ -50,8 +50,8 @@ describe('company setup wizard', () => {
     const user = userEvent.setup();
     render(<MemoryRouter><CompanySetupWizard
       templates={[
-        { id: 'general', name: '通用项目公司', description: '通用交付', roles: ['lead'], mark: '通', colorToken: 'blue', maturity: 'ready', recommendedUse: '通用项目', version: 1 },
-        { id: 'research-lab', name: '研究公司', description: '证据驱动研究', roles: ['lead', 'researcher'], mark: '研', colorToken: 'purple', maturity: 'experimental', recommendedUse: '研究与报告', version: 1 },
+        { id: 'general', name: '通用项目工作台', description: '通用交付', roles: ['lead'], mark: '通', colorToken: 'blue', maturity: 'ready', recommendedUse: '通用项目', version: 1 },
+        { id: 'research-lab', name: '研究工作台', description: '证据驱动研究', roles: ['lead', 'researcher'], mark: '研', colorToken: 'purple', maturity: 'experimental', recommendedUse: '研究与报告', version: 1 },
       ]}
       profiles={[]}
       policies={[]}
@@ -59,7 +59,7 @@ describe('company setup wizard', () => {
       onCommit={vi.fn(async () => true)}
     /></MemoryRouter>);
 
-    const research = screen.getByRole('button', { name: '选择研究公司' });
+    const research = screen.getByRole('button', { name: '选择研究工作台' });
     expect(research).toBeVisible();
     expect(screen.getByText('研')).toBeVisible();
     await user.click(research);
@@ -69,9 +69,9 @@ describe('company setup wizard', () => {
   it('requires blueprint review before committing the company', async()=>{
     const user=userEvent.setup();const commit=vi.fn(async()=>true);
     render(<MemoryRouter><CompanySetupWizard profiles={[{id:'ep',name:'Codex',manifestId:'codex-cli',config:{},connection:null}]} policies={[{id:'pp',name:'项目安全',approvalStrategy:'ask-by-rule',scope:'project',selectedDirectories:[]}]} onPreview={vi.fn(async()=>draft)} onCommit={commit}/></MemoryRouter>);
-    await user.type(screen.getByLabelText(/公司名称/),'Acme');await user.type(screen.getByLabelText(/一句话目标/),'发布产品');
-    await user.click(screen.getByRole('button',{name:'生成公司蓝图 →'}));
-    expect(await screen.findByText('公司蓝图已生成，请确认')).toBeVisible();
+    await user.type(screen.getByLabelText(/工作台名称/),'Acme');await user.type(screen.getByLabelText(/一句话目标/),'发布产品');
+    await user.click(screen.getByRole('button',{name:'生成工作台蓝图 →'}));
+    expect(await screen.findByText('工作台蓝图已生成，请确认')).toBeVisible();
     expect(commit).not.toHaveBeenCalled();
     await user.click(screen.getByRole('button',{name:'继续到运行'}));
     await user.click(screen.getByRole('button',{name:'继续到项目'}));
@@ -92,9 +92,9 @@ describe('company setup wizard', () => {
       onPreview={vi.fn(async()=>draft)}
       onCommit={commit}
     /></MemoryRouter>);
-    await user.type(screen.getByLabelText(/公司名称/),'Acme');
+    await user.type(screen.getByLabelText(/工作台名称/),'Acme');
     await user.type(screen.getByLabelText(/一句话目标/),'发布产品');
-    await user.click(screen.getByRole('button',{name:'生成公司蓝图 →'}));
+    await user.click(screen.getByRole('button',{name:'生成工作台蓝图 →'}));
     await user.click(screen.getByRole('button',{name:'继续到运行'}));
     await user.click(screen.getByRole('button',{name:'继续到项目'}));
     await user.click(screen.getByRole('button',{name:'继续到完成'}));

@@ -5,7 +5,7 @@ const GUIDE_KEY = 'muster:workbench-guide:v1';
 const steps = [
   { label: '1 选择工作', detail: '从左边选择任务、对话或看板。' },
   { label: '2 完成工作', detail: '中间始终是当前要做的事。' },
-  { label: '3 查看现场', detail: '右边自动显示员工、运行和审批。' },
+  { label: '3 查看现场', detail: '右边自动显示智能体、运行和审批。' },
 ];
 
 export function WorkbenchGuide(): React.ReactElement | null {

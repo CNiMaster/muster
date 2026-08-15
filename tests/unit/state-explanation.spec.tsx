@@ -13,8 +13,8 @@ describe('state explanations', () => {
   });
 
   it('renders every blocking issue with reason, impact and recovery link', () => {
-    render(<MemoryRouter><BlockingIssues issues={[{id:'one',what:'员工不能运行',why:'执行器尚未联通',impact:'工作单不会启动',action:{label:'去修复',href:'/executors'}}]}/></MemoryRouter>);
-    expect(screen.getByText('员工不能运行')).toBeInTheDocument();
+    render(<MemoryRouter><BlockingIssues issues={[{id:'one',what:'智能体不能运行',why:'执行器尚未联通',impact:'工作单不会启动',action:{label:'去修复',href:'/executors'}}]}/></MemoryRouter>);
+    expect(screen.getByText('智能体不能运行')).toBeInTheDocument();
     expect(screen.getByText(/原因：执行器尚未联通/)).toBeInTheDocument();
     expect(screen.getByText(/影响：工作单不会启动/)).toBeInTheDocument();
     expect(screen.getByRole('link',{name:'去修复'})).toHaveAttribute('href','/executors');

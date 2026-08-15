@@ -32,12 +32,12 @@ import { toast } from '../components/Button';
 import { NaturalLanguageGraphPanel } from '../components/NaturalLanguageGraphPanel';
 
 const KIND_LABEL: Record<string, string> = {
-  org: '员工上下级',
-  communication: '员工引用关系',
+  org: '智能体上下级',
+  communication: '智能体引用关系',
 };
 const KIND_HELP: Record<string, string> = {
-  org: '从负责人连向下属，表示直接负责与汇报方向；实际拆单由第一负责人或员工协作流程触发。',
-  communication: '从发起者连向可联系员工，表示谁可以找谁补充信息或协商问题；具体交接顺序由员工协作流程决定。',
+  org: '从负责人连向下属，表示直接负责与汇报方向；实际拆单由第一负责人或智能体协作流程触发。',
+  communication: '从发起者连向可联系智能体，表示谁可以找谁补充信息或协商问题；具体交接顺序由智能体协作流程决定。',
 };
 
 export function GraphPage(): React.ReactElement {
@@ -195,7 +195,7 @@ export function GraphPage(): React.ReactElement {
             <EmptyState
               icon={Icons.graph}
               title="画布为空"
-              hint={readonly ? '请先下班，再新增员工以构成关系图。' : '先去公司页新增员工，再回来拖动连线。'}
+              hint={readonly ? '请先下班，再新增智能体以构成关系图。' : '先去工作台页新增智能体，再回来拖动连线。'}
             />
           </div>
         )}

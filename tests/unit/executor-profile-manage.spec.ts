@@ -3,7 +3,7 @@
  *
  * 验证：
  * 1. updateExecutorProfile：更新名称/配置/凭据/并发模式
- * 2. deleteExecutorProfile：解除员工绑定 + 清理探针 + 删除
+ * 2. deleteExecutorProfile：解除智能体绑定 + 清理探针 + 删除
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { makeTestDb } from '../integration/setup';
@@ -53,7 +53,7 @@ describe('执行器档案管理（阶段二任务 2.2）', () => {
     expect(getExecutorProfile(db, profile.id).config.model).toBe('deepseek-chat');
   });
 
-  it('deleteExecutorProfile 解除员工绑定并清理探针', () => {
+  it('deleteExecutorProfile 解除智能体绑定并清理探针', () => {
     const c = createCompany(db, { name: 'co' });
     const agent = createAgent(db, { companyId: c.id, name: 'w', role: 'writer' });
     const profile = createExecutorProfile(db, {

@@ -1,6 +1,6 @@
 /**
- * 团队市场：选择一套角色包，批量入职到指定公司。
- * 与旧"添加整套"的区别：不再只建全局档案，而是真正入职到选定公司。
+ * 团队市场：选择一套角色包，批量入职到指定工作台。
+ * 与旧"添加整套"的区别：不再只建全局档案，而是真正入职到选定工作台。
  */
 import type React from 'react';
 import { useState } from 'react';
@@ -21,16 +21,16 @@ export function TeamPackPicker(): React.ReactElement {
 
   const addPackToCompany = async (packId: 'general' | 'software' | 'content' | 'novel'): Promise<void> => {
     if (!companyId) {
-      toast('error', '请先选择目标公司');
+      toast('error', '请先选择目标工作台');
       return;
     }
     const company = activeCompanies.find((c) => c.id === companyId);
     if (!company) {
-      toast('error', '公司不存在或已归档');
+      toast('error', '工作台不存在或已归档');
       return;
     }
     if (company.state !== 'off') {
-      toast('error', '请先让公司下班再加入团队');
+      toast('error', '请先让工作台下班再加入团队');
       return;
     }
     const pack = EMPLOYEE_TEMPLATE_PACKS.find((item) => item.id === packId);
@@ -59,7 +59,7 @@ export function TeamPackPicker(): React.ReactElement {
           fail++;
         }
       }
-      toast(ok ? 'success' : 'error', ok ? `已入职 ${ok} 位员工到「${company.name}」${fail ? `（${fail} 位失败）` : ''}` : '入职失败，请检查执行器/权限是否已配置');
+      toast(ok ? 'success' : 'error', ok ? `已入职 ${ok} 位智能体到「${company.name}」${fail ? `（${fail} 位失败）` : ''}` : '入职失败，请检查执行器/权限是否已配置');
     } finally {
       setBusyPack(null);
     }
@@ -68,10 +68,10 @@ export function TeamPackPicker(): React.ReactElement {
   return (
     <Card title="团队市场" actions={<Badge tone="info">整套入职</Badge>}>
       <div className="form-stack">
-        <p className="muted">选择一套匹配的团队，批量入职到指定公司。员工入职后可在该公司「组织架构」里单独配置执行器与权限。</p>
-        <Field label="目标公司" required>
+        <p className="muted">选择一套匹配的团队，批量入职到指定工作台。智能体入职后可在该工作台「组织架构」里单独配置执行器与权限。</p>
+        <Field label="目标工作台" required>
           <Select value={companyId} onChange={(e) => setCompanyId((e.target as HTMLSelectElement).value)}>
-            <option value="">请选择公司</option>
+            <option value="">请选择工作台</option>
             {activeCompanies.map((c) => (
               <option key={c.id} value={c.id}>{c.name}（{c.kind}）</option>
             ))}
@@ -101,7 +101,7 @@ export function TeamPackPicker(): React.ReactElement {
                   loading={busyPack === pack.id}
                   onClick={() => void addPackToCompany(pack.id)}
                 >
-                  入职到公司
+                  入职到工作台
                 </Button>
               </article>
             );

@@ -1,23 +1,22 @@
 /**
- * B2B 外包 REST 路由。
+ * 外包 REST 路由（蓝图组织批次5：B2B 拆件后）。
  *
- * - POST   /api/companies/:companyId/outsource/dispatch  甲方发起委派（含全自动决策树）
+ * - POST   /api/companies/:companyId/outsource/dispatch  用工决策（内部建议 / 临时工选拔）
  * - GET    /api/companies/:companyId/outsource/contracts 列出契约（role=source|target）
  * - GET    /api/outsource/contracts/:id                  契约详情
  * - POST   /api/outsource/contracts/:id/accept           乙方接受
  * - POST   /api/outsource/contracts/:id/review           甲方验收（completed/changes_requested/rejected）
  * - POST   /api/outsource/contracts/:id/cancel           取消契约
  *
- * 「公司」是软件内的本地组织概念。详见 docs/superpowers/specs/2026-08-10-b2b-outsourcing-design.md。
+ * 批次5 拆件：dispatch 不再创建"公司对公司"契约（按公司找乙方已退役）——只做
+ * 内部能力建议与临时工选拔（组队/复用路径）。契约状态机与交付管线保留，
+ * 待改造为跨项目交付协议（project↔project）。
  */
 import { Router } from 'express';
 import { z } from 'zod';
 import { asyncHandler, param } from './middleware';
 import { getDb } from '../db/client';
-import { getCompany } from '../domain/company';
-import { getProject } from '../domain/project';
 import {
-  createOutsourcingContract,
   getOutsourcingContract,
   listContractsForCompany,
   acceptContract,
@@ -32,24 +31,14 @@ import { runOutsourcingDecisionTree, selectTempForNeed } from '../domain/outsour
 import { realtime } from '../realtime';
 import { makeLifecycleEvent } from '../../shared/lifecycle-events';
 import { AppError, ErrorCode } from '../../shared/errors';
-import { shortId } from '../../shared/utils';
 
 export const outsourcingRouter = Router();
 
-// ── 甲方发起委派（含全自动决策树）──────────────────────────────────────────
+// ── 用工决策（内部建议 / 临时工选拔）──────────────────────────────────────
 const dispatchSchema = z.object({
-  sourceProjectId: z.string().optional(),
-  sourceTaskId: z.string().optional(),
   title: z.string().min(1),
   brief: z.string().min(1),
-  acceptanceCriteria: z.array(z.object({ id: z.string().optional(), criterion: z.string().min(1) })).optional(),
   requiredCapabilityIds: z.array(z.string().min(1)).optional(),
-  deliverableDir: z.string().optional(),
-  readonlyRefs: z.array(z.string()).optional(),
-  /** 显式指定乙方公司；不传则走全自动决策树自动选。 */
-  vendorCompanyId: z.string().optional(),
-  /** 是否启用全自动决策树（默认 true）。 */
-  autoDecide: z.boolean().optional(),
 });
 
 outsourcingRouter.post(
@@ -59,85 +48,34 @@ outsourcingRouter.post(
     const sourceCompanyId = param(req, 'companyId');
     const db = getDb();
 
-    // 校验甲方公司
-    const sourceCompany = getCompany(db, sourceCompanyId);
-    // 项目归属校验：仅创建外包契约时需要；recruit/internal 路径不需要项目
-    if (input.sourceProjectId) {
-      const sourceProject = getProject(db, input.sourceProjectId);
-      if (sourceProject.companyId !== sourceCompanyId) {
-        throw new AppError(ErrorCode.UNAUTHORIZED, '项目不属于该公司');
-      }
-    }
-
-    // 决策树：选乙方（显式指定 or 自动）
-    let targetCompanyId = input.vendorCompanyId;
-    let decisionPath = 'manual';
-    if (!targetCompanyId && (input.autoDecide ?? true)) {
-      const decision = runOutsourcingDecisionTree(
-        db,
-        sourceCompanyId,
-        input.requiredCapabilityIds ?? [],
-      );
-      decisionPath = decision.path;
-      if (decision.path === 'outsource' && decision.vendorCompany) {
-        targetCompanyId = decision.vendorCompany.id;
-      } else if (decision.path === 'internal') {
-        // 内部可做：不创建外包契约，返回决策建议（调用方应走内部派发）
-        res.status(200).json({
-          decision: { path: 'internal', internalAssigneeId: decision.internalAssigneeId, reason: decision.reason },
-          contract: null,
-        });
-        return;
-      } else {
-        // recruit：选拔优先级链（greyed 复用 → 人才库 → 创建）自动招募临时工到甲方公司
-        const tempRole = input.requiredCapabilityIds?.[0] ?? '临时专员';
-        const result = selectTempForNeed(db, sourceCompanyId, input.requiredCapabilityIds ?? [], tempRole, {
-          responsibilities: input.brief,
-        });
-        realtime.publish(makeLifecycleEvent('employee.temp-recruited', {
-          agentId: result.agentId,
-          profileId: result.profileId,
-          companyId: sourceCompanyId,
-          isNewProfile: result.isNewProfile,
-        }, { companyId: sourceCompanyId }));
-        res.status(200).json({
-          decision: { path: 'recruit', tempAgentId: result.agentId, selectionPath: result.path, isNewProfile: result.isNewProfile, reason: decision.reason },
-          contract: null,
-        });
-        return;
-      }
-    }
-    if (!targetCompanyId) {
-      throw new AppError(ErrorCode.VALIDATION, '未指定乙方公司且决策树未找到合适乙方');
-    }
-    if (!input.sourceProjectId) {
-      throw new AppError(ErrorCode.VALIDATION, '创建外包契约需指定甲方源项目（sourceProjectId）');
-    }
-
-    // 创建契约（pending 态）
-    const contract = createOutsourcingContract(db, {
+    const decision = runOutsourcingDecisionTree(
+      db,
       sourceCompanyId,
-      targetCompanyId,
-      sourceProjectId: input.sourceProjectId,
-      sourceTaskId: input.sourceTaskId,
-      dispatcherAgentId: sourceCompany.firstAgentId ?? undefined,
-      title: input.title,
-      brief: input.brief,
-      acceptanceCriteria: input.acceptanceCriteria?.map((c, i) => ({
-        id: c.id ?? shortId(`acc_${i}_`),
-        criterion: c.criterion,
-      })),
-      requiredCapabilityIds: input.requiredCapabilityIds,
-      deliverableDir: input.deliverableDir,
-      readonlyRefs: input.readonlyRefs,
+      input.requiredCapabilityIds ?? [],
+    );
+    if (decision.path === 'internal') {
+      // 内部可做：返回决策建议（调用方走内部派发）
+      res.status(200).json({
+        decision: { path: 'internal', internalAssigneeId: decision.internalAssigneeId, reason: decision.reason },
+        contract: null,
+      });
+      return;
+    }
+    // recruit：选拔优先级链（greyed 复用 → 人才库 → 创建）自动招募临时工
+    const tempRole = input.requiredCapabilityIds?.[0] ?? '临时专员';
+    const result = selectTempForNeed(db, sourceCompanyId, input.requiredCapabilityIds ?? [], tempRole, {
+      responsibilities: input.brief,
     });
-    realtime.publish(makeLifecycleEvent('outsource.requested', {
-      contractId: contract.id,
-      sourceCompanyId,
-      targetCompanyId,
-      decisionPath,
+    realtime.publish(makeLifecycleEvent('employee.temp-recruited', {
+      agentId: result.agentId,
+      profileId: result.profileId,
+      companyId: sourceCompanyId,
+      isNewProfile: result.isNewProfile,
     }, { companyId: sourceCompanyId }));
-    res.status(201).json({ contract, decision: { path: decisionPath } });
+    res.status(200).json({
+      decision: { path: 'recruit', tempAgentId: result.agentId, selectionPath: result.path, isNewProfile: result.isNewProfile, reason: decision.reason },
+      contract: null,
+    });
   }),
 );
 

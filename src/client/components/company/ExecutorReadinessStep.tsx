@@ -40,8 +40,8 @@ export function ExecutorReadinessStep({ draft, bindings, profiles, policies, onC
       {!executor && <a className="mu-btn mu-btn-primary mu-btn-sm" href="/executors" target="_blank" rel="noreferrer">接入执行器 ↗</a>}
       {onRefresh && <Button size="sm" variant="ghost" loading={refreshing} onClick={() => void onRefresh()}>刷新</Button>}
     </div>
-    {executor && policy && <div className="runtime-route" aria-label="默认运行路径"><span>{draft.employees.length} 位员工</span><i>→</i><span>{executor.name}</span><i>→</i><span>{policy.scope === 'project' ? '项目沙盒' : policy.name}</span></div>}
-    <details className="details-collapse"><summary>逐个调整员工配置</summary><div className="binding-grid">{draft.employees.map((employee) => {
+    {executor && policy && <div className="runtime-route" aria-label="默认运行路径"><span>{draft.employees.length} 位智能体</span><i>→</i><span>{executor.name}</span><i>→</i><span>{policy.scope === 'project' ? '项目沙盒' : policy.name}</span></div>}
+    <details className="details-collapse"><summary>逐个调整智能体配置</summary><div className="binding-grid">{draft.employees.map((employee) => {
       const current = bindings[employee.key] ?? { executorProfileId: '', permissionPolicyId: '' };
       return <div key={employee.key} className="binding-card"><strong>{employee.name}</strong><small>{employee.role}</small><Field label="执行器"><Select aria-label={`${employee.name}固定执行器`} value={current.executorProfileId} onChange={(event) => onChange({ ...bindings, [employee.key]: { ...current, executorProfileId: event.target.value } })}><option value="">请选择</option>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</Select></Field><Field label="权限"><Select aria-label={`${employee.name}权限范围`} value={current.permissionPolicyId} onChange={(event) => onChange({ ...bindings, [employee.key]: { ...current, permissionPolicyId: event.target.value } })}><option value="">请选择</option>{policies.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.scope}</option>)}</Select></Field></div>;
     })}</div></details>

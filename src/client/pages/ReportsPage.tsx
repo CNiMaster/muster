@@ -49,7 +49,7 @@ export function ReportsPage(): React.ReactElement {
       { projectId, triggerKind },
       {
         onSuccess: (data) => {
-          toast('success', '复盘周期已开启，公司已挂起等待复盘');
+          toast('success', '复盘周期已开启，工作台已挂起等待复盘');
           setActiveReportId(data.id);
           if (project?.companyId) {
             qc.invalidateQueries({ queryKey: ['company', project.companyId] });
@@ -130,9 +130,9 @@ export function ReportsPage(): React.ReactElement {
           gap: 'var(--space-3)'
         }}>
           <div>
-            <strong style={{ color: 'var(--accent)' }}>⚠️ 公司挂起中</strong>
+            <strong style={{ color: 'var(--accent)' }}>⚠️ 工作台挂起中</strong>
             <p style={{ margin: '4px 0 0 0', fontSize: 'var(--text-sm)', color: 'var(--fg-muted)' }}>
-              当前项目已触发强制复盘周期，引擎已暂停领取新任务。请检阅下方根员工看板，并填写备注意见。
+              当前项目已触发强制复盘周期，引擎已暂停领取新任务。请检阅下方根智能体看板，并填写备注意见。
             </p>
           </div>
           <Button variant="ghost" size="sm" onClick={resumeCompany} loading={companyAction.isPending}>
@@ -228,7 +228,7 @@ export function ReportsPage(): React.ReactElement {
                 </div>
 
                 <h3 style={{ borderBottom: '1px solid var(--border-subtle)', paddingBottom: '8px', marginTop: 'var(--space-4)' }}>
-                  根员工看板 (按岗位聚合成果)
+                  根智能体看板 (按岗位聚合成果)
                 </h3>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', marginTop: 'var(--space-3)' }}>

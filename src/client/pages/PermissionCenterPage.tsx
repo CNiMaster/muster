@@ -18,9 +18,9 @@ import {
 /**
  * 权限与审批中心。
  * - 策略库：管理权限策略，预设安全/Turbo。
- * - 按公司批量绑定：把某策略一次性绑到某公司所有员工。
+ * - 按工作台批量绑定：把某策略一次性绑到某工作台所有智能体。
  * - 待审批队列：CLI 命令审批（保留）。
- * 员工的执行器/权限绑定在公司组织架构页做，这里只管策略本身。
+ * 智能体的执行器/权限绑定在工作台组织架构页做，这里只管策略本身。
  */
 export function PermissionCenterPage(): React.ReactElement {
   const qc = useQueryClient();
@@ -37,7 +37,7 @@ export function PermissionCenterPage(): React.ReactElement {
   const [scope, setScope] = useState<PermissionScope>('project');
   const [dirs, setDirs] = useState('');
 
-  // 按公司批量绑定
+  // 按工作台批量绑定
   const [batchCompanyId, setBatchCompanyId] = useState('');
   const [batchPolicyId, setBatchPolicyId] = useState('');
 
@@ -57,7 +57,7 @@ export function PermissionCenterPage(): React.ReactElement {
       api.post<{ updated: number }>(`/api/permissions/companies/${companyId}/binding`, { policyId }),
     onSuccess: (data) => {
       void qc.invalidateQueries({ queryKey: ['agents'] });
-      toast('success', `已绑定到 ${data.updated} 位员工`);
+      toast('success', `已绑定到 ${data.updated} 位智能体`);
     },
     onError: (e: unknown) => toast('error', (e as Error).message ?? '批量绑定失败'),
   });
@@ -70,7 +70,7 @@ export function PermissionCenterPage(): React.ReactElement {
 
   const doBatchBind = (): void => {
     if (!batchCompanyId || !batchPolicyId) {
-      toast('error', '请选择公司和策略');
+      toast('error', '请选择工作台和策略');
       return;
     }
     batchBind.mutate({ companyId: batchCompanyId, policyId: batchPolicyId });
@@ -83,7 +83,7 @@ export function PermissionCenterPage(): React.ReactElement {
       <header className="page-header">
         <div>
           <h1>权限与审批中心</h1>
-          <p className="subtitle">管理权限策略，按公司批量绑定。员工的执行器/权限绑定在公司「组织架构」页统一操作。</p>
+          <p className="subtitle">管理权限策略，按工作台批量绑定。智能体的执行器/权限绑定在工作台「组织架构」页统一操作。</p>
         </div>
       </header>
 
@@ -95,12 +95,12 @@ export function PermissionCenterPage(): React.ReactElement {
         <p className="muted">项目 Turbo 只放开项目范围。安装软件、凭据、推送、部署、外部消息、账号和付费操作仍单独审批。</p>
       </Card>
 
-      <Card title="按公司批量绑定" className="section">
-        <p className="muted">把某策略一次性绑定到指定公司的所有员工（要求该公司已下班）。员工级细调请到公司组织架构页展开。</p>
+      <Card title="按工作台批量绑定" className="section">
+        <p className="muted">把某策略一次性绑定到指定工作台的所有智能体（要求该工作台已下班）。智能体级细调请到工作台组织架构页展开。</p>
         <div className="form-row">
-          <Field label="目标公司">
+          <Field label="目标工作台">
             <Select value={batchCompanyId} onChange={(e) => setBatchCompanyId((e.target as HTMLSelectElement).value)}>
-              <option value="">选择公司（仅下班）</option>
+              <option value="">选择工作台（仅下班）</option>
               {offCompanies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </Select>
           </Field>
@@ -154,7 +154,7 @@ export function PermissionCenterPage(): React.ReactElement {
                   <div>
                     <Badge tone={item.risk === 'high' ? 'err' : 'warn'}>{item.risk === 'high' ? '高风险' : '需确认'}</Badge> <strong>{item.action}</strong>
                   </div>
-                  <p>员工 {item.employee_id} · Task {item.task_id}</p>
+                  <p>智能体 {item.employee_id} · Task {item.task_id}</p>
                   <p><Badge tone={item.online ? 'warn' : 'neutral'}>{item.statusText}</Badge></p>
                   {item.command && <code>{item.command}</code>}
                   {item.path && <p className="diagnostic-text">{item.path}</p>}

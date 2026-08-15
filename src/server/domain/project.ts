@@ -13,7 +13,7 @@ import { spawnSync } from 'node:child_process';
 import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
-import { getCompany } from './company';
+import { getCompany, createCompany } from './company';
 import { getAgent } from './agent';
 import { ensureDefaultWorkspace } from './workspace';
 
@@ -155,6 +155,57 @@ export function getProject(db: DB, id: string): Project {
 export function listProjects(db: DB, companyId: string): Project[] {
   const rows = db.prepare('SELECT * FROM project WHERE company_id = ? ORDER BY created_at').all(companyId) as ProjectRow[];
   return rows.map(fromRow);
+}
+
+/**
+ * 蓝图组织批次4d：收件箱项目——工作台级随手问载体。
+ * 公司对话（scope=company）的任务落这里，不再随机借用第一个业务项目污染现场；
+ * 幂等：settings.inbox=true 的项目复用，无则创建（active 态跳过准备流程，随时可派）。
+ * 可见性决策（Review 修复 I2）：收件箱是基础设施——不进项目列表/驾驶舱计数/继续项目建议
+ * （消费方按 settings.inbox 过滤），用户经工作台对话与其交互。
+ */
+export function ensureInboxProject(db: DB, companyId: string): { project: Project; created: boolean } {
+  const rows = db.prepare('SELECT * FROM project WHERE company_id=?').all(companyId) as ProjectRow[];
+  const existing = rows.map(fromRow).find((p) => (p.settings as Record<string, unknown>)?.inbox === true);
+  if (existing) return { project: existing, created: false };
+  const project = createProject(db, {
+    companyId,
+    name: '收件箱',
+    description: '随手问与冷启动对话的载体：这里的工作单来自工作台对话，不占用正式项目。',
+    initialState: 'active',
+  });
+  const flagged = updateProject(db, project.id, {
+    settings: { ...(project.settings as Record<string, unknown>), inbox: true },
+  });
+  return { project: flagged, created: true };
+}
+
+/**
+ * 蓝图组织批次4c：项目优先入口——用户手里只有"一件要办的事"，不回答"哪家公司来做"。
+ * 自动落在默认工作台：取首个在营公司；一个都没有则顺手创建（无员工、无模板、下班态的空壳工作台）。
+ * 组织决策从入口消失：公司/工作台是懒创建的容器，不是用户的第一步。
+ */
+export function createQuickProject(db: DB, input: { name: string; description?: string }): {
+  project: Project;
+  companyId: string;
+  createdWorkspace: boolean;
+} {
+  const existing = db.prepare(
+    'SELECT id FROM company WHERE archived_at IS NULL ORDER BY created_at LIMIT 1',
+  ).get() as { id: string } | undefined;
+  if (existing) {
+    return {
+      project: createProject(db, { companyId: existing.id, name: input.name, description: input.description }),
+      companyId: existing.id,
+      createdWorkspace: false,
+    };
+  }
+  const workspace = createCompany(db, { name: '我的工作台', kind: 'general' });
+  return {
+    project: createProject(db, { companyId: workspace.id, name: input.name, description: input.description }),
+    companyId: workspace.id,
+    createdWorkspace: true,
+  };
 }
 
 export function updateProject(

@@ -42,7 +42,7 @@ describe('queryKeysForRealtimeEvent', () => {
     expect(queryKeysForRealtimeEvent({id:'ev_4',type:'approval.decided',companyId:'co_1',occurredAt:'2026-01-01T00:00:00.000Z',payload:{approvalId:'ap_1'}})).toContainEqual(['permission-approvals']);
   });
 
-  it('会话换代同时刷新项目任务、员工运行态和公司驾驶舱', () => {
+  it('会话换代同时刷新项目任务、智能体运行态和工作台驾驶舱', () => {
     const keys = queryKeysForRealtimeEvent({ id:'ev_5', type:'session.rotated', companyId:'co_1', projectId:'pr_1', taskId:'tk_1', occurredAt:'2026-01-01T00:00:00.000Z', payload:{projectTaskId:'pt_1',threadId:'pth_1'} });
     expect(keys).toContainEqual(['employee-runtime']);
     expect(keys).toContainEqual(['company-cockpit','co_1']);

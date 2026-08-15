@@ -1,29 +1,29 @@
 /**
- * B2B 外包决策树：内部能做吗 → 外包给谁 → 否则招聘。
+ * 用工决策树：内部能做吗 → 否则临时工选拔。
  *
- * 全自动决策逻辑（用户要求）：
- * 1. 查询甲方公司内部是否有人具备所需能力（capability_binding 有 employee_id 绑定）
+ * 蓝图组织批次5：B2B 外包拆件退役——删除"跨公司找乙方"（findVendorCompany 与 outsource 路径）。
+ * 新模型里干员/人设/蓝图都是工作台级资产，任何团队都能配任何能力，
+ * "跨公司"这个外包的存在理由被架构本身消解；能力缺口统一走临时工选拔（组队/复用路径）。
+ *
+ * 契约状态机与甲方 repo 交付管线（outsourcing-contract.ts / engine.ts）保留，
+ * 待改造为跨项目交付协议（project↔project），不再 company↔company。
+ *
+ * 1. 甲方内部是否有人具备所需能力（capability_binding 有 employee_id 绑定）
  *    → 路径 'internal'，返回可分配的内部员工
- * 2. 否则跨公司扫描所有在营公司，找具备所需能力的乙方
- *    → 路径 'outsource'，返回推荐的乙方公司
- * 3. 都没有 → 路径 'recruit'（本轮记事件 + 提示，不自动跑招聘 wizard）
+ * 2. 否则 → 路径 'recruit'（临时工选拔链：greyed 复用 → 人才库 → 新建）
  *
- * 能力匹配基于 capability_binding 表（migration 0027）：
- *   capability_id 是自由字符串（来自模板安装），同一 capabilityId 跨公司匹配。
+ * 能力匹配基于 capability_binding 表：
+ *   capability_id 是自由字符串（来自模板安装），同一 capabilityId 可跨任职匹配。
  */
 import type { DB } from '../db/client';
-import { listCompanies } from './company';
-import type { Company } from './company';
 import { createTempEmployment, findGreyedTempForReuse, reactivateGreyedTemp } from './temp-worker';
 
-export type DecisionPath = 'internal' | 'outsource' | 'recruit';
+export type DecisionPath = 'internal' | 'recruit';
 
 export interface OutsourcingDecision {
   path: DecisionPath;
   /** internal 路径：推荐的可分配员工 agent id。 */
   internalAssigneeId?: string;
-  /** outsource 路径：推荐的乙方公司。 */
-  vendorCompany?: Company;
   /** 决策原因（可展示给用户）。 */
   reason: string;
   /** 所需能力中，内部无法满足的部分（gap）。 */
@@ -76,38 +76,9 @@ export function findInternalAssignee(
 }
 
 /**
- * 跨公司扫描，找具备所需能力的乙方公司（排除自身）。
- * 优先返回在营（非归档）公司。
- */
-export function findVendorCompany(
-  db: DB,
-  sourceCompanyId: string,
-  capabilityIds: string[],
-): Company | null {
-  if (capabilityIds.length === 0) return null;
-  const placeholders = capabilityIds.map(() => '?').join(',');
-  // 查有 capability_binding 命中 + employee_id 的公司，排除甲方自身
-  const vendorIds = db
-    .prepare(
-      `SELECT DISTINCT cb.company_id FROM capability_binding cb
-       JOIN company c ON c.id = cb.company_id
-       WHERE cb.capability_id IN (${placeholders})
-         AND cb.employee_id IS NOT NULL
-         AND cb.company_id <> ?
-         AND c.archived_at IS NULL
-       ORDER BY c.state = 'online' DESC, c.updated_at DESC
-       LIMIT 1`,
-    )
-    .all(...capabilityIds, sourceCompanyId) as { company_id: string }[];
-  if (vendorIds.length === 0) return null;
-  const companies = listCompanies(db, { activeOnly: true });
-  return companies.find((c) => c.id === vendorIds[0].company_id) ?? null;
-}
-
-/**
- * 运行完整决策树。
+ * 运行完整决策树（蓝图组织批次5：两路径——内部 / 临时工选拔）。
  *
- * @param sourceCompanyId 甲方公司
+ * @param sourceCompanyId 工作台（甲方）
  * @param requiredCapabilityIds 任务所需能力列表
  */
 export function runOutsourcingDecisionTree(
@@ -121,24 +92,14 @@ export function runOutsourcingDecisionTree(
     return {
       path: 'internal',
       internalAssigneeId: assignee ?? undefined,
-      reason: '甲方公司内部具备所需能力，可内部派发',
+      reason: '工作台内部具备所需能力，可内部派发',
       missingCapabilityIds: [],
     };
   }
-  // 2. 系统内有无更适合的外包公司？
-  const vendor = findVendorCompany(db, sourceCompanyId, requiredCapabilityIds);
-  if (vendor) {
-    return {
-      path: 'outsource',
-      vendorCompany: vendor,
-      reason: `甲方内部无此能力，系统内 ${vendor.name} 具备，建议外包`,
-      missingCapabilityIds: requiredCapabilityIds,
-    };
-  }
-  // 3. 都没有 → 招聘
+  // 2. 没有 → 临时工选拔（greyed 复用 → 人才库 → 新建；跨公司外包已随批次5退役）
   return {
     path: 'recruit',
-    reason: '甲方与系统内其他公司均无所需能力，建议招聘新员工',
+    reason: '工作台内无此能力，走临时工选拔（复用候选 → 人才库 → 新建）',
     missingCapabilityIds: requiredCapabilityIds,
   };
 }

@@ -27,6 +27,8 @@ export interface MemoryCandidate {
   createdAt: string;
   /** E2.1 结构化 category 标签（形如 "design:color"），供晋升流聚类；旧数据/null 无标签。 */
   fingerprint: string | null;
+  /** 蓝图组织批次1：人设键（skill scope 的方法论归属，如 'product/product-manager'）；仅 skill scope 允许非空。 */
+  personaKey: string | null;
 }
 
 export interface MemoryEntry {
@@ -45,6 +47,8 @@ export interface MemoryEntry {
   updatedAt: string;
   /** E2.1 结构化 category 标签，供晋升流聚类。 */
   fingerprint: string | null;
+  /** 蓝图组织批次1：人设键（skill scope 专属）；null = 通用技能记忆。 */
+  personaKey: string | null;
 }
 
 type CandidateRow = {
@@ -52,13 +56,13 @@ type CandidateRow = {
   content: string; source_task_id: string | null; source_message_id: string | null; author: string;
   confidence: number; can_influence: number; status: MemoryCandidateStatus; quarantine_reason: string | null;
   expires_at: string | null; reviewed_by: string | null; reviewed_at: string | null; created_at: string;
-  fingerprint: string | null;
+  fingerprint: string | null; persona_key: string | null;
 };
 type EntryRow = {
   id: string; profile_id: string; scope: MemoryScope; company_id: string | null; project_id: string | null;
   content: string; version: number; state: MemoryEntryState; can_influence: number;
   source_candidate_id: string | null; expires_at: string | null; created_at: string; updated_at: string;
-  fingerprint: string | null;
+  fingerprint: string | null; persona_key: string | null;
 };
 
 function candidateFromRow(row: CandidateRow): MemoryCandidate {
@@ -68,6 +72,7 @@ function candidateFromRow(row: CandidateRow): MemoryCandidate {
     author: row.author, confidence: row.confidence, canInfluence: row.can_influence === 1, status: row.status,
     quarantineReason: row.quarantine_reason, expiresAt: row.expires_at, reviewedBy: row.reviewed_by,
     reviewedAt: row.reviewed_at, createdAt: row.created_at, fingerprint: row.fingerprint,
+    personaKey: row.persona_key ?? null,
   };
 }
 
@@ -77,6 +82,7 @@ function entryFromRow(row: EntryRow): MemoryEntry {
     content: row.content, version: row.version, state: row.state, canInfluence: row.can_influence === 1,
     sourceCandidateId: row.source_candidate_id, expiresAt: row.expires_at, createdAt: row.created_at, updatedAt: row.updated_at,
     fingerprint: row.fingerprint,
+    personaKey: row.persona_key ?? null,
   };
 }
 
@@ -86,9 +92,14 @@ export function createMemoryCandidate(db: DB, input: {
   canInfluence: boolean; expiresAt?: string; allowAutoApprove?: boolean;
   /** E2.1 结构化 category 标签（形如 "design:color"），供晋升流聚类；省略则无标签。 */
   fingerprint?: string | null;
+  /** 蓝图组织批次1：人设键——skill scope 的方法论归属（如 'product/product-manager'）。仅 skill scope 允许。 */
+  personaKey?: string;
 }): MemoryCandidate {
   getAgentProfile(db, input.profileId);
   validateScope(input.scope, input.companyId, input.projectId);
+  if (input.personaKey && input.scope !== 'skill') {
+    throw new AppError(ErrorCode.VALIDATION, '人设键只允许用于 skill 记忆（方法论挂在人设上）');
+  }
   const content = input.content.trim();
   if (!content) throw new AppError(ErrorCode.VALIDATION, '记忆内容不能为空');
   if (input.confidence < 0 || input.confidence > 1) throw new AppError(ErrorCode.VALIDATION, '记忆可信度必须在 0 到 1 之间');
@@ -98,15 +109,19 @@ export function createMemoryCandidate(db: DB, input: {
   db.prepare(
     `INSERT INTO memory_candidate (
       id, profile_id, scope, company_id, project_id, content, source_task_id, source_message_id,
-      author, confidence, can_influence, status, quarantine_reason, expires_at, created_at, fingerprint
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`,
+      author, confidence, can_influence, status, quarantine_reason, expires_at, created_at, fingerprint, persona_key
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)`,
   ).run(
     id, input.profileId, input.scope, input.companyId ?? null, input.projectId ?? null, content,
     input.sourceTaskId ?? null, input.sourceMessageId ?? null, input.author, input.confidence,
     input.canInfluence ? 1 : 0, quarantineReason, input.expiresAt ?? null, now, input.fingerprint ?? null,
+    input.personaKey ?? null,
   );
   const canAutoApprove = !quarantineReason && input.allowAutoApprove === true && (
-    input.scope === 'project' || input.author === 'user'
+    input.scope === 'project'
+    || input.author === 'user'
+    // 蓝图组织批次1：人设键方法论是自包含的领域经验（不绑定公司/项目事实），高置信允许自动生效。
+    || (input.scope === 'skill' && !!input.personaKey)
   );
   if (canAutoApprove) approveMemoryCandidate(db, id, input.author);
   return getMemoryCandidate(db, id);
@@ -137,11 +152,12 @@ export function approveMemoryCandidate(db: DB, id: string, reviewer: string): Me
     db.prepare(
       `INSERT INTO memory_entry (
         id, profile_id, scope, company_id, project_id, content, version, state,
-        can_influence, source_candidate_id, expires_at, created_at, updated_at, fingerprint
-      ) VALUES (?, ?, ?, ?, ?, ?, 1, 'active', ?, ?, ?, ?, ?, ?)`,
+        can_influence, source_candidate_id, expires_at, created_at, updated_at, fingerprint, persona_key
+      ) VALUES (?, ?, ?, ?, ?, ?, 1, 'active', ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       entryId, candidate.profileId, candidate.scope, candidate.companyId, candidate.projectId,
       candidate.content, candidate.canInfluence ? 1 : 0, candidate.id, candidate.expiresAt, now, now, candidate.fingerprint,
+      candidate.personaKey,
     );
     insertMemoryVersion(db, entryId, 1, candidate.content, reviewer, candidate.id, now);
     indexMemory(db, entryId, candidate.profileId, candidate.content);
@@ -245,8 +261,9 @@ export function searchMemory(db: DB, input: {
  * 将查询拆成匹配词元：按空白分词；中文连续段保留整段并生成重叠二元组（bigram），
  * 英文/数字词保持整词。中文无空格，整句 LIKE/FTS 前缀无法命中语义相关的记忆
  * （如任务"实现事件模块" vs 记忆"决定采用事件驱动架构"），二元组可跨句命中子串。
+ * 蓝图组织批次2：导出供归档检索（archive.ts）复用同一套词元逻辑。
  */
-function expandMatchTokens(query: string): string[] {
+export function expandMatchTokens(query: string): string[] {
   const tokens: string[] = [];
   const seen = new Set<string>();
   const push = (t: string) => { if (t && !seen.has(t)) { seen.add(t); tokens.push(t); } };
@@ -270,38 +287,52 @@ export function loadContextMemories(db: DB, input: {
 /**
    * 渐进式加载：当传入 query 时，company/project 记忆仅注入与当前任务相关的（词元级 LIKE + FTS5 命中），
    * 避免把全量记忆塞进 system prompt 淹没上下文；为空则回退全量（按 scope 优先级）。
-   * 注意：personal/skill 是用户的稳定偏好与核心身份，**永远全量注入**，不受 query 筛选——
+   * 注意：personal 是用户的稳定偏好与核心身份，**永远全量注入**，不受 query 筛选——
    * 否则 agent 会因任务不相关而忘记用户的固定偏好（如"用中文回复"）。
+   * 蓝图组织批次1：skill 记忆按人设过滤——任务穿戴人设时注入「该人设的方法论 + 通用技能记忆」，
+   * 不穿戴时只注入通用技能记忆（persona_key IS NULL）。人设方法论不污染无人设任务。
    * 不引入 embedding/向量——复用 searchMemory 已验证的 FTS5 路径即可。
    */
   query?: string;
+  /** 当前任务穿戴的人设（task.personaId）；null/undefined = 无人设。 */
+  personaKey?: string | null;
 }): MemoryEntry[] {
   const now = nowIso();
   const trimmedQuery = (input.query ?? '').trim();
   const limit = Math.min(Math.max(input.limit ?? 8, 1), 20);
   const orderClause = 'CASE scope WHEN \'personal\' THEN 1 WHEN \'company\' THEN 2 WHEN \'project\' THEN 3 ELSE 4 END, updated_at DESC';
+  // skill 分支按人设过滤：穿戴人设 → 该人设方法论 + 通用；未穿戴 → 仅通用。
+  const skillClause = input.personaKey
+    ? "(scope='skill' AND (persona_key IS NULL OR persona_key=?))"
+    : "(scope='skill' AND persona_key IS NULL)";
   // query 为空 → 原全量逻辑（向后兼容，零破坏）。
   if (!trimmedQuery) {
+    const fullValues: unknown[] = [input.profileId, now];
+    if (input.personaKey) fullValues.push(input.personaKey);
+    fullValues.push(input.companyId, input.companyId, input.projectId, limit);
     return (db.prepare(
       `SELECT * FROM memory_entry
        WHERE profile_id=? AND state IN ('active','locked')
          AND can_influence=1 AND (expires_at IS NULL OR expires_at > ?)
          AND (
-           scope IN ('personal','skill')
+           scope='personal'
+           OR ${skillClause}
            OR (scope='company' AND company_id=?)
            OR (scope='project' AND company_id=? AND project_id=?)
          )
        ORDER BY ${orderClause} LIMIT ?`,
-    ).all(input.profileId, now, input.companyId, input.companyId, input.projectId, limit) as EntryRow[])
+    ).all(...fullValues) as EntryRow[])
       .map(entryFromRow);
   }
-  // query 非空 → personal/skill 仍全量；company/project 仅注入相关记忆。
+  // query 非空 → personal/skill 仍全量（skill 按人设过滤）；company/project 仅注入相关记忆。
   // 每个词元独立 OR 命中（英文整词、中文整段 + 二元组），既渐进又不丢用户的稳定偏好。
   const tokens = expandMatchTokens(trimmedQuery);
   const matchOrs = tokens
     .map(() => '(content LIKE ? OR id IN (SELECT entry_id FROM memory_fts WHERE memory_fts MATCH ?))')
     .join(' OR ');
-  const values: unknown[] = [input.profileId, now, input.companyId, input.companyId, input.projectId];
+  const values: unknown[] = [input.profileId, now];
+  if (input.personaKey) values.push(input.personaKey);
+  values.push(input.companyId, input.companyId, input.projectId);
   for (const token of tokens) {
     values.push(`%${token}%`, `${escapeFtsQuery(token)}*`);
   }
@@ -311,7 +342,8 @@ export function loadContextMemories(db: DB, input: {
      WHERE profile_id=? AND state IN ('active','locked')
        AND can_influence=1 AND (expires_at IS NULL OR expires_at > ?)
        AND (
-         scope IN ('personal','skill')
+         scope='personal'
+         OR ${skillClause}
          OR ((scope='company' AND company_id=?) OR (scope='project' AND company_id=? AND project_id=?))
              AND (${matchOrs})
        )
@@ -381,7 +413,8 @@ function indexMemory(db: DB, entryId: string, profileId: string, content: string
   db.prepare('INSERT INTO memory_fts (entry_id, profile_id, content) VALUES (?, ?, ?)').run(entryId, profileId, content);
 }
 
-function escapeFtsQuery(query: string): string {
+/** 转义为 FTS5 短语查询（供归档检索复用）。 */
+export function escapeFtsQuery(query: string): string {
   return `"${query.replace(/"/g, '""')}"`;
 }
 

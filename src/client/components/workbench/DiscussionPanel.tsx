@@ -14,8 +14,10 @@ import {
   useProjectDiscussions,
   useDiscussionDetail,
   useCloseDiscussion,
+  useStartUserDiscussion,
   type DiscussionSummaryDTO,
 } from '../../hooks/queries';
+import type { Agent } from '../../api/types';
 import { StateBadge } from '../Badge';
 import { Button, toast } from '../Button';
 
@@ -29,11 +31,13 @@ const SCENARIO_LABELS: Record<string, string> = {
   'brainstorm': '头脑风暴',
 };
 
-export function DiscussionPanel({ projectId }: { projectId: string }): React.ReactElement {
+export function DiscussionPanel({ projectId, agents = [] }: { projectId: string; agents?: Agent[] }): React.ReactElement {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [composing, setComposing] = useState(false);
   const { data: discussions = [], isLoading } = useProjectDiscussions(projectId, showArchived ? 'all' : undefined);
   const closeDiscussion = useCloseDiscussion();
+  const startDiscussion = useStartUserDiscussion(projectId);
 
   const activeDiscussions = discussions.filter((d) => d.state === 'open' || d.state === 'concluding');
   const activeCount = activeDiscussions.length;
@@ -58,7 +62,7 @@ export function DiscussionPanel({ projectId }: { projectId: string }): React.Rea
       </div>
       {isLoading ? <p className="inspector-empty">加载讨论…</p>
         : displayed.length === 0 ? (
-          <p className="inspector-empty">暂无讨论。任务连续失败、验收不达标、发布冲突或跨公司交接时会自动发起讨论；员工也可主动发起。</p>
+          <p className="inspector-empty">暂无讨论。任务连续失败、验收不达标、发布冲突或跨工作台交接时会自动发起讨论；智能体也可主动发起。</p>
         ) : (
           <ul className="discussion-list">
             {displayed.slice(0, 5).map((d) => (
@@ -77,12 +81,85 @@ export function DiscussionPanel({ projectId }: { projectId: string }): React.Rea
             ))}
           </ul>
         )}
-      <div className="discussion-footer">
-        <button type="button" className="mu-btn mu-btn-ghost mu-btn-sm" onClick={() => setShowArchived(!showArchived)}>
-          {showArchived ? '← 回到进行中' : '查看归档'}
-        </button>
-      </div>
+      {composing ? (
+        <StartDiscussionForm
+          agents={agents}
+          loading={startDiscussion.isPending}
+          onCancel={() => setComposing(false)}
+          onSubmit={(topic, participantAgentIds) => {
+            startDiscussion.mutate({ topic, participantAgentIds }, {
+              onSuccess: () => {
+                toast('success', '探讨已开始，发言与纪要会出现在这里');
+                setComposing(false);
+              },
+              onError: (e) => toast('error', (e as Error).message),
+            });
+          }}
+        />
+      ) : (
+        <div className="discussion-footer">
+          <button type="button" className="mu-btn mu-btn-ghost mu-btn-sm" onClick={() => setShowArchived(!showArchived)}>
+            {showArchived ? '← 回到进行中' : '查看归档'}
+          </button>
+          {agents.length >= 2 && (
+            <button type="button" className="mu-btn mu-btn-ghost mu-btn-sm" onClick={() => setComposing(true)}>
+              发起探讨
+            </button>
+          )}
+        </div>
+      )}
     </section>
+  );
+}
+
+/** 用户发起探讨的表单（蓝图组织批次4）：议题 + 参与者多选（2-8 人，来自项目花名册，天然排除一次性执行体）。 */
+function StartDiscussionForm({ agents, loading, onCancel, onSubmit }: {
+  agents: Agent[];
+  loading: boolean;
+  onCancel: () => void;
+  onSubmit: (topic: string, participantAgentIds: string[]) => void;
+}): React.ReactElement {
+  const [topic, setTopic] = useState('');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  const toggle = (agentId: string): void => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(agentId)) next.delete(agentId);
+      else next.add(agentId);
+      return next;
+    });
+  };
+
+  return (
+    <div className="discussion-compose">
+      <input
+        className="mu-input"
+        placeholder="探讨议题（如：方案 A 还是 B？）"
+        value={topic}
+        onChange={(e) => setTopic((e.target as HTMLInputElement).value)}
+      />
+      <div className="discussion-participants" style={{ maxHeight: 120, overflowY: 'auto' }}>
+        {agents.map((agent) => (
+          <label key={agent.id} className="discussion-participant" style={{ display: 'flex', gap: 4, alignItems: 'center', cursor: 'pointer' }}>
+            <input type="checkbox" checked={selected.has(agent.id)} onChange={() => toggle(agent.id)} />
+            {agent.name}（{agent.role}）
+          </label>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <Button
+          size="sm"
+          loading={loading}
+          disabled={topic.trim().length === 0 || selected.size < 2}
+          onClick={() => onSubmit(topic.trim(), [...selected])}
+        >
+          开始探讨
+        </Button>
+        <Button size="sm" variant="ghost" onClick={onCancel}>取消</Button>
+      </div>
+      <p className="muted" style={{ fontSize: 12 }}>选 2-8 位智能体围绕议题多轮探讨，产出纪要与建议任务；开场与纪要都会播报到项目群聊。</p>
+    </div>
   );
 }
 

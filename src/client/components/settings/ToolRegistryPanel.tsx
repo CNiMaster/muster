@@ -31,7 +31,7 @@ export function ToolRegistryPanel({ defaultOpen = false }: { defaultOpen?: boole
     updateTool.mutate(
       { id: tool.id, isDefault: !tool.isDefault },
       {
-        onSuccess: () => toast('success', tool.isDefault ? '已取消默认派发' : '已设为默认派发(新公司将继承)'),
+        onSuccess: () => toast('success', tool.isDefault ? '已取消默认派发' : '已设为默认派发(新工作台将继承)'),
         onError: (e: any) => toast('error', e.message ?? '操作失败'),
       },
     );
@@ -59,11 +59,11 @@ export function ToolRegistryPanel({ defaultOpen = false }: { defaultOpen?: boole
     <details className="details-collapse" open={defaultOpen || undefined}>
       <summary>
         工具档案
-        <span className="muted">（能力中心:新公司默认派发 {tools?.filter((t) => t.isDefault).length ?? 0} 项）</span>
+        <span className="muted">（能力中心:新工作台默认派发 {tools?.filter((t) => t.isDefault).length ?? 0} 项）</span>
       </summary>
       <div className="form-stack">
         <p className="muted">
-          工具档案是"能力 → 可用实现"的备选目录,不是安装清单。员工执行时优先用自己已有的相似工具;缺少时才参考推荐。默认项会在创建公司时派发。
+          工具档案是"能力 → 可用实现"的备选目录,不是安装清单。智能体执行时优先用自己已有的相似工具;缺少时才参考推荐。默认项会在创建工作台时派发。
         </p>
         <div className="settings-primary-actions">
           <Button variant="ghost" onClick={handleSync} loading={syncTools.isPending}>重新扫描 tools/ 目录</Button>

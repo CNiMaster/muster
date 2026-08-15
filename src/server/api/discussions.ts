@@ -4,13 +4,14 @@
  * 挂载在 /api/projects/:projectId/discussions 下。
  * - GET /：列出项目的讨论室（默认进行中，?state=all 全部含归档）
  * - GET /:id：讨论详情（含参与者 + 发言流 + 纪要）
+ * - POST /：用户主动发起探讨（蓝图组织批次4：brainstorm 场景，参与者排除一次性执行体）
  * - POST /:id/close：手动关闭讨论
  */
 import { Router } from 'express';
 import { z } from 'zod';
 import { getDb } from '../db/client';
 import { asyncHandler, param } from './middleware';
-import { listDiscussions, getDiscussion, listParticipants, listTurns, closeDiscussion } from '../domain/discussion';
+import { listDiscussions, getDiscussion, listParticipants, listTurns, closeDiscussion, startUserDiscussion } from '../domain/discussion';
 import { getAgent } from '../domain/agent';
 
 export const discussionsRouter = Router();
@@ -52,6 +53,18 @@ discussionsRouter.get('/:id', asyncHandler(async (req, res) => {
     return { ...t, speakerName };
   });
   res.json({ ...disc, participants, turns });
+}));
+
+/** 用户主动发起探讨（蓝图组织批次4）。 */
+discussionsRouter.post('/', asyncHandler(async (req, res) => {
+  const input = z.object({
+    topic: z.string().min(1).max(200),
+    participantAgentIds: z.array(z.string().min(1)).min(2).max(8),
+    context: z.record(z.unknown()).optional(),
+    maxTurns: z.number().int().min(1).max(24).optional(),
+  }).parse(req.body);
+  const result = startUserDiscussion(getDb(), { projectId: param(req, 'projectId'), ...input });
+  res.status(201).json({ discussionId: result.discussion.id, turnTaskId: result.turnTaskId });
 }));
 
 /** 手动关闭讨论。 */

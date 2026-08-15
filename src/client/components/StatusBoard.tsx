@@ -3,7 +3,7 @@ import type { StatusBoard as StatusBoardData } from '../hooks/queries';
 import { Badge } from './Badge';
 
 /**
- 部门与员工状态看板（PRD Phase 4，清单 172）。
+ 部门与智能体状态看板（PRD Phase 4，清单 172）。
  按部门分组展示：availability、thread state、当前 Task、积压 Task 数。
  */
 export function StatusBoard({ data, loading, companyState }: { data: StatusBoardData | undefined; loading: boolean; companyState?: string }): React.ReactNode {
@@ -11,7 +11,7 @@ export function StatusBoard({ data, loading, companyState }: { data: StatusBoard
     return <div className="muted" style={{ padding: 12 }}>加载看板中…</div>;
   }
   if (!data || data.departments.length === 0) {
-    return <div className="muted" style={{ padding: 12 }}>暂无员工状态</div>;
+    return <div className="muted" style={{ padding: 12 }}>暂无智能体状态</div>;
   }
   return (
     <div className="mu-status-board">
@@ -24,7 +24,7 @@ export function StatusBoard({ data, loading, companyState }: { data: StatusBoard
           <table className="mu-status-board-table">
             <thead>
               <tr>
-                <th>员工</th>
+                <th>智能体</th>
                 <th>岗位</th>
                 <th>状态</th>
                 <th>线程</th>
@@ -39,7 +39,7 @@ export function StatusBoard({ data, loading, companyState }: { data: StatusBoard
                   <td className="muted">{a.role}</td>
                   <td>
                     <Badge tone={companyState === 'off' ? 'neutral' : a.availability === 'online' ? 'ok' : a.availability === 'draining' ? 'warn' : 'neutral'}>
-                      {companyState === 'off' ? '随公司待命' : a.availability === 'online' ? '工作中' : a.availability === 'draining' ? '收尾中' : '已暂停'}
+                      {companyState === 'off' ? '随工作台待命' : a.availability === 'online' ? '工作中' : a.availability === 'draining' ? '收尾中' : '已暂停'}
                     </Badge>
                   </td>
                   <td>

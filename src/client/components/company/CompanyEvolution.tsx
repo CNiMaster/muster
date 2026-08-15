@@ -1,5 +1,5 @@
 /**
- * E5.4 公司进化（组织记忆控制面）。
+ * E5.4 工作台进化（组织记忆控制面）。
  *
  * 四个块：优化报告（补阶段五遗留的审批 UI）/ 晋升候选 / 结构变更历史（回滚）/ 锁定管理。
  * 兑现"自动落地 + 历史可还原 + 手动锁定"的用户侧承诺——此前这些只有后端，无 UI 无 API。
@@ -138,7 +138,7 @@ function OptimizationReportsBlock({ companyId }: { companyId: string }): React.R
         </div>
       </div>
       {isLoading ? <p className="muted">加载中…</p> : reports.length === 0 ? (
-        <EmptyState icon="◌" title="还没有报告" hint="公司上线运行后，每天会生成一份运营优化报告；经验记忆达晋升阈值时也会产生晋升批次。" />
+        <EmptyState icon="◌" title="还没有报告" hint="工作台上线运行后，每天会生成一份运营优化报告；经验记忆达晋升阈值时也会产生晋升批次。" />
       ) : (
         <div className="form-stack">
           <div className="report-list">
@@ -220,16 +220,16 @@ function ReportDetail({ reportId }: { reportId: string }): React.ReactElement {
 // ── 晋升候选 ─────────────────────────────────────────────────────────
 
 function PromotionCandidatesBlock({ companyId }: { companyId: string }): React.ReactElement {
-  // E5 补齐：按公司过滤（跨公司/未归属候选不显示在任何公司页——它们也不进任何 promote 批次）。
+  // E5 补齐：按工作台过滤（跨工作台/未归属候选不显示在任何工作台页——它们也不进任何 promote 批次）。
   const { data: candidates = [], isLoading } = usePromotionCandidates(undefined, companyId);
   const dismiss = useDismissCandidate();
   const reopen = useReopenCandidate();
 
   return (
     <Card title="晋升候选">
-      <p className="muted">本公司重复经验达阈值后自动聚类；pending 会在每日报告后自动落地，可忽略/恢复</p>
+      <p className="muted">本工作台重复经验达阈值后自动聚类；pending 会在每日报告后自动落地，可忽略/恢复</p>
       {isLoading ? <p className="muted">加载中…</p> : candidates.length === 0 ? (
-        <EmptyState icon="◌" title="暂无晋升候选" hint="员工积累经验记忆后，同 fingerprint 重复 3 次或跨 2 人会生成候选。" />
+        <EmptyState icon="◌" title="暂无晋升候选" hint="智能体积累经验记忆后，同 fingerprint 重复 3 次或跨 2 人会生成候选。" />
       ) : (
         <div className="form-stack">
           {candidates.map((cand: any) => (
@@ -361,7 +361,7 @@ function LocksBlock(): React.ReactElement {
               <option value="capability_binding">capability_binding（能力绑定）</option>
               <option value="memory_entry">memory_entry（记忆）</option>
               <option value="workflow">workflow（工作流）</option>
-              <option value="agent_profile">agent_profile（员工档案）</option>
+              <option value="agent_profile">agent_profile（智能体档案）</option>
             </Select>
           </Field>
           <Field label="实体 ID" hint="如 tool_registry 的工具 id；memory_entry 用 profileId">

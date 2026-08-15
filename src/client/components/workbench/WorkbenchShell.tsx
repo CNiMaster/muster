@@ -24,8 +24,8 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
 
   const globalOptions = [
     { label: '首页', href: '/', group: '全局' },
-    { label: '公司', href: '/companies', group: '全局' },
-    { label: '员工库', href: '/agents', group: '全局' },
+    { label: '工作台', href: '/companies', group: '全局' },
+    { label: '智能体库', href: '/agents', group: '全局' },
     { label: '执行器', href: '/executors', group: '全局' },
     { label: '权限', href: '/permissions', group: '全局' },
     { label: '审批', href: '/reviews', group: '全局' },
@@ -57,7 +57,7 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
   } as React.CSSProperties;
   return <section className={`workbench ${preferences.leftOpen ? 'has-left' : ''} ${preferences.rightOpen ? 'has-right' : ''}`} style={style}>
     <header className="workbench-header">
-      {/* 改版收尾：品牌弹出菜单与顶部公司标签栏重复，收敛为纯首页链接 */}
+      {/* 改版收尾：品牌弹出菜单与顶部工作台标签栏重复，收敛为纯首页链接 */}
       <Link to="/" className="workbench-brand" aria-label="Muster 首页">
         <img src="/images/brand_logo.jpg" alt="Muster" className="workbench-brand-logo-img" style={{ width: '100%', height: '100%', borderRadius: 'var(--radius-sm, 6px)', objectFit: 'cover' }} />
       </Link>
@@ -76,7 +76,7 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
     <WorkbenchGuide />
     {commandOpen && <div className="command-backdrop" onMouseDown={() => { setCommandOpen(false); setCommandQuery(''); }}><div className="command-dialog" role="dialog" aria-modal="true" aria-label="搜索或跳转" onMouseDown={(event) => event.stopPropagation()}>
       <div className="command-title"><strong>去哪里？</strong><button type="button" aria-label="关闭搜索" onClick={() => { setCommandOpen(false); setCommandQuery(''); }}>×</button></div>
-      <input className="command-input" value={commandQuery} onChange={(event) => setCommandQuery(event.target.value)} placeholder="搜索当前项目任务、员工或全局功能…" autoFocus />
+      <input className="command-input" value={commandQuery} onChange={(event) => setCommandQuery(event.target.value)} placeholder="搜索当前项目任务、智能体或全局功能…" autoFocus />
       <div className="command-links">
         {groups.map((group) => <div key={group} className="command-group">
           <div className="command-group-label">{group}</div>

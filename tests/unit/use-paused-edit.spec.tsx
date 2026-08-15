@@ -33,7 +33,7 @@ const toastMock = toast as unknown as ReturnType<typeof vi.fn>;
 function company(state: Company['state']): Company {
   return {
     id: 'c1',
-    name: '测试公司',
+    name: '测试工作台',
     kind: 'software',
     state,
     charter: '',

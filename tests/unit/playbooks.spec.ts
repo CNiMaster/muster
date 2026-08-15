@@ -3,7 +3,7 @@
  *
  * 验证：
  * 1. listPlaybooks 返回目录；getPlaybook 按 id 取
- * 2. playbooksForCompanyTemplate 按公司模板推荐
+ * 2. playbooksForCompanyTemplate 按工作台模板推荐
  * 3. createProject 支持 playbookId 持久化
  */
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -42,7 +42,7 @@ describe('项目 Playbook（阶段六任务 6.2）', () => {
     }
   });
 
-  it('按公司模板推荐 Playbook', () => {
+  it('按工作台模板推荐 Playbook', () => {
     const visual = playbooksForCompanyTemplate('visual');
     expect(visual.some((p) => p.id === 'image-campaign')).toBe(true);
     const social = playbooksForCompanyTemplate('social');
@@ -58,7 +58,7 @@ describe('项目 Playbook（阶段六任务 6.2）', () => {
   });
 
   it('createProject 持久化 playbookId', () => {
-    const c = createCompany(db, { name: '内容公司', kind: 'content' });
+    const c = createCompany(db, { name: '内容工作台', kind: 'content' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
     const project = createProject(db, {
       companyId: c.id,

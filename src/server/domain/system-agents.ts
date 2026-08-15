@@ -1,8 +1,11 @@
 /**
  * 系统隐形岗（指挥系统 W0）：调度中心（蜂群）+ 评审中心（对抗评审庭）。
  *
- * 产品语义：它们是公司的"内置职能"而不是员工——自动存在、不出现在花名册、用户不可控。
- * 公司上线后由 coordinator tick 幂等创建（仿 ensureProjectThreads 模式）。
+ * 产品语义：它们是工作台的"内置职能"而不是员工——自动存在、不出现在花名册、用户不可控。
+ * 蓝图组织批次4e：与公司生命周期解耦——创建不再依赖"公司上线"时机（coordinator tick），
+ * 改为**首次使用时懒确保**（context 装配 / 辩论开庭 / 蜂群收口），任何状态下幂等自愈。
+ * 注：按工作台实例化而非全局单例——任务必须属于项目、项目属于工作台，
+ * 执行体必须同工作台（createTask 守卫）；工作台模型下按工作台实例化即为产品意义上的全局。
  */
 import type { DB } from '../db/client';
 import { createAgent } from './agent';
@@ -81,4 +84,14 @@ export function getDispatcherAgentId(db: DB, companyId: string): string | null {
 
 export function getJudgeAgentId(db: DB, companyId: string): string | null {
   return findSystemAgent(db, companyId, JUDGE_ROLE);
+}
+
+/** 蓝图组织批次4e：懒确保调度中心（首次使用时创建，幂等；与公司上线时机解耦）。 */
+export function ensureDispatcherAgentId(db: DB, companyId: string): string {
+  return ensureOne(db, companyId, DISPATCHER_ROLE, DISPATCHER_NAME, DISPATCHER_PROMPT);
+}
+
+/** 蓝图组织批次4e：懒确保评审中心（幂等）。 */
+export function ensureJudgeAgentId(db: DB, companyId: string): string {
+  return ensureOne(db, companyId, JUDGE_ROLE, JUDGE_NAME, JUDGE_PROMPT);
 }
