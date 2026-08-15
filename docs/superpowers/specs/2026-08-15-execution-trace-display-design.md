@@ -64,15 +64,15 @@ CREATE INDEX idx_execution_trace_task ON execution_trace(task_id, seq);
 | 来源 | 挂点 | 产出 kind |
 |---|---|---|
 | API 执行器循环 | `tool-loop.ts:120-189`（assistant message / tool call / tool result / catch） | thinking / text / tool_call / tool_result / error |
-| CLI 执行器 | `engine.ts:615-618` onOutput / onToolCall | text（按间隔聚合）/ tool_call |
-| CLI thinking | vendor transcript JSONL 解析（`claude-code-adapter.ts:454-492` 已拷贝的文件）：执行中定时 tail + 结束后全量补齐 | thinking |
+| CLI 执行器 | `engine.ts:615-618` onOutput / onToolCall / onThinking / onToolResult（新增回调） | text / tool_call / thinking / tool_result |
+| CLI thinking 与工具结果 | **stream-json 事件流实时解析**（`claude-code-adapter.ts:220` 本就 `--output-format stream-json`；新增纯函数 `claude-stream-events.ts` 从 assistant/user 事件拆 thinking/tool_use/tool_result 块，tool_use id→name 映射关联结果），无 transcript 文件解析依赖 | thinking / tool_result |
 | 文件编辑 | `file-tools.ts:134-164` write_file/edit_file handler | file_edit |
 | 预览/进度/通知 | `bridge.ts:141-173` GET handler + notify_host（`file-tools.ts:57-84`） | preview / progress / notice |
 | 蜂群重发 | 批次 4 的自动修复 | notice |
 
 API 路径的 thinking 需扩展：`ChatMessage`（`tool-loop.ts:28-37`）加 `thinking?: string`，openai adapter 从响应 reasoning 提取、gemini adapter 从 thoughts 提取；模型无数据则字段缺省，前端自然不显示。
 
-CLI 路径的 tool_result：onToolCall 只有 name+input，无结果回调——结果与 thinking 同走 transcript 解析通道（解析 tool_result 块按 tool_use id 关联补录），执行中定时 tail + 结束后全量补齐；解析失败则只展示调用不展示结果（条目标注「结果未捕获」）。
+CLI 路径的 tool_result：onToolCall 只有 name+input，无结果回调——adapter 从 stream-json 的 user 事件解析 tool_result 块（按 tool_use id 关联名称）并经新增的 `onToolResult` 回调上报；engine 只对 `executorKind==='cli'` 落 trace（API 路径由 tool-loop 落，防重复）。CLI 文本按消息块完整落库（stream-json 的 text 块即完整消息，无需间隔聚合）。
 
 ## 展示层设计（批次 2）
 
@@ -136,5 +136,5 @@ CLI 路径的 tool_result：onToolCall 只有 name+input，无结果回调——
 
 1. **B1 数据层**：迁移 + execution-trace.ts + 全部写入点（API 循环/bridge/file-tools/CLI 回调）+ GET API + integration 测试。
 2. **B2 展示层**：ExecutionTraceCard + 折叠/同类展开/全局记忆 + realtime 映射 + unit/e2e 测试。
-3. **B3 thinking**：ChatMessage 扩展 + openai/gemini adapter 响应侧提取 + CLI transcript 解析补录。
+3. **B3 thinking**：ChatMessage 扩展 + openai/gemini adapter 响应侧提取 + CLI stream-json 事件解析（thinking 块实时落库，无 transcript 文件依赖）。
 4. **B4 蜂群自动修复**：swarmRepairMax 设置 + 重发/换思路/留痕 + swarm-repair 测试 + 树节点标记。
