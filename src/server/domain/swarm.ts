@@ -339,6 +339,8 @@ function closeSwarm(db: DB, swarmId: string): void {
 /**
  * 回收工蜂：dismiss 是硬删（is_temp_only=1 连 profile + Agent Home 清理）——
  * 审计保留在 task 行（标题/状态/摘要）与 task_event，不依赖 agent 行存在。
+ * Review 修复 B1（防御层）：仍有在飞任务的蜂只 grey 不删——即使记账出现偏差，
+ * 也绝不硬删正在执行的工蜂（其 agent 删除会导致任务 assignee 置空、永远无人领取）。
  */
 export function releaseSwarmBees(db: DB, swarmId: string): void {
   const beeIds = db
@@ -350,6 +352,21 @@ export function releaseSwarmBees(db: DB, swarmId: string): void {
     .all(swarmId, SWARM_WORKER_ROLE) as Array<{ id: string }>;
   for (const bee of beeIds) {
     if (!bee.id) continue;
+    const stillActive = db
+      .prepare(
+        `SELECT 1 AS x FROM task
+         WHERE swarm_id=? AND assignee_agent_id=? AND state IN ('queued','claimed','running','waiting_input','waiting_dependency','paused','blocked')
+         LIMIT 1`,
+      )
+      .get(swarmId, bee.id) as { x: number } | undefined;
+    if (stillActive) {
+      try {
+        markTempGreyed(db, bee.id);
+      } catch {
+        // 忽略
+      }
+      continue;
+    }
     try {
       dismissTempWorker(db, bee.id, { confirm: true });
     } catch {

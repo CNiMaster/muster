@@ -234,8 +234,8 @@ export function registerScheduleTrigger(
   return { id };
 }
 
-/** 防叠跑：上次派发的 Task 仍处于这些状态时，本轮跳过不堆积。 */
-const OVERLAP_ACTIVE_STATES = new Set(['queued', 'claimed', 'running', 'waiting_input', 'waiting_dependency']);
+/** 防叠跑：上次派发的 Task 仍处于这些状态时，本轮跳过不堆积（含等待人工介入的 paused/blocked）。 */
+const OVERLAP_ACTIVE_STATES = new Set(['queued', 'claimed', 'running', 'waiting_input', 'waiting_dependency', 'paused', 'blocked']);
 
 /**
  * 领取并派发所有到期 schedule trigger（项目级 + 公司级）。

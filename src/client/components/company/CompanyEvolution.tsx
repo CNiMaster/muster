@@ -6,6 +6,7 @@
  */
 import type React from 'react';
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card } from '../Card';
 import { Badge } from '../Badge';
 import { Button, toast } from '../Button';
@@ -63,6 +64,7 @@ export function CompanyEvolution({ companyId }: { companyId: string }): React.Re
 
 function DebatesBlock({ companyId }: { companyId: string }): React.ReactElement {
   const { data: debates = [] } = useCompanyDebates(companyId);
+  const navigate = useNavigate();
   const statusLabel: Record<string, string> = { open: '辩论中', resolved: '已裁决', escalated: '待你拍板' };
   const statusTone: Record<string, 'info' | 'ok' | 'warn'> = { open: 'info', resolved: 'ok', escalated: 'warn' };
   return (
@@ -85,7 +87,7 @@ function DebatesBlock({ companyId }: { companyId: string }): React.ReactElement 
               </div>
               <div className="evolution-item-actions">
                 <Badge tone={statusTone[debate.status] ?? 'neutral'}>{statusLabel[debate.status] ?? debate.status}</Badge>
-                {debate.originTaskId && <Button size="sm" variant="ghost" onClick={() => { window.location.hash = `#/tasks/${debate.originTaskId}`; }}>查看任务</Button>}
+                {debate.originTaskId && <Button size="sm" variant="ghost" onClick={() => navigate(`/tasks/${debate.originTaskId}`)}>查看任务</Button>}
               </div>
             </div>
           ))}

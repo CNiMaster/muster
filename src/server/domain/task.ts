@@ -34,7 +34,8 @@ import {assertProjectActive} from './project-readiness';
 import { getCompany } from './company';
 import { recordSuspension, resolveSuspensionByTask } from './task-suspension';
 import { checkSwarmLimits, greyBeeAfterTask, handleSwarmTaskFailure, recordSwarmNodeOutcome, reportBeeCompletion } from './swarm';
-import { recordDecisionFromClarify } from './debate';
+import { handleDebateTaskFailure, recordDecisionFromClarify } from './debate';
+import { ensurePrimaryThread } from './thread';
 
 /**
  * 验收标准条目（双 Loop 地基 P0.1）。
@@ -376,6 +377,15 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
     db.prepare('UPDATE task SET root_task_id = ? WHERE id = ?').run(id, id);
   }
   appendTaskEvent(db, id, 'created', { seq, title: input.title });
+  // Review 修复 B2：任务指派给系统隐形岗（调度中心/评审中心）时自举线程——
+  // 隐岗不在 ensureProjectThreads（按可见花名册）覆盖内，否则首个派给它的任务永远无人领取
+  if (routedAssigneeId && assignee?.isSystem) {
+    try {
+      ensurePrimaryThread(db, input.projectId, routedAssigneeId);
+    } catch (e) {
+      console.warn('system agent thread bootstrap failed', { taskId: id, err: e instanceof Error ? e.message : String(e) });
+    }
+  }
   return getTask(db, id);
 }
 
@@ -395,6 +405,12 @@ export function listTasks(db: DB, projectId: string, state?: TaskState): Task[] 
     ? 'SELECT * FROM task WHERE project_id = ? AND state = ? ORDER BY seq'
     : 'SELECT * FROM task WHERE project_id = ? ORDER BY seq';
   const rows = (state ? db.prepare(sql).all(projectId, state) : db.prepare(sql).all(projectId)) as TaskRow[];
+  return rows.map(fromRow);
+}
+
+/** 蜂群全树（camelCase 映射；指挥系统 W4 树视图数据源）。 */
+export function listTasksBySwarm(db: DB, swarmId: string): Task[] {
+  const rows = db.prepare('SELECT * FROM task WHERE swarm_id = ? ORDER BY seq').all(swarmId) as TaskRow[];
   return rows.map(fromRow);
 }
 
@@ -663,6 +679,11 @@ export function completeTask(db: DB, taskId: string, result: AgentRunResult): Ta
           priority: out.priority,
           ...(cur.swarmId ? { swarmId: cur.swarmId, swarmDepth: cur.swarmDepth + 1 } : {}),
         });
+        // Review 修复 B1：继承蜂群的子任务入账 nodes_total——否则结算时 nodes_done 会越过
+        // nodes_total 提前触发 closeSwarm（误回收在飞工蜂、卡死收口链）
+        if (cur.swarmId) {
+          db.prepare('UPDATE swarm_run SET nodes_total = nodes_total + 1 WHERE id=?').run(cur.swarmId);
+        }
         if (result.outcome === 'waiting_dependency') {
           addDependency(db, cur.id, child.id);
         }
@@ -768,8 +789,10 @@ export function completeTask(db: DB, taskId: string, result: AgentRunResult): Ta
  * 派发者回答追问：把 task 重新入队（waiting_input → queued）。
  * 指挥系统批次3：支持结构化选项——optionId 命中时以「选项 {label}」作为回答落消息，
  * 与自由文本 answer 二选一。
+ * Review 修复 I6：source='auto'（评审庭自动采纳）不沉淀 user 决策记录——
+ * 系统的选择不是用户偏好，混入会污染偏好画像（finalizeDebate 自记 source=auto 记录）。
  */
-export function answerClarification(db: DB, taskId: string, input: { answer?: string; optionId?: string }): Task {
+export function answerClarification(db: DB, taskId: string, input: { answer?: string; optionId?: string; source?: 'user' | 'auto' }): Task {
   const cur = getTask(db, taskId);
   if (cur.state !== 'waiting_input') {
     throw new AppError(ErrorCode.TASK_INVALID_TRANSITION, `task ${taskId} 不在 waiting_input`);
@@ -794,8 +817,9 @@ export function answerClarification(db: DB, taskId: string, input: { answer?: st
     appendTaskEvent(db, taskId, 'clarification_answered', option ? { optionId: option.id, optionLabel: option.label } : {});
     resolveSuspensionByTask(db, taskId, { resolution: 'resumed' });
   })();
-  // 指挥系统批次4：用户的选项选择沉淀为决策记录（偏好画像，注入后续评审庭）
-  if (option) {
+  // 指挥系统批次4：用户的选项选择沉淀为决策记录（偏好画像，注入后续评审庭）；
+  // 评审庭自动采纳（source=auto）不在此记录，由 finalizeDebate 自记 source=auto
+  if (option && (input.source ?? 'user') === 'user') {
     try {
       recordDecisionFromClarify(db, taskId, option);
     } catch (e) {
@@ -985,6 +1009,16 @@ export function failTask(db: DB, taskId: string, message: string): Task {
       handleSwarmTaskFailure(db, failed, message);
     } catch (e) {
       console.warn('swarm failure handling failed', { taskId, err: e instanceof Error ? e.message : String(e) });
+    }
+    return failed;
+  }
+  // 指挥系统批次4：辩论任务失败 → 评审庭自救（取消下游 + 升级用户 + 回收辩手），
+  // 否则 failed 依赖永不满足会让辩论永挂、辩手泄漏、原问题无人拍板
+  if ((failed.inputProtocol as Record<string, unknown>)?.debate) {
+    try {
+      handleDebateTaskFailure(db, failed, message);
+    } catch (e) {
+      console.warn('debate failure handling failed', { taskId, err: e instanceof Error ? e.message : String(e) });
     }
     return failed;
   }

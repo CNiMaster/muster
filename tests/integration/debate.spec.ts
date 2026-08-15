@@ -178,7 +178,7 @@ describe('裁决分流', () => {
     expect(after.state).toBe('waiting_input');
     expect(after.questionOptions?.find((o) => o.id === 'a')?.cons).toContain('债务风险');
     const taskMessages = listTaskMessages(db, origin.id);
-    expect(taskMessages.some((m) => m.content.includes('[评审庭未决]') && m.content.includes('致命伤'))).toBe(true);
+    expect(taskMessages.some((m) => m.content.includes('[评审庭]') && m.content.includes('需要你拍板') && m.content.includes('致命伤'))).toBe(true);
     const convMsgs = listMessages(db, 'company', company.id);
     expect(convMsgs.some((m) => m.role === 'assistant' && m.content.includes('[需要你拍板]') && m.content.includes('⚠ 致命伤：B 耽误上线窗口'))).toBe(true);
     // 用户随后选择 → decision_record(source=user) 且关联该辩论

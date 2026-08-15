@@ -10,7 +10,8 @@ test('首页 onboarding 引导在无公司时渲染', async ({ page }) => {
     try { localStorage.removeItem('muster:onboarding:v1'); } catch { /* ignore */ }
   });
   await page.goto('/');
-  await expect(page.locator('h1')).toContainText('你的公司', { timeout: 5000 });
+  // 首次运行向导（Fresh MUSTER_HOME）会异步挂载第二个 h1——裸 locator('h1') 会撞 strict mode，用名称定位 hero 标题
+  await expect(page.getByRole('heading', { name: /你的公司/ })).toContainText('你的公司', { timeout: 5000 });
   // 页面正常渲染即通过（引导是否可见取决于是否已有公司）
 });
 

@@ -19,7 +19,7 @@ import { shortId, nowIso } from '../../shared/utils';
 import { AppError, ErrorCode } from '../../shared/errors';
 import type { DebateVerdict, QuestionOption } from '../../shared/types';
 import { getSystemSettings } from './setting';
-import { addDependency, answerClarification, createTask, getTask } from './task';
+import { addDependency, answerClarification, cancelTask, createTask, getTask } from './task';
 import { addTaskMessage } from './task-message';
 import { appendTaskEvent } from './task-event';
 import { createTempEmployment, dismissTempWorker } from './temp-worker';
@@ -275,6 +275,79 @@ function formatOptionsContent(question: string, options: QuestionOption[], flaws
 }
 
 /**
+ * 升级用户（低置信 / 辩论中断共用）：任务保持 waiting_input、选项 cons 补致命伤、
+ * 任务消息差评清单、对话收到问题原文（可一键选择）。用户已抢先回答则全部跳过（不再打扰）。
+ */
+function escalateDebateToUser(db: DB, debateId: string, opts: { flaws?: Array<{ optionId: string; flaw: string }>; note: string }): void {
+  const debate = getDebate(db, debateId);
+  if (!debate.originTaskId) return;
+  const origin = getTask(db, debate.originTaskId);
+  if (origin.state !== 'waiting_input') return;
+  const flaws = opts.flaws ?? [];
+  const enriched = origin.questionOptions?.map((o) => {
+    const flaw = flaws.find((f) => f.optionId === o.id)?.flaw;
+    return flaw ? { ...o, cons: o.cons ? `${o.cons}；${flaw}` : flaw } : o;
+  }) ?? null;
+  if (enriched) {
+    db.prepare('UPDATE task SET question_options_json=? WHERE id=?').run(JSON.stringify(enriched), origin.id);
+  }
+  addTaskMessage(db, origin.id, {
+    author: 'system',
+    role: 'dispatch',
+    content: `[评审庭] ${opts.note}\n${formatOptionsContent(debate.question, debate.options, flaws)}`,
+  });
+  const scopeInfo = db.prepare('SELECT origin_scope_kind AS k, origin_scope_id AS s FROM debate WHERE id=?').get(debateId) as { k: string | null; s: string | null };
+  if (scopeInfo.k && scopeInfo.s) {
+    postSystemMessage(db, {
+      scopeKind: scopeInfo.k as 'company' | 'project',
+      scopeId: scopeInfo.s!,
+      role: 'assistant',
+      author: getJudgeAgentId(db, debate.companyId) ?? 'system',
+      content: `[需要你拍板] ${formatOptionsContent(debate.question, debate.options, flaws)}`,
+      refTaskId: debate.originTaskId,
+    });
+  }
+}
+
+/**
+ * 辩论任务失败处置（failTask 对 debate 任务的分支——评审庭没有引擎兜底，失败必须自救）：
+ * R1/R2/裁决任一失败都会让下游依赖永不满足（failed 不算已满足）→ 辩论永挂、辩手泄漏。
+ * 处置：标记 escalated（中断说明）→ 取消该辩论剩余任务 → 把原问题直接升级用户 → 回收辩手。
+ */
+export function handleDebateTaskFailure(db: DB, failedTask: { id: string; inputProtocol: Record<string, unknown>; title: string }, message: string): void {
+  const debateInfo = failedTask.inputProtocol?.debate as { debateId?: string } | undefined;
+  const debateId = debateInfo?.debateId;
+  if (!debateId) return;
+  const debate = getDebate(db, debateId);
+  if (debate.status !== 'open') return;
+
+  db.prepare("UPDATE debate SET status='escalated', resolved_at=?, verdict_json=? WHERE id=?").run(
+    nowIso(),
+    JSON.stringify({ confidence: 0, rationale: `辩论中断（Task #${failedTask.title} 失败：${message.slice(0, 200)}），直接转用户拍板。`, flaws: [] }),
+    debateId,
+  );
+  // 取消该辩论剩余未终态任务（R2 兄弟/裁决/其他轮次）
+  const actives = db.prepare(
+    `SELECT id FROM task
+     WHERE parent_task_id=? AND input_protocol_json LIKE '%debate_%'
+       AND state IN ('queued','claimed','running','waiting_input','waiting_dependency','paused','blocked')`,
+  ).all(debate.originTaskId ?? '') as Array<{ id: string }>;
+  for (const row of actives) {
+    if (row.id === failedTask.id) continue;
+    try {
+      cancelTask(db, row.id);
+    } catch {
+      // 状态竞争时跳过
+    }
+  }
+  if (debate.originTaskId) {
+    appendTaskEvent(db, debate.originTaskId, 'debate_failed', { debateId, message: message.slice(0, 300), failedTaskId: failedTask.id });
+  }
+  escalateDebateToUser(db, debateId, { note: `辩论中断，需要你直接拍板。` });
+  dismissDebaters(db, debate.originTaskId ?? '');
+}
+
+/**
  * 裁决落定（引擎在评审中心返回 debateVerdict 后调用）：
  * - 置信 ≥ debateMinConfidence 且有推荐项 → 自动采纳：answerClarification(originTask) 继续执行 + 决策记录(auto) + 对话播报。
  * - 否则 → 升级用户：任务保持 waiting_input，选项的 cons 补上致命伤，对话收到问题+差评清单（可一键选择）。
@@ -296,9 +369,9 @@ export function finalizeDebate(db: DB, debateId: string, verdict: DebateVerdict)
   const canPost = Boolean(scopeInfo.k && scopeInfo.s);
 
   if (resolved && option && debate.originTaskId) {
-    // 自动采纳 + 决策记录
+    // 自动采纳 + 决策记录（source=auto 传入 answerClarification，避免再落一条 user 记录污染偏好画像）
     try {
-      answerClarification(db, debate.originTaskId, { optionId: option.id });
+      answerClarification(db, debate.originTaskId, { optionId: option.id, source: 'auto' });
       appendTaskEvent(db, debate.originTaskId, 'debate_resolved', { debateId, optionId: option.id, confidence: verdict.confidence });
     } catch (error) {
       // 任务已被人工回答/取消：辩论结论仍留档，不覆盖人的选择
@@ -326,33 +399,11 @@ export function finalizeDebate(db: DB, debateId: string, verdict: DebateVerdict)
       });
     }
   } else if (debate.originTaskId) {
-    // 升级用户：任务保持 waiting_input；把致命伤补进选项 cons + 任务消息留差评清单
-    const origin = getTask(db, debate.originTaskId);
-    // 用户已抢先回答/取消时不再打扰（对话播报也一并跳过——对着已解决的任务喊"拍板"是误导）
-    if (origin.state === 'waiting_input') {
-      const enriched = origin.questionOptions?.map((o) => {
-        const flaw = verdict.flaws.find((f) => f.optionId === o.id)?.flaw;
-        return flaw ? { ...o, cons: o.cons ? `${o.cons}；${flaw}` : flaw } : o;
-      }) ?? null;
-      if (enriched) {
-        db.prepare('UPDATE task SET question_options_json=? WHERE id=?').run(JSON.stringify(enriched), origin.id);
-      }
-      addTaskMessage(db, origin.id, {
-        author: 'system',
-        role: 'dispatch',
-        content: `[评审庭未决] 置信 ${verdict.confidence.toFixed(2)} 低于阈值 ${minConfidence}，需要你拍板。\n${formatOptionsContent(debate.question, debate.options, verdict.flaws)}\n裁决理由：${verdict.rationale.slice(0, 300)}`,
-      });
-      if (canPost) {
-        postSystemMessage(db, {
-          scopeKind: scopeInfo.k as 'company' | 'project',
-          scopeId: scopeInfo.s!,
-          role: 'assistant',
-          author: getJudgeAgentId(db, debate.companyId) ?? 'system',
-          content: `[需要你拍板] ${formatOptionsContent(debate.question, debate.options, verdict.flaws)}`,
-          refTaskId: debate.originTaskId,
-        });
-      }
-    }
+    // 升级用户（共享路径：补致命伤 + 差评清单 + 对话问题原文；用户已抢先回答则不打扰）
+    escalateDebateToUser(db, debateId, {
+      flaws: verdict.flaws,
+      note: `置信 ${verdict.confidence.toFixed(2)} 低于阈值 ${minConfidence}，需要你拍板。裁决理由：${verdict.rationale.slice(0, 300)}`,
+    });
     appendTaskEvent(db, debate.originTaskId, 'debate_escalated', { debateId, confidence: verdict.confidence });
   }
 

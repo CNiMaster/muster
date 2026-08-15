@@ -16,6 +16,7 @@ import {
   createTask,
   getTask,
   listTasks,
+  listTasksBySwarm,
   answerClarification,
   answerAlignment,
   cancelTask,
@@ -195,7 +196,7 @@ taskByIdRouter.get(
   }),
 );
 
-/** 指挥系统 W4：任务所属蜂群的树状视图数据（swarm 元信息 + 全部节点任务）。 */
+/** 指挥系统 W4：任务所属蜂群的树状视图数据（swarm 元信息 + 全部节点任务，camelCase）。 */
 taskByIdRouter.get(
   '/swarm',
   asyncHandler(async (req, res) => {
@@ -204,11 +205,7 @@ taskByIdRouter.get(
       res.json({ swarm: null, tasks: [] });
       return;
     }
-    const swarm = getSwarmRun(getDb(), task.swarmId);
-    const rows = getDb()
-      .prepare('SELECT * FROM task WHERE swarm_id=? ORDER BY seq')
-      .all(task.swarmId) as unknown[];
-    res.json({ swarm, tasks: rows });
+    res.json({ swarm: getSwarmRun(getDb(), task.swarmId), tasks: listTasksBySwarm(getDb(), task.swarmId) });
   }),
 );
 
