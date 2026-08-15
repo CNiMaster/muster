@@ -82,6 +82,8 @@ import{SessionManager}from'../domain/session-manager';
 import{approvalBroker}from'../domain/approval-broker';
 import { classifyRunFailure, RunFailure, RunWatchdog } from './run-watchdog';
 import { makeLifecycleEvent } from '../../shared/lifecycle-events';
+import { appendTrace, type AppendTraceInput } from '../domain/execution-trace';
+import { CLAUDE_FILE_TOOL_NAMES } from '../executors/claude-stream-events';
 
 export interface EngineOptions {
   heartbeatIntervalMs?: number;
@@ -612,9 +614,29 @@ export class TaskEngine {
       const runStartedAt=Date.now();
       try {
         let recoveryAttempt=0;
+        const recordTrace = (input: Omit<AppendTraceInput, 'taskId' | 'runId'>): void => {
+          try {
+            appendTrace(this.db, { taskId: task.id, runId: executionRun?.id, ...input });
+          } catch {
+            // trace 失败不影响执行
+          }
+        };
         for(;;){try{result = await Promise.race([withExecutorConcurrency(executorProfile?.concurrencyMode ?? 'parallel', executorProfile?.id ?? agent.id, () => adapter.run(ctx, {
-            onOutput: (chunk) => { watchdog.activity(); log.debug('agent output', { taskId: task.id, chunk: chunk.slice(0, 120), executionRunId: executionRun?.id }); },
-            onToolCall: (name, input) => { watchdog.activity(); log.debug('agent tool', { taskId: task.id, name, executionRunId: executionRun?.id }); },
+            onOutput: (chunk) => { watchdog.activity(); log.debug('agent output', { taskId: task.id, chunk: chunk.slice(0, 120), executionRunId: executionRun?.id }); if (executorKind === 'cli') recordTrace({ kind: 'text', summary: chunk.slice(0, 120), payload: { text: chunk } }); },
+            onToolCall: (name, input, toolUseId) => {
+              watchdog.activity();
+              log.debug('agent tool', { taskId: task.id, name, executionRunId: executionRun?.id });
+              // API 路径由 tool-loop 落 trace，这里只处理 CLI 路径避免重复
+              if (executorKind !== 'cli') return;
+              const inputObj = (input ?? {}) as Record<string, unknown>;
+              if (CLAUDE_FILE_TOOL_NAMES.has(name)) {
+                recordTrace({ kind: 'file_edit', name, summary: `${name}: ${String(inputObj.file_path ?? '')}`, payload: { toolCallId: toolUseId, path: inputObj.file_path, operation: name === 'Write' ? 'write' : 'edit' } });
+              } else {
+                recordTrace({ kind: 'tool_call', name, summary: `${name}(${JSON.stringify(input).slice(0, 80)})`, payload: { toolCallId: toolUseId, arguments: input } });
+              }
+            },
+            onThinking: (text) => { watchdog.activity(); if (executorKind === 'cli') recordTrace({ kind: 'thinking', summary: text.slice(0, 120), payload: { text } }); },
+            onToolResult: (toolUseId, name, content) => { if (executorKind === 'cli') recordTrace({ kind: 'tool_result', name, summary: content.slice(0, 120), payload: { toolCallId: toolUseId, content } }); },
           })), watchdog.failure]);sessionManager.clearRecovery(projectTaskThread.id);break;}catch(error){if(/network|econn|dns|tls|proxy/i.test(error instanceof Error?error.message:String(error)))watchdog.networkError();if(!isRecoverableSessionError(error))throw error;recoveryAttempt+=1;const compactSupported=Boolean(adapter.compactSession);const recovery=recoveryAttempt===1?'retry':recoveryAttempt===2&&compactSupported?'compact':recoveryAttempt===(compactSupported?3:2)?'rotate':'stop';sessionManager.nextRecovery(projectTaskThread.id,compactSupported);if(recovery==='stop')throw error;if(recovery==='compact'&&adapter.compactSession&&ctx.sessionIdHint){try{await adapter.compactSession(ctx);}catch{const previousSessionId=ctx.sessionIdHint??null;sessionManager.rotate(projectTaskThread.id,{reason:'compact-failed',taskId:task.id});ctx.sessionIdHint=undefined;realtime.publish(makeLifecycleEvent('session.rotated',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,previousSessionId,reason:'compact-failed'},{companyId:company.id,projectId:project.id,taskId:task.id}));}}else if(recovery==='rotate'){const previousSessionId=ctx.sessionIdHint??null;sessionManager.rotate(projectTaskThread.id,{reason:'session-recovery',taskId:task.id});ctx.sessionIdHint=undefined;realtime.publish(makeLifecycleEvent('session.rotated',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,previousSessionId,reason:'session-recovery'},{companyId:company.id,projectId:project.id,taskId:task.id}));}realtime.publish(makeLifecycleEvent('session.recovered',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,taskId:task.id,recovery},{companyId:company.id,projectId:project.id,taskId:task.id}));log.warn('retrying recoverable executor failure',{taskId:task.id,recovery,error:String(error)});}}
         if(!result||typeof result.outcome!=='string')throw new RunFailure('empty_result','执行器没有返回有效的 AgentRunResult');
         if(approvalFailure)throw approvalFailure;

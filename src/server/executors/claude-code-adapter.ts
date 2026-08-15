@@ -35,6 +35,7 @@ import { AppError, ErrorCode } from '../../shared/errors';
 import { agentRunResultSchema, AGENT_RESULT_JSON_SCHEMA } from './result-schema';
 import { startClaudePermissionBridge } from './claude-permission-bridge';
 import { resolveCliEnvironment } from './cli-environment';
+import { parseClaudeStreamEvent } from './claude-stream-events';
 // 保持向后兼容的 re-export（测试可能从此处导入）
 export { agentRunResultSchema } from './result-schema';
 
@@ -281,6 +282,7 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
       let structuredOutput: unknown = null;
       let toolCalls = 0;
       let resolved = false;
+      const toolUseNames = new Map<string, string>();
       const modelUsage: RawRunStats['modelUsage'] = {};
       let inputTokens = 0;
       let outputTokens = 0;
@@ -315,32 +317,36 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
           if (ev.type === 'system' && ev.subtype === 'init' && ev.session_id) {
             resultSessionId = ev.session_id;
           }
-          if (ev.type === 'assistant') {
-            const content = ev.message?.content;
-            if (Array.isArray(content)) {
-              for (const block of content) {
-                if (block.type === 'text' && block.text) {
-                  fullText = block.text;
-                  opts.events?.onOutput?.(block.text);
-                }
-                if (block.type === 'tool_use') {
-                  toolCalls++;
-                  opts.events?.onToolCall?.(block.name, block.input);
-                  if (toolCalls > opts.settings.maxToolCalls) {
-                    log.warn('claude exceeded max tool calls', { count: toolCalls });
-                    if (!resolved) {
-                      resolved = true;
-                      clearTimeout(timeout);
-                      proc.kill('SIGTERM');
-                      resolve({
-                        result: { fullText, structuredOutput: tryParseJSON(fullText) },
-                        raw: this.collectStats(start, inputTokens, outputTokens, cacheReadTokens, cacheCreateTokens, toolCalls, costUSD, modelUsage),
-                        sessionId: resultSessionId,
-                      });
-                    }
-                  }
+          if (ev.type === 'assistant' || ev.type === 'user') {
+            const parts = parseClaudeStreamEvent(ev);
+            for (const text of parts.outputs) {
+              fullText = text;
+              opts.events?.onOutput?.(text);
+            }
+            for (const th of parts.thinking) {
+              opts.events?.onThinking?.(th);
+            }
+            for (const tc of parts.toolCalls) {
+              toolUseNames.set(tc.toolUseId, tc.name);
+              toolCalls++;
+              opts.events?.onToolCall?.(tc.name, tc.input, tc.toolUseId);
+              if (toolCalls > opts.settings.maxToolCalls) {
+                log.warn('claude exceeded max tool calls', { count: toolCalls });
+                if (!resolved) {
+                  resolved = true;
+                  clearTimeout(timeout);
+                  proc.kill('SIGTERM');
+                  resolve({
+                    result: { fullText, structuredOutput: tryParseJSON(fullText) },
+                    raw: this.collectStats(start, inputTokens, outputTokens, cacheReadTokens, cacheCreateTokens, toolCalls, costUSD, modelUsage),
+                    sessionId: resultSessionId,
+                  });
                 }
               }
+            }
+            for (const tr of parts.toolResults) {
+              const name = tr.toolUseId ? toolUseNames.get(tr.toolUseId) : undefined;
+              opts.events?.onToolResult?.(tr.toolUseId, name, tr.content);
             }
           }
           if (ev.type === 'result') {
