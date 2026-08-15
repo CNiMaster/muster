@@ -9,7 +9,10 @@ import {
   useTaskAction,
   useAgents,
   useProject,
+  useTaskSwarm,
+  useAbortSwarm,
 } from '../hooks/queries';
+import type { Task } from '../api/types';
 import { Card } from '../components/Card';
 import { Badge, taskStateTone, stateLabel } from '../components/Badge';
 import { Button, toast } from '../components/Button';
@@ -40,9 +43,9 @@ export function TaskDetailPage(): React.ReactElement {
     || task.state === 'failed'
     || (task.state === 'cancelled' && isConflictResolution);
 
-  const doAction = (a: 'cancel' | 'pause' | 'resume' | 'clarify', answer?: string): void => {
+  const doAction = (a: 'cancel' | 'pause' | 'resume' | 'clarify', answer?: string, optionId?: string): void => {
     action.mutate(
-      { taskId, action: a, payload: a === 'clarify' ? { answer } : undefined },
+      { taskId, action: a, payload: a === 'clarify' ? (optionId ? { optionId } : { answer }) : undefined },
       {
         onSuccess: () => toast('success', '操作成功'),
         onError: (e) => toast('error', (e as { message?: string }).message ?? '操作失败'),
@@ -90,7 +93,7 @@ export function TaskDetailPage(): React.ReactElement {
 
       <div className="task-detail-layout">
         <div>
-          {task.state === 'waiting_input' && <ClarifyCard taskId={task.id} onSubmit={(ans) => doAction('clarify', ans)} loading={action.isPending} />}
+          {task.state === 'waiting_input' && <ClarifyCard taskId={task.id} task={task} onSubmit={(ans) => doAction('clarify', ans)} onOption={(optionId) => doAction('clarify', undefined, optionId)} loading={action.isPending} />}
           
           {task.summary === '被正式 Task 打断，提前结束' && (
             <div style={{
@@ -184,10 +187,67 @@ export function TaskDetailPage(): React.ReactElement {
               </Field>
             </div>
           </Card>
+          <SwarmTreeCard taskId={task.id} />
           <EventsCard taskId={task.id} />
         </div>
       </div>
     </div>
+  );
+}
+
+/** 指挥系统 W4：蜂群树视图——按 parentTaskId 建树、状态着色（失败红）、当前任务高亮、一键停群。 */
+function SwarmTreeCard({ taskId }: { taskId: string }): React.ReactElement | null {
+  const { data: view } = useTaskSwarm(taskId);
+  const abortSwarm = useAbortSwarm();
+  const swarm = view?.swarm;
+  const tasks = view?.tasks ?? [];
+  if (!swarm) return null;
+
+  const statusLabelMap: Record<string, string> = { active: '进行中', completed: '已收口', aborted: '已终止', failed: '已熔断' };
+  const statusToneMap: Record<string, 'ok' | 'info' | 'neutral' | 'err'> = { active: 'info', completed: 'ok', aborted: 'neutral', failed: 'err' };
+
+  const childrenOf = new Map<string | null, Task[]>();
+  for (const t of tasks) {
+    const list = childrenOf.get(t.parentTaskId) ?? [];
+    list.push(t);
+    childrenOf.set(t.parentTaskId, list);
+  }
+  const renderNode = (task: Task, depth: number): React.ReactElement => (
+    <div key={task.id} style={{ paddingLeft: depth * 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '2px 0' }}>
+        <Link to={`/tasks/${task.id}`} style={{ textDecoration: task.id === taskId ? 'underline' : undefined, fontWeight: task.id === taskId ? 600 : undefined, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          #{task.seq} {task.title}
+        </Link>
+        <Badge tone={taskStateTone(task.state)}>{stateLabel(task.state)}</Badge>
+      </div>
+      {(childrenOf.get(task.id) ?? []).map((child) => renderNode(child, depth + 1))}
+    </div>
+  );
+  const roots = tasks.filter((t) => !t.parentTaskId || !tasks.some((other) => other.id === t.parentTaskId));
+
+  return (
+    <Card
+      title="蜂群"
+      actions={
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <Badge tone={statusToneMap[swarm.status] ?? 'neutral'}>{statusLabelMap[swarm.status] ?? swarm.status}</Badge>
+          {swarm.status === 'active' && (
+            <Button size="sm" variant="ghost" loading={abortSwarm.isPending} onClick={() => {
+              abortSwarm.mutate(taskId, {
+                onSuccess: () => toast('success', '蜂群已停止，剩余工蜂已回收'),
+                onError: (e) => toast('error', (e as Error).message ?? '停止失败'),
+              });
+            }}>停止蜂群</Button>
+          )}
+        </div>
+      }
+    >
+      <p className="muted" style={{ margin: 0 }}>
+        {swarm.goal && <span>目标：{swarm.goal} · </span>}
+        收口 {swarm.nodesDone}/{swarm.nodesTotal}{swarm.nodesFailed > 0 && <span style={{ color: 'var(--err)' }}>（失败 {swarm.nodesFailed}）</span>}
+      </p>
+      <div style={{ fontSize: 'var(--text-sm)', marginTop: 8 }}>{roots.map((root) => renderNode(root, 0))}</div>
+    </Card>
   );
 }
 
@@ -200,12 +260,43 @@ function ProtocolCard({ title, protocol, emptyHint }: { title: string; protocol:
   </Card>;
 }
 
-function ClarifyCard({ taskId: _taskId, onSubmit, loading }: { taskId: string; onSubmit: (answer: string) => void; loading: boolean }): React.ReactElement {
+function ClarifyCard({ taskId, task, onSubmit, onOption, loading }: {
+  taskId: string;
+  task: import('../api/types').Task;
+  onSubmit: (answer: string) => void;
+  onOption: (optionId: string) => void;
+  loading: boolean;
+}): React.ReactElement {
   const [answer, setAnswer] = useState('');
+  void taskId;
+  const options = task.questionOptions ?? [];
   return (
     <Card title="回答追问" style={{ borderColor: 'var(--warn)' }}>
       <div className="form-stack">
-        <Textarea value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="补充信息…（回答后 Task 重新入队）" />
+        {options.length > 0 && (
+          <div className="form-stack" style={{ gap: 8 }}>
+            {options.map((option, index) => (
+              <button
+                key={option.id}
+                type="button"
+                className="mu-btn mu-btn-subtle"
+                style={{ textAlign: 'left', display: 'block', width: '100%' }}
+                disabled={loading}
+                onClick={() => onOption(option.id)}
+              >
+                <strong>{String.fromCharCode(65 + index)}. {option.label}</strong>
+                {option.detail && <span className="muted"> — {option.detail}</span>}
+                {(option.pros || option.cons) && (
+                  <div style={{ fontSize: 'var(--text-sm)', marginTop: 4 }}>
+                    {option.pros && <div style={{ color: 'var(--ok)' }}>优：{option.pros}</div>}
+                    {option.cons && <div style={{ color: 'var(--err)' }}>劣：{option.cons}</div>}
+                  </div>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+        <Textarea value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder={options.length ? '或自由补充…（也可直接点上面选项）' : '补充信息…（回答后 Task 重新入队）'} />
         <Button onClick={() => answer.trim() && onSubmit(answer)} disabled={!answer.trim()} loading={loading}>
           提交回答
         </Button>

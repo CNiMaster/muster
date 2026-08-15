@@ -11,7 +11,7 @@
 import type React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useMessages, usePostMessage, useAgents, type ConversationMessage } from '../hooks/queries';
+import { useMessages, usePostMessage, useAgents, useTaskOnce, useTaskAction, type ConversationMessage } from '../hooks/queries';
 import { Badge } from './Badge';
 import { Button } from './Button';
 import { toast } from './Button';
@@ -146,7 +146,51 @@ function MessageBubble({ message, agents }: { message: ConversationMessage; agen
       <div className="mu-msg-bubble">
         <div className="mu-msg-author">{authorName}</div>
         <div className="mu-msg-text">{message.content}</div>
+        {!isUser && <WaitingQuestionReply refTaskId={message.refTaskId} />}
       </div>
+    </div>
+  );
+}
+
+/**
+ * 指挥系统批次3：对话窗里的追问快捷回答。
+ * assistant 消息带 refTaskId 且该任务仍 waiting_input 时，渲染选项按钮（或"去回答"链接），
+ * 点击直接走 clarify（任务重新入队），无需跳转任务页。
+ */
+function WaitingQuestionReply({ refTaskId }: { refTaskId: string | null }): React.ReactElement | null {
+  const { data: task } = useTaskOnce(refTaskId ?? undefined);
+  const action = useTaskAction();
+  if (!refTaskId || !task || task.state !== 'waiting_input') return null;
+  const options = task.questionOptions ?? [];
+  if (options.length === 0) {
+    return (
+      <div style={{ marginTop: 6 }}>
+        <Link to={`/tasks/${refTaskId}`} className="mu-msg-task-link">等待你的回答 → 去回答</Link>
+      </div>
+    );
+  }
+  return (
+    <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {options.map((option, index) => (
+        <button
+          key={option.id}
+          type="button"
+          className="mu-btn mu-btn-subtle mu-btn-sm"
+          style={{ textAlign: 'left' }}
+          disabled={action.isPending}
+          onClick={() => {
+            action.mutate(
+              { taskId: refTaskId, action: 'clarify', payload: { optionId: option.id } },
+              {
+                onSuccess: () => toast('success', `已选择：${option.label}`),
+                onError: (e) => toast('error', (e as Error).message ?? '回答失败'),
+              },
+            );
+          }}
+        >
+          {String.fromCharCode(65 + index)}. {option.label}{option.detail ? ` — ${option.detail}` : ''}
+        </button>
+      ))}
     </div>
   );
 }

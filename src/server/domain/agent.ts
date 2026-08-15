@@ -34,6 +34,8 @@ export interface AgentDefinition {
   isInspector: boolean;
   /** 立场/视角：讨论/辩论时锁定 Agent 观点，防止盲目跟风。空 = 不注入。 */
   stance: string;
+  /** 指挥系统：系统隐形岗（调度中心/评审中心），用户不可见不可控，任职记录 hidden=1。 */
+  isSystem: boolean;
   availabilityState: 'online' | 'draining' | 'off';
   createdAt: string;
   updatedAt: string;
@@ -81,6 +83,7 @@ interface AgentRow {
   executor_json: string;
   is_inspector: number;
   stance: string;
+  is_system: number;
   availability_state: 'online' | 'draining' | 'off';
   created_at: string;
   updated_at: string;
@@ -104,6 +107,7 @@ function fromRow(r: AgentRow): AgentDefinition {
     executor: JSON.parse(r.executor_json ?? '{}'),
     isInspector: r.is_inspector === 1,
     stance: r.stance ?? '',
+    isSystem: (r as { is_system?: number }).is_system === 1,
     availabilityState: r.availability_state,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -128,11 +132,14 @@ export interface CreateAgentInput {
   stance?: string;
   /** 临时工招聘豁免：跳过 org lock（允许 online 态招临时工）。仅 temp-worker.ts 走此路径。 */
   tempRecruit?: boolean;
+  /** 指挥系统：系统隐形岗创建（豁免 org lock，任职记录 hidden=1）。仅 system-agents.ts / swarm.ts 走此路径。 */
+  isSystem?: boolean;
 }
 
-function assertUnlocked(db: DB, companyId: string, opts?: { tempRecruit?: boolean }): void {
+function assertUnlocked(db: DB, companyId: string, opts?: { tempRecruit?: boolean; isSystem?: boolean }): void {
   // 临时工招聘豁免：允许公司 online 态招临时工（B2B 决策树 recruit 路径自动触发）
-  if (opts?.tempRecruit) return;
+  // 系统隐形岗豁免：调度中心/评审中心由 coordinator 在线幂等创建
+  if (opts?.tempRecruit || opts?.isSystem) return;
   if (isOrgLocked(db, companyId)) {
     throw new AppError(ErrorCode.COMPANY_LOCKED, '上班期间不能修改员工配置');
   }
@@ -201,10 +208,10 @@ function assertExecutorValid(executor: Record<string, unknown> | undefined): voi
 
 export function createAgent(db: DB, input: CreateAgentInput): AgentDefinition {
   getCompany(db, input.companyId); // 校验存在
-  assertUnlocked(db, input.companyId, { tempRecruit: input.tempRecruit });
+  assertUnlocked(db, input.companyId, { tempRecruit: input.tempRecruit, isSystem: input.isSystem });
   assertDepartmentInCompany(db, input.companyId, input.departmentId ?? null);
   // 临时工招聘豁免 contactAllow 校验（临时工的工作关系仅限发起者，可能跨公司）
-  if (!input.tempRecruit) {
+  if (!input.tempRecruit && !input.isSystem) {
     assertContactAllow(db, input.companyId, input.contactAllow ?? []);
   }
   assertExecutorValid(input.executor);
@@ -225,15 +232,15 @@ export function createAgent(db: DB, input: CreateAgentInput): AgentDefinition {
       `INSERT INTO agent_definition
         (id, profile_id, company_id, department_id, name, role, responsibilities, system_prompt,
          skills_json, tools_json, permissions_json, contact_allow_json, can_dispatch,
-         executor_json, is_inspector, stance, created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+         executor_json, is_inspector, stance, is_system, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     ).run(
       id, profile.id, input.companyId, input.departmentId ?? null, input.name || profile.displayName, input.role,
       input.responsibilities ?? '', input.systemPrompt ?? profile.soul,
       JSON.stringify(input.skills ?? []), JSON.stringify(input.tools ?? []),
       JSON.stringify(input.permissions ?? {}), JSON.stringify(input.contactAllow ?? []),
       input.canDispatch === false ? 0 : 1, JSON.stringify(input.executor ?? {}),
-      input.isInspector ? 1 : 0, input.stance ?? '', now, now,
+      input.isInspector ? 1 : 0, input.stance ?? '', input.isSystem ? 1 : 0, now, now,
     );
     createCompanyEmployeeRecord(db, {
       id,
@@ -247,6 +254,10 @@ export function createAgent(db: DB, input: CreateAgentInput): AgentDefinition {
       permission: input.permissions,
       createdAt: now,
     });
+    // 系统隐形岗：任职记录标记 hidden（花名册/能力路由过滤，但可领取任务）
+    if (input.isSystem) {
+      db.prepare('UPDATE company_employee SET hidden=1 WHERE legacy_agent_id=?').run(id);
+    }
     return getAgent(db, id);
   })();
 }
@@ -277,8 +288,24 @@ export function getAgent(db: DB, id: string): AgentDefinition {
   return withEmploymentBindings(db, fromRow(row));
 }
 
-export function listAgents(db: DB, companyId: string): AgentDefinition[] {
-  const rows = db.prepare('SELECT * FROM agent_definition WHERE company_id = ? ORDER BY created_at').all(companyId) as AgentRow[];
+/**
+ * 列出公司员工。默认过滤 hidden 任职（系统隐形岗 + 蜂群临时工蜂）——
+ * 花名册/能力路由/组织图均走此处，一处过滤全面生效；内部系统逻辑传 includeHidden。
+ */
+export function listAgents(db: DB, companyId: string, options?: { includeHidden?: boolean }): AgentDefinition[] {
+  const rows = (
+    options?.includeHidden
+      ? db.prepare('SELECT * FROM agent_definition WHERE company_id = ? ORDER BY created_at').all(companyId)
+      : db.prepare(
+        `SELECT a.* FROM agent_definition a
+         WHERE a.company_id = ?
+           AND NOT EXISTS (
+             SELECT 1 FROM company_employee ce
+             WHERE ce.legacy_agent_id = a.id AND ce.hidden = 1
+           )
+         ORDER BY a.created_at`,
+      ).all(companyId)
+  ) as AgentRow[];
   return rows.map((row) => withEmploymentBindings(db, fromRow(row)));
 }
 

@@ -16,6 +16,7 @@ import {
   createTask,
   getTask,
   listTasks,
+  listTasksBySwarm,
   answerClarification,
   answerAlignment,
   cancelTask,
@@ -24,6 +25,8 @@ import {
   acceptSuggestion,
   getTaskChain,
 } from '../domain/task';
+import { abortSwarm, getSwarmRun } from '../domain/swarm';
+import { AppError, ErrorCode } from '../../shared/errors';
 import { listTaskEvents } from '../domain/task-event';
 import { listTaskMessages, addTaskMessage } from '../domain/task-message';
 import { getProject } from '../domain/project';
@@ -125,8 +128,12 @@ taskByIdRouter.post(
 taskByIdRouter.post(
   '/clarify',
   asyncHandler(async (req, res) => {
-    const { answer } = z.object({ answer: z.string().min(1) }).parse(req.body);
-    res.json(answerClarification(getDb(), param(req, 'id'), answer));
+    // 指挥系统批次3：结构化选项（optionId）或自由文本（answer）二选一
+    const input = z.object({
+      answer: z.string().min(1).optional(),
+      optionId: z.string().min(1).optional(),
+    }).refine((v) => !!v.answer !== !!v.optionId, { message: 'answer 与 optionId 必须二选一' }).parse(req.body);
+    res.json(answerClarification(getDb(), param(req, 'id'), input));
   }),
 );
 
@@ -186,5 +193,31 @@ taskByIdRouter.get(
   '/chain',
   asyncHandler(async (req, res) => {
     res.json(getTaskChain(getDb(), param(req, 'id')));
+  }),
+);
+
+/** 指挥系统 W4：任务所属蜂群的树状视图数据（swarm 元信息 + 全部节点任务，camelCase）。 */
+taskByIdRouter.get(
+  '/swarm',
+  asyncHandler(async (req, res) => {
+    const task = getTask(getDb(), param(req, 'id'));
+    if (!task.swarmId) {
+      res.json({ swarm: null, tasks: [] });
+      return;
+    }
+    res.json({ swarm: getSwarmRun(getDb(), task.swarmId), tasks: listTasksBySwarm(getDb(), task.swarmId) });
+  }),
+);
+
+/** 指挥系统 W4：一键停群（含根调度任务一起取消，一切停止）。 */
+taskByIdRouter.post(
+  '/swarm/abort',
+  asyncHandler(async (req, res) => {
+    const task = getTask(getDb(), param(req, 'id'));
+    if (!task.swarmId) {
+      throw new AppError(ErrorCode.NOT_FOUND, '该任务不属于任何蜂群');
+    }
+    abortSwarm(getDb(), task.swarmId, { reason: '用户手动停止蜂群', status: 'aborted', includeRoot: true });
+    res.json({ ok: true, swarm: getSwarmRun(getDb(), task.swarmId!) });
   }),
 );

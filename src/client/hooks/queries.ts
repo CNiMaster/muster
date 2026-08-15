@@ -1,7 +1,7 @@
 /** React Query hooks：所有数据获取集中在此。 */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
-import type { Company, Agent, AgentExecutorJson, AgentProfile, CompanyEmployee, MemoryCandidate, MemoryEntry, Department, Project, Relationship, Task, UsageSummary, ProjectAgentThread, Workspace, BusinessReview, Plugin, EffectivePlugin, OutsourcingContract, MarketplacePresetView, MarketplaceSearchEntry } from '../api/types';
+import type { Company, Agent, AgentExecutorJson, AgentProfile, CompanyEmployee, MemoryCandidate, MemoryEntry, Department, Project, Relationship, Task, UsageSummary, ProjectAgentThread, Workspace, BusinessReview, Plugin, EffectivePlugin, OutsourcingContract, MarketplacePresetView, MarketplaceSearchEntry, SwarmView } from '../api/types';
 import type { CompanyCockpitDTO, TemplateRuntimeHealthFinding } from '../../shared/types';
 import type { ProjectLaunchBrief, ProjectLaunchDiscovery } from '../../shared/project-launch';
 import type { CompanySetupDraft, CompanyTemplateOption, SetupBindings } from '../domain/company-templates';
@@ -880,10 +880,15 @@ export function useStartWorkflow() {
 
 export interface ProjectAutomation {
   id: string;
-  projectId: string;
+  /** 公司级触发器无项目（companyId 必有）。 */
+  projectId: string | null;
+  companyId: string | null;
   kind: 'event' | 'schedule';
   eventName: string | null;
   intervalMs: number | null;
+  scheduleKind: 'interval' | 'daily';
+  timeOfDay: string | null;
+  timezone: string | null;
   template: Record<string, unknown>;
   enabled: boolean;
   lastFiredAt: string | null;
@@ -891,6 +896,16 @@ export interface ProjectAutomation {
   createdAt: string;
   updatedAt: string;
 }
+
+/** 定时计划的创建参数：interval（间隔分钟）或 daily（每天固定时刻）二选一。 */
+export type CreateScheduleInput = {
+  title: string;
+  intervalMinutes?: number;
+  timeOfDay?: string;
+  timezone?: string;
+  assigneeAgentId?: string;
+  priority?: number;
+} & ({ intervalMinutes: number } | { timeOfDay: string });
 
 export function useProjectAutomations(projectId: string | undefined) {
   return useQuery({
@@ -903,7 +918,7 @@ export function useProjectAutomations(projectId: string | undefined) {
 export function useCreateProjectSchedule() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ projectId, ...input }: { projectId: string; title: string; intervalMinutes: number; projectTaskId: string; assigneeAgentId?: string; priority?: number }) =>
+    mutationFn: ({ projectId, ...input }: { projectId: string; title: string; projectTaskId: string; intervalMinutes?: number; timeOfDay?: string; timezone?: string; assigneeAgentId?: string; priority?: number }) =>
       api.post<ProjectAutomation>(`/api/projects/${projectId}/automation/schedules`, input),
     onSuccess: (data) => qc.invalidateQueries({ queryKey: ['project-automations', data.projectId] }),
   });
@@ -924,6 +939,83 @@ export function useDeleteProjectAutomation() {
     mutationFn: ({ projectId, triggerId }: { projectId: string; triggerId: string }) =>
       api.delete(`/api/projects/${projectId}/automation/${triggerId}`),
     onSuccess: (_data, input) => qc.invalidateQueries({ queryKey: ['project-automations', input.projectId] }),
+  });
+}
+
+// ===== 公司级定时自动化（指挥系统批次1）=====
+export function useCompanyAutomations(companyId: string | undefined) {
+  return useQuery({
+    queryKey: ['company-automations', companyId],
+    queryFn: () => api.get<ProjectAutomation[]>(`/api/companies/${companyId}/automation`),
+    enabled: !!companyId,
+  });
+}
+
+export function useCreateCompanySchedule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ companyId, ...input }: { companyId: string } & CreateScheduleInput) =>
+      api.post<ProjectAutomation>(`/api/companies/${companyId}/automation/schedules`, input),
+    onSuccess: (_data, input) => qc.invalidateQueries({ queryKey: ['company-automations', input.companyId] }),
+  });
+}
+
+export function useUpdateCompanyAutomation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ companyId, triggerId, enabled }: { companyId: string; triggerId: string; enabled: boolean }) =>
+      api.patch<ProjectAutomation>(`/api/companies/${companyId}/automation/${triggerId}`, { enabled }),
+    onSuccess: (_data, input) => qc.invalidateQueries({ queryKey: ['company-automations', input.companyId] }),
+  });
+}
+
+export function useDeleteCompanyAutomation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ companyId, triggerId }: { companyId: string; triggerId: string }) =>
+      api.delete(`/api/companies/${companyId}/automation/${triggerId}`),
+    onSuccess: (_data, input) => qc.invalidateQueries({ queryKey: ['company-automations', input.companyId] }),
+  });
+}
+
+// ===== 蜂群（指挥系统批次2）=====
+export function useTaskSwarm(taskId: string | undefined) {
+  return useQuery({
+    queryKey: ['task-swarm', taskId],
+    queryFn: () => api.get<SwarmView>(`/api/tasks/${taskId}/swarm`),
+    enabled: !!taskId,
+    refetchInterval: 4000,
+  });
+}
+
+export function useAbortSwarm() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (taskId: string) => api.post<{ ok: boolean }>(`/api/tasks/${taskId}/swarm/abort`, {}),
+    onSuccess: (_data, taskId) => {
+      qc.invalidateQueries({ queryKey: ['task-swarm', taskId] });
+      qc.invalidateQueries({ queryKey: ['task', taskId] });
+    },
+  });
+}
+
+// ===== 评审庭记录（指挥系统批次4）=====
+export interface DebateView {
+  id: string;
+  question: string;
+  options: { id: string; label: string; detail?: string }[];
+  status: 'open' | 'resolved' | 'escalated';
+  verdict: { recommendedOptionId?: string; confidence: number; rationale: string } | null;
+  originTaskId: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+}
+
+export function useCompanyDebates(companyId: string | undefined) {
+  return useQuery({
+    queryKey: ['company-debates', companyId],
+    queryFn: () => api.get<DebateView[]>(`/api/companies/${companyId}/debates`),
+    enabled: !!companyId,
   });
 }
 
@@ -957,6 +1049,15 @@ export function useTask(id: string | undefined) {
     queryFn: () => api.get<Task>(`/api/tasks/${id}`),
     enabled: !!id,
     refetchInterval: 3000,
+  });
+}
+
+/** 轻量任务查询（无轮询）：靠 task.* realtime 事件失效缓存刷新，对话气泡用。 */
+export function useTaskOnce(id: string | undefined) {
+  return useQuery({
+    queryKey: ['task', id],
+    queryFn: () => api.get<Task>(`/api/tasks/${id}`),
+    enabled: !!id,
   });
 }
 
@@ -1002,11 +1103,12 @@ export function usePostTaskMessage() {
 export function useTaskAction() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ taskId, action, payload }: { taskId: string; action: 'cancel' | 'pause' | 'resume' | 'clarify'; payload?: { answer?: string } }) =>
+    mutationFn: ({ taskId, action, payload }: { taskId: string; action: 'cancel' | 'pause' | 'resume' | 'clarify'; payload?: { answer?: string; optionId?: string } }) =>
       api.post<Task>(`/api/tasks/${taskId}/${action}`, payload ?? {}),
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['task', data.id] });
       qc.invalidateQueries({ queryKey: ['task-events', data.id] });
+      qc.invalidateQueries({ queryKey: ['messages'] });
     },
   });
 }
@@ -1501,6 +1603,12 @@ export function useSaveSystemSettings() {
       codeTheme?: string;
       autonomousReflectionEnabled?: boolean;
       autonomousReflectionBudgetUSD?: number;
+      morningReportEnabled?: boolean;
+      swarmMaxDepth?: number;
+      swarmMaxWidth?: number;
+      swarmMaxNodes?: number;
+      swarmBudgetUSD?: number;
+      debateMinConfidence?: number;
     }) => api.post<any>('/api/settings', settings),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['systemSettings'] });

@@ -39,6 +39,9 @@ export interface CreateTempEmploymentInput {
   permissions?: Record<string, unknown>;
   /** 发起需求的员工 agent id —— 临时工的工作关系仅限此人（小范围，不影响其他人）。 */
   requesterAgentId?: string;
+  /** 指挥系统：蜂群工蜂的显示名与提示词（不传用默认"临时工-{role}"）。 */
+  name?: string;
+  systemPrompt?: string;
 }
 
 export interface TempEmploymentResult {
@@ -66,10 +69,10 @@ export function createTempEmployment(db: DB, input: CreateTempEmploymentInput): 
 
   if (!profileId) {
     // 新建临时 profile（is_temp_only=1）
-    const displayName = `临时工-${input.role}`;
+    const displayName = input.name ?? `临时工-${input.role}`;
     const profile = createAgentProfile(db, {
       displayName,
-      soul: `你是${displayName}，临时岗位是${input.role}。${input.responsibilities ?? ''}`,
+      soul: input.systemPrompt ?? `你是${displayName}，临时岗位是${input.role}。${input.responsibilities ?? ''}`,
       capabilities: { skills: input.skills ?? [], tools: input.tools ?? [] },
       recommendedExecutor: input.executor,
       recommendedPermission: input.permissions,
@@ -90,6 +93,7 @@ export function createTempEmployment(db: DB, input: CreateTempEmploymentInput): 
     name: getAgentProfile(db, profileId).displayName,
     role: input.role,
     responsibilities: input.responsibilities,
+    systemPrompt: input.systemPrompt,
     skills: input.skills,
     tools: input.tools,
     executor: input.executor,

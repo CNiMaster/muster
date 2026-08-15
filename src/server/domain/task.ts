@@ -33,6 +33,9 @@ import {assertProjectLaunchConfirmed} from './project-launch';
 import {assertProjectActive} from './project-readiness';
 import { getCompany } from './company';
 import { recordSuspension, resolveSuspensionByTask } from './task-suspension';
+import { checkSwarmLimits, greyBeeAfterTask, handleSwarmTaskFailure, recordSwarmNodeOutcome, reportBeeCompletion } from './swarm';
+import { handleDebateTaskFailure, recordDecisionFromClarify } from './debate';
+import { ensurePrimaryThread } from './thread';
 
 /**
  * 验收标准条目（双 Loop 地基 P0.1）。
@@ -104,6 +107,12 @@ export interface Task {
   outsourcingContractId: string | null;
   /** E1.4 返工累计次数：business_review changes_requested/rejected 派返工 Task 时递增（记在被返工的原 task 上）。 */
   reworkCount: number;
+  /** 指挥系统：所属蜂群（null=普通任务）。 */
+  swarmId: string | null;
+  /** 指挥系统：蜂群树深度（根调度任务=0，蜂=1，子蜂递增）。 */
+  swarmDepth: number;
+  /** 指挥系统批次3：追问的结构化选项（null=自由文本追问）。 */
+  questionOptions: import('../../shared/types').QuestionOption[] | null;
 }
 
 interface TaskRow {
@@ -150,6 +159,9 @@ interface TaskRow {
   alignment_state: AlignmentState;
   outsourcing_contract_id: string | null;
   rework_count: number;
+  swarm_id: string | null;
+  swarm_depth: number;
+  question_options_json: string | null;
 }
 
 function fromRow(r: TaskRow): Task {
@@ -197,6 +209,11 @@ function fromRow(r: TaskRow): Task {
     alignmentState: (r.alignment_state ?? null) as AlignmentState,
     outsourcingContractId: r.outsourcing_contract_id ?? null,
     reworkCount: r.rework_count ?? 0,
+    swarmId: (r as { swarm_id?: string | null }).swarm_id ?? null,
+    swarmDepth: (r as { swarm_depth?: number }).swarm_depth ?? 0,
+    questionOptions: r.question_options_json
+      ? (JSON.parse(r.question_options_json) as import('../../shared/types').QuestionOption[])
+      : null,
   };
 }
 
@@ -236,6 +253,9 @@ export interface CreateTaskInput {
   skipLaunchGate?: boolean;
   /** 咨询任务豁免（设计二-方案A）：跳过 contactAllow 守卫（同事咨询属正常协作）。 */
   isConsultation?: boolean;
+  /** 指挥系统：蜂群归属与树深度（蜂任务/汇总任务/告警任务携带）。 */
+  swarmId?: string;
+  swarmDepth?: number;
 }
 
 const ALLOWED_TRANSITIONS: Record<TaskState, TaskState[]> = {
@@ -305,7 +325,8 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
     if (dispatcher && dispatcher.companyId !== project.companyId) {
       throw new AppError(ErrorCode.UNAUTHORIZED, `派发者 ${dispatcher.id} 不属于项目所在公司`);
     }
-    if (dispatcher && assignee && dispatcher.id !== assignee.id && !dispatcher.contactAllow.includes(assignee.id)) {
+    // 指挥系统：系统隐形岗（调度中心）的派发对象是一次性工蜂/汇总任务（系统管理），豁免 contactAllow
+    if (dispatcher && assignee && dispatcher.id !== assignee.id && !dispatcher.isSystem && !dispatcher.contactAllow.includes(assignee.id)) {
       throw new AppError(
         ErrorCode.UNAUTHORIZED,
         `员工 ${dispatcher.id} 未授权联系 ${assignee.id}`,
@@ -335,8 +356,8 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
        assignee_thread_id, assignee_task_thread_id, title, input_protocol_json, context_refs_json, output_protocol_json,
        priority, state, lease_owner_thread_id, lease_expires_at, heartbeat_at, outcome, summary,
        question, artifacts_json, checkpoint, clarification_rounds, is_discussion, is_suggestion, budget_json,
-       deadline_at, completed_at, created_at, updated_at, acceptance_criteria, outsourcing_contract_id)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?, ?,?,'queued',NULL,NULL,NULL,NULL,'',NULL,'[]',NULL,0,?,?,'{}',?,NULL,?, ?,?,?)`,
+       deadline_at, completed_at, created_at, updated_at, acceptance_criteria, outsourcing_contract_id, swarm_id, swarm_depth)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'queued',NULL,NULL,NULL,NULL,'',NULL,'[]',NULL,0,?,?,'{}',?,NULL,?,?,?,?,?,?)`,
   ).run(
     id, input.projectId,projectTaskId, seq, rootTaskId, input.parentTaskId ?? null, input.dispatcherAgentId ?? null,
     routedAssigneeId, null,null, input.title,
@@ -348,12 +369,23 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
     input.deadlineAt ?? null, now, now,
     JSON.stringify(input.acceptanceCriteria ?? []),
     input.outsourcingContext?.contractId ?? null,
+    input.swarmId ?? null,
+    input.swarmDepth ?? 0,
   );
   // 修正 root_task_id 自引用
   if (!input.parentTaskId && !input.rootTaskId) {
     db.prepare('UPDATE task SET root_task_id = ? WHERE id = ?').run(id, id);
   }
   appendTaskEvent(db, id, 'created', { seq, title: input.title });
+  // Review 修复 B2：任务指派给系统隐形岗（调度中心/评审中心）时自举线程——
+  // 隐岗不在 ensureProjectThreads（按可见花名册）覆盖内，否则首个派给它的任务永远无人领取
+  if (routedAssigneeId && assignee?.isSystem) {
+    try {
+      ensurePrimaryThread(db, input.projectId, routedAssigneeId);
+    } catch (e) {
+      console.warn('system agent thread bootstrap failed', { taskId: id, err: e instanceof Error ? e.message : String(e) });
+    }
+  }
   return getTask(db, id);
 }
 
@@ -373,6 +405,12 @@ export function listTasks(db: DB, projectId: string, state?: TaskState): Task[] 
     ? 'SELECT * FROM task WHERE project_id = ? AND state = ? ORDER BY seq'
     : 'SELECT * FROM task WHERE project_id = ? ORDER BY seq';
   const rows = (state ? db.prepare(sql).all(projectId, state) : db.prepare(sql).all(projectId)) as TaskRow[];
+  return rows.map(fromRow);
+}
+
+/** 蜂群全树（camelCase 映射；指挥系统 W4 树视图数据源）。 */
+export function listTasksBySwarm(db: DB, swarmId: string): Task[] {
+  const rows = db.prepare('SELECT * FROM task WHERE swarm_id = ? ORDER BY seq').all(swarmId) as TaskRow[];
   return rows.map(fromRow);
 }
 
@@ -542,7 +580,7 @@ export function completeTask(db: DB, taskId: string, result: AgentRunResult): Ta
     else nextState = 'blocked';
 
     db.prepare(
-      `UPDATE task SET state=?, outcome=?, summary=?, question=?, artifacts_json=?, checkpoint=?,
+      `UPDATE task SET state=?, outcome=?, summary=?, question=?, question_options_json=?, artifacts_json=?, checkpoint=?,
         completed_at=?, lease_owner_thread_id=NULL, lease_expires_at=NULL,
         interruption_count=interruption_count+?,
         updated_at=?
@@ -552,6 +590,7 @@ export function completeTask(db: DB, taskId: string, result: AgentRunResult): Ta
       result.outcome,
       result.summary,
       result.question ?? null,
+      result.questionOptions?.length ? JSON.stringify(result.questionOptions) : null,
       JSON.stringify(result.artifacts ?? []),
       result.checkpoint ?? null,
       result.outcome === 'completed' ? now : null,
@@ -562,6 +601,18 @@ export function completeTask(db: DB, taskId: string, result: AgentRunResult): Ta
       taskId,
     );
     appendTaskEvent(db, taskId, nextState, { outcome: result.outcome });
+
+    // 指挥系统：蜂任务完成 → 汇总消息写回 + 蜂灰化 + 整群记账（可能触发关群）
+    if (result.outcome === 'completed' && cur.swarmId) {
+      try {
+        const settled = getTask(db, taskId);
+        reportBeeCompletion(db, settled);
+        greyBeeAfterTask(db, settled);
+        recordSwarmNodeOutcome(db, settled, 'done');
+      } catch (e) {
+        console.warn('swarm completion accounting failed', { taskId, err: e instanceof Error ? e.message : String(e) });
+      }
+    }
 
     // 双 Loop P2：completed 时把 agent 自评的验收达标状态写回 acceptance_criteria。
     if (result.outcome === 'completed' && result.acceptanceMet?.length) {
@@ -604,6 +655,19 @@ export function completeTask(db: DB, taskId: string, result: AgentRunResult): Ta
           continue;
         }
 
+        // 指挥系统：蜂群限额（深度/宽度/总量/预算）——超限阻断并留痕，子任务继承群与深度
+        if (cur.swarmId) {
+          const guard = checkSwarmLimits(db, cur.swarmId, { parentTaskId: cur.id, addCount: 1 });
+          if (!guard.ok) {
+            appendTaskEvent(db, cur.id, 'swarm_limit_blocked', {
+              recipient: out.recipientAgentId,
+              title: out.title,
+              reason: guard.reason,
+            });
+            continue;
+          }
+        }
+
         const child = createTask(db, {
           projectId: cur.projectId,
           parentTaskId: cur.id,
@@ -613,7 +677,13 @@ export function completeTask(db: DB, taskId: string, result: AgentRunResult): Ta
           title: out.title,
           inputProtocol: out.payload,
           priority: out.priority,
+          ...(cur.swarmId ? { swarmId: cur.swarmId, swarmDepth: cur.swarmDepth + 1 } : {}),
         });
+        // Review 修复 B1：继承蜂群的子任务入账 nodes_total——否则结算时 nodes_done 会越过
+        // nodes_total 提前触发 closeSwarm（误回收在飞工蜂、卡死收口链）
+        if (cur.swarmId) {
+          db.prepare('UPDATE swarm_run SET nodes_total = nodes_total + 1 WHERE id=?').run(cur.swarmId);
+        }
         if (result.outcome === 'waiting_dependency') {
           addDependency(db, cur.id, child.id);
         }
@@ -691,6 +761,19 @@ export function completeTask(db: DB, taskId: string, result: AgentRunResult): Ta
     // （补齐 parentTaskId 单链之外的跨公司依赖恢复）
     if (result.outcome === 'completed') {
       resumeDependents(db, cur.id);
+      // 指挥系统批次4：辩论轮任务的输出转发给等待它的下游任务（R1→R2→裁决的上下文通道）
+      if ((cur.inputProtocol as Record<string, unknown>)?.relayOutputToDependents) {
+        const dependents = db
+          .prepare('SELECT task_id FROM task_dependency WHERE depends_on_id=?')
+          .all(cur.id) as Array<{ task_id: string }>;
+        for (const dep of dependents) {
+          addTaskMessage(db, dep.task_id, {
+            author: cur.assigneeAgentId ?? 'system',
+            role: 'dispatch',
+            content: `[上游输出] Task #${cur.seq}「${cur.title}」：${(result.summary ?? '').slice(0, 600)}`,
+          });
+        }
+      }
     }
   })();
 
@@ -702,20 +785,47 @@ export function completeTask(db: DB, taskId: string, result: AgentRunResult): Ta
   return updated;
 }
 
-/** 派发者回答追问：把 task 重新入队（waiting_input → queued）。 */
-export function answerClarification(db: DB, taskId: string, answer: string): Task {
+/**
+ * 派发者回答追问：把 task 重新入队（waiting_input → queued）。
+ * 指挥系统批次3：支持结构化选项——optionId 命中时以「选项 {label}」作为回答落消息，
+ * 与自由文本 answer 二选一。
+ * Review 修复 I6：source='auto'（评审庭自动采纳）不沉淀 user 决策记录——
+ * 系统的选择不是用户偏好，混入会污染偏好画像（finalizeDebate 自记 source=auto 记录）。
+ */
+export function answerClarification(db: DB, taskId: string, input: { answer?: string; optionId?: string; source?: 'user' | 'auto' }): Task {
   const cur = getTask(db, taskId);
   if (cur.state !== 'waiting_input') {
     throw new AppError(ErrorCode.TASK_INVALID_TRANSITION, `task ${taskId} 不在 waiting_input`);
+  }
+  const option = input.optionId
+    ? cur.questionOptions?.find((o) => o.id === input.optionId)
+    : undefined;
+  if (input.optionId && !option) {
+    throw new AppError(ErrorCode.NOT_FOUND, `选项 ${input.optionId} 不存在`);
+  }
+  const answer = option
+    ? `【选项】${option.label}${option.detail ? ` — ${option.detail}` : ''}`
+    : (input.answer ?? '').trim();
+  if (!answer) {
+    throw new AppError(ErrorCode.VALIDATION, '回答内容不能为空（answer 或 optionId 二选一）');
   }
   const now = nowIso();
   db.transaction(() => {
     // 若用户用 /clarify 回答了一个对齐态 task，清掉 alignment_state 避免孤儿标记（与 answerAlignment 对称）。
     db.prepare(`UPDATE task SET clarification_rounds=clarification_rounds+1, state='queued', alignment_state=NULL, updated_at=? WHERE id=?`).run(now, taskId);
     addTaskMessage(db, taskId, { author: 'user', role: 'user', content: answer });
-    appendTaskEvent(db, taskId, 'clarification_answered', {});
+    appendTaskEvent(db, taskId, 'clarification_answered', option ? { optionId: option.id, optionLabel: option.label } : {});
     resolveSuspensionByTask(db, taskId, { resolution: 'resumed' });
   })();
+  // 指挥系统批次4：用户的选项选择沉淀为决策记录（偏好画像，注入后续评审庭）；
+  // 评审庭自动采纳（source=auto）不在此记录，由 finalizeDebate 自记 source=auto
+  if (option && (input.source ?? 'user') === 'user') {
+    try {
+      recordDecisionFromClarify(db, taskId, option);
+    } catch (e) {
+      console.warn('decision record failed', { taskId, err: e instanceof Error ? e.message : String(e) });
+    }
+  }
   return getTask(db, taskId);
 }
 
@@ -892,6 +1002,26 @@ export function failTask(db: DB, taskId: string, message: string): Task {
   }
 
   const failed = getTask(db, taskId);
+  // 指挥系统：蜂群任务失败 → 改道调度中心处置（记账/告警/熔断/依赖解除），
+  // 不走 [兜底]（那会打扰第一负责人——蜂群的失败责任人是调度中心）
+  if (failed.swarmId) {
+    try {
+      handleSwarmTaskFailure(db, failed, message);
+    } catch (e) {
+      console.warn('swarm failure handling failed', { taskId, err: e instanceof Error ? e.message : String(e) });
+    }
+    return failed;
+  }
+  // 指挥系统批次4：辩论任务失败 → 评审庭自救（取消下游 + 升级用户 + 回收辩手），
+  // 否则 failed 依赖永不满足会让辩论永挂、辩手泄漏、原问题无人拍板
+  if ((failed.inputProtocol as Record<string, unknown>)?.debate) {
+    try {
+      handleDebateTaskFailure(db, failed, message);
+    } catch (e) {
+      console.warn('debate failure handling failed', { taskId, err: e instanceof Error ? e.message : String(e) });
+    }
+    return failed;
+  }
   // 阶段一任务 1.1：子任务失败时通知父任务并上报第一负责人，
   // 避免父任务永久卡在 waiting_dependency 无人发现。
   try {
@@ -1106,6 +1236,15 @@ export function cancelTask(db: DB, taskId: string): Task {
     console.warn('resumeDependents after cancel failed', { taskId, err: e instanceof Error ? e.message : String(e) });
   }
   appendTaskEvent(db, taskId, 'cancelled', {});
+  // 指挥系统：蜂群节点取消 → 记账（cancelled 计入已收口；蜂灰化）
+  if (cur.swarmId) {
+    try {
+      greyBeeAfterTask(db, cur);
+      recordSwarmNodeOutcome(db, cur, 'cancelled');
+    } catch (e) {
+      console.warn('swarm cancel accounting failed', { taskId, err: e instanceof Error ? e.message : String(e) });
+    }
+  }
   return getTask(db, taskId);
 }
 

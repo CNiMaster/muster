@@ -39,9 +39,17 @@ import { listProjects } from '../domain/project';
 import { ensureProjectThreads } from '../domain/thread';
 import { summarizeCompanyUsage } from '../domain/usage';
 import { companyArtifactGallery } from '../domain/artifact';
-import { listAgents } from '../domain/agent';
+import { listAgents, getAgent } from '../domain/agent';
 import { listDepartments } from '../domain/department';
 import { getCompanyCockpit } from '../domain/company-cockpit';
+import {
+  listCompanyTriggers,
+  registerScheduleTrigger,
+  setCompanyTriggerEnabled,
+  deleteCompanyTrigger,
+} from '../domain/triggers';
+import { listDebates } from '../domain/debate';
+import { AppError, ErrorCode } from '../../shared/errors';
 
 export const companiesRouter = Router();
 
@@ -195,6 +203,76 @@ companiesRouter.get(
   '/:id/usage',
   asyncHandler(async (req, res) => {
     res.json(summarizeCompanyUsage(getDb(), param(req, 'id')));
+  }),
+);
+
+/** 指挥系统批次4：评审庭记录（回看）。 */
+companiesRouter.get(
+  '/:id/debates',
+  asyncHandler(async (req, res) => {
+    res.json(listDebates(getDb(), param(req, 'id')));
+  }),
+);
+
+/** 指挥系统批次1：公司级定时自动化（不绑定项目任务，派发给第一负责人；任务载体=公司最早项目）。 */
+companiesRouter.get(
+  '/:id/automation',
+  asyncHandler(async (req, res) => {
+    res.json(listCompanyTriggers(getDb(), param(req, 'id')));
+  }),
+);
+
+const companyScheduleSchema = z.union([
+  z.object({
+    title: z.string().min(1),
+    intervalMinutes: z.number().int().min(1).max(525_600),
+    assigneeAgentId: z.string().optional(),
+    priority: z.number().int().min(1).max(9).optional(),
+  }),
+  z.object({
+    title: z.string().min(1),
+    timeOfDay: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, '时刻格式应为 HH:mm'),
+    timezone: z.string().max(100).optional(),
+    assigneeAgentId: z.string().optional(),
+    priority: z.number().int().min(1).max(9).optional(),
+  }),
+]);
+
+companiesRouter.post(
+  '/:id/automation/schedules',
+  asyncHandler(async (req, res) => {
+    const input = companyScheduleSchema.parse(req.body);
+    const db = getDb();
+    const companyId = param(req, 'id');
+    const company = getCompany(db, companyId);
+    if (input.assigneeAgentId && getAgent(db, input.assigneeAgentId).companyId !== company.id) {
+      throw new AppError(ErrorCode.VALIDATION, '计划任务的执行员工不属于当前公司');
+    }
+    const template: Record<string, unknown> = {
+      title: input.title,
+      assigneeAgentId: input.assigneeAgentId,
+      priority: input.priority ?? 5,
+    };
+    const created = 'timeOfDay' in input
+      ? registerScheduleTrigger(db, { companyId, timeOfDay: input.timeOfDay, timezone: input.timezone, template })
+      : registerScheduleTrigger(db, { companyId, intervalMs: input.intervalMinutes * 60_000, template });
+    res.status(201).json(listCompanyTriggers(db, companyId).find((item) => item.id === created.id));
+  }),
+);
+
+companiesRouter.patch(
+  '/:id/automation/:triggerId',
+  asyncHandler(async (req, res) => {
+    const { enabled } = z.object({ enabled: z.boolean() }).parse(req.body);
+    res.json(setCompanyTriggerEnabled(getDb(), param(req, 'id'), param(req, 'triggerId'), enabled));
+  }),
+);
+
+companiesRouter.delete(
+  '/:id/automation/:triggerId',
+  asyncHandler(async (req, res) => {
+    deleteCompanyTrigger(getDb(), param(req, 'id'), param(req, 'triggerId'));
+    res.status(204).end();
   }),
 );
 

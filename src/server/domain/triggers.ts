@@ -9,31 +9,43 @@ import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
 import { getProject } from './project';
+import { getCompany } from './company';
 import { listAgents } from './agent';
 import { createTask } from './task';
 import type { ArtifactChange } from '../../shared/types';
 import { transaction } from '../db/client';
 import { appendTaskEvent } from './task-event';
 import { MAINTENANCE_ROLES } from './novel-template';
+import { assertValidTimezone, localTimezone, nextDailyOccurrence } from './tz';
 
 export type ConsistencyCheckKind = 'omission' | 'continuity' | 'long_term';
 
 interface ScheduleTriggerRow {
   id: string;
-  project_id: string;
+  project_id: string | null;
+  company_id: string | null;
   interval_ms: number;
+  schedule_kind: 'interval' | 'daily';
+  time_of_day: string | null;
+  timezone: string | null;
   template_json: string;
   enabled: number;
+  last_task_id: string | null;
   created_at: string;
   next_run_at: string | null;
 }
 
 export interface ProjectTrigger {
   id: string;
-  projectId: string;
+  /** 公司级触发器无项目（companyId 必有）。 */
+  projectId: string | null;
+  companyId: string | null;
   kind: 'event' | 'schedule';
   eventName: string | null;
   intervalMs: number | null;
+  scheduleKind: 'interval' | 'daily';
+  timeOfDay: string | null;
+  timezone: string | null;
   template: Record<string, unknown>;
   enabled: boolean;
   lastFiredAt: string | null;
@@ -44,12 +56,17 @@ export interface ProjectTrigger {
 
 interface ProjectTriggerRow {
   id: string;
-  project_id: string;
+  project_id: string | null;
+  company_id: string | null;
   kind: 'event' | 'schedule';
   event_name: string | null;
   interval_ms: number | null;
+  schedule_kind: 'interval' | 'daily';
+  time_of_day: string | null;
+  timezone: string | null;
   template_json: string;
   enabled: number;
+  last_task_id: string | null;
   last_fired_at: string | null;
   next_run_at: string | null;
   created_at: string;
@@ -60,9 +77,13 @@ function triggerFromRow(row: ProjectTriggerRow): ProjectTrigger {
   return {
     id: row.id,
     projectId: row.project_id,
+    companyId: row.company_id,
     kind: row.kind,
     eventName: row.event_name,
     intervalMs: row.interval_ms,
+    scheduleKind: row.schedule_kind,
+    timeOfDay: row.time_of_day,
+    timezone: row.timezone,
     template: JSON.parse(row.template_json || '{}') as Record<string, unknown>,
     enabled: row.enabled === 1,
     lastFiredAt: row.last_fired_at,
@@ -78,12 +99,40 @@ export function listProjectTriggers(db: DB, projectId: string): ProjectTrigger[]
   return rows.map(triggerFromRow);
 }
 
+export function listCompanyTriggers(db: DB, companyId: string): ProjectTrigger[] {
+  getCompany(db, companyId);
+  const rows = db.prepare('SELECT * FROM trigger WHERE company_id=? ORDER BY created_at DESC').all(companyId) as ProjectTriggerRow[];
+  return rows.map(triggerFromRow);
+}
+
+/** 统一计算下次执行时间：daily = 时区内下一个该时刻；interval = now + interval。 */
+function computeNextRunAt(
+  row: { schedule_kind?: string | null; time_of_day?: string | null; timezone?: string | null; interval_ms?: number | null },
+  now: Date,
+): string {
+  if (row.schedule_kind === 'daily' && row.time_of_day) {
+    return nextDailyOccurrence(now, row.time_of_day, row.timezone ?? localTimezone()).toISOString();
+  }
+  return new Date(now.getTime() + (row.interval_ms ?? 86_400_000)).toISOString();
+}
+
 export function setProjectTriggerEnabled(db: DB, projectId: string, triggerId: string, enabled: boolean): ProjectTrigger {
   const row = db.prepare('SELECT * FROM trigger WHERE id=? AND project_id=?').get(triggerId, projectId) as ProjectTriggerRow | undefined;
   if (!row) throw new AppError(ErrorCode.NOT_FOUND, '计划任务不存在或不属于当前项目');
   const now = nowIso();
-  const nextRunAt = enabled && row.kind === 'schedule' && row.interval_ms
-    ? new Date(Date.now() + row.interval_ms).toISOString()
+  const nextRunAt = enabled && row.kind === 'schedule'
+    ? computeNextRunAt(row, new Date())
+    : row.next_run_at;
+  db.prepare('UPDATE trigger SET enabled=?, next_run_at=?, updated_at=? WHERE id=?').run(enabled ? 1 : 0, nextRunAt, now, triggerId);
+  return triggerFromRow(db.prepare('SELECT * FROM trigger WHERE id=?').get(triggerId) as ProjectTriggerRow);
+}
+
+export function setCompanyTriggerEnabled(db: DB, companyId: string, triggerId: string, enabled: boolean): ProjectTrigger {
+  const row = db.prepare('SELECT * FROM trigger WHERE id=? AND company_id=?').get(triggerId, companyId) as ProjectTriggerRow | undefined;
+  if (!row) throw new AppError(ErrorCode.NOT_FOUND, '计划任务不存在或不属于当前公司');
+  const now = nowIso();
+  const nextRunAt = enabled && row.kind === 'schedule'
+    ? computeNextRunAt(row, new Date())
     : row.next_run_at;
   db.prepare('UPDATE trigger SET enabled=?, next_run_at=?, updated_at=? WHERE id=?').run(enabled ? 1 : 0, nextRunAt, now, triggerId);
   return triggerFromRow(db.prepare('SELECT * FROM trigger WHERE id=?').get(triggerId) as ProjectTriggerRow);
@@ -92,6 +141,11 @@ export function setProjectTriggerEnabled(db: DB, projectId: string, triggerId: s
 export function deleteProjectTrigger(db: DB, projectId: string, triggerId: string): void {
   const result = db.prepare('DELETE FROM trigger WHERE id=? AND project_id=?').run(triggerId, projectId);
   if (!result.changes) throw new AppError(ErrorCode.NOT_FOUND, '计划任务不存在或不属于当前项目');
+}
+
+export function deleteCompanyTrigger(db: DB, companyId: string, triggerId: string): void {
+  const result = db.prepare('DELETE FROM trigger WHERE id=? AND company_id=?').run(triggerId, companyId);
+  if (!result.changes) throw new AppError(ErrorCode.NOT_FOUND, '计划任务不存在或不属于当前公司');
 }
 
 /** 注册一个事件触发器（持久化）。 */
@@ -108,39 +162,95 @@ export function registerEventTrigger(
   return { id };
 }
 
-/** 注册一个定时触发器。 */
+export interface RegisterScheduleTriggerInput {
+  /** 项目级触发器（与 companyId 二选一）。 */
+  projectId?: string;
+  /** 公司级触发器（与 projectId 二选一）。 */
+  companyId?: string;
+  /** interval 模式间隔（ms，正数）。daily 模式不传。 */
+  intervalMs?: number;
+  /** daily 模式时刻 'HH:mm'（提供即 daily；与 intervalMs 互斥）。 */
+  timeOfDay?: string;
+  /** IANA 时区，默认服务器本地。 */
+  timezone?: string;
+  template: Record<string, unknown>;
+  now?: Date;
+}
+
+/** 注册一个定时触发器：interval（间隔）或 daily（每天固定时刻）。 */
 export function registerScheduleTrigger(
   db: DB,
-  input: { projectId: string; intervalMs: number; template: Record<string, unknown>; now?: Date },
+  input: RegisterScheduleTriggerInput,
 ): { id: string } {
-  getProject(db, input.projectId);
-  if (!Number.isFinite(input.intervalMs) || input.intervalMs <= 0) {
-    throw new Error('intervalMs 必须是正数');
+  const isDaily = input.timeOfDay !== undefined;
+  if (isDaily && input.intervalMs !== undefined) {
+    throw new AppError(ErrorCode.VALIDATION, 'timeOfDay 与 intervalMs 只能二选一');
   }
+  if (!isDaily && (!Number.isFinite(input.intervalMs) || (input.intervalMs ?? 0) <= 0)) {
+    throw new AppError(ErrorCode.VALIDATION, 'intervalMs 必须是正数');
+  }
+  if (!input.projectId && !input.companyId) {
+    throw new AppError(ErrorCode.VALIDATION, 'projectId 与 companyId 至少提供其一');
+  }
+  if (input.projectId && input.companyId) {
+    throw new AppError(ErrorCode.VALIDATION, 'projectId 与 companyId 不能同时提供');
+  }
+  if (input.projectId) {
+    getProject(db, input.projectId);
+  } else {
+    getCompany(db, input.companyId!);
+  }
+  const timezone = input.timezone ?? localTimezone();
+  try {
+    assertValidTimezone(timezone);
+  } catch (error) {
+    throw new AppError(ErrorCode.VALIDATION, (error as Error).message);
+  }
+
   const id = shortId('tr_');
-  const now = input.now?.toISOString() ?? nowIso();
-  const nextRunAt = new Date(new Date(now).getTime() + input.intervalMs).toISOString();
+  const now = input.now ?? new Date();
+  const intervalMs = isDaily ? 86_400_000 : input.intervalMs!;
+  const nextRunAt = isDaily
+    ? nextDailyOccurrence(now, input.timeOfDay!, timezone).toISOString()
+    : new Date(now.getTime() + intervalMs).toISOString();
   db.prepare(
     `INSERT INTO trigger
-       (id, project_id, kind, interval_ms, template_json, enabled, created_at, updated_at, next_run_at)
-     VALUES (?, ?, 'schedule', ?, ?, 1, ?, ?, ?)`,
-  ).run(id, input.projectId, input.intervalMs, JSON.stringify(input.template), now, now, nextRunAt);
+       (id, project_id, company_id, kind, interval_ms, schedule_kind, time_of_day, timezone,
+        template_json, enabled, created_at, updated_at, next_run_at)
+     VALUES (?, ?, ?, 'schedule', ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
+  ).run(
+    id,
+    input.projectId ?? null,
+    input.companyId ?? null,
+    intervalMs,
+    isDaily ? 'daily' : 'interval',
+    isDaily ? input.timeOfDay! : null,
+    isDaily ? timezone : null,
+    JSON.stringify(input.template),
+    nowIso(),
+    nowIso(),
+    nextRunAt,
+  );
   return { id };
 }
 
+/** 防叠跑：上次派发的 Task 仍处于这些状态时，本轮跳过不堆积（含等待人工介入的 paused/blocked）。 */
+const OVERLAP_ACTIVE_STATES = new Set(['queued', 'claimed', 'running', 'waiting_input', 'waiting_dependency', 'paused', 'blocked']);
+
 /**
- * 领取并派发所有到期 schedule trigger。
+ * 领取并派发所有到期 schedule trigger（项目级 + 公司级）。
  *
  * next_run_at 在创建 Task 前于同一事务推进；派发失败会整体回滚，下一轮可重试。
  * 下班公司的 trigger 保持到期状态，上班后立即补派发。
+ * 防叠跑：上次 Task 仍 active → 跳过本轮并推进 next_run_at（trigger_skipped_overlap 留痕）。
  */
 export function dispatchDueScheduleTriggers(db: DB, now = new Date()): string[] {
   const nowMs = now.getTime();
   const candidates = db.prepare(
     `SELECT tr.*
        FROM trigger tr
-       JOIN project p ON p.id = tr.project_id
-       JOIN company c ON c.id = p.company_id
+       LEFT JOIN project p ON p.id = tr.project_id
+       JOIN company c ON c.id = COALESCE(p.company_id, tr.company_id)
       WHERE tr.kind = 'schedule' AND tr.enabled = 1 AND c.state = 'online'`,
   ).all() as ScheduleTriggerRow[];
   const dispatched: string[] = [];
@@ -154,8 +264,8 @@ export function dispatchDueScheduleTriggers(db: DB, now = new Date()): string[] 
       const current = db.prepare(
         `SELECT tr.*
            FROM trigger tr
-           JOIN project p ON p.id = tr.project_id
-           JOIN company c ON c.id = p.company_id
+           LEFT JOIN project p ON p.id = tr.project_id
+           JOIN company c ON c.id = COALESCE(p.company_id, tr.company_id)
           WHERE tr.id = ? AND tr.kind = 'schedule' AND tr.enabled = 1 AND c.state = 'online'`,
       ).get(candidate.id) as ScheduleTriggerRow | undefined;
       if (!current) return null;
@@ -164,12 +274,6 @@ export function dispatchDueScheduleTriggers(db: DB, now = new Date()): string[] 
         ? new Date(current.next_run_at).getTime()
         : new Date(current.created_at).getTime() + current.interval_ms;
       if (!Number.isFinite(currentDue) || currentDue > nowMs) return null;
-
-      const firedAt = now.toISOString();
-      const nextRunAt = new Date(nowMs + current.interval_ms).toISOString();
-      db.prepare(
-        'UPDATE trigger SET last_fired_at = ?, next_run_at = ?, updated_at = ? WHERE id = ?',
-      ).run(firedAt, nextRunAt, firedAt, current.id);
 
       const template = JSON.parse(current.template_json || '{}') as {
         checkKind?: ConsistencyCheckKind;
@@ -180,27 +284,75 @@ export function dispatchDueScheduleTriggers(db: DB, now = new Date()): string[] 
         inputProtocol?: Record<string, unknown>;
         outputProtocol?: Record<string, unknown>;
       };
+      const firedAt = now.toISOString();
+      const nextRunAt = computeNextRunAt(current, now);
+
+      // 防叠跑：上次派发的 Task 还在跑/排队/等待 → 本轮跳过（推进 next_run_at，在旧任务上留痕）
+      if (current.last_task_id) {
+        const prev = db.prepare('SELECT id, state FROM task WHERE id = ?').get(current.last_task_id) as { id: string; state: string } | undefined;
+        if (prev && OVERLAP_ACTIVE_STATES.has(prev.state)) {
+          db.prepare('UPDATE trigger SET last_fired_at = ?, next_run_at = ?, updated_at = ? WHERE id = ?')
+            .run(firedAt, nextRunAt, firedAt, current.id);
+          appendTaskEvent(db, prev.id, 'trigger_skipped_overlap', { triggerId: current.id, at: firedAt });
+          return null;
+        }
+      }
+
+      // 公司级触发器：任务载体 = 公司最早项目（与对话公司 scope 派发一致）；
+      // 公司还没有项目时不推进 next_run_at（等有项目后立即补发）。
+      if (!current.project_id) {
+        const company = getCompany(db, current.company_id!);
+        const carrier = db.prepare('SELECT id FROM project WHERE company_id = ? ORDER BY created_at LIMIT 1')
+          .get(company.id) as { id: string } | undefined;
+        const assignee = template.assigneeAgentId ?? company.firstAgentId;
+        if (!template.title || !carrier || !assignee) return null;
+        const task = createTask(db, {
+          projectId: carrier.id,
+          assigneeAgentId: assignee,
+          title: `[计划] ${template.title}`,
+          priority: template.priority ?? 5,
+          inputProtocol: {
+            trigger: 'schedule',
+            scheduleTriggerId: current.id,
+            scope: 'company',
+            companyId: company.id,
+            ...(template.inputProtocol ?? {}),
+          },
+        });
+        db.prepare(
+          'UPDATE trigger SET last_fired_at = ?, next_run_at = ?, updated_at = ?, last_task_id = ? WHERE id = ?',
+        ).run(firedAt, nextRunAt, firedAt, task.id, current.id);
+        return task.id;
+      }
+
+      // 项目级（原有路径）
+      let createdTaskId: string | null = null;
       const checkKind = template.checkKind;
       if (checkKind && ['omission', 'continuity', 'long_term'].includes(checkKind)) {
-        return dispatchConsistencyCheck(db, current.project_id, checkKind);
+        createdTaskId = dispatchConsistencyCheck(db, current.project_id, checkKind);
+      } else {
+        if (!template.title || !template.projectTaskId) {
+          throw new Error(`schedule trigger ${current.id} 缺少任务标题或项目任务上下文`);
+        }
+        const activeContext = db.prepare("SELECT id FROM project_task WHERE id=? AND project_id=? AND state='active'").get(template.projectTaskId, current.project_id) as { id: string } | undefined;
+        if (!activeContext) {
+          db.prepare('UPDATE trigger SET enabled=0, updated_at=? WHERE id=?').run(firedAt, current.id);
+          return null;
+        }
+        createdTaskId = createTask(db, {
+          projectId: current.project_id,
+          projectTaskId: template.projectTaskId,
+          title: `[计划] ${template.title}`,
+          assigneeAgentId: template.assigneeAgentId,
+          priority: template.priority ?? 5,
+          inputProtocol: { trigger: 'schedule', scheduleTriggerId: current.id, ...(template.inputProtocol ?? {}) },
+          outputProtocol: template.outputProtocol,
+        }).id;
       }
-      if (!template.title || !template.projectTaskId) {
-        throw new Error(`schedule trigger ${current.id} 缺少任务标题或项目任务上下文`);
-      }
-      const activeContext = db.prepare("SELECT id FROM project_task WHERE id=? AND project_id=? AND state='active'").get(template.projectTaskId, current.project_id) as { id: string } | undefined;
-      if (!activeContext) {
-        db.prepare('UPDATE trigger SET enabled=0, updated_at=? WHERE id=?').run(firedAt, current.id);
-        return null;
-      }
-      return createTask(db, {
-        projectId: current.project_id,
-        projectTaskId: template.projectTaskId,
-        title: `[计划] ${template.title}`,
-        assigneeAgentId: template.assigneeAgentId,
-        priority: template.priority ?? 5,
-        inputProtocol: { trigger: 'schedule', scheduleTriggerId: current.id, ...(template.inputProtocol ?? {}) },
-        outputProtocol: template.outputProtocol,
-      }).id;
+      db.prepare(
+        'UPDATE trigger SET last_fired_at = ?, next_run_at = ?, updated_at = ?, last_task_id = ? WHERE id = ?',
+      ).run(firedAt, nextRunAt, firedAt, createdTaskId, current.id);
+      return createdTaskId;
     });
     if (taskId) dispatched.push(taskId);
   }

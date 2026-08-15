@@ -225,7 +225,7 @@ describe('clarification rounds', () => {
         artifacts: [],
       });
       // 状态变 waiting_input；如果已达上限，completeTask 内部会触发上报
-      answerClarification(db, t.id, `回答${i + 1}`); // 重新入队（除非已上报）
+      answerClarification(db, t.id, { answer: `回答${i + 1}` }); // 重新入队（除非已上报）
     }
 
     // 应存在一条派给 lead 的上报 Task

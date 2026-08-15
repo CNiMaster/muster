@@ -23,10 +23,14 @@ const INTERVAL_OPTIONS = [
   { minutes: 1440, label: '每天' },
   { minutes: 10080, label: '每周' },
 ];
+const DAILY_MODE = 'daily';
 
-function intervalLabel(intervalMs: number | null): string {
-  if (!intervalMs) return '事件触发';
-  const minutes = Math.round(intervalMs / 60_000);
+function intervalLabel(automation: { intervalMs: number | null; scheduleKind: 'interval' | 'daily'; timeOfDay: string | null; timezone: string | null }): string {
+  if (automation.scheduleKind === 'daily' && automation.timeOfDay) {
+    return `每天 ${automation.timeOfDay}${automation.timezone ? `（${automation.timezone}）` : ''}`;
+  }
+  if (!automation.intervalMs) return '事件触发';
+  const minutes = Math.round(automation.intervalMs / 60_000);
   return INTERVAL_OPTIONS.find((option) => option.minutes === minutes)?.label ?? `每 ${minutes} 分钟`;
 }
 
@@ -44,6 +48,7 @@ export function ProjectPlansPage(): React.ReactElement {
   const [assigneeId, setAssigneeId] = useState('');
   const [projectTaskId, setProjectTaskId] = useState('');
   const [intervalMinutes, setIntervalMinutes] = useState('60');
+  const [timeOfDay, setTimeOfDay] = useState('09:00');
   const activeProjectTasks = projectTasks.filter((item) => item.state === 'active');
   const claimPool = tasks.filter((task) => ['queued', 'claimed', 'running'].includes(task.state));
 
@@ -53,16 +58,19 @@ export function ProjectPlansPage(): React.ReactElement {
 
   const submit = (): void => {
     if (!title.trim() || !projectTaskId) return;
-    createSchedule.mutate({
+    const base = {
       projectId,
       title: title.trim(),
       projectTaskId,
-      intervalMinutes: Number(intervalMinutes),
       assigneeAgentId: assigneeId || undefined,
-    }, {
-      onSuccess: () => { setTitle(''); toast('success', '计划任务已创建'); },
-      onError: (error) => toast('error', (error as Error).message),
-    });
+    };
+    createSchedule.mutate(
+      intervalMinutes === DAILY_MODE ? { ...base, timeOfDay } : { ...base, intervalMinutes: Number(intervalMinutes) },
+      {
+        onSuccess: () => { setTitle(''); toast('success', '计划任务已创建'); },
+        onError: (error) => toast('error', (error as Error).message),
+      },
+    );
   };
 
   return <div className="project-plans-page">
@@ -85,9 +93,11 @@ export function ProjectPlansPage(): React.ReactElement {
           </Select></Field>
           <Field label="执行周期"><Select value={intervalMinutes} onChange={(event) => setIntervalMinutes(event.target.value)}>
             {INTERVAL_OPTIONS.map((option) => <option key={option.minutes} value={option.minutes}>{option.label}</option>)}
+            <option value={DAILY_MODE}>每天固定时刻</option>
           </Select></Field>
+          {intervalMinutes === DAILY_MODE && <Field label="时刻（HH:mm，服务器时区）" hint="例如 09:00 = 每天早上 9 点"><Input type="time" value={timeOfDay} onChange={(event) => setTimeOfDay(event.target.value)} /></Field>}
         </div>
-        <div className="schedule-composer-action"><span>项目任务归档后，对应计划会自动停用。</span><Button onClick={submit} loading={createSchedule.isPending} disabled={!title.trim() || !projectTaskId}>创建计划</Button></div>
+        <div className="schedule-composer-action"><span>项目任务归档后，对应计划会自动停用；上一次没跑完时本轮自动跳过。</span><Button onClick={submit} loading={createSchedule.isPending} disabled={!title.trim() || !projectTaskId || (intervalMinutes === DAILY_MODE && !timeOfDay)}>创建计划</Button></div>
       </div>
     </Card>
 
@@ -97,7 +107,7 @@ export function ProjectPlansPage(): React.ReactElement {
           const titleText = typeof automation.template.title === 'string' ? automation.template.title : automation.eventName ?? '系统事件';
           const agent = agents.find((item) => item.id === automation.template.assigneeAgentId);
           return <article key={automation.id} className={`automation-item ${automation.enabled ? '' : 'is-disabled'}`}>
-            <div><strong>{titleText}</strong><span>{intervalLabel(automation.intervalMs)} · {agent?.name ?? '第一负责人分配'}</span><small>{automation.nextRunAt && automation.enabled ? `下次：${new Date(automation.nextRunAt).toLocaleString()}` : '当前已停用'}</small></div>
+            <div><strong>{titleText}</strong><span>{intervalLabel(automation)} · {agent?.name ?? '第一负责人分配'}</span><small>{automation.nextRunAt && automation.enabled ? `下次：${new Date(automation.nextRunAt).toLocaleString()}` : '当前已停用'}</small></div>
             <div className="automation-actions">
               <Button size="sm" variant="ghost" onClick={() => updateAutomation.mutate({ projectId, triggerId: automation.id, enabled: !automation.enabled })}>{automation.enabled ? '暂停' : '启用'}</Button>
               <Button size="sm" variant="ghost" onClick={() => deleteAutomation.mutate({ projectId, triggerId: automation.id })}>删除</Button>

@@ -84,10 +84,21 @@ export interface ArtifactChange {
   operation: 'create' | 'update' | 'delete';
 }
 
+/** 决策追问的结构化选项（指挥系统批次3）：agent 给用户的 A/B/C 按钮。 */
+export interface QuestionOption {
+  id: string;
+  label: string;
+  detail?: string;
+  pros?: string;
+  cons?: string;
+}
+
 export interface AgentRunResult {
   outcome: TaskOutcome;
   summary: string;
   question?: string;
+  /** 指挥系统批次3：追问的候选选项（≥2 个时消费方可渲染为多选一）。 */
+  questionOptions?: QuestionOption[];
   outboundTasks: OutboundTaskRequest[];
   artifacts: ArtifactChange[];
   checkpoint?: string;
@@ -95,6 +106,34 @@ export interface AgentRunResult {
   workflowNextEdgeLabel?: string;
   /** 双 Loop P2：agent 对每条验收标准的自评（对照 acceptance_criteria.id），供验收段半自动判定。 */
   acceptanceMet?: { id: string; met: boolean }[];
+  /**
+   * 指挥系统 W3：蜂群计划（仅调度中心系统岗的返回被兑现，其他 agent 返回会被忽略）。
+   * 全执行器通用契约（done 结构化输出），不依赖工具循环——CLI/API 执行器同构。
+   */
+  swarmPlan?: SwarmPlan;
+  /**
+   * 指挥系统批次4：评审裁决（仅评审中心系统岗的返回被兑现）。
+   * confidence ≥ 设置阈值自动采纳；低于则升级用户（带优劣表）。
+   */
+  debateVerdict?: DebateVerdict;
+}
+
+/** 评审庭裁决。 */
+export interface DebateVerdict {
+  debateId?: string;
+  /** 推荐选项 id（都不推荐时留空 + 低置信）。 */
+  recommendedOptionId?: string;
+  /** 置信度 0~1。 */
+  confidence: number;
+  rationale: string;
+  /** 每个选项的致命缺点（差评清单）。 */
+  flaws: Array<{ optionId: string; flaw: string }>;
+}
+
+/** 蜂群计划：调度中心把目标拆成一组独立工蜂任务。 */
+export interface SwarmPlan {
+  goal: string;
+  workers: Array<{ title: string; brief: string }>;
 }
 
 // ===== 实时事件契约 =====

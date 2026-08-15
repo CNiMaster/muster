@@ -6,11 +6,13 @@
  */
 import type React from 'react';
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card } from '../Card';
 import { Badge } from '../Badge';
 import { Button, toast } from '../Button';
 import { Field, Input, Select } from '../Form';
 import { EmptyState } from '../EmptyState';
+import { useCompanyDebates } from '../../hooks/queries';
 import {
   useOptimizationReports,
   useOptimizationReport,
@@ -49,11 +51,49 @@ export function CompanyEvolution({ companyId }: { companyId: string }): React.Re
   return (
     <div className="form-stack">
       <EvolutionSummaryBar companyId={companyId} />
+      <DebatesBlock companyId={companyId} />
       <OptimizationReportsBlock companyId={companyId} />
       <PromotionCandidatesBlock companyId={companyId} />
       <StructureHistoryBlock />
       <LocksBlock />
     </div>
+  );
+}
+
+// ── 评审庭记录（指挥系统批次4）────────────────────────────────────────
+
+function DebatesBlock({ companyId }: { companyId: string }): React.ReactElement {
+  const { data: debates = [] } = useCompanyDebates(companyId);
+  const navigate = useNavigate();
+  const statusLabel: Record<string, string> = { open: '辩论中', resolved: '已裁决', escalated: '待你拍板' };
+  const statusTone: Record<string, 'info' | 'ok' | 'warn'> = { open: 'info', resolved: 'ok', escalated: 'warn' };
+  return (
+    <Card title={<>评审庭{debates.length > 0 ? <> <Badge>{debates.length}</Badge></> : null}</>}>
+      <p className="muted" style={{ margin: 0 }}>
+        两难决策先由辩手立论互攻、评审中心裁决——置信够自动采纳，不够才问你。你的每次选择会沉淀为偏好，问的次数会越来越少。
+      </p>
+      {debates.length === 0 && <p className="muted">还没有评审记录。</p>}
+      {debates.length > 0 && (
+        <div className="report-list">
+          {debates.slice(0, 8).map((debate) => (
+            <div key={debate.id} className="evolution-item">
+              <div>
+                <strong>{debate.question.slice(0, 60)}</strong>
+                <small>
+                  {debate.createdAt ? new Date(debate.createdAt).toLocaleString() : ''}
+                  {debate.verdict ? ` · 置信 ${debate.verdict.confidence.toFixed(2)}` : ''}
+                  {debate.originTaskId ? ' · ' : ''}
+                </small>
+              </div>
+              <div className="evolution-item-actions">
+                <Badge tone={statusTone[debate.status] ?? 'neutral'}>{statusLabel[debate.status] ?? debate.status}</Badge>
+                {debate.originTaskId && <Button size="sm" variant="ghost" onClick={() => navigate(`/tasks/${debate.originTaskId}`)}>查看任务</Button>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
   );
 }
 

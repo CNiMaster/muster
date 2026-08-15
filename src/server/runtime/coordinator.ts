@@ -17,6 +17,7 @@ import { generateOptimizationReport } from '../domain/optimization-report';
 import type { SetupGenerator } from '../domain/setup-assistant';
 import { promoteCandidatesToActions } from '../domain/promotion';
 import { getSystemSettings } from '../domain/setting';
+import { ensureSystemAgents } from '../domain/system-agents';
 import { executePendingOfflineActions } from '../domain/optimization-report-executor';
 import { shortId } from '../../shared/utils';
 import {
@@ -65,6 +66,11 @@ export async function runDailyOptimizationReport(
     });
   }
   return { reportId: report.id, promoted };
+}
+
+/** 指挥系统批次1：晨醒（每日运营优化报告）开关，默认开。 */
+export function morningReportsEnabled(db: DB): boolean {
+  return getSystemSettings(db).morningReportEnabled;
 }
 
 /**
@@ -192,6 +198,14 @@ export class ProjectRuntimeCoordinator {
       let pumpedTasks = 0;
 
       for (const company of listCompanies(this.db)) {
+        // 指挥系统 W0：online 公司幂等确保系统隐形岗（调度中心/评审中心）
+        if (company.state === 'online') {
+          try {
+            ensureSystemAgents(this.db, company.id);
+          } catch (error) {
+            log.warn('ensure system agents failed', { companyId: company.id, error: error instanceof Error ? error.message : String(error) });
+          }
+        }
         if (company.state !== 'online') continue;
         settleDrainingAgents(this.db, company.id);
         for (const project of listProjects(this.db, company.id)) {
@@ -483,6 +497,8 @@ export class ProjectRuntimeCoordinator {
   /** 阶段五任务 5.1：为 online 公司异步生成运营优化报告（LLM 调用不阻塞 tick）。
    *  自然日语义：dbToday 幂等门是唯一守卫——"今天已生成"就跳过，进程重启/短开都能正确补做当天。 */
   private scheduleOptimizationReports(): void {
+    // 指挥系统批次1：晨醒开关（默认开，保持既有行为；用户可在设置关闭）
+    if (!morningReportsEnabled(this.db)) return;
     for (const company of listCompanies(this.db)) {
       if (company.state !== 'online') continue;
       // 今天已生成过的不重复

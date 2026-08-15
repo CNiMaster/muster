@@ -204,7 +204,7 @@ describe('engine → worktree → publish wiring', () => {
     expect(runtime).toBeDefined();
     expect(readFileSync(path.join(runtime!.worktree_path, 'drafts/ch01.md'), 'utf8')).toBe('未完成草稿\n');
 
-    answerClarification(db, task.id, '主角叫李墨');
+    answerClarification(db, task.id, { answer: '主角叫李墨' });
     await engine.pumpThread(thread.id);
 
     expect(getTask(db, task.id).state).toBe('completed');

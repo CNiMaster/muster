@@ -21,16 +21,41 @@ const artifactSchema = z.object({
   operation: z.enum(['create', 'update', 'delete']),
 });
 
+const swarmPlanSchema = z.object({
+  goal: z.string(),
+  workers: z.array(z.object({ title: z.string(), brief: z.string() })).min(1),
+});
+
+const questionOptionSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  detail: z.string().optional(),
+  pros: z.string().optional(),
+  cons: z.string().optional(),
+});
+
+const debateVerdictSchema = z.object({
+  debateId: z.string().optional(),
+  recommendedOptionId: z.string().optional(),
+  confidence: z.number().min(0).max(1),
+  rationale: z.string(),
+  flaws: z.array(z.object({ optionId: z.string(), flaw: z.string() })).default([]),
+});
+
 export const agentRunResultSchema = z.object({
   outcome: z.enum(['completed', 'waiting_input', 'waiting_dependency', 'blocked']),
   summary: z.string(),
   question: z.string().optional(),
+  questionOptions: z.array(questionOptionSchema).optional(),
+  debateVerdict: debateVerdictSchema.optional(),
   outboundTasks: z.array(outboundTaskSchema).default([]),
   artifacts: z.array(artifactSchema).default([]),
   checkpoint: z.string().optional(),
   workflowNextEdgeLabel: z.string().optional(),
   /** 双 Loop P2：agent 对每条验收标准的自评（对照 acceptance_criteria 的 id），供验收段半自动判定。 */
   acceptanceMet: z.array(z.object({ id: z.string(), met: z.boolean() })).optional(),
+  /** 指挥系统 W3：蜂群计划（仅调度中心系统岗被兑现）。 */
+  swarmPlan: swarmPlanSchema.optional(),
 });
 
 /** JSON Schema 描述，传给模型的 structured output 约束。 */
@@ -78,6 +103,56 @@ export const AGENT_RESULT_JSON_SCHEMA = {
         },
         required: ['id', 'met'],
       },
+    },
+    swarmPlan: {
+      type: 'object',
+      properties: {
+        goal: { type: 'string' },
+        workers: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              title: { type: 'string' },
+              brief: { type: 'string' },
+            },
+            required: ['title', 'brief'],
+          },
+        },
+      },
+      required: ['goal', 'workers'],
+    },
+    questionOptions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          label: { type: 'string' },
+          detail: { type: 'string' },
+          pros: { type: 'string' },
+          cons: { type: 'string' },
+        },
+        required: ['id', 'label'],
+      },
+    },
+    debateVerdict: {
+      type: 'object',
+      properties: {
+        debateId: { type: 'string' },
+        recommendedOptionId: { type: 'string' },
+        confidence: { type: 'number' },
+        rationale: { type: 'string' },
+        flaws: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: { optionId: { type: 'string' }, flaw: { type: 'string' } },
+            required: ['optionId', 'flaw'],
+          },
+        },
+      },
+      required: ['confidence', 'rationale', 'flaws'],
     },
   },
   required: ['outcome', 'summary'],

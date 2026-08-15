@@ -6,7 +6,8 @@ import { test, expect } from '@playwright/test';
 
 test('首页加载且健康', async ({ page }) => {
   await page.goto('/');
-  await expect(page.locator('h1')).toContainText('你的公司');
+  // 首次运行向导会异步挂载第二个 h1——裸 locator('h1') 撞 strict mode，用名称定位 hero 标题
+  await expect(page.getByRole('heading', { name: /你的公司/ })).toContainText('你的公司');
   await expect(page.getByText('公司现场')).toBeVisible();
   await expect(page.getByText(/本地服务 运行正常/)).toBeVisible();
 });

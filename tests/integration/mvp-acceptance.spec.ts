@@ -94,7 +94,7 @@ describe('MVP acceptance: 一个小说阶段完整闭环', () => {
     await engine.pumpThread(writerThread.id);
     expect(listTasks(db, project.id).find((t) => t.id === chapterTask.id)!.state).toBe('waiting_input');
     // 派发者（用户）回答
-    answerClarification(db, chapterTask.id, '主角叫李墨');
+    answerClarification(db, chapterTask.id, { answer: '主角叫李墨' });
     // 第二次：completed
     await engine.pumpThread(writerThread.id);
     const finalChapter = listTasks(db, project.id).find((t) => t.id === chapterTask.id)!;
