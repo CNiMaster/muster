@@ -27,9 +27,13 @@ export interface ConversationPanelProps {
   recipientAgentId?: string;
   /** 对话生成的工作单必须归入这个用户项目任务。 */
   projectTaskId?: string;
+  /** 是否隐藏内部输入框（使用外部 Composer 时） */
+  hideInput?: boolean;
+  /** 撑满 flex 列父容器（默认固定 520px 高兜底块级父容器） */
+  fill?: boolean;
 }
 
-export function ConversationPanel({ scope, scopeId, companyId, title, recipientAgentId, projectTaskId }: ConversationPanelProps): React.ReactElement {
+export function ConversationPanel({ scope, scopeId, companyId, title, recipientAgentId, projectTaskId, hideInput = false, fill = false }: ConversationPanelProps): React.ReactElement {
   const { data: messages, isLoading } = useMessages(scope, scopeId, recipientAgentId);
   const { data: agents } = useAgents(companyId);
   const post = usePostMessage(scope, recipientAgentId);
@@ -39,7 +43,12 @@ export function ConversationPanel({ scope, scopeId, companyId, title, recipientA
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+    if (!scrollRef.current) return;
+    if (typeof scrollRef.current.scrollTo === 'function') {
+      scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+    } else {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
   }, [messages]);
 
   const send = (): void => {
@@ -77,50 +86,62 @@ export function ConversationPanel({ scope, scopeId, companyId, title, recipientA
   const mentionCandidates = recipientAgentId ? [] : (agents ?? []).filter((a) => a.name.includes(mentionFilter));
 
   return (
-    <div className="mu-conv">
+    <div className={`mu-conv${fill ? ' is-fill' : ''}`}>
       {title && <div className="mu-conv-head">{title}</div>}
       <div className="mu-conv-stream" ref={scrollRef}>
         {isLoading && <div className="muted" style={{ padding: 16 }}>加载中…</div>}
         {messages && messages.length === 0 && (
-          <EmptyState
-            icon={Icons.empty}
-            title="还没有对话"
-            hint={recipient ? `在这里了解 ${recipient.name}、交代工作或继续追问。` : `向第一负责人发消息，开始协${scope === 'company' ? '调工作台' : '作项目'}。`}
-          />
+          <div style={{ padding: '32px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', gap: '12px', minHeight: '240px' }}>
+            <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'var(--accent-subtle)', color: 'var(--accent)', display: 'grid', placeItems: 'center', fontSize: '20px' }}>
+              ✨
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxWidth: '480px' }}>
+              <strong style={{ fontSize: '15px', color: 'var(--fg)', letterSpacing: '-0.01em' }}>
+                {recipient ? `正在与 ${recipient.name} (${recipient.role}) 对话` : '与项目第一负责人协作'}
+              </strong>
+              <p className="muted" style={{ fontSize: '13px', margin: 0, lineHeight: 1.5 }}>
+                {recipient
+                  ? `向 ${recipient.name} 交代具体工作、追问执行细节或下达新任务。`
+                  : '在下方直接交代目标或下达指令，系统将自动理解意图、拆解任务并调度智能体团队执行。'}
+              </p>
+            </div>
+          </div>
         )}
         {messages?.map((m) => (
           <MessageBubble key={m.id} message={m} agents={agents ?? []} />
         ))}
       </div>
-      <div className="mu-conv-input-wrap">
-        {showMentions && mentionCandidates.length > 0 && (
-          <div className="mu-conv-mentions">
-            {mentionCandidates.slice(0, 5).map((a) => (
-              <button key={a.id} className="mu-conv-mention-item" onClick={() => insertMention(a.name, a.id)}>
-                <strong>{a.name}</strong> <span className="muted">[{a.role}]</span>
-              </button>
-            ))}
+      {!hideInput && (
+        <div className="mu-conv-input-wrap">
+          {showMentions && mentionCandidates.length > 0 && (
+            <div className="mu-conv-mentions">
+              {mentionCandidates.slice(0, 5).map((a) => (
+                <button key={a.id} className="mu-conv-mention-item" onClick={() => insertMention(a.name, a.id)}>
+                  <strong>{a.name}</strong> <span className="muted">[{a.role}]</span>
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="mu-conv-input-row">
+            <textarea
+              className="mu-input mu-textarea"
+              value={text}
+              onChange={(e) => onChange(e.target.value)}
+              placeholder={recipient ? `发消息给 ${recipient.name}…  Enter 发送，Shift+Enter 换行` : '发消息给第一负责人…  Enter 发送，Shift+Enter 换行，@ 提及智能体'}
+              rows={2}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  send();
+                }
+              }}
+            />
+            <Button onClick={send} disabled={!text.trim()} loading={post.isPending}>
+              发送
+            </Button>
           </div>
-        )}
-        <div className="mu-conv-input-row">
-          <textarea
-            className="mu-input mu-textarea"
-            value={text}
-            onChange={(e) => onChange(e.target.value)}
-            placeholder={recipient ? `发消息给 ${recipient.name}…  Enter 发送，Shift+Enter 换行` : '发消息给第一负责人…  Enter 发送，Shift+Enter 换行，@ 提及智能体'}
-            rows={2}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                send();
-              }
-            }}
-          />
-          <Button onClick={send} disabled={!text.trim()} loading={post.isPending}>
-            发送
-          </Button>
         </div>
-      </div>
+      )}
     </div>
   );
 }

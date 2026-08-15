@@ -1,77 +1,262 @@
+import { useEffect, useState } from 'react';
 import type React from 'react';
-import type { Agent } from '../../api/types';
+import type { Agent, Task } from '../../api/types';
 import type { ProjectTaskDTO } from '../../hooks/queries';
-import { Button } from '../Button';
-import { EmptyState, Icons } from '../EmptyState';
-import { Field, Input, Select, Textarea } from '../Form';
-import { StateBadge } from '../Badge';
-import { ProjectLaunchGate } from './ProjectLaunchGate';
-import type { ProjectLaunchBrief } from '../../../shared/project-launch';
+import { useTask, useProjectTaskAction, useTaskAction, usePostMessage } from '../../hooks/queries';
+import { Button, toast } from '../Button';
+import { StateBadge, Badge } from '../Badge';
+import { ConversationPanel } from '../ConversationPanel';
+import { ExecutionTraceCard } from '../workbench/ExecutionTraceCard';
+import { PromptComposer } from '../workbench/PromptComposer';
+import { Input, Textarea, Field } from '../Form';
 
-export function ProjectTaskWorkspace({ selectedTask, tasks, agents, draft, creating, onDraftChange, onCreate, onSelect, onComplete, onArchive, workOrder, onWorkOrderChange, onPublishWorkOrder, discoveringLaunch, confirmingLaunch, onDiscoverLaunch, onConfirmLaunch }: {
+export function ProjectTaskWorkspace({
+  projectId,
+  companyId,
+  selectedTask,
+  tasks = [],
+  agents = [],
+  onSelect,
+  onCreateTask,
+  onPublishWorkOrder,
+  publishingWorkOrder = false,
+  newTaskSignal = 0,
+}: {
+  projectId: string;
+  companyId?: string;
   selectedTask?: ProjectTaskDTO;
-  tasks: ProjectTaskDTO[];
-  agents: Agent[];
-  draft: { title: string; brief: string };
-  creating: boolean;
-  onDraftChange: (draft: { title: string; brief: string }) => void;
-  onCreate: () => void;
+  tasks?: Task[];
+  projectTasks?: ProjectTaskDTO[];
+  agents?: Agent[];
   onSelect: (id: string) => void;
-  onComplete: (id: string) => void;
-  onArchive: (id: string) => void;
-  workOrder: { title: string; assigneeId: string };
-  onWorkOrderChange: (workOrder: { title: string; assigneeId: string }) => void;
-  onPublishWorkOrder: () => void;
-  discoveringLaunch: boolean;
-  confirmingLaunch: boolean;
-  onDiscoverLaunch: (id: string, brief: ProjectLaunchBrief) => void;
-  onConfirmLaunch: (id: string, brief: ProjectLaunchBrief) => void;
+  onCreateTask?: (title: string, brief?: string) => void;
+  onPublishWorkOrder?: (title: string, assigneeId?: string) => void;
+  publishingWorkOrder?: boolean;
+  /** 外部「＋ 新建任务」触发信号（自增计数），驱动创建卡展开 */
+  newTaskSignal?: number;
 }): React.ReactElement {
-  const hasActiveTask = tasks.some((item) => item.state === 'active');
-  const history = tasks.filter((item) => item.state !== 'active');
+  void onSelect;
 
-  return <div id="project-tasks" className="project-task-workspace">
-    {selectedTask ? <section className="project-task-stage" aria-labelledby="selected-project-task-title">
-      <header className="task-stage-header">
-        <div>
-          <span className="task-stage-kicker">项目任务 #{selectedTask.seq}</span>
-          <h1 id="selected-project-task-title">{selectedTask.title}</h1>
+  const [newTitle, setNewTitle] = useState('');
+  const [newBrief, setNewBrief] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [selectedAgentId, setSelectedAgentId] = useState<string>('');
+  const [currentModel, setCurrentModel] = useState<string>('claude-3-7-sonnet');
+  const [thinkingDepth, setThinkingDepth] = useState<'off' | 'low' | 'med' | 'high'>('high');
+
+  useEffect(() => {
+    if (newTaskSignal > 0) setCreating(true);
+  }, [newTaskSignal]);
+
+  const projectTaskAction = useProjectTaskAction();
+  const directTaskAction = useTaskAction();
+  const postMessage = usePostMessage('project', selectedAgentId || undefined);
+
+  // 获取当前正在运行、等待或暂停的 Task 执行记录
+  const activeRuntimeTask = tasks.find((t) => t.state === 'running' || t.state === 'claimed' || t.state === 'waiting_input' || t.state === 'paused') ?? tasks[0];
+  const { data: latestTask } = useTask(activeRuntimeTask?.id);
+
+  const isTaskWaitingOrPaused = activeRuntimeTask?.state === 'waiting_input' || activeRuntimeTask?.state === 'paused';
+
+  const handleResumeActiveTask = (): void => {
+    if (!activeRuntimeTask) return;
+    if (activeRuntimeTask.state === 'waiting_input') {
+      directTaskAction.mutate(
+        { taskId: activeRuntimeTask.id, action: 'clarify', payload: { answer: '确认，请继续执行' } },
+        {
+          onSuccess: () => toast('success', '已发送继续指令，智能体已恢复执行'),
+          onError: (e) => toast('error', (e as Error).message),
+        },
+      );
+    } else if (activeRuntimeTask.state === 'paused') {
+      directTaskAction.mutate(
+        { taskId: activeRuntimeTask.id, action: 'resume' },
+        {
+          onSuccess: () => toast('success', '任务已安全恢复运行'),
+          onError: (e) => toast('error', (e as Error).message),
+        },
+      );
+    }
+  };
+
+  const handleSendPrompt = (content: string, options?: { agentId?: string; model?: string; thinking?: string }): void => {
+    if (!content.trim()) return;
+
+    // 如果当前有正在等待补充输入（waiting_input）的任务，输入任何文字均视为答复并自动接续执行
+    if (activeRuntimeTask?.state === 'waiting_input') {
+      directTaskAction.mutate(
+        { taskId: activeRuntimeTask.id, action: 'clarify', payload: { answer: content } },
+        {
+          onSuccess: () => toast('success', '答复已送达，智能体已继续推进任务'),
+          onError: (e) => toast('error', (e as Error).message),
+        },
+      );
+    }
+
+    // 如果有选中的任务，直接作为工作单派发或在对话中推进
+    if (selectedTask) {
+      if (onPublishWorkOrder) {
+        onPublishWorkOrder(content, options?.agentId || selectedAgentId || undefined);
+      } else {
+        postMessage.mutate(
+          { scopeId: projectId, content, mentions: options?.agentId ? [options.agentId] : [], projectTaskId: selectedTask.id },
+          {
+            onSuccess: () => toast('success', '指令已发送给智能体团队'),
+            onError: (e) => toast('error', (e as Error).message),
+          },
+        );
+      }
+    } else {
+      // 若尚未建立任务，直接根据 Prompt 快速起草任务
+      if (onCreateTask) {
+        onCreateTask(content);
+      }
+    }
+  };
+
+  const handleCreateNew = (): void => {
+    if (!newTitle.trim()) return;
+    onCreateTask?.(newTitle.trim(), newBrief.trim() || undefined);
+    setNewTitle('');
+    setNewBrief('');
+    setCreating(false);
+  };
+
+  return (
+    <div className="project-task-workspace-stream">
+      {/* 顶部极简 Task 标题条 */}
+      {selectedTask ? (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 12px', background: 'var(--bg-elev)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)', minWidth: 0, gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
+            <span className="task-stage-kicker" style={{ margin: 0, fontSize: '12px', flexShrink: 0 }}>#{selectedTask.seq}</span>
+            <strong style={{ fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{selectedTask.title}</strong>
+            <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <StateBadge domain="project-task" state={selectedTask.state} />
+              {activeRuntimeTask?.state === 'running' && (
+                <Badge tone="ok" dot>运行中</Badge>
+              )}
+              {activeRuntimeTask?.state === 'waiting_input' && (
+                <Badge tone="warn" dot>等待答复</Badge>
+              )}
+              {activeRuntimeTask?.state === 'paused' && (
+                <Badge tone="warn">已暂停</Badge>
+              )}
+              {activeRuntimeTask?.state === 'blocked' && (
+                <Badge tone="err" dot>阻塞</Badge>
+              )}
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexShrink: 0 }}>
+            {/* 如果处于暂停或等待态，顶部直接常驻【▶ 继续执行】按钮 */}
+            {isTaskWaitingOrPaused && (
+              <button
+                type="button"
+                className="mu-composer-pill is-highlight"
+                style={{ background: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)', fontWeight: 700, whiteSpace: 'nowrap' }}
+                onClick={handleResumeActiveTask}
+                disabled={directTaskAction.isPending}
+              >
+                <span>▶ 继续执行</span>
+              </button>
+            )}
+            {selectedTask.state === 'active' && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => projectTaskAction.mutate({ projectId, id: selectedTask.id, action: 'complete' }, { onSuccess: () => toast('success', '已完成') })}
+              >
+                完成
+              </Button>
+            )}
+            <button
+              type="button"
+              className="mu-composer-pill"
+              onClick={() => setCreating(true)}
+              style={{ fontSize: '12px', whiteSpace: 'nowrap' }}
+            >
+              ＋ 新任务
+            </button>
+          </div>
         </div>
-        <div className="task-stage-status"><StateBadge domain="project-task" state={selectedTask.state} />
-          {selectedTask.state === 'active' && <details className="task-stage-menu">
-            <summary aria-label="项目任务操作">•••</summary>
-            <div><Button size="sm" variant="ghost" onClick={() => onComplete(selectedTask.id)}>完成任务</Button><Button size="sm" variant="ghost" onClick={() => onArchive(selectedTask.id)}>归档任务</Button></div>
-          </details>}
+      ) : (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'var(--bg-elev)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)', minWidth: 0 }}>
+          <span style={{ fontSize: '13px', color: 'var(--fg-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>当前处于全局协作对话 · 发送指令即可开工</span>
+          <Button size="sm" variant="primary" style={{ flexShrink: 0 }} onClick={() => setCreating(true)}>＋ 新建任务</Button>
         </div>
-      </header>
-      {selectedTask.brief && <p className="task-stage-brief">{selectedTask.brief}</p>}
+      )}
 
-      <ProjectLaunchGate key={selectedTask.id} task={selectedTask} discovering={discoveringLaunch} confirming={confirmingLaunch} onDiscover={(brief) => onDiscoverLaunch(selectedTask.id, brief)} onConfirm={(brief) => onConfirmLaunch(selectedTask.id, brief)} />
-
-      {selectedTask.launchState === 'confirmed' ? <div id="work-order-composer" className="work-order-composer">
-        <div className="work-order-composer-heading"><div><span>智能体工作单</span><h2>交给团队完成</h2></div><small>{selectedTask.state === 'archived' ? '只读' : '当前项目任务内持续复用智能体会话'}</small></div>
-        <Field label="工作内容"><Textarea rows={3} value={workOrder.title} disabled={selectedTask.state === 'archived'} onChange={(event) => onWorkOrderChange({ ...workOrder, title: event.target.value })} placeholder="例如：检查审批桥断线后的恢复流程，并补齐回归测试" /></Field>
-        <div className="work-order-composer-footer">
-          <Field label="负责人"><Select value={workOrder.assigneeId} disabled={selectedTask.state === 'archived'} onChange={(event) => onWorkOrderChange({ ...workOrder, assigneeId: event.target.value })}><option value="">自动选择合适智能体</option>{agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name} · {agent.role}</option>)}</Select></Field>
-          <Button className="work-order-submit" disabled={selectedTask.state === 'archived' || !workOrder.title.trim()} onClick={onPublishWorkOrder}>派发工作单</Button>
+      {/* 新建任务轻量卡片（弹开态） */}
+      {creating && (
+        <div style={{ padding: '12px', background: 'var(--bg-elev)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--accent)', boxShadow: 'var(--shadow-2)' }}>
+          <div className="form-stack">
+            <Field label="任务目标" required>
+              <Input
+                value={newTitle}
+                onChange={(e) => setNewTitle(e.target.value)}
+                placeholder="例如：重构前端三栏工作台布局"
+                autoFocus
+              />
+            </Field>
+            <Field label="详细说明（可选）">
+              <Textarea
+                rows={2}
+                value={newBrief}
+                onChange={(e) => setNewBrief(e.target.value)}
+                placeholder="验收标准、约束条件等…"
+              />
+            </Field>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <Button variant="ghost" size="sm" onClick={() => setCreating(false)}>取消</Button>
+              <Button size="sm" disabled={!newTitle.trim()} onClick={handleCreateNew}>创建并进入</Button>
+            </div>
+          </div>
         </div>
-      </div> : <div id="work-order-composer" className="work-order-composer work-order-launch-blocked"><strong>制作尚未开始</strong><p>完成上方的需求、能力和（如需要）视觉参考确认后，才能派发智能体工作单。</p></div>}
-    </section> : <section className="project-task-stage project-task-empty"><EmptyState icon={Icons.empty} title="还没有项目任务" hint="先创建一个目标，Muster 才能为智能体建立独立工作上下文。" /></section>}
+      )}
 
-    <div className="project-task-secondary">
-      <details className="task-context-create" open={!hasActiveTask}>
-        <summary><span>＋ 新建项目任务</span><small>开始一段新的工作上下文</small></summary>
-        <div className="form-stack">
-          <Field label="任务标题"><Input value={draft.title} onChange={(event) => onDraftChange({ ...draft, title: event.target.value })} placeholder="例如：重构执行器审批系统" /></Field>
-          <Field label="目标说明"><Textarea rows={3} value={draft.brief} onChange={(event) => onDraftChange({ ...draft, brief: event.target.value })} placeholder="说明目标、范围和验收标准" /></Field>
-          <Button disabled={!draft.title.trim()} loading={creating} onClick={onCreate}>创建并进入任务</Button>
+      {/* 中间核心：对话与内联执行流 */}
+      <div style={{ flex: 1, minHeight: '380px', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', overflowY: 'auto' }}>
+        {/* 1. 执行过程追踪（如果存在正在跑/等待的 Task） */}
+        {latestTask && (
+          <div style={{ marginBottom: '8px' }}>
+            <ExecutionTraceCard task={latestTask} />
+          </div>
+        )}
+
+        {/* 2. 项目群聊与智能体对话流 */}
+        <div style={{ flex: 1, background: 'var(--bg-elev)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-subtle)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <ConversationPanel
+            scope="project"
+            scopeId={projectId}
+            companyId={companyId ?? ''}
+            projectTaskId={selectedTask?.id}
+            title={selectedTask ? `项目任务 #${selectedTask.seq} 对话现场` : '项目协作对话现场'}
+            recipientAgentId={selectedAgentId || undefined}
+            hideInput
+            fill
+          />
         </div>
-      </details>
+      </div>
 
-      {history.length > 0 && <details className="task-context-history">
-        <summary><span>历史任务</span><small>{history.length} 个已完成或归档</small></summary>
-        <ul className="entity-list">{history.map((item) => <li key={item.id}><button className="link-button" onClick={() => onSelect(item.id)}>#{item.seq} {item.title}</button><StateBadge domain="project-task" state={item.state} /></li>)}</ul>
-      </details>}
+      {/* 底部常驻自适应复合输入框 */}
+      <PromptComposer
+        placeholder={
+          activeRuntimeTask?.state === 'waiting_input'
+            ? '智能体正在等待你的答复，直接输入即可继续执行…'
+            : selectedTask
+              ? `在任务 #${selectedTask.seq} 中给智能体下达指令…`
+              : '直接输入需求，或向智能体分配任务…'
+        }
+        agents={agents}
+        selectedAgentId={selectedAgentId}
+        onSelectAgent={setSelectedAgentId}
+        currentModel={currentModel}
+        onSelectModel={setCurrentModel}
+        thinkingDepth={thinkingDepth}
+        onToggleThinking={setThinkingDepth}
+        loading={publishingWorkOrder || postMessage.isPending || directTaskAction.isPending}
+        onSend={handleSendPrompt}
+        onAttachFile={() => toast('info', '可直接将文件拖拽到项目素材区或输入框')}
+      />
     </div>
-  </div>;
+  );
 }

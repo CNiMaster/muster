@@ -96,7 +96,7 @@ export function getSystemSettings(db: DB): SystemSettings {
     egressTimeoutMs: Number(getSetting(db, 'egress_timeout_ms', '30000')),
     theme: getSetting(db, 'theme', 'system') as SystemSettings['theme'],
     fontFamily: getSetting(db, 'font_family', 'system-ui'),
-    fontSize: Number(getSetting(db, 'font_size', '14')),
+    fontSize: Number(getSetting(db, 'font_size', '15')),
     locale: getSetting(db, 'locale', 'zh') as SystemSettings['locale'],
     codeTheme: getSetting(db, 'code_theme', 'default'),
     autonomousReflectionEnabled: getSetting(db, 'autonomous_reflection_enabled', 'false') === 'true',

@@ -63,7 +63,7 @@ describe('SettingsPage hook 顺序回归', () => {
       openaiBaseURL: 'https://api.openai.com/v1', openaiModel: 'gpt-4o', geminiModel: 'gemini-2.0-flash',
     });
     expect(() => renderPage()).not.toThrow();
-    expect(screen.getByText('常用设置')).toBeInTheDocument();
+    expect(screen.getByText('常规执行环境')).toBeInTheDocument();
   });
 
   it('同一组件实例从 loading 切到 loaded 不抛 hook 数量不一致异常', () => {

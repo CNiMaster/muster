@@ -43,7 +43,7 @@ describe('workbench preferences', () => {
   });
 
   it('keeps only one overlay pane open below the desktop breakpoint', () => {
-    const openBoth = { ...DEFAULT_WORKBENCH_PREFERENCES };
+    const openBoth = { ...DEFAULT_WORKBENCH_PREFERENCES, leftOpen: true, rightOpen: true };
     expect(toggleWorkbenchPane(openBoth, 'right', 1000)).toMatchObject({ leftOpen: true, rightOpen: false });
     expect(toggleWorkbenchPane({ ...openBoth, rightOpen: false }, 'right', 1000)).toMatchObject({ leftOpen: false, rightOpen: true });
     expect(toggleWorkbenchPane({ ...openBoth, leftOpen: false }, 'left', 390)).toMatchObject({ leftOpen: true, rightOpen: false });

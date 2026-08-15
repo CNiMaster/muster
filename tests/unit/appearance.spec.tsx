@@ -40,7 +40,7 @@ describe('applyAppearance（DOM 应用）', () => {
     expect(root.dataset.theme).toBe('dark');
     expect(root.lang).toBe('en');
     expect(root.style.getPropertyValue('--font-sans')).toBe('Menlo');
-    expect(root.style.getPropertyValue('--text-base')).toBe('15px');
+    expect(root.style.getPropertyValue('--app-font-size')).toBe('15px');
     expect(root.dataset.codeTheme).toBe('dark');
   });
 
@@ -49,6 +49,6 @@ describe('applyAppearance（DOM 应用）', () => {
     applyAppearance({ theme: 'dark', fontFamily: 'Menlo', fontSize: 15 }, false);
     applyAppearance({ theme: 'dark' }, false);
     expect(root.style.getPropertyValue('--font-sans')).toBe('');
-    expect(root.style.getPropertyValue('--text-base')).toBe('');
+    expect(root.style.getPropertyValue('--app-font-size')).toBe('');
   });
 });

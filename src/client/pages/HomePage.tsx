@@ -1,264 +1,173 @@
-import type React from 'react';
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { useCompanies, useCompanyCockpit, useProject, useBusinessReviews, useQuickProject } from '../hooks/queries';
-import { Badge, companyStateTone, stateLabel } from '../components/Badge';
-import { Button, toast } from '../components/Button';
-import { EmptyState, Icons } from '../components/EmptyState';
-import { OnboardingGuide } from '../components/OnboardingGuide';
-import { FirstRunWizard } from '../components/FirstRunWizard';
-import { CardSkeleton } from '../components/Skeleton';
+import type React from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useCompanies, useProjects, useProject, useQuickProject } from '../hooks/queries';
 import { readRecentProjectId, writeRecentProjectId } from '../hooks/useRecentProject';
-import type { Company } from '../api/types';
+import { PromptComposer } from '../components/workbench/PromptComposer';
+import { toast } from '../components/Button';
 
-interface HealthResp {
-  status: string;
-  version: string;
-  time: string;
-}
-
-const COMPANY_KIND_LABELS: Record<string, string> = {
-  general: '通用团队',
-  software: '软件研发',
-  content: '内容创作',
-  novel: '长篇小说',
-  marketing: '品牌营销',
-  consulting: '行业咨询',
-};
-
-const COMPANY_KIND_MARKS: Record<string, string> = {
-  general: '/images/tmpl_general.jpg',
-  software: '/images/tmpl_software.jpg',
-  content: '/images/tmpl_content.jpg',
-  novel: '/images/tmpl_novel.jpg',
-  marketing: '/images/tmpl_marketing.jpg',
-  consulting: '/images/tmpl_consulting.jpg',
-};
-
-const COMPANY_KIND_DESCRIPTIONS: Record<string, string> = {
-  general: '跨职能协作与项目交付',
-  software: '产品、研发与质量协同',
-  content: '策划、创作与内容发布',
-  novel: '长篇故事与连续性创作',
-  marketing: '调研、策划、文案与公关传播',
-  consulting: '课题研究、数据分析与研报咨询',
-};
+const SUGGESTIONS = [
+  { icon: '💻', title: '全栈应用研发', prompt: '帮我设计并开发一个现代全栈 Web 应用，包含前端三栏交互和后端 REST 接口。' },
+  { icon: '✍️', title: '小说大纲与正文', prompt: '我想构思一部赛博朋克科幻悬疑小说，请帮我设计核心世界观、主角人设与前三章大纲。' },
+  { icon: '⚡', title: '代码重构与测试', prompt: '对当前代码库进行架构清理，优化组件层级结构并补全关键单元测试。' },
+  { icon: '📊', title: '行业研报与方案', prompt: '针对当前 AI 智能体协作领域的最新技术路线，撰写一份深度调研与竞品分析报告。' },
+];
 
 export function HomePage(): React.ReactElement {
   const navigate = useNavigate();
-  const { data: companies, isLoading } = useCompanies();
-  const activeCompanies = (companies ?? []).filter((c) => !c.archivedAt);
-  const quickProject = useQuickProject();
-  const [quickOpen, setQuickOpen] = useState(false);
-  const [quickName, setQuickName] = useState('');
-  const [quickDesc, setQuickDesc] = useState('');
-  const { data: pendingReviews = [] } = useBusinessReviews({ status: 'pending' });
-  const pendingCount = pendingReviews.length;
+  const { data: companies, isLoading: companiesLoading } = useCompanies();
+  const firstCompany = companies?.find((c) => !c.archivedAt);
+  const { data: projects, isLoading: projectsLoading } = useProjects(firstCompany?.id);
+
   const [recentProjectId, setRecentProjectId] = useState<string | null>(() =>
     typeof window === 'undefined' ? null : readRecentProjectId(window.localStorage));
   const recentProject = useProject(recentProjectId ?? undefined);
-  const [health, setHealth] = useState<HealthResp | null>(null);
+  const quickProject = useQuickProject();
 
-  useEffect(() => {
-    fetch('/api/health')
-      .then((r) => r.json())
-      .then(setHealth)
-      .catch(() => {});
-  }, []);
+  const [currentModel, setCurrentModel] = useState<string>('claude-3-7-sonnet');
+  const [thinkingDepth, setThinkingDepth] = useState<'off' | 'low' | 'med' | 'high'>('high');
 
+  // 1. 如果有最近打开的项目且项目有效，直接进入该项目主工作台
   useEffect(() => {
-    if (!recentProject.isError || !recentProjectId) return;
-    writeRecentProjectId(window.localStorage, null);
-    setRecentProjectId(null);
+    if (recentProject.data?.id) {
+      navigate(`/projects/${recentProject.data.id}`, { replace: true });
+    }
+  }, [recentProject.data?.id, navigate]);
+
+  // 2. 如果记录的最近项目失效，清理记录
+  useEffect(() => {
+    if (recentProject.isError && recentProjectId) {
+      writeRecentProjectId(window.localStorage, null);
+      setRecentProjectId(null);
+    }
   }, [recentProject.isError, recentProjectId]);
 
-  const previewCompanies = activeCompanies.slice(0, 4);
-  const archivedCount = (companies ?? []).length - activeCompanies.length;
-  const onlineCount = activeCompanies.filter((company) => company.state === 'online').length;
-  const attentionCount = activeCompanies.filter((company) => company.state === 'review_paused' || company.state === 'draining').length;
+  // 3. 如果没有最近项目记录，但系统内已有项目，自动进入第一个活跃项目的主工作台
+  useEffect(() => {
+    if (recentProjectId || companiesLoading || projectsLoading || !projects || projects.length === 0) return;
+    const activeProject = projects.find((p) => p.state === 'active') ?? projects[0];
+    if (activeProject?.id) {
+      writeRecentProjectId(window.localStorage, activeProject.id);
+      navigate(`/projects/${activeProject.id}`, { replace: true });
+    }
+  }, [recentProjectId, companiesLoading, projectsLoading, projects, navigate]);
 
-  return (
-    <div className="home home-command-center">
-      <header className="home-hero">
-        <div className="home-hero-copy">
-          <span className="home-kicker">MUSTER · WORK DESK</span>
-          <h1>我有件事要办，<br /><em>现在开始。</em></h1>
-          <p>从要做的事开始：系统自动安排工作台与合适的智能体，组织由活决定。</p>
+  const handleStartWithPrompt = (promptText: string): void => {
+    if (!promptText.trim()) return;
+    const name = promptText.trim().slice(0, 30);
+    quickProject.mutate(
+      { name, description: promptText.trim() },
+      {
+        onSuccess: (p) => {
+          writeRecentProjectId(window.localStorage, p.project.id);
+          navigate(`/projects/${p.project.id}`, { replace: true });
+          toast('success', '已理解目标，负责人与团队已就位');
+        },
+        onError: (err) => {
+          toast('error', (err as Error).message || '创建项目失败');
+        },
+      },
+    );
+  };
+
+  // 若正在加载或自动跳转中，显示极简微光
+  if (companiesLoading || projectsLoading || recentProject.isLoading) {
+    return (
+      <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg)' }}>
+        <div style={{ fontSize: '13px', color: 'var(--fg-subtle)', letterSpacing: '0.04em' }}>
+          正在载入工作台…
         </div>
-        <div className="home-hero-side">
-          {/* 蓝图组织批次4c：项目优先入口——主 CTA 是"办事"，不是"选工作台"。 */}
-          <button
-            type="button"
-            className="home-create-company"
-            onClick={() => setQuickOpen(true)}
-          >
-            <span className="home-create-icon" aria-hidden="true">＋</span>
-            <span><strong>新建项目</strong><small>不用选工作台，直接开工</small></span>
-            <span aria-hidden="true">↗</span>
-          </button>
-          {quickOpen && (
-            <div style={{ display: 'grid', gap: 8, padding: 12, border: '1px solid var(--mu-border)', borderRadius: 10, background: 'var(--mu-surface)' }}>
-              <input
-                className="mu-input"
-                placeholder="要做的事（项目名）"
-                value={quickName}
-                onChange={(e) => setQuickName((e.target as HTMLInputElement).value)}
-              />
-              <textarea
-                className="mu-input"
-                placeholder="简单描述目标（可留空，进项目后再补）"
-                value={quickDesc}
-                onChange={(e) => setQuickDesc((e.target as HTMLTextAreaElement).value)}
-                rows={2}
-              />
-              <div style={{ display: 'flex', gap: 8 }}>
-                <Button
-                  loading={quickProject.isPending}
-                  disabled={quickName.trim().length === 0}
-                  onClick={() => {
-                    quickProject.mutate(
-                      { name: quickName.trim(), description: quickDesc.trim() || undefined },
-                      {
-                        onSuccess: (result) => {
-                          toast('success', result.createdWorkspace ? '已创建默认工作台，项目开工' : '项目已创建');
-                          navigate(`/projects/${result.project.id}`);
-                        },
-                        onError: (e) => toast('error', (e as Error).message),
-                      },
-                    );
-                  }}
-                >
-                  开工
-                </Button>
-                <Button variant="ghost" onClick={() => setQuickOpen(false)}>取消</Button>
-              </div>
-            </div>
-          )}
-          <dl className="home-overview-stats" aria-label="工作概况">
-            <div><dt>在营</dt><dd>{activeCompanies.length}</dd></div>
-            <div><dt>工作中</dt><dd>{onlineCount}</dd></div>
-            <div><dt>待关注</dt><dd>{attentionCount + pendingCount}</dd></div>
-          </dl>
-        </div>
-      </header>
-
-      <OnboardingGuide hasCompany={activeCompanies.length > 0} />
-      <FirstRunWizard />
-
-      {recentProject.data && (
-        <div className="home-resume-project">
-          <span className="home-resume-mark" aria-hidden="true">↳</span>
-          <div>
-            <span>继续上次项目</span>
-            <strong>{recentProject.data.name}</strong>
-          </div>
-          <Link to={`/projects/${recentProject.data.id}`}>回到工作现场 <span aria-hidden="true">→</span></Link>
-        </div>
-      )}
-
-      {pendingCount > 0 && (
-        <Link className="home-review-notice" to="/reviews">
-          <span className="home-review-pulse" aria-hidden="true" />
-          <span><strong>{pendingCount} 项业务产物等待审批</strong><small>你的决定将影响智能体接下来的工作</small></span>
-          <span aria-hidden="true">处理审批 →</span>
-        </Link>
-      )}
-
-      <section className="home-company-section" aria-labelledby="home-company-title">
-        <header className="home-section-heading">
-          <div>
-            <span className="home-section-index">01</span>
-            <div>
-              <h2 id="home-company-title">工作台现场</h2>
-              <p>状态、团队与项目进度集中在一张卡片里。</p>
-            </div>
-          </div>
-          {activeCompanies.length > 0 && <Link to="/companies">管理全部工作台 <span aria-hidden="true">→</span></Link>}
-        </header>
-
-        {isLoading && (
-          <div className="home-company-grid">
-            <CardSkeleton />
-            <CardSkeleton />
-          </div>
-        )}
-        {activeCompanies.length === 0 && !isLoading && (
-          <div className="home-empty-company">
-            <EmptyState
-              icon={Icons.empty}
-              title="从第一件事开始"
-              hint="不用先建工作台：新建项目会自动落在默认工作台，智能体和人设随活匹配。"
-              action={(
-                <button type="button" className="mu-btn mu-btn-primary mu-btn-md" onClick={() => setQuickOpen(true)}>
-                  新建项目
-                </button>
-              )}
-            />
-          </div>
-        )}
-        <div className="home-company-grid">
-          {previewCompanies.map((company, index) => <CompanyCard key={company.id} company={company} index={index} />)}
-        </div>
-        {activeCompanies.length > 4 && (
-          <Link className="home-more-companies" to="/companies">
-            <span>另有 {activeCompanies.length - 4} 家工作台</span><strong>查看完整工作台名册 →</strong>
-          </Link>
-        )}
-      </section>
-
-      <footer className="home-system-foot">
-        <span><i className={health?.status === 'ok' ? 'is-ok' : ''} />本地服务 {health?.status === 'ok' ? '运行正常' : health?.status ?? '检查中'}</span>
-        <span>版本 {health?.version ?? '—'}</span>
-        {archivedCount > 0 && <Link to="/companies">{archivedCount} 家已归档工作台</Link>}
-      </footer>
-    </div>
-  );
-}
-
-function CompanyCard({ company, index }: { company: Company; index: number }): React.ReactElement {
-  const cockpit = useCompanyCockpit(company.id);
-  const data = cockpit.data;
-  const attention = (data?.projects.attention ?? 0) + (data?.approvals.pending ?? 0) + (data?.employees.blocked ?? 0);
-
-  return (
-    <article
-      className={`home-company-card company-kind-${company.kind}`}
-      style={{ '--company-order': index } as React.CSSProperties}
-    >
-      <div className="home-company-card-topline" aria-hidden="true" />
-      <header>
-        <div className="home-company-mark" aria-hidden="true" style={{ overflow: 'hidden', padding: 0 }}>
-          {COMPANY_KIND_MARKS[company.kind] ? (
-            <img src={COMPANY_KIND_MARKS[company.kind]} alt={company.kind} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
-          ) : (
-            company.name.slice(0, 1)
-          )}
-        </div>
-        <div className="home-company-identity">
-          <span>{COMPANY_KIND_LABELS[company.kind] ?? company.kind}</span>
-          <Link to={`/companies/${company.id}`}>{company.name}</Link>
-          <small>{COMPANY_KIND_DESCRIPTIONS[company.kind] ?? 'Agent 团队与项目协作'}</small>
-        </div>
-        <Badge tone={companyStateTone(company.state)} dot={company.state === 'online'}>
-          {stateLabel(company.state)}
-        </Badge>
-      </header>
-
-      <div className="home-company-metrics" aria-label={`${company.name}运行概况`}>
-        <div><strong>{data?.employees.total ?? '—'}</strong><span>智能体</span><small>{data ? `${data.employees.online} 位在线` : '读取中'}</small></div>
-        <div><strong>{data?.projects.total ?? '—'}</strong><span>项目</span><small>{data ? `${data.projects.active} 个进行中` : '读取中'}</small></div>
-        <div className={attention > 0 ? 'has-attention' : ''}><strong>{data ? attention : '—'}</strong><span>待关注</span><small>{data ? (attention > 0 ? '需要你判断' : '当前顺畅') : '读取中'}</small></div>
       </div>
+    );
+  }
 
-      <footer>
-        <div className="home-company-next">
-          <span>建议下一步</span>
-          <strong>{data?.nextAction.label ?? '打开工作台驾驶舱'}</strong>
+  return (
+    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg)', color: 'var(--fg)', overflow: 'hidden' }}>
+      {/* 极简顶栏 */}
+      <header style={{ height: '44px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-elev)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--accent)' }} />
+          <strong style={{ fontSize: '13px', letterSpacing: '-0.01em' }}>Muster Studio</strong>
         </div>
-        <Link className="home-company-enter" to={data?.nextAction.href ?? `/companies/${company.id}`} aria-label={`进入${company.name}`}>
-          <span aria-hidden="true">→</span>
-        </Link>
-      </footer>
-    </article>
+        <div style={{ fontSize: '12px', color: 'var(--fg-subtle)' }}>
+          自然语言项目工作台
+        </div>
+      </header>
+
+      {/* 沉浸式对话开工视口（无任何繁琐表单，纯自然语言对话） */}
+      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', maxWidth: '840px', width: '100%', margin: '0 auto', padding: '24px 20px', boxSizing: 'border-box', overflowY: 'auto' }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '24px' }}>
+          {/* 负责人欢迎卡片 */}
+          <div style={{ textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', width: 'fit-content', padding: '4px 10px', background: 'var(--accent-subtle)', borderRadius: 'var(--radius-full)', color: 'var(--accent)', fontSize: '12px', fontWeight: 700 }}>
+              <span>✨ 第一负责人在线</span>
+            </div>
+            <h1 style={{ fontSize: '28px', fontWeight: 750, letterSpacing: '-0.03em', margin: 0, lineHeight: 1.25 }}>
+              你想开始什么新工作？
+            </h1>
+            <p className="muted" style={{ margin: 0, fontSize: '14px', lineHeight: 1.6, maxWidth: '640px' }}>
+              直接交代你的目标或具体想法。无需填表，我将自动理解意图、拆解任务清单并调配最合适的智能体专家立即推进。
+            </p>
+          </div>
+
+          {/* 灵感药丸推荐 */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '10px' }}>
+            {SUGGESTIONS.map((item, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => handleStartWithPrompt(item.prompt)}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'flex-start',
+                  gap: '6px',
+                  padding: '12px 14px',
+                  background: 'var(--bg-elev)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: 'var(--radius-lg)',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  boxShadow: 'var(--shadow-1)',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = 'var(--accent)';
+                  e.currentTarget.style.transform = 'translateY(-1px)';
+                  e.currentTarget.style.boxShadow = 'var(--shadow-2)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = 'var(--border-subtle)';
+                  e.currentTarget.style.transform = 'none';
+                  e.currentTarget.style.boxShadow = 'var(--shadow-1)';
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 650, fontSize: '13px', color: 'var(--fg)' }}>
+                  <span>{item.icon}</span>
+                  <span>{item.title}</span>
+                </div>
+                <div style={{ fontSize: '12px', color: 'var(--fg-subtle)', lineHeight: 1.4, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                  {item.prompt}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 底部全功能复合输入框 */}
+        <div style={{ paddingTop: '16px' }}>
+          <PromptComposer
+            placeholder="告诉负责人你想做什么…（例如：帮我重构三栏工作台）"
+            currentModel={currentModel}
+            onSelectModel={setCurrentModel}
+            thinkingDepth={thinkingDepth}
+            onToggleThinking={setThinkingDepth}
+            loading={quickProject.isPending}
+            onSend={(text) => handleStartWithPrompt(text)}
+            onAttachFile={() => toast('info', '项目启动后可直接在工作台上传文件与素材')}
+          />
+        </div>
+      </main>
+    </div>
   );
 }

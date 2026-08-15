@@ -1,6 +1,6 @@
-import type React from 'react';
 import { useEffect, useState } from 'react';
-import { useSaveSystemSettings, useSystemSettings, useTestConnection, useTools, useSyncTools, useUpdateTool, useExecutorProfiles } from '../hooks/queries';
+import type React from 'react';
+import { useSaveSystemSettings, useSystemSettings, useTestConnection, useExecutorProfiles } from '../hooks/queries';
 import { Badge } from '../components/Badge';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
@@ -9,18 +9,23 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { ToolRegistryPanel } from '../components/settings/ToolRegistryPanel';
 import { CredentialStorePanel } from '../components/settings/CredentialStorePanel';
 import { BackupCenterPanel } from '../components/settings/BackupCenterPanel';
-import { SetupChecklist } from '../components/settings/SetupChecklist';
+
+type SettingsTab = 'general' | 'models' | 'swarm' | 'network' | 'appearance' | 'credentials' | 'tools' | 'backup';
 
 export function SettingsPage(): React.ReactElement {
   const { data: settings, isLoading } = useSystemSettings();
   const saveSettings = useSaveSystemSettings();
   const testConnection = useTestConnection();
-  const { data: executorProfiles } = useExecutorProfiles();
-  // 注意：所有 hook（含 useSearchParams）必须在任何早期 return 之前调用，
-  // 否则 React 会抛 "Rendered fewer hooks than expected"。
-  const [searchParams] = useSearchParams();
-  const focusTools = searchParams.get('view') === 'tools';
-  const focusCredentials = searchParams.get('view') === 'credentials';
+  const { data: executorProfiles = [] } = useExecutorProfiles();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const activeTab = (searchParams.get('tab') as SettingsTab) || 'general';
+  const setTab = (t: SettingsTab): void => {
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', t);
+    setSearchParams(next);
+  };
+
   const [claudeBin, setClaudeBin] = useState('');
   const [model, setModel] = useState('');
   const [skipPermissions, setSkipPermissions] = useState(false);
@@ -114,298 +119,178 @@ export function SettingsPage(): React.ReactElement {
 
   if (isLoading) return <div className="loading">加载系统设置中…</div>;
 
-  const providerLabels: Record<string, string> = {
-    'claude-cli': 'Claude Code CLI',
-    'codex-cli': 'Codex CLI',
-    'antigravity-cli': 'Antigravity CLI',
-    openai: 'OpenAI 兼容 API',
-    gemini: 'Gemini API',
-  };
-
   return (
-    <div className="settings-page">
-      <header className="page-header">
-        <div>
-          <h1>系统设置</h1>
-          <p className="subtitle">先确认默认执行器可以连接；需要时再展开高级参数。</p>
+    <div className="settings-page" style={{ maxWidth: '1100px', margin: '0 auto', padding: '16px 0' }}>
+      <header className="page-header" style={{ marginBottom: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <Link to="/" className="back-link" style={{ fontSize: '13px' }}>← 返回工作台</Link>
+          <h1 style={{ margin: 0, fontSize: '22px' }}>系统设置</h1>
+        </div>
+        <div className="page-actions">
+          <Button variant="ghost" size="sm" onClick={handleTest} loading={testConnection.isPending}>测试连接</Button>
+          <Button size="sm" onClick={handleSave} loading={saveSettings.isPending}>保存修改</Button>
         </div>
       </header>
 
-      {/* 优化⑤：就绪清单——动态提示下一步配什么（全就绪自动隐藏） */}
-      <SetupChecklist />
+      <div className="settings-split">
+        {/* 左侧分类导航 */}
+        <nav className="settings-nav">
+          <button type="button" className={`settings-nav-item ${activeTab === 'general' ? 'is-active' : ''}`} onClick={() => setTab('general')}>
+            <span>⚙️ 常规与执行器</span>
+          </button>
+          <button type="button" className={`settings-nav-item ${activeTab === 'models' ? 'is-active' : ''}`} onClick={() => setTab('models')}>
+            <span>🧠 模型与分级</span>
+          </button>
+          <button type="button" className={`settings-nav-item ${activeTab === 'swarm' ? 'is-active' : ''}`} onClick={() => setTab('swarm')}>
+            <span>🐝 蜂群调度与反思</span>
+          </button>
+          <button type="button" className={`settings-nav-item ${activeTab === 'network' ? 'is-active' : ''}`} onClick={() => setTab('network')}>
+            <span>🌐 网络与出站代理</span>
+          </button>
+          <button type="button" className={`settings-nav-item ${activeTab === 'appearance' ? 'is-active' : ''}`} onClick={() => setTab('appearance')}>
+            <span>🎨 外观与主题</span>
+          </button>
+          <button type="button" className={`settings-nav-item ${activeTab === 'credentials' ? 'is-active' : ''}`} onClick={() => setTab('credentials')}>
+            <span>🔑 凭据金库</span>
+          </button>
+          <button type="button" className={`settings-nav-item ${activeTab === 'tools' ? 'is-active' : ''}`} onClick={() => setTab('tools')}>
+            <span>🔧 工具与 MCP 注册</span>
+          </button>
+          <button type="button" className={`settings-nav-item ${activeTab === 'backup' ? 'is-active' : ''}`} onClick={() => setTab('backup')}>
+            <span>💾 数据库与备份</span>
+          </button>
+        </nav>
 
-      <Card title="常用设置" actions={<Badge tone={testResult?.overallSuccess ? 'ok' : 'neutral'}>{testResult?.overallSuccess ? '连接正常' : '尚未测试'}</Badge>}>
-        <div className="settings-basic-grid">
-          <Field label="默认执行器" hint="智能体没有单独指定执行器时使用">
-            <Select value={defaultProvider} onChange={(event) => setDefaultProvider(event.target.value)}>
-              <option value="claude-cli">Claude Code CLI</option>
-              <option value="codex-cli">Codex CLI</option>
-              <option value="antigravity-cli">Antigravity CLI</option>
-              <option value="openai">OpenAI 兼容 API</option>
-              <option value="gemini">Gemini API</option>
-            </Select>
-          </Field>
-          <div className="connection-summary">
-            <span className="muted">当前连接</span>
-            <strong>{providerLabels[defaultProvider] ?? defaultProvider}</strong>
-            <span className="muted">{testResult ? (testResult.overallSuccess ? '最近测试成功' : '最近测试失败') : '运行测试以确认配置'}</span>
-          </div>
+        {/* 右侧配置面板 */}
+        <div className="settings-content-panel">
+          {activeTab === 'general' && (
+            <Card title="常规执行环境">
+              <div className="form-stack">
+                <Field label="默认执行引擎">
+                  <Select value={defaultProvider} onChange={(e) => setDefaultProvider(e.target.value)}>
+                    <option value="claude-cli">Claude Code CLI</option>
+                    <option value="codex-cli">Codex CLI</option>
+                    <option value="antigravity-cli">Antigravity CLI</option>
+                    <option value="openai">OpenAI 兼容 API</option>
+                    <option value="gemini">Gemini API</option>
+                  </Select>
+                </Field>
+                <Field label="Claude CLI 可执行路径" hint="系统检测或本地绝对路径">
+                  <Input value={claudeBin} onChange={(e) => setClaudeBin(e.target.value)} />
+                </Field>
+                <Field label="显式模型标识 (留空使用默认)">
+                  <Input value={model} onChange={(e) => setModel(e.target.value)} placeholder="留空使用执行器默认模型" />
+                </Field>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px' }}>
+                    <input type="checkbox" checked={skipPermissions} onChange={(e) => setSkipPermissions(e.target.checked)} />
+                    <span>允许跳过 CLI 权限拦截 (--dangerously-skip-permissions)</span>
+                  </label>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {activeTab === 'models' && (
+            <Card title="模型参数与执行器分级">
+              <div className="form-stack">
+                <Field label="OpenAI API Base URL">
+                  <Input value={openaiBaseURL} onChange={(e) => setOpenaiBaseURL(e.target.value)} />
+                </Field>
+                <Field label="OpenAI 模型名">
+                  <Input value={openaiModel} onChange={(e) => setOpenaiModel(e.target.value)} />
+                </Field>
+                <Field label="Gemini 模型名">
+                  <Input value={geminiModel} onChange={(e) => setGeminiModel(e.target.value)} />
+                </Field>
+                <Field label="执行器首选档位 (Tier Primary)">
+                  <Select value={tierPrimary} onChange={(e) => setTierPrimary(e.target.value)}>
+                    <option value="">跟随系统默认</option>
+                    {executorProfiles.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.manifestId})</option>)}
+                  </Select>
+                </Field>
+              </div>
+            </Card>
+          )}
+
+          {activeTab === 'swarm' && (
+            <Card title="蜂群并发与自动反思">
+              <div className="form-stack">
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <Field label="蜂群最大下探深度 (Max Depth)">
+                    <Input type="number" value={swarmMaxDepth} onChange={(e) => setSwarmMaxDepth(Number(e.target.value))} />
+                  </Field>
+                  <Field label="单层最大并发工蜂 (Max Width)">
+                    <Input type="number" value={swarmMaxWidth} onChange={(e) => setSwarmMaxWidth(Number(e.target.value))} />
+                  </Field>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <Field label="单次任务最大节点数 (Max Nodes)">
+                    <Input type="number" value={swarmMaxNodes} onChange={(e) => setSwarmMaxNodes(Number(e.target.value))} />
+                  </Field>
+                  <Field label="单群预算硬上限 ($ USD)">
+                    <Input type="number" value={swarmBudgetUSD} onChange={(e) => setSwarmBudgetUSD(Number(e.target.value))} />
+                  </Field>
+                </div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px' }}>
+                  <input type="checkbox" checked={morningReportEnabled} onChange={(e) => setMorningReportEnabled(e.target.checked)} />
+                  <span>启用晨醒自动巡检与日报 (Morning Report)</span>
+                </label>
+              </div>
+            </Card>
+          )}
+
+          {activeTab === 'network' && (
+            <Card title="网络与出站代理配置">
+              <div className="form-stack">
+                <Field label="HTTP/HTTPS 代理地址 (Proxy URL)" hint="例如: http://127.0.0.1:7890">
+                  <Input value={proxyUrl} onChange={(e) => setProxyUrl(e.target.value)} placeholder="http://127.0.0.1:7890" />
+                </Field>
+                <Field label="代理白名单 (Bypass List)" hint="逗号分隔">
+                  <Input value={proxyBypass} onChange={(e) => setProxyBypass(e.target.value)} placeholder="localhost, 127.0.0.1" />
+                </Field>
+                <Field label="出站超时时间 (毫秒)">
+                  <Input type="number" value={egressTimeoutMs} onChange={(e) => setEgressTimeoutMs(Number(e.target.value))} />
+                </Field>
+              </div>
+            </Card>
+          )}
+
+          {activeTab === 'appearance' && (
+            <Card title="界面外观与显示">
+              <div className="form-stack">
+                <Field label="主题偏好">
+                  <Select value={theme} onChange={(e) => setTheme(e.target.value as any)}>
+                    <option value="system">跟随系统 (System)</option>
+                    <option value="light">温暖纸质浅色 (Warm Paper Light)</option>
+                    <option value="dark">沉浸深灰深色 (Slate Dark)</option>
+                  </Select>
+                </Field>
+                <Field label="界面主字体大小 (px)">
+                  <Input type="number" value={fontSize} onChange={(e) => setFontSize(Number(e.target.value))} />
+                </Field>
+                <Field label="界面语言">
+                  <Select value={locale} onChange={(e) => setLocale(e.target.value as any)}>
+                    <option value="zh">简体中文 (Chinese)</option>
+                    <option value="en">English</option>
+                  </Select>
+                </Field>
+              </div>
+            </Card>
+          )}
+
+          {activeTab === 'credentials' && (
+            <CredentialStorePanel />
+          )}
+
+          {activeTab === 'tools' && (
+            <ToolRegistryPanel />
+          )}
+
+          {activeTab === 'backup' && (
+            <BackupCenterPanel />
+          )}
         </div>
-        <div className="settings-primary-actions">
-          <Button variant="ghost" onClick={handleTest} loading={testConnection.isPending}>运行连接测试</Button>
-          <Button onClick={handleSave} loading={saveSettings.isPending}>保存设置</Button>
-        </div>
-        {testResult && <TestResultPanel result={testResult} />}
-      </Card>
-
-      <div className="settings-advanced section">
-        {/* 改版 B3：配置中心——执行器/能力/权限的入口归位到设置页（去 hub-of-hubs 弹跳） */}
-        <details className="details-collapse" open>
-          <summary>配置中心（执行器 / 能力 / 权限）</summary>
-          <div className="form-stack">
-            <p className="muted">智能体的运行环境、可用工具与审批规则都在这里配置；工作台按智能体绑定。</p>
-            <div className="settings-primary-actions">
-              <Link to="/executors">执行器接入中心</Link>
-              <Link to="/capabilities">能力中心</Link>
-              <Link to="/permissions">权限与审批中心</Link>
-            </div>
-          </div>
-        </details>
-
-        <details className="details-collapse">
-          <summary>CLI 运行时</summary>
-          <div className="form-stack">
-            <Field label="Claude 可执行文件路径" required hint="通常填写 claude；也可以使用本地绝对路径。">
-              <Input value={claudeBin} onChange={(event) => setClaudeBin(event.target.value)} placeholder="例如: /Users/username/.local/bin/claude" />
-            </Field>
-            <Field label="模型标识" hint="留空使用执行器默认模型">
-              <Input value={model} onChange={(event) => setModel(event.target.value)} placeholder="例如: sonnet" />
-            </Field>
-          </div>
-        </details>
-
-        {/* 改版 B3：执行器分级从常用卡移入折叠区（power-user 项不再默认裸露） */}
-        <details className="details-collapse">
-          <summary>执行器分级（大活 / 标准 / 小活）</summary>
-          <div className="form-stack">
-            <div className="settings-tier-grid">
-              <Field label="大活默认执行器" hint="复杂/需要命令执行的任务（未配置时自动降级）">
-                <Select value={tierPrimary} onChange={(event) => setTierPrimary(event.target.value)}>
-                  <option value="">未配置（继承默认执行器）</option>
-                  {(executorProfiles ?? []).map((profile) => (
-                    <option key={profile.id} value={profile.id}>{profile.name}{profile.connection?.status === 'connected' ? ' ✓' : profile.connection ? ' ⚠' : ''}</option>
-                  ))}
-                </Select>
-              </Field>
-              <Field label="标准默认执行器" hint="普通任务">
-                <Select value={tierSecondary} onChange={(event) => setTierSecondary(event.target.value)}>
-                  <option value="">未配置（继承默认执行器）</option>
-                  {(executorProfiles ?? []).map((profile) => (
-                    <option key={profile.id} value={profile.id}>{profile.name}{profile.connection?.status === 'connected' ? ' ✓' : profile.connection ? ' ⚠' : ''}</option>
-                  ))}
-                </Select>
-              </Field>
-              <Field label="小活默认执行器" hint="讨论/咨询/轻量任务（低成本模型）">
-                <Select value={tierTertiary} onChange={(event) => setTierTertiary(event.target.value)}>
-                  <option value="">未配置（继承默认执行器）</option>
-                  {(executorProfiles ?? []).map((profile) => (
-                    <option key={profile.id} value={profile.id}>{profile.name}{profile.connection?.status === 'connected' ? ' ✓' : profile.connection ? ' ⚠' : ''}</option>
-                  ))}
-                </Select>
-              </Field>
-            </div>
-          </div>
-        </details>
-
-        <details className="details-collapse">
-          <summary>权限与运行限制</summary>
-          <div className="form-stack">
-            <p>权限现已按智能体使用“审批策略 × 允许范围”配置。Turbo 也必须选择范围。</p>
-            <div className="settings-field-grid">
-              <Field label="单次 Task 超时（毫秒）">
-                <Input type="number" value={timeoutMs} onChange={(event) => setTimeoutMs(Number(event.target.value))} />
-              </Field>
-              <Field label="单任务最大工具调用数">
-                <Input type="number" value={maxToolCalls} onChange={(event) => setMaxToolCalls(Number(event.target.value))} />
-              </Field>
-            </div>
-          </div>
-        </details>
-
-        <details className="details-collapse">
-          <summary>Provider 与 API 默认值</summary>
-          <div className="form-stack">
-            <p className="muted">API Key 只从环境变量读取，不在此处保存明文。多供应商/多模型档案请在「执行器接入中心」创建，此处仅作为快速入门默认值。</p>
-            <div className="settings-field-grid">
-              <Field label="OpenAI 默认 baseURL">
-                <Input value={openaiBaseURL} onChange={(event) => setOpenaiBaseURL(event.target.value)} placeholder="https://api.openai.com/v1" />
-              </Field>
-              <Field label="OpenAI 默认模型">
-                <Input value={openaiModel} onChange={(event) => setOpenaiModel(event.target.value)} placeholder="gpt-4o" />
-              </Field>
-            </div>
-            <Field label="Gemini 默认模型">
-              <Input value={geminiModel} onChange={(event) => setGeminiModel(event.target.value)} placeholder="gemini-2.0-flash" />
-            </Field>
-          </div>
-        </details>
-
-        <details className="details-collapse">
-          <summary>网络（代理 / 证书）</summary>
-          <div className="form-stack">
-            <p className="muted">模型、MCP、命令工具与应用渲染层的出口流量将经此代理。留空时直连，不读取系统环境变量。修改后需重启应用生效。</p>
-            <div className="settings-field-grid">
-              <Field label="HTTP 代理" hint="留空直连，例如 http://127.0.0.1:7890">
-                <Input value={proxyUrl} onChange={(event) => setProxyUrl(event.target.value)} placeholder="http://127.0.0.1:7890" />
-              </Field>
-              <Field label="代理例外" hint="匹配这些主机的请求将直连，不经过代理。逗号分隔，例如 localhost,127.0.0.1,.example.com">
-                <Input value={proxyBypass} onChange={(event) => setProxyBypass(event.target.value)} placeholder="localhost,127.0.0.1,.example.com" />
-              </Field>
-              <Field label="自定义证书（PEM 路径）" hint="作为 NODE_EXTRA_CA_CERTS 注入模型、MCP 与命令工具，并用于渲染层证书校验">
-                <Input value={caCertPath} onChange={(event) => setCaCertPath(event.target.value)} placeholder="/Users/name/certs/root-ca.pem" />
-              </Field>
-              <Field label="出口请求超时（毫秒）">
-                <Input type="number" value={egressTimeoutMs} onChange={(event) => setEgressTimeoutMs(Number(event.target.value))} />
-              </Field>
-            </div>
-            <p className="muted">⚠ 以上网络配置修改后需重启应用生效（不实时热更）。</p>
-          </div>
-        </details>
-
-        <details className="details-collapse">
-          <summary>外观（主题 / 字体 / 语言）</summary>
-          <div className="form-stack">
-            <div className="settings-field-grid">
-              <Field label="主题">
-                <Select value={theme} onChange={(event) => setTheme(event.target.value as 'dark' | 'light' | 'system')}>
-                  <option value="system">跟随系统</option>
-                  <option value="dark">深色</option>
-                  <option value="light">浅色</option>
-                </Select>
-              </Field>
-              <Field label="界面语言">
-                <Select value={locale} onChange={(event) => setLocale(event.target.value as 'zh' | 'en')}>
-                  <option value="zh">中文</option>
-                  <option value="en">English</option>
-                </Select>
-              </Field>
-              <Field label="界面字体" hint="留空使用默认字体">
-                <Input value={fontFamily} onChange={(event) => setFontFamily(event.target.value)} placeholder="例如: Avenir Next, PingFang SC" />
-              </Field>
-              <Field label="主文本字号（px）">
-                <Input type="number" value={fontSize} onChange={(event) => setFontSize(Number(event.target.value))} />
-              </Field>
-              <Field label="代码块主题" hint="default / dark 等（简单映射）">
-                <Select value={codeTheme} onChange={(event) => setCodeTheme(event.target.value)}>
-                  <option value="default">default</option>
-                  <option value="dark">dark</option>
-                </Select>
-              </Field>
-            </div>
-            <p className="muted">外观修改即时生效（主题/字体/字号/语言）。</p>
-          </div>
-        </details>
-
-        <details className="details-collapse">
-          <summary>定时与自动化</summary>
-          <div className="form-stack">
-            <label className="checkbox-row">
-              <input
-                type="checkbox"
-                checked={morningReportEnabled}
-                onChange={(event) => setMorningReportEnabled(event.target.checked)}
-              />
-              晨醒：每天自动生成运营优化报告（进化与报告页）
-            </label>
-            <p className="muted">
-              关闭后不再每日自动扫描生成优化建议；各项目/工作台自己配置的定时工作不受影响。
-            </p>
-          </div>
-        </details>
-
-        <details className="details-collapse">
-          <summary>蜂群（大规模并行）</summary>
-          <div className="form-stack">
-            <div className="settings-field-grid">
-              <Field label="最大下探深度（层）" hint="调度中心→工蜂→子蜂…；上限非目标，按需分解">
-                <Input type="number" min={1} max={5} value={swarmMaxDepth} onChange={(e) => setSwarmMaxDepth(Number(e.target.value))} />
-              </Field>
-              <Field label="每节点最大扇出（只）" hint="一个节点一次最多放出多少工蜂">
-                <Input type="number" min={1} max={20} value={swarmMaxWidth} onChange={(e) => setSwarmMaxWidth(Number(e.target.value))} />
-              </Field>
-              <Field label="单群总节点上限" hint="整群任务总数熔断线，可按需调大">
-                <Input type="number" min={1} max={300} value={swarmMaxNodes} onChange={(e) => setSwarmMaxNodes(Number(e.target.value))} />
-              </Field>
-              <Field label="单群预算（USD）" hint="整群累计花费达到上限即熔断；0 = 不限">
-                <Input type="number" min={0} step={0.5} value={swarmBudgetUSD} onChange={(e) => setSwarmBudgetUSD(Number(e.target.value))} />
-              </Field>
-              <Field label="蜂群失败自动修复上限（全群）" hint="蜂失败后自动换思路重发替补，全群修复次数达上限即停；0 语义由 1 代替">
-                <Input type="number" min={1} max={100} value={swarmRepairMax} onChange={(e) => setSwarmRepairMax(Number(e.target.value))} />
-              </Field>
-            </div>
-            <p className="muted">
-              蜂群由隐形「调度中心」自动拆解放蜂（一次性工蜂，不出现在花名册）；失败自动告警给调度中心，
-              失败过半自动熔断。任务详情页可看蜂群树并一键停止。
-            </p>
-          </div>
-        </details>
-
-        <details className="details-collapse">
-          <summary>自主进化（空闲反思）</summary>
-          <div className="form-stack">
-            <label className="checkbox-row">
-              <input
-                type="checkbox"
-                checked={autonomousReflectionEnabled}
-                onChange={(event) => setAutonomousReflectionEnabled(event.target.checked)}
-              />
-              工作台空闲时自动补做任务反思（沉淀经验进记忆）
-            </label>
-            <Field label="每日自主反思预算（USD）" hint="工作台当日总花费低于该值时才允许自动反思；0 = 关闭">
-              <Input
-                type="number"
-                min={0}
-                step={0.1}
-                value={autonomousReflectionBudgetUSD}
-                onChange={(event) => setAutonomousReflectionBudgetUSD(Number(event.target.value))}
-              />
-            </Field>
-            <p className="muted">
-              默认关闭（反思有 LLM 成本）。开启后：工作台在线且无活跃任务时，对近期已完成/失败但未反思过的任务补排队反思；
-              正式任务到达自动让位，单次最多补 2 条。
-            </p>
-          </div>
-        </details>
-
-        <ToolRegistryPanel defaultOpen={focusTools} />
-        <CredentialStorePanel defaultOpen={focusCredentials} />
-      </div>
-
-      <BackupCenterPanel className="section" />
-    </div>
-  );
-}
-
-function TestResultPanel({ result }: { result: any }): React.ReactElement {
-  return (
-    <div className="test-result-stack diagnostic-text">
-      <div className="test-result-box">
-        <div className="test-result-head">
-          <strong className="test-result-stage">命令行连接</strong>
-          <Badge tone={result.versionTest.success ? 'ok' : 'err'}>{result.versionTest.success ? '通过' : '失败'}</Badge>
-        </div>
-        {result.versionTest.success
-          ? <code className="test-result-code">{result.versionTest.output}</code>
-          : <pre className="test-result-err">{result.versionTest.error}</pre>}
-      </div>
-      <div className="test-result-box">
-        <div className="test-result-head">
-          <strong className="test-result-stage">模型桥接</strong>
-          <Badge tone={result.bridgeTest.success ? 'ok' : 'err'}>{result.bridgeTest.success ? '通过' : '未通过'}</Badge>
-        </div>
-        {result.bridgeTest.success
-          ? <div className="test-result-out">{result.bridgeTest.output}</div>
-          : <pre className="test-result-err">{result.bridgeTest.error || '命令行连接失败，未运行桥接测试。'}</pre>}
       </div>
     </div>
   );

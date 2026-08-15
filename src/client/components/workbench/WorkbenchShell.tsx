@@ -57,9 +57,8 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
   } as React.CSSProperties;
   return <section className={`workbench ${preferences.leftOpen ? 'has-left' : ''} ${preferences.rightOpen ? 'has-right' : ''}`} style={style}>
     <header className="workbench-header">
-      {/* 改版收尾：品牌弹出菜单与顶部工作台标签栏重复，收敛为纯首页链接 */}
-      <Link to="/" className="workbench-brand" aria-label="Muster 首页">
-        <img src="/images/brand_logo.jpg" alt="Muster" className="workbench-brand-logo-img" style={{ width: '100%', height: '100%', borderRadius: 'var(--radius-sm, 6px)', objectFit: 'cover' }} />
+      <Link to="/" className="workbench-brand" aria-label="Muster 首页" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '28px', height: '28px', borderRadius: '7px', background: 'var(--accent)', color: '#fff', textDecoration: 'none', fontWeight: 850, fontSize: '13px' }}>
+        <span>M</span>
       </Link>
       <button type="button" className="workbench-icon-button" title={preferences.leftOpen ? '收起左侧工作列表' : '展开左侧工作列表'} aria-label={preferences.leftOpen ? '收起工作列表' : '展开工作列表'} aria-expanded={preferences.leftOpen} aria-controls="work-navigation" onClick={preferences.toggleLeft}><span className="pane-toggle-glyph is-left" aria-hidden="true" /></button>
       <div className="workbench-breadcrumb">{breadcrumb}</div>

@@ -4,7 +4,7 @@
  * 把设置里的主题/字体/字号/语言/代码主题应用到 DOM：
  * - `data-theme="dark|light"`（system 解析为跟随系统，并监听系统切换）
  * - `<html lang>`（zh-CN / en）
- * - `--font-sans`、`--text-base`（主文本字号）
+ * - `--font-sans`、`--app-font-size`（字号基准，整条 type scale 随之缩放）
  * - `data-code-theme`（代码块主题，供 CodeMirror 映射）
  *
  * resolveAppearance 为纯函数，便于确定性单测。
@@ -50,8 +50,8 @@ export function applyAppearance(settings: AppearanceInput | undefined, prefersDa
   root.dataset.codeTheme = resolved.codeTheme;
   if (resolved.fontFamily) root.style.setProperty('--font-sans', resolved.fontFamily);
   else root.style.removeProperty('--font-sans');
-  if (resolved.fontSize > 0) root.style.setProperty('--text-base', `${resolved.fontSize}px`);
-  else root.style.removeProperty('--text-base');
+  if (resolved.fontSize > 0) root.style.setProperty('--app-font-size', `${resolved.fontSize}px`);
+  else root.style.removeProperty('--app-font-size');
   return resolved;
 }
 

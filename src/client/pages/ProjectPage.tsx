@@ -319,6 +319,14 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
   const [workOrderTitle,setWorkOrderTitle]=useState('');
   const [workOrderAssignee,setWorkOrderAssignee]=useState('');
   const [employeeWorkTitle,setEmployeeWorkTitle]=useState('');
+  // 头部「＋ 新建任务」按钮触发任务视图创建卡（signal 自增驱动，同参数重复点击也能再次打开）
+  const [newTaskSignal,setNewTaskSignal]=useState(0);
+  const openNewTaskCard=():void=>{
+    const next=new URLSearchParams(searchParams);
+    next.set('view','task');
+    setSearchParams(next,{replace:true});
+    setNewTaskSignal((n)=>n+1);
+  };
 
   const createMirror = useCreateMirror();
   const deleteMirror = useDeleteMirror();
@@ -350,21 +358,6 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
   }, [projectTasks, selectedProjectTaskId, searchParams, setSearchParams]);
 
   if (!project) return <div className="loading">加载中…</div>;
-
-  // 准备阶段：渲染 onboarding wizard 而非工作台（两层正交，active/paused 等仍走工作台）
-  const ONBOARDING_STATES = new Set(['drafting', 'researching', 'equipping', 'staffing', 'ready']);
-  if (ONBOARDING_STATES.has(project.state)) {
-    return (
-      <div className="project-page project-onboarding-container">
-        <div className="project-page-header">
-          <Link to={`/companies/${project.companyId}`} className="back-link">← 返回工作台</Link>
-          <h1>{project.name}</h1>
-          <StateBadge domain="project" state={project.state} />
-        </div>
-        <ProjectOnboardingWizard project={project} companyId={project.companyId} />
-      </div>
-    );
-  }
 
   const selectedAgentId = searchParams.get('agent') ?? project.firstAgentId ?? company?.firstAgentId ?? agents?.[0]?.id;
   const selectedAgent = agents?.find((agent) => agent.id === selectedAgentId);
@@ -456,16 +449,14 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
       inspectorLabel="项目任务与运行"
       attentionCount={attentionCount + (cockpit?.approvals.pending ?? 0)}
       primaryAction={projectView === 'task'
-        ? (selectedProjectTask
-          ? <a className="mu-btn mu-btn-primary mu-btn-sm workbench-publish-action" href="#work-order-composer">＋ 派发工作</a>
-          : <a className="mu-btn mu-btn-primary mu-btn-sm workbench-publish-action" href="#project-tasks">＋ 新建项目任务</a>)
+        ? <button type="button" className="mu-btn mu-btn-primary mu-btn-sm workbench-publish-action" onClick={openNewTaskCard}>＋ 新建任务</button>
         : projectView === 'employee'
           ? <a className="mu-btn mu-btn-primary mu-btn-sm workbench-publish-action" href="#employee-dispatch">＋ 派发工作</a>
           : selectedAgentId
             ? <Link className="mu-btn mu-btn-primary mu-btn-sm workbench-publish-action" to={`/projects/${projectId}?view=employee&agent=${selectedAgentId}${selectedProjectTaskId ? `&projectTask=${selectedProjectTaskId}` : ''}`}>联系负责人</Link>
             : undefined}
       navigation={<ProjectWorkNavigation projectId={projectId} projectTasks={projectTasks ?? []} tasks={tasks ?? []} agents={agents ?? []} departments={departments ?? []} firstAgentId={project.firstAgentId ?? company?.firstAgentId} selectedProjectTaskId={selectedProjectTaskId} selectedAgentId={selectedAgentId} view={projectView} attentionCount={attentionCount} novel={company?.kind === 'novel'} />}
-      inspector={<ProjectContextInspector projectId={projectId} companyId={project.companyId} projectState={project.state} selectedTask={selectedProjectTask} selectedAgentId={projectView === 'employee' ? selectedAgentId : undefined} agents={agents ?? []} tasks={tasks ?? []} cockpit={cockpit} />}
+      inspector={<ProjectContextInspector projectId={projectId} companyId={project.companyId} projectState={project.state} selectedTask={selectedProjectTask} selectedAgentId={projectView === 'employee' ? selectedAgentId : undefined} agents={agents ?? []} tasks={tasks ?? []} cockpit={cockpit} onChatWithAgent={(agentId) => { const next = new URLSearchParams(searchParams); next.set('view', 'employee'); next.set('agent', agentId); setSearchParams(next); }} />}
       commandOptions={[
         ...(projectTasks ?? []).slice(0, 5).map((item) => ({ label: `任务：${item.title}`, href: `/projects/${projectId}?view=task&projectTask=${item.id}`, group: '项目任务' })),
         ...(agents ?? []).slice(0, 5).map((agent) => ({ label: `智能体：${agent.name}`, href: `/projects/${projectId}?view=employee&agent=${agent.id}`, group: '团队成员' })),
@@ -476,14 +467,7 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
         { label: '项目设置', href: `/projects/${projectId}/settings`, group: '项目工具' },
       ]}
     >
-    <div className="project-page work-surface-page" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-      {(projectView === 'group' || projectView === 'activity') && <header className="work-surface-heading">
-        <div>
-          <span className="task-stage-kicker">{project.name}</span>
-          <h1>{projectView === 'group' ? '项目群聊' : '协作活动'}</h1>
-        </div>
-      </header>}
-
+    <div className="project-page work-surface-page" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       {projectView === 'employee' && selectedAgent && <ProjectEmployeeWorkspace
         projectId={projectId}
         companyId={project.companyId}
@@ -500,26 +484,19 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
       />}
 
       {projectView === 'task' && <ProjectTaskWorkspace
+        projectId={projectId}
+        companyId={project.companyId}
         selectedTask={selectedProjectTask}
-        tasks={projectTasks ?? []}
+        tasks={tasks ?? []}
+        projectTasks={projectTasks ?? []}
         agents={agents ?? []}
-        draft={{ title: projectTaskTitle, brief: projectTaskBrief }}
-        creating={createProjectTask.isPending}
-        onDraftChange={(draft) => { setProjectTaskTitle(draft.title); setProjectTaskBrief(draft.brief); }}
-        onCreate={() => createProjectTask.mutate({ projectId, title: projectTaskTitle, brief: projectTaskBrief }, { onSuccess: (item) => { setProjectTaskTitle(''); setProjectTaskBrief(''); selectProjectTask(item.id); toast('success', '项目任务已创建'); } })}
         onSelect={selectProjectTask}
-        onComplete={(id) => projectTaskAction.mutate({ projectId, id, action: 'complete' })}
-        onArchive={(id) => { if (window.confirm('归档后，本项目任务将只读保存；后续工作需要新建项目任务。确定归档吗？')) projectTaskAction.mutate({ projectId, id, action: 'archive' }); }}
-        workOrder={{ title: workOrderTitle, assigneeId: workOrderAssignee }}
-        onWorkOrderChange={(workOrder) => { setWorkOrderTitle(workOrder.title); setWorkOrderAssignee(workOrder.assigneeId); }}
-        onPublishWorkOrder={() => { if (!selectedProjectTask) return; createWorkOrder.mutate({ projectId, projectTaskId: selectedProjectTask.id, title: workOrderTitle, assigneeAgentId: workOrderAssignee || undefined }, { onSuccess: () => { setWorkOrderTitle(''); toast('success', '智能体工作单已发布'); } }); }}
-        discoveringLaunch={discoverProjectLaunch.isPending}
-        confirmingLaunch={confirmProjectLaunch.isPending}
-        onDiscoverLaunch={(id, launchBrief) => discoverProjectLaunch.mutate({ projectId, id, launchBrief }, { onSuccess: () => toast('success', '已检查当前执行器、能力绑定、Skill 与工具候选') , onError: (error) => toast('error', (error as Error).message) })}
-        onConfirmLaunch={(id, launchBrief) => confirmProjectLaunch.mutate({ projectId, id, launchBrief }, { onSuccess: () => toast('success', '制作前提已确认，现在可以派发工作单') , onError: (error) => toast('error', (error as Error).message) })}
+        onCreateTask={(title, brief) => createProjectTask.mutate({ projectId, title, brief }, { onSuccess: (item) => { selectProjectTask(item.id); toast('success', '项目任务已创建'); } })}
+        newTaskSignal={newTaskSignal}
+        onPublishWorkOrder={(title, assigneeId) => { if (!selectedProjectTask) return; createWorkOrder.mutate({ projectId, projectTaskId: selectedProjectTask.id, title, assigneeAgentId: assigneeId || undefined }, { onSuccess: () => toast('success', '智能体工作单已下达并开始执行') }); }}
+        publishingWorkOrder={createWorkOrder.isPending}
       />}
 
-      {/* 高频：对话 + 活动上移到首屏 */}
       {projectView === 'group' && <Card id="project-conversation" title="项目成员群聊">
         <ConversationPanel scope="project" scopeId={projectId} companyId={project.companyId} projectTaskId={selectedProjectTaskId} title="项目群 · 可 @ 指定智能体" />
       </Card>}

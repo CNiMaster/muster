@@ -14,6 +14,7 @@ const items: TraceItem[] = [
 const mockUseTaskTrace = vi.fn(() => ({ data: items }));
 vi.mock('../../src/client/hooks/queries', () => ({
   useTaskTrace: (...args: unknown[]) => mockUseTaskTrace(...args),
+  useTaskAction: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 import { ExecutionTraceCard } from '../../src/client/components/workbench/ExecutionTraceCard';

@@ -1,5 +1,6 @@
 import type React from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { useEffect } from 'react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Badge, companyStateTone, stateLabel } from '../components/Badge';
 import { Button, toast } from '../components/Button';
 import { CardSkeleton } from '../components/Skeleton';
@@ -43,6 +44,17 @@ export function CompanyPage(): React.ReactElement {
   const { data: events = [] } = useCompanyEvents(companyId);
   const { data: statusBoard, isLoading: statusBoardLoading } = useStatusBoard(companyId);
   const action = useCompanyAction();
+  const navigate = useNavigate();
+
+  // 自动将公司路由转发到具体的项目工作台
+  useEffect(() => {
+    if (!requestedTab && projects.length > 0) {
+      const activeProject = projects.find((p) => p.state === 'active') ?? projects[0];
+      if (activeProject?.id) {
+        navigate(`/projects/${activeProject.id}`, { replace: true });
+      }
+    }
+  }, [requestedTab, projects, navigate]);
 
   if (isLoading || !company) return <div className="loading"><CardSkeleton /></div>;
 

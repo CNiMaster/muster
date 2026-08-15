@@ -12,7 +12,7 @@ const agent = {
 } as Agent;
 
 const projectTask: ProjectTaskDTO = {
-  id: 'pt_1', projectId: 'pr_1', seq: 21, title: '审批恢复闭环', brief: '验证断线恢复', state: 'active', launchState: 'confirmed', launchBrief: { expectedOutcome: '验证断线恢复', audience: '', effectAndStyle: '', constraints: '', deliverables: [], requiredCapabilityIds: [], requiredSkillIds: [], externalResearchNeeds: [], references: [], needsVisualConfirmation: false, visualReferences: [] }, capabilityDiscovery: null, launchConfirmedAt: '', completedAt: null, archivedAt: null, createdAt: '', updatedAt: '',
+  id: 'pt_1', projectId: 'pr_1', seq: 21, title: '审批恢复闭环', brief: '验证断线恢复', state: 'active', launchState: 'confirmed', launchBrief: { expectedOutcome: '验证断线恢复', audience: '', effectAndStyle: '', constraints: '', deliverables: ['实现审批恢复逻辑', '补齐回归测试用例'], requiredCapabilityIds: [], requiredSkillIds: [], externalResearchNeeds: [], references: [], needsVisualConfirmation: false, visualReferences: [] }, capabilityDiscovery: null, launchConfirmedAt: '', completedAt: null, archivedAt: null, createdAt: '', updatedAt: '',
   threads: [{ id: 'pth_1', employeeId: 'ag_1', executorProfileId: null, vendorSessionId: 'session_1', previousVendorSessionId: null, state: 'idle', runCount: 2, transcriptBytes: 1200, compactionCount: 1, lastCompactionAt: null, updatedAt: '' }],
 };
 
@@ -21,30 +21,47 @@ const workOrder = {
 } satisfies Task;
 
 describe('project task workspace layout', () => {
-  it('keeps the center focused on one project task and one dispatch composer', () => {
-    render(<ProjectTaskWorkspace selectedTask={projectTask} tasks={[projectTask]} agents={[agent]} draft={{ title: '', brief: '' }} creating={false} onDraftChange={vi.fn()} onCreate={vi.fn()} onSelect={vi.fn()} onComplete={vi.fn()} onArchive={vi.fn()} workOrder={{ title: '', assigneeId: '' }} onWorkOrderChange={vi.fn()} onPublishWorkOrder={vi.fn()} discoveringLaunch={false} confirmingLaunch={false} onDiscoverLaunch={vi.fn()} onConfirmLaunch={vi.fn()} />);
-    expect(screen.getByRole('heading', { name: '审批恢复闭环', level: 1 })).toBeInTheDocument();
-    expect(screen.getByRole('textbox', { name: '工作内容' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '派发工作单' })).toBeDisabled();
-    expect(screen.getByText('开始一段新的工作上下文')).toBeInTheDocument();
-    expect(screen.queryByText('最近发布的任务')).not.toBeInTheDocument();
-  });
-
-  it('turns the inspector into an actionable task panel', () => {
+  it('keeps the center focused on stream conversation and adaptive prompt composer', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-    render(<QueryClientProvider client={client}><MemoryRouter><ProjectContextInspector projectId="pr_1" companyId="co_1" projectState="active" selectedTask={projectTask} selectedAgentId="ag_1" agents={[agent]} tasks={[workOrder]} cockpit={{ companyId: 'co_1', companyState: 'online', employees: { total: 1, online: 0, blocked: 1 }, projects: { total: 1, active: 1, attention: 0 }, approvals: { pending: 0 }, roleGaps: [], risks: [], nextAction: { kind: '', label: '', description: '', href: '' } }} /></MemoryRouter></QueryClientProvider>);
-    expect(screen.getByRole('link', { name: '派发给此智能体' })).toHaveAttribute('href', '#employee-dispatch');
-    expect(screen.getByRole('link', { name: /补齐恢复测试/ })).toHaveAttribute('href', '/tasks/tk_1');
-    expect(screen.getByRole('link', { name: /自动计划/ })).toHaveAttribute('href', '/projects/pr_1/plans');
-    expect(screen.getByRole('link', { name: '智能体引用关系' })).toHaveAttribute('href', '/companies/co_1/graphs/communication');
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <ProjectTaskWorkspace
+            projectId="pr_1"
+            selectedTask={projectTask}
+            tasks={[workOrder]}
+            agents={[agent]}
+            onSelect={vi.fn()}
+          />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    expect(screen.getByText('审批恢复闭环')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/在任务 #21 中给智能体下达指令…/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '发送' })).toBeInTheDocument();
   });
 
-  it('shows requirement and capability confirmation before exposing production dispatch', () => {
-    const draftTask: ProjectTaskDTO = { ...projectTask, launchState: 'draft', launchConfirmedAt: null, launchBrief: { ...projectTask.launchBrief, expectedOutcome: '', needsVisualConfirmation: true, visualReferences: [] } };
-    const { container } = render(<ProjectTaskWorkspace selectedTask={draftTask} tasks={[draftTask]} agents={[agent]} draft={{ title: '', brief: '' }} creating={false} onDraftChange={vi.fn()} onCreate={vi.fn()} onSelect={vi.fn()} onComplete={vi.fn()} onArchive={vi.fn()} workOrder={{ title: '', assigneeId: '' }} onWorkOrderChange={vi.fn()} onPublishWorkOrder={vi.fn()} discoveringLaunch={false} confirmingLaunch={false} onDiscoverLaunch={vi.fn()} onConfirmLaunch={vi.fn()} />);
-    expect(screen.getByText('先确认想要的效果与可执行能力')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '确认需求与能力方案，允许制作' })).toBeDisabled();
-    expect(screen.getByText('制作尚未开始')).toBeInTheDocument();
-    expect(container.querySelector('.work-order-composer-heading')).toBeNull();
+  it('turns the inspector into an actionable team and checklist drawer panel', () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <ProjectContextInspector
+            projectId="pr_1"
+            companyId="co_1"
+            projectState="active"
+            selectedTask={projectTask}
+            selectedAgentId="ag_1"
+            agents={[agent]}
+            tasks={[workOrder]}
+            cockpit={{ companyId: 'co_1', companyState: 'online', employees: { total: 1, online: 0, blocked: 1 }, projects: { total: 1, active: 1, attention: 0 }, approvals: { pending: 0 }, roleGaps: [], risks: [], nextAction: { kind: '', label: '', description: '', href: '' } }}
+          />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    expect(screen.getByText('👥 团队智能体')).toBeInTheDocument();
+    expect(screen.getByText('📋 任务清单')).toBeInTheDocument();
+    expect(screen.getByText('📦 产物')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '对话' })).toBeInTheDocument();
   });
 });

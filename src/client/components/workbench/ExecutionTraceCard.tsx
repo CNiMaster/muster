@@ -6,10 +6,11 @@
  */
 import { useMemo, useState } from 'react';
 import type React from 'react';
-import { useTaskTrace } from '../../hooks/queries';
+import { useTaskAction, useTaskTrace } from '../../hooks/queries';
 import type { Task, TraceItem } from '../../api/types';
 import { Card } from '../Card';
 import { Badge } from '../Badge';
+import { toast } from '../Button';
 import { EmptyState, Icons } from '../EmptyState';
 
 type TraceKind = TraceItem['kind'];
@@ -37,6 +38,7 @@ function saveExpanded(kind: string, expanded: boolean): void {
 
 export function ExecutionTraceCard({ task }: { task: Task }): React.ReactElement {
   const { data: items } = useTaskTrace(task.id);
+  const taskAction = useTaskAction();
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [kindExpanded, setKindExpanded] = useState<Record<string, boolean>>(() => {
     const init: Record<string, boolean> = {};
@@ -72,9 +74,24 @@ export function ExecutionTraceCard({ task }: { task: Task }): React.ReactElement
     });
   };
 
-  const running = task.state === 'running';
+  const isPausedOrWaiting = task.state === 'waiting_input' || task.state === 'paused';
+  const running = task.state === 'running' || task.state === 'claimed';
   const latest = items?.[0];
-  const statusLabel = !running ? '已结束' : latest?.kind === 'thinking' ? '思考中' : '运行中';
+  const statusLabel = isPausedOrWaiting ? (task.state === 'waiting_input' ? '等待答复' : '已暂停') : !running ? '已结束' : latest?.kind === 'thinking' ? '思考中' : '运行中';
+
+  const handleResume = (): void => {
+    if (task.state === 'waiting_input') {
+      taskAction.mutate(
+        { taskId: task.id, action: 'clarify', payload: { answer: '确认，请继续执行' } },
+        { onSuccess: () => toast('success', '已发送继续指令，智能体已恢复执行') },
+      );
+    } else {
+      taskAction.mutate(
+        { taskId: task.id, action: 'resume' },
+        { onSuccess: () => toast('success', '任务已恢复运行') },
+      );
+    }
+  };
 
   return (
     <Card
@@ -82,7 +99,18 @@ export function ExecutionTraceCard({ task }: { task: Task }): React.ReactElement
       className="section"
       actions={
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-          <Badge tone={running ? 'info' : 'neutral'} dot={running}>{statusLabel}</Badge>
+          {isPausedOrWaiting && (
+            <button
+              type="button"
+              className="mu-composer-pill is-highlight"
+              style={{ background: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)', fontWeight: 700, padding: '3px 10px' }}
+              onClick={handleResume}
+              disabled={taskAction.isPending}
+            >
+              <span>▶ 继续执行</span>
+            </button>
+          )}
+          <Badge tone={running ? 'ok' : isPausedOrWaiting ? 'warn' : 'neutral'} dot={running || isPausedOrWaiting}>{statusLabel}</Badge>
           {presentKinds.map((kind) => (
             <button
               key={kind}
