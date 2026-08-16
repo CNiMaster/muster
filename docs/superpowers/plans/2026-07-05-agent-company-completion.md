@@ -1,5 +1,7 @@
 # Muster Agent Company Completion Implementation Plan
 
+> ⚠️ 历史注记（2026-08-16）：公司 UI 语义已被公司退场取代，交付物中公司页/向导部分已删除；Task 引擎/记忆/执行器/权限等运行域仍现行。本计划为历史执行记录。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 把现有 Muster 改造成可持续运行、不会错派 Task 或丢失成果，并完整跑通长篇小说公司的本地单用户 Agent 公司工作台。

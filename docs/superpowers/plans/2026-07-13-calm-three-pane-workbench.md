@@ -1,5 +1,7 @@
 # Calm Three-Pane Workbench Implementation Plan
 
+> ⚠️ 历史注记（2026-08-16）：公司/项目双页适配已被项目页单壳取代（公司适配器随公司页删除）；三栏骨架由 WorkbenchShell 继承。本计划为历史执行记录。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Replace the company and project pages with the approved C3 workbench: left selects work, center performs work, right follows context, while management pages remain single-column.

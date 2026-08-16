@@ -1,5 +1,6 @@
 # 指挥系统实施计划（checkbox 版）
 
+> ⚠️ 历史注记（2026-08-16）：交付物全部在役；「公司页自动化卡片」UI 已随公司页删除（现落于 ProjectPlansPage），公司级 API 保留。
 > 对应设计：`docs/superpowers/specs/2026-08-14-command-system-design.md`
 > 分支 `command-system`，每批独立提交，typecheck/测试/e2e 绿。合 main 由用户拍板。
 

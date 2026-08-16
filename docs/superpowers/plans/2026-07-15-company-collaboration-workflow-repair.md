@@ -1,5 +1,7 @@
 # Company Collaboration Workflow Repair Implementation Plan
 
+> ⚠️ 历史注记（2026-08-16）：公司模板/建司路径已删（固定员工 ensureWorkspaceStaff 取代）；workflow_node/edge 可执行协作序列仍现行。本计划为历史执行记录。
+
 > **For agentic workers:** Execute this plan task-by-task with test-first changes and fresh verification before marking any item complete.
 
 **Goal:** Make the first-use path produce a usable AI company: a template creates employees, reporting/contact relationships, a collaboration workflow and task handoff contract; users can publish complete work orders to a task pool; the first responsible employee can claim and redistribute them; the workbench remains usable on narrow screens.

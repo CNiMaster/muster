@@ -8,13 +8,13 @@ Muster is a local multi-agent workbench. Persistent agents collaborate through p
 
 **Agent personas and skills** — 3 local personas plus 200+ domain experts integrated from [jnMetaCode/agency-agents-zh](https://github.com/jnMetaCode/agency-agents-zh) into `personas/`. 20 skills from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) in `skills/`.
 
-## Product Direction: Agent Company Workbench
+## Product Direction: Local Agent Workbench（项目主导）
 
-Muster is a persistent, project-driven Agent company workbench. The former one-shot Leader → Worker → Verifier model is retained only as historical context.
+Muster is a persistent, project-driven local Agent workbench. The former one-shot Leader → Worker → Verifier model is retained only as historical context.
 
 Authoritative planning documents:
 
-- `docs/PRD-agent-company-workbench.md` — product requirements and accepted domain semantics
+- `docs/PRD-agent-company-workbench.md` — 历史 PRD（公司时代语义，已被 2026-08-15 蓝图定案 + 08-16 公司退场替代；当前语义以本文件「Blueprint Org Refactor」与「UI 重构」章节为权威）
 - `docs/superpowers/specs/2026-07-11-platform-workspace-agent-memory-templates-design.md` — confirmed vNext workspace, employee memory, executor, permission, template, and UX design
 - `docs/superpowers/plans/2026-07-11-vnext-guided-workspace-foundation.md` — delivered and verified vNext workspace/onboarding foundation
 - `docs/superpowers/plans/2026-07-11-vnext-agent-profile-memory.md` — delivered and verified Agent Profile, Agent Home, layered memory, and context recovery
@@ -27,17 +27,17 @@ Key constraints for all new work:
 
 - Do not preserve or extend the existing "quick task" mode as a product requirement. The current orchestrator and group chat are legacy implementation references, not the target architecture.
 - Reuse low-level capabilities where appropriate: Claude Code process execution, streaming events, sandboxing, scheduling, backups, and path validation.
-- Evolve the domain model toward Workspace, Agent Profile, Company Employee, Project, Project Agent Thread, Mirror, Task, Trigger, Artifact, Report Cycle, Usage, Executor Profile, Permission Policy, Memory Entry, Capability Package, and Company Template concepts from the PRD and vNext design.
+- Evolve the domain model toward Workspace, Agent Profile, Company Employee, Project, Project Agent Thread, Mirror, Task, Trigger, Artifact, Report Cycle, Usage, Executor Profile, Permission Policy, Memory Entry, and Capability Package concepts（Company Template 概念已随模板平台删除）。
 - All real work belongs to a Project. Agent Profile is reusable and user-local; company employment, project context, runtime threads, sessions, permissions, and worktrees remain scoped and isolated.
 - Employees bind fixed CLI or API executors. Company defaults may be inherited, but an employee does not silently switch executors during a Task.
 - A mirror is a project-local temporary parallel execution thread for one employee, not a new formal company employee.
 - Task is the single runtime abstraction for queues, collaboration, clarification, feedback, event triggers, scheduled work, and bounded discussions.
 - The platform owns deterministic infrastructure; semantic decisions must be assigned to an explicit Agent.
 - No concurrent operation may silently overwrite or lose project files.
-- Writing is one built-in company template alongside general, software, and content companies. Multi-tenant SaaS, payments, and full PPT/Word/video editing remain outside the local workbench scope.
+- 题材域保留小说（novel）预设（题材扩展包/维护角色/章节初始化）；公司模板平台（general/software/content 模板向导）已随 08-16 退场删除。Multi-tenant SaaS, payments, and full PPT/Word/video editing remain outside the local workbench scope.
 - Old `.muster` runtime data contains failed test runs, has no migration requirement, and may be removed when the new persistence layer is introduced.
 
-> 当前成品边界是本地单用户多 Agent 公司工作台：公司向导、团队与员工档案、项目任务、固定执行器/权限、审批、会话健康和实时状态均已形成代码级闭环。旧 Leader→Worker→Verifier 单次编排器不参与当前运行。
+> 当前成品边界是本地单用户多智能体工作台：项目任务、智能体/人设、蓝图、归档、固定执行器/权限、审批、会话健康和实时状态均已形成代码级闭环。服务端 company 域 = 工作台实例的数据载体（company 表/company_employee/状态机/API 仍在用），UI 层已统一为工作台文案、不出现公司语义。旧 Leader→Worker→Verifier 单次编排器不参与当前运行。
 
 ## Blueprint Org Refactor（蓝图组织重构，2026-08-15 定案，分批落地）
 
@@ -54,7 +54,7 @@ Key constraints for all new work:
 
 已交付：批次1（人设原语+记忆归域）、批次2（归档检索+归档页）、批次3（蓝图环+动态通信图）、批次4a/4b（选择面规则+用户探讨）、批次4c（项目优先入口：`createQuickProject` 零组织决策 + 首页「我有件事要办」CTA）、批次4d（收件箱项目：公司对话落 `ensureInboxProject`）、批次4e（系统隐形岗懒确保：`ensureDispatcherAgentId`/`ensureJudgeAgentId` 首次使用即创建，与公司上线时机解耦；按工作台实例化而非全局单例——执行体必须同工作台是任务守卫的硬约束）、批次5（B2B 拆件：删外包中心 UI/路由/导航/hooks、删 `findVendorCompany` 与决策树 outsource 路径；dispatch 端点只留内部建议+临时工选拔；契约状态机/交付管线/返工/自动验收保留待改造为跨项目交付协议）、批次6（全量 UI 文案对齐：员工→智能体、公司→工作台，覆盖 src/client 全部用户可见文案与 tests/unit、tests/e2e 断言；服务端中文报错文案保持不动——被大量集成测试断言且属开发面）。Code review 修复：动态通信图排除 hidden 非系统执行体（蜂群工蜂/辩手只受直属调度，系统隐形岗保持可派发）；收件箱不进项目列表/驾驶舱计数并补 project.created 事件；退役蓝图遇同类新证据自动复活（避免 UNIQUE 冲突吞战绩）；归档检索空词元守卫。测试锚点：`tests/integration/task-persona.spec.ts`、`archive-search.spec.ts`、`blueprint.spec.ts`、`user-discussion.spec.ts`、`quick-project.spec.ts`、`conversation.spec.ts`（收件箱语义）、`system-agents-lazy.spec.ts`、`outsourcing-decision.spec.ts`（两路径）。
 
-剩余（收尾项）：外包契约状态机 → 跨项目交付协议的改造（项目对项目，替代公司对公司，需为保留的契约域设计新入口）；公司页 section 结构重组（团队/章程并入蓝图字段的深度改造）视真实使用后再定。注意：批次6 文案变更同步改了 tests/e2e 断言但本机未跑 e2e（`npm run test:e2e`），首次提交前需本地跑一遍验收。
+剩余（收尾项）：外包契约状态机 → 跨项目交付协议的改造（项目对项目，替代公司对公司，需为保留的契约域设计新入口）。
 
 ## UI 重构 2026-08-16（批次 A-E，项目主导 + Composer 全功能 + 固定员工收敛）
 
@@ -73,7 +73,7 @@ Key constraints for all new work:
 - **R3 资产库 + git 正确性**：upsert 登记时记录 props（size/mime，排序/预览的数据基础；按大小排序 UI 待接）；`deleteArtifact`（文件+登记+git 提交删除+审计，历史可回滚）；`POST /artifacts/reveal` 资源管理器定位（buildRevealCommand：open -R / explorer /select / xdg-open；防护同 /open：项目内 + 允许根）；前端 ArtifactsPage 列表与归档画廊显示「来源任务」链接（created_task_id 首次 UI 消费）+ 画廊类型筛选；**git 两修**——`writeArtifactContent` 保存即提交（"muster: user edit"，兑现 PRD 注释）+ 发布前主干未提交改动先提交为独立提交（"muster: user edits"，不再卷进 agent 发布提交）；context 注入「# 工作区与发布」教学段（勿自行 merge/push）。
 - **Review 修复（R1-R3 评审后）**：C1 验收员创建走 `internalRecruit` 豁免（org-lock 豁免但不 hidden——online 态可懒确保，此前真实运行态永远建不出）；I2 验收→返工轮回上限（`MAX_ACCEPTANCE_REWORK_ROUNDS=3`，超限升级用户）；I3 外包验收任务（reason=outsourcing_review）不再叠加验收员；I4 临时工转正时 deny 档自动重绑为员工档；I5 reveal/delete 补允许根校验；派发+留痕同事务；返工 assignee 预检；验收任务带显式 instruction。
 
-测试锚点：`tests/integration/r1-persona-tools.spec.ts`、`acceptance-review.spec.ts`、`r3-assets-git.spec.ts`（当前 190 文件 / 1303 测试）。实施位置：分支 execution-trace-display（工作树 /Users/master/Project/muster-execution-trace，含 2670793 重构 + f862eb0 trace 特性）；main 分支仍为重构前 028458a。
+测试锚点：`tests/integration/r1-persona-tools.spec.ts`、`acceptance-review.spec.ts`、`r3-assets-git.spec.ts`（已合入 main，随 2026-08-16 补缺批次交付）。
 
 明确不做（观察后决策）：knowledgeModel 数据实例与 views 渲染（ontology 只做蓝图分类轴）；能力包导入闭环；项目级导出；persona 正文深度激活（243 文件转换管线，待人设使用质量反馈）；工作室/手动班底固化（已被自动复盘蓝图取代）。
 
@@ -85,15 +85,15 @@ npm run dev              # 开发模式：tsx watch src/server/server.ts，Expre
 npm start                # 生产模式：node dist/server/server.js（需先 build）
 npm run typecheck        # TypeScript 项目引用全量检查
 npm test                 # Vitest 单测 + 集成（需 git 可用）
-npm run test:product-acceptance # 无真实模型请求的成品领域验收
+npm run test:watch       # vitest watch 模式
+npm run test:product-acceptance # 无真实模型请求的成品领域验收（零组织路径）
 npm run test:e2e         # Playwright 端到端
 npm run test:claude-smoke # 真实 Claude 两轮 Task/session/artifact/usage 冒烟
-npm run build            # tsup 编译 server + vite build 客户端 → dist/
-node scripts/smoke/capability-platform.mjs  # 能力平台 API 冒烟（需先 npm run dev，12 项 B1-B5 + transport 链路）
+npm run build            # build:server(tsup) + build:migrations(迁移文件拷贝) + build:client(vite) → dist/
+npm run smoke            # node scripts/smoke/run-all.mjs（需先 npm run dev，77 项 HTTP 冒烟全家桶）
 ```
 
-> **冒烟测试约定**：改 capability/plugin/project-readiness/mcp 相关代码后，启动 `npm run dev` 跑一次 `node scripts/smoke/capability-platform.mjs`，确认建项目→准备流程→plugin CRUD→marketplace→MCP transport 端到端可用。单测覆盖代码逻辑，冒烟覆盖真实 HTTP 链路。
-```
+> **冒烟测试约定**：改 capability/plugin/project-readiness/mcp/素材/权限/外包/交接相关代码后，启动 `npm run dev` 跑一次 `npm run smoke`（run-all.mjs，77 项），确认核心→素材/成果→执行器/权限→插件→B2B/临时工→委托/交接→能力平台端到端可用。单测覆盖代码逻辑，冒烟覆盖真实 HTTP 链路。
 
 ## Configuration (Environment Variables)
 
@@ -129,6 +129,13 @@ src/
                  # character-graph（只读人物关系图解析）/ speech-queue（loop protection + dedup）/
                  # swarm（蜂群）/ debate（评审庭）/ system-agents（隐形岗）/
                  # temp-worker（临时工）/ setting（系统设置模型）/ tz（时区换算）
+                 # 另有：playbooks / strategy-recommender / structure-versioning /
+                 # optimization-report / evolution-summary / promotion / recruitment /
+                 # task-suspension / thinking-params / cli-assistant / setup-assistant /
+                 # system-scan / muster-directories / capability-quality / capability-probe /
+                 # connection-probe / backup-export / entity-lock / agent-router /
+                 # company-cockpit / project-launch / business-review /
+                 # acceptance-officer / acceptance-review（subagent-health 仅测试引用，死代码）
     task-engine/ # ExecutionAdapter 接口 + FakeExecutor + TaskEngine + RunWatchdog + agentExecutor 覆盖
     trigger-scheduler.ts # 轮询持久化 schedule trigger，原子推进并派发巡检 Task
     executors/   # Claude/Codex/Gemini CLI + OpenAICompatible/Gemini API adapters +
@@ -143,8 +150,16 @@ src/
     realtime.ts  # WebSocket 广播 RealtimeEvent
     server.ts    # 入口：单端口 3456，dev 挂 Vite，prod 服务 dist/client
   client/      # React 19 + Router 7 + React Flow 12 + TanStack Query 5
-    pages/       # Home / Company / Graph / Project / Tasks / Usage / Artifacts / Reports / Dashboard / WorkflowGraph / CharacterGraph / Settings
-    components/  # StatusBoard / EventFeedList / ActivityPanel / ConversationPanel / ExecutionTraceCard / OnboardingGuide / ErrorBoundary / NaturalLanguageGraphPanel / ...
+    pages/       # Home / Project / Tasks / TaskDetail / Materials / Artifacts / Reports / Usage /
+                 # Dashboard / Graph / WorkflowGraph / CharacterGraph / Settings / Archive /
+                 # BlueprintLibrary / AgentLibrary / AgentProfile / ExecutorCenter /
+                 # PermissionCenter / CapabilityCenter / Marketplace / BusinessReview /
+                 # ProjectPlans / ProjectSettings / NotFound
+    components/  # StatusBoard / EventFeedList / ActivityPanel / ConversationPanel / OnboardingGuide /
+                 # ErrorBoundary / NaturalLanguageGraphPanel / BlockingIssues / MemoryReviewPanel /
+                 # StateExplanation（NextActionCard.tsx 为死代码，勿复用）+ 子目录 workbench/
+                 # （WorkbenchShell/PromptComposer/ExecutionTraceCard/ProjectWorkNavigation/
+                 # ProjectContextInspector/DiscussionPanel/...）、project/、review/、settings/、agents/
     hooks/       # React Query hooks
     realtime.ts  # WebSocket 断线重连 + 精确失效 React Query 缓存
     api/         # fetch client + DTO
@@ -155,7 +170,7 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 
 ### 核心运行模型
 
-- **公司状态机** `off | online | draining | review_paused`：上班锁定正式组织配置；镜像扩缩容例外。
+- **公司状态机（服务端工作台实例载体）** `off | online | draining | review_paused | archived`：上班锁定正式组织配置；镜像扩缩容例外。UI 层已无公司语义——company 行是工作台实例的数据归组锚点，用户看到的只有「工作台上线/下班」胶囊。
 - **项目状态机（准备流程）** `idle(兼容) | drafting | researching | equipping | staffing | ready | active | paused | completed | archived`：新建项目默认进 `drafting`，经六阶段准备流程（构思→调研→装备→员工→就绪）到 `active` 才能派工。`transitionProjectPhase` + `assertCanTransition` 做状态转换校验（向前需按序，回流任意允许），`validatePhaseExit` 校验向前跃迁的阶段产物（drafting 需 goal、researching 需摘要+候选能力、equipping 需启用 plugin、staffing 需分配员工）。readiness 存 `project.settings.onboarding`。任务连续失败 3 次（`failure_count >= TASK_CIRCUIT_BREAKER_THRESHOLD`）且项目 active 时自动熔断回流到 `researching`。`createProject` 接受可选 `initialState` 跳过准备流程（测试/模板用）。
 - **Task 是唯一运行单元**：10 态状态机 `queued|claimed|running|waiting_input|waiting_dependency|paused|blocked|completed|failed|cancelled`。
 - **项目任务边界由用户控制**：后台自动规划只能进入已有的 active `project_task`；没有用户项目任务时不得暗中创建新的上下文边界。
@@ -172,13 +187,13 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 - **员工档案、任职与运行态**：`agent_profile` 是全局稳定身份，`company_employee` 是公司任职，`project_task_thread` 是项目任务中的运行会话；员工页将三者分栏展示，同一档案可被多家公司引用。
 - **Agent Home 与分层记忆**：每个档案在 `{MUSTER_HOME}/agents/{profileId}` 拥有隔离个人空间；个人、技能、公司、项目记忆先进入候选审核，再写入版本化 SQLite/FTS 索引，并将已批准内容原子同步为人可读 Markdown。待审内容、凭据、会话与本地路径不会进入能力导出。
 - **可重建上下文**：上下文按身份原则→公司任职→项目→已批准分层记忆→Task 装配；自动/手动压缩先持久化记忆并保留前一 session 引用，失败时不清空旧 session。
-- **长篇小说公司**：5 基础岗位（lead/writer/character/plot/inspector），第一负责人≠主写手；章节完成事件触发人物/情节维护；定时一致性检查；强制复盘按根员工聚合；闲置头脑风暴受限。
+- **小说题材域**：题材预设/维护角色/章节初始化保留（GENRE_EXTENSION_PACKS/MAINTENANCE_ROLES/initializeNovelProject）；`createNovelCompany` 已降级为 tests/integration/setup.ts 测试夹具（ui-E 起无生产建司端点）；章节完成事件触发人物/情节维护；定时一致性检查；强制复盘按根员工聚合；闲置头脑风暴受限。
 - **镜像**：项目内临时并行线程，共享根员工职责/上下文/Task 池，不重复领取；成果归入根员工。
 - **能力中心（工具档案库）**：平台是"搬运工不是提供者"。`tools/` 目录是"能力→可用实现"的备选目录（不是安装清单），每个档案含 frontmatter（capability/implementation local|api/executor_kind/credential_keys/install/check/maturity）+ 正文。启动时 `syncToolRegistry()` 扫描入库到 `tool_registry` 表；后台设默认项，创建公司时 `dispatchDefaultToolsToCompany()` 派发到 `company_tool`。`assembleContext` 按"员工名下所有 capabilityBindings 的 recommendedToolIds"注入 `# 能力中心` system prompt 段，员工已具备相似工具时优先用自己的，缺少时参考推荐。是否安装/调用由员工自行决定，平台不做强制门禁，只做软诊断（`capability_tool_unavailable`/`capability_executor_mismatch` finding）。`capabilityBindingDefinitionSchema` 已扩展 `recommendedToolIds` 和 `requiresExecutorKind` 两字段。
 - **Plugin 体系（能力接入/下载/自定义 + opt-out 治理）**：统一 Plugin 模型（kind: skill/mcp-server/tool/bridge-action/ai-generated；source: builtin/executor-native/company/project/marketplace/ai-generated；scope: platform/company/project/employee）。现有 skill/tool/bridge 通过 `plugin-adapter.ts` 包装为只读 Plugin 视图，零迁移。`plugin` 表 + `company_plugin` 决策表（启停需 `company.state==='off'`）。**opt-out 治理**（迁移 `20260809100000`）：平台插件默认对所有公司启用，公司可显式禁用（`company_plugin.decision='disabled'`）；公司独占插件（scope=company）仅目标公司可见。`getEffectivePluginsForCompany` 计算 effective = 平台插件 MINUS 禁用集 ∪ 公司独占插件。**接入**：`POST /api/plugins` 存任意 MCP 配置，`assembleTools` 在 pumpThread 时按 effective 列表连接 MCP server、探测工具、注册进 RuntimeToolRegistry。**管理页**：`/capabilities`（CapabilityCenterPage）按 kind 分 Tab，每插件展开后是公司开关矩阵（三态：default/enabled/disabled/exclusive）。**下载**：`marketplace.ts` 检索本地 `~/.zcode/skills` + GitHub(`gh search`)，`installMarketplaceEntry` 落库。**自定义**：`skill-author.ts` 调 LLM（`llm-call.ts`，OpenAI 兼容，三层凭据解析）起草 SKILL.md 作为兜底。RuntimeToolRegistry 替代原 FILE_TOOLS 硬编码 switch，内置 7 工具变注册项，第三方/MCP 工具同接口注册。
 - **MCP 接入（三种 transport）**：`McpClientPool` 支持 stdio（本地子进程 command/args/env）、sse（SSEClientTransport，url/headers）、http（StreamableHTTPClientTransport，url/headers）。按 `McpServerConfig.transport` 分发到对应 SDK transport。MCP 工具经 `mcp/adapter.ts` 适配成 RuntimeTool 注册，命名 `mcp_<serverId>__<toolName>`，默认走 `network` 权限动作。连接失败的单个 server 不致命，记 health 错误后跳过。
 - **项目准备流程编排（PlanVersion + 阶段历史）**：`project_plan` 表记录每次 spec/plan 版本（回流时开新版本，created_reason: initial/rollback-3x/scope-change/manual），`project_phase_history` 记录阶段进出（含 rollbackFrom/reason）。lifecycle 事件 `project.phase-entered/exited/readiness-passed/rollback` 驱动前端 wizard stepper 自动刷新（`realtime.ts` 的 `project.*` 事件 invalidate `['project', id]`）。
-- **B2B 跨组织任务委派（外包）**：「公司」是软件内本地组织概念。`outsourcing_contract` 契约表（迁移 `20260810100000`）记录甲方 source → 乙方 target 的委派全生命周期：pending→accepted→in_progress→delivered→reviewing→completed/changes_requested/rejected。task 表增 `outsourcing_contract_id` 列标记承接任务。**全自动决策树**（`outsourcing-decision.ts`）：内部能做（`capability_binding` 有 employee_id 命中）→ 外包（跨公司扫描找具备能力的乙方）→ 招聘。**跨公司守卫旁路**：createTask 的同公司检查通过 `outsourcingContext` 显式参数绕过（默认不传=零回归），唯一跨公司入口是 `createOutsourcedTask`。承接任务在乙方项目里（assignee/project 同属乙方，thread 守卫自然通过）。**文件交付**：engine.ts 检测 `outsourcing_contract_id`，承接任务 worktree 基于**甲方 source project 的 git repo** 切出（`createWorktree(sourceProject.rootDir,...)`），publish 目标指向甲方 rootDir，readonlyDirs 追加甲方资料路径（复用全部三方合并管线，baseCommit 在甲方 repo 有效）。**跨公司依赖恢复**：`resumeDependents`（task.ts）扫描 `task_dependency` 全表唤醒等待方（补齐 parentTaskId 单链之外的跨公司依赖），在 completeTask completed 分支调用。验收返工（changes_requested）复用 business-review 模式：继承 acceptanceCriteria 另起返工任务。API：`POST /api/companies/:id/outsource/dispatch`（含决策树）/ `contracts/:id/accept|review|cancel`。管理页 `/outsourcing`（OutsourcingCenterPage）两栏契约看板。
+- **B2B 跨组织任务委派（外包）**：「公司」是软件内本地组织概念。`outsourcing_contract` 契约表（迁移 `20260810100000`）记录甲方 source → 乙方 target 的委派全生命周期：pending→accepted→in_progress→delivered→reviewing→completed/changes_requested/rejected。task 表增 `outsourcing_contract_id` 列标记承接任务。**决策入口**（`outsourcing-decision.ts`，批次5 起外包路径退役）：内部能力建议（`capability_binding` 有 employee_id 命中）+ 临时工选拔。**跨公司守卫旁路**：createTask 的同公司检查通过 `outsourcingContext` 显式参数绕过（默认不传=零回归），唯一跨公司入口是 `createOutsourcedTask`。承接任务在乙方项目里（assignee/project 同属乙方，thread 守卫自然通过）。**文件交付**：engine.ts 检测 `outsourcing_contract_id`，承接任务 worktree 基于**甲方 source project 的 git repo** 切出（`createWorktree(sourceProject.rootDir,...)`），publish 目标指向甲方 rootDir，readonlyDirs 追加甲方资料路径（复用全部三方合并管线，baseCommit 在甲方 repo 有效）。**跨公司依赖恢复**：`resumeDependents`（task.ts）扫描 `task_dependency` 全表唤醒等待方（补齐 parentTaskId 单链之外的跨公司依赖），在 completeTask completed 分支调用。验收返工（changes_requested）复用 business-review 模式：继承 acceptanceCriteria 另起返工任务。API：`POST /api/companies/:id/outsource/dispatch`（内部建议+选拔链）/ `contracts/:id/accept|review|cancel`（外包中心 UI 已退役，契约域保留）。
 - **临时工模型 + 员工评级（批次 A）**：`company_employee` 增 `employment_type`('permanent'|'temp')/`temp_status`('active'|'greyed'|'dismissed')/`source_contract_id`（迁移 `20260811000000`）；`agent_profile` 增 `is_temp_only`(0|1)/`rating`(1-5)。临时工是 B2B 决策树 recruit 路径落地。**选拔优先级链**（`selectTempForNeed`）：公司内部→复用 greyed 临时工（`reactivateGreyedTemp`，高星优先）→人才库（`is_temp_only=0`）→创建新临时工（`is_temp_only=1`）。**临时工小范围关系**：`contactAllow` 仅含发起者（对其他人隐形）。**招聘豁免**：temp 招聘允许 online 态（`assertUnlocked` 的 `tempRecruit` 参数），**绝不导致公司离线**。**两种开除**：`is_temp_only=0`（人才市场来的）开除保留 profile+Home、只清公司记忆分区；`is_temp_only=1`（临时新建未转正）开除连 profile+Agent Home 一起删、不进人才市场。**完成→greyed**：承接任务完成后（`onOutsourcedTaskCompleted`）temp+active 自动 greyed，不参与派工（`claimNextTask` 排除非 active temp）。**评级**（`employee-rating.ts`）：多维度自动计算（任务完成+记忆+任职+外包验收加权）→ 1-5 星，任务完成时 `applyRating` 异步重算；用户可 `adjustRating` 手动调；影响人才市场推荐排序与外包优先。API：`POST /companies/:id/employees/temp|:id/convert|:id/dismiss|:id/reactivate`、`POST /agent-profiles/:id/rating`。
 - **权限委托链 + 审计（批次 B）**：`permission_change_request` 表（迁移 `20260812000000`）记录下级申请权限变更（临时/项目/永久+原因），上级审批后生成 `permission_rule`。**委托链路由**（`permission-delegation.ts`）：员工超权→`findDirectManager`（org 边上溯 source_id）→公司第一负责人→用户，不让人逐个批。**审计日志**（`artifact_change_log`）：`upsertPublishedArtifact` 自动记 create/update；`transferArtifactOwnership`/`transferAllArtifactsOfOwner` 记 transfer（含接手人），交接时 owner 单一指针更新（不叠加）。**按角色模板**（`permission-templates.ts`）：经理(project/no-approval)/员工(task/ask-by-rule)/临时工(task/deny)三档幂等种子。API：`/permission-changes` CRUD、`/projects/:id/audit-log`、`/permission-templates/seed`。
 - **离职交接工作流（批次 C）**：`handover_record` 表（迁移 `20260812010000`），按人整体交接（跨所有项目）。**四阶段**（`handover.ts`）：drafting（系统自动汇总产物清单+审计）→awaiting（用户选接手人）→receiving（逐项目 `transferArtifactsInHandover` 转移 owner）→completed（删任职+归档记忆分区）。`completeHandover` 处理 first_agent 转移（防 FK 冲突）。**连环交接**：previous_handover_id 链表追溯，但 owner 始终单一指针（A→B→C 最终 owner=C）。`offboardEmployee` 创建交接入口。产物留项目原路径（检索不遗漏），owner 指针指向接手人。Agent Home 记忆分区归档到 archive/{companyId}-{date}/。API：`/handover` CRUD + assign/receive/transfer/complete、`/companies/:id/employees/:id/offboard`。
@@ -193,7 +208,7 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 以下能力均为通用机制，不绑定特定模板（写作模板可以不用，编码模板可以按需配置）：
 
 - **立场锁定（stance）**：AgentDefinition 有 `stance` 字段，在 `assembleContext` 中注入 `# 你的立场` 到 system prompt，指示 Agent 在讨论/辩论中坚持预设立场。写作场景用于角色一致性，编码场景可用于 code review 立场。
-- **活动流面板（ActivityPanel）**：Agent 间的 outboundTasks 派发（`spawned_child` 事件）和交接活动显式化，在 ProjectPage/CompanyPage 的独立面板展示 `@A → @B` 协作摘要。WebSocket 实时刷新（`project-events`/`company-events` key）。
+- **活动流面板（ActivityPanel）**：Agent 间的 outboundTasks 派发（`spawned_child` 事件）和交接活动显式化，在项目页/工作台的独立面板展示 `@A → @B` 协作摘要。WebSocket 实时刷新（`project-events`/`company-events` key）。
 - **执行过程展示（ExecutionTraceCard）**：任务执行明细落 `execution_trace` 表（kind=thinking/text/tool_call/tool_result/file_edit/progress/preview/notice/error，区别于 task_event 状态机事件）。接入点：API 执行器在 tool-loop 循环内落 trace（含 OpenAI reasoning/Gemini thoughts 思考提取）；CLI 执行器从 stream-json 事件流实时解析（`claude-stream-events.ts` 纯函数，thinking/tool_use/tool_result 块），engine 回调仅 executorKind='cli' 落库防重复；bridge/notify_host 的 progress/notify/preview 在 `processBridgeAction` 落 trace（原死通道接活）。保留策略：payload 深度截断 8KB + 每任务上限 500 条（先裁最老 tool_result）。TaskDetailPage 主列时间线（倒序、思考块默认折叠、「展开/收起同类」按 kind 批量操作 + localStorage `mu-trace-expand:<kind>` 全局记忆、preview 缩略图 + 灯箱）；`GET /api/tasks/:id/trace?kind=&limit=`；`trace.append` realtime 精确失效。
 - **Loop Protection**：`speech-queue.ts` 的 `isDispatchLoop()` 追踪 Agent→Agent 派发链，检测 A→B→A 回环和连续调用超限（阈值 3），在 `task.ts` 的 outboundTasks 派发处阻断并记录 `dispatch_loop_blocked` 事件。
 - **去重（dedup）**：`speech-queue.ts` 的 `isDuplicateContent()` 用 Jaccard 关键词相似度检查 assistant 回复是否与近期消息重复（>80% 抑制），在 `engine.ts` 回复写入前调用。
@@ -226,7 +241,7 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 | `src/server/executors/claude-code-adapter.ts` | Claude CLI 适配器 + AgentRunResult Zod 校验 |
 | `src/server/executors/tools/file-tools.ts` | worktree 文件工具 + notify_host（Agent Bridge） |
 | `src/server/worktree/publish-queue.ts` | 串行发布 + 三方合并 + 冲突阻塞 |
-| `src/server/domain/novel-template.ts` | 长篇小说公司一键模板 |
+| `src/server/domain/novel-template.ts` | 小说题材域：题材预设/维护角色/章节初始化（createNovelCompany 已降级为测试夹具） |
 | `src/server/domain/report.ts` | 强制复盘周期（review_paused → 看板 → 备注转修正） |
 | `tools/` | 能力中心工具档案库（能力→实现备选目录，启动扫描入 `tool_registry` 表） |
 | `src/server/domain/tool-registry.ts` | 工具档案扫描/CRUD/默认派发（`syncToolRegistry`/`listTools`/`dispatchDefaultToolsToCompany`） |
@@ -243,11 +258,11 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 | `src/server/domain/skill-author.ts` | AI 兜底起草 SKILL.md（调 llm-call） |
 | `src/server/domain/llm-call.ts` | 平台级 LLM 调用（OpenAI 兼容 fetch，三层凭据解析） |
 | `src/server/domain/outsourcing-contract.ts` | **B2B 外包契约**：状态机 CRUD + accept/review/deliver + createOutsourcedTask（跨公司任务唯一入口） |
-| `src/server/domain/outsourcing-decision.ts` | **B2B 决策树**：hasInternalCapability / findVendorCompany / runOutsourcingDecisionTree（内部→外包→招聘） |
+| `src/server/domain/outsourcing-decision.ts` | **外包决策入口**：hasInternalCapability + 临时工选拔（外包路径已退役） |
 | `src/server/domain/outsourcing-delivery.ts` | **B2B 交付协调**：onOutsourcedTaskCompleted（承接任务完成→契约 delivered + 临时工 greyed，幂等） |
 | `src/server/domain/temp-worker.ts` | **临时工生命周期**：createTempEmployment/convertTempToPermanent/markTempGreyed/reactivateGreyedTemp/dismissTempWorker/findGreyedTempForReuse |
 | `src/server/domain/employee-rating.ts` | **员工评级**：calculateRating（多维度加权）/applyRating/adjustRating/recalculateAllRatings |
-| `src/server/api/outsourcing.ts` | B2B REST 路由：dispatch（含决策树+选拔链）/ contracts / accept / review / cancel |
+| `src/server/api/outsourcing.ts` | B2B REST 路由：dispatch（内部建议+选拔链）/ contracts / accept / review / cancel |
 | `src/server/api/temp-worker.ts` | 临时工 + 评级 REST 路由：temp/convert/dismiss/reactivate/rating |
 | `src/server/domain/permission-delegation.ts` | **权限委托链**：findDirectManager（org 上溯）/createPermissionChangeRequest/approveChangeRequest |
 | `src/server/domain/artifact-audit.ts` | **产物审计**：logArtifactChange/listArtifactHistory/listProjectAuditLog |
@@ -261,17 +276,14 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 | `src/server/api/plugins.ts` | Plugin CRUD + MCP 连接测试 + 公司启停 + marketplace 检索/安装 + AI 起草路由 |
 | `src/client/components/workbench/WorkbenchShell.tsx` | 三栏工作台唯一壳层：顶栏（品牌菜单+栏位开关+面包屑+⌘K 命令面板+主操作）、三栏 grid、抽屉遮罩、WorkbenchGuide |
 | `src/client/components/workbench/useWorkbenchPreferences.ts` | 栏位偏好：桌面持久化（localStorage `muster:workbench:{scopeKey}`）+ 移动 ephemeral 抽屉状态解耦；`normalizeWorkbenchPreferencesForWidth` 只在 ≥1180px 收起被挤压栏 |
-| `src/client/components/workbench/ProjectWorkNavigation.tsx` | 项目左栏：正在进行/需要处理/团队与沟通/固定入口+更多（按工作状态组织，非系统模块） |
-| `src/client/components/workbench/CompanyWorkNavigation.tsx` | 公司左栏：日常工作/团队与沟通/固定入口 |
+| `src/client/components/workbench/ProjectWorkNavigation.tsx` | 项目左栏：项目任务/协作与沟通/工具与资产/系统设置四组（按工作状态组织；work-nav-more 收「历史任务」） |
 | `src/client/components/workbench/ProjectContextInspector.tsx` | 项目右栏：当前对象摘要（联系人/任务/运行/待处理 + 折叠协作设置） |
-| `src/client/components/workbench/CompanyContextInspector.tsx` | 公司右栏：当前公司摘要 + 团队现场 SeatWall 折叠 |
-| `src/client/components/workbench/WorkbenchContextSwitcher.tsx` | 面包屑切换器：公司/项目/当前对象（不承载完整功能目录） |
-| `src/client/components/workbench/ProjectToolPageShell.tsx` | 项目工具页（tasks/plans/dashboard/artifacts/...）复用同一三栏壳，不重新出现全局顶栏 |
-| `src/client/components/company/CompanyAttention.tsx` | 公司"需要处理"视图（`?view=attention`）：聚合审批/配置缺口/项目关注/风险/下一步 |
+| `src/client/components/workbench/WorkbenchContextSwitcher.tsx` | 面包屑切换器：项目/当前对象（不承载完整功能目录） |
+| `src/client/components/workbench/ProjectToolPageShell.tsx` | 项目工具页（tasks/plans/dashboard/artifacts/...）复用同一三栏壳，不重新出现全局顶栏（另导出 TaskDetailProjectShell） |
 | `src/client/components/workbench/WorkbenchGuide.tsx` | 一次性三步引导（选择工作/完成工作/查看现场） |
 | `src/client/components/project/ProjectOnboardingWizard.tsx` | 六阶段准备流程 wizard（drafting→researching→equipping→staffing→ready→active，允许回流） |
 | `src/client/components/project/phases/` | 5 个阶段表单组件（DraftingPhase/ResearchingPhase/EquippingPhase/StaffingPhase/ReadyPhase） |
-| `scripts/smoke/capability-platform.mjs` | 能力平台 API 冒烟测试（12 项，覆盖 B1-B5 + transport 关键链路） |
+| `scripts/smoke/run-all.mjs` | HTTP 冒烟全家桶（77 项：1-core/2-materials-artifacts/3-executors-perms/4-plugins/5-b2b-temp/6-delegation-handover/capability-platform，需先 npm run dev） |
 | `docs/superpowers/specs/2026-07-26-capability-platform-design.md` | 能力与流程平台总架构 spec（4 子系统 A/B/C/D + 6 批次 B1-B6） |
 | `src/server/domain/credential-store.ts` | 凭据库（平台级）：三层解析 + CRUD + seed + 公司派发 |
 | `src/server/api/credentials.ts` | 凭据库管理 REST 路由（平台级 + 公司级） |
@@ -306,10 +318,10 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 
 ### 测试
 
-- Vitest 单元与集成测试覆盖运行闭环、workspace 引导、全局员工档案、跨公司任职、Agent Home、分层记忆、项目任务会话、CLI 探测、审批桥、上下文恢复、复用与安全重置；准确数量以 `npm test` 当前输出为准（当前 181 文件 / 1250 测试，含能力平台 B1-B5、三栏工作台、定时自动化（tz 时区/schedule-automation）、蜂群 swarm.spec、结构化选项 question-options.spec、评审庭 debate.spec、蓝图组织重构 task-persona/archive-search/blueprint/user-discussion/quick-project/system-agents-lazy 等）。
+- Vitest 单元与集成测试覆盖运行闭环、workspace 引导、全局智能体档案、跨工作台任职、Agent Home、分层记忆、项目任务会话、CLI 探测、审批桥、上下文恢复、复用与安全重置；准确数量以 `npm test` 当前输出为准（当前 179 文件 / 1269 测试，1266 过；web-tools 3 例为本地沙箱 DNS 拦截公网域名的环境性失败非回归；含能力平台 B1-B5、三栏工作台、定时自动化（tz 时区/schedule-automation）、蜂群 swarm.spec、结构化选项 question-options.spec、评审庭 debate.spec、蓝图组织重构 task-persona/archive-search/blueprint/user-discussion/quick-project/system-agents-lazy、对话附件 message-attachments 等）。
   - 测试环境需要真实 git 仓库作为 `project.rootDir`（`createWorktree` 需要 `git rev-parse HEAD` 成功）。`tests/integration/setup.ts` 的 `makeTempGitRepo()` 创建临时 git 仓库（含初始 commit）供测试使用。
   - `project.rootDir` 与 `firstAgentId` 均为可选：建项目时留空，`createProject` 自动使用当前激活总工作区，并生成 `{workspace}/companies/{公司名}/projects/{项目名}-{项目ID}`；项目 ID 后缀保证同名项目不会共享目录。`ensureGitRepo()` 会在首个 worktree 创建时自动 `mkdir + git init`。
-- Playwright 覆盖建司→团队→项目→首 Task、向导式创建完整公司、在线建项目、最近项目恢复、公司上下文导航与工作台信息架构（总览/需要处理/团队/项目）、员工库、执行器中心（折叠式安装引导）、权限中心、窄屏工作台抽屉以及窄屏设置页；准确数量以 `npm run test:e2e` 当前输出为准（当前 20 测试）。
+- Playwright 覆盖项目主导流程（新建项目→首 Task）、在线建项目、最近项目恢复、工作台信息架构与项目导航、智能体库、执行器中心（折叠式安装引导）、权限中心、窄屏工作台抽屉以及窄屏设置页；准确数量以 `npm run test:e2e` 当前输出为准（当前 18 测试：smoke 11 + marketplace 2 + novel 2 + product-completion 2 + regression 1）。
 - `npm run test:claude-smoke` 已使用真实 Claude Code 连续完成两个 Task，验证跨 worktree 的 `--session-id`/`--resume`、文件发布、Artifact 登记和 Token/缓存用量。
 
 `publish_record` 由 `0002_conversation.sql` 创建，记录 Task 发布提交、合并文件、冲突与阻塞状态，供成果修改历史页读取。
@@ -327,27 +339,22 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 - OpenCode/Pi 等更多 CLI 需通过同一兼容性门禁后再加入；完整多模态和多租户 SaaS 不属于当前本地成品边界。
 
 ### UI 分层约定
-- **低门槛优先**：首次主流程固定为“创建公司→组建团队→创建项目→发布 Task”；首屏只提供一个状态相关主行动，rootDir/firstAgentId 后端自动。
+- **低门槛优先**：项目优先开工——首页自然语言输入（createQuickProject 零组织决策）或表单新建 /projects/new；零组织对话经 workspace-staff 固定员工（第一负责人 + 验收员）即开工；rootDir/firstAgentId 后端自动。
 - **看板纯前端增强**：DashboardPage 用 `useProjectEvents`/`useStatusBoard`/`useTasks` reduce/`useProjectUsage.byModel` 在客户端做状态分布条、负载柱状图、事件时间线、模型用量拆分；不引入图表库，用 CSS（`.dashboard-*` 类）可视化。新增聚合趋势（吞吐/费用时序）需后端补端点，不属于前端职责。
 - **低频配置收口**：项目目录、说明、复盘阈值和讨论预算集中到“项目设置”；项目页仅将线程扩容和脑暴收进协作工具折叠区。员工编辑折叠立场/技能/权限/执行器；系统设置首屏只显示默认执行器、连接测试与保存。
-- **三栏工作台信息架构（公司页 + 项目页统一）**：`WorkbenchShell` 是唯一壳层，三栏语义固定——左栏"选择工作"、中栏"完成工作"、右栏"查看当前对象状态"。设计规格见 `docs/superpowers/specs/2026-07-13-three-pane-workbench-design.md`。重构后的入口纪律：
-  - **左栏按工作状态组织，不按系统模块组织**。项目左栏四组：正在进行（活跃项目任务 + 任务领取清单 + 新建入口）/ 需要处理（阻塞·等待补充·待审批）/ 团队与沟通（项目群聊 + 第一负责人 + 部门员工树）/ 固定入口（运行概览·成果·**更多**）。公司左栏三组：日常工作（总览·项目·需要处理）/ 团队与沟通（团队·沟通活动）/ 固定入口（更多设置）。低频工具（计划·素材·复盘·用量·人物关系·设置）收入单层**更多**（`work-nav-more`，内联展开列表，**不**做 popover——左栏 `overflow:auto` 会裁剪绝对定位弹出层）。
-  - **右栏是对象摘要不是运营仪表盘**。`ProjectContextInspector`/`CompanyContextInspector` 统一为：当前对象 + 状态 + 1~3 关键指标 + 一个主行动 + 紧急待处理直显 + 折叠的协作/设置/团队现场。空状态不显示空告警卡。
+- **三栏工作台信息架构（项目页）**：`WorkbenchShell` 是唯一壳层，三栏语义固定——左栏"选择工作"、中栏"完成工作"、右栏"查看当前对象状态"。设计规格见 `docs/superpowers/specs/2026-07-13-three-pane-workbench-design.md`。重构后的入口纪律：
+  - **左栏按工作状态组织，不按系统模块组织**。项目左栏四组：项目任务（活跃项目任务 + 任务领取清单 + 新建入口）/ 协作与沟通（项目群聊 + 第一负责人 + 部门员工树）/ 工具与资产（成果与文件·自动化·蓝图库·归档·智能体人才库）/ 系统设置。历史任务收进单层**更多**（`work-nav-more`，内联展开列表，**不**做 popover——左栏 `overflow:auto` 会裁剪绝对定位弹出层）。
+  - **右栏是对象摘要不是运营仪表盘**。`ProjectContextInspector`：当前对象 + 状态 + 1~3 关键指标 + 一个主行动 + 紧急待处理直显 + 折叠的协作/设置/团队现场。空状态不显示空告警卡。
   - **中栏只突出一条主线**：项目任务工作面 = 任务标题+状态+目标 → 制作前提 → 工作单 Composer → 高级协作折叠。有活跃任务时"新建项目任务"默认收起。员工工作面统计卡收敛为 3 项。
-  - **顶部工具栏唯一**：品牌入口是全局菜单（首页·公司·员工库·执行器·权限·审批·设置），`WorkbenchContextSwitcher` 只切公司/项目/当前对象，不再承载完整功能目录。`⌘K` 是可搜索命令面板（`WorkbenchShell` 接 `commandOptions` prop，按 group 分组，公司页/项目页/工具页各传入上下文相关选项）。
+  - **顶部工具栏唯一**：品牌入口是全局菜单（首页·新建项目·蓝图库·归档·智能体库·执行器·权限·审批·设置），`WorkbenchContextSwitcher` 只切项目/当前对象，不再承载完整功能目录。`⌘K` 是可搜索命令面板（`WorkbenchShell` 接 `commandOptions` prop，按 group 分组，项目页/工具页各传入上下文相关选项）。
   - **响应式分层**：`useWorkbenchPreferences` 区分**桌面栏位**（持久化到 localStorage `muster:workbench:{scopeKey}`，`normalizeWorkbenchPreferencesForWidth` 只在 ≥1180px 收起被挤压的栏）和**移动抽屉**（<1180px 的 ephemeral `drawers` 状态，不持久化、互斥单开、遮罩+Escape 关闭）。两者解耦是为了：窄屏 toggle 抽屉不被 normalize 立即覆盖，回到桌面时桌面偏好完整恢复。
-  - **新增公司"需要处理"视图**：`CompanyAttention`（`?view=attention`）聚合权限审批、员工配置缺口、项目关注、风险和下一步行动，是 `CompanySectionKey` 的第六个值。
 - **工作流与计划边界**：员工上下级、引用许可、步骤条件与任务交接格式属于公司级配置，项目暂不覆盖公司工作流；项目只配置计划任务、任务领取清单和运行状态。所有项目工具页复用同一个三栏外壳，子工具页不得重新出现全局顶栏。
-- **模板优先创建**：员工库默认先展示与四类公司模板对应的整套团队，再展示单岗位快捷模板，空白自定义表单只作为低频入口；公司创建继续以模板向导为主入口。
-- **Schema 驱动公司蓝图**：行业模板必须输出 `CompanyTemplateDraft` 结构化数据并通过服务端确定性校验；客户端只用受信任 React 模块渲染，不接收或执行模型 HTML。创建必须经过“生成蓝图→六模块确认→运行配置→创建”，不可恢复一键绕过确认。
-- **Skill 绑定与加载边界**：系统级 `company-template-architect` 只生成公司草案，不生成或审核新 Skill。业务 Skill 绑定到员工、字段或 Task，并只在 Task 明确 Skill、能力或知识目标命中时加载；缺失项进入诊断，禁止执行时搜索或自动安装外部 Skill。
-- **模板运行健康**：公司模板安装必须保存确认快照与版本。字段负责人、能力绑定、Skill 和计划目标的运行问题使用稳定 fingerprint 去重，向用户解释原因、影响、建议与配置入口；修复不得静默覆盖用户调整。
 - **内联 style**：历史代码大量 `style={{...}}`，新增复杂区块优先抽 `.details-collapse` 等语义类进 `global.css`；简单 grid/gap 保留内联可接受。
 - **工作台改动约束**：
   - 改三栏布局/栏宽/折叠阈值，同步三处：`global.css` 的 `--work-left`/`--work-right`/`--work-surface-min` + `useWorkbenchPreferences.ts` 的 `normalizeWorkbenchPreferencesForWidth`/`MIN_WORKBENCH_SURFACE_WIDTH` + 响应式断点（1179px/819px）。桌面栏位收起只由 normalize 决定，移动抽屉开关只由 ephemeral `drawers` 状态决定——两者不可交叉干预，否则窄屏 toggle 会被立即覆盖。
   - 左栏"更多"用内联展开列表（`work-nav-more-list`），**不要**用 `position:absolute` popover——左栏 `overflow:auto` 会裁剪。
-  - `⌘K` 命令面板选项经 `WorkbenchShell` 的 `commandOptions` prop 注入，按 `group` 分组渲染；公司页/项目页/`ProjectToolPageShell` 各自传入上下文相关选项，全局选项（首页/公司/员工库/执行器/权限/审批/设置）由 shell 自动追加。
-  - 工作台相关测试：`workbench-shell.spec.tsx`（壳层/抽屉/命令面板）、`workbench-preferences.spec.ts`（偏好 normalize/toggle 语义）、`project-workbench.spec.tsx`（左栏导航）、`project-context-layout.spec.tsx`（任务工作面+右栏）、`company-page-layout.spec.tsx`（公司导航）。改左栏分组/文案/视图时同步这些测试。
+  - `⌘K` 命令面板选项经 `WorkbenchShell` 的 `commandOptions` prop 注入，按 `group` 分组渲染；项目页/`ProjectToolPageShell` 各自传入上下文相关选项，全局选项（首页/新建项目/蓝图库/归档/智能体库/执行器/权限/审批/设置）由 shell 自动追加。
+  - 工作台相关测试：`workbench-shell.spec.tsx`（壳层/抽屉/命令面板）、`workbench-preferences.spec.ts`（偏好 normalize/toggle 语义）、`project-workbench.spec.tsx`（左栏导航）、`project-context-layout.spec.tsx`（任务工作面+右栏）。改左栏分组/文案/视图时同步这些测试。
   - 改产品流程（如项目创建后是否直接进工作台 vs onboarding wizard）会连锁影响 E2E：`smoke.spec.ts`、`regression.spec.ts`、`product-completion.spec.ts` 假设了特定入口路径，流程变更后需同步断言。
 
 旧 Leader/Worker/Verifier、临时群聊、`.muster/config.json` 文件持久化等已全部废弃，不再参与运行。

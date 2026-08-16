@@ -48,7 +48,7 @@
 
 - `trigger` 表加 `schedule_kind('interval'|'daily')` + `time_of_day('HH:mm')` + `timezone`（默认服务器本地）；daily 的 next_run_at = 时区内下一个该时刻。
 - **不叠跑**：派发前查该 trigger 上次派的任务仍 active（queued/claimed/running/waiting_*）→ 跳过创建、推进 next_run_at、留 `trigger_skipped_overlap` 事件。
-- **公司级自动化**：`/api/companies/:id/automation`（镜像项目版），派发复用 postUserMessage 的公司 scope 机制（给第一负责人派任务）；UI 公司页「自动化」卡片。
+- **公司级自动化**：`/api/companies/:id/automation`（镜像项目版），派发复用 postUserMessage 的公司 scope 机制（给第一负责人派任务）；UI 公司页「自动化」卡片（公司页已删——自动化 UI 现落于 ProjectPlansPage，公司级 API 保留）。
 - **晨醒开关**：`morningReportEnabled`（默认 true）门 `scheduleOptimizationReports`，SettingsPage 开关。
 
 ## 蜂群设计（批次 2）

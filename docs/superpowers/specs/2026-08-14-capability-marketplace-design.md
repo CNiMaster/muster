@@ -36,7 +36,7 @@ muster 无法决定最终使用哪份能力，也不该尝试：
 ## 三项关键决策
 
 1. **来源要精：只接官方**。v1 四源：`anthropics/claude-code`（官方插件 market）、`anthropics/skills`（官方 Skills）、`registry.modelcontextprotocol.io`（官方 MCP Registry，REST API）、`modelcontextprotocol/servers`（官方参考 MCP）。社区聚合站（mcp.so/glama/pulseMCP）**不接**——数据参差、反爬、评分不可信；`claude-plugins-official`（claude.com）有公开不稳定 issue（anthropics/claude-code#22310）不主接。**不做 ~/.zcode 插件缓存扫描**（用户拍板：zcode 是本地特殊软件非主流；预置内容与装没装 zcode 解耦。既有 `searchLocalSkills` 保留为"本地目录"手动源，不扩展）。
-2. **分类 = Skill / MCP Server / 工具 / 插件**（对应 plugin.kind 现有枚举）。**智能体包不进商城 v1**：`anthropics/knowledge-work-plugins` 这类"岗位插件包"与员工库/团队模板（TeamPackPicker/role-templates/243 人设库）语义重叠，归属员工系统另议（见"不在本轮范围"）。
+2. **分类 = Skill / MCP Server / 工具 / 插件**（对应 plugin.kind 现有枚举）。**智能体包不进商城 v1**：`anthropics/knowledge-work-plugins` 这类"岗位插件包"与员工库/团队模板（TeamPackPicker/role-templates 已于 08-16 删除，语义现对应智能体库/人设库 243 人设）语义重叠，归属员工系统另议（见"不在本轮范围"）。
 3. **策展优先于镜像**：商城首页默认展示**预置策展目录（人工精选 ~10 个官方精品，pin commit/tag）**；官方 Registry 是搜索后的"延伸浏览"，不是全量镜像。这同时是安全策略：预置条目 pin 版本防上游劫持；第三方来源手动添加 → 未审核标记 → 权限清单 + 用户确认才可装（沿用 PRD 352/385 边界）。
 
 ## 目标体验（验收锚点）

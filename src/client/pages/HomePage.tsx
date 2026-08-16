@@ -163,7 +163,6 @@ export function HomePage(): React.ReactElement {
             onToggleThinking={setThinkingDepth}
             loading={quickProject.isPending}
             onSend={(text) => handleStartWithPrompt(text)}
-            onAttachFile={() => toast('info', '项目启动后可直接在工作台上传文件与素材')}
           />
         </div>
       </main>

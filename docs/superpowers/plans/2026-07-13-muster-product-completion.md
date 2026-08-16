@@ -1,5 +1,7 @@
 # Muster Product Completion Implementation Plan
 
+> ⚠️ 历史注记（2026-08-16）：公司驾驶舱/公司创建向导/模板平台交付物已随公司退场删除；运行层（Watchdog/SessionManager/生命周期事件）仍现行。本计划为历史执行记录。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 将当前“基础能力可用但入口复杂、状态不真实、闭环不完整”的 Muster 收敛为可创建公司、组建团队、绑定执行器、创建项目任务并持续运行的本地多 Agent 公司工作台成品。

@@ -1,4 +1,5 @@
 # Muster vNext Guided Workspace Foundation Implementation Plan
+> ⚠️ 历史注记（2026-08-16）：本计划中的公司→项目 onboarding 旅程与 CompanyPage/CompanyWizardPage 引用已被项目优先（createQuickProject/工作台固定员工）取代；总工作区/引导/恢复部分仍现行。
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 **Goal:** Deliver the first working vNext vertical: a safe company-to-project onboarding flow, a persistent total workspace, an action-first home/project experience, last-project resume, readable fallback errors, and progressive settings.
 

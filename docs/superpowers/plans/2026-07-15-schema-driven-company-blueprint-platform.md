@@ -1,5 +1,7 @@
 # Schema-Driven Company Blueprint Platform Implementation Plan
 
+> ⚠️ 历史注记（2026-08-16）：模板架构师 Skill 与声明式蓝图平台已随公司退场删除，蓝图语义由任务级 blueprint.ts 自动进化取代。本计划为历史执行记录。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the first complete schema-driven company-template vertical slice: a Template Architect Skill generates a validated company blueprint, Muster renders it as a clear modular HTML review, users can create and later adjust the company, and employee/field Skill usage plus health findings remain explicit and traceable.

@@ -1,5 +1,7 @@
 # Muster vNext Agent Profile and Memory Implementation Plan
 
+> ⚠️ 历史注记（2026-08-16）：Agent Profile/分层记忆/Agent Home 仍为现行服务端设计；文中 CompanyPage 引用已随公司退场失效。
+
 **Status:** Completed and verified on 2026-07-11.
 
 **Acceptance:** `npm test` 40 files / 270 tests, `npm run typecheck`, `npm run build`, `npm run test:e2e` 10/10, and `git diff --check` all passed.

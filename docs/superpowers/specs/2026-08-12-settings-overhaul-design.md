@@ -1,7 +1,7 @@
 # 基础设置补齐（网络代理 / 外观 / 生成参数 / 并发）设计
 
 **日期**：2026-08-12
-**状态**：设计稿（待实现）
+**状态**：✅ 已实现（2026-08-12 起，随公司退场同步更新）
 **关联 PRD**：`docs/PRD-agent-company-workbench.md` — Execution and Capability Model（新增 System Settings 概念段）
 **关联代码**：`src/server/domain/setting.ts`、`src/server/api/settings.ts`、`src/client/pages/SettingsPage.tsx`、`src/server/executors/*-adapter.ts`、`src/server/domain/capability-probe.ts`
 
