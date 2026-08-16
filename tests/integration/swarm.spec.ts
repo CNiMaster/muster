@@ -344,7 +344,32 @@ describe('W3 引擎接线', () => {
     expect(beeRows).toHaveLength(2);
     expect(listTaskEvents(db, dispTask.id).some((e) => e.kind === 'swarm_created')).toBe(true);
 
-    // 普通 agent 返回 swarmPlan → 忽略（completed 正常落账）
+    // 派遣分级（批次5）：第一负责人返回 swarmPlan → 全额落地（不再忽略）
+    fake.script([
+      {
+        result: {
+          outcome: 'completed' as const,
+          summary: '负责人放蜂',
+          outboundTasks: [],
+          artifacts: [],
+          swarmPlan: { goal: 'g', workers: [{ title: 'x', brief: 'b' }] },
+        },
+      },
+    ]);
+    const leadTask = createTask(db, { projectId: project.id, projectTaskId: projectTask.id, assigneeAgentId: lead.id, title: '负责人放蜂', priority: 9 });
+    db.prepare(
+      `INSERT INTO project_agent_thread (id, project_id, agent_id, kind, root_thread_id, claude_session_id, context_json, state, created_at, updated_at)
+       VALUES ('th_w3_b', ?, ?, 'primary', NULL, NULL, '{}', 'idle', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`,
+    ).run(project.id, lead.id);
+    await engine.pumpThread('th_w3_b');
+    const leadAfter = getTask(db, leadTask.id);
+    expect(leadAfter.state).toBe('waiting_dependency');
+    expect(db.prepare(
+      "SELECT COUNT(*) AS c FROM task WHERE parent_task_id=? AND input_protocol_json LIKE '%swarm_bee%'",
+    ).get(leadTask.id)).toMatchObject({ c: 1 });
+
+    // 控制面（蜂群工蜂角色）返回 swarmPlan → 仍忽略（completed 正常落账）
+    const beeRole = createAgent(db, { companyId: (db.prepare('SELECT company_id AS id FROM project WHERE id=?').get(project.id) as { id: string }).id, name: '工蜂测试', role: 'swarm-worker', responsibilities: '', contactAllow: [lead.id], tempRecruit: true });
     fake.script([
       {
         result: {
@@ -356,16 +381,16 @@ describe('W3 引擎接线', () => {
         },
       },
     ]);
-    const normalTask = createTask(db, { projectId: project.id, projectTaskId: projectTask.id, assigneeAgentId: lead.id, title: '普通活', priority: 9 });
+    const beeTask = createTask(db, { projectId: project.id, projectTaskId: projectTask.id, assigneeAgentId: beeRole.id, title: '工蜂活', priority: 9, swarmManaged: true });
     db.prepare(
       `INSERT INTO project_agent_thread (id, project_id, agent_id, kind, root_thread_id, claude_session_id, context_json, state, created_at, updated_at)
-       VALUES ('th_w3_b', ?, ?, 'primary', NULL, NULL, '{}', 'idle', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`,
-    ).run(project.id, lead.id);
-    await engine.pumpThread('th_w3_b');
-    const normalAfter = getTask(db, normalTask.id);
-    expect(normalAfter.state).toBe('completed');
+       VALUES ('th_w3_c', ?, ?, 'primary', NULL, NULL, '{}', 'idle', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`,
+    ).run(project.id, beeRole.id);
+    await engine.pumpThread('th_w3_c');
+    const beeAfter = getTask(db, beeTask.id);
+    expect(beeAfter.state).toBe('completed');
     expect(db.prepare(
       "SELECT COUNT(*) AS c FROM task WHERE parent_task_id=? AND input_protocol_json LIKE '%swarm_bee%'",
-    ).get(normalTask.id)).toMatchObject({ c: 0 });
+    ).get(beeTask.id)).toMatchObject({ c: 0 });
   });
 });

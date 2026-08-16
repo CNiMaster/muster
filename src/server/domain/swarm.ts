@@ -21,6 +21,7 @@ import { appendTrace } from './execution-trace';
 import { addDependency, cancelTask, createTask, getTask, type Task } from './task';
 import { createTempEmployment, dismissTempWorker, markTempGreyed } from './temp-worker';
 import { ensurePrimaryThread } from './thread';
+import { getPersona } from './persona-library';
 import type { SwarmPlan } from '../../shared/types';
 
 export const SWARM_WORKER_ROLE = 'swarm-worker';
@@ -55,6 +56,8 @@ export interface SwarmRun {
   nodesFailed: number;
   createdAt: string;
   finishedAt: string | null;
+  /** 派遣分级：发起者（谁请求放蜂）。 */
+  requesterAgentId: string | null;
 }
 
 interface SwarmRunRow {
@@ -74,6 +77,7 @@ interface SwarmRunRow {
   nodes_failed: number;
   created_at: string;
   finished_at: string | null;
+  requester_agent_id: string | null;
 }
 
 function swarmFromRow(r: SwarmRunRow): SwarmRun {
@@ -82,6 +86,7 @@ function swarmFromRow(r: SwarmRunRow): SwarmRun {
     companyId: r.company_id,
     projectId: r.project_id,
     rootTaskId: r.root_task_id,
+    requesterAgentId: r.requester_agent_id ?? null,
     synthesisTaskId: r.synthesis_task_id,
     goal: r.goal,
     status: r.status,
@@ -103,16 +108,51 @@ export function getSwarmRun(db: DB, id: string): SwarmRun {
   return swarmFromRow(row);
 }
 
-/** 建群：限额在创建时从系统设置定格为快照（群内不再随设置变化漂移）。 */
-export function createSwarmRun(db: DB, input: { companyId: string; projectId: string; rootTaskId: string; goal: string }): SwarmRun {
-  const limits = getSwarmLimits(db);
+/** 建群：限额在创建时定格为快照（群内不再随设置变化漂移）；requesterAgentId 记录发起者（派遣分级用）。 */
+export function createSwarmRun(db: DB, input: {
+  companyId: string; projectId: string; rootTaskId: string; goal: string;
+  requesterAgentId?: string; limitsOverride?: { maxDepth: number; maxWidth: number; maxNodes: number; budgetUsd: number };
+}): SwarmRun {
+  const limits = input.limitsOverride ?? getSwarmLimits(db);
   const id = shortId('sw_');
   const now = nowIso();
   db.prepare(
-    `INSERT INTO swarm_run (id, company_id, project_id, root_task_id, goal, status, max_depth, max_width, max_nodes, budget_usd, created_at)
-     VALUES (?,?,?,?,?,'active',?,?,?,?,?)`,
-  ).run(id, input.companyId, input.projectId, input.rootTaskId, input.goal, limits.maxDepth, limits.maxWidth, limits.maxNodes, limits.budgetUsd, now);
+    `INSERT INTO swarm_run (id, company_id, project_id, root_task_id, goal, status, max_depth, max_width, max_nodes, budget_usd, requester_agent_id, created_at)
+     VALUES (?,?,?,?,?,'active',?,?,?,?,?,?)`,
+  ).run(id, input.companyId, input.projectId, input.rootTaskId, input.goal, limits.maxDepth, limits.maxWidth, limits.maxNodes, limits.budgetUsd, input.requesterAgentId ?? null, now);
   return getSwarmRun(db, id);
+}
+
+/** 专家自主额度（派遣分级批次5）：非第一负责人/调度中心的智能体可自主放的小蜂群。 */
+export const EXPERT_SWARM_LIMITS = { maxDepth: 1, maxWidth: 3, maxNodes: 4, budgetUsd: 1 };
+
+/** 该智能体是否已有活跃蜂群（专家自主并发控制：同时最多 1 群）。 */
+export function countActiveSwarmsByRequester(db: DB, agentId: string): number {
+  const row = db.prepare(
+    "SELECT COUNT(*) AS c FROM swarm_run WHERE requester_agent_id=? AND status='active'",
+  ).get(agentId) as { c: number };
+  return row.c;
+}
+
+/** 请示第一负责人：超限/并发冲突时把完整计划派给负责人把关（负责人可自行决定转派调度中心或拒绝）。 */
+export function escalateSwarmRequest(db: DB, input: {
+  companyId: string; projectId: string; leadAgentId: string; requesterAgentId: string; requesterName: string; plan: SwarmPlan;
+}): { taskId: string } {
+  ensurePrimaryThread(db, input.projectId, input.leadAgentId);
+  const planDigest = input.plan.workers.map((w, i) => `${i + 1}. ${w.title}（${w.brief.slice(0, 60)}${w.personaId ? '；人设:' + w.personaId : ''}）`).join('\n');
+  const task = createTask(db, {
+    projectId: input.projectId,
+    assigneeAgentId: input.leadAgentId,
+    title: `[蜂群请示] ${input.requesterName} 请求派出 ${input.plan.workers.length} 只工蜂`,
+    inputProtocol: {
+      trigger: 'swarm_request',
+      goal: input.plan.goal,
+      planDigest,
+      requesterAgentId: input.requesterAgentId,
+    },
+    priority: 8,
+  });
+  return { taskId: task.id };
 }
 
 /** 实时节点统计（根调度任务不计；cancelled 计入 done=已收口）。 */
@@ -517,7 +557,12 @@ export interface MaterializedSwarm {
  *   追加蜂到原群（nodes_total += N），汇报写入原汇总/根任务。
  * 扇出超上限：截断到上限并留事件（不硬失败——调度中心的反馈通道已关闭，截断优于丢弃）。
  */
-export function materializeSwarm(db: DB, sourceTask: Task, plan: SwarmPlan): MaterializedSwarm {
+export function materializeSwarm(
+  db: DB,
+  sourceTask: Task,
+  plan: SwarmPlan,
+  opts: { requesterAgentId?: string; limitsOverride?: { maxDepth: number; maxWidth: number; maxNodes: number; budgetUsd: number } } = {},
+): MaterializedSwarm {
   if (!plan.workers?.length) {
     throw new AppError(ErrorCode.VALIDATION, 'swarmPlan.workers 至少 1 个工蜂任务');
   }
@@ -527,7 +572,7 @@ export function materializeSwarm(db: DB, sourceTask: Task, plan: SwarmPlan): Mat
   }
   // 调度中心是隐形岗，不在 ensureProjectThreads（按可见花名册）覆盖内——汇总/告警任务由它执行，显式建线程
   ensurePrimaryThread(db, sourceTask.projectId, rootDispatcherId);
-  const limits = getSwarmLimits(db);
+  const limits = opts.limitsOverride ?? getSwarmLimits(db);
   const proto = sourceTask.inputProtocol as Record<string, unknown>;
   const appendSwarmId = typeof proto.swarmId === 'string' ? proto.swarmId : null;
 
@@ -547,6 +592,12 @@ export function materializeSwarm(db: DB, sourceTask: Task, plan: SwarmPlan): Mat
   const rootTaskId = sourceTask.rootTaskId ?? sourceTask.id;
   let swarm: SwarmRun;
 
+  // 蜂人设：swarmPlan worker 显式指定人设（专家蜂群）——存在才穿戴，缺失优雅降级为匿名
+  const resolveBeePersona = (personaId: string | undefined): string | null => {
+    if (!personaId) return null;
+    try { return getPersona(personaId) ? personaId : null; } catch { return null; }
+  };
+
   if (appendSwarmId) {
     // 补蜂：追加到活跃群
     swarm = getSwarmRun(db, appendSwarmId);
@@ -563,6 +614,8 @@ export function materializeSwarm(db: DB, sourceTask: Task, plan: SwarmPlan): Mat
       projectId: sourceTask.projectId,
       rootTaskId: sourceTask.id,
       goal: plan.goal || sourceTask.title,
+      requesterAgentId: opts.requesterAgentId,
+      limitsOverride: opts.limitsOverride,
     });
   }
   const swarmId = swarm.id;
@@ -574,6 +627,7 @@ export function materializeSwarm(db: DB, sourceTask: Task, plan: SwarmPlan): Mat
       requesterAgentId: rootDispatcherId,
       index,
     });
+    const beePersonaId = resolveBeePersona(worker.personaId);
     const beeTask = createTask(db, {
       projectId: swarm.projectId,
       parentTaskId: sourceTask.id,
@@ -581,6 +635,8 @@ export function materializeSwarm(db: DB, sourceTask: Task, plan: SwarmPlan): Mat
       dispatcherAgentId: rootDispatcherId,
       assigneeAgentId: beeAgentId,
       title: worker.title,
+      swarmManaged: true,
+      ...(beePersonaId ? { personaId: beePersonaId } : {}),
       inputProtocol: {
         trigger: 'swarm_bee',
         swarm: { swarmId, goal: swarm.goal, brief: worker.brief, depth: 1 },

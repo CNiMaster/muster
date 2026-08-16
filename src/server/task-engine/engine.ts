@@ -32,7 +32,7 @@ import {
 import { getThread, listOnlineThreads, updateThreadState } from '../domain/thread';
 import { getAgent } from '../domain/agent';
 import { assembleContext } from '../executors/context';
-import { materializeSwarm } from '../domain/swarm';
+import { materializeSwarm, countActiveSwarmsByRequester, escalateSwarmRequest, EXPERT_SWARM_LIMITS } from '../domain/swarm';
 import { finalizeDebate, startDebate } from '../domain/debate';
 import { DISPATCHER_ROLE, JUDGE_ROLE } from '../domain/system-agents';
 import { getExecutorManifest } from '../executors/manifests';
@@ -721,16 +721,45 @@ export class TaskEngine {
         setProjectTaskThreadSession(this.db, projectTaskThread.id, result._sessionIdHint);
       }
 
-      // 指挥系统 W3：调度中心返回 swarmPlan → 蜂群落地。
-      // 全执行器通用契约（done 结构化输出），不依赖工具循环；非调度中心的 swarmPlan 一律忽略。
-      if (result.swarmPlan && agent.isSystem && agent.role === DISPATCHER_ROLE) {
+      // 指挥系统 W3 + 派遣分级（批次5）：任何非控制面智能体返回 swarmPlan 均可落地蜂群。
+      // 控制面（工蜂/辩手）永不自主；第一负责人与调度中心 = 全额四项限额；其他专家 = 小额自主，
+      // 超出额度或已有活跃蜂群 → 请示第一负责人（完整计划派发，负责人把关后自行转派调度中心或拒绝）。
+      if (result.swarmPlan && agent.role !== 'swarm-worker' && agent.role !== 'debater') {
         const plan = result.swarmPlan;
         result.swarmPlan = undefined;
+        const isDispatcher = agent.isSystem && agent.role === DISPATCHER_ROLE;
+        const isLead = agent.role === 'lead' || agent.id === company.firstAgentId;
         try {
-          const materialized = materializeSwarm(this.db, task, plan);
-          result.outcome = 'waiting_dependency';
-          if (!result.summary) {
-            result.summary = `已放出蜂群（${materialized.beeTaskIds.length} 只工蜂${materialized.truncated ? '，超出扇出上限已截断' : ''}），等待汇总收口。`;
+          if (isDispatcher || isLead) {
+            const materialized = materializeSwarm(this.db, task, plan, { requesterAgentId: agent.id });
+            result.outcome = 'waiting_dependency';
+            if (!result.summary) {
+              result.summary = `已放出蜂群（${materialized.beeTaskIds.length} 只工蜂${materialized.truncated ? '，超出扇出上限已截断' : ''}），等待汇总收口。`;
+            }
+          } else {
+            const activeSwarms = countActiveSwarmsByRequester(this.db, agent.id);
+            if (plan.workers.length > EXPERT_SWARM_LIMITS.maxWidth || activeSwarms > 0) {
+              if (!company.firstAgentId) throw new Error('工作台缺少第一负责人，无法请示放蜂');
+              const escalated = escalateSwarmRequest(this.db, {
+                companyId: company.id,
+                projectId: project.id,
+                leadAgentId: company.firstAgentId,
+                requesterAgentId: agent.id,
+                requesterName: agent.name,
+                plan,
+              });
+              result.outcome = 'waiting_dependency';
+              result.summary = activeSwarms > 0
+                ? `已向第一负责人请示放蜂：你已有活跃蜂群（并发上限 1 群），需负责人批准后才可并行放蜂。`
+                : `已向第一负责人请示放蜂：${plan.workers.length} 只超出专家自主额度 ${EXPERT_SWARM_LIMITS.maxWidth} 只，负责人确认后按全额执行。`;
+              realtime.publish(makeLifecycleEvent('swarm.request-escalated', { escalationTaskId: escalated.taskId, goal: plan.goal.slice(0, 80), requesterAgentId: agent.id }, { companyId: company.id, projectId: project.id, taskId: task.id }));
+            } else {
+              const materialized = materializeSwarm(this.db, task, plan, { requesterAgentId: agent.id, limitsOverride: EXPERT_SWARM_LIMITS });
+              result.outcome = 'waiting_dependency';
+              if (!result.summary) {
+                result.summary = `已放出专家蜂群（${materialized.beeTaskIds.length} 只，按专家自主额度限额），等待汇总收口。`;
+              }
+            }
           }
         } catch (error) {
           result.outcome = 'blocked';

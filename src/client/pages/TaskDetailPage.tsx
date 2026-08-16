@@ -11,6 +11,7 @@ import {
   useProject,
   useTaskSwarm,
   useAbortSwarm,
+  usePersonas,
 } from '../hooks/queries';
 import type { Task } from '../api/types';
 import { Card } from '../components/Card';
@@ -200,6 +201,7 @@ export function TaskDetailPage(): React.ReactElement {
 /** 指挥系统 W4：蜂群树视图——按 parentTaskId 建树、状态着色（失败红）、当前任务高亮、一键停群。 */
 function SwarmTreeCard({ taskId }: { taskId: string }): React.ReactElement | null {
   const { data: view } = useTaskSwarm(taskId);
+  const { data: personas = [] } = usePersonas();
   const abortSwarm = useAbortSwarm();
   const swarm = view?.swarm;
   const tasks = view?.tasks ?? [];
@@ -221,6 +223,11 @@ function SwarmTreeCard({ taskId }: { taskId: string }): React.ReactElement | nul
           #{task.seq} {task.title}
         </Link>
         <Badge tone={taskStateTone(task.state)}>{stateLabel(task.state)}</Badge>
+        {task.personaId && (
+          <span className="mu-trace-blueprint-chip" title="本蜂穿戴的专家人设">
+            🎭 {personas.find((p) => p.id === task.personaId)?.name ?? task.personaId}
+          </span>
+        )}
         {task.supersededBy && (
           <Link to={`/tasks/${task.supersededBy}`} style={{ fontSize: 'var(--text-sm)' }}>已重发 → 替补</Link>
         )}

@@ -133,7 +133,12 @@ export interface DebateVerdict {
 /** 蜂群计划：调度中心把目标拆成一组独立工蜂任务。 */
 export interface SwarmPlan {
   goal: string;
-  workers: Array<{ title: string; brief: string }>;
+  workers: Array<{
+    title: string;
+    brief: string;
+    /** 专家蜂群：指定该蜂穿戴的人设（不指定 = 匿名工蜂，按蓝图自动匹配兜底）。 */
+    personaId?: string;
+  }>;
 }
 
 // ===== 实时事件契约 =====

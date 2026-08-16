@@ -267,6 +267,8 @@ export interface CreateTaskInput {
   swarmDepth?: number;
   /** 蓝图组织批次1：本次穿戴的人设（personas/ 相对路径）。不校验存在性——persona 库可热变更，缺失时上下文优雅降级。 */
   personaId?: string;
+  /** 蜂群系统管理任务（工蜂）：contactAllow 方向与常规派发相反，跳过 crewMate 守卫。 */
+  swarmManaged?: boolean;
 }
 
 const ALLOWED_TRANSITIONS: Record<TaskState, TaskState[]> = {
@@ -369,7 +371,7 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
       throw new AppError(ErrorCode.UNAUTHORIZED, `派发者 ${dispatcher.id} 不属于项目所在公司`);
     }
     // 指挥系统：系统隐形岗（调度中心）的派发对象是一次性工蜂/汇总任务（系统管理），豁免 contactAllow
-    if (dispatcher && assignee && dispatcher.id !== assignee.id && !dispatcher.isSystem && !dispatcher.contactAllow.includes(assignee.id)) {
+    if (dispatcher && assignee && dispatcher.id !== assignee.id && !dispatcher.isSystem && !dispatcher.contactAllow.includes(assignee.id) && !input.swarmManaged) {
       // 蓝图组织批次3：动态通信图——同项目团队成员（在该项目有线程）互可派发，
       // 固定白名单不再是唯一通路；loop 防护（isDispatchLoop）仍然兜底。
       // Review 修复 I1：选择面/控制面分离——hidden 非系统执行体（蜂群工蜂/辩手）只受直属调度控制，

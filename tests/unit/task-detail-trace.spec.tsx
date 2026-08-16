@@ -24,6 +24,7 @@ vi.mock('../../src/client/hooks/queries', () => ({
   useTaskAction: () => ({ mutate: vi.fn(), isPending: false }),
   useTaskSwarm: () => ({ data: { swarm: { id: 'sw_1', goal: 'g', status: 'active', nodesTotal: 2, nodesDone: 1, nodesFailed: 1, maxDepth: 3, maxWidth: 5, maxNodes: 30, budgetUsd: 5, createdAt: '', finishedAt: null }, tasks: [task, { ...task, id: 'tsk_9', seq: 9, title: '[替补] 测试任务', supersededBy: null }] } }),
   useAbortSwarm: () => ({ mutate: vi.fn(), isPending: false }),
+  usePersonas: () => ({ data: [] }),
   useTaskTrace: () => ({ data: [] }),
 }));
 

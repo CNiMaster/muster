@@ -145,6 +145,12 @@ export interface LifecycleEventPayloadMap {
   // 离职交接（批次 C）
   'handover.created': { handoverId: string; departingEmployeeId: string };
   'handover.completed': { handoverId: string; departingEmployeeId: string; receiverEmployeeId: string };
+  // 蜂群派遣分级（批次5）：专家超限/并发冲突 → 已升级第一负责人
+  'swarm.request-escalated': {
+    escalationTaskId: string;
+    goal: string;
+    requesterAgentId: string;
+  };
 }
 
 /**
