@@ -14,6 +14,7 @@ import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
 import { getCompany, createCompany } from './company';
+import { ensureWorkspaceStaff } from './workspace-staff';
 import { getAgent } from './agent';
 import { ensureDefaultWorkspace } from './workspace';
 
@@ -194,15 +195,18 @@ export function createQuickProject(db: DB, input: { name: string; description?: 
     'SELECT id FROM company WHERE archived_at IS NULL ORDER BY created_at LIMIT 1',
   ).get() as { id: string } | undefined;
   if (existing) {
+    // 组织 = f(活)：固定员工幂等确保（零组织决策，但对话可立即派发）
+    const staff = ensureWorkspaceStaff(db, existing.id);
     return {
-      project: createProject(db, { companyId: existing.id, name: input.name, description: input.description }),
+      project: createProject(db, { companyId: existing.id, name: input.name, description: input.description, firstAgentId: staff.leadAgentId }),
       companyId: existing.id,
       createdWorkspace: false,
     };
   }
   const workspace = createCompany(db, { name: '我的工作台', kind: 'general' });
+  const staff = ensureWorkspaceStaff(db, workspace.id);
   return {
-    project: createProject(db, { companyId: workspace.id, name: input.name, description: input.description }),
+    project: createProject(db, { companyId: workspace.id, name: input.name, description: input.description, firstAgentId: staff.leadAgentId }),
     companyId: workspace.id,
     createdWorkspace: true,
   };

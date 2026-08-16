@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   generateAgentProposal,
-  generateCompanyProposal,
   generateProjectProposal,
   type SetupGenerator,
 } from '../../src/server/domain/setup-assistant';
@@ -42,8 +41,8 @@ describe('setup assistant', () => {
   });
 
   it('执行器不可用时返回显式离线模板和 warning，不伪造 AI 成功', async () => {
-    const company = await generateCompanyProposal(
-      { name: '离线公司', goal: '创作长篇小说' },
+    const agent = await generateAgentProposal(
+      { name: '离线智能体', duty: '负责润色' },
       new FailingGenerator(),
     );
     const project = await generateProjectProposal(
@@ -51,11 +50,11 @@ describe('setup assistant', () => {
       new FailingGenerator(),
     );
 
-    expect(company.source).toBe('offline_template');
-    expect(company.warning).toBe('智能方案暂时不可用，已为你载入可编辑的默认团队配置。');
-    expect(company.warning).not.toContain('SECRET_DIAGNOSTIC');
-    expect(company.warning).not.toContain('--json-schema');
-    expect(company.proposal.charter).toContain('离线公司');
+    expect(agent.source).toBe('offline_template');
+    expect(agent.warning).toBeTruthy();
+    expect(agent.warning).not.toContain('SECRET_DIAGNOSTIC');
+    expect(agent.warning).not.toContain('--json-schema');
+    expect(agent.proposal.soul).toContain('离线智能体');
     expect(project.source).toBe('offline_template');
     expect(project.warning).toBe('智能方案暂时不可用，已为你载入可编辑的默认项目蓝图。');
     expect(project.proposal.outline).toBe('凡人修仙成长故事');

@@ -13,9 +13,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { makeTestDb } from './setup';
+import {  makeTestDb, createNovelCompany } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createNovelCompany } from '../../src/server/domain/novel-template';
 import { createProject, updateProject } from '../../src/server/domain/project';
 import { ensurePrimaryThread, createMirror } from '../../src/server/domain/thread';
 import {

@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DB } from '../../src/server/db/client';
-import { makeTestDb, makeTempGitRepo } from './setup';
-import { createNovelCompany } from '../../src/server/domain/novel-template';
+import {  makeTestDb, makeTempGitRepo, createNovelCompany } from './setup';
 import { createCompany } from '../../src/server/domain/company';
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject, updateProject } from '../../src/server/domain/project';

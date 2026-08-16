@@ -56,6 +56,16 @@ Key constraints for all new work:
 
 剩余（收尾项）：外包契约状态机 → 跨项目交付协议的改造（项目对项目，替代公司对公司，需为保留的契约域设计新入口）；公司页 section 结构重组（团队/章程并入蓝图字段的深度改造）视真实使用后再定。注意：批次6 文案变更同步改了 tests/e2e 断言但本机未跑 e2e（`npm run test:e2e`），首次提交前需本地跑一遍验收。
 
+## UI 重构 2026-08-16（批次 A-E，项目主导 + Composer 全功能 + 固定员工收敛）
+
+- **排版体系**：字号刻度全部由 `--app-font-size` 推导（默认 15px，`useAppearance` 只覆写这一个变量，标题随设置缩放）；最小可视字号 12px（数字角标 10-11px 例外）；`.mu-conv` 默认 520px、flex 父容器加 `fill`/`is-fill` 弹性填充。
+- **公司概念退场（无兼容）**：删 CompanyPage/CompanyListPage/CompanyWizardPage/`components/company/` 全目录与 `/companies/*` 全部路由；归档/蓝图库/组织图/协作流程改为全局路由 `/archive` `/blueprints` `/graphs/:kind` `/workflows/:workflowId`（内部用 `useDefaultCompanyId()` 解析归属，company 只作数据归组锚点不再有公司语义 UI）。新建项目走 `/projects/new`；面包屑项目切换器带「＋ 新建项目」；左栏「＋ 新建任务」直建（URL `projectTask=new` 或 `newTaskSignal` 驱动创建卡）；项目页头部有工作台「上线/下班」生命周期胶囊（⌘K 命令面板同构）。
+- **对话空态居中→落底**：ProjectTaskWorkspace 空态（无消息且无执行过程）hero+composer 垂直居中；首条消息或出现执行后过渡为消息流占满+composer 底部常驻（`ptws-body`/`is-empty`/`is-started`）。
+- **公司模板平台删除**：TEMPLATE_BASES/template-registry/template-installation/template-architect/template-health(-findings)/company-setup/company-starter/role-templates 全删；`capability_binding` 通用查询并入 `capability-binding.ts`；迁移 drop 四张模板表；cockpit requiredRoles 缺岗告警移除。招募只剩 复用档案/新建档案 两源；`/api/novel/companies` 建司端点删除（题材预设 GENRE_EXTENSION_PACKS/MAINTENANCE_ROLES/initializeNovelProject 保留；`createNovelCompany` 降级为 tests/integration/setup.ts 夹具）。
+- **固定员工（组织=f(活) 收口）**：`workspace-staff.ts` `ensureWorkspaceStaff`——工作台默认只有 第一负责人(lead,internalRecruit 豁免懒建,绑经理档权限)+验收员(ensureAcceptanceOfficer)；调度中心/评审中心隐形懒确保不变；createQuickProject 与 postUserMessage（无第一负责人时）幂等调用。旧岗位名单全仓 grep 零残留（题材域/人设库除外）。
+- **Composer 全功能**：附件链路 = `POST /api/projects/:id/materials/upload`(octet-stream + x-file-name, 64MB 上限)→素材区 `materials/_uploads/` + commitAll 随仓库进后续任务 worktree；消息 `attachments_json` + 派发 inputProtocol 注入【用户附件】相对路径；`GET /:id/raw` 预览。任务药丸（切换归属）+ 分支药丸（只读 `muster/<project>/<task>`）。消息级选项 `options_json`(mode/model/thinking)：模式=计划(前缀指令+deny 只读沙盒)+三档审批(ask-always 升级审批/ask-by-rule/no-approval 降级放行)+只读；引擎 `readMessageOptions` 覆盖 `effectiveExecutor.model/thinkingDepth` 与审批策略（无员工策略时幂等绑员工档作审批载体）。斜杠命令面板（/plan /ask /rules /auto /readonly /default /model /think /task /new）。模型清单来自执行器档案+系统设置（不再硬编码）。
+- **测试基线**：单测/集成 179 文件 1266 过（web-tools 3 例为本地沙箱 DNS 拦截公网域名的环境性失败，非回归）；e2e 18/18；HTTP 冒烟 77/77；product-acceptance 改为零组织路径。
+
 ## 补缺批次 R1-R3（2026-08-16 交付，配枪/验收员/资产库）
 
 - **R1 人设配枪**：persona frontmatter `tools` 键解析（persona-library.ts）；穿戴人设时上下文含「# 人设工具」文本段 + 注册表归一化命中的工具进「# 能力中心」推荐卡（tool-recommendation.ts `normalizeToolId`）；**一次性执行体权限缺口修复**——临时工/系统隐形岗创建即绑「临时工」deny 档（permission-templates.ts `bindDefaultDenyPolicy`，API 执行器上不再零拦截，CLI 侧 fail-closed 不变；已有显式策略不覆盖，greyed 复用补绑）。

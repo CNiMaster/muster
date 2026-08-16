@@ -1,7 +1,5 @@
 /**
- * 小说公司 REST 路由。
- - POST /api/companies/:companyId/novel-template  （应用小说模板到现有公司，仅 off 状态）
- - POST /api/companies/novel  （直接创建小说公司）
+ * 长篇小说题材 REST 路由（公司模板物化端点已随固定岗位退场）。
  - POST /api/projects/:id/chapter-completed  （章节完成事件）
  - POST /api/projects/:id/correction  （用户纠正 → 修正 Task）
  - POST /api/projects/:id/check/:kind  （手动触发定时检查）
@@ -10,36 +8,10 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { asyncHandler, param } from './middleware';
 import { getDb } from '../db/client';
-import { createNovelCompany } from '../domain/novel-template';
 import { handleChapterCompleted, dispatchCorrectionTask, dispatchConsistencyCheck } from '../domain/triggers';
 import { registerArtifact } from '../domain/artifact';
-import { getAgentProfile } from '../domain/agent-profile';
-import { materializeAgentHome } from '../domain/agent-home';
 
 export const novelRouter = Router();
-
-novelRouter.post(
-  '/',
-  asyncHandler(async (req, res) => {
-    const { name, charter, departments } = z.object({
-      name: z.string().min(1),
-      charter: z.string().optional(),
-      departments: z.array(z.object({ name: z.string().min(1), purpose: z.string().optional() })).optional(),
-    }).parse(req.body);
-    const db = getDb();
-    const result = createNovelCompany(db, { name, charter, departments });
-    const templateAgents = [
-      result.agents.lead,
-      result.agents.writer,
-      result.agents.character,
-      result.agents.plot,
-      result.agents.inspector,
-      ...result.agents.extra,
-    ];
-    for (const agent of templateAgents) materializeAgentHome(getAgentProfile(db, agent.profileId));
-    res.status(201).json(result);
-  }),
-);
 
 const projectScopedNovel = Router({ mergeParams: true });
 

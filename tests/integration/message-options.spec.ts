@@ -5,9 +5,8 @@
  * - 前端思考档位别名 med 归一为 medium
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { makeTestDb } from './setup';
+import {  makeTestDb, createNovelCompany } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createNovelCompany } from '../../src/server/domain/novel-template';
 import { createProject } from '../../src/server/domain/project';
 import { postUserMessage, listMessages } from '../../src/server/domain/conversation';
 import { listTasks } from '../../src/server/domain/task';

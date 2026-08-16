@@ -5,10 +5,9 @@
  * - 超上限裁剪（先裁最老 tool_result，再按最老顺序裁任意条目）
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { makeTestDb } from './setup';
+import {  makeTestDb, createNovelCompany } from './setup';
 import type { DB } from '../../src/server/db/client';
 import { appendTrace, listTrace, MAX_TRACE_PER_TASK } from '../../src/server/domain/execution-trace';
-import { createNovelCompany } from '../../src/server/domain/novel-template';
 import { createProject } from '../../src/server/domain/project';
 import { runToolLoop } from '../../src/server/executors/tool-loop';
 import type { ChatMessage } from '../../src/server/executors/tool-loop';

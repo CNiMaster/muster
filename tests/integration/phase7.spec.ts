@@ -2,9 +2,8 @@
  * Phase 7 测试：镜像、监察、复盘、头脑风暴
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { makeTestDb } from './setup';
+import {  makeTestDb, createNovelCompany } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createNovelCompany } from '../../src/server/domain/novel-template';
 import { createProject } from '../../src/server/domain/project';
 import { ensurePrimaryThread, createMirror, listThreads, removeMirror, updateThreadState } from '../../src/server/domain/thread';
 import { createTask, claimNextTask, listTasks, completeTask, markRunning } from '../../src/server/domain/task';

@@ -26,6 +26,7 @@ import {
   useCompanyCockpit,
   useDepartments,
   useDefaultCompanyId,
+  useCompanyAction,
 } from '../hooks/queries';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
@@ -329,6 +330,7 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
   const discoverProjectLaunch = useDiscoverProjectLaunch();
   const confirmProjectLaunch = useConfirmProjectLaunch();
   const createWorkOrder = useCreateTask();
+  const companyAction = useCompanyAction();
   const [searchParams,setSearchParams]=useSearchParams();
   const requestedView = searchParams.get('view');
   const projectView = resolveProjectWorkbenchView(requestedView);
@@ -478,13 +480,22 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
       navigationLabel="项目组织与联系人"
       inspectorLabel="项目任务与运行"
       attentionCount={attentionCount + (cockpit?.approvals.pending ?? 0)}
-      primaryAction={projectView === 'task'
+      primaryAction={<>
+        {company && (
+          company.state === 'off'
+            ? <button type="button" className="mu-btn mu-btn-ghost mu-btn-sm workbench-publish-action" title="让智能体上线工作（下班状态不领取任务）" onClick={() => companyAction.mutate({ id: company.id, action: 'clock-in' }, { onSuccess: () => toast('success', '工作台已上线，智能体开始领取任务'), onError: (e) => toast('error', `${(e as Error).message}（可在执行器中心完成接入后再上线）`) })}>🌙 已下班 · 点亮</button>
+            : company.state === 'online'
+              ? <button type="button" className="mu-btn mu-btn-ghost mu-btn-sm workbench-publish-action" title="优雅下班：在跑任务收尾后停止" onClick={() => companyAction.mutate({ id: company.id, action: 'clock-out' }, { onSuccess: () => toast('success', '工作台已下班'), onError: (e) => toast('error', (e as Error).message) })}>☀️ 工作中</button>
+              : null
+        )}
+        {projectView === 'task'
         ? <button type="button" className="mu-btn mu-btn-primary mu-btn-sm workbench-publish-action" onClick={openNewTaskCard}>＋ 新建任务</button>
         : projectView === 'employee'
           ? <a className="mu-btn mu-btn-primary mu-btn-sm workbench-publish-action" href="#employee-dispatch">＋ 派发工作</a>
           : selectedAgentId
             ? <Link className="mu-btn mu-btn-primary mu-btn-sm workbench-publish-action" to={`/projects/${projectId}?view=employee&agent=${selectedAgentId}${selectedProjectTaskId ? `&projectTask=${selectedProjectTaskId}` : ''}`}>联系负责人</Link>
-            : undefined}
+            : null}
+      </>}
       navigation={<ProjectWorkNavigation projectId={projectId} projectTasks={projectTasks ?? []} tasks={tasks ?? []} agents={agents ?? []} departments={departments ?? []} firstAgentId={project.firstAgentId ?? company?.firstAgentId} selectedProjectTaskId={selectedProjectTaskId} selectedAgentId={selectedAgentId} view={projectView} attentionCount={attentionCount} novel={company?.kind === 'novel'} onNewTask={openNewTaskCard} />}
       inspector={<ProjectContextInspector projectId={projectId} companyId={project.companyId} projectState={project.state} selectedTask={selectedProjectTask} selectedAgentId={projectView === 'employee' ? selectedAgentId : undefined} agents={agents ?? []} tasks={tasks ?? []} cockpit={cockpit} onChatWithAgent={(agentId) => { const next = new URLSearchParams(searchParams); next.set('view', 'employee'); next.set('agent', agentId); setSearchParams(next); }} />}
       commandOptions={[

@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { DB } from '../../src/server/db/client';
-import { makeTestDb } from './setup';
-import { createNovelCompany } from '../../src/server/domain/novel-template';
+import {  makeTestDb, createNovelCompany } from './setup';
 import { createProject } from '../../src/server/domain/project';
 import { ensureProjectThreads, listThreads } from '../../src/server/domain/thread';
 

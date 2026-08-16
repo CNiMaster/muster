@@ -99,33 +99,6 @@ export class ClaudeSetupGenerator implements SetupGenerator {
   }
 }
 
-export async function generateCompanyProposal(
-  input: { name: string; goal: string },
-  generator: SetupGenerator,
-): Promise<ProposalResult<CompanyProposal>> {
-  const offline: CompanyProposal = {
-    name: input.name,
-    kind: 'novel',
-    charter: [
-      `# ${input.name} 公司章程`,
-      `创作目标：${input.goal || '协同创作长篇小说'}`,
-      '所有工作按项目和 Task 留痕；信息不足时必须追问；正文与派生资料保持一致。',
-    ].join('\n\n'),
-    departments: [
-      { name: '创作部', purpose: '正文、人物与情节协作' },
-      { name: '运营监察', purpose: '进度、拥堵与一致性检查' },
-    ],
-    agentNotes: defaultAgentNotes(),
-  };
-  return generateWithFallback(
-    'company',
-    generator,
-    companyProposalSchema,
-    `为本地 Agent 公司工作台设计长篇小说公司。公司名：${input.name}。目标：${input.goal}。输出简洁、可执行的公司章程、部门建议和岗位专注点，不增加用户未要求的岗位。`,
-    offline,
-  );
-}
-
 export async function generateAgentProposal(
   input: { name: string; duty: string; existingRoles?: string[] },
   generator: SetupGenerator,

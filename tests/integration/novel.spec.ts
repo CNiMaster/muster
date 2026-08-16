@@ -8,9 +8,9 @@
  - artifact 只读视图不可直接编辑
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { makeTestDb } from './setup';
+import {  makeTestDb, createNovelCompany, assertLeadWriterSeparate } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createNovelCompany, assertLeadWriterSeparate, initializeNovelProject } from '../../src/server/domain/novel-template';
+import { initializeNovelProject } from '../../src/server/domain/novel-template';
 import { createProject } from '../../src/server/domain/project';
 import { listTasks } from '../../src/server/domain/task';
 import { handleChapterCompleted, dispatchConsistencyCheck, dispatchCorrectionTask } from '../../src/server/domain/triggers';

@@ -145,12 +145,6 @@ export function useActivateWorkspace() {
   });
 }
 
-export function useGenerateCompanyProposal() {
-  return useMutation({
-    mutationFn: (input: { name: string; goal: string }) =>
-      api.post<ProposalResult<CompanyProposal>>('/api/setup-assistant/company', input),
-  });
-}
 export function useGenerateAgentProposal() {
   return useMutation({
     mutationFn: (input: { name: string; duty: string; existingRoles?: string[] }) =>

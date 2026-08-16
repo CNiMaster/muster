@@ -2,17 +2,12 @@
  * Batch 7 集成测试：题材扩展包 + 可选岗位 + 维护事件动态岗位 + 人物关系图。
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { makeTestDb, type TestDb } from './setup';
+import {  makeTestDb, type TestDb, createNovelCompany } from './setup';
 import type { DB } from '../../src/server/db/client';
 import { createCompany, transitionCompany } from '../../src/server/domain/company';
 import { createProject } from '../../src/server/domain/project';
 import { listAgents } from '../../src/server/domain/agent';
-import {
-  createNovelCompany,
-  initializeNovelProject,
-  GENRE_EXTENSION_PACKS,
-  MAINTENANCE_ROLES,
-} from '../../src/server/domain/novel-template';
+import { initializeNovelProject, GENRE_EXTENSION_PACKS, MAINTENANCE_ROLES,  } from '../../src/server/domain/novel-template';
 import { handleChapterCompleted } from '../../src/server/domain/triggers';
 import { getCharacterGraph } from '../../src/server/domain/character-graph';
 import { listArtifacts } from '../../src/server/domain/artifact';

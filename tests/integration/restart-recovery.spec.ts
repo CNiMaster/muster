@@ -5,9 +5,8 @@
  - 公司/项目/员工配置完整恢复
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { makeTestDb } from './setup';
+import {  makeTestDb, createNovelCompany } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createNovelCompany } from '../../src/server/domain/novel-template';
 import { createProject } from '../../src/server/domain/project';
 import { ensurePrimaryThread } from '../../src/server/domain/thread';
 import {

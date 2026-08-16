@@ -12,6 +12,7 @@ import { getProject, ensureInboxProject } from './project';
 import { createTask } from './task';
 import { getAgent } from './agent';
 import { getMaterial } from './material';
+import { ensureWorkspaceStaff } from './workspace-staff';
 import { realtime } from '../realtime';
 
 export type ScopeKind = 'company' | 'project';
@@ -253,6 +254,10 @@ export function postUserMessage(db: DB, input: PostUserMessageInput): {
     companyId = p.companyId;
     firstAgentId = p.firstAgentId ?? getCompany(db, p.companyId).firstAgentId;
     projectId = p.id;
+  }
+  // 批次 E：零组织工作台对话即开工——没有第一负责人时懒确保固定员工再派发
+  if (!firstAgentId) {
+    firstAgentId = ensureWorkspaceStaff(db, companyId).leadAgentId;
   }
 
   // 附件归属校验：素材必须属于本 scope 解析出的项目（防跨项目引用）
