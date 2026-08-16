@@ -11,7 +11,7 @@
 import type React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useMessages, usePostMessage, useAgents, useTaskOnce, useTaskAction, type ConversationMessage } from '../hooks/queries';
+import { useMessages, usePostMessage, useAgents, useTaskOnce, useTaskAction, materialRawUrl, type ConversationMessage } from '../hooks/queries';
 import { Badge } from './Badge';
 import { Button } from './Button';
 import { toast } from './Button';
@@ -165,8 +165,30 @@ function MessageBubble({ message, agents }: { message: ConversationMessage; agen
     <div className={`mu-msg ${isUser ? 'mu-msg-user' : 'mu-msg-other'}`}>
       <div className="mu-msg-avatar" aria-hidden="true">{authorName.slice(0, 1)}</div>
       <div className="mu-msg-bubble">
-        <div className="mu-msg-author">{authorName}</div>
+        <div className="mu-msg-author">
+          {authorName}
+          {isUser && message.options?.mode && (
+            <span className="mu-msg-mode-chip">{
+              { plan: '🗺 计划模式', 'ask-always': '🛡 每步审批', 'ask-by-rule': '📋 按规则审批', 'no-approval': '⚡ 自动执行', deny: '🔒 只读' }[message.options.mode] ?? message.options.mode
+            }</span>
+          )}
+        </div>
         <div className="mu-msg-text">{message.content}</div>
+        {message.attachments.length > 0 && (
+          <div className="mu-msg-attachments">
+            {message.attachments.map((a) =>
+              a.kind === 'image' ? (
+                <a key={a.materialId} href={materialRawUrl(message.scopeId, a.materialId)} target="_blank" rel="noreferrer" title={`${a.name} · 点击查看大图`}>
+                  <img className="mu-msg-attachment-img" src={materialRawUrl(message.scopeId, a.materialId)} alt={a.name} />
+                </a>
+              ) : (
+                <a key={a.materialId} className="mu-msg-attachment-file" href={materialRawUrl(message.scopeId, a.materialId)} target="_blank" rel="noreferrer">
+                  📄 {a.name} <small>{Math.max(1, Math.round(a.size / 1024))}KB</small>
+                </a>
+              ),
+            )}
+          </div>
+        )}
         {!isUser && <WaitingQuestionReply refTaskId={message.refTaskId} />}
       </div>
     </div>

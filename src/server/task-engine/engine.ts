@@ -49,6 +49,19 @@ import { dispatchGapResearch } from '../domain/gap-research';
 import { applyAdaptiveAdjustment, canRunMore } from '../domain/executor-concurrency';
 import { getCompany } from '../domain/company';
 import { createWorktree, removeWorktree } from '../worktree/manager';
+/** 批次 D2：读取任务 inputProtocol 里的消息级选项（模式/模型/思考），非法值忽略。 */
+function readMessageOptions(input: Record<string, unknown>): { mode?: 'plan' | 'ask-always' | 'ask-by-rule' | 'no-approval' | 'deny'; model?: string; thinking?: 'off' | 'low' | 'medium' | 'high' } {
+  const mode = input.mode;
+  const model = typeof input.model === 'string' && input.model.trim() ? input.model.trim() : undefined;
+  const rawThinking = input.thinking === 'med' ? 'medium' : input.thinking;
+  const thinking = rawThinking === 'off' || rawThinking === 'low' || rawThinking === 'medium' || rawThinking === 'high' ? rawThinking : undefined;
+  return {
+    mode: mode === 'plan' || mode === 'ask-always' || mode === 'ask-by-rule' || mode === 'no-approval' || mode === 'deny' ? mode : undefined,
+    model,
+    thinking,
+  };
+}
+
 import { commitAll } from '../worktree/manager';
 import { PublishQueue } from '../worktree/publish-queue';
 import { checkBudget, recordUsage, recordUsageBatch } from '../domain/usage';
@@ -397,8 +410,34 @@ export class TaskEngine {
       }
       const profileExecutor = executorProfile?.config as AgentExecutorConfig | undefined;
       const legacyExecutor = normalizeAgentExecutor(agent.executor);
-      const effectiveExecutor = profileExecutor ?? legacyExecutor;
-      const permissionPolicy = getEmployeePermissionPolicy(this.db, agent.id);
+      // 批次 D2：消息级选项（模式/模型/思考）覆盖员工执行器配置——用户在 composer 里的选择优先生效
+      const messageOptions = readMessageOptions(task.inputProtocol);
+      const effectiveExecutor: AgentExecutorConfig = {
+        ...(profileExecutor ?? legacyExecutor),
+        ...(messageOptions.model ? { model: messageOptions.model } : {}),
+        ...(messageOptions.thinking ? { thinkingDepth: messageOptions.thinking } : {}),
+      };
+      // 模式 → 审批策略映射：plan/deny=只读；ask-always/ask-by-rule/no-approval=三档审批
+      const modeStrategy = messageOptions.mode === 'ask-always' || messageOptions.mode === 'ask-by-rule' || messageOptions.mode === 'no-approval'
+        ? messageOptions.mode
+        : messageOptions.mode === 'plan' || messageOptions.mode === 'deny'
+          ? 'deny' as const
+          : undefined;
+      let employeePermissionPolicy = getEmployeePermissionPolicy(this.db, agent.id);
+      if (!employeePermissionPolicy && modeStrategy && modeStrategy !== 'deny') {
+        // 消息级审批模式需要策略/审批载体：幂等绑员工档模板（deny 只读不需要审批队列）
+        try {
+          const { getRoleTemplate } = await import('../domain/permission-templates');
+          const { bindEmployeePermissionPolicy } = await import('../domain/permission');
+          const template = getRoleTemplate(this.db, 'employee');
+          bindEmployeePermissionPolicy(this.db, agent.id, template.id, { skipLock: true });
+          employeePermissionPolicy = getEmployeePermissionPolicy(this.db, agent.id);
+        } catch (e) {
+          log.warn('message-mode policy binding failed', { taskId: task.id, err: e instanceof Error ? e.message : String(e) });
+        }
+      }
+      const permissionPolicy = employeePermissionPolicy;
+      const effectiveStrategy = modeStrategy ?? permissionPolicy?.approvalStrategy;
       let approvalFailure: RunFailure | null = null;
       const ctx: ExecutionContext = {
         task: getTask(this.db, task.id),
@@ -434,17 +473,32 @@ export class TaskEngine {
           baseUrl: `http://127.0.0.1:${this.serverPort}`,
           taskId: task.id,
         },
-        permissionGuard: permissionPolicy ? async (request) => {
-          const decision = evaluatePermission(this.db, permissionPolicy.id, {
-            ...request,
-            taskRoot: workingDir,
-            projectRoot: project.rootDir,
-            workspaceRoot: getActiveWorkspace(this.db)?.rootDir ?? project.rootDir,
-            employeeId: agent.id,
-            companyId: company.id,
-            projectId: project.id,
-            taskId: task.id,
-          });
+        permissionGuard: (permissionPolicy || effectiveStrategy) ? async (request) => {
+          // 只读（plan/deny）：直接拒绝一切执行动作（CLI 侧同时落 read-only 沙盒）
+          if (effectiveStrategy === 'deny') {
+            return { allowed: false, message: '当前为只读模式：本次对话已设置为不执行任何变更动作' };
+          }
+          let decision = employeePermissionPolicy
+            ? evaluatePermission(this.db, employeePermissionPolicy.id, {
+                ...request,
+                taskRoot: workingDir,
+                projectRoot: project.rootDir,
+                workspaceRoot: getActiveWorkspace(this.db)?.rootDir ?? project.rootDir,
+                employeeId: agent.id,
+                companyId: company.id,
+                projectId: project.id,
+                taskId: task.id,
+              })
+            : { decision: 'allow' as const, reason: '无员工策略，默认放行' };
+          // 每步审批：放行结论升级为待审批
+          if (effectiveStrategy === 'ask-always' && decision.decision === 'allow') {
+            decision = { decision: 'approval-required', reason: '消息设置为每步审批' };
+          }
+          // 自动执行：待审批结论降级为放行（显式 deny 规则不受影响）
+          if (effectiveStrategy === 'no-approval' && decision.decision === 'approval-required') {
+            return { allowed: true };
+          }
+          if (!permissionPolicy) return { allowed: true };
           if (decision.decision === 'allow') return { allowed: true };
           if (decision.decision === 'approval-required') {
             // AI 审批辅助（四级递进）：高频操作先调 AI 判断。
@@ -524,14 +578,16 @@ export class TaskEngine {
           return { allowed: false, message: decision.reason };
         } : undefined,
         permissionPolicy: permissionPolicy ? {
-          approvalStrategy: permissionPolicy.approvalStrategy,
+          approvalStrategy: effectiveStrategy ?? permissionPolicy.approvalStrategy,
           scope: permissionPolicy.scope,
           allowedRoots: permissionPolicy.scope === 'task' ? [workingDir]
             : permissionPolicy.scope === 'project' ? [project.rootDir]
             : permissionPolicy.scope === 'workspace' ? [getActiveWorkspace(this.db)?.rootDir ?? project.rootDir]
             : permissionPolicy.scope === 'selected-directories' ? permissionPolicy.selectedDirectories
             : [],
-        } : undefined,
+        } : effectiveStrategy
+          ? { approvalStrategy: effectiveStrategy, scope: 'task' as const, allowedRoots: [workingDir] }
+          : undefined,
       };
       // B3a：装配工具集（内置 + 已启用 MCP），失败不阻塞（降级为纯内置）
       try {

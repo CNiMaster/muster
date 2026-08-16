@@ -1026,6 +1026,13 @@ export function useProjectUsage(projectId: string | undefined) {
 }
 
 // ===== Conversation messages =====
+export interface MessageAttachment {
+  materialId: string;
+  name: string;
+  kind: string;
+  size: number;
+}
+
 export interface ConversationMessage {
   id: string;
   scopeKind: 'company' | 'project';
@@ -1035,6 +1042,13 @@ export interface ConversationMessage {
   content: string;
   refTaskId: string | null;
   createdAt: string;
+  attachments: MessageAttachment[];
+  options?: { mode?: string; model?: string; thinking?: string };
+}
+
+/** 素材原始文件访问 URL（图片预览/文件下载共用）。 */
+export function materialRawUrl(projectId: string, materialId: string): string {
+  return `/api/projects/${projectId}/materials/${materialId}/raw`;
 }
 
 export function useMessages(scope: 'company' | 'project', scopeId: string | undefined, agentId?: string) {
@@ -1051,13 +1065,36 @@ export function useMessages(scope: 'company' | 'project', scopeId: string | unde
 export function usePostMessage(scope: 'company' | 'project', agentId?: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ scopeId, content, mentions, projectTaskId }: { scopeId: string; content: string; mentions?: string[]; projectTaskId?: string }) => {
+    mutationFn: ({ scopeId, content, mentions, projectTaskId, attachments, options }: { scopeId: string; content: string; mentions?: string[]; projectTaskId?: string; attachments?: MessageAttachment[]; options?: { mode?: string; model?: string; thinking?: string } }) => {
       const url = scope === 'company' ? `/api/companies/${scopeId}/messages` : `/api/projects/${scopeId}/messages`;
-      return api.post<{ userMessage: ConversationMessage; task: unknown }>(url, { content, mentions, projectTaskId });
+      return api.post<{ userMessage: ConversationMessage; task: unknown }>(url, { content, mentions, projectTaskId, attachments, options });
     },
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: ['messages', scope, vars.scopeId] });
       if (agentId) qc.invalidateQueries({ queryKey: ['messages', scope, vars.scopeId, agentId] });
+    },
+  });
+}
+
+/** 对话附件上传：octet-stream 原始体，文件入库素材区并随仓库进入后续任务 worktree。 */
+export function useUploadMaterial(projectId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ file }: { file: File }) => {
+      if (!projectId) throw new Error('缺少项目上下文');
+      const response = await fetch(`/api/projects/${projectId}/materials/upload`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream', 'x-file-name': encodeURIComponent(file.name) },
+        body: file,
+      });
+      if (!response.ok) {
+        const text = await response.text().catch(() => '');
+        throw new Error(text || `上传失败 (HTTP ${response.status})`);
+      }
+      return response.json() as Promise<{ id: string; name: string; kind: string; meta: { sizeBytes?: number } }>;
+    },
+    onSuccess: () => {
+      if (projectId) qc.invalidateQueries({ queryKey: ['materials', projectId] });
     },
   });
 }

@@ -2,12 +2,12 @@ import { useEffect, useState } from 'react';
 import type React from 'react';
 import type { Agent, Task } from '../../api/types';
 import type { ProjectTaskDTO } from '../../hooks/queries';
-import { useTask, useProjectTaskAction, useTaskAction, usePostMessage, useMessages } from '../../hooks/queries';
+import { useTask, useProjectTaskAction, useTaskAction, usePostMessage, useMessages, useUploadMaterial, materialRawUrl, useExecutorProfiles, useSystemSettings, type MessageAttachment } from '../../hooks/queries';
+import { PromptComposer, type ComposerMode } from '../workbench/PromptComposer';
 import { Button, toast } from '../Button';
 import { StateBadge, Badge } from '../Badge';
 import { ConversationPanel } from '../ConversationPanel';
 import { ExecutionTraceCard } from '../workbench/ExecutionTraceCard';
-import { PromptComposer } from '../workbench/PromptComposer';
 import { Input, Textarea, Field } from '../Form';
 
 export function ProjectTaskWorkspace({
@@ -15,6 +15,7 @@ export function ProjectTaskWorkspace({
   companyId,
   selectedTask,
   tasks = [],
+  projectTasks = [],
   agents = [],
   onSelect,
   onCreateTask,
@@ -30,19 +31,41 @@ export function ProjectTaskWorkspace({
   agents?: Agent[];
   onSelect: (id: string) => void;
   onCreateTask?: (title: string, brief?: string) => void;
-  onPublishWorkOrder?: (title: string, assigneeId?: string) => void;
+  onPublishWorkOrder?: (title: string, assigneeId?: string, options?: { mode?: string; model?: string; thinking?: string }) => void;
   publishingWorkOrder?: boolean;
   /** 外部「＋ 新建任务」触发信号（自增计数），驱动创建卡展开 */
   newTaskSignal?: number;
 }): React.ReactElement {
-  void onSelect;
 
   const [newTitle, setNewTitle] = useState('');
   const [newBrief, setNewBrief] = useState('');
   const [creating, setCreating] = useState(false);
   const [selectedAgentId, setSelectedAgentId] = useState<string>('');
-  const [currentModel, setCurrentModel] = useState<string>('claude-3-7-sonnet');
+  const [currentModel, setCurrentModel] = useState<string>('');
   const [thinkingDepth, setThinkingDepth] = useState<'off' | 'low' | 'med' | 'high'>('high');
+  const [mode, setMode] = useState<ComposerMode>('');
+  const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
+  const uploadMaterial = useUploadMaterial(projectId);
+  // 模型清单来自真实执行器档案/系统设置（替换原硬编码假模型）
+  const { data: executorProfiles } = useExecutorProfiles();
+  const { data: systemSettings } = useSystemSettings();
+  const modelOptions = (() => {
+    const options: Array<{ id: string; label: string }> = [];
+    const seen = new Set<string>();
+    for (const profile of executorProfiles ?? []) {
+      const model = typeof profile.config?.model === 'string' ? profile.config.model.trim() : '';
+      if (model && !seen.has(model)) {
+        seen.add(model);
+        options.push({ id: model, label: `${profile.name} · ${model}` });
+      }
+    }
+    const systemModel = systemSettings?.model?.trim();
+    if (systemModel && !seen.has(systemModel)) {
+      options.push({ id: systemModel, label: `系统默认 · ${systemModel}` });
+    }
+    options.push({ id: '', label: '系统默认模型' });
+    return options;
+  })();
 
   useEffect(() => {
     if (newTaskSignal > 0) setCreating(true);
@@ -83,8 +106,15 @@ export function ProjectTaskWorkspace({
     }
   };
 
-  const handleSendPrompt = (content: string, options?: { agentId?: string; model?: string; thinking?: string }): void => {
-    if (!content.trim()) return;
+  const handleSendPrompt = (content: string, options?: { agentId?: string; model?: string; thinking?: string; attachments?: MessageAttachment[]; mode?: ComposerMode }): void => {
+    if (!content.trim() && (options?.attachments?.length ?? 0) === 0) return;
+    const messageAttachments = options?.attachments ?? [];
+    // 后端归一化前的前端映射：med → medium；模式/模型/思考随消息下发
+    const messageOptions = {
+      mode: options?.mode || undefined,
+      model: options?.model || undefined,
+      thinking: options?.thinking === 'med' ? 'medium' as const : options?.thinking as 'off' | 'low' | 'medium' | 'high' | undefined,
+    };
 
     // 如果当前有正在等待补充输入（waiting_input）的任务，输入任何文字均视为答复并自动接续执行
     if (activeRuntimeTask?.state === 'waiting_input') {
@@ -100,10 +130,10 @@ export function ProjectTaskWorkspace({
     // 如果有选中的任务，直接作为工作单派发或在对话中推进
     if (selectedTask) {
       if (onPublishWorkOrder) {
-        onPublishWorkOrder(content, options?.agentId || selectedAgentId || undefined);
+        onPublishWorkOrder(content, options?.agentId || selectedAgentId || undefined, messageOptions);
       } else {
         postMessage.mutate(
-          { scopeId: projectId, content, mentions: options?.agentId ? [options.agentId] : [], projectTaskId: selectedTask.id },
+          { scopeId: projectId, content, mentions: options?.agentId ? [options.agentId] : [], projectTaskId: selectedTask.id, attachments: messageAttachments.length ? messageAttachments : undefined, options: messageOptions },
           {
             onSuccess: () => toast('success', '指令已发送给智能体团队'),
             onError: (e) => toast('error', (e as Error).message),
@@ -115,6 +145,21 @@ export function ProjectTaskWorkspace({
       if (onCreateTask) {
         onCreateTask(content);
       }
+    }
+    setAttachments([]);
+  };
+
+  const handleAddFiles = (files: File[]): void => {
+    for (const file of files) {
+      uploadMaterial.mutate(
+        { file },
+        {
+          onSuccess: (material) => {
+            setAttachments((prev) => [...prev, { materialId: material.id, name: material.name, kind: material.kind, size: material.meta?.sizeBytes ?? file.size }]);
+          },
+          onError: (e) => toast('error', `附件「${file.name}」上传失败：${(e as Error).message}`),
+        },
+      );
     }
   };
 
@@ -266,11 +311,23 @@ export function ProjectTaskWorkspace({
           onSelectAgent={setSelectedAgentId}
           currentModel={currentModel}
           onSelectModel={setCurrentModel}
+          modelOptions={modelOptions}
           thinkingDepth={thinkingDepth}
           onToggleThinking={setThinkingDepth}
+          attachments={attachments}
+          onAddFiles={handleAddFiles}
+          onRemoveAttachment={(materialId) => setAttachments((prev) => prev.filter((a) => a.materialId !== materialId))}
+          uploading={uploadMaterial.isPending}
+          attachmentUrl={(materialId) => materialRawUrl(projectId, materialId)}
+          taskOptions={projectTasks.map((t) => ({ id: t.id, label: `#${t.seq} ${t.title}` }))}
+          selectedTaskId={selectedTask?.id}
+          onSelectTask={onSelect}
+          branch={selectedTask ? `muster/${projectId}/${selectedTask.id}` : null}
+          mode={mode}
+          onSelectMode={setMode}
+          onNewTask={() => setCreating(true)}
           loading={publishingWorkOrder || postMessage.isPending || directTaskAction.isPending}
           onSend={handleSendPrompt}
-          onAttachFile={() => toast('info', '可直接将文件拖拽到项目素材区或输入框')}
         />
       </div>
     </div>

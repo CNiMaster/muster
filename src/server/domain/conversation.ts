@@ -11,6 +11,7 @@ import { getCompany } from './company';
 import { getProject, ensureInboxProject } from './project';
 import { createTask } from './task';
 import { getAgent } from './agent';
+import { getMaterial } from './material';
 import { realtime } from '../realtime';
 
 export type ScopeKind = 'company' | 'project';
@@ -58,6 +59,31 @@ function publishInboxCreated(companyId: string, refTaskId?: string): void {
   }
 }
 
+export interface MessageAttachment {
+  materialId: string;
+  name: string;
+  kind: string;
+  size: number;
+}
+
+/** 消息级执行模式：计划（只读规划）+ 三档审批 + 只读。 */
+export type MessageMode = 'plan' | 'ask-always' | 'ask-by-rule' | 'no-approval' | 'deny';
+
+export interface MessageOptions {
+  mode?: MessageMode;
+  model?: string;
+  /** 归一化思考档位（med 为前端别名，入库前归一为 medium）。 */
+  thinking?: 'off' | 'low' | 'medium' | 'high';
+}
+
+function normalizeThinking(value: string | undefined): MessageOptions['thinking'] {
+  if (value === 'med') return 'medium';
+  if (value === 'off' || value === 'low' || value === 'medium' || value === 'high') return value;
+  return undefined;
+}
+
+const PLAN_PREFIX = '【计划模式】请只调研与规划，不要修改或创建任何文件。产出一份可执行计划（步骤、涉及文件、风险、验收标准），完成后等待用户确认再执行。\n\n';
+
 export interface ConversationMessage {
   id: string;
   scopeKind: ScopeKind;
@@ -67,6 +93,8 @@ export interface ConversationMessage {
   content: string;
   refTaskId: string | null;
   createdAt: string;
+  attachments: MessageAttachment[];
+  options: MessageOptions;
 }
 
 interface ConvRow {
@@ -78,9 +106,19 @@ interface ConvRow {
   content: string;
   ref_task_id: string | null;
   created_at: string;
+  attachments_json?: string;
+  options_json?: string;
 }
 
 function fromRow(r: ConvRow): ConversationMessage {
+  let attachments: MessageAttachment[] = [];
+  try {
+    attachments = r.attachments_json ? JSON.parse(r.attachments_json) as MessageAttachment[] : [];
+  } catch { attachments = []; }
+  let options: MessageOptions = {};
+  try {
+    options = r.options_json ? JSON.parse(r.options_json) as MessageOptions : {};
+  } catch { options = {}; }
   return {
     id: r.id,
     scopeKind: r.scope_kind as ScopeKind,
@@ -90,6 +128,8 @@ function fromRow(r: ConvRow): ConversationMessage {
     content: r.content,
     refTaskId: r.ref_task_id,
     createdAt: r.created_at,
+    attachments,
+    options,
   };
 }
 
@@ -133,6 +173,14 @@ export interface PostUserMessageInput {
   mentions?: string[];
   /** 项目中的用户任务上下文；员工单聊与群聊都应显式落入该边界。 */
   projectTaskId?: string;
+  /** 上传附件（引用项目素材区 material）。 */
+  attachments?: MessageAttachment[];
+  /** 消息级执行选项（模式/模型/思考等级；thinking 接受前端 'med' 别名，入库前归一）。 */
+  options?: {
+    mode?: MessageMode;
+    model?: string;
+    thinking?: 'off' | 'low' | 'med' | 'medium' | 'high';
+  };
 }
 
 /**
@@ -152,6 +200,23 @@ export function postUserMessage(db: DB, input: PostUserMessageInput): {
 
   const id = shortId('cm_');
   const now = nowIso();
+  // 附件归属校验 + 仓库相对路径解析（CLI 执行器在 worktree 内按相对路径读）
+  const attachments = [...new Map((input.attachments ?? []).map((a) => [a.materialId, a])).values()];
+  const attachmentRefs: Array<MessageAttachment & { repoPath: string | null }> = [];
+  for (const attachment of attachments) {
+    const material = getMaterial(db, attachment.materialId);
+    if (!material) throw new AppError(ErrorCode.NOT_FOUND, `附件素材不存在: ${attachment.name}`);
+    attachmentRefs.push({ ...attachment, name: material.name, kind: material.kind, repoPath: material.storagePath });
+  }
+  const attachmentNote = attachmentRefs.length > 0
+    ? `\n\n【用户附件】\n${attachmentRefs.map((a) => `- ${a.name}（${a.kind}，${Math.max(1, Math.round(a.size / 1024))}KB）路径: ${a.repoPath ?? '（仅引用）'}`).join('\n')}\n附件已随仓库带入工作区，可直接读取。`
+    : '';
+  const options: MessageOptions = {
+    mode: input.options?.mode,
+    model: input.options?.model?.trim() || undefined,
+    thinking: normalizeThinking(input.options?.thinking),
+  };
+  const dispatchContent = options.mode === 'plan' ? `${PLAN_PREFIX}${input.content}` : input.content;
   const userMessage: ConversationMessage = {
     id,
     scopeKind: input.scopeKind,
@@ -161,11 +226,13 @@ export function postUserMessage(db: DB, input: PostUserMessageInput): {
     content: input.content,
     refTaskId: null,
     createdAt: now,
+    attachments: attachmentRefs.map(({ materialId, name, kind, size }) => ({ materialId, name, kind, size })),
+    options,
   };
   db.prepare(
-    `INSERT INTO conversation_message (id, scope_kind, scope_id, author, role, content, ref_task_id, created_at)
-     VALUES (?, ?, ?, 'user', 'user', ?, NULL, ?)`,
-  ).run(id, input.scopeKind, input.scopeId, input.content, now);
+    `INSERT INTO conversation_message (id, scope_kind, scope_id, author, role, content, ref_task_id, created_at, attachments_json, options_json)
+     VALUES (?, ?, ?, 'user', 'user', ?, NULL, ?, ?, ?)`,
+  ).run(id, input.scopeKind, input.scopeId, input.content, now, JSON.stringify(userMessage.attachments), JSON.stringify(options));
 
   // 派发给第一负责人：company scope 必须存在至少一个项目才能派发；
   // 否则只记录用户消息（不派 Task），由系统在合适时回应。
@@ -186,6 +253,14 @@ export function postUserMessage(db: DB, input: PostUserMessageInput): {
     companyId = p.companyId;
     firstAgentId = p.firstAgentId ?? getCompany(db, p.companyId).firstAgentId;
     projectId = p.id;
+  }
+
+  // 附件归属校验：素材必须属于本 scope 解析出的项目（防跨项目引用）
+  for (const ref of attachmentRefs) {
+    const material = getMaterial(db, ref.materialId)!;
+    if (projectId && material.projectId !== projectId) {
+      throw new AppError(ErrorCode.VALIDATION, `附件 ${material.name} 不属于当前项目`);
+    }
   }
 
   const mentionedAgents = [...new Set(input.mentions ?? [])].map((agentId) => {
@@ -215,8 +290,12 @@ export function postUserMessage(db: DB, input: PostUserMessageInput): {
           trigger: 'user_message',
           scope: input.scopeKind,
           scopeId: input.scopeId,
-          content: input.content,
+          content: `${dispatchContent}${attachmentNote}`,
           mentions: input.mentions ?? [],
+          attachments: userMessage.attachments,
+          ...(options.mode ? { mode: options.mode } : {}),
+          ...(options.model ? { model: options.model } : {}),
+          ...(options.thinking ? { thinking: options.thinking } : {}),
         },
         priority: 7,
       }));
@@ -259,6 +338,8 @@ export function postSystemMessage(
     content: input.content,
     refTaskId: input.refTaskId ?? null,
     createdAt: now,
+    attachments: [],
+    options: {},
   };
   // 改版 B4：实时发布（assistant 回复/事件摘要即时到达对话）
   publishMessageCreated(message);

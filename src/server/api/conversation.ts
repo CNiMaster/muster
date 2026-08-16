@@ -24,10 +24,22 @@ companyMessagesRouter.get(
 companyMessagesRouter.post(
   '/',
   asyncHandler(async (req, res) => {
-    const { content, mentions, projectTaskId } = z
-      .object({ content: z.string().min(1), mentions: z.array(z.string()).optional(), projectTaskId: z.string().optional() })
+    const attachmentSchema = z.object({ materialId: z.string().min(1), name: z.string().min(1), kind: z.string().min(1), size: z.number().int().nonnegative() });
+    const optionsSchema = z.object({
+      mode: z.enum(['plan', 'ask-always', 'ask-by-rule', 'no-approval', 'deny']).optional(),
+      model: z.string().min(1).optional(),
+      thinking: z.enum(['off', 'low', 'med', 'medium', 'high']).optional(),
+    });
+    const { content, mentions, projectTaskId, attachments, options } = z
+      .object({
+        content: z.string().min(1),
+        mentions: z.array(z.string()).optional(),
+        projectTaskId: z.string().optional(),
+        attachments: z.array(attachmentSchema).optional(),
+        options: optionsSchema.optional(),
+      })
       .parse(req.body);
-    const r = postUserMessage(getDb(), { scopeKind: 'company', scopeId: param(req, 'id'), content, mentions, projectTaskId });
+    const r = postUserMessage(getDb(), { scopeKind: 'company', scopeId: param(req, 'id'), content, mentions, projectTaskId, attachments, options });
     res.status(201).json(r);
   }),
 );
@@ -42,10 +54,22 @@ projectMessagesRouter.get(
 projectMessagesRouter.post(
   '/',
   asyncHandler(async (req, res) => {
-    const { content, mentions, projectTaskId } = z
-      .object({ content: z.string().min(1), mentions: z.array(z.string()).optional(), projectTaskId: z.string().optional() })
+    const attachmentSchema = z.object({ materialId: z.string().min(1), name: z.string().min(1), kind: z.string().min(1), size: z.number().int().nonnegative() });
+    const optionsSchema = z.object({
+      mode: z.enum(['plan', 'ask-always', 'ask-by-rule', 'no-approval', 'deny']).optional(),
+      model: z.string().min(1).optional(),
+      thinking: z.enum(['off', 'low', 'med', 'medium', 'high']).optional(),
+    });
+    const { content, mentions, projectTaskId, attachments, options } = z
+      .object({
+        content: z.string().min(1),
+        mentions: z.array(z.string()).optional(),
+        projectTaskId: z.string().optional(),
+        attachments: z.array(attachmentSchema).optional(),
+        options: optionsSchema.optional(),
+      })
       .parse(req.body);
-    const r = postUserMessage(getDb(), { scopeKind: 'project', scopeId: param(req, 'id'), content, mentions, projectTaskId });
+    const r = postUserMessage(getDb(), { scopeKind: 'project', scopeId: param(req, 'id'), content, mentions, projectTaskId, attachments, options });
     res.status(201).json(r);
   }),
 );

@@ -1,19 +1,41 @@
 /**
  * PromptComposer · 现代自适应复合输入框组件
- * 
+ *
  * 对齐 Codex / Gemini 桌面端体验：
  * - Textarea 根据内容平滑自增高（1 行 ~ 8 行自适应）
- * - 底部集成控制栏：
- *   1. 模型选择器（Model Switcher）
- *   2. 人设/角色切换药丸（Persona Selector）
- *   3. 思考深度开关（Thinking Depth: Off/Low/Med/High）
- *   4. 附件添加（Attach Files/Materials）
- *   5. 发送按钮（Enter 发送，Shift+Enter 换行）
+ * - 附件：+ 菜单（图片/文件）、粘贴图片、拖拽上传；以芯片形式随消息发送
+ * - 任务药丸：显示/切换当前对话归属的项目任务
+ * - 分支药丸：只读展示当前任务的工作分支（muster/<project>/<task> 自动管理）
+ * - 底部控制栏：模型选择 / 人设药丸 / 思考深度 / 发送（Enter 发送，Shift+Enter 换行）
  */
 import { useEffect, useRef, useState } from 'react';
 import type React from 'react';
 import type { Agent } from '../../api/types';
 import { Button } from '../Button';
+import type { MessageAttachment } from '../../hooks/queries';
+
+export interface ComposerTaskOption {
+  id: string;
+  label: string;
+}
+
+export type ComposerMode = '' | 'plan' | 'ask-always' | 'ask-by-rule' | 'no-approval' | 'deny';
+
+export const COMPOSER_MODES: Array<{ id: ComposerMode; label: string; icon: string; hint: string }> = [
+  { id: '', label: '跟随默认策略', icon: '🛡', hint: '沿用任务/智能体的权限策略' },
+  { id: 'plan', label: '计划模式', icon: '🗺', hint: '只调研规划不动手，产出待确认方案' },
+  { id: 'ask-always', label: '每步审批', icon: '🛡', hint: '每个执行动作都要你批准' },
+  { id: 'ask-by-rule', label: '按规则审批', icon: '📋', hint: '规则放行，越界才审批' },
+  { id: 'no-approval', label: '自动执行', icon: '⚡', hint: '不弹审批，按范围直接执行' },
+  { id: 'deny', label: '只读', icon: '🔒', hint: '拒绝一切变更动作' },
+];
+
+interface SlashCommand {
+  token: string;
+  label: string;
+  hint: string;
+  apply: () => void;
+}
 
 export interface PromptComposerProps {
   placeholder?: string;
@@ -24,19 +46,29 @@ export interface PromptComposerProps {
   onSelectAgent?: (agentId: string) => void;
   currentModel?: string;
   onSelectModel?: (model: string) => void;
+  modelOptions?: Array<{ id: string; label: string }>;
   thinkingDepth?: 'off' | 'low' | 'med' | 'high';
   onToggleThinking?: (depth: 'off' | 'low' | 'med' | 'high') => void;
-  onSend: (content: string, options?: { agentId?: string; model?: string; thinking?: string }) => void;
-  onAttachFile?: () => void;
+  /** 附件芯片（已上传素材引用） */
+  attachments?: MessageAttachment[];
+  onAddFiles?: (files: File[]) => void;
+  onRemoveAttachment?: (materialId: string) => void;
+  uploading?: boolean;
+  /** 附件预览/下载地址（图片芯片缩略图用） */
+  attachmentUrl?: (materialId: string) => string;
+  /** 任务药丸：当前任务与可切换列表 */
+  taskOptions?: ComposerTaskOption[];
+  selectedTaskId?: string;
+  onSelectTask?: (taskId: string) => void;
+  /** 分支药丸：当前任务分支（只读，自动管理） */
+  branch?: string | null;
+  /** 模式药丸：计划+三档审批+只读 */
+  mode?: ComposerMode;
+  onSelectMode?: (mode: ComposerMode) => void;
+  /** 斜杠命令 /new 的落地动作（打开新建任务卡） */
+  onNewTask?: () => void;
+  onSend: (content: string, options?: { agentId?: string; model?: string; thinking?: string; attachments?: MessageAttachment[]; mode?: ComposerMode }) => void;
 }
-
-const AVAILABLE_MODELS = [
-  { id: 'claude-3-7-sonnet', label: 'Claude 3.7 Sonnet (推荐)' },
-  { id: 'claude-3-5-sonnet', label: 'Claude 3.5 Sonnet' },
-  { id: 'gpt-4o', label: 'GPT-4o' },
-  { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
-  { id: 'custom-cli', label: '系统默认执行器' },
-];
 
 export function PromptComposer({
   placeholder = '描述你想完成的事，或向智能体交代任务…',
@@ -45,19 +77,36 @@ export function PromptComposer({
   agents = [],
   selectedAgentId,
   onSelectAgent,
-  currentModel = 'claude-3-7-sonnet',
+  currentModel = '',
   onSelectModel,
+  modelOptions,
   thinkingDepth = 'high',
   onToggleThinking,
+  attachments = [],
+  onAddFiles,
+  onRemoveAttachment,
+  uploading = false,
+  attachmentUrl,
+  taskOptions,
+  selectedTaskId,
+  onSelectTask,
+  branch,
+  mode = '',
+  onSelectMode,
+  onNewTask,
   onSend,
-  onAttachFile,
 }: PromptComposerProps): React.ReactElement {
   const [text, setText] = useState('');
-  const [modelOpen, setModelOpen] = useState(false);
-  const [personaOpen, setPersonaOpen] = useState(false);
+  const [openMenu, setOpenMenu] = useState<'model' | 'persona' | 'task' | 'plus' | 'mode' | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [slashIndex, setSlashIndex] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const modelMenuRef = useRef<HTMLDivElement>(null);
-  const personaMenuRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const models = modelOptions ?? [];
+  const currentModelLabel = models.find((m) => m.id === currentModel)?.label ?? (currentModel || '默认模型');
 
   // 自适应高度调整
   const adjustHeight = (): void => {
@@ -72,14 +121,11 @@ export function PromptComposer({
     adjustHeight();
   }, [text]);
 
-  // 点击外部关闭下拉菜单
+  // 点击外部关闭全部下拉
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent): void => {
-      if (modelMenuRef.current && !modelMenuRef.current.contains(e.target as Node)) {
-        setModelOpen(false);
-      }
-      if (personaMenuRef.current && !personaMenuRef.current.contains(e.target as Node)) {
-        setPersonaOpen(false);
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
+        setOpenMenu(null);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -87,18 +133,45 @@ export function PromptComposer({
   }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
+    if (visibleSlashCommands.length > 0) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setSlashIndex((i) => (i + 1) % visibleSlashCommands.length); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); setSlashIndex((i) => (i - 1 + visibleSlashCommands.length) % visibleSlashCommands.length); return; }
+      if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); runSlashCommand(visibleSlashCommands[Math.min(slashIndex, visibleSlashCommands.length - 1)]!); return; }
+      if (e.key === 'Escape') { e.preventDefault(); setText(''); return; }
+    }
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       handleSend();
     }
   };
 
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>): void => {
+    if (!onAddFiles) return;
+    const files = Array.from(e.clipboardData?.files ?? []);
+    if (files.length > 0) {
+      e.preventDefault();
+      onAddFiles(files);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>): void => {
+    if (!onAddFiles) return;
+    const files = Array.from(e.dataTransfer?.files ?? []);
+    if (files.length > 0) {
+      e.preventDefault();
+      onAddFiles(files);
+    }
+    setDragOver(false);
+  };
+
   const handleSend = (): void => {
-    if (!text.trim() || disabled || loading) return;
+    if ((!text.trim() && attachments.length === 0) || disabled || loading) return;
     onSend(text.trim(), {
       agentId: selectedAgentId,
-      model: currentModel,
+      model: currentModel || undefined,
       thinking: thinkingDepth,
+      attachments: attachments.length > 0 ? attachments : undefined,
+      mode: mode || undefined,
     });
     setText('');
     if (textareaRef.current) {
@@ -107,7 +180,7 @@ export function PromptComposer({
   };
 
   const selectedAgent = agents.find((a) => a.id === selectedAgentId);
-  const currentModelLabel = AVAILABLE_MODELS.find((m) => m.id === currentModel)?.label ?? currentModel;
+  const selectedTask = taskOptions?.find((t) => t.id === selectedTaskId);
 
   const cycleThinking = (): void => {
     if (!onToggleThinking) return;
@@ -120,6 +193,33 @@ export function PromptComposer({
     onToggleThinking(nextMap[thinkingDepth] ?? 'high');
   };
 
+  const slashMatch = text.match(/^\/([a-z]*)$/i);
+  const slashToken = slashMatch?.[1]?.toLowerCase() ?? null;
+
+  const slashCommands: SlashCommand[] = [
+    { token: 'plan', label: '/plan 计划模式', hint: '只调研规划不动手', apply: () => onSelectMode?.('plan') },
+    { token: 'ask', label: '/ask 每步审批', hint: '每个动作都要批准', apply: () => onSelectMode?.('ask-always') },
+    { token: 'rules', label: '/rules 按规则审批', hint: '规则放行，越界审批', apply: () => onSelectMode?.('ask-by-rule') },
+    { token: 'auto', label: '/auto 自动执行', hint: '不弹审批直接执行', apply: () => onSelectMode?.('no-approval') },
+    { token: 'readonly', label: '/readonly 只读', hint: '拒绝一切变更', apply: () => onSelectMode?.('deny') },
+    { token: 'default', label: '/default 跟随默认策略', hint: '回到任务默认权限', apply: () => onSelectMode?.('') },
+    { token: 'model', label: '/model 切换模型', hint: '打开模型选择', apply: () => setOpenMenu('model') },
+    { token: 'think', label: '/think 思考深度', hint: '切换思考档位', apply: () => cycleThinking() },
+    { token: 'task', label: '/task 切换任务', hint: '打开任务选择', apply: () => setOpenMenu('task') },
+    { token: 'new', label: '/new 新建任务', hint: '展开新建任务卡', apply: () => onNewTask?.() },
+  ].filter((command) => onSelectMode || command.token === 'model' || command.token === 'think' || command.token === 'task' || command.token === 'new');
+  const visibleSlashCommands = slashToken === null ? [] : slashCommands.filter((c) => c.token.startsWith(slashToken));
+
+  useEffect(() => {
+    setSlashIndex(0);
+  }, [slashToken]);
+
+  const runSlashCommand = (command: SlashCommand): void => {
+    command.apply();
+    setText('');
+    setOpenMenu(command.token === 'model' ? 'model' : command.token === 'task' ? 'task' : null);
+  };
+
   const thinkingLabel = {
     off: '思考: 关',
     low: '思考: 快速',
@@ -127,14 +227,67 @@ export function PromptComposer({
     high: '思考: 深度',
   }[thinkingDepth];
 
+  const menuButton = (menu: 'model' | 'persona' | 'task' | 'plus' | 'mode', label: React.ReactNode, title: string, extraClass = ''): React.ReactElement => (
+    <button
+      type="button"
+      className={`mu-composer-pill ${extraClass} ${openMenu === menu ? 'is-open' : ''}`}
+      onClick={() => setOpenMenu(openMenu === menu ? null : menu)}
+      title={title}
+    >
+      {label}
+    </button>
+  );
+
   return (
-    <div className={`mu-prompt-composer ${disabled ? 'is-disabled' : ''}`}>
+    <div
+      ref={rootRef}
+      className={`mu-prompt-composer ${disabled ? 'is-disabled' : ''} ${dragOver ? 'is-dragover' : ''}`}
+      onDragOver={(e) => { if (onAddFiles) { e.preventDefault(); setDragOver(true); } }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={handleDrop}
+    >
+      {/* 附件芯片行 */}
+      {(attachments.length > 0 || uploading) && (
+        <div className="mu-composer-attachments">
+          {attachments.map((a) => (
+            <span key={a.materialId} className="mu-composer-attachment-chip" title={`${a.name} · ${Math.max(1, Math.round(a.size / 1024))}KB`}>
+              {a.kind === 'image' && attachmentUrl
+                ? <img src={attachmentUrl(a.materialId)} alt="" className="mu-composer-attachment-thumb" />
+                : <span className="mu-composer-attachment-icon">{a.kind === 'image' ? '🖼' : '📄'}</span>}
+              <span className="mu-composer-attachment-name">{a.name}</span>
+              {onRemoveAttachment && (
+                <button type="button" className="mu-composer-attachment-remove" aria-label={`移除附件 ${a.name}`} onClick={() => onRemoveAttachment(a.materialId)}>×</button>
+              )}
+            </span>
+          ))}
+          {uploading && <span className="mu-composer-attachment-chip is-uploading">⏳ 上传中…</span>}
+        </div>
+      )}
+
+      {/* 斜杠命令面板：输入 / 触发 */}
+      {visibleSlashCommands.length > 0 && (
+        <div className="mu-composer-slash">
+          {visibleSlashCommands.map((command, index) => (
+            <button
+              key={command.token}
+              type="button"
+              className={`mu-composer-slash-item ${index === Math.min(slashIndex, visibleSlashCommands.length - 1) ? 'is-active' : ''}`}
+              onMouseDown={(e) => { e.preventDefault(); runSlashCommand(command); }}
+            >
+              <span>{command.label}</span>
+              <small>{command.hint}</small>
+            </button>
+          ))}
+        </div>
+      )}
+
       <textarea
         ref={textareaRef}
         value={text}
         disabled={disabled}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={handleKeyDown}
+        onPaste={handlePaste}
         placeholder={placeholder}
         rows={1}
         className="mu-prompt-textarea"
@@ -142,62 +295,119 @@ export function PromptComposer({
 
       <div className="mu-prompt-toolbar">
         <div className="mu-prompt-controls">
+          {/* 模式药丸：计划+三档审批+只读 */}
+          {onSelectMode && (
+            <div className="mu-composer-popover-wrap">
+              {menuButton('mode', (
+                <>
+                  <span className="mu-pill-icon">{COMPOSER_MODES.find((m) => m.id === mode)?.icon ?? '🛡'}</span>
+                  <span className="mu-pill-label">{COMPOSER_MODES.find((m) => m.id === mode)?.label ?? '模式'}</span>
+                  <span className="mu-pill-arrow">▾</span>
+                </>
+              ), '计划模式与审批策略')}
+              {openMenu === 'mode' && (
+                <div className="mu-composer-dropdown">
+                  <div className="mu-dropdown-header">执行模式</div>
+                  {COMPOSER_MODES.map((m) => (
+                    <button
+                      key={m.id || 'default'}
+                      type="button"
+                      className={`mu-dropdown-item ${m.id === mode ? 'is-active' : ''}`}
+                      onClick={() => { onSelectMode(m.id); setOpenMenu(null); }}
+                    >
+                      <span>{m.icon} {m.label} <small className="muted">{m.hint}</small></span>
+                      {m.id === mode && <span className="mu-item-check">✓</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 任务药丸 */}
+          {taskOptions && taskOptions.length > 0 && onSelectTask && (
+            <div className="mu-composer-popover-wrap">
+              {menuButton('task', (
+                <>
+                  <span className="mu-pill-icon">📋</span>
+                  <span className="mu-pill-label">{selectedTask ? selectedTask.label : '全局对话'}</span>
+                  <span className="mu-pill-arrow">▾</span>
+                </>
+              ), '切换对话归属的项目任务')}
+              {openMenu === 'task' && (
+                <div className="mu-composer-dropdown mu-composer-dropdown-tasks">
+                  <div className="mu-dropdown-header">切换任务</div>
+                  {!selectedTaskId && <span className="mu-dropdown-item is-static is-active">全局对话（不归属任务）</span>}
+                  {taskOptions.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      className={`mu-dropdown-item ${t.id === selectedTaskId ? 'is-active' : ''}`}
+                      onClick={() => { onSelectTask(t.id); setOpenMenu(null); }}
+                    >
+                      <span>{t.label}</span>
+                      {t.id === selectedTaskId && <span className="mu-item-check">✓</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 分支药丸（只读：任务分支自动管理） */}
+          {branch && (
+            <span className="mu-composer-pill mu-composer-branch" title={`本任务在独立 Git 分支上执行：${branch}。新建任务会自动创建各自的分支。`}>
+              <span className="mu-pill-icon">🌿</span>
+              <span className="mu-pill-label">{branch}</span>
+            </span>
+          )}
+
           {/* 模型切换下拉 */}
-          <div className="mu-composer-popover-wrap" ref={modelMenuRef}>
-            <button
-              type="button"
-              className="mu-composer-pill"
-              onClick={() => setModelOpen(!modelOpen)}
-              title="切换使用的语言模型"
-            >
-              <span className="mu-pill-icon">🧠</span>
-              <span className="mu-pill-label">{currentModelLabel}</span>
-              <span className="mu-pill-arrow">▾</span>
-            </button>
-            {modelOpen && (
-              <div className="mu-composer-dropdown">
-                <div className="mu-dropdown-header">选择语言模型</div>
-                {AVAILABLE_MODELS.map((m) => (
-                  <button
-                    key={m.id}
-                    type="button"
-                    className={`mu-dropdown-item ${m.id === currentModel ? 'is-active' : ''}`}
-                    onClick={() => {
-                      onSelectModel?.(m.id);
-                      setModelOpen(false);
-                    }}
-                  >
-                    <span>{m.label}</span>
-                    {m.id === currentModel && <span className="mu-item-check">✓</span>}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          {models.length > 0 && (
+            <div className="mu-composer-popover-wrap">
+              {menuButton('model', (
+                <>
+                  <span className="mu-pill-icon">🧠</span>
+                  <span className="mu-pill-label">{currentModelLabel}</span>
+                  <span className="mu-pill-arrow">▾</span>
+                </>
+              ), '切换使用的语言模型')}
+              {openMenu === 'model' && (
+                <div className="mu-composer-dropdown">
+                  <div className="mu-dropdown-header">选择语言模型</div>
+                  {models.map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      className={`mu-dropdown-item ${m.id === currentModel ? 'is-active' : ''}`}
+                      onClick={() => { onSelectModel?.(m.id); setOpenMenu(null); }}
+                    >
+                      <span>{m.label}</span>
+                      {m.id === currentModel && <span className="mu-item-check">✓</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* 人设选择药丸 */}
           {agents.length > 0 && (
-            <div className="mu-composer-popover-wrap" ref={personaMenuRef}>
-              <button
-                type="button"
-                className="mu-composer-pill"
-                onClick={() => setPersonaOpen(!personaOpen)}
-                title="指定由哪位智能体处理（或自动匹配）"
-              >
-                <span className="mu-pill-icon">🎭</span>
-                <span className="mu-pill-label">{selectedAgent ? `${selectedAgent.name} (${selectedAgent.role})` : '智能体: 自动匹配'}</span>
-                <span className="mu-pill-arrow">▾</span>
-              </button>
-              {personaOpen && (
+            <div className="mu-composer-popover-wrap">
+              {menuButton('persona', (
+                <>
+                  <span className="mu-pill-icon">🎭</span>
+                  <span className="mu-pill-label">{selectedAgent ? selectedAgent.name : '智能体: 自动'}</span>
+                  <span className="mu-pill-arrow">▾</span>
+                </>
+              ), '指定由哪位智能体处理（或自动匹配）')}
+              {openMenu === 'persona' && (
                 <div className="mu-composer-dropdown">
                   <div className="mu-dropdown-header">指定处理智能体</div>
                   <button
                     type="button"
                     className={`mu-dropdown-item ${!selectedAgentId ? 'is-active' : ''}`}
-                    onClick={() => {
-                      onSelectAgent?.('');
-                      setPersonaOpen(false);
-                    }}
+                    onClick={() => { onSelectAgent?.(''); setOpenMenu(null); }}
                   >
                     <span>🎯 自动匹配合适智能体</span>
                     {!selectedAgentId && <span className="mu-item-check">✓</span>}
@@ -207,10 +417,7 @@ export function PromptComposer({
                       key={a.id}
                       type="button"
                       className={`mu-dropdown-item ${a.id === selectedAgentId ? 'is-active' : ''}`}
-                      onClick={() => {
-                        onSelectAgent?.(a.id);
-                        setPersonaOpen(false);
-                      }}
+                      onClick={() => { onSelectAgent?.(a.id); setOpenMenu(null); }}
                     >
                       <span>{a.name} · <small className="muted">{a.role}</small></span>
                       {a.id === selectedAgentId && <span className="mu-item-check">✓</span>}
@@ -232,17 +439,26 @@ export function PromptComposer({
             <span className="mu-pill-label">{thinkingLabel}</span>
           </button>
 
-          {/* 添加附件 */}
-          {onAttachFile && (
-            <button
-              type="button"
-              className="mu-composer-icon-btn"
-              onClick={onAttachFile}
-              title="添加文件或素材附件"
-            >
-              📎
-            </button>
+          {/* + 菜单：添加图片 / 添加文件 */}
+          {onAddFiles && (
+            <div className="mu-composer-popover-wrap">
+              {menuButton('plus', <span className="mu-composer-icon-btn">＋</span>, '添加图片或文件附件')}
+              {openMenu === 'plus' && (
+                <div className="mu-composer-dropdown">
+                  <div className="mu-dropdown-header">添加附件</div>
+                  <button type="button" className="mu-dropdown-item" onClick={() => { imageInputRef.current?.click(); setOpenMenu(null); }}>
+                    <span>🖼 添加图片</span>
+                  </button>
+                  <button type="button" className="mu-dropdown-item" onClick={() => { fileInputRef.current?.click(); setOpenMenu(null); }}>
+                    <span>📄 添加文件</span>
+                  </button>
+                  <div className="mu-dropdown-hint">支持粘贴图片、拖拽文件到输入框</div>
+                </div>
+              )}
+            </div>
           )}
+          <input ref={imageInputRef} type="file" accept="image/*" multiple hidden onChange={(e) => { const files = Array.from(e.target.files ?? []); if (files.length) onAddFiles?.(files); e.target.value = ''; }} />
+          <input ref={fileInputRef} type="file" multiple hidden onChange={(e) => { const files = Array.from(e.target.files ?? []); if (files.length) onAddFiles?.(files); e.target.value = ''; }} />
         </div>
 
         <div className="mu-prompt-actions">
@@ -251,7 +467,7 @@ export function PromptComposer({
             size="sm"
             variant="primary"
             loading={loading}
-            disabled={!text.trim() || disabled}
+            disabled={(!text.trim() && attachments.length === 0) || disabled}
             onClick={handleSend}
             className="mu-composer-send-btn"
           >

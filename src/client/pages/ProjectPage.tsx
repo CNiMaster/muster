@@ -523,7 +523,7 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
         onSelect={selectProjectTask}
         onCreateTask={(title, brief) => createProjectTask.mutate({ projectId, title, brief }, { onSuccess: (item) => { selectProjectTask(item.id); toast('success', '项目任务已创建'); } })}
         newTaskSignal={newTaskSignal}
-        onPublishWorkOrder={(title, assigneeId) => { if (!selectedProjectTask) return; createWorkOrder.mutate({ projectId, projectTaskId: selectedProjectTask.id, title, assigneeAgentId: assigneeId || undefined }, { onSuccess: () => toast('success', '智能体工作单已下达并开始执行') }); }}
+        onPublishWorkOrder={(title, assigneeId, options) => { if (!selectedProjectTask) return; createWorkOrder.mutate({ projectId, projectTaskId: selectedProjectTask.id, title, assigneeAgentId: assigneeId || undefined, inputProtocol: { trigger: 'work_order', content: title, ...(options?.mode ? { mode: options.mode } : {}), ...(options?.model ? { model: options.model } : {}), ...(options?.thinking ? { thinking: options.thinking } : {}) } }, { onSuccess: () => toast('success', '智能体工作单已下达并开始执行') }); }}
         publishingWorkOrder={createWorkOrder.isPending}
       />}
 

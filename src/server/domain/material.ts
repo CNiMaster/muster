@@ -9,7 +9,7 @@
  * 素材存储在 {project.rootDir}/materials/_copied/ 下,
  * 与 worktree 执行区隔离,路径校验防目录穿越(对照 resolveArtifactPath)。
  */
-import { copyFileSync, existsSync, mkdirSync, statSync, unlinkSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
@@ -17,7 +17,7 @@ import { shortId, nowIso } from '../../shared/utils';
 import { getProject } from './project';
 
 export type MaterialKind = 'video' | 'audio' | 'image' | 'document' | 'link' | 'other';
-export type MaterialSourceType = 'link' | 'moved' | 'copied';
+export type MaterialSourceType = 'link' | 'moved' | 'copied' | 'upload';
 
 export interface ProjectMaterial {
   id: string;
@@ -89,6 +89,63 @@ function safeJoinWithinProject(rootDir: string, relPath: string): string {
     throw new AppError(ErrorCode.UNAUTHORIZED, '素材路径逃逸');
   }
   return abs;
+}
+
+/** 上传文件名净化：去路径分隔符/控制字符，限长，空名兜底。 */
+function sanitizeFileName(name: string): string {
+  const clean = name
+    .replace(/[\\/\u0000-\u001f]/g, '_')
+    .replace(/^[._]+/, '')
+    .replace(/\.{2,}/g, '.')
+    .trim();
+  const limited = clean.slice(0, 120);
+  return limited || 'file';
+}
+
+const MIME_KIND_HINTS: Array<{ pattern: RegExp; kind: MaterialKind }> = [
+  { pattern: /^image\//, kind: 'image' },
+  { pattern: /^video\//, kind: 'video' },
+  { pattern: /^audio\//, kind: 'audio' },
+  { pattern: /^text\//, kind: 'document' },
+  { pattern: /pdf|word|excel|powerpoint|officedocument/, kind: 'document' },
+];
+
+/**
+ * 对话框上传附件：写入 {rootDir}/materials/_uploads/{id}-{name} 并登记素材。
+ * 文件落在项目 git 仓库内（API 层负责 commitAll），后续任务的 worktree 从 HEAD 切出即携带附件。
+ */
+export function importUploadedFile(
+  db: DB,
+  projectId: string,
+  input: { data: Buffer; originalName: string; mime?: string; createdBy?: string },
+): ProjectMaterial {
+  const project = getProject(db, projectId);
+  const now = nowIso();
+  const id = shortId('mat_');
+  const safeName = sanitizeFileName(input.originalName);
+  const kind: MaterialKind = inferMaterialKind(safeName) === 'other' && input.mime
+    ? (MIME_KIND_HINTS.find((hint) => hint.pattern.test(input.mime!))?.kind ?? 'other')
+    : inferMaterialKind(safeName);
+  const destRel = `materials/_uploads/${id}-${safeName}`;
+  const destAbs = safeJoinWithinProject(project.rootDir, destRel);
+  const destDir = path.dirname(destAbs);
+  if (!existsSync(destDir)) mkdirSync(destDir, { recursive: true });
+  writeFileSync(destAbs, input.data);
+  return insertMaterial(db, {
+    id, projectId, name: safeName, kind, sourceType: 'upload',
+    storagePath: destRel, sourceUrl: null,
+    tags: ['上传'], meta: { mime: input.mime ?? null, sizeBytes: input.data.length },
+    createdBy: input.createdBy ?? 'user', now,
+  });
+}
+
+/** 素材原始文件绝对路径（供 raw 下载；link 型返回 null）。 */
+export function resolveMaterialFile(db: DB, id: string): { absPath: string; material: ProjectMaterial } | null {
+  const material = getMaterial(db, id);
+  if (!material || !material.storagePath) return null;
+  const project = getProject(db, material.projectId);
+  const absPath = safeJoinWithinProject(project.rootDir, material.storagePath);
+  return { absPath, material };
 }
 
 export interface ImportMaterialInput {
