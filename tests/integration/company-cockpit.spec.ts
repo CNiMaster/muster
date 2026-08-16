@@ -94,36 +94,4 @@ describe('company cockpit', () => {
     expect(cockpit.approvals.pending).toBe(0);
   });
 
-  it('E5 补齐：optimization.pendingActions 统计待审批组织建议并进 risks；执行后归零', () => {
-    const company = createCompany(db, { name: 'A' });
-    const other = createCompany(db, { name: 'B' });
-    const now = nowIso();
-    // 本公司报告 + 1 条 pending item
-    db.prepare(
-      `INSERT INTO company_optimization_report (id, company_id, period_start, period_end, report_json, status, created_at, updated_at)
-       VALUES ('r1', ?, NULL, ?, '{}', 'generated', ?, ?)`,
-    ).run(company.id, now, now, now);
-    db.prepare(
-      `INSERT INTO report_action_item (id, report_id, action_type, description, reason, expected_effect, params_json, status, created_at, updated_at)
-       VALUES ('i1', 'r1', 'learn_workflow_pattern', '测', '', '', '{}', 'pending', ?, ?)`,
-    ).run(now, now);
-    // 别家公司的 pending item 不应漏入
-    db.prepare(
-      `INSERT INTO company_optimization_report (id, company_id, period_start, period_end, report_json, status, created_at, updated_at)
-       VALUES ('r2', ?, NULL, ?, '{}', 'generated', ?, ?)`,
-    ).run(other.id, now, now, now);
-    db.prepare(
-      `INSERT INTO report_action_item (id, report_id, action_type, description, reason, expected_effect, params_json, status, created_at, updated_at)
-       VALUES ('i2', 'r2', 'learn_workflow_pattern', '测', '', '', '{}', 'pending', ?, ?)`,
-    ).run(now, now);
-
-    const cockpit = getCompanyCockpit(db, company.id);
-    expect(cockpit.optimization.pendingActions).toBe(1);
-    expect(cockpit.risks.some((r) => r.kind === 'evolution' && r.href.includes('view=evolution'))).toBe(true);
-
-    // 执行/拒绝后不再计数
-    db.prepare("UPDATE report_action_item SET status='executed' WHERE id='i1'").run();
-    const after = getCompanyCockpit(db, company.id);
-    expect(after.optimization.pendingActions).toBe(0);
-  });
 });

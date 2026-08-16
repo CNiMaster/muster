@@ -13,12 +13,9 @@ import { settleDrainingAgents } from '../domain/agent';
 import { drainReflectionQueue, recoverStuckReflections, enqueueIdleReflections } from '../domain/reflection';
 import { generateInspectorSuggestions } from '../domain/inspector';
 import { autoAcceptContract, createOutsourcedTask, revertAcceptToPending } from '../domain/outsourcing-contract';
-import { generateOptimizationReport } from '../domain/optimization-report';
 import type { SetupGenerator } from '../domain/setup-assistant';
-import { promoteCandidatesToActions } from '../domain/promotion';
 import { getSystemSettings } from '../domain/setting';
 import { ensureSystemAgents } from '../domain/system-agents';
-import { executePendingOfflineActions } from '../domain/optimization-report-executor';
 import { shortId } from '../../shared/utils';
 import {
   STALE_WAITING_INPUT_MS,
@@ -34,45 +31,6 @@ export interface RuntimeTickResult {
   releasedMirrors: string[];
 }
 
-/** 今日零点 ISO（用于"今天已生成过"判断）。 */
-function dbToday(db: DB): string {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d.toISOString();
-}
-
-/**
- * E4.1 每日优化报告 + 晋升落地串接（孤岛打通）。
- *
- * 生成运营优化报告后立即把该公司 pending 的 promotion_candidate 翻译成 action item：
- * 低风险（update_user_preference / bind_habitual_tool）自动执行，高风险保持 pending 等用户审批。
- * 晋升失败不阻塞报告（记录日志），报告生成失败则上抛由调用方兜底。
- *
- * 单独导出以便测试直接验证"报告→晋升"串接（scheduleOptimizationReports 只是调度外壳）。
- */
-export async function runDailyOptimizationReport(
-  db: DB,
-  companyId: string,
-  options: { generator?: SetupGenerator } = {},
-): Promise<{ reportId: string; promoted: { reportId: string | null; created: number } }> {
-  const report = await generateOptimizationReport(db, companyId, options.generator ? { generator: options.generator } : {});
-  let promoted: { reportId: string | null; created: number } = { reportId: null, created: 0 };
-  try {
-    promoted = promoteCandidatesToActions(db, companyId);
-  } catch (error) {
-    log.warn('promoteCandidatesToActions failed', {
-      companyId,
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
-  return { reportId: report.id, promoted };
-}
-
-/** 指挥系统批次1：晨醒（每日运营优化报告）开关，默认开。 */
-export function morningReportsEnabled(db: DB): boolean {
-  return getSystemSettings(db).morningReportEnabled;
-}
-
 /**
  * E4.3 空闲自主反思（白日梦，默认关闭）：对 online 且无活跃正式任务的公司，
  * 在开关开启且当日花费未超预算时，补排队近期终态任务的反思。
@@ -80,6 +38,13 @@ export function morningReportsEnabled(db: DB): boolean {
  * - 只补 reflection，不做全自动 brainstorm（烧钱风险，spec 明确排除）；
  * - 预算语义：autonomousReflectionBudgetUSD 是"公司当日总 LLM 花费"上限，低于它才允许做梦（0 = 关闭）。
  */
+/** 今日零点 ISO（空闲反思当日预算判断用）。 */
+function dbToday(db: DB): string {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString();
+}
+
 export function runIdleReflectionPass(db: DB): Array<{ companyId: string; enqueued: number }> {
   const settings = getSystemSettings(db);
   if (!settings.autonomousReflectionEnabled) return [];
@@ -124,8 +89,6 @@ export class ProjectRuntimeCoordinator {
   /** 阶段五任务 5.1：运营优化报告——自然日语义（"晨醒 = 打开程序"模型）。
    *  每 60 秒问一次"今天生成过吗"，没生成就补：短开用户每天打开一次即触发当日报告+晋升批次，
    *  长开用户午夜后首个检查进入新一天。AI 生成异步不阻塞 tick。 */
-  private lastDailyReportCheck = 0;
-  private readonly dailyReportCheckIntervalMs: number;
   /** 晨醒模型 in-flight 去重：正在异步生成报告的公司集合（防 >60s 的生成被重复排队）。 */
   private readonly reportsInFlight = new Set<string>();
   /** E4.3 空闲自主反思扫描（默认关；每 60 秒检查一次，只入队不调 LLM）。 */
@@ -137,9 +100,7 @@ export class ProjectRuntimeCoordinator {
     private readonly engine: TaskEngine,
     private readonly intervalMs = 2_000,
     /** 测试注入：报告生成器 + 自然日检查间隔（默认 60s；测试传 0 让每次 tick 都检查）。 */
-    private readonly options: { generator?: SetupGenerator; dailyReportCheckIntervalMs?: number } = {},
   ) {
-    this.dailyReportCheckIntervalMs = options.dailyReportCheckIntervalMs ?? 60_000;
   }
 
   async tick(options: { pump?: boolean } = {}): Promise<RuntimeTickResult> {
@@ -170,16 +131,6 @@ export class ProjectRuntimeCoordinator {
         this.acceptPendingOutsourcing();
       } catch (error) {
         log.warn('auto accept outsourcing scan failed', { error: error instanceof Error ? error.message : String(error) });
-      }
-      // 阶段五任务 5.1：自然日语义——"今天已生成"检查本身就是幂等门（scheduleOptimizationReports 内部
-      // 按 dbToday 跳过已生成的），此处只做 60 秒节流。进程启动后首个 tick 立即检查 = 打开即晨醒。
-      if (Date.now() - this.lastDailyReportCheck >= this.dailyReportCheckIntervalMs) {
-        this.lastDailyReportCheck = Date.now();
-        try {
-          this.scheduleOptimizationReports();
-        } catch (error) {
-          log.warn('optimization report scan failed', { error: error instanceof Error ? error.message : String(error) });
-        }
       }
       // E4.3 空闲自主反思（默认关）：每 60 秒扫描一次；只入队（LLM 消化走独立反思定时器）。
       if (Date.now() - this.lastIdleReflectionRun >= this.idleReflectionIntervalMs) {
@@ -494,47 +445,6 @@ export class ProjectRuntimeCoordinator {
     return accepted;
   }
 
-  /** 阶段五任务 5.1：为 online 公司异步生成运营优化报告（LLM 调用不阻塞 tick）。
-   *  自然日语义：dbToday 幂等门是唯一守卫——"今天已生成"就跳过，进程重启/短开都能正确补做当天。 */
-  private scheduleOptimizationReports(): void {
-    // 指挥系统批次1：晨醒开关（默认开，保持既有行为；用户可在设置关闭）
-    if (!morningReportsEnabled(this.db)) return;
-    for (const company of listCompanies(this.db)) {
-      if (company.state !== 'online') continue;
-      // 今天已生成过的不重复
-      const today = dbToday(this.db);
-      const existing = this.db
-        .prepare(`SELECT 1 FROM company_optimization_report WHERE company_id=? AND created_at >= ? LIMIT 1`)
-        .get(company.id, today);
-      if (existing) continue;
-      // 进程内 in-flight 去重：AI 生成 fire-and-forget 可能 >60s（一次扫描间隔），
-      // 若不拦，下一次扫描会在报告落库前再排一个重复任务（同日两份报告）。
-      if (this.reportsInFlight.has(company.id)) continue;
-      this.reportsInFlight.add(company.id);
-      // fire-and-forget：AI 生成可能耗时数秒，异步执行
-      queueMicrotask(() => {
-        void (async () => {
-          try {
-            const { reportId, promoted } = await runDailyOptimizationReport(this.db, company.id, this.options);
-            log.info('optimization report generated', { companyId: company.id, reportId });
-            if (promoted.created > 0) {
-              log.info('promotion candidates promoted to actions', {
-                companyId: company.id, reportId: promoted.reportId, created: promoted.created,
-              });
-            }
-          } catch (error) {
-            log.warn('optimization report generation failed', {
-              companyId: company.id,
-              error: error instanceof Error ? error.message : String(error),
-            });
-          } finally {
-            this.reportsInFlight.delete(company.id);
-          }
-        })();
-      });
-    }
-  }
-
   private settleDrainingCompanies(): string[] {
     const settled: string[] = [];
     for (const company of listCompanies(this.db)) {
@@ -547,15 +457,6 @@ export class ProjectRuntimeCoordinator {
       if (!active) {
         transitionCompany(this.db, company.id, 'off');
         settled.push(company.id);
-        // Review 修复：公司下班后自动执行此前标记 pending_offline 的优化报告建议
-        try {
-          executePendingOfflineActions(this.db, company.id);
-        } catch (error) {
-          log.warn('pending offline actions execution failed', {
-            companyId: company.id,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
       }
     }
     return settled;

@@ -10,7 +10,7 @@ import { listTasks } from '../../src/server/domain/task';
 import { createTask } from '../../src/server/domain/task';
 import { FakeExecutor } from '../../src/server/task-engine/fake-executor';
 import { TaskEngine } from '../../src/server/task-engine/engine';
-import { ProjectRuntimeCoordinator, runDailyOptimizationReport } from '../../src/server/runtime/coordinator';
+import { ProjectRuntimeCoordinator } from '../../src/server/runtime/coordinator';
 import { listReports } from '../../src/server/domain/report';
 import { startBrainstorm } from '../../src/server/domain/brainstorm';
 import { createProjectTask } from '../../src/server/domain/project-task';
@@ -18,8 +18,6 @@ import { getAgent } from '../../src/server/domain/agent';
 import { addDependency } from '../../src/server/domain/task';
 import { listInspectorAlerts, resolveInspectorAlert } from '../../src/server/domain/inspector';
 import { createMemoryCandidate, approveMemoryCandidate, listMemoryEntries } from '../../src/server/domain/memory';
-import { detectPromotions } from '../../src/server/domain/promotion';
-import { listReportActionItems, listOptimizationReports } from '../../src/server/domain/optimization-report';
 import type { SetupGenerator } from '../../src/server/domain/setup-assistant';
 
 class NoopGenerator implements SetupGenerator {
@@ -312,106 +310,4 @@ describe('ProjectRuntimeCoordinator', () => {
   });
 });
 
-describe('runDailyOptimizationReport（E4.1 每日报告→晋升落地串接）', () => {
-  it('报告生成后自动把 pending 晋升候选转 action item 并低风险自动落地', async () => {
-    const c = createCompany(db, { name: 'ev' });
-    const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
-    const project = createProject(db, {
-      companyId: c.id, name: 'p', rootDir: makeTempGitRepo(), firstAgentId: lead.id, initialState: 'active',
-    });
-    // 3 条同 fingerprint 的经验记忆 → 达晋升阈值
-    for (let i = 0; i < 3; i++) {
-      const cand = createMemoryCandidate(db, {
-        profileId: lead.profileId, scope: 'project', companyId: c.id, projectId: project.id,
-        content: `design:color 经验 #${i}`, author: 'agent', confidence: 0.85, canInfluence: true, fingerprint: 'design:color',
-      });
-      approveMemoryCandidate(db, cand.id, 'agent');
-    }
-    detectPromotions(db);
 
-    const { reportId, promoted } = await runDailyOptimizationReport(db, c.id, { generator: new NoopGenerator() });
-
-    expect(reportId).toBeTruthy();
-    expect(promoted.created).toBe(1);
-    expect(promoted.reportId).not.toBeNull();
-    const items = listReportActionItems(db, promoted.reportId!);
-    expect(items[0]!.actionType).toBe('update_user_preference');
-    // 低风险自动落地：item executed + 主导员工新增 personal 偏好记忆
-    expect(items[0]!.status).toBe('executed');
-    const personal = listMemoryEntries(db, { profileId: lead.profileId, scope: 'personal' });
-    expect(personal.some((m) => m.fingerprint === 'design:color')).toBe(true);
-  });
-});
-
-describe('自然日报告调度（晨醒模型）', () => {
-  it('打开即晨醒：进程首个 tick 立即补做当日报告', async () => {
-    const novel = createNovelCompany(db, { name: 'co' });
-    transitionCompany(db, novel.company.id, 'online');
-    const coordinator = new ProjectRuntimeCoordinator(db, new TaskEngine(db, new FakeExecutor()), 2_000, { generator: new NoopGenerator(), dailyReportCheckIntervalMs: 0 });
-
-    await coordinator.tick({ pump: false });
-
-    await vi.waitFor(() => {
-      expect(listOptimizationReports(db, novel.company.id)).toHaveLength(1);
-    });
-  });
-
-  it('同日幂等：再多次 tick 不重复生成', async () => {
-    const novel = createNovelCompany(db, { name: 'co' });
-    transitionCompany(db, novel.company.id, 'online');
-    const coordinator = new ProjectRuntimeCoordinator(db, new TaskEngine(db, new FakeExecutor()), 2_000, { generator: new NoopGenerator(), dailyReportCheckIntervalMs: 0 });
-
-    await coordinator.tick({ pump: false });
-    await vi.waitFor(() => {
-      expect(listOptimizationReports(db, novel.company.id)).toHaveLength(1);
-    });
-    await coordinator.tick({ pump: false });
-    await new Promise((r) => setTimeout(r, 150));
-    expect(listOptimizationReports(db, novel.company.id)).toHaveLength(1);
-  });
-
-  it('跨天：昨天的报告不挡今天（自然日语义）', async () => {
-    const novel = createNovelCompany(db, { name: 'co' });
-    transitionCompany(db, novel.company.id, 'online');
-    const coordinator = new ProjectRuntimeCoordinator(db, new TaskEngine(db, new FakeExecutor()), 2_000, { generator: new NoopGenerator(), dailyReportCheckIntervalMs: 0 });
-
-    await coordinator.tick({ pump: false });
-    await vi.waitFor(() => {
-      expect(listOptimizationReports(db, novel.company.id)).toHaveLength(1);
-    });
-    // 把昨天的报告时间拨回昨天 → 下一次 tick 视为新的一天，再生成一份
-    const yesterday = new Date(Date.now() - 24 * 3600_000).toISOString();
-    db.prepare('UPDATE company_optimization_report SET created_at=? WHERE company_id=?').run(yesterday, novel.company.id);
-    await coordinator.tick({ pump: false });
-
-    await vi.waitFor(() => {
-      expect(listOptimizationReports(db, novel.company.id)).toHaveLength(2);
-    });
-  });
-
-  it('公司离线不生成', async () => {
-    const novel = createNovelCompany(db, { name: 'co' });
-    // 不上线
-    const coordinator = new ProjectRuntimeCoordinator(db, new TaskEngine(db, new FakeExecutor()), 2_000, { generator: new NoopGenerator(), dailyReportCheckIntervalMs: 0 });
-
-    await coordinator.tick({ pump: false });
-
-    expect(listOptimizationReports(db, novel.company.id)).toHaveLength(0);
-  });
-
-  it('in-flight 去重：慢生成（>扫描间隔）不会被下一次扫描重复排队', async () => {
-    const novel = createNovelCompany(db, { name: 'co' });
-    transitionCompany(db, novel.company.id, 'online');
-    const coordinator = new ProjectRuntimeCoordinator(db, new TaskEngine(db, new FakeExecutor()), 2_000, { generator: new SlowGenerator(120), dailyReportCheckIntervalMs: 0 });
-
-    // 连续两次 tick（间隔 0，但生成需 120ms 还没落库）：第二次必须因 in-flight 标记跳过
-    await coordinator.tick({ pump: false });
-    await coordinator.tick({ pump: false });
-
-    await vi.waitFor(() => {
-      expect(listOptimizationReports(db, novel.company.id)).toHaveLength(1);
-    });
-    await new Promise((r) => setTimeout(r, 200));
-    expect(listOptimizationReports(db, novel.company.id)).toHaveLength(1);
-  });
-});

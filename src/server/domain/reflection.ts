@@ -23,7 +23,6 @@ import { getTask, type Task } from './task';
 import { getProject } from './project';
 import { getAgent } from './agent';
 import { createMemoryCandidate, searchMemory } from './memory';
-import { detectPromotions } from './promotion';
 import { getPersona } from './persona-library';
 import { evolveBlueprint } from './blueprint';
 
@@ -180,7 +179,7 @@ export function enqueueIdleReflections(db: DB, companyId: string, limit = 2): nu
 export async function drainReflectionQueue(
   db: DB,
   options: { maxPerTick?: number; companyId?: string } = {},
-): Promise<{ processed: number; lessons: number; promotions: number }> {
+): Promise<{ processed: number; lessons: number }> {
   const maxPerTick = Math.min(Math.max(options.maxPerTick ?? 3, 1), 10);
   // 原子领取：UPDATE...RETURNING 把 pending 翻成 running 并返回被领取的行。
   const claimSql = options.companyId
@@ -233,8 +232,7 @@ export async function drainReflectionQueue(
     }
   }
   // E2.2 drain 完成后检测晋升：仅在本轮处理了反思时才扫，避免每 10s 空跑全表 + UPSERT 写放大。
-  const promotions = rows.length > 0 ? detectPromotions(db) : { processed: 0 };
-  return { processed: rows.length, lessons, promotions: promotions.processed };
+  return { processed: rows.length, lessons };
 }
 
 /**

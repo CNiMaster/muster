@@ -49,7 +49,6 @@ export function SettingsPage(): React.ReactElement {
   const [codeTheme, setCodeTheme] = useState('default');
   const [autonomousReflectionEnabled, setAutonomousReflectionEnabled] = useState(false);
   const [autonomousReflectionBudgetUSD, setAutonomousReflectionBudgetUSD] = useState(0);
-  const [morningReportEnabled, setMorningReportEnabled] = useState(true);
   const [swarmMaxDepth, setSwarmMaxDepth] = useState(3);
   const [swarmMaxWidth, setSwarmMaxWidth] = useState(5);
   const [swarmMaxNodes, setSwarmMaxNodes] = useState(30);
@@ -82,7 +81,6 @@ export function SettingsPage(): React.ReactElement {
     setCodeTheme(settings.codeTheme ?? 'default');
     setAutonomousReflectionEnabled(settings.autonomousReflectionEnabled ?? false);
     setAutonomousReflectionBudgetUSD(settings.autonomousReflectionBudgetUSD ?? 0);
-    setMorningReportEnabled(settings.morningReportEnabled ?? true);
     setSwarmMaxDepth(settings.swarmMaxDepth ?? 3);
     setSwarmMaxWidth(settings.swarmMaxWidth ?? 5);
     setSwarmMaxNodes(settings.swarmMaxNodes ?? 30);
@@ -96,7 +94,7 @@ export function SettingsPage(): React.ReactElement {
       return;
     }
     saveSettings.mutate(
-      { claudeBin, model, skipPermissions, timeoutMs, maxToolCalls, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierPrimaryId: tierPrimary, executorTierSecondaryId: tierSecondary, executorTierTertiaryId: tierTertiary, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs, theme, fontFamily, fontSize, locale, codeTheme, autonomousReflectionEnabled, autonomousReflectionBudgetUSD, morningReportEnabled, swarmMaxDepth, swarmMaxWidth, swarmMaxNodes, swarmBudgetUSD, swarmRepairMax },
+      { claudeBin, model, skipPermissions, timeoutMs, maxToolCalls, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierPrimaryId: tierPrimary, executorTierSecondaryId: tierSecondary, executorTierTertiaryId: tierTertiary, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs, theme, fontFamily, fontSize, locale, codeTheme, autonomousReflectionEnabled, autonomousReflectionBudgetUSD, swarmMaxDepth, swarmMaxWidth, swarmMaxNodes, swarmBudgetUSD, swarmRepairMax },
       {
         onSuccess: () => toast('success', '系统设置已保存并实时生效'),
         onError: (error: any) => toast('error', error.message ?? '保存设置失败'),
@@ -232,10 +230,6 @@ export function SettingsPage(): React.ReactElement {
                     <Input type="number" value={swarmBudgetUSD} onChange={(e) => setSwarmBudgetUSD(Number(e.target.value))} />
                   </Field>
                 </div>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px' }}>
-                  <input type="checkbox" checked={morningReportEnabled} onChange={(e) => setMorningReportEnabled(e.target.checked)} />
-                  <span>启用晨醒自动巡检与日报 (Morning Report)</span>
-                </label>
               </div>
             </Card>
           )}

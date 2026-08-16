@@ -16,20 +16,12 @@ export function getCompanyCockpit(db: DB, companyId: string): CompanyCockpitDTO 
     JOIN company_employee ce ON ce.id=pa.employee_id
     WHERE ce.company_id=? AND pa.status='pending'
   `).get(companyId) as { count: number }).count;
-  // E5 补齐：待审批的组织优化建议（晋升批次/运营报告产出的 pending action items）。
-  const pendingOptimizationActions = (db.prepare(`
-    SELECT COUNT(*) AS count
-    FROM report_action_item rai
-    JOIN company_optimization_report cor ON cor.id = rai.report_id
-    WHERE cor.company_id=? AND rai.status='pending'
-  `).get(companyId) as { count: number }).count;
   // 组织 = f(活)：公司模板缺岗告警已随固定岗位模板移除，角色由任务穿戴人设动态生成。
   const roleGaps: CompanyCockpitDTO['roleGaps'] = [];
   const active = projects.filter((project) => project.state === 'active').length;
   const attention = projects.filter((project) => project.state === 'paused').length;
   const risks: CompanyCockpitDTO['risks'] = [];
   if (pending > 0) risks.push({ kind: 'approval', label: `${pending} 项审批等待处理`, href: '/permissions' });
-  if (pendingOptimizationActions > 0) risks.push({ kind: 'evolution', label: `${pendingOptimizationActions} 条组织建议等待审批`, href: `/companies/${companyId}?view=evolution` });
   if (employees.blocked > 0) risks.push({ kind: 'executor', label: `${employees.blocked} 位员工尚不能运行`, href: `/companies/${companyId}?tab=team` });
   if (attention > 0) risks.push({ kind: 'project', label: `${attention} 个项目需要处理`, href: `/companies/${companyId}?tab=projects` });
 
@@ -56,7 +48,6 @@ export function getCompanyCockpit(db: DB, companyId: string): CompanyCockpitDTO 
     employees,
     projects: { total: projects.length, active, attention },
     approvals: { pending },
-    optimization: { pendingActions: pendingOptimizationActions },
     roleGaps,
     risks,
     nextAction,

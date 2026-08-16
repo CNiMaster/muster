@@ -16,8 +16,6 @@ import {
   setCompanyTriggerEnabled,
   deleteCompanyTrigger,
 } from '../../src/server/domain/triggers';
-import { getSystemSettings, saveSystemSettings } from '../../src/server/domain/setting';
-import { morningReportsEnabled } from '../../src/server/runtime/coordinator';
 import { AppError } from '../../src/shared/errors';
 import { makeTestDb } from './setup';
 
@@ -196,16 +194,6 @@ describe('公司级触发器', () => {
   });
 });
 
-describe('晨醒开关', () => {
-  it('默认开启；保存为 false 后读取生效（设置六步链）', () => {
-    expect(morningReportsEnabled(db)).toBe(true);
-    expect(getSystemSettings(db).morningReportEnabled).toBe(true);
-    saveSystemSettings(db, { morningReportEnabled: false });
-    expect(morningReportsEnabled(db)).toBe(false);
-    saveSystemSettings(db, { morningReportEnabled: true });
-    expect(morningReportsEnabled(db)).toBe(true);
-  });
-});
 
 /** 测试助手：直接改任务状态（模拟引擎运行/完成）。 */
 function setTaskState(db: DB, id: string, state: string): void {

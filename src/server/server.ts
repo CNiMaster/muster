@@ -27,8 +27,6 @@ import { taskByProjectRouter, taskByIdRouter } from './api/tasks';
 import { usageRouter } from './api/reports-usage';
 import { novelRouter, projectScopedNovel } from './api/novel';
 import { projectPhase7, reportByIdRouter, inspectorAlertRouter } from './api/phase7';
-import { optimizationReportRouter, optimizationReportByIdRouter } from './api/optimization-report';
-import { promotionCandidatesRouter, structureChangesRouter, locksRouter } from './api/evolution';
 import { companyMessagesRouter, projectMessagesRouter } from './api/conversation';
 import { pluginsRouter } from './api/plugins';
 import { outsourcingRouter } from './api/outsourcing';
@@ -196,8 +194,6 @@ async function createApp(): Promise<AppHandle> {
   app.use('/api/companies/:id/messages', companyMessagesRouter);
   app.use('/api/companies/:companyId/events', companyEventsRouter);
   app.use('/api/companies/:companyId/credentials', companyCredentialsRouter);
-  // 阶段五任务 5.1/5.2：公司运营优化报告（/optimization-report、/optimization-reports）
-  app.use('/api/companies/:companyId', optimizationReportRouter);
   app.use('/api/playbooks', playbooksRouter);
   // 蓝图组织批次4c：项目优先入口（须在 /api/projects/:id 之前挂载，避免被 :id 参数吞掉）
   app.use('/api/projects/quick', quickProjectsRouter);
@@ -209,11 +205,6 @@ async function createApp(): Promise<AppHandle> {
   app.use('/api', handoverRouter);
   app.use('/api/reports/:id', reportByIdRouter);
   app.use('/api/inspector/alerts', inspectorAlertRouter);
-  app.use('/api/optimization-reports/:id', optimizationReportByIdRouter);
-  // E5 用户控制面：晋升候选 / 结构历史+回滚 / 锁定管理
-  app.use('/api/promotion-candidates', promotionCandidatesRouter);
-  app.use('/api/structure-changes', structureChangesRouter);
-  app.use('/api/locks', locksRouter);
   app.use('/api/tasks/:id', taskByIdRouter);
   app.use('/api/settings', settingsRouter);
   app.use('/api/workspaces', workspacesRouter);
