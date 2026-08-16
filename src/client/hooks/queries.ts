@@ -1293,6 +1293,54 @@ export function useUpdateBlueprintDescription(companyId: string | undefined) {
   });
 }
 
+export interface BlueprintOptimizationItem {
+  id: string;
+  blueprintId: string;
+  actionType: 'lock' | 'retire' | 'merge' | 'polish_description';
+  targetBlueprintId: string | null;
+  reason: string;
+  expectedEffect: string;
+  params: Record<string, unknown>;
+  status: 'pending' | 'applied' | 'ignored';
+  createdAt: string;
+}
+
+export function useGenerateBlueprintOptimization(companyId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<{ source: 'claude' | 'rules'; items: BlueprintOptimizationItem[] }>(`/api/companies/${companyId}/blueprints/optimize`, {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['blueprint-optimization-items', companyId] }),
+  });
+}
+
+export function useBlueprintOptimizationItems(companyId: string | undefined) {
+  return useQuery({
+    queryKey: ['blueprint-optimization-items', companyId],
+    queryFn: () => api.get<BlueprintOptimizationItem[]>(`/api/companies/${companyId}/optimization-items`),
+    enabled: !!companyId,
+  });
+}
+
+export function useApplyBlueprintOptimizationItem(companyId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (itemId: string) => api.post<{ applied: boolean; message: string }>(`/api/companies/${companyId}/optimization-items/${itemId}/apply`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['blueprint-optimization-items', companyId] });
+      qc.invalidateQueries({ queryKey: ['blueprints', companyId] });
+      qc.invalidateQueries({ queryKey: ['blueprint-versions'] });
+    },
+  });
+}
+
+export function useIgnoreBlueprintOptimizationItem(companyId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (itemId: string) => api.post(`/api/companies/${companyId}/optimization-items/${itemId}/ignore`, {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['blueprint-optimization-items', companyId] }),
+  });
+}
+
 export function useBlueprints(companyId: string | undefined) {
   return useQuery({
     queryKey: ['blueprints', companyId],
