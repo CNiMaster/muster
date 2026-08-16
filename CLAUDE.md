@@ -66,6 +66,16 @@ Key constraints for all new work:
 - **Composer 全功能**：附件链路 = `POST /api/projects/:id/materials/upload`(octet-stream + x-file-name, 64MB 上限)→素材区 `materials/_uploads/` + commitAll 随仓库进后续任务 worktree；消息 `attachments_json` + 派发 inputProtocol 注入【用户附件】相对路径；`GET /:id/raw` 预览。任务药丸（切换归属）+ 分支药丸（只读 `muster/<project>/<task>`）。消息级选项 `options_json`(mode/model/thinking)：模式=计划(前缀指令+deny 只读沙盒)+三档审批(ask-always 升级审批/ask-by-rule/no-approval 降级放行)+只读；引擎 `readMessageOptions` 覆盖 `effectiveExecutor.model/thinkingDepth` 与审批策略（无员工策略时幂等绑员工档作审批载体）。斜杠命令面板（/plan /ask /rules /auto /readonly /default /model /think /task /new）。模型清单来自执行器档案+系统设置（不再硬编码）。
 - **测试基线**：单测/集成 179 文件 1266 过（web-tools 3 例为本地沙箱 DNS 拦截公网域名的环境性失败，非回归）；e2e 18/18；HTTP 冒烟 77/77；product-acceptance 改为零组织路径。
 
+## 蓝图打法包 + 蜂群专家团（2026-08-16 进化环收拢，批次1-6）
+
+- **进化频率 = 每次任务结束**：晨醒每日定时退役（coordinator 调度/开关/设置项全删），任务终态反思队列（10s 排水）成为唯一进化驱动；晋升链（promotion/detectPromotions/候选表/API）与旧运营报告数据面（表/executor/evolution-summary/structure-versioning/entity-lock）整体删除，蓝图成为唯一进化与治理对象。
+- **蓝图 = 打法包**（不再是"人设匹配器"）：`blueprint` 扩展 description（用户语言描述）、tools_json（execution_trace 按任务聚合工具记账 cap10）、rework_total/correction_total（多维战绩，综合评分=胜率60%+低返工25%+低纠正15%，样本<3 观察中）；班底 2-4 槽生效（协作成员以"协作班底"提示注入上下文，不另起执行体）；`stages_json` 二期预留（阶段工作流）。
+- **版本化**：`blueprint_version` 快照链（仅结构性变更出版——新建/班底/工具集/状态/回滚；纯计数不出版），中文摘要+证据，cap 30/蓝图，回滚恢复结构保战绩另记一版；API versions/rollback/description；任务穿戴审计含 blueprintVersion（标题条与 ExecutionTraceCard 显示"🎭 蓝图label vN"）。
+- **手动深度优化**（替代运营报告）：`blueprint-optimizer.ts` 按需体检（LLM，降级规则引擎：高胜率≥80锁/低评分<30淘汰/词面重叠[0.1,0.4)合并/缺描述润色），建议落 `blueprint_optimization_item`（pending/applied/ignored），采纳落地全走版本化（合并=班底工具战绩并入+源退役）。
+- **蜂群专家团 + 派遣分级**：SwarmPlan.worker.personaId → 工蜂穿戴人设（三蜂型：匿名/同种专家/混合专家；显式优先于蓝图自动匹配，缺失优雅降级）；调度中心提示词+蜂群契约教学三种蜂型。派遣分级：第一负责人与调度中心=全额四项限额；其他专家=小额自主（3蜂/单层/$1/并发1群，`swarm_run.requester_agent_id` 落库），超限或并发冲突→「[蜂群请示]」派第一负责人把关（不建群、计划全文派发、负责人自行决定转派调度中心或拒绝，`swarmManaged` 旁路 crewMate 守卫）；控制面（工蜂/辩手）永不自主；蜂群树每蜂人设徽章；`swarm.request-escalated` 事件。
+- **二期路线**（本轮未做）：stages_json 阶段工作流落地（每阶段=目标/人设/工具/产出）、组合管线生成器（复杂任务匹配多蓝图→顺序阶段编排，阶段内才用蜂群并行）、蓝图拆分/派生。
+- 测试基线：单测/集成 170 文件 1211 过（web-tools 3 例为本地沙箱 DNS 拦截，非回归）、e2e 18/18、HTTP 冒烟 77/77、product-acceptance 过。
+
 ## 补缺批次 R1-R3（2026-08-16 交付，配枪/验收员/资产库）
 
 - **R1 人设配枪**：persona frontmatter `tools` 键解析（persona-library.ts）；穿戴人设时上下文含「# 人设工具」文本段 + 注册表归一化命中的工具进「# 能力中心」推荐卡（tool-recommendation.ts `normalizeToolId`）；**一次性执行体权限缺口修复**——临时工/系统隐形岗创建即绑「临时工」deny 档（permission-templates.ts `bindDefaultDenyPolicy`，API 执行器上不再零拦截，CLI 侧 fail-closed 不变；已有显式策略不覆盖，greyed 复用补绑）。
