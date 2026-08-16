@@ -99,6 +99,18 @@ export function ExecutionTraceCard({ task }: { task: Task }): React.ReactElement
       className="section"
       actions={
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          {(() => {
+            const meta = (task.inputProtocol ?? {}) as { blueprintLabel?: string; blueprintVersion?: number };
+            if (!task.personaId && !meta.blueprintLabel) return null;
+            return (
+              <span
+                className="mu-trace-blueprint-chip"
+                title={`当前穿戴打法：${meta.blueprintLabel ?? '未命名蓝图'}${meta.blueprintVersion ? ` · v${meta.blueprintVersion}` : ''}（打法包一期：蓝图由任务终态反思自动进化）`}
+              >
+                🎭 {meta.blueprintLabel ?? '蓝图'} {meta.blueprintVersion ? <small>v{meta.blueprintVersion}</small> : null}
+              </span>
+            );
+          })()}
           {isPausedOrWaiting && (
             <button
               type="button"

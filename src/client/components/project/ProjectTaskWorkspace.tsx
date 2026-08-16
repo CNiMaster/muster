@@ -178,6 +178,15 @@ export function ProjectTaskWorkspace({
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 12px', background: 'var(--bg-elev)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)', minWidth: 0, gap: '12px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
             <span className="task-stage-kicker" style={{ margin: 0, fontSize: '12px', flexShrink: 0 }}>#{selectedTask.seq}</span>
+            {(() => {
+              const meta = (activeRuntimeTask?.inputProtocol ?? {}) as { blueprintLabel?: string; blueprintVersion?: number } | undefined;
+              if (!meta?.blueprintLabel) return null;
+              return (
+                <span className="mu-trace-blueprint-chip" title={`本任务穿戴打法：${meta.blueprintLabel}${meta.blueprintVersion ? ` · v${meta.blueprintVersion}` : ''}`}>
+                  🎭 {meta.blueprintLabel} {meta.blueprintVersion ? <small>v{meta.blueprintVersion}</small> : null}
+                </span>
+              );
+            })()}
             <strong style={{ fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{selectedTask.title}</strong>
             <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
               <StateBadge domain="project-task" state={selectedTask.state} />

@@ -36,7 +36,7 @@ import { recordSuspension, resolveSuspensionByTask } from './task-suspension';
 import { checkSwarmLimits, greyBeeAfterTask, handleSwarmTaskFailure, maybeAutoRepairBee, recordSwarmNodeOutcome, reportBeeCompletion } from './swarm';
 import { handleDebateTaskFailure, recordDecisionFromClarify } from './debate';
 import { ensurePrimaryThread } from './thread';
-import { matchBlueprint } from './blueprint';
+import { matchBlueprint, currentBlueprintVersion } from './blueprint';
 import { getPersona } from './persona-library';
 
 /**
@@ -335,6 +335,7 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
         blueprintMeta = {
           blueprintMatched: match.blueprint.id,
           blueprintLabel: match.blueprint.label,
+          blueprintVersion: currentBlueprintVersion(db, match.blueprint.id),
           blueprintScore: Math.round(match.score * 100) / 100,
           ...(crew.length > 0 ? { staffingNotes: crew } : {}),
         };

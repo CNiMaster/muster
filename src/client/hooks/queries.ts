@@ -1244,13 +1244,53 @@ export interface Blueprint {
   companyId: string;
   taskType: string;
   label: string;
+  description: string;
   staffing: Array<{ personaId: string; personaName: string }>;
+  tools: Array<{ kind: 'skill' | 'tool' | 'mcp'; id: string; uses: number; wins: number }>;
   sourceProjectIds: string[];
   wins: number;
   losses: number;
+  reworkTotal: number;
+  correctionTotal: number;
   status: 'active' | 'locked' | 'retired';
   createdAt: string;
   updatedAt: string;
+}
+
+export interface BlueprintVersion {
+  id: string;
+  blueprintId: string;
+  version: number;
+  snapshot: Record<string, unknown>;
+  summary: string;
+  evidence: string[];
+  createdAt: string;
+}
+
+export function useBlueprintVersions(companyId: string | undefined, blueprintId: string | undefined) {
+  return useQuery({
+    queryKey: ['blueprint-versions', companyId, blueprintId],
+    queryFn: () => api.get<BlueprintVersion[]>(`/api/companies/${companyId}/blueprints/${blueprintId}/versions`),
+    enabled: !!companyId && !!blueprintId,
+  });
+}
+
+export function useRollbackBlueprint(companyId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ blueprintId, version }: { blueprintId: string; version: number }) =>
+      api.post<Blueprint>(`/api/companies/${companyId}/blueprints/${blueprintId}/rollback`, { version }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['blueprints', companyId] }),
+  });
+}
+
+export function useUpdateBlueprintDescription(companyId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ blueprintId, description }: { blueprintId: string; description: string }) =>
+      api.patch<Blueprint>(`/api/companies/${companyId}/blueprints/${blueprintId}/description`, { description }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['blueprints', companyId] }),
+  });
 }
 
 export function useBlueprints(companyId: string | undefined) {

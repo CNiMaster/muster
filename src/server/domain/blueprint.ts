@@ -390,6 +390,12 @@ export function setBlueprintStatus(db: DB, id: string, status: BlueprintStatus):
   return getBlueprint(db, id);
 }
 
+/** 当前版本号（无版本 = 0）。任务穿戴时写入审计元数据。 */
+export function currentBlueprintVersion(db: DB, blueprintId: string): number {
+  const row = db.prepare('SELECT MAX(version) AS v FROM blueprint_version WHERE blueprint_id=?').get(blueprintId) as { v: number | null };
+  return row.v ?? 0;
+}
+
 /** 用户语言描述刷新（批次3 面板/批次4 优化器用）。 */
 export function updateBlueprintDescription(db: DB, id: string, description: string): Blueprint {
   const current = getBlueprint(db, id);

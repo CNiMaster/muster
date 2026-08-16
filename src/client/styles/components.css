@@ -1004,6 +1004,10 @@
 .mu-dropdown-hint { padding: 6px 12px; border-top: 1px solid var(--border-subtle); color: var(--fg-subtle); font-size: 11px; }
 .mu-composer-pill.is-open { background: var(--bg-soft); border-color: var(--accent); }
 
+/* ===== 蓝图打法包：任务穿戴角标（批次3） ===== */
+.mu-trace-blueprint-chip { display: inline-flex; align-items: baseline; gap: 4px; padding: 2px 9px; border: 1px solid color-mix(in srgb, var(--info) 35%, var(--border-subtle)); border-radius: 999px; background: var(--info-bg); color: var(--info); font-size: var(--text-xs); font-weight: 600; white-space: nowrap; }
+.mu-trace-blueprint-chip small { font-weight: 400; opacity: 0.85; }
+
 /* ===== 斜杠命令面板 & 消息模式角标（批次 D2） ===== */
 .mu-composer-slash { display: flex; flex-direction: column; gap: 2px; margin: 0 12px; max-height: 240px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-elev); box-shadow: var(--shadow-2); }
 .mu-composer-slash-item { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 7px 12px; border: 0; background: transparent; color: var(--fg); font-size: var(--text-xs); text-align: left; cursor: pointer; }
