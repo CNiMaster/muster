@@ -73,6 +73,7 @@ Key constraints for all new work:
 - **版本化**：`blueprint_version` 快照链（仅结构性变更出版——新建/班底/工具集/状态/回滚；纯计数不出版），中文摘要+证据，cap 30/蓝图，回滚恢复结构保战绩另记一版；API versions/rollback/description；任务穿戴审计含 blueprintVersion（标题条与 ExecutionTraceCard 显示"🎭 蓝图label vN"）。
 - **手动深度优化**（替代运营报告）：`blueprint-optimizer.ts` 按需体检（LLM，降级规则引擎：高胜率≥80锁/低评分<30淘汰/词面重叠[0.1,0.4)合并/缺描述润色），建议落 `blueprint_optimization_item`（pending/applied/ignored），采纳落地全走版本化（合并=班底工具战绩并入+源退役）。
 - **蜂群专家团 + 派遣分级**：SwarmPlan.worker.personaId → 工蜂穿戴人设（三蜂型：匿名/同种专家/混合专家；显式优先于蓝图自动匹配，缺失优雅降级）；调度中心提示词+蜂群契约教学三种蜂型。派遣分级：第一负责人与调度中心=全额四项限额；其他专家=小额自主（3蜂/单层/$1/并发1群，`swarm_run.requester_agent_id` 落库），超限或并发冲突→「[蜂群请示]」派第一负责人把关（不建群、计划全文派发、负责人自行决定转派调度中心或拒绝，`swarmManaged` 旁路 crewMate 守卫）；控制面（工蜂/辩手）永不自主；蜂群树每蜂人设徽章；`swarm.request-escalated` 事件。
+- **断电/意外安全基线（review 修复轮）**：DB=WAL+`synchronous=FULL` 显式（提交即 fsync，断电不丢已提交事务）；关键写链路全事务化——反思四类记忆候选+done 标记同事务（崩溃整体回滚，recoverStuckReflections 复位重做不产生重复候选）、drain 进化挪进行内（反思成功后同迭代记账，消除 done 后崩溃丢记账窗口）、进化记账与版本提交/版本提交与封顶删除/优化采纳与状态/建群全链各自单事务（崩溃不留半群或"已改蓝图但建议仍 pending"）；执行器新契约字段必须同时补 result-schema 的 zod 与 AGENT_RESULT_JSON_SCHEMA（zod strip 曾致 personaId 全链静默丢失）。
 - **二期路线**（本轮未做）：stages_json 阶段工作流落地（每阶段=目标/人设/工具/产出）、组合管线生成器（复杂任务匹配多蓝图→顺序阶段编排，阶段内才用蜂群并行）、蓝图拆分/派生。
 - 测试基线：单测/集成 170 文件 1211 过（web-tools 3 例为本地沙箱 DNS 拦截，非回归）、e2e 18/18、HTTP 冒烟 77/77、product-acceptance 过。
 
