@@ -94,11 +94,13 @@ function ruleBasedSuggestions(db: DB, companyId: string): Array<Omit<BlueprintOp
       });
     }
     if (!bp.description || bp.description.length < 20) {
+      const topTools = bp.tools.slice(0, 3).map((t) => t.id).join('、');
+      const template = `用于「${bp.taskType.split('|').slice(0, 6).join(' ')}」这类工作：主用人设「${bp.staffing[0]?.personaName ?? '待定'}」，${bp.wins} 胜 ${bp.losses} 负${topTools ? `，常用工具 ${topTools}` : ''}。打法随使用持续进化。`.slice(0, 400);
       suggestions.push({
         blueprintId: bp.id, actionType: 'polish_description', targetBlueprintId: null,
         reason: `「${bp.label}」缺少用户语言描述`,
-        expectedEffect: '生成一段清晰的描述，便于观察与追溯',
-        params: {},
+        expectedEffect: '以模板生成一段清晰描述（可编辑），便于观察与追溯',
+        params: { description: template },
       });
     }
   }
@@ -149,12 +151,12 @@ export async function generateBlueprintOptimization(
           items: {
             type: 'object',
             properties: {
-              blueprintId: 'string',
+              blueprintId: { type: 'string' },
               actionType: { type: 'string', enum: ['lock', 'retire', 'merge', 'polish_description'] },
-              targetBlueprintId: 'string',
-              reason: 'string',
-              expectedEffect: 'string',
-              params: 'object',
+              targetBlueprintId: { type: 'string' },
+              reason: { type: 'string' },
+              expectedEffect: { type: 'string' },
+              params: { type: 'object' },
             },
             required: ['blueprintId', 'actionType', 'reason', 'expectedEffect'],
             additionalProperties: false,
@@ -169,7 +171,7 @@ export async function generateBlueprintOptimization(
           ? entry.actionType as BlueprintOptimizationActionType
           : null;
         if (!actionType) continue;
-        if (actionType === 'merge' && !blueprints.some((b) => b.id === entry.targetBlueprintId)) continue;
+        if (actionType === 'merge' && (!entry.targetBlueprintId || entry.targetBlueprintId === entry.blueprintId || !blueprints.some((b) => b.id === entry.targetBlueprintId))) continue;
         suggestions.push({
           blueprintId: bp.id,
           actionType,
@@ -216,55 +218,61 @@ export function applyOptimizationItem(db: DB, itemId: string): { applied: boolea
   if (row.status !== 'pending') return { applied: false, message: '该建议已处理' };
   const item = fromRow(row);
   let message = '';
-  switch (item.actionType) {
-    case 'lock':
-      setBlueprintStatus(db, item.blueprintId, 'locked');
-      message = '已锁定（冻结进化，仍参与匹配）';
-      break;
-    case 'retire':
-      setBlueprintStatus(db, item.blueprintId, 'retired');
-      message = '已淘汰（不再参与匹配）';
-      break;
-    case 'merge': {
-      if (!item.targetBlueprintId) return { applied: false, message: '合并缺少目标蓝图' };
-      const target = getBlueprint(db, item.targetBlueprintId);
-      const source = getBlueprint(db, item.blueprintId);
-      // 班底并集（≤4 槽）、工具并集（cap 10）、战绩相加
-      const staffing = [...target.staffing];
-      for (const slot of source.staffing) {
-        if (!staffing.some((s) => s.personaId === slot.personaId) && staffing.length < 4) staffing.push(slot);
+  // 断电安全：动作落地 + 建议状态同事务（嵌套事务自动落 savepoint）——崩溃不会出现"已改蓝图但建议仍 pending"导致的重复采纳
+  const applied = db.transaction((): boolean => {
+    switch (item.actionType) {
+      case 'lock':
+        setBlueprintStatus(db, item.blueprintId, 'locked');
+        message = '已锁定（冻结进化，仍参与匹配）';
+        return true;
+      case 'retire':
+        setBlueprintStatus(db, item.blueprintId, 'retired');
+        message = '已淘汰（不再参与匹配）';
+        return true;
+      case 'merge': {
+        if (!item.targetBlueprintId) { message = '合并缺少目标蓝图'; return false; }
+        if (item.targetBlueprintId === item.blueprintId) { message = '不能合并到自身'; return false; }
+        const target = getBlueprint(db, item.targetBlueprintId);
+        const source = getBlueprint(db, item.blueprintId);
+        // 班底并集（≤4 槽）、工具并集（cap 10）、战绩相加
+        const staffing = [...target.staffing];
+        for (const slot of source.staffing) {
+          if (!staffing.some((s) => s.personaId === slot.personaId) && staffing.length < 4) staffing.push(slot);
+        }
+        const tools = [...target.tools];
+        for (const tool of source.tools) {
+          const hit = tools.find((t) => t.kind === tool.kind && t.id === tool.id);
+          if (hit) { hit.uses += tool.uses; hit.wins += tool.wins; }
+          else if (tools.length < 10) tools.push({ ...tool });
+        }
+        const now = nowIso();
+        db.prepare(
+          `UPDATE blueprint SET staffing_json=?, tools_json=?,
+             wins=?, losses=?, rework_total=?, correction_total=?, updated_at=? WHERE id=?`,
+        ).run(
+          JSON.stringify(staffing), JSON.stringify(tools),
+          target.wins + source.wins, target.losses + source.losses,
+          target.reworkTotal + source.reworkTotal, target.correctionTotal + source.correctionTotal,
+          now, target.id,
+        );
+        commitBlueprintVersion(db, target.id, `合并：吸收「${source.label}」的班底/工具/战绩`, [source.id]);
+        setBlueprintStatus(db, source.id, 'retired');
+        message = `已合并进「${target.label}」，源蓝图退役（可回滚）`;
+        return true;
       }
-      const tools = [...target.tools];
-      for (const tool of source.tools) {
-        const hit = tools.find((t) => t.kind === tool.kind && t.id === tool.id);
-        if (hit) { hit.uses += tool.uses; hit.wins += tool.wins; }
-        else if (tools.length < 10) tools.push({ ...tool });
+      case 'polish_description': {
+        const description = typeof item.params.description === 'string' ? item.params.description.trim() : '';
+        if (!description) { message = '建议缺少描述文本'; return false; }
+        updateBlueprintDescription(db, item.blueprintId, description);
+        message = '描述已更新';
+        return true;
       }
-      const now = nowIso();
-      db.prepare(
-        `UPDATE blueprint SET staffing_json=?, tools_json=?,
-           wins=?, losses=?, rework_total=?, correction_total=?, updated_at=? WHERE id=?`,
-      ).run(
-        JSON.stringify(staffing), JSON.stringify(tools),
-        target.wins + source.wins, target.losses + source.losses,
-        target.reworkTotal + source.reworkTotal, target.correctionTotal + source.correctionTotal,
-        now, target.id,
-      );
-      commitBlueprintVersion(db, target.id, `合并：吸收「${source.label}」的班底/工具/战绩`, [source.id]);
-      setBlueprintStatus(db, source.id, 'retired');
-      message = `已合并进「${target.label}」，源蓝图退役（可回滚）`;
-      break;
     }
-    case 'polish_description': {
-      const description = typeof item.params.description === 'string' ? item.params.description.trim() : '';
-      if (!description) return { applied: false, message: '建议缺少描述文本' };
-      updateBlueprintDescription(db, item.blueprintId, description);
-      message = '描述已更新';
-      break;
-    }
+  })();
+  if (applied) {
+    db.prepare("UPDATE blueprint_optimization_item SET status='applied' WHERE id=?").run(itemId);
   }
-  db.prepare("UPDATE blueprint_optimization_item SET status='applied' WHERE id=?").run(itemId);
-  return { applied: true, message };
+  return { applied, message };
 }
 
 export function ignoreOptimizationItem(db: DB, itemId: string): void {

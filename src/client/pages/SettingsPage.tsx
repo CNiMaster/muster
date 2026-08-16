@@ -230,6 +230,15 @@ export function SettingsPage(): React.ReactElement {
                     <Input type="number" value={swarmBudgetUSD} onChange={(e) => setSwarmBudgetUSD(Number(e.target.value))} />
                   </Field>
                 </div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px' }}>
+                  <input type="checkbox" checked={autonomousReflectionEnabled} onChange={(e) => setAutonomousReflectionEnabled(e.target.checked)} />
+                  <span>白日梦：空闲时自动反思近期任务（沉淀记忆 + 进化蓝图，默认关）</span>
+                </label>
+                {autonomousReflectionEnabled && (
+                  <Field label="白日梦当日预算上限 ($ USD，0 = 不限)">
+                    <Input type="number" step="0.5" value={autonomousReflectionBudgetUSD} onChange={(e) => setAutonomousReflectionBudgetUSD(Number(e.target.value))} />
+                  </Field>
+                )}
               </div>
             </Card>
           )}

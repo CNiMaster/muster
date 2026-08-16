@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type React from 'react';
 import type { Agent, Task } from '../../api/types';
 import type { ProjectTaskDTO } from '../../hooks/queries';
-import { useTask, useProjectTaskAction, useTaskAction, usePostMessage, useMessages, useUploadMaterial, materialRawUrl, useExecutorProfiles, useSystemSettings, type MessageAttachment } from '../../hooks/queries';
+import { useTask, useProjectTaskAction, useTaskAction, usePostMessage, useMessages, useUploadMaterial, materialRawUrl, useExecutorProfiles, useSystemSettings, useBlueprintMatches, type MessageAttachment } from '../../hooks/queries';
 import { PromptComposer, type ComposerMode } from '../workbench/PromptComposer';
 import { Button, toast } from '../Button';
 import { StateBadge, Badge } from '../Badge';
@@ -46,6 +46,8 @@ export function ProjectTaskWorkspace({
   const [mode, setMode] = useState<ComposerMode>('');
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
   const uploadMaterial = useUploadMaterial(projectId);
+  // 打法包：创建任务时预览将穿戴的蓝图与相关打法
+  const blueprintPreview = useBlueprintMatches(companyId, newTitle);
   // 模型清单来自真实执行器档案/系统设置（替换原硬编码假模型）
   const { data: executorProfiles } = useExecutorProfiles();
   const { data: systemSettings } = useSystemSettings();
@@ -263,6 +265,14 @@ export function ProjectTaskWorkspace({
                 placeholder="验收标准、约束条件等…"
               />
             </Field>
+            {(blueprintPreview.data ?? []).length > 0 && (
+              <p className="muted" style={{ margin: 0, fontSize: '12px', lineHeight: 1.6 }}>
+                将穿戴 🎭 {blueprintPreview.data![0]!.label}
+                {blueprintPreview.data!.length > 1 && (
+                  <> · 相关打法：{blueprintPreview.data!.slice(1).map((bp) => bp.label).join('、')}</>
+                )}
+              </p>
+            )}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
               <Button variant="ghost" size="sm" onClick={() => setCreating(false)}>取消</Button>
               <Button size="sm" disabled={!newTitle.trim()} onClick={handleCreateNew}>创建并进入</Button>

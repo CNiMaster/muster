@@ -208,10 +208,9 @@ export async function drainReflectionQueue(
       ).run(message.slice(0, 500), nowIso(), row.id);
       log.warn('reflection failed', { reflectionId: row.id, taskId: row.task_id, error: message });
     }
-  }
-  // 蓝图组织批次3：反思消化后进化蓝图——按 (任务类型, 人设) 记账胜负、聚类合并（自动复盘的写入侧）。
-  // 不依赖 LLM 反思是否产出记忆：凡入队的终态任务（含 skipped）都计战绩；失败不阻断反思主流程。
-  for (const row of rows) {
+    // 打法包（断电安全）：反思落库后【同一行内】立即进化蓝图——行标 done 后再进化的旧顺序
+    // 在两步之间崩溃会永久丢失该任务的蓝图记账；挪进行内则 recoverStuckReflections 复位后可整体重做。
+    // 不依赖 LLM 反思是否产出记忆：凡入队的终态任务（含 skipped/error）都计战绩；失败不阻断反思主流程。
     try {
       const task = getTask(db, row.task_id);
       if (!task.personaId) continue;
@@ -252,7 +251,6 @@ export async function drainReflectionQueue(
       });
     }
   }
-  // E2.2 drain 完成后检测晋升：仅在本轮处理了反思时才扫，避免每 10s 空跑全表 + UPSERT 写放大。
   return { processed: rows.length, lessons };
 }
 
@@ -286,6 +284,8 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
     ).run(nowIso(), reflection.id);
     return 'skipped';
   }
+  // 窄化捕获：早退守卫已确保非空，提为 const 让后续事务回调内保持类型
+  const profileId: string = reflection.profileId;
 
   const task = getTask(db, reflection.taskId);
   // 组装反思 prompt：目标 + 执行 trace + 根因信号（打断/对齐/验收/失败）+ 已有相关记忆去重。
@@ -299,7 +299,7 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
   // 已有相关记忆：用于让 LLM 知道已学到什么、避免重复，并在 prompt 里体现。
   const existing = reflection.profileId
     ? searchMemory(db, {
-        profileId: reflection.profileId,
+        profileId,
         companyId: reflection.companyId,
         projectId: reflection.projectId,
         query: task.title.slice(0, 40),
@@ -386,9 +386,11 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
   // 沉淀 LESSON（原有逻辑）：scope=project，高置信（>=0.8）自动批准生效。
   // candidate_id 字段记 LESSON（保留向后兼容：现有 schema 只有一个 candidate_id 列）。
   let lessonCandidateId: string | null = null;
+  // 断电安全：四类记忆候选 + done 标记同事务——崩溃时整体回滚，recoverStuckReflections 复位后重做不产生重复候选。
+  db.transaction(() => {
   if (lesson.body) {
     const candidate = createMemoryCandidate(db, {
-      profileId: reflection.profileId,
+      profileId,
       scope: 'project',
       companyId: reflection.companyId,
       projectId: reflection.projectId,
@@ -408,7 +410,7 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
   // 不单独记 candidate_id——可经 memory_candidate.source_task_id 反查（同 task 的第二条 candidate）。
   if (rule.body) {
     createMemoryCandidate(db, {
-      profileId: reflection.profileId,
+      profileId,
       scope: 'project',
       companyId: reflection.companyId,
       projectId: reflection.projectId,
@@ -427,7 +429,7 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
   let preferenceBody = '';
   if (preferenceValid) {
     createMemoryCandidate(db, {
-      profileId: reflection.profileId,
+      profileId,
       scope: 'personal',
       // 不传 companyId/projectId：personal/skill 记忆是跨组织的用户画像（validateScope 禁止绑定公司/项目）。
       content: preference.body,
@@ -447,7 +449,7 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
   let craftBody = '';
   if (craft.body && task.personaId) {
     createMemoryCandidate(db, {
-      profileId: reflection.profileId,
+      profileId,
       scope: 'skill',
       personaKey: task.personaId,
       content: craft.body,
@@ -472,6 +474,7 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
   db.prepare(
     `UPDATE task_reflection SET status='done', candidate_id=?, reflection_text=?, reflected_at=? WHERE id=?`,
   ).run(lessonCandidateId, summary.slice(0, 500), nowIso(), reflection.id);
+  })();
   return 'done';
 }
 

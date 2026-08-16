@@ -15,6 +15,7 @@ import {
   materializeSwarm, createSwarmRun, countActiveSwarmsByRequester, escalateSwarmRequest,
   EXPERT_SWARM_LIMITS, getSwarmRun,
 } from '../../src/server/domain/swarm';
+import { completeTask } from '../../src/server/domain/task';
 import { listTasks } from '../../src/server/domain/task';
 
 let tdb: ReturnType<typeof makeTestDb>;
@@ -89,12 +90,17 @@ describe('swarm expert team', () => {
     const plan = { goal: 'g', workers: [1, 2, 3, 4].map((i) => ({ title: `子题${i}`, brief: 'b' })) };
     const escalated = escalateSwarmRequest(db, {
       companyId, projectId, leadAgentId: lead.id, requesterAgentId: expert.id, requesterName: '写手', plan,
+      sourceTaskId: source.id,
     });
     const requestTask = getTask(db, escalated.taskId);
     expect(requestTask.assigneeAgentId).toBe(lead.id);
     expect(requestTask.title).toContain('[蜂群请示]');
     expect(requestTask.inputProtocol.trigger).toBe('swarm_request');
     expect(requestTask.inputProtocol.planDigest as string).toContain('子题1');
+    // I1 回归：请示任务挂在发起者任务之下且建立依赖边——负责人完成请示即唤醒发起者
+    expect(requestTask.parentTaskId).toBe(source.id);
+    const dep = db.prepare('SELECT 1 FROM task_dependency WHERE task_id=? AND depends_on_id=?').get(source.id, requestTask.id);
+    expect(dep).toBeTruthy();
     // 未建群
     expect(countActiveSwarmsByRequester(db, expert.id)).toBe(0);
     // 直接 createSwarmRun 也可记录 requester

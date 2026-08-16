@@ -20,6 +20,7 @@ export interface TestDb {
 export function makeTestDb(): TestDb {
   const db = new Database(':memory:');
   db.pragma('foreign_keys = ON');
+  db.pragma('synchronous = FULL');
   runMigrations(db, migrationsDir);
   return {
     db,

@@ -6,7 +6,7 @@
  */
 import { useMemo, useState } from 'react';
 import type React from 'react';
-import { useTaskAction, useTaskTrace } from '../../hooks/queries';
+import { useTaskAction, useTaskTrace, usePersonas } from '../../hooks/queries';
 import type { Task, TraceItem } from '../../api/types';
 import { Card } from '../Card';
 import { Badge } from '../Badge';
@@ -38,6 +38,7 @@ function saveExpanded(kind: string, expanded: boolean): void {
 
 export function ExecutionTraceCard({ task }: { task: Task }): React.ReactElement {
   const { data: items } = useTaskTrace(task.id);
+  const { data: personas = [] } = usePersonas();
   const taskAction = useTaskAction();
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [kindExpanded, setKindExpanded] = useState<Record<string, boolean>>(() => {
@@ -102,12 +103,19 @@ export function ExecutionTraceCard({ task }: { task: Task }): React.ReactElement
           {(() => {
             const meta = (task.inputProtocol ?? {}) as { blueprintLabel?: string; blueprintVersion?: number };
             if (!task.personaId && !meta.blueprintLabel) return null;
+            const personaName = personas.find((p) => p.id === task.personaId)?.name;
+            const label = meta.blueprintLabel
+              ? `${meta.blueprintLabel}${meta.blueprintVersion ? ` · v${meta.blueprintVersion}` : ''}`
+              : personaName
+                ? `人设 ${personaName}`
+                : null;
+            if (!label) return null;
             return (
               <span
                 className="mu-trace-blueprint-chip"
-                title={`当前穿戴打法：${meta.blueprintLabel ?? '未命名蓝图'}${meta.blueprintVersion ? ` · v${meta.blueprintVersion}` : ''}（打法包一期：蓝图由任务终态反思自动进化）`}
+                title={`当前穿戴打法：${label}（打法包：蓝图由任务终态反思自动进化；锁定可冻结）`}
               >
-                🎭 {meta.blueprintLabel ?? '蓝图'} {meta.blueprintVersion ? <small>v{meta.blueprintVersion}</small> : null}
+                🎭 {label}
               </span>
             );
           })()}

@@ -13,6 +13,7 @@ const items: TraceItem[] = [
 
 const mockUseTaskTrace = vi.fn(() => ({ data: items }));
 vi.mock('../../src/client/hooks/queries', () => ({
+  usePersonas: () => ({ data: [] }),
   useTaskTrace: (...args: unknown[]) => mockUseTaskTrace(...args),
   useTaskAction: () => ({ mutate: vi.fn(), isPending: false }),
 }));

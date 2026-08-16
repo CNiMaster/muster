@@ -198,15 +198,18 @@ export function commitBlueprintVersion(
   const version = (maxRow.v ?? 0) + 1;
   const id = shortId('bv_');
   const now = nowIso();
-  db.prepare(
-    `INSERT INTO blueprint_version (id, blueprint_id, version, snapshot_json, summary, evidence_json, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  ).run(id, blueprintId, version, JSON.stringify(snapshotOf(blueprint)), summary, JSON.stringify(evidence), now);
-  db.prepare(
-    `DELETE FROM blueprint_version WHERE blueprint_id=? AND version < (
-       SELECT COALESCE(MAX(version), 0) - ? FROM blueprint_version WHERE blueprint_id=?
-     )`,
-  ).run(blueprintId, MAX_VERSIONS - 1, blueprintId);
+  // 断电安全：提交 + 封顶删除同事务（崩溃不产生越界版本或孤儿提交）
+  db.transaction(() => {
+    db.prepare(
+      `INSERT INTO blueprint_version (id, blueprint_id, version, snapshot_json, summary, evidence_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run(id, blueprintId, version, JSON.stringify(snapshotOf(blueprint)), summary, JSON.stringify(evidence), now);
+    db.prepare(
+      `DELETE FROM blueprint_version WHERE blueprint_id=? AND version < (
+         SELECT COALESCE(MAX(version), 0) - ? FROM blueprint_version WHERE blueprint_id=?
+       )`,
+    ).run(blueprintId, MAX_VERSIONS - 1, blueprintId);
+  })();
   return listBlueprintVersions(db, blueprintId).find((v) => v.version === version)!;
 }
 
@@ -232,16 +235,18 @@ export function rollbackBlueprint(db: DB, blueprintId: string, targetVersion: nu
   if (!target) throw new AppError(ErrorCode.NOT_FOUND, `蓝图版本 v${targetVersion} 不存在`);
   const snapshot = target.snapshot as { label?: string; description?: string; staffing?: BlueprintStaffingSlot[]; tools?: BlueprintTool[]; status?: BlueprintStatus };
   const now = nowIso();
-  db.prepare(
-    `UPDATE blueprint SET label=?, description=?, staffing_json=?, tools_json=?, status=?, updated_at=? WHERE id=?`,
-  ).run(
-    snapshot.label ?? '', snapshot.description ?? '',
-    JSON.stringify(snapshot.staffing ?? []), JSON.stringify(snapshot.tools ?? []),
-    snapshot.status ?? 'active', now, blueprintId,
-  );
-  const restored = getBlueprint(db, blueprintId);
-  commitBlueprintVersion(db, blueprintId, `回滚到 v${targetVersion}：恢复该版本的结构配置（班底/工具/描述/状态）`, [`rollback-from:v${targetVersion}`]);
-  return restored;
+  // 断电安全：恢复 + 回滚提交同事务
+  return db.transaction(() => {
+    db.prepare(
+      `UPDATE blueprint SET label=?, description=?, staffing_json=?, tools_json=?, status=?, updated_at=? WHERE id=?`,
+    ).run(
+      snapshot.label ?? '', snapshot.description ?? '',
+      JSON.stringify(snapshot.staffing ?? []), JSON.stringify(snapshot.tools ?? []),
+      snapshot.status ?? 'active', now, blueprintId,
+    );
+    commitBlueprintVersion(db, blueprintId, `回滚到 v${targetVersion}：恢复该版本的结构配置（班底/工具/描述/状态）`, [`rollback-from:v${targetVersion}`]);
+    return getBlueprint(db, blueprintId);
+  })();
 }
 
 /**
@@ -309,40 +314,45 @@ export function evolveBlueprint(db: DB, input: {
   }
 
   const blueprint = fromRow(existing);
+  // 锁定 = 冻结自动进化的结构侧（班底/工具/来源不并、不出版）；战绩是观察，照记不受冻结影响。
+  const structureFrozen = blueprint.status === 'locked';
   const staffing = [...blueprint.staffing];
   let staffingChanged = false;
-  if (!staffing.some((slot) => slot.personaId === input.personaId) && staffing.length < MAX_STAFFING_SLOTS) {
+  if (!structureFrozen && !staffing.some((slot) => slot.personaId === input.personaId) && staffing.length < MAX_STAFFING_SLOTS) {
     staffing.push({ personaId: input.personaId, personaName: input.personaName });
     staffingChanged = true;
   }
   const sources = [...blueprint.sourceProjectIds];
-  if (!sources.includes(input.projectId) && sources.length < MAX_SOURCE_PROJECTS) {
+  if (!structureFrozen && !sources.includes(input.projectId) && sources.length < MAX_SOURCE_PROJECTS) {
     sources.push(input.projectId);
   }
-  const tools = mergeTools(blueprint.tools, input.tools ?? [], input.win);
+  const tools = structureFrozen ? blueprint.tools : mergeTools(blueprint.tools, input.tools ?? [], input.win);
   const toolsChanged = tools.length !== blueprint.tools.length;
   const revived = blueprint.status === 'retired';
-  db.prepare(
-    `UPDATE blueprint SET staffing_json=?, tools_json=?, source_project_ids_json=?, description=?,
-       wins=?, losses=?, rework_total=?, correction_total=?, status=?, updated_at=? WHERE id=?`,
-  ).run(
-    JSON.stringify(staffing), JSON.stringify(tools), JSON.stringify(sources), blueprint.description,
-    blueprint.wins + (input.win ? 1 : 0),
-    blueprint.losses + (input.win ? 0 : 1),
-    blueprint.reworkTotal + (input.reworkCount ?? 0),
-    blueprint.correctionTotal + (input.correctionCount ?? 0),
-    revived ? 'active' : blueprint.status,
-    now, existing.id,
-  );
-  const updated = getBlueprint(db, existing.id);
-  if (revived) {
-    commitBlueprintVersion(db, existing.id, '复活：同类任务的新证据出现，蓝图恢复现役并继续积累战绩', [input.projectId]);
-  } else if (staffingChanged) {
-    commitBlueprintVersion(db, existing.id, `班底扩充：新增协作成员「${input.personaName}」（第 ${staffing.length} 槽）`, [input.projectId]);
-  } else if (toolsChanged) {
-    commitBlueprintVersion(db, existing.id, `工具集扩充：新增 ${tools[tools.length - 1]!.kind}「${tools[tools.length - 1]!.id}」`, [input.projectId]);
-  }
-  return updated;
+  // 断电安全：记账更新与结构版本提交同事务（嵌套事务自动落 savepoint）
+  return db.transaction(() => {
+    db.prepare(
+      `UPDATE blueprint SET staffing_json=?, tools_json=?, source_project_ids_json=?, description=?,
+         wins=?, losses=?, rework_total=?, correction_total=?, status=?, updated_at=? WHERE id=?`,
+    ).run(
+      JSON.stringify(staffing), JSON.stringify(tools), JSON.stringify(sources), blueprint.description,
+      blueprint.wins + (input.win ? 1 : 0),
+      blueprint.losses + (input.win ? 0 : 1),
+      blueprint.reworkTotal + (input.reworkCount ?? 0),
+      blueprint.correctionTotal + (input.correctionCount ?? 0),
+      revived ? 'active' : blueprint.status,
+      now, existing.id,
+    );
+    if (revived) {
+      commitBlueprintVersion(db, existing.id, '复活：同类任务的新证据出现，蓝图恢复现役并继续积累战绩', [input.projectId]);
+    } else if (staffingChanged) {
+      commitBlueprintVersion(db, existing.id, `班底扩充：新增协作成员「${input.personaName}」（第 ${staffing.length} 槽）`, [input.projectId]);
+    } else if (toolsChanged) {
+      const added = tools.filter((t) => !blueprint.tools.some((o) => o.kind === t.kind && o.id === t.id)).map((t) => t.id);
+      commitBlueprintVersion(db, existing.id, `工具集扩充：新增 ${added.join('、')}`, [input.projectId]);
+    }
+    return getBlueprint(db, existing.id);
+  })();
 }
 
 /** 合并本任务工具调用进打法工具记账（上限 10 条，超出淘汰最少用）。 */

@@ -40,7 +40,7 @@ import { ensureProjectThreads } from '../domain/thread';
 import { summarizeCompanyUsage } from '../domain/usage';
 import { companyArtifactGallery } from '../domain/artifact';
 import { searchArchive } from '../domain/archive';
-import { listBlueprints, setBlueprintStatus, listBlueprintVersions, rollbackBlueprint, updateBlueprintDescription } from '../domain/blueprint';
+import { listBlueprints, setBlueprintStatus, listBlueprintVersions, rollbackBlueprint, updateBlueprintDescription, matchBlueprints, getBlueprint } from '../domain/blueprint';
 import { listAgents, getAgent } from '../domain/agent';
 import { listDepartments } from '../domain/department';
 import { getCompanyCockpit } from '../domain/company-cockpit';
@@ -312,8 +312,20 @@ companiesRouter.get(
 companiesRouter.post(
   '/:id/blueprints/:blueprintId/status',
   asyncHandler(async (req, res) => {
+    const companyId = param(req, 'id');
+    if (getBlueprint(getDb(), param(req, 'blueprintId')).companyId !== companyId) throw new AppError(ErrorCode.NOT_FOUND, '蓝图不存在');
     const { status } = z.object({ status: z.enum(['active', 'locked', 'retired']) }).parse(req.body);
     res.json(setBlueprintStatus(getDb(), param(req, 'blueprintId'), status));
+  }),
+);
+
+/** 打法包一期：按任务标题预览将穿戴的蓝图与相关打法（创建任务卡用）。 */
+companiesRouter.get(
+  '/:id/blueprints/match-preview',
+  asyncHandler(async (req, res) => {
+    const title = typeof req.query.title === 'string' ? req.query.title : '';
+    if (!title.trim()) { res.json([]); return; }
+    res.json(matchBlueprints(getDb(), param(req, 'id'), title, 3).map((m) => m.blueprint));
   }),
 );
 
@@ -321,6 +333,8 @@ companiesRouter.post(
 companiesRouter.get(
   '/:id/blueprints/:blueprintId/versions',
   asyncHandler(async (req, res) => {
+    const companyId = param(req, 'id');
+    if (getBlueprint(getDb(), param(req, 'blueprintId')).companyId !== companyId) throw new AppError(ErrorCode.NOT_FOUND, '蓝图不存在');
     res.json(listBlueprintVersions(getDb(), param(req, 'blueprintId')));
   }),
 );
@@ -328,6 +342,8 @@ companiesRouter.get(
 companiesRouter.post(
   '/:id/blueprints/:blueprintId/rollback',
   asyncHandler(async (req, res) => {
+    const companyId = param(req, 'id');
+    if (getBlueprint(getDb(), param(req, 'blueprintId')).companyId !== companyId) throw new AppError(ErrorCode.NOT_FOUND, '蓝图不存在');
     const { version } = z.object({ version: z.number().int().min(1) }).parse(req.body);
     res.json(rollbackBlueprint(getDb(), param(req, 'blueprintId'), version));
   }),
@@ -336,6 +352,8 @@ companiesRouter.post(
 companiesRouter.patch(
   '/:id/blueprints/:blueprintId/description',
   asyncHandler(async (req, res) => {
+    const companyId = param(req, 'id');
+    if (getBlueprint(getDb(), param(req, 'blueprintId')).companyId !== companyId) throw new AppError(ErrorCode.NOT_FOUND, '蓝图不存在');
     const { description } = z.object({ description: z.string().min(1).max(400) }).parse(req.body);
     res.json(updateBlueprintDescription(getDb(), param(req, 'blueprintId'), description));
   }),

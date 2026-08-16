@@ -86,11 +86,6 @@ export class ProjectRuntimeCoordinator {
   /** 阶段一任务 1.3：Inspector 定时运行（默认每 60 秒扫描一次，5 分钟冷却去重）。 */
   private lastInspectorRun = 0;
   private readonly inspectorIntervalMs = 60_000;
-  /** 阶段五任务 5.1：运营优化报告——自然日语义（"晨醒 = 打开程序"模型）。
-   *  每 60 秒问一次"今天生成过吗"，没生成就补：短开用户每天打开一次即触发当日报告+晋升批次，
-   *  长开用户午夜后首个检查进入新一天。AI 生成异步不阻塞 tick。 */
-  /** 晨醒模型 in-flight 去重：正在异步生成报告的公司集合（防 >60s 的生成被重复排队）。 */
-  private readonly reportsInFlight = new Set<string>();
   /** E4.3 空闲自主反思扫描（默认关；每 60 秒检查一次，只入队不调 LLM）。 */
   private lastIdleReflectionRun = 0;
   private readonly idleReflectionIntervalMs = 60_000;
@@ -99,7 +94,6 @@ export class ProjectRuntimeCoordinator {
     private readonly db: DB,
     private readonly engine: TaskEngine,
     private readonly intervalMs = 2_000,
-    /** 测试注入：报告生成器 + 自然日检查间隔（默认 60s；测试传 0 让每次 tick 都检查）。 */
   ) {
   }
 

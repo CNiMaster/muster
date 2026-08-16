@@ -37,6 +37,9 @@ export function getDb(opts: DbOptions = {}): DB {
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   db.pragma('busy_timeout = 5000');
+  // 断电安全：WAL + FULL——每次提交 fsync，进程被杀/断电不丢已提交事务、不损坏库
+  // （SQLite 默认即 FULL，此处显式声明防止依赖编译默认值）。
+  db.pragma('synchronous = FULL');
 
   runMigrations(db, opts.migrationsDir);
 

@@ -78,14 +78,19 @@ describe('blueprint optimizer', () => {
     expect(listBlueprintVersions(db, good).length).toBe(before + 1);
     expect(listBlueprintVersions(db, good)[0]!.summary).toContain('锁定');
 
-    // 描述建议没有 LLM 文本时不可落地
+    // 规则引擎的润色建议带模板描述，可直接采纳并出版
     const polishResult = applyOptimizationItem(db, polishItem.id);
-    expect(polishResult.applied).toBe(false);
+    expect(polishResult.applied).toBe(true);
+    expect(getBlueprint(db, good).description.length).toBeGreaterThan(10);
+    expect(listBlueprintVersions(db, good).some((v) => v.summary.includes('描述更新'))).toBe(true);
 
-    // 忽略
-    ignoreOptimizationItem(db, polishItem.id);
-    expect(listOptimizationItems(db, companyId).find((i) => i.id === polishItem.id)!.status).toBe('ignored');
-    expect(applyOptimizationItem(db, polishItem.id).applied).toBe(false);
+    // 忽略路径另造一条：再清空描述生成新建议后忽略
+    db.prepare("UPDATE blueprint SET description='' WHERE id=?").run(good);
+    void (await generateBlueprintOptimization(db, companyId));
+    const polishItem2 = listOptimizationItems(db, companyId).find((i) => i.actionType === 'polish_description' && i.blueprintId === good && i.status === 'pending')!;
+    ignoreOptimizationItem(db, polishItem2.id);
+    expect(listOptimizationItems(db, companyId).find((i) => i.id === polishItem2.id)!.status).toBe('ignored');
+    expect(applyOptimizationItem(db, polishItem2.id).applied).toBe(false);
   });
 
   it('采纳合并：班底/战绩相加、源蓝图退役、目标出版', async () => {

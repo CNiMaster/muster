@@ -137,11 +137,14 @@ export function countActiveSwarmsByRequester(db: DB, agentId: string): number {
 /** 请示第一负责人：超限/并发冲突时把完整计划派给负责人把关（负责人可自行决定转派调度中心或拒绝）。 */
 export function escalateSwarmRequest(db: DB, input: {
   companyId: string; projectId: string; leadAgentId: string; requesterAgentId: string; requesterName: string; plan: SwarmPlan;
+  /** 发起者任务 id：请示任务挂为其子任务，负责人完成请示即走既有父恢复链唤醒发起者。 */
+  sourceTaskId: string;
 }): { taskId: string } {
   ensurePrimaryThread(db, input.projectId, input.leadAgentId);
   const planDigest = input.plan.workers.map((w, i) => `${i + 1}. ${w.title}（${w.brief.slice(0, 60)}${w.personaId ? '；人设:' + w.personaId : ''}）`).join('\n');
   const task = createTask(db, {
     projectId: input.projectId,
+    parentTaskId: input.sourceTaskId,
     assigneeAgentId: input.leadAgentId,
     title: `[蜂群请示] ${input.requesterName} 请求派出 ${input.plan.workers.length} 只工蜂`,
     inputProtocol: {
@@ -152,6 +155,8 @@ export function escalateSwarmRequest(db: DB, input: {
     },
     priority: 8,
   });
+  // 发起者任务等待请示结论：负责人完成/拒绝请示后经既有依赖恢复链唤醒发起者
+  addDependency(db, input.sourceTaskId, task.id);
   return { taskId: task.id };
 }
 
@@ -310,7 +315,7 @@ function maybeSwarmAlert(db: DB, swarmId: string, failedTask: Task): void {
       counts: { settled: swarm.nodesDone, failed: swarm.nodesFailed, total: swarm.nodesTotal },
       failures: [failureNote],
       guidance:
-        '处置选项：a) 补蜂（返回 swarmPlan，只含需补做的子题）；b) 缩群收口（直接完成汇报）；c) 放弃（blocked + 原因）。',
+        `处置选项：a) 补蜂（返回 swarmPlan，只含需补做的子题；本群限额 深度${swarm.maxDepth}/宽度${swarm.maxWidth}/节点${swarm.maxNodes}·已用${swarm.nodesTotal}，已满时补蜂会被拒绝，请选 b）；b) 缩群收口（直接完成汇报）；c) 放弃（blocked + 原因）。`,
     },
     priority: 8,
     skipLaunchGate: true,
@@ -563,6 +568,8 @@ export function materializeSwarm(
   plan: SwarmPlan,
   opts: { requesterAgentId?: string; limitsOverride?: { maxDepth: number; maxWidth: number; maxNodes: number; budgetUsd: number } } = {},
 ): MaterializedSwarm {
+  // 断电安全：建群全链（群快照+工蜂+依赖+汇总）单事务——崩溃不会留下半群（根任务等待永不满足）
+  return db.transaction((): MaterializedSwarm => {
   if (!plan.workers?.length) {
     throw new AppError(ErrorCode.VALIDATION, 'swarmPlan.workers 至少 1 个工蜂任务');
   }
@@ -706,6 +713,7 @@ export function materializeSwarm(
     });
   }
   return { swarmId, beeTaskIds, synthesisTaskId, truncated };
+  })();
 }
 
 /**
@@ -714,6 +722,7 @@ export function materializeSwarm(
  * 换思路依据：原蜂的失败摘要（+ 若有反思则注入教训）写进替补的 inputPacket.repair。
  * 原蜂标记 superseded_by；根任务留 notice trace 与 swarm_bee_repair_dispatched 事件。
  */
+
 export function maybeAutoRepairBee(db: DB, failedTask: Task, message: string): void {
   const swarmId = failedTask.swarmId;
   if (!swarmId) return;
@@ -760,6 +769,8 @@ export function maybeAutoRepairBee(db: DB, failedTask: Task, message: string): v
     dispatcherAgentId: failedTask.dispatcherAgentId ?? undefined,
     assigneeAgentId: beeAgentId,
     title: `[替补] ${failedTask.title}`,
+    // 专家蜂的替补继承原蜂人设，保持专业视角一致
+    ...(failedTask.personaId ? { personaId: failedTask.personaId } : {}),
     inputProtocol: {
       trigger: 'swarm_bee',
       swarm: { swarmId, goal: swarm.goal, brief: originalBrief, depth: failedTask.swarmDepth },

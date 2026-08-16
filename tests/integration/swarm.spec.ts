@@ -310,7 +310,7 @@ describe('W4 失败可观测', () => {
 });
 
 describe('W3 引擎接线', () => {
-  it('调度中心返回 swarmPlan → 引擎落地蜂群、根任务 waiting_dependency；普通 agent 返回 swarmPlan 被忽略', async () => {
+  it('调度中心/负责人返回 swarmPlan → 全额落地；控制面（工蜂）返回被忽略', async () => {
     const { project, dispatcherAgentId, lead } = fixture();
     const projectTask = createProjectTask(db, { projectId: project.id, title: '调研' });
 

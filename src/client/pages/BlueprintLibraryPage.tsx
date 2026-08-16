@@ -54,6 +54,7 @@ export function BlueprintLibraryPage(): React.ReactElement {
   const [expandedVersions, setExpandedVersions] = useState<Set<string>>(new Set());
   const [editingDescription, setEditingDescription] = useState<string | null>(null);
   const [descriptionDraft, setDescriptionDraft] = useState('');
+  const [applyingItemId, setApplyingItemId] = useState<string | null>(null);
   const optimize = useGenerateBlueprintOptimization(companyId);
   const items = useBlueprintOptimizationItems(companyId);
   const applyItem = useApplyBlueprintOptimizationItem(companyId);
@@ -122,7 +123,20 @@ export function BlueprintLibraryPage(): React.ReactElement {
         ) : (
           <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 8 }}>
             {(items.data ?? []).filter((i) => i.status === 'pending').map((item) => (
-              <OptimizationItemRow key={item.id} item={item} onApply={(id) => applyItem.mutate(id, { onSuccess: (r) => toast('success', r.message), onError: (e) => toast('error', (e as Error).message) })} onIgnore={(id) => ignoreItem.mutate(id)} applying={applyItem.isPending} />
+              <OptimizationItemRow
+                key={item.id}
+                item={item}
+                onApply={(id) => {
+                  setApplyingItemId(id);
+                  applyItem.mutate(id, {
+                    onSuccess: (r) => toast(r.applied ? 'success' : 'info', r.message),
+                    onError: (e) => toast('error', (e as Error).message),
+                    onSettled: () => setApplyingItemId(null),
+                  });
+                }}
+                onIgnore={(id) => ignoreItem.mutate(id)}
+                applying={applyingItemId === item.id}
+              />
             ))}
           </ul>
         )}
@@ -202,6 +216,27 @@ export function BlueprintLibraryPage(): React.ReactElement {
                         </>
                       )}
                     </div>
+
+                    {/* 相关打法：词元重叠明显但未合并的其他蓝图（组合管线的二期素材） */}
+                    {(() => {
+                      const tokens = new Set(bp.taskType.split('|').filter(Boolean));
+                      const related = visible
+                        .filter((o) => o.id !== bp.id)
+                        .map((o) => {
+                          const other = o.taskType.split('|').filter(Boolean);
+                          const inter = other.filter((t) => tokens.has(t)).length;
+                          return { bp: o, jaccard: inter / (tokens.size + other.length - inter) };
+                        })
+                        .filter((r) => r.jaccard >= 0.1)
+                        .sort((a, b) => b.jaccard - a.jaccard)
+                        .slice(0, 2);
+                      if (related.length === 0) return null;
+                      return (
+                        <p className="muted" style={{ margin: '0 0 8px', fontSize: 12 }}>
+                          相关打法：{related.map((r) => r.bp.label).join('、')}（词面重叠，复杂任务可组合调用）
+                        </p>
+                      );
+                    })()}
 
                     {/* 版本时间线（折叠） */}
                     <div style={{ marginBottom: 8 }}>

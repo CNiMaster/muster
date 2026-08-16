@@ -23,7 +23,8 @@ const artifactSchema = z.object({
 
 const swarmPlanSchema = z.object({
   goal: z.string(),
-  workers: z.array(z.object({ title: z.string(), brief: z.string() })).min(1),
+  // 专家蜂群（派遣分级批次5）：worker 可指定穿戴人设；匿名蜂不传。
+  workers: z.array(z.object({ title: z.string(), brief: z.string(), personaId: z.string().optional() })).min(1),
 });
 
 const questionOptionSchema = z.object({
@@ -115,6 +116,7 @@ export const AGENT_RESULT_JSON_SCHEMA = {
             properties: {
               title: { type: 'string' },
               brief: { type: 'string' },
+              personaId: { type: 'string' },
             },
             required: ['title', 'brief'],
           },

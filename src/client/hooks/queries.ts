@@ -1280,7 +1280,10 @@ export function useRollbackBlueprint(companyId: string | undefined) {
   return useMutation({
     mutationFn: ({ blueprintId, version }: { blueprintId: string; version: number }) =>
       api.post<Blueprint>(`/api/companies/${companyId}/blueprints/${blueprintId}/rollback`, { version }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['blueprints', companyId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['blueprints', companyId] });
+      qc.invalidateQueries({ queryKey: ['blueprint-versions'] });
+    },
   });
 }
 
@@ -1289,7 +1292,20 @@ export function useUpdateBlueprintDescription(companyId: string | undefined) {
   return useMutation({
     mutationFn: ({ blueprintId, description }: { blueprintId: string; description: string }) =>
       api.patch<Blueprint>(`/api/companies/${companyId}/blueprints/${blueprintId}/description`, { description }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['blueprints', companyId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['blueprints', companyId] });
+      qc.invalidateQueries({ queryKey: ['blueprint-versions'] });
+    },
+  });
+}
+
+/** 相关打法：按任务标题匹配 top-N 蓝图（去同簇；创建任务卡预览穿戴用）。 */
+export function useBlueprintMatches(companyId: string | undefined, title: string | undefined) {
+  const trimmed = (title ?? '').trim();
+  return useQuery({
+    queryKey: ['blueprint-matches', companyId, trimmed],
+    queryFn: () => api.get<Blueprint[]>(`/api/companies/${companyId}/blueprints/match-preview?title=${encodeURIComponent(trimmed)}`),
+    enabled: !!companyId && trimmed.length >= 4,
   });
 }
 
@@ -1355,6 +1371,7 @@ export function useBlueprintStatus(companyId: string | undefined) {
     mutationFn: ({ blueprintId, status }: { blueprintId: string; status: Blueprint['status'] }) =>
       api.post<Blueprint>(`/api/companies/${companyId}/blueprints/${blueprintId}/status`, { status }),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['blueprint-versions'] });
       qc.invalidateQueries({ queryKey: ['blueprints', companyId] });
     },
   });

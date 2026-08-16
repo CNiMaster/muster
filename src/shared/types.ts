@@ -107,7 +107,8 @@ export interface AgentRunResult {
   /** 双 Loop P2：agent 对每条验收标准的自评（对照 acceptance_criteria.id），供验收段半自动判定。 */
   acceptanceMet?: { id: string; met: boolean }[];
   /**
-   * 指挥系统 W3：蜂群计划（仅调度中心系统岗的返回被兑现，其他 agent 返回会被忽略）。
+   * 指挥系统 W3 + 派遣分级：蜂群计划——任何非控制面智能体（工蜂/辩手/评审中心除外）的返回都会被兑现，
+   * 按请求者身份分级限额（负责人/调度中心全额，专家小额，超限升级负责人）。
    * 全执行器通用契约（done 结构化输出），不依赖工具循环——CLI/API 执行器同构。
    */
   swarmPlan?: SwarmPlan;
