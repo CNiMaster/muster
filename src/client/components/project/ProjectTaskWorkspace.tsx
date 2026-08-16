@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type React from 'react';
 import type { Agent, Task } from '../../api/types';
 import type { ProjectTaskDTO } from '../../hooks/queries';
-import { useTask, useProjectTaskAction, useTaskAction, usePostMessage } from '../../hooks/queries';
+import { useTask, useProjectTaskAction, useTaskAction, usePostMessage, useMessages } from '../../hooks/queries';
 import { Button, toast } from '../Button';
 import { StateBadge, Badge } from '../Badge';
 import { ConversationPanel } from '../ConversationPanel';
@@ -51,12 +51,16 @@ export function ProjectTaskWorkspace({
   const projectTaskAction = useProjectTaskAction();
   const directTaskAction = useTaskAction();
   const postMessage = usePostMessage('project', selectedAgentId || undefined);
+  // 与 ConversationPanel 同参共享缓存：用于判断会话是否已有内容（空态居中 → 开始后落底）
+  const { data: conversationMessages } = useMessages('project', projectId, selectedAgentId || undefined);
 
   // 获取当前正在运行、等待或暂停的 Task 执行记录
   const activeRuntimeTask = tasks.find((t) => t.state === 'running' || t.state === 'claimed' || t.state === 'waiting_input' || t.state === 'paused') ?? tasks[0];
   const { data: latestTask } = useTask(activeRuntimeTask?.id);
 
   const isTaskWaitingOrPaused = activeRuntimeTask?.state === 'waiting_input' || activeRuntimeTask?.state === 'paused';
+  // 空态（无消息且无执行过程）→ hero+composer 垂直居中；一旦开始 → 消息流占满、composer 落底
+  const startedLayout = (conversationMessages?.length ?? 0) > 0 || Boolean(latestTask);
 
   const handleResumeActiveTask = (): void => {
     if (!activeRuntimeTask) return;
@@ -123,7 +127,7 @@ export function ProjectTaskWorkspace({
   };
 
   return (
-    <div className="project-task-workspace-stream">
+    <div className={`project-task-workspace-stream ${startedLayout ? 'is-started' : 'is-empty'}`}>
       {/* 顶部极简 Task 标题条 */}
       {selectedTask ? (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 12px', background: 'var(--bg-elev)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)', minWidth: 0, gap: '12px' }}>
@@ -213,50 +217,62 @@ export function ProjectTaskWorkspace({
         </div>
       )}
 
-      {/* 中间核心：对话与内联执行流 */}
-      <div style={{ flex: 1, minHeight: '380px', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', overflowY: 'auto' }}>
-        {/* 1. 执行过程追踪（如果存在正在跑/等待的 Task） */}
-        {latestTask && (
-          <div style={{ marginBottom: '8px' }}>
-            <ExecutionTraceCard task={latestTask} />
+      {/* 中部主体：空态居中开工 / 开始后消息流+执行过程占满 */}
+      <div className="ptws-body">
+        {!startedLayout && (
+          <div className="ptws-hero">
+            <span className="ptws-hero-badge">✨ 第一负责人在线</span>
+            <h2>{selectedTask ? `在任务 #${selectedTask.seq} 里开始工作` : '直接交代你的目标'}</h2>
+            <p className="muted">
+              {selectedTask
+                ? '描述这步要完成什么、验收标准或约束，负责人会拆解并调度合适的智能体专家推进。'
+                : '无需建任务也能开工——发送即起草任务；也可以点右上角「＋ 新建任务」先立一个目标。'}
+            </p>
           </div>
         )}
 
-        {/* 2. 项目群聊与智能体对话流 */}
-        <div style={{ flex: 1, background: 'var(--bg-elev)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-subtle)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-          <ConversationPanel
-            scope="project"
-            scopeId={projectId}
-            companyId={companyId ?? ''}
-            projectTaskId={selectedTask?.id}
-            title={selectedTask ? `项目任务 #${selectedTask.seq} 对话现场` : '项目协作对话现场'}
-            recipientAgentId={selectedAgentId || undefined}
-            hideInput
-            fill
-          />
-        </div>
-      </div>
+        {startedLayout && (
+          <>
+            {latestTask && (
+              <div className="ptws-trace">
+                <ExecutionTraceCard task={latestTask} />
+              </div>
+            )}
+            <div className="ptws-conv">
+              <ConversationPanel
+                scope="project"
+                scopeId={projectId}
+                companyId={companyId ?? ''}
+                projectTaskId={selectedTask?.id}
+                title={selectedTask ? `项目任务 #${selectedTask.seq} 对话现场` : '项目协作对话现场'}
+                recipientAgentId={selectedAgentId || undefined}
+                hideInput
+                fill
+              />
+            </div>
+          </>
+        )}
 
-      {/* 底部常驻自适应复合输入框 */}
-      <PromptComposer
-        placeholder={
-          activeRuntimeTask?.state === 'waiting_input'
-            ? '智能体正在等待你的答复，直接输入即可继续执行…'
-            : selectedTask
-              ? `在任务 #${selectedTask.seq} 中给智能体下达指令…`
-              : '直接输入需求，或向智能体分配任务…'
-        }
-        agents={agents}
-        selectedAgentId={selectedAgentId}
-        onSelectAgent={setSelectedAgentId}
-        currentModel={currentModel}
-        onSelectModel={setCurrentModel}
-        thinkingDepth={thinkingDepth}
-        onToggleThinking={setThinkingDepth}
-        loading={publishingWorkOrder || postMessage.isPending || directTaskAction.isPending}
-        onSend={handleSendPrompt}
-        onAttachFile={() => toast('info', '可直接将文件拖拽到项目素材区或输入框')}
-      />
+        <PromptComposer
+          placeholder={
+            activeRuntimeTask?.state === 'waiting_input'
+              ? '智能体正在等待你的答复，直接输入即可继续执行…'
+              : selectedTask
+                ? `在任务 #${selectedTask.seq} 中给智能体下达指令…`
+                : '直接输入需求，或向智能体分配任务…'
+          }
+          agents={agents}
+          selectedAgentId={selectedAgentId}
+          onSelectAgent={setSelectedAgentId}
+          currentModel={currentModel}
+          onSelectModel={setCurrentModel}
+          thinkingDepth={thinkingDepth}
+          onToggleThinking={setThinkingDepth}
+          loading={publishingWorkOrder || postMessage.isPending || directTaskAction.isPending}
+          onSend={handleSendPrompt}
+          onAttachFile={() => toast('info', '可直接将文件拖拽到项目素材区或输入框')}
+        />
+      </div>
     </div>
   );
 }

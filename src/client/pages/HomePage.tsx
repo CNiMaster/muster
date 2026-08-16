@@ -153,10 +153,8 @@ export function HomePage(): React.ReactElement {
               </button>
             ))}
           </div>
-        </div>
 
-        {/* 底部全功能复合输入框 */}
-        <div style={{ paddingTop: '16px' }}>
+          {/* 居中簇收尾：全功能复合输入框（hero+药丸+输入框一体居中） */}
           <PromptComposer
             placeholder="告诉负责人你想做什么…（例如：帮我重构三栏工作台）"
             currentModel={currentModel}
