@@ -327,10 +327,16 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
       const slot = match?.blueprint.staffing[0];
       if (match && slot && getPersona(slot.personaId)) {
         personaId = slot.personaId;
+        // 打法包一期：班底生效——2-4 槽协作成员以名称+领域描述注入执行上下文
+        const crew = match.blueprint.staffing.slice(1).map((s) => {
+          const p = getPersona(s.personaId);
+          return { name: s.personaName, summary: p?.description ?? '' };
+        });
         blueprintMeta = {
           blueprintMatched: match.blueprint.id,
           blueprintLabel: match.blueprint.label,
           blueprintScore: Math.round(match.score * 100) / 100,
+          ...(crew.length > 0 ? { staffingNotes: crew } : {}),
         };
       }
     }

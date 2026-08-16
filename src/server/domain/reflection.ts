@@ -216,6 +216,24 @@ export async function drainReflectionQueue(
       const task = getTask(db, row.task_id);
       if (!task.personaId) continue;
       const persona = getPersona(task.personaId);
+      // 打法包一期：多维战绩——返工轮次(task.rework_count)、用户纠正(派发后追加的对话消息)、
+      // 工具调用(execution_trace tool_call 名,去重)
+      const correctionCount = (() => {
+        try {
+          const total = (db.prepare(
+            `SELECT COUNT(*) AS c FROM conversation_message WHERE ref_task_id=? AND author='user'`,
+          ).get(task.id) as { c: number }).c;
+          return Math.max(0, total - 1);
+        } catch { return 0; }
+      })();
+      const tools = (() => {
+        try {
+          const rows = db.prepare(
+            `SELECT DISTINCT name FROM execution_trace WHERE task_id=? AND kind='tool_call' AND name IS NOT NULL AND name != ''`,
+          ).all(task.id) as Array<{ name: string }>;
+          return rows.map((r) => r.name);
+        } catch { return []; }
+      })();
       evolveBlueprint(db, {
         companyId: row.company_id,
         projectId: task.projectId,
@@ -223,6 +241,9 @@ export async function drainReflectionQueue(
         personaId: task.personaId,
         personaName: persona?.name ?? task.personaId,
         win: row.outcome === 'completed',
+        reworkCount: task.reworkCount ?? 0,
+        correctionCount,
+        tools,
       });
     } catch (err) {
       log.warn('blueprint evolution failed', {

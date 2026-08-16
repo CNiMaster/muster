@@ -107,6 +107,11 @@ export function assembleContext(
       sp.push('# 人设工具', `本任务按「${persona.name}」人设推荐以下工具（CLI 执行器为原生工具集，API 执行器经工具循环调用）：`, persona.tools.join('、'), '');
     }
   }
+  // 打法包一期：协作班底（蓝图 2-4 槽）——不另起执行体，以协作成员提示注入
+  const staffingNotes = (task.inputProtocol.staffingNotes ?? []) as Array<{ name: string; summary: string }>;
+  if (staffingNotes.length > 0) {
+    sp.push('# 协作班底', '本打法还包含以下协作成员，需要时可参考其领域分工（不另起执行体）：', staffingNotes.map((m) => `- ${m.name}${m.summary ? `：${m.summary}` : ''}`).join('\n'), '');
+  }
   // 轻量模式：身份/职责/议题之后直接进入输出契约，跳过组织级大段上下文
   if (!lightweight) {
     if (company.charter) {
