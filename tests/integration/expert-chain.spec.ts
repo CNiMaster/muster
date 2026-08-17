@@ -145,6 +145,9 @@ describe('WP9 模型档位', () => {
     expect(taskExecutorTier(baseTask({ trigger: 'swarm_bee' }))).toBe('low');
     expect(taskExecutorTier(baseTask({ trigger: 'debate_round' }))).toBe('low');
     expect(taskExecutorTier(baseTask({ lightweight: true }))).toBe('low');
+    // review I3：旧分类器的 isDiscussion 列与 consultation 信号完整吸收
+    expect(taskExecutorTier({ ...baseTask({}), isDiscussion: 1 })).toBe('low');
+    expect(taskExecutorTier(baseTask({ consultation: true }))).toBe('low');
     expect(taskExecutorTier(baseTask({ mode: 'plan' }))).toBe('high');
     expect(taskExecutorTier(baseTask({ trigger: 'debate_verdict' }))).toBe('high');
     expect(taskExecutorTier(baseTask({ trigger: 'swarm_request' }))).toBe('high');

@@ -130,6 +130,17 @@ Key constraints for all new work:
 - 测试锚点：`tests/unit/staging-worktree.spec.ts`（建/幂等/基线切出/promote 快进+冲突）、`tests/integration/publish-staging.spec.ts`（双蜂并发发布/冲突阻塞/promote 前主干不可见）、`tests/integration/staging-promote.spec.ts`（三触发）、`tests/unit/approve-plan.spec.ts`。
 - 设计文档：`docs/superpowers/specs/2026-08-17-staging-integration-review.md`、`docs/superpowers/plans/2026-08-17-staging-integration-review-plan.md`。
 
+## 执行器池统一（2026-08-17 交付：档位=档案 · 能力自动选脑）
+
+- **两套档位合一**：旧执行器三级（primary/secondary/tertiary）与模型档位（modelTierEconomy/Premium 模型字符串）退役为**档位=执行器档案**（CLI/API 一个选择框）。新键 `executor_tier_high/standard/low_id`（旧键兼容读取一版：high←primary、standard←secondary、low←tertiary）。设置页「执行器档位」三个档案下拉（顺带修掉 secondary/tertiary 无 UI 缺陷）；WP9 composer 档位快捷项退役。
+- **档位判定与选档**（`model-tier.ts`）：`taskExecutorTier` 合并两套分类器——蜂群工蜂/辩手/轻量咨询→low，计划/验收/裁决/请示/返工→high，其余 standard；`resolveProfileForTier`（不健康/已删回落）；`selectProfileForTask` 需 CLI 技能时沿 高→标准→低 选 CLI 档案（binding 钉死不参与路由，能力缺口走既有告警）。
+- **引擎模型链简化**：消息显式 > 自有人才 customModel > 执行器档案 config.model（档位已选档案，删除档位模型覆盖）。
+- **能力标签**（shared `EXECUTOR_CAPABILITIES`：vision/image-gen/video-gen/voice/long-context/code）：manifest `defaultCapabilities` 预填 + 模型名启发式 `suggestDefaultCapabilities` + 执行器中心全词表 chips（用户纠偏）；vision 软降级（既有 imageAttachments 门控），多模态生成类标签走工具层非脑池。
+- **展示与绑定**：执行器中心列表按档位分组（▲高/●标准/▼低/—未分配）+ 组内健康度>能力数>名称 + 能力 chips 筛选；修复员工↔执行器绑定 UI 断链（AgentProfilePage 任职卡「固定执行器」下拉）。
+- **凭据**：`profile.credentialRef`(env) 接入解析链 **员工>档案>工作台>平台**（engine 任务链路 + 能力探针均注入档案 ref）；`providerForManifest` 双实现去重收敛 manif客es.ts。
+- 测试锚点：`tests/unit/executor-capability.spec.ts`、`tests/unit/credential-chain.spec.ts`、`tests/integration/expert-chain.spec.ts`（新档位判定/档案解析/旧键兼容/不健康回落）。
+- 设计文档：`docs/superpowers/specs/2026-08-17-executor-pool-unification.md`、`docs/superpowers/plans/2026-08-17-executor-pool-plan.md`。
+
 ## Commands
 
 ```bash

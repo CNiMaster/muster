@@ -48,6 +48,7 @@ import { recommendStrategy, buildStrategySection } from '../domain/strategy-reco
 import { dispatchGapResearch } from '../domain/gap-research';
 import { applyAdaptiveAdjustment, canRunMore } from '../domain/executor-concurrency';
 import { markExecutorFailure, markExecutorSuccess } from '../domain/executor-failover';
+import { isSwarmLinkedTask } from '../domain/staging';
 import { getCompany } from '../domain/company';
 import { createWorktree, removeWorktree, ensureStagingWorktree } from '../worktree/manager';
 /** 批次 D2：读取任务 inputProtocol 里的消息级选项（模式/模型/思考），非法值忽略。 */
@@ -90,7 +91,6 @@ import { buildRunIsolation, withExecutorConcurrency } from '../executors/run-iso
 import { ensureApprovalRequest, evaluatePermission, getEmployeePermissionPolicy } from '../domain/permission';
 import { getActiveWorkspace } from '../domain/workspace';
 import { ensureProjectTaskThread, setProjectTaskThreadSession } from '../domain/project-task-thread';
-import { selectTieredExecutorProfile } from '../domain/executor-tier';
 import { taskExecutorTier, resolveProfileForTier, selectProfileForTask, taskNeedsCliKind } from '../domain/model-tier';
 import { hasCommandCapability } from '../domain/capability-probe';
 import{SessionManager}from'../domain/session-manager';
@@ -352,12 +352,9 @@ export class TaskEngine {
         return true;
       }
       if (!worktreeInfo) {
-        // staging 一期：蜂群系任务（蜂/汇总/验收/返工）从 staging 集成分支切出（发布也落 staging，见发布目标参数化）
-        const ip = (task.inputProtocol ?? {}) as Record<string, unknown>;
-        const review = ip.acceptanceReview as { sourceSwarmId?: string } | undefined;
-        const payload = ip.payload as { sourceSwarmId?: string } | undefined;
-        const swarmLinked = Boolean(task.swarmId) || Boolean(review?.sourceSwarmId) || Boolean(payload?.sourceSwarmId);
-        const baseRef = (!sourceProject && swarmLinked)
+        // staging 一期：蜂群系任务（蜂/汇总/验收/返工/裁决）从 staging 集成分支切出——
+        // 基线与发布目标共用 isSwarmLinkedTask 谓词（review C1：缺一即闭环断裂）
+        const baseRef = (!sourceProject && isSwarmLinkedTask(task))
           ? ensureStagingWorktree(worktreeSourceRoot, project.id).branch
           : undefined;
         worktreeInfo = createWorktree(worktreeSourceRoot, project.id, task.id, baseRef);
@@ -919,8 +916,9 @@ export class TaskEngine {
       if (result.outcome === 'completed' && result.artifacts.length > 0 && worktreeInfo) {
         // B2B 外包：承接任务产物 publish 到甲方 source project 的 rootDir（让乙方工作直接落到甲方目录）
         const publishTargetRoot = sourceProject?.rootDir ?? project.rootDir;
-        // staging 一期：蜂群系任务（蜂/汇总）发布到 staging worktree 检出目录，验收通过才 promote 回主干
-        const stagingTarget = (!sourceProject && task.swarmId)
+        // staging 一期：蜂群系任务（蜂/汇总/验收/返工/裁决——isSwarmLinkedTask 统一谓词，
+        // 与 worktree 基线判定同源）发布到 staging worktree 检出目录，验收通过才 promote 回主干
+        const stagingTarget = (!sourceProject && isSwarmLinkedTask(task))
           ? ensureStagingWorktree(project.rootDir, project.id).path
           : undefined;
         const pub = this.publishArtifacts(task.id, thread.id, publishTargetRoot, worktreeInfo, result, stagingTarget);
@@ -1589,6 +1587,8 @@ export class TaskEngine {
         conflicts: input.conflicts,
         resolutionAttempt: input.attempt,
         conflictSnapshotDir: `.muster-conflicts/${input.publishId}`,
+        // staging 一期（review C1）：源任务属蜂群系的发布冲突，裁决任务同样从 staging 切出/发布回 staging
+        ...(isSwarmLinkedTask(input.task) ? { stagingProjectId: input.task.projectId } : {}),
         instructions: '比较裁决包中的 base/ours/theirs；需要用户决定时返回 waiting_input；最终只修改并声明全部冲突文件为 artifacts。',
       },
       outputProtocol: {

@@ -936,6 +936,16 @@ export function approvePlanTask(db: DB, taskId: string): Task {
   if (!cur.assigneeAgentId) {
     throw new AppError(ErrorCode.VALIDATION, '计划任务无负责人，无法派发执行任务');
   }
+  // 幂等（review I1）：同事务查 plan_approved 事件——重复点击/并发请求返回既有执行任务，不再派发第二个
+  const priorEvent = db.prepare(
+    "SELECT payload_json FROM task_event WHERE task_id=? AND kind='plan_approved' ORDER BY id DESC LIMIT 1",
+  ).get(cur.id) as { payload_json: string } | undefined;
+  if (priorEvent) {
+    try {
+      const priorId = (JSON.parse(priorEvent.payload_json) as { executionTaskId?: string }).executionTaskId;
+      if (priorId) return getTask(db, priorId);
+    } catch { /* 损坏事件走重派路径 */ }
+  }
   ensurePrimaryThread(db, cur.projectId, cur.assigneeAgentId);
   const plan = (cur.summary ?? '').trim();
   const executionTask = db.transaction(() => {

@@ -17,15 +17,16 @@ import { REQUIRES_CLI_SKILLS } from '../executors/context';
 
 export type ExecutorTier = 'high' | 'standard' | 'low';
 
-/** 任务档位判定（纯函数）：蜂群工蜂/辩手/轻量咨询 → low；计划/验收/裁决/请示/返工 → high；其余 standard。 */
+/** 任务档位判定（纯函数）：蜂群工蜂/辩手/轻量咨询/头脑风暴 → low；计划/验收/裁决/请示/返工 → high；其余 standard。 */
 export function taskExecutorTier(task: Task, assigneeRole?: string | null): ExecutorTier {
   const proto = (task.inputProtocol ?? {}) as Record<string, unknown>;
   const trigger = typeof proto.trigger === 'string' ? proto.trigger : '';
   const mode = typeof proto.mode === 'string' ? proto.mode : '';
   const lightweight = proto.lightweight === true;
-  // low：高并发、单点难度低
+  // low：高并发、单点难度低（review I3：isDiscussion 列与 consultation 信号从旧分类器完整吸收）
   if (trigger === 'swarm_bee' || trigger === 'debate_round') return 'low';
-  if (lightweight || proto.isDiscussion === true) return 'low';
+  if (lightweight || proto.isDiscussion === true || proto.consultation === true) return 'low';
+  if (task.isDiscussion === 1) return 'low';
   // high：错不起的调用
   if (mode === 'plan') return 'high';
   if (trigger === 'debate_verdict' || trigger === 'swarm_request') return 'high';

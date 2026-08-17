@@ -118,9 +118,10 @@ export function getSystemSettings(db: DB): SystemSettings {
     debateMinConfidence: Number(getSetting(db, 'debate_min_confidence', '0.6')),
     modelTierEconomy: getSetting(db, 'model_tier_economy', ''),
     modelTierPremium: getSetting(db, 'model_tier_premium', ''),
-    executorTierHighId: getSetting(db, 'executor_tier_high_id', ''),
-    executorTierStandardId: getSetting(db, 'executor_tier_standard_id', ''),
-    executorTierLowId: getSetting(db, 'executor_tier_low_id', ''),
+    // 新键为空时回落旧键（UI 展示与域层 resolveFrom 路由保持一致——review 次要项）
+    executorTierHighId: getSetting(db, 'executor_tier_high_id', '') || getSetting(db, 'executor_tier_primary_id', ''),
+    executorTierStandardId: getSetting(db, 'executor_tier_standard_id', '') || getSetting(db, 'executor_tier_secondary_id', ''),
+    executorTierLowId: getSetting(db, 'executor_tier_low_id', '') || getSetting(db, 'executor_tier_tertiary_id', ''),
     imageGenModel: getSetting(db, 'image_gen_model', ''),
   };
 }

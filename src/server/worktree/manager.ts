@@ -145,11 +145,17 @@ export function ensureStagingWorktree(rootDir: string, projectId: string): Stagi
  * promote：把 staging 集成分支合并回主干（项目根当前分支）。
  * 先兜底提交两侧未提交改动（与 publish 预提交惯例一致），再 merge。
  * 冲突时 abort 并返回冲突文件清单（一期由用户手改后重试，不自动吞）。
+ *
+ * 并发说明（review I2）：publish 与 promote 的全部 git 操作均为 spawnSync 同步执行，
+ * 单线程事件循环内不可能交错；真正的风险是「merge 进程中途被杀留下未合并 index」——
+ * 开头的 merge --abort 即崩溃恢复护栏（无残留时静默失败），防止后续任何
+ * commitAll('user edits') 把冲突标记静默提交进主干。
  */
 export function promoteStaging(
   rootDir: string,
   projectId: string,
 ): { promoted: boolean; message: string; mergeCommit?: string; conflicts?: string[] } {
+  git(rootDir, ['merge', '--abort'], { allowFail: true });
   const staging = ensureStagingWorktree(rootDir, projectId);
   commitAll(staging.path, 'muster: staging pre-promote');
   commitAll(rootDir, 'muster: user edits');

@@ -14,6 +14,7 @@ import { createTask } from '../../src/server/domain/task';
 import { ensureStagingWorktree } from '../../src/server/worktree/manager';
 import { maybePromoteSwarmStaging } from '../../src/server/domain/swarm';
 import { handleAcceptanceReviewTaskCompleted } from '../../src/server/domain/acceptance-review';
+import { isSwarmLinkedTask } from '../../src/server/domain/staging';
 import type { DB } from '../../src/server/db/client';
 
 let root: string;
@@ -110,5 +111,34 @@ describe('staging promote triggers (A3)', () => {
     handleAcceptanceReviewTaskCompleted(db, { ...completed, inputProtocol: JSON.parse(completed.input_protocol_json ?? '{}') } as any);
     // 验收通过 → promote 已执行，主干可见
     expect(readFileSync(path.join(root, 'bee-output.txt'), 'utf8')).toBe('bee output v1');
+  });
+
+  it('review C1：返工任务带 sourceSwarmId 标记——isSwarmLinkedTask 四源谓词全命中', () => {
+    seedStagingCommit();
+    seedSwarmRun('sw_4');
+    const source = createTask(db, {
+      projectId, title: '蜂群产出任务', assigneeAgentId: leadId, swarmId: 'sw_4',
+      acceptanceCriteria: [{ id: 'ac_1', criterion: '产出完整', met: undefined }],
+    });
+    db.prepare("UPDATE task SET state='completed', summary='交付' WHERE id=?").run(source.id);
+    const reviewTask = createTask(db, {
+      projectId, title: '[验收] 蜂群产出任务', assigneeAgentId: leadId,
+      inputProtocol: {
+        acceptanceReview: { sourceTaskId: source.id, sourceSwarmId: 'sw_4', criteria: source.acceptanceCriteria, artifacts: [], summary: '' },
+        instruction: 'VERDICT=PASS|FAIL|CHANGES',
+      },
+    });
+    db.prepare("UPDATE task SET state='completed', summary='VERDICT=FAIL\nCONFIDENCE=0.9\n不合格' WHERE id=?").run(reviewTask.id);
+    const completed = db.prepare('SELECT * FROM task WHERE id=?').get(reviewTask.id) as any;
+    handleAcceptanceReviewTaskCompleted(db, { ...completed, inputProtocol: JSON.parse(completed.input_protocol_json ?? '{}') } as any);
+    // 返工任务被派出且带 sourceSwarmId → swarmLinked（基线与发布目标都会指向 staging）
+    const rework = db.prepare("SELECT * FROM task WHERE title LIKE '[返工]%' ORDER BY id DESC LIMIT 1").get() as any;
+    expect(rework).toBeTruthy();
+    const reworkTask = { swarmId: rework.swarm_id, inputProtocol: JSON.parse(rework.input_protocol_json ?? '{}') };
+    expect(isSwarmLinkedTask(reworkTask)).toBe(true);
+    // 四源谓词：stagingProjectId（裁决任务标记）/ acceptanceReview.sourceSwarmId / 无标记 = false
+    expect(isSwarmLinkedTask({ swarmId: null, inputProtocol: { stagingProjectId: projectId } })).toBe(true);
+    expect(isSwarmLinkedTask({ swarmId: null, inputProtocol: { acceptanceReview: { sourceSwarmId: 'sw_x' } } })).toBe(true);
+    expect(isSwarmLinkedTask({ swarmId: null, inputProtocol: { trigger: 'user_message' } })).toBe(false);
   });
 });

@@ -30,6 +30,9 @@ export function TaskDetailPage(): React.ReactElement {
   const { data: project } = useProject(task?.projectId);
   const { data: agents } = useAgents(project?.companyId);
   const action = useTaskAction();
+  // A5 幂等展示：已有 plan_approved 事件则不再显示「同意计划并执行」（域层同样幂等返回既有任务）
+  const { data: taskEvents } = useTaskEvents(taskId);
+  const planApproved = (taskEvents ?? []).some((e) => e.kind === 'plan_approved');
 
   if (!task) {
     return (
@@ -46,8 +49,8 @@ export function TaskDetailPage(): React.ReactElement {
     || task.state === 'blocked'
     || task.state === 'failed'
     || (task.state === 'cancelled' && isConflictResolution);
-  // A5 计划同意并执行：计划模式任务 completed 后显示「同意计划并执行」
-  const isPendingPlan = (task.inputProtocol as Record<string, unknown>)?.mode === 'plan' && task.state === 'completed';
+  // A5 计划同意并执行：计划模式任务 completed 且未批准过时显示
+  const isPendingPlan = (task.inputProtocol as Record<string, unknown>)?.mode === 'plan' && task.state === 'completed' && !planApproved;
 
   const doAction = (a: 'cancel' | 'pause' | 'resume' | 'clarify' | 'approve-plan', answer?: string, optionId?: string): void => {
     action.mutate(

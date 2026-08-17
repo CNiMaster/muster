@@ -15,6 +15,21 @@ export interface StagingPromoteResult {
   aheadCommits: number;
 }
 
+/**
+ * 蜂群系任务统一判定（worktree 基线与发布目标**必须共用**同一谓词，缺一即闭环断裂）。
+ * 四个来源：任务自身属蜂群（蜂/汇总/根）；验收任务带 acceptanceReview.sourceSwarmId；
+ * 返工任务带 payload.sourceSwarmId；发布冲突裁决任务带 stagingProjectId。
+ */
+export function isSwarmLinkedTask(task: { swarmId?: string | null; inputProtocol?: unknown }): boolean {
+  if (task.swarmId) return true;
+  const ip = (task.inputProtocol ?? {}) as Record<string, unknown>;
+  const review = ip.acceptanceReview as { sourceSwarmId?: string } | undefined;
+  if (review?.sourceSwarmId) return true;
+  const payload = ip.payload as { sourceSwarmId?: string } | undefined;
+  if (payload?.sourceSwarmId) return true;
+  return typeof ip.stagingProjectId === 'string' && ip.stagingProjectId.length > 0;
+}
+
 /** 若项目存在 staging 且领先主干，则执行 promote。 */
 export function promoteProjectStagingIfAny(db: DB, projectId: string, reason: string): StagingPromoteResult {
   const project = getProject(db, projectId);
