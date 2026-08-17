@@ -329,7 +329,7 @@ export function BlueprintCanvasPage(): React.ReactElement {
         background: 'var(--bg-surface)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <Link to={`/companies/${companyId}/blueprints/${bp.id}`} style={{ textDecoration: 'none' }}>
+          <Link to={`/blueprints/${bp.id}`} style={{ textDecoration: 'none' }}>
             <Button size="sm" variant="ghost">← 返回打法详情</Button>
           </Link>
           <div>

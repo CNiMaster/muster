@@ -123,7 +123,7 @@ export function BlueprintLibraryPage(): React.ReactElement {
                   <article key={bp.id} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px', background: 'var(--bg-elev)' }}>
                     {/* 头行：标签 + 状态 + 综合评分 + 全貌跳转 */}
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
-                      <Link to={`/companies/${companyId}/blueprints/${bp.id}`} style={{ fontWeight: 650, fontSize: 15, textDecoration: 'none', color: 'inherit' }}>
+                      <Link to={`/blueprints/${bp.id}`} style={{ fontWeight: 650, fontSize: 15, textDecoration: 'none', color: 'inherit' }}>
                         {bp.label} ↗
                       </Link>
                       <Badge tone={meta.tone}>{meta.label}</Badge>

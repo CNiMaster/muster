@@ -81,7 +81,7 @@ export function BlueprintOptimizePage(): React.ReactElement {
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <Link to={`/companies/${companyId}/blueprints/${bp.id}`}>
+          <Link to={`/blueprints/${bp.id}`}>
             <Button variant="ghost">← 返回蓝图详情</Button>
           </Link>
         </div>

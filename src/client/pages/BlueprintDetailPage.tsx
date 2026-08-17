@@ -223,10 +223,10 @@ export function BlueprintDetailPage(): React.ReactElement {
         </div>
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <Link to={`/companies/${companyId}/blueprints/${bp.id}/optimize`}>
+          <Link to={`/blueprints/${bp.id}/optimize`}>
             <Button variant="primary">🚀 AI 优化对话</Button>
           </Link>
-          <Link to={`/companies/${companyId}/blueprints/${bp.id}/canvas`}>
+          <Link to={`/blueprints/${bp.id}/canvas`}>
             <Button variant="ghost">🎨 连线画布</Button>
           </Link>
 
