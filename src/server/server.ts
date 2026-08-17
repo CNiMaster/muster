@@ -74,7 +74,7 @@ import { autoDiscoverCertifiedExecutors } from './domain/executor-discovery';
 import { syncToolRegistry } from './domain/tool-registry';
 import { seedDefaultCredentialDefinitions } from './domain/credential-store';
 import { toolsRouter } from './api/tools';
-import { credentialsRouter, companyCredentialsRouter } from './api/credentials';
+import { credentialsRouter } from './api/credentials';
 import { materialsRouter } from './api/materials';
 import { businessReviewsRouter } from './api/business-reviews';
 import { backupRouter } from './api/backup';
@@ -209,7 +209,6 @@ async function createApp(): Promise<AppHandle> {
   app.use('/api/novel', novelRouter);
   // 公司退役批次C：旧 /api/companies/:companyId/* 挂载已全部下线（新路径见下；handler 经 companyIdOf 解析默认工作台）
   app.use('/api/workbench', workbenchRouter);
-  app.use('/api/workbench/credentials', companyCredentialsRouter);
   app.use('/api/blueprints', blueprintsRouter);
   app.use('/api/blueprint-optimization', blueprintOptimizationRouter);
   app.use('/api/agents', agentsRouter);

@@ -11,7 +11,6 @@ import { setDbForTest, closeDb } from '../../src/server/db/client';
 import { DEFAULT_WORKBENCH_NAME, ensureDefaultCompany } from '../../src/server/domain/company';
 import { createAgent } from '../../src/server/domain/agent';
 import { workbenchRouter } from '../../src/server/api/workbench';
-import { companyCredentialsRouter } from '../../src/server/api/credentials';
 
 let tdb: ReturnType<typeof makeTestDb>;
 let server: http.Server;
@@ -23,7 +22,6 @@ beforeEach(async () => {
   const app = express();
   app.use(express.json());
   app.use('/api/workbench', workbenchRouter);
-  app.use('/api/workbench/credentials', companyCredentialsRouter);
   await new Promise<void>((resolve) => {
     server = app.listen(0, '127.0.0.1', resolve);
   });
@@ -100,9 +98,5 @@ describe('workbench 单例路由', () => {
     expect((await res.json())).toEqual({ departments: [] });
   });
 
-  it('GET /api/workbench/credentials：公司级凭据清单 200（空 []）', async () => {
-    const res = await fetch(`${base}/api/workbench/credentials`);
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual([]);
-  });
+// 公司退役 D4-1：/api/workbench/credentials 随公司级凭据层一并下线
 });

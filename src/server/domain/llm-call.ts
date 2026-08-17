@@ -2,11 +2,11 @@
  * 平台级 LLM 调用（B3b）。
  *
  * 与执行器（adapter）不同，这是平台自身用的 LLM 调用（如 AI 起草 skill）。
- * 用 OpenAI 兼容 Chat Completions API，复用现有凭据解析（公司覆盖 > 平台默认）。
+ * 用 OpenAI 兼容 Chat Completions API，复用现有凭据解析（公司退役 D4-1：平台默认，无公司覆盖层）。
  * 默认用平台级 credential_definition 中 is_default 的 OpenAI/兼容 key。
  */
 import { getSystemSettings } from './setting';
-import { listCredentialDefinitions, listCompanyCredentials } from './credential-store';
+import { listCredentialDefinitions } from './credential-store';
 import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 
@@ -91,22 +91,7 @@ function resolveLlmCredential(
       : '';
   const model = opts.model || tierModel || (settings.openaiModel || 'gpt-4o-mini');
 
-  // 1. 公司级覆盖
-  if (opts.companyId) {
-    const companyCreds = listCompanyCredentials(db, opts.companyId);
-    const openaiOverride = companyCreds.find(
-      (c) =>
-        c.definition.credentialKey === 'OPENAI_API_KEY' ||
-        c.definition.applicableExecutors.includes('openai'),
-    );
-    if (openaiOverride) {
-      const envKey = openaiOverride.overrideKey ?? openaiOverride.definition.credentialKey;
-      const val = process.env[envKey];
-      if (val) return { apiKey: val, baseURL, model };
-    }
-  }
-
-  // 2. 平台默认 credential_definition
+  // 1. 平台默认 credential_definition
   const defs = listCredentialDefinitions(db, { defaultsOnly: true });
   const openaiDef = defs.find(
     (d) => d.credentialKey === 'OPENAI_API_KEY' || d.applicableExecutors.includes('openai'),
