@@ -6,24 +6,26 @@
  *   自动穿戴主槽人设（createTask 钩子），2-4 槽班底以协作提示注入上下文。
  * - 写入侧：任务终态进反思队列，drain 消化后 evolveBlueprint 记账（胜/负/返工/纠正/工具）、
  *   聚类合并——自动复盘进化，用户零手动固化。
- * - 版本化：结构性变更（新建/班底变化/工具集变化/状态切换/回滚）写 blueprint_version 提交
- *   （中文摘要 + 证据），每张蓝图最多保留 30 版，可回滚；纯战绩计数不出版。
- * - 治理：蓝图库可见/可锁（locked 冻结进化仍可匹配）/可淘汰（retired 不再匹配）。
- *
- * task_type 是确定性词元集合键（不依赖 LLM）：标题词元排序去重后拼接。
- * 聚类不要求键完全相等：进化按 Jaccard 相似度合并（>= 0.4 并入既有蓝图），
- * 匹配按相似度检索（>= 0.2），与记忆检索的词元策略同源。
+ * - 正向吸收与负向隔离：自有人才上岗表现优异时，提取亮点升级官方默认人设；表现不佳时严格隔离不改差官方配置。
+ * - 版本化：结构性变更（新建/班底变化/工具集变化/状态切换/回滚/正向吸收）写 blueprint_version 提交。
+ * - 治理：蓝图库可见/可锁/可淘汰/AI 咨询/单开独立调试任务。
  */
 import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
 import { expandMatchTokens } from './memory';
+import { findUserTalentForPersona, type AgentProfile } from './agent-profile';
+import { log } from '../logger';
 
 export type BlueprintStatus = 'active' | 'locked' | 'retired';
 
 export interface BlueprintStaffingSlot {
   personaId: string;
   personaName: string;
+}
+
+export interface BlueprintStaffingDetailSlot extends BlueprintStaffingSlot {
+  activeUserTalent: AgentProfile | null;
 }
 
 /** 打法工具记账：本蓝图高频使用的工具/skill/MCP（上限 10 条）。 */
@@ -39,7 +41,7 @@ export interface Blueprint {
   companyId: string;
   taskType: string;
   label: string;
-  /** 用户语言描述：这类活是什么、当前打法（批次3 面板展示，批次4 优化器润色）。 */
+  /** 用户语言描述：这类活是什么、当前打法。 */
   description: string;
   staffing: BlueprintStaffingSlot[];
   tools: BlueprintTool[];
@@ -48,11 +50,29 @@ export interface Blueprint {
   losses: number;
   reworkTotal: number;
   correctionTotal: number;
-  /** 二期预留：阶段工作流（组合管线）。本期恒为空数组。 */
+  /** 阶段工作流（组合管线）。 */
   stages: unknown[];
   status: BlueprintStatus;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface BlueprintDetail extends Blueprint {
+  staffingWithActiveTalents: BlueprintStaffingDetailSlot[];
+  versions: BlueprintVersion[];
+  score: {
+    score: number | null;
+    winRate: number;
+    reworkRate: number;
+    correctionRate: number;
+  };
+}
+
+export interface BlueprintConsultResult {
+  diagnosis: string;
+  strengths: string[];
+  bottlenecks: string[];
+  restructuringAdvice: string;
 }
 
 export interface BlueprintVersion {
@@ -98,22 +118,33 @@ function fromRow(row: BlueprintRow): Blueprint {
   };
 }
 
-/** 词元过滤：去单字/纯数字，保留有区分度的词（长度 >= 2）。 */
+function versionFromRow(row: VersionRow): BlueprintVersion {
+  return {
+    id: row.id,
+    blueprintId: row.blueprint_id,
+    version: row.version,
+    snapshot: JSON.parse(row.snapshot_json ?? '{}'),
+    summary: row.summary,
+    evidence: JSON.parse(row.evidence_json ?? '[]'),
+    createdAt: row.created_at,
+  };
+}
+
+export const MAX_STAFFING_SLOTS = 4;
+export const MAX_TOOLS = 10;
+export const MAX_SOURCE_PROJECTS = 8;
+export const MAX_VERSIONS = 30;
+
 function meaningfulTokens(title: string): string[] {
   return [...new Set(
     expandMatchTokens(title).filter((token) => token.length >= 2 && !/^\d+$/.test(token)),
   )].sort();
 }
 
-/**
- * 任务类型键：标题词元集合的确定性表示（排序去重拼接）。
- * 词序无关、可重复（同一任务永远同一键）；跨任务的相似匹配靠 jaccard，不要求键完全相等。
- */
 export function taskTypeOf(title: string): string {
   return meaningfulTokens(title).join('|');
 }
 
-/** 词元集合 Jaccard 相似度（匹配与聚类的统一度量）。 */
 export function jaccard(a: string[], b: string[]): number {
   const setA = new Set(a);
   const setB = new Set(b);
@@ -123,10 +154,7 @@ export function jaccard(a: string[], b: string[]): number {
   return inter / (setA.size + setB.size - inter);
 }
 
-/** 匹配阈值：标题词元与蓝图类型词元的 Jaccard 下限（低于此视为不同类型的活）。 */
 export const BLUEPRINT_MATCH_THRESHOLD = 0.2;
-
-/** 聚类合并阈值：进化时与既有蓝图的 Jaccard 上限——超过则并入既有蓝图，否则新建。 */
 export const BLUEPRINT_MERGE_THRESHOLD = 0.4;
 
 export interface BlueprintMatch {
@@ -134,131 +162,127 @@ export interface BlueprintMatch {
   score: number;
 }
 
-/**
- * 蓝图匹配：在现役（active/locked）蓝图中找与任务标题最相似的，
- * 按 相似度 > 战绩 排序。retired 不参与。无命中返回 null。
- */
 export function matchBlueprint(db: DB, companyId: string, taskTitle: string): BlueprintMatch | null {
   return matchBlueprints(db, companyId, taskTitle, 1)[0] ?? null;
 }
 
-/**
- * 打法包一期：返回 top-N 相关蓝图（去同簇：蓝图间 Jaccard >= 并合阈值只取最高分者），
- * 供"相关打法"展示与组合管线的二期铺垫。
- */
 export function matchBlueprints(db: DB, companyId: string, taskTitle: string, limit = 3): BlueprintMatch[] {
   const rows = db.prepare(
-    "SELECT * FROM blueprint WHERE company_id=? AND status IN ('active','locked')",
+    "SELECT * FROM blueprint WHERE company_id=? AND status != 'retired'",
   ).all(companyId) as BlueprintRow[];
+  if (rows.length === 0) return [];
   const titleTokens = meaningfulTokens(taskTitle);
-  const scored: BlueprintMatch[] = [];
+  if (titleTokens.length === 0) return [];
+
+  const scored: Array<{ row: BlueprintRow; score: number; bpTokens: string[] }> = [];
   for (const row of rows) {
-    const blueprint = fromRow(row);
-    const score = jaccard(titleTokens, blueprint.taskType.split('|').filter(Boolean));
-    if (score < BLUEPRINT_MATCH_THRESHOLD) continue;
-    scored.push({ blueprint, score });
+    const bpTokens = fromRow(row).taskType.split('|').filter(Boolean);
+    const score = jaccard(titleTokens, bpTokens);
+    if (score >= BLUEPRINT_MATCH_THRESHOLD) {
+      scored.push({ row, score, bpTokens });
+    }
   }
-  scored.sort((a, b) => b.score - a.score || b.blueprint.wins - a.blueprint.wins);
-  // 去同簇：保留相似度最高的那张，其"近亲"不再重复返回
+
+  scored.sort((a, b) => {
+    if (Math.abs(b.score - a.score) > 0.05) return b.score - a.score;
+    const totalA = a.row.wins + a.row.losses;
+    const totalB = b.row.wins + b.row.losses;
+    const rateA = totalA > 0 ? a.row.wins / totalA : 0;
+    const rateB = totalB > 0 ? b.row.wins / totalB : 0;
+    return rateB - rateA;
+  });
+
   const picked: BlueprintMatch[] = [];
-  for (const candidate of scored) {
-    const nearDuplicate = picked.some((p) =>
-      jaccard(candidate.blueprint.taskType.split('|').filter(Boolean), p.blueprint.taskType.split('|').filter(Boolean)) >= BLUEPRINT_MERGE_THRESHOLD);
-    if (!nearDuplicate) picked.push(candidate);
-    if (picked.length >= limit) break;
+  for (const item of scored) {
+    const isDuplicateCluster = picked.some((p) => {
+      const pTokens = p.blueprint.taskType.split('|').filter(Boolean);
+      return jaccard(item.bpTokens, pTokens) >= BLUEPRINT_MERGE_THRESHOLD;
+    });
+    if (!isDuplicateCluster) {
+      picked.push({ blueprint: fromRow(item.row), score: item.score });
+      if (picked.length >= limit) break;
+    }
   }
   return picked;
 }
 
-const MAX_STAFFING_SLOTS = 4;
-const MAX_SOURCE_PROJECTS = 8;
-const MAX_TOOLS = 10;
-const MAX_VERSIONS = 30;
-
-/** 蓝图快照（版本化用：结构字段全集，战绩除外——回滚恢复的是打法不是观察）。 */
-function snapshotOf(blueprint: Blueprint): Record<string, unknown> {
-  return {
-    label: blueprint.label,
-    description: blueprint.description,
-    staffing: blueprint.staffing,
-    tools: blueprint.tools,
-    status: blueprint.status,
-  };
-}
-
-/** 写一版提交：结构变更才调用；超过 MAX_VERSIONS 丢弃最旧。 */
 export function commitBlueprintVersion(
   db: DB,
   blueprintId: string,
   summary: string,
   evidence: string[] = [],
 ): BlueprintVersion {
-  const blueprint = getBlueprint(db, blueprintId);
-  const maxRow = db.prepare('SELECT MAX(version) AS v FROM blueprint_version WHERE blueprint_id=?').get(blueprintId) as { v: number | null };
-  const version = (maxRow.v ?? 0) + 1;
-  const id = shortId('bv_');
+  const bp = getBlueprint(db, blueprintId);
   const now = nowIso();
-  // 断电安全：提交 + 封顶删除同事务（崩溃不产生越界版本或孤儿提交）
-  db.transaction(() => {
+  const last = db.prepare('SELECT MAX(version) AS v FROM blueprint_version WHERE blueprint_id=?').get(blueprintId) as { v: number | null };
+  const nextVersion = (last.v ?? 0) + 1;
+  const id = shortId('bpv_');
+  const snapshot = {
+    taskType: bp.taskType,
+    label: bp.label,
+    description: bp.description,
+    staffing: bp.staffing,
+    tools: bp.tools,
+    stages: bp.stages,
+    status: bp.status,
+  };
+  return db.transaction(() => {
     db.prepare(
       `INSERT INTO blueprint_version (id, blueprint_id, version, snapshot_json, summary, evidence_json, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    ).run(id, blueprintId, version, JSON.stringify(snapshotOf(blueprint)), summary, JSON.stringify(evidence), now);
-    db.prepare(
-      `DELETE FROM blueprint_version WHERE blueprint_id=? AND version < (
-         SELECT COALESCE(MAX(version), 0) - ? FROM blueprint_version WHERE blueprint_id=?
-       )`,
-    ).run(blueprintId, MAX_VERSIONS - 1, blueprintId);
+    ).run(id, blueprintId, nextVersion, JSON.stringify(snapshot), summary, JSON.stringify(evidence), now);
+
+    const count = (db.prepare('SELECT COUNT(*) AS c FROM blueprint_version WHERE blueprint_id=?').get(blueprintId) as { c: number }).c;
+    if (count > MAX_VERSIONS) {
+      const oldest = db.prepare(
+        'SELECT id FROM blueprint_version WHERE blueprint_id=? ORDER BY version ASC LIMIT ?',
+      ).all(blueprintId, count - MAX_VERSIONS) as Array<{ id: string }>;
+      for (const row of oldest) {
+        db.prepare('DELETE FROM blueprint_version WHERE id=?').run(row.id);
+      }
+    }
+    return versionFromRow(
+      db.prepare('SELECT * FROM blueprint_version WHERE id=?').get(id) as VersionRow,
+    );
   })();
-  return listBlueprintVersions(db, blueprintId).find((v) => v.version === version)!;
 }
 
 export function listBlueprintVersions(db: DB, blueprintId: string): BlueprintVersion[] {
   const rows = db.prepare(
     'SELECT * FROM blueprint_version WHERE blueprint_id=? ORDER BY version DESC',
   ).all(blueprintId) as VersionRow[];
-  return rows.map((row) => ({
-    id: row.id,
-    blueprintId: row.blueprint_id,
-    version: row.version,
-    snapshot: JSON.parse(row.snapshot_json) as Record<string, unknown>,
-    summary: row.summary,
-    evidence: JSON.parse(row.evidence_json ?? '[]') as string[],
-    createdAt: row.created_at,
-  }));
+  return rows.map(versionFromRow);
 }
 
-/** 回滚到某版本：恢复结构字段（label/描述/班底/工具/状态），战绩保留，另记一版提交。 */
 export function rollbackBlueprint(db: DB, blueprintId: string, targetVersion: number): Blueprint {
-  const versions = listBlueprintVersions(db, blueprintId);
-  const target = versions.find((v) => v.version === targetVersion);
-  if (!target) throw new AppError(ErrorCode.NOT_FOUND, `蓝图版本 v${targetVersion} 不存在`);
-  const snapshot = target.snapshot as { label?: string; description?: string; staffing?: BlueprintStaffingSlot[]; tools?: BlueprintTool[]; status?: BlueprintStatus };
+  const row = db.prepare(
+    'SELECT * FROM blueprint_version WHERE blueprint_id=? AND version=?',
+  ).get(blueprintId, targetVersion) as VersionRow | undefined;
+  if (!row) throw new AppError(ErrorCode.NOT_FOUND, `blueprint ${blueprintId} version ${targetVersion} not found`);
+  const target = versionFromRow(row);
+  const snap = target.snapshot as {
+    taskType: string; label: string; description?: string; staffing: BlueprintStaffingSlot[];
+    tools: BlueprintTool[]; stages?: unknown[]; status: BlueprintStatus;
+  };
   const now = nowIso();
-  // 断电安全：恢复 + 回滚提交同事务
   return db.transaction(() => {
     db.prepare(
-      `UPDATE blueprint SET label=?, description=?, staffing_json=?, tools_json=?, status=?, updated_at=? WHERE id=?`,
+      `UPDATE blueprint SET staffing_json=?, tools_json=?, stages_json=?, description=?, status=?, updated_at=? WHERE id=?`,
     ).run(
-      snapshot.label ?? '', snapshot.description ?? '',
-      JSON.stringify(snapshot.staffing ?? []), JSON.stringify(snapshot.tools ?? []),
-      snapshot.status ?? 'active', now, blueprintId,
+      JSON.stringify(snap.staffing ?? []),
+      JSON.stringify(snap.tools ?? []),
+      JSON.stringify(snap.stages ?? []),
+      snap.description ?? '',
+      snap.status ?? 'active',
+      now, blueprintId,
     );
-    commitBlueprintVersion(db, blueprintId, `回滚到 v${targetVersion}：恢复该版本的结构配置（班底/工具/描述/状态）`, [`rollback-from:v${targetVersion}`]);
+    commitBlueprintVersion(db, blueprintId, `回滚到 v${targetVersion}：恢复该版结构配置（战绩保留另记）`, [`rollback_to:v${targetVersion}`]);
     return getBlueprint(db, blueprintId);
   })();
 }
 
 /**
- * 蓝图进化（自动复盘的写入侧）：按任务标题与既有蓝图的词元相似度聚类。
- * - 命中既有蓝图（Jaccard >= BLUEPRINT_MERGE_THRESHOLD，含 locked——战绩是观察不受冻结影响）：
- *   战绩 +1；人设未在班底则并入（上限 4 槽）；来源项目记账（上限 8）。
- * - 未命中：新建（task_type = 标题词元键，label = 人设名·代表任务标题）。
- * - 多维战绩：返工轮次 / 用户纠正次数 / 本任务工具调用并入记账。
- * - 结构性变更（新建/班底变化/工具集变化/复活）自动写版本提交；纯计数不出版。
- * - Review 修复：候选扫描包含 retired——同类活的新证据会让退役蓝图复活（status 回 active），
- *   避免 UNIQUE(company_id, task_type) 冲突被吞导致战绩静默丢失。
- * 幂等性由调用方保证（反思队列 task_id UNIQUE → 每任务只进化一次）。
+ * 蓝图进化：支持正向吸收升级与负向隔离保护。
  */
 export function evolveBlueprint(db: DB, input: {
   companyId: string;
@@ -267,13 +291,12 @@ export function evolveBlueprint(db: DB, input: {
   personaId: string;
   personaName: string;
   win: boolean;
-  /** 本任务返工轮次（验收链路 rework_count）。 */
   reworkCount?: number;
-  /** 本任务派发后的用户追加指令数（纠正信号）。 */
   correctionCount?: number;
-  /** 本任务执行过程中实际调用的工具名（execution_trace tool_call）。 */
   tools?: string[];
-}): Blueprint {
+  isUserOverride?: boolean;
+  userTalentName?: string;
+}): Blueprint | null {
   const taskType = taskTypeOf(input.taskTitle);
   const titleTokens = meaningfulTokens(input.taskTitle);
   const now = nowIso();
@@ -288,6 +311,12 @@ export function evolveBlueprint(db: DB, input: {
       existing = row;
       bestScore = score;
     }
+  }
+
+  // 负向保护：若是自有人才执行且失败/返工，严格不修改或劣化官方默认蓝图
+  if (input.isUserOverride && (!input.win || (input.reworkCount ?? 0) > 0)) {
+    // 有既有蓝图：原样返回不记战绩；无既有蓝图：直接跳过进化——绝不把负面表现写进官方基准或新蓝图
+    return existing ? fromRow(existing) : null;
   }
 
   if (!existing) {
@@ -314,7 +343,6 @@ export function evolveBlueprint(db: DB, input: {
   }
 
   const blueprint = fromRow(existing);
-  // 锁定 = 冻结自动进化的结构侧（班底/工具/来源不并、不出版）；战绩是观察，照记不受冻结影响。
   const structureFrozen = blueprint.status === 'locked';
   const staffing = [...blueprint.staffing];
   let staffingChanged = false;
@@ -329,7 +357,7 @@ export function evolveBlueprint(db: DB, input: {
   const tools = structureFrozen ? blueprint.tools : mergeTools(blueprint.tools, input.tools ?? [], input.win);
   const toolsChanged = tools.length !== blueprint.tools.length;
   const revived = blueprint.status === 'retired';
-  // 断电安全：记账更新与结构版本提交同事务（嵌套事务自动落 savepoint）
+
   return db.transaction(() => {
     db.prepare(
       `UPDATE blueprint SET staffing_json=?, tools_json=?, source_project_ids_json=?, description=?,
@@ -345,6 +373,8 @@ export function evolveBlueprint(db: DB, input: {
     );
     if (revived) {
       commitBlueprintVersion(db, existing.id, '复活：同类任务的新证据出现，蓝图恢复现役并继续积累战绩', [input.projectId]);
+    } else if (input.isUserOverride && input.win && (input.reworkCount ?? 0) === 0) {
+      commitBlueprintVersion(db, existing.id, `正向吸收：吸收自有人才「${input.userTalentName || input.personaName}」的优秀实践升级官方默认打法配置`, [input.projectId]);
     } else if (staffingChanged) {
       commitBlueprintVersion(db, existing.id, `班底扩充：新增协作成员「${input.personaName}」（第 ${staffing.length} 槽）`, [input.projectId]);
     } else if (toolsChanged) {
@@ -355,7 +385,6 @@ export function evolveBlueprint(db: DB, input: {
   })();
 }
 
-/** 合并本任务工具调用进打法工具记账（上限 10 条，超出淘汰最少用）。 */
 function mergeTools(current: BlueprintTool[], used: string[], win: boolean): BlueprintTool[] {
   if (used.length === 0) return current;
   const map = new Map(current.map((t) => [`${t.kind}:${t.id}`, t]));
@@ -369,14 +398,129 @@ function mergeTools(current: BlueprintTool[], used: string[], win: boolean): Blu
       map.set(key, { kind: 'tool', id, uses: 1, wins: win ? 1 : 0 });
     }
   }
-  const merged = [...map.values()].sort((a, b) => b.uses - a.uses).slice(0, MAX_TOOLS);
-  return merged;
+  return [...map.values()].sort((a, b) => b.uses - a.uses).slice(0, MAX_TOOLS);
 }
 
 export function getBlueprint(db: DB, id: string): Blueprint {
   const row = db.prepare('SELECT * FROM blueprint WHERE id=?').get(id) as BlueprintRow | undefined;
   if (!row) throw new AppError(ErrorCode.NOT_FOUND, `blueprint ${id} not found`);
   return fromRow(row);
+}
+
+export function getBlueprintDetail(db: DB, id: string): BlueprintDetail {
+  const bp = getBlueprint(db, id);
+  const versions = listBlueprintVersions(db, id);
+  const total = bp.wins + bp.losses;
+  const winRate = total > 0 ? bp.wins / total : 0;
+  const reworkRate = total > 0 ? Math.min(1, bp.reworkTotal / total) : 0;
+  const correctionRate = total > 0 ? Math.min(1, bp.correctionTotal / total) : 0;
+  const score = total >= 3 ? Math.round((winRate * 0.6 + (1 - reworkRate) * 0.25 + (1 - correctionRate) * 0.15) * 100) : null;
+
+  const staffingWithActiveTalents = bp.staffing.map((slot) => ({
+    ...slot,
+    activeUserTalent: findUserTalentForPersona(db, slot.personaId),
+  }));
+
+  return {
+    ...bp,
+    staffingWithActiveTalents,
+    versions,
+    score: {
+      score,
+      winRate: Math.round(winRate * 100),
+      reworkRate: Math.round(reworkRate * 100),
+      correctionRate: Math.round(correctionRate * 100),
+    },
+  };
+}
+
+export async function consultBlueprint(db: DB, id: string, query?: string): Promise<BlueprintConsultResult> {
+  const detail = getBlueprintDetail(db, id);
+  const prompt = `你是 Muster 多智能体打法包架构顾问。请分析以下蓝图配置并给出诊断建议：
+蓝图标签: ${detail.label}
+业务分类: ${detail.taskType}
+当前描述: ${detail.description}
+班底人设: ${detail.staffing.map((s) => s.personaName).join(', ')}
+常用工具: ${detail.tools.map((t) => t.id).join(', ') || '无'}
+战绩数据: 胜 ${detail.wins}, 负 ${detail.losses}, 返工 ${detail.reworkTotal} 次, 综合评分 ${detail.score.score ?? '观察中'}
+用户咨询: ${query || '请对当前打法进行全面体检并给出重构与调优建议。'}
+
+请按 JSON 格式返回：
+{
+  "diagnosis": "整体诊断概述",
+  "strengths": ["优势点1", "优势点2"],
+  "bottlenecks": ["潜在瓶颈或薄弱点1"],
+  "restructuringAdvice": "具体的重构或工具补充建议"
+}`;
+
+  try {
+    const { callLlm } = await import('./llm-call');
+    const resp = await callLlm(db, {
+      system: '你是 Muster 多智能体打法包架构顾问。只输出一个 JSON 对象（不要代码围栏、不要多余文本），字段：diagnosis(string)、strengths(string[])、bottlenecks(string[])、restructuringAdvice(string)。',
+      user: prompt,
+      companyId: detail.companyId,
+      timeoutMs: 45_000,
+    });
+    if (resp.content) {
+      const text = resp.content.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+      const parsed = JSON.parse(text);
+      return {
+        diagnosis: parsed.diagnosis || '诊断完成',
+        strengths: Array.isArray(parsed.strengths) ? parsed.strengths : ['基础结构稳定'],
+        bottlenecks: Array.isArray(parsed.bottlenecks) ? parsed.bottlenecks : [],
+        restructuringAdvice: parsed.restructuringAdvice || '建议持续积累样本以优化工具调用。',
+      };
+    }
+  } catch (e) {
+    log.warn('consultBlueprint LLM call failed, fallback to rule analysis', { id, err: e instanceof Error ? e.message : String(e) });
+  }
+
+  const bottlenecks: string[] = [];
+  if (detail.reworkTotal > 2) bottlenecks.push(`历史累计发生 ${detail.reworkTotal} 次返工，建议补充自动化验证工具`);
+  if (detail.tools.length === 0) bottlenecks.push('尚未沉淀常用工具链，建议在人设中声明工具推荐');
+  return {
+    diagnosis: `当前打法「${detail.label}」处于${detail.status === 'locked' ? '锁定' : '现役'}状态，累计执行 ${detail.wins + detail.losses} 场。`,
+    strengths: [detail.wins >= 3 ? '胜率稳定，核心班底配合良好' : '样本积累中'],
+    bottlenecks,
+    restructuringAdvice: '可通过单开蓝图调试任务扩充阶段工作流或调整专家班底。',
+  };
+}
+
+export function publishBlueprintDebugResult(db: DB, input: {
+  blueprintId: string;
+  staffing?: BlueprintStaffingSlot[];
+  tools?: BlueprintTool[];
+  stages?: unknown[];
+  description?: string;
+  summary: string;
+  evidenceTaskId?: string;
+}): Blueprint {
+  const current = getBlueprint(db, input.blueprintId);
+  const now = nowIso();
+  const staffing = input.staffing ?? current.staffing;
+  const tools = input.tools ?? current.tools;
+  const stages = input.stages ?? current.stages;
+  const description = input.description ?? current.description;
+
+  return db.transaction(() => {
+    db.prepare(
+      `UPDATE blueprint SET staffing_json=?, tools_json=?, stages_json=?, description=?, updated_at=? WHERE id=?`,
+    ).run(
+      JSON.stringify(staffing),
+      JSON.stringify(tools),
+      JSON.stringify(stages),
+      description,
+      now,
+      input.blueprintId,
+    );
+    commitBlueprintVersion(
+      db,
+      input.blueprintId,
+      `调试任务采纳：${input.summary}`,
+      input.evidenceTaskId ? [input.evidenceTaskId] : ['blueprint_debug'],
+    );
+    return getBlueprint(db, input.blueprintId);
+  })();
 }
 
 export function listBlueprints(db: DB, companyId: string): Blueprint[] {
@@ -386,7 +530,6 @@ export function listBlueprints(db: DB, companyId: string): Blueprint[] {
   return rows.map(fromRow);
 }
 
-/** 蓝图状态治理：active（现役）/ locked（锁：仍可匹配，不参与自动淘汰语义）/ retired（淘汰：不再匹配）。状态切换记版本提交。 */
 export function setBlueprintStatus(db: DB, id: string, status: BlueprintStatus): Blueprint {
   const current = getBlueprint(db, id);
   if (current.status === status) return current;
@@ -400,13 +543,11 @@ export function setBlueprintStatus(db: DB, id: string, status: BlueprintStatus):
   return getBlueprint(db, id);
 }
 
-/** 当前版本号（无版本 = 0）。任务穿戴时写入审计元数据。 */
 export function currentBlueprintVersion(db: DB, blueprintId: string): number {
   const row = db.prepare('SELECT MAX(version) AS v FROM blueprint_version WHERE blueprint_id=?').get(blueprintId) as { v: number | null };
   return row.v ?? 0;
 }
 
-/** 用户语言描述刷新（批次3 面板/批次4 优化器用）。 */
 export function updateBlueprintDescription(db: DB, id: string, description: string): Blueprint {
   const current = getBlueprint(db, id);
   const trimmed = description.trim();

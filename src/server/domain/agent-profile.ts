@@ -17,6 +17,16 @@ export interface AgentProfile {
   rating: number;
   /** 1=临时新建、未转正（人才市场过滤掉）；转正时清零。 */
   isTempOnly: number;
+  /** 'user' | 'system' | 'crystallized' */
+  source: 'user' | 'system' | 'crystallized';
+  /** 绑定的对应系统 Persona ID (如 'frontend/react-developer') */
+  sourcePersonaId: string | null;
+  /** 1=自动上岗（自动顶替官方人设），0=休息中（切回官方基准） */
+  isAutoDispatch: number;
+  /** 专属模型覆盖 */
+  customModel: string | null;
+  /** 专属思考深度覆盖 (off|low|med|high) */
+  customThinkingDepth: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -52,6 +62,11 @@ interface ProfileRow {
   base_version: number;
   rating: number;
   is_temp_only: number;
+  source: string | null;
+  source_persona_id: string | null;
+  is_auto_dispatch: number | null;
+  custom_model: string | null;
+  custom_thinking_depth: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -79,13 +94,18 @@ function profileFromRow(row: ProfileRow): AgentProfile {
     id: row.id,
     displayName: row.display_name,
     soul: row.soul,
-    principles: JSON.parse(row.principles_json),
-    capabilities: JSON.parse(row.capabilities_json),
-    recommendedExecutor: JSON.parse(row.recommended_executor_json),
-    recommendedPermission: JSON.parse(row.recommended_permission_json),
+    principles: JSON.parse(row.principles_json || '[]'),
+    capabilities: JSON.parse(row.capabilities_json || '{}'),
+    recommendedExecutor: JSON.parse(row.recommended_executor_json || '{}'),
+    recommendedPermission: JSON.parse(row.recommended_permission_json || '{}'),
     baseVersion: row.base_version,
     rating: row.rating ?? 1,
     isTempOnly: row.is_temp_only ?? 0,
+    source: (row.source as 'user' | 'system' | 'crystallized') || 'user',
+    sourcePersonaId: row.source_persona_id ?? null,
+    isAutoDispatch: row.is_auto_dispatch ?? 1,
+    customModel: row.custom_model ?? null,
+    customThinkingDepth: row.custom_thinking_depth ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -118,16 +138,23 @@ export function createAgentProfile(db: DB, input: {
   capabilities?: Record<string, unknown>;
   recommendedExecutor?: Record<string, unknown>;
   recommendedPermission?: Record<string, unknown>;
-  /** 阶段三任务 3.1：从 personas 专家库自动填充（用户显式字段优先）。 */
+  /** 专家库 persona ID */
   personaId?: string;
+  source?: 'user' | 'system' | 'crystallized';
+  sourcePersonaId?: string | null;
+  isAutoDispatch?: number;
+  customModel?: string | null;
+  customThinkingDepth?: string | null;
 }): AgentProfile {
   const displayName = input.displayName.trim();
   if (!displayName) throw new AppError(ErrorCode.VALIDATION, '员工档案名称不能为空');
-  // personaId 提供时自动填充 soul/principles/capabilities（用户显式字段优先）
   let soul = input.soul;
   let principles = input.principles;
   let capabilities = input.capabilities;
+  let sourcePersonaId = input.sourcePersonaId ?? null;
+
   if (input.personaId) {
+    sourcePersonaId = input.personaId;
     const persona = getPersona(input.personaId);
     if (persona) {
       soul ??= persona.soul;
@@ -135,13 +162,19 @@ export function createAgentProfile(db: DB, input: {
       capabilities ??= persona.capabilities;
     }
   }
+
   const id = shortId('ap_');
   const now = nowIso();
+  const source = input.source ?? 'user';
+  const isAutoDispatch = input.isAutoDispatch ?? 1;
+
   db.prepare(
     `INSERT INTO agent_profile (
       id, display_name, soul, principles_json, capabilities_json,
-      recommended_executor_json, recommended_permission_json, base_version, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+      recommended_executor_json, recommended_permission_json, base_version,
+      source, source_persona_id, is_auto_dispatch,
+      custom_model, custom_thinking_depth, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     displayName,
@@ -150,9 +183,15 @@ export function createAgentProfile(db: DB, input: {
     JSON.stringify(capabilities ?? {}),
     JSON.stringify(input.recommendedExecutor ?? {}),
     JSON.stringify(input.recommendedPermission ?? {}),
+    source,
+    sourcePersonaId,
+    isAutoDispatch,
+    input.customModel ?? null,
+    input.customThinkingDepth ?? null,
     now,
     now,
   );
+
   const snapshot = {
     displayName,
     soul: soul ?? '',
@@ -164,6 +203,7 @@ export function createAgentProfile(db: DB, input: {
   db.prepare(
     'INSERT INTO agent_profile_base (profile_id, version, snapshot_json, created_at) VALUES (?, 1, ?, ?)',
   ).run(id, JSON.stringify(snapshot), now);
+
   return getAgentProfile(db, id);
 }
 
@@ -173,28 +213,105 @@ export function getAgentProfile(db: DB, id: string): AgentProfile {
   return profileFromRow(row);
 }
 
-export function listAgentProfiles(db: DB, opts?: { includeTempOnly?: boolean }): AgentProfile[] {
-  // 人才市场默认过滤掉 is_temp_only=1（临时新建、未转正），避免污染人才池
-  const sql = opts?.includeTempOnly
-    ? 'SELECT * FROM agent_profile ORDER BY created_at, id'
-    : 'SELECT * FROM agent_profile WHERE is_temp_only = 0 ORDER BY rating DESC, created_at, id';
-  return (db.prepare(sql).all() as ProfileRow[]).map(profileFromRow);
+export function listAgentProfiles(db: DB, opts?: { includeTempOnly?: boolean; source?: 'user' | 'system' | 'crystallized' }): AgentProfile[] {
+  let sql = 'SELECT * FROM agent_profile WHERE 1=1';
+  const params: unknown[] = [];
+  if (!opts?.includeTempOnly) {
+    sql += ' AND is_temp_only = 0';
+  }
+  if (opts?.source) {
+    sql += ' AND source = ?';
+    params.push(opts.source);
+  }
+  sql += ' ORDER BY rating DESC, created_at, id';
+  return (db.prepare(sql).all(...params) as ProfileRow[]).map(profileFromRow);
+}
+
+/** 查询属于用户并处于开启「自动上岗」状态的同工种自定义人才。 */
+export function findUserTalentForPersona(db: DB, personaId: string): AgentProfile | null {
+  const row = db.prepare(
+    "SELECT * FROM agent_profile WHERE source_persona_id=? AND source='user' AND is_auto_dispatch=1 AND is_temp_only=0 ORDER BY rating DESC, updated_at DESC LIMIT 1",
+  ).get(personaId) as ProfileRow | undefined;
+  return row ? profileFromRow(row) : null;
 }
 
 export function updateAgentProfile(db: DB, id: string, patch: Partial<Pick<AgentProfile,
   'displayName' | 'soul' | 'principles' | 'capabilities' | 'recommendedExecutor' | 'recommendedPermission'
+  | 'isAutoDispatch' | 'customModel' | 'customThinkingDepth'
 >>): AgentProfile {
   const current = getAgentProfile(db, id);
   const next = { ...current, ...patch, updatedAt: nowIso() };
   if (!next.displayName.trim()) throw new AppError(ErrorCode.VALIDATION, '员工档案名称不能为空');
+
   db.prepare(
     `UPDATE agent_profile SET display_name=?, soul=?, principles_json=?, capabilities_json=?,
-      recommended_executor_json=?, recommended_permission_json=?, updated_at=? WHERE id=?`,
+      recommended_executor_json=?, recommended_permission_json=?, is_auto_dispatch=?,
+      custom_model=?, custom_thinking_depth=?, updated_at=? WHERE id=?`,
   ).run(
-    next.displayName.trim(), next.soul, JSON.stringify(next.principles), JSON.stringify(next.capabilities),
-    JSON.stringify(next.recommendedExecutor), JSON.stringify(next.recommendedPermission), next.updatedAt, id,
+    next.displayName.trim(),
+    next.soul,
+    JSON.stringify(next.principles),
+    JSON.stringify(next.capabilities),
+    JSON.stringify(next.recommendedExecutor),
+    JSON.stringify(next.recommendedPermission),
+    next.isAutoDispatch,
+    next.customModel,
+    next.customThinkingDepth,
+    next.updatedAt,
+    id,
   );
   return getAgentProfile(db, id);
+}
+
+/** 用户手动修改我的人才配置（仅允许修改 source === 'user' 的自有人才）。 */
+export function updateUserCustomConfig(db: DB, id: string, input: {
+  displayName?: string;
+  soul?: string;
+  principles?: string[];
+  isAutoDispatch?: number;
+  customModel?: string | null;
+  customThinkingDepth?: string | null;
+}): AgentProfile {
+  const profile = getAgentProfile(db, id);
+  if (profile.source !== 'user') {
+    throw new AppError(ErrorCode.VALIDATION, '系统预置与沉淀专家由系统自动管理，如需调整请先「复制为我的人才」');
+  }
+  return updateAgentProfile(db, id, input);
+}
+
+/** 从系统专家或已有档案一键克隆为「我的人才」副本（source='user', isAutoDispatch=1）。 */
+export function cloneProfileAsUser(db: DB, sourceProfileId: string, customName?: string): AgentProfile {
+  const source = getAgentProfile(db, sourceProfileId);
+  const name = customName?.trim() || `${source.displayName}（我的副本）`;
+  return createAgentProfile(db, {
+    displayName: name,
+    soul: source.soul,
+    principles: [...source.principles],
+    capabilities: structuredClone(source.capabilities),
+    recommendedExecutor: structuredClone(source.recommendedExecutor),
+    recommendedPermission: structuredClone(source.recommendedPermission),
+    source: 'user',
+    sourcePersonaId: source.sourcePersonaId || source.id,
+    isAutoDispatch: 1,
+    customModel: source.customModel,
+    customThinkingDepth: source.customThinkingDepth,
+  });
+}
+
+/** 从 Persona 库一键克隆为「我的人才」。 */
+export function clonePersonaAsUser(db: DB, personaId: string, customName?: string): AgentProfile {
+  const persona = getPersona(personaId);
+  if (!persona) throw new AppError(ErrorCode.NOT_FOUND, `Persona ${personaId} not found`);
+  const name = customName?.trim() || `${persona.name}（我的定制）`;
+  return createAgentProfile(db, {
+    displayName: name,
+    soul: persona.soul,
+    principles: [...persona.principles],
+    capabilities: structuredClone(persona.capabilities),
+    source: 'user',
+    sourcePersonaId: persona.id,
+    isAutoDispatch: 1,
+  });
 }
 
 export function createCompanyEmployeeRecord(db: DB, input: {
@@ -266,6 +383,9 @@ export function copyAgentProfile(db: DB, sourceId: string, input: {
     capabilities: structuredClone(source.capabilities),
     recommendedExecutor: structuredClone(source.recommendedExecutor),
     recommendedPermission: structuredClone(source.recommendedPermission),
+    source: 'user',
+    sourcePersonaId: source.sourcePersonaId || source.id,
+    isAutoDispatch: 1,
   });
   if (input.mode === 'snapshot-copy') copyPersonalMemoryEntries(db, source.id, copy.id);
   return getAgentProfile(db, copy.id);

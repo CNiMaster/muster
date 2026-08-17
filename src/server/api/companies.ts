@@ -40,7 +40,18 @@ import { ensureProjectThreads } from '../domain/thread';
 import { summarizeCompanyUsage } from '../domain/usage';
 import { companyArtifactGallery } from '../domain/artifact';
 import { searchArchive } from '../domain/archive';
-import { listBlueprints, setBlueprintStatus, listBlueprintVersions, rollbackBlueprint, updateBlueprintDescription, matchBlueprints, getBlueprint } from '../domain/blueprint';
+import {
+  listBlueprints,
+  setBlueprintStatus,
+  listBlueprintVersions,
+  rollbackBlueprint,
+  updateBlueprintDescription,
+  matchBlueprints,
+  getBlueprint,
+  getBlueprintDetail,
+  consultBlueprint,
+  publishBlueprintDebugResult,
+} from '../domain/blueprint';
 import { listAgents, getAgent } from '../domain/agent';
 import { listDepartments } from '../domain/department';
 import { getCompanyCockpit } from '../domain/company-cockpit';
@@ -356,6 +367,46 @@ companiesRouter.patch(
     if (getBlueprint(getDb(), param(req, 'blueprintId')).companyId !== companyId) throw new AppError(ErrorCode.NOT_FOUND, '蓝图不存在');
     const { description } = z.object({ description: z.string().min(1).max(400) }).parse(req.body);
     res.json(updateBlueprintDescription(getDb(), param(req, 'blueprintId'), description));
+  }),
+);
+
+companiesRouter.get(
+  '/:id/blueprints/:blueprintId/detail',
+  asyncHandler(async (req, res) => {
+    const companyId = param(req, 'id');
+    const bp = getBlueprint(getDb(), param(req, 'blueprintId'));
+    if (bp.companyId !== companyId) throw new AppError(ErrorCode.NOT_FOUND, '蓝图不存在');
+    res.json(getBlueprintDetail(getDb(), param(req, 'blueprintId')));
+  }),
+);
+
+companiesRouter.post(
+  '/:id/blueprints/:blueprintId/consult',
+  asyncHandler(async (req, res) => {
+    const companyId = param(req, 'id');
+    const bp = getBlueprint(getDb(), param(req, 'blueprintId'));
+    if (bp.companyId !== companyId) throw new AppError(ErrorCode.NOT_FOUND, '蓝图不存在');
+    const { query } = z.object({ query: z.string().optional() }).parse(req.body ?? {});
+    const result = await consultBlueprint(getDb(), param(req, 'blueprintId'), query);
+    res.json(result);
+  }),
+);
+
+companiesRouter.post(
+  '/:id/blueprints/:blueprintId/debug-adopt',
+  asyncHandler(async (req, res) => {
+    const companyId = param(req, 'id');
+    const bp = getBlueprint(getDb(), param(req, 'blueprintId'));
+    if (bp.companyId !== companyId) throw new AppError(ErrorCode.NOT_FOUND, '蓝图不存在');
+    const body = z.object({
+      staffing: z.array(z.object({ personaId: z.string(), personaName: z.string() })).optional(),
+      tools: z.array(z.object({ kind: z.enum(['skill', 'tool', 'mcp']), id: z.string(), uses: z.number(), wins: z.number() })).optional(),
+      stages: z.array(z.unknown()).optional(),
+      description: z.string().optional(),
+      summary: z.string().min(1),
+      evidenceTaskId: z.string().optional(),
+    }).parse(req.body);
+    res.json(publishBlueprintDebugResult(getDb(), { blueprintId: param(req, 'blueprintId'), ...body }));
   }),
 );
 

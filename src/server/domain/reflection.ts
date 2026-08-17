@@ -233,6 +233,9 @@ export async function drainReflectionQueue(
           return rows.map((r) => r.name);
         } catch { return []; }
       })();
+      const isUserOverride = task.inputProtocol.staffingMode === 'user_override';
+      const userTalentName = (task.inputProtocol.userTalentOverride as any)?.displayName;
+
       evolveBlueprint(db, {
         companyId: row.company_id,
         projectId: task.projectId,
@@ -243,6 +246,8 @@ export async function drainReflectionQueue(
         reworkCount: task.reworkCount ?? 0,
         correctionCount,
         tools,
+        isUserOverride,
+        userTalentName,
       });
     } catch (err) {
       log.warn('blueprint evolution failed', {

@@ -65,6 +65,11 @@ export interface AgentProfile {
   rating: number;
   /** 1=临时新建、未转正（人才市场过滤掉）。 */
   isTempOnly: number;
+  source?: 'user' | 'system' | 'crystallized';
+  sourcePersonaId?: string | null;
+  isAutoDispatch?: number;
+  customModel?: string | null;
+  customThinkingDepth?: string | null;
   createdAt: string;
   updatedAt: string;
   /** 该档案在多少家公司任职（人才市场用，由 /api/agent-profiles 聚合返回）。 */

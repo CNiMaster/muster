@@ -8,6 +8,9 @@ import {
   listAgentProfiles,
   listProfileEmployments,
   updateAgentProfile,
+  updateUserCustomConfig,
+  cloneProfileAsUser,
+  clonePersonaAsUser,
   copyAgentProfile,
   resetAgentProfileToBase,
 } from '../domain/agent-profile';
@@ -41,14 +44,29 @@ const profileSchema = z.object({
   capabilities: z.record(z.unknown()).optional(),
   recommendedExecutor: z.record(z.unknown()).optional(),
   recommendedPermission: z.record(z.unknown()).optional(),
-  /** 阶段三任务 3.1：从 personas 专家库自动填充（用户显式字段覆盖）。 */
   personaId: z.string().optional(),
+  source: z.enum(['user', 'system', 'crystallized']).optional(),
+  sourcePersonaId: z.string().nullable().optional(),
+  isAutoDispatch: z.number().int().min(0).max(1).optional(),
+  customModel: z.string().nullable().optional(),
+  customThinkingDepth: z.string().nullable().optional(),
 });
 
-agentProfilesRouter.get('/', asyncHandler(async (_req, res) => {
+const customConfigSchema = z.object({
+  displayName: z.string().min(1).optional(),
+  soul: z.string().optional(),
+  principles: z.array(z.string()).optional(),
+  isAutoDispatch: z.number().int().min(0).max(1).optional(),
+  customModel: z.string().nullable().optional(),
+  customThinkingDepth: z.string().nullable().optional(),
+});
+
+agentProfilesRouter.get('/', asyncHandler(async (req, res) => {
   const db = getDb();
-  const profiles = listAgentProfiles(db);
-  // 附带每个档案的在营公司任职数（避免前端 N+1）。
+  const source = typeof req.query.source === 'string' && (req.query.source === 'user' || req.query.source === 'system' || req.query.source === 'crystallized')
+    ? req.query.source
+    : undefined;
+  const profiles = listAgentProfiles(db, { source });
   const countRows = db.prepare(
     `SELECT profile_id, COUNT(*) as n FROM company_employee GROUP BY profile_id`,
   ).all() as Array<{ profile_id: string; n: number }>;
@@ -56,7 +74,25 @@ agentProfilesRouter.get('/', asyncHandler(async (_req, res) => {
   res.json(profiles.map((p) => ({ ...p, employmentCount: countMap.get(p.id) ?? 0 })));
 }));
 
-// ===== Persona 专家库（阶段三任务 3.1） =====
+/** 人才市场分类聚合视图 */
+agentProfilesRouter.get('/market', asyncHandler(async (_req, res) => {
+  const db = getDb();
+  const allProfiles = listAgentProfiles(db);
+  const countRows = db.prepare(
+    `SELECT profile_id, COUNT(*) as n FROM company_employee GROUP BY profile_id`,
+  ).all() as Array<{ profile_id: string; n: number }>;
+  const countMap = new Map(countRows.map((r) => [r.profile_id, r.n]));
+  const userTalents = allProfiles.filter((p) => p.source === 'user').map((p) => ({ ...p, employmentCount: countMap.get(p.id) ?? 0 }));
+  const crystallizedTalents = allProfiles.filter((p) => p.source === 'crystallized').map((p) => ({ ...p, employmentCount: countMap.get(p.id) ?? 0 }));
+  const systemPersonas = listPersonas();
+  res.json({
+    userTalents,
+    crystallizedTalents,
+    systemPersonas,
+  });
+}));
+
+// ===== Persona 专家库 =====
 
 agentProfilesRouter.get('/personas/domains', asyncHandler(async (_req, res) => {
   res.json(listPersonaDomains());
@@ -79,9 +115,37 @@ agentProfilesRouter.get('/personas/:personaId', asyncHandler(async (req, res) =>
   res.json(persona);
 }));
 
+/** 从 Persona 库一键克隆为「我的人才」 */
+agentProfilesRouter.post('/clone-persona', asyncHandler(async (req, res) => {
+  const input = z.object({
+    personaId: z.string().min(1),
+    displayName: z.string().optional(),
+  }).parse(req.body);
+  const profile = clonePersonaAsUser(getDb(), input.personaId, input.displayName);
+  materializeAgentHome(profile);
+  res.status(201).json(profile);
+}));
+
+/** 从已有档案克隆为「我的人才」 */
+agentProfilesRouter.post('/:id/clone-as-user', asyncHandler(async (req, res) => {
+  const input = z.object({
+    displayName: z.string().optional(),
+  }).optional().parse(req.body);
+  const profile = cloneProfileAsUser(getDb(), param(req, 'id'), input?.displayName);
+  materializeAgentHome(profile);
+  res.status(201).json(profile);
+}));
+
+/** 用户手动修改我的人才专属配置（仅限 source === 'user'） */
+agentProfilesRouter.patch('/:id/custom-config', asyncHandler(async (req, res) => {
+  const input = customConfigSchema.parse(req.body);
+  const profile = updateUserCustomConfig(getDb(), param(req, 'id'), input);
+  syncAgentIdentityFiles(profile);
+  res.json(profile);
+}));
+
 agentProfilesRouter.post('/', asyncHandler(async (req, res) => {
   const input = profileSchema.parse(req.body);
-  // personaId 由 createAgentProfile 内部自动填充 soul/principles/capabilities
   const profile = createAgentProfile(getDb(), input);
   materializeAgentHome(profile);
   res.status(201).json(profile);

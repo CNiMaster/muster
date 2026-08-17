@@ -43,6 +43,7 @@ import { setupAssistantRouter } from './api/setup-assistant';
 import { workspacesRouter } from './api/workspaces';
 import { recoverInterruptedMigrations } from './domain/workspace';
 import { agentProfilesRouter, companyEmployeesRouter } from './api/agent-profiles';
+import { canvasLayoutsRouter } from './api/canvas-layouts';
 import { memoryRouter } from './api/memory';
 import { permissionsRouter } from './api/permissions';
 import { discussionsRouter } from './api/discussions';
@@ -212,6 +213,7 @@ async function createApp(): Promise<AppHandle> {
   app.use('/api/workspaces', workspacesRouter);
   app.use('/api/agent-profiles', agentProfilesRouter);
   app.use('/api/agent-profiles/:profileId/memory', memoryRouter);
+  app.use('/api/canvas-layouts', canvasLayoutsRouter);
   app.use('/api/permissions', permissionsRouter);
   app.use('/api/executors', executorsRouter);
   app.use('/api/setup-assistant', setupAssistantRouter);

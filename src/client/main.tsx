@@ -55,6 +55,8 @@ const ProjectSettingsPage = lazyRetry(() => import('./pages/ProjectSettingsPage'
 const ProjectPlansPage = lazyRetry(() => import('./pages/ProjectPlansPage').then((m) => ({ default: m.ProjectPlansPage })));
 const ArchivePage = lazyRetry(() => import('./pages/ArchivePage').then((m) => ({ default: m.ArchivePage })));
 const BlueprintLibraryPage = lazyRetry(() => import('./pages/BlueprintLibraryPage').then((m) => ({ default: m.BlueprintLibraryPage })));
+const BlueprintDetailPage = lazyRetry(() => import('./pages/BlueprintDetailPage').then((m) => ({ default: m.BlueprintDetailPage })));
+const BlueprintCanvasPage = lazyRetry(() => import('./pages/BlueprintCanvasPage').then((m) => ({ default: m.BlueprintCanvasPage })));
 
 function ToastLayer(): React.ReactElement {
   const { toasts, dismiss } = useToasts();
@@ -76,6 +78,10 @@ const router = createBrowserRouter([
       { path: 'projects/new', element: <ProjectPage /> },
       { path: 'archive', element: <ArchivePage /> },
       { path: 'blueprints', element: <BlueprintLibraryPage /> },
+      { path: 'blueprints/:blueprintId', element: <BlueprintDetailPage /> },
+      { path: 'blueprints/:blueprintId/canvas', element: <BlueprintCanvasPage /> },
+      { path: 'companies/:companyId/blueprints/:blueprintId', element: <BlueprintDetailPage /> },
+      { path: 'companies/:companyId/blueprints/:blueprintId/canvas', element: <BlueprintCanvasPage /> },
       { path: 'graphs/:kind', element: <GraphPage /> },
       { path: 'workflows/:workflowId', element: <WorkflowGraphPage /> },
       { path: 'projects/:projectId', element: <ProjectPage /> },

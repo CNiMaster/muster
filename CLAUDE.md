@@ -86,7 +86,25 @@ Key constraints for all new work:
 
 测试锚点：`tests/integration/r1-persona-tools.spec.ts`、`acceptance-review.spec.ts`、`r3-assets-git.spec.ts`（已合入 main，随 2026-08-16 补缺批次交付）。
 
-明确不做（观察后决策）：knowledgeModel 数据实例与 views 渲染（ontology 只做蓝图分类轴）；能力包导入闭环；项目级导出；persona 正文深度激活（243 文件转换管线，待人设使用质量反馈）；工作室/手动班底固化（已被自动复盘蓝图取代）。
+## 人才市场双区、蓝图连线画布与标准化收尾（2026-08-17 交付落地）
+
+- **人才市场双区管理与自动上岗单开关**：
+  - **双区展示**：专区 A「系统预置与沉淀专区」（官方 211+ 领域专家，由系统自主进化，只读展示，支持一键复制为我的人才）；专区 B「我的人才管理区」（用户完全掌控调优，支持专属提示词/模型/思考深度配置，配置永久保持，系统绝不擅改）。
+  - **自动上岗单开关（🟢 自动上岗 / ⏸️ 休息中）**：自有人才开启自动上岗时，任务自动顶替官方人设并注入定制提示词与专属模型；休息中时自动切回官方基准。
+- **蓝图全貌展示、AI 顾问体检与正向吸收升级**：
+  - **全貌只读展示**（`/blueprints/:id`）：标签、多维评分（胜率/返工率/纠正率/战力分）、人设班底（官方基准 vs 自有人才顶替标记）、常用工具战绩、版本时间线（可回滚至任一历史快照）。
+  - **AI 顾问体检诊断**（`POST /api/companies/:id/blueprints/:blueprintId/consult`）：提供打法瓶颈分析、班底完备度评估与阶段工作流重构建议。
+  - **正向吸收升级与负向隔离保护**：自有人才上岗零返工成功交付时，反思管线正向吸收其有效实践，自动升级官方蓝图基准配置（出版版本提交）；自有人才失败或返工时启动负向隔离保护，绝不劣化官方基准。
+  - **独立调试任务机制**：支持将蓝图单开独立任务调试演练，满意后原子回写（`debug-adopt`）。
+- **React Flow 12 蓝图工作流与资源连线画布**（参考 `ahamoment-101/Open-DeepSeek-Harness-Desktop`）：
+  - 路由 `/companies/:companyId/blueprints/:blueprintId/canvas`，支持 StageNode（阶段步骤）、StaffingNode（班底专家与顶替标记）、ToolNode（工具/技能）拓扑连线。
+  - **Sidecar 排布持久化**：读写 `canvas_layout` 表，视觉坐标与领域模型彻底解耦。
+  - **DAG 防环拦截**：客户端与服务端严格执行环路检测（`hasCycleInEdges`），杜绝循环依赖。
+- **标准化任务收尾归档（Codex Closeout Archive）**（参考 `ChenJinCloud/codex-closeout-archive`）：
+  - 任务完成时自动提取 8 节高密度结构化简报与速读 Markdown：目标背景、蓝图与班底（顶替标记）、核心交付物、关键决策、验收自评达标报告、工具调用审计、反思与打法进化、后续跟进与关联打法。
+  - 任务详情页渲染 `TaskCloseoutCard`，提供卡片与 Markdown 双模速读。
+
+测试锚点：`tests/unit/talent-market-dispatch.spec.ts`、`tests/unit/blueprint-detail-consult.spec.ts`、`tests/unit/canvas-layout-and-closeout.spec.ts`（全部通过）。
 
 ## Commands
 

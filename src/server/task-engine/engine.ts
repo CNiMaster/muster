@@ -410,10 +410,16 @@ export class TaskEngine {
       }
       const profileExecutor = executorProfile?.config as AgentExecutorConfig | undefined;
       const legacyExecutor = normalizeAgentExecutor(agent.executor);
-      // 批次 D2：消息级选项（模式/模型/思考）覆盖员工执行器配置——用户在 composer 里的选择优先生效
+      // 批次 D2：消息级选项（模式/模型/思考）与自有人才专属配置覆盖员工执行器配置
       const messageOptions = readMessageOptions(task.inputProtocol);
+      const userTalentOverride = task.inputProtocol.userTalentOverride as {
+        customModel?: string | null;
+        customThinkingDepth?: string | null;
+      } | undefined;
       const effectiveExecutor: AgentExecutorConfig = {
         ...(profileExecutor ?? legacyExecutor),
+        ...(userTalentOverride?.customModel ? { model: userTalentOverride.customModel } : {}),
+        ...(userTalentOverride?.customThinkingDepth ? { thinkingDepth: userTalentOverride.customThinkingDepth as any } : {}),
         ...(messageOptions.model ? { model: messageOptions.model } : {}),
         ...(messageOptions.thinking ? { thinkingDepth: messageOptions.thinking } : {}),
       };

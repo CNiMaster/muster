@@ -38,6 +38,7 @@ import { handleDebateTaskFailure, recordDecisionFromClarify } from './debate';
 import { ensurePrimaryThread } from './thread';
 import { matchBlueprint, currentBlueprintVersion } from './blueprint';
 import { getPersona } from './persona-library';
+import { findUserTalentForPersona } from './agent-profile';
 
 /**
  * 验收标准条目（双 Loop 地基 P0.1）。
@@ -329,6 +330,7 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
       const slot = match?.blueprint.staffing[0];
       if (match && slot && getPersona(slot.personaId)) {
         personaId = slot.personaId;
+        const userTalent = findUserTalentForPersona(db, slot.personaId);
         // 打法包一期：班底生效——2-4 槽协作成员以名称+领域描述注入执行上下文
         const crew = match.blueprint.staffing.slice(1).map((s) => {
           const p = getPersona(s.personaId);
@@ -340,6 +342,19 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
           blueprintVersion: currentBlueprintVersion(db, match.blueprint.id),
           blueprintScore: Math.round(match.score * 100) / 100,
           ...(crew.length > 0 ? { staffingNotes: crew } : {}),
+          ...(userTalent ? {
+            userTalentOverride: {
+              profileId: userTalent.id,
+              displayName: userTalent.displayName,
+              soul: userTalent.soul,
+              principles: userTalent.principles,
+              customModel: userTalent.customModel,
+              customThinkingDepth: userTalent.customThinkingDepth,
+            },
+            staffingMode: 'user_override',
+          } : {
+            staffingMode: 'official_benchmark',
+          }),
         };
       }
     }

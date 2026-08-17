@@ -27,6 +27,7 @@ import {
   getTaskChain,
 } from '../domain/task';
 import { abortSwarm, getSwarmRun } from '../domain/swarm';
+import { generateTaskCloseoutSummary, getTaskCloseoutSummary } from '../domain/task-closeout';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { listTaskEvents } from '../domain/task-event';
 import { listTrace, type TraceKind } from '../domain/execution-trace';
@@ -232,5 +233,36 @@ taskByIdRouter.post(
     }
     abortSwarm(getDb(), task.swarmId, { reason: '用户手动停止蜂群', status: 'aborted', includeRoot: true });
     res.json({ ok: true, swarm: getSwarmRun(getDb(), task.swarmId!) });
+  }),
+);
+
+// 终态才有收尾简报：非终态一律不生成不落库（打开详情页不会给进行中任务写脏收尾数据）
+const CLOSEOUT_TERMINAL_STATES = new Set(['completed', 'failed', 'cancelled']);
+
+taskByIdRouter.get(
+  '/closeout',
+  asyncHandler(async (req, res) => {
+    const taskId = param(req, 'id');
+    const db = getDb();
+    const task = getTask(db, taskId);
+    if (!CLOSEOUT_TERMINAL_STATES.has(task.state)) {
+      throw new AppError(ErrorCode.NOT_FOUND, '任务尚未到终态，暂无收尾简报');
+    }
+    const summary = getTaskCloseoutSummary(db, taskId) ?? generateTaskCloseoutSummary(db, taskId);
+    res.json(summary);
+  }),
+);
+
+taskByIdRouter.post(
+  '/closeout/generate',
+  asyncHandler(async (req, res) => {
+    const taskId = param(req, 'id');
+    const db = getDb();
+    const task = getTask(db, taskId);
+    if (!CLOSEOUT_TERMINAL_STATES.has(task.state)) {
+      throw new AppError(ErrorCode.NOT_FOUND, '任务尚未到终态，暂无收尾简报');
+    }
+    const summary = generateTaskCloseoutSummary(db, taskId);
+    res.json(summary);
   }),
 );
