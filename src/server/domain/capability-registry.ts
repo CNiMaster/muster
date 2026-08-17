@@ -36,6 +36,8 @@ export const DEFAULT_REGISTRY: RegistryEntry[] = [
   { id: 'pandoc-doc', kind: 'cli', capabilityTags: ['pdf-export', 'docx', 'document', 'markdown'], title: 'pandoc 文档转换', description: 'Markdown↔Word/PDF/HTML 转换。', vetted: true, installSpec: { hint: 'brew install pandoc' }, dependencies: ['latex（PDF 导出需）'] },
   { id: 'builtin-web-research', kind: 'tool', capabilityTags: ['web-research', 'web-search', 'web-fetch'], title: '内置联网调研', description: '原生 web 搜索/抓取（解 API 执行器盲区）。', vetted: true, installSpec: { builtin: true } },
   { id: 'image-gen-api', kind: 'mcp-server', capabilityTags: ['image-gen', 'image', 'cover'], title: '图像生成 MCP', description: '文生图 MCP server（按需接入厂商 API）。', vetted: false, installSpec: { transport: 'stdio', hint: '配置对应 MCP server' }, dependencies: ['image API key'] },
+  // WP10 多模态工具化：内置 image_generate builtin（OpenAI 兼容 /images/generations，平台凭据）
+  { id: 'builtin-image-gen', kind: 'tool', capabilityTags: ['image-gen', 'image', 'cover', '画图'], title: '内置图像生成（image_generate）', description: 'API 执行器工具循环内置文生图，产物落 worktree；需 OPENAI_API_KEY 与图像生成模型（系统设置）。', vetted: true, installSpec: { builtin: true } },
 ];
 
 /** 判断条目是否可一键安装（vetted 且有可用安装描述）。 */

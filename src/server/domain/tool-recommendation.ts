@@ -160,6 +160,21 @@ export function findCapabilityGaps(db: DB, task: Task): CapabilityGap[] {
         purpose: binding.purpose,
         reason: `员工能力 ${binding.capabilityId} 无任何已启用工具实现`,
       });
+      continue;
+    }
+    // WP10 复活工具档案 executor_kind：绑定声明的类型 vs 推荐工具档案的类型不一致 → 软缺口提示
+    if (binding.requiresExecutorKind) {
+      const mismatched = activeToolIds.filter((id) => {
+        const t = getTool(db, id);
+        return t?.executorKind && t.executorKind !== binding.requiresExecutorKind;
+      });
+      if (mismatched.length === activeToolIds.length) {
+        gaps.push({
+          capabilityId: binding.capabilityId,
+          purpose: binding.purpose,
+          reason: `推荐工具（${activeToolIds.join('、')}）要求 ${mismatched[0] ? getTool(db, mismatched[0])?.executorKind : ''} 执行器，与能力声明的 ${binding.requiresExecutorKind} 不符`,
+        });
+      }
     }
   }
   return gaps;
