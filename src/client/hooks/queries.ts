@@ -1378,25 +1378,11 @@ export interface BlueprintDetail extends Blueprint {
   };
 }
 
-export interface BlueprintConsultResult {
-  diagnosis: string;
-  strengths: string[];
-  bottlenecks: string[];
-  restructuringAdvice: string;
-}
-
 export function useBlueprintDetail(companyId: string | undefined, blueprintId: string | undefined) {
   return useQuery({
     queryKey: ['blueprint-detail', companyId, blueprintId],
     queryFn: () => api.get<BlueprintDetail>(`/api/companies/${companyId}/blueprints/${blueprintId}/detail`),
     enabled: !!companyId && !!blueprintId,
-  });
-}
-
-export function useConsultBlueprint(companyId: string | undefined) {
-  return useMutation({
-    mutationFn: ({ blueprintId, query }: { blueprintId: string; query?: string }) =>
-      api.post<BlueprintConsultResult>(`/api/companies/${companyId}/blueprints/${blueprintId}/consult`, { query }),
   });
 }
 
@@ -1474,19 +1460,46 @@ export interface BlueprintOptimizationItem {
   createdAt: string;
 }
 
-export function useGenerateBlueprintOptimization(companyId: string | undefined) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => api.post<{ source: 'claude' | 'rules'; items: BlueprintOptimizationItem[] }>(`/api/companies/${companyId}/blueprints/optimize`, {}),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['blueprint-optimization-items', companyId] }),
+export function useBlueprintOptimizationItems(companyId: string | undefined, blueprintId?: string) {
+  return useQuery({
+    queryKey: ['blueprint-optimization-items', companyId, blueprintId ?? 'all'],
+    queryFn: () => api.get<BlueprintOptimizationItem[]>(`/api/companies/${companyId}/optimization-items${blueprintId ? `?blueprintId=${blueprintId}` : ''}`),
+    enabled: !!companyId,
   });
 }
 
-export function useBlueprintOptimizationItems(companyId: string | undefined) {
+// ===== 蓝图独立优化对话（2026-08-17：每蓝图一个 AI 优化会话，替代整体体检） =====
+export interface OptimizeChatMessage {
+  id: string;
+  blueprintId: string;
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt: string;
+}
+
+export interface OptimizeChatData {
+  messages: OptimizeChatMessage[];
+  pendingItems: BlueprintOptimizationItem[];
+}
+
+export function useBlueprintOptimizeChat(companyId: string | undefined, blueprintId: string | undefined) {
   return useQuery({
-    queryKey: ['blueprint-optimization-items', companyId],
-    queryFn: () => api.get<BlueprintOptimizationItem[]>(`/api/companies/${companyId}/optimization-items`),
-    enabled: !!companyId,
+    queryKey: ['blueprint-optimize-chat', companyId, blueprintId],
+    queryFn: () => api.get<OptimizeChatData>(`/api/companies/${companyId}/blueprints/${blueprintId}/optimize-chat`),
+    enabled: !!companyId && !!blueprintId,
+  });
+}
+
+export function useSendOptimizeChatMessage(companyId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ blueprintId, message }: { blueprintId: string; message: string }) =>
+      api.post<OptimizeChatData & { newProposals: BlueprintOptimizationItem[]; source: 'llm' | 'rules' }>(
+        `/api/companies/${companyId}/blueprints/${blueprintId}/optimize-chat`, { message }),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ['blueprint-optimize-chat', companyId, vars.blueprintId] });
+      qc.invalidateQueries({ queryKey: ['blueprint-optimization-items', companyId] });
+    },
   });
 }
 

@@ -15,7 +15,6 @@ import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
 import { expandMatchTokens } from './memory';
 import { findUserTalentForPersona, type AgentProfile } from './agent-profile';
-import { log } from '../logger';
 
 export type BlueprintStatus = 'active' | 'locked' | 'retired';
 
@@ -66,13 +65,6 @@ export interface BlueprintDetail extends Blueprint {
     reworkRate: number;
     correctionRate: number;
   };
-}
-
-export interface BlueprintConsultResult {
-  diagnosis: string;
-  strengths: string[];
-  bottlenecks: string[];
-  restructuringAdvice: string;
 }
 
 export interface BlueprintVersion {
@@ -431,58 +423,6 @@ export function getBlueprintDetail(db: DB, id: string): BlueprintDetail {
       reworkRate: Math.round(reworkRate * 100),
       correctionRate: Math.round(correctionRate * 100),
     },
-  };
-}
-
-export async function consultBlueprint(db: DB, id: string, query?: string): Promise<BlueprintConsultResult> {
-  const detail = getBlueprintDetail(db, id);
-  const prompt = `你是 Muster 多智能体打法包架构顾问。请分析以下蓝图配置并给出诊断建议：
-蓝图标签: ${detail.label}
-业务分类: ${detail.taskType}
-当前描述: ${detail.description}
-班底人设: ${detail.staffing.map((s) => s.personaName).join(', ')}
-常用工具: ${detail.tools.map((t) => t.id).join(', ') || '无'}
-战绩数据: 胜 ${detail.wins}, 负 ${detail.losses}, 返工 ${detail.reworkTotal} 次, 综合评分 ${detail.score.score ?? '观察中'}
-用户咨询: ${query || '请对当前打法进行全面体检并给出重构与调优建议。'}
-
-请按 JSON 格式返回：
-{
-  "diagnosis": "整体诊断概述",
-  "strengths": ["优势点1", "优势点2"],
-  "bottlenecks": ["潜在瓶颈或薄弱点1"],
-  "restructuringAdvice": "具体的重构或工具补充建议"
-}`;
-
-  try {
-    const { callLlm } = await import('./llm-call');
-    const resp = await callLlm(db, {
-      system: '你是 Muster 多智能体打法包架构顾问。只输出一个 JSON 对象（不要代码围栏、不要多余文本），字段：diagnosis(string)、strengths(string[])、bottlenecks(string[])、restructuringAdvice(string)。',
-      user: prompt,
-      companyId: detail.companyId,
-      timeoutMs: 45_000,
-    });
-    if (resp.content) {
-      const text = resp.content.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
-      const parsed = JSON.parse(text);
-      return {
-        diagnosis: parsed.diagnosis || '诊断完成',
-        strengths: Array.isArray(parsed.strengths) ? parsed.strengths : ['基础结构稳定'],
-        bottlenecks: Array.isArray(parsed.bottlenecks) ? parsed.bottlenecks : [],
-        restructuringAdvice: parsed.restructuringAdvice || '建议持续积累样本以优化工具调用。',
-      };
-    }
-  } catch (e) {
-    log.warn('consultBlueprint LLM call failed, fallback to rule analysis', { id, err: e instanceof Error ? e.message : String(e) });
-  }
-
-  const bottlenecks: string[] = [];
-  if (detail.reworkTotal > 2) bottlenecks.push(`历史累计发生 ${detail.reworkTotal} 次返工，建议补充自动化验证工具`);
-  if (detail.tools.length === 0) bottlenecks.push('尚未沉淀常用工具链，建议在人设中声明工具推荐');
-  return {
-    diagnosis: `当前打法「${detail.label}」处于${detail.status === 'locked' ? '锁定' : '现役'}状态，累计执行 ${detail.wins + detail.losses} 场。`,
-    strengths: [detail.wins >= 3 ? '胜率稳定，核心班底配合良好' : '样本积累中'],
-    bottlenecks,
-    restructuringAdvice: '可通过单开蓝图调试任务扩充阶段工作流或调整专家班底。',
   };
 }
 

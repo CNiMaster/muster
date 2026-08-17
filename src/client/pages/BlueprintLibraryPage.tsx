@@ -15,9 +15,8 @@ import { EmptyState } from '../components/EmptyState';
 import { CardSkeleton } from '../components/Skeleton';
 import {
   useBlueprints, useBlueprintStatus, useBlueprintVersions, useRollbackBlueprint,
-  useUpdateBlueprintDescription, useDefaultCompanyId, useGenerateBlueprintOptimization,
-  useBlueprintOptimizationItems, useApplyBlueprintOptimizationItem, useIgnoreBlueprintOptimizationItem,
-  type Blueprint, type BlueprintOptimizationItem,
+  useUpdateBlueprintDescription, useDefaultCompanyId,
+  type Blueprint,
 } from '../hooks/queries';
 
 const STATUS_META: Record<string, { label: string; tone: 'ok' | 'warn' | 'neutral' }> = {
@@ -54,11 +53,6 @@ export function BlueprintLibraryPage(): React.ReactElement {
   const [expandedVersions, setExpandedVersions] = useState<Set<string>>(new Set());
   const [editingDescription, setEditingDescription] = useState<string | null>(null);
   const [descriptionDraft, setDescriptionDraft] = useState('');
-  const [applyingItemId, setApplyingItemId] = useState<string | null>(null);
-  const optimize = useGenerateBlueprintOptimization(companyId);
-  const items = useBlueprintOptimizationItems(companyId);
-  const applyItem = useApplyBlueprintOptimizationItem(companyId);
-  const ignoreItem = useIgnoreBlueprintOptimizationItem(companyId);
 
   const visible = showRetired ? blueprints : blueprints.filter((bp) => bp.status !== 'retired');
 
@@ -107,40 +101,6 @@ export function BlueprintLibraryPage(): React.ReactElement {
           </p>
         </div>
       </header>
-
-      {/* 手动深度优化：按需体检，建议全部作用于蓝图并走版本化 */}
-      <Card className="section" title="深度优化" actions={
-        <Button size="sm" onClick={() => optimize.mutate(undefined, {
-          onSuccess: (r) => toast('success', r.source === 'claude' ? `已生成 ${r.items.filter((i) => i.status === 'pending').length} 条优化建议` : 'AI 不可用，已按规则引擎生成建议'),
-          onError: (e) => toast('error', (e as Error).message),
-        })} loading={optimize.isPending}>✨ 生成优化建议</Button>
-      }>
-        <p className="muted" style={{ margin: '0 0 10px', fontSize: 12, lineHeight: 1.55 }}>
-          按需体检所有打法：锁定高胜率、淘汰长期负、合并近重复、润色描述。每条建议可单独采纳或忽略，采纳即写入蓝图进化史（可回滚）。
-        </p>
-        {(items.data ?? []).length === 0 ? (
-          <p className="muted" style={{ margin: 0, fontSize: 12 }}>还没有建议。蓝图样本足够后，点「生成优化建议」开始。</p>
-        ) : (
-          <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 8 }}>
-            {(items.data ?? []).filter((i) => i.status === 'pending').map((item) => (
-              <OptimizationItemRow
-                key={item.id}
-                item={item}
-                onApply={(id) => {
-                  setApplyingItemId(id);
-                  applyItem.mutate(id, {
-                    onSuccess: (r) => toast(r.applied ? 'success' : 'info', r.message),
-                    onError: (e) => toast('error', (e as Error).message),
-                    onSettled: () => setApplyingItemId(null),
-                  });
-                }}
-                onIgnore={(id) => ignoreItem.mutate(id)}
-                applying={applyingItemId === item.id}
-              />
-            ))}
-          </ul>
-        )}
-      </Card>
 
       <Card className="section">
         {isLoading ? (
@@ -299,23 +259,6 @@ const OPT_ACTION_META: Record<string, { label: string; tone: 'ok' | 'err' | 'war
   merge: { label: '🔀 合并', tone: 'warn' },
   polish_description: { label: '✍️ 润色描述', tone: 'info' },
 };
-
-function OptimizationItemRow({ item, onApply, onIgnore, applying }: { item: BlueprintOptimizationItem; onApply: (id: string) => void; onIgnore: (id: string) => void; applying: boolean }): React.ReactElement {
-  const meta = OPT_ACTION_META[item.actionType] ?? OPT_ACTION_META.lock!;
-  return (
-    <li style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', border: '1px solid var(--border-subtle)', borderRadius: 10, background: 'var(--bg-soft)' }}>
-      <Badge tone={meta.tone}>{meta.label}</Badge>
-      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 }}>
-        <span style={{ fontSize: 13, lineHeight: 1.5 }}>{item.reason}</span>
-        <span className="muted" style={{ fontSize: 12 }}>预期：{item.expectedEffect}</span>
-      </div>
-      <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-        <Button size="sm" loading={applying} onClick={() => onApply(item.id)}>采纳</Button>
-        <Button size="sm" variant="ghost" onClick={() => onIgnore(item.id)}>忽略</Button>
-      </div>
-    </li>
-  );
-}
 
 function BlueprintVersionTimeline({ blueprintId, companyId, onRollback }: { blueprintId: string; companyId: string; onRollback: (version: number) => void }): React.ReactElement {
   const { data: versions = [], isLoading } = useBlueprintVersions(companyId, blueprintId);

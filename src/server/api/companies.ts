@@ -49,7 +49,6 @@ import {
   matchBlueprints,
   getBlueprint,
   getBlueprintDetail,
-  consultBlueprint,
   publishBlueprintDebugResult,
 } from '../domain/blueprint';
 import { listAgents, getAgent } from '../domain/agent';
@@ -377,18 +376,6 @@ companiesRouter.get(
     const bp = getBlueprint(getDb(), param(req, 'blueprintId'));
     if (bp.companyId !== companyId) throw new AppError(ErrorCode.NOT_FOUND, '蓝图不存在');
     res.json(getBlueprintDetail(getDb(), param(req, 'blueprintId')));
-  }),
-);
-
-companiesRouter.post(
-  '/:id/blueprints/:blueprintId/consult',
-  asyncHandler(async (req, res) => {
-    const companyId = param(req, 'id');
-    const bp = getBlueprint(getDb(), param(req, 'blueprintId'));
-    if (bp.companyId !== companyId) throw new AppError(ErrorCode.NOT_FOUND, '蓝图不存在');
-    const { query } = z.object({ query: z.string().optional() }).parse(req.body ?? {});
-    const result = await consultBlueprint(getDb(), param(req, 'blueprintId'), query);
-    res.json(result);
   }),
 );
 

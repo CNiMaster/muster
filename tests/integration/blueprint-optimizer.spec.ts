@@ -1,17 +1,18 @@
 /**
- * 蓝图深度优化（批次4）：
- * - 规则引擎建议：高胜率→锁定、低评分→淘汰、近重复→合并、缺描述→润色
- * - 幂等：同蓝图同动作 pending 不重复生成
- * - 采纳落地走版本化：锁定/淘汰/合并/描述各自出版；合并后源蓝图退役
+ * 蓝图优化对话与提案落地（2026-08-17 重构：公司级一键体检退役，改为每蓝图独立优化对话）：
+ * - 对话链路：LLM 不可用时降级单蓝图确定性规则（锁定/淘汰/润色），会话消息与提案同事务落库
+ * - 提案幂等：同蓝图同动作 pending 不重复插入
+ * - 采纳落地走版本化：锁定/淘汰/合并/描述各自出版；合并后源蓝图退役；忽略后不再可采纳
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { makeTestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
 import { createNovelCompany } from './setup';
 import { createProject } from '../../src/server/domain/project';
-import { evolveBlueprint, listBlueprintVersions, getBlueprint, setBlueprintStatus } from '../../src/server/domain/blueprint';
+import { evolveBlueprint, listBlueprintVersions, getBlueprint } from '../../src/server/domain/blueprint';
+import { sendOptimizeChatMessage, listOptimizeChat } from '../../src/server/domain/blueprint-optimize-chat';
 import {
-  generateBlueprintOptimization, listOptimizationItems, applyOptimizationItem, ignoreOptimizationItem,
+  insertPendingOptimizationItem, listOptimizationItems, applyOptimizationItem, ignoreOptimizationItem,
 } from '../../src/server/domain/blueprint-optimizer';
 
 let tdb: ReturnType<typeof makeTestDb>;
@@ -33,8 +34,8 @@ beforeEach(() => {
   projectId = project.id;
 });
 
-describe('blueprint optimizer', () => {
-  it('规则引擎：高胜率样本足→锁定；低评分→淘汰；缺描述→润色', async () => {
+describe('blueprint optimize chat & proposals', () => {
+  it('对话降级规则：高胜率→锁定；低评分→淘汰；会话消息与提案同事务落库且幂等', async () => {
     // 高胜率：5 次全胜无返工无纠正
     const good = seedBlueprint('制作产品发布会 PPT', 'p_writer', '笔杆子', true);
     for (let i = 1; i < 5; i++) {
@@ -46,70 +47,79 @@ describe('blueprint optimizer', () => {
       evolveBlueprint(db, { companyId, projectId, taskTitle: `运营周报数据统计 第${i}轮`, personaId: 'p_analyst', personaName: '分析员', win: false, reworkCount: 2, correctionCount: 1 });
     }
 
-    const { source, items } = await generateBlueprintOptimization(db, companyId);
-    expect(source).toBe('rules');
-    const pending = items.filter((i) => i.status === 'pending');
-    expect(pending.some((i) => i.blueprintId === good && i.actionType === 'lock')).toBe(true);
-    expect(pending.some((i) => i.blueprintId === bad && i.actionType === 'retire')).toBe(true);
-    // 描述创建时已自动生成（>=20 字），不触发润色建议
-    expect(pending.some((i) => i.actionType === 'polish_description')).toBe(false);
+    const turn1 = await sendOptimizeChatMessage(db, companyId, good, '这套打法表现怎么样？要不要锁定？');
+    expect(turn1.source).toBe('rules'); // 测试库无 LLM 凭据 → 降级
+    expect(turn1.messages.length).toBe(2); // 用户 + AI 各一条
+    expect(turn1.newProposals.some((i) => i.blueprintId === good && i.actionType === 'lock')).toBe(true);
 
-    // 幂等：再生成不重复
-    const again = await generateBlueprintOptimization(db, companyId);
-    expect(again.items.filter((i) => i.status === 'pending').length).toBe(pending.length);
+    const turn2 = await sendOptimizeChatMessage(db, companyId, bad, '最近老输，还有救吗？');
+    expect(turn2.newProposals.some((i) => i.blueprintId === bad && i.actionType === 'retire')).toBe(true);
+
+    // 幂等：再聊一轮不重复插入同动作提案
+    const turn3 = await sendOptimizeChatMessage(db, companyId, good, '再看看还有什么可做的');
+    expect(turn3.pendingItems.filter((i) => i.blueprintId === good && i.actionType === 'lock').length).toBe(1);
+    // 会话历史按序累积
+    expect(listOptimizeChat(db, good).length).toBe(4);
   });
 
-  it('采纳锁定/淘汰/描述：落地并出版版本；忽略后不再可采纳', async () => {
+  it('采纳锁定/润色：落地并出版版本；忽略后不再可采纳', async () => {
     const good = seedBlueprint('制作产品发布会 PPT', 'p_writer', '笔杆子', true);
     for (let i = 1; i < 5; i++) {
       evolveBlueprint(db, { companyId, projectId, taskTitle: `制作产品发布会 PPT 第${i}稿`, personaId: 'p_writer', personaName: '笔杆子', win: true });
     }
-    await generateBlueprintOptimization(db, companyId);
-    const lockItem = listOptimizationItems(db, companyId).find((i) => i.actionType === 'lock' && i.blueprintId === good)!;
-    // 清空描述后生成润色建议（规则引擎兜底，无 LLM 文本 → 采纳时应拒绝落地）
+    // 模拟对话产出的提案（LLM 路径等价物）：直接经同一落库函数
+    expect(insertPendingOptimizationItem(db, companyId, {
+      blueprintId: good, actionType: 'lock', targetBlueprintId: null,
+      reason: '高胜率被验证', expectedEffect: '冻结自动进化', params: {},
+    })).toBe(true);
     db.prepare("UPDATE blueprint SET description='' WHERE id=?").run(good);
-    await generateBlueprintOptimization(db, companyId);
-    const polishItem = listOptimizationItems(db, companyId).find((i) => i.actionType === 'polish_description' && i.blueprintId === good)!;
+    expect(insertPendingOptimizationItem(db, companyId, {
+      blueprintId: good, actionType: 'polish_description', targetBlueprintId: null,
+      reason: '缺描述', expectedEffect: '补模板描述', params: { description: '用于「制作 产品 发布会 PPT」这类工作：主用人设「笔杆子」，5 胜 0 负。打法随使用持续进化。' },
+    })).toBe(true);
 
     const before = listBlueprintVersions(db, good).length;
+    const lockItem = listOptimizationItems(db, companyId, good).find((i) => i.actionType === 'lock')!;
     const lockResult = applyOptimizationItem(db, lockItem.id);
     expect(lockResult.applied).toBe(true);
     expect(getBlueprint(db, good).status).toBe('locked');
     expect(listBlueprintVersions(db, good).length).toBe(before + 1);
     expect(listBlueprintVersions(db, good)[0]!.summary).toContain('锁定');
 
-    // 规则引擎的润色建议带模板描述，可直接采纳并出版
+    const polishItem = listOptimizationItems(db, companyId, good).find((i) => i.actionType === 'polish_description')!;
     const polishResult = applyOptimizationItem(db, polishItem.id);
     expect(polishResult.applied).toBe(true);
     expect(getBlueprint(db, good).description.length).toBeGreaterThan(10);
     expect(listBlueprintVersions(db, good).some((v) => v.summary.includes('描述更新'))).toBe(true);
 
-    // 忽略路径另造一条：再清空描述生成新建议后忽略
-    db.prepare("UPDATE blueprint SET description='' WHERE id=?").run(good);
-    void (await generateBlueprintOptimization(db, companyId));
-    const polishItem2 = listOptimizationItems(db, companyId).find((i) => i.actionType === 'polish_description' && i.blueprintId === good && i.status === 'pending')!;
-    ignoreOptimizationItem(db, polishItem2.id);
-    expect(listOptimizationItems(db, companyId).find((i) => i.id === polishItem2.id)!.status).toBe('ignored');
-    expect(applyOptimizationItem(db, polishItem2.id).applied).toBe(false);
+    // 忽略路径：忽略后不可再采纳
+    expect(insertPendingOptimizationItem(db, companyId, {
+      blueprintId: good, actionType: 'retire', targetBlueprintId: null,
+      reason: '测试忽略', expectedEffect: '无', params: {},
+    })).toBe(true);
+    const retireItem = listOptimizationItems(db, companyId, good).find((i) => i.actionType === 'retire' && i.status === 'pending')!;
+    ignoreOptimizationItem(db, retireItem.id);
+    expect(listOptimizationItems(db, companyId, good).find((i) => i.id === retireItem.id)!.status).toBe('ignored');
+    expect(applyOptimizationItem(db, retireItem.id).applied).toBe(false);
   });
 
   it('采纳合并：班底/战绩相加、源蓝图退役、目标出版', async () => {
-    // 两张"经常抢同一批任务但未合并"的蓝图（词元相似度 0.33，处于 0.25-0.4 区间）
+    // 两张覆盖同类活但未自动合并的蓝图，经对话产出合并提案（直接经同一落库函数）
     const a = seedBlueprint('行业调研报告撰写', 'p_writer', '笔杆子', true);
     evolveBlueprint(db, { companyId, projectId, taskTitle: '行业调研报告撰写 初稿', personaId: 'p_writer', personaName: '笔杆子', win: true, reworkCount: 1 });
     const b = seedBlueprint('行业调研排版整理', 'p_researcher', '研究员', true);
     evolveBlueprint(db, { companyId, projectId, taskTitle: '行业调研排版整理 汇编', personaId: 'p_researcher', personaName: '研究员', win: false, tools: ['web_fetch'] });
 
-    await generateBlueprintOptimization(db, companyId);
-    // 合并方向由战绩并列时的排序决定，断言与方向无关
-    const mergeItem = listOptimizationItems(db, companyId).find((i) =>
-      i.actionType === 'merge' && [a, b].includes(i.blueprintId) && i.targetBlueprintId !== null && [a, b].includes(i.targetBlueprintId!));
-    expect(mergeItem).toBeTruthy();
+    expect(insertPendingOptimizationItem(db, companyId, {
+      blueprintId: b, actionType: 'merge', targetBlueprintId: a,
+      reason: '覆盖同一类活', expectedEffect: '合并为一张蓝图', params: {},
+    })).toBe(true);
+    const mergeItem = listOptimizationItems(db, companyId, b).find((i) => i.actionType === 'merge')!;
 
-    const result = applyOptimizationItem(db, mergeItem!.id);
+    const result = applyOptimizationItem(db, mergeItem.id);
     expect(result.applied).toBe(true);
-    const target = getBlueprint(db, mergeItem!.targetBlueprintId!);
-    const source = getBlueprint(db, mergeItem!.blueprintId);
+    const target = getBlueprint(db, a);
+    const source = getBlueprint(db, b);
     expect(target.wins).toBe(3); // 2 + 1
     expect(target.losses).toBe(1); // 0 + 1
     expect(target.staffing.some((s) => s.personaId === 'p_researcher')).toBe(true); // 班底并入

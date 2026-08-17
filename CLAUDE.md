@@ -71,7 +71,7 @@ Key constraints for all new work:
 - **进化频率 = 每次任务结束**：晨醒每日定时退役（coordinator 调度/开关/设置项全删），任务终态反思队列（10s 排水）成为唯一进化驱动；晋升链（promotion/detectPromotions/候选表/API）与旧运营报告数据面（表/executor/evolution-summary/structure-versioning/entity-lock）整体删除，蓝图成为唯一进化与治理对象。
 - **蓝图 = 打法包**（不再是"人设匹配器"）：`blueprint` 扩展 description（用户语言描述）、tools_json（execution_trace 按任务聚合工具记账 cap10）、rework_total/correction_total（多维战绩，综合评分=胜率60%+低返工25%+低纠正15%，样本<3 观察中）；班底 2-4 槽生效（协作成员以"协作班底"提示注入上下文，不另起执行体）；`stages_json` 二期预留（阶段工作流）。
 - **版本化**：`blueprint_version` 快照链（仅结构性变更出版——新建/班底/工具集/状态/回滚；纯计数不出版），中文摘要+证据，cap 30/蓝图，回滚恢复结构保战绩另记一版；API versions/rollback/description；任务穿戴审计含 blueprintVersion（标题条与 ExecutionTraceCard 显示"🎭 蓝图label vN"）。
-- **手动深度优化**（替代运营报告）：`blueprint-optimizer.ts` 按需体检（LLM，降级规则引擎：高胜率≥80锁/低评分<30淘汰/词面重叠[0.1,0.4)合并/缺描述润色），建议落 `blueprint_optimization_item`（pending/applied/ignored），采纳落地全走版本化（合并=班底工具战绩并入+源退役）。
+- **蓝图优化对话**（2026-08-17 定案，替代手动深度体检）：`blueprint-optimize-chat.ts` 每蓝图一条 AI 会话线（`blueprint_optimize_chat` 表）——用户围绕单蓝图沟通，LLM（premium 档，失败降级单蓝图确定性规则：高胜率≥80锁/低评分<30淘汰/缺描述润色）产出结构化提案落 `blueprint_optimization_item`（pending/applied/ignored，幂等），采纳落地全走版本化（合并=班底工具战绩并入+源退役）；提案动作限 lock/retire/merge/polish_description 四种。UI `/blueprints/:id/optimize`（BlueprintOptimizePage，对话+提案双栏）；公司级一键体检与 consult 整体检测已退役（前者按钮 URL 与路由错位本就 404）。
 - **蜂群专家团 + 派遣分级**：SwarmPlan.worker.personaId → 工蜂穿戴人设（三蜂型：匿名/同种专家/混合专家；显式优先于蓝图自动匹配，缺失优雅降级）；调度中心提示词+蜂群契约教学三种蜂型。派遣分级：第一负责人与调度中心=全额四项限额；其他专家=小额自主（3蜂/单层/$1/并发1群，`swarm_run.requester_agent_id` 落库），超限或并发冲突→「[蜂群请示]」派第一负责人把关（不建群、计划全文派发、负责人自行决定转派调度中心或拒绝，`swarmManaged` 旁路 crewMate 守卫）；控制面（工蜂/辩手）永不自主；蜂群树每蜂人设徽章；`swarm.request-escalated` 事件。
 - **断电/意外安全基线（review 修复轮）**：DB=WAL+`synchronous=FULL` 显式（提交即 fsync，断电不丢已提交事务）；关键写链路全事务化——反思四类记忆候选+done 标记同事务（崩溃整体回滚，recoverStuckReflections 复位重做不产生重复候选）、drain 进化挪进行内（反思成功后同迭代记账，消除 done 后崩溃丢记账窗口）、进化记账与版本提交/版本提交与封顶删除/优化采纳与状态/建群全链各自单事务（崩溃不留半群或"已改蓝图但建议仍 pending"）；执行器新契约字段必须同时补 result-schema 的 zod 与 AGENT_RESULT_JSON_SCHEMA（zod strip 曾致 personaId 全链静默丢失）。
 - **记忆优势分（注入战绩排序，2026-08-17）**：`loadContextMemories` 排序从 `updated_at DESC` 升级为「收缩平均优势优先、时间序兜底」——解决"刚写的平庸记忆压过老而准记忆"。机制：注入记账（assembleContext 传 taskId → `memory_injection` 关联表 + `hit_count`，`(task,entry)` 唯一幂等，personal 豁免——用户偏好由用户背书不参选）；终态结算（`settleMemoryVotes` 10s 惰性扫描，不挂反思队列——反思在任务首次 waiting_input 就消耗 task_id UNIQUE，半程投票失真）：消耗分=`rework_count×2 + clarification_rounds×1`（追问走 clarification_rounds，原 conversation_message 纠正信号恒为 0 不可用），项目基线=`project_cost_stat` 已结算任务平均消耗（样本≥3 才启用，低于平均越多分越高），completed 记票 / failed 投中性 0 票（失败原因不明不冤枉不奖励且不计入基线）/ cancelled 与未终态不投；`voted_at` 守卫 + 单事务保证恰好一次（断电重扫不重复计票）；排序收缩常数 K=5（`adv_sum/(vote_count+5)`）防两次好运登顶。**扫描即过滤（review 修复）**：终态过滤放扫描 SQL 而非循环 continue——永久 waiting/cancelled 任务注入最早，会占满 LIMIT 窗口让结算静默停摆；验收未闭环推迟结算——验收返工的 `rework_count` 在源任务完成后才落（acceptance-review.ts 先加计数再发 acceptance_rework 事件），`acceptance_dispatched` 存在且未落闭环事件（passed/rework/escalated）且验收任务活着 → 推迟；验收任务死亡=事后门放行语义，此刻 rework_count 已是终值，正常结算。记忆中心面板展示「注入 N 次 · 平均优势 +x.x」。迁移 `20260817090000_memory_advantage.sql`。
@@ -104,9 +104,9 @@ Key constraints for all new work:
 - **人才市场双区管理与自动上岗单开关**：
   - **双区展示**：专区 A「系统预置与沉淀专区」（官方 211+ 领域专家，由系统自主进化，只读展示，支持一键复制为我的人才）；专区 B「我的人才管理区」（用户完全掌控调优，支持专属提示词/模型/思考深度配置，配置永久保持，系统绝不擅改）。
   - **自动上岗单开关（🟢 自动上岗 / ⏸️ 休息中）**：自有人才开启自动上岗时，任务自动顶替官方人设并注入定制提示词与专属模型；休息中时自动切回官方基准。
-- **蓝图全貌展示、AI 顾问体检与正向吸收升级**：
+- **蓝图全貌展示、AI 优化对话与正向吸收升级**：
   - **全貌只读展示**（`/blueprints/:id`）：标签、多维评分（胜率/返工率/纠正率/战力分）、人设班底（官方基准 vs 自有人才顶替标记）、常用工具战绩、版本时间线（可回滚至任一历史快照）。
-  - **AI 顾问体检诊断**（`POST /api/companies/:id/blueprints/:blueprintId/consult`）：提供打法瓶颈分析、班底完备度评估与阶段工作流重构建议。
+  - **AI 优化对话**（`/blueprints/:id/optimize`，`POST /api/companies/:id/blueprints/:bid/optimize-chat`）：每蓝图独立会话，用户把优化想法告诉 AI，AI 回复并产出结构化提案（同页采纳/忽略，版本化落地）。原「AI 顾问体检诊断」（consult 整体检测）已退役——不够精准，全局侧由任务终态自动进化覆盖。
   - **正向吸收升级与负向隔离保护**：自有人才上岗零返工成功交付时，反思管线正向吸收其有效实践，自动升级官方蓝图基准配置（出版版本提交）；自有人才失败或返工时启动负向隔离保护，绝不劣化官方基准。
   - **独立调试任务机制**：支持将蓝图单开独立任务调试演练，满意后原子回写（`debug-adopt`）。
 - **React Flow 12 蓝图工作流与资源连线画布**（参考 `ahamoment-101/Open-DeepSeek-Harness-Desktop`）：

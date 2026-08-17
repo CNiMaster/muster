@@ -5,7 +5,6 @@ import {
   evolveBlueprint,
   getBlueprint,
   getBlueprintDetail,
-  consultBlueprint,
   publishBlueprintDebugResult,
   listBlueprintVersions,
 } from '../../src/server/domain/blueprint';
@@ -13,7 +12,7 @@ import { createCompany } from '../../src/server/domain/company';
 import { createProject } from '../../src/server/domain/project';
 import { clonePersonaAsUser, updateUserCustomConfig } from '../../src/server/domain/agent-profile';
 
-describe('Blueprint Detail, AI Consultant & Positive Evolution (Phase 2)', () => {
+describe('Blueprint Detail, Debug Adopt & Positive Evolution', () => {
   let testDb: TestDb;
   let db: DB;
 
@@ -80,28 +79,6 @@ describe('Blueprint Detail, AI Consultant & Positive Evolution (Phase 2)', () =>
     expect(detail.staffingWithActiveTalents.length).toBeGreaterThan(0);
     expect(detail.staffingWithActiveTalents[0].activeUserTalent?.id).toBe(userTalent.id);
     expect(detail.tools.length).toBe(2);
-  });
-
-  it('provides AI consultation diagnostic assessment', async () => {
-    const db = getDb();
-    const company = createCompany(db, { name: `Consult Co ${Date.now()}` });
-    const project = createProject(db, { companyId: company.id, name: 'Web Project' });
-
-    const bp = evolveBlueprint(db, {
-      companyId: company.id,
-      projectId: project.id,
-      taskTitle: 'Data pipeline ETL sync',
-      personaId: 'data/data-engineer',
-      personaName: 'Data Engineer',
-      win: true,
-      reworkCount: 3,
-      tools: ['sql_query'],
-    });
-
-    const result = await consultBlueprint(db, bp.id, '分析返工原因');
-    expect(result.diagnosis).toBeTruthy();
-    expect(result.strengths.length).toBeGreaterThan(0);
-    expect(result.restructuringAdvice).toBeTruthy();
   });
 
   it('atomically publishes blueprint debug results and commits version', () => {
