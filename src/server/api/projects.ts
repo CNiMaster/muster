@@ -37,6 +37,8 @@ import {
 import { getCompany } from '../domain/company';
 import { getAgent } from '../domain/agent';
 import { syncAgentMemoryFiles } from '../domain/agent-home';
+import { stageStatus } from '../worktree/manager';
+import { promoteProjectStagingIfAny } from '../domain/staging';
 import { deleteProjectTrigger, listProjectTriggers, registerDefaultNovelScheduleTriggers, registerScheduleTrigger, setProjectTriggerEnabled } from '../domain/triggers';
 import { initializeNovelProject } from '../domain/novel-template';
 import { getCharacterGraph } from '../domain/character-graph';
@@ -118,6 +120,42 @@ projectById.get(
   '/',
   asyncHandler(async (req, res) => {
     res.json(getProject(getDb(), param(req,'id')));
+  }),
+);
+
+/** staging 一期：项目级集成现场状态（存在性/领先提交数/在审蜂群任务数）。 */
+projectById.get(
+  '/staging-status',
+  asyncHandler(async (req, res) => {
+    const db = getDb();
+    const project = getProject(db, param(req, 'id'));
+    const status = stageStatus(project.rootDir, project.id);
+    const pendingTasks = db.prepare(
+      `SELECT COUNT(*) AS c FROM task
+        WHERE project_id=? AND swarm_id IS NOT NULL AND state IN ('completed','failed','cancelled')`,
+    ).get(project.id) as { c: number };
+    res.json({ ...status, pendingTasks: pendingTasks.c });
+  }),
+);
+
+/** staging 一期：手动合并集成现场回主干（项目级；验收 PASS/收口自动 promote 之外的前台入口）。 */
+projectById.post(
+  '/staging/promote',
+  asyncHandler(async (req, res) => {
+    const db = getDb();
+    const project = getProject(db, param(req, 'id'));
+    const result = promoteProjectStagingIfAny(db, project.id, 'ui-promote');
+    try {
+      realtime.publish({
+        id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        type: result.promoted ? 'publish.staging-promoted' : 'publish.staging-promote-conflict',
+        companyId: project.companyId,
+        projectId: project.id,
+        occurredAt: new Date().toISOString(),
+        payload: { promoted: result.promoted, message: result.message, conflicts: result.conflicts ?? [] },
+      });
+    } catch { /* 事件失败不阻断 */ }
+    res.json({ ok: true, promoted: result.promoted, message: result.message, conflicts: result.conflicts ?? [] });
   }),
 );
 

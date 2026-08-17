@@ -630,6 +630,35 @@ export function useProject(id: string | undefined) {
   });
 }
 
+// ===== staging 集成审查（一期）：项目级集成现场状态 + 手动 promote =====
+export interface StagingStatus {
+  exists: boolean;
+  aheadCommits: number;
+  stagingHead: string | null;
+  mainHead: string;
+  pendingTasks: number;
+}
+
+export function useStagingStatus(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ['staging-status', projectId],
+    queryFn: () => api.get<StagingStatus>(`/api/projects/${projectId}/staging-status`),
+    enabled: !!projectId,
+    refetchInterval: 15_000,
+  });
+}
+
+export function usePromoteStaging(projectId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<{ ok: boolean; promoted: boolean; message: string; conflicts: string[] }>(`/api/projects/${projectId}/staging/promote`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['staging-status', projectId] });
+      qc.invalidateQueries({ queryKey: ['blueprints'] });
+    },
+  });
+}
+
 /** 蓝图组织批次4c：项目优先入口——零组织决策建项目（自动落默认工作台，无则顺手创建）。 */
 export function useQuickProject() {
   const qc = useQueryClient();

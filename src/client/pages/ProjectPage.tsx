@@ -27,6 +27,8 @@ import {
   useDepartments,
   useDefaultCompanyId,
   useCompanyAction,
+  useStagingStatus,
+  usePromoteStaging,
 } from '../hooks/queries';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
@@ -394,6 +396,10 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
   const selectedAgentId = searchParams.get('agent') ?? project.firstAgentId ?? company?.firstAgentId ?? agents?.[0]?.id;
   const selectedAgent = agents?.find((agent) => agent.id === selectedAgentId);
   const attentionCount = tasks?.filter((task) => task.state === 'blocked' || task.state === 'waiting_input').length ?? 0;
+  // staging 集成审查（一期）：蜂群集成现场状态
+  const stagingStatus = useStagingStatus(projectId).data;
+  const promoteStaging = usePromoteStaging(projectId);
+  const hasPendingStaging = Boolean(stagingStatus?.exists && stagingStatus.aheadCommits > 0);
   const selectProjectTask = (id:string):void => {
     setSelectedProjectTaskId(id);
     const next = new URLSearchParams(searchParams);
@@ -509,6 +515,21 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
       ]}
     >
     <div className="project-page work-surface-page" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {hasPendingStaging && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', borderBottom: '1px solid var(--border)', background: 'var(--accent-subtle, var(--bg-elev))', fontSize: 12 }}>
+          <span style={{ fontWeight: 600 }}>🟡 蜂群集成现场在审</span>
+          <span className="muted">staging 领先主干 {stagingStatus!.aheadCommits} 提交 · 涉及 {stagingStatus!.pendingTasks} 项蜂群任务（验收通过/收口自动合并，亦可手动）</span>
+          <Button size="sm" variant="primary"
+            onClick={() => promoteStaging.mutate(undefined, {
+              onSuccess: (r) => toast(r.promoted ? 'success' : 'info', r.message),
+              onError: (e) => toast('error', (e as Error).message),
+            })}
+            loading={promoteStaging.isPending}
+          >
+            ⏫ 合并回主干
+          </Button>
+        </div>
+      )}
       {projectView === 'employee' && selectedAgent && <ProjectEmployeeWorkspace
         projectId={projectId}
         companyId={project.companyId}
