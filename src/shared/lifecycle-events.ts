@@ -151,6 +151,11 @@ export interface LifecycleEventPayloadMap {
     goal: string;
     requesterAgentId: string;
   };
+  // WP5 API 流式输出：token 级增量（引擎内存缓冲转发，不持久化；message.created 才落库失效）。
+  // end 的 reason：tool-call（本轮文本结束进入工具执行）/ done（执行器返回）/ aborted（中断）。
+  // agentId/projectTaskId 供前端按对话归属过滤（单聊面板不串入其他任务的流）。
+  'message.delta': { delta: string; agentId?: string; projectTaskId?: string | null };
+  'message.delta.end': { reason: 'tool-call' | 'done' | 'aborted'; agentId?: string; projectTaskId?: string | null };
 }
 
 /**

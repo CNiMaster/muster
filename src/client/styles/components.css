@@ -1187,3 +1187,42 @@
     overflow-x: auto;
   }
 }
+
+/* ===== Markdown 渲染升级（WP4）：GFM 表格 + hljs 代码高亮（对话气泡/成品页共用） ===== */
+.mu-msg-text.is-md { white-space: normal; }
+
+.mu-md-preview .mu-md-p:last-child { margin-bottom: 0; }
+.mu-md-preview ul.mu-md-ul, .mu-md-preview ol.mu-md-ol { margin: 0 0 var(--space-3) 1.2em; }
+.mu-md-preview ul.mu-md-ul:last-child, .mu-md-preview ol.mu-md-ol:last-child { margin-bottom: 0; }
+.mu-md-preview li { margin-bottom: 2px; }
+.mu-md-preview li > input[type='checkbox'] { margin-right: 6px; }
+
+.mu-md-table-wrap { overflow-x: auto; margin-bottom: var(--space-3); }
+.mu-md-table { border-collapse: collapse; width: 100%; font-size: var(--text-xs); }
+.mu-md-table th, .mu-md-table td { border: 1px solid var(--border-subtle); padding: 4px 8px; text-align: left; }
+.mu-md-table th { background: var(--bg-soft); }
+
+/* hljs 主题（跟随 data-theme，取 GitHub 风）：块级代码在 .mu-md-code（bg-soft）内 */
+.mu-md-code .hljs-keyword, .mu-md-code .hljs-selector-tag, .mu-md-code .hljs-meta { color: #cf222e; }
+.mu-md-code .hljs-string, .mu-md-code .hljs-regexp, .mu-md-code .hljs-addition { color: #0a3069; }
+.mu-md-code .hljs-number, .mu-md-code .hljs-literal { color: #0550ae; }
+.mu-md-code .hljs-title, .mu-md-code .hljs-title.function_, .mu-md-code .hljs-section { color: #8250df; }
+.mu-md-code .hljs-comment, .mu-md-code .hljs-quote { color: var(--fg-muted, #6e7781); font-style: italic; }
+.mu-md-code .hljs-attr, .mu-md-code .hljs-attribute, .mu-md-code .hljs-variable, .mu-md-code .hljs-template-variable, .mu-md-code .hljs-type, .mu-md-code .hljs-name { color: #953800; }
+.mu-md-code .hljs-built_in, .mu-md-code .hljs-builtin-name { color: #116329; }
+.mu-md-code .hljs-symbol, .mu-md-code .hljs-bullet, .mu-md-code .hljs-link { color: #0550ae; }
+.mu-md-code .hljs-deletion { color: #82071e; }
+
+:root[data-theme='dark'] .mu-md-code .hljs-keyword, :root[data-theme='dark'] .mu-md-code .hljs-selector-tag, :root[data-theme='dark'] .mu-md-code .hljs-meta { color: #ff7b72; }
+:root[data-theme='dark'] .mu-md-code .hljs-string, :root[data-theme='dark'] .mu-md-code .hljs-regexp, :root[data-theme='dark'] .mu-md-code .hljs-addition { color: #a5d6ff; }
+:root[data-theme='dark'] .mu-md-code .hljs-number, :root[data-theme='dark'] .mu-md-code .hljs-literal { color: #79c0ff; }
+:root[data-theme='dark'] .mu-md-code .hljs-title, :root[data-theme='dark'] .mu-md-code .hljs-title.function_, :root[data-theme='dark'] .mu-md-code .hljs-section { color: #d2a8ff; }
+:root[data-theme='dark'] .mu-md-code .hljs-comment, :root[data-theme='dark'] .mu-md-code .hljs-quote { color: #8b949e; }
+:root[data-theme='dark'] .mu-md-code .hljs-attr, :root[data-theme='dark'] .mu-md-code .hljs-attribute, :root[data-theme='dark'] .mu-md-code .hljs-variable, :root[data-theme='dark'] .mu-md-code .hljs-template-variable, :root[data-theme='dark'] .mu-md-code .hljs-type, :root[data-theme='dark'] .mu-md-code .hljs-name { color: #ffa657; }
+:root[data-theme='dark'] .mu-md-code .hljs-built_in, :root[data-theme='dark'] .mu-md-code .hljs-builtin-name { color: #ff7b72; }
+:root[data-theme='dark'] .mu-md-code .hljs-symbol, :root[data-theme='dark'] .mu-md-code .hljs-bullet, :root[data-theme='dark'] .mu-md-code .hljs-link { color: #79c0ff; }
+:root[data-theme='dark'] .mu-md-code .hljs-deletion { color: #ffa198; }
+
+/* ===== WP5 流式打字机光标 ===== */
+.mu-stream-cursor { display: inline-block; animation: mu-stream-blink 0.9s steps(1) infinite; color: var(--accent); margin-left: 2px; }
+@keyframes mu-stream-blink { 50% { opacity: 0; } }

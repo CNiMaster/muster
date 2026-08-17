@@ -5,9 +5,32 @@ import { toast } from './components/Button';
 
 export type QueryKey = readonly unknown[];
 
+// ===== WP5 流式输出：message.delta 内存流订阅（不进 React Query；message.created 才失效刷新） =====
+export interface StreamDeltaInfo {
+  taskId: string;
+  companyId?: string;
+  projectId?: string;
+  agentId?: string;
+  projectTaskId?: string | null;
+  delta?: string;
+  ended?: boolean;
+}
+type StreamDeltaHandler = (info: StreamDeltaInfo) => void;
+const streamHandlers = new Set<StreamDeltaHandler>();
+
+/** 订阅流式增量（返回取消函数）。ConversationPanel 等即时渲染方使用。 */
+export function onStreamDelta(handler: StreamDeltaHandler): () => void {
+  streamHandlers.add(handler);
+  return () => {
+    streamHandlers.delete(handler);
+  };
+}
+
 /** 把服务端事件精确映射到受影响的 React Query 缓存，避免全局刷新。 */
 export function queryKeysForRealtimeEvent(event: RealtimeEvent): QueryKey[] {
   const keys: QueryKey[] = [];
+  // WP5 流式增量：走专用订阅（onStreamDelta），不触发任何缓存失效（避免 60ms 级 refetch 风暴）
+  if (event.type === 'message.delta' || event.type === 'message.delta.end') return keys;
   if (event.type.startsWith('approval.')) keys.push(['permission-approvals']);
   // 改版 B4：对话消息实时刷新——message.created 失效所有消息线程（4 秒轮询降级为兜底）
   if (event.type === 'message.created') keys.push(['messages']);
@@ -88,6 +111,22 @@ export function RealtimeSync(): null {
       socket.onmessage = (message) => {
         try {
           const event = JSON.parse(String(message.data)) as RealtimeEvent;
+          // WP5 流式增量：分发给订阅者（打字机），不做缓存失效
+          if (event.type === 'message.delta' || event.type === 'message.delta.end') {
+            const payload = (event.payload ?? {}) as { delta?: string; agentId?: string; projectTaskId?: string | null };
+            for (const handler of streamHandlers) {
+              handler({
+                taskId: event.taskId ?? '',
+                companyId: event.companyId,
+                projectId: event.projectId,
+                agentId: payload.agentId,
+                projectTaskId: payload.projectTaskId,
+                delta: event.type === 'message.delta' ? payload.delta : undefined,
+                ended: event.type === 'message.delta.end',
+              });
+            }
+            return;
+          }
           for (const queryKey of queryKeysForRealtimeEvent(event)) {
             void queryClient.invalidateQueries({ queryKey });
           }

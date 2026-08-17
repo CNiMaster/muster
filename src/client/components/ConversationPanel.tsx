@@ -12,10 +12,12 @@ import type React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMessages, usePostMessage, useAgents, useTaskOnce, useTaskAction, materialRawUrl, type ConversationMessage } from '../hooks/queries';
+import { onStreamDelta } from '../realtime';
 import { Badge } from './Badge';
 import { Button } from './Button';
 import { toast } from './Button';
 import { EmptyState, Icons } from './EmptyState';
+import { MarkdownPreview } from './MarkdownPreview';
 
 export interface ConversationPanelProps {
   scope: 'company' | 'project';
@@ -41,6 +43,51 @@ export function ConversationPanel({ scope, scopeId, companyId, title, recipientA
   const [showMentions, setShowMentions] = useState(false);
   const [mentionFilter, setMentionFilter] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
+  // WP5 流式输出：当前对话归属内正在生成的增量文本（内存态；落库/超时/流结束清除）
+  const [streamText, setStreamText] = useState<{ taskId: string; text: string } | null>(null);
+  const streamStaleTimer = useRef<number | null>(null);
+
+  const clearStream = (taskId?: string): void => {
+    setStreamText((prev) => (taskId && prev && prev.taskId !== taskId ? prev : null));
+  };
+
+  useEffect(() => {
+    const scopeMatch = (info: { companyId?: string; projectId?: string; agentId?: string }): boolean => {
+      if (scope === 'company' ? info.companyId !== scopeId : info.projectId !== scopeId) return false;
+      // 单聊面板只看本人的流；群聊/负责人面板接受 scope 内全部任务（蜂群工蜂等并发流互不抢占）
+      return recipientAgentId ? info.agentId === recipientAgentId : true;
+    };
+    const bumpStaleTimer = (taskId: string): void => {
+      if (streamStaleTimer.current !== null) window.clearTimeout(streamStaleTimer.current);
+      streamStaleTimer.current = window.setTimeout(() => clearStream(taskId), 5000);
+    };
+    const unsubscribe = onStreamDelta((info) => {
+      if (!info.taskId || !scopeMatch(info)) return;
+      if (info.ended) {
+        clearStream(info.taskId);
+        return;
+      }
+      if (!info.delta) return;
+      setStreamText((prev) => {
+        const base = prev && prev.taskId === info.taskId ? prev.text : '';
+        // 超长截尾（保留最新 8000 字符），防止超长回复撑爆渲染
+        const next = (base + info.delta).slice(-8000);
+        return { taskId: info.taskId, text: next };
+      });
+      bumpStaleTimer(info.taskId);
+    });
+    return () => {
+      unsubscribe();
+      if (streamStaleTimer.current !== null) window.clearTimeout(streamStaleTimer.current);
+    };
+  }, [scope, scopeId, recipientAgentId]);
+
+  // 该任务的回复已落库（messages 刷新出现 refTaskId 匹配的 assistant 消息）→ 立即清泡防重复显示
+  useEffect(() => {
+    if (!streamText) return;
+    const persisted = (messages ?? []).some((m) => m.role === 'assistant' && m.refTaskId === streamText.taskId);
+    if (persisted) clearStream(streamText.taskId);
+  }, [messages]);
 
   useEffect(() => {
     if (!scrollRef.current) return;
@@ -49,7 +96,7 @@ export function ConversationPanel({ scope, scopeId, companyId, title, recipientA
     } else {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages]);
+  }, [messages, streamText]);
 
   const send = (): void => {
     if (!text.trim()) return;
@@ -110,6 +157,18 @@ export function ConversationPanel({ scope, scopeId, companyId, title, recipientA
         {messages?.map((m) => (
           <MessageBubble key={m.id} message={m} agents={agents ?? []} />
         ))}
+        {streamText && streamText.text.trim().length > 0 && (
+          <div className="mu-msg mu-msg-other">
+            <div className="mu-msg-avatar" aria-hidden="true">✦</div>
+            <div className="mu-msg-bubble">
+              <div className="mu-msg-author">生成中<span className="mu-msg-mode-chip">⚡ 流式</span></div>
+              <div className="mu-msg-text is-md">
+                <MarkdownPreview source={streamText.text} />
+                <span className="mu-stream-cursor" aria-hidden="true">▍</span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
       {!hideInput && (
         <div className="mu-conv-input-wrap">
@@ -173,7 +232,9 @@ function MessageBubble({ message, agents }: { message: ConversationMessage; agen
             }</span>
           )}
         </div>
-        <div className="mu-msg-text">{message.content}</div>
+        <div className={isUser ? 'mu-msg-text' : 'mu-msg-text is-md'}>
+          {isUser ? message.content : <MarkdownPreview source={message.content} />}
+        </div>
         {message.attachments.length > 0 && (
           <div className="mu-msg-attachments">
             {message.attachments.map((a) =>

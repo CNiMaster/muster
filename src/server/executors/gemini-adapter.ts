@@ -57,7 +57,6 @@ export class GeminiAdapter implements ExecutionAdapter {
 
     const messages = this.buildMessages(ctx);
     const baseURL = this.opts.baseURL;
-
     const callModel: CallModelFn = async (msgs, signal, tools: ToolDefinition[]) => {
       // 转换 OpenAI 风格 messages → Gemini contents
       const systemInstruction = msgs.find((m) => m.role === 'system')?.content;
@@ -77,49 +76,116 @@ export class GeminiAdapter implements ExecutionAdapter {
         Object.assign(body, thinking.extraBody); // generationConfig.thinkingConfig
       }
 
-      const url = `${baseURL}/models/${encodeURIComponent(model)}:generateContent?key=${apiKey}`;
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        signal,
-      });
+      const doFetch = (stream: boolean): Promise<Response> => {
+        const method = stream ? 'streamGenerateContent?alt=sse&' : 'generateContent?';
+        return fetch(`${baseURL}/models/${encodeURIComponent(model)}:${method}key=${apiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          signal,
+        });
+      };
+
+      // WP5：默认流式（SSE）；provider/代理不支持时回退 generateContent 非流式
+      let res = await doFetch(true);
+      if (!res.ok && (res.status === 400 || res.status === 404 || res.status === 422)) {
+        await res.text().catch(() => '');
+        res = await doFetch(false);
+      }
       if (!res.ok) {
         const text = await res.text().catch(() => '');
         throw new Error(`Gemini API ${res.status}: ${text.slice(0, 200)}`);
       }
-      const data = (await res.json()) as any;
-      const candidate = data.candidates?.[0];
-      const parts = candidate?.content?.parts ?? [];
 
       // 收集文本与 function call（thought 块只进思考文本，不作为输出）
       let textContent = '';
       let thinkingText = '';
       const toolCalls: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }> = [];
+      let promptTokens = 0;
+      let completionTokens = 0;
+      let cachedTokens = 0;
       let fcIdx = 0;
-      for (const part of parts) {
-        if (part.text) {
-          if (part.thought === true) {
-            thinkingText += part.text; // 思考块：只进 trace，不当作输出
-          } else {
-            textContent += part.text;
-            events?.onOutput?.(part.text);
+      const consumeParts = (parts: any[]): void => {
+        for (const part of parts) {
+          if (part.text) {
+            if (part.thought === true) {
+              thinkingText += part.text; // 思考块：只进 trace，不当作输出
+            } else {
+              textContent += part.text;
+              events?.onTextDelta?.(part.text);
+            }
+          }
+          if (part.functionCall) {
+            const id = `gemini-fc-${fcIdx}`;
+            toolCalls.push({
+              id,
+              type: 'function',
+              function: {
+                name: part.functionCall.name,
+                arguments: JSON.stringify(part.functionCall.args ?? {}),
+              },
+            });
+            events?.onToolCall?.(part.functionCall.name, part.functionCall.args, id);
+            fcIdx++;
           }
         }
-        if (part.functionCall) {
-          const id = `gemini-fc-${fcIdx}`;
-          toolCalls.push({
-            id,
-            type: 'function',
-            function: {
-              name: part.functionCall.name,
-              arguments: JSON.stringify(part.functionCall.args ?? {}),
-            },
-          });
-          events?.onToolCall?.(part.functionCall.name, part.functionCall.args, id);
-          fcIdx++;
+      };
+      const consumeUsage = (meta: any): void => {
+        if (!meta) return;
+        promptTokens = meta.promptTokenCount ?? promptTokens;
+        completionTokens = meta.candidatesTokenCount ?? completionTokens;
+        cachedTokens = meta.cachedContentTokenCount ?? cachedTokens;
+      };
+
+      if (res.body) {
+        // SSE 流式：data: {chunk} 行协议
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = '';
+        let raw = '';
+        let sawDataLine = false;
+        const handleData = (data: string): void => {
+          if (!data) return;
+          let chunk: any;
+          try { chunk = JSON.parse(data); } catch { return; }
+          consumeUsage(chunk.usageMetadata);
+          consumeParts(chunk.candidates?.[0]?.content?.parts ?? []);
+        };
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const text = decoder.decode(value, { stream: true });
+          buf += text;
+          raw += text;
+          let idx: number;
+          while ((idx = buf.indexOf('\n')) >= 0) {
+            const line = buf.slice(0, idx).replace(/\r$/, '');
+            buf = buf.slice(idx + 1);
+            if (line.startsWith('data:')) {
+              sawDataLine = true;
+              handleData(line.slice(5).trim());
+            }
+          }
         }
+        if (buf.startsWith('data:')) {
+          sawDataLine = true;
+          handleData(buf.slice(5).trim());
+        }
+        // provider 忽略 stream 标志回整包 JSON：按非流式解析
+        if (!sawDataLine && raw.trim().startsWith('{')) {
+          try {
+            const data = JSON.parse(raw) as any;
+            consumeUsage(data.usageMetadata);
+            consumeParts(data.candidates?.[0]?.content?.parts ?? []);
+          } catch { /* 整包不是合法 JSON 则按空流处理 */ }
+        }
+      } else {
+        const data = (await res.json()) as any;
+        consumeUsage(data.usageMetadata);
+        consumeParts(data.candidates?.[0]?.content?.parts ?? []);
       }
+      // onOutput 语义与 openai 路径对齐：整段文本一次性上报（trace/调试），流式增量走 onTextDelta
+      if (textContent) events?.onOutput?.(textContent);
 
       const assistantMsg: ChatMessage = {
         role: 'assistant',
@@ -131,9 +197,9 @@ export class GeminiAdapter implements ExecutionAdapter {
       return {
         message: assistantMsg,
         usage: {
-          promptTokens: data.usageMetadata?.promptTokenCount ?? 0,
-          completionTokens: data.usageMetadata?.candidatesTokenCount ?? 0,
-          cachedTokens: data.usageMetadata?.cachedContentTokenCount ?? 0,
+          promptTokens,
+          completionTokens,
+          cachedTokens,
         },
       };
     };
@@ -204,7 +270,11 @@ export class GeminiAdapter implements ExecutionAdapter {
   private buildMessages(ctx: ExecutionContext): ChatMessage[] {
     return [
       { role: 'system', content: ctx.systemPrompt },
-      { role: 'user', content: this.buildTaskPrompt(ctx) },
+      {
+        role: 'user',
+        content: this.buildTaskPrompt(ctx),
+        ...(ctx.imageAttachments && ctx.imageAttachments.length > 0 ? { images: ctx.imageAttachments } : {}),
+      },
     ];
   }
 
@@ -229,6 +299,17 @@ export class GeminiAdapter implements ExecutionAdapter {
           },
         })),
       };
+    }
+    // WP10 识图直读：user 消息带图片 → text + inlineData parts（data-uri 拆 mime/base64）
+    if (msg.role === 'user' && msg.images && msg.images.length > 0) {
+      const parts: Array<Record<string, unknown>> = [{ text: msg.content }];
+      for (const dataUri of msg.images) {
+        const match = /^data:([^;]+);base64,(.+)$/.exec(dataUri);
+        if (match) {
+          parts.push({ inlineData: { mimeType: match[1], data: match[2] } });
+        }
+      }
+      return { role, parts };
     }
     return { role, parts: [{ text: msg.content }] };
   }

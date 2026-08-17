@@ -31,6 +31,8 @@ export interface ChatMessage {
   content: string;
   /** 模型思考文本（OpenAI reasoning / Gemini thoughts；模型无思考能力时为 undefined）。 */
   thinking?: string;
+  /** WP10 识图直读：user 消息携带的图片（data-uri 列表）；adapter 按执行器能力转 image_url / inline_data。 */
+  images?: string[];
   /** assistant 角色携带的 tool_calls。 */
   tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>;
   /** tool 角色携带的 tool_call_id。 */

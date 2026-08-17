@@ -42,6 +42,8 @@ export interface ExecutionContext {
    * 来自 agent_definition.executor_json，可含 model/claudeBin/timeoutMs/maxToolCalls/skipPermissions。
    */
   agentExecutor?: AgentExecutorConfig;
+  /** WP10 识图直读：用户消息携带的图片附件（data-uri 列表）；声明 vision 的 API 执行器以原生多模态消息送入。 */
+  imageAttachments?: string[];
   /**
    * 用户级凭据引用：环境变量名（如 ANTHROPIC_API_KEY_BOB）。
    * 执行器在 spawn 时把 process.env[apiKeyEnv] 注入子进程 ANTHROPIC_API_KEY。
@@ -84,6 +86,8 @@ export interface AgentExecutorConfig {
   thinkingDepth?: 'off' | 'low' | 'medium' | 'high';
   /** 上下文缓存模式（settings-overhaul B3；auto/on 保持 provider 默认缓存，off 文档化 no-op）。 */
   contextCache?: 'auto' | 'on' | 'off';
+  /** WP10 执行器能力矩阵：模型自身能力声明（多模态走工具层，此处只声明主模型直读能力）。 */
+  capabilities?: string[];
 }
 
 export interface ExecutionEvents {
@@ -94,6 +98,8 @@ export interface ExecutionEvents {
   onThinking?: (text: string) => void;
   /** 工具结果（含 tool_use id 关联）。 */
   onToolResult?: (toolUseId: string, name: string | undefined, content: string) => void;
+  /** WP5 流式输出：API 执行器 token 级文本增量（引擎节流后广播 message.delta，不落库）。 */
+  onTextDelta?: (delta: string) => void;
 }
 
 export interface ExecutionUsage {
