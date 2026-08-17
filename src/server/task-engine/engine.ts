@@ -35,7 +35,7 @@ import { assembleContext } from '../executors/context';
 import { materializeSwarm, countActiveSwarmsByRequester, escalateSwarmRequest, EXPERT_SWARM_LIMITS } from '../domain/swarm';
 import { finalizeDebate, startDebate } from '../domain/debate';
 import { DISPATCHER_ROLE, JUDGE_ROLE } from '../domain/system-agents';
-import { getExecutorManifest } from '../executors/manifests';
+import { getExecutorManifest, providerForManifest } from '../executors/manifests';
 import { assertSafeToRun } from '../executors/safety';
 import { getProject, listProjectReferences } from '../domain/project';
 import { getOutsourcingContract } from '../domain/outsourcing-contract';
@@ -1811,13 +1811,6 @@ export class TaskEngine {
   }
 }
 
-function providerForManifest(manifestId: string | undefined): string | undefined {
-  if (manifestId === 'claude-code-cli') return 'claude-cli';
-  if (manifestId === 'openai-compatible-api') return 'openai';
-  if (manifestId === 'gemini-api') return 'gemini';
-  return manifestId;
-}
-
 /**
  收集当前项目授权只读引用的所有源项目根目录（PRD Phase 3.4）。
  - 仅返回与当前项目 worktree 不同的真实目录。
@@ -1893,8 +1886,12 @@ function resolveExecutorCredentialForTask(
   const provider = providerForManifest(executorProfile?.manifestId) ?? effectiveExecutor?.provider ?? defaultProvider;
   const legacyEnv = extractApiKeyEnv(agent.executor);
   const providerFallback = PROVIDER_DEFAULT_API_KEY_ENV[provider as Provider];
+  // 池化统一（B4）：执行器档案的 credentialRef（env 引用）作为 员工>档案>工作台>平台 链上的档案层
+  const profileRef = (executorProfile?.credentialRef?.kind === 'env' && executorProfile.credentialRef.reference)
+    ? executorProfile.credentialRef.reference
+    : undefined;
   try {
-    return resolveExecutorCredentialEnv(db, agent.profileId, companyId, provider, legacyEnv, providerFallback);
+    return resolveExecutorCredentialEnv(db, agent.profileId, companyId, provider, legacyEnv, providerFallback, profileRef);
   } catch {
     // credential_definition 表缺失或查询异常:回退到 legacy + provider 默认
     return legacyEnv ?? providerFallback;

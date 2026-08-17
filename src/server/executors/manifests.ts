@@ -26,6 +26,14 @@ export interface ExecutorManifest {
   defaultCapabilities?: string[];
 }
 
+/** 池化统一：manifest → provider 的单一路由（两份旧实现并入一处，避免行为漂移）。 */
+export function providerForManifest(manifestId: string | undefined): string | undefined {
+  if (manifestId === 'claude-code-cli') return 'claude-cli';
+  if (manifestId === 'openai-compatible-api') return 'openai';
+  if (manifestId === 'gemini-api') return 'gemini';
+  return manifestId;
+}
+
 export const BUILTIN_EXECUTOR_MANIFESTS: readonly Readonly<ExecutorManifest>[] = deepFreeze([
   { id: 'codex-cli', version: 2, displayName: 'Codex CLI', kind: 'cli',certification:'certified',legacy:false,approvalBridge:'rpc',limitations:[], officialSource: 'https://github.com/openai/codex', platforms: ['darwin', 'linux', 'win32'], detection: { command: 'codex', args: ['--version'] }, minimumVersion: null, session: { create: true, resume: true,fork:true, compact: true, abort: true }, isolation: { cwd: true, configDir: false, tempDir: true }, permissions: { scoped: true, turboFlag: null }, concurrency: 'parallel', officialInstall: { guideUrl: 'https://github.com/openai/codex#installing-and-running-codex-cli', commands: ['curl -fsSL https://chatgpt.com/codex/install.sh | sh', 'brew install --cask codex', 'npm install -g @openai/codex'], binaryName: 'codex', loginCommand: 'codex login' }, defaultCapabilities: ['code'] },
   { id: 'claude-code-cli', version: 2, displayName: 'Claude Code CLI', kind: 'cli',certification:'certified',legacy:false,approvalBridge:'hook',limitations:[], officialSource: 'https://code.claude.com/docs/en/installation', platforms: ['darwin', 'linux', 'win32'], detection: { command: 'claude', args: ['--version'] }, minimumVersion: null, session: { create: true, resume: true,fork:true, compact: true, abort: true }, isolation: { cwd: true, configDir: false, tempDir: true }, permissions: { scoped: true, turboFlag: null }, concurrency: 'parallel', officialInstall: { guideUrl: 'https://code.claude.com/docs/en/installation', commands: ['curl -fsSL https://claude.ai/install.sh | bash', 'brew install --cask claude-code'], binaryName: 'claude', loginCommand: 'claude' }, defaultCapabilities: ['code'] },
