@@ -19,23 +19,21 @@ function describePlugin(p: Plugin): string {
 }
 
 export function EquippingPhase({
-  companyId,
   enabledPlugins,
   onEnabledPluginsChange,
 }: {
-  companyId: string;
   enabledPlugins: string[];
   onEnabledPluginsChange: (ids: string[]) => void;
 }): React.ReactElement {
   const plugins = usePlugins();
-  const enabled = useEnabledCompanyPlugins(companyId);
+  const enabled = useEnabledCompanyPlugins();
   const toggle = useToggleCompanyPlugin();
 
   const enabledSet = new Set(enabledPlugins);
 
   const handleToggle = (pluginId: string, turnOn: boolean): void => {
     toggle.mutate(
-      { companyId, pluginId, enabled: turnOn },
+      { pluginId, enabled: turnOn },
       {
         onSuccess: () => {
           const next = turnOn

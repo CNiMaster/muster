@@ -11,7 +11,6 @@ import {
   useBlueprintStatus,
   useRollbackBlueprint,
   useUpdateBlueprintDescription,
-  useDefaultCompanyId,
 } from '../hooks/queries';
 import { Badge } from '../components/Badge';
 import { Button, toast } from '../components/Button';
@@ -28,14 +27,12 @@ const STATUS_META: Record<string, { label: string; tone: 'ok' | 'warn' | 'neutra
 
 export function BlueprintDetailPage(): React.ReactElement {
   const routeParams = useParams();
-  const defaultCompanyId = useDefaultCompanyId();
-  // 全局路由 /blueprints/:id 也可达：无公司段时用默认工作台公司解析（蓝图 API 仍按归组锚点取数）
-  const companyId = routeParams.companyId ?? defaultCompanyId;
+  // 全局路由 /blueprints/:id 也可达：蓝图 API 已按工作台全局取数
   const blueprintId = routeParams.blueprintId;
-  const { data: bp, isLoading } = useBlueprintDetail(companyId, blueprintId);
-  const statusMutation = useBlueprintStatus(companyId);
-  const rollbackMutation = useRollbackBlueprint(companyId);
-  const updateDescMutation = useUpdateBlueprintDescription(companyId);
+  const { data: bp, isLoading } = useBlueprintDetail(blueprintId);
+  const statusMutation = useBlueprintStatus();
+  const rollbackMutation = useRollbackBlueprint();
+  const updateDescMutation = useUpdateBlueprintDescription();
 
   const [editingDesc, setEditingDesc] = useState(false);
   const [descDraft, setDescDraft] = useState('');

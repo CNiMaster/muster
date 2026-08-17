@@ -13,7 +13,6 @@ import {
   useSendOptimizeChatMessage,
   useApplyBlueprintOptimizationItem,
   useIgnoreBlueprintOptimizationItem,
-  useDefaultCompanyId,
   type BlueprintOptimizationItem,
 } from '../hooks/queries';
 import { Badge } from '../components/Badge';
@@ -32,15 +31,13 @@ const ACTION_META: Record<BlueprintOptimizationItem['actionType'], { label: stri
 
 export function BlueprintOptimizePage(): React.ReactElement {
   const routeParams = useParams();
-  const defaultCompanyId = useDefaultCompanyId();
-  const companyId = routeParams.companyId ?? defaultCompanyId;
   const blueprintId = routeParams.blueprintId;
 
-  const { data: bp, isLoading: isBpLoading } = useBlueprintDetail(companyId, blueprintId);
-  const { data: chat, isLoading: isChatLoading } = useBlueprintOptimizeChat(companyId, blueprintId);
-  const sendMutation = useSendOptimizeChatMessage(companyId);
-  const applyItem = useApplyBlueprintOptimizationItem(companyId);
-  const ignoreItem = useIgnoreBlueprintOptimizationItem(companyId);
+  const { data: bp, isLoading: isBpLoading } = useBlueprintDetail(blueprintId);
+  const { data: chat, isLoading: isChatLoading } = useBlueprintOptimizeChat(blueprintId);
+  const sendMutation = useSendOptimizeChatMessage();
+  const applyItem = useApplyBlueprintOptimizationItem();
+  const ignoreItem = useIgnoreBlueprintOptimizationItem();
   const [draft, setDraft] = useState('');
   const bottomRef = useRef<HTMLDivElement | null>(null);
 

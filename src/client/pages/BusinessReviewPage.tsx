@@ -4,7 +4,7 @@
  */
 import type React from 'react';
 import { useMemo, useState } from 'react';
-import { useBusinessReviews, useCompanies, useDecideBusinessReview } from '../hooks/queries';
+import { useBusinessReviews, useWorkbench, useDecideBusinessReview } from '../hooks/queries';
 import { Badge } from '../components/Badge';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
@@ -15,21 +15,20 @@ import type { BusinessReview } from '../api/types';
 
 export function BusinessReviewPage(): React.ReactElement {
   const { data: reviews = [], isLoading } = useBusinessReviews({ status: 'pending' });
-  const { data: companies = [] } = useCompanies();
+  const { data: company } = useWorkbench();
   const decide = useDecideBusinessReview();
   const [feedbackMap, setFeedbackMap] = useState<Record<string, string>>({});
 
   const byCompany = useMemo(() => {
     const map = new Map<string, { companyName: string; items: BusinessReview[] }>();
     for (const r of reviews) {
-      const company = companies.find((c) => c.id === r.companyId);
       const companyName = company?.name ?? r.companyId;
       const entry = map.get(r.companyId) ?? { companyName, items: [] };
       entry.items.push(r);
       map.set(r.companyId, entry);
     }
     return Array.from(map.entries());
-  }, [reviews, companies]);
+  }, [reviews, company]);
 
   const doDecide = (review: BusinessReview, decision: 'approved' | 'rejected' | 'changes_requested'): void => {
     const feedback = feedbackMap[review.id]?.trim();

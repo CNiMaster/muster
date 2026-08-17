@@ -28,7 +28,7 @@ export function TaskDetailPage(): React.ReactElement {
   const { taskId = '' } = useParams();
   const { data: task } = useTask(taskId);
   const { data: project } = useProject(task?.projectId);
-  const { data: agents } = useAgents(project?.companyId);
+  const { data: agents } = useAgents();
   const action = useTaskAction();
 
   if (!task) {

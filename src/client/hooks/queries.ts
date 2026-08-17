@@ -569,9 +569,8 @@ export function useAgentAvailability() {
 // ===== Departments =====
 export function useDepartments() {
   return useQuery({
-    queryKey: ['departments', companyId],
+    queryKey: ['departments'],
     queryFn: () => api.get<Department[]>(`/api/departments`),
-    enabled: !!companyId,
   });
 }
 export function useCreateDepartment() {

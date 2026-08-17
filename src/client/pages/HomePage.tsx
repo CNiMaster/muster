@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useCompanies, useProjects, useProject, useQuickProject } from '../hooks/queries';
+import { useProjects, useProject, useQuickProject, useWorkbench } from '../hooks/queries';
 import { readRecentProjectId, writeRecentProjectId } from '../hooks/useRecentProject';
 import { PromptComposer } from '../components/workbench/PromptComposer';
 import { toast } from '../components/Button';
@@ -15,9 +15,8 @@ const SUGGESTIONS = [
 
 export function HomePage(): React.ReactElement {
   const navigate = useNavigate();
-  const { data: companies, isLoading: companiesLoading } = useCompanies();
-  const firstCompany = companies?.find((c) => !c.archivedAt);
-  const { data: projects, isLoading: projectsLoading } = useProjects(firstCompany?.id);
+  const { isLoading: companiesLoading } = useWorkbench();
+  const { data: projects, isLoading: projectsLoading } = useProjects();
 
   const [recentProjectId, setRecentProjectId] = useState<string | null>(() =>
     typeof window === 'undefined' ? null : readRecentProjectId(window.localStorage));

@@ -15,7 +15,7 @@ import { EmptyState } from '../components/EmptyState';
 import { CardSkeleton } from '../components/Skeleton';
 import {
   useBlueprints, useBlueprintStatus, useBlueprintVersions, useRollbackBlueprint,
-  useUpdateBlueprintDescription, useDefaultCompanyId,
+  useUpdateBlueprintDescription,
   type Blueprint,
 } from '../hooks/queries';
 
@@ -44,19 +44,16 @@ function scoreOf(bp: Blueprint): { score: number | null; parts: Array<{ label: s
 }
 
 export function BlueprintLibraryPage(): React.ReactElement {
-  const companyId = useDefaultCompanyId();
-  const { data: blueprints = [], isLoading } = useBlueprints(companyId);
-  const statusMutation = useBlueprintStatus(companyId);
-  const rollback = useRollbackBlueprint(companyId);
-  const descriptionMutation = useUpdateBlueprintDescription(companyId);
+  const { data: blueprints = [], isLoading } = useBlueprints();
+  const statusMutation = useBlueprintStatus();
+  const rollback = useRollbackBlueprint();
+  const descriptionMutation = useUpdateBlueprintDescription();
   const [showRetired, setShowRetired] = useState(false);
   const [expandedVersions, setExpandedVersions] = useState<Set<string>>(new Set());
   const [editingDescription, setEditingDescription] = useState<string | null>(null);
   const [descriptionDraft, setDescriptionDraft] = useState('');
 
   const visible = showRetired ? blueprints : blueprints.filter((bp) => bp.status !== 'retired');
-
-  if (!companyId) return <div className="loading">正在定位默认工作台…</div>;
 
   const setStatus = (blueprintId: string, status: 'active' | 'locked' | 'retired'): void => {
     statusMutation.mutate({ blueprintId, status }, {
@@ -205,7 +202,7 @@ export function BlueprintLibraryPage(): React.ReactElement {
                       <button type="button" style={{ border: 0, background: 'none', color: 'var(--fg-subtle)', fontSize: 12, cursor: 'pointer' }} onClick={() => toggleVersions(bp.id)}>
                         {versionsOpen ? '▾' : '▸'} 进化史（版本提交）
                       </button>
-                      {versionsOpen && <BlueprintVersionTimeline blueprintId={bp.id} companyId={companyId} onRollback={(v) => applyRollback(bp.id, v)} />}
+                      {versionsOpen && <BlueprintVersionTimeline blueprintId={bp.id} onRollback={(v) => applyRollback(bp.id, v)} />}
                     </div>
 
                     {/* 治理 + 元信息 */}
@@ -260,8 +257,8 @@ const OPT_ACTION_META: Record<string, { label: string; tone: 'ok' | 'err' | 'war
   polish_description: { label: '✍️ 润色描述', tone: 'info' },
 };
 
-function BlueprintVersionTimeline({ blueprintId, companyId, onRollback }: { blueprintId: string; companyId: string; onRollback: (version: number) => void }): React.ReactElement {
-  const { data: versions = [], isLoading } = useBlueprintVersions(companyId, blueprintId);
+function BlueprintVersionTimeline({ blueprintId, onRollback }: { blueprintId: string; onRollback: (version: number) => void }): React.ReactElement {
+  const { data: versions = [], isLoading } = useBlueprintVersions(blueprintId);
   if (isLoading) return <div className="muted" style={{ fontSize: 12, padding: '4px 0' }}>加载版本史…</div>;
   if (versions.length === 0) return <div className="muted" style={{ fontSize: 12, padding: '4px 0' }}>还没有版本提交（结构变化后自动产生）。</div>;
   return (

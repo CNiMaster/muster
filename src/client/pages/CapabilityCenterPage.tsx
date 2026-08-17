@@ -16,7 +16,7 @@ import { useMemo, useState } from 'react';
 import type React from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { useCompanies, usePlugins, useToggleCompanyPlugin } from '../hooks/queries';
+import { usePlugins, useToggleCompanyPlugin, useWorkbench } from '../hooks/queries';
 import { api } from '../api/client';
 import type { Plugin, EffectivePlugin, CompanyPluginDecision } from '../api/types';
 import { Badge } from '../components/Badge';
@@ -60,7 +60,8 @@ function describePlugin(p: Plugin): string {
 
 export function CapabilityCenterPage(): React.ReactElement {
   const { data: plugins, isLoading } = usePlugins();
-  const { data: companies } = useCompanies();
+  const { data: company } = useWorkbench();
+  const companies = company ? [company] : [];
 
   const grouped = useMemo(() => {
     const byKind = new Map<string, Plugin[]>();
@@ -220,7 +221,7 @@ function CompanyToggle({ plugin, company }: { plugin: Plugin; company: CompanyLi
     // disabled/default → 启用（撤销禁用）；enabled → 禁用
     const turnOn = decision === 'disabled';
     toggle.mutate(
-      { companyId: company.id, pluginId: plugin.id, enabled: turnOn },
+      { pluginId: plugin.id, enabled: turnOn },
       {
         onSuccess: () => toast('success', `${company.name}：${turnOn ? '已启用' : '已禁用'} ${plugin.name}`),
         onError: (e: any) => {

@@ -4,8 +4,8 @@ import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   useProject,
-  useCompany,
-  useCompanyAction,
+  useWorkbench,
+  useWorkbenchAction,
   useReports,
   useCreateReport,
   useAddReportNote,
@@ -27,8 +27,8 @@ export function ReportsPage(): React.ReactElement {
   const qc = useQueryClient();
   const { projectId = '' } = useParams();
   const { data: project } = useProject(projectId);
-  const { data: company } = useCompany(project?.companyId);
-  const companyAction = useCompanyAction();
+  const { data: company } = useWorkbench();
+  const companyAction = useWorkbenchAction();
   const { data: reports, refetch } = useReports(projectId);
 
   const createReport = useCreateReport();
@@ -93,7 +93,7 @@ export function ReportsPage(): React.ReactElement {
   const resumeCompany = (): void => {
     if (!project?.companyId) return;
     companyAction.mutate(
-      { id: project.companyId, action: 'resume' },
+      { action: 'resume' },
       {
         onSuccess: () => toast('success', '工作已恢复，引擎将继续领取任务'),
         onError: (e) => toast('error', (e as { message?: string }).message ?? '恢复失败'),

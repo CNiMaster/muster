@@ -30,7 +30,6 @@ import {
   useBlueprintDetail,
   useCanvasLayout,
   useSaveCanvasLayout,
-  useDefaultCompanyId,
 } from '../hooks/queries';
 import { Button, toast } from '../components/Button';
 import { Badge } from '../components/Badge';
@@ -159,11 +158,9 @@ function checkCycle(edges: Edge[]): boolean {
 
 export function BlueprintCanvasPage(): React.ReactElement {
   const routeParams = useParams();
-  const defaultCompanyId = useDefaultCompanyId();
-  // 全局路由 /blueprints/:id/canvas 也可达：无公司段时用默认工作台公司解析
-  const companyId = routeParams.companyId ?? defaultCompanyId;
+  // 全局路由 /blueprints/:id/canvas 也可达：蓝图 API 已按工作台全局取数
   const blueprintId = routeParams.blueprintId;
-  const { data: bp, isLoading: isBpLoading } = useBlueprintDetail(companyId, blueprintId);
+  const { data: bp, isLoading: isBpLoading } = useBlueprintDetail(blueprintId);
   const canvasKey = blueprintId ? `blueprint:${blueprintId}` : undefined;
   const { data: savedLayout, isLoading: isLayoutLoading } = useCanvasLayout(canvasKey);
   const saveLayoutMutation = useSaveCanvasLayout();

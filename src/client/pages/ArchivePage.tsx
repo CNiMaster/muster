@@ -13,7 +13,7 @@ import { Card } from '../components/Card';
 import { Input } from '../components/Form';
 import { EmptyState } from '../components/EmptyState';
 import { CardSkeleton } from '../components/Skeleton';
-import { useArchiveSearch, useCompanyArtifactGallery, useDefaultCompanyId } from '../hooks/queries';
+import { useArchiveSearch, useWorkbenchArtifacts } from '../hooks/queries';
 
 const KIND_LABELS: Record<string, string> = {
   memory: '经验',
@@ -22,7 +22,6 @@ const KIND_LABELS: Record<string, string> = {
 };
 
 export function ArchivePage(): React.ReactElement {
-  const companyId = useDefaultCompanyId();
   const [tab, setTab] = useState<'search' | 'gallery'>('search');
   const [kindFilter, setKindFilter] = useState('');
   const [q, setQ] = useState('');
@@ -33,10 +32,8 @@ export function ArchivePage(): React.ReactElement {
     return () => clearTimeout(t);
   }, [q]);
 
-  const search = useArchiveSearch(companyId, debouncedQ);
-  const gallery = useCompanyArtifactGallery(companyId, tab === 'gallery' ? groupBy : 'time');
-
-  if (!companyId) return <div className="loading">正在定位默认工作台…</div>;
+  const search = useArchiveSearch(debouncedQ);
+  const gallery = useWorkbenchArtifacts(tab === 'gallery' ? groupBy : 'time');
 
   return (
     <div className="home">

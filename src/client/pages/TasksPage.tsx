@@ -14,7 +14,7 @@ export function TasksPage(): React.ReactElement {
   const { data: project } = useProject(projectId);
   const { data: tasks = [] } = useTasks(projectId);
   const { data: projectTasks = [] } = useProjectTasks(projectId);
-  const { data: agents = [] } = useAgents(project?.companyId);
+  const { data: agents = [] } = useAgents();
   const createTask = useCreateTask();
   const selectedAgentId = searchParams.get('agent') ?? '';
   const [title, setTitle] = useState('');

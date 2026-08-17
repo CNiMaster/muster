@@ -8,7 +8,6 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   useAgentProfiles,
-  useCompanies,
   useCreateAgentProfile,
   useRecruitFromDraft,
   usePersonas,
@@ -17,7 +16,6 @@ import {
   useClonePersonaAsUser,
   useCloneProfileAsUser,
   useUpdateUserCustomConfig,
-  useDefaultCompanyId,
   useExpertCandidates,
   useUpdateUserPersona,
   useDeleteUserPersona,
@@ -29,7 +27,7 @@ import { Badge } from '../components/Badge';
 import { Field, Input, Select, Textarea } from '../components/Form';
 import { EmptyState, Icons } from '../components/EmptyState';
 import { Tabs } from '../components/Tabs';
-import type { AgentProfile, Company } from '../api/types';
+import type { AgentProfile } from '../api/types';
 import type { RecruitmentDraft } from '../../shared/types';
 
 export function AgentLibraryPage(): React.ReactElement {
@@ -352,9 +350,8 @@ export function AgentLibraryPage(): React.ReactElement {
   );
 }
 function ExpertCandidatesSection(): React.ReactElement | null {
-  const companyId = useDefaultCompanyId();
   const { data: allPersonas } = usePersonas();
-  const { data: history } = useExpertCandidates(companyId, 20);
+  const { data: history } = useExpertCandidates(20);
   const updatePersona = useUpdateUserPersona();
   const deletePersona = useDeleteUserPersona();
   const [editingId, setEditingId] = useState<string | null>(null);

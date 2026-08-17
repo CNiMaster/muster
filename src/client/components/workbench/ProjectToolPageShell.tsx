@@ -1,6 +1,6 @@
 import type React from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { useAgents, useCompany, useCompanyCockpit, useDepartments, useProject, useProjectTask, useProjectTasks, useTask, useTasks } from '../../hooks/queries';
+import { useAgents, useWorkbench, useWorkbenchCockpit, useDepartments, useProject, useProjectTask, useProjectTasks, useTask, useTasks } from '../../hooks/queries';
 import { ProjectContextInspector } from './ProjectContextInspector';
 import { ProjectWorkNavigation, type ProjectToolKey } from './ProjectWorkNavigation';
 import { WorkbenchShell } from './WorkbenchShell';
@@ -24,10 +24,10 @@ export function ProjectToolPageShell({ tool, children, projectIdOverride, select
   const navigate = useNavigate();
   const projectId = projectIdOverride ?? routeProjectId;
   const { data: project } = useProject(projectId);
-  const { data: company } = useCompany(project?.companyId);
-  const { data: cockpit } = useCompanyCockpit(project?.companyId);
-  const { data: agents } = useAgents(project?.companyId);
-  const { data: departments } = useDepartments(project?.companyId);
+  const { data: company } = useWorkbench();
+  const { data: cockpit } = useWorkbenchCockpit();
+  const { data: agents } = useAgents();
+  const { data: departments } = useDepartments();
   const { data: tasks } = useTasks(projectId);
   const { data: projectTasks } = useProjectTasks(projectId);
   const selectedId = selectedProjectTaskId ?? projectTasks?.find((item) => item.state === 'active')?.id ?? projectTasks?.[0]?.id;
@@ -36,7 +36,7 @@ export function ProjectToolPageShell({ tool, children, projectIdOverride, select
 
   return <WorkbenchShell
     scopeKey={`project:${projectId}`}
-    breadcrumb={<WorkbenchContextSwitcher companyId={project?.companyId ?? ''} projectId={projectId} projectName={project?.name ?? '项目'} projectTaskId={selectedId} sectionKey={tool} sectionLabel={TOOL_LABELS[tool]} novel={company?.kind === 'novel'} />}
+    breadcrumb={<WorkbenchContextSwitcher projectId={projectId} projectName={project?.name ?? '项目'} projectTaskId={selectedId} sectionKey={tool} sectionLabel={TOOL_LABELS[tool]} novel={company?.kind === 'novel'} />}
     navigationLabel="项目组织与联系人"
     inspectorLabel="项目任务与运行"
     attentionCount={attentionCount + (cockpit?.approvals.pending ?? 0)}

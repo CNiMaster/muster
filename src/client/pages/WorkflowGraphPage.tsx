@@ -17,14 +17,13 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import {
-  useCompany,
+  useWorkbench,
   useAgents,
   useProjects,
   useStartWorkflow,
   useWorkflow,
   useSaveWorkflow,
   useValidateWorkflow,
-  useDefaultCompanyId,
 } from '../hooks/queries';
 import { Button } from '../components/Button';
 import { Badge } from '../components/Badge';
@@ -55,11 +54,10 @@ function parseConditionInput(type: string, label: string): Record<string, unknow
 
 export function WorkflowGraphPage(): React.ReactElement {
   const { workflowId = 'main' } = useParams();
-  const companyId = useDefaultCompanyId() ?? '';
-  const { data: company } = useCompany(companyId);
-  const { data: agents } = useAgents(companyId);
-  const { data: projects } = useProjects(companyId);
-  const { data: workflowData, isLoading } = useWorkflow(companyId, workflowId);
+  const { data: company } = useWorkbench();
+  const { data: agents } = useAgents();
+  const { data: projects } = useProjects();
+  const { data: workflowData, isLoading } = useWorkflow(workflowId);
   const saveWorkflow = useSaveWorkflow();
   const validateWorkflow = useValidateWorkflow();
   const startWorkflow = useStartWorkflow();
@@ -271,7 +269,7 @@ export function WorkflowGraphPage(): React.ReactElement {
       // 在后端运行校验，我们必须先 PUT，但这样如果失败会被写入不规范的图。
       // 为此，我们在本地进行初步的 start/end 校验，并提供快速临时保存以查看详细报告
       // 或者我们可以直接请求校验：
-      const r = await validateWorkflow.mutateAsync({ companyId, workflowId });
+      const r = await validateWorkflow.mutateAsync({ workflowId });
       setErrors(r.errors);
       return r.errors.length === 0;
     } catch {
@@ -312,12 +310,12 @@ export function WorkflowGraphPage(): React.ReactElement {
 
     // 2. 写入数据库
     saveWorkflow.mutate(
-      { companyId, workflowId, nodes: nodesInput, edges: edgesInput },
+      { workflowId, nodes: nodesInput, edges: edgesInput },
       {
         onSuccess: async () => {
           // 3. 保存后立刻拉取后端通路完整校验
           validateWorkflow.mutate(
-            { companyId, workflowId },
+            { workflowId },
             {
               onSuccess: (valRes) => {
                 setErrors(valRes.errors);
@@ -361,7 +359,7 @@ export function WorkflowGraphPage(): React.ReactElement {
             disabled={!startProjectId}
             loading={startWorkflow.isPending}
             onClick={() => startWorkflow.mutate(
-              { companyId, workflowId, projectId: startProjectId },
+              { workflowId, projectId: startProjectId },
               {
                 onSuccess: () => toast('success', '协作流程的首个任务已进入项目队列'),
                 onError: (error) => toast('error', (error as Error).message),

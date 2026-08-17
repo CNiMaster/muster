@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   useAgentProfile,
-  useCompanies,
+  useWorkbench,
   useCopyAgentProfile,
   useEmployeeRuntime,
   useProfileEmployments,
@@ -31,7 +31,7 @@ export function AgentProfilePage(): React.ReactElement {
   const { data: profile, isLoading } = useAgentProfile(profileId);
   const { data: employments } = useProfileEmployments(profileId);
   const { data: runtime } = useEmployeeRuntime(profileId);
-  const { data: companies } = useCompanies();
+  const { data: company } = useWorkbench();
   const copyProfile = useCopyAgentProfile();
   const cloneProfile = useCloneProfileAsUser();
   const resetProfile = useResetAgentProfile();
@@ -210,7 +210,6 @@ export function AgentProfilePage(): React.ReactElement {
       <p className="muted">任职决定智能体在某家工作台负责什么、使用哪个执行器，以及允许操作的范围；不会改变全局身份和个人记忆。</p>
       <div className="employment-grid">
         {employments?.map((employment) => {
-          const company = companies?.find((item) => item.id === employment.companyId);
           return (
             <EmploymentCard
               key={employment.id}
