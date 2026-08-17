@@ -19,6 +19,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { asyncHandler, param } from './middleware';
+import { blueprintsRouter } from './blueprints';
 import { getDb } from '../db/client';
 import {
   createCompany,
@@ -40,17 +41,6 @@ import { ensureProjectThreads } from '../domain/thread';
 import { summarizeCompanyUsage } from '../domain/usage';
 import { companyArtifactGallery } from '../domain/artifact';
 import { searchArchive } from '../domain/archive';
-import {
-  listBlueprints,
-  setBlueprintStatus,
-  listBlueprintVersions,
-  rollbackBlueprint,
-  updateBlueprintDescription,
-  matchBlueprints,
-  getBlueprint,
-  getBlueprintDetail,
-  publishBlueprintDebugResult,
-} from '../domain/blueprint';
 import { listAgents, getAgent } from '../domain/agent';
 import { listDepartments } from '../domain/department';
 import { getCompanyCockpit } from '../domain/company-cockpit';
@@ -311,91 +301,8 @@ companiesRouter.get(
   }),
 );
 
-/** 蓝图组织批次3：蓝图库列表（自动复盘进化，可见/可锁/可淘汰）。 */
-companiesRouter.get(
-  '/:id/blueprints',
-  asyncHandler(async (req, res) => {
-    res.json(listBlueprints(getDb(), param(req, 'id')));
-  }),
-);
-
-companiesRouter.post(
-  '/:id/blueprints/:blueprintId/status',
-  asyncHandler(async (req, res) => {
-    const companyId = param(req, 'id');
-    if (getBlueprint(getDb(), param(req, 'blueprintId')).companyId !== companyId) throw new AppError(ErrorCode.NOT_FOUND, '蓝图不存在');
-    const { status } = z.object({ status: z.enum(['active', 'locked', 'retired']) }).parse(req.body);
-    res.json(setBlueprintStatus(getDb(), param(req, 'blueprintId'), status));
-  }),
-);
-
-/** 打法包一期：按任务标题预览将穿戴的蓝图与相关打法（创建任务卡用）。 */
-companiesRouter.get(
-  '/:id/blueprints/match-preview',
-  asyncHandler(async (req, res) => {
-    const title = typeof req.query.title === 'string' ? req.query.title : '';
-    if (!title.trim()) { res.json([]); return; }
-    res.json(matchBlueprints(getDb(), param(req, 'id'), title, 3).map((m) => m.blueprint));
-  }),
-);
-
-// 打法包一期：版本时间线 / 回滚 / 用户语言描述刷新
-companiesRouter.get(
-  '/:id/blueprints/:blueprintId/versions',
-  asyncHandler(async (req, res) => {
-    const companyId = param(req, 'id');
-    if (getBlueprint(getDb(), param(req, 'blueprintId')).companyId !== companyId) throw new AppError(ErrorCode.NOT_FOUND, '蓝图不存在');
-    res.json(listBlueprintVersions(getDb(), param(req, 'blueprintId')));
-  }),
-);
-
-companiesRouter.post(
-  '/:id/blueprints/:blueprintId/rollback',
-  asyncHandler(async (req, res) => {
-    const companyId = param(req, 'id');
-    if (getBlueprint(getDb(), param(req, 'blueprintId')).companyId !== companyId) throw new AppError(ErrorCode.NOT_FOUND, '蓝图不存在');
-    const { version } = z.object({ version: z.number().int().min(1) }).parse(req.body);
-    res.json(rollbackBlueprint(getDb(), param(req, 'blueprintId'), version));
-  }),
-);
-
-companiesRouter.patch(
-  '/:id/blueprints/:blueprintId/description',
-  asyncHandler(async (req, res) => {
-    const companyId = param(req, 'id');
-    if (getBlueprint(getDb(), param(req, 'blueprintId')).companyId !== companyId) throw new AppError(ErrorCode.NOT_FOUND, '蓝图不存在');
-    const { description } = z.object({ description: z.string().min(1).max(400) }).parse(req.body);
-    res.json(updateBlueprintDescription(getDb(), param(req, 'blueprintId'), description));
-  }),
-);
-
-companiesRouter.get(
-  '/:id/blueprints/:blueprintId/detail',
-  asyncHandler(async (req, res) => {
-    const companyId = param(req, 'id');
-    const bp = getBlueprint(getDb(), param(req, 'blueprintId'));
-    if (bp.companyId !== companyId) throw new AppError(ErrorCode.NOT_FOUND, '蓝图不存在');
-    res.json(getBlueprintDetail(getDb(), param(req, 'blueprintId')));
-  }),
-);
-
-companiesRouter.post(
-  '/:id/blueprints/:blueprintId/debug-adopt',
-  asyncHandler(async (req, res) => {
-    const companyId = param(req, 'id');
-    const bp = getBlueprint(getDb(), param(req, 'blueprintId'));
-    if (bp.companyId !== companyId) throw new AppError(ErrorCode.NOT_FOUND, '蓝图不存在');
-    const body = z.object({
-      staffing: z.array(z.object({ personaId: z.string(), personaName: z.string() })).optional(),
-      tools: z.array(z.object({ kind: z.enum(['skill', 'tool', 'mcp']), id: z.string(), uses: z.number(), wins: z.number() })).optional(),
-      stages: z.array(z.unknown()).optional(),
-      description: z.string().optional(),
-      summary: z.string().min(1),
-      evidenceTaskId: z.string().optional(),
-    }).parse(req.body);
-    res.json(publishBlueprintDebugResult(getDb(), { blueprintId: param(req, 'blueprintId'), ...body }));
-  }),
-);
+/** 蓝图组织批次3 + 公司退役批次A：蓝图组抽离到 blueprints.ts；旧路径保留（handler 经 companyIdOf 读 :id 参数）。 */
+companiesRouter.use('/:id/blueprints', blueprintsRouter);
 
 /**
  部门与员工状态看板（PRD Phase 4，清单 172）。

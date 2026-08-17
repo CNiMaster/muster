@@ -27,6 +27,7 @@ import { taskByProjectRouter, taskByIdRouter } from './api/tasks';
 import { usageRouter } from './api/reports-usage';
 import { novelRouter, projectScopedNovel } from './api/novel';
 import { blueprintOptimizationRouter } from './api/blueprint-optimization';
+import { blueprintsRouter } from './api/blueprints';
 import { expertCandidatesRouter } from './api/expert-candidates';
 import { projectPhase7, reportByIdRouter, inspectorAlertRouter } from './api/phase7';
 import { companyMessagesRouter, projectMessagesRouter } from './api/conversation';
@@ -202,6 +203,10 @@ async function createApp(): Promise<AppHandle> {
   app.use('/api/companies/:companyId/credentials', companyCredentialsRouter);
   app.use('/api/companies/:companyId', blueprintOptimizationRouter);
   app.use('/api/companies/:companyId/expert-candidates', expertCandidatesRouter);
+  // 公司退役批次A：新路径双挂（旧 /api/companies/:companyId/* 保留至批次 C；handler 经 companyIdOf 兜底解析默认工作台；/api/projects 必须先于 /api/projects/quick 注册）
+  app.use('/api/blueprints', blueprintsRouter);
+  app.use('/api/blueprint-optimization', blueprintOptimizationRouter);
+  app.use('/api/projects', projectsRouter);
   app.use('/api/playbooks', playbooksRouter);
   // 蓝图组织批次4c：项目优先入口（须在 /api/projects/:id 之前挂载，避免被 :id 参数吞掉）
   app.use('/api/projects/quick', quickProjectsRouter);
