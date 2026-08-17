@@ -14,6 +14,7 @@ import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
 import type { CompanyState } from '../../shared/types';
 import { realtime } from '../realtime';
+import { log } from '../logger';
 
 export interface Company {
   id: string;
@@ -141,6 +142,26 @@ export function listCompanies(db: DB, filter?: CompanyListFilter): Company[] {
   const sql = `SELECT * FROM company${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY archived_at IS NULL DESC, created_at ASC`;
   const rows = db.prepare(sql).all(...params) as CompanyRow[];
   return rows.map(fromRow);
+}
+
+/** 公司退役批次A：隐式单例工作台的默认名称（UI 口径「工作台」）。 */
+export const DEFAULT_WORKBENCH_NAME = '默认工作台';
+
+/**
+ * 公司退役批次A：默认工作台单例解析——取首个在营公司（created_at 最早）；
+ * 一个都没有则创建空壳「默认工作台」（无员工、无模板、下班态）。
+ * 需要公司归属的入口（启动 seed、路由注入、quick 建项目）都走这里，
+ * 逐步替代各处「取第一家在营公司」的内联逻辑。
+ */
+export function ensureDefaultCompany(db: DB): { company: Company; created: boolean } {
+  const active = listCompanies(db, { activeOnly: true });
+  if (active.length > 0) {
+    if (active.length > 1) {
+      log.warn('default company: multiple active companies, using oldest as default workbench', { count: active.length });
+    }
+    return { company: active[0], created: false };
+  }
+  return { company: createCompany(db, { name: DEFAULT_WORKBENCH_NAME, kind: 'general' }), created: true };
 }
 
 export function updateCompany(
