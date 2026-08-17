@@ -78,6 +78,18 @@ Key constraints for all new work:
 - **二期路线**（本轮未做）：stages_json 阶段工作流落地（每阶段=目标/人设/工具/产出）、组合管线生成器（复杂任务匹配多蓝图→顺序阶段编排，阶段内才用蜂群并行）、蓝图拆分/派生。
 - 测试基线：单测/集成 174 文件 1227 过（web-tools 偶发本地沙箱 DNS 拦截为环境性非回归）、e2e 18/18。
 
+## 六问收口：专家沉淀 + 模型档位 + 多模态工具化 + 流式（2026-08-17）
+
+- **专家链路修复**：调度中心上下文注入人设库索引（`persona-library.listPersonaIndex`，域分组、仅 role=swarm-dispatcher 任务注入）；personaId 未命中留 `persona_miss` 事件（蜂群 `resolveBeePersona` + 任务穿戴热删除两处）；验收/返工任务 `exemptBlueprintMatch` 豁免蓝图自动穿戴（防验收员穿与产出者同款人设）；蓝图 tools 读侧消费（命中蓝图时 `blueprintTools` 按使用次数 cap10 注入「# 本打法常用工具」）；`resolvedSkillIds` 落 inputProtocol + 任务条/ExecutionTraceCard 🧩 chips（注入去黑盒）。
+- **系统自建专家（persona 沉淀管道，组织=f(活) 专家侧，免人工确认）**：反思 drain 末尾 `maybeSynthesizeExpertCandidates` 三信号——persona_miss 同 id ≥2 / 匿名蜂同 swarm goal 完成 ≥3 零失败 / 无专家人设普通任务同类 ≥3 零返工（taskTypeOf 聚类）→ LLM 轻量档起草（失败降级规则引擎）→ **自动入库**写 `~/.muster/personas/{domain}/{slug}.md`（无审批闸；去重双保险=同 signal_key 历史存在不涌现+草稿名与库内精确同名跳过）；`expert_candidate` 表=沉淀历史（status adopted/dismissed，persona_id 溯源）。管理=查/改/删：历史列表 `/api/companies/:id/expert-candidates`；人设编辑/删除单门 `/api/agent-profiles/personas/:id`（PUT 整文件重写/DELETE 删文件并标历史 dismissed，仅 user/ 前缀，预置库只读）；AgentLibraryPage「自建专家」区（编辑表单+删除确认+沉淀历史折叠）。persona-library 双根扫描（repo `personas/` + 用户根，user/ id 前缀防撞、source 标记，mtime 聚合一级子域目录热加载+写后强刷缓存）。二期不做：转正专家合并/淘汰（挂 blueprint-optimizer）、预置 243 人设正文深度激活。
+- **模型档位（成本-能力匹配）**：设置键 `modelTierEconomy/Premium`（空=不覆盖零回归；标准档=不覆盖故无第三键）；`domain/model-tier.ts` 判定——轻量=蜂群工蜂(trigger=swarm_bee)/辩手/平台反思（`llm-call` tier 参数，反思/审批/技能起草默认轻量），高级=计划模式/验收/返工/裁决/蜂群请示；引擎合成顺序=消息显式 model > 档位键 > 执行器档案 model；composer 模型下拉三档快捷项。
+- **API 流式输出**：openai/gemini adapter 默认 SSE 流式（400/404/422 或「provider 忽略 stream 回整包 JSON」自动回退非流式）；tool_calls 增量按 index 聚合；`ExecutionEvents.onTextDelta` → 引擎 60ms 节流广播 `message.delta`/`message.delta.end`（payload 带 agentId/projectTaskId 归属——单聊面板不串入其他任务的流；前端 realtime 对 delta 不做缓存失效，`onStreamDelta` 订阅）；ConversationPanel 打字机气泡（按归属过滤、markdown 实时渲染、8000 字符截尾、5s 无活动/落库/流结束三路清泡）。
+- **对话渲染**：MarkdownPreview 重写为 react-markdown + remark-gfm + rehype-highlight（`.mu-md-*` 类名兼容既有消费方）；MessageBubble assistant 消息走 markdown（`.mu-msg-text.is-md`）+ hljs 主题跟随 data-theme（浅/深两套 GitHub 风调色）。
+- **多模态工具化（主模型管思考，多模态走工具）**：`AgentExecutorConfig.capabilities` 能力声明（ExecutorCenter 勾选 vision）；识图双路——图片附件转 data-uri（仅 png/jpeg/webp/gif，≤2MB/张 ×3）随任务下发（conversation `collectImageDataUris` → inputProtocol.userImages），**引擎级门控：仅 capabilities 含 vision 才塞 ctx.imageAttachments 产 image_url/inline_data 原生直读**（未声明连 parts 都不拼——纯文本模型不会被 provider 400，走「# 图像输入提示」引导工具/禁编造；userImages 不进 inputPacket 提示词 JSON）；内置 `image_generate` 工具（OpenAI 兼容 /images/generations，`imageGenModel` 设置键，产物落 worktree、文件名穿越净化，network 权限）；复活死字段——`requires_executor_kind` 进 `findBestAssignee` 过滤（`requiredExecutorKindForCapabilities`）、工具档案 `executor_kind` 进能力缺口检测。
+- **Browser 能力（WP6 选型落地，不自研）**：主选 microsoft/playwright-mcp（Apache-2.0，pin `@playwright/mcp@0.0.79`）；商城预置 `mcp-playwright`（新分类 `mcp-browser`，curatedBy 白名单扩 microsoft）+ `tools/browser/playwright-mcp.md` 档案；选型对比见 `docs/superpowers/specs/2026-08-17-browser-tool-selection.md`。
+- **研究交付**：`docs/superpowers/specs/2026-08-17-dsh-capability-gap-matrix.md`——deepseek-harness 48 插件包 × muster 对照矩阵；缺口优先级=spill 上下文溢写 > bundle 能力包分发 > 蓝图 stages 阶段化；不引 Cordis 不搬代码。
+- 测试锚点：`tests/integration/expert-chain.spec.ts`（豁免/miss留痕/索引/档位判定）、`expert-synthesis.spec.ts`（三信号/采纳/双根，MUSTER_HOME 动态隔离）、`tests/unit/openai-stream.spec.ts`（SSE 解析）、`image-tools.spec.ts`（文生图）。测试基线：单测/集成 178 文件 1250 过（web-tools 3 例为本地沙箱 DNS 拦截公网域名的环境性失败，非回归）+ e2e 18/18 + smoke 77/77。
+
 ## 补缺批次 R1-R3（2026-08-16 交付，配枪/验收员/资产库）
 
 - **R1 人设配枪**：persona frontmatter `tools` 键解析（persona-library.ts）；穿戴人设时上下文含「# 人设工具」文本段 + 注册表归一化命中的工具进「# 能力中心」推荐卡（tool-recommendation.ts `normalizeToolId`）；**一次性执行体权限缺口修复**——临时工/系统隐形岗创建即绑「临时工」deny 档（permission-templates.ts `bindDefaultDenyPolicy`，API 执行器上不再零拦截，CLI 侧 fail-closed 不变；已有显式策略不覆盖，greyed 复用补绑）。
@@ -106,6 +118,8 @@ npm run smoke            # node scripts/smoke/run-all.mjs（需先 npm run dev�
 ```
 
 > **冒烟测试约定**：改 capability/plugin/project-readiness/mcp/素材/权限/外包/交接相关代码后，启动 `npm run dev` 跑一次 `npm run smoke`（run-all.mjs，77 项），确认核心→素材/成果→执行器/权限→插件→B2B/临时工→委托/交接→能力平台端到端可用。单测覆盖代码逻辑，冒烟覆盖真实 HTTP 链路。
+
+> **开源资源约定**：有现成开源/MCP 方案不自研；凡引入或借鉴开源资源（依赖、代码、设计）必须在根 `THIRD_PARTY_NOTICES.md` 登记（名称/仓库/许可/用途/引入日期/方式）——后期商业化/协议合规追溯用。
 
 ## Configuration (Environment Variables)
 

@@ -48,6 +48,16 @@
 | [python-pptx](document/python-pptx.md) | 本地 | 程序化生成 PowerPoint |
 | [openpyxl](document/openpyxl.md) | 本地 | 程序化生成 Excel 表格 |
 
+### 浏览器自动化(browser)
+| 工具档案 | 实现 | 适用场景 |
+|----------|------|----------|
+| [playwright-mcp](browser/playwright-mcp.md) | 本地 MCP | 网页调研/登录后抓取/线上验证（Playwright 官方；选型见 docs/superpowers/specs/2026-08-17-browser-tool-selection.md） |
+
+### 图像生成(image-gen)
+| 工具档案 | 实现 | 适用场景 |
+|----------|------|----------|
+| [openai-images-api](image-gen/openai-images-api.md) | 内置工具 | 文生图（内置 image_generate，OpenAI 兼容端点，产物落 worktree） |
+
 ## frontmatter 字段约定
 
 每个工具档案 `.md` 顶部 YAML frontmatter:

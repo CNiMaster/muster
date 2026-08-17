@@ -18,6 +18,7 @@
 | source-driven-development | 依赖官方文档的正确性 |
 | api-and-interface-design | 设计 API 或模块边界 |
 | frontend-ui-engineering | 构建用户界面 |
+| karpathy-guidelines | 一切编码任务的行事准则（假设显式化/极简/外科手术式修改/目标驱动） |
 
 ## 验证阶段
 | Skill | 触发场景 |
