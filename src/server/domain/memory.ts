@@ -403,12 +403,37 @@ function recordInjected(db: DB, taskId: string | null | undefined, entries: Memo
  * 优势 = 基线 − 消耗（completed 记票；failed 投中性 0 票，失败原因不明不冤枉不奖励）→
  * 累计到每条注入记忆并标 voted_at。voted_at 守卫保证恰好一次：崩溃后重扫不重复计票。
  * 基线先算后累加（本任务不稀释自身基线）；failed 不计入基线（基线=正常完成水平）。
+ *
+ * 扫描即过滤（review 修复两处）：
+ * 1. 终态过滤放 SQL 而不是循环里 continue——永久 waiting/cancelled 的任务注入时间最早，
+ *    会永远占满 LIMIT 窗口饿死后来的终态任务（结算静默停摆）。
+ * 2. 验收未闭环推迟结算——验收返工的 rework_count 在源任务完成后才落（acceptance-review.ts
+ *    先加计数再发 acceptance_rework 事件），10s 就结算会读到 0 漏记成本。已派验收
+ *    （acceptance_dispatched）且未落闭环事件（passed/rework/escalated）且验收任务还活着 → 推迟；
+ *    验收任务死亡（失败/取消）= 事后门放行语义，rework_count 已是终值，正常结算。
  */
 export function settleMemoryVotes(db: DB, options: { maxTasks?: number } = {}): number {
   const maxTasks = Math.min(Math.max(options.maxTasks ?? 20, 1), 100);
   const pending = db.prepare(
-    `SELECT task_id FROM memory_injection WHERE voted_at IS NULL
-     GROUP BY task_id ORDER BY MIN(injected_at) LIMIT ?`,
+    `SELECT mi.task_id
+     FROM memory_injection mi
+     JOIN task t ON t.id = mi.task_id
+     WHERE mi.voted_at IS NULL AND t.state IN ('completed','failed')
+       AND NOT EXISTS (
+         SELECT 1 FROM task_event de
+         WHERE de.task_id = t.id AND de.kind = 'acceptance_dispatched'
+           AND NOT EXISTS (
+             SELECT 1 FROM task_event te
+             WHERE te.task_id = t.id
+               AND te.kind IN ('acceptance_passed','acceptance_rework','acceptance_escalated')
+           )
+           AND EXISTS (
+             SELECT 1 FROM task rt
+             WHERE rt.id = json_extract(de.payload_json, '$.reviewTaskId')
+               AND rt.state NOT IN ('completed','failed','cancelled')
+           )
+       )
+     GROUP BY mi.task_id ORDER BY MIN(mi.injected_at) LIMIT ?`,
   ).all(maxTasks) as Array<{ task_id: string }>;
   let voted = 0;
   for (const { task_id } of pending) {

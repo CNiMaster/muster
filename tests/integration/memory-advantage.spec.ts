@@ -19,6 +19,13 @@ import {
   loadContextMemories,
   settleMemoryVotes,
 } from '../../src/server/domain/memory';
+import { assembleContext } from '../../src/server/executors/context';
+import { getTask } from '../../src/server/domain/task';
+import { appendTaskEvent } from '../../src/server/domain/task-event';
+import {
+  maybeTriggerAcceptanceReview,
+  handleAcceptanceReviewTaskCompleted,
+} from '../../src/server/domain/acceptance-review';
 
 let tdb: ReturnType<typeof makeTestDb>;
 let db: DB;
@@ -222,6 +229,142 @@ describe('终态结算（settleMemoryVotes）', () => {
   });
 });
 
+describe('生产接线与扫描过滤（review 修复回归）', () => {
+  it('assembleContext 正常装配记账、lightweight 不注入不记账、不传 taskId 纯读', () => {
+    const { c, p, lead } = seed();
+    // 记忆必须挂在执行人（lead）自己的档案下，assembleContext 按 agent.profileId 加载
+    const entry = seedProjectMemory(lead.profileId, c.id, p.id, '当前项目决定采用事件驱动架构');
+
+    // 不传 taskId（旧调用方路径）：纯读，零记账
+    const readOnly = loadContextMemories(db, {
+      profileId: lead.profileId, companyId: c.id, projectId: p.id, query: '事件 驱动',
+    });
+    expect(readOnly.some((m) => m.id === entry)).toBe(true);
+    expect(db.prepare('SELECT COUNT(*) AS n FROM memory_injection').get() as { n: number }).toEqual({ n: 0 });
+
+    // 生产唯一调用点：assembleContext 带 task 上下文记账
+    const task = createTask(db, { projectId: p.id, assigneeAgentId: lead.id, title: '继续实现事件模块' });
+    const context = assembleContext(db, task);
+    expect(context.systemPrompt).toContain('当前项目决定采用事件驱动架构');
+    expect(getMemoryEntry(db, entry).hitCount).toBe(1);
+    expect(db.prepare('SELECT COUNT(*) AS n FROM memory_injection WHERE task_id=?').get(task.id) as { n: number })
+      .toEqual({ n: 1 });
+
+    // 轻量模式（咨询/讨论）：不注入记忆也不记账
+    const lightTask = createTask(db, { projectId: p.id, assigneeAgentId: lead.id, title: '咨询一下事件模块' });
+    assembleContext(db, lightTask, { lightweight: true });
+    expect(db.prepare('SELECT COUNT(*) AS n FROM memory_injection WHERE task_id=?').get(lightTask.id) as { n: number })
+      .toEqual({ n: 0 });
+    expect(getMemoryEntry(db, entry).hitCount).toBe(1);
+  });
+
+  it('扫描即过滤终态：永久 waiting/cancelled 不占结算窗口（防饥饿回归）', () => {
+    const { profile, c, p, lead } = seed();
+    const entry = seedProjectMemory(profile.id, c.id, p.id, '防饥饿经验');
+    // 两个更早注入、但永远到不了可结算态的任务（修复前会占满 LIMIT 窗口饿死后来的终态任务）
+    const stuck = createTask(db, { projectId: p.id, title: '半程', assigneeAgentId: lead.id });
+    const cancelled = createTask(db, { projectId: p.id, title: '取消', assigneeAgentId: lead.id });
+    inject(stuck.id, entry);
+    inject(cancelled.id, entry);
+    finishTask(stuck.id, 'waiting_input');
+    finishTask(cancelled.id, 'cancelled');
+    // 后来完成的任务：窗口收到最小 maxTasks=1 也必须能结算
+    const done = createTask(db, { projectId: p.id, title: '完成', assigneeAgentId: lead.id });
+    inject(done.id, entry);
+    finishTask(done.id, 'completed');
+    expect(settleMemoryVotes(db, { maxTasks: 1 })).toBe(1);
+    // stuck/cancelled 的注入行保持未投票（语义正确），但不再挡路
+    expect(db.prepare('SELECT COUNT(*) AS n FROM memory_injection WHERE voted_at IS NULL').get() as { n: number })
+      .toEqual({ n: 2 });
+  });
+
+  it('验收未闭环推迟结算：返工计数落定后才投票（读到终值不漏记成本）', () => {
+    const { profile, c, p, lead } = seed();
+    const entry = seedProjectMemory(profile.id, c.id, p.id, '验收推迟经验');
+    // 三个铺垫任务（每个返工 2 = 成本 4）→ 基线 4
+    for (let i = 0; i < 3; i += 1) {
+      const t = createTask(db, { projectId: p.id, title: '铺垫', assigneeAgentId: lead.id });
+      inject(t.id, entry);
+      finishTask(t.id, 'completed', 2, 0);
+    }
+    settleMemoryVotes(db);
+
+    // 源任务带验收标准完成（此刻 rework_count=0）
+    const source = createTask(db, {
+      projectId: p.id, title: '带验收的活', assigneeAgentId: lead.id,
+      acceptanceCriteria: [{ id: 'ac_1', criterion: '产物存在' }],
+    });
+    inject(source.id, entry);
+    finishTask(source.id, 'completed');
+    const review = maybeTriggerAcceptanceReview(db, getTask(db, source.id));
+    expect(review).not.toBeNull();
+    // 验收进行中（review 任务 queued = 活着）→ 推迟结算
+    expect(settleMemoryVotes(db)).toBe(0);
+    // 验收员判 FAIL：rework_count+1 先于 acceptance_rework 事件落库（acceptance-review.ts 顺序）
+    db.prepare('UPDATE task SET summary=? WHERE id=?').run('VERDICT=FAIL\nCONFIDENCE=0.9\n不行重来', review!.id);
+    handleAcceptanceReviewTaskCompleted(db, getTask(db, review!.id));
+    expect(getTask(db, source.id).reworkCount).toBe(1);
+    // 闭环后才结算，读到终值：成本 = 1×2 = 2 → 优势 = 4 − 2 = +2（修复前会读到成本 0 记 +4）
+    expect(settleMemoryVotes(db)).toBe(1);
+    expect(getMemoryEntry(db, entry).advSum).toBe(2);
+  });
+
+  it('验收任务死亡（失败）= 事后门放行：立即按当前终值结算', () => {
+    const { profile, c, p, lead } = seed();
+    const entry = seedProjectMemory(profile.id, c.id, p.id, '放行经验');
+    const source = createTask(db, {
+      projectId: p.id, title: '带验收的活', assigneeAgentId: lead.id,
+      acceptanceCriteria: [{ id: 'ac_1', criterion: '产物存在' }],
+    });
+    inject(source.id, entry);
+    finishTask(source.id, 'completed');
+    const review = maybeTriggerAcceptanceReview(db, getTask(db, source.id));
+    expect(review).not.toBeNull();
+    finishTask(review!.id, 'failed'); // 验收任务自身失败：无闭环事件，源任务 rework_count 也不会再加
+    expect(settleMemoryVotes(db)).toBe(1); // 不再推迟
+  });
+
+  it('有基线时 failed 仍投中性 0（低消耗失败不白捡正分）；成本高于基线记负优势', () => {
+    const { profile, c, p, lead } = seed();
+    const entry = seedProjectMemory(profile.id, c.id, p.id, '中性票经验');
+    for (let i = 0; i < 3; i += 1) {
+      const t = createTask(db, { projectId: p.id, title: '铺垫', assigneeAgentId: lead.id });
+      inject(t.id, entry);
+      finishTask(t.id, 'completed', 2, 0);
+    }
+    settleMemoryVotes(db); // 基线 4，entry 三条 0 票
+
+    // 零消耗的失败任务：中性 0 票（若错误地按 completed 记票会白捡 4−0=+4）
+    const failedTask = createTask(db, { projectId: p.id, title: '失败活', assigneeAgentId: lead.id });
+    inject(failedTask.id, entry);
+    finishTask(failedTask.id, 'failed', 0, 0);
+    settleMemoryVotes(db);
+    expect(getMemoryEntry(db, entry)).toMatchObject({ voteCount: 4, advSum: 0 });
+
+    // 高于基线的完成任务（成本 6 > 基线 4）→ 负优势 −2（failed 不进基线，基线仍是 4）
+    const heavy = createTask(db, { projectId: p.id, title: '折腾活', assigneeAgentId: lead.id });
+    inject(heavy.id, entry);
+    finishTask(heavy.id, 'completed', 3, 0);
+    settleMemoryVotes(db);
+    expect(getMemoryEntry(db, entry).advSum).toBe(-2);
+  });
+
+  it('闭环事件顺序锚点：appendTaskEvent 可作验收闭环信号（供扫描 SQL 消费）', () => {
+    const { profile, c, p, lead } = seed();
+    const entry = seedProjectMemory(profile.id, c.id, p.id, '闭环锚点经验');
+    const source = createTask(db, {
+      projectId: p.id, title: '带验收的活', assigneeAgentId: lead.id,
+      acceptanceCriteria: [{ id: 'ac_1', criterion: '产物存在' }],
+    });
+    inject(source.id, entry);
+    finishTask(source.id, 'completed');
+    const review = maybeTriggerAcceptanceReview(db, getTask(db, source.id))!;
+    expect(settleMemoryVotes(db)).toBe(0); // 推迟中
+    appendTaskEvent(db, source.id, 'acceptance_passed', { reviewTaskId: review.id });
+    expect(settleMemoryVotes(db)).toBe(1); // 闭环事件即放行
+  });
+});
+
 describe('排序（收缩平均优势优先，时间序兜底）', () => {
   it('长期稳定正优势压过短期侥幸；零票新记忆按时间序保底出场', () => {
     const { profile, c, p, lead } = seed();
@@ -238,6 +381,8 @@ describe('排序（收缩平均优势优先，时间序兜底）', () => {
       query: '特性',
     });
     const ids = memories.filter((m) => m.scope === 'project').map((m) => m.id);
+    // 先断言在场，防 indexOf(-1) 让比较空过
+    expect(ids).toEqual(expect.arrayContaining([stable, lucky, fresh]));
     expect(ids.indexOf(stable)).toBeLessThan(ids.indexOf(lucky));
     expect(ids.indexOf(lucky)).toBeLessThan(ids.indexOf(fresh));
   });
@@ -254,6 +399,7 @@ describe('排序（收缩平均优势优先，时间序兜底）', () => {
       query: '特性',
     });
     const ids = memories.filter((m) => m.scope === 'project').map((m) => m.id);
+    expect(ids).toEqual(expect.arrayContaining([newer, older]));
     expect(ids.indexOf(newer)).toBeLessThan(ids.indexOf(older));
   });
 });

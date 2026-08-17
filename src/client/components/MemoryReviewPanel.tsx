@@ -129,8 +129,9 @@ function scopeLabel(scope: MemoryCandidate['scope']): string {
   return ({ personal: '个人', company: '工作台', project: '项目', skill: 'Skill' } as const)[scope];
 }
 
-/** 记忆优势分展示：正数带 + 号（好于项目平均消耗），保留两位。 */
+/** 记忆优势分展示：正数带 + 号（好于项目平均消耗），保留两位；±0.005 内四舍五入为 0.00（吞掉 -0.00）。 */
 function formatAdvantage(advSum: number, votes: number): string {
-  const avg = advSum / votes;
-  return `${avg >= 0 ? '+' : ''}${avg.toFixed(2)}`;
+  const rounded = Math.round((advSum / votes) * 100) / 100;
+  if (rounded === 0) return '0.00';
+  return `${rounded > 0 ? '+' : ''}${rounded.toFixed(2)}`;
 }
