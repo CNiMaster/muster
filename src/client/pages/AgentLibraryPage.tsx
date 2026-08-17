@@ -8,13 +8,13 @@
 import type React from 'react';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useAgentProfiles, useCompanies, useCreateAgentProfile, useRecruitFromDraft, usePersonas, usePersonaDomains, useGenerateAgentProposal } from '../hooks/queries';
+import { useAgentProfiles, useCompanies, useCreateAgentProfile, useRecruitFromDraft, usePersonas, usePersonaDomains, useGenerateAgentProposal, useDefaultCompanyId, useExpertCandidates, useUpdateUserPersona, useDeleteUserPersona, type PersonaDTO } from '../hooks/queries';
+import type { AgentProfile, Company } from '../api/types';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
 import { Badge } from '../components/Badge';
 import { Field, Input, Select, Textarea } from '../components/Form';
 import { EmptyState, Icons } from '../components/EmptyState';
-import type { AgentProfile, Company } from '../api/types';
 import type { RecruitmentDraft } from '../../shared/types';
 
 export function AgentLibraryPage(): React.ReactElement {
@@ -153,6 +153,9 @@ export function AgentLibraryPage(): React.ReactElement {
         </div>
       </section>
 
+      {/* WP3 系统自建专家：沉淀候选（反思队列从真实使用中发现「缺什么专家」） */}
+      <ExpertCandidatesSection />
+
       <Card title="人才列表" className="section" actions={profiles ? <Badge>{profiles.length}</Badge> : undefined}>
         {!isLoading && filtered.length === 0 && (
           <EmptyState
@@ -172,8 +175,171 @@ export function AgentLibraryPage(): React.ReactElement {
   );
 }
 
-function TalentCard({ profile }: { profile: AgentProfile }): React.ReactElement {
-  const { data: companies = [] } = useCompanies();
+/**
+ * WP3 系统自建专家（免人工确认版）：信号命中即自动入库，本区只做「查/改/删」。
+ * - 管理卡：user/ 前缀人设（系统沉淀 + 手动放入用户根），可编辑（整文件重写）/删除（沉淀历史同步标已删除）。
+ * - 沉淀历史：最近自动入库记录（来源信号 + 何时使用），deleted 的显示为已删除。
+ */
+function ExpertCandidatesSection(): React.ReactElement | null {
+  const companyId = useDefaultCompanyId();
+  const { data: allPersonas } = usePersonas();
+  const { data: history } = useExpertCandidates(companyId, 20);
+  const updatePersona = useUpdateUserPersona();
+  const deletePersona = useDeleteUserPersona();
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [open, setOpen] = useState(true);
+
+  const userPersonas = (allPersonas ?? []).filter((p) => p.source === 'user');
+  const historyList = history ?? [];
+  if (userPersonas.length === 0 && historyList.length === 0) return null;
+
+  const sourceLabel: Record<string, string> = {
+    persona_miss: '库缺口：调度中心需要的专家不存在',
+    bee_record: '蜂群战绩：匿名蜂反复打同一种活',
+    generalist_record: '打法专家化：普通员工零返工连击',
+  };
+
+  return (
+    <section className="section" aria-labelledby="expert-candidates-title">
+      <div className="section-heading">
+        <div>
+          <span className="step-kicker">03</span>
+          <h2 id="expert-candidates-title">自建专家（系统自动沉淀）</h2>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Badge tone="info">{userPersonas.length} 位在库</Badge>
+          <Button size="sm" variant="ghost" onClick={() => setOpen(!open)}>{open ? '收起' : '展开'}</Button>
+        </div>
+      </div>
+      <p className="muted" style={{ fontSize: 12, margin: '0 0 12px' }}>
+        系统从真实使用中自动沉淀专家（缺什么补什么），无需确认、即入库即调度；沉淀错了在这里改或删。
+      </p>
+      {open && (
+        <>
+          <div className="persona-library-grid">
+            {userPersonas.map((persona) => (
+              <UserPersonaCard
+                key={persona.id}
+                persona={persona}
+                editing={editingId === persona.id}
+                deleting={deletingId === persona.id}
+                onEdit={() => { setEditingId(persona.id); setDeletingId(null); }}
+                onCancelEdit={() => setEditingId(null)}
+                onDelete={() => setDeletingId(deletingId === persona.id ? null : persona.id)}
+                onDeleteConfirm={() => {
+                  deletePersona.mutate(persona.id, {
+                    onSuccess: () => { toast('success', `已删除自建专家「${persona.name}」`); setDeletingId(null); },
+                    onError: (error) => toast('error', (error as Error).message),
+                  });
+                }}
+                deletePending={deletePersona.isPending}
+                onSave={(patch) => {
+                  updatePersona.mutate({ id: persona.id, patch }, {
+                    onSuccess: () => { toast('success', '自建专家已更新'); setEditingId(null); },
+                    onError: (error) => toast('error', (error as Error).message),
+                  });
+                }}
+                savePending={updatePersona.isPending}
+              />
+            ))}
+          </div>
+          {historyList.length > 0 && (
+            <details className="details-collapse" style={{ marginTop: 12 }}>
+              <summary style={{ fontSize: 12, cursor: 'pointer' }}>沉淀历史（最近 {historyList.length} 条）</summary>
+              <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 12 }}>
+                {historyList.map((item) => (
+                  <li key={item.id} className="muted" style={{ marginBottom: 4 }}>
+                    {item.status === 'dismissed' ? '🗑 ' : '🧬 '}
+                    <strong style={{ color: 'var(--fg)' }}>{item.name}</strong>
+                    {' '}· {sourceLabel[item.source] ?? item.source}
+                    {item.description ? ` · ${item.description.slice(0, 60)}` : ''}
+                    {' '}· {new Date(item.createdAt).toLocaleString()}
+                    {item.personaId ? ` · ${item.personaId}` : ''}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+function UserPersonaCard(props: {
+  persona: PersonaDTO;
+  editing: boolean;
+  deleting: boolean;
+  onEdit: () => void;
+  onCancelEdit: () => void;
+  onDelete: () => void;
+  onDeleteConfirm: () => void;
+  deletePending: boolean;
+  onSave: (patch: { name?: string; description?: string; soul?: string; tools?: string[]; principles?: string[] }) => void;
+  savePending: boolean;
+}): React.ReactElement {
+  const { persona } = props;
+  const [name, setName] = useState(persona.name);
+  const [description, setDescription] = useState(persona.description);
+  const [tools, setTools] = useState((persona.tools ?? []).join('、'));
+  const [soul, setSoul] = useState(persona.soul);
+  const [principles, setPrinciples] = useState(persona.principles.join('\n'));
+
+  if (props.editing) {
+    return (
+      <article className="persona-library-card" style={{ display: 'block' }}>
+        <div className="form-stack" style={{ gap: 6 }}>
+          <Field label="名称"><Input value={name} onChange={(e) => setName(e.target.value)} /></Field>
+          <Field label="何时使用（调度匹配用）"><Input value={description} onChange={(e) => setDescription(e.target.value)} /></Field>
+          <Field label="常用工具（顿号分隔，可空）"><Input value={tools} onChange={(e) => setTools(e.target.value)} /></Field>
+          <Field label="身份与使命"><Textarea value={soul} onChange={(e) => setSoul(e.target.value)} rows={5} /></Field>
+          <Field label="关键规则（每行一条）"><Textarea value={principles} onChange={(e) => setPrinciples(e.target.value)} rows={4} /></Field>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <Button size="sm" loading={props.savePending} disabled={!name.trim()}
+              onClick={() => props.onSave({
+                name: name.trim(),
+                description: description.trim(),
+                soul: soul.trim(),
+                tools: tools.split(/[、,，]/).map((t) => t.trim()).filter(Boolean),
+                principles: principles.split('\n').map((p) => p.trim()).filter(Boolean),
+              })}>保存</Button>
+            <Button size="sm" variant="ghost" onClick={props.onCancelEdit}>取消</Button>
+          </div>
+        </div>
+      </article>
+    );
+  }
+
+  return (
+    <article className="persona-library-card">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span className="employee-avatar">{persona.emoji || '🧬'}</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <strong>{persona.name}</strong>
+          <small className="muted">{persona.domain} · 自建</small>
+        </div>
+      </div>
+      <p className="muted" style={{ fontSize: 12, margin: '6px 0' }}>{persona.description}</p>
+      {(persona.tools ?? []).length > 0 && (
+        <small className="muted" style={{ display: 'block', fontSize: 11, marginBottom: 6 }}>🛠 {(persona.tools ?? []).join('、')}</small>
+      )}
+      <div style={{ display: 'flex', gap: 6 }}>
+        <Button size="sm" variant="ghost" onClick={props.onEdit}>编辑</Button>
+        {props.deleting ? (
+          <>
+            <Button size="sm" loading={props.deletePending} onClick={props.onDeleteConfirm}>确认删除</Button>
+            <Button size="sm" variant="ghost" onClick={props.onDelete}>取消</Button>
+          </>
+        ) : (
+          <Button size="sm" variant="ghost" onClick={props.onDelete}>删除</Button>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function TalentCard({ profile }: { profile: AgentProfile }): React.ReactElement {  const { data: companies = [] } = useCompanies();
   const activeCompanies = companies.filter((c) => !c.archivedAt && c.state === 'off');
   const recruit = useRecruitFromDraft();
   const [joining, setJoining] = useState(false);

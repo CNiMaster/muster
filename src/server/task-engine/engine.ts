@@ -90,6 +90,7 @@ import { ensureApprovalRequest, evaluatePermission, getEmployeePermissionPolicy 
 import { getActiveWorkspace } from '../domain/workspace';
 import { ensureProjectTaskThread, setProjectTaskThreadSession } from '../domain/project-task-thread';
 import { selectTieredExecutorProfile } from '../domain/executor-tier';
+import { modelTierForTask, resolveModelForTier } from '../domain/model-tier';
 import { hasCommandCapability } from '../domain/capability-probe';
 import{SessionManager}from'../domain/session-manager';
 import{approvalBroker}from'../domain/approval-broker';
@@ -412,9 +413,12 @@ export class TaskEngine {
       const legacyExecutor = normalizeAgentExecutor(agent.executor);
       // 批次 D2：消息级选项（模式/模型/思考）覆盖员工执行器配置——用户在 composer 里的选择优先生效
       const messageOptions = readMessageOptions(task.inputProtocol);
+      // WP9 模型档位：用户显式指定 > 档位默认（轻量=工蜂/辩手，高级=计划/验收/裁决/请示）> 执行器档案 model。
+      const modelTier = modelTierForTask(task, agent.role);
+      const tierModel = modelTier ? resolveModelForTier(this.db, modelTier) : null;
       const effectiveExecutor: AgentExecutorConfig = {
         ...(profileExecutor ?? legacyExecutor),
-        ...(messageOptions.model ? { model: messageOptions.model } : {}),
+        ...(messageOptions.model ? { model: messageOptions.model } : (tierModel ? { model: tierModel } : {})),
         ...(messageOptions.thinking ? { thinkingDepth: messageOptions.thinking } : {}),
       };
       // 模式 → 审批策略映射：plan/deny=只读；ask-always/ask-by-rule/no-approval=三档审批
@@ -468,6 +472,12 @@ export class TaskEngine {
         // PRD Phase 3：员工级执行器配置 + 凭据三层解析(员工覆盖 > 公司覆盖 > 平台默认 > legacy/系统回退)
         agentExecutor: effectiveExecutor,
         apiKeyEnv: resolveExecutorCredentialForTask(this.db, agent, company.id, executorProfile, effectiveExecutor, this.defaultProvider),
+        // WP10 识图直读：仅执行器声明 vision 才原生送图（未声明的不拼 image parts——纯文本模型会被
+        // provider 400 拒绝，降级路径靠 system prompt 提示走工具/路径读取）
+        imageAttachments: (Array.isArray(effectiveExecutor?.capabilities) && effectiveExecutor.capabilities.includes('vision')
+          && Array.isArray((task.inputProtocol as Record<string, unknown>)?.userImages))
+          ? (task.inputProtocol.userImages as unknown[]).filter((x): x is string => typeof x === 'string')
+          : undefined,
         // Agent Bridge loopback 配置
         loopback: {
           baseUrl: `http://127.0.0.1:${this.serverPort}`,
@@ -635,9 +645,28 @@ export class TaskEngine {
         executorHasCommandCapability: executorProfile
           ? hasCommandCapability(this.db, executorProfile.id, executorKind)
           : undefined,
+        // WP10 识图直读：执行器能力声明（capabilities 含 vision）
+        executorVision: Array.isArray(effectiveExecutor?.capabilities)
+          && effectiveExecutor.capabilities.includes('vision'),
         lightweight: (task.inputProtocol as Record<string, unknown>)?.lightweight === true,
       });
       ctx.systemPrompt = assembled.systemPrompt;
+      // 注入去黑盒：本次实际加载的 skills 持久化进 inputProtocol（任务条显示 chips；内容变化才写）。
+      // 写前重读最新 input_protocol_json 再合并——claim 快照到此处隔着 MCP 装配等秒级窗口，
+      // 并发写者（[兜底]/[蜂群告警] 追加 failedChildren/failures）的字段不能被整体覆写吞掉。
+      if (assembled.loadedSkillIds.length > 0) {
+        try {
+          const fresh = this.db.prepare('SELECT input_protocol_json FROM task WHERE id=?').get(task.id) as { input_protocol_json: string } | undefined;
+          const proto = (fresh ? JSON.parse(fresh.input_protocol_json ?? '{}') : (task.inputProtocol ?? {})) as Record<string, unknown>;
+          const existing = Array.isArray(proto.resolvedSkillIds) ? (proto.resolvedSkillIds as string[]) : [];
+          if (existing.join(',') !== assembled.loadedSkillIds.join(',')) {
+            const merged = { ...proto, resolvedSkillIds: assembled.loadedSkillIds };
+            this.db.prepare('UPDATE task SET input_protocol_json=?, updated_at=? WHERE id=?')
+              .run(JSON.stringify(merged), new Date().toISOString(), task.id);
+            task.inputProtocol = merged;
+          }
+        } catch { /* 审计写入失败不阻断执行 */ }
+      }
       // spec B2：注入能力缺口提示（执行期可见，不阻断）。
       if (capabilityGaps.length > 0) {
         ctx.systemPrompt += buildCapabilityGapSection(capabilityGaps);
@@ -682,10 +711,22 @@ export class TaskEngine {
             // trace 失败不影响执行
           }
         };
+        let lastDeltaPublishAt = 0;
         for(;;){try{result = await Promise.race([withExecutorConcurrency(executorProfile?.concurrencyMode ?? 'parallel', executorProfile?.id ?? agent.id, () => adapter.run(ctx, {
+            // WP5 流式输出：token 级增量节流广播（60ms 一发；message.created 才失效刷新，delta 不触发失效）。
+            // 带归属（agentId/projectTaskId）供前端单聊面板过滤，蜂群/其他任务的流不串入。
+            onTextDelta: (delta) => {
+              watchdog.activity();
+              const now = Date.now();
+              if (now - lastDeltaPublishAt < 60) return;
+              lastDeltaPublishAt = now;
+              realtime.publish(makeLifecycleEvent('message.delta', { delta, agentId: agent.id, projectTaskId: task.projectTaskId }, { companyId: company.id, projectId: project.id, taskId: task.id }));
+            },
             onOutput: (chunk) => { watchdog.activity(); log.debug('agent output', { taskId: task.id, chunk: chunk.slice(0, 120), executionRunId: executionRun?.id }); if (traceViaEngine) recordTrace({ kind: 'text', summary: chunk.slice(0, 120), payload: { text: chunk } }); },
             onToolCall: (name, input, toolUseId) => {
               watchdog.activity();
+              // 本轮文本流结束（进入工具执行）——前端清掉打字机气泡
+              realtime.publish(makeLifecycleEvent('message.delta.end', { reason: 'tool-call' }, { companyId: company.id, projectId: project.id, taskId: task.id }));
               log.debug('agent tool', { taskId: task.id, name, executionRunId: executionRun?.id });
               // API 路径由 tool-loop 落 trace，这里只处理 CLI 路径避免重复
               if (!traceViaEngine) return;
@@ -704,6 +745,8 @@ export class TaskEngine {
               }
             },
           })), watchdog.failure]);sessionManager.clearRecovery(projectTaskThread.id);break;}catch(error){if(/network|econn|dns|tls|proxy/i.test(error instanceof Error?error.message:String(error)))watchdog.networkError();if(!isRecoverableSessionError(error))throw error;recoveryAttempt+=1;const compactSupported=Boolean(adapter.compactSession);const recovery=recoveryAttempt===1?'retry':recoveryAttempt===2&&compactSupported?'compact':recoveryAttempt===(compactSupported?3:2)?'rotate':'stop';sessionManager.nextRecovery(projectTaskThread.id,compactSupported);if(recovery==='stop')throw error;if(recovery==='compact'&&adapter.compactSession&&ctx.sessionIdHint){try{await adapter.compactSession(ctx);}catch{const previousSessionId=ctx.sessionIdHint??null;sessionManager.rotate(projectTaskThread.id,{reason:'compact-failed',taskId:task.id});ctx.sessionIdHint=undefined;realtime.publish(makeLifecycleEvent('session.rotated',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,previousSessionId,reason:'compact-failed'},{companyId:company.id,projectId:project.id,taskId:task.id}));}}else if(recovery==='rotate'){const previousSessionId=ctx.sessionIdHint??null;sessionManager.rotate(projectTaskThread.id,{reason:'session-recovery',taskId:task.id});ctx.sessionIdHint=undefined;realtime.publish(makeLifecycleEvent('session.rotated',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,previousSessionId,reason:'session-recovery'},{companyId:company.id,projectId:project.id,taskId:task.id}));}realtime.publish(makeLifecycleEvent('session.recovered',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,taskId:task.id,recovery},{companyId:company.id,projectId:project.id,taskId:task.id}));log.warn('retrying recoverable executor failure',{taskId:task.id,recovery,error:String(error)});}}
+        // WP5：执行器返回——收掉流式气泡（最终回复经 postSystemMessage 落库后走 message.created）
+        realtime.publish(makeLifecycleEvent('message.delta.end', { reason: 'done' }, { companyId: company.id, projectId: project.id, taskId: task.id }));
         if(!result||typeof result.outcome!=='string')throw new RunFailure('empty_result','执行器没有返回有效的 AgentRunResult');
         if(approvalFailure)throw approvalFailure;
         watchdog.complete();
@@ -713,6 +756,8 @@ export class TaskEngine {
         const failure=classifyRunFailure(error);
         if (executionRun) failExecutionRun(this.db, executionRun.id, failure.classification, failure.message);
         realtime.publish(makeLifecycleEvent('run.watchdog-stopped',{runId:executionRun?.id??null,taskId:task.id,classification:failure.classification},{companyId:company.id,projectId:project.id,taskId:task.id}));
+        // WP5：执行失败也要收掉流式气泡（否则前端打字机残留到组件卸载）
+        realtime.publish(makeLifecycleEvent('message.delta.end', { reason: 'aborted' }, { companyId: company.id, projectId: project.id, taskId: task.id }));
         throw failure;
       }
 

@@ -17,7 +17,7 @@ import { resetPersonalMemory } from '../domain/memory';
 import { recruitFromDraft } from '../domain/recruitment';
 import { getEmployeeRuntime } from '../domain/employee-runtime';
 import { getEmploymentHealth } from '../domain/executor-health';
-import { listPersonas, getPersona, listPersonaDomains, searchPersonas } from '../domain/persona-library';
+import { listPersonas, getPersona, listPersonaDomains, searchPersonas, updateUserPersona, deleteUserPersona } from '../domain/persona-library';
 
 export const agentProfilesRouter = Router();
 export const companyEmployeesRouter = Router({ mergeParams: true });
@@ -77,6 +77,40 @@ agentProfilesRouter.get('/personas/:personaId', asyncHandler(async (req, res) =>
     return;
   }
   res.json(persona);
+}));
+
+// ===== WP3 自建人设「改/删」（仅 user/ 前缀；预置库只读） =====
+
+const userPersonaPatchSchema = z.object({
+  name: z.string().min(1).max(30).optional(),
+  description: z.string().max(160).optional(),
+  soul: z.string().max(2000).optional(),
+  principles: z.array(z.string().max(80)).max(8).optional(),
+  tools: z.array(z.string().max(60)).max(10).optional(),
+});
+
+agentProfilesRouter.put('/personas/:personaId', asyncHandler(async (req, res) => {
+  const patch = userPersonaPatchSchema.parse(req.body);
+  try {
+    res.json(updateUserPersona(param(req, 'personaId'), patch));
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : '编辑失败' });
+  }
+}));
+
+agentProfilesRouter.delete('/personas/:personaId', asyncHandler(async (req, res) => {
+  const personaId = param(req, 'personaId');
+  try {
+    deleteUserPersona(personaId);
+    // 沉淀历史行同步标 dismissed（人设文件是全局的，历史行跨公司全标；失败不阻断删除）
+    try {
+      getDb().prepare("UPDATE expert_candidate SET status='dismissed', updated_at=? WHERE persona_id=?")
+        .run(new Date().toISOString(), personaId);
+    } catch { /* 历史标记失败不阻断 */ }
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : '删除失败' });
+  }
 }));
 
 agentProfilesRouter.post('/', asyncHandler(async (req, res) => {

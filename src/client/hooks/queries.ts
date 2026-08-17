@@ -266,6 +266,9 @@ export interface PersonaDTO {
   soul: string;
   principles: string[];
   capabilities: Record<string, unknown>;
+  /** WP3 双根：builtin=预置库；user=自建（系统沉淀/手动放入用户根，可编辑可删除）。 */
+  source?: 'builtin' | 'user';
+  tools?: string[];
 }
 
 export function usePersonaDomains() {
@@ -278,6 +281,63 @@ export function usePersonas(domain?: string, q?: string) {
   if (q) params.set('q', q);
   const qs = params.toString();
   return useQuery({ queryKey: ['personas', domain, q], queryFn: () => api.get<PersonaDTO[]>(`/api/agent-profiles/personas${qs ? `?${qs}` : ''}`) });
+}
+
+// ===== WP3 系统自建专家（免人工确认）：沉淀历史（查）+ 自建人设改/删 =====
+export interface ExpertCandidateDTO {
+  id: string;
+  companyId: string;
+  source: 'persona_miss' | 'bee_record' | 'generalist_record';
+  sourceTaskId: string | null;
+  name: string;
+  domain: string;
+  description: string;
+  soul: string;
+  principles: string[];
+  tools: string[];
+  status: 'pending' | 'adopted' | 'dismissed';
+  createdAt: string;
+  resolvedAt: string | null;
+  personaId: string | null;
+}
+
+export function useExpertCandidates(companyId: string | undefined, limit = 20) {
+  return useQuery({
+    queryKey: ['expert-candidates', companyId, limit],
+    queryFn: () => api.get<ExpertCandidateDTO[]>(`/api/companies/${companyId}/expert-candidates?limit=${limit}`),
+    enabled: !!companyId,
+  });
+}
+
+export interface UserPersonaPatchInput {
+  name?: string;
+  description?: string;
+  soul?: string;
+  principles?: string[];
+  tools?: string[];
+}
+
+export function useUpdateUserPersona() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, patch }: { id: string; patch: UserPersonaPatchInput }) =>
+      api.put<PersonaDTO>(`/api/agent-profiles/personas/${encodeURIComponent(id)}`, patch),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['personas'] });
+      qc.invalidateQueries({ queryKey: ['expert-candidates'] });
+    },
+  });
+}
+
+export function useDeleteUserPersona() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.delete<{ ok: true }>(`/api/agent-profiles/personas/${encodeURIComponent(id)}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['personas'] });
+      qc.invalidateQueries({ queryKey: ['expert-candidates'] });
+    },
+  });
 }
 export function useAgentProfile(id: string | undefined) {
   return useQuery({
@@ -1703,6 +1763,9 @@ export function useSaveSystemSettings() {
       swarmBudgetUSD?: number;
       swarmRepairMax?: number;
       debateMinConfidence?: number;
+      modelTierEconomy?: string;
+      modelTierPremium?: string;
+      imageGenModel?: string;
     }) => api.post<any>('/api/settings', settings),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['systemSettings'] });

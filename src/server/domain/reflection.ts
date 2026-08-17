@@ -25,6 +25,7 @@ import { getAgent } from './agent';
 import { createMemoryCandidate, searchMemory } from './memory';
 import { getPersona } from './persona-library';
 import { evolveBlueprint } from './blueprint';
+import { maybeSynthesizeExpertCandidates } from './expert-synthesis';
 
 /** 反思信号来源（兼作根因分类标签，喂给 prompt 与归因分析）。 */
 export type ReflectionSignal =
@@ -251,6 +252,12 @@ export async function drainReflectionQueue(
       });
     }
   }
+  // WP3 系统自建专家：反思排水的同一 tick 顺带检查专家沉淀信号（每公司 ≤2 张候选；
+  // 全程 try/catch 不抛——沉淀是增值不是主流程；失败下次 tick 再来）。
+  const touchedCompanies = [...new Set(rows.map((r) => r.company_id))];
+  for (const companyId of touchedCompanies) {
+    await maybeSynthesizeExpertCandidates(db, companyId);
+  }
   return { processed: rows.length, lessons };
 }
 
@@ -356,7 +363,7 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
       : []),
   ].filter(Boolean).join('\n');
 
-  const llm = await callLlm(db, { system, user, companyId: reflection.companyId, timeoutMs: 45_000 });
+  const llm = await callLlm(db, { system, user, companyId: reflection.companyId, timeoutMs: 45_000, tier: 'economy' });
   const text = llm.content.trim();
 
   // 全局 SKIPPED（兼容老格式：模型直接回 SKIPPED）

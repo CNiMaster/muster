@@ -635,6 +635,10 @@ export function materializeSwarm(
       index,
     });
     const beePersonaId = resolveBeePersona(worker.personaId);
+    if (worker.personaId && !beePersonaId) {
+      // 专家链路：调度中心指定的 personaId 不在库中——留痕（静默降级匿名蜂会丢失"缺什么专家"的信号，喂沉淀管道）
+      appendTaskEvent(db, sourceTask.id, 'persona_miss', { requestedPersonaId: worker.personaId, beeTitle: worker.title, scope: 'swarm_bee' });
+    }
     const beeTask = createTask(db, {
       projectId: swarm.projectId,
       parentTaskId: sourceTask.id,

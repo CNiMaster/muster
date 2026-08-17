@@ -27,6 +27,7 @@ import { taskByProjectRouter, taskByIdRouter } from './api/tasks';
 import { usageRouter } from './api/reports-usage';
 import { novelRouter, projectScopedNovel } from './api/novel';
 import { blueprintOptimizationRouter } from './api/blueprint-optimization';
+import { expertCandidatesRouter } from './api/expert-candidates';
 import { projectPhase7, reportByIdRouter, inspectorAlertRouter } from './api/phase7';
 import { companyMessagesRouter, projectMessagesRouter } from './api/conversation';
 import { pluginsRouter } from './api/plugins';
@@ -196,6 +197,7 @@ async function createApp(): Promise<AppHandle> {
   app.use('/api/companies/:companyId/events', companyEventsRouter);
   app.use('/api/companies/:companyId/credentials', companyCredentialsRouter);
   app.use('/api/companies/:companyId', blueprintOptimizationRouter);
+  app.use('/api/companies/:companyId/expert-candidates', expertCandidatesRouter);
   app.use('/api/playbooks', playbooksRouter);
   // 蓝图组织批次4c：项目优先入口（须在 /api/projects/:id 之前挂载，避免被 :id 参数吞掉）
   app.use('/api/projects/quick', quickProjectsRouter);

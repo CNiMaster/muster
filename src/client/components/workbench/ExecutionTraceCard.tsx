@@ -101,7 +101,7 @@ export function ExecutionTraceCard({ task }: { task: Task }): React.ReactElement
       actions={
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
           {(() => {
-            const meta = (task.inputProtocol ?? {}) as { blueprintLabel?: string; blueprintVersion?: number };
+            const meta = (task.inputProtocol ?? {}) as { blueprintLabel?: string; blueprintVersion?: number; resolvedSkillIds?: string[] };
             if (!task.personaId && !meta.blueprintLabel) return null;
             const personaName = personas.find((p) => p.id === task.personaId)?.name;
             const label = meta.blueprintLabel
@@ -116,6 +116,18 @@ export function ExecutionTraceCard({ task }: { task: Task }): React.ReactElement
                 title={`当前穿戴打法：${label}（打法包：蓝图由任务终态反思自动进化；锁定可冻结）`}
               >
                 🎭 {label}
+              </span>
+            );
+          })()}
+          {(() => {
+            const meta = (task.inputProtocol ?? {}) as { resolvedSkillIds?: string[] };
+            const skills = meta.resolvedSkillIds ?? [];
+            if (skills.length === 0) return null;
+            const shown = skills.slice(0, 3);
+            const rest = skills.length - shown.length;
+            return (
+              <span className="mu-trace-blueprint-chip" title={`本次按需加载的 skills：${skills.join('、')}`}>
+                🧩 {shown.join('、')}{rest > 0 ? ` +${rest}` : ''}
               </span>
             );
           })()}

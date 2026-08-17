@@ -23,7 +23,8 @@ import { loadContextMemories } from '../domain/memory';
 import { resolveTaskSkills } from '../domain/capability-binding';
 import { resolveToolRecommendations, buildCapabilityCenterSection } from '../domain/tool-recommendation';
 import { listMaterials } from '../domain/material';
-import { getPersona } from '../domain/persona-library';
+import { getPersona, listPersonaIndex } from '../domain/persona-library';
+import { appendTaskEvent } from '../domain/task-event';
 import { searchArchive } from '../domain/archive';
 
 const MAX_REFERENCE_BYTES = 64 * 1024;
@@ -57,6 +58,8 @@ export interface AssembledContext {
   referencedArtifacts: Record<string, string>;
   /** 本次加载且需要 CLI 执行能力的 skillId 列表（供引擎派发校验提示用）。 */
   loadedSkillsRequiringCli: string[];
+  /** 本次实际加载的全部 skillId（引擎持久化进 inputProtocol，任务条显示 chips——注入去黑盒）。 */
+  loadedSkillIds: string[];
 }
 
 export function assembleContext(
@@ -72,6 +75,8 @@ export function assembleContext(
     executorKind?: 'cli' | 'api';
     /** 阶段二任务 2.3：API 型执行器是否具备命令执行能力（由能力探针判定）。undefined = 不按此分化。 */
     executorHasCommandCapability?: boolean;
+    /** WP10 识图直读：执行器是否声明图像理解能力（capabilities 含 vision）。 */
+    executorVision?: boolean;
     /** 轻量模式（咨询/讨论发言）：只注入身份/议题/职责/契约，跳过素材/技能/记忆/验收等大段上下文。 */
     lightweight?: boolean;
   } = {},
@@ -89,8 +94,17 @@ export function assembleContext(
     if (profile.principles.length > 0) sp.push('# 工作原则', profile.principles.map((item) => `- ${item}`).join('\n'), '');
   }
   // 蓝图组织批次1：本次人设——身份层信息，轻量模式（咨询/讨论发言）同样注入。
-  // persona 库可热变更：任务指定的 persona 已不存在时优雅跳过（不阻断执行）。
+  // persona 库可热变更：任务指定的 persona 已不存在时优雅跳过（不阻断执行），并留痕供专家沉淀管道观察缺什么专家。
+  // 执行重试/会话恢复会重复装配上下文——同任务只留一次 persona_miss（查重防噪声）。
   const persona = task.personaId ? getPersona(task.personaId) : null;
+  if (task.personaId && !persona) {
+    try {
+      const seen = db.prepare(
+        "SELECT 1 FROM task_event WHERE task_id=? AND kind='persona_miss' LIMIT 1",
+      ).get(task.id);
+      if (!seen) appendTaskEvent(db, task.id, 'persona_miss', { requestedPersonaId: task.personaId, scope: 'task_wear' });
+    } catch { /* 留痕失败不阻断 */ }
+  }
   if (persona) {
     sp.push('# 本次人设', `你在本任务中穿戴专家人设「${persona.name}」，以该领域的专业标准分析、决策与交付。`, persona.soul, '');
     if (persona.principles.length > 0) {
@@ -111,6 +125,11 @@ export function assembleContext(
   const staffingNotes = (task.inputProtocol.staffingNotes ?? []) as Array<{ name: string; summary: string }>;
   if (staffingNotes.length > 0) {
     sp.push('# 协作班底', '本打法还包含以下协作成员，需要时可参考其领域分工（不另起执行体）：', staffingNotes.map((m) => `- ${m.name}${m.summary ? `：${m.summary}` : ''}`).join('\n'), '');
+  }
+  // 打法包读侧消费：蓝图战绩记账的常用工具注入上下文（CLI 原生工具集 / API 工具循环均可见）。
+  const blueprintTools = (task.inputProtocol.blueprintTools ?? []) as string[];
+  if (blueprintTools.length > 0) {
+    sp.push('# 本打法常用工具', '这套打法历史上高频使用以下工具（按使用次数排序），优先考虑（推荐非门禁，按需取用）：', blueprintTools.slice(0, 10).join('、'), '');
   }
   // 轻量模式：身份/职责/议题之后直接进入输出契约，跳过组织级大段上下文
   if (!lightweight) {
@@ -199,6 +218,17 @@ export function assembleContext(
   }
   // 设计一-3：执行器能力边界提示（API 型按能力探针真实结果分化；具备命令能力的 API 不再被引导禁用 run_command）
   if (options.executorKind === 'api') {
+    // WP10 识图双路：带图片但执行器未声明 vision → 引导走路径/OCR 工具，禁止假装看图
+    const userImages = Array.isArray((task.inputProtocol as Record<string, unknown>).userImages)
+      ? (task.inputProtocol.userImages as unknown[]).filter((x): x is string => typeof x === 'string')
+      : [];
+    if (userImages.length > 0 && options.executorVision !== true) {
+      sp.push(
+        '# 图像输入提示',
+        `本任务附带 ${userImages.length} 张用户图片，但当前执行器未声明图像理解能力（capabilities 不含 vision）。图片以文件路径列在【用户附件】中（CLI 型可直接读取图片文件）；如需理解图片内容请使用图像理解/OCR 类工具，不要在没有真正看到图片的情况下编造其内容。`,
+        '',
+      );
+    }
     const cliOnlySkills = loadedSkills
       .map((skill) => skill.skillId)
       .filter((skillId) => REQUIRES_CLI_SKILLS.has(skillId));
@@ -312,6 +342,19 @@ export function assembleContext(
   }
   // 指挥系统 W3：调度中心专属——swarmPlan 契约教学（其他岗位不教，返回也会被忽略）
   if (agent?.isSystem && agent.role === DISPATCHER_ROLE) {
+    // 专家链路：人设库索引注入——调度中心从"凭训练记忆盲猜 id"变为目录可见可选（persona_miss 的根治）。
+    const personaIndex = listPersonaIndex();
+    if (personaIndex.length > 0) {
+      sp.push(
+        '# 人设库索引（选蜂人设用）',
+        '为 worker 挑选 personaId 时从以下目录取（id 必须与目录逐字一致）；没有合适的就省略 personaId（匿名蜂），不要编造目录外的 id：',
+        ...personaIndex.flatMap((d) => [
+          `## ${d.domain}（${d.items.length} 位）`,
+          ...d.items.map((i) => `- ${i.id} — ${i.name}${i.description ? `：${i.description}` : ''}`),
+        ]),
+        '',
+      );
+    }
     sp.push(
       '# 蜂群契约（你是调度中心，独有）',
       '适合并行拆解的目标：在最终 JSON 里加 swarmPlan 字段并置 outcome="waiting_dependency"：',
@@ -359,6 +402,9 @@ export function assembleContext(
     referencedArtifacts,
     availableContacts,
   };
+  // WP10 识图直读：data-uri 图片不进提示词 JSON 块（否则 base64 灌满所有执行器的输入包，API 执行器双重携带）；
+  // 图片经 ctx.imageAttachments 由 adapter 原生送入，文件路径提示已在【用户附件】文本里。
+  delete inputPacket.userImages;
   // 指挥系统：大规模并行任务的专职入口（调度中心是隐形岗，不在 availableContacts 里）
   // 蓝图组织批次4e：懒确保——与公司上线时机解耦，首次装配上下文即自愈创建（幂等）。
   if (!lightweight) {
@@ -402,6 +448,7 @@ export function assembleContext(
     inputPacket,
     referencedArtifacts,
     loadedSkillsRequiringCli: loadedSkills.map((s) => s.skillId).filter((id) => REQUIRES_CLI_SKILLS.has(id)),
+    loadedSkillIds: loadedSkills.map((s) => s.skillId),
   };
 }
 
