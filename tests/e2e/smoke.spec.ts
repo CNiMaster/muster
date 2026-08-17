@@ -93,14 +93,14 @@ test('智能体库展示全局档案与工作台任职', async ({ page }) => {
   });
 
   await page.goto('/agents');
-  await expect(page.getByRole('heading', { name: '智能体库' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: '添加人才' })).toBeVisible();
+  // 人才市场双区重构后：入口页为「人才市场」（我的人才 tab 默认展示自有/新建档案）
+  await expect(page.getByRole('heading', { name: '人才市场' })).toBeVisible();
   await page.getByRole('link', { name: new RegExp(`全局智能体-${suffix}`) }).first().click();
   await expect(page.getByText('工作台任职')).toBeVisible();
   await page.getByRole('tab', { name: /工作台任职/ }).click();
   await expect(page.getByText('本工作台岗位：').locator('..')).toContainText('engineer');
   await expect(page).toHaveURL(`/agents/${agent.profileId}`);
-  await page.getByRole('tab', { name: '身份与能力' }).click();
+  await page.getByRole('tab', { name: '身份与配置' }).click();
   await expect(page.getByText('待确认记忆 1')).toBeVisible();
   await expect(page.getByText('用户偏好先看简短摘要')).toBeVisible();
   await page.getByRole('button', { name: '批准记忆' }).click();
