@@ -11,6 +11,7 @@ import { isSoftCapReached, type Budget } from '../domain/usage';
 import { updateProject, getProject } from '../domain/project';
 import { settleDrainingAgents } from '../domain/agent';
 import { drainReflectionQueue, recoverStuckReflections, enqueueIdleReflections } from '../domain/reflection';
+import { settleMemoryVotes } from '../domain/memory';
 import { generateInspectorSuggestions } from '../domain/inspector';
 import { autoAcceptContract, createOutsourcedTask, revertAcceptToPending } from '../domain/outsourcing-contract';
 import type { SetupGenerator } from '../domain/setup-assistant';
@@ -254,6 +255,12 @@ export class ProjectRuntimeCoordinator {
       void drainReflectionQueue(this.db, { maxPerTick: 3 }).catch((error) =>
         log.warn('reflection drain failed', { error: error instanceof Error ? error.message : String(error) }),
       );
+      // 记忆优势分：与反思同频惰性结算终态任务的注入投票（纯记账、无 LLM，同步执行不阻塞排水）。
+      try {
+        settleMemoryVotes(this.db);
+      } catch (error) {
+        log.warn('memory vote settle failed', { error: error instanceof Error ? error.message : String(error) });
+      }
     }, 10_000);
     this.reflectionTimer.unref?.();
   }

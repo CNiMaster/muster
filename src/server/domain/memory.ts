@@ -49,6 +49,12 @@ export interface MemoryEntry {
   fingerprint: string | null;
   /** 蓝图组织批次1：人设键（skill scope 专属）；null = 通用技能记忆。 */
   personaKey: string | null;
+  /** 记忆优势分：注入次数（记录在案的任务上下文出场）。 */
+  hitCount: number;
+  /** 记忆优势分：已结算的终态投票数（收缩平均的分母）。 */
+  voteCount: number;
+  /** 记忆优势分：优势分累计（每票 = 项目基线 − 任务消耗）。 */
+  advSum: number;
 }
 
 type CandidateRow = {
@@ -63,6 +69,7 @@ type EntryRow = {
   content: string; version: number; state: MemoryEntryState; can_influence: number;
   source_candidate_id: string | null; expires_at: string | null; created_at: string; updated_at: string;
   fingerprint: string | null; persona_key: string | null;
+  hit_count: number; vote_count: number; adv_sum: number;
 };
 
 function candidateFromRow(row: CandidateRow): MemoryCandidate {
@@ -83,6 +90,7 @@ function entryFromRow(row: EntryRow): MemoryEntry {
     sourceCandidateId: row.source_candidate_id, expiresAt: row.expires_at, createdAt: row.created_at, updatedAt: row.updated_at,
     fingerprint: row.fingerprint,
     personaKey: row.persona_key ?? null,
+    hitCount: row.hit_count, voteCount: row.vote_count, advSum: row.adv_sum,
   };
 }
 
@@ -282,6 +290,16 @@ export function expandMatchTokens(query: string): string[] {
   return tokens;
 }
 
+// ===== 记忆优势分（注入战绩）=====
+/** 返工一轮折算的消耗权重（重：一次返工 ≈ 两轮追问的折腾）。 */
+const REWORK_WEIGHT = 2;
+/** 追问一轮的消耗权重。 */
+const CLARIFY_WEIGHT = 1;
+/** 项目基线最少样本：不足时优势记 0（冷启动保守，排序退回时间序）。 */
+const MIN_BASELINE_TASKS = 3;
+/** 收缩先验：票数少时平均优势向 0 收缩，防止一两次好运记忆压过长期稳定记忆。 */
+const SHRINK_K = 5;
+
 export function loadContextMemories(db: DB, input: {
   profileId: string; companyId: string; projectId: string; limit?: number;
 /**
@@ -296,11 +314,16 @@ export function loadContextMemories(db: DB, input: {
   query?: string;
   /** 当前任务穿戴的人设（task.personaId）；null/undefined = 无人设。 */
   personaKey?: string | null;
+  /** 记忆优势分：传入执行任务 id 时，对本次注入的非 personal 记忆记账（hit_count + memory_injection）。 */
+  taskId?: string | null;
 }): MemoryEntry[] {
   const now = nowIso();
   const trimmedQuery = (input.query ?? '').trim();
   const limit = Math.min(Math.max(input.limit ?? 8, 1), 20);
-  const orderClause = 'CASE scope WHEN \'personal\' THEN 1 WHEN \'company\' THEN 2 WHEN \'project\' THEN 3 ELSE 4 END, updated_at DESC';
+  // 排序：scope 优先级不变；同级内按收缩平均优势（adv_sum/(vote_count+5)，零票=0 退回时间序），
+  // 新记忆靠 updated_at 时间序保底出场（探索通道），老而准的记忆靠战绩稳压新而平庸的；
+  // id 兜底保证同毫秒创建的记忆排序确定。
+  const orderClause = `CASE scope WHEN 'personal' THEN 1 WHEN 'company' THEN 2 WHEN 'project' THEN 3 ELSE 4 END, adv_sum * 1.0 / (vote_count + ${SHRINK_K}) DESC, updated_at DESC, id`;
   // skill 分支按人设过滤：穿戴人设 → 该人设方法论 + 通用；未穿戴 → 仅通用。
   const skillClause = input.personaKey
     ? "(scope='skill' AND (persona_key IS NULL OR persona_key=?))"
@@ -310,7 +333,7 @@ export function loadContextMemories(db: DB, input: {
     const fullValues: unknown[] = [input.profileId, now];
     if (input.personaKey) fullValues.push(input.personaKey);
     fullValues.push(input.companyId, input.companyId, input.projectId, limit);
-    return (db.prepare(
+    const rows = db.prepare(
       `SELECT * FROM memory_entry
        WHERE profile_id=? AND state IN ('active','locked')
          AND can_influence=1 AND (expires_at IS NULL OR expires_at > ?)
@@ -321,8 +344,8 @@ export function loadContextMemories(db: DB, input: {
            OR (scope='project' AND company_id=? AND project_id=?)
          )
        ORDER BY ${orderClause} LIMIT ?`,
-    ).all(...fullValues) as EntryRow[])
-      .map(entryFromRow);
+    ).all(...fullValues) as EntryRow[];
+    return recordInjected(db, input.taskId, rows.map(entryFromRow));
   }
   // query 非空 → personal/skill 仍全量（skill 按人设过滤）；company/project 仅注入相关记忆。
   // 每个词元独立 OR 命中（英文整词、中文整段 + 二元组），既渐进又不丢用户的稳定偏好。
@@ -337,7 +360,7 @@ export function loadContextMemories(db: DB, input: {
     values.push(`%${token}%`, `${escapeFtsQuery(token)}*`);
   }
   values.push(limit);
-  return (db.prepare(
+  const rows = db.prepare(
     `SELECT * FROM memory_entry
      WHERE profile_id=? AND state IN ('active','locked')
        AND can_influence=1 AND (expires_at IS NULL OR expires_at > ?)
@@ -348,7 +371,82 @@ export function loadContextMemories(db: DB, input: {
              AND (${matchOrs})
        )
      ORDER BY ${orderClause} LIMIT ?`,
-  ).all(...values) as EntryRow[]).map(entryFromRow);
+  ).all(...values) as EntryRow[];
+  return recordInjected(db, input.taskId, rows.map(entryFromRow));
+}
+
+/**
+ * 记忆优势分：本次注入记账（调用方传了 taskId 时）。
+ * personal 豁免——用户偏好由用户背书，不参与任务结果投票；(task, entry) 唯一，
+ * waiting_input 恢复后重新装配上下文不会重复计数；后轮新命中的记忆会补记（它后来也参与了）。
+ */
+function recordInjected(db: DB, taskId: string | null | undefined, entries: MemoryEntry[]): MemoryEntry[] {
+  if (!taskId) return entries;
+  const injectable = entries.filter((entry) => entry.scope !== 'personal');
+  if (injectable.length === 0) return entries;
+  const insert = db.prepare('INSERT OR IGNORE INTO memory_injection (task_id, entry_id, injected_at) VALUES (?, ?, ?)');
+  const bump = db.prepare('UPDATE memory_entry SET hit_count = hit_count + 1 WHERE id = ?');
+  db.transaction(() => {
+    const now = nowIso();
+    for (const entry of injectable) {
+      if (insert.run(taskId, entry.id, now).changes === 1) bump.run(entry.id);
+    }
+  })();
+  return entries;
+}
+
+/**
+ * 记忆优势分：结算终态任务的注入投票（惰性结算，10s 定时器调用）。
+ * 不挂反思队列——反思在任务首次 waiting_input 就入队消耗 task_id UNIQUE（engine.ts:1100），
+ * 挂那里会在任务半程投票失真；这里扫描"任务已到真正终态（completed/failed）且存在未投票注入"的记录。
+ * 每任务单事务：消耗分 = 返工×2 + 追问×1 → 项目基线（该项目已结算任务的平均消耗，样本≥3 才启用）→
+ * 优势 = 基线 − 消耗（completed 记票；failed 投中性 0 票，失败原因不明不冤枉不奖励）→
+ * 累计到每条注入记忆并标 voted_at。voted_at 守卫保证恰好一次：崩溃后重扫不重复计票。
+ * 基线先算后累加（本任务不稀释自身基线）；failed 不计入基线（基线=正常完成水平）。
+ */
+export function settleMemoryVotes(db: DB, options: { maxTasks?: number } = {}): number {
+  const maxTasks = Math.min(Math.max(options.maxTasks ?? 20, 1), 100);
+  const pending = db.prepare(
+    `SELECT task_id FROM memory_injection WHERE voted_at IS NULL
+     GROUP BY task_id ORDER BY MIN(injected_at) LIMIT ?`,
+  ).all(maxTasks) as Array<{ task_id: string }>;
+  let voted = 0;
+  for (const { task_id } of pending) {
+    const task = db.prepare(
+      'SELECT state, rework_count, clarification_rounds, project_id FROM task WHERE id=?',
+    ).get(task_id) as
+      | { state: string; rework_count: number; clarification_rounds: number; project_id: string }
+      | undefined;
+    if (!task) continue; // task 已删（级联清注入行，正常不可达）
+    if (task.state !== 'completed' && task.state !== 'failed') continue; // 中途/等待输入等未终态
+    voted += db.transaction(() => {
+      const stat = db.prepare('SELECT task_count, cost_sum FROM project_cost_stat WHERE project_id=?')
+        .get(task.project_id) as { task_count: number; cost_sum: number } | undefined;
+      const cost = task.rework_count * REWORK_WEIGHT + task.clarification_rounds * CLARIFY_WEIGHT;
+      let advantage = 0;
+      if (task.state === 'completed' && stat && stat.task_count >= MIN_BASELINE_TASKS) {
+        advantage = stat.cost_sum / stat.task_count - cost;
+      }
+      const rows = db.prepare('SELECT entry_id FROM memory_injection WHERE task_id=? AND voted_at IS NULL')
+        .all(task_id) as Array<{ entry_id: string }>;
+      if (rows.length === 0) return 0;
+      const updateEntry = db.prepare('UPDATE memory_entry SET vote_count = vote_count + 1, adv_sum = adv_sum + ? WHERE id = ?');
+      const markVoted = db.prepare('UPDATE memory_injection SET voted_at=? WHERE task_id=? AND voted_at IS NULL');
+      for (const row of rows) updateEntry.run(advantage, row.entry_id);
+      markVoted.run(nowIso(), task_id);
+      if (task.state === 'completed') {
+        if (stat) {
+          db.prepare('UPDATE project_cost_stat SET task_count = task_count + 1, cost_sum = cost_sum + ? WHERE project_id=?')
+            .run(cost, task.project_id);
+        } else {
+          db.prepare('INSERT INTO project_cost_stat (project_id, task_count, cost_sum) VALUES (?, 1, ?)')
+            .run(task.project_id, cost);
+        }
+      }
+      return rows.length;
+    })();
+  }
+  return voted;
 }
 
 export function flushThreadMemory(db: DB, input: {

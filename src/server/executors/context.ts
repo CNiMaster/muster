@@ -249,6 +249,8 @@ export function assembleContext(
       projectId: project.id,
       personaKey: task.personaId,
       query,
+      // 记忆优势分：注入记账（任务终态时按项目基线投票）。
+      taskId: task.id,
     });
     if (memories.length > 0) {
       sp.push('# 已批准的相关记忆', ...memories.map((memory) => `- [${memory.scope}] ${memory.content}`), '');

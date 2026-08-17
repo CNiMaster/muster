@@ -143,6 +143,10 @@ export interface MemoryEntry {
   canInfluence: boolean;
   sourceCandidateId: string | null;
   updatedAt: string;
+  /** 记忆优势分：注入次数 / 投票数 / 优势分累计（仅展示用）。 */
+  hitCount?: number;
+  voteCount?: number;
+  advSum?: number;
 }
 
 /** 员工级执行器配置（与 server AgentExecutorJson 对齐）。 */

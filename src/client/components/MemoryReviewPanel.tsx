@@ -87,6 +87,12 @@ export function MemoryReviewPanel({ profileId }: { profileId: string }): React.R
               <details>
                 <summary>版本与来源</summary>
                 <p className="muted">来源候选：{entry.sourceCandidateId ?? '手动创建'} · 状态：{entry.state}</p>
+                {entry.hitCount !== undefined && entry.hitCount > 0 && (
+                  <p className="muted">
+                    注入 {entry.hitCount} 次
+                    {entry.voteCount ? ` · 平均优势 ${formatAdvantage(entry.advSum ?? 0, entry.voteCount)}` : ''}
+                  </p>
+                )}
               </details>
             </div>
             <div className="memory-actions">
@@ -121,4 +127,10 @@ export function MemoryReviewPanel({ profileId }: { profileId: string }): React.R
 
 function scopeLabel(scope: MemoryCandidate['scope']): string {
   return ({ personal: '个人', company: '工作台', project: '项目', skill: 'Skill' } as const)[scope];
+}
+
+/** 记忆优势分展示：正数带 + 号（好于项目平均消耗），保留两位。 */
+function formatAdvantage(advSum: number, votes: number): string {
+  const avg = advSum / votes;
+  return `${avg >= 0 ? '+' : ''}${avg.toFixed(2)}`;
 }
