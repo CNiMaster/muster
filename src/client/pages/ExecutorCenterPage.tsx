@@ -60,6 +60,8 @@ export function ExecutorCenterPage(): React.ReactElement {
   const [apiConcurrencyLocked, setApiConcurrencyLocked] = useState(false);
   // settings-overhaul B3：思考深度（归一化档位，仅支持的模型生效）+ 上下文缓存模式
   const [apiThinkingDepth, setApiThinkingDepth] = useState<'off' | 'low' | 'medium' | 'high'>('off');
+  // WP10 执行器能力矩阵：主模型直读能力声明（多模态生成走工具层，不在此声明）
+  const [apiCapabilities, setApiCapabilities] = useState<string[]>([]);
   const [apiContextCache, setApiContextCache] = useState<'auto' | 'on' | 'off'>('auto');
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
@@ -181,6 +183,7 @@ export function ExecutorCenterPage(): React.ReactElement {
         : { provider: 'gemini', model: apiModel.trim() };
       config.thinkingDepth = apiThinkingDepth;
       config.contextCache = apiContextCache;
+      if (apiCapabilities.length > 0) config.capabilities = apiCapabilities;
       return api.post<ExecutorProfile>('/api/executors/profiles', {
         name: apiName.trim(),
         manifestId: apiKind,
@@ -203,6 +206,7 @@ export function ExecutorCenterPage(): React.ReactElement {
         : { provider: 'gemini', model: apiModel.trim() };
       config.thinkingDepth = apiThinkingDepth;
       config.contextCache = apiContextCache;
+      if (apiCapabilities.length > 0) config.capabilities = apiCapabilities;
       return api.put<ExecutorProfile>(`/api/executors/profiles/${profileId}`, {
         name: apiName.trim(),
         config,
@@ -401,6 +405,20 @@ export function ExecutorCenterPage(): React.ReactElement {
               </Select>
             </Field>
           </div>
+          <Field label="能力声明" hint="模型自身直读能力：勾选 vision 后，带图片的任务会以原生多模态消息送入；画图/语音等生成能力走工具层（能力中心），不在此声明">
+            <div className="form-row" style={{ flexWrap: 'wrap', gap: 8 }}>
+              {['vision'].map((cap) => (
+                <label key={cap} className="checkbox-row" style={{ marginRight: 12 }}>
+                  <input
+                    type="checkbox"
+                    checked={apiCapabilities.includes(cap)}
+                    onChange={(e) => setApiCapabilities((old) => (e.target.checked ? [...old, cap] : old.filter((c) => c !== cap)))}
+                  />
+                  {cap === 'vision' ? 'vision（图像理解直读）' : cap}
+                </label>
+              ))}
+            </div>
+          </Field>
           <div className="form-row">
             <Field label="最大并发" hint="该执行器同时运行的任务数上限（如套餐只允许 1 个并发就填 1）">
               <Input type="number" min={1} max={64} value={apiMaxConcurrency} onChange={(e) => setApiMaxConcurrency(Number(e.target.value))} />
@@ -473,6 +491,7 @@ export function ExecutorCenterPage(): React.ReactElement {
                           ? (profile.config.contextCache as 'auto' | 'on' | 'off')
                           : 'auto',
                       );
+                      setApiCapabilities(Array.isArray(profile.config.capabilities) ? profile.config.capabilities.filter((c): c is string => typeof c === 'string') : []);
                       window.scrollTo({ top: 0, behavior: 'smooth' });
                     }}>编辑</Button>
                   )}

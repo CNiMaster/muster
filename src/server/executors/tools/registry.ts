@@ -43,6 +43,7 @@ import type {
   ReviewContext,
 } from './file-tools';
 import { WEB_TOOL_DEFINITIONS, webFetchHandler, webSearchHandler } from './web-tools';
+import { IMAGE_TOOL_DEFINITIONS, imageGenerateHandler } from './image-tools';
 
 // 复用 file-tools.ts 的类型定义（稳定，多处引用）
 export type { ToolDefinition, ToolCall, ToolResult, ReviewContext } from './file-tools';
@@ -1346,6 +1347,13 @@ export function createBuiltinToolRegistry(): RuntimeToolRegistry {
     handler: webSearchHandler,
     permissionAction: 'network',
     source: { pluginId: BUILTIN_PLUGIN_ID, toolName: 'web_search' },
+  });
+  // WP10 多模态工具化：内置文生图（主模型管思考，画图走工具；权限=network 调外部 API）
+  registry.register({
+    definition: IMAGE_TOOL_DEFINITIONS[0]!,
+    handler: imageGenerateHandler,
+    permissionAction: 'network',
+    source: { pluginId: BUILTIN_PLUGIN_ID, toolName: 'image_generate' },
   });
   return registry;
 }

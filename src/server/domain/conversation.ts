@@ -5,6 +5,8 @@
  主窗口展示关键事件摘要（领取/派发/等待/阻塞/完成/成果/告警）。
  */
 import type { DB } from '../db/client';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { shortId, nowIso } from '../../shared/utils';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { getCompany } from './company';
@@ -184,6 +186,34 @@ export interface PostUserMessageInput {
   };
 }
 
+/** WP10 识图直读：图片附件转 data-uri（≤2MB/张、≤3 张），声明 vision 的 API 执行器原生直读。 */
+const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
+const MAX_USER_IMAGES = 3;
+function collectImageDataUris(
+  db: DB,
+  refs: Array<{ kind: string; repoPath: string | null }>,
+  projectId: string,
+): string[] {
+  const out: string[] = [];
+  if (refs.length === 0) return out;
+  const project = getProject(db, projectId);
+  for (const ref of refs) {
+    if (ref.kind !== 'image' || !ref.repoPath) continue;
+    if (out.length >= MAX_USER_IMAGES) break;
+    try {
+      const buf = readFileSync(path.join(project.rootDir, ref.repoPath));
+      if (buf.length > MAX_IMAGE_BYTES) continue;
+      const ext = ref.repoPath.split('.').pop()?.toLowerCase() ?? '';
+      // vision API 白名单外的格式（svg 等）不转 data-uri——直读必 400；保留路径提示走工具/OCR 路线
+      const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : ext === 'gif' ? 'image/gif'
+        : ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : null;
+      if (!mime) continue;
+      out.push(`data:${mime};base64,${buf.toString('base64')}`);
+    } catch { /* 读取失败跳过：附件路径提示仍在，CLI 执行器可读 */ }
+  }
+  return out;
+}
+
 /**
  * 用户在公司/项目窗口发消息：
  * 1. 写入用户消息
@@ -268,8 +298,7 @@ export function postUserMessage(db: DB, input: PostUserMessageInput): {
     }
   }
 
-  const mentionedAgents = [...new Set(input.mentions ?? [])].map((agentId) => {
-    const agent = getAgent(db, agentId);
+  const mentionedAgents = [...new Set(input.mentions ?? [])].map((agentId) => {    const agent = getAgent(db, agentId);
     if (agent.companyId !== companyId) {
       throw new AppError(ErrorCode.VALIDATION, `@员工 ${agentId} 不属于当前公司`);
     }
@@ -283,6 +312,8 @@ export function postUserMessage(db: DB, input: PostUserMessageInput): {
     : firstAgentId
       ? [firstAgentId]
       : [];
+  // WP10 识图直读：图片附件转 data-uri 随任务下发（projectId 已解析，路径归属已校验）
+  const userImages = projectId ? collectImageDataUris(db, attachmentRefs, projectId) : [];
   const tasks: Array<ReturnType<typeof createTask>> = [];
   if (projectId) {
     for (const recipientAgentId of recipients) {
@@ -298,6 +329,7 @@ export function postUserMessage(db: DB, input: PostUserMessageInput): {
           content: `${dispatchContent}${attachmentNote}`,
           mentions: input.mentions ?? [],
           attachments: userMessage.attachments,
+          ...(userImages.length > 0 ? { userImages } : {}),
           ...(options.mode ? { mode: options.mode } : {}),
           ...(options.model ? { model: options.model } : {}),
           ...(options.thinking ? { thinking: options.thinking } : {}),

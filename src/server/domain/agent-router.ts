@@ -12,6 +12,8 @@
 import type { DB } from '../db/client';
 import { listAgents } from './agent';
 import { listAgentProfiles } from './agent-profile';
+import { getEmployeeExecutorProfile } from './executor-profile';
+import { getExecutorManifest } from '../executors/manifests';
 
 export interface AssigneeCandidate {
   agentId: string;
@@ -44,18 +46,33 @@ export function shouldReplaceBest(
  * 按 requiredCapabilities 自动选专家。
  * - 只考虑本公司员工，在线优先。
  * - 无任何匹配时返回 null（调用方 fallback 第一负责人）。
+ * - requiresExecutorKind（WP10 复活死字段）：能力绑定声明了执行器类型时，过滤掉绑错类型的候选
+ *   （如 CLI-only 能力不会路由到纯 API 执行器员工）。
  */
 export function findBestAssignee(
   db: DB,
   companyId: string,
   requiredCapabilities: string[],
-  options: { excludeAgentId?: string; taskType?: string } = {},
+  options: { excludeAgentId?: string; taskType?: string; requiresExecutorKind?: '' | 'cli' | 'api' } = {},
 ): AssigneeCandidate | null {
   const capabilities = (requiredCapabilities ?? [])
     .filter((c) => typeof c === 'string' && c.trim())
     .map(normalizeCapability);
   const agents = listAgents(db, companyId).filter((agent) => agent.id !== options.excludeAgentId);
   if (agents.length === 0) return null;
+
+  // 执行器类型过滤：解析每个候选员工绑定的执行器档案 → manifest kind
+  const kindByAgent = new Map<string, 'cli' | 'api' | null>();
+  if (options.requiresExecutorKind) {
+    for (const agent of agents) {
+      try {
+        const profile = getEmployeeExecutorProfile(db, agent.id);
+        kindByAgent.set(agent.id, profile ? getExecutorManifest(profile.manifestId).kind : null);
+      } catch {
+        kindByAgent.set(agent.id, null);
+      }
+    }
+  }
 
   const ratings = new Map(listAgentProfiles(db).map((p) => [p.id, p.rating]));
   const loadByAgent = new Map<string, number>();
@@ -75,6 +92,11 @@ export function findBestAssignee(
 
   let best: AssigneeCandidate | null = null;
   for (const agent of agents) {
+    // WP10 执行器类型硬过滤：绑错类型的候选不参与路由（未绑定执行器的候选放行——走三级默认路由）
+    if (options.requiresExecutorKind) {
+      const kind = kindByAgent.get(agent.id);
+      if (kind !== null && kind !== options.requiresExecutorKind) continue;
+    }
     const agentSkills = (agent.skills ?? []).map(normalizeCapability);
     const matched = capabilities.filter((cap) => agentSkills.includes(cap));
     // 硬性要求：至少匹配一个能力（无能力要求时不做硬限制）

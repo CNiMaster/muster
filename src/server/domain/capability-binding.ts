@@ -58,6 +58,25 @@ export function listCapabilityBindings(db: DB, companyId: string): CapabilityBin
   const rows = db.prepare('SELECT * FROM capability_binding WHERE company_id=? ORDER BY scope, scope_key, capability_id').all(companyId) as CapabilityBindingRow[];
   return rows.map(mapCapabilityBinding);
 }
+
+/**
+ * WP10 复活 requires_executor_kind：给定任务要求的能力集合，返回绑定声明的执行器类型
+ * （多绑定时取第一个非空；'' = 无硬性要求）。能力路由据此过滤绑错类型的候选员工。
+ */
+export function requiredExecutorKindForCapabilities(
+  db: DB,
+  companyId: string,
+  capabilityIds: string[],
+): '' | 'cli' | 'api' {
+  const wanted = new Set(capabilityIds.map((c) => c.trim().toLowerCase()).filter(Boolean));
+  if (wanted.size === 0) return '';
+  for (const binding of listCapabilityBindings(db, companyId)) {
+    if (wanted.has(binding.capabilityId.trim().toLowerCase()) && binding.requiresExecutorKind) {
+      return binding.requiresExecutorKind;
+    }
+  }
+  return '';
+}
 import { getAgent } from './agent';
 import { getProject } from './project';
 import type { Task } from './task';

@@ -38,6 +38,7 @@ import { handleDebateTaskFailure, recordDecisionFromClarify } from './debate';
 import { ensurePrimaryThread } from './thread';
 import { matchBlueprint, currentBlueprintVersion } from './blueprint';
 import { getPersona } from './persona-library';
+import { requiredExecutorKindForCapabilities } from './capability-binding';
 
 /**
  * 验收标准条目（双 Loop 地基 P0.1）。
@@ -269,6 +270,8 @@ export interface CreateTaskInput {
   personaId?: string;
   /** 蜂群系统管理任务（工蜂）：contactAllow 方向与常规派发相反，跳过 crewMate 守卫。 */
   swarmManaged?: boolean;
+  /** 豁免蓝图自动穿戴：验收/返工等立场独立性任务保持执行者本体身份（防验收员穿上与产出者同款专家人设）。 */
+  exemptBlueprintMatch?: boolean;
 }
 
 const ALLOWED_TRANSITIONS: Record<TaskState, TaskState[]> = {
@@ -307,7 +310,10 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
   let routedAssigneeId = input.assigneeAgentId ?? null;
   let routedMeta: Record<string, unknown> = {};
   if (!routedAssigneeId && Array.isArray(input.requiredCapabilityIds) && input.requiredCapabilityIds.length > 0) {
-    const candidate = findBestAssignee(db, project.companyId, input.requiredCapabilityIds);
+    const candidate = findBestAssignee(db, project.companyId, input.requiredCapabilityIds, {
+      // WP10 复活 requires_executor_kind：绑定声明执行器类型时过滤绑错类型的候选
+      requiresExecutorKind: requiredExecutorKindForCapabilities(db, project.companyId, input.requiredCapabilityIds),
+    });
     routedAssigneeId = candidate?.agentId ?? project.firstAgentId;
     if (candidate) {
       routedMeta = { routedByCapability: true, routedCandidate: candidate.name, routedScore: candidate.score };
@@ -315,9 +321,11 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
   }
   // 蓝图组织批次3：任务未显式指定人设/技能/能力且非讨论任务时，按蓝图匹配自动穿戴
   // （组织 = f(活) 的读取侧）。匹配结果记入 inputProtocol 供审计；无命中/人设已不存在则不穿戴。
+  // exemptBlueprintMatch：立场独立性任务（验收/返工）豁免——评审者不能穿与产出者同款的专家外套。
   let personaId = input.personaId ?? null;
   let blueprintMeta: Record<string, unknown> = {};
   if (!personaId
+    && !input.exemptBlueprintMatch
     && !input.isDiscussion
     && !(Array.isArray(input.requiredSkillIds) && input.requiredSkillIds.length > 0)
     && !(Array.isArray(input.requiredCapabilityIds) && input.requiredCapabilityIds.length > 0)
@@ -329,6 +337,11 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
       const slot = match?.blueprint.staffing[0];
       if (match && slot && getPersona(slot.personaId)) {
         personaId = slot.personaId;
+        // 打法包读侧消费：蓝图战绩工具（按使用次数排序）随穿戴注入上下文
+        const playbookTools = [...match.blueprint.tools]
+          .sort((a, b) => b.uses - a.uses)
+          .map((t) => t.id)
+          .slice(0, 10);
         // 打法包一期：班底生效——2-4 槽协作成员以名称+领域描述注入执行上下文
         const crew = match.blueprint.staffing.slice(1).map((s) => {
           const p = getPersona(s.personaId);
@@ -339,6 +352,7 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
           blueprintLabel: match.blueprint.label,
           blueprintVersion: currentBlueprintVersion(db, match.blueprint.id),
           blueprintScore: Math.round(match.score * 100) / 100,
+          ...(playbookTools.length > 0 ? { blueprintTools: playbookTools } : {}),
           ...(crew.length > 0 ? { staffingNotes: crew } : {}),
         };
       }
