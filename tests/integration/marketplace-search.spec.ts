@@ -36,7 +36,7 @@ describe('searchPresets（本地策展搜索 + 安装状态）', () => {
   it('空查询返回全部预置；关键词命中 name/description/tags', () => {
     const { db } = makeTestDb();
     const all = searchPresets(db, '');
-    expect(all.length).toBe(10);
+    expect(all.length).toBe(11);
     const hits = searchPresets(db, 'excel');
     expect(hits.map((h) => h.name)).toContain('xlsx');
   });

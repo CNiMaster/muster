@@ -26,6 +26,7 @@ const KIND_LABEL: Record<'skill' | 'mcp-server', string> = { skill: 'Skill 技�
 const CURATED_LABEL: Record<MarketplacePresetView['curatedBy'], string> = {
   anthropic: 'Anthropic 官方',
   modelcontextprotocol: 'MCP 官方',
+  microsoft: 'Microsoft 官方',
 };
 
 function stateBadge(state: PresetInstallState): React.ReactNode {

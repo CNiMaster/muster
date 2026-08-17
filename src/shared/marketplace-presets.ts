@@ -17,6 +17,7 @@ export type PresetCategory =
   | 'dev-test' // 开发与测试（Skill）
   | 'mcp-files' // 文件与代码仓库（MCP）
   | 'mcp-data' // 数据库与 API（MCP）
+  | 'mcp-browser' // 浏览器自动化与网页调研（MCP，WP6）
   | 'plugin-workflow'; // 命令与工作流（插件）
 
 /** 二级分类展示信息。 */
@@ -28,6 +29,7 @@ export const PRESET_CATEGORIES: Record<
   'dev-test': { label: '开发与测试', group: 'skill', blurb: '来自 Anthropic 官方 skills 仓库（anthropics/skills）。' },
   'mcp-files': { label: '文件与代码仓库', group: 'mcp-server', blurb: '来自官方参考实现（modelcontextprotocol/servers）。' },
   'mcp-data': { label: '数据库与 API', group: 'mcp-server', blurb: '来自官方参考实现（modelcontextprotocol/servers）。' },
+  'mcp-browser': { label: '浏览器与调研', group: 'mcp-server', blurb: '本地浏览器自动化（Playwright 官方 MCP），补工作区层 Browser 缺口。' },
   'plugin-workflow': { label: '命令与工作流', group: 'mcp-server', blurb: '来自 Claude Code 官方插件。' },
 };
 
@@ -67,7 +69,7 @@ export interface MarketplacePreset {
   install: PresetInstall;
   /** 权限清单——安装前展示（PRD 385）。 */
   permissions: string[];
-  curatedBy: 'anthropic' | 'modelcontextprotocol';
+  curatedBy: 'anthropic' | 'modelcontextprotocol' | 'microsoft';
 }
 
 /** Anthropic 官方 skills 仓库的当前 pin（commit sha，不可变）。 */
@@ -78,6 +80,7 @@ const MCP_PKG = {
   filesystem: '2026.7.10',
   github: '2025.4.8',
   postgres: '0.6.2',
+  playwright: '0.0.79',
 } as const;
 
 function anthropicSkill(
@@ -167,6 +170,23 @@ export const MARKETPLACE_PRESETS: readonly MarketplacePreset[] = [
     permissions: ['network'],
     curatedBy: 'modelcontextprotocol',
   },
+  // ── MCP：浏览器与调研（WP6 选型主选，见 docs/superpowers/specs/2026-08-17-browser-tool-selection.md） ──
+  {
+    id: 'mcp-playwright',
+    name: 'playwright',
+    kind: 'mcp-server',
+    category: 'mcp-browser',
+    source: { kind: 'npm', ref: '@playwright/mcp', pin: MCP_PKG.playwright },
+    description: '本地浏览器自动化（Playwright 官方）：打开网页、点击、填表、截图、抽取内容——调研类任务的网页触达。首次使用需 npx playwright install chromium。',
+    tags: ['浏览器', 'MCP', '调研', '本地'],
+    install: {
+      type: 'mcp-command',
+      command: 'npx',
+      args: ['-y', `@playwright/mcp@${MCP_PKG.playwright}`],
+    },
+    permissions: ['network'],
+    curatedBy: 'microsoft',
+  },
 ];
 
 /** 校验预设条目自身一致性（测试 + 防回归）。 */
@@ -180,7 +200,7 @@ export function validateMarketplacePresets(): string[] {
     const key = `${p.kind}:${p.name.toLowerCase()}`;
     if (seenNames.has(key)) errors.push(`重复 (kind,name): ${key}`);
     seenNames.add(key);
-    if (p.curatedBy !== 'anthropic' && p.curatedBy !== 'modelcontextprotocol') {
+    if (p.curatedBy !== 'anthropic' && p.curatedBy !== 'modelcontextprotocol' && p.curatedBy !== 'microsoft') {
       errors.push(`${p.id}: curatedBy 非白名单`);
     }
     if (p.install.type === 'raw-skill' && !p.install.pin) errors.push(`${p.id}: raw-skill 缺 pin`);

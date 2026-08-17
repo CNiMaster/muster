@@ -289,9 +289,11 @@ function samePresetSourceRow(
   return row.source_ref === `${presetRegistry(preset)}@${preset.id}`;
 }
 
-/** 预置来源标签（不含 @，用作 marketplace source 的 registry；区分官方 skill / 官方 MCP）。 */
+/** 预置来源标签（不含 @，用作 marketplace source 的 registry；区分官方 skill / 官方 MCP / 一线厂商）。 */
 export function presetRegistry(preset: MarketplacePreset): string {
-  return preset.curatedBy === 'anthropic' ? 'anthropics-skills' : 'mcp-official';
+  if (preset.curatedBy === 'anthropic') return 'anthropics-skills';
+  if (preset.curatedBy === 'microsoft') return 'microsoft-official';
+  return 'mcp-official';
 }
 
 function describeSource(source: Plugin['source']): string {

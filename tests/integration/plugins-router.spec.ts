@@ -3,7 +3,7 @@
  *
  * - install-preset scope 缺 companyId → 400（zod，防落库孤儿 plugin）。
  * - 公司 scope 安装要求公司下班（org 配置锁，与其它启停路由一致）→ 409。
- * - presets 端点 200 且 10 条。
+ * - presets 端点 200 且 11 条。
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import express from 'express';
@@ -38,11 +38,11 @@ afterEach(async () => {
 });
 
 describe('marketplace install-preset 路由', () => {
-  it('GET /api/plugins/marketplace/presets 返回 10 条策展目录', async () => {
+  it('GET /api/plugins/marketplace/presets 返回 11 条策展目录', async () => {
     const res = await fetch(`${base}/api/plugins/marketplace/presets`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as Array<{ installState: string }>;
-    expect(body.length).toBe(10);
+    expect(body.length).toBe(11);
     expect(body.every((p) => p.installState === 'installable')).toBe(true);
   });
 
