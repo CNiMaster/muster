@@ -393,11 +393,12 @@ export class TaskEngine {
       // 阶段二任务 2.1：员工未显式绑定执行器时，按任务标签走三级默认（公司级 > 全局级）。
       // 绑定的优先级高于三级默认（绑定 = 固定执行器，不参与路由）。
       // 故障转移：绑定的档案不健康（连续失败/认证失效）时跳过，降级走三级默认换备选。
+      // 公司退役 D4-2：三级默认仅取全局级（selectTieredExecutorProfile 不再接收 companyId）。
       const executorProfile = (boundProfile && boundProfile.health !== 'unhealthy')
         ? boundProfile
         : (boundProfile
-          ? (log.warn('bound executor profile unhealthy, falling back to tiered selection', { taskId: task.id, profileId: boundProfile.id, note: boundProfile.healthNote }), selectTieredExecutorProfile(this.db, task, company.id))
-          : selectTieredExecutorProfile(this.db, task, company.id));
+          ? (log.warn('bound executor profile unhealthy, falling back to tiered selection', { taskId: task.id, profileId: boundProfile.id, note: boundProfile.healthNote }), selectTieredExecutorProfile(this.db, task))
+          : selectTieredExecutorProfile(this.db, task));
       const projectTaskThread=ensureProjectTaskThread(this.db,{projectTaskId:task.projectTaskId,employeeId:agent.id,executorProfileId:executorProfile?.id??null});
       bindTaskToProjectTaskThread(this.db,task.id,projectTaskThread.id);
       const executionRun = executorProfile ? createExecutionRun(this.db, {

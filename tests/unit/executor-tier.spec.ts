@@ -104,7 +104,7 @@ describe('selectTieredExecutorProfile（三级默认选择 + 降级）', () => {
   it('未配置三级时返回 null（回退 defaultProvider）', () => {
     const { lead, project } = fixture();
     const task = createTask(db, { projectId: project.id, assigneeAgentId: lead.id, title: '普通任务' });
-    expect(selectTieredExecutorProfile(db, task, project.companyId)).toBeNull();
+    expect(selectTieredExecutorProfile(db, task)).toBeNull();
   });
 
   it('按任务标签选对应级别（全局级）', () => {
@@ -115,24 +115,24 @@ describe('selectTieredExecutorProfile（三级默认选择 + 降级）', () => {
     setSetting(db, 'executor_tier_tertiary_id', tertiary.id);
 
     const heavy = createTask(db, { projectId: project.id, assigneeAgentId: lead.id, title: '跑测试', requiredSkillIds: ['ci-cd-and-automation'] });
-    expect(selectTieredExecutorProfile(db, heavy, project.companyId)?.id).toBe(primary.id);
+    expect(selectTieredExecutorProfile(db, heavy)?.id).toBe(primary.id);
 
     const standard = createTask(db, { projectId: project.id, assigneeAgentId: lead.id, title: '写文档' });
-    expect(selectTieredExecutorProfile(db, standard, project.companyId)?.id).toBe(secondary.id);
+    expect(selectTieredExecutorProfile(db, standard)?.id).toBe(secondary.id);
 
     const light = createTask(db, { projectId: project.id, assigneeAgentId: lead.id, title: '轻量', inputProtocol: { lightweight: true } });
-    expect(selectTieredExecutorProfile(db, light, project.companyId)?.id).toBe(tertiary.id);
+    expect(selectTieredExecutorProfile(db, light)?.id).toBe(tertiary.id);
   });
 
-  it('工作台级覆盖优先于全局级', () => {
+  it('公司级字段退役(D4-2):不再参与覆盖,全局级为唯一来源', () => {
     const { c, lead, project } = fixture();
     const { primary, secondary } = makeProfiles();
     setSetting(db, 'executor_tier_primary_id', primary.id);
-    // 工作台级把 primary 覆盖为 secondary
+    // 公司字段残留值不应再起作用(三级→两级)
     db.prepare('UPDATE company SET executor_tier_primary_id=? WHERE id=?').run(secondary.id, c.id);
 
     const heavy = createTask(db, { projectId: project.id, assigneeAgentId: lead.id, title: '跑测试', requiredSkillIds: ['ci-cd-and-automation'] });
-    expect(selectTieredExecutorProfile(db, heavy, project.companyId)?.id).toBe(secondary.id);
+    expect(selectTieredExecutorProfile(db, heavy)?.id).toBe(primary.id);
   });
 
   it('目标级未配置或 profile 缺失时自动降级', () => {
@@ -142,15 +142,15 @@ describe('selectTieredExecutorProfile（三级默认选择 + 降级）', () => {
     setSetting(db, 'executor_tier_secondary_id', secondary.id);
     setSetting(db, 'executor_tier_tertiary_id', tertiary.id);
     const heavy = createTask(db, { projectId: project.id, assigneeAgentId: lead.id, title: '跑测试', requiredSkillIds: ['ci-cd-and-automation'] });
-    expect(selectTieredExecutorProfile(db, heavy, project.companyId)?.id).toBe(secondary.id);
+    expect(selectTieredExecutorProfile(db, heavy)?.id).toBe(secondary.id);
 
     // primary 配置了但 profile 被删除 → 继续降级到 secondary
     setSetting(db, 'executor_tier_primary_id', 'ep_deleted_profile');
-    expect(selectTieredExecutorProfile(db, heavy, project.companyId)?.id).toBe(secondary.id);
+    expect(selectTieredExecutorProfile(db, heavy)?.id).toBe(secondary.id);
 
     // 全部未配置 → null
     setSetting(db, 'executor_tier_secondary_id', '');
     setSetting(db, 'executor_tier_tertiary_id', '');
-    expect(selectTieredExecutorProfile(db, heavy, project.companyId)).toBeNull();
+    expect(selectTieredExecutorProfile(db, heavy)).toBeNull();
   });
 });

@@ -1,13 +1,12 @@
 /**
- * 执行器三级默认（阶段二任务 2.1）。
+ * 执行器三级默认（阶段二任务 2.1；公司退役 D4-2：三级降两级——公司级档位字段退役）。
  *
  * 三级默认执行器：用户配置 primary（大活）/ secondary（标准）/ tertiary（小活），
  * 新建员工默认继承；派发任务时引擎按任务标签自动选级，未配置或不可用时自动降级。
  *
- * 优先级：员工显式绑定（executor_profile_id）> 公司级三级默认 > 全局级三级默认 > 平台 defaultProvider。
+ * 优先级：员工显式绑定（executor_profile_id）> 全局级三级默认 > 平台 defaultProvider。
  */
 import type { DB } from '../db/client';
-import { getCompany } from './company';
 import { getSetting } from './setting';
 import { getExecutorProfile, type ExecutorProfile } from './executor-profile';
 import { REQUIRES_CLI_SKILLS } from '../executors/context';
@@ -42,20 +41,11 @@ const TIER_FALLBACK_ORDER: Record<ExecutorTier, ExecutorTier[]> = {
   tertiary: ['tertiary'],
 };
 
-/** 读取某一级生效的 profile id：公司级覆盖 > 全局级。 */
+/** 读取某一级生效的 profile id（公司退役 D4-2：仅全局级 system_setting）。 */
 export function getTieredExecutorProfileId(
   db: DB,
-  companyId: string,
   tier: ExecutorTier,
 ): string | null {
-  const company = getCompany(db, companyId);
-  const companyFieldMap: Record<ExecutorTier, 'executorTierPrimaryId' | 'executorTierSecondaryId' | 'executorTierTertiaryId'> = {
-    primary: 'executorTierPrimaryId',
-    secondary: 'executorTierSecondaryId',
-    tertiary: 'executorTierTertiaryId',
-  };
-  const companyIdValue = company[companyFieldMap[tier]];
-  if (companyIdValue) return companyIdValue;
   const globalValue = getSetting(db, `executor_tier_${tier}_id`, '');
   return globalValue || null;
 }
@@ -67,11 +57,10 @@ export function getTieredExecutorProfileId(
 export function selectTieredExecutorProfile(
   db: DB,
   task: Task,
-  companyId: string,
 ): ExecutorProfile | null {
   const tier = tierForTask(task);
   for (const candidate of TIER_FALLBACK_ORDER[tier]) {
-    const profileId = getTieredExecutorProfileId(db, companyId, candidate);
+    const profileId = getTieredExecutorProfileId(db, candidate);
     if (!profileId) continue;
     try {
       const profile = getExecutorProfile(db, profileId);
