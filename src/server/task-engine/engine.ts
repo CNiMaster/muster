@@ -91,7 +91,7 @@ import { ensureApprovalRequest, evaluatePermission, getEmployeePermissionPolicy 
 import { getActiveWorkspace } from '../domain/workspace';
 import { ensureProjectTaskThread, setProjectTaskThreadSession } from '../domain/project-task-thread';
 import { selectTieredExecutorProfile } from '../domain/executor-tier';
-import { taskExecutorTier, resolveProfileForTier } from '../domain/model-tier';
+import { taskExecutorTier, resolveProfileForTier, selectProfileForTask, taskNeedsCliKind } from '../domain/model-tier';
 import { hasCommandCapability } from '../domain/capability-probe';
 import{SessionManager}from'../domain/session-manager';
 import{approvalBroker}from'../domain/approval-broker';
@@ -400,10 +400,11 @@ export class TaskEngine {
       const boundProfile = getEmployeeExecutorProfile(this.db, agent.id);
       // 执行器池统一（2026-08-17）：员工绑定(健康) > 档位档案（CLI/API 一个选择框，档位=档案 id）；
       // 故障转移：绑定的档案不健康时跳过，沿档位解析回落；档位未配置/不健康同样回落 legacy。
+      // B2 能力感知：需 CLI 技能的任务沿 高→标准→低 挑选 CLI 档案；绑定档案钉死不参与路由（能力缺口走既有告警）。
       const boundHealthy = boundProfile && boundProfile.health !== 'unhealthy';
       const tier = taskExecutorTier(task, agent.role);
-      const tierProfile = resolveProfileForTier(this.db, tier);
-      const executorProfile = boundHealthy ? boundProfile : tierProfile;
+      const needsCli = taskNeedsCliKind(task);
+      const executorProfile = boundHealthy ? boundProfile : selectProfileForTask(this.db, tier, needsCli);
       if (boundProfile && !boundHealthy) {
         log.warn('bound executor profile unhealthy, falling back to tier profile', { taskId: task.id, profileId: boundProfile.id, note: boundProfile.healthNote, tier });
       }

@@ -12,6 +12,8 @@ import type { Task } from './task';
 import type { DB } from '../db/client';
 import { getSetting } from './setting';
 import { getExecutorProfile, type ExecutorProfile } from './executor-profile';
+import { getExecutorManifest } from '../executors/manifests';
+import { REQUIRES_CLI_SKILLS } from '../executors/context';
 
 export type ExecutorTier = 'high' | 'standard' | 'low';
 
@@ -32,16 +34,22 @@ export function taskExecutorTier(task: Task, assigneeRole?: string | null): Exec
   return 'standard';
 }
 
-/** 任务是否需要 cli kind 执行体（命中 REQUIRES_CLI_SKILLS 的能力需求；供能力过滤用）。 */
+/** 任务是否需要 cli kind 执行体（命中 REQUIRES_CLI_SKILLS 的能力需求；B2 能力过滤用）。 */
 export function taskNeedsCliKind(task: Task): boolean {
   const proto = (task.inputProtocol ?? {}) as Record<string, unknown>;
   const ids = Array.isArray(proto.resolvedSkillIds) ? (proto.resolvedSkillIds as unknown[]) : [];
-  if (ids.length === 0) return false;
-  // REQUIRES_CLI_SKILLS 集合在 context.ts；此处按 skillId 前缀保守判定（避免循环依赖）
-  return ids.some((id) => {
-    const s = String(id);
-    return /^(cli|shell|codex|claude|git|terminal|workspace)/.test(s);
-  });
+  if (ids.length > 0) return ids.some((id) => REQUIRES_CLI_SKILLS.has(String(id)));
+  // 兼容旧链路：requiredSkillIds 也可能携带
+  const required = Array.isArray(proto.requiredSkillIds) ? (proto.requiredSkillIds as unknown[]) : [];
+  return required.some((id) => REQUIRES_CLI_SKILLS.has(String(id)));
+}
+
+function profileIsCli(profile: ExecutorProfile): boolean {
+  try {
+    return getExecutorManifest(profile.manifestId).kind === 'cli';
+  } catch {
+    return Boolean((profile.config as Record<string, unknown>).binaryPath);
+  }
 }
 
 function resolveFrom(db: DB, newKey: string, legacyKey: string): ExecutorProfile | null {
@@ -64,4 +72,21 @@ export function resolveProfileForTier(db: DB, tier: ExecutorTier): ExecutorProfi
     case 'standard': return resolveFrom(db, 'executor_tier_standard_id', 'executor_tier_secondary_id');
     case 'low': return resolveFrom(db, 'executor_tier_low_id', 'executor_tier_tertiary_id');
   }
+}
+
+/**
+ * B2 能力感知选档：从自然档开始，沿 高→标准→低 扫描，取第一个满足硬能力要求（需 CLI）的档案。
+ * 返回 null = 三档无可用 → 引擎回落 legacy。健康过滤由 resolveProfileForTier 承担。
+ */
+export function selectProfileForTask(db: DB, tier: ExecutorTier, needsCli: boolean): ExecutorProfile | null {
+  const settled = (tier === 'high') ? ['high', 'standard', 'low']
+    : (tier === 'standard') ? ['standard', 'high', 'low']
+      : ['low', 'high', 'standard'];
+  for (const t of settled) {
+    const profile = resolveProfileForTier(db, t as ExecutorTier);
+    if (!profile) continue;
+    if (needsCli && !profileIsCli(profile)) continue;
+    return profile;
+  }
+  return null;
 }

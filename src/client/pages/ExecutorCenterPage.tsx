@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
 import { Badge, StateBadge } from '../components/Badge';
@@ -10,6 +10,8 @@ import { useGenerateCliProposal, useCredentialDefinitions, type CliProposal, typ
 import {
   concurrencyLabel,
   probeClassificationLabel,
+  EXECUTOR_CAPABILITIES,
+  suggestDefaultCapabilities,
   type CapabilityProbeResult,
   type ExecutorDetection,
   type ExecutorManifest,
@@ -62,6 +64,16 @@ export function ExecutorCenterPage(): React.ReactElement {
   const [apiThinkingDepth, setApiThinkingDepth] = useState<'off' | 'low' | 'medium' | 'high'>('off');
   // WP10 执行器能力矩阵：主模型直读能力声明（多模态生成走工具层，不在此声明）
   const [apiCapabilities, setApiCapabilities] = useState<string[]>([]);
+  // B2 池化统一：manifest 默认 + 模型名启发式自动预填能力标签（用户可勾选纠偏；编辑回填保留既有标签，仅并集补默认）
+  useEffect(() => {
+    setApiCapabilities((old) => {
+      const merged = new Set(old);
+      for (const s of suggestDefaultCapabilities(apiKind, apiModel)) merged.add(s);
+      return [...merged];
+    });
+    // apiKind/apiModel 变化时刷新默认建议
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiKind, apiModel]);
   const [apiContextCache, setApiContextCache] = useState<'auto' | 'on' | 'off'>('auto');
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
@@ -405,16 +417,16 @@ export function ExecutorCenterPage(): React.ReactElement {
               </Select>
             </Field>
           </div>
-          <Field label="能力声明" hint="模型自身直读能力：勾选 vision 后，带图片的任务会以原生多模态消息送入；画图/语音等生成能力走工具层（能力中心），不在此声明">
+          <Field label="能力声明" hint="勾选模型直读能力：vision 让带图任务走原生多模态；画图/语音等生成能力走工具层（能力中心），不在此声明。脑池按能力自动选档，故请真实勾选">
             <div className="form-row" style={{ flexWrap: 'wrap', gap: 8 }}>
-              {['vision'].map((cap) => (
-                <label key={cap} className="checkbox-row" style={{ marginRight: 12 }}>
+              {EXECUTOR_CAPABILITIES.map((cap) => (
+                <label key={cap.id} className="checkbox-row" style={{ marginRight: 12 }}>
                   <input
                     type="checkbox"
-                    checked={apiCapabilities.includes(cap)}
-                    onChange={(e) => setApiCapabilities((old) => (e.target.checked ? [...old, cap] : old.filter((c) => c !== cap)))}
+                    checked={apiCapabilities.includes(cap.id)}
+                    onChange={(e) => setApiCapabilities((old) => (e.target.checked ? [...old, cap.id] : old.filter((c) => c !== cap.id)))}
                   />
-                  {cap === 'vision' ? 'vision（图像理解直读）' : cap}
+                  {cap.label}
                 </label>
               ))}
             </div>
