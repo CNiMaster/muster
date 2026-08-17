@@ -1,119 +1,53 @@
 /**
- * MarkdownPreview · 极简 Markdown 渲染（无依赖）
+ * MarkdownPreview · 对话/成品共用的 Markdown 渲染（react-markdown + GFM + 代码高亮）
  *
- 仅支持标题/段落/列表/代码/引用/链接/分隔线/粗体斜体。
- 完整 GFM 留给后续（避免引入 marked 等增加 bundle）。
+ * 2026-08-17 升级：原无依赖极简实现替换为 react-markdown 全量 GFM（表格/删除线/任务列表）
+ * + rehype-highlight 代码高亮。类名保持 .mu-md-* 兼容既有样式与消费方（ArtifactsPage/编辑器/对话气泡）。
+ * 流式输出（WP5）复用本组件：节流重渲即可。
  */
 import type React from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeHighlight from 'rehype-highlight';
 
 export function MarkdownPreview({ source }: { source: string }): React.ReactElement {
-  return <div className="mu-md-preview">{renderBlocks(source)}</div>;
-}
-
-function renderBlocks(src: string): React.ReactNode[] {
-  const lines = src.split('\n');
-  const out: React.ReactNode[] = [];
-  let i = 0;
-  let key = 0;
-  while (i < lines.length) {
-    const line = lines[i];
-    // 空行
-    if (!line.trim()) {
-      i++;
-      continue;
-    }
-    // 标题
-    const h = /^(#{1,6})\s+(.*)$/.exec(line);
-    if (h) {
-      const level = h[1]!.length;
-      const text = inline(h[2]!);
-      const Tag = (`h${Math.min(level + 1, 6)}` as 'h2' | 'h3' | 'h4' | 'h5' | 'h6');
-      out.push(<Tag key={key++} className={`mu-md-h mu-md-h${level}`}>{text}</Tag>);
-      i++;
-      continue;
-    }
-    // 分隔线
-    if (/^---+$/.test(line.trim())) {
-      out.push(<hr key={key++} className="mu-md-hr" />);
-      i++;
-      continue;
-    }
-    // 引用
-    if (/^>\s/.test(line)) {
-      const buf: string[] = [];
-      while (i < lines.length && /^>\s/.test(lines[i])) {
-        buf.push(lines[i]!.replace(/^>\s/, ''));
-        i++;
-      }
-      out.push(<blockquote key={key++} className="mu-md-quote">{inline(buf.join('\n'))}</blockquote>);
-      continue;
-    }
-    // 代码块
-    if (/^```/.test(line.trim())) {
-      const buf: string[] = [];
-      i++;
-      while (i < lines.length && !/^```/.test(lines[i]!.trim())) {
-        buf.push(lines[i]!);
-        i++;
-      }
-      i++; // skip closing ```
-      out.push(<pre key={key++} className="mu-md-code"><code>{buf.join('\n')}</code></pre>);
-      continue;
-    }
-    // 无序列表
-    if (/^[-*]\s/.test(line)) {
-      const items: React.ReactNode[] = [];
-      while (i < lines.length && /^[-*]\s/.test(lines[i])) {
-        items.push(<li key={items.length}>{inline(lines[i]!.replace(/^[-*]\s/, ''))}</li>);
-        i++;
-      }
-      out.push(<ul key={key++} className="mu-md-ul">{items}</ul>);
-      continue;
-    }
-    // 有序列表
-    if (/^\d+\.\s/.test(line)) {
-      const items: React.ReactNode[] = [];
-      while (i < lines.length && /^\d+\.\s/.test(lines[i])) {
-        items.push(<li key={items.length}>{inline(lines[i]!.replace(/^\d+\.\s/, ''))}</li>);
-        i++;
-      }
-      out.push(<ol key={key++} className="mu-md-ol">{items}</ol>);
-      continue;
-    }
-    // 段落
-    const buf: string[] = [];
-    while (
-      i < lines.length &&
-      lines[i]!.trim() &&
-      !/^(#{1,6})\s/.test(lines[i]!) &&
-      !/^[-*]\s/.test(lines[i]!) &&
-      !/^\d+\.\s/.test(lines[i]!) &&
-      !/^>\s/.test(lines[i]!) &&
-      !/^```/.test(lines[i]!.trim())
-    ) {
-      buf.push(lines[i]!);
-      i++;
-    }
-    out.push(<p key={key++} className="mu-md-p">{inline(buf.join(' '))}</p>);
-  }
-  return out;
-}
-
-function inline(text: string): React.ReactNode {
-  // 粗体 + 斜体 + 链接 + 行内代码
-  const parts: React.ReactNode[] = [];
-  const regex = /(\*\*([^*]+)\*\*|\*([^*]+)\*|`([^`]+)`|\[([^\]]+)\]\(([^)]+)\))/g;
-  let last = 0;
-  let m: RegExpExecArray | null;
-  let k = 0;
-  while ((m = regex.exec(text))) {
-    if (m.index > last) parts.push(text.slice(last, m.index));
-    if (m[2] !== undefined) parts.push(<strong key={k++}>{m[2]}</strong>);
-    else if (m[3] !== undefined) parts.push(<em key={k++}>{m[3]}</em>);
-    else if (m[4] !== undefined) parts.push(<code key={k++} className="mu-md-icode">{m[4]}</code>);
-    else if (m[5] !== undefined) parts.push(<a key={k++} href={m[6]} target="_blank" rel="noreferrer">{m[5]}</a>);
-    last = m.index + m[0].length;
-  }
-  if (last < text.length) parts.push(text.slice(last));
-  return parts;
+  return (
+    <div className="mu-md-preview">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[[rehypeHighlight, { detect: false, ignoreMissing: true }]]}
+        components={{
+          h1: ({ children }) => <h2 className="mu-md-h mu-md-h1">{children}</h2>,
+          h2: ({ children }) => <h2 className="mu-md-h mu-md-h2">{children}</h2>,
+          h3: ({ children }) => <h3 className="mu-md-h mu-md-h3">{children}</h3>,
+          h4: ({ children }) => <h4 className="mu-md-h mu-md-h3">{children}</h4>,
+          h5: ({ children }) => <h5 className="mu-md-h mu-md-h3">{children}</h5>,
+          h6: ({ children }) => <h6 className="mu-md-h mu-md-h3">{children}</h6>,
+          p: ({ children }) => <p className="mu-md-p">{children}</p>,
+          ul: ({ children }) => <ul className="mu-md-ul">{children}</ul>,
+          ol: ({ children }) => <ol className="mu-md-ol">{children}</ol>,
+          blockquote: ({ children }) => <blockquote className="mu-md-quote">{children}</blockquote>,
+          hr: () => <hr className="mu-md-hr" />,
+          a: ({ href, children }) => (
+            <a href={href} target="_blank" rel="noreferrer">{children}</a>
+          ),
+          pre: ({ children }) => <pre className="mu-md-code">{children}</pre>,
+          code: ({ className, children, ...rest }) => {
+            // 块级代码：rehype-highlight 会带 language-/hljs 类；行内代码无类名走 mu-md-icode。
+            const isBlock = /language-|hljs/.test(className ?? '') || String(children).includes('\n');
+            return isBlock
+              ? <code className={className} {...rest}>{children}</code>
+              : <code className="mu-md-icode" {...rest}>{children}</code>;
+          },
+          table: ({ children }) => (
+            <div className="mu-md-table-wrap">
+              <table className="mu-md-table">{children}</table>
+            </div>
+          ),
+        }}
+      >
+        {source}
+      </ReactMarkdown>
+    </div>
+  );
 }
