@@ -168,30 +168,17 @@ export function useGenerateCliProposal() {
   });
 }
 
-// ===== Company =====
-export function useCompanies() {
-  return useQuery({ queryKey: ['companies'], queryFn: () => api.get<Company[]>('/api/companies') });
-}
+// ===== Workbench（公司退役批次B：company 坍缩为隐式单例工作台） =====
 /**
- * 默认工作台 id（在营的第一个）。公司概念已从 UI 退场，company 仅作内部数据归组锚点；
- * 归档/蓝图库/组织图等全局工具页用它在内部解析归属。
+ * 工作台单例读（原 GET /api/companies/:id；公司概念已退场，仅作数据归组锚点）。
  */
-export function useDefaultCompanyId() {
-  const { data: companies } = useCompanies();
-  return companies?.find((c) => !c.archivedAt)?.id ?? companies?.[0]?.id;
+export function useWorkbench() {
+  return useQuery({ queryKey: ['workbench'], queryFn: () => api.get<Company>('/api/workbench') });
 }
-export function useCompany(id: string | undefined) {
+export function useWorkbenchCockpit() {
   return useQuery({
-    queryKey: ['company', id],
-    queryFn: () => api.get<Company>(`/api/companies/${id}`),
-    enabled: !!id,
-  });
-}
-export function useCompanyCockpit(id: string | undefined) {
-  return useQuery({
-    queryKey: ['company-cockpit', id],
-    queryFn: () => api.get<CompanyCockpitDTO>(`/api/companies/${id}/cockpit`),
-    enabled: !!id,
+    queryKey: ['workbench-cockpit'],
+    queryFn: () => api.get<CompanyCockpitDTO>(`/api/workbench/cockpit`),
   });
 }
 export function useExecutorProfiles() {
@@ -208,15 +195,14 @@ export function useCreatePermissionPolicy() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['permission-policies'] }),
   });
 }
-export function useCompanyAction() {
+export function useWorkbenchAction() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, action }: { id: string; action: 'clock-in' | 'clock-out' | 'drain' | 'review-pause' | 'resume' }) =>
-      api.post<Company>(`/api/companies/${id}/${action}`),
-    onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: ['companies'] });
-      qc.invalidateQueries({ queryKey: ['company', data.id] });
-      qc.invalidateQueries({ queryKey: ['company-cockpit', data.id] });
+    mutationFn: ({ action }: { action: 'clock-in' | 'clock-out' | 'drain' | 'review-pause' | 'resume' }) =>
+      api.post<Company>(`/api/workbench/${action}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['workbench'] });
+      qc.invalidateQueries({ queryKey: ['workbench-cockpit'] });
     },
   });
 }
@@ -243,11 +229,10 @@ export interface StatusBoard {
   departments: StatusBoardDepartment[];
 }
 
-export function useStatusBoard(companyId: string | undefined) {
+export function useStatusBoard() {
   return useQuery({
-    queryKey: ['status-board', companyId],
-    queryFn: () => api.get<StatusBoard>(`/api/companies/${companyId}/status-board`),
-    enabled: !!companyId,
+    queryKey: ['status-board'],
+    queryFn: () => api.get<StatusBoard>(`/api/workbench/status-board`),
     refetchInterval: 5000,
   });
 }
@@ -304,11 +289,10 @@ export interface ExpertCandidateDTO {
   personaId: string | null;
 }
 
-export function useExpertCandidates(companyId: string | undefined, limit = 20) {
+export function useExpertCandidates(limit = 20) {
   return useQuery({
-    queryKey: ['expert-candidates', companyId, limit],
-    queryFn: () => api.get<ExpertCandidateDTO[]>(`/api/companies/${companyId}/expert-candidates?limit=${limit}`),
-    enabled: !!companyId,
+    queryKey: ['expert-candidates', limit],
+    queryFn: () => api.get<ExpertCandidateDTO[]>(`/api/expert-candidates?limit=${limit}`),
   });
 }
 
@@ -429,10 +413,10 @@ export function useResetAgentProfile() {
 export function useRecruitAgentProfile() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ companyId, ...input }: { companyId: string; profileId: string; role: string; responsibilities?: string }) =>
-      api.post<Agent>(`/api/companies/${companyId}/employees`, input),
+    mutationFn: (input: { profileId: string; role: string; responsibilities?: string }) =>
+      api.post<Agent>(`/api/employees`, input),
     onSuccess: (agent) => {
-      qc.invalidateQueries({ queryKey: ['agents', agent.companyId] });
+      qc.invalidateQueries({ queryKey: ['agents'] });
       qc.invalidateQueries({ queryKey: ['profile-employments', agent.profileId] });
     },
   });
@@ -440,12 +424,12 @@ export function useRecruitAgentProfile() {
 export function useRecruitFromDraft() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ companyId, draft }: { companyId: string; draft: RecruitmentDraft }) =>
-      api.post<Agent>(`/api/companies/${companyId}/employees/recruit`, draft),
+    mutationFn: (draft: RecruitmentDraft) =>
+      api.post<Agent>(`/api/employees/recruit`, draft),
     onSuccess: (agent) => {
-      qc.invalidateQueries({ queryKey: ['agents', agent.companyId] });
+      qc.invalidateQueries({ queryKey: ['agents'] });
       qc.invalidateQueries({ queryKey: ['agent-profiles'] });
-      qc.invalidateQueries({ queryKey: ['company-cockpit', agent.companyId] });
+      qc.invalidateQueries({ queryKey: ['workbench-cockpit'] });
     },
   });
 }
@@ -490,18 +474,16 @@ export function useCorrectMemoryEntry() {
     onSuccess: (_data, input) => qc.invalidateQueries({ queryKey: ['memory-entries', input.profileId] }),
   });
 }
-export function useAgents(companyId: string | undefined) {
+export function useAgents() {
   return useQuery({
-    queryKey: ['agents', companyId],
-    queryFn: () => api.get<Agent[]>(`/api/companies/${companyId}/agents`),
-    enabled: !!companyId,
+    queryKey: ['agents'],
+    queryFn: () => api.get<Agent[]>(`/api/agents`),
   });
 }
 export function useCreateAgent() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ companyId, ...input }: {
-      companyId: string;
+    mutationFn: (input: {
       name: string;
       role: string;
       departmentId?: string;
@@ -513,15 +495,14 @@ export function useCreateAgent() {
       canDispatch?: boolean;
       isInspector?: boolean;
     }) =>
-      api.post<Agent>(`/api/companies/${companyId}/agents`, input),
-    onSuccess: (data) => qc.invalidateQueries({ queryKey: ['agents', data.companyId] }),
+      api.post<Agent>(`/api/agents`, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['agents'] }),
   });
 }
 export function useUpdateAgent() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ companyId, id, ...patch }: {
-      companyId: string;
+    mutationFn: ({ id, ...patch }: {
       id: string;
       departmentId?: string | null;
       name?: string;
@@ -534,8 +515,8 @@ export function useUpdateAgent() {
       permissions?: Record<string, unknown>;
       executor?: AgentExecutorJson;
     }) =>
-      api.patch<Agent>(`/api/companies/${companyId}/agents/${id}`, patch),
-    onSuccess: (data) => qc.invalidateQueries({ queryKey: ['agents', data.companyId] }),
+      api.patch<Agent>(`/api/agents/${id}`, patch),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['agents'] }),
   });
 }
 /** 给员工绑定固定执行器（复用执行器连通测试结果，员工不重复测试）。 */
@@ -566,8 +547,8 @@ export function useBindEmployeePermission() {
 export function useDismissEmployee() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ companyId, employeeId }: { companyId: string; employeeId: string }) =>
-      api.delete(`/api/companies/${companyId}/agents/${employeeId}`),
+    mutationFn: ({ employeeId }: { employeeId: string }) =>
+      api.delete(`/api/agents/${employeeId}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['agents'] });
       qc.invalidateQueries({ queryKey: ['agent-profiles'] });
@@ -577,49 +558,47 @@ export function useDismissEmployee() {
 export function useAgentAvailability() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ companyId, id, action }: {
-      companyId: string;
+    mutationFn: ({ id, action }: {
       id: string;
       action: 'clock-in' | 'clock-out';
-    }) => api.post<Agent>(`/api/companies/${companyId}/agents/${id}/${action}`),
-    onSuccess: (data) => qc.invalidateQueries({ queryKey: ['agents', data.companyId] }),
+    }) => api.post<Agent>(`/api/agents/${id}/${action}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['agents'] }),
   });
 }
 
 // ===== Departments =====
-export function useDepartments(companyId: string | undefined) {
+export function useDepartments() {
   return useQuery({
     queryKey: ['departments', companyId],
-    queryFn: () => api.get<Department[]>(`/api/companies/${companyId}/departments`),
+    queryFn: () => api.get<Department[]>(`/api/departments`),
     enabled: !!companyId,
   });
 }
 export function useCreateDepartment() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ companyId, name }: { companyId: string; name: string }) =>
-      api.post<Department>(`/api/companies/${companyId}/departments`, { name }),
-    onSuccess: (data) => qc.invalidateQueries({ queryKey: ['departments', data.companyId] }),
+    mutationFn: ({ name }: { name: string }) =>
+      api.post<Department>(`/api/departments`, { name }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['departments'] }),
   });
 }
 export function useDeleteDepartment() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ companyId, id }: { companyId: string; id: string }) =>
-      api.delete(`/api/companies/${companyId}/departments/${id}`),
-    onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: ['departments', vars.companyId] });
-      qc.invalidateQueries({ queryKey: ['agents', vars.companyId] });
+    mutationFn: ({ id }: { id: string }) =>
+      api.delete(`/api/departments/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['departments'] });
+      qc.invalidateQueries({ queryKey: ['agents'] });
     },
   });
 }
 
 // ===== Projects =====
-export function useProjects(companyId: string | undefined) {
+export function useProjects() {
   return useQuery({
-    queryKey: ['projects', companyId],
-    queryFn: () => api.get<Project[]>(`/api/companies/${companyId}/projects`),
-    enabled: !!companyId,
+    queryKey: ['projects'],
+    queryFn: () => api.get<Project[]>(`/api/projects`),
   });
 }
 export function useProject(id: string | undefined) {
@@ -699,9 +678,9 @@ export function useContextSize(projectId: string | undefined, threadId: string |
 export function useCreateProject() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ companyId, ...input }: { companyId: string; name: string; rootDir?: string; description?: string; firstAgentId?: string; playbookId?: string }) =>
-      api.post<Project>(`/api/companies/${companyId}/projects`, input),
-    onSuccess: (data) => qc.invalidateQueries({ queryKey: ['projects', data.companyId] }),
+    mutationFn: (input: { name: string; rootDir?: string; description?: string; firstAgentId?: string; playbookId?: string }) =>
+      api.post<Project>(`/api/projects`, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['projects'] }),
   });
 }
 
@@ -737,7 +716,6 @@ export function usePlaybooksForTemplate(templateId: string | undefined) {
 
 // ===== Relationships =====
 export function useRelationships(
-  companyId: string | undefined,
   kind?: 'org' | 'communication',
   opts: { includeArchived?: boolean } = {},
 ) {
@@ -746,24 +724,23 @@ export function useRelationships(
   if (opts.includeArchived) params.set('includeArchived', '1');
   const qs = params.toString() ? `?${params.toString()}` : '';
   return useQuery({
-    queryKey: ['relationships', companyId, kind, opts.includeArchived ?? false],
-    queryFn: () => api.get<Relationship[]>(`/api/companies/${companyId}/relationships${qs}`),
-    enabled: !!companyId,
+    queryKey: ['relationships', kind, opts.includeArchived ?? false],
+    queryFn: () => api.get<Relationship[]>(`/api/relationships${qs}`),
   });
 }
 export function useAddRelationship() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ companyId, ...input }: { companyId: string; kind: 'org' | 'communication'; sourceId: string; targetId: string; label?: string }) =>
-      api.post<Relationship>(`/api/companies/${companyId}/relationships`, input),
-    onSuccess: (data) => qc.invalidateQueries({ queryKey: ['relationships', data.companyId] }),
+    mutationFn: (input: { kind: 'org' | 'communication'; sourceId: string; targetId: string; label?: string }) =>
+      api.post<Relationship>(`/api/relationships`, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['relationships'] }),
   });
 }
 export function useDeleteRelationship() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ companyId, id }: { companyId: string; id: string }) =>
-      api.delete(`/api/companies/${companyId}/relationships/${id}`),
+    mutationFn: ({ id }: { id: string }) =>
+      api.delete(`/api/relationships/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['relationships'] }),
   });
 }
@@ -772,8 +749,8 @@ export function useDeleteRelationship() {
 export function useArchiveRelationship() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ companyId, id }: { companyId: string; id: string }) =>
-      api.post<Relationship>(`/api/companies/${companyId}/relationships/${id}/archive`),
+    mutationFn: ({ id }: { id: string }) =>
+      api.post<Relationship>(`/api/relationships/${id}/archive`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['relationships'] }),
   });
 }
@@ -782,8 +759,8 @@ export function useArchiveRelationship() {
 export function useRestoreRelationship() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ companyId, id }: { companyId: string; id: string }) =>
-      api.post<Relationship>(`/api/companies/${companyId}/relationships/${id}/restore`),
+    mutationFn: ({ id }: { id: string }) =>
+      api.post<Relationship>(`/api/relationships/${id}/restore`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['relationships'] }),
   });
 }
@@ -815,8 +792,8 @@ export interface GraphProposalResult {
 
 export function useProposeGraphChange() {
   return useMutation({
-    mutationFn: ({ companyId, kind, naturalLanguage }: { companyId: string; kind: 'org' | 'communication'; naturalLanguage: string }) =>
-      api.post<GraphProposalResult>(`/api/companies/${companyId}/relationships/propose`, {
+    mutationFn: ({ kind, naturalLanguage }: { kind: 'org' | 'communication'; naturalLanguage: string }) =>
+      api.post<GraphProposalResult>(`/api/relationships/propose`, {
         kind,
         naturalLanguage,
       }),
@@ -826,8 +803,8 @@ export function useProposeGraphChange() {
 export function useApplyGraphChange() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ companyId, kind, proposal }: { companyId: string; kind: 'org' | 'communication'; proposal: GraphChangeProposal }) =>
-      api.post<{ ok: boolean; diff: GraphDiff }>(`/api/companies/${companyId}/relationships/apply`, {
+    mutationFn: ({ kind, proposal }: { kind: 'org' | 'communication'; proposal: GraphChangeProposal }) =>
+      api.post<{ ok: boolean; diff: GraphDiff }>(`/api/relationships/apply`, {
         kind,
         proposal,
       }),
@@ -836,20 +813,19 @@ export function useApplyGraphChange() {
 }
 export function useValidateGraph() {
   return useMutation({
-    mutationFn: (companyId: string) =>
-      api.post<{ errors: string[] }>(`/api/companies/${companyId}/relationships/validate`),
+    mutationFn: () =>
+      api.post<{ errors: string[] }>(`/api/relationships/validate`),
   });
 }
 
 export function useStartWorkflow() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ companyId, workflowId, projectId }: {
-      companyId: string;
+    mutationFn: ({ workflowId, projectId }: {
       workflowId: string;
       projectId: string;
     }) => api.post<Task[]>(
-      `/api/companies/${companyId}/workflows/${workflowId}/start`,
+      `/api/workflows/${workflowId}/start`,
       { projectId },
     ),
     onSuccess: (_data, variables) => qc.invalidateQueries({ queryKey: ['tasks', variables.projectId] }),
@@ -920,39 +896,38 @@ export function useDeleteProjectAutomation() {
   });
 }
 
-// ===== 公司级定时自动化（指挥系统批次1）=====
-export function useCompanyAutomations(companyId: string | undefined) {
+// ===== 工作台级定时自动化（指挥系统批次1；公司退役批次B 改名 workbench）=====
+export function useWorkbenchAutomations() {
   return useQuery({
-    queryKey: ['company-automations', companyId],
-    queryFn: () => api.get<ProjectAutomation[]>(`/api/companies/${companyId}/automation`),
-    enabled: !!companyId,
+    queryKey: ['workbench-automations'],
+    queryFn: () => api.get<ProjectAutomation[]>(`/api/workbench/automation`),
   });
 }
 
 export function useCreateCompanySchedule() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ companyId, ...input }: { companyId: string } & CreateScheduleInput) =>
-      api.post<ProjectAutomation>(`/api/companies/${companyId}/automation/schedules`, input),
-    onSuccess: (_data, input) => qc.invalidateQueries({ queryKey: ['company-automations', input.companyId] }),
+    mutationFn: (input: CreateScheduleInput) =>
+      api.post<ProjectAutomation>(`/api/workbench/automation/schedules`, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['workbench-automations'] }),
   });
 }
 
 export function useUpdateCompanyAutomation() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ companyId, triggerId, enabled }: { companyId: string; triggerId: string; enabled: boolean }) =>
-      api.patch<ProjectAutomation>(`/api/companies/${companyId}/automation/${triggerId}`, { enabled }),
-    onSuccess: (_data, input) => qc.invalidateQueries({ queryKey: ['company-automations', input.companyId] }),
+    mutationFn: ({ triggerId, enabled }: { triggerId: string; enabled: boolean }) =>
+      api.patch<ProjectAutomation>(`/api/workbench/automation/${triggerId}`, { enabled }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['workbench-automations'] }),
   });
 }
 
 export function useDeleteCompanyAutomation() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ companyId, triggerId }: { companyId: string; triggerId: string }) =>
-      api.delete(`/api/companies/${companyId}/automation/${triggerId}`),
-    onSuccess: (_data, input) => qc.invalidateQueries({ queryKey: ['company-automations', input.companyId] }),
+    mutationFn: ({ triggerId }: { triggerId: string }) =>
+      api.delete(`/api/workbench/automation/${triggerId}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['workbench-automations'] }),
   });
 }
 
@@ -989,11 +964,10 @@ export interface DebateView {
   resolvedAt: string | null;
 }
 
-export function useCompanyDebates(companyId: string | undefined) {
+export function useWorkbenchDebates() {
   return useQuery({
-    queryKey: ['company-debates', companyId],
-    queryFn: () => api.get<DebateView[]>(`/api/companies/${companyId}/debates`),
-    enabled: !!companyId,
+    queryKey: ['workbench-debates'],
+    queryFn: () => api.get<DebateView[]>(`/api/workbench/debates`),
   });
 }
 
@@ -1143,12 +1117,12 @@ export function materialRawUrl(projectId: string, materialId: string): string {
 }
 
 export function useMessages(scope: 'company' | 'project', scopeId: string | undefined, agentId?: string) {
-  const baseUrl = scope === 'company' ? `/api/companies/${scopeId}/messages` : `/api/projects/${scopeId}/messages`;
+  const baseUrl = scope === 'company' ? `/api/messages` : `/api/projects/${scopeId}/messages`;
   const url = `${baseUrl}${agentId ? `?agentId=${encodeURIComponent(agentId)}` : ''}`;
   return useQuery({
     queryKey: ['messages', scope, scopeId, agentId ?? 'all'],
     queryFn: () => api.get<ConversationMessage[]>(url),
-    enabled: !!scopeId,
+    enabled: scope === 'company' || !!scopeId,
     refetchInterval: 4000, // 兜底轮询，WebSocket 接入后可移除
   });
 }
@@ -1157,7 +1131,7 @@ export function usePostMessage(scope: 'company' | 'project', agentId?: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ scopeId, content, mentions, projectTaskId, attachments, options }: { scopeId: string; content: string; mentions?: string[]; projectTaskId?: string; attachments?: MessageAttachment[]; options?: { mode?: string; model?: string; thinking?: string } }) => {
-      const url = scope === 'company' ? `/api/companies/${scopeId}/messages` : `/api/projects/${scopeId}/messages`;
+      const url = scope === 'company' ? `/api/messages` : `/api/projects/${scopeId}/messages`;
       return api.post<{ userMessage: ConversationMessage; task: unknown }>(url, { content, mentions, projectTaskId, attachments, options });
     },
     onSuccess: (_data, vars) => {
@@ -1308,13 +1282,12 @@ export function useArtifactGallery(projectId: string | undefined, groupBy: 'time
 }
 
 /** 公司级跨项目成品画廊分组（蓝图组织批次2：归档页用）。 */
-export function useCompanyArtifactGallery(companyId: string | undefined, groupBy: 'time' | 'type' | 'project' = 'time') {
+export function useWorkbenchArtifacts(groupBy: 'time' | 'type' | 'project' = 'time') {
   return useQuery({
-    queryKey: ['company-artifact-gallery', companyId, groupBy],
+    queryKey: ['workbench-artifacts', groupBy],
     queryFn: () => api.get<Array<ArtifactGalleryGroup & { projectId?: string; projectName?: string }>>(
-      `/api/companies/${companyId}/artifacts?groupBy=${groupBy}`,
+      `/api/workbench/artifacts?groupBy=${groupBy}`,
     ),
-    enabled: !!companyId,
   });
 }
 
@@ -1327,11 +1300,11 @@ export interface ArchiveHit {
   createdAt: string;
 }
 
-export function useArchiveSearch(companyId: string | undefined, query: string) {
+export function useArchiveSearch(query: string) {
   return useQuery({
-    queryKey: ['archive-search', companyId, query],
-    queryFn: () => api.get<ArchiveHit[]>(`/api/companies/${companyId}/archive/search?q=${encodeURIComponent(query)}`),
-    enabled: !!companyId && query.trim().length > 0,
+    queryKey: ['archive-search', query],
+    queryFn: () => api.get<ArchiveHit[]>(`/api/workbench/archive/search?q=${encodeURIComponent(query)}`),
+    enabled: query.trim().length > 0,
   });
 }
 
@@ -1381,15 +1354,15 @@ export interface BlueprintDetail extends Blueprint {
   };
 }
 
-export function useBlueprintDetail(companyId: string | undefined, blueprintId: string | undefined) {
+export function useBlueprintDetail(blueprintId: string | undefined) {
   return useQuery({
-    queryKey: ['blueprint-detail', companyId, blueprintId],
-    queryFn: () => api.get<BlueprintDetail>(`/api/companies/${companyId}/blueprints/${blueprintId}/detail`),
-    enabled: !!companyId && !!blueprintId,
+    queryKey: ['blueprint-detail', blueprintId],
+    queryFn: () => api.get<BlueprintDetail>(`/api/blueprints/${blueprintId}/detail`),
+    enabled: !!blueprintId,
   });
 }
 
-export function useDebugAdoptBlueprint(companyId: string | undefined) {
+export function useDebugAdoptBlueprint() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ blueprintId, ...body }: {
@@ -1400,54 +1373,54 @@ export function useDebugAdoptBlueprint(companyId: string | undefined) {
       description?: string;
       summary: string;
       evidenceTaskId?: string;
-    }) => api.post<Blueprint>(`/api/companies/${companyId}/blueprints/${blueprintId}/debug-adopt`, body),
+    }) => api.post<Blueprint>(`/api/blueprints/${blueprintId}/debug-adopt`, body),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['blueprints', companyId] });
-      qc.invalidateQueries({ queryKey: ['blueprint-detail', companyId] });
-      qc.invalidateQueries({ queryKey: ['blueprint-versions', companyId] });
-    },
-  });
-}
-
-export function useBlueprintVersions(companyId: string | undefined, blueprintId: string | undefined) {
-  return useQuery({
-    queryKey: ['blueprint-versions', companyId, blueprintId],
-    queryFn: () => api.get<BlueprintVersion[]>(`/api/companies/${companyId}/blueprints/${blueprintId}/versions`),
-    enabled: !!companyId && !!blueprintId,
-  });
-}
-
-export function useRollbackBlueprint(companyId: string | undefined) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ blueprintId, version }: { blueprintId: string; version: number }) =>
-      api.post<Blueprint>(`/api/companies/${companyId}/blueprints/${blueprintId}/rollback`, { version }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['blueprints', companyId] });
+      qc.invalidateQueries({ queryKey: ['blueprints'] });
+      qc.invalidateQueries({ queryKey: ['blueprint-detail'] });
       qc.invalidateQueries({ queryKey: ['blueprint-versions'] });
     },
   });
 }
 
-export function useUpdateBlueprintDescription(companyId: string | undefined) {
+export function useBlueprintVersions(blueprintId: string | undefined) {
+  return useQuery({
+    queryKey: ['blueprint-versions', blueprintId],
+    queryFn: () => api.get<BlueprintVersion[]>(`/api/blueprints/${blueprintId}/versions`),
+    enabled: !!blueprintId,
+  });
+}
+
+export function useRollbackBlueprint() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ blueprintId, version }: { blueprintId: string; version: number }) =>
+      api.post<Blueprint>(`/api/blueprints/${blueprintId}/rollback`, { version }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['blueprints'] });
+      qc.invalidateQueries({ queryKey: ['blueprint-versions'] });
+    },
+  });
+}
+
+export function useUpdateBlueprintDescription() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ blueprintId, description }: { blueprintId: string; description: string }) =>
-      api.patch<Blueprint>(`/api/companies/${companyId}/blueprints/${blueprintId}/description`, { description }),
+      api.patch<Blueprint>(`/api/blueprints/${blueprintId}/description`, { description }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['blueprints', companyId] });
+      qc.invalidateQueries({ queryKey: ['blueprints'] });
       qc.invalidateQueries({ queryKey: ['blueprint-versions'] });
     },
   });
 }
 
 /** 相关打法：按任务标题匹配 top-N 蓝图（去同簇；创建任务卡预览穿戴用）。 */
-export function useBlueprintMatches(companyId: string | undefined, title: string | undefined) {
+export function useBlueprintMatches(title: string | undefined) {
   const trimmed = (title ?? '').trim();
   return useQuery({
-    queryKey: ['blueprint-matches', companyId, trimmed],
-    queryFn: () => api.get<Blueprint[]>(`/api/companies/${companyId}/blueprints/match-preview?title=${encodeURIComponent(trimmed)}`),
-    enabled: !!companyId && trimmed.length >= 4,
+    queryKey: ['blueprint-matches', trimmed],
+    queryFn: () => api.get<Blueprint[]>(`/api/blueprints/match-preview?title=${encodeURIComponent(trimmed)}`),
+    enabled: trimmed.length >= 4,
   });
 }
 
@@ -1463,11 +1436,10 @@ export interface BlueprintOptimizationItem {
   createdAt: string;
 }
 
-export function useBlueprintOptimizationItems(companyId: string | undefined, blueprintId?: string) {
+export function useBlueprintOptimizationItems(blueprintId?: string) {
   return useQuery({
-    queryKey: ['blueprint-optimization-items', companyId, blueprintId ?? 'all'],
-    queryFn: () => api.get<BlueprintOptimizationItem[]>(`/api/companies/${companyId}/optimization-items${blueprintId ? `?blueprintId=${blueprintId}` : ''}`),
-    enabled: !!companyId,
+    queryKey: ['blueprint-optimization-items', blueprintId ?? 'all'],
+    queryFn: () => api.get<BlueprintOptimizationItem[]>(`/api/blueprint-optimization/optimization-items${blueprintId ? `?blueprintId=${blueprintId}` : ''}`),
   });
 }
 
@@ -1485,63 +1457,62 @@ export interface OptimizeChatData {
   pendingItems: BlueprintOptimizationItem[];
 }
 
-export function useBlueprintOptimizeChat(companyId: string | undefined, blueprintId: string | undefined) {
+export function useBlueprintOptimizeChat(blueprintId: string | undefined) {
   return useQuery({
-    queryKey: ['blueprint-optimize-chat', companyId, blueprintId],
-    queryFn: () => api.get<OptimizeChatData>(`/api/companies/${companyId}/blueprints/${blueprintId}/optimize-chat`),
-    enabled: !!companyId && !!blueprintId,
+    queryKey: ['blueprint-optimize-chat', blueprintId],
+    queryFn: () => api.get<OptimizeChatData>(`/api/blueprint-optimization/blueprints/${blueprintId}/optimize-chat`),
+    enabled: !!blueprintId,
   });
 }
 
-export function useSendOptimizeChatMessage(companyId: string | undefined) {
+export function useSendOptimizeChatMessage() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ blueprintId, message }: { blueprintId: string; message: string }) =>
       api.post<OptimizeChatData & { newProposals: BlueprintOptimizationItem[]; source: 'llm' | 'rules' }>(
-        `/api/companies/${companyId}/blueprints/${blueprintId}/optimize-chat`, { message }),
+        `/api/blueprint-optimization/blueprints/${blueprintId}/optimize-chat`, { message }),
     onSuccess: (_, vars) => {
-      qc.invalidateQueries({ queryKey: ['blueprint-optimize-chat', companyId, vars.blueprintId] });
-      qc.invalidateQueries({ queryKey: ['blueprint-optimization-items', companyId] });
+      qc.invalidateQueries({ queryKey: ['blueprint-optimize-chat', vars.blueprintId] });
+      qc.invalidateQueries({ queryKey: ['blueprint-optimization-items'] });
     },
   });
 }
 
-export function useApplyBlueprintOptimizationItem(companyId: string | undefined) {
+export function useApplyBlueprintOptimizationItem() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (itemId: string) => api.post<{ applied: boolean; message: string }>(`/api/companies/${companyId}/optimization-items/${itemId}/apply`, {}),
+    mutationFn: (itemId: string) => api.post<{ applied: boolean; message: string }>(`/api/blueprint-optimization/optimization-items/${itemId}/apply`, {}),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['blueprint-optimization-items', companyId] });
-      qc.invalidateQueries({ queryKey: ['blueprints', companyId] });
+      qc.invalidateQueries({ queryKey: ['blueprint-optimization-items'] });
+      qc.invalidateQueries({ queryKey: ['blueprints'] });
       qc.invalidateQueries({ queryKey: ['blueprint-versions'] });
     },
   });
 }
 
-export function useIgnoreBlueprintOptimizationItem(companyId: string | undefined) {
+export function useIgnoreBlueprintOptimizationItem() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (itemId: string) => api.post(`/api/companies/${companyId}/optimization-items/${itemId}/ignore`, {}),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['blueprint-optimization-items', companyId] }),
+    mutationFn: (itemId: string) => api.post(`/api/blueprint-optimization/optimization-items/${itemId}/ignore`, {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['blueprint-optimization-items'] }),
   });
 }
 
-export function useBlueprints(companyId: string | undefined) {
+export function useBlueprints() {
   return useQuery({
-    queryKey: ['blueprints', companyId],
-    queryFn: () => api.get<Blueprint[]>(`/api/companies/${companyId}/blueprints`),
-    enabled: !!companyId,
+    queryKey: ['blueprints'],
+    queryFn: () => api.get<Blueprint[]>(`/api/blueprints`),
   });
 }
 
-export function useBlueprintStatus(companyId: string | undefined) {
+export function useBlueprintStatus() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ blueprintId, status }: { blueprintId: string; status: Blueprint['status'] }) =>
-      api.post<Blueprint>(`/api/companies/${companyId}/blueprints/${blueprintId}/status`, { status }),
+      api.post<Blueprint>(`/api/blueprints/${blueprintId}/status`, { status }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['blueprint-versions'] });
-      qc.invalidateQueries({ queryKey: ['blueprints', companyId] });
+      qc.invalidateQueries({ queryKey: ['blueprints'] });
     },
   });
 }
@@ -1632,12 +1603,11 @@ export interface FeedEvent {
   assigneeAgentId: string | null;
 }
 
-export function useCompanyEvents(companyId: string | undefined, since?: string) {
+export function useEvents(since?: string) {
   return useQuery({
-    queryKey: ['company-events', companyId, since],
+    queryKey: ['events', since],
     queryFn: () =>
-      api.get<FeedEvent[]>(`/api/companies/${companyId}/events${since ? `?since=${encodeURIComponent(since)}` : ''}`),
-    enabled: !!companyId,
+      api.get<FeedEvent[]>(`/api/events${since ? `?since=${encodeURIComponent(since)}` : ''}`),
   });
 }
 
@@ -1812,11 +1782,11 @@ export interface WorkflowData {
   edges: WorkflowEdge[];
 }
 
-export function useWorkflow(companyId: string | undefined, workflowId: string | undefined) {
+export function useWorkflow(workflowId: string | undefined) {
   return useQuery({
-    queryKey: ['workflow', companyId, workflowId],
-    queryFn: () => api.get<WorkflowData>(`/api/companies/${companyId}/workflows/${workflowId}`),
-    enabled: !!companyId && !!workflowId,
+    queryKey: ['workflow', workflowId],
+    queryFn: () => api.get<WorkflowData>(`/api/workflows/${workflowId}`),
+    enabled: !!workflowId,
   });
 }
 
@@ -1824,27 +1794,25 @@ export function useSaveWorkflow() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({
-      companyId,
       workflowId,
       nodes,
       edges,
     }: {
-      companyId: string;
       workflowId: string;
       nodes: Array<{ id?: string; kind: 'step' | 'decision' | 'start' | 'end'; label: string; position: { x: number; y: number }; props?: Record<string, unknown> }>;
       edges: Array<{ sourceId: string; targetId: string; label?: string; condition?: Record<string, unknown>; maxTraversals?: number }>;
     }) =>
-      api.put<{ ok: boolean }>(`/api/companies/${companyId}/workflows/${workflowId}`, { nodes, edges }),
+      api.put<{ ok: boolean }>(`/api/workflows/${workflowId}`, { nodes, edges }),
     onSuccess: (_d, vars) => {
-      qc.invalidateQueries({ queryKey: ['workflow', vars.companyId, vars.workflowId] });
+      qc.invalidateQueries({ queryKey: ['workflow', vars.workflowId] });
     },
   });
 }
 
 export function useValidateWorkflow() {
   return useMutation({
-    mutationFn: ({ companyId, workflowId }: { companyId: string; workflowId: string }) =>
-      api.post<{ errors: string[] }>(`/api/companies/${companyId}/workflows/${workflowId}/validate`),
+    mutationFn: ({ workflowId }: { workflowId: string }) =>
+      api.post<{ errors: string[] }>(`/api/workflows/${workflowId}/validate`),
   });
 }
 
@@ -2045,18 +2013,7 @@ export function useSetCredentialDefault() {
   });
 }
 
-export function useCompanyCredentials(companyId: string | undefined) {
-  return useQuery({ queryKey: ['company-credentials', companyId], queryFn: () => api.get<CompanyCredentialDTO[]>(`/api/companies/${companyId}/credentials`), enabled: !!companyId });
-}
-
-export function useSetCompanyCredential() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ companyId, definitionId, overrideKey, enabled }: { companyId: string; definitionId: string; overrideKey?: string | null; enabled?: boolean }) =>
-      api.put<CompanyCredentialDTO>(`/api/companies/${companyId}/credentials/${definitionId}`, { overrideKey, enabled }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['company-credentials'] }),
-  });
-}
+// 公司级凭据覆盖 hooks：前端无消费方（死代码），随公司退役 D4 凭据层一并下线，此处直接删除。
 
 // ===== 项目素材区 =====
 export function useMaterials(projectId: string | undefined, filter?: { kind?: string; tag?: string }) {
@@ -2131,11 +2088,10 @@ export function usePlugins() {
 }
 
 /** 公司已启用的 plugin id 列表（opt-out 迁移后语义=effective）。 */
-export function useEnabledCompanyPlugins(companyId: string | undefined) {
+export function useEnabledCompanyPlugins() {
   return useQuery({
-    queryKey: ['enabled-plugins', companyId],
-    queryFn: () => api.get<string[]>(`/api/plugins/companies/${companyId}/plugins/enabled`),
-    enabled: !!companyId,
+    queryKey: ['enabled-plugins'],
+    queryFn: () => api.get<string[]>(`/api/plugins/enabled`),
   });
 }
 
@@ -2143,46 +2099,44 @@ export function useEnabledCompanyPlugins(companyId: string | undefined) {
  * 公司实际生效的插件列表（opt-out：平台默认 - 显式禁用 + 公司独占），
  * 每个插件带 companyDecision 三态标注，供 UI 渲染开关。
  */
-export function useEffectiveCompanyPlugins(companyId: string | undefined) {
+export function useEffectiveCompanyPlugins() {
   return useQuery({
-    queryKey: ['effective-plugins', companyId],
-    queryFn: () => api.get<EffectivePlugin[]>(`/api/plugins/companies/${companyId}/plugins/effective`),
-    enabled: !!companyId,
+    queryKey: ['effective-plugins'],
+    queryFn: () => api.get<EffectivePlugin[]>(`/api/plugins/effective`),
   });
 }
 
-/** 公司独占插件列表（scope=company，仅此公司可见）。 */
-export function useCompanyScopedPlugins(companyId: string | undefined) {
+/** 工作台独占插件列表（scope=company，仅默认工作台可见）。 */
+export function useCompanyScopedPlugins() {
   return useQuery({
-    queryKey: ['company-scoped-plugins', companyId],
-    queryFn: () => api.get<Plugin[]>(`/api/plugins/company-scoped/${companyId}`),
-    enabled: !!companyId,
+    queryKey: ['company-scoped-plugins'],
+    queryFn: () => api.get<Plugin[]>(`/api/plugins/company-scoped`),
   });
 }
 
-/** 公司级启停 plugin（需公司下班）。opt-out：enabled=true 撤销禁用，false 显式禁用。 */
+/** 工作台级启停 plugin（需工作台下班）。opt-out：enabled=true 撤销禁用，false 显式禁用。 */
 export function useToggleCompanyPlugin() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ companyId, pluginId, enabled }: { companyId: string; pluginId: string; enabled: boolean }) =>
-      api.post<{ ok: boolean }>(`/api/plugins/companies/${companyId}/plugins/${pluginId}/${enabled ? 'enable' : 'disable'}`, {}),
-    onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: ['enabled-plugins', vars.companyId] });
-      qc.invalidateQueries({ queryKey: ['effective-plugins', vars.companyId] });
+    mutationFn: ({ pluginId, enabled }: { pluginId: string; enabled: boolean }) =>
+      api.post<{ ok: boolean }>(`/api/plugins/${pluginId}/${enabled ? 'enable' : 'disable'}`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['enabled-plugins'] });
+      qc.invalidateQueries({ queryKey: ['effective-plugins'] });
       qc.invalidateQueries({ queryKey: ['plugins'] });
     },
   });
 }
 
-/** 安装公司独占插件（scope=company，仅目标公司可见可用）。 */
+/** 安装工作台独占插件（scope=company，仅默认工作台可见可用）。 */
 export function useInstallExclusivePlugin() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ companyId, input }: { companyId: string; input: InstallExclusiveInput }) =>
-      api.post<Plugin>(`/api/plugins/companies/${companyId}/plugins/exclusive`, input),
-    onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: ['company-scoped-plugins', vars.companyId] });
-      qc.invalidateQueries({ queryKey: ['effective-plugins', vars.companyId] });
+    mutationFn: (input: InstallExclusiveInput) =>
+      api.post<Plugin>(`/api/plugins/exclusive`, input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['company-scoped-plugins'] });
+      qc.invalidateQueries({ queryKey: ['effective-plugins'] });
       qc.invalidateQueries({ queryKey: ['plugins'] });
     },
   });
@@ -2266,12 +2220,11 @@ export function useInstallClaudePlugin() {
 
 // ── 临时工 + 评级 hooks（批次 A）───────────────────────────────────────────
 
-/** 列出公司临时工（含 greyed）。 */
-export function useTempEmployees(companyId: string | undefined) {
+/** 列出工作台临时工（含 greyed）。 */
+export function useTempEmployees() {
   return useQuery({
-    queryKey: ['temp-employees', companyId],
-    queryFn: () => api.get<Array<{ legacy_agent_id: string; profile_id: string; display_name: string; role: string; rating: number; employment_type: string; temp_status: string | null }>>(`/api/companies/${companyId}/employees/temp`),
-    enabled: !!companyId,
+    queryKey: ['temp-employees'],
+    queryFn: () => api.get<Array<{ legacy_agent_id: string; profile_id: string; display_name: string; role: string; rating: number; employment_type: string; temp_status: string | null }>>(`/api/employees/temp`),
   });
 }
 
@@ -2279,10 +2232,10 @@ export function useTempEmployees(companyId: string | undefined) {
 export function useRecruitTemp() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ companyId, input }: { companyId: string; input: { role: string; responsibilities?: string; profileId?: string; requesterAgentId?: string } }) =>
-      api.post<{ agentId: string; profileId: string; isNewProfile: boolean }>(`/api/companies/${companyId}/employees/temp`, input),
-    onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: ['temp-employees', vars.companyId] });
+    mutationFn: (input: { role: string; responsibilities?: string; profileId?: string; requesterAgentId?: string }) =>
+      api.post<{ agentId: string; profileId: string; isNewProfile: boolean }>(`/api/employees/temp`, input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['temp-employees'] });
     },
   });
 }
@@ -2291,8 +2244,8 @@ export function useRecruitTemp() {
 export function useConvertTemp() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ companyId, agentId }: { companyId: string; agentId: string }) =>
-      api.post<{ ok: boolean }>(`/api/companies/${companyId}/employees/${agentId}/convert`, {}),
+    mutationFn: ({ agentId }: { agentId: string }) =>
+      api.post<{ ok: boolean }>(`/api/employees/${agentId}/convert`, {}),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['temp-employees'] });
       qc.invalidateQueries({ queryKey: ['agents'] });
@@ -2304,8 +2257,8 @@ export function useConvertTemp() {
 export function useDismissTemp() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ companyId, agentId }: { companyId: string; agentId: string }) =>
-      api.post<{ ok: boolean; profileDeleted: boolean }>(`/api/companies/${companyId}/employees/${agentId}/dismiss`, { confirm: true }),
+    mutationFn: ({ agentId }: { agentId: string }) =>
+      api.post<{ ok: boolean; profileDeleted: boolean }>(`/api/employees/${agentId}/dismiss`, { confirm: true }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['temp-employees'] });
       qc.invalidateQueries({ queryKey: ['agents'] });
@@ -2317,8 +2270,8 @@ export function useDismissTemp() {
 export function useReactivateTemp() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ companyId, agentId }: { companyId: string; agentId: string }) =>
-      api.post<{ ok: boolean }>(`/api/companies/${companyId}/employees/${agentId}/reactivate`, {}),
+    mutationFn: ({ agentId }: { agentId: string }) =>
+      api.post<{ ok: boolean }>(`/api/employees/${agentId}/reactivate`, {}),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['temp-employees'] });
     },
@@ -2441,29 +2394,4 @@ export function useStartUserDiscussion(projectId: string | undefined) {
   });
 }
 
-// ===== L1 优雅关机 / 一键恢复 =====
-
-export function useBeginShutdown() {
-  return useMutation({
-    mutationFn: () => api.post<{ affected: Array<{ id: string; name: string }>; total: number }>('/api/companies/shutdown/begin'),
-  });
-}
-
-export function useResumeShutdownPaused() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => api.post<{ resumed: number }>('/api/companies/shutdown/resume'),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['companies'] });
-    },
-  });
-}
-
-/** L3：各公司活跃任务数（标签栏"工作中/空闲"信号）。 */
-export function useCompaniesActivity() {
-  return useQuery({
-    queryKey: ['companies-activity'],
-    queryFn: () => api.get<Record<string, number>>('/api/companies/activity'),
-    refetchInterval: 15000,
-  });
-}
+// ===== L1 优雅关机 / 一键恢复（前端无消费方的死 hooks 已随公司退役批次B删除） =====

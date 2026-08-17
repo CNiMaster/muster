@@ -19,7 +19,8 @@ import { toast } from '../components/Button';
 
 const DRAIN_TIMEOUT_MS = 60_000;
 
-export function usePausedEdit(companyId: string, companyState?: string) {
+/** 公司退役批次B：单例工作台化——不再接收 companyId，统一走 /api/workbench。 */
+export function usePausedEdit(companyState?: string) {
   const qc = useQueryClient();
   const [pausing, setPausing] = useState(false);
 
@@ -27,32 +28,32 @@ export function usePausedEdit(companyId: string, companyState?: string) {
   const waitUntilOff = useCallback(async (): Promise<boolean> => {
     const deadline = Date.now() + DRAIN_TIMEOUT_MS;
     while (Date.now() < deadline) {
-      const company = await api.get<Company>(`/api/companies/${companyId}`);
+      const company = await api.get<Company>(`/api/workbench`);
       if (company.state === 'off') return true;
       await new Promise((r) => setTimeout(r, 1000));
     }
     return false;
-  }, [companyId]);
+  }, []);
 
   const finish = useCallback(() => {
     setPausing(false);
-    qc.invalidateQueries({ queryKey: ['company', companyId] });
-    qc.invalidateQueries({ queryKey: ['companies'] });
-  }, [companyId, qc]);
+    qc.invalidateQueries({ queryKey: ['workbench'] });
+    qc.invalidateQueries({ queryKey: ['workbench-cockpit'] });
+  }, [qc]);
 
   const resumeOnline = useCallback(async () => {
     try {
-      await api.post(`/api/companies/${companyId}/clock-in`);
+      await api.post(`/api/workbench/clock-in`);
     } catch {
       /* 恢复失败不吞修改结果；状态由下一次查询反映 */
     }
-  }, [companyId]);
+  }, []);
 
   const run = useCallback(
     async <T,>(apply: () => Promise<T>): Promise<T | null> => {
-      const state = qc.getQueryData<Company>(['company', companyId])?.state ?? companyState;
+      const state = qc.getQueryData<Company>(['workbench'])?.state ?? companyState;
       const refetchState = async (): Promise<string> => {
-        const company = await api.get<Company>(`/api/companies/${companyId}`);
+        const company = await api.get<Company>(`/api/workbench`);
         return company.state;
       };
 
@@ -84,7 +85,7 @@ export function usePausedEdit(companyId: string, companyState?: string) {
         setPausing(true);
         let paused = false;
         try {
-          await api.post(`/api/companies/${companyId}/clock-out`);
+          await api.post(`/api/workbench/clock-out`);
           paused = true;
           let result: T | null = null;
           try {
@@ -108,7 +109,7 @@ export function usePausedEdit(companyId: string, companyState?: string) {
       setPausing(true);
       let paused = false;
       try {
-        await api.post(`/api/companies/${companyId}/drain`);
+        await api.post(`/api/workbench/drain`);
         paused = true;
         if (!(await waitUntilOff())) {
           toast('error', '等待手头任务收尾超时，请稍后再试');
@@ -136,7 +137,7 @@ export function usePausedEdit(companyId: string, companyState?: string) {
       toast('error', `当前状态（${actual}）不能修改组织配置，请稍后再试`);
       return null;
     },
-    [companyId, companyState, qc, waitUntilOff, finish, resumeOnline],
+    [companyState, qc, waitUntilOff, finish, resumeOnline],
   );
 
   return { run, pausing };
