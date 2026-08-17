@@ -15,7 +15,7 @@
  */
 import { Router } from 'express';
 import { z } from 'zod';
-import { asyncHandler, param } from './middleware';
+import { asyncHandler, param, companyIdOf } from './middleware';
 import { getDb } from '../db/client';
 import {
   createHandover,
@@ -35,29 +35,26 @@ import { AppError, ErrorCode } from '../../shared/errors';
 
 export const handoverRouter = Router();
 
-// 创建交接（离职入口）
+// 创建交接（离职入口）—— 公司退役批次A双挂（旧 /companies/:companyId/handover 与新 /handover，companyId 经 companyIdOf 兜底）
 const createSchema = z.object({ departingEmployeeId: z.string().min(1) });
-
-handoverRouter.post(
-  '/companies/:companyId/handover',
-  asyncHandler(async (req, res) => {
-    const input = createSchema.parse(req.body);
-    const record = createHandover(getDb(), { companyId: param(req, 'companyId'), departingEmployeeId: input.departingEmployeeId });
-    realtime.publish(makeLifecycleEvent('handover.created' as never, {
-      handoverId: record.id,
-      departingEmployeeId: record.departingEmployeeId,
-    } as never, { companyId: param(req, 'companyId') }));
-    res.status(201).json(record);
-  }),
-);
+const createHandoverHandler = asyncHandler(async (req, res) => {
+  const input = createSchema.parse(req.body);
+  const record = createHandover(getDb(), { companyId: companyIdOf(req), departingEmployeeId: input.departingEmployeeId });
+  realtime.publish(makeLifecycleEvent('handover.created' as never, {
+    handoverId: record.id,
+    departingEmployeeId: record.departingEmployeeId,
+  } as never, { companyId: companyIdOf(req) }));
+  res.status(201).json(record);
+});
+handoverRouter.post('/companies/:companyId/handover', createHandoverHandler);
+handoverRouter.post('/handover', createHandoverHandler);
 
 // 列出公司交接记录
-handoverRouter.get(
-  '/companies/:companyId/handover',
-  asyncHandler(async (req, res) => {
-    res.json(listHandovers(getDb(), param(req, 'companyId')));
-  }),
-);
+const listHandoversHandler = asyncHandler(async (req, res) => {
+  res.json(listHandovers(getDb(), companyIdOf(req)));
+});
+handoverRouter.get('/companies/:companyId/handover', listHandoversHandler);
+handoverRouter.get('/handover', listHandoversHandler);
 
 // 交接详情
 handoverRouter.get(
@@ -135,11 +132,10 @@ handoverRouter.post(
   }),
 );
 
-// 正式员工离职入口（创建交接记录）
-handoverRouter.post(
-  '/companies/:companyId/employees/:employeeId/offboard',
-  asyncHandler(async (req, res) => {
-    const record = offboardEmployee(getDb(), param(req, 'companyId'), param(req, 'employeeId'));
-    res.status(201).json(record);
-  }),
-);
+// 正式员工离职入口（创建交接记录）—— 公司退役批次A双挂（旧 /companies/:companyId/employees/:eid/offboard 与新 /employees/:eid/offboard）
+const offboardHandler = asyncHandler(async (req, res) => {
+  const record = offboardEmployee(getDb(), companyIdOf(req), param(req, 'employeeId'));
+  res.status(201).json(record);
+});
+handoverRouter.post('/companies/:companyId/employees/:employeeId/offboard', offboardHandler);
+handoverRouter.post('/employees/:employeeId/offboard', offboardHandler);

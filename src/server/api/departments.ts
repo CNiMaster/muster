@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { asyncHandler, param } from './middleware';
+import { asyncHandler, param, companyIdOf } from './middleware';
 import { getDb } from '../db/client';
 import {
   createDepartment,
@@ -17,15 +17,15 @@ const bodySchema = z.object({
 });
 
 departmentsRouter.get('/', asyncHandler(async (req, res) => {
-  res.json(listDepartments(getDb(), param(req, 'companyId')));
+  res.json(listDepartments(getDb(), companyIdOf(req)));
 }));
 departmentsRouter.post('/', asyncHandler(async (req, res) => {
   const input = bodySchema.parse(req.body);
-  res.status(201).json(createDepartment(getDb(), { companyId: param(req, 'companyId'), ...input }));
+  res.status(201).json(createDepartment(getDb(), { companyId: companyIdOf(req), ...input }));
 }));
 departmentsRouter.patch('/:id', asyncHandler(async (req, res) => {
   const current = getDepartment(getDb(), param(req, 'id'));
-  if (current.companyId !== param(req, 'companyId')) {
+  if (current.companyId !== companyIdOf(req)) {
     res.status(404).json({ error: 'department not found' });
     return;
   }
@@ -33,7 +33,7 @@ departmentsRouter.patch('/:id', asyncHandler(async (req, res) => {
 }));
 departmentsRouter.delete('/:id', asyncHandler(async (req, res) => {
   const current = getDepartment(getDb(), param(req, 'id'));
-  if (current.companyId !== param(req, 'companyId')) {
+  if (current.companyId !== companyIdOf(req)) {
     res.status(404).json({ error: 'department not found' });
     return;
   }

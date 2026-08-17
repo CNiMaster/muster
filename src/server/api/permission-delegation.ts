@@ -14,7 +14,7 @@
  */
 import { Router } from 'express';
 import { z } from 'zod';
-import { asyncHandler, param } from './middleware';
+import { asyncHandler, param, companyIdOf } from './middleware';
 import { getDb } from '../db/client';
 import {
   createPermissionChangeRequest,
@@ -42,37 +42,36 @@ const createChangeSchema = z.object({
   reason: z.string().min(1),
 });
 
-delegationRouter.post(
-  '/companies/:companyId/permission-changes',
-  asyncHandler(async (req, res) => {
-    const input = createChangeSchema.parse(req.body);
-    const req2 = createPermissionChangeRequest(getDb(), {
-      companyId: param(req, 'companyId'),
-      ...input,
-    });
-    realtime.publish(makeLifecycleEvent('permission.change-requested' as never, {
-      requestId: req2.id,
-      requesterEmployeeId: req2.requesterEmployeeId,
-      approverEmployeeId: req2.approverEmployeeId ?? '',
-    } as never, { companyId: param(req, 'companyId') }));
-    res.status(201).json(req2);
-  }),
-);
+// 申请权限变更（公司退役批次A双挂：旧 /companies/:companyId/permission-changes 与新 /permission-changes，companyId 经 companyIdOf 兜底）
+const createChangeHandler = asyncHandler(async (req, res) => {
+  const input = createChangeSchema.parse(req.body);
+  const req2 = createPermissionChangeRequest(getDb(), {
+    companyId: companyIdOf(req),
+    ...input,
+  });
+  realtime.publish(makeLifecycleEvent('permission.change-requested' as never, {
+    requestId: req2.id,
+    requesterEmployeeId: req2.requesterEmployeeId,
+    approverEmployeeId: req2.approverEmployeeId ?? '',
+  } as never, { companyId: companyIdOf(req) }));
+  res.status(201).json(req2);
+});
+delegationRouter.post('/companies/:companyId/permission-changes', createChangeHandler);
+delegationRouter.post('/permission-changes', createChangeHandler);
 
 // 列出（role=requester|approver）
-delegationRouter.get(
-  '/companies/:companyId/permission-changes',
-  asyncHandler(async (req, res) => {
-    const role = (req.query.role as 'requester' | 'approver') ?? 'requester';
-    const employeeId = req.query.employeeId as string;
-    if (!employeeId) throw new AppError(ErrorCode.VALIDATION, '缺少 employeeId');
-    if (role === 'approver') {
-      res.json(listPendingApprovals(getDb(), employeeId));
-    } else {
-      res.json(listMyRequests(getDb(), employeeId));
-    }
-  }),
-);
+const listChangesHandler = asyncHandler(async (req, res) => {
+  const role = (req.query.role as 'requester' | 'approver') ?? 'requester';
+  const employeeId = req.query.employeeId as string;
+  if (!employeeId) throw new AppError(ErrorCode.VALIDATION, '缺少 employeeId');
+  if (role === 'approver') {
+    res.json(listPendingApprovals(getDb(), employeeId));
+  } else {
+    res.json(listMyRequests(getDb(), employeeId));
+  }
+});
+delegationRouter.get('/companies/:companyId/permission-changes', listChangesHandler);
+delegationRouter.get('/permission-changes', listChangesHandler);
 
 // 上级批准
 delegationRouter.post(

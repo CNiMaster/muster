@@ -9,7 +9,7 @@
  */
 import { Router } from 'express';
 import { z } from 'zod';
-import { asyncHandler, param } from './middleware';
+import { asyncHandler, param, companyIdOf } from './middleware';
 import { getDb } from '../db/client';
 import {
   clockInAgent,
@@ -45,7 +45,7 @@ const createAgentSchema = z.object({
 agentsRouter.get(
   '/',
   asyncHandler(async (req, res) => {
-    res.json(listAgents(getDb(), param(req,'companyId')));
+    res.json(listAgents(getDb(), companyIdOf(req)));
   }),
 );
 
@@ -54,7 +54,7 @@ agentsRouter.post(
   asyncHandler(async (req, res) => {
     const input = createAgentSchema.parse(req.body);
     const db = getDb();
-    const agent = createAgent(db, { companyId: param(req,'companyId'), ...input });
+    const agent = createAgent(db, { companyId: companyIdOf(req), ...input });
     materializeAgentHome(getAgentProfile(db, agent.profileId));
     res.status(201).json(agent);
   }),
@@ -90,7 +90,7 @@ agentsRouter.delete(
 
 agentsRouter.post('/:id/clock-in', asyncHandler(async (req, res) => {
   const agent = getAgent(getDb(), param(req, 'id'));
-  if (agent.companyId !== param(req, 'companyId')) {
+  if (agent.companyId !== companyIdOf(req)) {
     res.status(404).json({ error: 'agent not found' });
     return;
   }
@@ -99,7 +99,7 @@ agentsRouter.post('/:id/clock-in', asyncHandler(async (req, res) => {
 
 agentsRouter.post('/:id/clock-out', asyncHandler(async (req, res) => {
   const agent = getAgent(getDb(), param(req, 'id'));
-  if (agent.companyId !== param(req, 'companyId')) {
+  if (agent.companyId !== companyIdOf(req)) {
     res.status(404).json({ error: 'agent not found' });
     return;
   }

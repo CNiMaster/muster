@@ -4,7 +4,7 @@
  - GET /api/projects/:id/events?since=&limit=
  */
 import { Router } from 'express';
-import { asyncHandler } from './middleware';
+import { asyncHandler, companyIdOf } from './middleware';
 import { getDb } from '../db/client';
 import { listCompanyEvents, listProjectEvents } from '../domain/event-feed';
 
@@ -13,7 +13,7 @@ export const companyEventsRouter = Router({ mergeParams: true });
 companyEventsRouter.get(
   '/',
   asyncHandler(async (req, res) => {
-    const companyId = String(req.params.companyId);
+    const companyId = companyIdOf(req);
     const since = req.query.since ? String(req.query.since) : undefined;
     const limit = req.query.limit ? Number(req.query.limit) : undefined;
     res.json(listCompanyEvents(getDb(), companyId, { since, limit: Number.isFinite(limit) ? limit : undefined }));

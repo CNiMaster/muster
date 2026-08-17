@@ -209,7 +209,15 @@ async function createApp(): Promise<AppHandle> {
   app.use('/api/workbench/credentials', companyCredentialsRouter);
   app.use('/api/blueprints', blueprintsRouter);
   app.use('/api/blueprint-optimization', blueprintOptimizationRouter);
+  app.use('/api/agents', agentsRouter);
+  app.use('/api/employees', companyEmployeesRouter);
+  app.use('/api/departments', departmentsRouter);
   app.use('/api/projects', projectsRouter);
+  app.use('/api/relationships', graphsRouter);
+  app.use('/api/workflows', workflowsRouter);
+  app.use('/api/messages', companyMessagesRouter);
+  app.use('/api/events', companyEventsRouter);
+  app.use('/api/expert-candidates', expertCandidatesRouter);
   app.use('/api/playbooks', playbooksRouter);
   // 蓝图组织批次4c：项目优先入口（须在 /api/projects/:id 之前挂载，避免被 :id 参数吞掉）
   app.use('/api/projects/quick', quickProjectsRouter);

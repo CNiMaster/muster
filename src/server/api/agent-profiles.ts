@@ -14,7 +14,7 @@ import {
   copyAgentProfile,
   resetAgentProfileToBase,
 } from '../domain/agent-profile';
-import { asyncHandler, param } from './middleware';
+import { asyncHandler, param, companyIdOf } from './middleware';
 import { exportCapabilityPackage, materializeAgentHome, syncAgentIdentityFiles, syncAgentMemoryFiles } from '../domain/agent-home';
 import { resetPersonalMemory } from '../domain/memory';
 import { recruitFromDraft } from '../domain/recruitment';
@@ -238,10 +238,10 @@ companyEmployeesRouter.post('/', asyncHandler(async (req, res) => {
     departmentId: z.string().optional(),
     responsibilities: z.string().optional(),
   }).parse(req.body);
-  res.status(201).json(recruitAgentProfile(getDb(), { companyId: param(req, 'companyId'), ...input }));
+  res.status(201).json(recruitAgentProfile(getDb(), { companyId: companyIdOf(req), ...input }));
 }));
 
 companyEmployeesRouter.post('/recruit', asyncHandler(async (req, res) => {
   const draft = recruitmentDraftSchema.parse(req.body);
-  res.status(201).json(recruitFromDraft(getDb(), param(req, 'companyId'), draft));
+  res.status(201).json(recruitFromDraft(getDb(), companyIdOf(req), draft));
 }));

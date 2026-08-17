@@ -14,7 +14,7 @@
  */
 import { Router } from 'express';
 import { z } from 'zod';
-import { asyncHandler, param } from './middleware';
+import { asyncHandler, param, companyIdOf } from './middleware';
 import { getDb } from '../db/client';
 import {
   createProject,
@@ -85,7 +85,7 @@ projectsRouter.get(
   '/',
   asyncHandler(async (req, res) => {
     // Review 修复 I2：收件箱项目是对话基础设施，不进项目列表。
-    res.json(listProjects(getDb(), param(req, 'companyId')).filter((p) => (p.settings as Record<string, unknown>)?.inbox !== true));
+    res.json(listProjects(getDb(), companyIdOf(req)).filter((p) => (p.settings as Record<string, unknown>)?.inbox !== true));
   }),
 );
 
@@ -94,7 +94,7 @@ projectsRouter.post(
   asyncHandler(async (req, res) => {
     const input = createProjectSchema.parse(req.body);
     const db = getDb();
-    const companyId = param(req, 'companyId');
+    const companyId = companyIdOf(req);
     const project = createProject(db, { companyId, ...input });
     ensureProjectThreads(db, project.id);
     if (getCompany(db, companyId).kind === 'novel') {

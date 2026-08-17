@@ -6,7 +6,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { getDb } from '../db/client';
-import { asyncHandler } from './middleware';
+import { asyncHandler, companyIdOf } from './middleware';
 import { listExpertCandidates } from '../domain/expert-synthesis';
 
 export const expertCandidatesRouter = Router({ mergeParams: true });
@@ -20,6 +20,6 @@ expertCandidatesRouter.get(
   asyncHandler(async (req, res) => {
     const db = getDb();
     const { limit } = listQuerySchema.parse(req.query);
-    res.json(listExpertCandidates(db, String(req.params.companyId), limit));
+    res.json(listExpertCandidates(db, companyIdOf(req), limit));
   }),
 );
