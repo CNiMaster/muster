@@ -56,6 +56,9 @@ export interface ExecutorProfile {
   connection?: { status: string; classification: string | null; version: string | null; completedAt: string | null } | null;
   /** 列表端点附带的最近一次能力探针结果（仅 API 型执行器）。 */
   capability?: { status: string; classification: string | null; capabilityJson: CapabilityProbeResult | null; completedAt: string | null } | null;
+  /** 故障转移健康（2026-08-17）：unhealthy = 连续失败/认证失效，领取时自动换备选。 */
+  health?: 'healthy' | 'unhealthy';
+  healthNote?: string | null;
 }
 
 /** 能力探针结果（仅 API 型执行器）。 */

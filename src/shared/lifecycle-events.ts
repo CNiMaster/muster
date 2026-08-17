@@ -156,6 +156,8 @@ export interface LifecycleEventPayloadMap {
   // agentId/projectTaskId 供前端按对话归属过滤（单聊面板不串入其他任务的流）。
   'message.delta': { delta: string; agentId?: string; projectTaskId?: string | null };
   'message.delta.end': { reason: 'tool-call' | 'done' | 'aborted'; agentId?: string; projectTaskId?: string | null };
+  // 故障转移（2026-08-17）：执行器档案新变为不健康（连续失败/认证失效）的一次性告警。
+  'executor.unhealthy': { profileId: string; name: string; reason: string };
 }
 
 /**

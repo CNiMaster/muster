@@ -12,6 +12,9 @@ export interface ExecutorProfileDTO {
   manifestId: string;
   config: Record<string, unknown>;
   connection: null | { status: 'queued' | 'testing' | 'connected' | 'failed'; classification: string | null; version: string | null; completedAt: string | null };
+  /** 故障转移健康：unhealthy = 连续失败/认证失效，领取时自动换备选（executor-failover） */
+  health?: 'healthy' | 'unhealthy';
+  healthNote?: string | null;
 }
 
 export interface PermissionPolicyDTO {

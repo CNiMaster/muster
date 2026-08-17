@@ -22,6 +22,10 @@ export interface ExecutorProfile {
   maxConcurrency: number;
   /** 锁定后自适应不越界不上调（B4）。 */
   concurrencyLocked: boolean;
+  /** 故障转移健康（2026-08-17）：unhealthy = 连续失败/认证失效，领取时跳过换备选。 */
+  health: 'healthy' | 'unhealthy';
+  consecutiveFailures: number;
+  healthNote: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -42,11 +46,11 @@ export interface ExecutionRun {
   createdAt: string;
 }
 
-type ProfileRow = { id: string; name: string; manifest_id: string; manifest_version: number; config_json: string; credential_ref_json: string; install_json: string; concurrency_mode: ExecutorConcurrency; max_concurrency: number | null; concurrency_locked: number | null; effective_concurrency: number | null; created_at: string; updated_at: string };
+type ProfileRow = { id: string; name: string; manifest_id: string; manifest_version: number; config_json: string; credential_ref_json: string; install_json: string; concurrency_mode: ExecutorConcurrency; max_concurrency: number | null; concurrency_locked: number | null; effective_concurrency: number | null; health: string | null; consecutive_failures: number | null; health_note: string | null; created_at: string; updated_at: string };
 type RunRow = { id: string; executor_profile_id: string; employee_id: string; project_id: string; task_id: string; status: ExecutionRun['status']; manifest_snapshot_json: string; profile_snapshot_json: string; started_at: string | null; finished_at: string | null; failure_classification: string | null; failure_message: string | null; created_at: string };
 
 function profileFromRow(row: ProfileRow): ExecutorProfile {
-  return { id: row.id, name: row.name, manifestId: row.manifest_id, manifestVersion: row.manifest_version, config: JSON.parse(row.config_json), credentialRef: JSON.parse(row.credential_ref_json), install: JSON.parse(row.install_json), concurrencyMode: row.concurrency_mode, maxConcurrency: row.max_concurrency ?? DEFAULT_MAX_CONCURRENCY, concurrencyLocked: (row.concurrency_locked ?? 0) === 1, createdAt: row.created_at, updatedAt: row.updated_at };
+  return { id: row.id, name: row.name, manifestId: row.manifest_id, manifestVersion: row.manifest_version, config: JSON.parse(row.config_json), credentialRef: JSON.parse(row.credential_ref_json), install: JSON.parse(row.install_json), concurrencyMode: row.concurrency_mode, maxConcurrency: row.max_concurrency ?? DEFAULT_MAX_CONCURRENCY, concurrencyLocked: (row.concurrency_locked ?? 0) === 1, health: row.health === 'unhealthy' ? 'unhealthy' : 'healthy', consecutiveFailures: row.consecutive_failures ?? 0, healthNote: row.health_note ?? null, createdAt: row.created_at, updatedAt: row.updated_at };
 }
 
 function assertNoSecretValues(value: unknown, path = 'config'): void {
@@ -137,6 +141,8 @@ export function updateExecutorProfile(
   );
   // 锁定/下调上限时同步收住 effective（不越界）；解锁时恢复 max 作为试探起点。
   db.prepare('UPDATE executor_profile SET effective_concurrency = MIN(effective_concurrency, ?) WHERE id = ?').run(nextMax, id);
+  // 用户手动编辑 = 在修问题：健康状态顺手复位（executor-failover）
+  db.prepare('UPDATE executor_profile SET health=?, consecutive_failures=0, health_note=NULL, unhealthy_since=NULL WHERE id=?').run('healthy', id);
   return getExecutorProfile(db, id);
 }
 

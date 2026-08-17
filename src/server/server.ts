@@ -43,6 +43,7 @@ import { departmentsRouter } from './api/departments';
 import { setupAssistantRouter } from './api/setup-assistant';
 import { workspacesRouter } from './api/workspaces';
 import { recoverInterruptedMigrations } from './domain/workspace';
+import { startExecutorHealthSweeps } from './domain/executor-failover';
 import { agentProfilesRouter, companyEmployeesRouter } from './api/agent-profiles';
 import { canvasLayoutsRouter } from './api/canvas-layouts';
 import { memoryRouter } from './api/memory';
@@ -104,6 +105,8 @@ async function createApp(): Promise<AppHandle> {
   // Review 修复（M-6）：启动自愈——若上次 workspace 迁移在文件移动后、DB 提交前中断，
   // 依据 migrating 标记补提路径更新，避免「文件在新目录、DB 指向旧路径」的孤儿状态。
   recoverInterruptedMigrations(db);
+  // 故障转移巡检：启动 + 每 10 分钟，不健康执行器档案验活/冷却放回（executor-failover）
+  startExecutorHealthSweeps(() => db);
 
   // ===== /api/projects/:id 子树统一挂载 =====
   // 把所有 project 范围内的子路由挂到 projectById 下，避免多个 Router 并列在前缀上导致顺序冲突。

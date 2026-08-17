@@ -47,6 +47,7 @@ import { performCapabilityPrecheck, buildCapabilityGapSection } from '../domain/
 import { recommendStrategy, buildStrategySection } from '../domain/strategy-recommender';
 import { dispatchGapResearch } from '../domain/gap-research';
 import { applyAdaptiveAdjustment, canRunMore } from '../domain/executor-concurrency';
+import { markExecutorFailure, markExecutorSuccess } from '../domain/executor-failover';
 import { getCompany } from '../domain/company';
 import { createWorktree, removeWorktree } from '../worktree/manager';
 /** 批次 D2：读取任务 inputProtocol 里的消息级选项（模式/模型/思考），非法值忽略。 */
@@ -391,7 +392,12 @@ export class TaskEngine {
       const boundProfile = getEmployeeExecutorProfile(this.db, agent.id);
       // 阶段二任务 2.1：员工未显式绑定执行器时，按任务标签走三级默认（公司级 > 全局级）。
       // 绑定的优先级高于三级默认（绑定 = 固定执行器，不参与路由）。
-      const executorProfile = boundProfile ?? selectTieredExecutorProfile(this.db, task, company.id);
+      // 故障转移：绑定的档案不健康（连续失败/认证失效）时跳过，降级走三级默认换备选。
+      const executorProfile = (boundProfile && boundProfile.health !== 'unhealthy')
+        ? boundProfile
+        : (boundProfile
+          ? (log.warn('bound executor profile unhealthy, falling back to tiered selection', { taskId: task.id, profileId: boundProfile.id, note: boundProfile.healthNote }), selectTieredExecutorProfile(this.db, task, company.id))
+          : selectTieredExecutorProfile(this.db, task, company.id));
       const projectTaskThread=ensureProjectTaskThread(this.db,{projectTaskId:task.projectTaskId,employeeId:agent.id,executorProfileId:executorProfile?.id??null});
       bindTaskToProjectTaskThread(this.db,task.id,projectTaskThread.id);
       const executionRun = executorProfile ? createExecutionRun(this.db, {
@@ -756,11 +762,20 @@ export class TaskEngine {
         if(!result||typeof result.outcome!=='string')throw new RunFailure('empty_result','执行器没有返回有效的 AgentRunResult');
         if(approvalFailure)throw approvalFailure;
         watchdog.complete();
+        // 故障转移：run 成功即执行器存活证据，健康计数清零
+        markExecutorSuccess(this.db, executorProfile?.id);
         if (executionRun) updateExecutionRunStatus(this.db, executionRun.id, result.outcome === 'completed' ? 'completed' : 'failed');
       } catch (error) {
         watchdog.complete();
         const failure=classifyRunFailure(error);
         if (executionRun) failExecutionRun(this.db, executionRun.id, failure.classification, failure.message);
+        // 故障转移：失败记账（认证失效立即不健康；启动/进程/网络连续≥2次不健康），新标记时广播一次性告警
+        try {
+          const health = markExecutorFailure(this.db, executorProfile?.id, failure.classification);
+          if (health.turnedUnhealthy && executorProfile) {
+            realtime.publish(makeLifecycleEvent('executor.unhealthy', { profileId: executorProfile.id, name: executorProfile.name, reason: executorProfile.id ? String(failure.message).slice(0, 200) : '' }, { companyId: company.id, projectId: project.id, taskId: task.id }));
+          }
+        } catch { /* 健康记账失败不影响失败主流程 */ }
         realtime.publish(makeLifecycleEvent('run.watchdog-stopped',{runId:executionRun?.id??null,taskId:task.id,classification:failure.classification},{companyId:company.id,projectId:project.id,taskId:task.id}));
         // WP5：执行失败也要收掉流式气泡（否则前端打字机残留到组件卸载）
         realtime.publish(makeLifecycleEvent('message.delta.end', { reason: 'aborted' }, { companyId: company.id, projectId: project.id, taskId: task.id }));

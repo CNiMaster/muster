@@ -74,7 +74,10 @@ export function selectTieredExecutorProfile(
     const profileId = getTieredExecutorProfileId(db, companyId, candidate);
     if (!profileId) continue;
     try {
-      return getExecutorProfile(db, profileId);
+      const profile = getExecutorProfile(db, profileId);
+      // 故障转移：不健康档案（连续失败/认证失效）跳过，沿降级链换备选
+      if (profile.health === 'unhealthy') continue;
+      return profile;
     } catch {
       // profile 已被删除：尝试下一级
       continue;

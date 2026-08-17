@@ -463,6 +463,14 @@ export function ExecutorCenterPage(): React.ReactElement {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <div style={{ flex: 1, minWidth: 200 }}>
                     <strong>{profile.name}</strong>
+                    {profile.health === 'unhealthy' && (
+                      <span
+                        style={{ marginLeft: 8, fontSize: 11, color: 'var(--warn, orange)' }}
+                        title={profile.healthNote ?? '连续失败/认证失效，任务已自动换用备选执行器'}
+                      >
+                        ⚠️ 不健康（已切备选）
+                      </span>
+                    )}
                     <div className="muted">{String(profile.config.binaryPath ?? profile.manifestId)}</div>
                   </div>
                   <Button size="sm" variant="ghost" onClick={() => testConnection.mutate({ id: profile.id, kind: 'connectivity' })} loading={testConnection.isPending}>联通测试</Button>

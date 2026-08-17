@@ -1,4 +1,4 @@
-export type RunFailureClassification = 'startup_timeout' | 'idle_timeout' | 'max_runtime' | 'network_errors' | 'empty_result' | 'approval_timeout' | 'process_exit';
+export type RunFailureClassification = 'startup_timeout' | 'idle_timeout' | 'max_runtime' | 'network_errors' | 'empty_result' | 'approval_timeout' | 'process_exit' | 'auth_error';
 export type RunWatchdogClassification = Extract<RunFailureClassification, 'startup_timeout' | 'idle_timeout' | 'max_runtime' | 'network_errors'>;
 
 export class RunFailure extends Error {
@@ -18,6 +18,8 @@ export class RunWatchdogTimeout extends RunFailure {
 export function classifyRunFailure(error: unknown): RunFailure {
   if (error instanceof RunFailure) return error;
   const message = error instanceof Error ? error.message : String(error);
+  // 认证/凭据失效单独分类：不浪费重试，直接标记执行器不健康等用户修凭据（executor-failover）
+  if (/\b40[13]\b|unauthorized|invalid[ _-]?(api[ _-]?key|token)|authentication|login[ _-]?(expired|required)|登录(已过期|失效)|凭据(无效|失效|错误)/i.test(message)) return new RunFailure('auth_error', message);
   if (/no valid AgentRunResult|empty result|undefined result|no result/i.test(message)) return new RunFailure('empty_result', message);
   if (/exited|exit code|signal|process.*closed|spawn.*failed/i.test(message)) return new RunFailure('process_exit', message);
   return new RunFailure('process_exit', message);
