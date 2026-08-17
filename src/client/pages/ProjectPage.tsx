@@ -391,14 +391,15 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
     }
   }, [projectTasks, selectedProjectTaskId, searchParams, setSearchParams]);
 
+  // staging 集成审查（一期）：蜂群集成现场状态（hooks 必须在条件返回之前无条件调用）
+  const stagingStatus = useStagingStatus(projectId).data;
+  const promoteStaging = usePromoteStaging(projectId);
+
   if (!project) return <div className="loading">加载中…</div>;
 
   const selectedAgentId = searchParams.get('agent') ?? project.firstAgentId ?? company?.firstAgentId ?? agents?.[0]?.id;
   const selectedAgent = agents?.find((agent) => agent.id === selectedAgentId);
   const attentionCount = tasks?.filter((task) => task.state === 'blocked' || task.state === 'waiting_input').length ?? 0;
-  // staging 集成审查（一期）：蜂群集成现场状态
-  const stagingStatus = useStagingStatus(projectId).data;
-  const promoteStaging = usePromoteStaging(projectId);
   const hasPendingStaging = Boolean(stagingStatus?.exists && stagingStatus.aheadCommits > 0);
   const selectProjectTask = (id:string):void => {
     setSelectedProjectTaskId(id);

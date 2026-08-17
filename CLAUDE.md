@@ -119,6 +119,17 @@ Key constraints for all new work:
 
 测试锚点：`tests/unit/talent-market-dispatch.spec.ts`、`tests/unit/blueprint-detail-consult.spec.ts`、`tests/unit/canvas-layout-and-closeout.spec.ts`（全部通过）。
 
+## staging 集成审查（2026-08-17 一期交付：蜂群产物先入集成现场，验收后合并回主干）
+
+- **动机**：蜂群并行产物的「逐个审太慢、合并后再审有风险」；计划等待期间他人改动最多到 staging、主干纹丝不动。
+- **形态（不重写发布模型）**：保留文件级三方合并管线（锁/冲突裁决/publish_record 原样），仅把**蜂群系任务**（蜂/汇总，`task.swarmId`）的发布目标目录换成项目持久 staging worktree 检出目录（`ensureStagingWorktree`，分支 `muster/<project>/staging`）；`PublishQueue.publish` 增 `targetRootDir`（缺省=项目根，非蜂群零回归）。
+- **审查现场**：验收任务/返工任务创建时随 `sourceSwarmId` 标记，worktree 从 staging 头切出——验收员看到的是一**个集成后的整体**而非孤立产出；`publish-queue` 冲突链路原样工作于 staging。
+- **promote 三触发**：①验收 PASS（源任务属蜂群系，`acceptance-review.ts`）自动合并回主干；②蜂群收口且根任务无验收标准（`maybePromoteSwarmStaging`）自动合并；③手动 `POST /api/projects/:id/staging/promote`（项目页顶部「🟡蜂群集成现场在审 · 合并回主干」状态条，15s 轮询 `stageStatus`）。冲突不自动吞：`promoteStaging` abort 并返回文件清单，用户在主干手改后重试。
+- **计划同意并执行闭环（A5）**：`POST /api/tasks/:id/approve-plan`——计划模式任务 completed 后取其 `summary` 计划文本派发执行任务（`trigger=plan_execution`，mode 剥离=正常读写，refPlanTaskId/parentTaskId 关联）；任务详情页「✅ 同意计划并执行」按钮。
+- **回滚**：promote 后不满意 → 主干 `git revert -m 1 <mergeCommit>`（一期手动；spec 注明回滚按段）。
+- 测试锚点：`tests/unit/staging-worktree.spec.ts`（建/幂等/基线切出/promote 快进+冲突）、`tests/integration/publish-staging.spec.ts`（双蜂并发发布/冲突阻塞/promote 前主干不可见）、`tests/integration/staging-promote.spec.ts`（三触发）、`tests/unit/approve-plan.spec.ts`。
+- 设计文档：`docs/superpowers/specs/2026-08-17-staging-integration-review.md`、`docs/superpowers/plans/2026-08-17-staging-integration-review-plan.md`。
+
 ## Commands
 
 ```bash
