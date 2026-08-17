@@ -921,6 +921,47 @@ export function answerClarification(db: DB, taskId: string, input: { answer?: st
 }
 
 /**
+ * 计划同意并执行（2026-08-17，A5）：计划模式任务 completed 后，用户确认 → 以其计划文本
+ * 派发一个正常读写模式的执行任务（同项目同负责人，mode 剥离——执行不再 deny 只读）。
+ * 校验：必须是 plan 模式且已到终态；非 plan 任务 400。
+ */
+export function approvePlanTask(db: DB, taskId: string): Task {
+  const cur = getTask(db, taskId);
+  if (!cur || (cur.inputProtocol as Record<string, unknown>)?.mode !== 'plan') {
+    throw new AppError(ErrorCode.VALIDATION, '仅计划模式任务可执行「同意计划并执行」');
+  }
+  if (cur.state !== 'completed') {
+    throw new AppError(ErrorCode.TASK_INVALID_TRANSITION, '计划任务尚未完成，暂无计划文本可确认');
+  }
+  if (!cur.assigneeAgentId) {
+    throw new AppError(ErrorCode.VALIDATION, '计划任务无负责人，无法派发执行任务');
+  }
+  ensurePrimaryThread(db, cur.projectId, cur.assigneeAgentId);
+  const plan = (cur.summary ?? '').trim();
+  const executionTask = db.transaction(() => {
+    const created = createTask(db, {
+      projectId: cur.projectId,
+      projectTaskId: cur.projectTaskId ?? undefined,
+      parentTaskId: cur.id,
+      dispatcherAgentId: cur.assigneeAgentId ?? undefined,
+      assigneeAgentId: cur.assigneeAgentId ?? undefined,
+      title: `执行：${cur.title}`,
+      priority: cur.priority,
+      inputProtocol: {
+        trigger: 'plan_execution',
+        refPlanTaskId: cur.id,
+        // 计划文本随执行任务下发；mode 剥离 → 执行任务正常读写
+        content: plan ? `按以下已确认计划执行：\n${plan}` : `按已确认的计划（计划任务 ${cur.id}）执行。`,
+      },
+    });
+    appendTaskEvent(db, cur.id, 'plan_approved', { executionTaskId: created.id });
+    return created;
+  })();
+  appendTaskEvent(db, executionTask.id, 'plan_execution_dispatched', { planTaskId: cur.id });
+  return executionTask;
+}
+
+/**
  * 查找等待超时的 task（阶段一任务 1.2）：coordinator 定时扫描 waiting_input /
  * waiting_dependency 状态且 updated_at 早于各自阈值的 task，供上报第一负责人。
  */

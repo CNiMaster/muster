@@ -24,6 +24,7 @@ import {
   pauseTask,
   resumeTask,
   acceptSuggestion,
+  approvePlanTask,
   getTaskChain,
 } from '../domain/task';
 import { abortSwarm, getSwarmRun } from '../domain/swarm';
@@ -149,6 +150,14 @@ taskByIdRouter.post(
       optionId: z.string().min(1).optional(),
     }).refine((v) => !!v.answer !== !!v.optionId, { message: 'answer 与 optionId 必须二选一' }).parse(req.body);
     res.json(answerClarification(getDb(), param(req, 'id'), input));
+  }),
+);
+
+/** A5 计划同意并执行：计划模式任务 completed 后确认 → 以其计划文本派发执行任务（正常读写）。 */
+taskByIdRouter.post(
+  '/approve-plan',
+  asyncHandler(async (req, res) => {
+    res.status(201).json(approvePlanTask(getDb(), param(req, 'id')));
   }),
 );
 

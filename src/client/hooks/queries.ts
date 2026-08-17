@@ -1117,7 +1117,7 @@ export function usePostTaskMessage() {
 export function useTaskAction() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ taskId, action, payload }: { taskId: string; action: 'cancel' | 'pause' | 'resume' | 'clarify'; payload?: { answer?: string; optionId?: string } }) =>
+    mutationFn: ({ taskId, action, payload }: { taskId: string; action: 'cancel' | 'pause' | 'resume' | 'clarify' | 'approve-plan'; payload?: { answer?: string; optionId?: string } }) =>
       api.post<Task>(`/api/tasks/${taskId}/${action}`, payload ?? {}),
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['task', data.id] });

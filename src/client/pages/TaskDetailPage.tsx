@@ -46,8 +46,10 @@ export function TaskDetailPage(): React.ReactElement {
     || task.state === 'blocked'
     || task.state === 'failed'
     || (task.state === 'cancelled' && isConflictResolution);
+  // A5 计划同意并执行：计划模式任务 completed 后显示「同意计划并执行」
+  const isPendingPlan = (task.inputProtocol as Record<string, unknown>)?.mode === 'plan' && task.state === 'completed';
 
-  const doAction = (a: 'cancel' | 'pause' | 'resume' | 'clarify', answer?: string, optionId?: string): void => {
+  const doAction = (a: 'cancel' | 'pause' | 'resume' | 'clarify' | 'approve-plan', answer?: string, optionId?: string): void => {
     action.mutate(
       { taskId, action: a, payload: a === 'clarify' ? (optionId ? { optionId } : { answer }) : undefined },
       {
@@ -85,6 +87,11 @@ export function TaskDetailPage(): React.ReactElement {
               {task.state === 'failed' || task.state === 'cancelled'
                 ? (isConflictResolution ? '重试裁决' : '重试')
                 : '恢复'}
+            </Button>
+          )}
+          {isPendingPlan && (
+            <Button variant="primary" onClick={() => doAction('approve-plan')} loading={action.isPending}>
+              ✅ 同意计划并执行
             </Button>
           )}
           {!['completed', 'cancelled', 'failed'].includes(task.state) && (
