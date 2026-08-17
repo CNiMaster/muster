@@ -12,6 +12,8 @@ import {
   useTaskSwarm,
   useAbortSwarm,
   usePersonas,
+  useTaskCloseout,
+  useGenerateTaskCloseout,
 } from '../hooks/queries';
 import type { Task } from '../api/types';
 import { Card } from '../components/Card';
@@ -171,6 +173,7 @@ export function TaskDetailPage(): React.ReactElement {
               </ul>
             </Card>
           )}
+          <TaskCloseoutCard taskId={task.id} taskState={task.state} />
           <DiscussionCard taskId={task.id} />
         </div>
 
@@ -368,6 +371,97 @@ function EventsCard({ taskId }: { taskId: string }): React.ReactElement {
           </li>
         ))}
       </ul>
+    </Card>
+  );
+}
+
+/** 标准化任务收尾归档卡片 (Codex Closeout Archive) */
+function TaskCloseoutCard({ taskId, taskState }: { taskId: string; taskState: string }): React.ReactElement | null {
+  const { data: closeout, isLoading } = useTaskCloseout(taskId, taskState);
+  const generateMutation = useGenerateTaskCloseout();
+  const [showMarkdown, setShowMarkdown] = useState(false);
+
+  if (taskState !== 'completed' && !closeout) return null;
+  if (isLoading && !closeout) return null;
+
+  const s = closeout?.sections;
+
+  return (
+    <Card
+      title="任务收尾归档简报 (Codex Closeout Archive)"
+      className="section"
+      actions={
+        <div style={{ display: 'flex', gap: 6 }}>
+          <Button size="sm" variant="ghost" onClick={() => setShowMarkdown((prev) => !prev)}>
+            {showMarkdown ? '切换卡片视图' : '查看完整 Markdown'}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => generateMutation.mutate(taskId)} loading={generateMutation.isPending}>
+            🔄 重新生成简报
+          </Button>
+        </div>
+      }
+    >
+      {showMarkdown && closeout ? (
+        <div style={{ background: 'var(--bg-surface)', padding: 14, borderRadius: 8, border: '1px solid var(--border)' }}>
+          <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: 12, lineHeight: 1.6, fontFamily: 'monospace' }}>
+            {closeout.closeoutMarkdown}
+          </pre>
+        </div>
+      ) : s ? (
+        <div className="section-stack" style={{ display: 'grid', gap: 12 }}>
+          {/* 打法蓝图与人设班底 */}
+          <div style={{ padding: 10, background: 'var(--bg-elev)', borderRadius: 8, border: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <strong>2. 👥 打法蓝图与专家班底</strong>
+              <Badge tone={s.blueprintAndStaffing.staffingMode === 'user_override' ? 'ok' : 'neutral'}>
+                {s.blueprintAndStaffing.staffingMode === 'user_override' ? '🟢 自有人才顶替' : '🏛️ 官方基准'}
+              </Badge>
+            </div>
+            <div style={{ fontSize: 13 }}>
+              打法: <strong>{s.blueprintAndStaffing.blueprintLabel || '动态临时打法'}</strong> ·
+              人设: <strong>{s.blueprintAndStaffing.personaName || '默认专家'}</strong>
+              {s.blueprintAndStaffing.userTalentOverride && (
+                <span style={{ color: 'var(--accent)', marginLeft: 8 }}>
+                  (自有人才: {s.blueprintAndStaffing.userTalentOverride.displayName})
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* 验收自评 */}
+          <div style={{ padding: 10, background: 'var(--bg-elev)', borderRadius: 8, border: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <strong>5. ✅ 验收自评达标报告</strong>
+              <Badge tone={s.acceptanceResults.passed === s.acceptanceResults.total ? 'ok' : 'warn'}>
+                {s.acceptanceResults.passed} / {s.acceptanceResults.total} 项达标
+              </Badge>
+            </div>
+            <div style={{ display: 'grid', gap: 4, fontSize: 12 }}>
+              {s.acceptanceResults.items.map((it) => (
+                <div key={it.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>{it.met ? '✅' : '❌'}</span>
+                  <span>{it.criterion}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* 反思与正向吸收判定 */}
+          <div style={{ padding: 10, background: s.reflectionAndEvolution.isPositiveEvolution ? 'var(--accent-subtle)' : 'var(--bg-elev)', borderRadius: 8, border: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+              <strong>7. 💡 反思与打法进化判定</strong>
+              {s.reflectionAndEvolution.isPositiveEvolution && (
+                <Badge tone="ok">🌟 正向吸收升级</Badge>
+              )}
+            </div>
+            <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5 }}>
+              {s.reflectionAndEvolution.reflectionNote}
+            </p>
+          </div>
+        </div>
+      ) : (
+        <EmptyState icon={Icons.empty} title="尚未生成收尾简报" hint="点击上方「重新生成简报」提取 8 节速读归档。" />
+      )}
     </Card>
   );
 }

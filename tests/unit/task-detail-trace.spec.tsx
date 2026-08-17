@@ -26,6 +26,8 @@ vi.mock('../../src/client/hooks/queries', () => ({
   useAbortSwarm: () => ({ mutate: vi.fn(), isPending: false }),
   usePersonas: () => ({ data: [] }),
   useTaskTrace: () => ({ data: [] }),
+  useTaskCloseout: () => ({ data: undefined, isLoading: false }),
+  useGenerateTaskCloseout: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 import { TaskDetailPage } from '../../src/client/pages/TaskDetailPage';

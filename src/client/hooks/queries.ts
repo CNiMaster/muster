@@ -364,8 +364,42 @@ export function useEmployeeRuntime(id: string | undefined) {
 export function useCreateAgentProfile() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { displayName: string; soul?: string; principles?: string[]; capabilities?: Record<string, unknown>; personaId?: string }) => api.post<AgentProfile>('/api/agent-profiles', input),
+    mutationFn: (input: { displayName: string; soul?: string; principles?: string[]; capabilities?: Record<string, unknown>; personaId?: string; source?: 'user' | 'system' | 'crystallized'; isAutoDispatch?: number }) => api.post<AgentProfile>('/api/agent-profiles', input),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['agent-profiles'] }),
+  });
+}
+export function useCloneProfileAsUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, displayName }: { id: string; displayName?: string }) =>
+      api.post<AgentProfile>(`/api/agent-profiles/${id}/clone-as-user`, { displayName }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['agent-profiles'] }),
+  });
+}
+export function useClonePersonaAsUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ personaId, displayName }: { personaId: string; displayName?: string }) =>
+      api.post<AgentProfile>('/api/agent-profiles/clone-persona', { personaId, displayName }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['agent-profiles'] }),
+  });
+}
+export function useUpdateUserCustomConfig() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...input }: {
+      id: string;
+      displayName?: string;
+      soul?: string;
+      principles?: string[];
+      isAutoDispatch?: number;
+      customModel?: string | null;
+      customThinkingDepth?: string | null;
+    }) => api.patch<AgentProfile>(`/api/agent-profiles/${id}/custom-config`, input),
+    onSuccess: (profile) => {
+      qc.invalidateQueries({ queryKey: ['agent-profiles'] });
+      qc.invalidateQueries({ queryKey: ['agent-profile', profile.id] });
+    },
   });
 }
 export function useCopyAgentProfile() {
@@ -1327,6 +1361,65 @@ export interface BlueprintVersion {
   createdAt: string;
 }
 
+export interface BlueprintStaffingDetailSlot {
+  personaId: string;
+  personaName: string;
+  activeUserTalent?: AgentProfile | null;
+}
+
+export interface BlueprintDetail extends Blueprint {
+  staffingWithActiveTalents: BlueprintStaffingDetailSlot[];
+  versions: BlueprintVersion[];
+  score: {
+    score: number | null;
+    winRate: number;
+    reworkRate: number;
+    correctionRate: number;
+  };
+}
+
+export interface BlueprintConsultResult {
+  diagnosis: string;
+  strengths: string[];
+  bottlenecks: string[];
+  restructuringAdvice: string;
+}
+
+export function useBlueprintDetail(companyId: string | undefined, blueprintId: string | undefined) {
+  return useQuery({
+    queryKey: ['blueprint-detail', companyId, blueprintId],
+    queryFn: () => api.get<BlueprintDetail>(`/api/companies/${companyId}/blueprints/${blueprintId}/detail`),
+    enabled: !!companyId && !!blueprintId,
+  });
+}
+
+export function useConsultBlueprint(companyId: string | undefined) {
+  return useMutation({
+    mutationFn: ({ blueprintId, query }: { blueprintId: string; query?: string }) =>
+      api.post<BlueprintConsultResult>(`/api/companies/${companyId}/blueprints/${blueprintId}/consult`, { query }),
+  });
+}
+
+export function useDebugAdoptBlueprint(companyId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ blueprintId, ...body }: {
+      blueprintId: string;
+      staffing?: Blueprint['staffing'];
+      tools?: Blueprint['tools'];
+      stages?: unknown[];
+      description?: string;
+      summary: string;
+      evidenceTaskId?: string;
+    }) => api.post<Blueprint>(`/api/companies/${companyId}/blueprints/${blueprintId}/debug-adopt`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['blueprints', companyId] });
+      qc.invalidateQueries({ queryKey: ['blueprint-detail', companyId] });
+      qc.invalidateQueries({ queryKey: ['blueprint-versions', companyId] });
+    },
+  });
+}
+
 export function useBlueprintVersions(companyId: string | undefined, blueprintId: string | undefined) {
   return useQuery({
     queryKey: ['blueprint-versions', companyId, blueprintId],
@@ -1433,6 +1526,79 @@ export function useBlueprintStatus(companyId: string | undefined) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['blueprint-versions'] });
       qc.invalidateQueries({ queryKey: ['blueprints', companyId] });
+    },
+  });
+}
+
+// ===== Canvas Layout Sidecar & Task Closeout =====
+export interface CanvasLayoutRecord {
+  id?: string;
+  canvasKey: string;
+  layout: {
+    nodes: Array<{ id: string; type?: string; position: { x: number; y: number }; data?: Record<string, unknown> }>;
+    edges: Array<{ id: string; source: string; target: string; label?: string; data?: Record<string, unknown> }>;
+    viewport?: { x: number; y: number; zoom: number };
+  };
+  version: number;
+}
+
+export function useCanvasLayout(canvasKey: string | undefined) {
+  return useQuery({
+    queryKey: ['canvas-layout', canvasKey],
+    queryFn: () => api.get<CanvasLayoutRecord>(`/api/canvas-layouts/${canvasKey}`),
+    enabled: !!canvasKey,
+  });
+}
+
+export function useSaveCanvasLayout() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ canvasKey, layout }: { canvasKey: string; layout: CanvasLayoutRecord['layout'] }) =>
+      api.put<CanvasLayoutRecord>(`/api/canvas-layouts/${canvasKey}`, layout),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ['canvas-layout', vars.canvasKey] });
+    },
+  });
+}
+
+export interface TaskCloseoutData {
+  id: string;
+  taskId: string;
+  projectId: string;
+  companyId: string;
+  blueprintId: string | null;
+  personaId: string | null;
+  isUserOverride: boolean;
+  sections: {
+    objective: { title: string; projectName: string };
+    blueprintAndStaffing: { blueprintLabel: string | null; staffingMode: string; personaName: string | null; userTalentOverride?: { displayName: string } };
+    deliverables: Array<{ kind: string; path?: string }>;
+    keyDecisions: string[];
+    acceptanceResults: { total: number; passed: number; items: Array<{ id: string; criterion: string; met: boolean }> };
+    toolAudit: Array<{ name: string; callCount: number }>;
+    reflectionAndEvolution: { outcome: string; isPositiveEvolution: boolean; reflectionNote: string };
+    nextStepsAndRelated: { recommendations: string[]; relatedBlueprints: Array<{ id: string; label: string; score: number }> };
+  };
+  closeoutMarkdown: string;
+  status: string;
+  createdAt: string;
+}
+
+export function useTaskCloseout(taskId: string | undefined, taskState?: string) {
+  return useQuery({
+    queryKey: ['task-closeout', taskId],
+    queryFn: () => api.get<TaskCloseoutData>(`/api/tasks/${taskId}/closeout`),
+    // 只在终态拉取：服务端对非终态不生成不落库，客户端也别发请求
+    enabled: !!taskId && (taskState === undefined || ['completed', 'failed', 'cancelled'].includes(taskState)),
+  });
+}
+
+export function useGenerateTaskCloseout() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (taskId: string) => api.post<TaskCloseoutData>(`/api/tasks/${taskId}/closeout/generate`, {}),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['task-closeout', data.taskId] });
     },
   });
 }

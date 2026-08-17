@@ -161,9 +161,11 @@ export function BlueprintLibraryPage(): React.ReactElement {
                 const versionsOpen = expandedVersions.has(bp.id);
                 return (
                   <article key={bp.id} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px', background: 'var(--bg-elev)' }}>
-                    {/* 头行：标签 + 状态 + 综合评分 */}
+                    {/* 头行：标签 + 状态 + 综合评分 + 全貌跳转 */}
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
-                      <span style={{ fontWeight: 650, fontSize: 14 }}>{bp.label}</span>
+                      <Link to={`/companies/${companyId}/blueprints/${bp.id}`} style={{ fontWeight: 650, fontSize: 15, textDecoration: 'none', color: 'inherit' }}>
+                        {bp.label} ↗
+                      </Link>
                       <Badge tone={meta.tone}>{meta.label}</Badge>
                       {score === null
                         ? <span className="muted" style={{ fontSize: 12 }}>综合评分：观察中（样本 &lt;3）</span>

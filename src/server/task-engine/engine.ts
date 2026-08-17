@@ -411,14 +411,20 @@ export class TaskEngine {
       }
       const profileExecutor = executorProfile?.config as AgentExecutorConfig | undefined;
       const legacyExecutor = normalizeAgentExecutor(agent.executor);
-      // 批次 D2：消息级选项（模式/模型/思考）覆盖员工执行器配置——用户在 composer 里的选择优先生效
+      // 批次 D2：消息级选项（模式/模型/思考）与自有人才专属配置覆盖员工执行器配置
       const messageOptions = readMessageOptions(task.inputProtocol);
-      // WP9 模型档位：用户显式指定 > 档位默认（轻量=工蜂/辩手，高级=计划/验收/裁决/请示）> 执行器档案 model。
+      // WP9 模型档位 + 我的人才专属覆盖，模型优先级：消息显式指定 > 自有人才 customModel > 档位默认（轻量=工蜂/辩手，高级=计划/验收/裁决/请示）> 执行器档案 model。
       const modelTier = modelTierForTask(task, agent.role);
       const tierModel = modelTier ? resolveModelForTier(this.db, modelTier) : null;
+      const userTalentOverride = task.inputProtocol.userTalentOverride as {
+        customModel?: string | null;
+        customThinkingDepth?: string | null;
+      } | undefined;
+      const effectiveModel = messageOptions.model ?? userTalentOverride?.customModel ?? tierModel ?? undefined;
       const effectiveExecutor: AgentExecutorConfig = {
         ...(profileExecutor ?? legacyExecutor),
-        ...(messageOptions.model ? { model: messageOptions.model } : (tierModel ? { model: tierModel } : {})),
+        ...(effectiveModel ? { model: effectiveModel } : {}),
+        ...(userTalentOverride?.customThinkingDepth ? { thinkingDepth: userTalentOverride.customThinkingDepth as AgentExecutorConfig['thinkingDepth'] } : {}),
         ...(messageOptions.thinking ? { thinkingDepth: messageOptions.thinking } : {}),
       };
       // 模式 → 审批策略映射：plan/deny=只读；ask-always/ask-by-rule/no-approval=三档审批

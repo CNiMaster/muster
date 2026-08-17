@@ -96,6 +96,7 @@ export function assembleContext(
   // 蓝图组织批次1：本次人设——身份层信息，轻量模式（咨询/讨论发言）同样注入。
   // persona 库可热变更：任务指定的 persona 已不存在时优雅跳过（不阻断执行），并留痕供专家沉淀管道观察缺什么专家。
   // 执行重试/会话恢复会重复装配上下文——同任务只留一次 persona_miss（查重防噪声）。
+  // 我的人才：自有人才在岗（staffingMode=user_override）时其定制身份优先于官方 persona 注入。
   const persona = task.personaId ? getPersona(task.personaId) : null;
   if (task.personaId && !persona) {
     try {
@@ -105,7 +106,18 @@ export function assembleContext(
       if (!seen) appendTaskEvent(db, task.id, 'persona_miss', { requestedPersonaId: task.personaId, scope: 'task_wear' });
     } catch { /* 留痕失败不阻断 */ }
   }
-  if (persona) {
+  const userOverride = task.inputProtocol.userTalentOverride as {
+    profileId: string;
+    displayName: string;
+    soul: string;
+    principles: string[];
+  } | undefined;
+  if (userOverride) {
+    sp.push('# 本次人设（我的专属人才定制）', `你在本任务中穿戴用户定制人才「${userOverride.displayName}」，严格遵循以下定制身份与工作原则：`, userOverride.soul || '', '');
+    if (userOverride.principles && userOverride.principles.length > 0) {
+      sp.push('# 专属工作原则', userOverride.principles.map((item) => `- ${item}`).join('\n'), '');
+    }
+  } else if (persona) {
     sp.push('# 本次人设', `你在本任务中穿戴专家人设「${persona.name}」，以该领域的专业标准分析、决策与交付。`, persona.soul, '');
     if (persona.principles.length > 0) {
       sp.push('# 人设工作要点', persona.principles.map((item) => `- ${item}`).join('\n'), '');
