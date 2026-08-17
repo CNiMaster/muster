@@ -56,10 +56,18 @@ Key constraints for all new work:
 
 剩余（收尾项）：外包契约状态机 → 跨项目交付协议的改造（项目对项目，替代公司对公司，需为保留的契约域设计新入口）。
 
+## 公司概念退役 A+B+C（2026-08-18，worktree feat/company-retirement）
+
+- **语义坍缩为隐式单例工作台（不动表结构）**：`ensureDefaultCompany(db)`（domain/company.ts）取首个在营公司、无则建「默认工作台」(general)；启动 seed 幂等确保、恰一个在营且非默认名则改名（星河软件→默认工作台）；多公司在营仅 log.warn 取最早，不自动归并。`createQuickProject` 复用该原语。表与各表 `company_id` 列均保留（物理去列=远期 D 批）。
+- **API 面**：/api/companies/:companyId/* 全部下线；资源组去段扁平（/api/blueprints /api/agents /api/employees /api/departments /api/projects /api/relationships /api/workflows /api/messages /api/events /api/expert-candidates /api/blueprint-optimization /api/plugins/* /api/employees/temp /api/outsource/* /api/handover /api/permission-changes /api/permissions/binding）；单例组收进 `/api/workbench/*`（读/状态机/聚合/自动化/关机/凭据：GET+PATCH /、clock-in/out、cockpit、status-board、usage、debates、activity、automation、artifacts、archive/search、shutdown）。`companyIdOf(req)`（middleware.ts）统一解析默认工作台——注意 Express 5 mergeParams 在 router 入口快照父参数，中间件改 req.params 不传导，且带 `:id` 的资源路由会误读，故一律走 ensureDefaultCompany。
+- **前端**：删除 useDefaultCompanyId/useCompanies；hooks 全量去 companyId 参数并切新路径；workbench 族 hooks 命名 useWorkbench/useWorkbenchCockpit/useWorkbenchAction/useWorkbenchAutomations/useWorkbenchDebates/useWorkbenchArtifacts/useEvents/useStatusBoard；realtime 失效键单例化（workbench-cockpit/events/status-board）。
+- **测试基建隔离**：smoke（run-all.mjs）无 MUSTER_API 时自起隔离服务器（临时 MUSTER_HOME+随机端口,跑完清理,屏蔽模块 process.exit 连坐）；e2e 固定 /tmp/muster-e2e-run + global-setup 每次清理 + 探针打 /api/workbench + 零项目态用例在 00-bootstrap.spec.ts 按序最先。
+- **顺带修复**：f3e2c01 引入的 blueprint-optimization 路由参数错名（optimize-chat 原必 404）。
+
 ## UI 重构 2026-08-16（批次 A-E，项目主导 + Composer 全功能 + 固定员工收敛）
 
 - **排版体系**：字号刻度全部由 `--app-font-size` 推导（默认 15px，`useAppearance` 只覆写这一个变量，标题随设置缩放）；最小可视字号 12px（数字角标 10-11px 例外）；`.mu-conv` 默认 520px、flex 父容器加 `fill`/`is-fill` 弹性填充。
-- **公司概念退场（无兼容）**：删 CompanyPage/CompanyListPage/CompanyWizardPage/`components/company/` 全目录与 `/companies/*` 全部路由；归档/蓝图库/组织图/协作流程改为全局路由 `/archive` `/blueprints` `/graphs/:kind` `/workflows/:workflowId`（内部用 `useDefaultCompanyId()` 解析归属，company 只作数据归组锚点不再有公司语义 UI）。新建项目走 `/projects/new`；面包屑项目切换器带「＋ 新建项目」；左栏「＋ 新建任务」直建（URL `projectTask=new` 或 `newTaskSignal` 驱动创建卡）；项目页头部有工作台「上线/下班」生命周期胶囊（⌘K 命令面板同构）。
+- **公司概念退场（无兼容）**：删 CompanyPage/CompanyListPage/CompanyWizardPage/`components/company/` 全目录与 `/companies/*` 全部路由；归档/蓝图库/组织图/协作流程改为全局路由 `/archive` `/blueprints` `/graphs/:kind` `/workflows/:workflowId`（公司/API 层退役见上方「公司概念退役 A+B+C」节，`useDefaultCompanyId` 已删除）。新建项目走 `/projects/new`；面包屑项目切换器带「＋ 新建项目」；左栏「＋ 新建任务」直建（URL `projectTask=new` 或 `newTaskSignal` 驱动创建卡）；项目页头部有工作台「上线/下班」生命周期胶囊（⌘K 命令面板同构）。
 - **对话空态居中→落底**：ProjectTaskWorkspace 空态（无消息且无执行过程）hero+composer 垂直居中；首条消息或出现执行后过渡为消息流占满+composer 底部常驻（`ptws-body`/`is-empty`/`is-started`）。
 - **公司模板平台删除**：TEMPLATE_BASES/template-registry/template-installation/template-architect/template-health(-findings)/company-setup/company-starter/role-templates 全删；`capability_binding` 通用查询并入 `capability-binding.ts`；迁移 drop 四张模板表；cockpit requiredRoles 缺岗告警移除。招募只剩 复用档案/新建档案 两源；`/api/novel/companies` 建司端点删除（题材预设 GENRE_EXTENSION_PACKS/MAINTENANCE_ROLES/initializeNovelProject 保留；`createNovelCompany` 降级为 tests/integration/setup.ts 夹具）。
 - **固定员工（组织=f(活) 收口）**：`workspace-staff.ts` `ensureWorkspaceStaff`——工作台默认只有 第一负责人(lead,internalRecruit 豁免懒建,绑经理档权限)+验收员(ensureAcceptanceOfficer)；调度中心/评审中心隐形懒确保不变；createQuickProject 与 postUserMessage（无第一负责人时）幂等调用。旧岗位名单全仓 grep 零残留（题材域/人设库除外）。
