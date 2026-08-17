@@ -49,7 +49,7 @@ import { dispatchGapResearch } from '../domain/gap-research';
 import { applyAdaptiveAdjustment, canRunMore } from '../domain/executor-concurrency';
 import { markExecutorFailure, markExecutorSuccess } from '../domain/executor-failover';
 import { getCompany } from '../domain/company';
-import { createWorktree, removeWorktree } from '../worktree/manager';
+import { createWorktree, removeWorktree, ensureStagingWorktree } from '../worktree/manager';
 /** 批次 D2：读取任务 inputProtocol 里的消息级选项（模式/模型/思考），非法值忽略。 */
 function readMessageOptions(input: Record<string, unknown>): { mode?: 'plan' | 'ask-always' | 'ask-by-rule' | 'no-approval' | 'deny'; model?: string; thinking?: 'off' | 'low' | 'medium' | 'high' } {
   const mode = input.mode;
@@ -911,7 +911,11 @@ export class TaskEngine {
       if (result.outcome === 'completed' && result.artifacts.length > 0 && worktreeInfo) {
         // B2B 外包：承接任务产物 publish 到甲方 source project 的 rootDir（让乙方工作直接落到甲方目录）
         const publishTargetRoot = sourceProject?.rootDir ?? project.rootDir;
-        const pub = this.publishArtifacts(task.id, thread.id, publishTargetRoot, worktreeInfo, result);
+        // staging 一期：蜂群系任务（蜂/汇总）发布到 staging worktree 检出目录，验收通过才 promote 回主干
+        const stagingTarget = (!sourceProject && task.swarmId)
+          ? ensureStagingWorktree(project.rootDir, project.id).path
+          : undefined;
+        const pub = this.publishArtifacts(task.id, thread.id, publishTargetRoot, worktreeInfo, result, stagingTarget);
         if (pub.blocked) {
           blockTaskForPublishConflict(
             this.db,
@@ -1432,6 +1436,7 @@ export class TaskEngine {
     projectRootDir: string,
     worktreeInfo: ReturnType<typeof createWorktree>,
     result: AgentRunResult,
+    targetRootDir?: string,
   ): ReturnType<PublishQueue['publish']> {
       return this.publishQueue.publish({
         taskId,
@@ -1439,6 +1444,7 @@ export class TaskEngine {
         worktreePath: worktreeInfo.path,
         baseCommit: worktreeInfo.baseCommit,
         projectRootDir,
+        ...(targetRootDir ? { targetRootDir } : {}),
         artifacts: result.artifacts.map((a) => ({
           path: a.path,
           kind: a.kind,
