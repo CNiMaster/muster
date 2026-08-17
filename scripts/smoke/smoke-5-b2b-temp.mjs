@@ -9,35 +9,35 @@ const r1 = await runSuite('临时工生命周期', async (check) => {
   const { companyId } = await setupCompany(uname('temp-co'));
 
   await check('招临时工（新建 profile，is_temp_only=1）', async () => {
-    const r = await api.post(`/api/companies/${companyId}/employees/temp`, { role: 'designer', responsibilities: '设计' });
+    const r = await api.post(`/api/employees/temp`, { role: 'designer', responsibilities: '设计' });
     assertStatus(r, 201, '招临时工');
     assert(r.body.isNewProfile === true, '应为新建 profile');
     assert(!!r.body.agentId && !!r.body.profileId, '有 agentId + profileId');
   });
 
   await check('列出临时工', async () => {
-    const r = await api.get(`/api/companies/${companyId}/employees/temp`);
+    const r = await api.get(`/api/employees/temp`);
     assertStatus(r, 200, '临时工列表');
     assert(r.body.length >= 1, `至少 1 个临时工，实际 ${r.body.length}`);
   });
 
   let convertAgentId;
   await check('转正', async () => {
-    const list = await api.get(`/api/companies/${companyId}/employees/temp`);
+    const list = await api.get(`/api/employees/temp`);
     convertAgentId = list.body[0].legacy_agent_id;
-    const r = await api.post(`/api/companies/${companyId}/employees/${convertAgentId}/convert`, {});
+    const r = await api.post(`/api/employees/${convertAgentId}/convert`, {});
     assertStatus(r, 200, '转正');
   });
 
   await check('开除临时工（需二次确认）', async () => {
     // 先再招一个用于开除
-    const tr = await api.post(`/api/companies/${companyId}/employees/temp`, { role: 'to-dismiss' });
+    const tr = await api.post(`/api/employees/temp`, { role: 'to-dismiss' });
     const aid = tr.body.agentId;
     // 不带 confirm 应失败
-    const bad = await api.post(`/api/companies/${companyId}/employees/${aid}/dismiss`, { confirm: false });
+    const bad = await api.post(`/api/employees/${aid}/dismiss`, { confirm: false });
     assert(bad.status >= 400, `无 confirm 应失败，实际 ${bad.status}`);
     // 带 confirm 成功
-    const r = await api.post(`/api/companies/${companyId}/employees/${aid}/dismiss`, { confirm: true });
+    const r = await api.post(`/api/employees/${aid}/dismiss`, { confirm: true });
     assertStatus(r, 200, '开除');
     assert(typeof r.body.profileDeleted === 'boolean', '返回 profileDeleted');
   });
@@ -45,7 +45,7 @@ const r1 = await runSuite('临时工生命周期', async (check) => {
 
 const r2 = await runSuite('评级', async (check) => {
   const { companyId } = await setupCompany(uname('rate-co'));
-  const tr = await api.post(`/api/companies/${companyId}/employees/temp`, { role: 'rated' });
+  const tr = await api.post(`/api/employees/temp`, { role: 'rated' });
   const pid = tr.body.profileId;
 
   await check('评级明细查询', async () => {
@@ -81,7 +81,7 @@ const r3 = await runSuite('B2B 外包决策树', async (check) => {
   const { companyId: coB } = await setupCompany(uname('b2b-B'));
 
   await check('dispatch recruit 路径（自动招临时工）', async () => {
-    const r = await api.post(`/api/companies/${coA}/outsource/dispatch`, {
+    const r = await api.post(`/api/outsource/dispatch`, {
       title: '冒烟外包', brief: '需要稀有能力',
       requiredCapabilityIds: [uname('rare-cap')],
       autoDecide: true,
@@ -93,13 +93,13 @@ const r3 = await runSuite('B2B 外包决策树', async (check) => {
   });
 
   await check('列出甲方契约（source）', async () => {
-    const r = await api.get(`/api/companies/${coA}/outsource/contracts?role=source`);
+    const r = await api.get(`/api/outsource/contracts?role=source`);
     assertStatus(r, 200, 'source 契约');
     assert(Array.isArray(r.body), '返回数组');
   });
 
   await check('列出乙方契约（target）', async () => {
-    const r = await api.get(`/api/companies/${coB}/outsource/contracts?role=target`);
+    const r = await api.get(`/api/outsource/contracts?role=target`);
     assertStatus(r, 200, 'target 契约');
     assert(Array.isArray(r.body), '返回数组');
   });
@@ -112,7 +112,7 @@ const r4 = await runSuite('用工决策 internal 路径', async (check) => {
   const { companyId: coB } = await setupCompany(uname('internal-B'));
 
   await check('dispatch 无能力要求 → internal 建议', async () => {
-    const r = await api.post(`/api/companies/${coA}/outsource/dispatch`, {
+    const r = await api.post(`/api/outsource/dispatch`, {
       title: '冒烟决策', brief: '内部可做',
     });
     assertStatus(r, 200, 'dispatch');
@@ -121,7 +121,7 @@ const r4 = await runSuite('用工决策 internal 路径', async (check) => {
   });
 
   await check('dispatch 稀有能力 → recruit（另一工作台有能力也不外包）', async () => {
-    const r = await api.post(`/api/companies/${coA}/outsource/dispatch`, {
+    const r = await api.post(`/api/outsource/dispatch`, {
       title: '冒烟招聘', brief: '需要稀有能力',
       requiredCapabilityIds: [uname('rare-cap-2')],
     });

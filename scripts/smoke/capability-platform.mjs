@@ -18,14 +18,14 @@ await check('健康检查 200', async () => {
 
 let companyId;
 await check('建公司', async () => {
-  const r = await api.post('/api/companies', { name: `冒烟公司-${Date.now()}`, kind: 'general' });
+  const r = await api.post('/api/workbench', { name: `冒烟公司-${Date.now()}`, kind: 'general' });
   if (r.status !== 201) throw new Error(`status ${r.status}`);
   companyId = r.body.id;
 });
 
 let projectId;
 await check('B2 建项目默认 drafting', async () => {
-  const r = await api.post(`/api/companies/${companyId}/projects`, { name: '冒烟项目' });
+  const r = await api.post(`/api/projects`, { name: '冒烟项目' });
   if (r.status !== 201) throw new Error(`status ${r.status}`);
   projectId = r.body.id;
   if (r.body.state !== 'drafting') throw new Error(`state=${r.body.state}`);
@@ -46,7 +46,7 @@ await check('B4 drafting→researching 通过产物校验', async () => {
 });
 
 await check('B2 非法跃迁 drafting→active 被拦 (409)', async () => {
-  const r = await api.post(`/api/companies/${companyId}/projects`, { name: '非法跃迁' });
+  const r = await api.post(`/api/projects`, { name: '非法跃迁' });
   const bad = await api.patch(`/api/projects/${r.body.id}`, { state: 'active' });
   if (bad.status !== 409) throw new Error(`期望 409, 实际 ${bad.status}`);
 });

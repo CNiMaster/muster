@@ -48,7 +48,7 @@ const r2 = await runSuite('opt-out 治理：三态', async (check) => {
   });
 
   // 下班后操作
-  await api.post(`/api/companies/${companyId}/clock-out`, {});
+  await api.post(`/api/workbench/clock-out`, {});
 
   await check('disable 后 effective 排除该插件', async () => {
     const r = await api.post(`/api/plugins/companies/${companyId}/plugins/${pluginId}/disable`);
@@ -71,7 +71,7 @@ const r3 = await runSuite('公司独占插件', async (check) => {
   const { companyId, agentId } = await setupCompany(uname('excl-co'));
   const { companyId: co2 } = await setupCompany(uname('excl-other'));
   // 下班后安装独占
-  await api.post(`/api/companies/${companyId}/clock-out`, {});
+  await api.post(`/api/workbench/clock-out`, {});
 
   await check('安装公司独占插件', async () => {
     const r = await api.post(`/api/plugins/companies/${companyId}/plugins/exclusive`, {
