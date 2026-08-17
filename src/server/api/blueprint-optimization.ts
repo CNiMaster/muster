@@ -1,5 +1,5 @@
 /**
- * 蓝图优化 API（公司退役批次A双挂 /api/blueprint-optimization 与 /api/companies/:companyId）。
+ * 蓝图优化 API（挂 /api/blueprint-optimization；旧 /api/companies/:companyId 已下线）。
  * 2026-08-17 定案：退役公司级「一键体检」与 consult 整体检测，改为每蓝图独立优化对话。
  * - GET  /blueprints/:blueprintId/optimize-chat   会话历史 + 待处理提案
  * - POST /blueprints/:blueprintId/optimize-chat   发言（AI 回复 + 提案落暂存表，LLM 失败降级规则）

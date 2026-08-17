@@ -1,7 +1,7 @@
 /**
  * 对话窗口 REST：
- - GET  /api/companies/:id/messages
- - POST /api/companies/:id/messages
+ - GET  /api/messages
+ - POST /api/messages
  - GET  /api/projects/:id/messages
  - POST /api/projects/:id/messages
  */

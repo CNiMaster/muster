@@ -16,14 +16,14 @@ export function param(req: Request, name: string): string {
 }
 
 /**
- * 公司退役批次A：解析当前请求归属的工作台 id。
- * 优先级：URL 参数（旧路径 companyId / id）→ 隐式单例兜底（新路径无公司段，直接解析默认工作台）。
+ * 公司退役批次C：解析当前请求归属的工作台 id。
+ * 旧 /api/companies/:companyId/*（含 /:id 变体）挂载批次C已全部下线，
+ * 当前路由不再从 URL 承载公司 id——统一解析为隐式单例默认工作台。
  * 说明：Express 5 的 mergeParams 在 router 入口快照父参数（router/index.js:169,285），
- * 中间件改写 req.params 不传导到后续路由层，故不采用「注入中间件」，改为读侧解析。
+ * 中间件改写 req.params 不传导到后续路由层；且带 :id 参数的路由（插件/临时工/智能体）
+ * 若读 URL 参数会误把资源 id 当公司 id，故一律走 ensureDefaultCompany。
  */
-export function companyIdOf(req: Request): string {
-  const fromParams = param(req, 'companyId') || param(req, 'id');
-  if (fromParams) return fromParams;
+export function companyIdOf(_req: Request): string {
   return ensureDefaultCompany(getDb()).company.id;
 }
 

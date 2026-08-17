@@ -1,8 +1,8 @@
 /**
  * 权限委托链 + 审计 REST 路由（批次 B）。
  *
- * - POST   /api/companies/:companyId/permission-changes          申请权限变更
- * - GET    /api/companies/:companyId/permission-changes           列出（role=requester|approver）
+ * - POST   /api/permission-changes          申请权限变更
+ * - GET    /api/permission-changes           列出（role=requester|approver）
  * - POST   /api/permission-changes/:id/approve                   上级批准
  * - POST   /api/permission-changes/:id/reject                    上级拒绝
  * - POST   /api/permission-changes/:id/cancel                    申请人取消
@@ -56,7 +56,6 @@ const createChangeHandler = asyncHandler(async (req, res) => {
   } as never, { companyId: companyIdOf(req) }));
   res.status(201).json(req2);
 });
-delegationRouter.post('/companies/:companyId/permission-changes', createChangeHandler);
 delegationRouter.post('/permission-changes', createChangeHandler);
 
 // 列出（role=requester|approver）
@@ -70,7 +69,6 @@ const listChangesHandler = asyncHandler(async (req, res) => {
     res.json(listMyRequests(getDb(), employeeId));
   }
 });
-delegationRouter.get('/companies/:companyId/permission-changes', listChangesHandler);
 delegationRouter.get('/permission-changes', listChangesHandler);
 
 // 上级批准

@@ -18,7 +18,6 @@ import { SERVER_CONFIG } from './env';
 import { log } from './logger';
 import { startGracefulShutdownSequence } from './runtime/shutdown';
 import { healthRouter } from './api/health';
-import { companiesRouter } from './api/companies';
 import { agentsRouter } from './api/agents';
 import { projectsRouter, projectById, quickProjectsRouter } from './api/projects';
 import { playbooksRouter } from './api/projects';
@@ -207,20 +206,8 @@ async function createApp(): Promise<AppHandle> {
   }
   // API（顶层）
   app.use('/api', healthRouter);
-  app.use('/api/companies', companiesRouter);
   app.use('/api/novel', novelRouter);
-  app.use('/api/companies/:companyId/agents', agentsRouter);
-  app.use('/api/companies/:companyId/employees', companyEmployeesRouter);
-  app.use('/api/companies/:companyId/departments', departmentsRouter);
-  app.use('/api/companies/:companyId/projects', projectsRouter);
-  app.use('/api/companies/:companyId/relationships', graphsRouter);
-  app.use('/api/companies/:companyId/workflows', workflowsRouter);
-  app.use('/api/companies/:id/messages', companyMessagesRouter);
-  app.use('/api/companies/:companyId/events', companyEventsRouter);
-  app.use('/api/companies/:companyId/credentials', companyCredentialsRouter);
-  app.use('/api/companies/:companyId', blueprintOptimizationRouter);
-  app.use('/api/companies/:companyId/expert-candidates', expertCandidatesRouter);
-  // 公司退役批次A：新路径双挂（旧 /api/companies/:companyId/* 保留至批次 C；handler 经 companyIdOf 兜底解析默认工作台；/api/projects 必须先于 /api/projects/quick 注册）
+  // 公司退役批次C：旧 /api/companies/:companyId/* 挂载已全部下线（新路径见下；handler 经 companyIdOf 解析默认工作台）
   app.use('/api/workbench', workbenchRouter);
   app.use('/api/workbench/credentials', companyCredentialsRouter);
   app.use('/api/blueprints', blueprintsRouter);

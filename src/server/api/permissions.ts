@@ -24,7 +24,6 @@ const companyBindingHandler = asyncHandler(async (req, res) => {
   const result = bindCompanyEmployeesPermission(getDb(), companyIdOf(req), input.policyId);
   res.json(result);
 });
-permissionsRouter.post('/companies/:companyId/binding', companyBindingHandler);
 permissionsRouter.post('/binding', companyBindingHandler);
 
 /**

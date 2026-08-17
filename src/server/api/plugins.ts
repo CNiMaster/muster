@@ -13,12 +13,12 @@
  * - POST   /api/plugins                                安装（写 plugin 表）
  * - DELETE /api/plugins/:id                            移除
  * - POST   /api/plugins/:id/test                       测试 MCP server 连接
- * - POST   /api/companies/:companyId/plugins/:id/enable   撤销禁用（恢复平台默认）
- * - POST   /api/companies/:companyId/plugins/:id/disable  显式禁用某平台插件
- * - GET    /api/companies/:companyId/plugins/effective   公司实际生效的插件（含三态）
- * - GET    /api/companies/:companyId/plugins/enabled     公司生效 plugin id 列表（兼容旧）
+ * - POST   /api/plugins/:id/enable   撤销禁用（恢复平台默认）
+ * - POST   /api/plugins/:id/disable  显式禁用某平台插件
+ * - GET    /api/plugins/effective   工作台实际生效的插件（含三态）
+ * - GET    /api/plugins/enabled     工作台生效 plugin id 列表
  * - GET    /api/plugins/company-scoped/:companyId        公司独占插件列表
- * - POST   /api/companies/:companyId/plugins/exclusive   安装公司独占插件
+ * - POST   /api/plugins/exclusive   安装工作台独占插件
  */
 import { Router } from 'express';
 import { z } from 'zod';
@@ -73,7 +73,6 @@ const companyEnableHandler = asyncHandler(async (req, res) => {
   realtime.publish(makeLifecycleEvent('plugin.enabled', { pluginId: param(req, 'id') }, { companyId: companyIdOf(req) }));
   res.json({ ok: true });
 });
-pluginsRouter.post('/companies/:companyId/plugins/:id/enable', companyEnableHandler);
 pluginsRouter.post('/:id/enable', companyEnableHandler);
 
 const companyDisableHandler = asyncHandler(async (req, res) => {
@@ -83,7 +82,6 @@ const companyDisableHandler = asyncHandler(async (req, res) => {
   realtime.publish(makeLifecycleEvent('plugin.disabled', { pluginId: param(req, 'id') }, { companyId: companyIdOf(req) }));
   res.json({ ok: true });
 });
-pluginsRouter.post('/companies/:companyId/plugins/:id/disable', companyDisableHandler);
 pluginsRouter.post('/:id/disable', companyDisableHandler);
 
 // 公司实际生效的插件（opt-out：平台默认 - 禁用 + 公司独占），含三态决策标注
@@ -104,21 +102,18 @@ const companyEffectiveHandler = asyncHandler(async (req, res) => {
   });
   res.json(annotated);
 });
-pluginsRouter.get('/companies/:companyId/plugins/effective', companyEffectiveHandler);
 pluginsRouter.get('/effective', companyEffectiveHandler);
 
 const companyEnabledHandler = asyncHandler(async (req, res) => {
   // opt-out 迁移后语义=effective，保留旧路由名兼容历史调用方
   res.json(listEnabledCompanyPlugins(getDb(), companyIdOf(req)));
 });
-pluginsRouter.get('/companies/:companyId/plugins/enabled', companyEnabledHandler);
 pluginsRouter.get('/enabled', companyEnabledHandler);
 
 // 公司独占插件列表（scope=company 且 scope_id===默认工作台）
 const companyScopedHandler = asyncHandler(async (req, res) => {
   res.json(listPlugins(getDb(), { scopeLevel: 'company', scopeCompanyId: companyIdOf(req) }));
 });
-pluginsRouter.get('/company-scoped/:companyId', companyScopedHandler);
 pluginsRouter.get('/company-scoped', companyScopedHandler);
 
 // 安装公司独占插件（scope=company，仅对目标公司可见可用）
@@ -145,7 +140,6 @@ const companyExclusiveHandler = asyncHandler(async (req, res) => {
   realtime.publish(makeLifecycleEvent('plugin.installed', { pluginId: plugin.id }, { companyId: companyIdOf(req) }));
   res.status(201).json(plugin);
 });
-pluginsRouter.post('/companies/:companyId/plugins/exclusive', companyExclusiveHandler);
 pluginsRouter.post('/exclusive', companyExclusiveHandler);
 
 pluginsRouter.get(

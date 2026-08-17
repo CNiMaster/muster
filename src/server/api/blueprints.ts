@@ -1,5 +1,5 @@
 /**
- * 蓝图库 API（公司退役批次A从 companies.ts 抽离，双挂 /api/blueprints 与 /api/companies/:id/blueprints）。
+ * 蓝图库 API（公司退役批次A从 companies.ts 抽离，新路径 /api/blueprints）。
  *
  * - GET    /api/blueprints                          蓝图库列表
  * - POST   /api/blueprints/:blueprintId/status      锁定/淘汰

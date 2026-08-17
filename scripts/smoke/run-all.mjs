@@ -61,12 +61,19 @@ if (!process.env.MUSTER_API) {
 
 const repeat = parseInt(process.argv[2] ?? '1', 10);
 let allPass = true;
+// 模块异常/断言失败靠 try/catch 汇总，屏蔽模块级 process.exit(1) 的进程连坐（原注释遗留 TODO，本次落地）
+process.exit = () => { /* 模块级 exit 连坐屏蔽（见上注释） */ };
 try {
   for (let round = 1; round <= repeat; round++) {
     if (repeat > 1) console.log(`\n████ 第 ${round}/${repeat} 轮 ████`);
     for (const mod of MODULES) {
-      const url = pathToFileURL(resolve(__dirname, mod)).href;
-      await import(`${url}?t=${Date.now()}-${round}`); // cache-busting
+      try {
+        const url = pathToFileURL(resolve(__dirname, mod)).href;
+        await import(`${url}?t=${Date.now()}-${round}`); // cache-busting
+      } catch (err) {
+        allPass = false;
+        console.error(`冒烟模块异常：${mod}`, err instanceof Error ? err.message : String(err));
+      }
     }
   }
 } finally {

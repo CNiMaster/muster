@@ -8,8 +8,8 @@
  *   DELETE /api/credentials/:id        删除凭据定义
  *   PUT    /api/credentials/:id/default 设置/取消默认派发
  * 公司级:
- *   GET    /api/companies/:id/credentials  公司派发清单(嵌套路由用 companyId param)
- *   PUT    /api/companies/:id/credentials/:defId 公司级覆盖/禁用
+ *   GET    /api/workbench/credentials  工作台派发清单
+ *   PUT    /api/workbench/credentials/:defId 覆盖/禁用
  *   (公司级路由挂在 companies 路由下,见下方 companyCredentialsRouter)
  */
 import { Router } from 'express';
@@ -72,7 +72,7 @@ credentialsRouter.put('/:id/default', asyncHandler(async (req, res) => {
   res.json(setCredentialDefinitionDefault(getDb(), param(req, 'id'), isDefault));
 }));
 
-// 公司级凭据路由（公司退役批次A双挂 /api/companies/:companyId/credentials 与 /api/workbench/credentials；companyId 经 companyIdOf 解析）
+// 工作台凭据路由（公司退役批次A/B：挂 /api/workbench/credentials；companyId 经 companyIdOf 解析）
 export const companyCredentialsRouter = Router({ mergeParams: true });
 
 companyCredentialsRouter.get('/', asyncHandler(async (req, res) => {

@@ -1,6 +1,6 @@
 /**
  * 关键事件聚合 REST（PRD:346,349）：
- - GET /api/companies/:companyId/events?since=&limit=
+ - GET /api/events?since=&limit=
  - GET /api/projects/:id/events?since=&limit=
  */
 import { Router } from 'express';

@@ -1,12 +1,12 @@
 /**
  * Graph（组织/通信图）REST 路由。
  *
- - GET    /api/companies/:companyId/relationships?kind=org|communication&includeArchived=1
- - POST   /api/companies/:companyId/relationships
- - DELETE /api/companies/:companyId/relationships/:id            （硬删除）
- - POST   /api/companies/:companyId/relationships/:id/archive    （软删除/归档）
- - POST   /api/companies/:companyId/relationships/:id/restore    （恢复归档）
- - POST   /api/companies/:companyId/relationships/validate
+ - GET    /api/relationships?kind=org|communication&includeArchived=1
+ - POST   /api/relationships
+ - DELETE /api/relationships/:id            （硬删除）
+ - POST   /api/relationships/:id/archive    （软删除/归档）
+ - POST   /api/relationships/:id/restore    （恢复归档）
+ - POST   /api/relationships/validate
  */
 import { Router } from 'express';
 import { z } from 'zod';

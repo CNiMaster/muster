@@ -1,8 +1,8 @@
 /**
  * 离职交接 REST 路由（批次 C）。
  *
- * - POST   /api/companies/:companyId/handover               创建交接记录（离职入口）
- * - GET    /api/companies/:companyId/handover               列出公司交接记录
+ * - POST   /api/handover               创建交接记录（离职入口）
+ * - GET    /api/handover               列出工作台交接记录
  * - GET    /api/handover/:id                                交接详情
  * - PATCH  /api/handover/:id/content                        更新交接内容（drafting 阶段）
  * - POST   /api/handover/:id/assign                         指定接手人（→ awaiting）
@@ -46,14 +46,12 @@ const createHandoverHandler = asyncHandler(async (req, res) => {
   } as never, { companyId: companyIdOf(req) }));
   res.status(201).json(record);
 });
-handoverRouter.post('/companies/:companyId/handover', createHandoverHandler);
 handoverRouter.post('/handover', createHandoverHandler);
 
 // 列出公司交接记录
 const listHandoversHandler = asyncHandler(async (req, res) => {
   res.json(listHandovers(getDb(), companyIdOf(req)));
 });
-handoverRouter.get('/companies/:companyId/handover', listHandoversHandler);
 handoverRouter.get('/handover', listHandoversHandler);
 
 // 交接详情
@@ -137,5 +135,4 @@ const offboardHandler = asyncHandler(async (req, res) => {
   const record = offboardEmployee(getDb(), companyIdOf(req), param(req, 'employeeId'));
   res.status(201).json(record);
 });
-handoverRouter.post('/companies/:companyId/employees/:employeeId/offboard', offboardHandler);
 handoverRouter.post('/employees/:employeeId/offboard', offboardHandler);

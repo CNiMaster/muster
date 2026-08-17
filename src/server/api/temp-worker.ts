@@ -1,10 +1,10 @@
 /**
  * 临时工 + 评级 REST 路由（批次 A）。
  *
- * - POST   /api/companies/:companyId/employees/temp       招聘临时工
- * - POST   /api/companies/:companyId/employees/:id/convert 转正
- * - POST   /api/companies/:companyId/employees/:id/dismiss 开除临时工（confirm=true）
- * - GET    /api/companies/:companyId/employees/temp        列出临时工（含 greyed）
+ * - POST   /api/employees/temp       招聘临时工
+ * - POST   /api/employees/:id/convert 转正
+ * - POST   /api/employees/:id/dismiss 开除临时工（confirm=true）
+ * - GET    /api/employees/temp        列出临时工（含 greyed）
  * - POST   /api/agent-profiles/:id/rating                 用户手动调星级
  *
  * 详见 docs/superpowers/specs/2026-08-10-temp-worker-and-handover-design.md。
@@ -53,7 +53,6 @@ const recruitTempHandler = asyncHandler(async (req, res) => {
   }, { companyId: companyIdOf(req) }));
   res.status(201).json(result);
 });
-tempWorkerRouter.post('/companies/:companyId/employees/temp', recruitTempHandler);
 tempWorkerRouter.post('/employees/temp', recruitTempHandler);
 
 // 转正
@@ -68,7 +67,6 @@ const convertTempHandler = asyncHandler(async (req, res) => {
   }, { companyId: companyIdOf(req) }));
   res.json({ ok: true });
 });
-tempWorkerRouter.post('/companies/:companyId/employees/:id/convert', convertTempHandler);
 tempWorkerRouter.post('/employees/:id/convert', convertTempHandler);
 
 // 开除临时工（二次确认）
@@ -95,7 +93,6 @@ const dismissTempHandler = asyncHandler(async (req, res) => {
   }, { companyId: companyIdOf(req) }));
   res.json({ ok: true, profileDeleted });
 });
-tempWorkerRouter.post('/companies/:companyId/employees/:id/dismiss', dismissTempHandler);
 tempWorkerRouter.post('/employees/:id/dismiss', dismissTempHandler);
 
 // 重新激活 greyed 临时工（选拔优先级链第二级：复用而非新建）
@@ -104,7 +101,6 @@ const reactivateTempHandler = asyncHandler(async (req, res) => {
   reactivateGreyedTemp(getDb(), agentId);
   res.json({ ok: true });
 });
-tempWorkerRouter.post('/companies/:companyId/employees/:id/reactivate', reactivateTempHandler);
 tempWorkerRouter.post('/employees/:id/reactivate', reactivateTempHandler);
 
 // 列出临时工（含 greyed）
@@ -119,7 +115,6 @@ const listTempHandler = asyncHandler(async (req, res) => {
   ).all(companyIdOf(req));
   res.json(rows);
 });
-tempWorkerRouter.get('/companies/:companyId/employees/temp', listTempHandler);
 tempWorkerRouter.get('/employees/temp', listTempHandler);
 
 // 手动调星级

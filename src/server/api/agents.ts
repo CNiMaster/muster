@@ -1,11 +1,11 @@
 /**
  * Agent REST 路由。
  *
- - GET   /api/companies/:companyId/agents
- - POST  /api/companies/:companyId/agents
- - GET   /api/companies/:companyId/agents/:id
- - PATCH /api/companies/:companyId/agents/:id
- - DELETE /api/companies/:companyId/agents/:id
+ - GET   /api/agents
+ - POST  /api/agents
+ - GET   /api/agents/:id
+ - PATCH /api/agents/:id
+ - DELETE /api/agents/:id
  */
 import { Router } from 'express';
 import { z } from 'zod';

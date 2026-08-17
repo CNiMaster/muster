@@ -1,8 +1,8 @@
 /**
  * 外包 REST 路由（蓝图组织批次5：B2B 拆件后）。
  *
- * - POST   /api/companies/:companyId/outsource/dispatch  用工决策（内部建议 / 临时工选拔）
- * - GET    /api/companies/:companyId/outsource/contracts 列出契约（role=source|target）
+ * - POST   /api/outsource/dispatch  用工决策（内部建议 / 临时工选拔）
+ * - GET    /api/outsource/contracts 列出契约（role=source|target）
  * - GET    /api/outsource/contracts/:id                  契约详情
  * - POST   /api/outsource/contracts/:id/accept           乙方接受
  * - POST   /api/outsource/contracts/:id/review           甲方验收（completed/changes_requested/rejected）
@@ -76,7 +76,6 @@ const dispatchHandler = asyncHandler(async (req, res) => {
     contract: null,
   });
 });
-outsourcingRouter.post('/companies/:companyId/outsource/dispatch', dispatchHandler);
 outsourcingRouter.post('/outsource/dispatch', dispatchHandler);
 
 // ── 列出契约 ──────────────────────────────────────────────────────────────
@@ -87,7 +86,6 @@ const listContractsHandler = asyncHandler(async (req, res) => {
   }
   res.json(listContractsForCompany(getDb(), companyIdOf(req), role));
 });
-outsourcingRouter.get('/companies/:companyId/outsource/contracts', listContractsHandler);
 outsourcingRouter.get('/outsource/contracts', listContractsHandler);
 
 // ── 契约详情 ──────────────────────────────────────────────────────────────

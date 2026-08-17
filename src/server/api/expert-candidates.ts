@@ -1,7 +1,7 @@
 /**
  * WP3 系统自建专家（免人工确认版）REST 路由。
  * 沉淀自动入库（无审批闸），本路由只提供「查」：沉淀历史（含 persona_id 溯源，跳转人设编辑/删除走 /api/agent-profiles/personas/:id）。
- * GET /api/companies/:companyId/expert-candidates?limit=50
+ * GET /api/expert-candidates?limit=50
  */
 import { Router } from 'express';
 import { z } from 'zod';

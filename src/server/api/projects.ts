@@ -1,8 +1,8 @@
 /**
  * Project REST 路由。
  *
- - GET   /api/companies/:companyId/projects
- - POST  /api/companies/:companyId/projects
+ - GET   /api/projects
+ - POST  /api/projects
  - GET   /api/projects/:id
  - PATCH /api/projects/:id
  - POST  /api/projects/:id/threads       (员工进入项目)
