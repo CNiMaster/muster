@@ -49,7 +49,8 @@ export function ensureGitRepo(rootDir: string): void {
 }
 
 export function worktreeRoot(): string {
-  const dir = path.join(SERVER_CONFIG.musterDir, 'worktrees');
+  // 运行时动态解析（测试可随时覆盖 MUSTER_HOME 隔离目录；生产 = 启动时 SERVER_CONFIG 值）
+  const dir = path.join(process.env.MUSTER_HOME ?? SERVER_CONFIG.musterDir, 'worktrees');
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   return dir;
 }

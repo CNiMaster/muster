@@ -19,6 +19,7 @@ import { addTaskMessage } from './task-message';
 import { appendTaskEvent } from './task-event';
 import { appendTrace } from './execution-trace';
 import { addDependency, cancelTask, createTask, getTask, type Task } from './task';
+import { promoteProjectStagingIfAny } from './staging';
 import { createTempEmployment, dismissTempWorker, markTempGreyed } from './temp-worker';
 import { ensurePrimaryThread } from './thread';
 import { getPersona } from './persona-library';
@@ -369,6 +370,33 @@ export function abortSwarm(db: DB, swarmId: string, opts: { reason: string; stat
   releaseSwarmBees(db, swarmId);
 }
 
+/**
+ * staging 一期：蜂群收口时的自动 promote 判定与执行（抽出来便于测试）。
+ * 根任务无验收标准 → 收口即 promote；有验收标准 → 等验收 PASS 触发（acceptance-review）。
+ * 任何失败都不阻断收口（留待手动 promote）。
+ */
+export function maybePromoteSwarmStaging(db: DB, rootTaskId: string): void {
+  try {
+    const rootTask = getTask(db, rootTaskId);
+    if (rootTask && rootTask.acceptanceCriteria.length === 0) {
+      const promote = promoteProjectStagingIfAny(db, rootTask.projectId, 'swarm-closed');
+      if (promote.promoted) {
+        addTaskMessage(db, rootTaskId, {
+          author: 'system',
+          role: 'dispatch',
+          content: `[staging 已合并] 蜂群产物已合并回主干（${promote.message}）。`,
+        });
+      }
+    }
+  } catch (e) {
+    addTaskMessage(db, rootTaskId, {
+      author: 'system',
+      role: 'dispatch',
+      content: `[staging 提示] 蜂群收口，但集成现场未自动合并：${e instanceof Error ? e.message : String(e)}`,
+    });
+  }
+}
+
 /** 关群（全部收口）：清理工蜂；失败明细留在任务树与事件里。 */
 function closeSwarm(db: DB, swarmId: string): void {
   const swarm = getSwarmRun(db, swarmId);
@@ -379,6 +407,7 @@ function closeSwarm(db: DB, swarmId: string): void {
     role: 'dispatch',
     content: `[蜂群收口] 全部 ${swarm.nodesTotal} 个节点完成（失败 ${swarm.nodesFailed} 个）。`,
   });
+  maybePromoteSwarmStaging(db, swarm.rootTaskId);
   releaseSwarmBees(db, swarmId);
 }
 

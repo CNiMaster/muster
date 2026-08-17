@@ -28,6 +28,7 @@ import {
 } from '../domain/task';
 import { abortSwarm, getSwarmRun } from '../domain/swarm';
 import { generateTaskCloseoutSummary, getTaskCloseoutSummary } from '../domain/task-closeout';
+import { promoteProjectStagingIfAny } from '../domain/staging';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { listTaskEvents } from '../domain/task-event';
 import { listTrace, type TraceKind } from '../domain/execution-trace';
@@ -233,6 +234,32 @@ taskByIdRouter.post(
     }
     abortSwarm(getDb(), task.swarmId, { reason: '用户手动停止蜂群', status: 'aborted', includeRoot: true });
     res.json({ ok: true, swarm: getSwarmRun(getDb(), task.swarmId!) });
+  }),
+);
+
+/** staging 一期：手动把蜂群集成现场合并回主干（验收 PASS / 收口自动 promote 之外的兜底）。 */
+taskByIdRouter.post(
+  '/swarm/promote',
+  asyncHandler(async (req, res) => {
+    const db = getDb();
+    const task = getTask(db, param(req, 'id'));
+    if (!task.swarmId) {
+      throw new AppError(ErrorCode.NOT_FOUND, '该任务不属于任何蜂群');
+    }
+    const result = promoteProjectStagingIfAny(db, task.projectId, 'manual-promote');
+    try {
+      const project = getProject(db, task.projectId);
+      realtime.publish({
+        id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        type: result.promoted ? 'publish.staging-promoted' : 'publish.staging-promote-conflict',
+        companyId: project.companyId,
+        projectId: task.projectId,
+        taskId: task.id,
+        occurredAt: new Date().toISOString(),
+        payload: { promoted: result.promoted, message: result.message, conflicts: result.conflicts ?? [] },
+      });
+    } catch { /* 事件失败不阻断 */ }
+    res.json({ ok: true, promoted: result.promoted, message: result.message, conflicts: result.conflicts ?? [] });
   }),
 );
 

@@ -352,7 +352,15 @@ export class TaskEngine {
         return true;
       }
       if (!worktreeInfo) {
-        worktreeInfo = createWorktree(worktreeSourceRoot, project.id, task.id);
+        // staging 一期：蜂群系任务（蜂/汇总/验收/返工）从 staging 集成分支切出（发布也落 staging，见发布目标参数化）
+        const ip = (task.inputProtocol ?? {}) as Record<string, unknown>;
+        const review = ip.acceptanceReview as { sourceSwarmId?: string } | undefined;
+        const payload = ip.payload as { sourceSwarmId?: string } | undefined;
+        const swarmLinked = Boolean(task.swarmId) || Boolean(review?.sourceSwarmId) || Boolean(payload?.sourceSwarmId);
+        const baseRef = (!sourceProject && swarmLinked)
+          ? ensureStagingWorktree(worktreeSourceRoot, project.id).branch
+          : undefined;
+        worktreeInfo = createWorktree(worktreeSourceRoot, project.id, task.id, baseRef);
         saveTaskRuntime(this.db, worktreeInfo);
       }
       workingDir = worktreeInfo.path;
