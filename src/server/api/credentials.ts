@@ -25,7 +25,7 @@ import {
   updateCredentialDefinition,
 } from '../domain/credential-store';
 import { AppError, ErrorCode } from '../../shared/errors';
-import { asyncHandler, param } from './middleware';
+import { asyncHandler, param, companyIdOf } from './middleware';
 
 export const credentialsRouter = Router();
 
@@ -72,16 +72,16 @@ credentialsRouter.put('/:id/default', asyncHandler(async (req, res) => {
   res.json(setCredentialDefinitionDefault(getDb(), param(req, 'id'), isDefault));
 }));
 
-// 公司级凭据路由(挂在 /api/companies/:companyId/credentials 下)
+// 公司级凭据路由（公司退役批次A双挂 /api/companies/:companyId/credentials 与 /api/workbench/credentials；companyId 经 companyIdOf 解析）
 export const companyCredentialsRouter = Router({ mergeParams: true });
 
 companyCredentialsRouter.get('/', asyncHandler(async (req, res) => {
-  res.json(listCompanyCredentials(getDb(), param(req, 'companyId')));
+  res.json(listCompanyCredentials(getDb(), companyIdOf(req)));
 }));
 
 companyCredentialsRouter.put('/:definitionId', asyncHandler(async (req, res) => {
   const { overrideKey, enabled } = req.body ?? {};
-  res.json(setCompanyCredential(getDb(), param(req, 'companyId'), param(req, 'definitionId'), {
+  res.json(setCompanyCredential(getDb(), companyIdOf(req), param(req, 'definitionId'), {
     overrideKey: overrideKey === null || typeof overrideKey === 'string' ? overrideKey : undefined,
     enabled: typeof enabled === 'boolean' ? enabled : undefined,
   }));

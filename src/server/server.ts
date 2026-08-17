@@ -43,6 +43,7 @@ import { settingsRouter } from './api/settings';
 import { departmentsRouter } from './api/departments';
 import { setupAssistantRouter } from './api/setup-assistant';
 import { workspacesRouter } from './api/workspaces';
+import { workbenchRouter } from './api/workbench';
 import { recoverInterruptedMigrations } from './domain/workspace';
 import { startExecutorHealthSweeps } from './domain/executor-failover';
 import { agentProfilesRouter, companyEmployeesRouter } from './api/agent-profiles';
@@ -204,6 +205,8 @@ async function createApp(): Promise<AppHandle> {
   app.use('/api/companies/:companyId', blueprintOptimizationRouter);
   app.use('/api/companies/:companyId/expert-candidates', expertCandidatesRouter);
   // 公司退役批次A：新路径双挂（旧 /api/companies/:companyId/* 保留至批次 C；handler 经 companyIdOf 兜底解析默认工作台；/api/projects 必须先于 /api/projects/quick 注册）
+  app.use('/api/workbench', workbenchRouter);
+  app.use('/api/workbench/credentials', companyCredentialsRouter);
   app.use('/api/blueprints', blueprintsRouter);
   app.use('/api/blueprint-optimization', blueprintOptimizationRouter);
   app.use('/api/projects', projectsRouter);
