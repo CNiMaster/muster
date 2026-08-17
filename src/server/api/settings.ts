@@ -27,6 +27,10 @@ export const settingsUpdateSchema = z.object({
   executorTierPrimaryId: z.string().max(100).optional(),
   executorTierSecondaryId: z.string().max(100).optional(),
   executorTierTertiaryId: z.string().max(100).optional(),
+  // 执行器池统一（2026-08-17）：高/标准/低档 = 档案 id
+  executorTierHighId: z.string().max(100).optional(),
+  executorTierStandardId: z.string().max(100).optional(),
+  executorTierLowId: z.string().max(100).optional(),
   // settings-overhaul（spec 2026-08-12-settings-overhaul-design）
   proxyUrl: z.string().max(500).optional(),
   proxyBypass: z.string().max(1000).optional(),

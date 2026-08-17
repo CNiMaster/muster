@@ -91,7 +91,7 @@ import { ensureApprovalRequest, evaluatePermission, getEmployeePermissionPolicy 
 import { getActiveWorkspace } from '../domain/workspace';
 import { ensureProjectTaskThread, setProjectTaskThreadSession } from '../domain/project-task-thread';
 import { selectTieredExecutorProfile } from '../domain/executor-tier';
-import { modelTierForTask, resolveModelForTier } from '../domain/model-tier';
+import { taskExecutorTier, resolveProfileForTier } from '../domain/model-tier';
 import { hasCommandCapability } from '../domain/capability-probe';
 import{SessionManager}from'../domain/session-manager';
 import{approvalBroker}from'../domain/approval-broker';
@@ -398,14 +398,15 @@ export class TaskEngine {
       checkBudget(this.db, project.id, task.budget);
 
       const boundProfile = getEmployeeExecutorProfile(this.db, agent.id);
-      // 阶段二任务 2.1：员工未显式绑定执行器时，按任务标签走三级默认（公司级 > 全局级）。
-      // 绑定的优先级高于三级默认（绑定 = 固定执行器，不参与路由）。
-      // 故障转移：绑定的档案不健康（连续失败/认证失效）时跳过，降级走三级默认换备选。
-      const executorProfile = (boundProfile && boundProfile.health !== 'unhealthy')
-        ? boundProfile
-        : (boundProfile
-          ? (log.warn('bound executor profile unhealthy, falling back to tiered selection', { taskId: task.id, profileId: boundProfile.id, note: boundProfile.healthNote }), selectTieredExecutorProfile(this.db, task, company.id))
-          : selectTieredExecutorProfile(this.db, task, company.id));
+      // 执行器池统一（2026-08-17）：员工绑定(健康) > 档位档案（CLI/API 一个选择框，档位=档案 id）；
+      // 故障转移：绑定的档案不健康时跳过，沿档位解析回落；档位未配置/不健康同样回落 legacy。
+      const boundHealthy = boundProfile && boundProfile.health !== 'unhealthy';
+      const tier = taskExecutorTier(task, agent.role);
+      const tierProfile = resolveProfileForTier(this.db, tier);
+      const executorProfile = boundHealthy ? boundProfile : tierProfile;
+      if (boundProfile && !boundHealthy) {
+        log.warn('bound executor profile unhealthy, falling back to tier profile', { taskId: task.id, profileId: boundProfile.id, note: boundProfile.healthNote, tier });
+      }
       const projectTaskThread=ensureProjectTaskThread(this.db,{projectTaskId:task.projectTaskId,employeeId:agent.id,executorProfileId:executorProfile?.id??null});
       bindTaskToProjectTaskThread(this.db,task.id,projectTaskThread.id);
       const executionRun = executorProfile ? createExecutionRun(this.db, {
@@ -427,14 +428,12 @@ export class TaskEngine {
       const legacyExecutor = normalizeAgentExecutor(agent.executor);
       // 批次 D2：消息级选项（模式/模型/思考）与自有人才专属配置覆盖员工执行器配置
       const messageOptions = readMessageOptions(task.inputProtocol);
-      // WP9 模型档位 + 我的人才专属覆盖，模型优先级：消息显式指定 > 自有人才 customModel > 档位默认（轻量=工蜂/辩手，高级=计划/验收/裁决/请示）> 执行器档案 model。
-      const modelTier = modelTierForTask(task, agent.role);
-      const tierModel = modelTier ? resolveModelForTier(this.db, modelTier) : null;
+      // 池化后模型链简化：消息显式 > 自有人才 customModel > 执行器档案 config.model（档位已选档案，不再覆盖模型）
       const userTalentOverride = task.inputProtocol.userTalentOverride as {
         customModel?: string | null;
         customThinkingDepth?: string | null;
       } | undefined;
-      const effectiveModel = messageOptions.model ?? userTalentOverride?.customModel ?? tierModel ?? undefined;
+      const effectiveModel = messageOptions.model ?? userTalentOverride?.customModel ?? undefined;
       const effectiveExecutor: AgentExecutorConfig = {
         ...(profileExecutor ?? legacyExecutor),
         ...(effectiveModel ? { model: effectiveModel } : {}),

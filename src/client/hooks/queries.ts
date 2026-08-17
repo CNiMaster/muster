@@ -1957,6 +1957,9 @@ export function useSaveSystemSettings() {
       executorTierPrimaryId?: string;
       executorTierSecondaryId?: string;
       executorTierTertiaryId?: string;
+      executorTierHighId?: string;
+      executorTierStandardId?: string;
+      executorTierLowId?: string;
       proxyUrl?: string;
       proxyBypass?: string;
       caCertPath?: string;
