@@ -38,6 +38,9 @@ export function SettingsPage(): React.ReactElement {
   const [tierPrimary, setTierPrimary] = useState('');
   const [tierSecondary, setTierSecondary] = useState('');
   const [tierTertiary, setTierTertiary] = useState('');
+  const [modelTierEconomy, setModelTierEconomy] = useState('');
+  const [modelTierPremium, setModelTierPremium] = useState('');
+  const [imageGenModel, setImageGenModel] = useState('');
   const [proxyUrl, setProxyUrl] = useState('');
   const [proxyBypass, setProxyBypass] = useState('');
   const [caCertPath, setCaCertPath] = useState('');
@@ -70,6 +73,9 @@ export function SettingsPage(): React.ReactElement {
     setTierPrimary(settings.executorTierPrimaryId ?? '');
     setTierSecondary(settings.executorTierSecondaryId ?? '');
     setTierTertiary(settings.executorTierTertiaryId ?? '');
+    setModelTierEconomy(settings.modelTierEconomy ?? '');
+    setModelTierPremium(settings.modelTierPremium ?? '');
+    setImageGenModel(settings.imageGenModel ?? '');
     setProxyUrl(settings.proxyUrl ?? '');
     setProxyBypass(settings.proxyBypass ?? '');
     setCaCertPath(settings.caCertPath ?? '');
@@ -94,7 +100,7 @@ export function SettingsPage(): React.ReactElement {
       return;
     }
     saveSettings.mutate(
-      { claudeBin, model, skipPermissions, timeoutMs, maxToolCalls, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierPrimaryId: tierPrimary, executorTierSecondaryId: tierSecondary, executorTierTertiaryId: tierTertiary, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs, theme, fontFamily, fontSize, locale, codeTheme, autonomousReflectionEnabled, autonomousReflectionBudgetUSD, swarmMaxDepth, swarmMaxWidth, swarmMaxNodes, swarmBudgetUSD, swarmRepairMax },
+      { claudeBin, model, skipPermissions, timeoutMs, maxToolCalls, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierPrimaryId: tierPrimary, executorTierSecondaryId: tierSecondary, executorTierTertiaryId: tierTertiary, modelTierEconomy, modelTierPremium, imageGenModel, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs, theme, fontFamily, fontSize, locale, codeTheme, autonomousReflectionEnabled, autonomousReflectionBudgetUSD, swarmMaxDepth, swarmMaxWidth, swarmMaxNodes, swarmBudgetUSD, swarmRepairMax },
       {
         onSuccess: () => toast('success', '系统设置已保存并实时生效'),
         onError: (error: any) => toast('error', error.message ?? '保存设置失败'),
@@ -206,6 +212,27 @@ export function SettingsPage(): React.ReactElement {
                     <option value="">跟随系统默认</option>
                     {executorProfiles.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.manifestId})</option>)}
                   </Select>
+                </Field>
+              </div>
+            </Card>
+          )}
+
+          {activeTab === 'models' && (
+            <Card title="模型分级（成本-能力匹配）">
+              <div className="form-stack">
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <Field label="轻量档模型（蜂群工蜂/辩手/平台反思）">
+                    <Input value={modelTierEconomy} placeholder="如 gemini-2.0-flash / gpt-4o-mini，留空不覆盖" onChange={(e) => setModelTierEconomy(e.target.value)} />
+                  </Field>
+                  <Field label="高级档模型（计划/验收/裁决/蜂群请示）">
+                    <Input value={modelTierPremium} placeholder="如 claude-sonnet-4.5，留空不覆盖" onChange={(e) => setModelTierPremium(e.target.value)} />
+                  </Field>
+                </div>
+                <p style={{ margin: 0, fontSize: '12px', color: 'var(--fg-muted, #888)' }}>
+                  优先级：消息/工作单显式选模型 &gt; 档位默认 &gt; 执行器档案模型。标准档 = 不覆盖（沿用档案模型）。平台反思/审批/技能起草走轻量档（未配置时沿用 OpenAI 默认模型）。
+                </p>
+                <Field label="图像生成模型（image_generate 工具）">
+                  <Input value={imageGenModel} placeholder="如 gpt-image-1 / 兼容端点的生图模型，留空默认 gpt-image-1" onChange={(e) => setImageGenModel(e.target.value)} />
                 </Field>
               </div>
             </Card>

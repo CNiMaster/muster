@@ -48,6 +48,11 @@ export const settingsUpdateSchema = z.object({
   debateMinConfidence: z.number().min(0.5).max(0.95).optional(),
   // 执行过程展示批次4：蜂群失败自动修复全群上限
   swarmRepairMax: z.number().int().min(1).max(100).optional(),
+  // WP9 模型档位（空串 = 未配置不覆盖；标准档 = 不覆盖故无键）
+  modelTierEconomy: z.string().max(200).optional(),
+  modelTierPremium: z.string().max(200).optional(),
+  // WP10 图像生成模型（image_generate 工具）
+  imageGenModel: z.string().max(200).optional(),
 });
 
 // 获取当前系统设置

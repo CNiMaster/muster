@@ -58,6 +58,12 @@ export interface SystemSettings {
   debateMinConfidence: number;
   /** 执行过程展示批次4：蜂群失败自动修复的全群重发上限（防失控放大）。 */
   swarmRepairMax: number;
+  /** 模型档位（WP9 成本-能力匹配）：轻量档模型标识——蜂群工蜂/辩手/平台 LLM 反思等高并发低难度调用。空 = 不覆盖（沿用执行器档案模型）。 */
+  modelTierEconomy: string;
+  /** 模型档位：高级档模型标识——计划模式/验收/裁决/蜂群请示等高质量调用。空 = 不覆盖。 */
+  modelTierPremium: string;
+  /** WP10 图像生成模型（image_generate 工具调 OpenAI 兼容 /images/generations 用）。空 = gpt-image-1。 */
+  imageGenModel: string;
 }
 
 export function getSetting(db: DB, key: string, defaultValue: string): string {
@@ -106,6 +112,9 @@ export function getSystemSettings(db: DB): SystemSettings {
     swarmRepairMax: Number(getSetting(db, 'swarm_repair_max', String(Math.max(1, Math.floor(swarmMaxNodes / 3))))),
     swarmBudgetUSD: Number(getSetting(db, 'swarm_budget_usd', '5')),
     debateMinConfidence: Number(getSetting(db, 'debate_min_confidence', '0.6')),
+    modelTierEconomy: getSetting(db, 'model_tier_economy', ''),
+    modelTierPremium: getSetting(db, 'model_tier_premium', ''),
+    imageGenModel: getSetting(db, 'image_gen_model', ''),
   };
 }
 
@@ -179,5 +188,14 @@ export function saveSystemSettings(db: DB, settings: Partial<SystemSettings>): v
   }
   if (settings.debateMinConfidence !== undefined) {
     setSetting(db, 'debate_min_confidence', String(Math.max(0.5, Math.min(0.95, settings.debateMinConfidence))));
+  }
+  if (settings.modelTierEconomy !== undefined) {
+    setSetting(db, 'model_tier_economy', settings.modelTierEconomy.trim());
+  }
+  if (settings.modelTierPremium !== undefined) {
+    setSetting(db, 'model_tier_premium', settings.modelTierPremium.trim());
+  }
+  if (settings.imageGenModel !== undefined) {
+    setSetting(db, 'image_gen_model', settings.imageGenModel.trim());
   }
 }

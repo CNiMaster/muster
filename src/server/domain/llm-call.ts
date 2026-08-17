@@ -17,6 +17,8 @@ export interface LlmCallOptions {
   user: string;
   /** 模型名，缺省用系统设置默认。 */
   model?: string;
+  /** 模型档位（WP9）：economy 读系统设置轻量档（反思/审批/起草等平台调用省成本）。显式 model 优先于档位。 */
+  tier?: 'economy' | 'premium';
   /** 超时 ms。 */
   timeoutMs?: number;
   /** 公司 id（用于解析公司级凭据覆盖）。 */
@@ -81,7 +83,13 @@ function resolveLlmCredential(
 ): { apiKey: string; baseURL: string; model: string } {
   const settings = getSystemSettings(db);
   const baseURL = settings.openaiBaseURL || 'https://api.openai.com/v1';
-  const model = opts.model ?? (settings.openaiModel || 'gpt-4o-mini');
+  // WP9 模型档位：显式 model > 档位键 > 平台默认（未配置档位时行为不变）
+  const tierModel = opts.tier === 'economy'
+    ? settings.modelTierEconomy
+    : opts.tier === 'premium'
+      ? settings.modelTierPremium
+      : '';
+  const model = opts.model || tierModel || (settings.openaiModel || 'gpt-4o-mini');
 
   // 1. 公司级覆盖
   if (opts.companyId) {

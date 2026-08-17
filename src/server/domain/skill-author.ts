@@ -54,6 +54,7 @@ export async function authorSkill(db: DB, input: AuthorSkillInput): Promise<Plug
     user: userPrompt,
     companyId: input.companyId,
     timeoutMs: 90_000,
+    tier: 'economy',
   });
 
   // 从 LLM 输出提取 skill name（frontmatter），回退自动生成

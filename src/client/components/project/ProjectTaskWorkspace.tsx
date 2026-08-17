@@ -65,6 +65,13 @@ export function ProjectTaskWorkspace({
     if (systemModel && !seen.has(systemModel)) {
       options.push({ id: systemModel, label: `系统默认 · ${systemModel}` });
     }
+    // WP9 模型档位快捷项：配置了档位模型时一键选用（id=模型值，走既有 model 透传，零协议变更）
+    const tierEntries: Array<{ id: string; label: string }> = [];
+    const economyModel = (systemSettings?.modelTierEconomy ?? '').trim();
+    const premiumModel = (systemSettings?.modelTierPremium ?? '').trim();
+    if (economyModel && !seen.has(economyModel)) tierEntries.push({ id: economyModel, label: `⚡ 轻量档 · ${economyModel}` });
+    if (premiumModel && !seen.has(premiumModel)) tierEntries.push({ id: premiumModel, label: `🚀 高级档 · ${premiumModel}` });
+    options.unshift(...tierEntries);
     options.push({ id: '', label: '系统默认模型' });
     return options;
   })();
@@ -181,11 +188,22 @@ export function ProjectTaskWorkspace({
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
             <span className="task-stage-kicker" style={{ margin: 0, fontSize: '12px', flexShrink: 0 }}>#{selectedTask.seq}</span>
             {(() => {
-              const meta = (activeRuntimeTask?.inputProtocol ?? {}) as { blueprintLabel?: string; blueprintVersion?: number } | undefined;
+              const meta = (activeRuntimeTask?.inputProtocol ?? {}) as { blueprintLabel?: string; blueprintVersion?: number; resolvedSkillIds?: string[] } | undefined;
               if (!meta?.blueprintLabel) return null;
               return (
                 <span className="mu-trace-blueprint-chip" title={`本任务穿戴打法：${meta.blueprintLabel}${meta.blueprintVersion ? ` · v${meta.blueprintVersion}` : ''}`}>
                   🎭 {meta.blueprintLabel} {meta.blueprintVersion ? <small>v{meta.blueprintVersion}</small> : null}
+                </span>
+              );
+            })()}
+            {(() => {
+              const meta = (activeRuntimeTask?.inputProtocol ?? {}) as { resolvedSkillIds?: string[] } | undefined;
+              const skills = (meta?.resolvedSkillIds ?? []).slice(0, 3);
+              if (skills.length === 0) return null;
+              const rest = (meta?.resolvedSkillIds ?? []).length - skills.length;
+              return (
+                <span className="mu-trace-blueprint-chip" title={`本次按需加载的 skills：${(meta?.resolvedSkillIds ?? []).join('、')}`}>
+                  🧩 {skills.join('、')}{rest > 0 ? ` +${rest}` : ''}
                 </span>
               );
             })()}

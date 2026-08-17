@@ -189,6 +189,7 @@ export async function evaluateWithAi(db: DB, req: AiApprovalRequest): Promise<Ai
     const result = await callLlm(db, {
       system, user: detail,
       model: process.env.MUSTER_AI_APPROVAL_MODEL,
+      tier: 'economy',
       timeoutMs: 15_000,
     });
     const parsed = parseResult(result.content);
