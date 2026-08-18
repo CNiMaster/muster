@@ -62,6 +62,10 @@ export interface SystemSettings {
   modelTierEconomy: string;
   /** 模型档位：高级档模型标识——计划模式/验收/裁决/蜂群请示等高质量调用。空 = 不覆盖。 */
   modelTierPremium: string;
+  /** 执行器池统一（2026-08-17）：高档/标准/低档 = 执行器档案 id（CLI/API 不分家）。空 = 该档不指定。 */
+  executorTierHighId: string;
+  executorTierStandardId: string;
+  executorTierLowId: string;
   /** WP10 图像生成模型（image_generate 工具调 OpenAI 兼容 /images/generations 用）。空 = gpt-image-1。 */
   imageGenModel: string;
 }
@@ -114,6 +118,10 @@ export function getSystemSettings(db: DB): SystemSettings {
     debateMinConfidence: Number(getSetting(db, 'debate_min_confidence', '0.6')),
     modelTierEconomy: getSetting(db, 'model_tier_economy', ''),
     modelTierPremium: getSetting(db, 'model_tier_premium', ''),
+    // 新键为空时回落旧键（UI 展示与域层 resolveFrom 路由保持一致——review 次要项）
+    executorTierHighId: getSetting(db, 'executor_tier_high_id', '') || getSetting(db, 'executor_tier_primary_id', ''),
+    executorTierStandardId: getSetting(db, 'executor_tier_standard_id', '') || getSetting(db, 'executor_tier_secondary_id', ''),
+    executorTierLowId: getSetting(db, 'executor_tier_low_id', '') || getSetting(db, 'executor_tier_tertiary_id', ''),
     imageGenModel: getSetting(db, 'image_gen_model', ''),
   };
 }
@@ -194,6 +202,15 @@ export function saveSystemSettings(db: DB, settings: Partial<SystemSettings>): v
   }
   if (settings.modelTierPremium !== undefined) {
     setSetting(db, 'model_tier_premium', settings.modelTierPremium.trim());
+  }
+  if (settings.executorTierHighId !== undefined) {
+    setSetting(db, 'executor_tier_high_id', settings.executorTierHighId.trim());
+  }
+  if (settings.executorTierStandardId !== undefined) {
+    setSetting(db, 'executor_tier_standard_id', settings.executorTierStandardId.trim());
+  }
+  if (settings.executorTierLowId !== undefined) {
+    setSetting(db, 'executor_tier_low_id', settings.executorTierLowId.trim());
   }
   if (settings.imageGenModel !== undefined) {
     setSetting(db, 'image_gen_model', settings.imageGenModel.trim());

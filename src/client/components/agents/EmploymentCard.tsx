@@ -26,8 +26,22 @@ export function EmploymentCard(props:{employment:Employment;companyName:string;e
     {'modelProbe' in health&&health.modelProbe?<p className="diagnostic-text">指定模型：{health.modelProbe.model??'未命名'} · {health.modelProbe.status}{health.modelProbe.classification?`（${health.modelProbe.classification}）`:''}</p>:null}
     {'reasons' in health&&health.reasons?.length?<ul className="diagnostic-list">{health.reasons.map((reason)=><li key={reason}>{reason}</li>)}</ul>:null}
     {'action' in health && health.action ? <p><Link to={health.action.href}>{health.action.label}</Link></p> : null}
-    <p className="muted" style={{ marginTop: 8 }}>
-      执行器与权限的绑定/修改在智能体对话或工作台设置中操作。
-    </p>
+    {props.onExecutor ? (
+      <div style={{ marginTop: 8 }}>
+        <p className="muted" style={{ margin: '0 0 6px', fontSize: 12 }}>固定执行器（绑定优先于档位；修改需该工作台处于下班状态）</p>
+        <select
+          className="mu-select"
+          value={props.employment.executorProfileId ?? ''}
+          onChange={(e) => props.onExecutor!(e.target.value)}
+        >
+          <option value="">跟随系统（未绑定）</option>
+          {props.executors.map((ex) => <option key={ex.id} value={ex.id}>{ex.name}</option>)}
+        </select>
+      </div>
+    ) : (
+      <p className="muted" style={{ marginTop: 8 }}>
+        执行器与权限的绑定/修改在智能体对话或工作台设置中操作。
+      </p>
+    )}
   </Card>;
 }

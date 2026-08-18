@@ -127,6 +127,28 @@ Key constraints for all new work:
 
 测试锚点：`tests/unit/talent-market-dispatch.spec.ts`、`tests/unit/blueprint-detail-consult.spec.ts`、`tests/unit/canvas-layout-and-closeout.spec.ts`（全部通过）。
 
+## staging 集成审查（2026-08-17 一期交付：蜂群产物先入集成现场，验收后合并回主干）
+
+- **动机**：蜂群并行产物的「逐个审太慢、合并后再审有风险」；计划等待期间他人改动最多到 staging、主干纹丝不动。
+- **形态（不重写发布模型）**：保留文件级三方合并管线（锁/冲突裁决/publish_record 原样），仅把**蜂群系任务**（蜂/汇总，`task.swarmId`）的发布目标目录换成项目持久 staging worktree 检出目录（`ensureStagingWorktree`，分支 `muster/<project>/staging`）；`PublishQueue.publish` 增 `targetRootDir`（缺省=项目根，非蜂群零回归）。
+- **审查现场**：验收任务/返工任务创建时随 `sourceSwarmId` 标记，worktree 从 staging 头切出——验收员看到的是一**个集成后的整体**而非孤立产出；`publish-queue` 冲突链路原样工作于 staging。
+- **promote 三触发**：①验收 PASS（源任务属蜂群系，`acceptance-review.ts`）自动合并回主干；②蜂群收口且根任务无验收标准（`maybePromoteSwarmStaging`）自动合并；③手动 `POST /api/projects/:id/staging/promote`（项目页顶部「🟡蜂群集成现场在审 · 合并回主干」状态条，15s 轮询 `stageStatus`）。冲突不自动吞：`promoteStaging` abort 并返回文件清单，用户在主干手改后重试。
+- **计划同意并执行闭环（A5）**：`POST /api/tasks/:id/approve-plan`——计划模式任务 completed 后取其 `summary` 计划文本派发执行任务（`trigger=plan_execution`，mode 剥离=正常读写，refPlanTaskId/parentTaskId 关联）；任务详情页「✅ 同意计划并执行」按钮。
+- **回滚**：promote 后不满意 → 主干 `git revert -m 1 <mergeCommit>`（一期手动；spec 注明回滚按段）。
+- 测试锚点：`tests/unit/staging-worktree.spec.ts`（建/幂等/基线切出/promote 快进+冲突）、`tests/integration/publish-staging.spec.ts`（双蜂并发发布/冲突阻塞/promote 前主干不可见）、`tests/integration/staging-promote.spec.ts`（三触发）、`tests/unit/approve-plan.spec.ts`。
+- 设计文档：`docs/superpowers/specs/2026-08-17-staging-integration-review.md`、`docs/superpowers/plans/2026-08-17-staging-integration-review-plan.md`。
+
+## 执行器池统一（2026-08-17 交付：档位=档案 · 能力自动选脑）
+
+- **两套档位合一**：旧执行器三级（primary/secondary/tertiary）与模型档位（modelTierEconomy/Premium 模型字符串）退役为**档位=执行器档案**（CLI/API 一个选择框）。新键 `executor_tier_high/standard/low_id`（旧键兼容读取一版：high←primary、standard←secondary、low←tertiary）。设置页「执行器档位」三个档案下拉（顺带修掉 secondary/tertiary 无 UI 缺陷）；WP9 composer 档位快捷项退役。
+- **档位判定与选档**（`model-tier.ts`）：`taskExecutorTier` 合并两套分类器——蜂群工蜂/辩手/轻量咨询→low，计划/验收/裁决/请示/返工→high，其余 standard；`resolveProfileForTier`（不健康/已删回落）；`selectProfileForTask` 需 CLI 技能时沿 高→标准→低 选 CLI 档案（binding 钉死不参与路由，能力缺口走既有告警）。
+- **引擎模型链简化**：消息显式 > 自有人才 customModel > 执行器档案 config.model（档位已选档案，删除档位模型覆盖）。
+- **能力标签**（shared `EXECUTOR_CAPABILITIES`：vision/image-gen/video-gen/voice/long-context/code）：manifest `defaultCapabilities` 预填 + 模型名启发式 `suggestDefaultCapabilities` + 执行器中心全词表 chips（用户纠偏）；vision 软降级（既有 imageAttachments 门控），多模态生成类标签走工具层非脑池。
+- **展示与绑定**：执行器中心列表按档位分组（▲高/●标准/▼低/—未分配）+ 组内健康度>能力数>名称 + 能力 chips 筛选；修复员工↔执行器绑定 UI 断链（AgentProfilePage 任职卡「固定执行器」下拉）。
+- **凭据**：`profile.credentialRef`(env) 接入解析链 **员工>档案>工作台>平台**（engine 任务链路 + 能力探针均注入档案 ref）；`providerForManifest` 双实现去重收敛 manif客es.ts。
+- 测试锚点：`tests/unit/executor-capability.spec.ts`、`tests/unit/credential-chain.spec.ts`、`tests/integration/expert-chain.spec.ts`（新档位判定/档案解析/旧键兼容/不健康回落）。
+- 设计文档：`docs/superpowers/specs/2026-08-17-executor-pool-unification.md`、`docs/superpowers/plans/2026-08-17-executor-pool-plan.md`。
+
 ## Commands
 
 ```bash

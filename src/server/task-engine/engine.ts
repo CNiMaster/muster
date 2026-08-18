@@ -35,7 +35,7 @@ import { assembleContext } from '../executors/context';
 import { materializeSwarm, countActiveSwarmsByRequester, escalateSwarmRequest, EXPERT_SWARM_LIMITS } from '../domain/swarm';
 import { finalizeDebate, startDebate } from '../domain/debate';
 import { DISPATCHER_ROLE, JUDGE_ROLE } from '../domain/system-agents';
-import { getExecutorManifest } from '../executors/manifests';
+import { getExecutorManifest, providerForManifest } from '../executors/manifests';
 import { assertSafeToRun } from '../executors/safety';
 import { getProject, listProjectReferences } from '../domain/project';
 import { getOutsourcingContract } from '../domain/outsourcing-contract';
@@ -48,8 +48,9 @@ import { recommendStrategy, buildStrategySection } from '../domain/strategy-reco
 import { dispatchGapResearch } from '../domain/gap-research';
 import { applyAdaptiveAdjustment, canRunMore } from '../domain/executor-concurrency';
 import { markExecutorFailure, markExecutorSuccess } from '../domain/executor-failover';
+import { isSwarmLinkedTask } from '../domain/staging';
 import { getCompany } from '../domain/company';
-import { createWorktree, removeWorktree } from '../worktree/manager';
+import { createWorktree, removeWorktree, ensureStagingWorktree } from '../worktree/manager';
 /** 批次 D2：读取任务 inputProtocol 里的消息级选项（模式/模型/思考），非法值忽略。 */
 function readMessageOptions(input: Record<string, unknown>): { mode?: 'plan' | 'ask-always' | 'ask-by-rule' | 'no-approval' | 'deny'; model?: string; thinking?: 'off' | 'low' | 'medium' | 'high' } {
   const mode = input.mode;
@@ -90,8 +91,7 @@ import { buildRunIsolation, withExecutorConcurrency } from '../executors/run-iso
 import { ensureApprovalRequest, evaluatePermission, getEmployeePermissionPolicy } from '../domain/permission';
 import { getActiveWorkspace } from '../domain/workspace';
 import { ensureProjectTaskThread, setProjectTaskThreadSession } from '../domain/project-task-thread';
-import { selectTieredExecutorProfile } from '../domain/executor-tier';
-import { modelTierForTask, resolveModelForTier } from '../domain/model-tier';
+import { taskExecutorTier, resolveProfileForTier, selectProfileForTask, taskNeedsCliKind } from '../domain/model-tier';
 import { hasCommandCapability } from '../domain/capability-probe';
 import{SessionManager}from'../domain/session-manager';
 import{approvalBroker}from'../domain/approval-broker';
@@ -352,7 +352,12 @@ export class TaskEngine {
         return true;
       }
       if (!worktreeInfo) {
-        worktreeInfo = createWorktree(worktreeSourceRoot, project.id, task.id);
+        // staging 一期：蜂群系任务（蜂/汇总/验收/返工/裁决）从 staging 集成分支切出——
+        // 基线与发布目标共用 isSwarmLinkedTask 谓词（review C1：缺一即闭环断裂）
+        const baseRef = (!sourceProject && isSwarmLinkedTask(task))
+          ? ensureStagingWorktree(worktreeSourceRoot, project.id).branch
+          : undefined;
+        worktreeInfo = createWorktree(worktreeSourceRoot, project.id, task.id, baseRef);
         saveTaskRuntime(this.db, worktreeInfo);
       }
       workingDir = worktreeInfo.path;
@@ -390,15 +395,18 @@ export class TaskEngine {
       checkBudget(this.db, project.id, task.budget);
 
       const boundProfile = getEmployeeExecutorProfile(this.db, agent.id);
-      // 阶段二任务 2.1：员工未显式绑定执行器时，按任务标签走三级默认（公司级 > 全局级）。
-      // 绑定的优先级高于三级默认（绑定 = 固定执行器，不参与路由）。
-      // 故障转移：绑定的档案不健康（连续失败/认证失效）时跳过，降级走三级默认换备选。
-      // 公司退役 D4-2：三级默认仅取全局级（selectTieredExecutorProfile 不再接收 companyId）。
-      const executorProfile = (boundProfile && boundProfile.health !== 'unhealthy')
-        ? boundProfile
-        : (boundProfile
-          ? (log.warn('bound executor profile unhealthy, falling back to tiered selection', { taskId: task.id, profileId: boundProfile.id, note: boundProfile.healthNote }), selectTieredExecutorProfile(this.db, task))
-          : selectTieredExecutorProfile(this.db, task));
+
+      // 执行器池统一（2026-08-17）：员工绑定(健康) > 档位档案（CLI/API 一个选择框，档位=档案 id）；
+      // 故障转移：绑定的档案不健康时跳过，沿档位解析回落；档位未配置/不健康同样回落 legacy。
+      // B2 能力感知：需 CLI 技能的任务沿 高→标准→低 挑选 CLI 档案；绑定档案钉死不参与路由（能力缺口走既有告警）。
+      const boundHealthy = boundProfile && boundProfile.health !== 'unhealthy';
+      const tier = taskExecutorTier(task, agent.role);
+      const needsCli = taskNeedsCliKind(task);
+      const executorProfile = boundHealthy ? boundProfile : selectProfileForTask(this.db, tier, needsCli);
+      if (boundProfile && !boundHealthy) {
+        log.warn('bound executor profile unhealthy, falling back to tier profile', { taskId: task.id, profileId: boundProfile.id, note: boundProfile.healthNote, tier });
+      }
+
       const projectTaskThread=ensureProjectTaskThread(this.db,{projectTaskId:task.projectTaskId,employeeId:agent.id,executorProfileId:executorProfile?.id??null});
       bindTaskToProjectTaskThread(this.db,task.id,projectTaskThread.id);
       const executionRun = executorProfile ? createExecutionRun(this.db, {
@@ -420,14 +428,12 @@ export class TaskEngine {
       const legacyExecutor = normalizeAgentExecutor(agent.executor);
       // 批次 D2：消息级选项（模式/模型/思考）与自有人才专属配置覆盖员工执行器配置
       const messageOptions = readMessageOptions(task.inputProtocol);
-      // WP9 模型档位 + 我的人才专属覆盖，模型优先级：消息显式指定 > 自有人才 customModel > 档位默认（轻量=工蜂/辩手，高级=计划/验收/裁决/请示）> 执行器档案 model。
-      const modelTier = modelTierForTask(task, agent.role);
-      const tierModel = modelTier ? resolveModelForTier(this.db, modelTier) : null;
+      // 池化后模型链简化：消息显式 > 自有人才 customModel > 执行器档案 config.model（档位已选档案，不再覆盖模型）
       const userTalentOverride = task.inputProtocol.userTalentOverride as {
         customModel?: string | null;
         customThinkingDepth?: string | null;
       } | undefined;
-      const effectiveModel = messageOptions.model ?? userTalentOverride?.customModel ?? tierModel ?? undefined;
+      const effectiveModel = messageOptions.model ?? userTalentOverride?.customModel ?? undefined;
       const effectiveExecutor: AgentExecutorConfig = {
         ...(profileExecutor ?? legacyExecutor),
         ...(effectiveModel ? { model: effectiveModel } : {}),
@@ -912,7 +918,12 @@ export class TaskEngine {
       if (result.outcome === 'completed' && result.artifacts.length > 0 && worktreeInfo) {
         // B2B 外包：承接任务产物 publish 到甲方 source project 的 rootDir（让乙方工作直接落到甲方目录）
         const publishTargetRoot = sourceProject?.rootDir ?? project.rootDir;
-        const pub = this.publishArtifacts(task.id, thread.id, publishTargetRoot, worktreeInfo, result);
+        // staging 一期：蜂群系任务（蜂/汇总/验收/返工/裁决——isSwarmLinkedTask 统一谓词，
+        // 与 worktree 基线判定同源）发布到 staging worktree 检出目录，验收通过才 promote 回主干
+        const stagingTarget = (!sourceProject && isSwarmLinkedTask(task))
+          ? ensureStagingWorktree(project.rootDir, project.id).path
+          : undefined;
+        const pub = this.publishArtifacts(task.id, thread.id, publishTargetRoot, worktreeInfo, result, stagingTarget);
         if (pub.blocked) {
           blockTaskForPublishConflict(
             this.db,
@@ -1433,6 +1444,7 @@ export class TaskEngine {
     projectRootDir: string,
     worktreeInfo: ReturnType<typeof createWorktree>,
     result: AgentRunResult,
+    targetRootDir?: string,
   ): ReturnType<PublishQueue['publish']> {
       return this.publishQueue.publish({
         taskId,
@@ -1440,6 +1452,7 @@ export class TaskEngine {
         worktreePath: worktreeInfo.path,
         baseCommit: worktreeInfo.baseCommit,
         projectRootDir,
+        ...(targetRootDir ? { targetRootDir } : {}),
         artifacts: result.artifacts.map((a) => ({
           path: a.path,
           kind: a.kind,
@@ -1576,6 +1589,8 @@ export class TaskEngine {
         conflicts: input.conflicts,
         resolutionAttempt: input.attempt,
         conflictSnapshotDir: `.muster-conflicts/${input.publishId}`,
+        // staging 一期（review C1）：源任务属蜂群系的发布冲突，裁决任务同样从 staging 切出/发布回 staging
+        ...(isSwarmLinkedTask(input.task) ? { stagingProjectId: input.task.projectId } : {}),
         instructions: '比较裁决包中的 base/ours/theirs；需要用户决定时返回 waiting_input；最终只修改并声明全部冲突文件为 artifacts。',
       },
       outputProtocol: {
@@ -1798,13 +1813,6 @@ export class TaskEngine {
   }
 }
 
-function providerForManifest(manifestId: string | undefined): string | undefined {
-  if (manifestId === 'claude-code-cli') return 'claude-cli';
-  if (manifestId === 'openai-compatible-api') return 'openai';
-  if (manifestId === 'gemini-api') return 'gemini';
-  return manifestId;
-}
-
 /**
  收集当前项目授权只读引用的所有源项目根目录（PRD Phase 3.4）。
  - 仅返回与当前项目 worktree 不同的真实目录。
@@ -1880,8 +1888,12 @@ function resolveExecutorCredentialForTask(
   const provider = providerForManifest(executorProfile?.manifestId) ?? effectiveExecutor?.provider ?? defaultProvider;
   const legacyEnv = extractApiKeyEnv(agent.executor);
   const providerFallback = PROVIDER_DEFAULT_API_KEY_ENV[provider as Provider];
+  // 池化统一（B4）：执行器档案的 credentialRef（env 引用）作为 员工>档案>工作台>平台 链上的档案层
+  const profileRef = (executorProfile?.credentialRef?.kind === 'env' && executorProfile.credentialRef.reference)
+    ? executorProfile.credentialRef.reference
+    : undefined;
   try {
-    return resolveExecutorCredentialEnv(db, agent.profileId, companyId, provider, legacyEnv, providerFallback);
+    return resolveExecutorCredentialEnv(db, agent.profileId, companyId, provider, legacyEnv, providerFallback, profileRef);
   } catch {
     // credential_definition 表缺失或查询异常:回退到 legacy + provider 默认
     return legacyEnv ?? providerFallback;

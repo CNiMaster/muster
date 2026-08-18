@@ -10,6 +10,7 @@ import {
   useResetAgentProfile,
   useUpdateUserCustomConfig,
   useCloneProfileAsUser,
+  useBindEmployeeExecutor,
 } from '../hooks/queries';
 import { Badge } from '../components/Badge';
 import { Card } from '../components/Card';
@@ -36,6 +37,7 @@ export function AgentProfilePage(): React.ReactElement {
   const cloneProfile = useCloneProfileAsUser();
   const resetProfile = useResetAgentProfile();
   const updateCustomConfig = useUpdateUserCustomConfig();
+  const bindExecutor = useBindEmployeeExecutor();
 
   const executorProfiles = useQuery({ queryKey: ['executor-profiles'], queryFn: () => api.get<ExecutorProfileOption[]>('/api/executors/profiles') });
   const permissionPolicies = useQuery({ queryKey: ['permission-policies'], queryFn: () => api.get<PermissionPolicyOption[]>('/api/permissions/policies') });
@@ -217,6 +219,13 @@ export function AgentProfilePage(): React.ReactElement {
               companyName={company?.name ?? employment.companyId}
               executors={executorProfiles.data ?? []}
               policies={permissionPolicies.data ?? []}
+              onExecutor={(executorProfileId) => bindExecutor.mutate(
+                { employeeId: employment.id, executorProfileId },
+                {
+                  onSuccess: () => toast('success', executorProfileId ? '执行器绑定已更新（下次任务生效）' : '已解除固定执行器（回到档位路由）'),
+                  onError: (e) => toast('error', (e as Error).message),
+                },
+              )}
             />
           );
         })}

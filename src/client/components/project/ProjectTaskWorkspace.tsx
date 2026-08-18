@@ -63,13 +63,6 @@ export function ProjectTaskWorkspace({
     if (systemModel && !seen.has(systemModel)) {
       options.push({ id: systemModel, label: `系统默认 · ${systemModel}` });
     }
-    // WP9 模型档位快捷项：配置了档位模型时一键选用（id=模型值，走既有 model 透传，零协议变更）
-    const tierEntries: Array<{ id: string; label: string }> = [];
-    const economyModel = (systemSettings?.modelTierEconomy ?? '').trim();
-    const premiumModel = (systemSettings?.modelTierPremium ?? '').trim();
-    if (economyModel && !seen.has(economyModel)) tierEntries.push({ id: economyModel, label: `⚡ 轻量档 · ${economyModel}` });
-    if (premiumModel && !seen.has(premiumModel)) tierEntries.push({ id: premiumModel, label: `🚀 高级档 · ${premiumModel}` });
-    options.unshift(...tierEntries);
     options.push({ id: '', label: '系统默认模型' });
     return options;
   })();

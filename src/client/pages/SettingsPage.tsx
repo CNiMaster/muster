@@ -38,8 +38,10 @@ export function SettingsPage(): React.ReactElement {
   const [tierPrimary, setTierPrimary] = useState('');
   const [tierSecondary, setTierSecondary] = useState('');
   const [tierTertiary, setTierTertiary] = useState('');
-  const [modelTierEconomy, setModelTierEconomy] = useState('');
-  const [modelTierPremium, setModelTierPremium] = useState('');
+  // 执行器池统一（2026-08-17）：档位 = 执行器档案 id（高/标准/低，CLI+API 一个选择框）
+  const [tierHigh, setTierHigh] = useState('');
+  const [tierStandard, setTierStandard] = useState('');
+  const [tierLow, setTierLow] = useState('');
   const [imageGenModel, setImageGenModel] = useState('');
   const [proxyUrl, setProxyUrl] = useState('');
   const [proxyBypass, setProxyBypass] = useState('');
@@ -73,8 +75,9 @@ export function SettingsPage(): React.ReactElement {
     setTierPrimary(settings.executorTierPrimaryId ?? '');
     setTierSecondary(settings.executorTierSecondaryId ?? '');
     setTierTertiary(settings.executorTierTertiaryId ?? '');
-    setModelTierEconomy(settings.modelTierEconomy ?? '');
-    setModelTierPremium(settings.modelTierPremium ?? '');
+    setTierHigh(settings.executorTierHighId ?? (settings.executorTierPrimaryId ?? ''));
+    setTierStandard(settings.executorTierStandardId ?? (settings.executorTierSecondaryId ?? ''));
+    setTierLow(settings.executorTierLowId ?? (settings.executorTierTertiaryId ?? ''));
     setImageGenModel(settings.imageGenModel ?? '');
     setProxyUrl(settings.proxyUrl ?? '');
     setProxyBypass(settings.proxyBypass ?? '');
@@ -100,7 +103,7 @@ export function SettingsPage(): React.ReactElement {
       return;
     }
     saveSettings.mutate(
-      { claudeBin, model, skipPermissions, timeoutMs, maxToolCalls, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierPrimaryId: tierPrimary, executorTierSecondaryId: tierSecondary, executorTierTertiaryId: tierTertiary, modelTierEconomy, modelTierPremium, imageGenModel, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs, theme, fontFamily, fontSize, locale, codeTheme, autonomousReflectionEnabled, autonomousReflectionBudgetUSD, swarmMaxDepth, swarmMaxWidth, swarmMaxNodes, swarmBudgetUSD, swarmRepairMax },
+      { claudeBin, model, skipPermissions, timeoutMs, maxToolCalls, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierPrimaryId: tierPrimary, executorTierSecondaryId: tierSecondary, executorTierTertiaryId: tierTertiary, executorTierHighId: tierHigh, executorTierStandardId: tierStandard, executorTierLowId: tierLow, imageGenModel, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs, theme, fontFamily, fontSize, locale, codeTheme, autonomousReflectionEnabled, autonomousReflectionBudgetUSD, swarmMaxDepth, swarmMaxWidth, swarmMaxNodes, swarmBudgetUSD, swarmRepairMax },
       {
         onSuccess: () => toast('success', '系统设置已保存并实时生效'),
         onError: (error: any) => toast('error', error.message ?? '保存设置失败'),
@@ -207,29 +210,36 @@ export function SettingsPage(): React.ReactElement {
                 <Field label="Gemini 模型名">
                   <Input value={geminiModel} onChange={(e) => setGeminiModel(e.target.value)} />
                 </Field>
-                <Field label="执行器首选档位 (Tier Primary)">
-                  <Select value={tierPrimary} onChange={(e) => setTierPrimary(e.target.value)}>
-                    <option value="">跟随系统默认</option>
-                    {executorProfiles.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.manifestId})</option>)}
-                  </Select>
-                </Field>
               </div>
             </Card>
           )}
 
           {activeTab === 'models' && (
-            <Card title="模型分级（成本-能力匹配）">
+            <Card title="执行器档位（成本-能力匹配，一个选择框选 CLI/API）">
               <div className="form-stack">
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                  <Field label="轻量档模型（蜂群工蜂/辩手/平台反思）">
-                    <Input value={modelTierEconomy} placeholder="如 gemini-2.0-flash / gpt-4o-mini，留空不覆盖" onChange={(e) => setModelTierEconomy(e.target.value)} />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                  <Field label="高级档（计划/验收/裁决/蜂群请示）">
+                    <Select value={tierHigh} onChange={(e) => setTierHigh(e.target.value)}>
+                      <option value="">跟随系统默认</option>
+                      {executorProfiles.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.manifestId})</option>)}
+                    </Select>
                   </Field>
-                  <Field label="高级档模型（计划/验收/裁决/蜂群请示）">
-                    <Input value={modelTierPremium} placeholder="如 claude-sonnet-4.5，留空不覆盖" onChange={(e) => setModelTierPremium(e.target.value)} />
+                  <Field label="标准档（普通任务）">
+                    <Select value={tierStandard} onChange={(e) => setTierStandard(e.target.value)}>
+                      <option value="">跟随系统默认</option>
+                      {executorProfiles.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.manifestId})</option>)}
+                    </Select>
+                  </Field>
+                  <Field label="低档（蜂群工蜂/辩手/咨询）">
+                    <Select value={tierLow} onChange={(e) => setTierLow(e.target.value)}>
+                      <option value="">跟随系统默认</option>
+                      {executorProfiles.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.manifestId})</option>)}
+                    </Select>
                   </Field>
                 </div>
                 <p style={{ margin: 0, fontSize: '12px', color: 'var(--fg-muted, #888)' }}>
-                  优先级：消息/工作单显式选模型 &gt; 档位默认 &gt; 执行器档案模型。标准档 = 不覆盖（沿用档案模型）。平台反思/审批/技能起草走轻量档（未配置时沿用 OpenAI 默认模型）。
+                  档位 = 执行器档案（CLI agent 产品或 LLM API 均可）；任务按档位自动选档案，故障自动换健康备选。
+                  员工绑定优先于档位；消息/工作单显式选模型为单次例外。API 档案自带 model，CLI 档案走该 CLI。
                 </p>
                 <Field label="图像生成模型（image_generate 工具）">
                   <Input value={imageGenModel} placeholder="如 gpt-image-1 / 兼容端点的生图模型，留空默认 gpt-image-1" onChange={(e) => setImageGenModel(e.target.value)} />

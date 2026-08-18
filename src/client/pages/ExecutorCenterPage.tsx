@@ -1,15 +1,17 @@
 import type React from 'react';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
 import { Badge, StateBadge } from '../components/Badge';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
 import { Field, Input, Select } from '../components/Form';
-import { useGenerateCliProposal, useCredentialDefinitions, type CliProposal, type ProposalResult } from '../hooks/queries';
+import { useGenerateCliProposal, useCredentialDefinitions, useSystemSettings, type CliProposal, type ProposalResult } from '../hooks/queries';
 import {
   concurrencyLabel,
   probeClassificationLabel,
+  EXECUTOR_CAPABILITIES,
+  suggestDefaultCapabilities,
   type CapabilityProbeResult,
   type ExecutorDetection,
   type ExecutorManifest,
@@ -62,6 +64,56 @@ export function ExecutorCenterPage(): React.ReactElement {
   const [apiThinkingDepth, setApiThinkingDepth] = useState<'off' | 'low' | 'medium' | 'high'>('off');
   // WP10 执行器能力矩阵：主模型直读能力声明（多模态生成走工具层，不在此声明）
   const [apiCapabilities, setApiCapabilities] = useState<string[]>([]);
+  // B2 池化统一：manifest 默认 + 模型名启发式自动预填能力标签（用户可勾选纠偏；编辑回填保留既有标签，仅并集补默认）
+  useEffect(() => {
+    setApiCapabilities((old) => {
+      const merged = new Set(old);
+      for (const s of suggestDefaultCapabilities(apiKind, apiModel)) merged.add(s);
+      return [...merged];
+    });
+    // apiKind/apiModel 变化时刷新默认建议
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiKind, apiModel]);
+  // B3 池化统一：能力筛选 chips + 按档位分组排序（健康度>能力数>名称）
+  const [capFilter, setCapFilter] = useState<string[]>([]);
+  const { data: systemSettings } = useSystemSettings();
+  const groupedList = useMemo(() => {
+    const tierOf = (id: string): 'high' | 'standard' | 'low' | null => {
+      if (systemSettings?.executorTierHighId === id) return 'high';
+      if (systemSettings?.executorTierStandardId === id) return 'standard';
+      if (systemSettings?.executorTierLowId === id) return 'low';
+      return null;
+    };
+    const order: Array<{ key: 'high' | 'standard' | 'low' | 'unassigned'; label: string }> = [
+      { key: 'high', label: '▲ 高级档' },
+      { key: 'standard', label: '● 标准档' },
+      { key: 'low', label: '▼ 低档' },
+      { key: 'unassigned', label: '— 未分配档位' },
+    ];
+    const buckets = new Map<string, ExecutorProfile[]>();
+    order.forEach((g) => buckets.set(g.key, []));
+    for (const p of (profiles.data ?? [])) {
+      if (capFilter.length > 0 && !capFilter.every((c) => (p.config.capabilities as string[] | undefined)?.includes(c))) continue;
+      buckets.get(tierOf(p.id) ?? 'unassigned')!.push(p);
+    }
+    const out: Array<{ kind: 'header' | 'profile'; tier: string; profile?: ExecutorProfile; headerLabel?: string }> = [];
+    for (const g of order) {
+      const group = buckets.get(g.key)!;
+      group.sort((a, b) => {
+        const health = (a.health === 'unhealthy' ? 1 : 0) - (b.health === 'unhealthy' ? 1 : 0);
+        if (health !== 0) return health;
+        const capDiff = ((b.config.capabilities as string[] | undefined)?.length ?? 0) - ((a.config.capabilities as string[] | undefined)?.length ?? 0);
+        if (capDiff !== 0) return capDiff;
+        return a.name.localeCompare(b.name);
+      });
+      if (group.length > 0) {
+        out.push({ kind: 'header', tier: g.key, headerLabel: g.label });
+        for (const p of group) out.push({ kind: 'profile', tier: g.key, profile: p });
+      }
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profiles.data, capFilter, systemSettings]);
   const [apiContextCache, setApiContextCache] = useState<'auto' | 'on' | 'off'>('auto');
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
@@ -405,16 +457,16 @@ export function ExecutorCenterPage(): React.ReactElement {
               </Select>
             </Field>
           </div>
-          <Field label="能力声明" hint="模型自身直读能力：勾选 vision 后，带图片的任务会以原生多模态消息送入；画图/语音等生成能力走工具层（能力中心），不在此声明">
+          <Field label="能力声明" hint="勾选模型直读能力：vision 让带图任务走原生多模态；画图/语音等生成能力走工具层（能力中心），不在此声明。脑池按能力自动选档，故请真实勾选">
             <div className="form-row" style={{ flexWrap: 'wrap', gap: 8 }}>
-              {['vision'].map((cap) => (
-                <label key={cap} className="checkbox-row" style={{ marginRight: 12 }}>
+              {EXECUTOR_CAPABILITIES.map((cap) => (
+                <label key={cap.id} className="checkbox-row" style={{ marginRight: 12 }}>
                   <input
                     type="checkbox"
-                    checked={apiCapabilities.includes(cap)}
-                    onChange={(e) => setApiCapabilities((old) => (e.target.checked ? [...old, cap] : old.filter((c) => c !== cap)))}
+                    checked={apiCapabilities.includes(cap.id)}
+                    onChange={(e) => setApiCapabilities((old) => (e.target.checked ? [...old, cap.id] : old.filter((c) => c !== cap.id)))}
                   />
-                  {cap === 'vision' ? 'vision（图像理解直读）' : cap}
+                  {cap.label}
                 </label>
               ))}
             </div>
@@ -452,9 +504,33 @@ export function ExecutorCenterPage(): React.ReactElement {
       </Card>
 
       <Card title="已绑定执行器" className="section">
-        <p className="muted">连通测试在这里做一次；智能体绑定后复用结果。哪些智能体在用某个执行器，请到对应工作台的「组织架构」查看。</p>
+        <p className="muted">按档位分组（▲ 高 / ● 标准 / ▼ 低 / —未分配），组内先健康后故障、再按能力数排序；能力 chips 作筛选。绑定在智能体「工作台任职」卡操作。</p>
+
+        <div className="form-row" style={{ flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+          {EXECUTOR_CAPABILITIES.map((cap) => {
+            const active = capFilter.includes(cap.id);
+            return (
+              <label
+                key={cap.id}
+                style={{ cursor: 'pointer', fontSize: 12, border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`, background: active ? 'var(--accent-subtle, var(--bg-elev))' : 'transparent', borderRadius: 999, padding: '2px 10px' }}
+              >
+                <input type="checkbox" checked={active} style={{ display: 'none' }}
+                  onChange={() => setCapFilter((old) => (old.includes(cap.id) ? old.filter((c) => c !== cap.id) : [...old, cap.id]))} />
+                {cap.label}
+              </label>
+            );
+          })}
+        </div>
         <ul className="entity-list">
-          {profiles.data?.map((profile) => {
+          {groupedList.map((entry) => {
+            if (entry.kind === 'header') {
+              return (
+                <li key={`hdr-${entry.tier}`} className="muted" style={{ padding: '6px 2px 2px', fontSize: 11, letterSpacing: 0.5 }}>
+                  {(entry as any).headerLabel ?? entry.tier}
+                </li>
+              );
+            }
+            const profile = (entry as any).profile as ExecutorProfile;
             const hasModel = typeof profile.config.model === 'string' && Boolean(String(profile.config.model).trim());
             const manifestKind = manifests.data?.find((m) => m.id === profile.manifestId)?.kind;
             const isApi = manifestKind === 'api';

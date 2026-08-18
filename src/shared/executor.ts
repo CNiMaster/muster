@@ -21,6 +21,51 @@ export interface ExecutorManifest {
   officialSource: string;
   concurrency: ExecutorConcurrency;
   officialInstall: ExecutorOfficialInstall | null;
+  /** 池化统一（2026-08-17）：该执行器开箱自带的默认能力标签（用户在编辑时可按需纠偏）。 */
+  defaultCapabilities?: string[];
+}
+
+/**
+ * 执行器能力词表（2026-08-17 池化统一）：脑池过滤/tool 推荐共用。
+ * 多模态生成类（image-gen/video-gen/voice）主要服务工具推荐；脑池硬过滤只认 vision/code/command-execution。
+ */
+export const EXECUTOR_CAPABILITIES: Array<{ id: string; label: string }> = [
+  { id: 'vision', label: '图像理解' },
+  { id: 'image-gen', label: '图像生成' },
+  { id: 'video-gen', label: '视频生成' },
+  { id: 'voice', label: '语音合成' },
+  { id: 'long-context', label: '长上下文' },
+  { id: 'code', label: '代码' },
+];
+
+/** 模型名启发式：常见多模态/长上下文模型自动建议对应标签（仅作预填，用户可纠偏）。 */
+export function suggestDefaultCapabilities(manifestId: string, model?: string): string[] {
+  const tags = new Set<string>();
+  const m = (model ?? '').toLowerCase();
+  switch (manifestId) {
+    case 'claude-code-cli':
+    case 'codex-cli':
+    case 'antigravity-cli':
+    case 'opencode-cli':
+      tags.add('code');
+      return [...tags];
+    case 'gemini-api':
+      tags.add('vision');
+      tags.add('long-context');
+      if (/(video|veo|image|imagegen|nano)/.test(m)) tags.add(m.includes('video') ? 'video-gen' : 'image-gen');
+      return [...tags];
+    case 'custom-cli':
+      return ['code'];
+    default:
+      break;
+  }
+  // openai-compatible-api 或未知：按模型名启发
+  if (/(gpt-4o|vision|omni|multimodal)/.test(m)) tags.add('vision');
+  if (/(128k|200k|1m|1-million|long|context)/.test(m)) tags.add('long-context');
+  if (/(video|veo)/.test(m)) tags.add('video-gen');
+  if (/(tts|voice|speech|audio)/.test(m)) tags.add('voice');
+  if (/(image|dall-e|imagegen)/.test(m)) tags.add('image-gen');
+  return [...tags];
 }
 
 /** 执行器检测（CLI 系统探测）结果。 */

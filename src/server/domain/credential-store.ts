@@ -2,12 +2,12 @@
  * 凭据库(平台级基本能力)。
  *
  * 所有 API/CLI 接入的凭据作为软件基本能力统一管理,凌驾于公司之上。
- * 创建公司时从默认派发到 company_credential,员工执行时三层解析:
+ * 员工执行时两级解析(公司级覆盖层已随公司退役 D4-1 下线):
  *
  *   ① 员工级覆盖:Agent Home profile/credentials.json(只存环境变量名覆盖,不存明文)
- *   ② 公司级覆盖:company_credential.override_key
- *   ③ 平台默认:credential_definition.credential_key
- *   ④ 系统回退:provider 默认(PROVIDER_DEFAULT_API_KEY_ENV,向后兼容)
+ *   ①.5 档案级覆盖:执行器档案 credentialRef(池化统一 2026-08-17)
+ *   ② 平台默认:credential_definition.credential_key
+ *   ③ 系统回退:provider 默认(PROVIDER_DEFAULT_API_KEY_ENV,向后兼容)
  *
  * 安全:只存环境变量名/引用,绝不存明文值。明文值始终由系统环境变量提供。
  */
@@ -225,7 +225,7 @@ function readEmployeeCredentialOverrides(profileId: string): EmployeeCredentialO
       return result;
     }
   } catch {
-    /* 损坏的 credentials.json 忽略,回退到公司/平台层 */
+    /* 损坏的 credentials.json 忽略,回退到档案/平台层 */
   }
   return {};
 }
@@ -260,7 +260,7 @@ export function setEmployeeCredentialOverride(profileId: string, definitionId: s
 
 /**
  * 解析某项凭据最终生效的环境变量名。
- * 优先级:员工覆盖 > 公司覆盖 > 平台默认 > null。
+ * 优先级:员工覆盖 > 档案覆盖 > 平台默认 > null(公司层 D4-1 退役)。
  *
  * @param db 数据库
  * @param profileId 员工档案 ID(可空,跳过员工层)
@@ -268,13 +268,15 @@ export function setEmployeeCredentialOverride(profileId: string, definitionId: s
  * @param definitionId 凭据定义 ID
  * @returns 最终生效的环境变量名;无匹配定义时返回 null
  */
-export function resolveCredentialKey(db: DB, profileId: string | null, companyId: string | null, definitionId: string): string | null {
+export function resolveCredentialKey(db: DB, profileId: string | null, companyId: string | null, definitionId: string, profileRef?: string): string | null {
   void companyId; // 公司退役 D4-1：公司级覆盖层已退役（三级→两级），参数留待物理去列批清理
   // ① 员工级覆盖
   if (profileId) {
     const overrides = readEmployeeCredentialOverrides(profileId);
     if (overrides[definitionId]) return overrides[definitionId];
   }
+  // ①.5 档案级覆盖（池化统一 2026-08-17：执行器档案 credentialRef 是员工与平台之间的一层；公司层 D4-1 已退役）
+  if (profileRef) return profileRef;
   // ② 平台默认
   const def = db.prepare('SELECT credential_key FROM credential_definition WHERE id=?').get(definitionId) as { credential_key: string } | undefined;
   return def?.credential_key ?? null;
@@ -298,6 +300,7 @@ export function resolveExecutorCredentialEnv(
   provider: string,
   legacyEnv?: string,
   providerFallback?: string,
+  profileRef?: string,
 ): string | undefined {
   // 查找适用于该 provider 的凭据定义。
   // 精确逗号分隔匹配,避免 LIKE '%gemini%' 误匹配 'gemini-cli' 等子串。
@@ -305,10 +308,11 @@ export function resolveExecutorCredentialEnv(
   for (const def of allDefs) {
     const executors = def.applicable_executors ? def.applicable_executors.split(',').map((s) => s.trim()) : [];
     if (!executors.includes(provider)) continue;
-    const resolved = resolveCredentialKey(db, profileId, companyId, def.id);
+    const resolved = resolveCredentialKey(db, profileId, companyId, def.id, profileRef);
     if (resolved) return resolved;
   }
-  // 回退链:legacy apiKeyEnv → provider 默认
+  // 回退链:档案级显式 env(无匹配定义时直接生效,如未注册的自定义 provider) → legacy apiKeyEnv → provider 默认
+  if (profileRef) return profileRef;
   return legacyEnv ?? providerFallback;
 }
 

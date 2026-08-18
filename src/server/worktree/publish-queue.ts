@@ -26,6 +26,11 @@ export interface PublishRequest {
   worktreePath: string;
   /** 正式项目根目录。 */
   projectRootDir: string;
+  /**
+   * 发布目标目录（staging 一期：蜂群系任务发布到 staging worktree 检出目录）。
+   * 缺省 = projectRootDir（行为与现状完全一致）。
+   */
+  targetRootDir?: string;
   /** worktree 创建时的 base commit（正式目录当时的 HEAD）。 */
   baseCommit: string;
   /** 本次发布涉及的文件（相对路径）。 */
@@ -166,13 +171,15 @@ export class PublishQueue {
     const conflicts: string[] = [];
     const pending = new Map<string, { operation: 'write' | 'delete'; content?: Buffer }>();
     const acquiredLocks: string[] = [];
+    // 发布目标：staging 一期=staging worktree 检出目录；缺省=项目根（现状行为）
+    const targetRoot = req.targetRootDir ?? req.projectRootDir;
 
     try {
-      return this.doPublishInner(req, id, publishedAt, conflicts, pending, acquiredLocks);
+      return this.doPublishInner(req, id, publishedAt, conflicts, pending, acquiredLocks, targetRoot);
     } finally {
       // 无论成功/失败/异常，释放本次获取的所有锁（成功发布后二进制已落盘，无需继续持有）
       if (acquiredLocks.length > 0) {
-        this.releaseLocks(req.projectRootDir, req.taskId);
+        this.releaseLocks(targetRoot, req.taskId);
       }
     }
   }
@@ -184,26 +191,27 @@ export class PublishQueue {
     conflicts: string[],
     pending: Map<string, { operation: 'write' | 'delete'; content?: Buffer }>,
     acquiredLocks: string[],
+    targetRoot: string,
   ): PublishResult {
     // 1. 在 worktree 提交所有改动，得到 commit hash
     const wtCommit = commitAll(req.worktreePath, `muster: task ${req.taskId} 成果`);
 
-    // R3：发布前把主干未提交的用户改动提交为独立提交（"muster: user edits"），
+    // R3：发布前把目标目录未提交的改动提交为独立提交（"muster: user edits"），
     // 不再被本发布步骤 ③ 的 git add -A 卷进 agent 发布提交；历史可追踪。
     try {
-      commitAll(req.projectRootDir, 'muster: user edits');
+      commitAll(targetRoot, 'muster: user edits');
     } catch {
-      // 主干仓库异常不阻断发布（三方合并仍以磁盘当前文件为 ours）
+      // 目标仓库异常不阻断发布（三方合并仍以磁盘当前文件为 ours）
     }
 
-    // 2. 预计算整批变更。此阶段绝不修改正式目录，保证发现任一冲突时零落盘。
+    // 2. 预计算整批变更。此阶段绝不修改目标目录，保证发现任一冲突时零落盘。
     for (const art of req.artifacts) {
-      // 路径逃逸防护：所有 artifact path 必须在项目根目录内
-      assertWithin(req.projectRootDir, art.path);
+      // 路径逃逸防护：所有 artifact path 必须在目标根目录内
+      assertWithin(targetRoot, art.path);
       if (art.operation === 'delete') {
-        const target = path.join(req.projectRootDir, art.path);
+        const target = path.join(targetRoot, art.path);
         if (existsSync(target)) {
-          const base = gitFileAt(req.projectRootDir, req.baseCommit, art.path);
+          const base = gitFileAt(targetRoot, req.baseCommit, art.path);
           const current = readFileSync(target);
           if (!base || !current.equals(base)) {
             conflicts.push(art.path);
@@ -216,7 +224,7 @@ export class PublishQueue {
 
       const isBinary = isBinaryPath(art.path) || art.kind === 'image' || art.kind === 'pdf' || art.kind === 'video' || art.kind === 'audio' || art.kind === 'binary';
       const sourceAbs = path.join(req.worktreePath, art.path);
-      const targetAbs = path.join(req.projectRootDir, art.path);
+      const targetAbs = path.join(targetRoot, art.path);
 
       if (!existsSync(sourceAbs)) {
         log.warn('publish: source missing', { path: art.path });
@@ -234,12 +242,12 @@ export class PublishQueue {
         // 1) 锁被其他 task 持有 → conflict（排队等待）
         // 2) 锁拿到但 base 与当前正式版本不一致 → conflict（无法三方合并二进制，
         //    必须等用户/第一负责人裁决；同 task 连续写时 base 一致才能覆盖）
-        if (!this.acquireLock(req.projectRootDir, art.path, req.taskId)) {
+        if (!this.acquireLock(targetRoot, art.path, req.taskId)) {
           conflicts.push(art.path);
           continue;
         }
         acquiredLocks.push(art.path);
-        const baseContent = gitFileAt(req.projectRootDir, req.baseCommit, art.path);
+        const baseContent = gitFileAt(targetRoot, req.baseCommit, art.path);
         const currentContent = readFileSync(targetAbs);
         if (!baseContent || !currentContent.equals(baseContent)) {
           // 基线已变（用户或其他 task 已改过此二进制），无法安全覆盖
@@ -251,7 +259,7 @@ export class PublishQueue {
       }
 
       // 文本三方合并
-      const mergedContent = this.threeWayMerge(req.projectRootDir, req.baseCommit, art.path, sourceAbs);
+      const mergedContent = this.threeWayMerge(targetRoot, req.baseCommit, art.path, sourceAbs);
       if (mergedContent !== null) {
         pending.set(art.path, { operation: 'write', content: Buffer.from(mergedContent) });
       } else {
@@ -266,7 +274,7 @@ export class PublishQueue {
       const backups = new Map<string, Buffer | null>();
       try {
         for (const [relPath, change] of pending) {
-          const target = path.join(req.projectRootDir, relPath);
+          const target = path.join(targetRoot, relPath);
           backups.set(relPath, existsSync(target) ? readFileSync(target) : null);
           if (change.operation === 'delete') {
             rmSync(target, { force: true });
@@ -276,10 +284,10 @@ export class PublishQueue {
             writeFileSync(target, change.content!);
           }
         }
-        commitHash = commitAll(req.projectRootDir, `muster: publish task ${req.taskId}`);
+        commitHash = commitAll(targetRoot, `muster: publish task ${req.taskId}`);
       } catch (error) {
         for (const [relPath, previous] of backups) {
-          const target = path.join(req.projectRootDir, relPath);
+          const target = path.join(targetRoot, relPath);
           if (previous === null) rmSync(target, { force: true });
           else {
             if (!existsSync(path.dirname(target))) mkdirSync(path.dirname(target), { recursive: true });
@@ -292,6 +300,8 @@ export class PublishQueue {
 
     // 4. 记录
     const blocked = conflicts.length > 0 ? 1 : 0;
+    // project_root 语义 = 项目身份（业务查询键），不是文件落盘位置；staging 记录的
+    // git 回滚一期走「promote 前在 staging worktree 手动操作」（见 staging spec 回滚按段）。
     this.db
       .prepare(
         `INSERT INTO publish_record (id, task_id, thread_id, project_root, commit_hash,

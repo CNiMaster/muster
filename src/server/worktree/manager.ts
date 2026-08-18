@@ -49,17 +49,19 @@ export function ensureGitRepo(rootDir: string): void {
 }
 
 export function worktreeRoot(): string {
-  const dir = path.join(SERVER_CONFIG.musterDir, 'worktrees');
+  // 运行时动态解析（测试可随时覆盖 MUSTER_HOME 隔离目录；生产 = 启动时 SERVER_CONFIG 值）
+  const dir = path.join(process.env.MUSTER_HOME ?? SERVER_CONFIG.musterDir, 'worktrees');
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   return dir;
 }
 
-export function createWorktree(rootDir: string, projectId: string, taskId: string): WorktreeInfo {
+export function createWorktree(rootDir: string, projectId: string, taskId: string, baseRef?: string): WorktreeInfo {
   ensureGitRepo(rootDir);
   const branch = `muster/${projectId}/${taskId}`;
   const wtPath = path.join(worktreeRoot(), taskId);
-  // 基于当前 HEAD 创建分支 + worktree
-  const head = git(rootDir, ['rev-parse', 'HEAD']).stdout;
+  // 基线分支：缺省主干 HEAD（staging 模式下传 staging 集成分支名）
+  const ref = baseRef || 'HEAD';
+  const base = git(rootDir, ['rev-parse', ref]).stdout;
   // 清理已有同名分支/路径（force）
   git(rootDir, ['worktree', 'remove', '--force', wtPath], { allowFail: true });
   git(rootDir, ['branch', '-D', branch], { allowFail: true });
@@ -67,9 +69,9 @@ export function createWorktree(rootDir: string, projectId: string, taskId: strin
   if (existsSync(wtPath)) {
     rmSync(wtPath, { recursive: true, force: true });
   }
-  git(rootDir, ['worktree', 'add', '-b', branch, wtPath, 'HEAD']);
-  log.info('worktree created', { taskId, branch, wtPath, base: head.slice(0, 8) });
-  return { taskId, branch, path: wtPath, baseCommit: head };
+  git(rootDir, ['worktree', 'add', '-b', branch, wtPath, ref]);
+  log.info('worktree created', { taskId, branch, wtPath, base: base.slice(0, 8), ref });
+  return { taskId, branch, path: wtPath, baseCommit: base };
 }
 
 export function removeWorktree(rootDir: string, info: WorktreeInfo): void {
@@ -98,4 +100,93 @@ export function commitAll(
 
 export function currentHead(wtPath: string): string {
   return git(wtPath, ['rev-parse', 'HEAD']).stdout;
+}
+
+// ===== staging 集成审查（2026-08-17，spec: docs/superpowers/specs/2026-08-17-staging-integration-review.md）=====
+
+export interface StagingInfo {
+  projectId: string;
+  branch: string;
+  path: string;
+}
+
+export function stagingBranch(projectId: string): string {
+  return `muster/${projectId}/staging`;
+}
+
+export function stagingWorktreePath(projectId: string): string {
+  return path.join(worktreeRoot(), `staging-${projectId}`);
+}
+
+/**
+ * 确保项目的 staging 集成分支与持久 worktree 存在（幂等）。
+ * 无分支时从主干 HEAD 创建；分支存在但 worktree 目录缺失时重新挂载。
+ * staging 是蜂群系任务（蜂/汇总/验收/返工）的发布目标与审查现场。
+ */
+export function ensureStagingWorktree(rootDir: string, projectId: string): StagingInfo {
+  ensureGitRepo(rootDir);
+  const branch = stagingBranch(projectId);
+  const wtPath = stagingWorktreePath(projectId);
+  if (!git(rootDir, ['branch', '--list', branch]).stdout) {
+    git(rootDir, ['worktree', 'remove', '--force', wtPath], { allowFail: true });
+    if (existsSync(wtPath)) rmSync(wtPath, { recursive: true, force: true });
+    git(rootDir, ['worktree', 'add', '-b', branch, wtPath, 'HEAD']);
+    log.info('staging worktree created', { projectId, branch, wtPath });
+  } else if (!existsSync(wtPath)) {
+    // 目录丢失但注册残留：先 prune 清注册，再重新挂载
+    git(rootDir, ['worktree', 'prune'], { allowFail: true });
+    git(rootDir, ['worktree', 'add', wtPath, branch]);
+    log.info('staging worktree re-attached', { projectId, branch, wtPath });
+  }
+  return { projectId, branch, path: wtPath };
+}
+
+/**
+ * promote：把 staging 集成分支合并回主干（项目根当前分支）。
+ * 先兜底提交两侧未提交改动（与 publish 预提交惯例一致），再 merge。
+ * 冲突时 abort 并返回冲突文件清单（一期由用户手改后重试，不自动吞）。
+ *
+ * 并发说明（review I2）：publish 与 promote 的全部 git 操作均为 spawnSync 同步执行，
+ * 单线程事件循环内不可能交错；真正的风险是「merge 进程中途被杀留下未合并 index」——
+ * 开头的 merge --abort 即崩溃恢复护栏（无残留时静默失败），防止后续任何
+ * commitAll('user edits') 把冲突标记静默提交进主干。
+ */
+export function promoteStaging(
+  rootDir: string,
+  projectId: string,
+): { promoted: boolean; message: string; mergeCommit?: string; conflicts?: string[] } {
+  git(rootDir, ['merge', '--abort'], { allowFail: true });
+  const staging = ensureStagingWorktree(rootDir, projectId);
+  commitAll(staging.path, 'muster: staging pre-promote');
+  commitAll(rootDir, 'muster: user edits');
+  const r = git(rootDir, ['merge', '--no-edit', staging.branch], { allowFail: true });
+  if (r.status !== 0) {
+    // 冲突文件清单从 merge 后的工作区状态提取（UU/AA/DD/AU/UA/DU/UD 前缀）
+    const conflicts = git(rootDir, ['status', '--porcelain']).stdout
+      .split('\n')
+      .filter((l) => /^(UU|AA|DD|AU|UA|DU|UD)\s+/.test(l.trim()))
+      .map((l) => l.trim().replace(/^(UU|AA|DD|AU|UA|DU|UD)\s+/, '').trim())
+      .filter(Boolean);
+    git(rootDir, ['merge', '--abort'], { allowFail: true });
+    return {
+      promoted: false,
+      message: `staging 合并冲突（${conflicts.length || '若干'} 个文件），已中止。请在项目根手动处理后重试 promote`,
+      conflicts,
+    };
+  }
+  return { promoted: true, message: 'staging 已合并回主干', mergeCommit: git(rootDir, ['rev-parse', 'HEAD']).stdout };
+}
+
+/** staging 的 git 事实（供 UI 状态条）：分支存在性、领先主干提交数、两侧 HEAD。 */
+export function stageStatus(
+  rootDir: string,
+  projectId: string,
+): { exists: boolean; aheadCommits: number; stagingHead: string | null; mainHead: string } {
+  ensureGitRepo(rootDir);
+  const branch = stagingBranch(projectId);
+  const exists = Boolean(git(rootDir, ['branch', '--list', branch]).stdout);
+  const mainHead = git(rootDir, ['rev-parse', 'HEAD']).stdout;
+  if (!exists) return { exists: false, aheadCommits: 0, stagingHead: null, mainHead };
+  const aheadCommits = Number(git(rootDir, ['rev-list', '--count', `HEAD..${branch}`]).stdout || '0');
+  return { exists: true, aheadCommits, stagingHead: git(rootDir, ['rev-parse', branch]).stdout, mainHead };
 }

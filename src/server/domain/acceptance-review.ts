@@ -17,6 +17,7 @@ import { getProject } from './project';
 import { getCompany } from './company';
 import { getAgent } from './agent';
 import { postSystemMessage } from './conversation';
+import { promoteProjectStagingIfAny } from './staging';
 import { ensurePrimaryThread } from './thread';
 import { ensureAcceptanceOfficer, ACCEPTANCE_OFFICER_ROLE } from './acceptance-officer';
 import { log } from '../logger';
@@ -116,6 +117,8 @@ export function maybeTriggerAcceptanceReview(db: DB, completedTask: Task): Task 
       inputProtocol: {
         acceptanceReview: {
           sourceTaskId: completedTask.id,
+          // staging 一期：源任务属蜂群系时，验收任务 worktree 从 staging 集成现场切出（engine 据此选基线）
+          ...(completedTask.swarmId ? { sourceSwarmId: completedTask.swarmId } : {}),
           criteria: completedTask.acceptanceCriteria,
           artifacts: completedTask.artifacts.map((a) => ({ path: a.path, kind: a.kind })),
           summary: (completedTask.summary ?? '').slice(0, 2000),
@@ -199,6 +202,21 @@ export function handleAcceptanceReviewTaskCompleted(db: DB, reviewTask: Task): v
         confidence: parsed.confidence,
         feedback: parsed.feedback,
       });
+      // staging 一期：蜂群系源任务验收通过 → 集成现场 promote 回主干
+      if (source.swarmId) {
+        const promote = promoteProjectStagingIfAny(db, source.projectId, 'acceptance-passed');
+        try {
+          postSystemMessage(db, {
+            scopeKind: 'project',
+            scopeId: source.projectId,
+            role: 'system',
+            author: '验收员',
+            content: promote.promoted
+              ? `[staging 已合并] 蜂群产物通过验收，集成现场已合并回主干（${promote.message}）。`
+              : `[staging 提示] 验收通过，但未执行合并：${promote.message}${promote.conflicts?.length ? `（冲突：${promote.conflicts.join('、')}）` : ''}`,
+          });
+        } catch { /* 播报失败不阻断 */ }
+      }
       return;
     }
 
@@ -261,6 +279,8 @@ export function handleAcceptanceReviewTaskCompleted(db: DB, reviewTask: Task): v
           decision: parsed.verdict,
           previousReviewId: reviewTask.id,
           sourceTaskId: source.id,
+          // staging 一期：蜂群系返工任务同样从 staging 集成现场切出
+          ...(source.swarmId ? { sourceSwarmId: source.swarmId } : {}),
           reviewRound: nextRound,
         },
       },

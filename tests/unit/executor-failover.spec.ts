@@ -8,7 +8,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { makeTestDb } from '../integration/setup';
 import type { DB } from '../../src/server/db/client';
 import { createExecutorProfile, updateExecutorProfile } from '../../src/server/domain/executor-profile';
-import { selectTieredExecutorProfile } from '../../src/server/domain/executor-tier';
+import { selectProfileForTask } from '../../src/server/domain/model-tier';
 import { markExecutorFailure, markExecutorSuccess, sweepExecutorHealth } from '../../src/server/domain/executor-failover';
 import { setSetting } from '../../src/server/domain/setting';
 import { createNovelCompany } from '../integration/setup';
@@ -44,17 +44,15 @@ describe('executor failover', () => {
   it('三级默认跳过不健康档案，沿降级链换备选', () => {
     const a = createExecutorProfile(db, { name: 'A', manifestId: 'custom-cli', config: { binaryPath: '/bin/ls' } });
     const b = createExecutorProfile(db, { name: 'B', manifestId: 'custom-cli', config: { binaryPath: '/bin/ls' } });
-    setSetting(db, 'executor_tier_secondary_id', a.id);
-    setSetting(db, 'executor_tier_tertiary_id', b.id);
-    const r = createNovelCompany(db, { name: 'co' });
-    const project = createProject(db, { companyId: r.company.id, name: 'p', rootDir: '/tmp/ef', firstAgentId: r.agents.lead.id, initialState: 'active' });
-    const task = createTask(db, { projectId: project.id, title: '普通任务', assigneeAgentId: r.agents.lead.id });
+    setSetting(db, 'executor_tier_standard_id', a.id);
+    setSetting(db, 'executor_tier_low_id', b.id);
 
-    expect(selectTieredExecutorProfile(db, task, r.company.id)?.id).toBe(a.id);
+    // 池化统一：selectProfileForTask 沿档位链选健康档案（标准档 A → 不健康后降链选低档 B）
+    expect(selectProfileForTask(db, 'standard', false)?.id).toBe(a.id);
     markExecutorFailure(db, a.id, 'auth_error');
-    expect(selectTieredExecutorProfile(db, task, r.company.id)?.id).toBe(b.id);
+    expect(selectProfileForTask(db, 'standard', false)?.id).toBe(b.id);
     markExecutorFailure(db, b.id, 'auth_error');
-    expect(selectTieredExecutorProfile(db, task, r.company.id)).toBeNull(); // 全不健康 → 回退 legacy 链
+    expect(selectProfileForTask(db, 'standard', false)).toBeNull(); // 全不健康 → 回退 legacy 链
   });
 
   it('巡检：CLI 二进制还在→冷却期满放回；二进制没了→保持不健康', () => {

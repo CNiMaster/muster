@@ -23,7 +23,9 @@ import { materializeSwarm } from '../../src/server/domain/swarm';
 import { ensureDispatcherAgentId } from '../../src/server/domain/system-agents';
 import { getSystemSettings, saveSystemSettings } from '../../src/server/domain/setting';
 import { settingsUpdateSchema } from '../../src/server/api/settings';
-import { modelTierForTask } from '../../src/server/domain/model-tier';
+import { taskExecutorTier, resolveProfileForTier } from '../../src/server/domain/model-tier';
+import { createExecutorProfile } from '../../src/server/domain/executor-profile';
+import { markExecutorFailure } from '../../src/server/domain/executor-failover';
 
 let tdb: ReturnType<typeof makeTestDb>;
 let db: DB;
@@ -139,28 +141,50 @@ describe('WP9 模型档位', () => {
       projectTaskSeq: null, waitingSince: null, leaseExpiresAt: null, leasedAt: null, outsourcedContractId: null,
     }) as unknown as Task;
 
-  it('判定：蜂群工蜂/辩手=轻量；计划/验收/返工/裁决/请示=高级；其余标准', () => {
-    expect(modelTierForTask(baseTask({ trigger: 'swarm_bee' }))).toBe('economy');
-    expect(modelTierForTask(baseTask({ trigger: 'debate_round' }))).toBe('economy');
-    expect(modelTierForTask(baseTask({ mode: 'plan' }))).toBe('premium');
-    expect(modelTierForTask(baseTask({ trigger: 'debate_verdict' }))).toBe('premium');
-    expect(modelTierForTask(baseTask({ trigger: 'swarm_request' }))).toBe('premium');
-    expect(modelTierForTask(baseTask({ acceptanceReview: { sourceTaskId: 'x' } }))).toBe('premium');
-    expect(modelTierForTask(baseTask({ type: 'business_rework' }))).toBe('premium');
-    expect(modelTierForTask(baseTask({ trigger: 'swarm_synthesis' }))).toBeNull(); // 汇总=标准
-    expect(modelTierForTask(baseTask({}), 'debate-judge')).toBe('premium');
-    expect(modelTierForTask(baseTask({ trigger: 'user_message' }))).toBeNull();
+  it('判定：蜂群工蜂/辩手/轻量咨询=低档；计划/验收/返工/裁决/请示=高档；其余标准', () => {
+    expect(taskExecutorTier(baseTask({ trigger: 'swarm_bee' }))).toBe('low');
+    expect(taskExecutorTier(baseTask({ trigger: 'debate_round' }))).toBe('low');
+    expect(taskExecutorTier(baseTask({ lightweight: true }))).toBe('low');
+    // review I3：旧分类器的 isDiscussion 列与 consultation 信号完整吸收
+    expect(taskExecutorTier({ ...baseTask({}), isDiscussion: 1 })).toBe('low');
+    expect(taskExecutorTier(baseTask({ consultation: true }))).toBe('low');
+    expect(taskExecutorTier(baseTask({ mode: 'plan' }))).toBe('high');
+    expect(taskExecutorTier(baseTask({ trigger: 'debate_verdict' }))).toBe('high');
+    expect(taskExecutorTier(baseTask({ trigger: 'swarm_request' }))).toBe('high');
+    expect(taskExecutorTier(baseTask({ acceptanceReview: { sourceTaskId: 'x' } }))).toBe('high');
+    expect(taskExecutorTier(baseTask({ type: 'business_rework' }))).toBe('high');
+    expect(taskExecutorTier(baseTask({ trigger: 'swarm_synthesis' }))).toBe('standard'); // 汇总=标准
+    expect(taskExecutorTier(baseTask({}), 'debate-judge')).toBe('high');
+    expect(taskExecutorTier(baseTask({ trigger: 'user_message' }))).toBe('standard');
   });
 
-  it('设置键往返：modelTierEconomy/Premium 保存读取 + zod 放行', () => {
+  it('档位=档案解析：新键生效；不健康/已删回落；旧键兼容读取（high←primary 等）', () => {
+    const high = createExecutorProfile(db, { name: 'H', manifestId: 'custom-cli', config: { binaryPath: '/bin/ls' } });
+    const std = createExecutorProfile(db, { name: 'S', manifestId: 'custom-cli', config: { binaryPath: '/bin/ls' } });
+    const low = createExecutorProfile(db, { name: 'L', manifestId: 'custom-cli', config: { binaryPath: '/bin/ls' } });
+    saveSystemSettings(db, { executorTierHighId: high.id, executorTierStandardId: std.id, executorTierLowId: low.id });
+    expect(resolveProfileForTier(db, 'high')?.id).toBe(high.id);
+    expect(resolveProfileForTier(db, 'standard')?.id).toBe(std.id);
+    expect(resolveProfileForTier(db, 'low')?.id).toBe(low.id);
+    // 旧键兼容：primary→high（同档键清空时回落旧键）
+    saveSystemSettings(db, { executorTierHighId: '', executorTierPrimaryId: std.id });
+    expect(resolveProfileForTier(db, 'high')?.id).toBe(std.id);
+    // 不健康（重新指向 high 后）→ 回落 null
+    saveSystemSettings(db, { executorTierHighId: high.id, executorTierPrimaryId: '' });
+    markExecutorFailure(db, high.id, 'auth_error');
+    expect(resolveProfileForTier(db, 'high')).toBeNull();
+  });
+
+  it('设置键往返：executorTierHigh/Standard/Low 保存读取 + zod 放行', () => {
     const parsed = settingsUpdateSchema.parse({
       claudeBin: 'claude', model: '', skipPermissions: false, timeoutMs: 600000, maxToolCalls: 30,
-      modelTierEconomy: ' gemini-2.0-flash ', modelTierPremium: 'claude-sonnet-4.5',
+      executorTierHighId: 'bp_1', executorTierStandardId: 'bp_2', executorTierLowId: 'bp_3',
     });
     saveSystemSettings(db, parsed);
     const settings = getSystemSettings(db);
-    expect(settings.modelTierEconomy).toBe('gemini-2.0-flash'); // trim 落库
-    expect(settings.modelTierPremium).toBe('claude-sonnet-4.5');
+    expect(settings.executorTierHighId).toBe('bp_1');
+    expect(settings.executorTierStandardId).toBe('bp_2');
+    expect(settings.executorTierLowId).toBe('bp_3');
     // 未配置时为空（=不覆盖，零回归）
     saveSystemSettings(db, { modelTierEconomy: '', modelTierPremium: '' });
     expect(getSystemSettings(db).modelTierEconomy).toBe('');
