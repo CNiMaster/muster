@@ -110,7 +110,7 @@ describe('tool registry db operations', () => {
       expect(cosvoice?.isDefault).toBe(false);
 
       // 创建测试公司(直接插表,绕过完整 setup)
-      db.prepare(`INSERT INTO company (id, name, state, charter, created_at, updated_at) VALUES (?, ?, 'off', '', ?, ?)`)
+      db.prepare(`INSERT INTO workbench (id, name, state, charter, created_at, updated_at) VALUES (?, ?, 'off', '', ?, ?)`)
         .run('c_test', '测试公司', new Date().toISOString(), new Date().toISOString());
       dispatchDefaultToolsToCompany(db, 'c_test');
 

@@ -140,7 +140,7 @@ describe('I5：辩论失败自救（下游取消 + 升级用户 + 辩手回收�
       assigneeAgentId: lead.id,
       title: '两难',
       priority: 9,
-      inputProtocol: { trigger: 'user_message', scope: 'company', scopeId: company.id, content: '帮我权衡' },
+      inputProtocol: { trigger: 'user_message', scope: 'workbench', scopeId: company.id, content: '帮我权衡' },
     });
     db.prepare("UPDATE task SET state='running' WHERE id=?").run(origin.id);
     completeTask(db, origin.id, {
@@ -157,7 +157,7 @@ describe('I5：辩论失败自救（下游取消 + 升级用户 + 辩手回收�
       question: '选 A 还是 B？',
       options: OPTIONS,
       originTaskId: origin.id,
-      originScopeKind: 'company',
+      originScopeKind: 'workbench',
       originScopeId: company.id,
     });
     const r1 = getTask(db, started.debaterTaskIds[0]);
@@ -178,7 +178,7 @@ describe('I5：辩论失败自救（下游取消 + 升级用户 + 辩手回收�
     expect(db.prepare('SELECT COUNT(*) AS c FROM agent_definition WHERE role=?').get(DEBATER_ROLE)).toMatchObject({ c: 0 });
     // 原任务保持 waiting_input，对话收到问题原文（升级兜底）
     expect(getTask(db, origin.id).state).toBe('waiting_input');
-    const msgs = listMessages(db, 'company', company.id);
+    const msgs = listMessages(db, 'workbench', company.id);
     expect(msgs.some((m) => m.content.includes('[需要你拍板]') && m.content.includes('A. 方案A'))).toBe(true);
     expect(listTaskEvents(db, origin.id).some((e) => e.kind === 'debate_failed')).toBe(true);
   });

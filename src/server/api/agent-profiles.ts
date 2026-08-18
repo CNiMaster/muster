@@ -238,7 +238,7 @@ companyEmployeesRouter.post('/', asyncHandler(async (req, res) => {
     departmentId: z.string().optional(),
     responsibilities: z.string().optional(),
   }).parse(req.body);
-  res.status(201).json(recruitAgentProfile(getDb(), { companyId: companyIdOf(req), ...input }));
+  res.status(201).json(recruitAgentProfile(getDb(), { ...input }));
 }));
 
 companyEmployeesRouter.post('/recruit', asyncHandler(async (req, res) => {

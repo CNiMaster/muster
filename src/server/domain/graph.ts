@@ -8,13 +8,12 @@
 import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
-import { isOrgLocked } from './company';
+import { getWorkbench } from './workbench';
 import type { GraphKind } from '../../shared/types';
 import { getAgent } from './agent';
 
 export interface Relationship {
   id: string;
-  companyId: string;
   kind: GraphKind;
   sourceId: string;
   targetId: string;
@@ -26,7 +25,6 @@ export interface Relationship {
 
 interface RelationshipRow {
   id: string;
-  company_id: string;
   kind: GraphKind;
   source_id: string;
   target_id: string;
@@ -36,10 +34,9 @@ interface RelationshipRow {
   archived_at: string | null;
 }
 
-function fromRow(r: RelationshipRow): Relationship {
+function fromRow(_db: DB, r: RelationshipRow): Relationship {
   return {
     id: r.id,
-    companyId: r.company_id,
     kind: r.kind,
     sourceId: r.source_id,
     targetId: r.target_id,
@@ -50,37 +47,35 @@ function fromRow(r: RelationshipRow): Relationship {
   };
 }
 
-function assertUnlocked(db: DB, companyId: string): void {
-  if (isOrgLocked(db, companyId)) {
+function assertUnlocked(db: DB): void {
+  if (getWorkbench(db).state !== 'off') {
     throw new AppError(ErrorCode.COMPANY_LOCKED, '上班期间不能修改关系图');
   }
 }
 
 export function addRelationship(
   db: DB,
-  input: { companyId: string; kind: GraphKind; sourceId: string; targetId: string; label?: string; protocol?: Record<string, unknown> },
+  input: { kind: GraphKind; sourceId: string; targetId: string; label?: string; protocol?: Record<string, unknown> },
 ): Relationship {
-  assertUnlocked(db, input.companyId);
+  assertUnlocked(db);
   if (input.sourceId === input.targetId) {
     throw new AppError(ErrorCode.VALIDATION, '不能自引用关系');
   }
-  const source = getAgent(db, input.sourceId);
-  const target = getAgent(db, input.targetId);
-  if (source.companyId !== input.companyId || target.companyId !== input.companyId) {
-    throw new AppError(ErrorCode.VALIDATION, '关系图两端必须是本公司员工');
-  }
+  getAgent(db, input.sourceId);
+  getAgent(db, input.targetId);
   const id = shortId('rel_');
   db.transaction(() => {
     db.prepare(
-      `INSERT INTO relationship (id, company_id, kind, source_id, target_id, label, protocol_json, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(id, input.companyId, input.kind, input.sourceId, input.targetId, input.label ?? '', JSON.stringify(input.protocol ?? {}), nowIso());
+      `INSERT INTO relationship (id, kind, source_id, target_id, label, protocol_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run(id, input.kind, input.sourceId, input.targetId, input.label ?? '', JSON.stringify(input.protocol ?? {}), nowIso());
     if (input.kind === 'communication') {
-      const contacts = [...new Set([...source.contactAllow, target.id])];
+      const source = getAgent(db, input.sourceId);
+      const contacts = [...new Set([...source.contactAllow, input.targetId])];
       db.prepare('UPDATE agent_definition SET contact_allow_json=?, updated_at=? WHERE id=?').run(
         JSON.stringify(contacts),
         nowIso(),
-        source.id,
+        input.sourceId,
       );
     }
   })();
@@ -90,7 +85,7 @@ export function addRelationship(
 export function getRelationship(db: DB, id: string): Relationship {
   const row = db.prepare('SELECT * FROM relationship WHERE id = ?').get(id) as RelationshipRow | undefined;
   if (!row) throw new AppError(ErrorCode.NOT_FOUND, `relationship ${id} not found`);
-  return fromRow(row);
+  return fromRow(db, row);
 }
 
 /**
@@ -100,12 +95,11 @@ export function getRelationship(db: DB, id: string): Relationship {
  */
 export function listRelationships(
   db: DB,
-  companyId: string,
   kind?: GraphKind,
   opts: { includeArchived?: boolean } = {},
 ): Relationship[] {
-  const where = ['company_id = ?'];
-  const params: unknown[] = [companyId];
+  const where: string[] = [];
+  const params: unknown[] = [];
   if (kind) {
     where.push('kind = ?');
     params.push(kind);
@@ -113,14 +107,14 @@ export function listRelationships(
   if (!opts.includeArchived) {
     where.push('archived_at IS NULL');
   }
-  const sql = `SELECT * FROM relationship WHERE ${where.join(' AND ')} ORDER BY archived_at IS NULL DESC, created_at`;
+  const sql = `SELECT * FROM relationship${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY archived_at IS NULL DESC, created_at`;
   const rows = db.prepare(sql).all(...params) as RelationshipRow[];
-  return rows.map(fromRow);
+  return rows.map((row) => fromRow(db, row));
 }
 
 export function deleteRelationship(db: DB, id: string): void {
   const cur = getRelationship(db, id);
-  assertUnlocked(db, cur.companyId);
+  assertUnlocked(db);
   db.transaction(() => {
     db.prepare('DELETE FROM relationship WHERE id = ?').run(id);
     if (cur.kind === 'communication') {
@@ -142,7 +136,7 @@ export function deleteRelationship(db: DB, id: string): void {
  */
 export function archiveRelationship(db: DB, id: string): Relationship {
   const cur = getRelationship(db, id);
-  assertUnlocked(db, cur.companyId);
+  assertUnlocked(db);
   db.transaction(() => {
     db.prepare('UPDATE relationship SET archived_at=? WHERE id=?').run(nowIso(), id);
     if (cur.kind === 'communication') {
@@ -161,7 +155,7 @@ export function archiveRelationship(db: DB, id: string): Relationship {
 /** 恢复归档关系。通信边恢复时同步把 target 重新加入 contact_allow。 */
 export function restoreRelationship(db: DB, id: string): Relationship {
   const cur = getRelationship(db, id);
-  assertUnlocked(db, cur.companyId);
+  assertUnlocked(db);
   db.transaction(() => {
     db.prepare('UPDATE relationship SET archived_at=NULL WHERE id=?').run(id);
     if (cur.kind === 'communication') {
@@ -182,8 +176,8 @@ export function restoreRelationship(db: DB, id: string): Relationship {
  * - 每条 communication 边的 source 必须把 target 加入 contact_allow。
  * 返回错误列表（空表示通过）。
  */
-export function validateCommunication(db: DB, companyId: string): string[] {
-  const edges = listRelationships(db, companyId, 'communication');
+export function validateCommunication(db: DB): string[] {
+  const edges = listRelationships(db, 'communication');
   const errors: string[] = [];
   for (const e of edges) {
     const src = db.prepare('SELECT contact_allow_json FROM agent_definition WHERE id = ?').get(e.sourceId) as

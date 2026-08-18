@@ -318,7 +318,7 @@ function copyDirSync(src: string, dest: string): void {
  */
 function assertAllCompaniesIdle(db: DB): void {
   const busyCompanies = db.prepare(
-    "SELECT id, name, state FROM company WHERE state != 'off' ORDER BY name",
+    "SELECT id, name, state FROM workbench WHERE state != 'off' ORDER BY name",
   ).all() as Array<{ id: string; name: string; state: string }>;
   if (busyCompanies.length > 0) {
     const names = busyCompanies.slice(0, 5).map((c) => `${c.name}(${c.state})`).join('、');

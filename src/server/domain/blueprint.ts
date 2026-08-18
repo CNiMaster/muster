@@ -37,7 +37,6 @@ export interface BlueprintTool {
 
 export interface Blueprint {
   id: string;
-  companyId: string;
   taskType: string;
   label: string;
   /** 用户语言描述：这类活是什么、当前打法。 */
@@ -78,7 +77,7 @@ export interface BlueprintVersion {
 }
 
 interface BlueprintRow {
-  id: string; company_id: string; task_type: string; label: string; description: string;
+  id: string; task_type: string; label: string; description: string;
   staffing_json: string; tools_json: string; source_project_ids_json: string;
   wins: number; losses: number; rework_total: number; correction_total: number;
   stages_json: string | null; status: BlueprintStatus; created_at: string; updated_at: string;
@@ -89,10 +88,9 @@ interface VersionRow {
   summary: string; evidence_json: string; created_at: string;
 }
 
-function fromRow(row: BlueprintRow): Blueprint {
+function fromRow(_db: DB, row: BlueprintRow): Blueprint {
   return {
     id: row.id,
-    companyId: row.company_id,
     taskType: row.task_type,
     label: row.label,
     description: row.description ?? '',
@@ -120,6 +118,12 @@ function versionFromRow(row: VersionRow): BlueprintVersion {
     evidence: JSON.parse(row.evidence_json ?? '[]'),
     createdAt: row.created_at,
   };
+}
+
+export function getBlueprint(db: DB, id: string): Blueprint {
+  const row = db.prepare('SELECT * FROM blueprint WHERE id = ?').get(id) as BlueprintRow | undefined;
+  if (!row) throw new AppError(ErrorCode.NOT_FOUND, `blueprint ${id} not found`);
+  return fromRow(db, row);
 }
 
 export const MAX_STAFFING_SLOTS = 4;
@@ -158,17 +162,17 @@ export function matchBlueprint(db: DB, companyId: string, taskTitle: string): Bl
   return matchBlueprints(db, companyId, taskTitle, 1)[0] ?? null;
 }
 
-export function matchBlueprints(db: DB, companyId: string, taskTitle: string, limit = 3): BlueprintMatch[] {
+export function matchBlueprints(db: DB, companyId?: string, taskTitle = '', limit = 3): BlueprintMatch[] {
   const rows = db.prepare(
-    "SELECT * FROM blueprint WHERE company_id=? AND status != 'retired'",
-  ).all(companyId) as BlueprintRow[];
+    "SELECT * FROM blueprint WHERE status != 'retired'",
+  ).all() as BlueprintRow[];
   if (rows.length === 0) return [];
   const titleTokens = meaningfulTokens(taskTitle);
   if (titleTokens.length === 0) return [];
 
   const scored: Array<{ row: BlueprintRow; score: number; bpTokens: string[] }> = [];
   for (const row of rows) {
-    const bpTokens = fromRow(row).taskType.split('|').filter(Boolean);
+    const bpTokens = fromRow(db, row).taskType.split('|').filter(Boolean);
     const score = jaccard(titleTokens, bpTokens);
     if (score >= BLUEPRINT_MATCH_THRESHOLD) {
       scored.push({ row, score, bpTokens });
@@ -191,7 +195,7 @@ export function matchBlueprints(db: DB, companyId: string, taskTitle: string, li
       return jaccard(item.bpTokens, pTokens) >= BLUEPRINT_MERGE_THRESHOLD;
     });
     if (!isDuplicateCluster) {
-      picked.push({ blueprint: fromRow(item.row), score: item.score });
+      picked.push({ blueprint: fromRow(db, item.row), score: item.score });
       if (picked.length >= limit) break;
     }
   }
@@ -277,7 +281,7 @@ export function rollbackBlueprint(db: DB, blueprintId: string, targetVersion: nu
  * 蓝图进化：支持正向吸收升级与负向隔离保护。
  */
 export function evolveBlueprint(db: DB, input: {
-  companyId: string;
+  companyId?: string;
   projectId: string;
   taskTitle: string;
   personaId: string;
@@ -293,12 +297,12 @@ export function evolveBlueprint(db: DB, input: {
   const titleTokens = meaningfulTokens(input.taskTitle);
   const now = nowIso();
   const candidates = db.prepare(
-    'SELECT * FROM blueprint WHERE company_id=?',
-  ).all(input.companyId) as BlueprintRow[];
+    'SELECT * FROM blueprint',
+  ).all() as BlueprintRow[];
   let existing: BlueprintRow | undefined;
   let bestScore = 0;
   for (const row of candidates) {
-    const score = jaccard(titleTokens, fromRow(row).taskType.split('|').filter(Boolean));
+    const score = jaccard(titleTokens, fromRow(db, row).taskType.split('|').filter(Boolean));
     if (score >= BLUEPRINT_MERGE_THRESHOLD && score > bestScore) {
       existing = row;
       bestScore = score;
@@ -308,7 +312,7 @@ export function evolveBlueprint(db: DB, input: {
   // 负向保护：若是自有人才执行且失败/返工，严格不修改或劣化官方默认蓝图
   if (input.isUserOverride && (!input.win || (input.reworkCount ?? 0) > 0)) {
     // 有既有蓝图：原样返回不记战绩；无既有蓝图：直接跳过进化——绝不把负面表现写进官方基准或新蓝图
-    return existing ? fromRow(existing) : null;
+    return existing ? fromRow(db, existing) : null;
   }
 
   if (!existing) {
@@ -317,11 +321,11 @@ export function evolveBlueprint(db: DB, input: {
     const description = `用于「${input.taskTitle.slice(0, 24)}」这类工作：主用人设「${input.personaName}」，打法随使用持续进化。`;
     const tools = mergeTools([], input.tools ?? [], input.win);
     db.prepare(
-      `INSERT INTO blueprint (id, company_id, task_type, label, description, staffing_json, tools_json,
+      `INSERT INTO blueprint (id, task_type, label, description, staffing_json, tools_json,
         source_project_ids_json, wins, losses, rework_total, correction_total, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
     ).run(
-      id, input.companyId, taskType, label, description,
+      id, taskType, label, description,
       JSON.stringify([{ personaId: input.personaId, personaName: input.personaName }]),
       JSON.stringify(tools),
       JSON.stringify([input.projectId]),
@@ -334,7 +338,7 @@ export function evolveBlueprint(db: DB, input: {
     return created;
   }
 
-  const blueprint = fromRow(existing);
+  const blueprint = fromRow(db, existing);
   const structureFrozen = blueprint.status === 'locked';
   const staffing = [...blueprint.staffing];
   let staffingChanged = false;
@@ -391,12 +395,6 @@ function mergeTools(current: BlueprintTool[], used: string[], win: boolean): Blu
     }
   }
   return [...map.values()].sort((a, b) => b.uses - a.uses).slice(0, MAX_TOOLS);
-}
-
-export function getBlueprint(db: DB, id: string): Blueprint {
-  const row = db.prepare('SELECT * FROM blueprint WHERE id=?').get(id) as BlueprintRow | undefined;
-  if (!row) throw new AppError(ErrorCode.NOT_FOUND, `blueprint ${id} not found`);
-  return fromRow(row);
 }
 
 export function getBlueprintDetail(db: DB, id: string): BlueprintDetail {
@@ -463,11 +461,11 @@ export function publishBlueprintDebugResult(db: DB, input: {
   })();
 }
 
-export function listBlueprints(db: DB, companyId: string): Blueprint[] {
+export function listBlueprints(db: DB, companyId?: string): Blueprint[] {
   const rows = db.prepare(
-    'SELECT * FROM blueprint WHERE company_id=? ORDER BY (wins + losses) DESC, updated_at DESC',
-  ).all(companyId) as BlueprintRow[];
-  return rows.map(fromRow);
+    'SELECT * FROM blueprint ORDER BY (wins + losses) DESC, updated_at DESC',
+  ).all() as BlueprintRow[];
+  return rows.map((r) => fromRow(db, r));
 }
 
 export function setBlueprintStatus(db: DB, id: string, status: BlueprintStatus): Blueprint {

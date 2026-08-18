@@ -39,13 +39,13 @@ function seed() {
   return { c, lead, p };
 }
 
-function insertPendingReview(reviewId: string, taskId: string, companyId: string, employeeId: string, projectId: string) {
+function insertPendingReview(reviewId: string, taskId: string, employeeId: string, projectId: string) {
   const now = new Date().toISOString();
   db.prepare(
     `INSERT INTO business_review
-       (id, company_id, project_id, task_id, employee_id, review_kind, subject_id, subject_snapshot_json, title, status, created_at)
-     VALUES (?, ?, ?, ?, ?, 'custom', 'subj', '{}', '审阅', 'pending', ?)`,
-  ).run(reviewId, companyId, projectId, taskId, employeeId, now);
+       (id, project_id, task_id, employee_id, review_kind, subject_id, subject_snapshot_json, title, status, created_at)
+     VALUES (?, ?, ?, ?, 'custom', 'subj', '{}', '审阅', 'pending', ?)`,
+  ).run(reviewId, projectId, taskId, employeeId, now);
 }
 
 const mockLlm = (content: string) => ({ content, model: 'mock', usage: { promptTokens: 10, completionTokens: 20 } });
@@ -54,7 +54,7 @@ describe('E1.3 rework 反思信号接线', () => {
   it('验收 changes_requested 时对返工 Task 入队 signal=rework 反思', () => {
     const { c, lead, p } = seed();
     const task = createTask(db, { projectId: p.id, title: '原任务', assigneeAgentId: lead.id });
-    insertPendingReview('br1', task.id, c.id, lead.id, p.id);
+    insertPendingReview('br1', task.id, lead.id, p.id);
     decideBusinessReview(db, 'br1', { decision: 'changes_requested', feedback: '颜色不对，要改', decidedBy: 'user' });
 
     const row = db.prepare("SELECT signal, outcome FROM task_reflection WHERE signal='rework'").get() as
@@ -67,7 +67,7 @@ describe('E1.3 rework 反思信号接线', () => {
   it('drain rework 反思时通过 rework_task_id 反查打回反馈，产出引用反馈的 lesson', async () => {
     const { c, lead, p } = seed();
     const task = createTask(db, { projectId: p.id, title: '设计封面', assigneeAgentId: lead.id });
-    insertPendingReview('br2', task.id, c.id, lead.id, p.id);
+    insertPendingReview('br2', task.id, lead.id, p.id);
     decideBusinessReview(db, 'br2', { decision: 'changes_requested', feedback: '字体太小，可读性差', decidedBy: 'user' });
 
     vi.spyOn(llmCallModule, 'callLlm').mockResolvedValue(
@@ -86,7 +86,7 @@ describe('E1.3 rework 反思信号接线', () => {
   it('approved 不触发 rework 反思', () => {
     const { c, lead, p } = seed();
     const task = createTask(db, { projectId: p.id, title: '原任务', assigneeAgentId: lead.id });
-    insertPendingReview('br3', task.id, c.id, lead.id, p.id);
+    insertPendingReview('br3', task.id, lead.id, p.id);
     decideBusinessReview(db, 'br3', { decision: 'approved', decidedBy: 'user' });
 
     const row = db.prepare("SELECT id FROM task_reflection WHERE signal='rework'").get();
@@ -96,7 +96,7 @@ describe('E1.3 rework 反思信号接线', () => {
   it('rejected 同样触发 rework 反思（被打回即学习）', () => {
     const { c, lead, p } = seed();
     const task = createTask(db, { projectId: p.id, title: '原任务', assigneeAgentId: lead.id });
-    insertPendingReview('br4', task.id, c.id, lead.id, p.id);
+    insertPendingReview('br4', task.id, lead.id, p.id);
     decideBusinessReview(db, 'br4', { decision: 'rejected', feedback: '方向完全错', decidedBy: 'user' });
 
     const row = db.prepare("SELECT signal FROM task_reflection WHERE signal='rework'").get();

@@ -31,6 +31,7 @@ import { addTaskMessage } from '../../domain/task-message';
 import { postSystemMessage } from '../../domain/conversation';
 import { getAgent } from '../../domain/agent';
 import { getProject } from '../../domain/project';
+import { getWorkbench } from '../../domain/workbench';
 import { appendTaskEvent } from '../../domain/task-event';
 import { nowIso } from '../../../shared/utils';
 import { findBestAssignee } from '../../domain/agent-router';
@@ -395,8 +396,11 @@ async function submitReviewHandler(call: ToolCall, ctx: ToolContext): Promise<To
       return { toolCallId: call.id, name: call.name, content: `错误：找不到 Task ${taskId}` };
     }
     const projectRow = db
-      .prepare('SELECT id, company_id FROM project WHERE id=?')
-      .get(taskRow.project_id) as { id: string; company_id: string };
+      .prepare('SELECT id FROM project WHERE id=?')
+      .get(taskRow.project_id) as { id: string } | undefined;
+    if (!projectRow) {
+      return { toolCallId: call.id, name: call.name, content: `错误：找不到 Project ${taskRow.project_id}` };
+    }
     const reviewKind = String(call.args.review_kind ?? 'custom') as BusinessReviewKind;
     const validKinds: BusinessReviewKind[] = [
       'material',
@@ -415,7 +419,6 @@ async function submitReviewHandler(call: ToolCall, ctx: ToolContext): Promise<To
       };
     }
     const review = submitBusinessReview(db, {
-      companyId: projectRow.company_id,
       projectId: projectRow.id,
       taskId,
       employeeId: taskRow.assignee_agent_id ?? '',
@@ -542,17 +545,15 @@ async function notifyColleagueHandler(call: ToolCall, ctx: ToolContext): Promise
       if (recentAny) {
         addTaskMessage(db, recentAny.id, { author: askerAgentId, role: 'dispatch', content: `[通知] ${message}` });
       } else {
-        // 接收方从未有过 task（新员工）：通知写入公司对话流（scope=company，用户可见），保证不丢
-        const projectRow = db.prepare('SELECT company_id FROM project WHERE id=?').get(cctx.askerProjectId) as { company_id: string } | undefined;
-        if (projectRow) {
-          postSystemMessage(db, {
-            scopeKind: 'company',
-            scopeId: projectRow.company_id,
-            role: 'system',
-            author: askerAgentId,
-            content: `[员工通知] ${asker.name} → ${recipient.name}：${message}`,
-          });
-        }
+        // 接收方从未有过 task（新员工）：通知写入工作台对话流（scope=workbench，用户可见），保证不丢
+        const wb = getWorkbench(db);
+        postSystemMessage(db, {
+          scopeKind: 'workbench',
+          scopeId: wb.id,
+          role: 'system',
+          author: askerAgentId,
+          content: `[员工通知] ${asker.name} → ${recipient.name}：${message}`,
+        });
       }
     }
     void askerTaskId;

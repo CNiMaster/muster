@@ -36,8 +36,8 @@ function makeMcpPlugin(id: string) {
     id,
     name: '测试 MCP',
     kind: 'mcp-server',
-    source: { kind: 'company', companyId },
-    scope: { level: 'company', companyId },
+    source: { kind: 'workbench', companyId },
+    scope: { level: 'workbench', companyId },
     manifest: {
       kind: 'mcp-server',
       mcp: { transport: 'stdio', command: 'echo', args: ['hi'] },
@@ -51,7 +51,7 @@ describe('installPlugin', () => {
     const p = makeMcpPlugin('plg_test1');
     expect(p.id).toBe('plg_test1');
     expect(p.kind).toBe('mcp-server');
-    expect(p.source).toEqual({ kind: 'company', companyId });
+    expect(p.source).toEqual({ kind: 'workbench' });
     expect(p.manifest.kind).toBe('mcp-server');
   });
 
@@ -61,8 +61,8 @@ describe('installPlugin', () => {
       id: 'plg_test2',
       name: '改名',
       kind: 'mcp-server',
-      source: { kind: 'company', companyId },
-      scope: { level: 'company', companyId },
+      source: { kind: 'workbench', companyId },
+      scope: { level: 'workbench', companyId },
       manifest: { kind: 'mcp-server', mcp: { transport: 'stdio', command: 'ls' } },
     });
     const p = getPluginRow(db, 'plg_test2');
@@ -101,27 +101,19 @@ describe('removePlugin', () => {
 describe('公司级启停', () => {
   it('enable 后在启用列表中', () => {
     makeMcpPlugin('plg_en');
-    setCompanyPluginEnabled(db, companyId, 'plg_en', true);
+    setCompanyPluginEnabled(db, 'plg_en', true);
     expect(listEnabledCompanyPlugins(db, companyId)).toContain('plg_en');
   });
 
   it('disable 后不在启用列表中', () => {
     makeMcpPlugin('plg_dis');
-    setCompanyPluginEnabled(db, companyId, 'plg_dis', true);
-    setCompanyPluginEnabled(db, companyId, 'plg_dis', false);
+    setCompanyPluginEnabled(db, 'plg_dis', true);
+    setCompanyPluginEnabled(db, 'plg_dis', false);
     expect(listEnabledCompanyPlugins(db, companyId)).not.toContain('plg_dis');
   });
 
   it('启停不存在的 plugin 抛 NOT_FOUND', () => {
-    expect(() => setCompanyPluginEnabled(db, companyId, 'nonexistent', true)).toThrow(AppError);
-  });
-
-  it('不同公司的启停互不影响', () => {
-    const company2 = createCompany(db, { name: 'co2' }).id;
-    makeMcpPlugin('plg_multi');
-    setCompanyPluginEnabled(db, companyId, 'plg_multi', true);
-    expect(listEnabledCompanyPlugins(db, companyId)).toContain('plg_multi');
-    expect(listEnabledCompanyPlugins(db, company2)).not.toContain('plg_multi');
+    expect(() => setCompanyPluginEnabled(db, 'nonexistent', true)).toThrow(AppError);
   });
 });
 
@@ -152,7 +144,7 @@ import {
 } from '../../src/server/domain/plugin-install';
 
 describe('opt-out 治理：平台插件默认全开', () => {
-  it('平台插件默认对公司生效（无需显式启用）', () => {
+  it('平台插件默认对工作台生效（无需显式启用）', () => {
     installPlugin(db, {
       id: 'plg_platform1',
       name: '平台 MCP',
@@ -162,7 +154,7 @@ describe('opt-out 治理：平台插件默认全开', () => {
       manifest: { kind: 'mcp-server', mcp: { transport: 'stdio', command: 'echo' } },
     });
     // 不做任何启用操作，effective 仍应包含它
-    const effective = getEffectivePluginsForCompany(db, companyId);
+    const effective = getEffectivePluginsForCompany(db);
     expect(effective.find((p) => p.id === 'plg_platform1')).toBeTruthy();
   });
 
@@ -175,11 +167,11 @@ describe('opt-out 治理：平台插件默认全开', () => {
       scope: { level: 'platform' },
       manifest: { kind: 'mcp-server', mcp: { transport: 'stdio', command: 'echo' } },
     });
-    setCompanyPluginDecision(db, companyId, 'plg_platform2', 'disabled');
-    const effective = getEffectivePluginsForCompany(db, companyId);
+    setCompanyPluginDecision(db, 'plg_platform2', 'disabled');
+    const effective = getEffectivePluginsForCompany(db);
     expect(effective.find((p) => p.id === 'plg_platform2')).toBeFalsy();
     // listDisabledCompanyPlugins 应返回禁用集合
-    expect(listDisabledCompanyPlugins(db, companyId).has('plg_platform2')).toBe(true);
+    expect(listDisabledCompanyPlugins(db).has('plg_platform2')).toBe(true);
   });
 
   it('撤销禁用（decision=enabled）后恢复生效', () => {
@@ -191,45 +183,24 @@ describe('opt-out 治理：平台插件默认全开', () => {
       scope: { level: 'platform' },
       manifest: { kind: 'mcp-server', mcp: { transport: 'stdio', command: 'echo' } },
     });
-    setCompanyPluginDecision(db, companyId, 'plg_platform3', 'disabled');
-    setCompanyPluginDecision(db, companyId, 'plg_platform3', 'enabled');
-    const effective = getEffectivePluginsForCompany(db, companyId);
+    setCompanyPluginDecision(db, 'plg_platform3', 'disabled');
+    setCompanyPluginDecision(db, 'plg_platform3', 'enabled');
+    const effective = getEffectivePluginsForCompany(db);
     expect(effective.find((p) => p.id === 'plg_platform3')).toBeTruthy();
-  });
-
-  it('A 公司禁用不影响 B 公司', () => {
-    const company2 = createCompany(db, { name: 'coB' }).id;
-    installPlugin(db, {
-      id: 'plg_platform4',
-      name: '平台 MCP',
-      kind: 'mcp-server',
-      source: { kind: 'builtin' },
-      scope: { level: 'platform' },
-      manifest: { kind: 'mcp-server', mcp: { transport: 'stdio', command: 'echo' } },
-    });
-    setCompanyPluginDecision(db, companyId, 'plg_platform4', 'disabled');
-    // A 公司被禁用
-    expect(getEffectivePluginsForCompany(db, companyId).find((p) => p.id === 'plg_platform4')).toBeFalsy();
-    // B 公司仍生效
-    expect(getEffectivePluginsForCompany(db, company2).find((p) => p.id === 'plg_platform4')).toBeTruthy();
   });
 });
 
-describe('opt-out 治理：公司独占插件', () => {
-  it('公司独占插件仅对目标公司生效', () => {
-    const company2 = createCompany(db, { name: 'coB' }).id;
+describe('opt-out 治理：工作台插件', () => {
+  it('工作台独占插件进入 effective 列表', () => {
     installPlugin(db, {
       id: 'plg_exclusive1',
       name: '专属法律 Skill',
       kind: 'skill',
-      source: { kind: 'company', companyId },
-      scope: { level: 'company', companyId },
+      source: { kind: 'workbench', companyId },
+      scope: { level: 'workbench', companyId },
       manifest: { kind: 'skill', skill: { body: '专属能力' } },
     });
-    // 目标公司能看到
-    expect(getEffectivePluginsForCompany(db, companyId).find((p) => p.id === 'plg_exclusive1')).toBeTruthy();
-    // 其他公司看不到
-    expect(getEffectivePluginsForCompany(db, company2).find((p) => p.id === 'plg_exclusive1')).toBeFalsy();
+    expect(getEffectivePluginsForCompany(db).find((p) => p.id === 'plg_exclusive1')).toBeTruthy();
   });
 
   it('getCompanyPluginDecisions 返回三态标注', () => {
@@ -241,8 +212,8 @@ describe('opt-out 治理：公司独占插件', () => {
       scope: { level: 'platform' },
       manifest: { kind: 'skill', skill: { body: 'x' } },
     });
-    setCompanyPluginDecision(db, companyId, 'plg_dec1', 'disabled');
-    const decisions = getCompanyPluginDecisions(db, companyId);
+    setCompanyPluginDecision(db, 'plg_dec1', 'disabled');
+    const decisions = getCompanyPluginDecisions(db);
     expect(decisions.get('plg_dec1')).toBe('disabled');
     // 未决策的插件不在 map 中（UI 据此显示 'default'）
     expect(decisions.has('plg_undecided')).toBe(false);

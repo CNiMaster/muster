@@ -34,7 +34,7 @@ import {
   ensureProjectThreads,
   compactThreadWithMemory,
 } from '../domain/thread';
-import { getCompany } from '../domain/company';
+import { getWorkbench } from '../domain/workbench';
 import { getAgent } from '../domain/agent';
 import { syncAgentMemoryFiles } from '../domain/agent-home';
 import { stageStatus } from '../worktree/manager';
@@ -99,7 +99,7 @@ projectsRouter.post(
     const companyId = companyIdOf(req);
     const project = createProject(db, { companyId, ...input });
     ensureProjectThreads(db, project.id);
-    if (getCompany(db, companyId).kind === 'novel') {
+    if (getWorkbench(db).kind === 'novel') {
       initializeNovelProject(db, project.id);
       registerDefaultNovelScheduleTriggers(db, project.id);
     }
@@ -149,7 +149,6 @@ projectById.post(
       realtime.publish({
         id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         type: result.promoted ? 'publish.staging-promoted' : 'publish.staging-promote-conflict',
-        companyId: project.companyId,
         projectId: project.id,
         occurredAt: new Date().toISOString(),
         payload: { promoted: result.promoted, message: result.message, conflicts: result.conflicts ?? [] },
@@ -179,7 +178,7 @@ projectById.patch(
               phase: previousState,
               outcome: isRollback ? 'rollback' : 'forward',
             },
-            { companyId: project.companyId, projectId: project.id },
+            { projectId: project.id },
           ),
         );
       }
@@ -188,7 +187,7 @@ projectById.patch(
           makeLifecycleEvent(
             'project.rollback',
             { projectId: project.id, from: previousState as ProjectState, to: project.state, reason: 'manual' },
-            { companyId: project.companyId, projectId: project.id },
+            { projectId: project.id },
           ),
         );
       }
@@ -198,7 +197,7 @@ projectById.patch(
           makeLifecycleEvent(
             'project.readiness-passed',
             { projectId: project.id },
-            { companyId: project.companyId, projectId: project.id },
+            { projectId: project.id },
           ),
         );
       }
@@ -206,7 +205,7 @@ projectById.patch(
         makeLifecycleEvent(
           'project.phase-entered',
           { projectId: project.id, phase: project.state, previousPhase: previousState, rollbackFrom: isRollback ? previousState : undefined },
-          { companyId: project.companyId, projectId: project.id },
+          { projectId: project.id },
         ),
       );
       res.json(project);
@@ -225,12 +224,12 @@ projectById.patch(
 );
 
 projectById.get('/project-tasks',asyncHandler(async(req,res)=>res.json(listProjectTasks(getDb(),param(req,'id')))));
-projectById.post('/project-tasks',asyncHandler(async(req,res)=>{const input=z.object({title:z.string().min(1),brief:z.string().optional(),launchBrief:projectLaunchBriefSchema.optional()}).parse(req.body);const projectId=param(req,'id');const task=createProjectTask(getDb(),{projectId,...input,launchState:'draft'});const project=getProject(getDb(),projectId);realtime.publish(makeLifecycleEvent('project-task.created',{projectTaskId:task.id},{companyId:project.companyId,projectId}));res.status(201).json(task);}));
+projectById.post('/project-tasks',asyncHandler(async(req,res)=>{const input=z.object({title:z.string().min(1),brief:z.string().optional(),launchBrief:projectLaunchBriefSchema.optional()}).parse(req.body);const projectId=param(req,'id');const task=createProjectTask(getDb(),{projectId,...input,launchState:'draft'});realtime.publish(makeLifecycleEvent('project-task.created',{projectTaskId:task.id},{projectId}));res.status(201).json(task);}));
 projectById.get('/project-tasks/:projectTaskId',asyncHandler(async(req,res)=>{const task=getProjectTaskInProject(getDb(),param(req,'projectTaskId'),param(req,'id'));res.json({...task,threads:listProjectTaskThreads(getDb(),task.id)});}));
-projectById.post('/project-tasks/:projectTaskId/discover-capabilities',asyncHandler(async(req,res)=>{const projectId=param(req,'id'),projectTask=getProjectTaskInProject(getDb(),param(req,'projectTaskId'),projectId);const brief=projectLaunchBriefSchema.parse(req.body?.launchBrief??projectTask.launchBrief);discoverProjectLaunchCapabilities(getDb(),projectTask.id,brief);const updated=getProjectTaskInProject(getDb(),projectTask.id,projectId),project=getProject(getDb(),projectId);realtime.publish(makeLifecycleEvent('project-task.launch_discovered',{projectTaskId:projectTask.id},{companyId:project.companyId,projectId}));res.json(updated);}));
-projectById.post('/project-tasks/:projectTaskId/confirm-launch',asyncHandler(async(req,res)=>{const projectId=param(req,'id'),projectTask=getProjectTaskInProject(getDb(),param(req,'projectTaskId'),projectId);const brief=projectLaunchBriefSchema.parse(req.body?.launchBrief??projectTask.launchBrief);confirmProjectLaunch(getDb(),projectTask.id,brief);const updated=getProjectTaskInProject(getDb(),projectTask.id,projectId),project=getProject(getDb(),projectId);realtime.publish(makeLifecycleEvent('project-task.launch_confirmed',{projectTaskId:projectTask.id},{companyId:project.companyId,projectId}));res.json(updated);}));
-projectById.post('/project-tasks/:projectTaskId/complete',asyncHandler(async(req,res)=>{const projectId=param(req,'id'),task=completeProjectTask(getDb(),param(req,'projectTaskId'),projectId),project=getProject(getDb(),projectId);realtime.publish(makeLifecycleEvent('project-task.completed',{projectTaskId:task.id},{companyId:project.companyId,projectId}));res.json(task);}));
-projectById.post('/project-tasks/:projectTaskId/archive',asyncHandler(async(req,res)=>{const projectId=param(req,'id'),task=archiveProjectTask(getDb(),param(req,'projectTaskId'),projectId),project=getProject(getDb(),projectId);realtime.publish(makeLifecycleEvent('project-task.archived',{projectTaskId:task.id},{companyId:project.companyId,projectId}));res.json(task);}));
+projectById.post('/project-tasks/:projectTaskId/discover-capabilities',asyncHandler(async(req,res)=>{const projectId=param(req,'id'),projectTask=getProjectTaskInProject(getDb(),param(req,'projectTaskId'),projectId);const brief=projectLaunchBriefSchema.parse(req.body?.launchBrief??projectTask.launchBrief);discoverProjectLaunchCapabilities(getDb(),projectTask.id,brief);const updated=getProjectTaskInProject(getDb(),projectTask.id,projectId);realtime.publish(makeLifecycleEvent('project-task.launch_discovered',{projectTaskId:projectTask.id},{projectId}));res.json(updated);}));
+projectById.post('/project-tasks/:projectTaskId/confirm-launch',asyncHandler(async(req,res)=>{const projectId=param(req,'id'),projectTask=getProjectTaskInProject(getDb(),param(req,'projectTaskId'),projectId);const brief=projectLaunchBriefSchema.parse(req.body?.launchBrief??projectTask.launchBrief);confirmProjectLaunch(getDb(),projectTask.id,brief);const updated=getProjectTaskInProject(getDb(),projectTask.id,projectId);realtime.publish(makeLifecycleEvent('project-task.launch_confirmed',{projectTaskId:projectTask.id},{projectId}));res.json(updated);}));
+projectById.post('/project-tasks/:projectTaskId/complete',asyncHandler(async(req,res)=>{const projectId=param(req,'id'),task=completeProjectTask(getDb(),param(req,'projectTaskId'),projectId);realtime.publish(makeLifecycleEvent('project-task.completed',{projectTaskId:task.id},{projectId}));res.json(task);}));
+projectById.post('/project-tasks/:projectTaskId/archive',asyncHandler(async(req,res)=>{const projectId=param(req,'id'),task=archiveProjectTask(getDb(),param(req,'projectTaskId'),projectId);realtime.publish(makeLifecycleEvent('project-task.archived',{projectTaskId:task.id},{projectId}));res.json(task);}));
 
 // B4 staffing：精确分配员工到项目（按 agentIds 创建 primary thread，区别于 ensureProjectThreads 全公司批量）
 projectById.post('/staff',asyncHandler(async(req,res)=>{const input=z.object({agentIds:z.array(z.string().min(1)).min(1)}).parse(req.body);const projectId=param(req,'id');const threads=input.agentIds.map((agentId)=>ensurePrimaryThread(getDb(),projectId,agentId));res.status(201).json({ok:true,threadIds:threads.map((t)=>t.id)});}));

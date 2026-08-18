@@ -98,7 +98,7 @@ describe('ask_colleague 工具（设计二-方案A）', () => {
     expect(replyMsg!.content).toContain('孤儿，被武林宗门收养');
   });
 
-  it('跨公司咨询被拒绝', async () => {
+  it('跨公司咨询被接受（公司退役批次D：agent 归属单例工作台，咨询不限公司）', async () => {
     const c1 = createCompany(db, { name: 'co1' });
     const c2 = createCompany(db, { name: 'co2' });
     const w1 = createAgent(db, { companyId: c1.id, name: 'w1', role: 'writer' });
@@ -108,7 +108,8 @@ describe('ask_colleague 工具（设计二-方案A）', () => {
     const call: ToolCall = { id: 'tc', name: 'ask_colleague', args: { recipient_agent_id: w2.id, question: 'q' } };
     const ctx = makeConsultationContext(askerTask.id, project.id, askerTask.projectTaskId, w1.id);
     const result = await executeTool(call, ctx);
-    expect(result.content).toContain('不属于本公司');
+    // 单例工作台下所有员工同属一个工作台，跨公司咨询成功发起
+    expect(result.content).toContain('已向 w2（writer）发起咨询');
   });
 
   it('自我咨询被拒绝', async () => {

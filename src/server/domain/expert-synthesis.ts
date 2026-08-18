@@ -26,7 +26,6 @@ import { log } from '../logger';
 
 export interface ExpertCandidate {
   id: string;
-  companyId: string;
   source: 'persona_miss' | 'bee_record' | 'generalist_record';
   sourceTaskId: string | null;
   name: string;
@@ -43,7 +42,7 @@ export interface ExpertCandidate {
 }
 
 interface CandidateRow {
-  id: string; company_id: string; source: string; source_task_id: string | null;
+  id: string; source: string; source_task_id: string | null;
   name: string; domain: string; description: string; soul: string;
   principles_json: string; tools_json: string; status: string;
   created_at: string; updated_at: string; resolved_at: string | null; persona_id?: string | null;
@@ -51,10 +50,9 @@ interface CandidateRow {
 
 const MAX_SIGNALS_PER_TICK = 2;
 
-function fromRow(row: CandidateRow): ExpertCandidate {
+function fromRow(_db: DB, row: CandidateRow): ExpertCandidate {
   return {
     id: row.id,
-    companyId: row.company_id,
     source: row.source as ExpertCandidate['source'],
     sourceTaskId: row.source_task_id,
     name: row.name,
@@ -71,11 +69,11 @@ function fromRow(row: CandidateRow): ExpertCandidate {
 }
 
 /** 沉淀历史（默认最新在前）。 */
-export function listExpertCandidates(db: DB, companyId: string, limit = 50): ExpertCandidate[] {
+export function listExpertCandidates(db: DB, companyId?: string, limit = 50): ExpertCandidate[] {
   const rows = db.prepare(
-    'SELECT * FROM expert_candidate WHERE company_id=? ORDER BY created_at DESC LIMIT ?',
-  ).all(companyId, limit) as CandidateRow[];
-  return rows.map(fromRow);
+    'SELECT * FROM expert_candidate ORDER BY created_at DESC LIMIT ?',
+  ).all(limit) as CandidateRow[];
+  return rows.map((r) => fromRow(db, r));
 }
 
 interface DraftSignal {
@@ -87,26 +85,23 @@ interface DraftSignal {
 }
 
 /** 收集三类沉淀信号（纯查询）。 */
-function collectSignals(db: DB, companyId: string): DraftSignal[] {
+function collectSignals(db: DB, companyId?: string): DraftSignal[] {
   const signals: DraftSignal[] = [];
 
   // a) persona_miss：同 id 重复 ≥2
   const missRows = db.prepare(`
     SELECT json_extract(e.payload_json, '$.requestedPersonaId') AS pid, COUNT(*) AS n
     FROM task_event e
-    JOIN task t ON t.id = e.task_id
-    JOIN project p ON p.id = t.project_id
-    WHERE e.kind='persona_miss' AND p.company_id=?
+    WHERE e.kind='persona_miss'
       AND json_extract(e.payload_json, '$.requestedPersonaId') IS NOT NULL
     GROUP BY pid HAVING n >= 2 ORDER BY n DESC LIMIT 5
-  `).all(companyId) as Array<{ pid: string; n: number }>;
+  `).all() as Array<{ pid: string; n: number }>;
   for (const row of missRows) {
     const samples = db.prepare(`
       SELECT t.title FROM task_event e JOIN task t ON t.id = e.task_id
-      JOIN project p ON p.id = t.project_id
-      WHERE e.kind='persona_miss' AND p.company_id=? AND json_extract(e.payload_json, '$.requestedPersonaId')=?
+      WHERE e.kind='persona_miss' AND json_extract(e.payload_json, '$.requestedPersonaId')=?
       ORDER BY e.occurred_at DESC LIMIT 2
-    `).all(companyId, row.pid) as Array<{ title: string }>;
+    `).all(row.pid) as Array<{ title: string }>;
     signals.push({
       source: 'persona_miss',
       signalKey: `miss:${row.pid}`,
@@ -124,11 +119,10 @@ function collectSignals(db: DB, companyId: string): DraftSignal[] {
     FROM task
     WHERE persona_id IS NULL
       AND json_extract(input_protocol_json, '$.trigger') = 'swarm_bee'
-      AND project_id IN (SELECT id FROM project WHERE company_id=?)
     GROUP BY goal
     HAVING wins >= 3 AND failures = 0
     ORDER BY wins DESC LIMIT 5
-  `).all(companyId) as Array<{ goal: string; wins: number; failures: number }>;
+  `).all() as Array<{ goal: string; wins: number; failures: number }>;
   for (const row of beeRows) {
     if (!row.goal) continue;
     signals.push({
@@ -148,9 +142,8 @@ function collectSignals(db: DB, companyId: string): DraftSignal[] {
       AND (json_extract(input_protocol_json, '$.trigger') IS NULL
            OR json_extract(input_protocol_json, '$.trigger') NOT IN
              ('swarm_bee','swarm_synthesis','swarm_request','debate_round','debate_verdict'))
-      AND project_id IN (SELECT id FROM project WHERE company_id=?)
     LIMIT 200
-  `).all(companyId) as Array<{ title: string }>;
+  `).all() as Array<{ title: string }>;
   const byType = new Map<string, string[]>();
   for (const row of genRows) {
     const type = taskTypeOf(row.title);
@@ -300,10 +293,10 @@ function insertCandidateRow(
   const id = shortId('exc_');
   const at = nowIso();
   db.prepare(`
-    INSERT INTO expert_candidate (id, company_id, source, source_task_id, name, domain, description,
+    INSERT INTO expert_candidate (id, source, source_task_id, name, domain, description,
       soul, principles_json, tools_json, status, signal_key, created_at, updated_at, resolved_at, persona_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, companyId, signal.source, signal.sourceTaskId, draft.name, draft.domain, draft.description,
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, signal.source, signal.sourceTaskId, draft.name, draft.domain, draft.description,
     draft.soul, JSON.stringify(draft.principles), JSON.stringify(draft.tools), status, signal.signalKey, at, at, at, personaId);
 }
 
@@ -316,33 +309,33 @@ function insertCandidateRow(
  *    同名命中即补录历史，不会重复写文件）；
  * 3. 写文件先于落行：崩溃留下的孤儿人设已在库可用，仅历史行由下 tick 同名补偿。
  */
-export async function maybeSynthesizeExpertCandidates(db: DB, companyId: string): Promise<number> {
+export async function maybeSynthesizeExpertCandidates(db: DB, companyId?: string): Promise<number> {
   try {
     const seenSignals = new Set(
-      (db.prepare('SELECT signal_key FROM expert_candidate WHERE company_id=?').all(companyId) as Array<{ signal_key: string }>)
+      (db.prepare('SELECT signal_key FROM expert_candidate').all() as Array<{ signal_key: string }>)
         .map((r) => r.signal_key),
     );
-    const signals = collectSignals(db, companyId).filter((s) => !seenSignals.has(s.signalKey));
+    const signals = collectSignals(db).filter((s) => !seenSignals.has(s.signalKey));
     let created = 0;
     for (const signal of signals.slice(0, MAX_SIGNALS_PER_TICK)) {
-      const draft = sanitizeDraft((await draftWithLlm(db, companyId, signal)) ?? fallbackDraft(signal));
+      const draft = sanitizeDraft((await draftWithLlm(db, companyId ?? '', signal)) ?? fallbackDraft(signal));
       const needle = draft.name.trim().toLowerCase();
       const existing = listPersonas().find((p) => p.name.trim().toLowerCase() === needle);
       if (existing) {
         // 同名终止：自建同名视为该信号已消化（含崩溃孤儿补偿）；预置同名标记跳过
-        insertCandidateRow(db, companyId, signal, draft,
+        insertCandidateRow(db, companyId ?? '', signal, draft,
           existing.source === 'user' ? 'adopted' : 'dismissed',
           existing.source === 'user' ? existing.id : null);
         continue;
       }
       const { personaId } = writeUserPersonaFile(draft);
-      insertCandidateRow(db, companyId, signal, draft, 'adopted', personaId);
+      insertCandidateRow(db, companyId ?? '', signal, draft, 'adopted', personaId);
       created += 1;
-      log.info('expert synthesized (auto-adopted)', { companyId, personaId, source: signal.source, signal: signal.signalKey });
+      log.info('expert synthesized (auto-adopted)', { personaId, source: signal.source, signal: signal.signalKey });
     }
     return created;
   } catch (err) {
-    log.warn('expert synthesis failed', { companyId, err: err instanceof Error ? err.message : String(err) });
+    log.warn('expert synthesis failed', { err: err instanceof Error ? err.message : String(err) });
     return 0;
   }
 }
@@ -351,11 +344,11 @@ export async function maybeSynthesizeExpertCandidates(db: DB, companyId: string)
  * 删除自建人设（沉淀错了/不再需要）：删用户根文件（persona-library）+ 历史行标记 dismissed（留痕不删行）。
  * 只允许删 user/ 前缀人设；预置库不可删。
  */
-export function deleteSynthesizedPersona(db: DB, personaId: string, companyId: string): void {
+export function deleteSynthesizedPersona(db: DB, personaId: string, companyId?: string): void {
   deleteUserPersona(personaId);
   db.prepare(
-    "UPDATE expert_candidate SET status='dismissed', updated_at=? WHERE persona_id=? AND company_id=?",
-  ).run(nowIso(), personaId, companyId);
+    "UPDATE expert_candidate SET status='dismissed', updated_at=? WHERE persona_id=?",
+  ).run(nowIso(), personaId);
   if (getPersona(personaId)) {
     log.warn('deleted persona still visible in cache (will refresh on next scan)', { personaId });
   }

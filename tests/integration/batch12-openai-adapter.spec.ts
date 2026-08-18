@@ -12,6 +12,7 @@ import { estimateCostUSD } from '../../src/server/executors/model-pricing';
 import type { ExecutionContext } from '../../src/server/task-engine/executor';
 import type { Task } from '../../src/server/domain/task';
 import { makeTestDb, type TestDb } from './setup';
+import { setDbForTest, closeDb } from '../../src/server/db/client';
 
 let tdb: TestDb;
 let workdir: string;
@@ -20,6 +21,9 @@ let originalFetch: typeof globalThis.fetch;
 
 beforeEach(() => {
   tdb = makeTestDb();
+  // 公司退役批次D：本测试为纯适配器单测，不依赖开发者本地库；
+  // 显式挂测试库，使 getDb()（usage/trace/review 埋点）解析到已迁移的内存库。
+  setDbForTest(tdb.db);
   workdir = mkdtempSync(join(tmpdir(), 'muster-adapter-'));
   tmpRoots.push(workdir);
   originalFetch = globalThis.fetch;
@@ -27,6 +31,8 @@ beforeEach(() => {
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  closeDb();
+  tdb.close();
   for (const root of tmpRoots) {
     try { rmSync(root, { recursive: true, force: true }); } catch { /* ignore */ }
   }

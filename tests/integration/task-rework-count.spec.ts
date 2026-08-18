@@ -42,13 +42,13 @@ function seed() {
   return { c, lead, p };
 }
 
-function insertPendingReview(reviewId: string, taskId: string, companyId: string, employeeId: string, projectId: string) {
+function insertPendingReview(reviewId: string, taskId: string, employeeId: string, projectId: string) {
   const now = new Date().toISOString();
   db.prepare(
     `INSERT INTO business_review
-       (id, company_id, project_id, task_id, employee_id, review_kind, subject_id, subject_snapshot_json, title, status, created_at)
-     VALUES (?, ?, ?, ?, ?, 'custom', 'subj', '{}', '审阅', 'pending', ?)`,
-  ).run(reviewId, companyId, projectId, taskId, employeeId, now);
+       (id, project_id, task_id, employee_id, review_kind, subject_id, subject_snapshot_json, title, status, created_at)
+     VALUES (?, ?, ?, ?, 'custom', 'subj', '{}', '审阅', 'pending', ?)`,
+  ).run(reviewId, projectId, taskId, employeeId, now);
 }
 
 /** 直接把 task 标记 completed（评级/通过率测试只需 state + rework_count，避免 completeTask 的 running 态前置依赖）。 */
@@ -69,7 +69,7 @@ describe('E1.4 task.rework_count 一等字段', () => {
   it('changes_requested 派返工时递增原 task 计数', () => {
     const { c, lead, p } = seed();
     const t = createTask(db, { projectId: p.id, title: '原任务', assigneeAgentId: lead.id });
-    insertPendingReview('br1', t.id, c.id, lead.id, p.id);
+    insertPendingReview('br1', t.id, lead.id, p.id);
     decideBusinessReview(db, 'br1', { decision: 'changes_requested', feedback: '改', decidedBy: 'user' });
     expect(getTask(db, t.id).reworkCount).toBe(1);
   });
@@ -77,9 +77,9 @@ describe('E1.4 task.rework_count 一等字段', () => {
   it('多次返工累加', () => {
     const { c, lead, p } = seed();
     const t = createTask(db, { projectId: p.id, title: '原任务', assigneeAgentId: lead.id });
-    insertPendingReview('br1', t.id, c.id, lead.id, p.id);
+    insertPendingReview('br1', t.id, lead.id, p.id);
     decideBusinessReview(db, 'br1', { decision: 'changes_requested', feedback: '一改', decidedBy: 'user' });
-    insertPendingReview('br2', t.id, c.id, lead.id, p.id);
+    insertPendingReview('br2', t.id, lead.id, p.id);
     decideBusinessReview(db, 'br2', { decision: 'rejected', feedback: '二改', decidedBy: 'user' });
     expect(getTask(db, t.id).reworkCount).toBe(2);
   });
@@ -87,7 +87,7 @@ describe('E1.4 task.rework_count 一等字段', () => {
   it('approved 不递增', () => {
     const { c, lead, p } = seed();
     const t = createTask(db, { projectId: p.id, title: '原任务', assigneeAgentId: lead.id });
-    insertPendingReview('br', t.id, c.id, lead.id, p.id);
+    insertPendingReview('br', t.id, lead.id, p.id);
     decideBusinessReview(db, 'br', { decision: 'approved', decidedBy: 'user' });
     expect(getTask(db, t.id).reworkCount).toBe(0);
   });
@@ -100,7 +100,7 @@ describe('E1.4 评级质量维度 + 一次通过率', () => {
 
     const tA = createTask(db, { projectId: p.id, title: 'A', assigneeAgentId: lead.id });
     markCompleted(tA.id);
-    insertPendingReview('brA', tA.id, c.id, lead.id, p.id);
+    insertPendingReview('brA', tA.id, lead.id, p.id);
     decideBusinessReview(db, 'brA', { decision: 'changes_requested', feedback: '重做', decidedBy: 'user' });
 
     const tB = createTask(db, { projectId: p.id, title: 'B', assigneeAgentId: other.id });
@@ -120,7 +120,7 @@ describe('E1.4 评级质量维度 + 一次通过率', () => {
     for (let i = 0; i < 5; i++) {
       const t = createTask(db, { projectId: p.id, title: `L${i}`, assigneeAgentId: lead.id });
       markCompleted(t.id);
-      insertPendingReview(`brL${i}`, t.id, c.id, lead.id, p.id);
+      insertPendingReview(`brL${i}`, t.id, lead.id, p.id);
       decideBusinessReview(db, `brL${i}`, { decision: 'changes_requested', feedback: 'x', decidedBy: 'user' });
     }
     for (let i = 0; i < 5; i++) {
@@ -138,7 +138,7 @@ describe('E1.4 评级质量维度 + 一次通过率', () => {
     markCompleted(t1.id);
     const t2 = createTask(db, { projectId: p.id, title: 'bad', assigneeAgentId: lead.id });
     markCompleted(t2.id);
-    insertPendingReview('br', t2.id, c.id, lead.id, p.id);
+    insertPendingReview('br', t2.id, lead.id, p.id);
     decideBusinessReview(db, 'br', { decision: 'changes_requested', feedback: 'x', decidedBy: 'user' });
 
     expect(getOnboardingPassRate(db, { profileId: lead.profileId })).toBe(0.5);
@@ -164,7 +164,7 @@ describe('E1.4 评级质量维度 + 一次通过率', () => {
     markCompleted(tOk.id);
 
     const tBad = createTask(db, { projectId: p.id, title: 'bad', assigneeAgentId: lead.id });
-    insertPendingReview('brX', tBad.id, c.id, lead.id, p.id);
+    insertPendingReview('brX', tBad.id, lead.id, p.id);
     decideBusinessReview(db, 'brX', { decision: 'changes_requested', feedback: '重做', decidedBy: 'user' });
     // 模拟阻塞模式：原 task 被取消（decideBusinessReview 已递增 rework_count）
     db.prepare("UPDATE task SET state='cancelled' WHERE id=?").run(tBad.id);

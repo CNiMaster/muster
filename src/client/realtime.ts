@@ -8,7 +8,6 @@ export type QueryKey = readonly unknown[];
 // ===== WP5 流式输出：message.delta 内存流订阅（不进 React Query；message.created 才失效刷新） =====
 export interface StreamDeltaInfo {
   taskId: string;
-  companyId?: string;
   projectId?: string;
   agentId?: string;
   projectTaskId?: string | null;
@@ -35,7 +34,7 @@ export function queryKeysForRealtimeEvent(event: RealtimeEvent): QueryKey[] {
   // 改版 B4：对话消息实时刷新——message.created 失效所有消息线程（4 秒轮询降级为兜底）
   if (event.type === 'message.created') keys.push(['messages']);
   // L1：工作台状态实时刷新（关机进度/胶囊状态；公司退役批次B 单例键）
-  if (event.type === 'company.state') {
+  if (event.type === 'company.state' || event.type === 'workbench.state') {
     keys.push(['workbench']);
     keys.push(['workbench-cockpit']);
   }
@@ -73,11 +72,12 @@ export function queryKeysForRealtimeEvent(event: RealtimeEvent): QueryKey[] {
       if (typeof projectTaskId === 'string') keys.push(['project-task', event.projectId, projectTaskId]);
     }
   }
-  if (event.companyId) {
-    keys.push(['events']);
-    if (event.type.startsWith('approval.') || event.type.startsWith('project-task.') || event.type.startsWith('session.')) keys.push(['workbench-cockpit']);
-    // task.* 事件秒级刷新工位墙/员工状态看板（不再依赖 5s 轮询）
-    if (event.type.startsWith('task.')) keys.push(['status-board']);
+  if (event.type.startsWith('approval.') || event.type.startsWith('project-task.') || event.type.startsWith('session.')) {
+    keys.push(['events'], ['workbench-cockpit']);
+  }
+  // task.* 事件秒级刷新工位墙/员工状态看板（不再依赖 5s 轮询）
+  if (event.type.startsWith('task.')) {
+    keys.push(['events'], ['status-board']);
   }
   if (event.taskId) {
     keys.splice(
@@ -115,7 +115,6 @@ export function RealtimeSync(): null {
             for (const handler of streamHandlers) {
               handler({
                 taskId: event.taskId ?? '',
-                companyId: event.companyId,
                 projectId: event.projectId,
                 agentId: payload.agentId,
                 projectTaskId: payload.projectTaskId,

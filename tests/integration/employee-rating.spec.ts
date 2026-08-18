@@ -38,7 +38,7 @@ beforeEach(() => {
   });
   agentId = agent.id;
   profileId = agent.profileId;
-  db.prepare("UPDATE company SET state='online', first_agent_id=? WHERE id=?").run(agentId, companyId);
+  db.prepare("UPDATE workbench SET state='online', first_agent_id=? WHERE id=?").run(agentId, companyId);
   projectId = createProject(db, { companyId, name: '项目', initialState: 'active' }).id;
 });
 

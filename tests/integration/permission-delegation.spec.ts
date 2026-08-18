@@ -39,9 +39,9 @@ beforeEach(() => {
     companyId, name: '员工', role: 'engineer', systemPrompt: '', skills: [], tools: [], permissions: {}, executor: {},
   }).id;
   // 下班建 org 边，再上线
-  db.prepare("UPDATE company SET state='off', first_agent_id=? WHERE id=?").run(managerId, companyId);
+  db.prepare("UPDATE workbench SET state='off', first_agent_id=? WHERE id=?").run(managerId, companyId);
   addRelationship(db, { companyId, kind: 'org', sourceId: managerId, targetId: employeeId });
-  db.prepare("UPDATE company SET state='online' WHERE id=?").run(companyId);
+  db.prepare("UPDATE workbench SET state='online' WHERE id=?").run(companyId);
   projectId = createProject(db, { companyId, name: '审计项目', initialState: 'active' }).id;
 });
 
@@ -53,11 +53,11 @@ describe('权限委托链：findDirectManager', () => {
   });
 
   it('无 org 边时 fallback 到公司第一负责人', () => {
-    db.prepare("UPDATE company SET state='off' WHERE id=?").run(companyId);
+    db.prepare("UPDATE workbench SET state='off' WHERE id=?").run(companyId);
     const loner = createAgent(db, {
       companyId, name: '孤员', role: 'temp', systemPrompt: '', skills: [], tools: [], permissions: {}, executor: {},
     }).id;
-    db.prepare("UPDATE company SET state='online' WHERE id=?").run(companyId);
+    db.prepare("UPDATE workbench SET state='online' WHERE id=?").run(companyId);
     expect(findDirectManager(db, loner)).toBe(managerId); // firstAgentId
   });
 
@@ -108,11 +108,11 @@ describe('权限委托链：申请→审批', () => {
   });
 
   it('非审批人不能批准', () => {
-    db.prepare("UPDATE company SET state='off' WHERE id=?").run(companyId);
+    db.prepare("UPDATE workbench SET state='off' WHERE id=?").run(companyId);
     const other = createAgent(db, {
       companyId, name: '其他人', role: 'temp', systemPrompt: '', skills: [], tools: [], permissions: {}, executor: {},
     }).id;
-    db.prepare("UPDATE company SET state='online' WHERE id=?").run(companyId);
+    db.prepare("UPDATE workbench SET state='online' WHERE id=?").run(companyId);
     const req = createPermissionChangeRequest(db, {
       companyId,
       requesterEmployeeId: employeeId,
@@ -123,12 +123,12 @@ describe('权限委托链：申请→审批', () => {
   });
 
   it('M-4：审批人未解析时（approverEmployeeId 为 null）不能批准/拒绝', () => {
-    // 无 org 边 + 公司无第一负责人 → resolveApprover 返回 null
-    db.prepare("UPDATE company SET state='off', first_agent_id=NULL WHERE id=?").run(companyId);
+    // 无 org 边 + 工作台无第一负责人 → resolveApprover 返回 null
+    db.prepare("UPDATE workbench SET state='off', first_agent_id=NULL WHERE id=?").run(companyId);
     const loner = createAgent(db, {
       companyId, name: '无负责人员工', role: 'temp', systemPrompt: '', skills: [], tools: [], permissions: {}, executor: {},
     }).id;
-    db.prepare("UPDATE company SET state='online' WHERE id=?").run(companyId);
+    db.prepare("UPDATE workbench SET state='online' WHERE id=?").run(companyId);
     const req = createPermissionChangeRequest(db, {
       companyId,
       requesterEmployeeId: loner,

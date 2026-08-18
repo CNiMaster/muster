@@ -1,21 +1,21 @@
 import type { CompanyCockpitDTO } from '../../shared/types';
 import type { DB } from '../db/client';
-import { getCompany } from './company';
+import { getWorkbench } from './workbench';
 import { listProjects } from './project';
 import { getEmploymentHealth } from './executor-health';
 
-export function getCompanyCockpit(db: DB, companyId: string): CompanyCockpitDTO {
-  const company = getCompany(db, companyId);
+export function getWorkbenchCockpit(db: DB): CompanyCockpitDTO {
+  const company = getWorkbench(db);
   // Review 修复 I2：收件箱项目（settings.inbox）是对话基础设施，不进驾驶舱计数与"继续当前项目"建议。
-  const projects = listProjects(db, companyId).filter((p) => (p.settings as Record<string, unknown>)?.inbox !== true);
-  const employeeRows = db.prepare(`SELECT ce.id,ad.availability_state FROM company_employee ce JOIN agent_definition ad ON ad.id=ce.legacy_agent_id WHERE ce.company_id=?`).all(companyId) as Array<{id:string;availability_state:string}>;
+  const projects = listProjects(db, company.id).filter((p) => (p.settings as Record<string, unknown>)?.inbox !== true);
+  const employeeRows = db.prepare(`SELECT ce.id,ad.availability_state FROM company_employee ce JOIN agent_definition ad ON ad.id=ce.legacy_agent_id`).all() as Array<{id:string;availability_state:string}>;
   const employees = { total: employeeRows.length, online: company.state === 'online' ? employeeRows.filter((row) => row.availability_state === 'online').length : 0, blocked: employeeRows.filter((row) => getEmploymentHealth(db, row.id).state !== 'ready').length };
   const pending = (db.prepare(`
     SELECT COUNT(*) AS count
     FROM permission_approval pa
     JOIN company_employee ce ON ce.id=pa.employee_id
-    WHERE ce.company_id=? AND pa.status='pending'
-  `).get(companyId) as { count: number }).count;
+    WHERE pa.status='pending'
+  `).get() as { count: number }).count;
   // 组织 = f(活)：公司模板缺岗告警已随固定岗位模板移除，角色由任务穿戴人设动态生成。
   const roleGaps: CompanyCockpitDTO['roleGaps'] = [];
   const active = projects.filter((project) => project.state === 'active').length;
@@ -45,7 +45,6 @@ export function getCompanyCockpit(db: DB, companyId: string): CompanyCockpitDTO 
   }
 
   return {
-    companyId,
     companyState: company.state,
     employees,
     projects: { total: projects.length, active, attention },

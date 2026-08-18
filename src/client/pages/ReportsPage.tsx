@@ -51,10 +51,7 @@ export function ReportsPage(): React.ReactElement {
         onSuccess: (data) => {
           toast('success', '复盘周期已开启，工作台已挂起等待复盘');
           setActiveReportId(data.id);
-          if (project?.companyId) {
-            qc.invalidateQueries({ queryKey: ['company', project.companyId] });
-            qc.invalidateQueries({ queryKey: ['companies'] });
-          }
+          qc.invalidateQueries({ queryKey: ['workbench'] });
           refetch();
         },
         onError: (e) => toast('error', (e as { message?: string }).message ?? '开启失败'),
@@ -80,10 +77,7 @@ export function ReportsPage(): React.ReactElement {
     closeReport.mutate(reportId, {
       onSuccess: () => {
         toast('success', '复盘已关闭，已向第一负责人派发修正任务');
-        if (project?.companyId) {
-          qc.invalidateQueries({ queryKey: ['company', project.companyId] });
-          qc.invalidateQueries({ queryKey: ['companies'] });
-        }
+        qc.invalidateQueries({ queryKey: ['workbench'] });
         refetch();
       },
       onError: (e) => toast('error', (e as { message?: string }).message ?? '关闭失败'),
@@ -91,7 +85,6 @@ export function ReportsPage(): React.ReactElement {
   };
 
   const resumeCompany = (): void => {
-    if (!project?.companyId) return;
     companyAction.mutate(
       { action: 'resume' },
       {

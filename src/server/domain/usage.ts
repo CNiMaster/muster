@@ -117,15 +117,11 @@ export function summarizeAgentUsage(db: DB, projectId: string, rootAgentId: stri
   return aggregate(rows);
 }
 
-/** 按公司聚合：汇总该公司所有项目的用量（PRD Phase 3.7）。 */
-export function summarizeCompanyUsage(db: DB, companyId: string): UsageSummary {
+/** 按工作台聚合：汇总所有项目的用量。 */
+export function summarizeCompanyUsage(db: DB, companyId?: string): UsageSummary {
   const rows = db
-    .prepare(
-      `SELECT u.* FROM usage_record u
-       JOIN project p ON p.id = u.project_id
-       WHERE p.company_id = ?`,
-    )
-    .all(companyId) as any[];
+    .prepare('SELECT * FROM usage_record')
+    .all() as any[];
   return aggregate(rows);
 }
 

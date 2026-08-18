@@ -67,7 +67,7 @@ describe('assembleContext 人设段注入', () => {
     expect(context.systemPrompt).not.toContain('# 本次人设');
     expect(context.systemPrompt).toContain('# 员工身份');
     expect(context.systemPrompt).toContain('稳定身份：谨慎验证');
-    expect(context.systemPrompt).toContain('# 公司章程');
+    expect(context.systemPrompt).toContain('# 工作台章程');
     expect(context.systemPrompt).toContain('公司章程内容');
   });
 
@@ -87,7 +87,7 @@ describe('assembleContext 人设段注入', () => {
     expect(sp).toContain(persona!.name);
     expect(sp).toContain(persona!.soul.slice(0, 30));
     expect(sp.indexOf('# 员工身份')).toBeLessThan(sp.indexOf('# 本次人设'));
-    expect(sp.indexOf('# 本次人设')).toBeLessThan(sp.indexOf('# 公司章程'));
+    expect(sp.indexOf('# 本次人设')).toBeLessThan(sp.indexOf('# 工作台章程'));
     // 工作要点来自 persona 的关键规则
     if (persona!.principles.length > 0) {
       expect(sp).toContain(persona!.principles[0]!.slice(0, 20));

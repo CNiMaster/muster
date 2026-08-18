@@ -82,7 +82,7 @@ describe('讨论室 domain（设计二-方案B）', () => {
       .toThrow(/至少需要 2/);
   });
 
-  it('跨公司参与者被拒绝', () => {
+  it.skip('跨公司参与者被拒绝（单例工作台退役多公司隔离）', () => {
     const c2 = createCompany(db, { name: 'co2' });
     const outsider = createAgent(db, { companyId: c2.id, name: 'out', role: 'x' });
     const { lead, writer, project } = fixture();

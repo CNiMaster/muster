@@ -27,15 +27,15 @@ export interface AssembledTools {
 
 /**
  * 为一次 task 执行装配工具集。
- * companyId 决定哪些 MCP plugin 生效（opt-out：平台默认 - 显式禁用 + 公司独占）。
+ * 生效集合是单例工作台的 opt-out 决策（平台默认 - 显式禁用 + 工作台独占）。
  * 无生效 plugin 时返回纯内置 registry（向后兼容 B1/B2）。
  */
-export async function assembleTools(db: DB, companyId: string): Promise<AssembledTools> {
+export async function assembleTools(db: DB): Promise<AssembledTools> {
   const registry = createBuiltinToolRegistry();
   const pool = new McpClientPool();
 
   // 查实际生效的 plugin（opt-out 计算：平台默认全开 - 显式禁用 + 公司独占）
-  const effectivePlugins = getEffectivePluginsForCompany(db, companyId);
+  const effectivePlugins = getEffectivePluginsForCompany(db);
 
   // 过滤出 MCP server 类型的 plugin
   const mcpPlugins = effectivePlugins.filter((p) => p.kind === 'mcp-server');

@@ -3,11 +3,14 @@
  * 参考: ChenJinCloud/codex-closeout-archive
  */
 import type { DB } from '../db/client';
-import { getTask, type Task } from './task';
 import { getProject } from './project';
-import { getCompany } from './company';
-import { getPersona } from './persona-library';
+import { getWorkbenchOrNull } from './workbench';
+import { getTask } from './task';
+import { listArtifacts } from './artifact';
+import { listTaskMessages } from './task-message';
+import { listTaskEvents } from './task-event';
 import { matchBlueprints } from './blueprint';
+import { getPersona } from './persona-library';
 import { shortId, nowIso } from '../../shared/utils';
 import { log } from '../logger';
 
@@ -60,7 +63,6 @@ export interface TaskCloseoutSummary {
   id: string;
   taskId: string;
   projectId: string;
-  companyId: string;
   blueprintId: string | null;
   personaId: string | null;
   isUserOverride: boolean;
@@ -75,7 +77,6 @@ interface SummaryRow {
   id: string;
   task_id: string;
   project_id: string;
-  company_id: string;
   blueprint_id: string | null;
   persona_id: string | null;
   is_user_override: number;
@@ -86,12 +87,11 @@ interface SummaryRow {
   updated_at: string;
 }
 
-function fromRow(row: SummaryRow): TaskCloseoutSummary {
+function fromRow(_db: DB, row: SummaryRow): TaskCloseoutSummary {
   return {
     id: row.id,
     taskId: row.task_id,
     projectId: row.project_id,
-    companyId: row.company_id,
     blueprintId: row.blueprint_id,
     personaId: row.persona_id,
     isUserOverride: row.is_user_override === 1,
@@ -106,7 +106,6 @@ function fromRow(row: SummaryRow): TaskCloseoutSummary {
 export function generateTaskCloseoutSummary(db: DB, taskId: string): TaskCloseoutSummary {
   const task = getTask(db, taskId);
   const project = getProject(db, task.projectId);
-  const company = getCompany(db, project.companyId);
   const persona = task.personaId ? getPersona(task.personaId) : null;
 
   const staffingMode = (task.inputProtocol.staffingMode as 'user_override' | 'official_benchmark') ?? 'official_benchmark';
@@ -158,7 +157,7 @@ export function generateTaskCloseoutSummary(db: DB, taskId: string): TaskCloseou
       : `官方基准人设「${persona?.name || '专家'}」按既定打法执行完成。`;
 
   // 5. 相关打法推荐
-  const relatedMatches = matchBlueprints(db, company.id, task.title, 3);
+  const relatedMatches = matchBlueprints(db, undefined, task.title, 3);
   const relatedBlueprints = relatedMatches.map((m) => ({
     id: m.blueprint.id,
     label: m.blueprint.label,
@@ -249,21 +248,21 @@ ${relatedBlueprints.length > 0 ? relatedBlueprints.map((r) => `- 关联打法: [
     db.prepare(
       `UPDATE task_closeout_summary SET sections_json=?, closeout_markdown=?, status=?, updated_at=? WHERE id=?`,
     ).run(JSON.stringify(sections), md, task.state, now, existing.id);
-    return fromRow(db.prepare('SELECT * FROM task_closeout_summary WHERE id=?').get(existing.id) as SummaryRow);
+    return fromRow(db, db.prepare('SELECT * FROM task_closeout_summary WHERE id=?').get(existing.id) as SummaryRow);
   }
 
   const id = shortId('tcs_');
   db.prepare(
-    `INSERT INTO task_closeout_summary (id, task_id, project_id, company_id, blueprint_id, persona_id, is_user_override, sections_json, closeout_markdown, status, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO task_closeout_summary (id, task_id, project_id, blueprint_id, persona_id, is_user_override, sections_json, closeout_markdown, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
-    id, taskId, project.id, company.id, blueprintMatched, task.personaId,
+    id, taskId, project.id, blueprintMatched, task.personaId,
     isUserOverride ? 1 : 0, JSON.stringify(sections), md, task.state, now, now,
   );
-  return fromRow(db.prepare('SELECT * FROM task_closeout_summary WHERE id=?').get(id) as SummaryRow);
+  return fromRow(db, db.prepare('SELECT * FROM task_closeout_summary WHERE id=?').get(id) as SummaryRow);
 }
 
 export function getTaskCloseoutSummary(db: DB, taskId: string): TaskCloseoutSummary | null {
   const row = db.prepare('SELECT * FROM task_closeout_summary WHERE task_id=?').get(taskId) as SummaryRow | undefined;
-  return row ? fromRow(row) : null;
+  return row ? fromRow(db, row) : null;
 }

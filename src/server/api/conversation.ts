@@ -18,7 +18,7 @@ companyMessagesRouter.get(
   '/',
   asyncHandler(async (req, res) => {
     const agentId = typeof req.query.agentId === 'string' ? req.query.agentId : undefined;
-    res.json(listMessages(getDb(), 'company', companyIdOf(req), agentId));
+    res.json(listMessages(getDb(), 'workbench', companyIdOf(req), agentId));
   }),
 );
 companyMessagesRouter.post(
@@ -39,7 +39,7 @@ companyMessagesRouter.post(
         options: optionsSchema.optional(),
       })
       .parse(req.body);
-    const r = postUserMessage(getDb(), { scopeKind: 'company', scopeId: companyIdOf(req), content, mentions, projectTaskId, attachments, options });
+    const r = postUserMessage(getDb(), { scopeKind: 'workbench', scopeId: companyIdOf(req), content, mentions, projectTaskId, attachments, options });
     res.status(201).json(r);
   }),
 );

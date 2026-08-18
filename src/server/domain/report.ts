@@ -94,7 +94,7 @@ function nextCycleNo(db: DB, projectId: string): number {
  */
 function buildSummary(db: DB, projectId: string): Record<string, unknown> {
   const project = getProject(db, projectId);
-  const agents = listAgents(db, project.companyId);
+  const agents = listAgents(db);
   const tasks = listTasks(db, projectId);
   const byAgent = new Map<string, { completed: number; blocked: number; summaries: string[] }>();
 

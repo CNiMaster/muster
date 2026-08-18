@@ -35,15 +35,6 @@ export interface CredentialDefinition {
   updatedAt: string;
 }
 
-export interface CompanyCredential {
-  companyId: string;
-  credentialDefinitionId: string;
-  overrideKey: string | null;
-  enabled: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-
 interface CredentialDefinitionRow {
   id: string;
   name: string;
@@ -53,15 +44,6 @@ interface CredentialDefinitionRow {
   description: string;
   applicable_executors: string;
   is_default: number;
-  created_at: string;
-  updated_at: string;
-}
-
-interface CompanyCredentialRow {
-  company_id: string;
-  credential_definition_id: string;
-  override_key: string | null;
-  enabled: number;
   created_at: string;
   updated_at: string;
 }
@@ -76,17 +58,6 @@ function defFromRow(row: CredentialDefinitionRow): CredentialDefinition {
     description: row.description,
     applicableExecutors: row.applicable_executors ? row.applicable_executors.split(',').filter(Boolean) : [],
     isDefault: row.is_default === 1,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
-
-function companyCredFromRow(row: CompanyCredentialRow): CompanyCredential {
-  return {
-    companyId: row.company_id,
-    credentialDefinitionId: row.credential_definition_id,
-    overrideKey: row.override_key,
-    enabled: row.enabled === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -264,12 +235,10 @@ export function setEmployeeCredentialOverride(profileId: string, definitionId: s
  *
  * @param db 数据库
  * @param profileId 员工档案 ID(可空,跳过员工层)
- * @param companyId 公司 ID(可空,跳过公司层)
  * @param definitionId 凭据定义 ID
  * @returns 最终生效的环境变量名;无匹配定义时返回 null
  */
-export function resolveCredentialKey(db: DB, profileId: string | null, companyId: string | null, definitionId: string, profileRef?: string): string | null {
-  void companyId; // 公司退役 D4-1：公司级覆盖层已退役（三级→两级），参数留待物理去列批清理
+export function resolveCredentialKey(db: DB, profileId: string | null, definitionId: string, profileRef?: string): string | null {
   // ① 员工级覆盖
   if (profileId) {
     const overrides = readEmployeeCredentialOverrides(profileId);
@@ -287,7 +256,7 @@ export function resolveCredentialKey(db: DB, profileId: string | null, companyId
  *
  * 逻辑:
  * 1. 找出 applicable_executors 包含该 provider 的凭据定义(通常只有一个)
- * 2. 对它做三层解析
+ * 2. 对它做两层解析（员工 > 档案 > 平台）
  * 3. 若无匹配定义,回退到 legacy extractApiKeyEnv 值或 provider 默认(向后兼容)
  *
  * @param legacyEnv 旧版 agent.executor.apiKeyEnv(向后兼容)
@@ -296,7 +265,6 @@ export function resolveCredentialKey(db: DB, profileId: string | null, companyId
 export function resolveExecutorCredentialEnv(
   db: DB,
   profileId: string | null,
-  companyId: string | null,
   provider: string,
   legacyEnv?: string,
   providerFallback?: string,
@@ -308,7 +276,7 @@ export function resolveExecutorCredentialEnv(
   for (const def of allDefs) {
     const executors = def.applicable_executors ? def.applicable_executors.split(',').map((s) => s.trim()) : [];
     if (!executors.includes(provider)) continue;
-    const resolved = resolveCredentialKey(db, profileId, companyId, def.id, profileRef);
+    const resolved = resolveCredentialKey(db, profileId, def.id, profileRef);
     if (resolved) return resolved;
   }
   // 回退链:档案级显式 env(无匹配定义时直接生效,如未注册的自定义 provider) → legacy apiKeyEnv → provider 默认

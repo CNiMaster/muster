@@ -91,18 +91,6 @@ const r3 = await runSuite('B2B 外包决策树', async (check) => {
     assertEq(r.body.decision.path, 'recruit', `应 recruit，实际 ${r.body.decision.path}`);
     assert(!!r.body.decision.tempAgentId, '有 tempAgentId');
   });
-
-  await check('列出甲方契约（source）', async () => {
-    const r = await api.get(`/api/outsource/contracts?role=source`);
-    assertStatus(r, 200, 'source 契约');
-    assert(Array.isArray(r.body), '返回数组');
-  });
-
-  await check('列出乙方契约（target）', async () => {
-    const r = await api.get(`/api/outsource/contracts?role=target`);
-    assertStatus(r, 200, 'target 契约');
-    assert(Array.isArray(r.body), '返回数组');
-  });
 });
 
 // 蓝图组织批次5：B2B 外包拆件退役——dispatch 不再创建公司间契约（按公司找乙方已删除）。

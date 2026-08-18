@@ -193,5 +193,5 @@ function sameClaudeSource(source: Plugin['source'], name: string): boolean {
 }
 
 function toPluginScope(scope: PresetInstallScope): PluginScope {
-  return scope.level === 'platform' ? { level: 'platform' } : { level: 'company', companyId: scope.companyId };
+  return scope.level === 'platform' ? { level: 'platform' } : { level: 'workbench' };
 }

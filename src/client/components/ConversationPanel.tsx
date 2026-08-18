@@ -50,8 +50,8 @@ export function ConversationPanel({ scope, scopeId, title, recipientAgentId, pro
   };
 
   useEffect(() => {
-    const scopeMatch = (info: { companyId?: string; projectId?: string; agentId?: string }): boolean => {
-      if (scope === 'company' ? info.companyId !== scopeId : info.projectId !== scopeId) return false;
+    const scopeMatch = (info: { projectId?: string; agentId?: string }): boolean => {
+      if (scope !== 'company' && info.projectId !== scopeId) return false;
       // 单聊面板只看本人的流；群聊/负责人面板接受 scope 内全部任务（蜂群工蜂等并发流互不抢占）
       return recipientAgentId ? info.agentId === recipientAgentId : true;
     };

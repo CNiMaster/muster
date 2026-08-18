@@ -71,16 +71,16 @@ describe('permission policy = approval strategy × allowed scope', () => {
     } finally {close();}
   });
 
-  it('company-scoped rule retired (D4-3)：rule.company_id 不再限制匹配（规则全平台化）', () => {
+  it('company-scoped rule retired (D4-3→批次D)：rule.company_id 列已物理删除（规则全平台化）', () => {
     const { db, close } = makeTestDb();
     try {
       const policy = createPermissionPolicy(db, { name: '测试', approvalStrategy: 'ask-by-rule', scope: 'task' });
       savePermissionRule(db, policy.id, { effect: 'deny', action: 'run-command', commandPattern: '^rm\\b' });
-      // 历史数据形状：规则残留 company_id（与请求不同）
-      db.prepare('UPDATE permission_rule SET company_id=? WHERE policy_id=?').run('co_other', policy.id);
+      // 批次 D 迁移 E 已 DROP permission_rule.company_id——历史残留形状不复存在
+      const cols = (db.prepare('PRAGMA table_info(permission_rule)').all() as Array<{ name: string }>).map((c) => c.name);
+      expect(cols).not.toContain('company_id');
       const res = evaluatePermission(db, policy.id, {
         action: 'run-command', command: 'rm file', path: '/p', taskRoot: '/p', projectRoot: '/p', workspaceRoot: '/',
-        companyId: 'co_default',
       });
       expect(res.decision).toBe('deny'); // 公司条件退役，规则命中
     } finally { close(); }
@@ -93,10 +93,10 @@ describe('permission policy = approval strategy × allowed scope', () => {
       const lead = createAgent(db, { companyId: company.id, name: '负责人', role: 'lead' });
       const policy = createPermissionPolicy(db, { name: 'P', approvalStrategy: 'ask-always', scope: 'task' });
 
-      db.prepare("UPDATE company SET state='off' WHERE id=?").run(company.id);
+      db.prepare("UPDATE workbench SET state='off' WHERE id=?").run(company.id);
       expect(() => bindEmployeePermissionPolicy(db, lead.id, policy.id)).not.toThrow();
 
-      db.prepare("UPDATE company SET state='online' WHERE id=?").run(company.id);
+      db.prepare("UPDATE workbench SET state='online' WHERE id=?").run(company.id);
       expect(() => bindEmployeePermissionPolicy(db, lead.id, policy.id)).toThrowError(/下班/);
     } finally { close(); }
   });

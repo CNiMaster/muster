@@ -95,7 +95,7 @@ describe('业务审批闭环', () => {
 
   it('parallel 模式：提交后不阻塞 Task', () => {
     const c = createCompany(db, { name: '并行公司' });
-    db.prepare("UPDATE company SET review_mode='parallel' WHERE id=?").run(c.id);
+    db.prepare("UPDATE workbench SET review_mode='parallel' WHERE id=?").run(c.id);
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/p3', firstAgentId: lead.id });
     const task = createTask(db, { projectId: p.id, title: '任务', assigneeAgentId: lead.id });

@@ -10,7 +10,7 @@
  */
 import type { DB } from '../db/client';
 import { createAgent } from './agent';
-import { getCompany } from './company';
+import { getWorkbench } from './workbench';
 import { getRoleTemplate } from './permission-templates';
 import { bindEmployeePermissionPolicy } from './permission';
 
@@ -37,15 +37,14 @@ const ACCEPTANCE_PROMPT = `你是「${ACCEPTANCE_OFFICER_NAME}」，工作台的
  * - 执行器走三级默认路由（不绑固定档案，继承工作台默认）
  * - userDirectContact 默认开（可对话）
  */
-export function ensureAcceptanceOfficer(db: DB, companyId: string): string {
-  getCompany(db, companyId);
+export function ensureAcceptanceOfficer(db: DB): string {
+  getWorkbench(db);
   const existing = db
-    .prepare('SELECT id FROM agent_definition WHERE company_id=? AND role=? AND is_inspector=1 LIMIT 1')
-    .get(companyId, ACCEPTANCE_OFFICER_ROLE) as { id: string } | undefined;
+    .prepare('SELECT id FROM agent_definition WHERE role=? AND is_inspector=1 LIMIT 1')
+    .get(ACCEPTANCE_OFFICER_ROLE) as { id: string } | undefined;
   if (existing) return existing.id;
 
   const agent = createAgent(db, {
-    companyId,
     name: ACCEPTANCE_OFFICER_NAME,
     role: ACCEPTANCE_OFFICER_ROLE,
     responsibilities: '收尾验收：对照验收标准独立判定成果是否可交付；默认自动验收，用户可对话调整。',

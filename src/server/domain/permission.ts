@@ -4,6 +4,7 @@ import { AppError, ErrorCode } from '../../shared/errors';
 import { resumeTaskAfterApproval } from './task';
 import { resolveSuspensionByTask } from './task-suspension';
 import { nowIso, shortId } from '../../shared/utils';
+import { getWorkbench } from './workbench';
 
 export type ApprovalStrategy = 'ask-always' | 'ask-by-rule' | 'no-approval' | 'deny';
 export type PermissionScope = 'task' | 'project' | 'workspace' | 'selected-directories' | 'device';
@@ -15,7 +16,7 @@ export interface PermissionRequest { action: string; command?: string; path?: st
 export interface PermissionRuleInput { effect: 'allow'|'deny'; action?: string; commandPattern?: string; pathPrefix?: string; fileExtension?: string; employeeId?: string; projectId?: string; taskId?: string; network?: boolean; subprocess?: boolean; expiresAt?: string }
 
 type PolicyRow = { id:string; name:string; approval_strategy:ApprovalStrategy; scope:PermissionScope; selected_directories_json:string; created_at:string; updated_at:string };
-type RuleRow = { id:string; policy_id:string; effect:'allow'|'deny'; action:string|null; command_pattern:string|null; path_prefix:string|null; file_extension:string|null; employee_id:string|null; company_id:string|null; project_id:string|null; task_id:string|null; network:number|null; subprocess:number|null; expires_at:string|null };
+type RuleRow = { id:string; policy_id:string; effect:'allow'|'deny'; action:string|null; command_pattern:string|null; path_prefix:string|null; file_extension:string|null; employee_id:string|null; project_id:string|null; task_id:string|null; network:number|null; subprocess:number|null; expires_at:string|null };
 
 function fromRow(row: PolicyRow): PermissionPolicy { return { id:row.id, name:row.name, approvalStrategy:row.approval_strategy, scope:row.scope, selectedDirectories:JSON.parse(row.selected_directories_json), createdAt:row.created_at, updatedAt:row.updated_at }; }
 export function createPermissionPolicy(db:DB,input:{name:string;approvalStrategy:ApprovalStrategy;scope:PermissionScope;selectedDirectories?:string[]}):PermissionPolicy { const now=nowIso(); const id=shortId('pp_'); db.prepare('INSERT INTO permission_policy (id,name,approval_strategy,scope,selected_directories_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?)').run(id,input.name.trim(),input.approvalStrategy,input.scope,JSON.stringify(input.selectedDirectories??[]),now,now); return getPermissionPolicy(db,id); }
@@ -30,18 +31,16 @@ export function listApprovalQueue(db:DB,isOnline:(id:string)=>boolean,now=Date.n
   });
 }
 export function getEmployeePermissionPolicy(db:DB,employeeId:string):PermissionPolicy|null { const row=db.prepare('SELECT permission_policy_id FROM company_employee WHERE id=?').get(employeeId) as {permission_policy_id:string|null}|undefined;if(!row)throw new AppError(ErrorCode.NOT_FOUND,`公司员工不存在: ${employeeId}`);return row.permission_policy_id?getPermissionPolicy(db,row.permission_policy_id):null; }
-export function bindEmployeePermissionPolicy(db:DB,employeeId:string,policyId:string,opts?:{skipLock?:boolean}):void { getPermissionPolicy(db,policyId); const employment=db.prepare('SELECT c.state FROM company_employee ce JOIN company c ON c.id=ce.company_id WHERE ce.id=?').get(employeeId) as {state:string}|undefined; if(!employment)throw new AppError(ErrorCode.NOT_FOUND,`公司员工不存在: ${employeeId}`);if(!opts?.skipLock&&employment.state!=='off')throw new AppError(ErrorCode.CONFLICT,'公司下班后才能修改员工权限'); const result=db.prepare('UPDATE company_employee SET permission_policy_id=?,updated_at=? WHERE id=?').run(policyId,nowIso(),employeeId); if(result.changes!==1) throw new AppError(ErrorCode.NOT_FOUND,`公司员工不存在: ${employeeId}`); }
+export function bindEmployeePermissionPolicy(db:DB,employeeId:string,policyId:string,opts?:{skipLock?:boolean}):void { getPermissionPolicy(db,policyId); const employment=db.prepare('SELECT id FROM company_employee WHERE id=?').get(employeeId) as {id:string}|undefined; if(!employment)throw new AppError(ErrorCode.NOT_FOUND,`公司员工不存在: ${employeeId}`);if(!opts?.skipLock&&getWorkbench(db).state!=='off')throw new AppError(ErrorCode.CONFLICT,'公司下班后才能修改员工权限'); const result=db.prepare('UPDATE company_employee SET permission_policy_id=?,updated_at=? WHERE id=?').run(policyId,nowIso(),employeeId); if(result.changes!==1) throw new AppError(ErrorCode.NOT_FOUND,`公司员工不存在: ${employeeId}`); }
 
 /**
- * 按公司批量绑定权限策略到所有员工。要求公司处于下班（off）状态。
+ * 按公司批量绑定权限策略到所有员工。要求工作台处于下班（off）状态。
  * 返回受影响员工数。
  */
-export function bindCompanyEmployeesPermission(db:DB,companyId:string,policyId:string):{updated:number} {
+export function bindCompanyEmployeesPermission(db:DB,policyId:string):{updated:number} {
   getPermissionPolicy(db,policyId);
-  const company=db.prepare('SELECT state FROM company WHERE id=?').get(companyId) as {state:string}|undefined;
-  if(!company) throw new AppError(ErrorCode.NOT_FOUND,`公司不存在: ${companyId}`);
-  if(company.state!=='off') throw new AppError(ErrorCode.CONFLICT,'公司下班后才能批量修改员工权限');
-  const result=db.prepare('UPDATE company_employee SET permission_policy_id=?,updated_at=? WHERE company_id=?').run(policyId,nowIso(),companyId);
+  if(getWorkbench(db).state!=='off') throw new AppError(ErrorCode.CONFLICT,'公司下班后才能批量修改员工权限');
+  const result=db.prepare('UPDATE company_employee SET permission_policy_id=?,updated_at=?').run(policyId,nowIso());
   return { updated: result.changes };
 }
 
@@ -51,7 +50,7 @@ function matches(rule:RuleRow,request:PermissionRequest):boolean { if(rule.expir
 
 export function evaluatePermission(db:DB,policyId:string,request:PermissionRequest):{decision:PermissionDecision;reason:string;ruleId?:string} { const policy=getPermissionPolicy(db,policyId); const rules=db.prepare('SELECT * FROM permission_rule WHERE policy_id=? ORDER BY created_at DESC').all(policyId) as RuleRow[]; const rule=rules.find((item)=>matches(item,request)); if(rule) return {decision:rule.effect,reason:'matched-rule',ruleId:rule.id}; if(policy.approvalStrategy==='deny') return {decision:'deny',reason:'policy-deny'}; if(HIGH_RISK_ACTIONS.has(request.action)) return {decision:'approval-required',reason:'high-risk'}; if(!inScope(policy,request)) return {decision:'approval-required',reason:'outside-scope'}; if(policy.approvalStrategy==='no-approval') return {decision:'allow',reason:'within-scope'}; return {decision:'approval-required',reason:policy.approvalStrategy}; }
 
-export function savePermissionRule(db:DB,policyId:string,input:PermissionRuleInput):string { getPermissionPolicy(db,policyId); if(input.commandPattern) { try { new RegExp(input.commandPattern); } catch { throw new AppError(ErrorCode.VALIDATION,'命令规则不是有效正则表达式'); } } const id=shortId('rule_'); db.prepare(`INSERT INTO permission_rule (id,policy_id,effect,action,command_pattern,path_prefix,file_extension,employee_id,company_id,project_id,task_id,network,subprocess,expires_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id,policyId,input.effect,input.action??null,input.commandPattern??null,input.pathPrefix??null,input.fileExtension??null,input.employeeId??null,null,input.projectId??null,input.taskId??null,input.network===undefined?null:Number(input.network),input.subprocess===undefined?null:Number(input.subprocess),input.expiresAt??null,nowIso()); return id; }
+export function savePermissionRule(db:DB,policyId:string,input:PermissionRuleInput):string { getPermissionPolicy(db,policyId); if(input.commandPattern) { try { new RegExp(input.commandPattern); } catch { throw new AppError(ErrorCode.VALIDATION,'命令规则不是有效正则表达式'); } } const id=shortId('rule_'); db.prepare(`INSERT INTO permission_rule (id,policy_id,effect,action,command_pattern,path_prefix,file_extension,employee_id,project_id,task_id,network,subprocess,expires_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id,policyId,input.effect,input.action??null,input.commandPattern??null,input.pathPrefix??null,input.fileExtension??null,input.employeeId??null,input.projectId??null,input.taskId??null,input.network===undefined?null:Number(input.network),input.subprocess===undefined?null:Number(input.subprocess),input.expiresAt??null,nowIso()); return id; }
 
 export function requestApproval(db:DB,input:{policyId:string;employeeId:string;taskId:string;action:string;command?:string;path?:string;risk?:string}):{id:string;status:'pending'} { getPermissionPolicy(db,input.policyId); const id=shortId('approval_'); db.prepare(`INSERT INTO permission_approval (id,policy_id,employee_id,task_id,action,command,path,risk,status,created_at) VALUES (?,?,?,?,?,?,?,?, 'pending',?)`).run(id,input.policyId,input.employeeId,input.taskId,input.action,input.command??null,input.path??null,input.risk??(HIGH_RISK_ACTIONS.has(input.action)?'high':'normal'),nowIso()); return {id,status:'pending'}; }
 export function ensureApprovalRequest(db:DB,input:{policyId:string;employeeId:string;taskId:string;action:string;command?:string;path?:string;risk?:string}):{id:string;status:'pending'} { const existing=db.prepare("SELECT id FROM permission_approval WHERE policy_id=? AND employee_id=? AND task_id=? AND action=? AND COALESCE(command,'')=COALESCE(?,'') AND COALESCE(path,'')=COALESCE(?,'') AND status='pending'").get(input.policyId,input.employeeId,input.taskId,input.action,input.command??null,input.path??null) as {id:string}|undefined;return existing?{id:existing.id,status:'pending'}:requestApproval(db,input); }

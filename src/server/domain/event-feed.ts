@@ -86,15 +86,15 @@ const BASE_SQL = `
   WHERE te.kind IN (${[...KEY_EVENT_KINDS].map(() => '?').join(', ')})
 `;
 
-/** 公司级事件流：聚合该公司下所有项目的关键事件。 */
+/** 公司/工作台级事件流：聚合所有项目的关键事件。 */
 export function listCompanyEvents(
   db: DB,
-  companyId: string,
+  companyId?: string,
   opts: { since?: string; limit?: number } = {},
 ): FeedEvent[] {
   const limit = Math.min(opts.limit ?? 200, 500);
-  const params: unknown[] = [...KEY_EVENT_KINDS, companyId];
-  let sql = `${BASE_SQL} AND t.project_id IN (SELECT id FROM project WHERE company_id = ?)`;
+  const params: unknown[] = [...KEY_EVENT_KINDS];
+  let sql = BASE_SQL;
   if (opts.since) {
     sql += ` AND te.occurred_at > ?`;
     params.push(opts.since);

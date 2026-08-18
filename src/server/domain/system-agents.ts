@@ -9,7 +9,7 @@
  */
 import type { DB } from '../db/client';
 import { createAgent } from './agent';
-import { getCompany } from './company';
+import { getWorkbench } from './workbench';
 import { bindDefaultDenyPolicy } from './permission-templates';
 
 export const DISPATCHER_ROLE = 'swarm-dispatcher';
@@ -47,18 +47,17 @@ const JUDGE_PROMPT = `你是「${JUDGE_NAME}」，公司的决策评审岗。你
    双方都说不清时坦率给低置信度——低置信度会转交用户决策，这不是失败。
 4. 汇总偏好：若输入包含用户历史决策记录，尊重其体现的偏好方向。`;
 
-function findSystemAgent(db: DB, companyId: string, role: string): string | null {
+function findSystemAgent(db: DB, role: string): string | null {
   const row = db
-    .prepare('SELECT id FROM agent_definition WHERE company_id=? AND role=? AND is_system=1 LIMIT 1')
-    .get(companyId, role) as { id: string } | undefined;
+    .prepare('SELECT id FROM agent_definition WHERE role=? AND is_system=1 LIMIT 1')
+    .get(role) as { id: string } | undefined;
   return row?.id ?? null;
 }
 
-function ensureOne(db: DB, companyId: string, role: string, name: string, prompt: string): string {
-  const existing = findSystemAgent(db, companyId, role);
+function ensureOne(db: DB, role: string, name: string, prompt: string): string {
+  const existing = findSystemAgent(db, role);
   if (existing) return existing;
   const agent = createAgent(db, {
-    companyId,
     name,
     role,
     responsibilities: '系统内置职能岗（自动创建，不可见）',
@@ -77,30 +76,30 @@ export interface SystemAgents {
   judgeAgentId: string;
 }
 
-/** 幂等确保系统隐形岗存在（公司任意状态可调用；coordinator tick 对 online 公司调用）。 */
-export function ensureSystemAgents(db: DB, companyId: string): SystemAgents {
-  getCompany(db, companyId);
+/** 幂等确保系统隐形岗存在（工作台任意状态可调用；coordinator tick 调用）。 */
+export function ensureSystemAgents(db: DB): SystemAgents {
+  getWorkbench(db);
   return {
-    dispatcherAgentId: ensureOne(db, companyId, DISPATCHER_ROLE, DISPATCHER_NAME, DISPATCHER_PROMPT),
-    judgeAgentId: ensureOne(db, companyId, JUDGE_ROLE, JUDGE_NAME, JUDGE_PROMPT),
+    dispatcherAgentId: ensureOne(db, DISPATCHER_ROLE, DISPATCHER_NAME, DISPATCHER_PROMPT),
+    judgeAgentId: ensureOne(db, JUDGE_ROLE, JUDGE_NAME, JUDGE_PROMPT),
   };
 }
 
 /** 查询系统岗 id（不存在返回 null，不创建）。 */
-export function getDispatcherAgentId(db: DB, companyId: string): string | null {
-  return findSystemAgent(db, companyId, DISPATCHER_ROLE);
+export function getDispatcherAgentId(db: DB): string | null {
+  return findSystemAgent(db, DISPATCHER_ROLE);
 }
 
-export function getJudgeAgentId(db: DB, companyId: string): string | null {
-  return findSystemAgent(db, companyId, JUDGE_ROLE);
+export function getJudgeAgentId(db: DB): string | null {
+  return findSystemAgent(db, JUDGE_ROLE);
 }
 
 /** 蓝图组织批次4e：懒确保调度中心（首次使用时创建，幂等；与公司上线时机解耦）。 */
-export function ensureDispatcherAgentId(db: DB, companyId: string): string {
-  return ensureOne(db, companyId, DISPATCHER_ROLE, DISPATCHER_NAME, DISPATCHER_PROMPT);
+export function ensureDispatcherAgentId(db: DB): string {
+  return ensureOne(db, DISPATCHER_ROLE, DISPATCHER_NAME, DISPATCHER_PROMPT);
 }
 
 /** 蓝图组织批次4e：懒确保评审中心（幂等）。 */
-export function ensureJudgeAgentId(db: DB, companyId: string): string {
-  return ensureOne(db, companyId, JUDGE_ROLE, JUDGE_NAME, JUDGE_PROMPT);
+export function ensureJudgeAgentId(db: DB): string {
+  return ensureOne(db, JUDGE_ROLE, JUDGE_NAME, JUDGE_PROMPT);
 }

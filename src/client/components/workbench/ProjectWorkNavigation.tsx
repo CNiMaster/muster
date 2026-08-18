@@ -64,7 +64,7 @@ export function ProjectWorkNavigation({
     employees: agents.filter((agent) => agent.departmentId === department.id && agent.id !== firstAgentId),
   }));
   const unassigned = agents.filter((agent) => !agent.departmentId && agent.id !== firstAgentId);
-  const groups = [...departmentGroups, ...(unassigned.length ? [{ id: 'unassigned', companyId: '', name: '其他成员', rules: {}, createdAt: '', updatedAt: '', employees: unassigned }] : [])];
+  const groups = [...departmentGroups, ...(unassigned.length ? [{ id: 'unassigned', name: '其他成员', rules: {}, createdAt: '', updatedAt: '', employees: unassigned }] : [])];
 
   const employeeRow = (agent: Agent): React.ReactElement => {
     const employeeTasks = tasks.filter((task) => task.assigneeAgentId === agent.id && OPEN_TASK_STATES.has(task.state));

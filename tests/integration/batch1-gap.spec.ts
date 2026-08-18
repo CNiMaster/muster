@@ -212,18 +212,18 @@ describe('B1.8 关系归档与恢复', () => {
 
     archiveRelationship(db, edge.id);
     // 默认不返回归档
-    const active = listRelationships(db, c.id, 'communication');
+    const active = listRelationships(db, 'communication');
     expect(active.find((r) => r.id === edge.id)).toBeUndefined();
     // includeArchived 时返回
-    const all = listRelationships(db, c.id, 'communication', { includeArchived: true });
+    const all = listRelationships(db, 'communication', { includeArchived: true });
     expect(all.find((r) => r.id === edge.id)?.archivedAt).not.toBeNull();
 
     // 通信边归档后 contact_allow 应被同步移除
-    expect(validateCommunication(db, c.id)).toEqual([]);
+    expect(validateCommunication(db)).toEqual([]);
 
     // 恢复
     restoreRelationship(db, edge.id);
-    const restored = listRelationships(db, c.id, 'communication');
+    const restored = listRelationships(db, 'communication');
     expect(restored.find((r) => r.id === edge.id)?.archivedAt).toBeNull();
   });
 
@@ -234,8 +234,8 @@ describe('B1.8 关系归档与恢复', () => {
     const edge = addRelationship(db, { companyId: c.id, kind: 'org', sourceId: a.id, targetId: b.id });
     archiveRelationship(db, edge.id);
     // org 边归档后默认不列出
-    expect(listRelationships(db, c.id, 'org').find((r) => r.id === edge.id)).toBeUndefined();
-    expect(listRelationships(db, c.id, 'org', { includeArchived: true }).find((r) => r.id === edge.id)).toBeTruthy();
+    expect(listRelationships(db, 'org').find((r) => r.id === edge.id)).toBeUndefined();
+    expect(listRelationships(db, 'org', { includeArchived: true }).find((r) => r.id === edge.id)).toBeTruthy();
   });
 
   it('上班期间禁止归档', () => {
@@ -243,8 +243,8 @@ describe('B1.8 关系归档与恢复', () => {
     const a = createAgent(db, { companyId: c.id, name: 'a', role: 'lead' });
     const b = createAgent(db, { companyId: c.id, name: 'b', role: 'writer' });
     const edge = addRelationship(db, { companyId: c.id, kind: 'org', sourceId: a.id, targetId: b.id });
-    // 切到 online（绕过 assertCompanyHealthy 直接改 state）
-    db.prepare("UPDATE company SET state='online' WHERE id=?").run(c.id);
+    // 切到 online（绕过 assertWorkbenchHealthy 直接改 state）
+    db.prepare("UPDATE workbench SET state='online' WHERE id=?").run(c.id);
     expect(() => archiveRelationship(db, edge.id)).toThrow(AppError);
   });
 });

@@ -31,10 +31,8 @@ import { AppError, ErrorCode } from '../../shared/errors';
 
 export const blueprintsRouter = Router({ mergeParams: true });
 
-function assertBlueprintCompany(blueprintId: string, companyId: string): void {
-  if (getBlueprint(getDb(), blueprintId).companyId !== companyId) {
-    throw new AppError(ErrorCode.NOT_FOUND, '蓝图不存在');
-  }
+function assertBlueprintExists(blueprintId: string): void {
+  getBlueprint(getDb(), blueprintId);
 }
 
 blueprintsRouter.get(
@@ -47,7 +45,7 @@ blueprintsRouter.get(
 blueprintsRouter.post(
   '/:blueprintId/status',
   asyncHandler(async (req, res) => {
-    assertBlueprintCompany(param(req, 'blueprintId'), companyIdOf(req));
+    assertBlueprintExists(param(req, 'blueprintId'));
     const { status } = z.object({ status: z.enum(['active', 'locked', 'retired']) }).parse(req.body);
     res.json(setBlueprintStatus(getDb(), param(req, 'blueprintId'), status));
   }),
@@ -67,7 +65,7 @@ blueprintsRouter.get(
 blueprintsRouter.get(
   '/:blueprintId/versions',
   asyncHandler(async (req, res) => {
-    assertBlueprintCompany(param(req, 'blueprintId'), companyIdOf(req));
+    assertBlueprintExists(param(req, 'blueprintId'));
     res.json(listBlueprintVersions(getDb(), param(req, 'blueprintId')));
   }),
 );
@@ -75,7 +73,7 @@ blueprintsRouter.get(
 blueprintsRouter.post(
   '/:blueprintId/rollback',
   asyncHandler(async (req, res) => {
-    assertBlueprintCompany(param(req, 'blueprintId'), companyIdOf(req));
+    assertBlueprintExists(param(req, 'blueprintId'));
     const { version } = z.object({ version: z.number().int().min(1) }).parse(req.body);
     res.json(rollbackBlueprint(getDb(), param(req, 'blueprintId'), version));
   }),
@@ -84,7 +82,7 @@ blueprintsRouter.post(
 blueprintsRouter.patch(
   '/:blueprintId/description',
   asyncHandler(async (req, res) => {
-    assertBlueprintCompany(param(req, 'blueprintId'), companyIdOf(req));
+    assertBlueprintExists(param(req, 'blueprintId'));
     const { description } = z.object({ description: z.string().min(1).max(400) }).parse(req.body);
     res.json(updateBlueprintDescription(getDb(), param(req, 'blueprintId'), description));
   }),
@@ -93,7 +91,7 @@ blueprintsRouter.patch(
 blueprintsRouter.get(
   '/:blueprintId/detail',
   asyncHandler(async (req, res) => {
-    assertBlueprintCompany(param(req, 'blueprintId'), companyIdOf(req));
+    assertBlueprintExists(param(req, 'blueprintId'));
     res.json(getBlueprintDetail(getDb(), param(req, 'blueprintId')));
   }),
 );
@@ -101,7 +99,7 @@ blueprintsRouter.get(
 blueprintsRouter.post(
   '/:blueprintId/debug-adopt',
   asyncHandler(async (req, res) => {
-    assertBlueprintCompany(param(req, 'blueprintId'), companyIdOf(req));
+    assertBlueprintExists(param(req, 'blueprintId'));
     const body = z.object({
       staffing: z.array(z.object({ personaId: z.string(), personaName: z.string() })).optional(),
       tools: z.array(z.object({ kind: z.enum(['skill', 'tool', 'mcp']), id: z.string(), uses: z.number(), wins: z.number() })).optional(),

@@ -26,6 +26,8 @@ import { createTempEmployment, dismissTempWorker } from './temp-worker';
 import { ensurePrimaryThread } from './thread';
 import { ensureSystemAgents, getJudgeAgentId } from './system-agents';
 import { postSystemMessage } from './conversation';
+import { getWorkbenchOrNull } from './workbench';
+
 export const DEBATER_ROLE = 'debater';
 /** 两轮封顶：R1 立论 + R2 互攻（外部研究：3 轮后收益递减甚至下降——从众塌缩/跑题漂移）。 */
 export const DEBATE_MAX_ADVOCATES = 3;
@@ -45,7 +47,6 @@ export interface DebateSummary {
 
 interface DebateRow {
   id: string;
-  company_id: string;
   project_id: string | null;
   question: string;
   options_json: string;
@@ -59,10 +60,10 @@ interface DebateRow {
   resolved_at: string | null;
 }
 
-function debateFromRow(r: DebateRow): DebateSummary {
+function debateFromRow(db: DB, r: DebateRow): DebateSummary {
   return {
     id: r.id,
-    companyId: r.company_id,
+    companyId: getWorkbenchOrNull(db)?.id ?? '',
     projectId: r.project_id,
     question: r.question,
     options: JSON.parse(r.options_json || '[]') as QuestionOption[],
@@ -77,24 +78,24 @@ function debateFromRow(r: DebateRow): DebateSummary {
 export function getDebate(db: DB, id: string): DebateSummary {
   const row = db.prepare('SELECT * FROM debate WHERE id=?').get(id) as DebateRow | undefined;
   if (!row) throw new AppError(ErrorCode.NOT_FOUND, `debate ${id} not found`);
-  return debateFromRow(row);
+  return debateFromRow(db, row);
 }
 
-export function listDebates(db: DB, companyId: string, limit = 30): DebateSummary[] {
-  const rows = db.prepare('SELECT * FROM debate WHERE company_id=? ORDER BY created_at DESC LIMIT ?').all(companyId, limit) as DebateRow[];
-  return rows.map(debateFromRow);
+export function listDebates(db: DB, companyId?: string, limit = 30): DebateSummary[] {
+  const rows = db.prepare('SELECT * FROM debate ORDER BY created_at DESC LIMIT ?').all(limit) as DebateRow[];
+  return rows.map((r) => debateFromRow(db, r));
 }
 
 /** 近期用户决策记录（偏好画像，注入辩手/裁决上下文）。 */
-export function recentDecisions(db: DB, companyId: string, limit = 5): Array<{ question: string; chosen: string; rationale: string | null; source: string; createdAt: string }> {
+export function recentDecisions(db: DB, companyId?: string, limit = 5): Array<{ question: string; chosen: string; rationale: string | null; source: string; createdAt: string }> {
   return db.prepare(
     `SELECT question, chosen, rationale, source, created_at FROM decision_record
-     WHERE company_id=? ORDER BY created_at DESC LIMIT ?`,
-  ).all(companyId, limit) as Array<{ question: string; chosen: string; rationale: string | null; source: string; createdAt: string }>;
+     ORDER BY created_at DESC LIMIT ?`,
+  ).all(limit) as Array<{ question: string; chosen: string; rationale: string | null; source: string; createdAt: string }>;
 }
 
 export function recordDecision(db: DB, input: {
-  companyId: string;
+  companyId?: string;
   debateId?: string | null;
   question: string;
   options: QuestionOption[];
@@ -105,10 +106,10 @@ export function recordDecision(db: DB, input: {
   source: 'user' | 'auto';
 }): void {
   db.prepare(
-    `INSERT INTO decision_record (id, company_id, debate_id, question, options_json, chosen, chosen_option_id, rationale, context, source, created_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO decision_record (id, debate_id, question, options_json, chosen, chosen_option_id, rationale, context, source, created_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?)`,
   ).run(
-    shortId('dr_'), input.companyId, input.debateId ?? null, input.question,
+    shortId('dr_'), input.debateId ?? null, input.question,
     JSON.stringify(input.options), input.chosen, input.chosenOptionId ?? null,
     input.rationale ?? null, input.context ?? null, input.source, nowIso(),
   );
@@ -125,9 +126,8 @@ function debaterPrompt(option: QuestionOption, allOptions: QuestionOption[]): st
 - 对手立场：${others || '（无）'}。每轮输出 300 字以内，结论先行。`;
 }
 
-function createDebater(db: DB, input: { companyId: string; projectId: string; index: number; option: QuestionOption; allOptions: QuestionOption[]; judgeAgentId: string }): string {
+function createDebater(db: DB, input: { projectId: string; index: number; option: QuestionOption; allOptions: QuestionOption[]; judgeAgentId: string }): string {
   const { agentId } = createTempEmployment(db, {
-    companyId: input.companyId,
     role: DEBATER_ROLE,
     requesterAgentId: input.judgeAgentId,
     name: ADVOCATE_NAMES[input.index] ?? `辩手${input.index + 1}`,
@@ -162,7 +162,7 @@ export interface StartDebateInput {
   options: QuestionOption[];
   /** 两难的来源任务（waiting_input 挂着等裁决；裁决后自动回答或升级）。 */
   originTaskId: string;
-  originScopeKind?: 'company' | 'project';
+  originScopeKind?: 'workbench' | 'project';
   originScopeId?: string;
 }
 
@@ -177,7 +177,7 @@ export function startDebate(db: DB, input: StartDebateInput): StartedDebate {
   if (input.options.length < 2) {
     throw new AppError(ErrorCode.VALIDATION, '评审庭至少需要 2 个选项');
   }
-  const { judgeAgentId } = ensureSystemAgents(db, input.companyId);
+  const { judgeAgentId } = ensureSystemAgents(db);
   // 评审岗是隐形岗，不在 ensureProjectThreads（按可见花名册）覆盖内——显式建线程
   ensurePrimaryThread(db, input.projectId, judgeAgentId);
   const advocates = input.options.slice(0, DEBATE_MAX_ADVOCATES);
@@ -185,9 +185,9 @@ export function startDebate(db: DB, input: StartDebateInput): StartedDebate {
 
   const debateId = shortId('db_');
   db.prepare(
-    `INSERT INTO debate (id, company_id, project_id, question, options_json, status, origin_task_id, origin_scope_kind, origin_scope_id, created_at)
-     VALUES (?,?,?,?,?,'open',?,?,?,?)`,
-  ).run(debateId, input.companyId, input.projectId, input.question, JSON.stringify(input.options), input.originTaskId, input.originScopeKind ?? null, input.originScopeId ?? null, nowIso());
+    `INSERT INTO debate (id, project_id, question, options_json, status, origin_task_id, origin_scope_kind, origin_scope_id, created_at)
+     VALUES (?,?,?,?,'open',?,?,?,?)`,
+  ).run(debateId, input.projectId, input.question, JSON.stringify(input.options), input.originTaskId, input.originScopeKind ?? null, input.originScopeId ?? null, nowIso());
 
   const base = {
     projectId: input.projectId,
@@ -206,7 +206,6 @@ export function startDebate(db: DB, input: StartDebateInput): StartedDebate {
   const debaterAgentIds: string[] = [];
   for (const [index, option] of advocates.entries()) {
     const debaterAgentId = createDebater(db, {
-      companyId: input.companyId,
       projectId: input.projectId,
       index,
       option,
@@ -299,10 +298,10 @@ function escalateDebateToUser(db: DB, debateId: string, opts: { flaws?: Array<{ 
   const scopeInfo = db.prepare('SELECT origin_scope_kind AS k, origin_scope_id AS s FROM debate WHERE id=?').get(debateId) as { k: string | null; s: string | null };
   if (scopeInfo.k && scopeInfo.s) {
     postSystemMessage(db, {
-      scopeKind: scopeInfo.k as 'company' | 'project',
+      scopeKind: scopeInfo.k as 'workbench' | 'project',
       scopeId: scopeInfo.s!,
       role: 'assistant',
-      author: getJudgeAgentId(db, debate.companyId) ?? 'system',
+      author: getJudgeAgentId(db) ?? 'system',
       content: `[需要你拍板] ${formatOptionsContent(debate.question, debate.options, flaws)}`,
       refTaskId: debate.originTaskId,
     });
@@ -390,7 +389,7 @@ export function finalizeDebate(db: DB, debateId: string, verdict: DebateVerdict)
     });
     if (canPost) {
       postSystemMessage(db, {
-        scopeKind: scopeInfo.k as 'company' | 'project',
+        scopeKind: scopeInfo.k as 'workbench' | 'project',
         scopeId: scopeInfo.s!,
         role: 'event',
         author: 'system',
@@ -414,10 +413,8 @@ export function finalizeDebate(db: DB, debateId: string, verdict: DebateVerdict)
 /** 用户经 clarify 选择后沉淀决策记录（answerClarification 的选项路径调用）。 */
 export function recordDecisionFromClarify(db: DB, taskId: string, option: QuestionOption): void {
   const task = getTask(db, taskId);
-  const companyId = (db.prepare('SELECT company_id AS c FROM project WHERE id=?').get(task.projectId) as { c: string }).c;
   const debateRow = db.prepare("SELECT id FROM debate WHERE origin_task_id=? AND status IN ('open','escalated') ORDER BY created_at DESC LIMIT 1").get(taskId) as { id: string } | undefined;
   recordDecision(db, {
-    companyId,
     debateId: debateRow?.id ?? null,
     question: task.question ?? task.title,
     options: task.questionOptions ?? [],
@@ -429,6 +426,6 @@ export function recordDecisionFromClarify(db: DB, taskId: string, option: Questi
 }
 
 /** 兼容外部引用：确认评审岗存在时返回其 id。 */
-export function judgeAgentOf(db: DB, companyId: string): string | null {
-  return getJudgeAgentId(db, companyId) ?? ensureSystemAgents(db, companyId).judgeAgentId;
+export function judgeAgentOf(db: DB): string | null {
+  return getJudgeAgentId(db) ?? ensureSystemAgents(db).judgeAgentId;
 }

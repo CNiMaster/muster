@@ -31,7 +31,6 @@ export interface Workspace {
 export interface Agent {
   id: string;
   profileId: string;
-  companyId: string;
   departmentId: string | null;
   name: string;
   role: string;
@@ -79,7 +78,6 @@ export interface AgentProfile {
 export interface CompanyEmployee {
   id: string;
   profileId: string;
-  companyId: string;
   legacyAgentId: string;
   departmentId: string | null;
   role: string;
@@ -102,7 +100,6 @@ export type BusinessReviewStatus = 'pending' | 'approved' | 'rejected' | 'change
 
 export interface BusinessReview {
   id: string;
-  companyId: string;
   projectId: string | null;
   taskId: string | null;
   employeeId: string;
@@ -123,7 +120,6 @@ export interface MemoryCandidate {
   id: string;
   profileId: string;
   scope: 'personal' | 'company' | 'project' | 'skill';
-  companyId: string | null;
   projectId: string | null;
   content: string;
   sourceTaskId: string | null;
@@ -140,7 +136,6 @@ export interface MemoryEntry {
   id: string;
   profileId: string;
   scope: MemoryCandidate['scope'];
-  companyId: string | null;
   projectId: string | null;
   content: string;
   version: number;
@@ -168,7 +163,6 @@ export interface AgentExecutorJson {
 
 export interface Department {
   id: string;
-  companyId: string;
   name: string;
   rules: Record<string, unknown>;
   createdAt: string;
@@ -177,7 +171,6 @@ export interface Department {
 
 export interface Project {
   id: string;
-  companyId: string;
   name: string;
   description: string;
   rootDir: string;
@@ -198,7 +191,6 @@ export interface Project {
 
 export interface Relationship {
   id: string;
-  companyId: string;
   kind: 'org' | 'communication';
   sourceId: string;
   targetId: string;

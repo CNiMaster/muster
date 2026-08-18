@@ -28,8 +28,8 @@ describe('execution context from profile and layered memory', () => {
 
     const context = assembleContext(db, task, { threadId: thread.id });
 
-    expect(context.systemPrompt.indexOf('# 员工身份')).toBeLessThan(context.systemPrompt.indexOf('# 公司章程'));
-    expect(context.systemPrompt.indexOf('# 公司章程')).toBeLessThan(context.systemPrompt.indexOf('# 项目说明'));
+    expect(context.systemPrompt.indexOf('# 员工身份')).toBeLessThan(context.systemPrompt.indexOf('# 工作台章程'));
+    expect(context.systemPrompt.indexOf('# 工作台章程')).toBeLessThan(context.systemPrompt.indexOf('# 项目说明'));
     expect(context.systemPrompt).toContain('稳定身份：谨慎验证');
     expect(context.systemPrompt).toContain('当前项目决定采用事件驱动架构');
   });

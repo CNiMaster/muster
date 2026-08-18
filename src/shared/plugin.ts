@@ -20,7 +20,7 @@ export type PluginKind = 'skill' | 'mcp-server' | 'tool' | 'bridge-action' | 'ai
 export type PluginSource =
   | { kind: 'builtin' }
   | { kind: 'executor-native'; provider: string }
-  | { kind: 'company'; companyId: string }
+  | { kind: 'workbench' }
   | { kind: 'project'; projectId: string }
   | { kind: 'marketplace'; registry: string; ref: string }
   | { kind: 'ai-generated'; generatedAt: string; prompt: string };
@@ -28,7 +28,7 @@ export type PluginSource =
 /** 生效范围。替换未来 agent.tools / agent.skills 的字符串数组。 */
 export type PluginScope =
   | { level: 'platform' }
-  | { level: 'company'; companyId: string }
+  | { level: 'workbench' }
   | { level: 'project'; projectId: string }
   | { level: 'employee'; agentId: string };
 

@@ -42,15 +42,13 @@ const recruitSchema = z.object({
 const recruitTempHandler = asyncHandler(async (req, res) => {
   const input = recruitSchema.parse(req.body);
   const result = createTempEmployment(getDb(), {
-    companyId: companyIdOf(req),
     ...input,
   });
   realtime.publish(makeLifecycleEvent('employee.temp-recruited', {
     agentId: result.agentId,
     profileId: result.profileId,
-    companyId: companyIdOf(req),
     isNewProfile: result.isNewProfile,
-  }, { companyId: companyIdOf(req) }));
+  }, {}));
   res.status(201).json(result);
 });
 tempWorkerRouter.post('/employees/temp', recruitTempHandler);
@@ -63,8 +61,7 @@ const convertTempHandler = asyncHandler(async (req, res) => {
   realtime.publish(makeLifecycleEvent('employee.converted', {
     agentId,
     profileId: agent.profileId,
-    companyId: companyIdOf(req),
-  }, { companyId: companyIdOf(req) }));
+  }, {}));
   res.json({ ok: true });
 });
 tempWorkerRouter.post('/employees/:id/convert', convertTempHandler);
@@ -88,9 +85,8 @@ const dismissTempHandler = asyncHandler(async (req, res) => {
   realtime.publish(makeLifecycleEvent('employee.dismissed', {
     agentId,
     profileId,
-    companyId: companyIdOf(req),
     profileDeleted,
-  }, { companyId: companyIdOf(req) }));
+  }, {}));
   res.json({ ok: true, profileDeleted });
 });
 tempWorkerRouter.post('/employees/:id/dismiss', dismissTempHandler);
@@ -103,16 +99,16 @@ const reactivateTempHandler = asyncHandler(async (req, res) => {
 });
 tempWorkerRouter.post('/employees/:id/reactivate', reactivateTempHandler);
 
-// 列出临时工（含 greyed）
-const listTempHandler = asyncHandler(async (req, res) => {
+// 列出临时工（含 greyed；单例工作台下临时工为全局可见）
+const listTempHandler = asyncHandler(async (_req, res) => {
   const rows = getDb().prepare(
     `SELECT ce.*, ad.name, ad.profile_id, ap.display_name, ap.rating
      FROM company_employee ce
      JOIN agent_definition ad ON ad.id = ce.legacy_agent_id
      JOIN agent_profile ap ON ap.id = ce.profile_id
-     WHERE ce.company_id = ? AND ce.employment_type = 'temp'
+     WHERE ce.employment_type = 'temp'
      ORDER BY ce.temp_status, ce.created_at DESC`,
-  ).all(companyIdOf(req));
+  ).all();
   res.json(rows);
 });
 tempWorkerRouter.get('/employees/temp', listTempHandler);

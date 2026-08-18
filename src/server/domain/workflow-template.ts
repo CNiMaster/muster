@@ -10,7 +10,7 @@
 import type { DB } from '../db/client';
 import { shortId, nowIso } from '../../shared/utils';
 import { AppError, ErrorCode } from '../../shared/errors';
-import { isOrgLocked } from './company';
+import { getWorkbench } from './workbench';
 
 export interface TemplateNode {
   kind: 'step' | 'decision' | 'start' | 'end';
@@ -117,7 +117,7 @@ export function listWorkflowTemplates(db: DB, category?: string): WorkflowTempla
  * 与 saveWorkflow 一致，要求公司处于下班态（结构变更需 company off）。
  */
 export function instantiateWorkflowFromTemplate(db: DB, companyId: string, templateId: string, workflowId: string): { nodeCount: number; edgeCount: number } {
-  if (isOrgLocked(db, companyId)) {
+  if (getWorkbench(db).state !== 'off') {
     throw new AppError(ErrorCode.COMPANY_LOCKED, '上班期间不能实例化工作流模板');
   }
   const tpl = getWorkflowTemplate(db, templateId);
@@ -126,21 +126,21 @@ export function instantiateWorkflowFromTemplate(db: DB, companyId: string, templ
   const now = nowIso();
   db.transaction(() => {
     // 清空目标 workflow 既有内容（实例化即覆盖）
-    db.prepare('DELETE FROM workflow_edge WHERE company_id = ? AND workflow_id = ?').run(companyId, workflowId);
-    db.prepare('DELETE FROM workflow_node WHERE company_id = ? AND workflow_id = ?').run(companyId, workflowId);
+    db.prepare('DELETE FROM workflow_edge WHERE workflow_id = ?').run(workflowId);
+    db.prepare('DELETE FROM workflow_node WHERE workflow_id = ?').run(workflowId);
 
     const nodeIds = tpl.nodes.map((n) => shortId('wn_'));
     tpl.nodes.forEach((n, i) => {
       db.prepare(
-        `INSERT INTO workflow_node (id, company_id, workflow_id, kind, label, position_json, props_json, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).run(nodeIds[i], companyId, workflowId, n.kind, n.label, JSON.stringify(n.position ?? { x: 0, y: 0 }), JSON.stringify(n.props ?? {}), now);
+        `INSERT INTO workflow_node (id, workflow_id, kind, label, position_json, props_json, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ).run(nodeIds[i], workflowId, n.kind, n.label, JSON.stringify(n.position ?? { x: 0, y: 0 }), JSON.stringify(n.props ?? {}), now);
     });
     tpl.edges.forEach((e) => {
       db.prepare(
-        `INSERT INTO workflow_edge (id, company_id, workflow_id, source_id, target_id, label, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      ).run(shortId('we_'), companyId, workflowId, nodeIds[e.sourceIdx], nodeIds[e.targetIdx], e.label ?? '', now);
+        `INSERT INTO workflow_edge (id, workflow_id, source_id, target_id, label, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      ).run(shortId('we_'), workflowId, nodeIds[e.sourceIdx], nodeIds[e.targetIdx], e.label ?? '', now);
     });
   })();
 

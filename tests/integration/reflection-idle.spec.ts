@@ -64,7 +64,7 @@ describe('enqueueIdleReflections（补排队）', () => {
     db.prepare("UPDATE task SET state='cancelled' WHERE id=?").run(t3.id);
     // t4 保持未终态
 
-    const n = enqueueIdleReflections(db, c.id, 10);
+    const n = enqueueIdleReflections(db, 10);
 
     expect(n).toBe(2);
     const rows = db.prepare('SELECT task_id, signal FROM task_reflection ORDER BY created_at').all() as Array<{ task_id: string; signal: string }>;
@@ -82,7 +82,7 @@ describe('enqueueIdleReflections（补排队）', () => {
     done(p.id, worker.id, t2.id);
     enqueueReflection(db, { task: getTask(db, t1.id), outcome: 'completed', signal: 'completed' });
 
-    const n = enqueueIdleReflections(db, c.id, 10);
+    const n = enqueueIdleReflections(db, 10);
 
     expect(n).toBe(1); // 只有 t2
   });
@@ -93,11 +93,11 @@ describe('enqueueIdleReflections（补排队）', () => {
       const t = createTask(db, { projectId: p.id, assigneeAgentId: worker.id, title: `T${i}` });
       done(p.id, worker.id, t.id);
     }
-    expect(enqueueIdleReflections(db, c.id, 2)).toBe(2);
+    expect(enqueueIdleReflections(db, 2)).toBe(2);
     expect(reflectionCount()).toBe(2);
   });
 
-  it('只认本公司任务', () => {
+  it.skip('只认本公司任务（单例工作台退役多公司隔离）', () => {
     const { c } = fixture();
     const c2 = createCompany(db, { name: 'ev2' });
     const w2 = createAgent(db, { companyId: c2.id, name: 'w2', role: 'worker' });
@@ -105,7 +105,7 @@ describe('enqueueIdleReflections（补排队）', () => {
     const t = createTask(db, { projectId: p2.id, assigneeAgentId: w2.id, title: '别的公司的' });
     done(p2.id, w2.id, t.id);
 
-    expect(enqueueIdleReflections(db, c.id, 10)).toBe(0);
+    expect(enqueueIdleReflections(db, 10)).toBe(0);
   });
 });
 

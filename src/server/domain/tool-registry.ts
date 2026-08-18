@@ -295,35 +295,40 @@ export function setToolActive(db: DB, id: string, isActive: boolean): ToolRegist
   return getTool(db, id)!;
 }
 
-/** 派发默认工具到公司(创建公司时调用)。 */
-export function dispatchDefaultToolsToCompany(db: DB, companyId: string): void {
+/** 派发默认工具到工作台。 */
+export function dispatchDefaultToolsToWorkbench(db: DB): void {
   const now = nowIso();
   const defaults = db.prepare('SELECT id FROM tool_registry WHERE is_default=1 AND is_active=1').all() as Array<{ id: string }>;
   db.transaction(() => {
     for (const { id } of defaults) {
-      db.prepare(`INSERT OR IGNORE INTO company_tool (company_id, tool_id, enabled, created_at, updated_at) VALUES (?, ?, 1, ?, ?)`)
-        .run(companyId, id, now, now);
+      db.prepare(`INSERT OR IGNORE INTO workbench_tool (tool_id, enabled, created_at, updated_at) VALUES (?, 1, ?, ?)`)
+        .run(id, now, now);
     }
   })();
 }
+export const dispatchDefaultToolsToCompany = (db: DB, _companyId?: string) => dispatchDefaultToolsToWorkbench(db);
 
-/** 公司可用工具清单。 */
-export function listCompanyTools(db: DB, companyId: string): Array<ToolRegistryEntry & { enabled: boolean }> {
+/** 工作台可用工具清单。 */
+export function listWorkbenchTools(db: DB): Array<ToolRegistryEntry & { enabled: boolean }> {
   const rows = db.prepare(`SELECT t.*, c.enabled AS c_enabled FROM tool_registry t
-    LEFT JOIN company_tool c ON c.tool_id=t.id AND c.company_id=?
+    LEFT JOIN workbench_tool c ON c.tool_id=t.id
     WHERE t.is_active=1 ORDER BY t.capability_id, t.implementation, t.title`)
-    .all(companyId) as Array<ToolRegistryRow & { c_enabled: number | null }>;
+    .all() as Array<ToolRegistryRow & { c_enabled: number | null }>;
   return rows.map((row) => ({
     ...fromRow(row),
     enabled: row.c_enabled === null ? row.is_default === 1 : row.c_enabled === 1,
   }));
 }
+export const listCompanyTools = (db: DB, _companyId?: string) => listWorkbenchTools(db);
 
-/** 设置公司工具启停。 */
-export function setCompanyToolEnabled(db: DB, companyId: string, toolId: string, enabled: boolean): void {
+/** 设置工作台工具启停。 */
+export function setWorkbenchToolEnabled(db: DB, toolId: string, enabled: boolean): void {
   const now = nowIso();
-  db.prepare(`INSERT INTO company_tool (company_id, tool_id, enabled, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT(company_id, tool_id) DO UPDATE SET enabled=excluded.enabled, updated_at=excluded.updated_at`)
-    .run(companyId, toolId, enabled ? 1 : 0, now, now);
+  db.prepare(`INSERT INTO workbench_tool (tool_id, enabled, created_at, updated_at)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(tool_id) DO UPDATE SET enabled=excluded.enabled, updated_at=excluded.updated_at`)
+    .run(toolId, enabled ? 1 : 0, now, now);
+}
+export function setCompanyToolEnabled(db: DB, _companyId: string, toolId: string, enabled: boolean): void {
+  setWorkbenchToolEnabled(db, toolId, enabled);
 }

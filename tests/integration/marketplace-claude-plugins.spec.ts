@@ -91,7 +91,7 @@ describe('installClaudeCodePlugin（安装为 skill 注入）', () => {
       signals.push(init?.signal);
       return base(url, init);
     }) as ClaudeFetch;
-    const plugin = await installClaudeCodePlugin(db, 'commit-commands', { level: 'company', companyId: company.id }, { fetcher: recording });
+    const plugin = await installClaudeCodePlugin(db, 'commit-commands', { level: 'workbench' }, { fetcher: recording });
     expect(plugin.kind).toBe('skill');
     expect(plugin.name).toBe('commit-commands');
     expect(plugin.source).toEqual({ kind: 'marketplace', registry: 'claude-code-plugins', ref: 'commit-commands' });
@@ -107,9 +107,9 @@ describe('installClaudeCodePlugin（安装为 skill 注入）', () => {
   it('同源重复安装 → CONFLICT', async () => {
     const { db } = makeTestDb();
     const company = createCompany(db, { name: 'C' });
-    await installClaudeCodePlugin(db, 'commit-commands', { level: 'company', companyId: company.id }, { fetcher: mockFetcher() });
+    await installClaudeCodePlugin(db, 'commit-commands', { level: 'workbench' }, { fetcher: mockFetcher() });
     await expect(
-      installClaudeCodePlugin(db, 'commit-commands', { level: 'company', companyId: company.id }, { fetcher: mockFetcher() }),
+      installClaudeCodePlugin(db, 'commit-commands', { level: 'workbench' }, { fetcher: mockFetcher() }),
     ).rejects.toMatchObject({ code: 'conflict' });
   });
 
@@ -124,16 +124,16 @@ describe('installClaudeCodePlugin（安装为 skill 注入）', () => {
       manifest: { kind: 'skill', skill: { body: '# 旧版' } },
     });
     await expect(
-      installClaudeCodePlugin(db, 'commit-commands', { level: 'company', companyId: company.id }, { fetcher: mockFetcher() }),
+      installClaudeCodePlugin(db, 'commit-commands', { level: 'workbench' }, { fetcher: mockFetcher() }),
     ).rejects.toMatchObject({ code: 'conflict' });
     const fresh = await installClaudeCodePlugin(
       db,
       'commit-commands',
-      { level: 'company', companyId: company.id },
+      { level: 'workbench' },
       { fetcher: mockFetcher(), replaceExisting: true },
     );
     expect(fresh.id).not.toBe(old.id);
-    const disabled = db.prepare('SELECT decision FROM company_plugin WHERE company_id = ? AND plugin_id = ?').get(company.id, old.id) as { decision: string } | undefined;
+    const disabled = db.prepare('SELECT decision FROM workbench_plugin WHERE plugin_id = ?').get(old.id) as { decision: string } | undefined;
     expect(disabled?.decision).toBe('disabled');
   });
 
@@ -141,7 +141,7 @@ describe('installClaudeCodePlugin（安装为 skill 注入）', () => {
     const { db } = makeTestDb();
     const company = createCompany(db, { name: 'C' });
     await expect(
-      installClaudeCodePlugin(db, 'nope', { level: 'company', companyId: company.id }, { fetcher: mockFetcher() }),
+      installClaudeCodePlugin(db, 'nope', { level: 'workbench' }, { fetcher: mockFetcher() }),
     ).rejects.toMatchObject({ code: 'not_found' });
     const failing = mockFetcher();
     const bad = (async (url: string) => {
@@ -149,7 +149,7 @@ describe('installClaudeCodePlugin（安装为 skill 注入）', () => {
       return failing(url);
     }) as ClaudeFetch;
     await expect(
-      installClaudeCodePlugin(db, 'commit-commands', { level: 'company', companyId: company.id }, { fetcher: bad }),
+      installClaudeCodePlugin(db, 'commit-commands', { level: 'workbench' }, { fetcher: bad }),
     ).rejects.toMatchObject({ code: 'validation' });
   });
 
@@ -172,7 +172,7 @@ describe('installClaudeCodePlugin（安装为 skill 注入）', () => {
       }
       return f(url);
     }) as ClaudeFetch;
-    const plugin = await installClaudeCodePlugin(db, 'commit-commands', { level: 'company', companyId: company.id }, { fetcher: noDownloadUrl });
+    const plugin = await installClaudeCodePlugin(db, 'commit-commands', { level: 'workbench' }, { fetcher: noDownloadUrl });
     if (plugin.manifest.kind === 'skill') {
       expect(plugin.manifest.skill.body).toContain('提交工作流指令');
     }

@@ -202,18 +202,6 @@ await check('C7: 列出公司交接记录', async () => {
   if (!Array.isArray(r.body)) throw new Error('应返回数组');
 });
 
-// ── 外包契约基础（B2B）──────────────────────────────────────────────────
-await check('D1: 列出甲方外包契约', async () => {
-  const r = await api.get(`/api/outsource/contracts?role=source`);
-  if (r.status !== 200) throw new Error(`status ${r.status}`);
-  if (!Array.isArray(r.body)) throw new Error('应返回数组');
-});
-
-await check('D2: 列出乙方外包契约', async () => {
-  const r = await api.get(`/api/outsource/contracts?role=target`);
-  if (r.status !== 200) throw new Error(`status ${r.status}`);
-});
-
 // ── 汇总 ────────────────────────────────────────────────────────────────
 console.log(results.join('\n'));
 console.log(`\n${pass}/${pass + fail} passed`);

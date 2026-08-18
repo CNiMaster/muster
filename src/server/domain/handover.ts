@@ -19,7 +19,7 @@ import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { nowIso, shortId } from '../../shared/utils';
 import { getAgent, deleteAgent } from './agent';
-import { getCompany } from './company';
+import { getWorkbench } from './workbench';
 import { getAgentHomePath } from './agent-home';
 import { transferAllArtifactsOfOwner } from './artifact';
 import { listAgentAuditLog } from './artifact-audit';
@@ -28,7 +28,6 @@ export type HandoverState = 'drafting' | 'awaiting' | 'receiving' | 'completed' 
 
 export interface HandoverRecord {
   id: string;
-  companyId: string;
   departingEmployeeId: string;
   departingProfileId: string;
   receiverEmployeeId: string | null;
@@ -47,7 +46,6 @@ export interface HandoverRecord {
 
 interface HandoverRow {
   id: string;
-  company_id: string;
   departing_employee_id: string;
   departing_profile_id: string;
   receiver_employee_id: string | null;
@@ -64,10 +62,9 @@ interface HandoverRow {
   updated_at: string;
 }
 
-function fromRow(r: HandoverRow): HandoverRecord {
+function fromRow(_db: DB, r: HandoverRow): HandoverRecord {
   return {
     id: r.id,
-    companyId: r.company_id,
     departingEmployeeId: r.departing_employee_id,
     departingProfileId: r.departing_profile_id,
     receiverEmployeeId: r.receiver_employee_id,
@@ -122,11 +119,8 @@ function buildArtifactInventory(db: DB, agentId: string): HandoverRecord['artifa
  * 阶段 1：创建交接记录（drafting）。
  * 系统自动汇总产物清单 + 审计日志。离职员工可补充交接记录、经验教训、待办。
  */
-export function createHandover(db: DB, input: { companyId: string; departingEmployeeId: string }): HandoverRecord {
-  const agent = getAgent(db, input.departingEmployeeId);
-  if (agent.companyId !== input.companyId) {
-    throw new AppError(ErrorCode.UNAUTHORIZED, '离职员工不属于该公司');
-  }
+export function createHandover(db: DB, input: { departingEmployeeId: string }): HandoverRecord {
+  getAgent(db, input.departingEmployeeId); // 校验离职员工存在
   // 检查是否已有未完成交接
   const existing = db
     .prepare(
@@ -141,26 +135,26 @@ export function createHandover(db: DB, input: { companyId: string; departingEmpl
   const inventory = buildArtifactInventory(db, input.departingEmployeeId);
   db.prepare(
     `INSERT INTO handover_record
-      (id, company_id, departing_employee_id, departing_profile_id, receiver_employee_id,
+      (id, departing_employee_id, departing_profile_id, receiver_employee_id,
        previous_handover_id, state, handover_note, work_history_json, lessons_json,
        pending_work_json, artifact_inventory_json, receiver_acknowledgement, created_at, completed_at, updated_at)
-     VALUES (?, ?, ?, ?, NULL, NULL, 'drafting', NULL, '[]', '[]', '[]', ?, NULL, ?, NULL, ?)`,
-  ).run(id, input.companyId, input.departingEmployeeId, agent.profileId, JSON.stringify(inventory), now, now);
+     VALUES (?, ?, ?, NULL, NULL, 'drafting', NULL, '[]', '[]', '[]', ?, NULL, ?, NULL, ?)`,
+  ).run(id, input.departingEmployeeId, getAgent(db, input.departingEmployeeId).profileId, JSON.stringify(inventory), now, now);
   return getHandover(db, id);
 }
 
 export function getHandover(db: DB, id: string): HandoverRecord {
   const row = db.prepare('SELECT * FROM handover_record WHERE id=?').get(id) as HandoverRow | undefined;
   if (!row) throw new AppError(ErrorCode.NOT_FOUND, `交接记录 ${id} 不存在`);
-  return fromRow(row);
+  return fromRow(db, row);
 }
 
 /** 列出公司的交接记录。 */
-export function listHandovers(db: DB, companyId: string): HandoverRecord[] {
+export function listHandovers(db: DB): HandoverRecord[] {
   const rows = db
-    .prepare('SELECT * FROM handover_record WHERE company_id=? ORDER BY updated_at DESC')
-    .all(companyId) as HandoverRow[];
-  return rows.map(fromRow);
+    .prepare('SELECT * FROM handover_record ORDER BY updated_at DESC')
+    .all() as HandoverRow[];
+  return rows.map((row) => fromRow(db, row));
 }
 
 /**
@@ -213,11 +207,8 @@ export function assignReceiver(db: DB, id: string, receiverEmployeeId: string): 
   } else if (cur.state !== 'awaiting') {
     throw new AppError(ErrorCode.VALIDATION, `交接记录 ${id} 状态 ${cur.state}，不可指定接手人`);
   }
-  // 校验接手人属于同公司
+  // 校验接手人存在（同工作台语义下无需再比对公司归属）
   const receiver = getAgent(db, receiverEmployeeId);
-  if (receiver.companyId !== cur.companyId) {
-    throw new AppError(ErrorCode.UNAUTHORIZED, '接手人不属于该公司');
-  }
   if (receiverEmployeeId === cur.departingEmployeeId) {
     throw new AppError(ErrorCode.VALIDATION, '不能交接给自己');
   }
@@ -277,19 +268,23 @@ export function completeHandover(db: DB, id: string, opts?: { musterHome?: strin
   assertTransition(cur.state, 'completed');
   const now = nowIso();
   // 执行离职前：若离职员工是公司/项目的 first_agent，转移给接手人或清除（防 FK 冲突）
+  let companyId = 'default';
   db.transaction(() => {
-    const company = db.prepare('SELECT first_agent_id FROM company WHERE id=?').get(cur.companyId) as { first_agent_id: string | null } | undefined;
-    if (company?.first_agent_id === cur.departingEmployeeId) {
-      db.prepare('UPDATE company SET first_agent_id=? WHERE id=?').run(cur.receiverEmployeeId, cur.companyId);
+    const company = db.prepare('SELECT id, first_agent_id FROM workbench LIMIT 1').get() as { id: string; first_agent_id: string | null } | undefined;
+    if (company) {
+      companyId = company.id;
+      if (company.first_agent_id === cur.departingEmployeeId) {
+        db.prepare('UPDATE workbench SET first_agent_id=? WHERE id=?').run(cur.receiverEmployeeId, company.id);
+      }
     }
     // 项目的 first_agent_id 同理（ON DELETE SET NULL 会自动处理，但显式转移更优）
-    db.prepare('UPDATE project SET first_agent_id=? WHERE first_agent_id=? AND company_id=?').run(
-      cur.receiverEmployeeId, cur.departingEmployeeId, cur.companyId,
+    db.prepare('UPDATE project SET first_agent_id=? WHERE first_agent_id=?').run(
+      cur.receiverEmployeeId, cur.departingEmployeeId,
     );
     db.prepare('DELETE FROM agent_definition WHERE id=?').run(cur.departingEmployeeId);
   })();
-  // 归档该公司在 Agent Home 的记忆分区
-  archiveCompanyMemoryPartition(cur.departingProfileId, cur.companyId, opts?.musterHome);
+  // 归档该工作台在 Agent Home 的记忆分区
+  archiveCompanyMemoryPartition(cur.departingProfileId, companyId, opts?.musterHome);
   db.prepare(
     `UPDATE handover_record SET state='completed', completed_at=?, updated_at=? WHERE id=?`,
   ).run(now, now, id);
@@ -309,8 +304,8 @@ export function cancelHandover(db: DB, id: string): HandoverRecord {
  * 封装：创建交接 → （用户在 UI 走完四阶段）→ completeHandover 删任职。
  * 本函数仅创建交接记录入口，实际完成由 completeHandover 触发。
  */
-export function offboardEmployee(db: DB, companyId: string, employeeId: string): HandoverRecord {
-  return createHandover(db, { companyId, departingEmployeeId: employeeId });
+export function offboardEmployee(db: DB, employeeId: string): HandoverRecord {
+  return createHandover(db, { departingEmployeeId: employeeId });
 }
 
 /** 归档 Agent Home 中某公司的记忆分区到 archive/ 子目录。 */

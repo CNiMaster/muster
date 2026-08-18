@@ -40,13 +40,13 @@ function seed() {
   return { c, lead, p };
 }
 
-function insertReview(taskId: string, companyId: string, employeeId: string, feedback: string, decision = 'changes_requested') {
+function insertReview(taskId: string, employeeId: string, feedback: string, decision = 'changes_requested') {
   const now = new Date().toISOString();
   db.prepare(
     `INSERT INTO business_review
-       (id, company_id, task_id, employee_id, review_kind, subject_id, subject_snapshot_json, title, status, feedback, decided_at, created_at)
-     VALUES (?, ?, ?, ?, 'custom', 'subj', '{}', '审阅', ?, ?, ?, ?)`,
-  ).run(`br_${taskId}`, companyId, taskId, employeeId, decision, feedback, now, now);
+       (id, task_id, employee_id, review_kind, subject_id, subject_snapshot_json, title, status, feedback, decided_at, created_at)
+     VALUES (?, ?, ?, 'custom', 'subj', '{}', '审阅', ?, ?, ?, ?)`,
+  ).run(`br_${taskId}`, taskId, employeeId, decision, feedback, now, now);
 }
 
 function insertUserMessage(taskId: string, content: string) {
@@ -62,7 +62,7 @@ describe('E1.2 用户反馈提取进反思（偏好记忆）', () => {
   it('business_review.feedback 存在时，反思产出 PREFERENCE → personal/author=user 候选并自动批准', async () => {
     const { c, lead, p } = seed();
     const task = createTask(db, { projectId: p.id, title: '设计封面', assigneeAgentId: lead.id });
-    insertReview(task.id, c.id, lead.id, '太花了，整体要更商务、更克制');
+    insertReview(task.id, lead.id, '太花了，整体要更商务、更克制');
     enqueueReflection(db, { task, outcome: 'completed', signal: 'completed' });
 
     vi.spyOn(llmCallModule, 'callLlm').mockResolvedValue(
@@ -117,7 +117,7 @@ describe('E1.2 用户反馈提取进反思（偏好记忆）', () => {
   it('PREFERENCE 置信度 < 0.7 时不沉淀（避免弱信号噪声）', async () => {
     const { c, lead, p } = seed();
     const task = createTask(db, { projectId: p.id, title: '设计', assigneeAgentId: lead.id });
-    insertReview(task.id, c.id, lead.id, '还行吧');
+    insertReview(task.id, lead.id, '还行吧');
     enqueueReflection(db, { task, outcome: 'completed', signal: 'completed' });
 
     vi.spyOn(llmCallModule, 'callLlm').mockResolvedValue(
@@ -132,7 +132,7 @@ describe('E1.2 用户反馈提取进反思（偏好记忆）', () => {
   it('PREFERENCE 与 LESSON/RULE 可在同一轮反思中并存沉淀', async () => {
     const { c, lead, p } = seed();
     const task = createTask(db, { projectId: p.id, title: '设计海报', assigneeAgentId: lead.id });
-    insertReview(task.id, c.id, lead.id, '颜色太跳，要稳重');
+    insertReview(task.id, lead.id, '颜色太跳，要稳重');
     enqueueReflection(db, { task, outcome: 'completed', signal: 'completed' });
 
     vi.spyOn(llmCallModule, 'callLlm').mockResolvedValue(

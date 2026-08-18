@@ -19,9 +19,8 @@ import { asyncHandler, param, companyIdOf } from './middleware';
 
 export const blueprintOptimizationRouter = Router({ mergeParams: true });
 
-function assertBlueprintCompany(blueprintId: string, companyId: string): void {
-  const bp = getBlueprint(getDb(), blueprintId);
-  if (bp.companyId !== companyId) throw new AppError(ErrorCode.NOT_FOUND, '蓝图不存在');
+function assertBlueprintExists(blueprintId: string): void {
+  getBlueprint(getDb(), blueprintId);
 }
 
 blueprintOptimizationRouter.get(
@@ -29,7 +28,7 @@ blueprintOptimizationRouter.get(
   asyncHandler(async (req, res) => {
     const companyId = companyIdOf(req);
     const blueprintId = param(req, 'blueprintId');
-    assertBlueprintCompany(blueprintId, companyId);
+    assertBlueprintExists(blueprintId);
     res.json({
       messages: listOptimizeChat(getDb(), blueprintId),
       pendingItems: listOptimizationItems(getDb(), companyId, blueprintId).filter((i) => i.status === 'pending'),
@@ -44,7 +43,7 @@ blueprintOptimizationRouter.post(
   asyncHandler(async (req, res) => {
     const companyId = companyIdOf(req);
     const blueprintId = param(req, 'blueprintId');
-    assertBlueprintCompany(blueprintId, companyId);
+    assertBlueprintExists(blueprintId);
     const { message } = optimizeChatSchema.parse(req.body);
     res.json(await sendOptimizeChatMessage(getDb(), companyId, blueprintId, message));
   }),
@@ -59,15 +58,15 @@ blueprintOptimizationRouter.get(
   }),
 );
 
-function assertItemCompany(itemId: string, companyId: string): void {
-  const row = getDb().prepare('SELECT company_id FROM blueprint_optimization_item WHERE id=?').get(itemId) as { company_id: string } | undefined;
-  if (!row || row.company_id !== companyId) throw new AppError(ErrorCode.NOT_FOUND, '优化建议不存在');
+function assertItemExists(itemId: string): void {
+  const row = getDb().prepare('SELECT 1 FROM blueprint_optimization_item WHERE id=?').get(itemId);
+  if (!row) throw new AppError(ErrorCode.NOT_FOUND, '优化建议不存在');
 }
 
 blueprintOptimizationRouter.post(
   '/optimization-items/:itemId/apply',
   asyncHandler(async (req, res) => {
-    assertItemCompany(param(req, 'itemId'), companyIdOf(req));
+    assertItemExists(param(req, 'itemId'));
     res.json(applyOptimizationItem(getDb(), param(req, 'itemId')));
   }),
 );
@@ -75,7 +74,7 @@ blueprintOptimizationRouter.post(
 blueprintOptimizationRouter.post(
   '/optimization-items/:itemId/ignore',
   asyncHandler(async (req, res) => {
-    assertItemCompany(param(req, 'itemId'), companyIdOf(req));
+    assertItemExists(param(req, 'itemId'));
     ignoreOptimizationItem(getDb(), param(req, 'itemId'));
     res.status(204).end();
   }),

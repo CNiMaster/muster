@@ -35,7 +35,6 @@ describe('Agent Profile and company employment', () => {
       id: agent.id,
       legacyAgentId: agent.id,
       profileId: agent.profileId,
-      companyId: company.id,
       role: 'engineer',
     });
   });

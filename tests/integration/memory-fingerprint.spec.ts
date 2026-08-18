@@ -100,9 +100,9 @@ describe('E2.1 memory fingerprint', () => {
     const task = createTask(db, { projectId: p.id, title: '设计', assigneeAgentId: lead.id });
     const now = new Date().toISOString();
     db.prepare(
-      `INSERT INTO business_review (id, company_id, project_id, task_id, employee_id, review_kind, subject_id, subject_snapshot_json, title, status, feedback, decided_at, created_at)
-       VALUES (?, ?, ?, ?, ?, 'custom', 's', '{}', 'r', 'changes_requested', ?, ?, ?)`,
-    ).run('br', c.id, p.id, task.id, lead.id, '要更商务', now, now);
+      `INSERT INTO business_review (id, project_id, task_id, employee_id, review_kind, subject_id, subject_snapshot_json, title, status, feedback, decided_at, created_at)
+       VALUES (?, ?, ?, ?, 'custom', 's', '{}', 'r', 'changes_requested', ?, ?, ?)`,
+    ).run('br', p.id, task.id, lead.id, '要更商务', now, now);
     enqueueReflection(db, { task, outcome: 'completed', signal: 'completed' });
     vi.spyOn(llmCallModule, 'callLlm').mockResolvedValue(
       mockLlm('[LESSON]\nSKIPPED\n[RULE]\nSKIPPED\n[PREFERENCE]\n0.9\nstyle:business\n【风格】用户偏好商务、克制的视觉风格。'),

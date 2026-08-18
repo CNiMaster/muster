@@ -58,7 +58,7 @@ export function findBestAssignee(
   const capabilities = (requiredCapabilities ?? [])
     .filter((c) => typeof c === 'string' && c.trim())
     .map(normalizeCapability);
-  const agents = listAgents(db, companyId).filter((agent) => agent.id !== options.excludeAgentId);
+  const agents = listAgents(db).filter((agent) => agent.id !== options.excludeAgentId);
   if (agents.length === 0) return null;
 
   // 执行器类型过滤：解析每个候选员工绑定的执行器档案 → manifest kind

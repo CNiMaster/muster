@@ -46,14 +46,13 @@ const createChangeSchema = z.object({
 const createChangeHandler = asyncHandler(async (req, res) => {
   const input = createChangeSchema.parse(req.body);
   const req2 = createPermissionChangeRequest(getDb(), {
-    companyId: companyIdOf(req),
     ...input,
   });
   realtime.publish(makeLifecycleEvent('permission.change-requested' as never, {
     requestId: req2.id,
     requesterEmployeeId: req2.requesterEmployeeId,
     approverEmployeeId: req2.approverEmployeeId ?? '',
-  } as never, { companyId: companyIdOf(req) }));
+  } as never, {}));
   res.status(201).json(req2);
 });
 delegationRouter.post('/permission-changes', createChangeHandler);

@@ -7,7 +7,7 @@
 import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
-import { getCompany, isOrgLocked } from './company';
+import { getWorkbench } from './workbench';
 import { assertDepartmentInCompany } from './department';
 import {
   createAgentProfile,
@@ -69,7 +69,6 @@ export interface AgentExecutorJson {
 interface AgentRow {
   id: string;
   profile_id: string;
-  company_id: string;
   department_id: string | null;
   name: string;
   role: string;
@@ -89,11 +88,11 @@ interface AgentRow {
   updated_at: string;
 }
 
-function fromRow(r: AgentRow): AgentDefinition {
+function fromRow(db: DB, r: AgentRow): AgentDefinition {
   return {
     id: r.id,
     profileId: r.profile_id,
-    companyId: r.company_id,
+    companyId: getWorkbench(db).id,
     departmentId: r.department_id,
     name: r.name,
     role: r.role,
@@ -115,7 +114,6 @@ function fromRow(r: AgentRow): AgentDefinition {
 }
 
 export interface CreateAgentInput {
-  companyId: string;
   profileId?: string;
   departmentId?: string;
   name: string;
@@ -138,22 +136,22 @@ export interface CreateAgentInput {
   internalRecruit?: boolean;
 }
 
-function assertUnlocked(db: DB, companyId: string, opts?: { tempRecruit?: boolean; isSystem?: boolean; internalRecruit?: boolean }): void {
+function assertUnlocked(db: DB, opts?: { tempRecruit?: boolean; isSystem?: boolean; internalRecruit?: boolean }): void {
   // 临时工招聘豁免：允许公司 online 态招临时工（B2B 决策树 recruit 路径自动触发）
   // 系统隐形岗豁免：调度中心/评审中心由 coordinator 在线幂等创建
   // R2 内部岗豁免：验收员等可见固定岗懒确保（任务完成时工作台通常 online，不豁免则永远建不出来）
   if (opts?.tempRecruit || opts?.isSystem || opts?.internalRecruit) return;
-  if (isOrgLocked(db, companyId)) {
+  if (getWorkbench(db).state !== 'off') {
     throw new AppError(ErrorCode.COMPANY_LOCKED, '上班期间不能修改员工配置');
   }
 }
 
-function assertContactAllow(db: DB, companyId: string, contactAllow: string[]): void {
+function assertContactAllow(db: DB, contactAllow: string[]): void {
   if (contactAllow.length === 0) return;
   const placeholders = contactAllow.map(() => '?').join(',');
   const rows = db.prepare(
-    `SELECT id FROM agent_definition WHERE company_id = ? AND id IN (${placeholders})`,
-  ).all(companyId, ...contactAllow) as Array<{ id: string }>;
+    `SELECT id FROM agent_definition WHERE id IN (${placeholders})`,
+  ).all(...contactAllow) as Array<{ id: string }>;
   const valid = new Set(rows.map((row) => row.id));
   const invalid = contactAllow.filter((id) => !valid.has(id));
   if (invalid.length > 0) {
@@ -210,12 +208,12 @@ function assertExecutorValid(executor: Record<string, unknown> | undefined): voi
 }
 
 export function createAgent(db: DB, input: CreateAgentInput): AgentDefinition {
-  getCompany(db, input.companyId); // 校验存在
-  assertUnlocked(db, input.companyId, { tempRecruit: input.tempRecruit, isSystem: input.isSystem, internalRecruit: input.internalRecruit });
-  assertDepartmentInCompany(db, input.companyId, input.departmentId ?? null);
+  getWorkbench(db); // 校验工作台存在
+  assertUnlocked(db, { tempRecruit: input.tempRecruit, isSystem: input.isSystem, internalRecruit: input.internalRecruit });
+  assertDepartmentInCompany(db, input.departmentId ?? null);
   // 临时工招聘豁免 contactAllow 校验（临时工的工作关系仅限发起者，可能跨公司）
   if (!input.tempRecruit && !input.isSystem) {
-    assertContactAllow(db, input.companyId, input.contactAllow ?? []);
+    assertContactAllow(db, input.contactAllow ?? []);
   }
   assertExecutorValid(input.executor);
 
@@ -233,12 +231,12 @@ export function createAgent(db: DB, input: CreateAgentInput): AgentDefinition {
     const now = nowIso();
     db.prepare(
       `INSERT INTO agent_definition
-        (id, profile_id, company_id, department_id, name, role, responsibilities, system_prompt,
+        (id, profile_id, department_id, name, role, responsibilities, system_prompt,
          skills_json, tools_json, permissions_json, contact_allow_json, can_dispatch,
          executor_json, is_inspector, stance, is_system, created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     ).run(
-      id, profile.id, input.companyId, input.departmentId ?? null, input.name || profile.displayName, input.role,
+      id, profile.id, input.departmentId ?? null, input.name || profile.displayName, input.role,
       input.responsibilities ?? '', input.systemPrompt ?? profile.soul,
       JSON.stringify(input.skills ?? []), JSON.stringify(input.tools ?? []),
       JSON.stringify(input.permissions ?? {}), JSON.stringify(input.contactAllow ?? []),
@@ -248,7 +246,6 @@ export function createAgent(db: DB, input: CreateAgentInput): AgentDefinition {
     createCompanyEmployeeRecord(db, {
       id,
       profileId: profile.id,
-      companyId: input.companyId,
       legacyAgentId: id,
       departmentId: input.departmentId,
       role: input.role,
@@ -266,7 +263,6 @@ export function createAgent(db: DB, input: CreateAgentInput): AgentDefinition {
 }
 
 export function recruitAgentProfile(db: DB, input: {
-  companyId: string;
   profileId: string;
   role: string;
   departmentId?: string;
@@ -288,28 +284,27 @@ export function recruitAgentProfile(db: DB, input: {
 export function getAgent(db: DB, id: string): AgentDefinition {
   const row = db.prepare('SELECT * FROM agent_definition WHERE id = ?').get(id) as AgentRow | undefined;
   if (!row) throw new AppError(ErrorCode.NOT_FOUND, `agent ${id} not found`);
-  return withEmploymentBindings(db, fromRow(row));
+  return withEmploymentBindings(db, fromRow(db, row));
 }
 
 /**
  * 列出公司员工。默认过滤 hidden 任职（系统隐形岗 + 蜂群临时工蜂）——
  * 花名册/能力路由/组织图均走此处，一处过滤全面生效；内部系统逻辑传 includeHidden。
  */
-export function listAgents(db: DB, companyId: string, options?: { includeHidden?: boolean }): AgentDefinition[] {
+export function listAgents(db: DB, options?: { includeHidden?: boolean }): AgentDefinition[] {
   const rows = (
     options?.includeHidden
-      ? db.prepare('SELECT * FROM agent_definition WHERE company_id = ? ORDER BY created_at').all(companyId)
+      ? db.prepare('SELECT * FROM agent_definition ORDER BY created_at').all()
       : db.prepare(
         `SELECT a.* FROM agent_definition a
-         WHERE a.company_id = ?
-           AND NOT EXISTS (
-             SELECT 1 FROM company_employee ce
-             WHERE ce.legacy_agent_id = a.id AND ce.hidden = 1
-           )
+         WHERE NOT EXISTS (
+           SELECT 1 FROM company_employee ce
+           WHERE ce.legacy_agent_id = a.id AND ce.hidden = 1
+         )
          ORDER BY a.created_at`,
-      ).all(companyId)
+      ).all()
   ) as AgentRow[];
-  return rows.map((row) => withEmploymentBindings(db, fromRow(row)));
+  return rows.map((row) => withEmploymentBindings(db, fromRow(db, row)));
 }
 
 /** 附带 company_employee 表的执行器/权限绑定（legacy_agent_id 与 agent_definition.id 同值）。 */
@@ -330,14 +325,14 @@ export function updateAgent(
   patch: Partial<Omit<AgentDefinition, 'id' | 'companyId' | 'createdAt' | 'availabilityState'>>,
 ): AgentDefinition {
   const cur = getAgent(db, id);
-  assertUnlocked(db, cur.companyId);
+  assertUnlocked(db);
   const next: AgentDefinition = {
     ...cur,
     ...patch,
     updatedAt: nowIso(),
   };
-  assertDepartmentInCompany(db, cur.companyId, next.departmentId);
-  assertContactAllow(db, cur.companyId, next.contactAllow);
+  assertDepartmentInCompany(db, next.departmentId);
+  assertContactAllow(db, next.contactAllow);
   assertExecutorValid(next.executor);
   db.prepare(
     `UPDATE agent_definition SET
@@ -367,13 +362,13 @@ export function updateAgent(
 
 export function deleteAgent(db: DB, id: string): void {
   const cur = getAgent(db, id);
-  assertUnlocked(db, cur.companyId);
+  assertUnlocked(db);
   if (cur.isInspector) {
     throw new AppError(ErrorCode.CONFLICT, '监察员工是系统稳定性岗位，不能删除；可以修改配置');
   }
-  // 若该员工是公司/项目的第一负责人，先清除（防 DEFERRABLE FK 冲突）
+  // 若该员工是工作台/项目的第一负责人，先清除（防 DEFERRABLE FK 冲突）
   db.transaction(() => {
-    db.prepare('UPDATE company SET first_agent_id=NULL WHERE first_agent_id=?').run(id);
+    db.prepare('UPDATE workbench SET first_agent_id=NULL WHERE first_agent_id=?').run(id);
     db.prepare('UPDATE project SET first_agent_id=NULL WHERE first_agent_id=?').run(id);
     db.prepare('DELETE FROM agent_definition WHERE id=?').run(id);
   })();
@@ -401,9 +396,9 @@ export function clockOutAgent(db: DB, id: string): AgentDefinition {
 }
 
 /** 将已经完成手头工作的 draining 员工转为 off。 */
-export function settleDrainingAgents(db: DB, companyId: string): string[] {
+export function settleDrainingAgents(db: DB): string[] {
   const settled: string[] = [];
-  for (const agent of listAgents(db, companyId)) {
+  for (const agent of listAgents(db)) {
     if (agent.availabilityState !== 'draining') continue;
     const running = db.prepare(
       "SELECT 1 FROM task WHERE assignee_agent_id=? AND state IN ('claimed','running') LIMIT 1",

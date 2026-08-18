@@ -41,7 +41,7 @@ export function dispatchGapResearch(db: DB, task: Task, gaps: CapabilityGap[]): 
   if (already) return { dispatched: false, reason: '本任务已派过能力缺口调研' };
 
   // 选研究员：在线 + research 技能；否则第一负责人；都没有则放弃。
-  const online = listAgents(db, project.companyId).filter((a) => a.availabilityState === 'online');
+  const online = listAgents(db).filter((a) => a.availabilityState === 'online');
   const researcher = online.find((a) => (a.skills ?? []).includes('research'))
     ?? online.find((a) => company.firstAgentId && a.id === company.firstAgentId)
     ?? null;

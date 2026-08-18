@@ -3,10 +3,12 @@ import path from 'node:path';
 import type { ResolvedTaskSkill, TaskCapabilityRequirements } from '../../shared/types';
 import type { DB } from '../db/client';
 
+import { shortId, nowIso } from '../../shared/utils';
+import { AppError, ErrorCode } from '../../shared/errors';
+
 /** 能力绑定（capability_binding 表）：把能力/业务字段映射到 skill 与推荐工具。 */
 interface CapabilityBindingRow {
   id: string;
-  company_id: string;
   employee_id: string | null;
   scope: CapabilityBinding['scope'];
   scope_key: string;
@@ -22,7 +24,7 @@ interface CapabilityBindingRow {
 
 export interface CapabilityBinding {
   id: string;
-  companyId: string;
+  companyId?: string;
   employeeId: string | null;
   scope: 'role' | 'employee' | 'field' | 'task';
   scopeKey: string;
@@ -39,13 +41,12 @@ export interface CapabilityBinding {
 function mapCapabilityBinding(row: CapabilityBindingRow): CapabilityBinding {
   return {
     id: row.id,
-    companyId: row.company_id,
     employeeId: row.employee_id,
     scope: row.scope,
     scopeKey: row.scope_key,
     capabilityId: row.capability_id,
-    skillIds: JSON.parse(row.skill_ids_json) as string[],
-    recommendedToolIds: JSON.parse(row.recommended_tool_ids_json) as string[],
+    skillIds: JSON.parse(row.skill_ids_json || '[]') as string[],
+    recommendedToolIds: JSON.parse(row.recommended_tool_ids_json || '[]') as string[],
     requiresExecutorKind: (row.requires_executor_kind || '') as CapabilityBinding['requiresExecutorKind'],
     purpose: row.purpose,
     loadWhen: row.load_when,
@@ -54,9 +55,53 @@ function mapCapabilityBinding(row: CapabilityBindingRow): CapabilityBinding {
   };
 }
 
-export function listCapabilityBindings(db: DB, companyId: string): CapabilityBinding[] {
-  const rows = db.prepare('SELECT * FROM capability_binding WHERE company_id=? ORDER BY scope, scope_key, capability_id').all(companyId) as CapabilityBindingRow[];
+export function listCapabilityBindings(db: DB, _companyId?: string): CapabilityBinding[] {
+  const rows = db.prepare('SELECT * FROM capability_binding ORDER BY scope, scope_key, capability_id').all() as CapabilityBindingRow[];
   return rows.map(mapCapabilityBinding);
+}
+
+export function getCapabilityBinding(db: DB, id: string): CapabilityBinding {
+  const row = db.prepare('SELECT * FROM capability_binding WHERE id=?').get(id) as CapabilityBindingRow | undefined;
+  if (!row) throw new AppError(ErrorCode.NOT_FOUND, '能力绑定不存在');
+  return mapCapabilityBinding(row);
+}
+
+export function createCapabilityBinding(
+  db: DB,
+  input: {
+    employeeId?: string | null;
+    scope: 'role' | 'employee' | 'field' | 'task';
+    scopeKey: string;
+    capabilityId: string;
+    skillIds?: string[];
+    recommendedToolIds?: string[];
+    requiresExecutorKind?: '' | 'cli' | 'api';
+    purpose?: string;
+    loadWhen?: string;
+  },
+): CapabilityBinding {
+  const id = shortId('cb_');
+  const now = nowIso();
+  db.prepare(
+    `INSERT INTO capability_binding (
+       id, employee_id, scope, scope_key, capability_id, skill_ids_json,
+       purpose, load_when, created_at, updated_at, recommended_tool_ids_json, requires_executor_kind
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    id,
+    input.employeeId ?? null,
+    input.scope,
+    input.scopeKey,
+    input.capabilityId,
+    JSON.stringify(input.skillIds ?? []),
+    input.purpose ?? '',
+    input.loadWhen ?? 'always',
+    now,
+    now,
+    JSON.stringify(input.recommendedToolIds ?? []),
+    input.requiresExecutorKind ?? '',
+  );
+  return getCapabilityBinding(db, id);
 }
 
 /**
@@ -65,12 +110,13 @@ export function listCapabilityBindings(db: DB, companyId: string): CapabilityBin
  */
 export function requiredExecutorKindForCapabilities(
   db: DB,
-  companyId: string,
-  capabilityIds: string[],
+  companyIdOrCapabilityIds: string | string[],
+  maybeCapabilityIds?: string[],
 ): '' | 'cli' | 'api' {
+  const capabilityIds = Array.isArray(companyIdOrCapabilityIds) ? companyIdOrCapabilityIds : (maybeCapabilityIds ?? []);
   const wanted = new Set(capabilityIds.map((c) => c.trim().toLowerCase()).filter(Boolean));
   if (wanted.size === 0) return '';
-  for (const binding of listCapabilityBindings(db, companyId)) {
+  for (const binding of listCapabilityBindings(db)) {
     if (wanted.has(binding.capabilityId.trim().toLowerCase()) && binding.requiresExecutorKind) {
       return binding.requiresExecutorKind;
     }
@@ -172,7 +218,7 @@ export function resolveTaskSkills(
 
   // 注入链（spec M1）：plugin 表（商城安装/公司生效）**优先于**仓库 bundled 目录——
   // 安装的新版本必须盖过内置旧版（反之商城同名校准永远进不了上下文）。
-  const pluginSkills = collectEffectivePluginSkills(db, project.companyId);
+  const pluginSkills = collectEffectivePluginSkills(db);
   return [...selected.values()].map((candidate) => {
     if (disabled.has(candidate.skillId)) return { ...candidate, status: 'disabled' as const };
     const content = pluginSkills.get(candidate.skillId.trim().toLowerCase())

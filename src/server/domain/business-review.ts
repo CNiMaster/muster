@@ -19,7 +19,7 @@ import { AppError, ErrorCode } from '../../shared/errors';
 import { nowIso, shortId } from '../../shared/utils';
 import { createTask, getTask, type CreateTaskInput, type AcceptanceItem } from './task';
 import { enqueueReflection } from './reflection';
-import { getCompany } from './company';
+import { getWorkbench } from './workbench';
 import { recordSuspension, resolveSuspensionByTask } from './task-suspension';
 
 export type BusinessReviewKind = 'material' | 'artifact' | 'character' | 'skill' | 'relationship' | 'plot' | 'custom';
@@ -27,7 +27,6 @@ export type BusinessReviewStatus = 'pending' | 'approved' | 'rejected' | 'change
 
 export interface BusinessReview {
   id: string;
-  companyId: string;
   projectId: string | null;
   taskId: string | null;
   employeeId: string;
@@ -46,7 +45,6 @@ export interface BusinessReview {
 
 interface ReviewRow {
   id: string;
-  company_id: string;
   project_id: string | null;
   task_id: string | null;
   employee_id: string;
@@ -63,10 +61,9 @@ interface ReviewRow {
   created_at: string;
 }
 
-function fromRow(r: ReviewRow): BusinessReview {
+function fromRow(_db: DB, r: ReviewRow): BusinessReview {
   return {
     id: r.id,
-    companyId: r.company_id,
     projectId: r.project_id,
     taskId: r.task_id,
     employeeId: r.employee_id,
@@ -85,7 +82,6 @@ function fromRow(r: ReviewRow): BusinessReview {
 }
 
 export interface SubmitReviewInput {
-  companyId: string;
   projectId?: string;
   taskId?: string;
   employeeId: string;
@@ -102,14 +98,14 @@ export interface SubmitReviewInput {
  * parallel 模式：Task 继续执行，审批异步。
  */
 export function submitBusinessReview(db: DB, input: SubmitReviewInput): BusinessReview {
-  const company = getCompany(db, input.companyId);
+  const company = getWorkbench(db);
   const id = shortId('rev_');
   const now = nowIso();
   db.prepare(
-    `INSERT INTO business_review (id, company_id, project_id, task_id, employee_id, review_kind, subject_id, subject_snapshot_json, title, summary, status, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+    `INSERT INTO business_review (id, project_id, task_id, employee_id, review_kind, subject_id, subject_snapshot_json, title, summary, status, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
   ).run(
-    id, input.companyId, input.projectId ?? null, input.taskId ?? null, input.employeeId,
+    id, input.projectId ?? null, input.taskId ?? null, input.employeeId,
     input.reviewKind, input.subjectId, JSON.stringify(input.subjectSnapshot ?? {}),
     input.title, input.summary ?? null, now,
   );
@@ -134,20 +130,19 @@ export function submitBusinessReview(db: DB, input: SubmitReviewInput): Business
 export function getBusinessReview(db: DB, id: string): BusinessReview {
   const row = db.prepare('SELECT * FROM business_review WHERE id=?').get(id) as ReviewRow | undefined;
   if (!row) throw new AppError(ErrorCode.NOT_FOUND, `业务审批不存在: ${id}`);
-  return fromRow(row);
+  return fromRow(db, row);
 }
 
 export function listBusinessReviews(
   db: DB,
-  filter: { companyId?: string; projectId?: string; status?: BusinessReviewStatus } = {},
+  filter: { projectId?: string; status?: BusinessReviewStatus } = {},
 ): BusinessReview[] {
   const where: string[] = [];
   const params: (string | number)[] = [];
-  if (filter.companyId) { where.push('company_id=?'); params.push(filter.companyId); }
   if (filter.projectId) { where.push('project_id=?'); params.push(filter.projectId); }
   if (filter.status) { where.push('status=?'); params.push(filter.status); }
   const sql = `SELECT * FROM business_review${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY created_at DESC`;
-  return (db.prepare(sql).all(...params) as ReviewRow[]).map(fromRow);
+  return (db.prepare(sql).all(...params) as ReviewRow[]).map((row) => fromRow(db, row));
 }
 
 export interface DecideReviewInput {

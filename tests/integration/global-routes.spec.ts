@@ -123,11 +123,6 @@ describe('散落路由新路径', () => {
     expect(res.status).toBe(200);
   });
 
-  it('GET /api/outsource/contracts?role=source -> 200 []', async () => {
-    const res = await fetch(`${base}/api/outsource/contracts?role=source`);
-    expect(res.status).toBe(200);
-  });
-
   it('GET /api/permission-changes 缺 employeeId -> 400（路由命中）', async () => {
     const res = await fetch(`${base}/api/permission-changes`);
     expect(res.status).toBe(400);

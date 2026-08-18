@@ -104,7 +104,7 @@ export function maybeTriggerAcceptanceReview(db: DB, completedTask: Task): Task 
   ).get(completedTask.id);
   if (dispatched) return null;
 
-  const officerId = ensureAcceptanceOfficer(db, project.companyId);
+  const officerId = ensureAcceptanceOfficer(db);
   ensurePrimaryThread(db, project.id, officerId);
   // Review 修复 Minor：派发 + 留痕同事务（崩溃中断不会重派）
   const reviewTask = db.transaction(() => {
@@ -168,7 +168,7 @@ export function handleAcceptanceReviewTaskCompleted(db: DB, reviewTask: Task): v
     if (!parsed) {
       // 解析失败 → 升级用户
       postSystemMessage(db, {
-        scopeKind: 'company',
+        scopeKind: 'workbench',
         scopeId: project.companyId,
         role: 'system',
         author: officerName,
@@ -181,7 +181,7 @@ export function handleAcceptanceReviewTaskCompleted(db: DB, reviewTask: Task): v
     if (parsed.confidence < ACCEPTANCE_MIN_CONFIDENCE) {
       // 低置信 → 升级用户
       postSystemMessage(db, {
-        scopeKind: 'company',
+        scopeKind: 'workbench',
         scopeId: project.companyId,
         role: 'system',
         author: officerName,
@@ -235,7 +235,7 @@ export function handleAcceptanceReviewTaskCompleted(db: DB, reviewTask: Task): v
       getAgent(db, source.assigneeAgentId);
     } catch {
       postSystemMessage(db, {
-        scopeKind: 'company',
+        scopeKind: 'workbench',
         scopeId: project.companyId,
         role: 'system',
         author: officerName,
@@ -252,7 +252,7 @@ export function handleAcceptanceReviewTaskCompleted(db: DB, reviewTask: Task): v
     const nextRound = (prevPayload?.reviewRound ?? 0) + 1;
     if (nextRound > MAX_ACCEPTANCE_REWORK_ROUNDS) {
       postSystemMessage(db, {
-        scopeKind: 'company',
+        scopeKind: 'workbench',
         scopeId: project.companyId,
         role: 'system',
         author: officerName,
@@ -296,7 +296,7 @@ export function handleAcceptanceReviewTaskCompleted(db: DB, reviewTask: Task): v
       reviewTaskId: reviewTask.id,
     });
     postSystemMessage(db, {
-      scopeKind: 'company',
+      scopeKind: 'workbench',
       scopeId: project.companyId,
       role: 'system',
       author: officerName,

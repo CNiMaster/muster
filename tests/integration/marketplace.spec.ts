@@ -97,7 +97,7 @@ describe('installMarketplaceEntry', () => {
       kind: 'skill',
       maturity: 'stable',
     };
-    const plugin = installMarketplaceEntry(db, entry, { level: 'company', companyId });
+    const plugin = installMarketplaceEntry(db, entry, { level: 'workbench', companyId });
     expect(plugin.kind).toBe('skill');
     expect(plugin.source).toEqual({ kind: 'marketplace', registry: 'local', ref: 'installable' });
     expect(plugin.manifest.kind).toBe('skill');

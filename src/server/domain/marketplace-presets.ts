@@ -114,8 +114,8 @@ export function listMarketplacePresets(db: DB): PresetWithStatus[] {
     .map(({ it }) => it);
 }
 
-/** 安装范围（marketplace 仅支持 platform/company 两层）。 */
-export type PresetInstallScope = { level: 'platform' } | { level: 'company'; companyId: string };
+/** 安装范围（marketplace 仅支持 platform/workbench 两层）。 */
+export type PresetInstallScope = { level: 'platform' } | { level: 'workbench' };
 
 /** 远程拉取 SKILL.md 全文（raw.githubusercontent.com，pin=commit sha/tag）。 */
 export async function fetchRawSkill(repo: string, path: string, pin: string): Promise<string> {
@@ -240,21 +240,21 @@ export function disableExistingForScope(
 ): void {
   const now = nowIso();
   for (const id of existingIds) {
-    if (scope.level === 'company') {
+    if (scope.level === 'workbench') {
       if (isEntityId(id)) {
         try {
-          setCompanyPluginDecision(db, scope.companyId, id, 'disabled', enabledBy);
+          setCompanyPluginDecision(db, id, 'disabled', enabledBy);
         } catch {
           /* 旧条目可能已删，忽略 */
         }
       } else {
         // 只读视图条目（skill:/tool:/bridge:）：setCompanyPluginDecision 会因 getPluginRow
-        // 查不到而抛错，这里直写 company_plugin 覆盖行（读路径 listDisabledCompanyPlugins 兼容视图 id）
+        // 查不到而抛错，这里直写 workbench_plugin 覆盖行（读路径 listDisabledCompanyPlugins 兼容视图 id）
         db.prepare(
-          `INSERT INTO company_plugin (company_id, plugin_id, enabled, decision, enabled_by, enabled_at)
-           VALUES (?, ?, 0, 'disabled', ?, ?)
-           ON CONFLICT(company_id, plugin_id) DO UPDATE SET enabled=0, decision='disabled', enabled_by=excluded.enabled_by, enabled_at=excluded.enabled_at`,
-        ).run(scope.companyId, id, enabledBy ?? null, now);
+          `INSERT INTO workbench_plugin (plugin_id, enabled, decision, enabled_by, enabled_at)
+           VALUES (?, 0, 'disabled', ?, ?)
+           ON CONFLICT(plugin_id) DO UPDATE SET enabled=0, decision='disabled', enabled_by=excluded.enabled_by, enabled_at=excluded.enabled_at`,
+        ).run(id, enabledBy ?? null, now);
       }
     } else {
       // 平台级替换：实体行置 status=disabled（effective 已按 status 过滤，旧行即失效）；
@@ -271,7 +271,7 @@ export function isEntityId(id: string): boolean {
 }
 
 function toPluginScope(scope: PresetInstallScope): PluginScope {
-  return scope.level === 'platform' ? { level: 'platform' } : { level: 'company', companyId: scope.companyId };
+  return scope.level === 'platform' ? { level: 'platform' } : { level: 'workbench' };
 }
 
 /** 判断现有 plugin 来源是否与预置同源（marketplace + 同 registry 标签 + 同 preset id）。 */

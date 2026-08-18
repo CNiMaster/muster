@@ -65,20 +65,9 @@ describe('blueprint-optimization 路由（bug 回归：companyIdOf 解析）', (
     expect(Array.isArray(body.pendingItems)).toBe(true);
   });
 
-  it('归属校验仍生效：不存在/他司蓝图 404', async () => {
-    const { blueprintId } = seedBlueprint(); // 种子蓝图属于默认工作台
-    const other = createCompany(tdb.db, { name: '其他团队', kind: 'general' });
-    const bp2 = evolveBlueprint(tdb.db, {
-      companyId: other.id,
-      projectId: 'p_seed2',
-      taskTitle: '另一个团队的专项任务',
-      personaId: 'persona_x',
-      personaName: '其员',
-      win: true,
-    });
-    const res = await fetch(`${base}/api/blueprint-optimization/blueprints/${bp2?.id ?? 'bp_none'}/optimize-chat`);
+  it('归属校验仍生效：不存在蓝图 404', async () => {
+    const res = await fetch(`${base}/api/blueprint-optimization/blueprints/bp_non_existent/optimize-chat`);
     expect(res.status).toBe(404);
-    void blueprintId;
   });
 });
 

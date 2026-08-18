@@ -20,7 +20,6 @@ import { shortId, nowIso } from '../../shared/utils';
 import { log } from '../logger';
 import { callLlm } from './llm-call';
 import { getTask, type Task } from './task';
-import { getProject } from './project';
 import { getAgent } from './agent';
 import { createMemoryCandidate, searchMemory } from './memory';
 import { getPersona } from './persona-library';
@@ -41,7 +40,6 @@ export type ReflectionStatus = 'pending' | 'running' | 'done' | 'skipped' | 'err
 export interface TaskReflection {
   id: string;
   taskId: string;
-  companyId: string;
   projectId: string;
   profileId: string | null;
   outcome: string;
@@ -58,7 +56,6 @@ export interface TaskReflection {
 interface ReflectionRow {
   id: string;
   task_id: string;
-  company_id: string;
   project_id: string;
   profile_id: string | null;
   outcome: string;
@@ -76,7 +73,6 @@ function fromRow(r: ReflectionRow): TaskReflection {
   return {
     id: r.id,
     taskId: r.task_id,
-    companyId: r.company_id,
     projectId: r.project_id,
     profileId: r.profile_id,
     outcome: r.outcome,
@@ -105,7 +101,6 @@ export interface EnqueueReflectionInput {
  */
 export function enqueueReflection(db: DB, input: EnqueueReflectionInput): void {
   const { task, outcome, signal, extraContext } = input;
-  const project = getProject(db, task.projectId);
   const profileId = task.assigneeAgentId
     ? (getAgent(db, task.assigneeAgentId)?.profileId ?? null)
     : null;
@@ -125,12 +120,11 @@ export function enqueueReflection(db: DB, input: EnqueueReflectionInput): void {
   const now = nowIso();
   db.prepare(
     `INSERT OR IGNORE INTO task_reflection
-      (id, task_id, company_id, project_id, profile_id, outcome, signal, context_snapshot, status, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+      (id, task_id, project_id, profile_id, outcome, signal, context_snapshot, status, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
   ).run(
     id,
     task.id,
-    project.companyId,
     task.projectId,
     profileId,
     outcome,
@@ -146,17 +140,16 @@ export function enqueueReflection(db: DB, input: EnqueueReflectionInput): void {
  * cancelled（被返工取消的原 task 已由 rework 反思覆盖）与未终态任务跳过。
  * 返回本次入队数（0 = 没有可反思的任务）。
  */
-export function enqueueIdleReflections(db: DB, companyId: string, limit = 2): number {
+export function enqueueIdleReflections(db: DB, limit = 2): number {
   const rows = db
     .prepare(
       `SELECT t.id, t.state FROM task t
-       WHERE t.project_id IN (SELECT id FROM project WHERE company_id=?)
-         AND t.state IN ('completed','failed')
+       WHERE t.state IN ('completed','failed')
          AND t.is_discussion = 0
          AND NOT EXISTS (SELECT 1 FROM task_reflection tr WHERE tr.task_id = t.id)
        ORDER BY t.updated_at DESC LIMIT ?`,
     )
-    .all(companyId, limit) as Array<{ id: string; state: string }>;
+    .all(limit) as Array<{ id: string; state: string }>;
   let enqueued = 0;
   for (const row of rows) {
     enqueueReflection(db, {
@@ -179,22 +172,18 @@ export function enqueueIdleReflections(db: DB, companyId: string, limit = 2): nu
  */
 export async function drainReflectionQueue(
   db: DB,
-  options: { maxPerTick?: number; companyId?: string } = {},
+  options: { maxPerTick?: number } = {},
 ): Promise<{ processed: number; lessons: number }> {
   const maxPerTick = Math.min(Math.max(options.maxPerTick ?? 3, 1), 10);
   // 原子领取：UPDATE...RETURNING 把 pending 翻成 running 并返回被领取的行。
-  const claimSql = options.companyId
-    ? `UPDATE task_reflection SET status='running' WHERE id IN (
-         SELECT id FROM task_reflection WHERE status='pending' AND company_id=?
-         ORDER BY created_at LIMIT ?
-       ) RETURNING *`
-    : `UPDATE task_reflection SET status='running' WHERE id IN (
+  const rows = db
+    .prepare(
+      `UPDATE task_reflection SET status='running' WHERE id IN (
          SELECT id FROM task_reflection WHERE status='pending'
          ORDER BY created_at LIMIT ?
-       ) RETURNING *`;
-  const rows = (options.companyId
-    ? db.prepare(claimSql).all(options.companyId, maxPerTick)
-    : db.prepare(claimSql).all(maxPerTick)) as ReflectionRow[];
+       ) RETURNING *`,
+    )
+    .all(maxPerTick) as ReflectionRow[];
 
   let lessons = 0;
   for (const row of rows) {
@@ -238,7 +227,6 @@ export async function drainReflectionQueue(
       const userTalentName = (task.inputProtocol.userTalentOverride as any)?.displayName;
 
       evolveBlueprint(db, {
-        companyId: row.company_id,
         projectId: task.projectId,
         taskTitle: task.title,
         personaId: task.personaId,
@@ -257,12 +245,9 @@ export async function drainReflectionQueue(
       });
     }
   }
-  // WP3 系统自建专家：反思排水的同一 tick 顺带检查专家沉淀信号（每公司 ≤2 张候选；
+  // WP3 系统自建专家：反思排水的同一 tick 顺带检查专家沉淀信号（≤2 张候选；
   // 全程 try/catch 不抛——沉淀是增值不是主流程；失败下次 tick 再来）。
-  const touchedCompanies = [...new Set(rows.map((r) => r.company_id))];
-  for (const companyId of touchedCompanies) {
-    await maybeSynthesizeExpertCandidates(db, companyId);
-  }
+  await maybeSynthesizeExpertCandidates(db);
   return { processed: rows.length, lessons };
 }
 
@@ -312,7 +297,6 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
   const existing = reflection.profileId
     ? searchMemory(db, {
         profileId,
-        companyId: reflection.companyId,
         projectId: reflection.projectId,
         query: task.title.slice(0, 40),
         limit: 5,
@@ -368,7 +352,7 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
       : []),
   ].filter(Boolean).join('\n');
 
-  const llm = await callLlm(db, { system, user, companyId: reflection.companyId, timeoutMs: 45_000, tier: 'economy' });
+  const llm = await callLlm(db, { system, user, timeoutMs: 45_000, tier: 'economy' });
   const text = llm.content.trim();
 
   // 全局 SKIPPED（兼容老格式：模型直接回 SKIPPED）
@@ -404,7 +388,6 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
     const candidate = createMemoryCandidate(db, {
       profileId,
       scope: 'project',
-      companyId: reflection.companyId,
       projectId: reflection.projectId,
       content: lesson.body,
       sourceTaskId: reflection.taskId,
@@ -424,7 +407,6 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
     createMemoryCandidate(db, {
       profileId,
       scope: 'project',
-      companyId: reflection.companyId,
       projectId: reflection.projectId,
       content: `【协作规则】${rule.body}`,
       sourceTaskId: reflection.taskId,

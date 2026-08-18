@@ -38,7 +38,7 @@ describe('project material', () => {
     const { db, close } = makeTestDb();
     const repo = makeGitRepo();
     try {
-      db.prepare(`INSERT INTO company (id, name, state, charter, created_at, updated_at) VALUES (?, 'T', 'off', '', ?, ?)`)
+      db.prepare(`INSERT INTO workbench (id, name, state, charter, created_at, updated_at) VALUES (?, 'T', 'off', '', ?, ?)`)
         .run('c1', new Date().toISOString(), new Date().toISOString());
       const project = createProject(db, { companyId: 'c1', name: 'P', rootDir: repo });
 
@@ -63,7 +63,7 @@ describe('project material', () => {
     const srcFile = join(srcDir, 'source.mp4');
     writeFileSync(srcFile, 'fake video content');
     try {
-      db.prepare(`INSERT INTO company (id, name, state, charter, created_at, updated_at) VALUES (?, 'T', 'off', '', ?, ?)`)
+      db.prepare(`INSERT INTO workbench (id, name, state, charter, created_at, updated_at) VALUES (?, 'T', 'off', '', ?, ?)`)
         .run('c1', new Date().toISOString(), new Date().toISOString());
       const project = createProject(db, { companyId: 'c1', name: 'P', rootDir: repo });
 
@@ -91,7 +91,7 @@ describe('project material', () => {
     const srcFile = join(srcDir, 'source.mp3');
     writeFileSync(srcFile, 'audio data');
     try {
-      db.prepare(`INSERT INTO company (id, name, state, charter, created_at, updated_at) VALUES (?, 'T', 'off', '', ?, ?)`)
+      db.prepare(`INSERT INTO workbench (id, name, state, charter, created_at, updated_at) VALUES (?, 'T', 'off', '', ?, ?)`)
         .run('c1', new Date().toISOString(), new Date().toISOString());
       const project = createProject(db, { companyId: 'c1', name: 'P', rootDir: repo });
 
@@ -113,7 +113,7 @@ describe('project material', () => {
     const { db, close } = makeTestDb();
     const repo = makeGitRepo();
     try {
-      db.prepare(`INSERT INTO company (id, name, state, charter, created_at, updated_at) VALUES (?, 'T', 'off', '', ?, ?)`)
+      db.prepare(`INSERT INTO workbench (id, name, state, charter, created_at, updated_at) VALUES (?, 'T', 'off', '', ?, ?)`)
         .run('c1', new Date().toISOString(), new Date().toISOString());
       const project = createProject(db, { companyId: 'c1', name: 'P', rootDir: repo });
 
@@ -147,7 +147,7 @@ describe('project material', () => {
     const srcFile = join(srcDir, 'evil.mp4');
     writeFileSync(srcFile, 'evil');
     try {
-      db.prepare(`INSERT INTO company (id, name, state, charter, created_at, updated_at) VALUES (?, 'T', 'off', '', ?, ?)`)
+      db.prepare(`INSERT INTO workbench (id, name, state, charter, created_at, updated_at) VALUES (?, 'T', 'off', '', ?, ?)`)
         .run('c1', new Date().toISOString(), new Date().toISOString());
       const project = createProject(db, { companyId: 'c1', name: 'P', rootDir: repo });
 
@@ -166,7 +166,7 @@ describe('project material', () => {
     const { db, close } = makeTestDb();
     const repo = makeGitRepo();
     try {
-      db.prepare(`INSERT INTO company (id, name, state, charter, created_at, updated_at) VALUES (?, 'T', 'off', '', ?, ?)`)
+      db.prepare(`INSERT INTO workbench (id, name, state, charter, created_at, updated_at) VALUES (?, 'T', 'off', '', ?, ?)`)
         .run('c1', new Date().toISOString(), new Date().toISOString());
       const project = createProject(db, { companyId: 'c1', name: 'P', rootDir: repo });
 

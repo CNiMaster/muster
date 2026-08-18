@@ -23,6 +23,7 @@ import { promoteProjectStagingIfAny } from './staging';
 import { createTempEmployment, dismissTempWorker, markTempGreyed } from './temp-worker';
 import { ensurePrimaryThread } from './thread';
 import { getPersona } from './persona-library';
+import { getWorkbenchOrNull } from './workbench';
 import type { SwarmPlan } from '../../shared/types';
 
 export const SWARM_WORKER_ROLE = 'swarm-worker';
@@ -42,7 +43,6 @@ export function getSwarmLimits(db: DB): SwarmLimits {
 
 export interface SwarmRun {
   id: string;
-  companyId: string;
   projectId: string;
   rootTaskId: string;
   synthesisTaskId: string | null;
@@ -63,7 +63,6 @@ export interface SwarmRun {
 
 interface SwarmRunRow {
   id: string;
-  company_id: string;
   project_id: string;
   root_task_id: string;
   synthesis_task_id: string | null;
@@ -81,10 +80,9 @@ interface SwarmRunRow {
   requester_agent_id: string | null;
 }
 
-function swarmFromRow(r: SwarmRunRow): SwarmRun {
+function swarmFromRow(_db: DB, r: SwarmRunRow): SwarmRun {
   return {
     id: r.id,
-    companyId: r.company_id,
     projectId: r.project_id,
     rootTaskId: r.root_task_id,
     requesterAgentId: r.requester_agent_id ?? null,
@@ -106,21 +104,21 @@ function swarmFromRow(r: SwarmRunRow): SwarmRun {
 export function getSwarmRun(db: DB, id: string): SwarmRun {
   const row = db.prepare('SELECT * FROM swarm_run WHERE id=?').get(id) as SwarmRunRow | undefined;
   if (!row) throw new AppError(ErrorCode.NOT_FOUND, `swarm ${id} not found`);
-  return swarmFromRow(row);
+  return swarmFromRow(db, row);
 }
 
 /** 建群：限额在创建时定格为快照（群内不再随设置变化漂移）；requesterAgentId 记录发起者（派遣分级用）。 */
 export function createSwarmRun(db: DB, input: {
-  companyId: string; projectId: string; rootTaskId: string; goal: string;
+  companyId?: string; projectId: string; rootTaskId: string; goal: string;
   requesterAgentId?: string; limitsOverride?: { maxDepth: number; maxWidth: number; maxNodes: number; budgetUsd: number };
 }): SwarmRun {
   const limits = input.limitsOverride ?? getSwarmLimits(db);
   const id = shortId('sw_');
   const now = nowIso();
   db.prepare(
-    `INSERT INTO swarm_run (id, company_id, project_id, root_task_id, goal, status, max_depth, max_width, max_nodes, budget_usd, requester_agent_id, created_at)
-     VALUES (?,?,?,?,?,'active',?,?,?,?,?,?)`,
-  ).run(id, input.companyId, input.projectId, input.rootTaskId, input.goal, limits.maxDepth, limits.maxWidth, limits.maxNodes, limits.budgetUsd, input.requesterAgentId ?? null, now);
+    `INSERT INTO swarm_run (id, project_id, root_task_id, goal, status, max_depth, max_width, max_nodes, budget_usd, requester_agent_id, created_at)
+     VALUES (?,?,?,?,'active',?,?,?,?,?,?)`,
+  ).run(id, input.projectId, input.rootTaskId, input.goal, limits.maxDepth, limits.maxWidth, limits.maxNodes, limits.budgetUsd, input.requesterAgentId ?? null, now);
   return getSwarmRun(db, id);
 }
 
@@ -137,7 +135,7 @@ export function countActiveSwarmsByRequester(db: DB, agentId: string): number {
 
 /** 请示第一负责人：超限/并发冲突时把完整计划派给负责人把关（负责人可自行决定转派调度中心或拒绝）。 */
 export function escalateSwarmRequest(db: DB, input: {
-  companyId: string; projectId: string; leadAgentId: string; requesterAgentId: string; requesterName: string; plan: SwarmPlan;
+  companyId?: string; projectId: string; leadAgentId: string; requesterAgentId: string; requesterName: string; plan: SwarmPlan;
   /** 发起者任务 id：请示任务挂为其子任务，负责人完成请示即走既有父恢复链唤醒发起者。 */
   sourceTaskId: string;
 }): { taskId: string } {
@@ -561,10 +559,9 @@ const BEE_PROMPT = `你是蜂群工蜂：一次性任务执行者，为"调度�
  */
 export function createWorkerBee(
   db: DB,
-  input: { companyId: string; projectId: string; requesterAgentId: string; index: number },
+  input: { companyId?: string; projectId: string; requesterAgentId: string; index: number },
 ): string {
   const { agentId } = createTempEmployment(db, {
-    companyId: input.companyId,
     role: SWARM_WORKER_ROLE,
     requesterAgentId: input.requesterAgentId,
     name: `工蜂-${input.index + 1}`,
@@ -646,7 +643,6 @@ export function materializeSwarm(
     }
   } else {
     swarm = createSwarmRun(db, {
-      companyId: (db.prepare('SELECT company_id AS id FROM project WHERE id=?').get(sourceTask.projectId) as { id: string }).id,
       projectId: sourceTask.projectId,
       rootTaskId: sourceTask.id,
       goal: plan.goal || sourceTask.title,
@@ -658,7 +654,6 @@ export function materializeSwarm(
 
   for (const [index, worker] of workers.entries()) {
     const beeAgentId = createWorkerBee(db, {
-      companyId: swarm.companyId,
       projectId: swarm.projectId,
       requesterAgentId: rootDispatcherId,
       index,
@@ -789,7 +784,6 @@ export function maybeAutoRepairBee(db: DB, failedTask: Task, message: string): v
   const requester = failedTask.dispatcherAgentId ?? failedTask.assigneeAgentId ?? rootAssignee;
   if (!requester) return; // 无派发者无法建替补
   const beeAgentId = createWorkerBee(db, {
-    companyId: swarm.companyId,
     projectId: swarm.projectId,
     requesterAgentId: requester,
     index: beeCount,

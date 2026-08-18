@@ -22,7 +22,7 @@ describe('artifact gallery', () => {
     const { db, close } = makeTestDb();
     const repo = makeGitRepo();
     try {
-      db.prepare(`INSERT INTO company (id, name, state, charter, created_at, updated_at) VALUES (?, 'T', 'off', '', ?, ?)`)
+      db.prepare(`INSERT INTO workbench (id, name, state, charter, created_at, updated_at) VALUES (?, 'T', 'off', '', ?, ?)`)
         .run('c1', new Date().toISOString(), new Date().toISOString());
       const project = createProject(db, { companyId: 'c1', name: 'P', rootDir: repo });
 
@@ -49,7 +49,7 @@ describe('artifact gallery', () => {
     const { db, close } = makeTestDb();
     const repo = makeGitRepo();
     try {
-      db.prepare(`INSERT INTO company (id, name, state, charter, created_at, updated_at) VALUES (?, 'T', 'off', '', ?, ?)`)
+      db.prepare(`INSERT INTO workbench (id, name, state, charter, created_at, updated_at) VALUES (?, 'T', 'off', '', ?, ?)`)
         .run('c1', new Date().toISOString(), new Date().toISOString());
       const project = createProject(db, { companyId: 'c1', name: 'P', rootDir: repo });
 
@@ -72,7 +72,7 @@ describe('artifact gallery', () => {
     const { db, close } = makeTestDb();
     const repo = makeGitRepo();
     try {
-      db.prepare(`INSERT INTO company (id, name, state, charter, created_at, updated_at) VALUES (?, 'T', 'off', '', ?, ?)`)
+      db.prepare(`INSERT INTO workbench (id, name, state, charter, created_at, updated_at) VALUES (?, 'T', 'off', '', ?, ?)`)
         .run('c1', new Date().toISOString(), new Date().toISOString());
       const project = createProject(db, { companyId: 'c1', name: 'P', rootDir: repo });
       expect(artifactGallery(db, project.id)).toEqual([]);

@@ -19,17 +19,6 @@ export function BusinessReviewPage(): React.ReactElement {
   const decide = useDecideBusinessReview();
   const [feedbackMap, setFeedbackMap] = useState<Record<string, string>>({});
 
-  const byCompany = useMemo(() => {
-    const map = new Map<string, { companyName: string; items: BusinessReview[] }>();
-    for (const r of reviews) {
-      const companyName = company?.name ?? r.companyId;
-      const entry = map.get(r.companyId) ?? { companyName, items: [] };
-      entry.items.push(r);
-      map.set(r.companyId, entry);
-    }
-    return Array.from(map.entries());
-  }, [reviews, company]);
-
   const doDecide = (review: BusinessReview, decision: 'approved' | 'rejected' | 'changes_requested'): void => {
     const feedback = feedbackMap[review.id]?.trim();
     if ((decision === 'rejected' || decision === 'changes_requested') && !feedback) {
@@ -70,15 +59,14 @@ export function BusinessReviewPage(): React.ReactElement {
         </Card>
       )}
 
-      {byCompany.map(([companyId, { companyName, items }]) => (
+      {reviews.length > 0 && (
         <Card
-          key={companyId}
-          title={companyName}
+          title={company?.name ?? '工作台业务审批'}
           className="section"
-          actions={<Badge tone="warn">{items.length}</Badge>}
+          actions={<Badge tone="warn">{reviews.length}</Badge>}
         >
           <div className="form-stack">
-            {items.map((review) => (
+            {reviews.map((review) => (
               <div key={review.id}>
                 <BusinessReviewPanel review={review} projectId={review.projectId ?? undefined} />
                 <div className="form-stack" style={{ marginTop: 8, gap: 6 }}>
@@ -98,7 +86,7 @@ export function BusinessReviewPage(): React.ReactElement {
             ))}
           </div>
         </Card>
-      ))}
+      )}
     </div>
   );
 }

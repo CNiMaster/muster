@@ -220,8 +220,8 @@ bridgeRouter.post('/submit-review', (req, res) => {
       res.status(404).json({ error: `Task not found: ${taskId}` });
       return;
     }
-    const projectRow = db.prepare('SELECT id, company_id FROM project WHERE id=?').get(taskRow.project_id) as
-      | { id: string; company_id: string } | undefined;
+    const projectRow = db.prepare('SELECT id FROM project WHERE id=?').get(taskRow.project_id) as
+      | { id: string } | undefined;
     if (!projectRow) {
       res.status(404).json({ error: `Project not found: ${taskRow.project_id}` });
       return;
@@ -238,7 +238,6 @@ bridgeRouter.post('/submit-review', (req, res) => {
     const agentSnapshot = (req.body?.snapshot as Record<string, unknown>) ?? {};
     const enrichedSnapshot = enrichReviewSnapshot(db, projectRow.id, reviewKind, subjectId, agentSnapshot);
     const review = submitBusinessReview(db, {
-      companyId: projectRow.company_id,
       projectId: projectRow.id,
       taskId,
       employeeId: taskRow.assignee_agent_id ?? '',

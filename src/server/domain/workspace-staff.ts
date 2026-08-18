@@ -9,7 +9,7 @@
  * 幂等：任何状态可调用；online 态补建走 internalRecruit 豁免（与验收员同模式）。
  */
 import type { DB } from '../db/client';
-import { getCompany, updateCompany } from './company';
+import { getWorkbench, updateWorkbench } from './workbench';
 import { createAgent, listAgents } from './agent';
 import { getEmployeePermissionPolicy } from './permission';
 import { getRoleTemplate } from './permission-templates';
@@ -19,13 +19,12 @@ import { ensureAcceptanceOfficer } from './acceptance-officer';
 export const WORKSPACE_LEAD_NAME = '项目第一负责人';
 
 /** 确保工作台固定员工就位：第一负责人（可见）+ 验收员（可见）。幂等。 */
-export function ensureWorkspaceStaff(db: DB, companyId: string): { leadAgentId: string; acceptanceAgentId: string } {
-  const company = getCompany(db, companyId);
-  const visibleAgents = listAgents(db, companyId);
+export function ensureWorkspaceStaff(db: DB): { leadAgentId: string; acceptanceAgentId: string } {
+  const company = getWorkbench(db);
+  const visibleAgents = listAgents(db);
   let lead = visibleAgents.find((a) => a.role === 'lead' && !a.isSystem);
   if (!lead) {
     lead = createAgent(db, {
-      companyId,
       name: WORKSPACE_LEAD_NAME,
       role: 'lead',
       responsibilities: '理解用户目标、拆解任务并调度智能体执行；处理阻塞并对最终结果负责。',
@@ -43,9 +42,9 @@ export function ensureWorkspaceStaff(db: DB, companyId: string): { leadAgentId: 
       // 绑定失败不阻塞：无策略时引擎按无员工策略路径执行
     }
   }
-  const acceptanceAgentId = ensureAcceptanceOfficer(db, companyId);
+  const acceptanceAgentId = ensureAcceptanceOfficer(db);
   if (!company.firstAgentId) {
-    updateCompany(db, companyId, { firstAgentId: lead.id });
+    updateWorkbench(db, { firstAgentId: lead.id });
   }
   return { leadAgentId: lead.id, acceptanceAgentId };
 }

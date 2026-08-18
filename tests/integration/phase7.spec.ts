@@ -87,7 +87,7 @@ describe('inspector suggestions', () => {
 describe('report cycle', () => {
   it('开启复盘 → 公司进入 review_paused', () => {
     // 先上班
-    db.prepare("UPDATE company SET state='online' WHERE id=?").run(fx.company.id);
+    db.prepare("UPDATE workbench SET state='online' WHERE id=?").run(fx.company.id);
     createTask(db, { projectId: fx.project.id, assigneeAgentId: fx.agents.writer.id, title: 't' });
     const r = openReportCycle(db, { projectId: fx.project.id, triggerKind: 'task_count' });
     expect(r.state).toBe('open');
@@ -95,7 +95,7 @@ describe('report cycle', () => {
   });
 
   it('添加备注 → 转修正 Task → 关闭', () => {
-    db.prepare("UPDATE company SET state='online' WHERE id=?").run(fx.company.id);
+    db.prepare("UPDATE workbench SET state='online' WHERE id=?").run(fx.company.id);
     const r = openReportCycle(db, { projectId: fx.project.id, triggerKind: 'milestone' });
     addReportNote(db, r.id, '主角名字要统一');
     addReportNote(db, r.id, '伏笔要回收');

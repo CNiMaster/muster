@@ -74,7 +74,7 @@ describe('B2.2 时间·里程碑触发复盘', () => {
     const c = createCompany(db, { name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/p4', firstAgentId: lead.id, initialState: 'active'});
-    db.prepare("UPDATE company SET state='online' WHERE id=?").run(c.id);
+    db.prepare("UPDATE workbench SET state='online' WHERE id=?").run(c.id);
     openReportCycle(db, { projectId: p.id, triggerKind: 'task_count' });
     const r = shouldTriggerReport(db, p.id, { taskCountInterval: 1 });
     expect(r.trigger).toBe(false);

@@ -1,5 +1,5 @@
 import type { DB } from '../db/client';
-import { listCompanies, transitionCompany } from '../domain/company';
+import { getWorkbench, transitionWorkbench } from '../domain/workbench';
 import { listProjects } from '../domain/project';
 import { ensureProjectThreads, releaseProjectMirrors } from '../domain/thread';
 import { ensurePlanningTask, listTasks, recoverExpiredLeases, findStaleWaitingTasks, escalateToFirstResponder, createTask } from '../domain/task';
@@ -13,7 +13,6 @@ import { settleDrainingAgents } from '../domain/agent';
 import { drainReflectionQueue, recoverStuckReflections, enqueueIdleReflections } from '../domain/reflection';
 import { settleMemoryVotes } from '../domain/memory';
 import { generateInspectorSuggestions } from '../domain/inspector';
-import { autoAcceptContract, createOutsourcedTask, revertAcceptToPending } from '../domain/outsourcing-contract';
 import type { SetupGenerator } from '../domain/setup-assistant';
 import { getSystemSettings } from '../domain/setting';
 import { ensureSystemAgents } from '../domain/system-agents';
@@ -53,7 +52,7 @@ export function runIdleReflectionPass(db: DB): Array<{ companyId: string; enqueu
   if (budgetUSD <= 0) return [];
   const today = dbToday(db);
   const results: Array<{ companyId: string; enqueued: number }> = [];
-  for (const company of listCompanies(db)) {
+  for (const company of [getWorkbench(db)]) {
     if (company.state !== 'online') continue;
     const hasActive = listProjects(db, company.id).some((p) => {
       if (p.state !== 'active') return false;
@@ -67,12 +66,11 @@ export function runIdleReflectionPass(db: DB): Array<{ companyId: string; enqueu
     const spendToday = db
       .prepare(
         `SELECT COALESCE(SUM(u.cost_usd), 0) AS c FROM usage_record u
-         JOIN project p ON p.id = u.project_id
-         WHERE p.company_id=? AND u.recorded_at >= ?`,
+         WHERE u.recorded_at >= ?`,
       )
-      .get(company.id, today) as { c: number };
+      .get(today) as { c: number };
     if (spendToday.c >= budgetUSD) continue;
-    const enqueued = enqueueIdleReflections(db, company.id, 2);
+    const enqueued = enqueueIdleReflections(db, 2);
     if (enqueued > 0) results.push({ companyId: company.id, enqueued });
   }
   return results;
@@ -121,12 +119,6 @@ export class ProjectRuntimeCoordinator {
           log.warn('inspector alert scan failed', { error: error instanceof Error ? error.message : String(error) });
         }
       }
-      // 阶段四任务 4.1：pending 外包契约自动接受（乙方在线且未关闭自动接受时）。
-      try {
-        this.acceptPendingOutsourcing();
-      } catch (error) {
-        log.warn('auto accept outsourcing scan failed', { error: error instanceof Error ? error.message : String(error) });
-      }
       // E4.3 空闲自主反思（默认关）：每 60 秒扫描一次；只入队（LLM 消化走独立反思定时器）。
       if (Date.now() - this.lastIdleReflectionRun >= this.idleReflectionIntervalMs) {
         this.lastIdleReflectionRun = Date.now();
@@ -143,17 +135,17 @@ export class ProjectRuntimeCoordinator {
       const releasedMirrors: string[] = [];
       let pumpedTasks = 0;
 
-      for (const company of listCompanies(this.db)) {
+      for (const company of [getWorkbench(this.db)]) {
         // 指挥系统 W0：online 公司幂等确保系统隐形岗（调度中心/评审中心）
         if (company.state === 'online') {
           try {
-            ensureSystemAgents(this.db, company.id);
+            ensureSystemAgents(this.db);
           } catch (error) {
             log.warn('ensure system agents failed', { companyId: company.id, error: error instanceof Error ? error.message : String(error) });
           }
         }
         if (company.state !== 'online') continue;
-        settleDrainingAgents(this.db, company.id);
+        settleDrainingAgents(this.db);
         for (const project of listProjects(this.db, company.id)) {
           // archived/completed：级联释放 mirror（PRD Phase 5.4）；paused 仍保留镜像便于恢复。
           if (project.state === 'archived' || project.state === 'completed') {
@@ -208,11 +200,11 @@ export class ProjectRuntimeCoordinator {
   }
 
   async pumpProject(projectId: string): Promise<RuntimeTickResult> {
-    const project = this.db.prepare('SELECT company_id, state FROM project WHERE id=?').get(projectId) as
-      | { company_id: string; state: string }
+    const project = this.db.prepare('SELECT state FROM project WHERE id=?').get(projectId) as
+      | { state: string }
       | undefined;
     if (!project) return { recoveredLeases: 0, plannedTasks: [], pumpedTasks: 0, settledCompanies: [], releasedMirrors: [] };
-    const company = listCompanies(this.db).find((item) => item.id === project.company_id);
+    const company = getWorkbench(this.db);
     if (!company || company.state !== 'online') {
       return { recoveredLeases: 0, plannedTasks: [], pumpedTasks: 0, settledCompanies: [], releasedMirrors: [] };
     }
@@ -339,7 +331,7 @@ export class ProjectRuntimeCoordinator {
   private runInspectorAlerts(): number {
     let alerts = 0;
     const cooldownCutoff = new Date(Date.now() - 5 * 60_000).toISOString();
-    for (const company of listCompanies(this.db)) {
+    for (const company of [getWorkbench(this.db)]) {
       if (company.state !== 'online') continue;
       for (const project of listProjects(this.db, company.id)) {
         if (project.state !== 'active') continue;
@@ -405,58 +397,16 @@ export class ProjectRuntimeCoordinator {
     return alerts;
   }
 
-  /** 阶段四任务 4.1：扫描 pending 外包契约，条件满足时自动接受（AI 对 AI）。 */
-  private acceptPendingOutsourcing(): number {
-    let accepted = 0;
-    const rows = this.db
-      .prepare(`SELECT id FROM outsourcing_contract WHERE state='pending'`)
-      .all() as { id: string }[];
-    for (const { id } of rows) {
-      try {
-        const contract = autoAcceptContract(this.db, id);
-        if (contract && contract.state === 'accepted') {
-          // 阶段四任务 4.1 补全：接受后立即创建乙方承接任务（与 API /accept 端点流程对齐），
-          // 否则契约停在 accepted，乙方永不执行。
-          try {
-            const { task } = createOutsourcedTask(this.db, id);
-            accepted++;
-            log.info('outsourcing contract auto-accepted', {
-              contractId: id,
-              liaisonAgentId: contract.vendorLiaisonAgentId,
-              outsourcedTaskId: task.id,
-            });
-          } catch (taskError) {
-            // Review 修复（M-1）：承接任务创建失败时回滚到 pending（清空对接人），
-            // 契约可被下次 tick 重新接受，不再永久卡在 accepted。
-            // M-1 退避：传 autoBackoff 累加失败计数 + 设下次允许时间，避免每 2s tick 反复空转。
-            revertAcceptToPending(this.db, id, true);
-            log.warn('auto accept outsourcing: createOutsourcedTask failed, contract reverted to pending (backoff applied)', {
-              contractId: id,
-              error: taskError instanceof Error ? taskError.message : String(taskError),
-            });
-          }
-        }
-      } catch (error) {
-        log.warn('auto accept outsourcing failed', {
-          contractId: id,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
-    return accepted;
-  }
-
   private settleDrainingCompanies(): string[] {
     const settled: string[] = [];
-    for (const company of listCompanies(this.db)) {
+    for (const company of [getWorkbench(this.db)]) {
       if (company.state !== 'draining') continue;
       const active = this.db.prepare(
         `SELECT 1 FROM task t
-         JOIN project p ON p.id=t.project_id
-         WHERE p.company_id=? AND t.state IN ('claimed','running') LIMIT 1`,
-      ).get(company.id);
+         WHERE t.state IN ('claimed','running') LIMIT 1`,
+      ).get();
       if (!active) {
-        transitionCompany(this.db, company.id, 'off');
+        transitionWorkbench(this.db, 'off');
         settled.push(company.id);
       }
     }

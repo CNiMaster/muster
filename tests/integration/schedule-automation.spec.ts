@@ -176,7 +176,6 @@ describe('公司级触发器', () => {
     expect(list[0].scheduleKind).toBe('daily');
     expect(list[0].timeOfDay).toBe('09:00');
     expect(list[0].projectId).toBeNull();
-    expect(list[0].companyId).toBe(company.id);
 
     const paused = setCompanyTriggerEnabled(db, company.id, list[0].id, false);
     expect(paused.enabled).toBe(false);
@@ -202,5 +201,5 @@ function setTaskState(db: DB, id: string, state: string): void {
 
 /** 测试助手：设置公司第一负责人（createCompany 不支持直接传）。 */
 function updateCompanyFirstAgent(companyId: string, agentId: string): void {
-  db.prepare('UPDATE company SET first_agent_id=? WHERE id=?').run(agentId, companyId);
+  db.prepare('UPDATE workbench SET first_agent_id=? WHERE id=?').run(agentId, companyId);
 }

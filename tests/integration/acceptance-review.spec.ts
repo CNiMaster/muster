@@ -80,7 +80,7 @@ describe('ensureAcceptanceOfficer 验收员实体', () => {
   it('Review 修复 C1：工作台 online 态也能懒确保（internalRecruit 豁免 org-lock）', () => {
     const { c, lead, p } = seed();
     // 真实运行态：任务完成时工作台 online（干员/项目先建好，再切状态）
-    db.prepare("UPDATE company SET state='online' WHERE id=?").run(c.id);
+    db.prepare("UPDATE workbench SET state='online' WHERE id=?").run(c.id);
     const officerId = ensureAcceptanceOfficer(db, c.id);
     expect(officerId).toMatch(/^ag_/);
     // 可见（未 hidden）
@@ -175,7 +175,7 @@ describe('handleAcceptanceReviewTaskCompleted 判定落地', () => {
     expect(rework.acceptanceCriteria[0]!.criterion).toBe('落地页首屏转化率达标');
     // 播报（公司对话）
     const broadcast = db.prepare(
-      "SELECT content FROM conversation_message WHERE scope_kind='company' AND content LIKE '[验收返工]%'",
+      "SELECT content FROM conversation_message WHERE scope_kind='workbench' AND content LIKE '[验收返工]%'",
     ).get() as { content: string } | undefined;
     expect(broadcast?.content).toContain('重做 A/B 实验');
   });
@@ -190,7 +190,7 @@ describe('handleAcceptanceReviewTaskCompleted 判定落地', () => {
     const events = listTaskEvents(db, source.id);
     expect(events.some((e) => e.kind === 'acceptance_escalated' && (e.payload as Record<string, unknown>)?.reason === 'low-confidence')).toBe(true);
     const broadcast = db.prepare(
-      "SELECT content FROM conversation_message WHERE scope_kind='company' AND content LIKE '[验收升级]%'",
+      "SELECT content FROM conversation_message WHERE scope_kind='workbench' AND content LIKE '[验收升级]%'",
     ).get() as { content: string } | undefined;
     expect(broadcast).toBeDefined();
     expect(getTask(db, source.id).reworkCount).toBe(0);

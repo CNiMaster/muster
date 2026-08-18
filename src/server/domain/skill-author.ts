@@ -21,8 +21,8 @@ export interface AuthorSkillInput {
   capability: string;
   /** 上下文：为什么需要这个能力（项目场景、任务要求等）。 */
   context?: string;
-  /** 公司 id（用于解析 LLM 凭据 + 注册为公司 scope）。 */
-  companyId?: string;
+  /** 注册层级：workbench=工作台独占（默认），platform=平台级。 */
+  scope?: 'platform' | 'workbench';
   /** 落盘根目录，缺省 process.cwd()/skills。 */
   skillsRoot?: string;
 }
@@ -52,7 +52,6 @@ export async function authorSkill(db: DB, input: AuthorSkillInput): Promise<Plug
   const result = await callLlm(db, {
     system: AUTHOR_SYSTEM_PROMPT,
     user: userPrompt,
-    companyId: input.companyId,
     timeoutMs: 90_000,
     tier: 'economy',
   });
@@ -69,7 +68,7 @@ export async function authorSkill(db: DB, input: AuthorSkillInput): Promise<Plug
     name: skillId,
     kind: 'skill',
     source: { kind: 'ai-generated', generatedAt: new Date().toISOString(), prompt: input.capability },
-    scope: input.companyId ? { level: 'company', companyId: input.companyId } : { level: 'platform' },
+    scope: input.scope === 'platform' ? { level: 'platform' } : { level: 'workbench' },
     manifest: { kind: 'skill', skill: { body: result.content } },
     maturity: 'experimental', // AI 生成默认 experimental，需人工验证后晋升
   });

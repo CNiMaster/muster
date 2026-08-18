@@ -58,7 +58,7 @@ describe('workbench 单例路由', () => {
     const first = await (await fetch(`${base}/api/workbench`)).json() as { id: string };
     const second = await (await fetch(`${base}/api/workbench`)).json() as { id: string };
     expect(second.id).toBe(first.id);
-    const { n } = tdb.db.prepare('SELECT COUNT(*) AS n FROM company').get() as { n: number };
+    const { n } = tdb.db.prepare('SELECT COUNT(*) AS n FROM workbench').get() as { n: number };
     expect(n).toBe(1);
   });
 

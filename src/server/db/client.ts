@@ -81,11 +81,24 @@ export function runMigrations(db: DB, migrationsDir?: string): string[] {
     const already = db.prepare('SELECT name FROM schema_migrations WHERE name = ?').get(file);
     if (already) continue;
     const sql = readFileSync(path.join(dir, file), 'utf8');
-    const tx = db.transaction(() => {
-      db.exec(sql);
-      insertApplied.run(file, nowIso());
-    });
-    tx();
+    // SQLite 官方表重建规程（sqlite.org/lang_altertable §7）：迁移期间必须关外键，
+    // 否则 DROP TABLE 的隐式 DELETE 会被未重建子表的外键拒绝（或触发级联误删数据）。
+    // PRAGMA foreign_keys 在事务内是 no-op，必须在事务外切换；每文件提交前用
+    // foreign_key_check 做闸，违规即抛错回滚，不放进 ledger。
+    db.pragma('foreign_keys = OFF');
+    try {
+      const tx = db.transaction(() => {
+        db.exec(sql);
+        const violations = db.pragma('foreign_key_check') as Array<Record<string, unknown>>;
+        if (violations.length > 0) {
+          throw new Error(`migration ${file} 产生外键违规: ${JSON.stringify(violations.slice(0, 3))}`);
+        }
+        insertApplied.run(file, nowIso());
+      });
+      tx();
+    } finally {
+      db.pragma('foreign_keys = ON');
+    }
     applied.push(file);
     log.info('migration applied', { file });
   }

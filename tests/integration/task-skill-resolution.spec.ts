@@ -11,7 +11,6 @@ import { nowIso, shortId } from '../../src/shared/utils';
 import { makeTestDb } from './setup';
 
 function insertBinding(db: ReturnType<typeof makeTestDb>['db'], input: {
-  companyId: string;
   employeeId: string;
   scope: 'employee' | 'field';
   scopeKey: string;
@@ -20,9 +19,9 @@ function insertBinding(db: ReturnType<typeof makeTestDb>['db'], input: {
 }): void {
   const now = nowIso();
   db.prepare(`INSERT INTO capability_binding
-    (id, company_id, employee_id, scope, scope_key, capability_id, skill_ids_json, purpose, load_when, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(shortId('cb_'), input.companyId, input.employeeId, input.scope, input.scopeKey,
+    (id, employee_id, scope, scope_key, capability_id, skill_ids_json, purpose, load_when, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(shortId('cb_'), input.employeeId, input.scope, input.scopeKey,
       input.capabilityId, JSON.stringify(input.skillIds), `处理 ${input.scopeKey}`, 'Task 命中时', now, now);
 }
 
@@ -38,9 +37,9 @@ describe('task skill resolution', () => {
         skills: ['code-simplification', 'performance-optimization'],
       });
       const project = createProject(db, { companyId: company.id, name: '产品' });
-      insertBinding(db, { companyId: company.id, employeeId: engineer.id, scope: 'field', scopeKey: 'requirement.title', capabilityId: 'requirements', skillIds: ['spec-driven-development'] });
-      insertBinding(db, { companyId: company.id, employeeId: engineer.id, scope: 'employee', scopeKey: engineer.id, capabilityId: 'quality', skillIds: ['code-review-and-quality'] });
-      insertBinding(db, { companyId: company.id, employeeId: engineer.id, scope: 'employee', scopeKey: `${engineer.id}:unrelated`, capabilityId: 'shipping', skillIds: ['shipping-and-launch'] });
+      insertBinding(db, { employeeId: engineer.id, scope: 'field', scopeKey: 'requirement.title', capabilityId: 'requirements', skillIds: ['spec-driven-development'] });
+      insertBinding(db, { employeeId: engineer.id, scope: 'employee', scopeKey: engineer.id, capabilityId: 'quality', skillIds: ['code-review-and-quality'] });
+      insertBinding(db, { employeeId: engineer.id, scope: 'employee', scopeKey: `${engineer.id}:unrelated`, capabilityId: 'shipping', skillIds: ['shipping-and-launch'] });
 
       const task = createTask(db, {
         projectId: project.id,

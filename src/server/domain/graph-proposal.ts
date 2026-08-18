@@ -68,8 +68,8 @@ export async function proposeGraphChange(
   if (isOrgLocked(db, input.companyId)) {
     throw new AppError(ErrorCode.COMPANY_LOCKED, '上班期间不能修改关系图');
   }
-  const agents = listAgents(db, input.companyId);
-  const edges = listRelationships(db, input.companyId, input.kind, { includeArchived: false });
+  const agents = listAgents(db);
+  const edges = listRelationships(db, input.kind, { includeArchived: false });
 
   // 当前快照序列化（让 Claude 看到员工角色映射 + 现有边）
   const agentRoster = agents.map((a) => `${a.role}(${a.name}, id=${a.id})`).join('; ');
@@ -118,9 +118,9 @@ export function applyGraphProposal(db: DB, input: GraphProposalInput, proposal: 
   if (isOrgLocked(db, input.companyId)) {
     throw new AppError(ErrorCode.COMPANY_LOCKED, '上班期间不能修改关系图');
   }
-  const agents = listAgents(db, input.companyId);
+  const agents = listAgents(db);
   resolveHints(proposal, agents);
-  const edges = listRelationships(db, input.companyId, input.kind, { includeArchived: false });
+  const edges = listRelationships(db, input.kind, { includeArchived: false });
   const diff: GraphDiff = { added: [], removed: [] };
 
   for (const change of proposal.changes) {
@@ -132,7 +132,6 @@ export function applyGraphProposal(db: DB, input: GraphProposalInput, proposal: 
       );
       if (exists) continue;
       addRelationship(db, {
-        companyId: input.companyId,
         kind: input.kind,
         sourceId: change.sourceId,
         targetId: change.targetId,

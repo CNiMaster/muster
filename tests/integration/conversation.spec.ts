@@ -48,7 +48,7 @@ describe('conversation messages', () => {
     const r = createNovelCompany(db, { name: 'co' });
     // 不预置任何项目
     const { userMessage, task } = postUserMessage(db, {
-      scopeKind: 'company',
+      scopeKind: 'workbench',
       scopeId: r.company.id,
       content: '你好',
     });
@@ -56,7 +56,7 @@ describe('conversation messages', () => {
     // 新语义：收件箱项目自动创建，消息派给公司第一负责人
     expect(task).not.toBeNull();
     expect(task!.assigneeAgentId).toBe(r.agents.lead.id);
-    const inbox = db.prepare('SELECT * FROM project WHERE company_id=?').all(r.company.id)
+    const inbox = db.prepare('SELECT * FROM project').all()
       .map((row) => row as { name: string; settings_json: string })
       .find((row) => (JSON.parse(row.settings_json ?? '{}') as Record<string, unknown>)?.inbox === true);
     expect(inbox).toBeDefined();
@@ -73,7 +73,7 @@ describe('conversation messages', () => {
       initialState: 'active',
     });
     const { task } = postUserMessage(db, {
-      scopeKind: 'company',
+      scopeKind: 'workbench',
       scopeId: r.company.id,
       content: '安排工作',
     });
@@ -84,7 +84,7 @@ describe('conversation messages', () => {
     const taskProjectName = (db.prepare('SELECT name FROM project WHERE id=?').get(task!.projectId) as { name: string }).name;
     expect(taskProjectName).toBe('收件箱');
     // 幂等：两次对话共用同一收件箱
-    const second = postUserMessage(db, { scopeKind: 'company', scopeId: r.company.id, content: '再问一句' });
+    const second = postUserMessage(db, { scopeKind: 'workbench', scopeId: r.company.id, content: '再问一句' });
     expect(second.task!.projectId).toBe(task!.projectId);
   });
 
@@ -140,10 +140,10 @@ describe('conversation messages', () => {
 
   it('消息按时间正序排列', () => {
     const r = createNovelCompany(db, { name: 'co' });
-    postUserMessage(db, { scopeKind: 'company', scopeId: r.company.id, content: '第一条' });
-    postSystemMessage(db, { scopeKind: 'company', scopeId: r.company.id, role: 'event', author: 'system', content: 'Task 已领取' });
-    postUserMessage(db, { scopeKind: 'company', scopeId: r.company.id, content: '第二条' });
-    const msgs = listMessages(db, 'company', r.company.id);
+    postUserMessage(db, { scopeKind: 'workbench', scopeId: r.company.id, content: '第一条' });
+    postSystemMessage(db, { scopeKind: 'workbench', scopeId: r.company.id, role: 'event', author: 'system', content: 'Task 已领取' });
+    postUserMessage(db, { scopeKind: 'workbench', scopeId: r.company.id, content: '第二条' });
+    const msgs = listMessages(db, 'workbench', r.company.id);
     expect(msgs.length).toBe(3);
     expect(msgs[0].content).toBe('第一条');
     expect(msgs[1].content).toBe('Task 已领取');
@@ -153,13 +153,13 @@ describe('conversation messages', () => {
   it('空内容抛错', () => {
     const r = createNovelCompany(db, { name: 'co' });
     expect(() =>
-      postUserMessage(db, { scopeKind: 'company', scopeId: r.company.id, content: '' }),
+      postUserMessage(db, { scopeKind: 'workbench', scopeId: r.company.id, content: '' }),
     ).toThrow();
   });
 
   it('scope 不存在抛错', () => {
     expect(() =>
-      listMessages(db, 'company', 'co_nonexistent'),
+      listMessages(db, 'workbench', 'co_nonexistent'),
     ).toThrow();
   });
 });
