@@ -5,18 +5,17 @@
  */
 import { test, expect } from '@playwright/test';
 
-test('快速开工 API 建项目后首页自动进入项目工作台', async ({ page }) => {
+test('快速开工 API 建项目后首页项目列表可见并可进入', async ({ page }) => {
   const response = await page.request.post('/api/projects/quick', {
     data: { name: `E2E快速项目-${Date.now()}`, description: '冒烟：对话式开工' },
   });
   expect(response.status()).toBe(201);
   const { project } = await response.json();
 
-  // 种下「最近项目」记录，首页按最近入口自动进入本项目（而非第一个历史项目）
-  await page.addInitScript((id) => {
-    window.localStorage.setItem('muster:last-project:v1', id);
-  }, project.id);
+  // 项目主页（批2 起不再自动跳转）：hero 在、项目行可见，点击进入项目工作台
   await page.goto('/');
+  await expect(page.getByRole('heading', { name: /你想开始什么新工作/ })).toBeVisible();
+  await page.getByRole('link', { name: new RegExp(project.name) }).first().click();
   await expect(page).toHaveURL(new RegExp(`/projects/${project.id}`), { timeout: 8000 });
   // 项目工作台：三栏壳层与左栏「＋ 新建任务」直建入口
   await expect(page.getByRole('navigation', { name: '项目组织与联系人' })).toBeVisible();

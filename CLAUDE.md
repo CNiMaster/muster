@@ -72,6 +72,13 @@ Key constraints for all new work:
 - **契约与事件**：`src/shared/types.ts`, `src/shared/lifecycle-events.ts`, `src/client/api/types.ts` 全面剥除 `companyId`；事件类型由 `company.state` 演进为 `workbench.state`。
 - **测试基线**：tsc 0 错误；vitest 全量除 web-tools 3 例（本地沙箱 DNS 环境性失败）全过、2 skipped（多公司隔离语义过时）；e2e 与冒烟基线见批次收口记录。
 
+## 项目/任务管理工作台（2026-08-18 批1-4）
+
+- **语义定案**：移除项目=移出显示区（可选删平台记录；**任何删除绝不触碰用户仓库目录**）；归档=进归档区可还原可删记录；独立任务=隐藏「独立任务」载体项目（收件箱同款 `settings.standalone`，零 schema 大改）；分组=手动自由分组（`project.settings_json` 承载 `group/sortOrder/removed`，零列变更）。
+- **服务端**：迁移 `20260819000500`（`project_task.pinned`）；`removeProject`（隐藏/删记录双语义，删前取消未终态任务，基础设施项目拒移除）；`listProjectFileTree`（只读目录树，复用 artifact 防逃逸口径，忽略 .git/node_modules，深度≤4 懒加载）；`GET /api/projects?view=archived|removed`、`DELETE /api/projects/:id`、`GET /:id/files/tree`、`POST/DELETE project-tasks/:id`（pin/删记录/restore）；状态机新增 `archived→active/drafting` 还原出口。
+- **客户端**：HomePage 重写为项目主页（去自动跳转）：紧凑对话开工 hero + 独立任务区（一行即建/置顶/归档）+ 分组管理（dnd-kit 组内拖动排序/跨组拖入/空组删除/组头折叠）+ 项目行（拖柄/折叠/状态徽章/active 任务前 5+「显示更多」/三点菜单：新建任务·查看文件·归档·移除双按钮确认）；`/projects/new?mode=open` 打开本地目录模式；侧栏 ProjectWorkNavigation 任务行置顶/归档 hover 操作+>5 折叠+区块折叠；切换器项目名旁「＋」；ArchivePage 增「归档项目」「归档任务」双 tab（还原/恢复显示/删记录，确认文案明示不动仓库）。公共组件：`DropdownMenu`、`FilesTreeModal`（树懒加载+文本预览）。
+- **测试**：集成 project-management.spec 12 例（移除双语义含目录保留断言/树防逃逸/深度语义/独立任务幂等置顶/还原链路）；e2e project-home.spec 3 例（独立任务+折叠显示更多/移除双语义+归档页恢复/归档还原），e2e 基线 21/21。
+
 ## UI 重构 2026-08-16（批次 A-E，项目主导 + Composer 全功能 + 固定员工收敛）
 
 - **排版体系**：字号刻度全部由 `--app-font-size` 推导（默认 15px，`useAppearance` 只覆写这一个变量，标题随设置缩放）；最小可视字号 12px（数字角标 10-11px 例外）；`.mu-conv` 默认 520px、flex 父容器加 `fill`/`is-fill` 弹性填充。

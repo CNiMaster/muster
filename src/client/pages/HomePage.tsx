@@ -321,6 +321,7 @@ function ProjectRow({ project, collapsed, onToggleCollapse, onShowFiles, onArchi
   return (
     <div
       ref={setNodeRef}
+      data-project-id={project.id}
       style={{
         transform: CSS.Transform.toString(transform),
         transition,

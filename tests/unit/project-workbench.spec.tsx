@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import type { Agent, Department, Task } from '../../src/client/api/types';
@@ -12,7 +13,9 @@ const task = { id: 'tk_1', projectId: 'pr_1', projectTaskId: 'pt_1', seq: 3, tit
 
 describe('project employee-centered workbench', () => {
   it('uses the organization as navigation and nests tasks under employees', () => {
-    render(<MemoryRouter><ProjectWorkNavigation projectId="pr_1" projectTasks={[]} tasks={[task]} agents={[lead, engineer]} departments={[department]} firstAgentId="ag_1" selectedProjectTaskId="pt_1" selectedAgentId="ag_2" view="employee" attentionCount={2} novel={false} onNewTask={() => {}} /></MemoryRouter>);
+    // 批3 起组件内置置顶/归档 mutation（react-query），渲染需 Provider
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={qc}><MemoryRouter><ProjectWorkNavigation projectId="pr_1" projectTasks={[]} tasks={[task]} agents={[lead, engineer]} departments={[department]} firstAgentId="ag_1" selectedProjectTaskId="pt_1" selectedAgentId="ag_2" view="employee" attentionCount={2} novel={false} onNewTask={() => {}} /></MemoryRouter></QueryClientProvider>);
     expect(screen.getByText('置顶 · 第一负责人')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /研发负责人/ })).toHaveAttribute('href', '/projects/pr_1?view=employee&agent=ag_1&projectTask=pt_1');
     expect(screen.getByRole('link', { name: /项目群聊/ })).toHaveAttribute('href', '/projects/pr_1?view=group&projectTask=pt_1');
