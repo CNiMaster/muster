@@ -251,7 +251,6 @@ export class TaskEngine {
     realtime.publish({
       id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       type: 'task.claimed',
-      companyId: company.id,
       projectId: project.id,
       taskId: task.id,
       occurredAt: new Date().toISOString(),
@@ -292,7 +291,6 @@ export class TaskEngine {
       realtime.publish({
         id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         type: 'task.blocked',
-        companyId: company.id,
         projectId: project.id,
         taskId: task.id,
         occurredAt: new Date().toISOString(),
@@ -374,7 +372,6 @@ export class TaskEngine {
       realtime.publish({
         id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         type: 'task.running',
-        companyId: company.id,
         projectId: project.id,
         taskId: task.id,
         occurredAt: new Date().toISOString(),
@@ -525,7 +522,7 @@ export class TaskEngine {
                 realtime.publish(makeLifecycleEvent('approval.ai-denied', {
                   approvalId: null, taskId: task.id, action: request.action,
                   command: request.command?.slice(0, 100), reason: aiResult.reason,
-                }, { companyId: company.id, projectId: project.id, taskId: task.id }));
+                }, { projectId: project.id, taskId: task.id }));
                 return { allowed: false, message: `AI 审批拒绝：${aiResult.reason}` };
               }
               if (aiResult.verdict === 'safe') {
@@ -536,7 +533,7 @@ export class TaskEngine {
                     approvalId: null, taskId: task.id, action: request.action,
                     command: request.command?.slice(0, 100), reason: `单次执行：${aiResult.reason}`,
                     level: 'execute_once',
-                  }, { companyId: company.id, projectId: project.id, taskId: task.id }));
+                  }, { projectId: project.id, taskId: task.id }));
                   return { allowed: true };
                 }
                 if (aiResult.highestSafeLevel === 'project_scope') {
@@ -554,7 +551,7 @@ export class TaskEngine {
                     approvalId: null, taskId: task.id, action: request.action,
                     command: request.command?.slice(0, 100), reason: `项目内放行：${aiResult.reason}`,
                     level: 'project_scope',
-                  }, { companyId: company.id, projectId: project.id, taskId: task.id }));
+                  }, { projectId: project.id, taskId: task.id }));
                   return { allowed: true };
                 }
                 // company_scope/permanent → 单次执行 + 入批量审批队列等人工升级
@@ -565,7 +562,7 @@ export class TaskEngine {
                   approvalId: batchApproval.id, taskId: task.id, action: request.action,
                   command: request.command?.slice(0, 100), reason: `单次执行，已入批量审批队列（建议升级到 ${aiResult.highestSafeLevel}）：${aiResult.reason}`,
                   level: aiResult.highestSafeLevel,
-                }, { companyId: company.id, projectId: project.id, taskId: task.id }));
+                }, { projectId: project.id, taskId: task.id }));
                 return { allowed: true }; // 单次执行不阻塞，批量升级等人工
               }
               // uncertain → 继续走人工审批
@@ -575,10 +572,10 @@ export class TaskEngine {
             const approval = ensureApprovalRequest(this.db, { policyId: permissionPolicy.id, employeeId: agent.id, taskId: task.id, action: request.action, command: request.command, path: request.path });
             this.db.prepare('UPDATE permission_approval SET execution_run_id=?,project_task_thread_id=?,executor_profile_id=?,expires_at=?,recovery_json=? WHERE id=?').run(executionRun?.id??null,projectTaskThread.id,executorProfile?.id??null,new Date(Date.now()+600_000).toISOString(),JSON.stringify({vendorSessionId:projectTaskThread.vendorSessionId}),approval.id);
             markTaskWaitingApproval(this.db,task.id,approval.id,'online');
-            realtime.publish(makeLifecycleEvent('approval.requested',{approvalId:approval.id,taskId:task.id,projectTaskId:task.projectTaskId,threadId:projectTaskThread.id},{companyId:company.id,projectId:project.id,taskId:task.id}));
+            realtime.publish(makeLifecycleEvent('approval.requested',{approvalId:approval.id,taskId:task.id,projectTaskId:task.projectTaskId,threadId:projectTaskThread.id},{projectId:project.id,taskId:task.id}));
             const resolution=await approvalBroker.wait(approval.id,600_000);
             if(resolution==='allow'||resolution==='deny')clearTaskApprovalWait(this.db,task.id);
-            else {approvalFailure=new RunFailure('approval_timeout',`审批请求 ${approval.id} ${resolution==='shutdown'?'因 Muster 停止而安全拒绝':'等待超时，已安全停止'}`);markTaskWaitingApproval(this.db,task.id,approval.id,'persistent');realtime.publish(makeLifecycleEvent('approval.timed-out',{approvalId:approval.id,taskId:task.id},{companyId:company.id,projectId:project.id,taskId:task.id}));}
+            else {approvalFailure=new RunFailure('approval_timeout',`审批请求 ${approval.id} ${resolution==='shutdown'?'因 Muster 停止而安全拒绝':'等待超时，已安全停止'}`);markTaskWaitingApproval(this.db,task.id,approval.id,'persistent');realtime.publish(makeLifecycleEvent('approval.timed-out',{approvalId:approval.id,taskId:task.id},{projectId:project.id,taskId:task.id}));}
             return resolution==='allow'?{allowed:true}:{allowed:false,message:`审批请求 ${approval.id} ${resolution==='deny'?'已拒绝':'等待超时，已安全停止'}`};
           }
           return { allowed: false, message: decision.reason };
@@ -683,7 +680,7 @@ export class TaskEngine {
               taskId: task.id, projectTaskId: task.projectTaskId, threadId: projectTaskThread.id,
               message: `当前为 API 执行器，以下技能需要命令执行能力但无法使用：${skillsRequiringCli.join('、')}（建议连接 CLI 执行器以获得完整能力）`,
               skills: skillsRequiringCli,
-            }, { companyId: company.id, projectId: project.id, taskId: task.id }));
+            }, { projectId: project.id, taskId: task.id }));
           }
         } catch { /* 软提示失败不阻塞执行 */ }
       }
@@ -716,13 +713,13 @@ export class TaskEngine {
               const now = Date.now();
               if (now - lastDeltaPublishAt < 60) return;
               lastDeltaPublishAt = now;
-              realtime.publish(makeLifecycleEvent('message.delta', { delta, agentId: agent.id, projectTaskId: task.projectTaskId }, { companyId: company.id, projectId: project.id, taskId: task.id }));
+              realtime.publish(makeLifecycleEvent('message.delta', { delta, agentId: agent.id, projectTaskId: task.projectTaskId }, { projectId: project.id, taskId: task.id }));
             },
             onOutput: (chunk) => { watchdog.activity(); log.debug('agent output', { taskId: task.id, chunk: chunk.slice(0, 120), executionRunId: executionRun?.id }); if (traceViaEngine) recordTrace({ kind: 'text', summary: chunk.slice(0, 120), payload: { text: chunk } }); },
             onToolCall: (name, input, toolUseId) => {
               watchdog.activity();
               // 本轮文本流结束（进入工具执行）——前端清掉打字机气泡
-              realtime.publish(makeLifecycleEvent('message.delta.end', { reason: 'tool-call' }, { companyId: company.id, projectId: project.id, taskId: task.id }));
+              realtime.publish(makeLifecycleEvent('message.delta.end', { reason: 'tool-call' }, { projectId: project.id, taskId: task.id }));
               log.debug('agent tool', { taskId: task.id, name, executionRunId: executionRun?.id });
               // API 路径由 tool-loop 落 trace，这里只处理 CLI 路径避免重复
               if (!traceViaEngine) return;
@@ -740,9 +737,9 @@ export class TaskEngine {
                 recordTrace({ kind: 'tool_result', name, summary: content.slice(0, 120), payload: { toolCallId: toolUseId, content } });
               }
             },
-          })), watchdog.failure]);sessionManager.clearRecovery(projectTaskThread.id);break;}catch(error){if(/network|econn|dns|tls|proxy/i.test(error instanceof Error?error.message:String(error)))watchdog.networkError();if(!isRecoverableSessionError(error))throw error;recoveryAttempt+=1;const compactSupported=Boolean(adapter.compactSession);const recovery=recoveryAttempt===1?'retry':recoveryAttempt===2&&compactSupported?'compact':recoveryAttempt===(compactSupported?3:2)?'rotate':'stop';sessionManager.nextRecovery(projectTaskThread.id,compactSupported);if(recovery==='stop')throw error;if(recovery==='compact'&&adapter.compactSession&&ctx.sessionIdHint){try{await adapter.compactSession(ctx);}catch{const previousSessionId=ctx.sessionIdHint??null;sessionManager.rotate(projectTaskThread.id,{reason:'compact-failed',taskId:task.id});ctx.sessionIdHint=undefined;realtime.publish(makeLifecycleEvent('session.rotated',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,previousSessionId,reason:'compact-failed'},{companyId:company.id,projectId:project.id,taskId:task.id}));}}else if(recovery==='rotate'){const previousSessionId=ctx.sessionIdHint??null;sessionManager.rotate(projectTaskThread.id,{reason:'session-recovery',taskId:task.id});ctx.sessionIdHint=undefined;realtime.publish(makeLifecycleEvent('session.rotated',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,previousSessionId,reason:'session-recovery'},{companyId:company.id,projectId:project.id,taskId:task.id}));}realtime.publish(makeLifecycleEvent('session.recovered',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,taskId:task.id,recovery},{companyId:company.id,projectId:project.id,taskId:task.id}));log.warn('retrying recoverable executor failure',{taskId:task.id,recovery,error:String(error)});}}
+          })), watchdog.failure]);sessionManager.clearRecovery(projectTaskThread.id);break;}catch(error){if(/network|econn|dns|tls|proxy/i.test(error instanceof Error?error.message:String(error)))watchdog.networkError();if(!isRecoverableSessionError(error))throw error;recoveryAttempt+=1;const compactSupported=Boolean(adapter.compactSession);const recovery=recoveryAttempt===1?'retry':recoveryAttempt===2&&compactSupported?'compact':recoveryAttempt===(compactSupported?3:2)?'rotate':'stop';sessionManager.nextRecovery(projectTaskThread.id,compactSupported);if(recovery==='stop')throw error;if(recovery==='compact'&&adapter.compactSession&&ctx.sessionIdHint){try{await adapter.compactSession(ctx);}catch{const previousSessionId=ctx.sessionIdHint??null;sessionManager.rotate(projectTaskThread.id,{reason:'compact-failed',taskId:task.id});ctx.sessionIdHint=undefined;realtime.publish(makeLifecycleEvent('session.rotated',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,previousSessionId,reason:'compact-failed'},{projectId:project.id,taskId:task.id}));}}else if(recovery==='rotate'){const previousSessionId=ctx.sessionIdHint??null;sessionManager.rotate(projectTaskThread.id,{reason:'session-recovery',taskId:task.id});ctx.sessionIdHint=undefined;realtime.publish(makeLifecycleEvent('session.rotated',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,previousSessionId,reason:'session-recovery'},{projectId:project.id,taskId:task.id}));}realtime.publish(makeLifecycleEvent('session.recovered',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,taskId:task.id,recovery},{projectId:project.id,taskId:task.id}));log.warn('retrying recoverable executor failure',{taskId:task.id,recovery,error:String(error)});}}
         // WP5：执行器返回——收掉流式气泡（最终回复经 postSystemMessage 落库后走 message.created）
-        realtime.publish(makeLifecycleEvent('message.delta.end', { reason: 'done' }, { companyId: company.id, projectId: project.id, taskId: task.id }));
+        realtime.publish(makeLifecycleEvent('message.delta.end', { reason: 'done' }, { projectId: project.id, taskId: task.id }));
         if(!result||typeof result.outcome!=='string')throw new RunFailure('empty_result','执行器没有返回有效的 AgentRunResult');
         if(approvalFailure)throw approvalFailure;
         watchdog.complete();
@@ -757,12 +754,12 @@ export class TaskEngine {
         try {
           const health = markExecutorFailure(this.db, executorProfile?.id, failure.classification);
           if (health.turnedUnhealthy && executorProfile) {
-            realtime.publish(makeLifecycleEvent('executor.unhealthy', { profileId: executorProfile.id, name: executorProfile.name, reason: executorProfile.id ? String(failure.message).slice(0, 200) : '' }, { companyId: company.id, projectId: project.id, taskId: task.id }));
+            realtime.publish(makeLifecycleEvent('executor.unhealthy', { profileId: executorProfile.id, name: executorProfile.name, reason: executorProfile.id ? String(failure.message).slice(0, 200) : '' }, { projectId: project.id, taskId: task.id }));
           }
         } catch { /* 健康记账失败不影响失败主流程 */ }
-        realtime.publish(makeLifecycleEvent('run.watchdog-stopped',{runId:executionRun?.id??null,taskId:task.id,classification:failure.classification},{companyId:company.id,projectId:project.id,taskId:task.id}));
+        realtime.publish(makeLifecycleEvent('run.watchdog-stopped',{runId:executionRun?.id??null,taskId:task.id,classification:failure.classification},{projectId:project.id,taskId:task.id}));
         // WP5：执行失败也要收掉流式气泡（否则前端打字机残留到组件卸载）
-        realtime.publish(makeLifecycleEvent('message.delta.end', { reason: 'aborted' }, { companyId: company.id, projectId: project.id, taskId: task.id }));
+        realtime.publish(makeLifecycleEvent('message.delta.end', { reason: 'aborted' }, { projectId: project.id, taskId: task.id }));
         throw failure;
       }
 
@@ -803,7 +800,7 @@ export class TaskEngine {
               result.summary = activeSwarms > 0
                 ? `已向第一负责人请示放蜂：你已有活跃蜂群（并发上限 1 群），需负责人批准后才可并行放蜂。`
                 : `已向第一负责人请示放蜂：${plan.workers.length} 只超出专家自主额度 ${EXPERT_SWARM_LIMITS.maxWidth} 只，负责人确认后按全额执行。`;
-              realtime.publish(makeLifecycleEvent('swarm.request-escalated', { escalationTaskId: escalated.taskId, goal: plan.goal.slice(0, 80), requesterAgentId: agent.id }, { companyId: company.id, projectId: project.id, taskId: task.id }));
+              realtime.publish(makeLifecycleEvent('swarm.request-escalated', { escalationTaskId: escalated.taskId, goal: plan.goal.slice(0, 80), requesterAgentId: agent.id }, { projectId: project.id, taskId: task.id }));
             } else {
               const materialized = materializeSwarm(this.db, task, plan, { requesterAgentId: agent.id, limitsOverride: EXPERT_SWARM_LIMITS });
               result.outcome = 'waiting_dependency';
@@ -841,17 +838,17 @@ export class TaskEngine {
             if (adapter.compactSession && sessionIdHint) {
               await adapter.compactSession({ ...ctx, sessionIdHint });
               sessionManager.markCompacted(projectTaskThread.id);
-              realtime.publish(makeLifecycleEvent('session.compacted',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,sessionId:sessionIdHint},{companyId:company.id,projectId:project.id,taskId:task.id}));
+              realtime.publish(makeLifecycleEvent('session.compacted',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,sessionId:sessionIdHint},{projectId:project.id,taskId:task.id}));
               log.info('vendor session compacted', { threadId: projectTaskThread.id });
             } else {
-              const previousSessionId=sessionIdHint??null;sessionManager.rotate(projectTaskThread.id, handoff);realtime.publish(makeLifecycleEvent('session.rotated',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,previousSessionId,reason:'compact-unavailable'},{companyId:company.id,projectId:project.id,taskId:task.id}));
+              const previousSessionId=sessionIdHint??null;sessionManager.rotate(projectTaskThread.id, handoff);realtime.publish(makeLifecycleEvent('session.rotated',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,previousSessionId,reason:'compact-unavailable'},{projectId:project.id,taskId:task.id}));
             }
           } catch (error) {
-            const previousSessionId=sessionIdHint??null;sessionManager.rotate(projectTaskThread.id, handoff);realtime.publish(makeLifecycleEvent('session.rotated',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,previousSessionId,reason:'compact-failed'},{companyId:company.id,projectId:project.id,taskId:task.id}));
+            const previousSessionId=sessionIdHint??null;sessionManager.rotate(projectTaskThread.id, handoff);realtime.publish(makeLifecycleEvent('session.rotated',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,previousSessionId,reason:'compact-failed'},{projectId:project.id,taskId:task.id}));
             log.warn('vendor compaction failed; session rotated', { threadId: projectTaskThread.id, error: String(error) });
           }
         } else if (decision.action === 'rotate') {
-          realtime.publish(makeLifecycleEvent('session.rotated',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,previousSessionId:result._sessionIdHint??ctx.sessionIdHint??null,reason:'hard-context-limit'},{companyId:company.id,projectId:project.id,taskId:task.id}));
+          realtime.publish(makeLifecycleEvent('session.rotated',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,previousSessionId:result._sessionIdHint??ctx.sessionIdHint??null,reason:'hard-context-limit'},{projectId:project.id,taskId:task.id}));
           log.info('vendor session rotated at hard context limit', { threadId: projectTaskThread.id });
         }
       }
@@ -934,9 +931,9 @@ export class TaskEngine {
               assigneeAgentId: project.firstAgentId,
               conflicts: pub.conflicts,
               attempt: nextAttempt,
-            }, { companyId: company.id, projectId: project.id, taskId: task.id }));
+            }, { projectId: project.id, taskId: task.id }));
             // 自动触发2：发布冲突 → conflict-resolution 讨论（冲突方+裁决者协商）
-            try { this.triggerConflictResolutionDiscussion(task, project, company.id, pub.conflicts, sourceTaskIds); } catch (e) { log.warn('conflict-resolution discussion trigger failed', { taskId: task.id, err: e instanceof Error ? e.message : String(e) }); }
+            try { this.triggerConflictResolutionDiscussion(task, project, pub.conflicts, sourceTaskIds); } catch (e) { log.warn('conflict-resolution discussion trigger failed', { taskId: task.id, err: e instanceof Error ? e.message : String(e) }); }
           } else {
             const escalationIds = [pub.id, rootPublishId, resolutionContext?.publishId].filter(
               (value): value is string => Boolean(value),
@@ -949,7 +946,7 @@ export class TaskEngine {
               conflicts: pub.conflicts,
               attempt: nextAttempt,
               reason: project.firstAgentId ? '裁决后再次冲突，已达到自动裁决上限' : '项目未设置第一负责人',
-            }, { companyId: company.id, projectId: project.id, taskId: task.id }));
+            }, { projectId: project.id, taskId: task.id }));
           }
           return true;
         }
@@ -993,7 +990,7 @@ export class TaskEngine {
             resolutionTaskId: task.id,
             sourceTaskIds,
             mergedFiles: pub.mergedFiles,
-          }, { companyId: company.id, projectId: project.id, taskId: task.id }));
+          }, { projectId: project.id, taskId: task.id }));
         }
       }
 
@@ -1070,7 +1067,7 @@ export class TaskEngine {
             completeDiscussionTurn(this.db, discussionId, task.id, (result.summary ?? '').slice(0, 2000));
             realtime.publish(makeLifecycleEvent('discussion.turn-completed', {
               discussionId, taskId: task.id, speakerAgentId: task.assigneeAgentId ?? '',
-            }, { companyId: company.id, projectId: project.id, taskId: task.id }));
+            }, { projectId: project.id, taskId: task.id }));
           } catch (e) {
             log.warn('discussion turn record failed', { discussionId, taskId: task.id, err: e instanceof Error ? e.message : String(e) });
           }
@@ -1087,7 +1084,7 @@ export class TaskEngine {
       }
       // 自动触发1：验收不达标（acceptance_criteria 有 met=false）→ quality-review 讨论
       if (result.outcome === 'completed' && result.acceptanceMet?.some((m) => m.met === false)) {
-        try { this.triggerQualityReviewDiscussion(task, result.acceptanceMet!, agent, project, company.id); } catch (e) { log.warn('quality-review discussion trigger failed', { taskId: task.id, err: e instanceof Error ? e.message : String(e) }); }
+        try { this.triggerQualityReviewDiscussion(task, result.acceptanceMet!, agent, project); } catch (e) { log.warn('quality-review discussion trigger failed', { taskId: task.id, err: e instanceof Error ? e.message : String(e) }); }
       }
       // R2：收尾验收——任务 completed（有验收标准、开关开、非验收任务自身）→ 派 [验收] Task 给验收员。
       // 条件不满足时静默跳过（maybeTriggerAcceptanceReview 内部判定 + 幂等）。
@@ -1099,7 +1096,7 @@ export class TaskEngine {
             realtime.publish(makeLifecycleEvent('acceptance.review-triggered', {
               sourceTaskId: task.id,
               reviewTaskId: reviewTask.id,
-            }, { companyId: company.id, projectId: project.id, taskId: task.id }));
+            }, { projectId: project.id, taskId: task.id }));
           }
         } catch (e) {
           log.warn('acceptance review trigger failed', { taskId: task.id, err: e instanceof Error ? e.message : String(e) });
@@ -1286,7 +1283,6 @@ export class TaskEngine {
       realtime.publish({
         id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         type: `task.${result.outcome}`,
-        companyId: company.id,
         projectId: project.id,
         taskId: task.id,
         occurredAt: new Date().toISOString(),
@@ -1305,7 +1301,6 @@ export class TaskEngine {
       if (getTask(this.db, task.id).state === 'cancelled') {
         if (resolutionContext) {
           this.escalatePublishConflictResolution(resolutionContext, {
-            companyId: company.id,
             projectId: project.id,
             taskId: task.id,
             reason: '裁决 Task 已取消，可从成果历史进入该 Task 后恢复',
@@ -1323,7 +1318,6 @@ export class TaskEngine {
       }
       if (resolutionContext) {
         this.escalatePublishConflictResolution(resolutionContext, {
-          companyId: company.id,
           projectId: project.id,
           taskId: task.id,
           reason: `裁决执行失败，可从成果历史进入该 Task 后恢复：${err instanceof Error ? err.message : String(err)}`,
@@ -1335,7 +1329,6 @@ export class TaskEngine {
       realtime.publish({
         id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         type: `task.${failedTask.state}`,
-        companyId: company.id,
         projectId: project.id,
         taskId: task.id,
         occurredAt: new Date().toISOString(),
@@ -1406,7 +1399,7 @@ export class TaskEngine {
    * 自动触发1：验收不达标 → quality-review 讨论。
    * 产出者 + 第一负责人（评审者）参与，讨论如何改进。
    */
-  private triggerQualityReviewDiscussion(task: ReturnType<typeof getTask>, acceptanceMet: Array<{ id: string; met: boolean }>, agent: ReturnType<typeof getAgent>, project: ReturnType<typeof getProject>, companyId: string): void {
+  private triggerQualityReviewDiscussion(task: ReturnType<typeof getTask>, acceptanceMet: Array<{ id: string; met: boolean }>, agent: ReturnType<typeof getAgent>, project: ReturnType<typeof getProject>): void {
     const failedCriteria = acceptanceMet.filter((m) => m.met === false).map((m) => m.id);
     const participants: string[] = [];
     if (project.firstAgentId) participants.push(project.firstAgentId);
@@ -1421,7 +1414,7 @@ export class TaskEngine {
     startDiscussionRoom(this.db, disc.id);
     realtime.publish(makeLifecycleEvent('discussion.auto-triggered', {
       discussionId: disc.id, scenario: 'quality-review', taskId: task.id, projectId: project.id,
-    }, { companyId, projectId: project.id, taskId: task.id }));
+    }, { projectId: project.id, taskId: task.id }));
     log.info('auto quality-review discussion triggered', { taskId: task.id, discussionId: disc.id, failedCriteria });
   }
 
@@ -1429,7 +1422,7 @@ export class TaskEngine {
    * 自动触发2：发布冲突 → conflict-resolution 讨论。
    * 冲突方（sourceTaskIds 的 assignee）+ 裁决者（第一负责人）协商。
    */
-  private triggerConflictResolutionDiscussion(task: ReturnType<typeof getTask>, project: ReturnType<typeof getProject>, companyId: string, conflicts: string[], sourceTaskIds: string[]): void {
+  private triggerConflictResolutionDiscussion(task: ReturnType<typeof getTask>, project: ReturnType<typeof getProject>, conflicts: string[], sourceTaskIds: string[]): void {
     const participants: string[] = [];
     if (project.firstAgentId) participants.push(project.firstAgentId);
     // 加入冲突方的 assignee
@@ -1449,7 +1442,7 @@ export class TaskEngine {
     startDiscussionRoom(this.db, disc.id);
     realtime.publish(makeLifecycleEvent('discussion.auto-triggered', {
       discussionId: disc.id, scenario: 'conflict-resolution', taskId: task.id, projectId: project.id,
-    }, { companyId, projectId: project.id, taskId: task.id }));
+    }, { projectId: project.id, taskId: task.id }));
     log.info('auto conflict-resolution discussion triggered', { taskId: task.id, discussionId: disc.id, conflictsCount: conflicts.length });
   }
 
@@ -1491,7 +1484,7 @@ export class TaskEngine {
 
   private escalatePublishConflictResolution(
     context: PublishConflictResolutionContext,
-    scope: { companyId: string; projectId: string; taskId: string; reason: string },
+    scope: { projectId: string; taskId: string; reason: string },
   ): void {
     for (const publishId of new Set([context.rootPublishId, context.publishId])) {
       this.publishQueue.markEscalated(publishId);
@@ -1503,7 +1496,7 @@ export class TaskEngine {
       conflicts: context.conflicts,
       attempt: context.attempt,
       reason: scope.reason,
-    }, { companyId: scope.companyId, projectId: scope.projectId, taskId: scope.taskId }));
+    }, { projectId: scope.projectId, taskId: scope.taskId }));
   }
 
   /** 异常分级（P7）：根据错误类型走不同分支。 */
@@ -1592,7 +1585,7 @@ export class TaskEngine {
             makeLifecycleEvent(
               'project.rollback',
               { projectId: project.id, from: previousState, to: 'researching', reason: 'rollback-3x' },
-              { companyId: project.companyId, projectId: project.id },
+              { projectId: project.id },
             ),
           );
           log.warn('circuit breaker tripped, rolled back project to researching', {
@@ -1620,7 +1613,7 @@ export class TaskEngine {
             startDiscussionRoom(this.db, disc.id);
             realtime.publish(makeLifecycleEvent('discussion.auto-triggered', {
               discussionId: disc.id, scenario: 'help-request', taskId, projectId: project.id,
-            }, { companyId: project.companyId, projectId: project.id, taskId }));
+            }, { projectId: project.id, taskId }));
             }
           } catch (e) {
             log.warn('auto help-request discussion failed', { taskId, err: e instanceof Error ? e.message : String(e) });

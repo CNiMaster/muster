@@ -176,7 +176,6 @@ describe('公司级触发器', () => {
     expect(list[0].scheduleKind).toBe('daily');
     expect(list[0].timeOfDay).toBe('09:00');
     expect(list[0].projectId).toBeNull();
-    expect(list[0].companyId).toBe(company.id);
 
     const paused = setCompanyTriggerEnabled(db, company.id, list[0].id, false);
     expect(paused.enabled).toBe(false);

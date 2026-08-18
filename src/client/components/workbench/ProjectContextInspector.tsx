@@ -14,7 +14,6 @@ const ATTENTION_STATES = new Set(['waiting_input', 'waiting_approval', 'blocked'
 
 export function ProjectContextInspector({
   projectId,
-  companyId,
   projectState,
   selectedTask,
   selectedAgentId,
@@ -24,7 +23,6 @@ export function ProjectContextInspector({
   onChatWithAgent,
 }: {
   projectId: string;
-  companyId?: string;
   projectState: string;
   selectedTask?: ProjectTaskDTO;
   selectedAgentId?: string;

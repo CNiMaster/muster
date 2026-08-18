@@ -52,7 +52,7 @@ const createChangeHandler = asyncHandler(async (req, res) => {
     requestId: req2.id,
     requesterEmployeeId: req2.requesterEmployeeId,
     approverEmployeeId: req2.approverEmployeeId ?? '',
-  } as never, { companyId: companyIdOf(req) }));
+  } as never, {}));
   res.status(201).json(req2);
 });
 delegationRouter.post('/permission-changes', createChangeHandler);

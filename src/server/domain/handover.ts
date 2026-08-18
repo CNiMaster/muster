@@ -28,7 +28,6 @@ export type HandoverState = 'drafting' | 'awaiting' | 'receiving' | 'completed' 
 
 export interface HandoverRecord {
   id: string;
-  companyId: string;
   departingEmployeeId: string;
   departingProfileId: string;
   receiverEmployeeId: string | null;
@@ -63,10 +62,9 @@ interface HandoverRow {
   updated_at: string;
 }
 
-function fromRow(db: DB, r: HandoverRow): HandoverRecord {
+function fromRow(_db: DB, r: HandoverRow): HandoverRecord {
   return {
     id: r.id,
-    companyId: getWorkbench(db).id,
     departingEmployeeId: r.departing_employee_id,
     departingProfileId: r.departing_profile_id,
     receiverEmployeeId: r.receiver_employee_id,
@@ -270,10 +268,14 @@ export function completeHandover(db: DB, id: string, opts?: { musterHome?: strin
   assertTransition(cur.state, 'completed');
   const now = nowIso();
   // 执行离职前：若离职员工是公司/项目的 first_agent，转移给接手人或清除（防 FK 冲突）
+  let companyId = 'default';
   db.transaction(() => {
-    const company = db.prepare('SELECT first_agent_id FROM company WHERE id=?').get(cur.companyId) as { first_agent_id: string | null } | undefined;
-    if (company?.first_agent_id === cur.departingEmployeeId) {
-      db.prepare('UPDATE company SET first_agent_id=? WHERE id=?').run(cur.receiverEmployeeId, cur.companyId);
+    const company = db.prepare('SELECT id, first_agent_id FROM company LIMIT 1').get() as { id: string; first_agent_id: string | null } | undefined;
+    if (company) {
+      companyId = company.id;
+      if (company.first_agent_id === cur.departingEmployeeId) {
+        db.prepare('UPDATE company SET first_agent_id=? WHERE id=?').run(cur.receiverEmployeeId, company.id);
+      }
     }
     // 项目的 first_agent_id 同理（ON DELETE SET NULL 会自动处理，但显式转移更优）
     db.prepare('UPDATE project SET first_agent_id=? WHERE first_agent_id=?').run(
@@ -281,8 +283,8 @@ export function completeHandover(db: DB, id: string, opts?: { musterHome?: strin
     );
     db.prepare('DELETE FROM agent_definition WHERE id=?').run(cur.departingEmployeeId);
   })();
-  // 归档该公司在 Agent Home 的记忆分区
-  archiveCompanyMemoryPartition(cur.departingProfileId, cur.companyId, opts?.musterHome);
+  // 归档该工作台在 Agent Home 的记忆分区
+  archiveCompanyMemoryPartition(cur.departingProfileId, companyId, opts?.musterHome);
   db.prepare(
     `UPDATE handover_record SET state='completed', completed_at=?, updated_at=? WHERE id=?`,
   ).run(now, now, id);

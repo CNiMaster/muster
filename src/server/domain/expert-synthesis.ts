@@ -26,7 +26,6 @@ import { log } from '../logger';
 
 export interface ExpertCandidate {
   id: string;
-  companyId: string;
   source: 'persona_miss' | 'bee_record' | 'generalist_record';
   sourceTaskId: string | null;
   name: string;
@@ -42,8 +41,6 @@ export interface ExpertCandidate {
   personaId: string | null;
 }
 
-import { getWorkbenchOrNull } from './workbench';
-
 interface CandidateRow {
   id: string; source: string; source_task_id: string | null;
   name: string; domain: string; description: string; soul: string;
@@ -53,10 +50,9 @@ interface CandidateRow {
 
 const MAX_SIGNALS_PER_TICK = 2;
 
-function fromRow(db: DB, row: CandidateRow): ExpertCandidate {
+function fromRow(_db: DB, row: CandidateRow): ExpertCandidate {
   return {
     id: row.id,
-    companyId: getWorkbenchOrNull(db)?.id ?? '',
     source: row.source as ExpertCandidate['source'],
     sourceTaskId: row.source_task_id,
     name: row.name,

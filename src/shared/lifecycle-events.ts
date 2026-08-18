@@ -137,10 +137,10 @@ export interface LifecycleEventPayloadMap {
   /** R2：任务级自动验收已派发 [验收] Task 给验收员。 */
   'acceptance.review-triggered': { sourceTaskId: string; reviewTaskId: string };
   // 临时工生命周期（批次 A）
-  'employee.temp-recruited': { agentId: string; profileId: string; companyId: string; isNewProfile: boolean };
-  'employee.converted': { agentId: string; profileId: string; companyId: string };
-  'employee.greyed': { agentId: string; profileId: string; companyId: string };
-  'employee.dismissed': { agentId: string; profileId: string; companyId: string; profileDeleted: boolean };
+  'employee.temp-recruited': { agentId: string; profileId: string; isNewProfile: boolean };
+  'employee.converted': { agentId: string; profileId: string };
+  'employee.greyed': { agentId: string; profileId: string };
+  'employee.dismissed': { agentId: string; profileId: string; profileDeleted: boolean };
   'employee.rating-adjusted': { profileId: string; oldRating: number; newRating: number };
   // 离职交接（批次 C）
   'handover.created': { handoverId: string; departingEmployeeId: string };
@@ -182,7 +182,6 @@ type ProjectPhase =
 export type LifecycleEventType = keyof LifecycleEventPayloadMap;
 
 export interface LifecycleEventScope {
-  companyId?: string;
   projectId?: string;
   taskId?: string;
 }

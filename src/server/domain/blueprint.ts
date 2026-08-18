@@ -37,7 +37,6 @@ export interface BlueprintTool {
 
 export interface Blueprint {
   id: string;
-  companyId: string;
   taskType: string;
   label: string;
   /** 用户语言描述：这类活是什么、当前打法。 */
@@ -67,8 +66,6 @@ export interface BlueprintDetail extends Blueprint {
   };
 }
 
-import { getWorkbenchOrNull } from './workbench';
-
 export interface BlueprintVersion {
   id: string;
   blueprintId: string;
@@ -91,10 +88,9 @@ interface VersionRow {
   summary: string; evidence_json: string; created_at: string;
 }
 
-function fromRow(db: DB, row: BlueprintRow): Blueprint {
+function fromRow(_db: DB, row: BlueprintRow): Blueprint {
   return {
     id: row.id,
-    companyId: getWorkbenchOrNull(db)?.id ?? '',
     taskType: row.task_type,
     label: row.label,
     description: row.description ?? '',
@@ -285,7 +281,7 @@ export function rollbackBlueprint(db: DB, blueprintId: string, targetVersion: nu
  * 蓝图进化：支持正向吸收升级与负向隔离保护。
  */
 export function evolveBlueprint(db: DB, input: {
-  companyId: string;
+  companyId?: string;
   projectId: string;
   taskTitle: string;
   personaId: string;

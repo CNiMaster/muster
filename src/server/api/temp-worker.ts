@@ -47,9 +47,8 @@ const recruitTempHandler = asyncHandler(async (req, res) => {
   realtime.publish(makeLifecycleEvent('employee.temp-recruited', {
     agentId: result.agentId,
     profileId: result.profileId,
-    companyId: companyIdOf(req),
     isNewProfile: result.isNewProfile,
-  }, { companyId: companyIdOf(req) }));
+  }, {}));
   res.status(201).json(result);
 });
 tempWorkerRouter.post('/employees/temp', recruitTempHandler);
@@ -62,8 +61,7 @@ const convertTempHandler = asyncHandler(async (req, res) => {
   realtime.publish(makeLifecycleEvent('employee.converted', {
     agentId,
     profileId: agent.profileId,
-    companyId: companyIdOf(req),
-  }, { companyId: companyIdOf(req) }));
+  }, {}));
   res.json({ ok: true });
 });
 tempWorkerRouter.post('/employees/:id/convert', convertTempHandler);
@@ -87,9 +85,8 @@ const dismissTempHandler = asyncHandler(async (req, res) => {
   realtime.publish(makeLifecycleEvent('employee.dismissed', {
     agentId,
     profileId,
-    companyId: companyIdOf(req),
     profileDeleted,
-  }, { companyId: companyIdOf(req) }));
+  }, {}));
   res.json({ ok: true, profileDeleted });
 });
 tempWorkerRouter.post('/employees/:id/dismiss', dismissTempHandler);

@@ -31,7 +31,6 @@ function publishMessageCreated(message: ConversationMessage): void {
     realtime.publish({
       id: shortId('ev_'),
       type: 'message.created',
-      companyId: message.scopeKind === 'workbench' ? message.scopeId : undefined,
       projectId: message.scopeKind === 'project' ? message.scopeId : undefined,
       taskId: message.refTaskId ?? undefined,
       occurredAt: message.createdAt,
@@ -49,12 +48,11 @@ function publishMessageCreated(message: ConversationMessage): void {
 }
 
 /** Review 修复 I2：收件箱项目首次创建后补发 project.created，让项目列表/看板即时刷新。 */
-function publishInboxCreated(companyId: string, refTaskId?: string): void {
+function publishInboxCreated(refTaskId?: string): void {
   try {
     realtime.publish({
       id: shortId('ev_'),
       type: 'project.created',
-      companyId,
       occurredAt: nowIso(),
       payload: { inbox: true, refTaskId },
     });
@@ -351,7 +349,7 @@ export function postUserMessage(db: DB, input: PostUserMessageInput): {
   publishMessageCreated(result.userMessage);
   // Review 修复 I2：收件箱首次创建时补发 project.created（事务已提交，事件不会虚发）。
   if (result.inboxCreated) {
-    publishInboxCreated(result.userMessage.scopeId, result.userMessage.refTaskId ?? undefined);
+    publishInboxCreated(result.userMessage.refTaskId ?? undefined);
   }
   return result;
 }

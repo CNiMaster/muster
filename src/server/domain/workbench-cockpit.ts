@@ -45,7 +45,6 @@ export function getWorkbenchCockpit(db: DB): CompanyCockpitDTO {
   }
 
   return {
-    companyId: company.id,
     companyState: company.state,
     employees,
     projects: { total: projects.length, active, attention },

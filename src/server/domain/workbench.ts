@@ -194,7 +194,6 @@ export function transitionWorkbench(db: DB, target: WorkbenchState): Workbench {
     realtime.publish({
       id: shortId('ev_'),
       type: 'company.state',
-      companyId: cur.id,
       occurredAt: nowIso(),
       payload: { state: updated.state },
     });

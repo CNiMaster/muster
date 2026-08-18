@@ -43,7 +43,7 @@ const createHandoverHandler = asyncHandler(async (req, res) => {
   realtime.publish(makeLifecycleEvent('handover.created' as never, {
     handoverId: record.id,
     departingEmployeeId: record.departingEmployeeId,
-  } as never, { companyId: companyIdOf(req) }));
+  } as never, {}));
   res.status(201).json(record);
 });
 handoverRouter.post('/handover', createHandoverHandler);
@@ -117,7 +117,7 @@ handoverRouter.post(
       handoverId: record.id,
       departingEmployeeId: record.departingEmployeeId,
       receiverEmployeeId: record.receiverEmployeeId ?? '',
-    } as never, { companyId: record.companyId }));
+    } as never, {}));
     res.json(record);
   }),
 );

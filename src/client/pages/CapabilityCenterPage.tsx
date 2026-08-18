@@ -146,7 +146,7 @@ function PluginGovernRow({ plugin, companies }: { plugin: Plugin; companies: Com
               <Badge tone={MATURITY_TONE[plugin.maturity]}>{MATURITY_LABEL[plugin.maturity]}</Badge>
             )}
             {isExclusive ? (
-              <Badge tone="info" title={`工作台独占：${plugin.scope.level === 'company' ? plugin.scope.companyId : ''}`}>工作台独占</Badge>
+              <Badge tone="info" title="工作台独占">工作台独占</Badge>
             ) : (
               <Badge tone="neutral">平台通用</Badge>
             )}
@@ -260,7 +260,7 @@ function CompanyToggle({ plugin, company }: { plugin: Plugin; company: CompanyLi
 function ExclusiveDetail({ plugin }: { plugin: Plugin }): React.ReactElement {
   return (
     <div className="exclusive-detail">
-      <p className="muted">工作台独占插件，仅对 <code>{plugin.scope.level === 'company' ? plugin.scope.companyId : ''}</code> 可见可用。其他工作台看不到此插件。</p>
+      <p className="muted">工作台独占插件，仅对本工作台可见可用。</p>
       {plugin.manifest.kind === 'mcp-server' && (
         <details>
           <summary>MCP 配置</summary>
@@ -274,8 +274,7 @@ function ExclusiveDetail({ plugin }: { plugin: Plugin }): React.ReactElement {
 // ── 辅助：单工作台单插件决策查询 ─────────────────────────────────────────────
 // 当前用 effective endpoint 全量取一次再过滤（工作台数适中时够用；工作台极多时应改批量预取）。
 
-function useCompanyEffectiveDecision(companyId: string, pluginId: string): { decision: CompanyPluginDecision } {
-  void companyId; // 公司退役：单例工作台，决策即默认工作台决策（原按公司拼 URL 随旧路径下线）
+function useCompanyEffectiveDecision(_companyId: string, pluginId: string): { decision: CompanyPluginDecision } {
   const { data } = useEffectiveCompanyPlugins();
   // 不在 effective 列表里 = 被禁用（平台插件）
   const found = (data ?? []).find((p: EffectivePlugin) => p.id === pluginId);

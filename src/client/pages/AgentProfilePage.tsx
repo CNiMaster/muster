@@ -216,7 +216,7 @@ export function AgentProfilePage(): React.ReactElement {
             <EmploymentCard
               key={employment.id}
               employment={employment}
-              companyName={company?.name ?? employment.companyId}
+              companyName={company?.name ?? '默认工作台'}
               executors={executorProfiles.data ?? []}
               policies={permissionPolicies.data ?? []}
               onExecutor={(executorProfileId) => bindExecutor.mutate(

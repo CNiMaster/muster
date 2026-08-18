@@ -63,7 +63,6 @@ export interface TaskCloseoutSummary {
   id: string;
   taskId: string;
   projectId: string;
-  companyId: string;
   blueprintId: string | null;
   personaId: string | null;
   isUserOverride: boolean;
@@ -88,12 +87,11 @@ interface SummaryRow {
   updated_at: string;
 }
 
-function fromRow(db: DB, row: SummaryRow): TaskCloseoutSummary {
+function fromRow(_db: DB, row: SummaryRow): TaskCloseoutSummary {
   return {
     id: row.id,
     taskId: row.task_id,
     projectId: row.project_id,
-    companyId: getWorkbenchOrNull(db)?.id ?? '',
     blueprintId: row.blueprint_id,
     personaId: row.persona_id,
     isUserOverride: row.is_user_override === 1,

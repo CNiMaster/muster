@@ -35,7 +35,6 @@ export interface AgentProfile {
 export interface CompanyEmployee {
   id: string;
   profileId: string;
-  companyId: string;
   legacyAgentId: string;
   departmentId: string | null;
   role: string;
@@ -111,11 +110,10 @@ function profileFromRow(row: ProfileRow): AgentProfile {
   };
 }
 
-function employeeFromRow(db: DB, row: EmployeeRow): CompanyEmployee {
+function employeeFromRow(_db: DB, row: EmployeeRow): CompanyEmployee {
   return {
     id: row.id,
     profileId: row.profile_id,
-    companyId: getWorkbench(db).id,
     legacyAgentId: row.legacy_agent_id,
     departmentId: row.department_id,
     role: row.role,

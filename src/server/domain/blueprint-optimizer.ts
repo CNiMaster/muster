@@ -13,7 +13,6 @@ export type BlueprintOptimizationActionType = 'lock' | 'retire' | 'merge' | 'pol
 
 export interface BlueprintOptimizationItem {
   id: string;
-  companyId: string;
   blueprintId: string;
   actionType: BlueprintOptimizationActionType;
   /** merge 的目标蓝图（并入谁）。 */
@@ -25,18 +24,15 @@ export interface BlueprintOptimizationItem {
   createdAt: string;
 }
 
-import { getWorkbenchOrNull } from './workbench';
-
 interface ItemRow {
   id: string; blueprint_id: string; action_type: string;
   target_blueprint_id: string | null; reason: string; expected_effect: string;
   params_json: string; status: string; created_at: string;
 }
 
-function fromRow(db: DB, row: ItemRow): BlueprintOptimizationItem {
+function fromRow(_db: DB, row: ItemRow): BlueprintOptimizationItem {
   return {
     id: row.id,
-    companyId: getWorkbenchOrNull(db)?.id ?? '',
     blueprintId: row.blueprint_id,
     actionType: row.action_type as BlueprintOptimizationActionType,
     targetBlueprintId: row.target_blueprint_id,
@@ -48,7 +44,7 @@ function fromRow(db: DB, row: ItemRow): BlueprintOptimizationItem {
   };
 }
 
-function insertItem(db: DB, companyId: string, item: Omit<BlueprintOptimizationItem, 'id' | 'companyId' | 'status' | 'createdAt'>): void {
+function insertItem(db: DB, _companyId: string, item: Omit<BlueprintOptimizationItem, 'id' | 'status' | 'createdAt'>): void {
   const now = nowIso();
   db.prepare(
     `INSERT INTO blueprint_optimization_item
@@ -75,7 +71,7 @@ export function scoreOfBlueprint(bp: Blueprint): number | null {
 export function insertPendingOptimizationItem(
   db: DB,
   companyId: string,
-  item: Omit<BlueprintOptimizationItem, 'id' | 'companyId' | 'status' | 'createdAt'>,
+  item: Omit<BlueprintOptimizationItem, 'id' | 'status' | 'createdAt'>,
 ): boolean {
   const exists = db.prepare(
     `SELECT 1 FROM blueprint_optimization_item
@@ -86,7 +82,7 @@ export function insertPendingOptimizationItem(
   return true;
 }
 
-export function listOptimizationItems(db: DB, companyId?: string, blueprintId?: string): BlueprintOptimizationItem[] {
+export function listOptimizationItems(db: DB, _companyId?: string, blueprintId?: string): BlueprintOptimizationItem[] {
   const rows = (blueprintId
     ? db.prepare('SELECT * FROM blueprint_optimization_item WHERE blueprint_id=? ORDER BY created_at DESC').all(blueprintId)
     : db.prepare('SELECT * FROM blueprint_optimization_item ORDER BY created_at DESC').all()) as ItemRow[];

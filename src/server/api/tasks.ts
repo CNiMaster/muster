@@ -45,11 +45,9 @@ function publishTaskStateEvent(taskId: string, state: string): void {
     const db = getDb();
     const task = getTask(db, taskId);
     const project = getProject(db, task.projectId);
-    const company = getCompany(db, project.companyId);
     realtime.publish({
       id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       type: `task.${state}`,
-      companyId: company.id,
       projectId: project.id,
       taskId: task.id,
       occurredAt: new Date().toISOString(),
@@ -257,11 +255,9 @@ taskByIdRouter.post(
     }
     const result = promoteProjectStagingIfAny(db, task.projectId, 'manual-promote');
     try {
-      const project = getProject(db, task.projectId);
       realtime.publish({
         id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         type: result.promoted ? 'publish.staging-promoted' : 'publish.staging-promote-conflict',
-        companyId: project.companyId,
         projectId: task.projectId,
         taskId: task.id,
         occurredAt: new Date().toISOString(),

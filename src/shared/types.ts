@@ -45,7 +45,6 @@ export interface ResolvedTaskSkill {
 
 export interface TemplateRuntimeHealthFinding {
   id: string;
-  companyId: string;
   fingerprint: string;
   code: string;
   severity: 'info' | 'warning' | 'blocking';
@@ -146,7 +145,6 @@ export interface SwarmPlan {
 export interface RealtimeEvent<T = unknown> {
   id: string;
   type: string;
-  companyId?: string;
   projectId?: string;
   taskId?: string;
   occurredAt: string;
@@ -175,7 +173,6 @@ export type {
 } from './lifecycle-events';
 
 export interface CompanyCockpitDTO {
-  companyId: string;
   companyState: CompanyState;
   employees: { total: number; online: number; blocked: number };
   projects: { total: number; active: number; attention: number };
@@ -195,8 +192,6 @@ export interface EmployeeRuntimeDTO {
   totals: { employments: number; projects: number; threads: number; workOrders: number; artifacts: number };
   employments: Array<{
     employeeId: string;
-    companyId: string;
-    companyName: string;
     role: string;
     projects: Array<{
       projectId: string;

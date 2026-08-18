@@ -50,9 +50,8 @@ const dispatchHandler = asyncHandler(async (req, res) => {
   realtime.publish(makeLifecycleEvent('employee.temp-recruited', {
     agentId: result.agentId,
     profileId: result.profileId,
-    companyId: sourceCompanyId,
     isNewProfile: result.isNewProfile,
-  }, { companyId: sourceCompanyId }));
+  }, {}));
   res.status(200).json({
     decision: { path: 'recruit', tempAgentId: result.agentId, selectionPath: result.path, isNewProfile: result.isNewProfile, reason: decision.reason },
     contract: null,

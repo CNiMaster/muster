@@ -43,7 +43,6 @@ export function getSwarmLimits(db: DB): SwarmLimits {
 
 export interface SwarmRun {
   id: string;
-  companyId: string;
   projectId: string;
   rootTaskId: string;
   synthesisTaskId: string | null;
@@ -81,10 +80,9 @@ interface SwarmRunRow {
   requester_agent_id: string | null;
 }
 
-function swarmFromRow(db: DB, r: SwarmRunRow): SwarmRun {
+function swarmFromRow(_db: DB, r: SwarmRunRow): SwarmRun {
   return {
     id: r.id,
-    companyId: getWorkbenchOrNull(db)?.id ?? '',
     projectId: r.project_id,
     rootTaskId: r.root_task_id,
     requesterAgentId: r.requester_agent_id ?? null,
@@ -137,7 +135,7 @@ export function countActiveSwarmsByRequester(db: DB, agentId: string): number {
 
 /** 请示第一负责人：超限/并发冲突时把完整计划派给负责人把关（负责人可自行决定转派调度中心或拒绝）。 */
 export function escalateSwarmRequest(db: DB, input: {
-  companyId: string; projectId: string; leadAgentId: string; requesterAgentId: string; requesterName: string; plan: SwarmPlan;
+  companyId?: string; projectId: string; leadAgentId: string; requesterAgentId: string; requesterName: string; plan: SwarmPlan;
   /** 发起者任务 id：请示任务挂为其子任务，负责人完成请示即走既有父恢复链唤醒发起者。 */
   sourceTaskId: string;
 }): { taskId: string } {
@@ -561,7 +559,7 @@ const BEE_PROMPT = `你是蜂群工蜂：一次性任务执行者，为"调度�
  */
 export function createWorkerBee(
   db: DB,
-  input: { companyId: string; projectId: string; requesterAgentId: string; index: number },
+  input: { companyId?: string; projectId: string; requesterAgentId: string; index: number },
 ): string {
   const { agentId } = createTempEmployment(db, {
     role: SWARM_WORKER_ROLE,
@@ -656,7 +654,6 @@ export function materializeSwarm(
 
   for (const [index, worker] of workers.entries()) {
     const beeAgentId = createWorkerBee(db, {
-      companyId: swarm.companyId,
       projectId: swarm.projectId,
       requesterAgentId: rootDispatcherId,
       index,
@@ -787,7 +784,6 @@ export function maybeAutoRepairBee(db: DB, failedTask: Task, message: string): v
   const requester = failedTask.dispatcherAgentId ?? failedTask.assigneeAgentId ?? rootAssignee;
   if (!requester) return; // 无派发者无法建替补
   const beeAgentId = createWorkerBee(db, {
-    companyId: swarm.companyId,
     projectId: swarm.projectId,
     requesterAgentId: requester,
     index: beeCount,

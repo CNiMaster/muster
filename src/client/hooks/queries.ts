@@ -105,7 +105,6 @@ export interface CredentialDefinitionDTO {
 }
 
 export interface CompanyCredentialDTO {
-  companyId: string;
   credentialDefinitionId: string;
   overrideKey: string | null;
   enabled: boolean;
@@ -274,7 +273,6 @@ export function usePersonas(domain?: string, q?: string) {
 // ===== WP3 系统自建专家（免人工确认）：沉淀历史（查）+ 自建人设改/删 =====
 export interface ExpertCandidateDTO {
   id: string;
-  companyId: string;
   source: 'persona_miss' | 'bee_record' | 'generalist_record';
   sourceTaskId: string | null;
   name: string;
@@ -642,9 +640,9 @@ export function useQuickProject() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: { name: string; description?: string }) =>
-      api.post<{ project: Project; companyId: string; createdWorkspace: boolean }>('/api/projects/quick', input),
+      api.post<{ project: Project; createdWorkspace: boolean }>('/api/projects/quick', input),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['companies'] });
+      qc.invalidateQueries({ queryKey: ['workbench'] });
     },
   });
 }
@@ -862,9 +860,7 @@ export function useStartWorkflow() {
 
 export interface ProjectAutomation {
   id: string;
-  /** 公司级触发器无项目（companyId 必有）。 */
   projectId: string | null;
-  companyId: string | null;
   kind: 'event' | 'schedule';
   eventName: string | null;
   intervalMs: number | null;
@@ -1339,7 +1335,6 @@ export function useArchiveSearch(query: string) {
 /** 蓝图（从使用中学出来的组织形状：任务类型 × 人设组合 × 战绩）。 */
 export interface Blueprint {
   id: string;
-  companyId: string;
   taskType: string;
   label: string;
   description: string;
@@ -1580,7 +1575,6 @@ export interface TaskCloseoutData {
   id: string;
   taskId: string;
   projectId: string;
-  companyId: string;
   blueprintId: string | null;
   personaId: string | null;
   isUserOverride: boolean;
@@ -1784,7 +1778,6 @@ export function useResolveInspectorAlert() {
 // ===== Workflows (Phase F) =====
 export interface WorkflowNode {
   id: string;
-  companyId: string;
   workflowId: string;
   kind: 'step' | 'decision' | 'start' | 'end';
   label: string;
@@ -1795,7 +1788,6 @@ export interface WorkflowNode {
 
 export interface WorkflowEdge {
   id: string;
-  companyId: string;
   workflowId: string;
   sourceId: string;
   targetId: string;
@@ -2082,9 +2074,8 @@ export function useUpdateMaterial() {
 }
 
 // ===== 业务产物审批 =====
-export function useBusinessReviews(filter?: { companyId?: string; projectId?: string; status?: 'pending' | 'approved' | 'rejected' | 'changes_requested' }) {
+export function useBusinessReviews(filter?: { projectId?: string; status?: 'pending' | 'approved' | 'rejected' | 'changes_requested' }) {
   const params = new URLSearchParams();
-  if (filter?.companyId) params.set('companyId', filter.companyId);
   if (filter?.projectId) params.set('projectId', filter.projectId);
   if (filter?.status) params.set('status', filter.status);
   const qs = params.toString();
@@ -2198,7 +2189,7 @@ export function useMarketplacePresets() {
 export function useInstallPreset() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { presetId: string; scope?: { level: 'platform' | 'company'; companyId?: string }; replaceExisting?: boolean }) =>
+    mutationFn: (input: { presetId: string; scope?: { level: 'platform' | 'company' }; replaceExisting?: boolean }) =>
       api.post<Plugin>('/api/plugins/marketplace/install-preset', {
         presetId: input.presetId,
         scope: input.scope ?? { level: 'platform' },
@@ -2231,7 +2222,7 @@ export function useMarketplaceCatalog(query: string) {
 export function useInstallClaudePlugin() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { pluginName: string; scope?: { level: 'platform' | 'company'; companyId?: string }; replaceExisting?: boolean }) =>
+    mutationFn: (input: { pluginName: string; scope?: { level: 'platform' | 'company' }; replaceExisting?: boolean }) =>
       api.post<Plugin>('/api/plugins/marketplace/install-claude-plugin', {
         pluginName: input.pluginName,
         scope: input.scope ?? { level: 'platform' },

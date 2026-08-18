@@ -36,9 +36,7 @@ interface ScheduleTriggerRow {
 
 export interface ProjectTrigger {
   id: string;
-  /** 公司级触发器无项目（companyId 必有）。 */
   projectId: string | null;
-  companyId: string | null;
   kind: 'event' | 'schedule';
   eventName: string | null;
   intervalMs: number | null;
@@ -71,11 +69,10 @@ interface ProjectTriggerRow {
   updated_at: string;
 }
 
-function triggerFromRow(db: DB, row: ProjectTriggerRow): ProjectTrigger {
+function triggerFromRow(_db: DB, row: ProjectTriggerRow): ProjectTrigger {
   return {
     id: row.id,
     projectId: row.project_id,
-    companyId: getWorkbenchOrNull(db)?.id ?? null,
     kind: row.kind,
     eventName: row.event_name,
     intervalMs: row.interval_ms,

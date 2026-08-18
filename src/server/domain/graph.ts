@@ -14,7 +14,6 @@ import { getAgent } from './agent';
 
 export interface Relationship {
   id: string;
-  companyId: string;
   kind: GraphKind;
   sourceId: string;
   targetId: string;
@@ -35,10 +34,9 @@ interface RelationshipRow {
   archived_at: string | null;
 }
 
-function fromRow(db: DB, r: RelationshipRow): Relationship {
+function fromRow(_db: DB, r: RelationshipRow): Relationship {
   return {
     id: r.id,
-    companyId: getWorkbench(db).id,
     kind: r.kind,
     sourceId: r.source_id,
     targetId: r.target_id,

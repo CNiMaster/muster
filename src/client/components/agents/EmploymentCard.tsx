@@ -5,7 +5,7 @@ import { Card } from '../Card';
 import type { EmploymentHealthDTO } from '../../../shared/types';
 
 interface Option { id: string; name: string }
-interface Employment { id:string;companyId:string;role:string;executorProfileId:string|null;permissionPolicyId:string|null;health?:EmploymentHealthDTO }
+interface Employment { id: string; role: string; executorProfileId: string | null; permissionPolicyId: string | null; health?: EmploymentHealthDTO }
 
 /**
  * 工作台任职卡片（智能体档案页用）。

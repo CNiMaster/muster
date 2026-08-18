@@ -27,7 +27,6 @@ export type BusinessReviewStatus = 'pending' | 'approved' | 'rejected' | 'change
 
 export interface BusinessReview {
   id: string;
-  companyId: string;
   projectId: string | null;
   taskId: string | null;
   employeeId: string;
@@ -62,10 +61,9 @@ interface ReviewRow {
   created_at: string;
 }
 
-function fromRow(db: DB, r: ReviewRow): BusinessReview {
+function fromRow(_db: DB, r: ReviewRow): BusinessReview {
   return {
     id: r.id,
-    companyId: getWorkbench(db).id,
     projectId: r.project_id,
     taskId: r.task_id,
     employeeId: r.employee_id,

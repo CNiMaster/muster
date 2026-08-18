@@ -12,7 +12,6 @@ export interface MemoryCandidate {
   id: string;
   profileId: string;
   scope: MemoryScope;
-  companyId: string | null;
   projectId: string | null;
   content: string;
   sourceTaskId: string | null;
@@ -36,7 +35,6 @@ export interface MemoryEntry {
   id: string;
   profileId: string;
   scope: MemoryScope;
-  companyId: string | null;
   projectId: string | null;
   content: string;
   version: number;
@@ -73,9 +71,9 @@ type EntryRow = {
   hit_count: number; vote_count: number; adv_sum: number;
 };
 
-function candidateFromRow(db: DB, row: CandidateRow): MemoryCandidate {
+function candidateFromRow(_db: DB, row: CandidateRow): MemoryCandidate {
   return {
-    id: row.id, profileId: row.profile_id, scope: row.scope, companyId: getWorkbenchOrNull(db)?.id ?? null, projectId: row.project_id,
+    id: row.id, profileId: row.profile_id, scope: row.scope, projectId: row.project_id,
     content: row.content, sourceTaskId: row.source_task_id, sourceMessageId: row.source_message_id,
     author: row.author, confidence: row.confidence, canInfluence: row.can_influence === 1, status: row.status,
     quarantineReason: row.quarantine_reason, expiresAt: row.expires_at, reviewedBy: row.reviewed_by,
@@ -84,9 +82,9 @@ function candidateFromRow(db: DB, row: CandidateRow): MemoryCandidate {
   };
 }
 
-function entryFromRow(db: DB, row: EntryRow): MemoryEntry {
+function entryFromRow(_db: DB, row: EntryRow): MemoryEntry {
   return {
-    id: row.id, profileId: row.profile_id, scope: row.scope, companyId: getWorkbenchOrNull(db)?.id ?? null, projectId: row.project_id,
+    id: row.id, profileId: row.profile_id, scope: row.scope, projectId: row.project_id,
     content: row.content, version: row.version, state: row.state, canInfluence: row.can_influence === 1,
     sourceCandidateId: row.source_candidate_id, expiresAt: row.expires_at, createdAt: row.created_at, updatedAt: row.updated_at,
     fingerprint: row.fingerprint,

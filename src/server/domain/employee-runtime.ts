@@ -47,8 +47,6 @@ export function getEmployeeRuntime(db: DB, profileId: string): EmployeeRuntimeDT
     const projectIds = [...new Set(employmentRows.map((row) => row.project_id))];
     return {
       employeeId: employment.id,
-      companyId: employment.companyId,
-      companyName: getWorkbench(db).name,
       role: employment.role,
       projects: projectIds.map((projectId) => {
         const projectRows = employmentRows.filter((row) => row.project_id === projectId);

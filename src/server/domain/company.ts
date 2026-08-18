@@ -259,7 +259,6 @@ export function transitionCompany(db: DB, id: string, target: CompanyState): Com
     realtime.publish({
       id: shortId('ev_'),
       type: 'company.state',
-      companyId: id,
       occurredAt: nowIso(),
       payload: { state: updated.state },
     });
