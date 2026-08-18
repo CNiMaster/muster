@@ -10,13 +10,14 @@ import { z } from 'zod';
 import { asyncHandler, companyIdOf, param } from './middleware';
 import { getDb } from '../db/client';
 import {
-  getCompany,
-  updateCompany,
-  transitionCompany,
-  assertCompanyHealthy,
+  ensureWorkbench,
+  getWorkbench,
+  updateWorkbench,
+  transitionWorkbench,
+  assertWorkbenchHealthy,
   resumeShutdownPaused,
-  getCompaniesActivity,
-} from '../domain/company';
+  getWorkbenchActivity,
+} from '../domain/workbench';
 import type { CompanyState } from '../../shared/types';
 import { startGracefulShutdownSequence } from '../runtime/shutdown';
 import { listProjects } from '../domain/project';
@@ -27,7 +28,7 @@ import { searchArchive } from '../domain/archive';
 import { listAgents } from '../domain/agent';
 import { getAgent } from '../domain/agent';
 import { listDepartments } from '../domain/department';
-import { getCompanyCockpit } from '../domain/company-cockpit';
+import { getWorkbenchCockpit } from '../domain/workbench-cockpit';
 import {
   listCompanyTriggers,
   registerScheduleTrigger,
@@ -39,11 +40,11 @@ import { AppError, ErrorCode } from '../../shared/errors';
 
 export const workbenchRouter = Router();
 
-/** 单例读（原 GET /api/companies/:id）。 */
+/** 单例读（原 GET /api/companies/:id；空库首个访问自动建默认工作台）。 */
 workbenchRouter.get(
   '/',
   asyncHandler(async (req, res) => {
-    res.json(getCompany(getDb(), companyIdOf(req)));
+    res.json(ensureWorkbench(getDb()).workbench);
   }),
 );
 
@@ -51,8 +52,10 @@ workbenchRouter.patch(
   '/',
   asyncHandler(async (req, res) => {
     const patch = req.body ?? {};
+    const db = getDb();
+    ensureWorkbench(db);
     res.json(
-      updateCompany(getDb(), companyIdOf(req), {
+      updateWorkbench(db, {
         name: patch.name,
         charter: patch.charter,
         contractJson: patch.contractJson,
@@ -65,7 +68,7 @@ workbenchRouter.patch(
 
 function stateEndpoint(target: CompanyState) {
   return asyncHandler(async (req, res) => {
-    res.json(transitionCompany(getDb(), companyIdOf(req), target));
+    res.json(transitionWorkbench(getDb(), target));
   });
 }
 
@@ -73,10 +76,9 @@ workbenchRouter.post(
   '/clock-in',
   asyncHandler(async (req, res) => {
     const db = getDb();
-    const companyId = companyIdOf(req);
-    assertCompanyHealthy(db, companyId);
-    const company = transitionCompany(db, companyId, 'online');
-    for (const project of listProjects(db, companyId)) {
+    assertWorkbenchHealthy(db);
+    const company = transitionWorkbench(db, 'online');
+    for (const project of listProjects(db, company.id)) {
       if (project.state !== 'archived' && project.state !== 'completed') {
         ensureProjectThreads(db, project.id);
       }
@@ -93,7 +95,7 @@ workbenchRouter.post('/resume', stateEndpoint('online'));
 workbenchRouter.get(
   '/cockpit',
   asyncHandler(async (req, res) => {
-    res.json(getCompanyCockpit(getDb(), companyIdOf(req)));
+    res.json(getWorkbenchCockpit(getDb(), companyIdOf(req)));
   }),
 );
 
@@ -101,7 +103,7 @@ workbenchRouter.get(
 workbenchRouter.get(
   '/activity',
   asyncHandler(async (_req, res) => {
-    res.json(getCompaniesActivity(getDb()));
+    res.json(getWorkbenchActivity(getDb()));
   }),
 );
 
@@ -170,7 +172,7 @@ workbenchRouter.post(
     const input = companyScheduleSchema.parse(req.body);
     const db = getDb();
     const companyId = companyIdOf(req);
-    const company = getCompany(db, companyId);
+    const company = getWorkbench(db);
     if (input.assigneeAgentId && getAgent(db, input.assigneeAgentId).companyId !== company.id) {
       throw new AppError(ErrorCode.VALIDATION, '计划任务的执行员工不属于当前公司');
     }

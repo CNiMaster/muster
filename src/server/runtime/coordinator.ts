@@ -1,5 +1,5 @@
 import type { DB } from '../db/client';
-import { listCompanies, transitionCompany } from '../domain/company';
+import { getWorkbench, transitionWorkbench } from '../domain/workbench';
 import { listProjects } from '../domain/project';
 import { ensureProjectThreads, releaseProjectMirrors } from '../domain/thread';
 import { ensurePlanningTask, listTasks, recoverExpiredLeases, findStaleWaitingTasks, escalateToFirstResponder, createTask } from '../domain/task';
@@ -53,7 +53,7 @@ export function runIdleReflectionPass(db: DB): Array<{ companyId: string; enqueu
   if (budgetUSD <= 0) return [];
   const today = dbToday(db);
   const results: Array<{ companyId: string; enqueued: number }> = [];
-  for (const company of listCompanies(db)) {
+  for (const company of [getWorkbench(db)]) {
     if (company.state !== 'online') continue;
     const hasActive = listProjects(db, company.id).some((p) => {
       if (p.state !== 'active') return false;
@@ -143,7 +143,7 @@ export class ProjectRuntimeCoordinator {
       const releasedMirrors: string[] = [];
       let pumpedTasks = 0;
 
-      for (const company of listCompanies(this.db)) {
+      for (const company of [getWorkbench(this.db)]) {
         // 指挥系统 W0：online 公司幂等确保系统隐形岗（调度中心/评审中心）
         if (company.state === 'online') {
           try {
@@ -212,7 +212,7 @@ export class ProjectRuntimeCoordinator {
       | { company_id: string; state: string }
       | undefined;
     if (!project) return { recoveredLeases: 0, plannedTasks: [], pumpedTasks: 0, settledCompanies: [], releasedMirrors: [] };
-    const company = listCompanies(this.db).find((item) => item.id === project.company_id);
+    const company = getWorkbench(this.db);
     if (!company || company.state !== 'online') {
       return { recoveredLeases: 0, plannedTasks: [], pumpedTasks: 0, settledCompanies: [], releasedMirrors: [] };
     }
@@ -339,7 +339,7 @@ export class ProjectRuntimeCoordinator {
   private runInspectorAlerts(): number {
     let alerts = 0;
     const cooldownCutoff = new Date(Date.now() - 5 * 60_000).toISOString();
-    for (const company of listCompanies(this.db)) {
+    for (const company of [getWorkbench(this.db)]) {
       if (company.state !== 'online') continue;
       for (const project of listProjects(this.db, company.id)) {
         if (project.state !== 'active') continue;
@@ -448,7 +448,7 @@ export class ProjectRuntimeCoordinator {
 
   private settleDrainingCompanies(): string[] {
     const settled: string[] = [];
-    for (const company of listCompanies(this.db)) {
+    for (const company of [getWorkbench(this.db)]) {
       if (company.state !== 'draining') continue;
       const active = this.db.prepare(
         `SELECT 1 FROM task t
@@ -456,7 +456,7 @@ export class ProjectRuntimeCoordinator {
          WHERE p.company_id=? AND t.state IN ('claimed','running') LIMIT 1`,
       ).get(company.id);
       if (!active) {
-        transitionCompany(this.db, company.id, 'off');
+        transitionWorkbench(this.db, 'off');
         settled.push(company.id);
       }
     }

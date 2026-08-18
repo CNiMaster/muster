@@ -7,7 +7,7 @@
  * 超时兜底后回调 onComplete（由调用方停止引擎/关闭进程）。
  */
 import { getDb } from '../db/client';
-import { beginGracefulShutdown, getCompany } from '../domain/company';
+import { beginGracefulShutdown, getWorkbench } from '../domain/workbench';
 import { log } from '../logger';
 
 const DEFAULT_DRAIN_TIMEOUT_MS = 60_000;
@@ -23,7 +23,7 @@ export function startGracefulShutdownSequence(opts: {
     while (Date.now() < deadline) {
       const remaining = affected.filter((c) => {
         try {
-          return getCompany(db, c.id).state !== 'off';
+          return getWorkbench(db).state !== 'off';
         } catch {
           return false;
         }

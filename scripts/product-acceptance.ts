@@ -6,7 +6,7 @@ import { runMigrations } from '../src/server/db/client';
 import { createExecutorProfile } from '../src/server/domain/executor-profile';
 import { getEmploymentHealth } from '../src/server/domain/executor-health';
 import { createPermissionPolicy } from '../src/server/domain/permission';
-import { createCompany } from '../src/server/domain/company';
+import { ensureWorkbench } from '../src/server/domain/workbench';
 import { recruitFromDraft } from '../src/server/domain/recruitment';
 import { createProject } from '../src/server/domain/project';
 import { createProjectTask } from '../src/server/domain/project-task';
@@ -30,7 +30,7 @@ try {
   const executor = createExecutorProfile(db, { name: '验收 API 执行器', manifestId: 'openai-compatible-api' });
   const policy = createPermissionPolicy(db, { name: '验收项目权限', approvalStrategy: 'ask-by-rule', scope: 'project' });
   // 组织 = f(活)：不再走公司模板物化员工，按招募契约建一名负责人
-  const company = createCompany(db, { name: '验收工作台' });
+  const { workbench: company } = ensureWorkbench(db);
   const lead = recruitFromDraft(db, company.id, {
     source: 'new-profile', displayName: '验收负责人', role: 'lead', responsibilities: '拆解目标并对结果负责',
     capabilities: { skills: [], tools: [] }, departmentId: null, executorProfileId: executor.id, permissionPolicyId: policy.id,

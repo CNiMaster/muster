@@ -79,7 +79,7 @@ import { materialsRouter } from './api/materials';
 import { businessReviewsRouter } from './api/business-reviews';
 import { backupRouter } from './api/backup';
 import { setupRouter } from './api/setup';
-import { ensureDefaultCompany, listCompanies, updateCompany, DEFAULT_WORKBENCH_NAME } from './domain/company';
+import { ensureWorkbench, updateWorkbench, DEFAULT_WORKBENCH_NAME } from './domain/workbench';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -189,17 +189,14 @@ async function createApp(): Promise<AppHandle> {
   } catch (err) {
     log.warn('credential seed failed', { error: err instanceof Error ? err.message : String(err) });
   }
-  // 公司退役批次A：启动确保默认工作台单例（无则建「默认工作台」；恰一个在营且未用默认名则更名，幂等）
+  // 公司退役批次A：启动确保默认工作台单例（无则建「默认工作台」；未用默认名则更名，幂等）
   try {
-    const ensured = ensureDefaultCompany(getDb());
+    const ensured = ensureWorkbench(getDb());
     if (ensured.created) {
-      log.info('default workbench created', { id: ensured.company.id });
-    } else {
-      const actives = listCompanies(getDb(), { activeOnly: true });
-      if (actives.length === 1 && actives[0].name !== DEFAULT_WORKBENCH_NAME) {
-        updateCompany(getDb(), actives[0].id, { name: DEFAULT_WORKBENCH_NAME });
-        log.info('default workbench renamed', { from: actives[0].name });
-      }
+      log.info('default workbench created', { id: ensured.workbench.id });
+    } else if (ensured.workbench.name !== DEFAULT_WORKBENCH_NAME) {
+      updateWorkbench(getDb(), { name: DEFAULT_WORKBENCH_NAME });
+      log.info('default workbench renamed', { from: ensured.workbench.name });
     }
   } catch (err) {
     log.warn('default workbench ensure failed', { error: err instanceof Error ? err.message : String(err) });

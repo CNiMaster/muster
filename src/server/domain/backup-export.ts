@@ -10,7 +10,7 @@
  */
 import type { DB } from '../db/client';
 import { nowIso, shortId } from '../../shared/utils';
-import { createCompany, listCompanies } from './company';
+import { getWorkbench, restoreWorkbench } from './workbench';
 import { createDepartment, listDepartments } from './department';
 import { createAgentProfile, listAgentProfiles } from './agent-profile';
 import { createAgent, listAgents } from './agent';
@@ -23,41 +23,43 @@ export const BACKUP_VERSION = 1;
 
 /** 导出：公司（含部门/员工/项目元数据）+ 人才档案 + 工具 + 插件 + 目录指引。 */
 export function exportMusterBackup(db: DB): MusterBackup {
-  const companies = listCompanies(db);
+  // 公司退役批次D：公司坍缩为单例工作台，导出恒为单工作台。
+  const wb = getWorkbench(db);
   return {
     format: BACKUP_FORMAT,
     version: BACKUP_VERSION,
     exportedAt: nowIso(),
-    companies: companies.map((c) => ({
-      id: c.id,
-      name: c.name,
-      kind: c.kind,
-      charter: c.charter,
-      contractJson: c.contractJson,
-      archivedAt: c.archivedAt,
-      departments: listDepartments(db, c.id).map((d) => ({ name: d.name, rules: d.rules })),
-      employees: listAgents(db, c.id).map((a) => ({
-        profileId: a.profileId,
-        departmentName: a.departmentId ? listDepartments(db, c.id).find((d) => d.id === a.departmentId)?.name ?? null : null,
-        name: a.name,
-        role: a.role,
-        responsibilities: a.responsibilities,
-        systemPrompt: a.systemPrompt,
-        skills: a.skills,
-        tools: a.tools,
-        permissions: a.permissions,
-        contactAllow: a.contactAllow,
-        canDispatch: a.canDispatch,
-        executor: a.executor,
-        isInspector: a.isInspector,
-        stance: a.stance,
-      })),
-      projects: listProjects(db, c.id).map((p) => ({
-        name: p.name,
-        description: p.description,
-        state: p.state,
-      })),
-    })),
+    companies: [
+      {
+        id: wb.id,
+        name: wb.name,
+        kind: wb.kind,
+        charter: wb.charter,
+        contractJson: wb.contractJson,
+        archivedAt: null,
+        departments: listDepartments(db, wb.id).map((d) => ({ name: d.name, rules: d.rules })),
+        employees: listAgents(db, wb.id).map((a) => ({
+          profileId: a.profileId,
+          departmentName: a.departmentId ? listDepartments(db, wb.id).find((d) => d.id === a.departmentId)?.name ?? null : null,
+          name: a.name,
+          role: a.role,
+          responsibilities: a.responsibilities,
+          systemPrompt: a.systemPrompt,
+          skills: a.skills,
+          tools: a.tools,
+          permissions: a.permissions,
+          contactAllow: a.contactAllow,
+          canDispatch: a.canDispatch,
+          executor: a.executor,
+          isInspector: a.isInspector,
+          stance: a.stance,
+        })),
+        projects: listProjects(db, wb.id).map((p) => ({
+          name: p.name,
+          description: p.description,
+          state: p.state,
+        })),
+      }],
     profiles: listAgentProfiles(db, { includeTempOnly: true }).map((p) => ({
       id: p.id,
       displayName: p.displayName,
@@ -281,13 +283,14 @@ export function importMusterBackup(db: DB, backup: MusterBackup): ImportSummary 
 
 function importCompany(db: DB, company: MusterCompanyExport, backup: MusterBackup, summary: ImportSummary): string {
   const name = uniquifyCompanyName(db, company.name);
-  const created = createCompany(db, {
+  restoreWorkbench(db, {
+    id: company.id,
     name,
     kind: company.kind,
     charter: company.charter ?? undefined,
     contractJson: company.contractJson ?? undefined,
   });
-  const companyId = created.id;
+  const companyId = company.id;
   // 重建部门，记名称 → id 供员工映射
   const departmentIds = new Map<string, string>();
   for (const dept of company.departments) {

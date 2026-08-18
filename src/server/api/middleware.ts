@@ -5,7 +5,7 @@ import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import { ZodError } from 'zod';
 import { AppError } from '../../shared/errors';
 import { log, newCorrelationId } from '../logger';
-import { ensureDefaultCompany } from '../domain/company';
+import { ensureWorkbench } from '../domain/workbench';
 import { getDb } from '../db/client';
 
 /** 从 req.params 取出确定的 string 值（数组时取第一个）。 */
@@ -21,10 +21,10 @@ export function param(req: Request, name: string): string {
  * 当前路由不再从 URL 承载公司 id——统一解析为隐式单例默认工作台。
  * 说明：Express 5 的 mergeParams 在 router 入口快照父参数（router/index.js:169,285），
  * 中间件改写 req.params 不传导到后续路由层；且带 :id 参数的路由（插件/临时工/智能体）
- * 若读 URL 参数会误把资源 id 当公司 id，故一律走 ensureDefaultCompany。
+ * 若读 URL 参数会误把资源 id 当公司 id，故一律走 ensureWorkbench。
  */
 export function companyIdOf(_req: Request): string {
-  return ensureDefaultCompany(getDb()).company.id;
+  return ensureWorkbench(getDb()).workbench.id;
 }
 
 export function asyncHandler(fn: (req: Request, res: Response, next: NextFunction) => Promise<unknown>): RequestHandler {
