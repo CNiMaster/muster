@@ -34,7 +34,7 @@ const r2 = await runSuite('opt-out 治理：三态', async (check) => {
   const pluginId = inst.body.id;
 
   await check('default 态：effective 含该插件', async () => {
-    const r = await api.get(`/api/plugins/companies/${companyId}/plugins/effective`);
+    const r = await api.get(`/api/plugins/effective`);
     assertStatus(r, 200, 'effective');
     const found = r.body.find(p => p.id === pluginId);
     assert(!!found, 'effective 含平台插件');
@@ -43,25 +43,25 @@ const r2 = await runSuite('opt-out 治理：三态', async (check) => {
   });
 
   await check('上班期间 disable 被拒（org-lock）', async () => {
-    const r = await api.post(`/api/plugins/companies/${companyId}/plugins/${pluginId}/disable`);
+    const r = await api.post(`/api/plugins/${pluginId}/disable`);
     assert(r.status === 423 || r.status === 409, `上班 disable 应锁，实际 ${r.status}`);
   });
 
   // 下班后操作
-  await api.post(`/api/companies/${companyId}/clock-out`, {});
+  await api.post(`/api/workbench/clock-out`, {});
 
   await check('disable 后 effective 排除该插件', async () => {
-    const r = await api.post(`/api/plugins/companies/${companyId}/plugins/${pluginId}/disable`);
+    const r = await api.post(`/api/plugins/${pluginId}/disable`);
     assertStatus(r, 200, 'disable');
-    const eff = await api.get(`/api/plugins/companies/${companyId}/plugins/effective`);
+    const eff = await api.get(`/api/plugins/effective`);
     const found = eff.body.find(p => p.id === pluginId);
     assert(!found, 'disabled 插件不应在 effective 列表');
   });
 
   await check('enable 后恢复 effective', async () => {
-    const r = await api.post(`/api/plugins/companies/${companyId}/plugins/${pluginId}/enable`);
+    const r = await api.post(`/api/plugins/${pluginId}/enable`);
     assertStatus(r, 200, 'enable');
-    const eff = await api.get(`/api/plugins/companies/${companyId}/plugins/effective`);
+    const eff = await api.get(`/api/plugins/effective`);
     const found = eff.body.find(p => p.id === pluginId);
     assert(!!found, 'enable 后恢复 effective');
   });
@@ -71,10 +71,10 @@ const r3 = await runSuite('公司独占插件', async (check) => {
   const { companyId, agentId } = await setupCompany(uname('excl-co'));
   const { companyId: co2 } = await setupCompany(uname('excl-other'));
   // 下班后安装独占
-  await api.post(`/api/companies/${companyId}/clock-out`, {});
+  await api.post(`/api/workbench/clock-out`, {});
 
   await check('安装公司独占插件', async () => {
-    const r = await api.post(`/api/plugins/companies/${companyId}/plugins/exclusive`, {
+    const r = await api.post(`/api/plugins/exclusive`, {
       name: uname('excl'), kind: 'skill',
       source: { kind: 'company', companyId },
       manifest: { kind: 'skill', skill: { body: '专属能力' } },
@@ -83,7 +83,7 @@ const r3 = await runSuite('公司独占插件', async (check) => {
     assert(!!r.body.id, '有 id');
   });
   await check('company-scoped 列表', async () => {
-    const r = await api.get(`/api/plugins/company-scoped/${companyId}`);
+    const r = await api.get(`/api/plugins/company-scoped`);
     assertStatus(r, 200, 'company-scoped');
     assert(Array.isArray(r.body), '返回数组');
   });

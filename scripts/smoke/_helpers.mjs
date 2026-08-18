@@ -31,22 +31,22 @@ export function uname(prefix = 't') {
 }
 
 /**
- * setupCompany：创建公司 + 招临时工作为负责人 + clock-in。
- * 返回 { companyId, agentId, profileId }。
- * 临时工招聘豁免 org lock，公司保持 online，可立即操作。
+ * setupCompany：确保默认工作台 + 招临时工作为负责人 + clock-in。
+ * 返回 { companyId, agentId, profileId }（companyId = 隐式单例工作台 id）。
+ * 公司退役批次C：不再建公司，一律走 /api/workbench 单例。
  */
 export async function setupCompany(name) {
-  const r = await api.post('/api/companies', { name: name ?? uname('公司'), kind: 'general' });
-  assertStatus(r, 201, '建公司');
-  const companyId = r.body.id;
+  const wr = await api.get('/api/workbench');
+  assertStatus(wr, 200, '取默认工作台');
+  const companyId = wr.body.id;
   // 招临时工作为负责人（off 态可招，tempRecruit 豁免）
-  const ar = await api.post(`/api/companies/${companyId}/employees/temp`, { role: 'lead', responsibilities: '负责人' });
+  const ar = await api.post(`/api/employees/temp`, { role: 'lead', responsibilities: '负责人' });
   assertStatus(ar, 201, '招负责人');
   const agentId = ar.body.agentId;
   const profileId = ar.body.profileId;
   // 设为第一负责人 + clock-in
-  await api.patch(`/api/companies/${companyId}`, { firstAgentId: agentId });
-  await api.post(`/api/companies/${companyId}/clock-in`, {});
+  await api.patch(`/api/workbench`, { firstAgentId: agentId });
+  await api.post(`/api/workbench/clock-in`, {});
   return { companyId, agentId, profileId };
 }
 
@@ -55,7 +55,7 @@ export async function setupCompany(name) {
  * 返回 { projectId, projectTaskId }。
  */
 export async function setupProject(companyId, agentId, name) {
-  const r = await api.post(`/api/companies/${companyId}/projects`, { name: name ?? uname('项目') });
+  const r = await api.post(`/api/projects`, { name: name ?? uname('项目') });
   assertStatus(r, 201, '建项目');
   const projectId = r.body.id;
   // 写 readiness（合并 settings）

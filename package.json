@@ -16,7 +16,6 @@
     "test:e2e": "playwright test",
     "test:product-acceptance": "tsx scripts/product-acceptance.ts",
     "test:claude-smoke": "tsx scripts/claude-smoke.ts",
-    "cleanup:companies": "tsx scripts/cleanup-companies.ts",
     "build:server": "tsup",
     "build:migrations": "node -e \"require('fs').cpSync('src/server/db/migrations','dist/server/db/migrations',{recursive:true})\"",
     "build:client": "vite build",

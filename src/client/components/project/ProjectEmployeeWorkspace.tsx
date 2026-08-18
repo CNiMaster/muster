@@ -11,7 +11,6 @@ const OPEN_STATES = new Set(['queued', 'claimed', 'running', 'waiting_input', 'w
 
 export function ProjectEmployeeWorkspace({
   projectId,
-  companyId,
   agent,
   isFirstAgent,
   tasks,
@@ -24,7 +23,6 @@ export function ProjectEmployeeWorkspace({
   onPublish,
 }: {
   projectId: string;
-  companyId: string;
   agent: Agent;
   isFirstAgent: boolean;
   tasks: Task[];
@@ -84,7 +82,7 @@ export function ProjectEmployeeWorkspace({
     </section>
 
     <section className="employee-conversation-card">
-      <ConversationPanel scope="project" scopeId={projectId} companyId={companyId} recipientAgentId={agent.id} projectTaskId={projectTaskId} title={`与 ${agent.name} 对话`} />
+      <ConversationPanel scope="project" scopeId={projectId} recipientAgentId={agent.id} projectTaskId={projectTaskId} title={`与 ${agent.name} 对话`} />
     </section>
   </div>;
 }

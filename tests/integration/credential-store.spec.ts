@@ -5,9 +5,6 @@ import {
   createCredentialDefinition,
   resolveCredentialKey,
   resolveExecutorCredentialEnv,
-  dispatchDefaultCredentialsToCompany,
-  listCompanyCredentials,
-  setCompanyCredential,
   setEmployeeCredentialOverride,
   getEmployeeCredentialOverrides,
 } from '../../src/server/domain/credential-store';
@@ -49,7 +46,7 @@ describe('credential store', () => {
     }
   });
 
-  it('resolves credential key with three-layer priority', () => {
+  it('resolves credential key with two-layer priority (平台>员工；公司退役 D4)', () => {
     const { db, close } = makeTestDb();
     try {
       seedDefaultCredentialDefinitions(db);
@@ -59,43 +56,26 @@ describe('credential store', () => {
       // profileId 只需合法格式(getAgentHomePath 校验格式,不查 DB)
       const profileId = 'ap_test_credential';
 
-      // ③ 平台默认
+      // 平台默认
       const platformDefault = resolveCredentialKey(db, null, 'c_test', 'cred_openai_key');
       expect(platformDefault).toBe('OPENAI_API_KEY');
 
-      // ② 公司级覆盖
-      setCompanyCredential(db, 'c_test', 'cred_openai_key', { overrideKey: 'COMPANY_OPENAI_KEY' });
-      expect(resolveCredentialKey(db, null, 'c_test', 'cred_openai_key')).toBe('COMPANY_OPENAI_KEY');
+      // 公司级覆盖已退役：即使存在 company_credential 覆盖行也不再生效（三级→两级）
+      db.prepare(`INSERT INTO company_credential (company_id, credential_definition_id, override_key, enabled, created_at, updated_at)
+        VALUES (?, ?, 'COMPANY_OPENAI_KEY', 1, ?, ?)`)
+        .run('c_test', 'cred_openai_key', new Date().toISOString(), new Date().toISOString());
+      expect(resolveCredentialKey(db, null, 'c_test', 'cred_openai_key')).toBe('OPENAI_API_KEY');
+      expect(resolveCredentialKey(db, 'ap_test', 'c_test', 'cred_openai_key')).toBe('OPENAI_API_KEY');
 
-      // profileId 无覆盖时,公司级生效
-      expect(resolveCredentialKey(db, 'ap_test', 'c_test', 'cred_openai_key')).toBe('COMPANY_OPENAI_KEY');
-
-      // ① 员工级覆盖(最高优先)
+      // 员工级覆盖(最高优先)
       setEmployeeCredentialOverride(profileId, 'cred_openai_key', 'MY_OPENAI_KEY');
       expect(resolveCredentialKey(db, profileId, 'c_test', 'cred_openai_key')).toBe('MY_OPENAI_KEY');
       // 无 companyId 时员工级也生效
       expect(resolveCredentialKey(db, profileId, null, 'cred_openai_key')).toBe('MY_OPENAI_KEY');
 
-      // 清除员工覆盖后回退到公司级
+      // 清除员工覆盖后回退到平台默认
       setEmployeeCredentialOverride(profileId, 'cred_openai_key', null);
-      expect(resolveCredentialKey(db, profileId, 'c_test', 'cred_openai_key')).toBe('COMPANY_OPENAI_KEY');
-    } finally {
-      close();
-    }
-  });
-
-  it('dispatches default credentials to company on creation', () => {
-    const { db, close } = makeTestDb();
-    try {
-      seedDefaultCredentialDefinitions(db);
-      db.prepare(`INSERT INTO company (id, name, state, charter, created_at, updated_at) VALUES (?, ?, 'off', '', ?, ?)`)
-        .run('c_test2', '测试公司2', new Date().toISOString(), new Date().toISOString());
-
-      dispatchDefaultCredentialsToCompany(db, 'c_test2');
-      const companyCreds = listCompanyCredentials(db, 'c_test2');
-      expect(companyCreds.length).toBeGreaterThanOrEqual(3);
-      expect(companyCreds.every((c) => c.enabled)).toBe(true);
-      expect(companyCreds.every((c) => c.overrideKey === null)).toBe(true);
+      expect(resolveCredentialKey(db, profileId, 'c_test', 'cred_openai_key')).toBe('OPENAI_API_KEY');
     } finally {
       close();
     }

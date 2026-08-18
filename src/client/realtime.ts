@@ -34,13 +34,11 @@ export function queryKeysForRealtimeEvent(event: RealtimeEvent): QueryKey[] {
   if (event.type.startsWith('approval.')) keys.push(['permission-approvals']);
   // 改版 B4：对话消息实时刷新——message.created 失效所有消息线程（4 秒轮询降级为兜底）
   if (event.type === 'message.created') keys.push(['messages']);
-  // L1：公司状态实时刷新（关机进度/标签栏状态）
+  // L1：工作台状态实时刷新（关机进度/胶囊状态；公司退役批次B 单例键）
   if (event.type === 'company.state') {
-    keys.push(['companies']);
-    if (event.companyId) keys.push(['company-cockpit', event.companyId]);
+    keys.push(['workbench']);
+    keys.push(['workbench-cockpit']);
   }
-  // L3：任务生命周期刷新公司活动信号（标签栏"工作中/空闲"）
-  if (event.type.startsWith('task.')) keys.push(['companies-activity']);
   // 讨论室事件：刷项目讨论列表 + 详情
   if (event.type.startsWith('discussion.')) {
     if (event.projectId) keys.push(['project-discussions', event.projectId]);
@@ -50,7 +48,7 @@ export function queryKeysForRealtimeEvent(event: RealtimeEvent): QueryKey[] {
   if (event.type.startsWith('session.') || event.type === 'run.watchdog-stopped') keys.push(['employee-runtime']);
   // Agent Bridge 事件：刷活动流
   if (event.type?.startsWith('bridge.')) {
-    keys.push(['project-events'], ['company-events']);
+    keys.push(['project-events'], ['events']);
   }
   // 执行过程 trace：精确失效任务时间线
   if (event.type === 'trace.append') {
@@ -76,10 +74,10 @@ export function queryKeysForRealtimeEvent(event: RealtimeEvent): QueryKey[] {
     }
   }
   if (event.companyId) {
-    keys.push(['company-events', event.companyId]);
-    if (event.type.startsWith('approval.') || event.type.startsWith('project-task.') || event.type.startsWith('session.')) keys.push(['company-cockpit', event.companyId]);
+    keys.push(['events']);
+    if (event.type.startsWith('approval.') || event.type.startsWith('project-task.') || event.type.startsWith('session.')) keys.push(['workbench-cockpit']);
     // task.* 事件秒级刷新工位墙/员工状态看板（不再依赖 5s 轮询）
-    if (event.type.startsWith('task.')) keys.push(['status-board', event.companyId]);
+    if (event.type.startsWith('task.')) keys.push(['status-board']);
   }
   if (event.taskId) {
     keys.splice(

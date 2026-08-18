@@ -395,6 +395,7 @@ export class TaskEngine {
       checkBudget(this.db, project.id, task.budget);
 
       const boundProfile = getEmployeeExecutorProfile(this.db, agent.id);
+
       // 执行器池统一（2026-08-17）：员工绑定(健康) > 档位档案（CLI/API 一个选择框，档位=档案 id）；
       // 故障转移：绑定的档案不健康时跳过，沿档位解析回落；档位未配置/不健康同样回落 legacy。
       // B2 能力感知：需 CLI 技能的任务沿 高→标准→低 挑选 CLI 档案；绑定档案钉死不参与路由（能力缺口走既有告警）。
@@ -405,6 +406,7 @@ export class TaskEngine {
       if (boundProfile && !boundHealthy) {
         log.warn('bound executor profile unhealthy, falling back to tier profile', { taskId: task.id, profileId: boundProfile.id, note: boundProfile.healthNote, tier });
       }
+
       const projectTaskThread=ensureProjectTaskThread(this.db,{projectTaskId:task.projectTaskId,employeeId:agent.id,executorProfileId:executorProfile?.id??null});
       bindTaskToProjectTaskThread(this.db,task.id,projectTaskThread.id);
       const executionRun = executorProfile ? createExecutionRun(this.db, {

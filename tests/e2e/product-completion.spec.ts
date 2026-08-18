@@ -2,11 +2,11 @@ import { expect, test } from '@playwright/test';
 
 test('项目工作台三层视图形成完整入口', async ({ page }) => {
   const suffix = Date.now();
-  const companyResponse = await page.request.post('/api/companies', { data: { name: `成品工作台-${suffix}`, kind: 'general' } });
-  const company = await companyResponse.json();
-  const agentResponse = await page.request.post(`/api/companies/${company.id}/agents`, { data: { name: `成品智能体-${suffix}`, role: 'lead', responsibilities: '负责交付' } });
+  // 公司退役批次B/C：不再自建公司，直接用隐式单例工作台 + 全局新路径
+  await page.request.get('/api/workbench');
+  const agentResponse = await page.request.post('/api/agents', { data: { name: `成品智能体-${suffix}`, role: 'lead', responsibilities: '负责交付' } });
   const agent = await agentResponse.json();
-  const projectResponse = await page.request.post(`/api/companies/${company.id}/projects`, {
+  const projectResponse = await page.request.post('/api/projects', {
     data: { name: `成品项目-${suffix}`, firstAgentId: agent.id },
   });
   const project = await projectResponse.json();

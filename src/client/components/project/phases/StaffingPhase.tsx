@@ -9,17 +9,15 @@ import { Badge } from '../../Badge';
 import { useAgents, useStaffProject } from '../../../hooks/queries';
 
 export function StaffingPhase({
-  companyId,
   projectId,
   employeeIds,
   onEmployeeIdsChange,
 }: {
-  companyId: string;
   projectId: string;
   employeeIds: string[];
   onEmployeeIdsChange: (ids: string[]) => void;
 }): React.ReactElement {
-  const agents = useAgents(companyId);
+  const agents = useAgents();
   const staff = useStaffProject();
   const selected = new Set(employeeIds);
 

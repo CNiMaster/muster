@@ -12,7 +12,6 @@ import { Input, Textarea, Field } from '../Form';
 
 export function ProjectTaskWorkspace({
   projectId,
-  companyId,
   selectedTask,
   tasks = [],
   projectTasks = [],
@@ -24,7 +23,6 @@ export function ProjectTaskWorkspace({
   newTaskSignal = 0,
 }: {
   projectId: string;
-  companyId?: string;
   selectedTask?: ProjectTaskDTO;
   tasks?: Task[];
   projectTasks?: ProjectTaskDTO[];
@@ -47,7 +45,7 @@ export function ProjectTaskWorkspace({
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
   const uploadMaterial = useUploadMaterial(projectId);
   // 打法包：创建任务时预览将穿戴的蓝图与相关打法
-  const blueprintPreview = useBlueprintMatches(companyId, newTitle);
+  const blueprintPreview = useBlueprintMatches(newTitle);
   // 模型清单来自真实执行器档案/系统设置（替换原硬编码假模型）
   const { data: executorProfiles } = useExecutorProfiles();
   const { data: systemSettings } = useSystemSettings();
@@ -317,7 +315,6 @@ export function ProjectTaskWorkspace({
               <ConversationPanel
                 scope="project"
                 scopeId={projectId}
-                companyId={companyId ?? ''}
                 projectTaskId={selectedTask?.id}
                 title={selectedTask ? `项目任务 #${selectedTask.seq} 对话现场` : '项目协作对话现场'}
                 recipientAgentId={selectedAgentId || undefined}

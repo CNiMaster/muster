@@ -1,29 +1,9 @@
 /**
  * E2E smoke：项目主导 UI——首页对话式开工 → 项目工作台 → 直建任务 → 全局工具页。
  * 公司页面/向导/标签栏已随公司概念退场；组织数据仍走内部 API 准备。
+ * 注意：零项目态/健康探针已前移到 00-bootstrap.spec.ts（本文件会先建项目，不能断言空态）。
  */
 import { test, expect } from '@playwright/test';
-
-test('首页（零项目态）加载对话式开工视口', async ({ page }) => {
-  // 清空全部工作台，保证零项目态（同轮次更早的用例会建项目）
-  const companies = await (await page.request.get('/api/companies')).json() as Array<{ id: string }>;
-  for (const company of companies) {
-    // 删除接口只接受已归档公司：先归档再删除
-    await page.request.post(`/api/companies/${company.id}/archive`, { data: { reason: 'e2e 清场' } });
-    await page.request.delete(`/api/companies/${company.id}`);
-  }
-  await page.goto('/');
-  await expect(page.getByRole('heading', { name: /你想开始什么新工作/ })).toBeVisible();
-  await expect(page.getByPlaceholder(/告诉负责人你想做什么/)).toBeVisible();
-  await expect(page.getByText('全栈应用研发')).toBeVisible();
-});
-
-test('健康接口 200', async ({ request }) => {
-  const r = await request.get('/api/health');
-  expect(r.status()).toBe(200);
-  const body = await r.json();
-  expect(body.status).toBe('ok');
-});
 
 test('快速开工 API 建项目后首页自动进入项目工作台', async ({ page }) => {
   const response = await page.request.post('/api/projects/quick', {
@@ -74,11 +54,9 @@ test('蓝图库与归档作为全局工具页可达', async ({ page }) => {
 
 test('智能体库展示全局档案与工作台任职', async ({ page }) => {
   const suffix = Date.now();
-  const companyResponse = await page.request.post('/api/companies', {
-    data: { name: `智能体库工作台-${suffix}`, kind: 'general' },
-  });
-  const company = await companyResponse.json();
-  const agentResponse = await page.request.post(`/api/companies/${company.id}/agents`, {
+  // 公司退役批次C：不再自建公司，走隐式单例工作台 + 全局新路径
+  await page.request.get('/api/workbench');
+  const agentResponse = await page.request.post('/api/agents', {
     data: { name: `全局智能体-${suffix}`, role: 'engineer', responsibilities: '负责实现' },
   });
   const agent = await agentResponse.json();

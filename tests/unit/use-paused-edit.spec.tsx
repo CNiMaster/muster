@@ -51,11 +51,11 @@ let qc: QueryClient;
 
 function renderHookWithState(state: Company['state']) {
   qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  qc.setQueryData<Company>(['company', 'c1'], company(state));
+  qc.setQueryData<Company>(['workbench'], company(state));
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={qc}>{children}</QueryClientProvider>
   );
-  return renderHook(() => usePausedEdit('c1'), { wrapper });
+  return renderHook(() => usePausedEdit(), { wrapper });
 }
 
 beforeEach(() => {
@@ -90,8 +90,8 @@ describe('usePausedEdit 状态分流', () => {
       await result.current.run(apply);
     });
 
-    expect(apiPost).toHaveBeenNthCalledWith(1, '/api/companies/c1/drain');
-    expect(apiPost).toHaveBeenNthCalledWith(2, '/api/companies/c1/clock-in');
+    expect(apiPost).toHaveBeenNthCalledWith(1, '/api/workbench/drain');
+    expect(apiPost).toHaveBeenNthCalledWith(2, '/api/workbench/clock-in');
     expect(apply).toHaveBeenCalledTimes(1);
   });
 
@@ -129,8 +129,8 @@ describe('usePausedEdit 状态分流', () => {
       await result.current.run(apply);
     });
 
-    expect(apiPost).toHaveBeenNthCalledWith(1, '/api/companies/c1/clock-out');
-    expect(apiPost).toHaveBeenNthCalledWith(2, '/api/companies/c1/clock-in');
+    expect(apiPost).toHaveBeenNthCalledWith(1, '/api/workbench/clock-out');
+    expect(apiPost).toHaveBeenNthCalledWith(2, '/api/workbench/clock-in');
     expect(apply).toHaveBeenCalledTimes(1);
   });
 
@@ -165,7 +165,7 @@ describe('usePausedEdit 状态分流', () => {
     const wrapper = ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={qc}>{children}</QueryClientProvider>
     );
-    const hook = renderHook(() => usePausedEdit('c1', 'draining'), { wrapper });
+    const hook = renderHook(() => usePausedEdit('draining'), { wrapper });
     apiGet.mockResolvedValue(company('off'));
     const apply = vi.fn().mockResolvedValue('ok');
 

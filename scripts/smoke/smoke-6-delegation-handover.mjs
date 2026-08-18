@@ -10,7 +10,7 @@ const r1 = await runSuite('权限委托链', async (check) => {
 
   let requestId;
   await check('申请权限变更（自动路由审批人）', async () => {
-    const r = await api.post(`/api/companies/${companyId}/permission-changes`, {
+    const r = await api.post(`/api/permission-changes`, {
       requesterEmployeeId: agentId,
       requestedScope: 'temp',
       reason: '冒烟需要写权限',
@@ -27,7 +27,7 @@ const r1 = await runSuite('权限委托链', async (check) => {
 
   await check('列出待审批', async () => {
     // agentId 是 setupCompany 的负责人，也是默认审批人
-    const r = await api.get(`/api/companies/${companyId}/permission-changes?role=approver&employeeId=${agentId}`);
+    const r = await api.get(`/api/permission-changes?role=approver&employeeId=${agentId}`);
     assertStatus(r, 200, '待审批列表');
     assert(Array.isArray(r.body), '返回数组');
   });
@@ -39,7 +39,7 @@ const r1 = await runSuite('权限委托链', async (check) => {
   });
 
   await check('permanent scope 无 validUntil', async () => {
-    const r = await api.post(`/api/companies/${companyId}/permission-changes`, {
+    const r = await api.post(`/api/permission-changes`, {
       requesterEmployeeId: agentId,
       requestedScope: 'permanent',
       reason: '永久权限',
@@ -52,12 +52,12 @@ const r1 = await runSuite('权限委托链', async (check) => {
 const r2 = await runSuite('离职交接四阶段', async (check) => {
   const { companyId, agentId: receiverId } = await setupCompany(uname('handover-co'));
   // 招一个临时工作为离职人
-  const tr = await api.post(`/api/companies/${companyId}/employees/temp`, { role: 'departing' });
+  const tr = await api.post(`/api/employees/temp`, { role: 'departing' });
   const departingId = tr.body.agentId;
 
   let handoverId;
   await check('创建交接记录（drafting + 自动产物清单）', async () => {
-    const r = await api.post(`/api/companies/${companyId}/handover`, { departingEmployeeId: departingId });
+    const r = await api.post(`/api/handover`, { departingEmployeeId: departingId });
     assertStatus(r, 201, '建交接');
     handoverId = r.body.id;
     assertEq(r.body.state, 'drafting', 'drafting');
@@ -93,13 +93,13 @@ const r2 = await runSuite('离职交接四阶段', async (check) => {
     assertEq(r.body.state, 'completed', 'completed');
     assert(!!r.body.completedAt, '有 completedAt');
     // 离职员工应已被删（agent_definition 不存在）
-    const agentCheck = await api.get(`/api/companies/${companyId}/agents/${departingId}`);
+    const agentCheck = await api.get(`/api/agents/${departingId}`);
     assertEq(agentCheck.status, 404, '离职员工已删');
   });
 
   await check('重复交接被拒（同一员工）', async () => {
     // departingId 已删，但尝试用 receiverId 再交接（receiver 还在）
-    const r = await api.post(`/api/companies/${companyId}/handover`, { departingEmployeeId: receiverId });
+    const r = await api.post(`/api/handover`, { departingEmployeeId: receiverId });
     // receiverId 还在，可以创建（但若已有未完成的会冲突）
     // 这里只验证不崩溃
     assert(r.status === 201 || r.status === 409, `创建或冲突都行，实际 ${r.status}`);
@@ -110,13 +110,13 @@ const r3 = await runSuite('交接记录列表 + offboard 入口', async (check) 
   const { companyId, agentId } = await setupCompany(uname('offboard-co'));
 
   await check('列出公司交接记录', async () => {
-    const r = await api.get(`/api/companies/${companyId}/handover`);
+    const r = await api.get(`/api/handover`);
     assertStatus(r, 200, '交接列表');
     assert(Array.isArray(r.body), '返回数组');
   });
 
   await check('offboard 入口创建交接', async () => {
-    const r = await api.post(`/api/companies/${companyId}/employees/${agentId}/offboard`, {});
+    const r = await api.post(`/api/employees/${agentId}/offboard`, {});
     assert(r.status === 201, `offboard 应 201，实际 ${r.status}`);
   });
 });

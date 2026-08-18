@@ -6,7 +6,7 @@ import {
   useAgents,
   useThreads,
   useCreateProject,
-  useCompany,
+  useWorkbench,
   useCreateTask,
   useCreateMirror,
   useDeleteMirror,
@@ -23,12 +23,12 @@ import {
   useProjectTaskAction,
   useDiscoverProjectLaunch,
   useConfirmProjectLaunch,
-  useCompanyCockpit,
+  useWorkbenchCockpit,
   useDepartments,
-  useDefaultCompanyId,
-  useCompanyAction,
+  useWorkbenchAction,
   useStagingStatus,
   usePromoteStaging,
+
 } from '../hooks/queries';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
@@ -81,8 +81,8 @@ const NOVEL_PROJECT_PRESET = {
 function NewProject(): React.ReactElement {
   const navigate = useNavigate();
   // 公司概念已从 UI 退场：companyId 只是内部归组锚点，新建项目不感知工作台
-  const companyId = useDefaultCompanyId();
-  const { data: company } = useCompany(companyId);
+  const { data: company } = useWorkbench();
+  const companyId = company?.id;
   const isNovelWorkspace = company?.kind === 'novel';
   const creationPreset = isNovelWorkspace ? NOVEL_PROJECT_PRESET : GENERAL_PROJECT_PRESET;
   const createProject = useCreateProject();
@@ -148,7 +148,7 @@ function NewProject(): React.ReactElement {
     }
 
     createProject.mutate(
-      { companyId: companyId ?? '', name, description: desc, ...(rootDir.trim() ? { rootDir: rootDir.trim() } : {}), ...(playbookId ? { playbookId } : {}) },
+      { name, description: desc, ...(rootDir.trim() ? { rootDir: rootDir.trim() } : {}), ...(playbookId ? { playbookId } : {}) },
       {
         onSuccess: (p) => {
           // 新项目只建立「待确认」的项目任务；确认需求与能力前不派发制作工作单。
@@ -319,10 +319,10 @@ function NewProject(): React.ReactElement {
 function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement {
   useRecentProject(projectId);
   const { data: project } = useProject(projectId);
-  const { data: company } = useCompany(project?.companyId);
-  const { data: cockpit } = useCompanyCockpit(project?.companyId);
-  const { data: agents } = useAgents(project?.companyId);
-  const { data: departments } = useDepartments(project?.companyId);
+  const { data: company } = useWorkbench();
+  const { data: cockpit } = useWorkbenchCockpit();
+  const { data: agents } = useAgents();
+  const { data: departments } = useDepartments();
   const { data: threads } = useThreads(projectId);
   const { data: projectEvents } = useProjectEvents(projectId);
   const { data: tasks } = useTasks(projectId);
@@ -332,7 +332,7 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
   const discoverProjectLaunch = useDiscoverProjectLaunch();
   const confirmProjectLaunch = useConfirmProjectLaunch();
   const createWorkOrder = useCreateTask();
-  const companyAction = useCompanyAction();
+  const companyAction = useWorkbenchAction();
   const [searchParams,setSearchParams]=useSearchParams();
   const requestedView = searchParams.get('view');
   const projectView = resolveProjectWorkbenchView(requestedView);
@@ -483,16 +483,16 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
   return (
     <WorkbenchShell
       scopeKey={`project:${projectId}`}
-      breadcrumb={<WorkbenchContextSwitcher companyId={project.companyId} projectId={project.id} projectName={project.name} projectTaskId={selectedProjectTaskId} sectionKey={projectView} sectionLabel={{ task: '项目任务', employee: selectedAgent?.name ?? '智能体', group: '项目群聊', activity: '协作活动' }[projectView]} novel={company?.kind === 'novel'} />}
+      breadcrumb={<WorkbenchContextSwitcher projectId={project.id} projectName={project.name} projectTaskId={selectedProjectTaskId} sectionKey={projectView} sectionLabel={{ task: '项目任务', employee: selectedAgent?.name ?? '智能体', group: '项目群聊', activity: '协作活动' }[projectView]} novel={company?.kind === 'novel'} />}
       navigationLabel="项目组织与联系人"
       inspectorLabel="项目任务与运行"
       attentionCount={attentionCount + (cockpit?.approvals.pending ?? 0)}
       primaryAction={<>
         {company && (
           company.state === 'off'
-            ? <button type="button" className="mu-btn mu-btn-ghost mu-btn-sm workbench-publish-action" title="让智能体上线工作（下班状态不领取任务）" onClick={() => companyAction.mutate({ id: company.id, action: 'clock-in' }, { onSuccess: () => toast('success', '工作台已上线，智能体开始领取任务'), onError: (e) => toast('error', `${(e as Error).message}（可在执行器中心完成接入后再上线）`) })}>🌙 已下班 · 点亮</button>
+            ? <button type="button" className="mu-btn mu-btn-ghost mu-btn-sm workbench-publish-action" title="让智能体上线工作（下班状态不领取任务）" onClick={() => companyAction.mutate({ action: 'clock-in' }, { onSuccess: () => toast('success', '工作台已上线，智能体开始领取任务'), onError: (e) => toast('error', `${(e as Error).message}（可在执行器中心完成接入后再上线）`) })}>🌙 已下班 · 点亮</button>
             : company.state === 'online'
-              ? <button type="button" className="mu-btn mu-btn-ghost mu-btn-sm workbench-publish-action" title="优雅下班：在跑任务收尾后停止" onClick={() => companyAction.mutate({ id: company.id, action: 'clock-out' }, { onSuccess: () => toast('success', '工作台已下班'), onError: (e) => toast('error', (e as Error).message) })}>☀️ 工作中</button>
+              ? <button type="button" className="mu-btn mu-btn-ghost mu-btn-sm workbench-publish-action" title="优雅下班：在跑任务收尾后停止" onClick={() => companyAction.mutate({ action: 'clock-out' }, { onSuccess: () => toast('success', '工作台已下班'), onError: (e) => toast('error', (e as Error).message) })}>☀️ 工作中</button>
               : null
         )}
         {projectView === 'task'
@@ -533,7 +533,6 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
       )}
       {projectView === 'employee' && selectedAgent && <ProjectEmployeeWorkspace
         projectId={projectId}
-        companyId={project.companyId}
         agent={selectedAgent}
         isFirstAgent={selectedAgent.id === (project.firstAgentId ?? company?.firstAgentId)}
         tasks={tasks ?? []}
@@ -548,7 +547,6 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
 
       {projectView === 'task' && <ProjectTaskWorkspace
         projectId={projectId}
-        companyId={project.companyId}
         selectedTask={selectedProjectTask}
         tasks={tasks ?? []}
         projectTasks={projectTasks ?? []}
@@ -561,7 +559,7 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
       />}
 
       {projectView === 'group' && <Card id="project-conversation" title="项目成员群聊">
-        <ConversationPanel scope="project" scopeId={projectId} companyId={project.companyId} projectTaskId={selectedProjectTaskId} title="项目群 · 可 @ 指定智能体" />
+        <ConversationPanel scope="project" scopeId={projectId} projectTaskId={selectedProjectTaskId} title="项目群 · 可 @ 指定智能体" />
       </Card>}
 
       {projectView === 'activity' && <Card title="协作活动">

@@ -40,10 +40,8 @@ function readReadiness(project: Project): ProjectReadiness {
 
 export function ProjectOnboardingWizard({
   project,
-  companyId,
 }: {
   project: Project;
-  companyId: string;
 }): React.ReactElement {
   const updateProject = useUpdateProject();
   const currentIndex = PHASES.findIndex((p) => p.state === project.state);
@@ -117,7 +115,6 @@ export function ProjectOnboardingWizard({
         )}
         {project.state === 'equipping' && (
           <EquippingPhase
-            companyId={companyId}
             enabledPlugins={readiness.equipment.enabledPlugins}
             onEnabledPluginsChange={(enabledPlugins) =>
               updateReadiness({ ...readiness, equipment: { ...readiness.equipment, enabledPlugins } })
@@ -126,7 +123,6 @@ export function ProjectOnboardingWizard({
         )}
         {project.state === 'staffing' && (
           <StaffingPhase
-            companyId={companyId}
             projectId={project.id}
             employeeIds={readiness.staffing.employeeIds}
             onEmployeeIdsChange={(employeeIds) =>

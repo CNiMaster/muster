@@ -28,7 +28,7 @@ export function TaskDetailPage(): React.ReactElement {
   const { taskId = '' } = useParams();
   const { data: task } = useTask(taskId);
   const { data: project } = useProject(task?.projectId);
-  const { data: agents } = useAgents(project?.companyId);
+  const { data: agents } = useAgents();
   const action = useTaskAction();
   // A5 幂等展示：已有 plan_approved 事件则不再显示「同意计划并执行」（域层同样幂等返回既有任务）
   const { data: taskEvents } = useTaskEvents(taskId);

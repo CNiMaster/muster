@@ -26,48 +26,48 @@ const api = {
 // ── 前置：建公司 + 员工 ──────────────────────────────────────────────────
 let companyA, companyB, agentA, agentB, projectA;
 await check('建甲方公司', async () => {
-  const r = await api.post('/api/companies', { name: `冒烟甲方-${Date.now()}`, kind: 'general' });
+  const r = await api.post('/api/workbench', { name: `冒烟甲方-${Date.now()}`, kind: 'general' });
   if (r.status !== 201) throw new Error(`status ${r.status}: ${JSON.stringify(r.body)}`);
   companyA = r.body.id;
 });
 await check('建乙方公司', async () => {
-  const r = await api.post('/api/companies', { name: `冒烟乙方-${Date.now()}`, kind: 'consulting' });
+  const r = await api.post('/api/workbench', { name: `冒烟乙方-${Date.now()}`, kind: 'consulting' });
   if (r.status !== 201) throw new Error(`status ${r.status}`);
   companyB = r.body.id;
 });
 await check('甲方建项目（active）', async () => {
-  const r = await api.post(`/api/companies/${companyA}/projects`, { name: '冒烟外包项目' });
+  const r = await api.post(`/api/projects`, { name: '冒烟外包项目' });
   if (r.status !== 201) throw new Error(`status ${r.status}`);
   projectA = r.body.id;
   // 直接激活（跳过准备流程）
   await api.patch(`/api/projects/${projectA}`, { state: 'active' });
 });
 await check('甲方招临时工作为负责人（tempRecruit 豁免，off 态可招）', async () => {
-  const r = await api.post(`/api/companies/${companyA}/employees/temp`, {
+  const r = await api.post(`/api/employees/temp`, {
     role: 'lead',
     responsibilities: '冒烟负责人',
   });
   if (r.status !== 201) throw new Error(`status ${r.status}: ${JSON.stringify(r.body)}`);
   agentA = r.body.agentId;
   // 设为第一负责人（off 态可改）
-  const p = await api.patch(`/api/companies/${companyA}`, { firstAgentId: agentA });
+  const p = await api.patch(`/api/workbench`, { firstAgentId: agentA });
   if (p.status !== 200) throw new Error(`设负责人失败 ${p.status}`);
 });
 await check('甲方 clock-in', async () => {
-  const r = await api.post(`/api/companies/${companyA}/clock-in`, {});
+  const r = await api.post(`/api/workbench/clock-in`, {});
   if (r.status !== 200) throw new Error(`status ${r.status}: ${JSON.stringify(r.body)}`);
 });
 await check('乙方招临时工作为负责人 + clock-in', async () => {
-  const r = await api.post(`/api/companies/${companyB}/employees/temp`, { role: 'lead', responsibilities: '乙方负责人' });
+  const r = await api.post(`/api/employees/temp`, { role: 'lead', responsibilities: '乙方负责人' });
   if (r.status !== 201) throw new Error(`status ${r.status}`);
   agentB = r.body.agentId;
-  await api.patch(`/api/companies/${companyB}`, { firstAgentId: agentB });
-  await api.post(`/api/companies/${companyB}/clock-in`, {});
+  await api.patch(`/api/workbench`, { firstAgentId: agentB });
+  await api.post(`/api/workbench/clock-in`, {});
 });
 
 // ── 批次 A：B2B 外包决策树 + 临时工 ──────────────────────────────────────
 await check('A1: B2B dispatch（recruit 路径自动招临时工）', async () => {
-  const r = await api.post(`/api/companies/${companyA}/outsource/dispatch`, {
+  const r = await api.post(`/api/outsource/dispatch`, {
     title: '冒烟外包任务',
     brief: '需要设计素材',
     requiredCapabilityIds: ['smoke-test-cap-nonexistent'],
@@ -82,7 +82,7 @@ await check('A1: B2B dispatch（recruit 路径自动招临时工）', async () =
 });
 
 await check('A2: 手动招临时工', async () => {
-  const r = await api.post(`/api/companies/${companyA}/employees/temp`, {
+  const r = await api.post(`/api/employees/temp`, {
     role: 'smoke-designer',
     responsibilities: '冒烟测试临时工',
   });
@@ -92,14 +92,14 @@ await check('A2: 手动招临时工', async () => {
 });
 
 await check('A3: 列出临时工', async () => {
-  const r = await api.get(`/api/companies/${companyA}/employees/temp`);
+  const r = await api.get(`/api/employees/temp`);
   if (r.status !== 200) throw new Error(`status ${r.status}`);
   if (!Array.isArray(r.body)) throw new Error('应返回数组');
 });
 
 await check('A4: 评级明细查询', async () => {
   // agentA 是临时工（is_temp_only=1），不在人才市场列表；用其 profileId 查评级
-  const agentDetail = await api.get(`/api/companies/${companyA}/agents/${agentA}`);
+  const agentDetail = await api.get(`/api/agents/${agentA}`);
   const pid = agentDetail.body.profileId;
   const r = await api.get(`/api/agent-profiles/${pid}/rating`);
   if (r.status !== 200) throw new Error(`status ${r.status}`);
@@ -107,7 +107,7 @@ await check('A4: 评级明细查询', async () => {
 });
 
 await check('A5: 手动调星级', async () => {
-  const agentDetail = await api.get(`/api/companies/${companyA}/agents/${agentA}`);
+  const agentDetail = await api.get(`/api/agents/${agentA}`);
   const pid = agentDetail.body.profileId;
   const r = await api.post(`/api/agent-profiles/${pid}/rating`, { rating: 4 });
   if (r.status !== 200) throw new Error(`status ${r.status}`);
@@ -122,7 +122,7 @@ await check('B1: 权限模板 seed（三档）', async () => {
 });
 
 await check('B2: 权限变更申请', async () => {
-  const r = await api.post(`/api/companies/${companyA}/permission-changes`, {
+  const r = await api.post(`/api/permission-changes`, {
     requesterEmployeeId: agentA,
     requestedScope: 'temp',
     reason: '冒烟测试申请',
@@ -135,7 +135,7 @@ await check('B2: 权限变更申请', async () => {
 });
 
 await check('B3: 列出待审批', async () => {
-  const r = await api.get(`/api/companies/${companyA}/permission-changes?role=approver&employeeId=${agentA}`);
+  const r = await api.get(`/api/permission-changes?role=approver&employeeId=${agentA}`);
   if (r.status !== 200) throw new Error(`status ${r.status}`);
   if (!Array.isArray(r.body)) throw new Error('应返回数组');
 });
@@ -149,7 +149,7 @@ await check('B4: 项目审计日志（空）', async () => {
 // ── 批次 C：离职交接四阶段 ────────────────────────────────────────────────
 let tempAgentForHandover, handoverId;
 await check('C1: 招一个临时工用于交接测试', async () => {
-  const r = await api.post(`/api/companies/${companyA}/employees/temp`, {
+  const r = await api.post(`/api/employees/temp`, {
     role: 'handover-test',
   });
   if (r.status !== 201) throw new Error(`status ${r.status}`);
@@ -157,7 +157,7 @@ await check('C1: 招一个临时工用于交接测试', async () => {
 });
 
 await check('C2: 创建交接记录（drafting）', async () => {
-  const r = await api.post(`/api/companies/${companyA}/handover`, {
+  const r = await api.post(`/api/handover`, {
     departingEmployeeId: tempAgentForHandover,
   });
   if (r.status !== 201) throw new Error(`status ${r.status}: ${JSON.stringify(r.body)}`);
@@ -197,20 +197,20 @@ await check('C6: 完成交接（→ completed，离职生效）', async () => {
 });
 
 await check('C7: 列出公司交接记录', async () => {
-  const r = await api.get(`/api/companies/${companyA}/handover`);
+  const r = await api.get(`/api/handover`);
   if (r.status !== 200) throw new Error(`status ${r.status}`);
   if (!Array.isArray(r.body)) throw new Error('应返回数组');
 });
 
 // ── 外包契约基础（B2B）──────────────────────────────────────────────────
 await check('D1: 列出甲方外包契约', async () => {
-  const r = await api.get(`/api/companies/${companyA}/outsource/contracts?role=source`);
+  const r = await api.get(`/api/outsource/contracts?role=source`);
   if (r.status !== 200) throw new Error(`status ${r.status}`);
   if (!Array.isArray(r.body)) throw new Error('应返回数组');
 });
 
 await check('D2: 列出乙方外包契约', async () => {
-  const r = await api.get(`/api/companies/${companyB}/outsource/contracts?role=target`);
+  const r = await api.get(`/api/outsource/contracts?role=target`);
   if (r.status !== 200) throw new Error(`status ${r.status}`);
 });
 

@@ -18,7 +18,6 @@ import { SERVER_CONFIG } from './env';
 import { log } from './logger';
 import { startGracefulShutdownSequence } from './runtime/shutdown';
 import { healthRouter } from './api/health';
-import { companiesRouter } from './api/companies';
 import { agentsRouter } from './api/agents';
 import { projectsRouter, projectById, quickProjectsRouter } from './api/projects';
 import { playbooksRouter } from './api/projects';
@@ -27,6 +26,7 @@ import { taskByProjectRouter, taskByIdRouter } from './api/tasks';
 import { usageRouter } from './api/reports-usage';
 import { novelRouter, projectScopedNovel } from './api/novel';
 import { blueprintOptimizationRouter } from './api/blueprint-optimization';
+import { blueprintsRouter } from './api/blueprints';
 import { expertCandidatesRouter } from './api/expert-candidates';
 import { projectPhase7, reportByIdRouter, inspectorAlertRouter } from './api/phase7';
 import { companyMessagesRouter, projectMessagesRouter } from './api/conversation';
@@ -42,6 +42,7 @@ import { settingsRouter } from './api/settings';
 import { departmentsRouter } from './api/departments';
 import { setupAssistantRouter } from './api/setup-assistant';
 import { workspacesRouter } from './api/workspaces';
+import { workbenchRouter } from './api/workbench';
 import { recoverInterruptedMigrations } from './domain/workspace';
 import { startExecutorHealthSweeps } from './domain/executor-failover';
 import { agentProfilesRouter, companyEmployeesRouter } from './api/agent-profiles';
@@ -73,11 +74,12 @@ import { autoDiscoverCertifiedExecutors } from './domain/executor-discovery';
 import { syncToolRegistry } from './domain/tool-registry';
 import { seedDefaultCredentialDefinitions } from './domain/credential-store';
 import { toolsRouter } from './api/tools';
-import { credentialsRouter, companyCredentialsRouter } from './api/credentials';
+import { credentialsRouter } from './api/credentials';
 import { materialsRouter } from './api/materials';
 import { businessReviewsRouter } from './api/business-reviews';
 import { backupRouter } from './api/backup';
 import { setupRouter } from './api/setup';
+import { ensureDefaultCompany, listCompanies, updateCompany, DEFAULT_WORKBENCH_NAME } from './domain/company';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -187,21 +189,37 @@ async function createApp(): Promise<AppHandle> {
   } catch (err) {
     log.warn('credential seed failed', { error: err instanceof Error ? err.message : String(err) });
   }
+  // 公司退役批次A：启动确保默认工作台单例（无则建「默认工作台」；恰一个在营且未用默认名则更名，幂等）
+  try {
+    const ensured = ensureDefaultCompany(getDb());
+    if (ensured.created) {
+      log.info('default workbench created', { id: ensured.company.id });
+    } else {
+      const actives = listCompanies(getDb(), { activeOnly: true });
+      if (actives.length === 1 && actives[0].name !== DEFAULT_WORKBENCH_NAME) {
+        updateCompany(getDb(), actives[0].id, { name: DEFAULT_WORKBENCH_NAME });
+        log.info('default workbench renamed', { from: actives[0].name });
+      }
+    }
+  } catch (err) {
+    log.warn('default workbench ensure failed', { error: err instanceof Error ? err.message : String(err) });
+  }
   // API（顶层）
   app.use('/api', healthRouter);
-  app.use('/api/companies', companiesRouter);
   app.use('/api/novel', novelRouter);
-  app.use('/api/companies/:companyId/agents', agentsRouter);
-  app.use('/api/companies/:companyId/employees', companyEmployeesRouter);
-  app.use('/api/companies/:companyId/departments', departmentsRouter);
-  app.use('/api/companies/:companyId/projects', projectsRouter);
-  app.use('/api/companies/:companyId/relationships', graphsRouter);
-  app.use('/api/companies/:companyId/workflows', workflowsRouter);
-  app.use('/api/companies/:id/messages', companyMessagesRouter);
-  app.use('/api/companies/:companyId/events', companyEventsRouter);
-  app.use('/api/companies/:companyId/credentials', companyCredentialsRouter);
-  app.use('/api/companies/:companyId', blueprintOptimizationRouter);
-  app.use('/api/companies/:companyId/expert-candidates', expertCandidatesRouter);
+  // 公司退役批次C：旧 /api/companies/:companyId/* 挂载已全部下线（新路径见下；handler 经 companyIdOf 解析默认工作台）
+  app.use('/api/workbench', workbenchRouter);
+  app.use('/api/blueprints', blueprintsRouter);
+  app.use('/api/blueprint-optimization', blueprintOptimizationRouter);
+  app.use('/api/agents', agentsRouter);
+  app.use('/api/employees', companyEmployeesRouter);
+  app.use('/api/departments', departmentsRouter);
+  app.use('/api/projects', projectsRouter);
+  app.use('/api/relationships', graphsRouter);
+  app.use('/api/workflows', workflowsRouter);
+  app.use('/api/messages', companyMessagesRouter);
+  app.use('/api/events', companyEventsRouter);
+  app.use('/api/expert-candidates', expertCandidatesRouter);
   app.use('/api/playbooks', playbooksRouter);
   // 蓝图组织批次4c：项目优先入口（须在 /api/projects/:id 之前挂载，避免被 :id 参数吞掉）
   app.use('/api/projects/quick', quickProjectsRouter);

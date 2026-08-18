@@ -22,8 +22,6 @@ import { MarkdownPreview } from './MarkdownPreview';
 export interface ConversationPanelProps {
   scope: 'company' | 'project';
   scopeId: string;
-  /** 用于解析 @提及候选智能体的 companyId。 */
-  companyId: string;
   title?: string;
   /** 固定联系人；设置后成为该智能体的项目单聊，并只显示与其关联的消息。 */
   recipientAgentId?: string;
@@ -35,9 +33,9 @@ export interface ConversationPanelProps {
   fill?: boolean;
 }
 
-export function ConversationPanel({ scope, scopeId, companyId, title, recipientAgentId, projectTaskId, hideInput = false, fill = false }: ConversationPanelProps): React.ReactElement {
+export function ConversationPanel({ scope, scopeId, title, recipientAgentId, projectTaskId, hideInput = false, fill = false }: ConversationPanelProps): React.ReactElement {
   const { data: messages, isLoading } = useMessages(scope, scopeId, recipientAgentId);
-  const { data: agents } = useAgents(companyId);
+  const { data: agents } = useAgents();
   const post = usePostMessage(scope, recipientAgentId);
   const [text, setText] = useState('');
   const [showMentions, setShowMentions] = useState(false);

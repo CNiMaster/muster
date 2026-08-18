@@ -2,7 +2,7 @@ import type React from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
   useProject,
-  useCompany,
+  useWorkbench,
   useTasks,
   useThreads,
   useProjectUsage,
@@ -70,16 +70,16 @@ function relTime(iso: string): string {
 export function DashboardPage(): React.ReactElement {
   const { projectId = '' } = useParams();
   const { data: project, isLoading: projectLoading } = useProject(projectId);
-  const { data: company } = useCompany(project?.companyId);
+  const { data: company } = useWorkbench();
   const { data: tasks } = useTasks(projectId);
   const { data: threads } = useThreads(projectId);
   const { data: usage } = useProjectUsage(projectId);
   const { data: suggestions } = useInspectorSuggestions(projectId);
   const { data: alerts } = useInspectorAlerts(projectId);
   const resolveAlert = useResolveInspectorAlert();
-  const { data: agents } = useAgents(project?.companyId);
+  const { data: agents } = useAgents();
   const { data: events } = useProjectEvents(projectId);
-  const { data: statusBoard } = useStatusBoard(project?.companyId);
+  const { data: statusBoard } = useStatusBoard();
   const { data: artifacts } = useArtifacts(projectId);
 
   const coreLoading = projectLoading && !project;

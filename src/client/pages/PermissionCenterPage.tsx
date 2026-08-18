@@ -30,15 +30,12 @@ export function PermissionCenterPage(): React.ReactElement {
     queryFn: () => api.get<PermissionApproval[]>('/api/permissions/approvals'),
     refetchInterval: 3000,
   });
-  const companies = useQuery({ queryKey: ['companies', { status: 'active' }], queryFn: () => api.get<{ id: string; name: string; state: string }[]>('/api/companies?status=active') });
-
   const [name, setName] = useState('项目内询问');
   const [strategy, setStrategy] = useState<ApprovalStrategy>('ask-by-rule');
   const [scope, setScope] = useState<PermissionScope>('project');
   const [dirs, setDirs] = useState('');
 
-  // 按工作台批量绑定
-  const [batchCompanyId, setBatchCompanyId] = useState('');
+  // 按工作台批量绑定（单例工作台，无需选公司）
   const [batchPolicyId, setBatchPolicyId] = useState('');
 
   const create = useMutation({
@@ -53,8 +50,8 @@ export function PermissionCenterPage(): React.ReactElement {
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['permission-approvals'] }),
   });
   const batchBind = useMutation({
-    mutationFn: ({ companyId, policyId }: { companyId: string; policyId: string }) =>
-      api.post<{ updated: number }>(`/api/permissions/companies/${companyId}/binding`, { policyId }),
+    mutationFn: ({ policyId }: { policyId: string }) =>
+      api.post<{ updated: number }>(`/api/permissions/binding`, { policyId }),
     onSuccess: (data) => {
       void qc.invalidateQueries({ queryKey: ['agents'] });
       toast('success', `已绑定到 ${data.updated} 位智能体`);
@@ -69,14 +66,12 @@ export function PermissionCenterPage(): React.ReactElement {
   };
 
   const doBatchBind = (): void => {
-    if (!batchCompanyId || !batchPolicyId) {
-      toast('error', '请选择工作台和策略');
+    if (!batchPolicyId) {
+      toast('error', '请选择策略');
       return;
     }
-    batchBind.mutate({ companyId: batchCompanyId, policyId: batchPolicyId });
+    batchBind.mutate({ policyId: batchPolicyId });
   };
-
-  const offCompanies = (companies.data ?? []).filter((c) => c.state === 'off');
 
   return (
     <div className="settings-page">
@@ -96,14 +91,8 @@ export function PermissionCenterPage(): React.ReactElement {
       </Card>
 
       <Card title="按工作台批量绑定" className="section">
-        <p className="muted">把某策略一次性绑定到指定工作台的所有智能体（要求该工作台已下班）。智能体级细调请到工作台组织架构页展开。</p>
+        <p className="muted">把某策略一次性绑定到工作台所有智能体（要求工作台已下班）。智能体级细调请到工作台组织架构页展开。</p>
         <div className="form-row">
-          <Field label="目标工作台">
-            <Select value={batchCompanyId} onChange={(e) => setBatchCompanyId((e.target as HTMLSelectElement).value)}>
-              <option value="">选择工作台（仅下班）</option>
-              {offCompanies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </Select>
-          </Field>
           <Field label="权限策略">
             <Select value={batchPolicyId} onChange={(e) => setBatchPolicyId((e.target as HTMLSelectElement).value)}>
               <option value="">选择策略</option>
@@ -111,7 +100,7 @@ export function PermissionCenterPage(): React.ReactElement {
             </Select>
           </Field>
         </div>
-        <Button onClick={doBatchBind} disabled={!batchCompanyId || !batchPolicyId} loading={batchBind.isPending}>批量绑定</Button>
+        <Button onClick={doBatchBind} disabled={!batchPolicyId} loading={batchBind.isPending}>批量绑定</Button>
       </Card>
 
       <Card title="新建自定义策略" className="section">

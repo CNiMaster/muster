@@ -12,13 +12,12 @@ import { Badge } from './Badge';
 import type { GraphChangeProposal, GraphDiff } from '../hooks/queries';
 
 interface Props {
-  companyId: string;
   kind: 'org' | 'communication';
   agents: Array<{ id: string; name: string; role: string }>;
   onApplied?: () => void;
 }
 
-export function NaturalLanguageGraphPanel({ companyId, kind, agents, onApplied }: Props): React.ReactNode {
+export function NaturalLanguageGraphPanel({ kind, agents, onApplied }: Props): React.ReactNode {
   const [text, setText] = useState('');
   const [proposal, setProposal] = useState<GraphChangeProposal | null>(null);
   const [diff, setDiff] = useState<GraphDiff | null>(null);
@@ -35,7 +34,7 @@ export function NaturalLanguageGraphPanel({ companyId, kind, agents, onApplied }
   const submitPropose = (): void => {
     if (!text.trim()) return;
     propose.mutate(
-      { companyId, kind, naturalLanguage: text },
+      { kind, naturalLanguage: text },
       {
         onSuccess: (r) => {
           setProposal(r.proposal);
@@ -53,7 +52,7 @@ export function NaturalLanguageGraphPanel({ companyId, kind, agents, onApplied }
   const accept = (): void => {
     if (!proposal) return;
     apply.mutate(
-      { companyId, kind, proposal },
+      { kind, proposal },
       {
         onSuccess: (r) => {
           toast('success', `已应用：+${r.diff.added.length} / -${r.diff.removed.length}`);

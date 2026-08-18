@@ -15,7 +15,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import {
-  useCompany,
+  useWorkbench,
   useAgents,
   useRelationships,
   useAddRelationship,
@@ -23,7 +23,6 @@ import {
   useArchiveRelationship,
   useRestoreRelationship,
   useValidateGraph,
-  useDefaultCompanyId,
 } from '../hooks/queries';
 import { Button } from '../components/Button';
 import { Badge } from '../components/Badge';
@@ -43,12 +42,11 @@ const KIND_HELP: Record<string, string> = {
 
 export function GraphPage(): React.ReactElement {
   const { kind = 'org' } = useParams();
-  const companyId = useDefaultCompanyId() ?? '';
   const graphKind = kind as 'org' | 'communication';
-  const { data: company } = useCompany(companyId);
-  const { data: agents } = useAgents(companyId);
+  const { data: company } = useWorkbench();
+  const { data: agents } = useAgents();
   const [showArchived, setShowArchived] = useState(false);
-  const { data: rels } = useRelationships(companyId, graphKind, { includeArchived: true });
+  const { data: rels } = useRelationships(graphKind, { includeArchived: true });
   const addRel = useAddRelationship();
   const delRel = useDeleteRelationship();
   const archiveRel = useArchiveRelationship();
@@ -111,10 +109,10 @@ export function GraphPage(): React.ReactElement {
   const onConnect = useCallback(
     (conn: Connection) => {
       if (readonly || !conn.source || !conn.target) return;
-      addRel.mutate({ companyId, kind: graphKind, sourceId: conn.source, targetId: conn.target });
+      addRel.mutate({ kind: graphKind, sourceId: conn.source, targetId: conn.target });
       void addEdge;
     },
-    [readonly, companyId, graphKind, addRel],
+    [readonly, graphKind, addRel],
   );
 
   const onEdgeClick = useCallback(
@@ -125,18 +123,18 @@ export function GraphPage(): React.ReactElement {
       const proceed = confirm(`${action}关系 ${edge.id}?\n（归档保留历史，恢复可还原；点击"取消"查看其他动作）`);
       if (proceed) {
         if (archived) {
-          restoreRel.mutate({ companyId, id: edge.id });
+          restoreRel.mutate({ id: edge.id });
         } else {
-          archiveRel.mutate({ companyId, id: edge.id });
+          archiveRel.mutate({ id: edge.id });
         }
         return;
       }
       // 二次确认：彻底删除
       if (confirm(`彻底删除关系 ${edge.id}? 此操作不可恢复。`)) {
-        delRel.mutate({ companyId, id: edge.id });
+        delRel.mutate({ id: edge.id });
       }
     },
-    [readonly, companyId, archiveRel, restoreRel, delRel],
+    [readonly, archiveRel, restoreRel, delRel],
   );
 
   const doValidate = (): void => {
@@ -144,7 +142,7 @@ export function GraphPage(): React.ReactElement {
       setErrors([]);
       return;
     }
-    validate.mutate(companyId, {
+    validate.mutate(undefined, {
       onSuccess: (r) => {
         setErrors(r.errors);
         if (r.errors.length === 0) toast('success', '关系校验通过');
@@ -185,7 +183,6 @@ export function GraphPage(): React.ReactElement {
 
       {!readonly && (
         <NaturalLanguageGraphPanel
-          companyId={companyId}
           kind={graphKind}
           agents={agents ?? []}
           onApplied={() => toast('success', '已应用变更')}

@@ -197,7 +197,7 @@ export function approveChangeRequest(db: DB, requestId: string, approverId: stri
   if (req.approverEmployeeId !== approverId) {
     throw new AppError(ErrorCode.UNAUTHORIZED, '只有指定的审批人可批准此申请');
   }
-  // 获取申请人的权限策略，生成规则
+  // 获取申请人的权限策略，生成规则（公司退役 D4-3：规则全平台化，不再带 company_id）
   const policy = getEmployeePermissionPolicy(db, req.requesterEmployeeId);
   let ruleId: string | null = null;
   if (policy) {
@@ -206,7 +206,6 @@ export function approveChangeRequest(db: DB, requestId: string, approverId: stri
       action: req.requestedAction ?? undefined,
       pathPrefix: req.targetPathPrefix ?? undefined,
       employeeId: req.requesterEmployeeId,
-      companyId: req.companyId,
       expiresAt: req.validUntil ?? undefined,
     });
   }

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { asyncHandler, param } from './middleware';
+import { asyncHandler, param, companyIdOf } from './middleware';
 import { getDb } from '../db/client';
 import { getWorkflow, saveWorkflow, startWorkflow, validateWorkflow, validateWorkflowResponsibility } from '../domain/workflow';
 import type { EdgeCondition } from '../domain/workflow';
@@ -35,7 +35,7 @@ workflowsRouter.get(
   '/:workflowId',
   asyncHandler(async (req, res) => {
     const db = getDb();
-    const companyId = param(req, 'companyId');
+    const companyId = companyIdOf(req);
     const workflowId = param(req, 'workflowId');
     res.json(getWorkflow(db, companyId, workflowId));
   }),
@@ -45,7 +45,7 @@ workflowsRouter.put(
   '/:workflowId',
   asyncHandler(async (req, res) => {
     const db = getDb();
-    const companyId = param(req, 'companyId');
+    const companyId = companyIdOf(req);
     const workflowId = param(req, 'workflowId');
     const input = saveWorkflowSchema.parse(req.body);
 
@@ -80,7 +80,7 @@ workflowsRouter.post(
   '/:workflowId/validate',
   asyncHandler(async (req, res) => {
     const db = getDb();
-    const companyId = param(req, 'companyId');
+    const companyId = companyIdOf(req);
     const workflowId = param(req, 'workflowId');
     res.json({ errors: validateWorkflow(db, companyId, workflowId) });
   }),

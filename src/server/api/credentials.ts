@@ -7,20 +7,14 @@
  *   PUT    /api/credentials/:id        更新凭据定义
  *   DELETE /api/credentials/:id        删除凭据定义
  *   PUT    /api/credentials/:id/default 设置/取消默认派发
- * 公司级:
- *   GET    /api/companies/:id/credentials  公司派发清单(嵌套路由用 companyId param)
- *   PUT    /api/companies/:id/credentials/:defId 公司级覆盖/禁用
- *   (公司级路由挂在 companies 路由下,见下方 companyCredentialsRouter)
- */
+ * (公司级覆盖路由已随公司退役 D4-1 下线：凭据解析降为 平台>员工 两级) */
 import { Router } from 'express';
 import { getDb } from '../db/client';
 import {
   createCredentialDefinition,
   deleteCredentialDefinition,
   getCredentialDefinition,
-  listCompanyCredentials,
   listCredentialDefinitions,
-  setCompanyCredential,
   setCredentialDefinitionDefault,
   updateCredentialDefinition,
 } from '../domain/credential-store';
@@ -70,19 +64,4 @@ credentialsRouter.delete('/:id', asyncHandler(async (req, res) => {
 credentialsRouter.put('/:id/default', asyncHandler(async (req, res) => {
   const isDefault = req.body?.isDefault === true;
   res.json(setCredentialDefinitionDefault(getDb(), param(req, 'id'), isDefault));
-}));
-
-// 公司级凭据路由(挂在 /api/companies/:companyId/credentials 下)
-export const companyCredentialsRouter = Router({ mergeParams: true });
-
-companyCredentialsRouter.get('/', asyncHandler(async (req, res) => {
-  res.json(listCompanyCredentials(getDb(), param(req, 'companyId')));
-}));
-
-companyCredentialsRouter.put('/:definitionId', asyncHandler(async (req, res) => {
-  const { overrideKey, enabled } = req.body ?? {};
-  res.json(setCompanyCredential(getDb(), param(req, 'companyId'), param(req, 'definitionId'), {
-    overrideKey: overrideKey === null || typeof overrideKey === 'string' ? overrideKey : undefined,
-    enabled: typeof enabled === 'boolean' ? enabled : undefined,
-  }));
 }));

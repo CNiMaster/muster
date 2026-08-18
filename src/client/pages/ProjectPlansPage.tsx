@@ -37,7 +37,7 @@ function intervalLabel(automation: { intervalMs: number | null; scheduleKind: 'i
 export function ProjectPlansPage(): React.ReactElement {
   const { projectId = '' } = useParams();
   const { data: project } = useProject(projectId);
-  const { data: agents = [] } = useAgents(project?.companyId);
+  const { data: agents = [] } = useAgents();
   const { data: projectTasks = [] } = useProjectTasks(projectId);
   const { data: tasks = [] } = useTasks(projectId);
   const { data: automations = [] } = useProjectAutomations(projectId);

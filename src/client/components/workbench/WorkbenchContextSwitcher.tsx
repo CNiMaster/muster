@@ -47,8 +47,7 @@ function SwitchMenu({ label, options, activeKey, ariaLabel }: { label: string; o
   );
 }
 
-export function WorkbenchContextSwitcher({ companyId, projectId, projectName, projectTaskId, sectionKey, sectionLabel, novel = false }: {
-  companyId?: string;
+export function WorkbenchContextSwitcher({ projectId, projectName, projectTaskId, sectionKey, sectionLabel, novel = false }: {
   projectId?: string;
   projectName?: string;
   projectTaskId?: string;
@@ -56,7 +55,7 @@ export function WorkbenchContextSwitcher({ companyId, projectId, projectName, pr
   sectionLabel: string;
   novel?: boolean;
 }): React.ReactElement {
-  const { data: projects = [] } = useProjects(companyId);
+  const { data: projects = [] } = useProjects();
   const sections = projectId ? projectSectionOptions(projectId, projectTaskId, novel) : [];
   const projectOptions = projects.map((project) => ({ key: project.id, label: project.name, href: `/projects/${project.id}` }));
 

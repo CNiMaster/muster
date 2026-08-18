@@ -13,16 +13,16 @@
  * - POST   /api/plugins                                安装（写 plugin 表）
  * - DELETE /api/plugins/:id                            移除
  * - POST   /api/plugins/:id/test                       测试 MCP server 连接
- * - POST   /api/companies/:companyId/plugins/:id/enable   撤销禁用（恢复平台默认）
- * - POST   /api/companies/:companyId/plugins/:id/disable  显式禁用某平台插件
- * - GET    /api/companies/:companyId/plugins/effective   公司实际生效的插件（含三态）
- * - GET    /api/companies/:companyId/plugins/enabled     公司生效 plugin id 列表（兼容旧）
+ * - POST   /api/plugins/:id/enable   撤销禁用（恢复平台默认）
+ * - POST   /api/plugins/:id/disable  显式禁用某平台插件
+ * - GET    /api/plugins/effective   工作台实际生效的插件（含三态）
+ * - GET    /api/plugins/enabled     工作台生效 plugin id 列表
  * - GET    /api/plugins/company-scoped/:companyId        公司独占插件列表
- * - POST   /api/companies/:companyId/plugins/exclusive   安装公司独占插件
+ * - POST   /api/plugins/exclusive   安装工作台独占插件
  */
 import { Router } from 'express';
 import { z } from 'zod';
-import { asyncHandler, param } from './middleware';
+import { asyncHandler, param, companyIdOf } from './middleware';
 import { getDb } from '../db/client';
 import { listPlugins, getPlugin } from '../domain/plugin-adapter';
 import {
@@ -62,6 +62,85 @@ pluginsRouter.get(
     res.json(listPlugins(getDb()));
   }),
 );
+
+// 公司级插件启停/生效视图 —— 公司退役批次A双挂（旧 /companies/:companyId/plugins/* 保留至批次 C；
+// 新路径 /effective /enabled /company-scoped /:id/enable /:id/disable /exclusive，companyId 经 companyIdOf 兜底解析默认工作台）
+// 注意：本段必须注册在 GET /:id 之前，否则 /effective 等字面路径会被 /:id 吞掉。
+const companyEnableHandler = asyncHandler(async (req, res) => {
+  assertCompanyOff(getDb(), companyIdOf(req));
+  // opt-out：enable = 撤销禁用，恢复平台默认全开
+  setCompanyPluginDecision(getDb(), companyIdOf(req), param(req, 'id'), 'enabled');
+  realtime.publish(makeLifecycleEvent('plugin.enabled', { pluginId: param(req, 'id') }, { companyId: companyIdOf(req) }));
+  res.json({ ok: true });
+});
+pluginsRouter.post('/:id/enable', companyEnableHandler);
+
+const companyDisableHandler = asyncHandler(async (req, res) => {
+  assertCompanyOff(getDb(), companyIdOf(req));
+  // opt-out：disable = 显式禁用某平台插件
+  setCompanyPluginDecision(getDb(), companyIdOf(req), param(req, 'id'), 'disabled');
+  realtime.publish(makeLifecycleEvent('plugin.disabled', { pluginId: param(req, 'id') }, { companyId: companyIdOf(req) }));
+  res.json({ ok: true });
+});
+pluginsRouter.post('/:id/disable', companyDisableHandler);
+
+// 公司实际生效的插件（opt-out：平台默认 - 禁用 + 公司独占），含三态决策标注
+const companyEffectiveHandler = asyncHandler(async (req, res) => {
+  const db = getDb();
+  const companyId = companyIdOf(req);
+  const effective = getEffectivePluginsForCompany(db, companyId);
+  const decisions = getCompanyPluginDecisions(db, companyId);
+  // 为每个插件标注该公司对其的三态决策：default（平台默认全开）/ enabled（显式启用痕迹）/ disabled（显式禁用）/ exclusive（公司独占）
+  const annotated = effective.map((p) => {
+    let companyDecision: 'default' | 'enabled' | 'disabled' | 'exclusive';
+    if (p.scope.level === 'company' && p.scope.companyId === companyId) {
+      companyDecision = 'exclusive';
+    } else {
+      companyDecision = (decisions.get(p.id) as 'enabled' | 'disabled' | undefined) ?? 'default';
+    }
+    return { ...p, companyDecision };
+  });
+  res.json(annotated);
+});
+pluginsRouter.get('/effective', companyEffectiveHandler);
+
+const companyEnabledHandler = asyncHandler(async (req, res) => {
+  // opt-out 迁移后语义=effective，保留旧路由名兼容历史调用方
+  res.json(listEnabledCompanyPlugins(getDb(), companyIdOf(req)));
+});
+pluginsRouter.get('/enabled', companyEnabledHandler);
+
+// 公司独占插件列表（scope=company 且 scope_id===默认工作台）
+const companyScopedHandler = asyncHandler(async (req, res) => {
+  res.json(listPlugins(getDb(), { scopeLevel: 'company', scopeCompanyId: companyIdOf(req) }));
+});
+pluginsRouter.get('/company-scoped', companyScopedHandler);
+
+// 安装公司独占插件（scope=company，仅对目标公司可见可用）
+const exclusiveInstallSchema = z.object({
+  id: z.string().optional(),
+  name: z.string().min(1),
+  kind: z.enum(['skill', 'mcp-server', 'tool', 'bridge-action', 'ai-generated']),
+  source: z.unknown(),
+  manifest: z.record(z.unknown()),
+  permissions: z.array(z.string()).optional(),
+  credentialKeys: z.array(z.string()).optional(),
+  maturity: z.enum(['experimental', 'stable', 'deprecated']).optional(),
+});
+const companyExclusiveHandler = asyncHandler(async (req, res) => {
+  assertCompanyOff(getDb(), companyIdOf(req));
+  const parsed = exclusiveInstallSchema.parse(req.body);
+  const plugin = installPlugin(getDb(), {
+    ...parsed,
+    source: parsed.source as import('../../shared/plugin').PluginSource,
+    // 强制 scope 为公司独占：仅目标公司可见
+    scope: { level: 'company', companyId: companyIdOf(req) },
+    manifest: parsed.manifest as import('../../shared/plugin').Plugin['manifest'],
+  });
+  realtime.publish(makeLifecycleEvent('plugin.installed', { pluginId: plugin.id }, { companyId: companyIdOf(req) }));
+  res.status(201).json(plugin);
+});
+pluginsRouter.post('/exclusive', companyExclusiveHandler);
 
 pluginsRouter.get(
   '/:id',
@@ -147,101 +226,6 @@ pluginsRouter.post(
   }),
 );
 
-// 公司级启停（opt-out 语义）
-pluginsRouter.post(
-  '/companies/:companyId/plugins/:id/enable',
-  asyncHandler(async (req, res) => {
-    assertCompanyOff(getDb(), param(req, 'companyId'));
-    // opt-out：enable = 撤销禁用，恢复平台默认全开
-    setCompanyPluginDecision(getDb(), param(req, 'companyId'), param(req, 'id'), 'enabled');
-    realtime.publish(
-      makeLifecycleEvent('plugin.enabled', { pluginId: param(req, 'id') }, { companyId: param(req, 'companyId') }),
-    );
-    res.json({ ok: true });
-  }),
-);
-
-pluginsRouter.post(
-  '/companies/:companyId/plugins/:id/disable',
-  asyncHandler(async (req, res) => {
-    assertCompanyOff(getDb(), param(req, 'companyId'));
-    // opt-out：disable = 显式禁用某平台插件
-    setCompanyPluginDecision(getDb(), param(req, 'companyId'), param(req, 'id'), 'disabled');
-    realtime.publish(
-      makeLifecycleEvent('plugin.disabled', { pluginId: param(req, 'id') }, { companyId: param(req, 'companyId') }),
-    );
-    res.json({ ok: true });
-  }),
-);
-
-// 公司实际生效的插件（opt-out：平台默认 - 禁用 + 公司独占），含三态决策标注
-pluginsRouter.get(
-  '/companies/:companyId/plugins/effective',
-  asyncHandler(async (req, res) => {
-    const db = getDb();
-    const companyId = param(req, 'companyId');
-    const effective = getEffectivePluginsForCompany(db, companyId);
-    const decisions = getCompanyPluginDecisions(db, companyId);
-    // 为每个插件标注该公司对其的三态决策：default（平台默认全开）/ enabled（显式启用痕迹）/ disabled（显式禁用）/ exclusive（公司独占）
-    const annotated = effective.map((p) => {
-      let companyDecision: 'default' | 'enabled' | 'disabled' | 'exclusive';
-      if (p.scope.level === 'company' && p.scope.companyId === companyId) {
-        companyDecision = 'exclusive';
-      } else {
-        companyDecision = (decisions.get(p.id) as 'enabled' | 'disabled' | undefined) ?? 'default';
-      }
-      return { ...p, companyDecision };
-    });
-    res.json(annotated);
-  }),
-);
-
-pluginsRouter.get(
-  '/companies/:companyId/plugins/enabled',
-  asyncHandler(async (req, res) => {
-    // opt-out 迁移后语义=effective，保留旧路由名兼容历史调用方
-    res.json(listEnabledCompanyPlugins(getDb(), param(req, 'companyId')));
-  }),
-);
-
-// 公司独占插件列表（scope=company 且 scope_id===companyId）
-pluginsRouter.get(
-  '/company-scoped/:companyId',
-  asyncHandler(async (req, res) => {
-    res.json(listPlugins(getDb(), { scopeLevel: 'company', scopeCompanyId: param(req, 'companyId') }));
-  }),
-);
-
-// 安装公司独占插件（scope=company，仅对目标公司可见可用）
-const exclusiveInstallSchema = z.object({
-  id: z.string().optional(),
-  name: z.string().min(1),
-  kind: z.enum(['skill', 'mcp-server', 'tool', 'bridge-action', 'ai-generated']),
-  source: z.unknown(),
-  manifest: z.record(z.unknown()),
-  permissions: z.array(z.string()).optional(),
-  credentialKeys: z.array(z.string()).optional(),
-  maturity: z.enum(['experimental', 'stable', 'deprecated']).optional(),
-});
-
-pluginsRouter.post(
-  '/companies/:companyId/plugins/exclusive',
-  asyncHandler(async (req, res) => {
-    assertCompanyOff(getDb(), param(req, 'companyId'));
-    const parsed = exclusiveInstallSchema.parse(req.body);
-    const plugin = installPlugin(getDb(), {
-      ...parsed,
-      source: parsed.source as import('../../shared/plugin').PluginSource,
-      // 强制 scope 为公司独占：仅目标公司可见
-      scope: { level: 'company', companyId: param(req, 'companyId') },
-      manifest: parsed.manifest as import('../../shared/plugin').Plugin['manifest'],
-    });
-    realtime.publish(
-      makeLifecycleEvent('plugin.installed', { pluginId: plugin.id }, { companyId: param(req, 'companyId') }),
-    );
-    res.status(201).json(plugin);
-  }),
-);
 
 // ── Marketplace 检索 + 安装（B3b）─────────────────────────────────────────
 

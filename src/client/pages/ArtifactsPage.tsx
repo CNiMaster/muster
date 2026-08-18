@@ -57,7 +57,7 @@ export function ArtifactsPage(): React.ReactElement {
   const { projectId = '' } = useParams();
   const { data: project } = useProject(projectId);
   const { data: artifacts } = useArtifacts(projectId);
-  const { data: agents } = useAgents(project?.companyId);
+  const { data: agents } = useAgents();
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
 

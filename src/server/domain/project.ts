@@ -13,7 +13,7 @@ import { spawnSync } from 'node:child_process';
 import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
-import { getCompany, createCompany } from './company';
+import { getCompany, ensureDefaultCompany } from './company';
 import { ensureWorkspaceStaff } from './workspace-staff';
 import { getAgent } from './agent';
 import { ensureDefaultWorkspace } from './workspace';
@@ -191,24 +191,14 @@ export function createQuickProject(db: DB, input: { name: string; description?: 
   companyId: string;
   createdWorkspace: boolean;
 } {
-  const existing = db.prepare(
-    'SELECT id FROM company WHERE archived_at IS NULL ORDER BY created_at LIMIT 1',
-  ).get() as { id: string } | undefined;
-  if (existing) {
-    // 组织 = f(活)：固定员工幂等确保（零组织决策，但对话可立即派发）
-    const staff = ensureWorkspaceStaff(db, existing.id);
-    return {
-      project: createProject(db, { companyId: existing.id, name: input.name, description: input.description, firstAgentId: staff.leadAgentId }),
-      companyId: existing.id,
-      createdWorkspace: false,
-    };
-  }
-  const workspace = createCompany(db, { name: '我的工作台', kind: 'general' });
-  const staff = ensureWorkspaceStaff(db, workspace.id);
+  // 公司退役批次A：「取首个在营公司、无则在营则建默认工作台」收敛到 ensureDefaultCompany 单例原语
+  const { company, created } = ensureDefaultCompany(db);
+  // 组织 = f(活)：固定员工幂等确保（零组织决策，但对话可立即派发）
+  const staff = ensureWorkspaceStaff(db, company.id);
   return {
-    project: createProject(db, { companyId: workspace.id, name: input.name, description: input.description, firstAgentId: staff.leadAgentId }),
-    companyId: workspace.id,
-    createdWorkspace: true,
+    project: createProject(db, { companyId: company.id, name: input.name, description: input.description, firstAgentId: staff.leadAgentId }),
+    companyId: company.id,
+    createdWorkspace: created,
   };
 }
 

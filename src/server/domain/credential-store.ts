@@ -2,12 +2,12 @@
  * 凭据库(平台级基本能力)。
  *
  * 所有 API/CLI 接入的凭据作为软件基本能力统一管理,凌驾于公司之上。
- * 创建公司时从默认派发到 company_credential,员工执行时三层解析:
+ * 员工执行时两级解析(公司级覆盖层已随公司退役 D4-1 下线):
  *
  *   ① 员工级覆盖:Agent Home profile/credentials.json(只存环境变量名覆盖,不存明文)
- *   ② 公司级覆盖:company_credential.override_key
- *   ③ 平台默认:credential_definition.credential_key
- *   ④ 系统回退:provider 默认(PROVIDER_DEFAULT_API_KEY_ENV,向后兼容)
+ *   ①.5 档案级覆盖:执行器档案 credentialRef(池化统一 2026-08-17)
+ *   ② 平台默认:credential_definition.credential_key
+ *   ③ 系统回退:provider 默认(PROVIDER_DEFAULT_API_KEY_ENV,向后兼容)
  *
  * 安全:只存环境变量名/引用,绝不存明文值。明文值始终由系统环境变量提供。
  */
@@ -198,72 +198,6 @@ export function setCredentialDefinitionDefault(db: DB, id: string, isDefault: bo
   return getCredentialDefinition(db, id)!;
 }
 
-// ===== 公司级凭据 CRUD =====
-
-export function listCompanyCredentials(db: DB, companyId: string): Array<CompanyCredential & { definition: CredentialDefinition }> {
-  const rows = db.prepare(`SELECT cc.*, cd.name AS d_name, cd.credential_key, cd.kind, cd.category, cd.description,
-    cd.applicable_executors, cd.is_default, cd.created_at AS d_created, cd.updated_at AS d_updated
-    FROM company_credential cc
-    JOIN credential_definition cd ON cd.id = cc.credential_definition_id
-    WHERE cc.company_id=? ORDER BY cd.category, cd.name`)
-    .all(companyId) as Array<CompanyCredentialRow & {
-      d_name: string; credential_key: string; kind: string; category: string;
-      description: string; applicable_executors: string; is_default: number; d_created: string; d_updated: string;
-    }>;
-  return rows.map((row) => ({
-    companyId: row.company_id,
-    credentialDefinitionId: row.credential_definition_id,
-    overrideKey: row.override_key,
-    enabled: row.enabled === 1,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    definition: {
-      id: row.credential_definition_id,
-      name: row.d_name,
-      credentialKey: row.credential_key,
-      kind: row.kind as CredentialKind,
-      category: row.category as CredentialCategory,
-      description: row.description,
-      applicableExecutors: row.applicable_executors ? row.applicable_executors.split(',').filter(Boolean) : [],
-      isDefault: row.is_default === 1,
-      createdAt: row.d_created,
-      updatedAt: row.d_updated,
-    },
-  }));
-}
-
-/** 创建公司时从默认凭据派发。 */
-export function dispatchDefaultCredentialsToCompany(db: DB, companyId: string): void {
-  const now = nowIso();
-  const defaults = db.prepare('SELECT id FROM credential_definition WHERE is_default=1').all() as Array<{ id: string }>;
-  db.transaction(() => {
-    for (const { id } of defaults) {
-      db.prepare(`INSERT OR IGNORE INTO company_credential (company_id, credential_definition_id, override_key, enabled, created_at, updated_at)
-        VALUES (?, ?, NULL, 1, ?, ?)`)
-        .run(companyId, id, now, now);
-    }
-  })();
-}
-
-/** 设置公司级凭据覆盖。 */
-export function setCompanyCredential(db: DB, companyId: string, definitionId: string, input: {
-  overrideKey?: string | null;
-  enabled?: boolean;
-}): CompanyCredential {
-  if (input.overrideKey && !ENV_KEY_PATTERN.test(input.overrideKey)) {
-    throw new AppError(ErrorCode.VALIDATION, 'overrideKey 必须是大写字母/数字/下划线,字母开头');
-  }
-  const now = nowIso();
-  db.prepare(`INSERT INTO company_credential (company_id, credential_definition_id, override_key, enabled, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT(company_id, credential_definition_id) DO UPDATE SET
-      override_key=excluded.override_key, enabled=excluded.enabled, updated_at=excluded.updated_at`)
-    .run(companyId, definitionId, input.overrideKey ?? null, input.enabled === false ? 0 : 1, now, now);
-  const row = db.prepare('SELECT * FROM company_credential WHERE company_id=? AND credential_definition_id=?')
-    .get(companyId, definitionId) as CompanyCredentialRow;
-  return companyCredFromRow(row);
-}
-
 // ===== 员工级凭据覆盖(Agent Home profile/credentials.json)=====
 
 interface EmployeeCredentialOverrides {
@@ -291,7 +225,7 @@ function readEmployeeCredentialOverrides(profileId: string): EmployeeCredentialO
       return result;
     }
   } catch {
-    /* 损坏的 credentials.json 忽略,回退到公司/平台层 */
+    /* 损坏的 credentials.json 忽略,回退到档案/平台层 */
   }
   return {};
 }
@@ -326,7 +260,7 @@ export function setEmployeeCredentialOverride(profileId: string, definitionId: s
 
 /**
  * 解析某项凭据最终生效的环境变量名。
- * 优先级:员工覆盖 > 公司覆盖 > 平台默认 > null。
+ * 优先级:员工覆盖 > 档案覆盖 > 平台默认 > null(公司层 D4-1 退役)。
  *
  * @param db 数据库
  * @param profileId 员工档案 ID(可空,跳过员工层)
@@ -335,20 +269,15 @@ export function setEmployeeCredentialOverride(profileId: string, definitionId: s
  * @returns 最终生效的环境变量名;无匹配定义时返回 null
  */
 export function resolveCredentialKey(db: DB, profileId: string | null, companyId: string | null, definitionId: string, profileRef?: string): string | null {
+  void companyId; // 公司退役 D4-1：公司级覆盖层已退役（三级→两级），参数留待物理去列批清理
   // ① 员工级覆盖
   if (profileId) {
     const overrides = readEmployeeCredentialOverrides(profileId);
     if (overrides[definitionId]) return overrides[definitionId];
   }
-  // ①.5 档案级覆盖（池化统一 2026-08-17：执行器档案 credentialRef 是员工与工作台之间的一层）
+  // ①.5 档案级覆盖（池化统一 2026-08-17：执行器档案 credentialRef 是员工与平台之间的一层；公司层 D4-1 已退役）
   if (profileRef) return profileRef;
-  // ② 公司级覆盖
-  if (companyId) {
-    const row = db.prepare('SELECT override_key FROM company_credential WHERE company_id=? AND credential_definition_id=? AND enabled=1')
-      .get(companyId, definitionId) as { override_key: string | null } | undefined;
-    if (row?.override_key) return row.override_key;
-  }
-  // ③ 平台默认
+  // ② 平台默认
   const def = db.prepare('SELECT credential_key FROM credential_definition WHERE id=?').get(definitionId) as { credential_key: string } | undefined;
   return def?.credential_key ?? null;
 }
