@@ -58,24 +58,34 @@ test('三点菜单：移除项目双语义 + 归档页恢复显示与删除记�
   await expect(page.getByRole('link', { name: new RegExp(project.name) }).first()).toBeVisible({ timeout: 8000 });
 });
 
-test('三点菜单：归档项目 → 归档页取消归档还原', async ({ page }) => {
+test('归档页：归档项目取消归档还原 + 行内按钮顺序（⋯仅移除 · 查看文件 · 新建任务）', async ({ page }) => {
   const response = await page.request.post('/api/projects/quick', {
     data: { name: `归档项目-${Date.now()}` },
   });
   const { project } = await response.json();
 
+  // 修订轮：⋯ 菜单只放「其他功能」（目前仅移除）；归档项目经 API（语义：任务归档为主、项目归档走归档区）
+  const arch = await page.request.patch(`/api/projects/${project.id}`, { data: { state: 'archived' } });
+  expect(arch.status()).toBe(200);
+
   await page.goto('/');
-  const row = page.locator(`[data-project-id="${project.id}"]`);
-  await row.getByRole('button', { name: '项目操作' }).click();
-  await row.getByRole('menuitem', { name: /归档项目/ }).click();
-  await expect(page.getByRole('link', { name: new RegExp(project.name) })).toHaveCount(0, { timeout: 8000 });
+  const row = page.locator(`[data-project-id="${project.id}"]`, { hasText: project.name });
+  await expect(row).toHaveCount(0, { timeout: 8000 });
 
   await page.goto('/archive');
   await page.getByRole('button', { name: '归档项目' }).click();
   const card = page.locator('li', { hasText: project.name });
+  await expect(card).toBeVisible({ timeout: 8000 });
   await card.getByRole('button', { name: /取消归档/ }).click();
   await expect(card).toHaveCount(0, { timeout: 8000 });
 
   await page.goto('/');
-  await expect(page.getByRole('link', { name: new RegExp(project.name) }).first()).toBeVisible({ timeout: 8000 });
+  const restored = page.locator(`[data-project-id="${project.id}"]`);
+  await expect(restored).toBeVisible({ timeout: 8000 });
+  // 行内按钮齐备：查看文件 / 新建任务；⋯ 菜单内只有移除
+  await expect(restored.getByRole('button', { name: '查看文件（目录树）' })).toBeVisible();
+  await expect(restored.getByRole('button', { name: '新建任务', exact: true })).toBeVisible();
+  await restored.getByRole('button', { name: '项目操作' }).click();
+  await expect(restored.getByRole('menuitem', { name: /移除项目/ })).toBeVisible();
+  await expect(restored.getByRole('menuitem', { name: /归档/ })).toHaveCount(0);
 });

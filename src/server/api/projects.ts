@@ -44,7 +44,7 @@ import { promoteProjectStagingIfAny } from '../domain/staging';
 import { deleteProjectTrigger, listProjectTriggers, registerDefaultNovelScheduleTriggers, registerScheduleTrigger, setProjectTriggerEnabled } from '../domain/triggers';
 import { initializeNovelProject } from '../domain/novel-template';
 import { getCharacterGraph } from '../domain/character-graph';
-import {archiveProjectTask,completeProjectTask,createProjectTask,deleteProjectTaskRecord,getProjectTaskInProject,listProjectTasks,restoreProjectTask,setProjectTaskPinned} from '../domain/project-task';
+import {archiveProjectTask,completeProjectTask,createProjectTask,deleteProjectTaskRecord,getProjectTaskInProject,listProjectTasks,reorderProjectTasks,restoreProjectTask,setProjectTaskPinned} from '../domain/project-task';
 import { listProjectFileTree } from '../domain/project-files';
 import {listProjectTaskThreads} from '../domain/project-task-thread';
 import { realtime } from '../realtime';
@@ -265,6 +265,8 @@ projectById.post('/project-tasks/:projectTaskId/archive',asyncHandler(async(req,
 projectById.post('/project-tasks/:projectTaskId/restore',asyncHandler(async(req,res)=>{const task=restoreProjectTask(getDb(),param(req,'projectTaskId'),param(req,'id'));realtime.publish(makeLifecycleEvent('project-task.created',{projectTaskId:task.id},{projectId:task.projectId}));res.json(task);}));
 /** 管理工作台批1：置顶/取消置顶（仅列表排序）。 */
 projectById.post('/project-tasks/:projectTaskId/pin',asyncHandler(async(req,res)=>{const input=z.object({pinned:z.boolean()}).parse(req.body);const task=setProjectTaskPinned(getDb(),param(req,'projectTaskId'),input.pinned,param(req,'id'));res.json(task);}));
+/** 管理工作台（修订轮）：任务拖动排序——orderedIds 自上而下。 */
+projectById.post('/project-tasks/reorder',asyncHandler(async(req,res)=>{const input=z.object({orderedIds:z.array(z.string().min(1)).min(1)}).parse(req.body);reorderProjectTasks(getDb(),param(req,'id'),input.orderedIds);res.json({ok:true});}));
 /** 管理工作台批1：删除归档任务的平台记录（不触碰仓库文件）。 */
 projectById.delete('/project-tasks/:projectTaskId',asyncHandler(async(req,res)=>{deleteProjectTaskRecord(getDb(),param(req,'projectTaskId'),param(req,'id'));res.json({ok:true});}));
 

@@ -6,9 +6,9 @@ import { emptyProjectLaunchBrief, type ProjectLaunchBrief, type ProjectLaunchDis
 import { readProjectLaunchSnapshot, type ProjectLaunchState } from './project-launch';
 
 export type ProjectTaskState='active'|'completed'|'archived';
-export interface ProjectTask{id:string;projectId:string;seq:number;title:string;brief:string;state:ProjectTaskState;pinned:boolean;launchState:ProjectLaunchState;launchBrief:ProjectLaunchBrief;capabilityDiscovery:ProjectLaunchDiscovery|null;launchConfirmedAt:string|null;completedAt:string|null;archivedAt:string|null;createdAt:string;updatedAt:string}
-type Row={id:string;project_id:string;seq:number;title:string;brief:string;state:ProjectTaskState;pinned:number;launch_state?:string;launch_brief_json?:string;capability_discovery_json?:string;launch_confirmed_at?:string|null;completed_at:string|null;archived_at:string|null;created_at:string;updated_at:string};
-const fromRow=(r:Row):ProjectTask=>{const launch=readProjectLaunchSnapshot(r);return{id:r.id,projectId:r.project_id,seq:r.seq,title:r.title,brief:r.brief,state:r.state,pinned:r.pinned===1,launchState:launch.state,launchBrief:launch.brief,capabilityDiscovery:launch.discovery,launchConfirmedAt:launch.confirmedAt,completedAt:r.completed_at,archivedAt:r.archived_at,createdAt:r.created_at,updatedAt:r.updated_at};};
+export interface ProjectTask{id:string;projectId:string;seq:number;title:string;brief:string;state:ProjectTaskState;pinned:boolean;sortOrder:number;launchState:ProjectLaunchState;launchBrief:ProjectLaunchBrief;capabilityDiscovery:ProjectLaunchDiscovery|null;launchConfirmedAt:string|null;completedAt:string|null;archivedAt:string|null;createdAt:string;updatedAt:string}
+type Row={id:string;project_id:string;seq:number;title:string;brief:string;state:ProjectTaskState;pinned:number;sort_order:number;launch_state?:string;launch_brief_json?:string;capability_discovery_json?:string;launch_confirmed_at?:string|null;completed_at:string|null;archived_at:string|null;created_at:string;updated_at:string};
+const fromRow=(r:Row):ProjectTask=>{const launch=readProjectLaunchSnapshot(r);return{id:r.id,projectId:r.project_id,seq:r.seq,title:r.title,brief:r.brief,state:r.state,pinned:r.pinned===1,sortOrder:r.sort_order,launchState:launch.state,launchBrief:launch.brief,capabilityDiscovery:launch.discovery,launchConfirmedAt:launch.confirmedAt,completedAt:r.completed_at,archivedAt:r.archived_at,createdAt:r.created_at,updatedAt:r.updated_at};};
 
 export function createProjectTask(db:DB,input:{projectId:string;title:string;brief?:string;launchState?:ProjectLaunchState;launchBrief?:ProjectLaunchBrief}):ProjectTask{
   getProject(db,input.projectId);const title=input.title.trim();if(!title)throw new AppError(ErrorCode.VALIDATION,'项目任务标题不能为空');
@@ -19,7 +19,9 @@ export function createProjectTask(db:DB,input:{projectId:string;title:string;bri
 }
 export function getProjectTask(db:DB,id:string):ProjectTask{const row=db.prepare('SELECT * FROM project_task WHERE id=?').get(id) as Row|undefined;if(!row)throw new AppError(ErrorCode.NOT_FOUND,`项目任务不存在: ${id}`);return fromRow(row);}
 export function getProjectTaskInProject(db:DB,id:string,projectId:string):ProjectTask{const task=getProjectTask(db,id);if(task.projectId!==projectId)throw new AppError(ErrorCode.VALIDATION,'项目任务不属于当前项目');return task;}
-export function listProjectTasks(db:DB,projectId:string):ProjectTask[]{return(db.prepare('SELECT * FROM project_task WHERE project_id=? ORDER BY pinned DESC, seq DESC').all(projectId) as Row[]).map(fromRow);}
+export function listProjectTasks(db:DB,projectId:string):ProjectTask[]{return(db.prepare('SELECT * FROM project_task WHERE project_id=? ORDER BY pinned DESC, sort_order ASC, seq DESC').all(projectId) as Row[]).map(fromRow);}
+/** 管理工作台（修订轮）：任务拖动排序——orderedIds 自上而下赋 1..N；列表序 sort_order ASC（未拖过的 0 在前=新任务靠顶，拖过的按手排）。 */
+export function reorderProjectTasks(db:DB,projectId:string,orderedIds:string[]):void{getProject(db,projectId);const now=nowIso();db.transaction(()=>{orderedIds.forEach((id,idx)=>{db.prepare('UPDATE project_task SET sort_order=?,updated_at=? WHERE id=? AND project_id=?').run(idx+1,now,id,projectId);});})();}
 /** 管理工作台：置顶/取消置顶（仅影响列表排序，不动执行语义）。 */
 export function setProjectTaskPinned(db:DB,id:string,pinned:boolean,projectId?:string):ProjectTask{const task=projectId?getProjectTaskInProject(db,id,projectId):getProjectTask(db,id);db.prepare('UPDATE project_task SET pinned=?,updated_at=? WHERE id=?').run(pinned?1:0,nowIso(),task.id);return getProjectTask(db,id);}
 /**

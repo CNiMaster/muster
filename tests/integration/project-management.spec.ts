@@ -157,6 +157,22 @@ describe('独立任务载体', () => {
   });
 });
 
+describe('任务拖动排序（修订轮）', () => {
+  it('reorder 后列表序即手排序；未拖过的新任务靠顶', async () => {
+    const { reorderProjectTasks } = await import('../../src/server/domain/project-task');
+    const p = proj('拖序', tmpRoot);
+    const a = createProjectTask(db, { projectId: p.id, title: 'A' });
+    const b = createProjectTask(db, { projectId: p.id, title: 'B' });
+    const c = createProjectTask(db, { projectId: p.id, title: 'C' });
+    // 手排：C 在最上，其次 A、B
+    reorderProjectTasks(db, p.id, [c.id, a.id, b.id]);
+    expect(listProjectTasks(db, p.id).map((t) => t.title)).toEqual(['C', 'A', 'B']);
+    // 新建未拖过（sort_order=0）→ 排在最前
+    createProjectTask(db, { projectId: p.id, title: '新任务' });
+    expect(listProjectTasks(db, p.id).map((t) => t.title)).toEqual(['新任务', 'C', 'A', 'B']);
+  });
+});
+
 describe('归档还原（批3）', () => {
   it('项目 archived → active 还原合法（updateProject state 出口）', () => {
     const p = proj('还原测试', tmpRoot);

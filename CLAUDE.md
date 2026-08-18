@@ -77,7 +77,8 @@ Key constraints for all new work:
 - **语义定案**：移除项目=移出显示区（可选删平台记录；**任何删除绝不触碰用户仓库目录**）；归档=进归档区可还原可删记录；独立任务=隐藏「独立任务」载体项目（收件箱同款 `settings.standalone`，零 schema 大改）；分组=手动自由分组（`project.settings_json` 承载 `group/sortOrder/removed`，零列变更）。
 - **服务端**：迁移 `20260819000500`（`project_task.pinned`）；`removeProject`（隐藏/删记录双语义，删前取消未终态任务，基础设施项目拒移除）；`listProjectFileTree`（只读目录树，复用 artifact 防逃逸口径，忽略 .git/node_modules，深度≤4 懒加载）；`GET /api/projects?view=archived|removed`、`DELETE /api/projects/:id`、`GET /:id/files/tree`、`POST/DELETE project-tasks/:id`（pin/删记录/restore）；状态机新增 `archived→active/drafting` 还原出口。
 - **客户端**：HomePage 重写为项目主页（去自动跳转）：紧凑对话开工 hero + 独立任务区（一行即建/置顶/归档）+ 分组管理（dnd-kit 组内拖动排序/跨组拖入/空组删除/组头折叠）+ 项目行（拖柄/折叠/状态徽章/active 任务前 5+「显示更多」/三点菜单：新建任务·查看文件·归档·移除双按钮确认）；`/projects/new?mode=open` 打开本地目录模式；侧栏 ProjectWorkNavigation 任务行置顶/归档 hover 操作+>5 折叠+区块折叠；切换器项目名旁「＋」；ArchivePage 增「归档项目」「归档任务」双 tab（还原/恢复显示/删记录，确认文案明示不动仓库）。公共组件：`DropdownMenu`、`FilesTreeModal`（树懒加载+文本预览）。
-- **测试**：集成 project-management.spec 12 例（移除双语义含目录保留断言/树防逃逸/深度语义/独立任务幂等置顶/还原链路）；e2e project-home.spec 3 例（独立任务+折叠显示更多/移除双语义+归档页恢复/归档还原），e2e 基线 21/21。
+- **修订轮（同日）**：项目行按钮定序 `⋯(其他功能,目前仅移除) → 📁查看文件 → ➕新建任务`（归档从行菜单移除，项目归档走归档区/API）；顶部工具条＝`#分组|项目` 视图切换 + 展开全部/收起全部 + 筛选排序（视图：按项目/时间线；排序：更新/创建时间）+ 归档入口；项目区头右侧「添加项目」、任务区（独立任务）头右侧「新建任务」；任务拖动排序持久化（迁移 `20260819000600` `project_task.sort_order`，`reorderProjectTasks` 自上而下赋 1..N，列表序 `pinned DESC, sort_order ASC, seq DESC`——未拖过的新任务靠顶）；时间线视图跨项目平铺 active 任务（useQueries）。
+- **测试**：集成 project-management.spec 13 例（移除双语义含目录保留断言/树防逃逸/深度语义/独立任务幂等置顶/还原链路）；e2e project-home.spec 3 例（独立任务+折叠显示更多/移除双语义+归档页恢复/归档还原+行内按钮顺序断言），e2e 基线 21/21。
 
 ## UI 重构 2026-08-16（批次 A-E，项目主导 + Composer 全功能 + 固定员工收敛）
 
