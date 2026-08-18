@@ -466,7 +466,7 @@ git commit -m "docs(company-drop): 批次 D 物理去列收口——spec 状态�
 | 计划修订（first_agent_id/review_mode 判活）| ✅ | bd09bba（docs 分支）| 用户拍板保留两列 |
 | Task 1 workbench 域原语+运行时 | ✅ | 5e2284e | company.ts 保留为测试夹具兼容壳 |
 | Task 2 组织人员域去列 | ✅ | ac3ffdd | 迁移 A 列级对账权威库通过 |
-| Task 3 任务/知识资产域去列 | ✅ | 65d70e7 | 迁移 B（10 张表去列）+ 域函数去参 |
+| Task 3 任务/知识资产域去列 | ✅ | 71e5fbe | 迁移 B（10 张表去列）+ 域函数去参 |
 | Task 4 能力卫星/死表/B2B 死流退役 | ✅ | 6d449bb | 迁移 C（5 张表去列+死表退役）+ 解锁 33 例测试 |
 | Task 5 契约面清扫(client/shared/realtime) | ✅ | 42eaa8d | Shared/Client DTO 与 realtime 全链去 companyId |
 | Task 6 company RENAME workbench | ✅ | dc63eef | 迁移 D（company 瘦身 RENAME workbench 单例表）+ 死列删除 |
@@ -492,3 +492,31 @@ git commit -m "docs(company-drop): 批次 D 物理去列收口——spec 状态�
 - 重建迁移的列抄写错误由两道闸拦：结构断言 spec（PRAGMA table_info）+ 全量单测（域函数读写）。
 - 真实库操作前强制备份（Task 6 Step 6），回退=恢复备份文件，零数据风险。
 - 最大风险点=Task 2/3 夹具适配量大（~110 文件）：tsc 是兜底网，逐文件机械替换。
+
+---
+
+## 终审修复轮（2026-08-18，验收高级模型执行）
+
+> 验收结论：Task 3-7 代码主体可用、测试数字属实，但 **Task 6 的真实库演练/冷启动断言未实际执行**（计划勾选框全空却标 ✅），迁移链在任何有数据的库上跑不通。终审按「验收报告修复清单」逐项修复后，批次 D 才真正落地。原始 Task 3-7 的进度表保留在上文不作美化。
+
+### 修复项
+1. **迁移 runner 外键规程**（`src/server/db/client.ts`）：逐文件事务外 `foreign_keys=OFF`、文件内 `foreign_key_check` 违规即回滚。原实现 FK=ON 下迁移 A 第一步 `DROP TABLE agent_definition` 即被外键拒绝——真实库副本演练复现，空库测试全绿属假阳性。
+2. **迁移 B closeout 形状无关重建**：真实库该表为历史漂移旧形状（无 blueprint_id 等 6 列），按共同列（id/task_id/project_id/persona_id/created_at）重建，真实库 0 行无损。
+3. **迁移 E（20260819000400_company_drop_leftovers.sql）**：plugin 表 CHECK 'company'→'workbench'（存量 13 行 CASE 映射、scope_id 清空）；补删漏网列 permission_rule.company_id（D4-3 承诺未兑现）与 task_reflection.company_id；reflection/permission 域函数同步去列去参。
+4. **plugin 契约 workbench 化**：shared PluginScope/PluginSource、plugins API（6 处空串构造）、plugin-adapter/install、marketplace×3、skill-author、tool-assembly、capability-binding、客户端 hooks/页面全链去 'company' 档与 companyId 占位；setCompanyPluginDecision 等签名去公司参。
+5. **运行时换域**：engine/context/projects/tasks 的 `getCompany` import 换 `domain/workbench`（engine 引用 workbench.firstAgentId 放蜂请示链路保持）；上下文注入标签 `# 公司章程`→`# 工作台章程`；credential-store/客户端死类型清理。
+6. **真实库清理与迁移已执行**：脚本 `scripts/company-drop-migrate-real-db.mts`（备份→清理 103 家冒烟垃圾→迁移 A-E→断言）dry-run 通过后 apply，终态 workbench 单行/员工 2/智能体 2（默认工作台组织数据完整）/垃圾项目任务全清。备份：`~/.muster-backups/muster-before-company-drop-2026-08-18T10-14-25-635Z.db`。
+7. **测试隔离结构修复**：`tests/unit/setup-dom.ts` 给 MUSTER_HOME 兜底临时目录。事故记录：部分单测裸调 `getDb()` 直写真实库（104 家垃圾公司来源）；2026-08-18 16:07 全量测试曾因此把迁移误跑到真实库——因 WAL 未 checkpoint 且主文件未动，隔离 -wal/-shm 后无损回退再正规迁移，零数据损失。
+
+### 决策点终裁（对应上文 6 项）
+1. company.ts 壳：本轮已把**运行时** 4 处 import 换 domain/workbench；壳降级为纯测试夹具（103 文件依赖），整体删除另开微批，不阻塞合并。
+2. createProject/createTask 跨司守卫放宽为存在性检查：**接受**（单例下原校验恒真，contactAllow/团队守卫仍在）。
+3. b2b 33 例：死流域代码+测试删除、活流程解锁，**方式正确**；余 2 例多公司隔离语义过时 skip 可随手删。
+4. 关机单工作台语义：coordinator/shutdown 单元素数组 + 客户端 Task 5 清扫，**接受**。
+5. 迁移 A 口径：终审用静态列对账脚本逐表复核，**11 表全部与权威库对齐**（含 CASE 值转换）。
+6. company_employee 表名/hidden 保留：**接受**（hidden 为人才市场/蜂群工蜂活列）。
+
+### 终验基线
+- `npm run typecheck`：0 错误
+- `npx vitest run`：除 web-tools 3 例（本地沙箱 DNS 环境性失败）全过，2 skipped（多公司隔离语义过时）
+- 迁移验收以「真实库副本 + FK 规程 + foreign_key_check」为准；**空库全绿不再作为迁移验收依据**（本轮教训）

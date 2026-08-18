@@ -10,7 +10,16 @@
 > 3. 迁移 C（20260819000200_company_drop_satellites.sql）：重构 5 张能力卫星表去 company_id，退役 b2b 契约死表与死流。
 > 4. 迁移 D（20260819000300_company_rename_workbench.sql）：company 表瘦身并 RENAME 为 workbench 单例表。
 > 5. 契约清扫：Shared DTO、Client API、Realtime 事件全链剥除 companyId，company.state 演进为 workbench.state。
-> 6. 验证：PRAGMA foreign_key_check 为空，tsc 0 错误，全量 188 个测试文件（1253 测试用例）100% 通过，18 例 Playwright e2e 通过，6 组 HTTP smoke 全通。
+>
+> 【终审修复轮，2026-08-18】验收终审发现迁移链从未在有数据的库上跑过（空库测试全绿属假阳性），修复后批次 D 才真正落地：
+> 1. **runner 外键规程**：runMigrations 逐文件事务外 `foreign_keys=OFF` + 文件内 `foreign_key_check` 违规即回滚（SQLite 官方表重建规程）。原实现 FK=ON 下 `DROP TABLE agent_definition` 被未重建子表外键直接拒绝——任何有数据的库上迁移 A 第一步即炸。
+> 2. **迁移 B closeout 形状无关重建**：真实库 task_closeout_summary 是历史漂移旧形状（无 blueprint_id/sections_json 等 6 列），按仓库链形状写的 INSERT SELECT 必炸 `no such column`；改为仅抄两形状共同列（真实库该表 0 行，无损）。
+> 3. **迁移 E（20260819000400_company_drop_leftovers.sql）**：plugin 表 CHECK 的 'company' 档→'workbench'（存量 13 行 CASE 映射）；补删漏网列 permission_rule.company_id（D4-3 承诺未兑现）与 task_reflection.company_id（reflection 域在用）。
+> 4. **plugin 契约 workbench 化**：PluginScope/PluginSource 'company' 成员改 'workbench'（无 id 载荷），plugins API/marketplace/skill-author/plugin-adapter 全链去 `companyId:''` 空串占位。
+> 5. **运行时换域**：engine/context/projects/tasks 的 getCompany import 换 domain/workbench；company.ts 仅存测试夹具壳（103 文件依赖，删除另开微批）。
+> 6. **真实库清理与迁移已执行**（脚本 `scripts/company-drop-migrate-real-db.mts` 留档）：备份至 ~/.muster-backups/ → 清理 103 家冒烟垃圾公司（留 co_default_workspace，组织数据完整）→ 迁移 A-E → 断言全过（foreign_key_check 空、workbench 单行）。
+> 7. **测试隔离结构修复**：setup-dom.ts 给 MUSTER_HOME 兜底临时目录——此前部分单测裸调 getDb() 直写真实库（104 家垃圾公司的来源），2026-08-18 曾因此在全量测试中把迁移误跑到真实库（WAL 未 checkpoint，主文件回退+隔离 WAL 无损恢复）。
+> 验证口径：tsc 0 错误；vitest 全量除 web-tools 3 例（本地沙箱 DNS 环境性失败）全过、2 skipped（多公司隔离语义过时）；迁移演练以「真实库副本 + FK 规程」为准，空库全绿不再作为迁移验收依据。
 
 ## 1. 现状与耦合面
 
