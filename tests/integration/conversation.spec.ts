@@ -56,7 +56,7 @@ describe('conversation messages', () => {
     // 新语义：收件箱项目自动创建，消息派给公司第一负责人
     expect(task).not.toBeNull();
     expect(task!.assigneeAgentId).toBe(r.agents.lead.id);
-    const inbox = db.prepare('SELECT * FROM project WHERE company_id=?').all(r.company.id)
+    const inbox = db.prepare('SELECT * FROM project').all()
       .map((row) => row as { name: string; settings_json: string })
       .find((row) => (JSON.parse(row.settings_json ?? '{}') as Record<string, unknown>)?.inbox === true);
     expect(inbox).toBeDefined();

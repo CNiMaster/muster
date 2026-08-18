@@ -67,10 +67,9 @@ export function runIdleReflectionPass(db: DB): Array<{ companyId: string; enqueu
     const spendToday = db
       .prepare(
         `SELECT COALESCE(SUM(u.cost_usd), 0) AS c FROM usage_record u
-         JOIN project p ON p.id = u.project_id
-         WHERE p.company_id=? AND u.recorded_at >= ?`,
+         WHERE u.recorded_at >= ?`,
       )
-      .get(company.id, today) as { c: number };
+      .get(today) as { c: number };
     if (spendToday.c >= budgetUSD) continue;
     const enqueued = enqueueIdleReflections(db, company.id, 2);
     if (enqueued > 0) results.push({ companyId: company.id, enqueued });
@@ -452,9 +451,8 @@ export class ProjectRuntimeCoordinator {
       if (company.state !== 'draining') continue;
       const active = this.db.prepare(
         `SELECT 1 FROM task t
-         JOIN project p ON p.id=t.project_id
-         WHERE p.company_id=? AND t.state IN ('claimed','running') LIMIT 1`,
-      ).get(company.id);
+         WHERE t.state IN ('claimed','running') LIMIT 1`,
+      ).get();
       if (!active) {
         transitionWorkbench(this.db, 'off');
         settled.push(company.id);

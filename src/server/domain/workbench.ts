@@ -22,7 +22,8 @@ export type WorkbenchState = CompanyState;
 
 /** 读单例工作台；无行返回 null（测试/零组织库场景，DTO 常量填充用）。 */
 export function getWorkbenchOrNull(db: DB): Workbench | null {
-  const row = db.prepare('SELECT * FROM company LIMIT 1').get() as WorkbenchRow | undefined;
+  const row = (db.prepare('SELECT * FROM company WHERE archived_at IS NULL ORDER BY created_at ASC LIMIT 1').get()
+    ?? db.prepare('SELECT * FROM company LIMIT 1').get()) as WorkbenchRow | undefined;
   return row ? fromRow(row) : null;
 }
 
@@ -75,7 +76,8 @@ export const DEFAULT_WORKBENCH_NAME = '默认工作台';
 
 /** 读单例工作台；无行则抛（正常路径启动已 ensure）。 */
 export function getWorkbench(db: DB): Workbench {
-  const row = db.prepare('SELECT * FROM company LIMIT 1').get() as WorkbenchRow | undefined;
+  const row = (db.prepare('SELECT * FROM company WHERE archived_at IS NULL ORDER BY created_at ASC LIMIT 1').get()
+    ?? db.prepare('SELECT * FROM company LIMIT 1').get()) as WorkbenchRow | undefined;
   if (!row) throw new AppError(ErrorCode.NOT_FOUND, '未找到默认工作台（启动时应 ensureWorkbench 创建）');
   return fromRow(row);
 }
@@ -125,7 +127,7 @@ function createWorkbenchRow(db: DB, input: { name: string; kind?: string; charte
     `INSERT INTO company (id, name, kind, state, charter, contract_json, first_agent_id, created_at, updated_at, review_mode)
      VALUES (?, ?, ?, 'off', ?, ?, NULL, ?, ?, 'blocking')`,
   ).run(id, input.name, input.kind ?? 'novel', input.charter ?? '', JSON.stringify(input.contractJson ?? {}), now, now);
-  return getWorkbench(db);
+  return fromRow(db.prepare('SELECT * FROM company WHERE id=?').get(id) as WorkbenchRow);
 }
 
 /** 工作台名在在营行中是否可用。 */
@@ -250,9 +252,8 @@ export function clockOut(db: DB): Workbench {
 function hasRunningTasks(db: DB, workbenchId: string): boolean {
   return Boolean(db.prepare(
     `SELECT 1 FROM task t
-     JOIN project p ON p.id=t.project_id
-     WHERE p.company_id=? AND t.state IN ('claimed','running') LIMIT 1`,
-  ).get(workbenchId));
+     WHERE t.state IN ('claimed','running') LIMIT 1`,
+  ).get());
 }
 
 /** 当前是否锁定组织配置。 */
@@ -270,15 +271,13 @@ export function assertWorkbenchHealthy(db: DB): void {
 
 /** L3：工作台活跃任务数（claimed/running）——标签栏"工作中/空闲"信号。 */
 export function getWorkbenchActivity(db: DB): Record<string, number> {
+  const wb = getWorkbenchOrNull(db);
+  if (!wb) return {};
   const row = db
     .prepare(
-      `SELECT p.company_id AS companyId, COUNT(*) AS n FROM task t
-       JOIN project p ON p.id = t.project_id
-       WHERE t.state IN ('claimed','running')
-       GROUP BY p.company_id`,
+      `SELECT COUNT(*) AS n FROM task t
+       WHERE t.state IN ('claimed','running')`,
     )
-    .all() as Array<{ companyId: string; n: number }>;
-  const map: Record<string, number> = {};
-  for (const r of row) map[r.companyId] = r.n;
-  return map;
+    .get() as { n: number };
+  return { [wb.id]: row.n };
 }

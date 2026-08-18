@@ -9,7 +9,7 @@ import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
 import { getProject } from './project';
-import { getCompany } from './company';
+import { getWorkbench, getWorkbenchOrNull } from './workbench';
 import { listAgents } from './agent';
 import { createTask } from './task';
 import type { ArtifactChange } from '../../shared/types';
@@ -23,7 +23,6 @@ export type ConsistencyCheckKind = 'omission' | 'continuity' | 'long_term';
 interface ScheduleTriggerRow {
   id: string;
   project_id: string | null;
-  company_id: string | null;
   interval_ms: number;
   schedule_kind: 'interval' | 'daily';
   time_of_day: string | null;
@@ -57,7 +56,6 @@ export interface ProjectTrigger {
 interface ProjectTriggerRow {
   id: string;
   project_id: string | null;
-  company_id: string | null;
   kind: 'event' | 'schedule';
   event_name: string | null;
   interval_ms: number | null;
@@ -73,11 +71,11 @@ interface ProjectTriggerRow {
   updated_at: string;
 }
 
-function triggerFromRow(row: ProjectTriggerRow): ProjectTrigger {
+function triggerFromRow(db: DB, row: ProjectTriggerRow): ProjectTrigger {
   return {
     id: row.id,
     projectId: row.project_id,
-    companyId: row.company_id,
+    companyId: getWorkbenchOrNull(db)?.id ?? null,
     kind: row.kind,
     eventName: row.event_name,
     intervalMs: row.interval_ms,
@@ -96,13 +94,12 @@ function triggerFromRow(row: ProjectTriggerRow): ProjectTrigger {
 export function listProjectTriggers(db: DB, projectId: string): ProjectTrigger[] {
   getProject(db, projectId);
   const rows = db.prepare('SELECT * FROM trigger WHERE project_id=? ORDER BY created_at DESC').all(projectId) as ProjectTriggerRow[];
-  return rows.map(triggerFromRow);
+  return rows.map((r) => triggerFromRow(db, r));
 }
 
-export function listCompanyTriggers(db: DB, companyId: string): ProjectTrigger[] {
-  getCompany(db, companyId);
-  const rows = db.prepare('SELECT * FROM trigger WHERE company_id=? ORDER BY created_at DESC').all(companyId) as ProjectTriggerRow[];
-  return rows.map(triggerFromRow);
+export function listCompanyTriggers(db: DB, companyId?: string): ProjectTrigger[] {
+  const rows = db.prepare('SELECT * FROM trigger WHERE project_id IS NULL ORDER BY created_at DESC').all() as ProjectTriggerRow[];
+  return rows.map((r) => triggerFromRow(db, r));
 }
 
 /** 统一计算下次执行时间：daily = 时区内下一个该时刻；interval = now + interval。 */
@@ -124,18 +121,18 @@ export function setProjectTriggerEnabled(db: DB, projectId: string, triggerId: s
     ? computeNextRunAt(row, new Date())
     : row.next_run_at;
   db.prepare('UPDATE trigger SET enabled=?, next_run_at=?, updated_at=? WHERE id=?').run(enabled ? 1 : 0, nextRunAt, now, triggerId);
-  return triggerFromRow(db.prepare('SELECT * FROM trigger WHERE id=?').get(triggerId) as ProjectTriggerRow);
+  return triggerFromRow(db, db.prepare('SELECT * FROM trigger WHERE id=?').get(triggerId) as ProjectTriggerRow);
 }
 
 export function setCompanyTriggerEnabled(db: DB, companyId: string, triggerId: string, enabled: boolean): ProjectTrigger {
-  const row = db.prepare('SELECT * FROM trigger WHERE id=? AND company_id=?').get(triggerId, companyId) as ProjectTriggerRow | undefined;
-  if (!row) throw new AppError(ErrorCode.NOT_FOUND, '计划任务不存在或不属于当前公司');
+  const row = db.prepare('SELECT * FROM trigger WHERE id=? AND project_id IS NULL').get(triggerId) as ProjectTriggerRow | undefined;
+  if (!row) throw new AppError(ErrorCode.NOT_FOUND, '计划任务不存在或不属于当前工作台');
   const now = nowIso();
   const nextRunAt = enabled && row.kind === 'schedule'
     ? computeNextRunAt(row, new Date())
     : row.next_run_at;
   db.prepare('UPDATE trigger SET enabled=?, next_run_at=?, updated_at=? WHERE id=?').run(enabled ? 1 : 0, nextRunAt, now, triggerId);
-  return triggerFromRow(db.prepare('SELECT * FROM trigger WHERE id=?').get(triggerId) as ProjectTriggerRow);
+  return triggerFromRow(db, db.prepare('SELECT * FROM trigger WHERE id=?').get(triggerId) as ProjectTriggerRow);
 }
 
 export function deleteProjectTrigger(db: DB, projectId: string, triggerId: string): void {
@@ -144,8 +141,8 @@ export function deleteProjectTrigger(db: DB, projectId: string, triggerId: strin
 }
 
 export function deleteCompanyTrigger(db: DB, companyId: string, triggerId: string): void {
-  const result = db.prepare('DELETE FROM trigger WHERE id=? AND company_id=?').run(triggerId, companyId);
-  if (!result.changes) throw new AppError(ErrorCode.NOT_FOUND, '计划任务不存在或不属于当前公司');
+  const result = db.prepare('DELETE FROM trigger WHERE id=? AND project_id IS NULL').run(triggerId);
+  if (!result.changes) throw new AppError(ErrorCode.NOT_FOUND, '计划任务不存在或不属于当前工作台');
 }
 
 /** 注册一个事件触发器（持久化）。 */
@@ -197,8 +194,6 @@ export function registerScheduleTrigger(
   }
   if (input.projectId) {
     getProject(db, input.projectId);
-  } else {
-    getCompany(db, input.companyId!);
   }
   const timezone = input.timezone ?? localTimezone();
   try {
@@ -215,13 +210,12 @@ export function registerScheduleTrigger(
     : new Date(now.getTime() + intervalMs).toISOString();
   db.prepare(
     `INSERT INTO trigger
-       (id, project_id, company_id, kind, interval_ms, schedule_kind, time_of_day, timezone,
+       (id, project_id, kind, interval_ms, schedule_kind, time_of_day, timezone,
         template_json, enabled, created_at, updated_at, next_run_at)
-     VALUES (?, ?, ?, 'schedule', ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
+     VALUES (?, ?, 'schedule', ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
   ).run(
     id,
     input.projectId ?? null,
-    input.companyId ?? null,
     intervalMs,
     isDaily ? 'daily' : 'interval',
     isDaily ? input.timeOfDay! : null,
@@ -238,20 +232,19 @@ export function registerScheduleTrigger(
 const OVERLAP_ACTIVE_STATES = new Set(['queued', 'claimed', 'running', 'waiting_input', 'waiting_dependency', 'paused', 'blocked']);
 
 /**
- * 领取并派发所有到期 schedule trigger（项目级 + 公司级）。
+ * 领取并派发所有到期 schedule trigger（项目级 + 工作台级）。
  *
  * next_run_at 在创建 Task 前于同一事务推进；派发失败会整体回滚，下一轮可重试。
- * 下班公司的 trigger 保持到期状态，上班后立即补派发。
+ * 下班状态保持到期状态，上班后立即补派发。
  * 防叠跑：上次 Task 仍 active → 跳过本轮并推进 next_run_at（trigger_skipped_overlap 留痕）。
  */
 export function dispatchDueScheduleTriggers(db: DB, now = new Date()): string[] {
+  const workbench = getWorkbench(db);
+  if (workbench.state !== 'online') return [];
+
   const nowMs = now.getTime();
   const candidates = db.prepare(
-    `SELECT tr.*
-       FROM trigger tr
-       LEFT JOIN project p ON p.id = tr.project_id
-       JOIN company c ON c.id = COALESCE(p.company_id, tr.company_id)
-      WHERE tr.kind = 'schedule' AND tr.enabled = 1 AND c.state = 'online'`,
+    `SELECT * FROM trigger WHERE kind = 'schedule' AND enabled = 1`,
   ).all() as ScheduleTriggerRow[];
   const dispatched: string[] = [];
 
@@ -262,11 +255,7 @@ export function dispatchDueScheduleTriggers(db: DB, now = new Date()): string[] 
 
     const taskId = transaction(db, () => {
       const current = db.prepare(
-        `SELECT tr.*
-           FROM trigger tr
-           LEFT JOIN project p ON p.id = tr.project_id
-           JOIN company c ON c.id = COALESCE(p.company_id, tr.company_id)
-          WHERE tr.id = ? AND tr.kind = 'schedule' AND tr.enabled = 1 AND c.state = 'online'`,
+        `SELECT * FROM trigger WHERE id = ? AND kind = 'schedule' AND enabled = 1`,
       ).get(candidate.id) as ScheduleTriggerRow | undefined;
       if (!current) return null;
 
@@ -298,13 +287,12 @@ export function dispatchDueScheduleTriggers(db: DB, now = new Date()): string[] 
         }
       }
 
-      // 公司级触发器：任务载体 = 公司最早项目（与对话公司 scope 派发一致）；
-      // 公司还没有项目时不推进 next_run_at（等有项目后立即补发）。
+      // 工作台级触发器：任务载体 = 最早项目；
+      // 还没有项目时不推进 next_run_at（等有项目后立即补发）。
       if (!current.project_id) {
-        const company = getCompany(db, current.company_id!);
-        const carrier = db.prepare('SELECT id FROM project WHERE company_id = ? ORDER BY created_at LIMIT 1')
-          .get(company.id) as { id: string } | undefined;
-        const assignee = template.assigneeAgentId ?? company.firstAgentId;
+        const carrier = db.prepare('SELECT id FROM project ORDER BY created_at LIMIT 1')
+          .get() as { id: string } | undefined;
+        const assignee = template.assigneeAgentId ?? workbench.firstAgentId;
         if (!template.title || !carrier || !assignee) return null;
         const task = createTask(db, {
           projectId: carrier.id,
@@ -315,7 +303,6 @@ export function dispatchDueScheduleTriggers(db: DB, now = new Date()): string[] 
             trigger: 'schedule',
             scheduleTriggerId: current.id,
             scope: 'company',
-            companyId: company.id,
             ...(template.inputProtocol ?? {}),
           },
         });

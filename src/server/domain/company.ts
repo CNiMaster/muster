@@ -15,6 +15,7 @@ import { shortId, nowIso } from '../../shared/utils';
 import type { CompanyState } from '../../shared/types';
 import { realtime } from '../realtime';
 import { log } from '../logger';
+import { getWorkbenchOrNull } from './workbench';
 
 export interface Company {
   id: string;
@@ -302,17 +303,15 @@ export function resumeShutdownPaused(db: DB): number {
 
 /** L3：各公司活跃任务数（claimed/running）——标签栏"工作中/空闲"信号。 */
 export function getCompaniesActivity(db: DB): Record<string, number> {
-  const rows = db
+  const wb = getWorkbenchOrNull(db);
+  if (!wb) return {};
+  const row = db
     .prepare(
-      `SELECT p.company_id AS companyId, COUNT(*) AS n FROM task t
-       JOIN project p ON p.id = t.project_id
-       WHERE t.state IN ('claimed','running')
-       GROUP BY p.company_id`,
+      `SELECT COUNT(*) AS n FROM task t
+       WHERE t.state IN ('claimed','running')`,
     )
-    .all() as Array<{ companyId: string; n: number }>;
-  const map: Record<string, number> = {};
-  for (const row of rows) map[row.companyId] = row.n;
-  return map;
+    .get() as { n: number };
+  return { [wb.id]: row.n };
 }
 
 /** 上班 = off → online。 */
@@ -333,9 +332,8 @@ export function clockOut(db: DB, id: string): Company {
 function hasRunningTasks(db: DB, companyId: string): boolean {
   return Boolean(db.prepare(
     `SELECT 1 FROM task t
-     JOIN project p ON p.id=t.project_id
-     WHERE p.company_id=? AND t.state IN ('claimed','running') LIMIT 1`,
-  ).get(companyId));
+     WHERE t.state IN ('claimed','running') LIMIT 1`,
+  ).get());
 }
 
 /** 当前是否锁定组织配置。 */

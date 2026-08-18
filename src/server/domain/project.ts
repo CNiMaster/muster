@@ -13,7 +13,7 @@ import { spawnSync } from 'node:child_process';
 import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
-import { getCompany, ensureDefaultCompany } from './company';
+import { getWorkbench, getWorkbenchOrNull, ensureWorkbench } from './workbench';
 import { ensureWorkspaceStaff } from './workspace-staff';
 import { getAgent } from './agent';
 import { ensureDefaultWorkspace } from './workspace';
@@ -78,7 +78,6 @@ export interface Project {
 
 interface ProjectRow {
   id: string;
-  company_id: string;
   name: string;
   description: string;
   root_dir: string;
@@ -90,10 +89,10 @@ interface ProjectRow {
   updated_at: string;
 }
 
-function fromRow(r: ProjectRow): Project {
+function fromRow(db: DB, r: ProjectRow): Project {
   return {
     id: r.id,
-    companyId: r.company_id,
+    companyId: getWorkbenchOrNull(db)?.id ?? '',
     name: r.name,
     description: r.description,
     rootDir: r.root_dir,
@@ -109,7 +108,7 @@ function fromRow(r: ProjectRow): Project {
 export function createProject(
   db: DB,
   input: {
-    companyId: string;
+    companyId?: string;
     name: string;
     description?: string;
     rootDir?: string;
@@ -120,41 +119,39 @@ export function createProject(
     playbookId?: string;
   },
 ): Project {
-  const company = getCompany(db, input.companyId);
+  const workbench = getWorkbench(db);
   const id = shortId('pr_');
   // rootDir 未指定时自动生成默认路径，降低建项目门槛。
   // ensureGitRepo() 会在首个 worktree 创建时自动 mkdir + git init。
   const requestedRootDir = input.rootDir?.trim();
   const rootDir = requestedRootDir || defaultRootDir(
     ensureDefaultWorkspace(db, join(homedir(), 'MusterWorkspace')).rootDir,
-    company.name,
+    workbench.name,
     input.name,
     id,
   );
-  const firstAgentId = input.firstAgentId ?? company.firstAgentId ?? undefined;
+  const firstAgentId = input.firstAgentId ?? workbench.firstAgentId ?? undefined;
   if (firstAgentId) {
-    // 公司退役批次D：agent 归属已是单例工作台（companyId 恒为工作台 id），
-    // 跨公司校验坍缩为存在性校验（类比 assertDepartmentInCompany）；createProject 的 company_id 列语义保留（Task3）。
     getAgent(db, firstAgentId);
   }
   const state = input.initialState ?? 'drafting';
   const now = nowIso();
   db.prepare(
-    `INSERT INTO project (id, company_id, name, description, root_dir, first_agent_id, state, settings_json, playbook_id, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, '{}', ?, ?, ?)`,
-  ).run(id, input.companyId, input.name, input.description ?? '', rootDir, firstAgentId ?? null, state, input.playbookId ?? null, now, now);
+    `INSERT INTO project (id, name, description, root_dir, first_agent_id, state, settings_json, playbook_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, '{}', ?, ?, ?)`,
+  ).run(id, input.name, input.description ?? '', rootDir, firstAgentId ?? null, state, input.playbookId ?? null, now, now);
   return getProject(db, id);
 }
 
 export function getProject(db: DB, id: string): Project {
   const row = db.prepare('SELECT * FROM project WHERE id = ?').get(id) as ProjectRow | undefined;
   if (!row) throw new AppError(ErrorCode.NOT_FOUND, `project ${id} not found`);
-  return fromRow(row);
+  return fromRow(db, row);
 }
 
-export function listProjects(db: DB, companyId: string): Project[] {
-  const rows = db.prepare('SELECT * FROM project WHERE company_id = ? ORDER BY created_at').all(companyId) as ProjectRow[];
-  return rows.map(fromRow);
+export function listProjects(db: DB, companyId?: string): Project[] {
+  const rows = db.prepare('SELECT * FROM project ORDER BY created_at').all() as ProjectRow[];
+  return rows.map((r) => fromRow(db, r));
 }
 
 /**
@@ -164,12 +161,11 @@ export function listProjects(db: DB, companyId: string): Project[] {
  * 可见性决策（Review 修复 I2）：收件箱是基础设施——不进项目列表/驾驶舱计数/继续项目建议
  * （消费方按 settings.inbox 过滤），用户经工作台对话与其交互。
  */
-export function ensureInboxProject(db: DB, companyId: string): { project: Project; created: boolean } {
-  const rows = db.prepare('SELECT * FROM project WHERE company_id=?').all(companyId) as ProjectRow[];
-  const existing = rows.map(fromRow).find((p) => (p.settings as Record<string, unknown>)?.inbox === true);
+export function ensureInboxProject(db: DB, companyId?: string): { project: Project; created: boolean } {
+  const rows = db.prepare('SELECT * FROM project').all() as ProjectRow[];
+  const existing = rows.map((r) => fromRow(db, r)).find((p) => (p.settings as Record<string, unknown>)?.inbox === true);
   if (existing) return { project: existing, created: false };
   const project = createProject(db, {
-    companyId,
     name: '收件箱',
     description: '随手问与冷启动对话的载体：这里的工作单来自工作台对话，不占用正式项目。',
     initialState: 'active',
@@ -190,13 +186,12 @@ export function createQuickProject(db: DB, input: { name: string; description?: 
   companyId: string;
   createdWorkspace: boolean;
 } {
-  // 公司退役批次A：「取首个在营公司、无则在营则建默认工作台」收敛到 ensureDefaultCompany 单例原语
-  const { company, created } = ensureDefaultCompany(db);
+  const { workbench, created } = ensureWorkbench(db);
   // 组织 = f(活)：固定员工幂等确保（零组织决策，但对话可立即派发）
   const staff = ensureWorkspaceStaff(db);
   return {
-    project: createProject(db, { companyId: company.id, name: input.name, description: input.description, firstAgentId: staff.leadAgentId }),
-    companyId: company.id,
+    project: createProject(db, { name: input.name, description: input.description, firstAgentId: staff.leadAgentId }),
+    companyId: workbench.id,
     createdWorkspace: created,
   };
 }
@@ -396,21 +391,15 @@ export function checkProjectHealth(db: DB, projectId: string): ProjectHealthIssu
   const issues: ProjectHealthIssue[] = [];
   // getProject 自身不存在会抛 NOT_FOUND，调用方应先确认项目存在
   const project = getProject(db, projectId);
-  const company = getCompany(db, project.companyId);
+  const workbench = getWorkbench(db);
 
-  if (!company.firstAgentId) {
-    issues.push({ code: 'company_no_first_agent', message: `公司「${company.name}」未设置第一负责人` });
+  if (!workbench.firstAgentId) {
+    issues.push({ code: 'company_no_first_agent', message: `工作台「${workbench.name}」未设置第一负责人` });
   }
   if (!project.firstAgentId) {
     issues.push({ code: 'project_no_first_agent', message: `项目「${project.name}」未设置第一负责人` });
   } else {
-    const firstAgent = getAgent(db, project.firstAgentId);
-    if (firstAgent.companyId !== project.companyId) {
-      issues.push({
-        code: 'first_agent_mismatch',
-        message: `项目第一负责人 ${firstAgent.name} 不属于项目所在公司`,
-      });
-    }
+    getAgent(db, project.firstAgentId);
   }
 
   // 引用项目可读性：每条引用的 source_project 都必须存在

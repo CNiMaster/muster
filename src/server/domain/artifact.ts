@@ -182,10 +182,10 @@ export function artifactGallery(db: DB, projectId: string, groupBy: 'time' | 'ty
 }
 
 /** 公司级跨项目成品聚合。 */
-export function companyArtifactGallery(db: DB, companyId: string, groupBy: 'time' | 'type' | 'project' = 'time'): Array<ArtifactGalleryGroup & { projectId?: string; projectName?: string }> {
+export function companyArtifactGallery(db: DB, companyId?: string, groupBy: 'time' | 'type' | 'project' = 'time'): Array<ArtifactGalleryGroup & { projectId?: string; projectName?: string }> {
   const rows = db.prepare(`SELECT a.*, p.name AS project_name FROM artifact a
     JOIN project p ON p.id = a.project_id
-    WHERE p.company_id = ? ORDER BY a.created_at DESC`).all(companyId) as Array<ArtifactRow & { project_name: string }>;
+    ORDER BY a.created_at DESC`).all() as Array<ArtifactRow & { project_name: string }>;
   const groups = new Map<string, Array<Artifact & { projectName: string }>>();
   for (const row of rows) {
     const key = groupBy === 'time' ? row.created_at.slice(0, 10) : groupBy === 'type' ? row.kind : row.project_id;

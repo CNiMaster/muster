@@ -23,6 +23,7 @@ import { promoteProjectStagingIfAny } from './staging';
 import { createTempEmployment, dismissTempWorker, markTempGreyed } from './temp-worker';
 import { ensurePrimaryThread } from './thread';
 import { getPersona } from './persona-library';
+import { getWorkbenchOrNull } from './workbench';
 import type { SwarmPlan } from '../../shared/types';
 
 export const SWARM_WORKER_ROLE = 'swarm-worker';
@@ -63,7 +64,6 @@ export interface SwarmRun {
 
 interface SwarmRunRow {
   id: string;
-  company_id: string;
   project_id: string;
   root_task_id: string;
   synthesis_task_id: string | null;
@@ -81,10 +81,10 @@ interface SwarmRunRow {
   requester_agent_id: string | null;
 }
 
-function swarmFromRow(r: SwarmRunRow): SwarmRun {
+function swarmFromRow(db: DB, r: SwarmRunRow): SwarmRun {
   return {
     id: r.id,
-    companyId: r.company_id,
+    companyId: getWorkbenchOrNull(db)?.id ?? '',
     projectId: r.project_id,
     rootTaskId: r.root_task_id,
     requesterAgentId: r.requester_agent_id ?? null,
@@ -106,21 +106,21 @@ function swarmFromRow(r: SwarmRunRow): SwarmRun {
 export function getSwarmRun(db: DB, id: string): SwarmRun {
   const row = db.prepare('SELECT * FROM swarm_run WHERE id=?').get(id) as SwarmRunRow | undefined;
   if (!row) throw new AppError(ErrorCode.NOT_FOUND, `swarm ${id} not found`);
-  return swarmFromRow(row);
+  return swarmFromRow(db, row);
 }
 
 /** 建群：限额在创建时定格为快照（群内不再随设置变化漂移）；requesterAgentId 记录发起者（派遣分级用）。 */
 export function createSwarmRun(db: DB, input: {
-  companyId: string; projectId: string; rootTaskId: string; goal: string;
+  companyId?: string; projectId: string; rootTaskId: string; goal: string;
   requesterAgentId?: string; limitsOverride?: { maxDepth: number; maxWidth: number; maxNodes: number; budgetUsd: number };
 }): SwarmRun {
   const limits = input.limitsOverride ?? getSwarmLimits(db);
   const id = shortId('sw_');
   const now = nowIso();
   db.prepare(
-    `INSERT INTO swarm_run (id, company_id, project_id, root_task_id, goal, status, max_depth, max_width, max_nodes, budget_usd, requester_agent_id, created_at)
-     VALUES (?,?,?,?,?,'active',?,?,?,?,?,?)`,
-  ).run(id, input.companyId, input.projectId, input.rootTaskId, input.goal, limits.maxDepth, limits.maxWidth, limits.maxNodes, limits.budgetUsd, input.requesterAgentId ?? null, now);
+    `INSERT INTO swarm_run (id, project_id, root_task_id, goal, status, max_depth, max_width, max_nodes, budget_usd, requester_agent_id, created_at)
+     VALUES (?,?,?,?,'active',?,?,?,?,?,?)`,
+  ).run(id, input.projectId, input.rootTaskId, input.goal, limits.maxDepth, limits.maxWidth, limits.maxNodes, limits.budgetUsd, input.requesterAgentId ?? null, now);
   return getSwarmRun(db, id);
 }
 
@@ -645,7 +645,6 @@ export function materializeSwarm(
     }
   } else {
     swarm = createSwarmRun(db, {
-      companyId: (db.prepare('SELECT company_id AS id FROM project WHERE id=?').get(sourceTask.projectId) as { id: string }).id,
       projectId: sourceTask.projectId,
       rootTaskId: sourceTask.id,
       goal: plan.goal || sourceTask.title,

@@ -157,10 +157,9 @@ export function getOnboardingPassRate(
            COUNT(*) AS total,
            SUM(CASE WHEN t.state='completed' AND t.rework_count = 0 THEN 1 ELSE 0 END) AS passed
          FROM task t
-         JOIN project pr ON pr.id = t.project_id
-         WHERE pr.company_id = ? AND ${scope}`,
+         WHERE ${scope}`,
       )
-      .get(filter.companyId) as { total: number; passed: number } | undefined;
+      .get() as { total: number; passed: number } | undefined;
     const total = row?.total ?? 0;
     if (total === 0) return null;
     return (row?.passed ?? 0) / total;

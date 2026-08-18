@@ -25,16 +25,18 @@ export interface BlueprintOptimizationItem {
   createdAt: string;
 }
 
+import { getWorkbenchOrNull } from './workbench';
+
 interface ItemRow {
-  id: string; company_id: string; blueprint_id: string; action_type: string;
+  id: string; blueprint_id: string; action_type: string;
   target_blueprint_id: string | null; reason: string; expected_effect: string;
   params_json: string; status: string; created_at: string;
 }
 
-function fromRow(row: ItemRow): BlueprintOptimizationItem {
+function fromRow(db: DB, row: ItemRow): BlueprintOptimizationItem {
   return {
     id: row.id,
-    companyId: row.company_id,
+    companyId: getWorkbenchOrNull(db)?.id ?? '',
     blueprintId: row.blueprint_id,
     actionType: row.action_type as BlueprintOptimizationActionType,
     targetBlueprintId: row.target_blueprint_id,
@@ -50,9 +52,9 @@ function insertItem(db: DB, companyId: string, item: Omit<BlueprintOptimizationI
   const now = nowIso();
   db.prepare(
     `INSERT INTO blueprint_optimization_item
-      (id, company_id, blueprint_id, action_type, target_blueprint_id, reason, expected_effect, params_json, status, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
-  ).run(shortId('boi_'), companyId, item.blueprintId, item.actionType, item.targetBlueprintId ?? null,
+      (id, blueprint_id, action_type, target_blueprint_id, reason, expected_effect, params_json, status, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+  ).run(shortId('boi_'), item.blueprintId, item.actionType, item.targetBlueprintId ?? null,
     item.reason, item.expectedEffect, JSON.stringify(item.params ?? {}), now);
 }
 
@@ -77,18 +79,18 @@ export function insertPendingOptimizationItem(
 ): boolean {
   const exists = db.prepare(
     `SELECT 1 FROM blueprint_optimization_item
-      WHERE company_id=? AND blueprint_id=? AND action_type=? AND status='pending' LIMIT 1`,
-  ).get(companyId, item.blueprintId, item.actionType);
+      WHERE blueprint_id=? AND action_type=? AND status='pending' LIMIT 1`,
+  ).get(item.blueprintId, item.actionType);
   if (exists) return false;
   insertItem(db, companyId, item);
   return true;
 }
 
-export function listOptimizationItems(db: DB, companyId: string, blueprintId?: string): BlueprintOptimizationItem[] {
+export function listOptimizationItems(db: DB, companyId?: string, blueprintId?: string): BlueprintOptimizationItem[] {
   const rows = (blueprintId
-    ? db.prepare('SELECT * FROM blueprint_optimization_item WHERE company_id=? AND blueprint_id=? ORDER BY created_at DESC').all(companyId, blueprintId)
-    : db.prepare('SELECT * FROM blueprint_optimization_item WHERE company_id=? ORDER BY created_at DESC').all(companyId)) as ItemRow[];
-  return rows.map(fromRow);
+    ? db.prepare('SELECT * FROM blueprint_optimization_item WHERE blueprint_id=? ORDER BY created_at DESC').all(blueprintId)
+    : db.prepare('SELECT * FROM blueprint_optimization_item ORDER BY created_at DESC').all()) as ItemRow[];
+  return rows.map((r) => fromRow(db, r));
 }
 
 
@@ -97,7 +99,7 @@ export function applyOptimizationItem(db: DB, itemId: string): { applied: boolea
   const row = db.prepare('SELECT * FROM blueprint_optimization_item WHERE id=?').get(itemId) as ItemRow | undefined;
   if (!row) throw new Error('优化建议不存在');
   if (row.status !== 'pending') return { applied: false, message: '该建议已处理' };
-  const item = fromRow(row);
+  const item = fromRow(db, row);
   let message = '';
   // 断电安全：动作落地 + 建议状态同事务（嵌套事务自动落 savepoint）——崩溃不会出现"已改蓝图但建议仍 pending"导致的重复采纳
   const applied = db.transaction((): boolean => {

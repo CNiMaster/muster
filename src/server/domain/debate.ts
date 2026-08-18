@@ -26,6 +26,8 @@ import { createTempEmployment, dismissTempWorker } from './temp-worker';
 import { ensurePrimaryThread } from './thread';
 import { ensureSystemAgents, getJudgeAgentId } from './system-agents';
 import { postSystemMessage } from './conversation';
+import { getWorkbenchOrNull } from './workbench';
+
 export const DEBATER_ROLE = 'debater';
 /** 两轮封顶：R1 立论 + R2 互攻（外部研究：3 轮后收益递减甚至下降——从众塌缩/跑题漂移）。 */
 export const DEBATE_MAX_ADVOCATES = 3;
@@ -45,7 +47,6 @@ export interface DebateSummary {
 
 interface DebateRow {
   id: string;
-  company_id: string;
   project_id: string | null;
   question: string;
   options_json: string;
@@ -59,10 +60,10 @@ interface DebateRow {
   resolved_at: string | null;
 }
 
-function debateFromRow(r: DebateRow): DebateSummary {
+function debateFromRow(db: DB, r: DebateRow): DebateSummary {
   return {
     id: r.id,
-    companyId: r.company_id,
+    companyId: getWorkbenchOrNull(db)?.id ?? '',
     projectId: r.project_id,
     question: r.question,
     options: JSON.parse(r.options_json || '[]') as QuestionOption[],
@@ -77,24 +78,24 @@ function debateFromRow(r: DebateRow): DebateSummary {
 export function getDebate(db: DB, id: string): DebateSummary {
   const row = db.prepare('SELECT * FROM debate WHERE id=?').get(id) as DebateRow | undefined;
   if (!row) throw new AppError(ErrorCode.NOT_FOUND, `debate ${id} not found`);
-  return debateFromRow(row);
+  return debateFromRow(db, row);
 }
 
-export function listDebates(db: DB, companyId: string, limit = 30): DebateSummary[] {
-  const rows = db.prepare('SELECT * FROM debate WHERE company_id=? ORDER BY created_at DESC LIMIT ?').all(companyId, limit) as DebateRow[];
-  return rows.map(debateFromRow);
+export function listDebates(db: DB, companyId?: string, limit = 30): DebateSummary[] {
+  const rows = db.prepare('SELECT * FROM debate ORDER BY created_at DESC LIMIT ?').all(limit) as DebateRow[];
+  return rows.map((r) => debateFromRow(db, r));
 }
 
 /** 近期用户决策记录（偏好画像，注入辩手/裁决上下文）。 */
-export function recentDecisions(db: DB, companyId: string, limit = 5): Array<{ question: string; chosen: string; rationale: string | null; source: string; createdAt: string }> {
+export function recentDecisions(db: DB, companyId?: string, limit = 5): Array<{ question: string; chosen: string; rationale: string | null; source: string; createdAt: string }> {
   return db.prepare(
     `SELECT question, chosen, rationale, source, created_at FROM decision_record
-     WHERE company_id=? ORDER BY created_at DESC LIMIT ?`,
-  ).all(companyId, limit) as Array<{ question: string; chosen: string; rationale: string | null; source: string; createdAt: string }>;
+     ORDER BY created_at DESC LIMIT ?`,
+  ).all(limit) as Array<{ question: string; chosen: string; rationale: string | null; source: string; createdAt: string }>;
 }
 
 export function recordDecision(db: DB, input: {
-  companyId: string;
+  companyId?: string;
   debateId?: string | null;
   question: string;
   options: QuestionOption[];
@@ -105,10 +106,10 @@ export function recordDecision(db: DB, input: {
   source: 'user' | 'auto';
 }): void {
   db.prepare(
-    `INSERT INTO decision_record (id, company_id, debate_id, question, options_json, chosen, chosen_option_id, rationale, context, source, created_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO decision_record (id, debate_id, question, options_json, chosen, chosen_option_id, rationale, context, source, created_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?)`,
   ).run(
-    shortId('dr_'), input.companyId, input.debateId ?? null, input.question,
+    shortId('dr_'), input.debateId ?? null, input.question,
     JSON.stringify(input.options), input.chosen, input.chosenOptionId ?? null,
     input.rationale ?? null, input.context ?? null, input.source, nowIso(),
   );
@@ -184,9 +185,9 @@ export function startDebate(db: DB, input: StartDebateInput): StartedDebate {
 
   const debateId = shortId('db_');
   db.prepare(
-    `INSERT INTO debate (id, company_id, project_id, question, options_json, status, origin_task_id, origin_scope_kind, origin_scope_id, created_at)
-     VALUES (?,?,?,?,?,'open',?,?,?,?)`,
-  ).run(debateId, input.companyId, input.projectId, input.question, JSON.stringify(input.options), input.originTaskId, input.originScopeKind ?? null, input.originScopeId ?? null, nowIso());
+    `INSERT INTO debate (id, project_id, question, options_json, status, origin_task_id, origin_scope_kind, origin_scope_id, created_at)
+     VALUES (?,?,?,?,'open',?,?,?,?)`,
+  ).run(debateId, input.projectId, input.question, JSON.stringify(input.options), input.originTaskId, input.originScopeKind ?? null, input.originScopeId ?? null, nowIso());
 
   const base = {
     projectId: input.projectId,
@@ -412,10 +413,8 @@ export function finalizeDebate(db: DB, debateId: string, verdict: DebateVerdict)
 /** 用户经 clarify 选择后沉淀决策记录（answerClarification 的选项路径调用）。 */
 export function recordDecisionFromClarify(db: DB, taskId: string, option: QuestionOption): void {
   const task = getTask(db, taskId);
-  const companyId = (db.prepare('SELECT company_id AS c FROM project WHERE id=?').get(task.projectId) as { c: string }).c;
   const debateRow = db.prepare("SELECT id FROM debate WHERE origin_task_id=? AND status IN ('open','escalated') ORDER BY created_at DESC LIMIT 1").get(taskId) as { id: string } | undefined;
   recordDecision(db, {
-    companyId,
     debateId: debateRow?.id ?? null,
     question: task.question ?? task.title,
     options: task.questionOptions ?? [],

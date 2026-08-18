@@ -21,6 +21,7 @@ import { DISPATCHER_ROLE, ensureSystemAgents, getDispatcherAgentId } from '../..
 import { TaskEngine } from '../../src/server/task-engine/engine';
 import { FakeExecutor } from '../../src/server/task-engine/fake-executor';
 import { makeTestDb, makeTempGitRepo } from './setup';
+import { getWorkbench } from '../../src/server/domain/workbench';
 
 let db: DB;
 
@@ -369,7 +370,7 @@ describe('W3 引擎接线', () => {
     ).get(leadTask.id)).toMatchObject({ c: 1 });
 
     // 控制面（蜂群工蜂角色）返回 swarmPlan → 仍忽略（completed 正常落账）
-    const beeRole = createAgent(db, { companyId: (db.prepare('SELECT company_id AS id FROM project WHERE id=?').get(project.id) as { id: string }).id, name: '工蜂测试', role: 'swarm-worker', responsibilities: '', contactAllow: [lead.id], tempRecruit: true });
+    const beeRole = createAgent(db, { companyId: getWorkbench(db).id, name: '工蜂测试', role: 'swarm-worker', responsibilities: '', contactAllow: [lead.id], tempRecruit: true });
     fake.script([
       {
         result: {

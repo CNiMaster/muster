@@ -68,7 +68,7 @@ function searchMemoryArchive(db: DB, companyId: string, excludeProjectId: string
 function searchResearchArchive(db: DB, companyId: string, excludeProjectId: string | undefined, tokens: string[]): Array<{ row: ProjectRow; summary: string }> {
   // Review 修复：空词元不回全量（防御：无有效词元时宁可不搜调研摘要）。
   if (tokens.length === 0) return [];
-  const rows = db.prepare('SELECT id, name, settings_json, updated_at FROM project WHERE company_id=?').all(companyId) as ProjectRow[];
+  const rows = db.prepare('SELECT id, name, settings_json, updated_at FROM project').all() as ProjectRow[];
   const out: Array<{ row: ProjectRow; summary: string }> = [];
   for (const row of rows) {
     if (excludeProjectId && row.id === excludeProjectId) continue;
@@ -93,13 +93,13 @@ function searchArtifactArchive(db: DB, companyId: string, excludeProjectId: stri
   const sql = `SELECT a.project_id, a.path, a.kind, a.created_at, p.name AS project_name
     FROM artifact a
     JOIN project p ON p.id = a.project_id
-    WHERE p.company_id=?
+    WHERE 1=1
       ${excludeProjectId ? 'AND a.project_id != ?' : ''}
       AND (${likes})
     ORDER BY a.created_at DESC LIMIT 10`;
   const params: unknown[] = excludeProjectId
-    ? [companyId, excludeProjectId, ...values]
-    : [companyId, ...values];
+    ? [excludeProjectId, ...values]
+    : [...values];
   return db.prepare(sql).all(...params) as Array<ArtifactHitRow & { project_name: string }>;
 }
 

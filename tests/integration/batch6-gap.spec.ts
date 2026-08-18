@@ -33,18 +33,16 @@ function aggregateStatusBoard(db: DB, companyId: string) {
     .prepare(
       `SELECT t.id, t.agent_id, t.state AS thread_state, t.project_id
        FROM project_agent_thread t
-       JOIN project p ON p.id = t.project_id
-       WHERE p.company_id=? AND t.kind='primary'`,
+       WHERE t.kind='primary'`,
     )
-    .all(companyId) as Array<{ id: string; agent_id: string; thread_state: string; project_id: string }>;
+    .all() as Array<{ id: string; agent_id: string; thread_state: string; project_id: string }>;
   const tasks = db
     .prepare(
       `SELECT tk.id, tk.title, tk.state, tk.assignee_agent_id, tk.project_id
        FROM task tk
-       JOIN project p ON p.id = tk.project_id
-       WHERE p.company_id=? AND tk.state IN ('queued','claimed','running','waiting_input','waiting_dependency','paused')`,
+       WHERE tk.state IN ('queued','claimed','running','waiting_input','waiting_dependency','paused')`,
     )
-    .all(companyId) as Array<{ id: string; title: string; state: string; assignee_agent_id: string | null; project_id: string }>;
+    .all() as Array<{ id: string; title: string; state: string; assignee_agent_id: string | null; project_id: string }>;
   const result = departments.map((dept) => ({
     id: dept.id,
     name: dept.name,

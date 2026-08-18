@@ -1,7 +1,7 @@
 import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
-import { isOrgLocked } from './company';
+import { getWorkbench, getWorkbenchOrNull } from './workbench';
 import { getAgent, listAgents } from './agent';
 import { getProject } from './project';
 import { createTask, type Task } from './task';
@@ -55,7 +55,6 @@ export interface WorkflowEdge {
 
 interface WorkflowNodeRow {
   id: string;
-  company_id: string;
   workflow_id: string;
   kind: string;
   label: string;
@@ -66,7 +65,6 @@ interface WorkflowNodeRow {
 
 interface WorkflowEdgeRow {
   id: string;
-  company_id: string;
   workflow_id: string;
   source_id: string;
   target_id: string;
@@ -76,10 +74,10 @@ interface WorkflowEdgeRow {
   created_at: string;
 }
 
-function nodeFromRow(r: WorkflowNodeRow): WorkflowNode {
+function nodeFromRow(db: DB, r: WorkflowNodeRow): WorkflowNode {
   return {
     id: r.id,
-    companyId: r.company_id,
+    companyId: getWorkbenchOrNull(db)?.id ?? '',
     workflowId: r.workflow_id,
     kind: r.kind as any,
     label: r.label,
@@ -105,10 +103,10 @@ function parseEdgeCondition(json: string, label: string): EdgeCondition {
   return { type: 'agent_label' };
 }
 
-function edgeFromRow(r: WorkflowEdgeRow): WorkflowEdge {
+function edgeFromRow(db: DB, r: WorkflowEdgeRow): WorkflowEdge {
   return {
     id: r.id,
-    companyId: r.company_id,
+    companyId: getWorkbenchOrNull(db)?.id ?? '',
     workflowId: r.workflow_id,
     sourceId: r.source_id,
     targetId: r.target_id,
@@ -125,15 +123,15 @@ export function getWorkflow(
   workflowId: string,
 ): { nodes: WorkflowNode[]; edges: WorkflowEdge[] } {
   const nodeRows = db
-    .prepare('SELECT * FROM workflow_node WHERE company_id = ? AND workflow_id = ?')
-    .all(companyId, workflowId) as WorkflowNodeRow[];
+    .prepare('SELECT * FROM workflow_node WHERE workflow_id = ?')
+    .all(workflowId) as WorkflowNodeRow[];
   const edgeRows = db
-    .prepare('SELECT * FROM workflow_edge WHERE company_id = ? AND workflow_id = ?')
-    .all(companyId, workflowId) as WorkflowEdgeRow[];
+    .prepare('SELECT * FROM workflow_edge WHERE workflow_id = ?')
+    .all(workflowId) as WorkflowEdgeRow[];
 
   return {
-    nodes: nodeRows.map(nodeFromRow),
-    edges: edgeRows.map(edgeFromRow),
+    nodes: nodeRows.map((r) => nodeFromRow(db, r)),
+    edges: edgeRows.map((r) => edgeFromRow(db, r)),
   };
 }
 
@@ -146,7 +144,7 @@ export function saveWorkflow(
     edges: Array<{ sourceId: string; targetId: string; label?: string; condition?: EdgeCondition; maxTraversals?: number }>;
   },
 ): void {
-  if (isOrgLocked(db, companyId)) {
+  if (getWorkbench(db).state !== 'off') {
     throw new AppError(ErrorCode.COMPANY_LOCKED, '上班期间不能修改工作流图');
   }
 
@@ -161,8 +159,8 @@ export function saveWorkflow(
   // 用 better-sqlite3 事务包裹删除与重新写入
   db.transaction(() => {
     // 1. 删除现有
-    db.prepare('DELETE FROM workflow_node WHERE company_id = ? AND workflow_id = ?').run(companyId, workflowId);
-    db.prepare('DELETE FROM workflow_edge WHERE company_id = ? AND workflow_id = ?').run(companyId, workflowId);
+    db.prepare('DELETE FROM workflow_node WHERE workflow_id = ?').run(workflowId);
+    db.prepare('DELETE FROM workflow_edge WHERE workflow_id = ?').run(workflowId);
 
     // 2. 写入 node
     const nodeMap = new Map<string, string>(); // 原 id/新 id 映射，如果是 React Flow 自动生成的字符串 ID 则保留它
@@ -170,11 +168,10 @@ export function saveWorkflow(
       const dbId = n.id || shortId('wn_');
       nodeMap.set(n.id || dbId, dbId);
       db.prepare(
-        `INSERT INTO workflow_node (id, company_id, workflow_id, kind, label, position_json, props_json, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO workflow_node (id, workflow_id, kind, label, position_json, props_json, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
       ).run(
         dbId,
-        companyId,
         workflowId,
         n.kind,
         n.label,
@@ -193,11 +190,10 @@ export function saveWorkflow(
       }
       const edgeId = shortId('we_');
       db.prepare(
-        `INSERT INTO workflow_edge (id, company_id, workflow_id, source_id, target_id, label, condition_json, max_traversals, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO workflow_edge (id, workflow_id, source_id, target_id, label, condition_json, max_traversals, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
         edgeId,
-        companyId,
         workflowId,
         sourceDbId,
         targetDbId,
@@ -224,10 +220,7 @@ function normalizeAndValidateProps(
   const assigneeAgentId = typeof raw.assigneeAgentId === 'string' ? raw.assigneeAgentId : undefined;
   const assigneeRole = typeof raw.assigneeRole === 'string' ? raw.assigneeRole : undefined;
   if (assigneeAgentId) {
-    const agent = getAgent(db, assigneeAgentId);
-    if (agent.companyId !== companyId) {
-      throw new AppError(ErrorCode.VALIDATION, `节点「${node.label}」责任人必须属于当前公司`);
-    }
+    getAgent(db, assigneeAgentId);
   }
   if (assigneeRole && !listAgents(db).some((agent) => agent.role === assigneeRole)) {
     throw new AppError(ErrorCode.VALIDATION, `节点「${node.label}」责任角色不存在：${assigneeRole}`);

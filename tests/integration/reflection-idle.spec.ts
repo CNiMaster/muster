@@ -97,7 +97,7 @@ describe('enqueueIdleReflections（补排队）', () => {
     expect(reflectionCount()).toBe(2);
   });
 
-  it('只认本公司任务', () => {
+  it.skip('只认本公司任务（单例工作台退役多公司隔离）', () => {
     const { c } = fixture();
     const c2 = createCompany(db, { name: 'ev2' });
     const w2 = createAgent(db, { companyId: c2.id, name: 'w2', role: 'worker' });

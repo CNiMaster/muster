@@ -50,8 +50,8 @@ beforeEach(() => {
 
 function seedSwarmRun(id: string): void {
   db.prepare(
-    'INSERT INTO swarm_run (id, company_id, project_id, root_task_id, max_depth, max_width, max_nodes, budget_usd, created_at) VALUES (?,?,?,?,1,3,30,5,?)',
-  ).run(id, companyId, projectId, '', new Date().toISOString());
+    'INSERT INTO swarm_run (id, project_id, root_task_id, max_depth, max_width, max_nodes, budget_usd, created_at) VALUES (?,?,?,1,3,30,5,?)',
+  ).run(id, projectId, '', new Date().toISOString());
 }
 
 afterEach(() => {

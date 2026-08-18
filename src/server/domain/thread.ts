@@ -10,6 +10,7 @@ import { shortId, nowIso } from '../../shared/utils';
 import { getProject } from './project';
 import { getAgent, listAgents } from './agent';
 import { flushThreadMemory } from './memory';
+import { getWorkbenchOrNull } from './workbench';
 
 export type ThreadKind = 'primary' | 'mirror';
 export type ThreadState = 'idle' | 'running' | 'waiting' | 'paused' | 'failed';
@@ -123,15 +124,15 @@ export function listMirrorsOfRoot(db: DB, rootThreadId: string): ProjectAgentThr
   return rows.map(fromRow);
 }
 
-/** 跨项目列出 online 公司下所有活跃线程（用于引擎轮询）。 */
+/** 跨项目列出 online 工作台下所有活跃线程（用于引擎轮询）。 */
 export function listOnlineThreads(db: DB): ProjectAgentThread[] {
+  const wb = getWorkbenchOrNull(db);
+  if (!wb || wb.state !== 'online') return [];
   const rows = db
     .prepare(
       `SELECT t.* FROM project_agent_thread t
-       JOIN project p ON p.id = t.project_id
-       JOIN company c ON c.id = p.company_id
        JOIN agent_definition a ON a.id = t.agent_id
-       WHERE c.state = 'online' AND a.availability_state = 'online'
+       WHERE a.availability_state = 'online'
        ORDER BY t.created_at`,
     )
     .all() as ThreadRow[];

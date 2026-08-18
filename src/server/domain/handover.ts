@@ -276,8 +276,8 @@ export function completeHandover(db: DB, id: string, opts?: { musterHome?: strin
       db.prepare('UPDATE company SET first_agent_id=? WHERE id=?').run(cur.receiverEmployeeId, cur.companyId);
     }
     // 项目的 first_agent_id 同理（ON DELETE SET NULL 会自动处理，但显式转移更优）
-    db.prepare('UPDATE project SET first_agent_id=? WHERE first_agent_id=? AND company_id=?').run(
-      cur.receiverEmployeeId, cur.departingEmployeeId, cur.companyId,
+    db.prepare('UPDATE project SET first_agent_id=? WHERE first_agent_id=?').run(
+      cur.receiverEmployeeId, cur.departingEmployeeId,
     );
     db.prepare('DELETE FROM agent_definition WHERE id=?').run(cur.departingEmployeeId);
   })();
