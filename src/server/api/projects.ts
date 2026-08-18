@@ -44,8 +44,10 @@ import { promoteProjectStagingIfAny } from '../domain/staging';
 import { deleteProjectTrigger, listProjectTriggers, registerDefaultNovelScheduleTriggers, registerScheduleTrigger, setProjectTriggerEnabled } from '../domain/triggers';
 import { initializeNovelProject } from '../domain/novel-template';
 import { getCharacterGraph } from '../domain/character-graph';
-import {archiveProjectTask,completeProjectTask,createProjectTask,deleteProjectTaskRecord,getProjectTaskInProject,listProjectTasks,reorderProjectTasks,restoreProjectTask,setProjectTaskPinned} from '../domain/project-task';
+import {archiveProjectTask,completeProjectTask,createProjectTask,deleteProjectTaskRecord,getProjectTaskInProject,listProjectTasks,renameProjectTask,reorderProjectTasks,restoreProjectTask,setProjectTaskPinned,setProjectTaskUnread} from '../domain/project-task';
 import { listProjectFileTree } from '../domain/project-files';
+import { listBranches, gitGraph, checkoutInTaskWorktree } from '../domain/git-branches';
+import { getTaskContext, openLocation } from '../domain/open-location';
 import {listProjectTaskThreads} from '../domain/project-task-thread';
 import { realtime } from '../realtime';
 import { makeLifecycleEvent } from '../../shared/lifecycle-events';
@@ -263,6 +265,17 @@ projectById.post('/project-tasks/:projectTaskId/complete',asyncHandler(async(req
 projectById.post('/project-tasks/:projectTaskId/archive',asyncHandler(async(req,res)=>{const projectId=param(req,'id'),task=archiveProjectTask(getDb(),param(req,'projectTaskId'),projectId);realtime.publish(makeLifecycleEvent('project-task.archived',{projectTaskId:task.id},{projectId}));res.json(task);}));
 /** 管理工作台批3：归档还原（归档页「取消归档」）。 */
 projectById.post('/project-tasks/:projectTaskId/restore',asyncHandler(async(req,res)=>{const task=restoreProjectTask(getDb(),param(req,'projectTaskId'),param(req,'id'));realtime.publish(makeLifecycleEvent('project-task.created',{projectTaskId:task.id},{projectId:task.projectId}));res.json(task);}));
+/** 任务顶栏：重命名任务。 */
+projectById.patch('/project-tasks/:projectTaskId',asyncHandler(async(req,res)=>{const input=z.object({title:z.string().min(1)}).parse(req.body);res.json(renameProjectTask(getDb(),param(req,'projectTaskId'),input.title,param(req,'id')));}));
+/** 任务顶栏：标记已读/未读。 */
+projectById.post('/project-tasks/:projectTaskId/mark-unread',asyncHandler(async(req,res)=>{const input=z.object({unread:z.boolean()}).parse(req.body);res.json(setProjectTaskUnread(getDb(),param(req,'projectTaskId'),input.unread,param(req,'id')));}));
+
+// ===== 任务顶栏：git 分支面与位置服务 =====
+projectById.get('/git/branches',asyncHandler(async(_req,res)=>{res.json(listBranches(getDb(),param(_req,'id')));}));
+projectById.get('/git/graph',asyncHandler(async(_req,res)=>{res.json({graph:gitGraph(getDb(),param(_req,'id'))});}));
+projectById.get('/git/task-context',asyncHandler(async(req,res)=>{res.json(getTaskContext(getDb(),String(req.query.projectTaskId??'')));}));
+projectById.post('/git/checkout',asyncHandler(async(req,res)=>{const input=z.object({projectTaskId:z.string().min(1),branch:z.string().min(1),create:z.boolean().optional()}).parse(req.body);res.json(checkoutInTaskWorktree(getDb(),input.projectTaskId,input.branch,{create:input.create}));}));
+projectById.post('/open-location',asyncHandler(async(req,res)=>{const input=z.object({dir:z.string().min(1),app:z.enum(['finder','terminal'])}).parse(req.body);openLocation(input.dir,input.app);res.json({ok:true});}));
 /** 管理工作台批1：置顶/取消置顶（仅列表排序）。 */
 projectById.post('/project-tasks/:projectTaskId/pin',asyncHandler(async(req,res)=>{const input=z.object({pinned:z.boolean()}).parse(req.body);const task=setProjectTaskPinned(getDb(),param(req,'projectTaskId'),input.pinned,param(req,'id'));res.json(task);}));
 /** 管理工作台（修订轮）：任务拖动排序——orderedIds 自上而下。 */

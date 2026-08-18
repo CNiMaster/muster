@@ -12,6 +12,8 @@ export interface MenuItem {
   label: React.ReactNode;
   onSelect: () => void;
   danger?: boolean;
+  /** 只渲染分割线，忽略 label/onSelect。 */
+  divider?: boolean;
 }
 
 export interface DropdownMenuProps {
@@ -72,6 +74,9 @@ export function DropdownMenu({ label, children, items, align = 'right', classNam
           }}
         >
           {items.map((item) => (
+            item.divider ? (
+              <hr key={item.key} style={{ border: 'none', borderTop: '1px solid var(--border-subtle, #eee)', margin: '4px 2px' }} />
+            ) : (
             <button
               key={item.key}
               type="button"
@@ -95,6 +100,7 @@ export function DropdownMenu({ label, children, items, align = 'right', classNam
             >
               {item.label}
             </button>
+            )
           ))}
         </div>
       )}

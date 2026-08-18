@@ -194,6 +194,56 @@ describe('归档还原（批3）', () => {
   });
 });
 
+describe('任务顶栏（git 分支面 + rename/unread + task-context）', () => {
+  it('git 分支：列分支 / 图谱 / 任务 worktree 检出（创建并切换）', async () => {
+    const { execSync } = await import('node:child_process');
+    const { createWorktree } = await import('../../src/server/worktree/manager');
+    const { listBranches, gitGraph, checkoutInTaskWorktree, taskWorktreePath, taskWorktreeBranch } = await import('../../src/server/domain/git-branches');
+    const { createTask } = await import('../../src/server/domain/task');
+    const { createAgent } = await import('../../src/server/domain/agent');
+    execSync('git init -q', { cwd: tmpRoot });
+    execSync("git config user.email t@t && git config user.name t && git commit -q --allow-empty -m init && git branch feat-x", { cwd: tmpRoot });
+    const p = proj('git 项目', tmpRoot);
+    const lead = createAgent(db, { companyId: ensureWorkbench(db).workbench.id, name: 'lead', role: 'lead' });
+    const pt = createProjectTask(db, { projectId: p.id, title: '分支任务' });
+    const agentTask = createTask(db, { projectId: p.id, projectTaskId: pt.id, assigneeAgentId: lead.id, title: '执行' });
+
+    // 无 worktree 时：分支可列、检出被拒（不越权动主干）
+    const branches = listBranches(db, p.id);
+    expect(branches.map((b) => b.name).sort()).toEqual(['feat-x', 'master', 'main'].filter((n) => branches.some((b) => b.name === n)).sort());
+    expect(gitGraph(db, p.id)).toContain('init');
+    expect(() => checkoutInTaskWorktree(db, pt.id, 'feat-x')).toThrow(/尚无工作区/);
+
+    // 建 worktree 后：创建并检出新分支成功，分支实时生效
+    const { ensureGitRepo } = await import('../../src/server/worktree/manager');
+    ensureGitRepo(tmpRoot);
+    const wt = createWorktree(tmpRoot, p.id, agentTask.id);
+    const { saveTaskRuntime } = await import('../../src/server/domain/task-runtime');
+    saveTaskRuntime(db, wt);
+    expect(taskWorktreePath(db, pt.id)).toBe(wt.path);
+    checkoutInTaskWorktree(db, pt.id, 'feat-x');
+    expect(taskWorktreeBranch(db, pt.id)).toBe('feat-x');
+    checkoutInTaskWorktree(db, pt.id, 'brand-new', { create: true });
+    expect(taskWorktreeBranch(db, pt.id)).toBe('brand-new');
+  });
+
+  it('rename / unread / task-context（会话 ID 回退线程 id）', async () => {
+    const { renameProjectTask, setProjectTaskUnread } = await import('../../src/server/domain/project-task');
+    const { getTaskContext } = await import('../../src/server/domain/open-location');
+    const { ensureProjectTaskThread } = await import('../../src/server/domain/project-task-thread');
+    const p = proj('ctx 项目', tmpRoot);
+    const pt = createProjectTask(db, { projectId: p.id, title: '原名' });
+    const lead2 = createAgent(db, { companyId: ensureWorkbench(db).workbench.id, name: 'ctx-lead', role: 'lead' });
+    ensureProjectTaskThread(db, { projectTaskId: pt.id, employeeId: lead2.id, executorProfileId: null });
+    expect(renameProjectTask(db, pt.id, ' 新名字 ', p.id).title).toBe('新名字');
+    expect(setProjectTaskUnread(db, pt.id, true, p.id).unread).toBe(true);
+    const ctx = getTaskContext(db, pt.id);
+    expect(ctx.projectRootDir).toBe(tmpRoot);
+    expect(ctx.worktreePath).toBeNull();
+    expect(ctx.sessionId).toBeTruthy();
+  });
+});
+
 describe('API 层：view 过滤与 DELETE 端点', () => {
   let server: http.Server;
   let base: string;

@@ -444,7 +444,7 @@ function ProjectRow({ project, collapsed, onToggleCollapse, onShowFiles, onNewTa
         <div style={{ paddingLeft: 30, paddingTop: 4 }}>
           {visibleTasks.map((t) => (
             <Link key={t.id} to={`/projects/${project.id}?view=task&projectTask=${t.id}`} style={{ display: 'block', fontSize: 12, color: 'var(--fg-muted)', textDecoration: 'none', padding: '2px 0' }}>
-              {t.pinned ? '📌 ' : ''}{t.title}
+              {t.unread ? <span aria-label="未读" style={{ display: 'inline-block', width: 6, height: 6, borderRadius: 999, background: 'var(--accent)', marginRight: 4 }} /> : null}{t.pinned ? '📌 ' : ''}{t.title}
             </Link>
           ))}
           {activeTasks.length > 5 && (
@@ -597,7 +597,7 @@ function StandaloneTaskRow({ task, onOpen, onPin, onArchive }: {
         {task.pinned ? '📌' : '🔘'}
       </button>
       <button type="button" onClick={onOpen} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 13, color: 'inherit', textAlign: 'left', flex: 1, padding: 0 }}>
-        {task.title}
+        {task.unread ? <span aria-label="未读" style={{ display: 'inline-block', width: 6, height: 6, borderRadius: 999, background: 'var(--accent)', marginRight: 4 }} /> : null}{task.title}
       </button>
       <button type="button" aria-label="归档任务" onClick={onArchive} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 12, color: 'var(--fg-subtle)' }}>
         📦

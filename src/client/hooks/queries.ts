@@ -72,7 +72,7 @@ export interface ProjectProposal {
   initialTaskTitle: string;
 }
 export interface ProjectTaskThreadDTO { id:string; employeeId:string; executorProfileId:string|null; vendorSessionId:string|null; previousVendorSessionId:string|null; state:string; runCount:number; transcriptBytes:number; compactionCount:number; lastCompactionAt:string|null; updatedAt:string }
-export interface ProjectTaskDTO { id:string; projectId:string; seq:number; title:string; brief:string; state:'active'|'completed'|'archived'; pinned:boolean; launchState:'draft'|'ready_for_confirmation'|'confirmed'; launchBrief:ProjectLaunchBrief; capabilityDiscovery:ProjectLaunchDiscovery|null; launchConfirmedAt:string|null; completedAt:string|null; archivedAt:string|null; createdAt:string; updatedAt:string; threads?:ProjectTaskThreadDTO[] }
+export interface ProjectTaskDTO { id:string; projectId:string; seq:number; title:string; brief:string; state:'active'|'completed'|'archived'; pinned:boolean; unread:boolean; launchState:'draft'|'ready_for_confirmation'|'confirmed'; launchBrief:ProjectLaunchBrief; capabilityDiscovery:ProjectLaunchDiscovery|null; launchConfirmedAt:string|null; completedAt:string|null; archivedAt:string|null; createdAt:string; updatedAt:string; threads?:ProjectTaskThreadDTO[] }
 
 export interface ToolRegistryDTO {
   id: string;
@@ -1018,6 +1018,17 @@ export function usePinProjectTask(){const qc=useQueryClient();return useMutation
 export function useDeleteProjectTaskRecord(){const qc=useQueryClient();return useMutation({mutationFn:({projectId,id}:{projectId:string;id:string})=>api.delete(`/api/projects/${projectId}/project-tasks/${id}`),onSuccess:(_d,v)=>{qc.invalidateQueries({queryKey:['project-tasks',v.projectId]});qc.invalidateQueries({queryKey:['standalone-tasks']});}});}
 /** 管理工作台批3：归档还原。 */
 export function useRestoreProjectTask(){const qc=useQueryClient();return useMutation({mutationFn:({projectId,id}:{projectId:string;id:string})=>api.post<ProjectTaskDTO>(`/api/projects/${projectId}/project-tasks/${id}/restore`),onSuccess:data=>{qc.invalidateQueries({queryKey:['project-tasks',data.projectId]});qc.invalidateQueries({queryKey:['standalone-tasks']});}});}
+
+/** 任务顶栏：任务上下文（项目根/worktree 路径/分支/会话 ID/日志目录）。 */
+export interface TaskContextDTO{projectId:string;projectName:string;projectRootDir:string;worktreePath:string|null;branch:string|null;sessionId:string|null;runLogDir:string|null;}
+export function useTaskContext(projectId:string|undefined,projectTaskId:string|undefined){return useQuery({queryKey:['task-context',projectId,projectTaskId],queryFn:()=>api.get<TaskContextDTO>(`/api/projects/${projectId}/git/task-context?projectTaskId=${projectTaskId}`),enabled:!!projectId&&!!projectTaskId,refetchInterval:8000});}
+export interface GitBranchDTO{name:string;current:boolean;lastCommit:string;}
+export function useGitBranches(projectId:string|undefined,enabled=false){return useQuery({queryKey:['git-branches',projectId],queryFn:()=>api.get<GitBranchDTO[]>(`/api/projects/${projectId}/git/branches`),enabled:!!projectId&&enabled});}
+export function useGitGraph(projectId:string|undefined,enabled=false){return useQuery({queryKey:['git-graph',projectId],queryFn:()=>api.get<{graph:string}>(`/api/projects/${projectId}/git/graph`),enabled:!!projectId&&enabled});}
+export function useCheckoutBranch(projectId:string|undefined){const qc=useQueryClient();return useMutation({mutationFn:({projectTaskId,branch,create}:{projectTaskId:string;branch:string;create?:boolean})=>api.post<{branch:string}>(`/api/projects/${projectId}/git/checkout`,{projectTaskId,branch,create}),onSuccess:()=>{qc.invalidateQueries({queryKey:['task-context']});qc.invalidateQueries({queryKey:['git-branches',projectId]});}});}
+export function useOpenLocation(projectId:string|undefined){return useMutation({mutationFn:({dir,app}:{dir:string;app:'finder'|'terminal'})=>api.post(`/api/projects/${projectId}/open-location`,{dir,app})});}
+export function useRenameProjectTask(){const qc=useQueryClient();return useMutation({mutationFn:({projectId,id,title}:{projectId:string;id:string;title:string})=>api.patch<ProjectTaskDTO>(`/api/projects/${projectId}/project-tasks/${id}`,{title}),onSuccess:data=>{qc.invalidateQueries({queryKey:['project-tasks',data.projectId]});qc.invalidateQueries({queryKey:['project-task',data.projectId,data.id]});qc.invalidateQueries({queryKey:['standalone-tasks']});}});}
+export function useMarkUnread(){const qc=useQueryClient();return useMutation({mutationFn:({projectId,id,unread}:{projectId:string;id:string;unread:boolean})=>api.post<ProjectTaskDTO>(`/api/projects/${projectId}/project-tasks/${id}/mark-unread`,{unread}),onSuccess:data=>{qc.invalidateQueries({queryKey:['project-tasks',data.projectId]});}});}
 
 /** 管理工作台批2：独立任务区（隐藏载体项目 + 其任务，pinned 置顶序）。 */
 export function useStandaloneTasks(){return useQuery({queryKey:['standalone-tasks'],queryFn:()=>api.get<{projectId:string;tasks:ProjectTaskDTO[]}>('/api/projects/standalone-tasks')});}

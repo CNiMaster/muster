@@ -143,7 +143,7 @@ export function ProjectWorkNavigation({
                       <span className="work-nav-icon task-mark" style={{ '--task-hue': `${(item.seq * 37) % 360}` } as React.CSSProperties}>
                         {projectTaskMark(item.title)}
                       </span>
-                      <span className="work-nav-label">{item.pinned ? '📌 ' : ''}#{item.seq} {item.title}</span>
+                      <span className="work-nav-label">{item.unread ? <span aria-label="未读" style={{ display:'inline-block', width:6, height:6, borderRadius:999, background:'var(--accent)', marginRight:4 }} /> : null}{item.pinned ? '📌 ' : ''}#{item.seq} {item.title}</span>
                     </Link>
                     <span className="task-nav-actions" style={{ display: 'flex', gap: 2 }}>
                       <button

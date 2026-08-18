@@ -1,8 +1,17 @@
-import { useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import type React from 'react';
 import { Link } from 'react-router-dom';
 import { WorkbenchGuide } from './WorkbenchGuide';
 import { MIN_WORKBENCH_SURFACE_WIDTH, useWorkbenchPreferences } from './useWorkbenchPreferences';
+
+/**
+ * 面板开关下放：中栏内容（如任务顶栏的「右侧面板」按钮）可经此 context
+ * 复用 Shell 的左右面板开合状态，不重复建偏好存储。
+ */
+export const WorkbenchUIContext = createContext<{ toggleRight: () => void; toggleLeft: () => void } | null>(null);
+export function useWorkbenchUI(): { toggleRight: () => void; toggleLeft: () => void } | null {
+  return useContext(WorkbenchUIContext);
+}
 
 export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspectorLabel, navigation, inspector, primaryAction, attentionCount = 0, commandOptions, children }: {
   scopeKey: string;
@@ -57,7 +66,8 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
     '--work-right': `${preferences.rightWidth}px`,
     '--work-surface-min': `${MIN_WORKBENCH_SURFACE_WIDTH}px`,
   } as React.CSSProperties;
-  return <section className={`workbench ${preferences.leftOpen ? 'has-left' : ''} ${preferences.rightOpen ? 'has-right' : ''}`} style={style}>
+  return <WorkbenchUIContext.Provider value={{ toggleRight: preferences.toggleRight, toggleLeft: preferences.toggleLeft }}>
+  <section className={`workbench ${preferences.leftOpen ? 'has-left' : ''} ${preferences.rightOpen ? 'has-right' : ''}`} style={style}>
     <header className="workbench-header">
       <Link to="/" className="workbench-brand" aria-label="Muster 首页" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '28px', height: '28px', borderRadius: '7px', background: 'var(--accent)', color: '#fff', textDecoration: 'none', fontWeight: 850, fontSize: '13px' }}>
         <span>M</span>
@@ -86,5 +96,6 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
         {visible.length === 0 && <p className="muted command-empty">没有匹配项</p>}
       </div>
     </div></div>}
-  </section>;
+  </section>
+  </WorkbenchUIContext.Provider>;
 }

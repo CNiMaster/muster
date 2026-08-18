@@ -9,6 +9,7 @@ import { StateBadge, Badge } from '../Badge';
 import { ConversationPanel } from '../ConversationPanel';
 import { ExecutionTraceCard } from '../workbench/ExecutionTraceCard';
 import { Input, Textarea, Field } from '../Form';
+import { TaskTopBar } from './TaskTopBar';
 
 export function ProjectTaskWorkspace({
   projectId,
@@ -176,45 +177,39 @@ export function ProjectTaskWorkspace({
       {/* 顶部极简 Task 标题条 */}
       {selectedTask ? (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 12px', background: 'var(--bg-elev)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)', minWidth: 0, gap: '12px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
-            <span className="task-stage-kicker" style={{ margin: 0, fontSize: '12px', flexShrink: 0 }}>#{selectedTask.seq}</span>
-            {(() => {
-              const meta = (activeRuntimeTask?.inputProtocol ?? {}) as { blueprintLabel?: string; blueprintVersion?: number; resolvedSkillIds?: string[] } | undefined;
-              if (!meta?.blueprintLabel) return null;
-              return (
-                <span className="mu-trace-blueprint-chip" title={`本任务穿戴打法：${meta.blueprintLabel}${meta.blueprintVersion ? ` · v${meta.blueprintVersion}` : ''}`}>
-                  🎭 {meta.blueprintLabel} {meta.blueprintVersion ? <small>v{meta.blueprintVersion}</small> : null}
-                </span>
-              );
-            })()}
-            {(() => {
-              const meta = (activeRuntimeTask?.inputProtocol ?? {}) as { resolvedSkillIds?: string[] } | undefined;
-              const skills = (meta?.resolvedSkillIds ?? []).slice(0, 3);
-              if (skills.length === 0) return null;
-              const rest = (meta?.resolvedSkillIds ?? []).length - skills.length;
-              return (
-                <span className="mu-trace-blueprint-chip" title={`本次按需加载的 skills：${(meta?.resolvedSkillIds ?? []).join('、')}`}>
-                  🧩 {skills.join('、')}{rest > 0 ? ` +${rest}` : ''}
-                </span>
-              );
-            })()}
-            <strong style={{ fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{selectedTask.title}</strong>
-            <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <StateBadge domain="project-task" state={selectedTask.state} />
-              {activeRuntimeTask?.state === 'running' && (
-                <Badge tone="ok" dot>运行中</Badge>
-              )}
-              {activeRuntimeTask?.state === 'waiting_input' && (
-                <Badge tone="warn" dot>等待答复</Badge>
-              )}
-              {activeRuntimeTask?.state === 'paused' && (
-                <Badge tone="warn">已暂停</Badge>
-              )}
-              {activeRuntimeTask?.state === 'blocked' && (
-                <Badge tone="err" dot>阻塞</Badge>
-              )}
-            </div>
-          </div>
+          <TaskTopBar
+            projectId={projectId}
+            task={selectedTask}
+            runtimeTaskId={activeRuntimeTask?.id ?? null}
+            rightExtra={(
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                {(() => {
+                  const meta = (activeRuntimeTask?.inputProtocol ?? {}) as { blueprintLabel?: string; blueprintVersion?: number } | undefined;
+                  if (!meta?.blueprintLabel) return null;
+                  return (
+                    <span className="mu-trace-blueprint-chip" title={`本任务穿戴打法：${meta.blueprintLabel}${meta.blueprintVersion ? ` · v${meta.blueprintVersion}` : ''}`}>
+                      🎭 {meta.blueprintLabel} {meta.blueprintVersion ? <small>v{meta.blueprintVersion}</small> : null}
+                    </span>
+                  );
+                })()}
+                {(() => {
+                  const meta = (activeRuntimeTask?.inputProtocol ?? {}) as { resolvedSkillIds?: string[] } | undefined;
+                  const skills = (meta?.resolvedSkillIds ?? []).slice(0, 2);
+                  if (skills.length === 0) return null;
+                  return (
+                    <span className="mu-trace-blueprint-chip" title={`本次按需加载的 skills：${(meta?.resolvedSkillIds ?? []).join('、')}`}>
+                      🧩 {skills.join('、')}
+                    </span>
+                  );
+                })()}
+                <StateBadge domain="project-task" state={selectedTask.state} />
+                {activeRuntimeTask?.state === 'running' && (<Badge tone="ok" dot>运行中</Badge>)}
+                {activeRuntimeTask?.state === 'waiting_input' && (<Badge tone="warn" dot>等待答复</Badge>)}
+                {activeRuntimeTask?.state === 'paused' && (<Badge tone="warn">已暂停</Badge>)}
+                {activeRuntimeTask?.state === 'blocked' && (<Badge tone="err" dot>阻塞</Badge>)}
+              </div>
+            )}
+          />
           <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexShrink: 0 }}>
             {/* 如果处于暂停或等待态，顶部直接常驻【▶ 继续执行】按钮 */}
             {isTaskWaitingOrPaused && (
