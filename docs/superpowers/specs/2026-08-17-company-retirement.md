@@ -1,7 +1,7 @@
 # 公司概念退役技术方案（company retirement）
 
 > 规范文件路径：`docs/superpowers/specs/2026-08-17-company-retirement.md`
-> 状态：**已实施 A+B+C（2026-08-18，worktree feat/company-retirement）**；D4（三级降两级）与 D（物理去列）留后续。
+> 状态：**已实施 A+B+C+D4（2026-08-18，worktree feat/company-retirement）**；D（物理去列）留远期可选。
 > 背景锚点：2026-08-16 UI 重构已完成「公司 UI 退场」（CLAUDE.md「UI 重构」章）；本方案处理数据层与 API 层的最终退役。
 
 > 【落地注记 A+B+C，2026-08-18】实际耦合面实测为 **12 个挂载点 + 6 个散落文件**（非 spec 原记 9 组；blueprints 组是 companies.ts 内嵌子路由、另 plugins/outsourcing/handover/temp-worker/permission-delegation/permissions 在公司外挂载点还带 `/companies/:companyId/*` 子路径）。顺带修复 f3e2c01 引入的 live bug：`blueprint-optimization.ts` 读 `param('id')` 但挂载参数名为 `:companyId`，optimize-chat 五端点原必 404。机制定案（Express 5 实测）：mergeParams 在 router 入口快照父参数，中间件改写 `req.params` 不传导，故不用「注入中间件」，改为读侧 `companyIdOf(req)`；批 C 后无任何 `:companyId`/`:id` 参数承载公司 id（带 `:id` 的资源路由会误读），companyIdOf 收敛为一律 `ensureDefaultCompany` 隐式单例解析。多公司不自动归并（取最早+log.warn；真实库仅 1 司，归并工具 YAGNI）。单例组命名定案 `/api/workbench/*`（API 层未占用，与 CLAUDE.md「工作台实例」口径一致）。
@@ -40,7 +40,7 @@
 | A | `ensureDefaultCompany` 单例 + 12 挂载点/6 散落文件新路径双挂（`companyIdOf` 读侧解析） | 低（纯增量） | ✅ 2026-08-18 |
 | B | 前端 hooks/页面切新路径；删 `useDefaultCompanyId` 与公司感知残留 | 中（改动面广，tsc 兜底） | ✅ 2026-08-18 |
 | C | 删旧路径挂载；companies CRUD 下线；smoke/e2e 断言更新 + smoke/e2e 隔离 | 中 | ✅ 2026-08-18 |
-| D4 | 三级解析降两级（见 spec §2 D4） | 中 | 实施中（D4-1/2/3） |
+| D4 | 三级解析降两级（见 spec §2 D4） | 中 | ✅ 2026-08-18（D4-1 凭据 / D4-2 执行器档位 / D4-3 权限，数据迁移靠 SQL 回填） |
 | D（远期可选） | 物理去列：迁移剥 `company_id`、DROP company 表 | 高（全库重写，收益仅洁癖） | 未开始 |
 
 每批完成跑全量验证（单测/e2e/smoke），批次间可独立发布。

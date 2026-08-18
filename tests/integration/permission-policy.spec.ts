@@ -7,7 +7,10 @@ import {
   recordApprovalDecision,
   requestApproval,
   savePermissionRule,
+  bindEmployeePermissionPolicy,
 } from '../../src/server/domain/permission';
+import { createCompany } from '../../src/server/domain/company';
+import { createAgent } from '../../src/server/domain/agent';
 import { executeFileTool } from '../../src/server/executors/tools/file-tools';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -66,5 +69,35 @@ describe('permission policy = approval strategy × allowed scope', () => {
       expect(listApprovalQueue(db,(id)=>id===approval.id)[0]).toMatchObject({online:true,resumeMode:'direct'});
       expect(String(listApprovalQueue(db,()=>false)[0]?.statusText)).toContain('重新入队');
     } finally {close();}
+  });
+
+  it('company-scoped rule retired (D4-3)：rule.company_id 不再限制匹配（规则全平台化）', () => {
+    const { db, close } = makeTestDb();
+    try {
+      const policy = createPermissionPolicy(db, { name: '测试', approvalStrategy: 'ask-by-rule', scope: 'task' });
+      savePermissionRule(db, policy.id, { effect: 'deny', action: 'run-command', commandPattern: '^rm\\b' });
+      // 历史数据形状：规则残留 company_id（与请求不同）
+      db.prepare('UPDATE permission_rule SET company_id=? WHERE policy_id=?').run('co_other', policy.id);
+      const res = evaluatePermission(db, policy.id, {
+        action: 'run-command', command: 'rm file', path: '/p', taskRoot: '/p', projectRoot: '/p', workspaceRoot: '/',
+        companyId: 'co_default',
+      });
+      expect(res.decision).toBe('deny'); // 公司条件退役，规则命中
+    } finally { close(); }
+  });
+
+  it('bindEmployeePermissionPolicy 锁仍按工作台下班态（D4-3）', () => {
+    const { db, close } = makeTestDb();
+    try {
+      const company = createCompany(db, { name: '默认工作台', kind: 'general' });
+      const lead = createAgent(db, { companyId: company.id, name: '负责人', role: 'lead' });
+      const policy = createPermissionPolicy(db, { name: 'P', approvalStrategy: 'ask-always', scope: 'task' });
+
+      db.prepare("UPDATE company SET state='off' WHERE id=?").run(company.id);
+      expect(() => bindEmployeePermissionPolicy(db, lead.id, policy.id)).not.toThrow();
+
+      db.prepare("UPDATE company SET state='online' WHERE id=?").run(company.id);
+      expect(() => bindEmployeePermissionPolicy(db, lead.id, policy.id)).toThrowError(/下班/);
+    } finally { close(); }
   });
 });
