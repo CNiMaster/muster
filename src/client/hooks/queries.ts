@@ -583,6 +583,11 @@ export function useDeleteDepartment() {
 }
 
 // ===== Projects =====
+/** 管理工作台批3：归档页视图——view=archived（已归档项目）/ removed（已移除未删记录）。 */
+export function useProjectsView(view: 'archived' | 'removed') {
+  return useQuery({ queryKey: ['projects', view], queryFn: () => api.get<Project[]>(`/api/projects?view=${view}`) });
+}
+
 export function useProjects() {
   return useQuery({
     queryKey: ['projects'],
@@ -1011,6 +1016,9 @@ export function useProjectTaskAction(){const qc=useQueryClient();return useMutat
 export function usePinProjectTask(){const qc=useQueryClient();return useMutation({mutationFn:({projectId,id,pinned}:{projectId:string;id:string;pinned:boolean})=>api.post<ProjectTaskDTO>(`/api/projects/${projectId}/project-tasks/${id}/pin`,{pinned}),onSuccess:data=>{qc.invalidateQueries({queryKey:['project-tasks',data.projectId]});qc.invalidateQueries({queryKey:['standalone-tasks']});}});}
 /** 管理工作台批2：删除归档任务的平台记录（不触碰仓库文件）。 */
 export function useDeleteProjectTaskRecord(){const qc=useQueryClient();return useMutation({mutationFn:({projectId,id}:{projectId:string;id:string})=>api.delete(`/api/projects/${projectId}/project-tasks/${id}`),onSuccess:(_d,v)=>{qc.invalidateQueries({queryKey:['project-tasks',v.projectId]});qc.invalidateQueries({queryKey:['standalone-tasks']});}});}
+/** 管理工作台批3：归档还原。 */
+export function useRestoreProjectTask(){const qc=useQueryClient();return useMutation({mutationFn:({projectId,id}:{projectId:string;id:string})=>api.post<ProjectTaskDTO>(`/api/projects/${projectId}/project-tasks/${id}/restore`),onSuccess:data=>{qc.invalidateQueries({queryKey:['project-tasks',data.projectId]});qc.invalidateQueries({queryKey:['standalone-tasks']});}});}
+
 /** 管理工作台批2：独立任务区（隐藏载体项目 + 其任务，pinned 置顶序）。 */
 export function useStandaloneTasks(){return useQuery({queryKey:['standalone-tasks'],queryFn:()=>api.get<{projectId:string;tasks:ProjectTaskDTO[]}>('/api/projects/standalone-tasks')});}
 /** 管理工作台批2：项目目录树（只读）。 */

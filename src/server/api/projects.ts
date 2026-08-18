@@ -44,7 +44,7 @@ import { promoteProjectStagingIfAny } from '../domain/staging';
 import { deleteProjectTrigger, listProjectTriggers, registerDefaultNovelScheduleTriggers, registerScheduleTrigger, setProjectTriggerEnabled } from '../domain/triggers';
 import { initializeNovelProject } from '../domain/novel-template';
 import { getCharacterGraph } from '../domain/character-graph';
-import {archiveProjectTask,completeProjectTask,createProjectTask,deleteProjectTaskRecord,getProjectTaskInProject,listProjectTasks,setProjectTaskPinned} from '../domain/project-task';
+import {archiveProjectTask,completeProjectTask,createProjectTask,deleteProjectTaskRecord,getProjectTaskInProject,listProjectTasks,restoreProjectTask,setProjectTaskPinned} from '../domain/project-task';
 import { listProjectFileTree } from '../domain/project-files';
 import {listProjectTaskThreads} from '../domain/project-task-thread';
 import { realtime } from '../realtime';
@@ -261,6 +261,8 @@ projectById.post('/project-tasks/:projectTaskId/discover-capabilities',asyncHand
 projectById.post('/project-tasks/:projectTaskId/confirm-launch',asyncHandler(async(req,res)=>{const projectId=param(req,'id'),projectTask=getProjectTaskInProject(getDb(),param(req,'projectTaskId'),projectId);const brief=projectLaunchBriefSchema.parse(req.body?.launchBrief??projectTask.launchBrief);confirmProjectLaunch(getDb(),projectTask.id,brief);const updated=getProjectTaskInProject(getDb(),projectTask.id,projectId);realtime.publish(makeLifecycleEvent('project-task.launch_confirmed',{projectTaskId:projectTask.id},{projectId}));res.json(updated);}));
 projectById.post('/project-tasks/:projectTaskId/complete',asyncHandler(async(req,res)=>{const projectId=param(req,'id'),task=completeProjectTask(getDb(),param(req,'projectTaskId'),projectId);realtime.publish(makeLifecycleEvent('project-task.completed',{projectTaskId:task.id},{projectId}));res.json(task);}));
 projectById.post('/project-tasks/:projectTaskId/archive',asyncHandler(async(req,res)=>{const projectId=param(req,'id'),task=archiveProjectTask(getDb(),param(req,'projectTaskId'),projectId);realtime.publish(makeLifecycleEvent('project-task.archived',{projectTaskId:task.id},{projectId}));res.json(task);}));
+/** 管理工作台批3：归档还原（归档页「取消归档」）。 */
+projectById.post('/project-tasks/:projectTaskId/restore',asyncHandler(async(req,res)=>{const task=restoreProjectTask(getDb(),param(req,'projectTaskId'),param(req,'id'));realtime.publish(makeLifecycleEvent('project-task.created',{projectTaskId:task.id},{projectId:task.projectId}));res.json(task);}));
 /** 管理工作台批1：置顶/取消置顶（仅列表排序）。 */
 projectById.post('/project-tasks/:projectTaskId/pin',asyncHandler(async(req,res)=>{const input=z.object({pinned:z.boolean()}).parse(req.body);const task=setProjectTaskPinned(getDb(),param(req,'projectTaskId'),input.pinned,param(req,'id'));res.json(task);}));
 /** 管理工作台批1：删除归档任务的平台记录（不触碰仓库文件）。 */

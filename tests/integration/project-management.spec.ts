@@ -17,6 +17,7 @@ import {
   listProjects,
   removeProject,
   getProject,
+  updateProject,
 } from '../../src/server/domain/project';
 import {
   archiveProjectTask,
@@ -24,6 +25,8 @@ import {
   deleteProjectTaskRecord,
   listProjectTasks,
   setProjectTaskPinned,
+  getProjectTask,
+  restoreProjectTask,
 } from '../../src/server/domain/project-task';
 import { listProjectFileTree } from '../../src/server/domain/project-files';
 import { createTask } from '../../src/server/domain/task';
@@ -154,6 +157,27 @@ describe('独立任务载体', () => {
   });
 });
 
+describe('归档还原（批3）', () => {
+  it('项目 archived → active 还原合法（updateProject state 出口）', () => {
+    const p = proj('还原测试', tmpRoot);
+    updateProject(db, p.id, { state: 'archived' });
+    expect(getProject(db, p.id).state).toBe('archived');
+    const restored = updateProject(db, p.id, { state: 'active' });
+    expect(restored.state).toBe('active');
+  });
+
+  it('任务归档 → 还原 active、archived_at 清空；还原后不可直接删记录', async () => {
+    const p = proj('任务还原', tmpRoot);
+    const t = createProjectTask(db, { projectId: p.id, title: '可还原' });
+    archiveProjectTask(db, t.id, p.id);
+    expect(getProjectTask ?? null).toBeTruthy();
+    const restored = restoreProjectTask(db, t.id, p.id);
+    expect(restored.state).toBe('active');
+    expect(restored.archivedAt).toBeNull();
+    expect(() => deleteProjectTaskRecord(db, t.id, p.id)).toThrow(/仅归档/);
+  });
+});
+
 describe('API 层：view 过滤与 DELETE 端点', () => {
   let server: http.Server;
   let base: string;
@@ -173,7 +197,6 @@ describe('API 层：view 过滤与 DELETE 端点', () => {
   it('view=archived/removed 过滤正确；DELETE 隐藏后从 active 消失', async () => {
     const active = proj('活跃', tmpRoot);
     const archived = proj('已归档', tmpRoot);
-    const { updateProject } = await import('../../src/server/domain/project');
     updateProject(db, archived.id, { state: 'archived' });
 
     const activeList = (await (await fetch(`${base}/projects`)).json()) as Array<{ name: string }>;

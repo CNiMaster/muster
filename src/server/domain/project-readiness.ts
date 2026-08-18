@@ -44,6 +44,9 @@ export function assertCanTransition(from: ProjectState, to: ProjectState): void 
   // 归档：任意非终态 → archived
   if (to === 'archived' && from !== 'completed' && from !== 'archived') return;
 
+  // 管理工作台批3：归档还原——归档页「取消归档」显式出口（还原为进行中，或回准备阶段）
+  if (from === 'archived' && (to === 'active' || to === 'drafting')) return;
+
   // idle 兼容：历史 idle 项目 → drafting（进入准备流程）
   if (from === 'idle' && to === 'drafting') return;
 

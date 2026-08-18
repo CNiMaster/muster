@@ -1,6 +1,7 @@
 import type React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useProjects } from '../../hooks/queries';
+import { DropdownMenu } from '../DropdownMenu';
 
 export interface WorkbenchSectionOption {
   key: string;
@@ -55,6 +56,7 @@ export function WorkbenchContextSwitcher({ projectId, projectName, projectTaskId
   sectionLabel: string;
   novel?: boolean;
 }): React.ReactElement {
+  const navigate = useNavigate();
   const { data: projects = [] } = useProjects();
   const sections = projectId ? projectSectionOptions(projectId, projectTaskId, novel) : [];
   const projectOptions = projects.map((project) => ({ key: project.id, label: project.name, href: `/projects/${project.id}` }));
@@ -70,6 +72,17 @@ export function WorkbenchContextSwitcher({ projectId, projectName, projectTaskId
         <>
           <span className="workbench-context-separator" aria-hidden="true" style={{ color: 'var(--fg-subtle)' }}>/</span>
           <SwitchMenu label={projectName} options={projectOptions} activeKey={projectId} ariaLabel="切换项目" />
+          {/* 管理工作台批3：项目名旁「＋」快捷入口（新建 / 打开本地目录） */}
+          <DropdownMenu
+            label="新建项目"
+            items={[
+              { key: 'new', label: '🆕 新建项目', onSelect: () => navigate('/projects/new') },
+              { key: 'open', label: '📂 打开本地目录…', onSelect: () => navigate('/projects/new?mode=open') },
+            ]}
+            buttonClassName="workbench-switch-new-btn"
+          >
+            <span style={{ fontSize: 13, lineHeight: 1, padding: '0 2px' }}>＋</span>
+          </DropdownMenu>
         </>
       )}
 

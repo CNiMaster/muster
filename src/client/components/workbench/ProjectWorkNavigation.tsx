@@ -1,7 +1,9 @@
 import type React from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { Agent, Department, Task } from '../../api/types';
 import type { ProjectTaskDTO } from '../../hooks/queries';
+import { usePinProjectTask, useProjectTaskAction } from '../../hooks/queries';
 
 export type ProjectToolKey = 'tasks' | 'plans' | 'dashboard' | 'artifacts' | 'materials' | 'reports' | 'usage' | 'character' | 'settings';
 export type ProjectSurfaceView = 'task' | 'employee' | 'group' | 'activity' | 'tool';
@@ -54,9 +56,16 @@ export function ProjectWorkNavigation({
 }): React.ReactElement {
   void novel;
 
+  // 管理工作台批3：任务行置顶/归档 + >5 折叠显示更多 + 项目任务区折叠
+  const pinTask = usePinProjectTask();
+  const taskAction = useProjectTaskAction();
+  const [showAllActive, setShowAllActive] = useState(false);
+  const [tasksCollapsed, setTasksCollapsed] = useState(false);
+
   const firstAgent = agents.find((agent) => agent.id === firstAgentId);
   const activeProjectTasks = projectTasks.filter((item) => item.state === 'active');
   const historyProjectTasks = projectTasks.filter((item) => item.state !== 'active');
+  const visibleActive = showAllActive ? activeProjectTasks : activeProjectTasks.slice(0, 5);
   const groupHref = `/projects/${projectId}?view=group${selectedProjectTaskId ? `&projectTask=${selectedProjectTaskId}` : ''}`;
 
   const departmentGroups = departments.map((department) => ({
@@ -106,53 +115,96 @@ export function ProjectWorkNavigation({
           </button>
         </div>
 
-        {/* 核心项目任务列表 */}
+        {/* 核心项目任务列表（pinned 置顶序由服务端返回；>5 折叠；区块可折叠） */}
         <div className="work-nav-section">
-          <div className="work-nav-heading">
-            <span>项目任务</span>
+          <button
+            type="button"
+            className="work-nav-heading"
+            style={{ display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between', border: 'none', background: 'transparent', cursor: 'pointer', color: 'inherit', padding: 0 }}
+            onClick={() => setTasksCollapsed((v) => !v)}
+            aria-expanded={!tasksCollapsed}
+          >
+            <span>{tasksCollapsed ? '▸' : '▾'} 项目任务</span>
             <span style={{ fontSize: '11px', color: 'var(--fg-subtle)' }}>{projectTasks.length}</span>
-          </div>
+          </button>
 
-          {activeProjectTasks.map((item) => {
-            const selected = view === 'task' && selectedProjectTaskId === item.id;
-            return (
-              <Link
-                key={item.id}
-                className={`work-nav-item task-nav-item ${selected ? 'is-active' : ''}`}
-                to={taskHref(projectId, item.id)}
-                aria-current={selected ? 'page' : undefined}
-              >
-                <span className="work-nav-icon task-mark" style={{ '--task-hue': `${(item.seq * 37) % 360}` } as React.CSSProperties}>
-                  {projectTaskMark(item.title)}
-                </span>
-                <span className="work-nav-label">#{item.seq} {item.title}</span>
-              </Link>
-            );
-          })}
+          {!tasksCollapsed && (
+            <>
+              {visibleActive.map((item) => {
+                const selected = view === 'task' && selectedProjectTaskId === item.id;
+                return (
+                  <div key={item.id} className={`work-nav-item task-nav-item ${selected ? 'is-active' : ''}`} style={{ position: 'relative' }}>
+                    <Link
+                      className="task-nav-link"
+                      style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0, color: 'inherit', textDecoration: 'none' }}
+                      to={taskHref(projectId, item.id)}
+                      aria-current={selected ? 'page' : undefined}
+                    >
+                      <span className="work-nav-icon task-mark" style={{ '--task-hue': `${(item.seq * 37) % 360}` } as React.CSSProperties}>
+                        {projectTaskMark(item.title)}
+                      </span>
+                      <span className="work-nav-label">{item.pinned ? '📌 ' : ''}#{item.seq} {item.title}</span>
+                    </Link>
+                    <span className="task-nav-actions" style={{ display: 'flex', gap: 2 }}>
+                      <button
+                        type="button"
+                        aria-label={item.pinned ? '取消置顶' : '置顶'}
+                        title={item.pinned ? '取消置顶' : '置顶'}
+                        style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 11, padding: '0 3px' }}
+                        onClick={() => pinTask.mutate({ projectId, id: item.id, pinned: !item.pinned })}
+                      >
+                        {item.pinned ? '📌' : '🔘'}
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="归档任务"
+                        title="归档任务"
+                        style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 11, padding: '0 3px' }}
+                        onClick={() => taskAction.mutate({ projectId, id: item.id, action: 'archive' })}
+                      >
+                        📦
+                      </button>
+                    </span>
+                  </div>
+                );
+              })}
 
-          {activeProjectTasks.length === 0 && (
-            <p className="muted work-nav-empty">暂无进行中的任务</p>
-          )}
+              {activeProjectTasks.length > 5 && (
+                <button
+                  type="button"
+                  className="work-nav-item"
+                  style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--accent)', fontSize: 12, padding: '4px 8px', width: '100%', textAlign: 'left' }}
+                  onClick={() => setShowAllActive((v) => !v)}
+                >
+                  {showAllActive ? '收起' : `显示更多 ${activeProjectTasks.length - 5}`}
+                </button>
+              )}
 
-          {historyProjectTasks.length > 0 && (
-            <details className="work-nav-more" style={{ marginTop: '6px' }}>
-              <summary>
-                <span className="work-nav-icon" aria-hidden="true">📁</span>
-                <span className="work-nav-label">历史任务 ({historyProjectTasks.length})</span>
-              </summary>
-              <div className="work-nav-more-list">
-                {historyProjectTasks.map((item) => (
-                  <Link
-                    key={item.id}
-                    className={`work-nav-item ${selectedProjectTaskId === item.id ? 'is-active' : ''}`}
-                    to={taskHref(projectId, item.id)}
-                  >
-                    <span className="work-nav-icon" style={{ fontSize: '10px' }}>#{item.seq}</span>
-                    <span className="work-nav-label">{item.title}</span>
-                  </Link>
-                ))}
-              </div>
-            </details>
+              {activeProjectTasks.length === 0 && (
+                <p className="muted work-nav-empty">暂无进行中的任务</p>
+              )}
+
+              {historyProjectTasks.length > 0 && (
+                <details className="work-nav-more" style={{ marginTop: '6px' }}>
+                  <summary>
+                    <span className="work-nav-icon" aria-hidden="true">📁</span>
+                    <span className="work-nav-label">历史任务 ({historyProjectTasks.length})</span>
+                  </summary>
+                  <div className="work-nav-more-list">
+                    {historyProjectTasks.map((item) => (
+                      <Link
+                        key={item.id}
+                        className={`work-nav-item ${selectedProjectTaskId === item.id ? 'is-active' : ''}`}
+                        to={taskHref(projectId, item.id)}
+                      >
+                        <span className="work-nav-icon" style={{ fontSize: '10px' }}>#{item.seq}</span>
+                        <span className="work-nav-label">{item.title}</span>
+                      </Link>
+                    ))}
+                  </div>
+                </details>
+              )}
+            </>
           )}
         </div>
 
