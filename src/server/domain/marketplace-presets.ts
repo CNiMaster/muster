@@ -249,12 +249,12 @@ export function disableExistingForScope(
         }
       } else {
         // 只读视图条目（skill:/tool:/bridge:）：setCompanyPluginDecision 会因 getPluginRow
-        // 查不到而抛错，这里直写 company_plugin 覆盖行（读路径 listDisabledCompanyPlugins 兼容视图 id）
+        // 查不到而抛错，这里直写 workbench_plugin 覆盖行（读路径 listDisabledCompanyPlugins 兼容视图 id）
         db.prepare(
-          `INSERT INTO company_plugin (company_id, plugin_id, enabled, decision, enabled_by, enabled_at)
-           VALUES (?, ?, 0, 'disabled', ?, ?)
-           ON CONFLICT(company_id, plugin_id) DO UPDATE SET enabled=0, decision='disabled', enabled_by=excluded.enabled_by, enabled_at=excluded.enabled_at`,
-        ).run(scope.companyId, id, enabledBy ?? null, now);
+          `INSERT INTO workbench_plugin (plugin_id, enabled, decision, enabled_by, enabled_at)
+           VALUES (?, 0, 'disabled', ?, ?)
+           ON CONFLICT(plugin_id) DO UPDATE SET enabled=0, decision='disabled', enabled_by=excluded.enabled_by, enabled_at=excluded.enabled_at`,
+        ).run(id, enabledBy ?? null, now);
       }
     } else {
       // 平台级替换：实体行置 status=disabled（effective 已按 status 过滤，旧行即失效）；

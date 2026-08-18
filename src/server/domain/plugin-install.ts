@@ -141,17 +141,16 @@ export function setCompanyPluginDecision(
   const now = nowIso();
   if (decision === 'enabled') {
     // 撤销禁用：删除覆盖行，回到平台默认全开
-    db.prepare('DELETE FROM company_plugin WHERE company_id = ? AND plugin_id = ?').run(
-      companyId,
+    db.prepare('DELETE FROM workbench_plugin WHERE plugin_id = ?').run(
       pluginId,
     );
   } else {
     // 显式禁用：upsert decision='disabled'
     db.prepare(
-      `INSERT INTO company_plugin (company_id, plugin_id, enabled, decision, enabled_by, enabled_at)
-       VALUES (?, ?, 0, 'disabled', ?, ?)
-       ON CONFLICT(company_id, plugin_id) DO UPDATE SET enabled=0, decision='disabled', enabled_by=excluded.enabled_by, enabled_at=excluded.enabled_at`,
-    ).run(companyId, pluginId, enabledBy ?? null, now);
+      `INSERT INTO workbench_plugin (plugin_id, enabled, decision, enabled_by, enabled_at)
+       VALUES (?, 0, 'disabled', ?, ?)
+       ON CONFLICT(plugin_id) DO UPDATE SET enabled=0, decision='disabled', enabled_by=excluded.enabled_by, enabled_at=excluded.enabled_at`,
+    ).run(pluginId, enabledBy ?? null, now);
   }
 }
 
@@ -170,53 +169,51 @@ export function setCompanyPluginEnabled(
 }
 
 /**
- * 查询某公司显式禁用的平台插件 id 集合（opt-out 计算用）。
+ * 查询工作台显式禁用的平台插件 id 集合（opt-out 计算用）。
  * 这是 opt-out 模型的热路径：effective = 平台插件 MINUS 这个集合。
  */
-export function listDisabledCompanyPlugins(db: DB, companyId: string): Set<string> {
+export function listDisabledCompanyPlugins(db: DB, _companyId?: string): Set<string> {
   const rows = db
     .prepare(
-      `SELECT plugin_id FROM company_plugin WHERE company_id = ? AND decision = 'disabled'`,
+      `SELECT plugin_id FROM workbench_plugin WHERE decision = 'disabled'`,
     )
-    .all(companyId) as { plugin_id: string }[];
+    .all() as { plugin_id: string }[];
   return new Set(rows.map((r) => r.plugin_id));
 }
 
 /**
- * 查询某公司对每个 plugin 的决策状态（供 UI 渲染三态）。
+ * 查询工作台对每个 plugin 的决策状态（供 UI 渲染三态）。
  * 返回 Map<pluginId, 'enabled' | 'disabled'> —— 仅含显式决策的行。
  * 未出现在 Map 中的插件 = 'default'（平台默认）。
  */
 export function getCompanyPluginDecisions(
   db: DB,
-  companyId: string,
+  _companyId?: string,
 ): Map<string, 'enabled' | 'disabled'> {
   const rows = db
-    .prepare('SELECT plugin_id, decision FROM company_plugin WHERE company_id = ?')
-    .all(companyId) as { plugin_id: string; decision: 'enabled' | 'disabled' }[];
+    .prepare('SELECT plugin_id, decision FROM workbench_plugin')
+    .all() as { plugin_id: string; decision: 'enabled' | 'disabled' }[];
   return new Map(rows.map((r) => [r.plugin_id, r.decision]));
 }
 
 /**
- * 计算某公司「实际生效」的插件列表（opt-out 核心）。
+ * 计算工作台「实际生效」的插件列表（opt-out 核心）。
  *
  * 生效规则：
- *   - 平台插件（scope.level='platform'）：默认启用，减去该公司显式禁用的
- *   - 公司插件（scope.level='company', scope.companyId===companyId）：公司独占，生效；
- *     但仍可被该公司显式禁用（与历史 opt-in 语义兼容）
- *   - 其他公司独占插件：不生效
+ *   - 平台插件（scope.level='platform'）：默认启用，减去工作台显式禁用的
+ *   - 工作台插件（scope.level='company' 或其他）：未被显式禁用；同样排除 status='disabled'
  *
  * assembleTools 调用此函数决定加载哪些 MCP server。
  */
-export function getEffectivePluginsForCompany(db: DB, companyId: string): Plugin[] {
+export function getEffectivePluginsForCompany(db: DB, companyId?: string): Plugin[] {
   const disabledSet = listDisabledCompanyPlugins(db, companyId);
   // 平台级插件：默认全开，减去显式禁用；status='disabled' 的实体行（商城平台级「装新停旧」）不生效
   const platformPlugins = listPlugins(db, { scopeLevel: 'platform' }).filter(
     (p) => !disabledSet.has(p.id) && p.status !== 'disabled',
   );
-  // 公司独占插件：仅 scope 匹配的本公司，且未被显式禁用；同样排除 status='disabled'
-  const companyPlugins = listPlugins(db, { scopeLevel: 'company', scopeCompanyId: companyId }).filter(
-    (p) => !disabledSet.has(p.id) && p.status !== 'disabled',
+  // 工作台级插件：未被显式禁用；同样排除 status='disabled'
+  const companyPlugins = listPlugins(db).filter(
+    (p) => p.scope.level === 'company' && !disabledSet.has(p.id) && p.status !== 'disabled',
   );
   // 按 id 去重（理论上两类不会重叠，防御性）
   const byId = new Map<string, Plugin>();
@@ -245,10 +242,10 @@ export function isEntityPlugin(p: Plugin): boolean {
 }
 
 /**
- * 一次查询构建该公司生效 skill 的（归一化 name → body）索引。
+ * 一次查询构建工作台生效 skill 的（归一化 name → body）索引。
  * 注入链热路径（resolveTaskSkills）只扫一遍全量插件，避免每个候选各扫一次。
  */
-export function collectEffectivePluginSkills(db: DB, companyId: string): Map<string, string> {
+export function collectEffectivePluginSkills(db: DB, companyId?: string): Map<string, string> {
   const map = new Map<string, string>();
   for (const p of getEffectivePluginsForCompany(db, companyId)) {
     if (p.kind !== 'skill' || p.manifest.kind !== 'skill') continue;
@@ -258,10 +255,10 @@ export function collectEffectivePluginSkills(db: DB, companyId: string): Map<str
 }
 
 /**
- * 查询某公司启用的 plugin id 列表（opt-out 迁移后语义=effective）。
+ * 查询工作台启用的 plugin id 列表（opt-out 迁移后语义=effective）。
  * 保留旧函数名供 assembleTools 等历史调用方使用，内部转 effective 计算。
  */
-export function listEnabledCompanyPlugins(db: DB, companyId: string): string[] {
+export function listEnabledCompanyPlugins(db: DB, companyId?: string): string[] {
   return getEffectivePluginsForCompany(db, companyId).map((p) => p.id);
 }
 

@@ -42,7 +42,7 @@ export async function runConnectionProbe(db:DB,input:{profileId:string;force:boo
     }
     const provider = manifest.id === 'gemini-api' ? 'gemini' : 'openai';
     const profileRef = (profile.credentialRef?.kind === 'env' && profile.credentialRef.reference) ? profile.credentialRef.reference : undefined;
-    const apiKeyEnv = resolveExecutorCredentialEnv(db, null, null, provider, undefined, PROVIDER_DEFAULT_API_KEY_ENV[provider], profileRef);
+    const apiKeyEnv = resolveExecutorCredentialEnv(db, null, provider, undefined, PROVIDER_DEFAULT_API_KEY_ENV[provider], profileRef);
     const apiKey = apiKeyEnv ? (process.env[apiKeyEnv] ?? '') : '';
     const startedAt = Date.now();
     try {

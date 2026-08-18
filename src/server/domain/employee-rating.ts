@@ -44,7 +44,7 @@ export function calculateRating(db: DB, profileId: string): RatingBreakdown {
     .prepare('SELECT COUNT(*) AS c FROM memory_entry WHERE profile_id = ?')
     .get(profileId) as { c: number };
 
-  // 任职累计天数（跨所有公司任职）
+  // 任职累计天数（跨所有任职）
   const daysRow = db
     .prepare(
       `SELECT COALESCE(SUM(CAST((julianday(COALESCE(NULLIF(ce.updated_at,''), datetime('now'))) - julianday(ce.created_at)) AS INTEGER)), 0) AS d
@@ -52,19 +52,10 @@ export function calculateRating(db: DB, profileId: string): RatingBreakdown {
     )
     .get(profileId) as { d: number };
 
-  // 外包验收通过数（该 profile 作为乙方对接人，契约 completed）
-  const contractRow = db
-    .prepare(
-      `SELECT COUNT(*) AS c FROM outsourcing_contract oc
-       JOIN agent_definition a ON a.id = oc.vendor_liaison_agent_id
-       WHERE a.profile_id = ? AND oc.state = 'completed'`,
-    )
-    .get(profileId) as { c: number };
-
   const completedTasks = taskRow.c ?? 0;
   const memoryEntries = memRow.c ?? 0;
   const employmentDays = daysRow.d ?? 0;
-  const deliveredContracts = contractRow.c ?? 0;
+  const deliveredContracts = 0;
   // E1.4 质量维度：该 profile 所有任职作为 assignee 的 task 返工总次数（负向信号，驱动路由与晋升流）。
   const reworkRow = db
     .prepare(

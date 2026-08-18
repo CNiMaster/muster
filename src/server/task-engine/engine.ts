@@ -38,8 +38,6 @@ import { DISPATCHER_ROLE, JUDGE_ROLE } from '../domain/system-agents';
 import { getExecutorManifest, providerForManifest } from '../executors/manifests';
 import { assertSafeToRun } from '../executors/safety';
 import { getProject, listProjectReferences } from '../domain/project';
-import { getOutsourcingContract } from '../domain/outsourcing-contract';
-import { onOutsourcedTaskCompleted } from '../domain/outsourcing-delivery';
 import { applyRating } from '../domain/employee-rating';
 import { transitionProjectPhase } from '../domain/project-readiness';
 import { appendTaskEvent } from '../domain/task-event';
@@ -333,17 +331,7 @@ export class TaskEngine {
     // B3a：MCP 连接池提升到 try 外，确保 finally 能清理（ctx 在 try 内定义，作用域不达 finally）
     let mcpPool: import('../executors/tools/mcp/client-pool').McpClientPool | undefined;
     const resolutionContext = getPublishConflictResolutionContext(task.inputProtocol);
-    // B2B 外包：承接任务的 worktree 基于甲方 source project 的 git repo 切出，
-    // publish 目标也指向甲方 rootDir（让乙方直接在甲方目录内工作）。
-    // 普通任务 outsourcingContractId 为 null，完全走原逻辑（零回归）。
-    const outsourcingContract = task.outsourcingContractId
-      ? getOutsourcingContract(this.db, task.outsourcingContractId)
-      : null;
-    const sourceProject = outsourcingContract
-      ? getProject(this.db, outsourcingContract.sourceProjectId)
-      : null;
-    // worktree 源 repo：外包任务用甲方 repo（baseCommit 才在 publish 目标 repo 有效），普通任务用自身项目
-    const worktreeSourceRoot = sourceProject?.rootDir ?? project.rootDir;
+    const worktreeSourceRoot = project.rootDir;
     try {
       worktreeInfo = getTaskRuntime(this.db, task.id) ?? null;
       if (worktreeInfo && !existsSync(worktreeInfo.path)) {
@@ -354,7 +342,7 @@ export class TaskEngine {
       if (!worktreeInfo) {
         // staging 一期：蜂群系任务（蜂/汇总/验收/返工/裁决）从 staging 集成分支切出——
         // 基线与发布目标共用 isSwarmLinkedTask 谓词（review C1：缺一即闭环断裂）
-        const baseRef = (!sourceProject && isSwarmLinkedTask(task))
+        const baseRef = isSwarmLinkedTask(task)
           ? ensureStagingWorktree(worktreeSourceRoot, project.id).branch
           : undefined;
         worktreeInfo = createWorktree(worktreeSourceRoot, project.id, task.id, baseRef);
@@ -476,18 +464,7 @@ export class TaskEngine {
         threadId: projectTaskThread.id,
         sessionIdHint: projectTaskThread.vendorSessionId ?? undefined,
         // PRD Phase 3.4：收集授权参考项目根目录，让 Claude 直接只读访问（--add-dir）。
-        // B2B 外包：追加甲方 source project 的授权只读资料路径 + 甲方项目根（便于乙方参考甲方既有资料）
-        readonlyDirs: [
-          ...collectReadonlyReferenceDirs(this.db, task.projectId),
-          ...(outsourcingContract && sourceProject
-            ? [
-                sourceProject.rootDir,
-                ...outsourcingContract.readonlyRefs.map((r) =>
-                  r.startsWith('/') ? r : `${sourceProject.rootDir}/${r}`,
-                ),
-              ]
-            : []),
-        ],
+        readonlyDirs: collectReadonlyReferenceDirs(this.db, task.projectId),
         // PRD Phase 3：员工级执行器配置 + 凭据三层解析(员工覆盖 > 公司覆盖 > 平台默认 > legacy/系统回退)
         agentExecutor: effectiveExecutor,
         apiKeyEnv: resolveExecutorCredentialForTask(this.db, agent, company.id, executorProfile, effectiveExecutor, this.defaultProvider),
@@ -916,11 +893,10 @@ export class TaskEngine {
       }
 
       if (result.outcome === 'completed' && result.artifacts.length > 0 && worktreeInfo) {
-        // B2B 外包：承接任务产物 publish 到甲方 source project 的 rootDir（让乙方工作直接落到甲方目录）
-        const publishTargetRoot = sourceProject?.rootDir ?? project.rootDir;
+        const publishTargetRoot = project.rootDir;
         // staging 一期：蜂群系任务（蜂/汇总/验收/返工/裁决——isSwarmLinkedTask 统一谓词，
         // 与 worktree 基线判定同源）发布到 staging worktree 检出目录，验收通过才 promote 回主干
-        const stagingTarget = (!sourceProject && isSwarmLinkedTask(task))
+        const stagingTarget = isSwarmLinkedTask(task)
           ? ensureStagingWorktree(project.rootDir, project.id).path
           : undefined;
         const pub = this.publishArtifacts(task.id, thread.id, publishTargetRoot, worktreeInfo, result, stagingTarget);
@@ -1100,15 +1076,6 @@ export class TaskEngine {
           }
         }
       }
-      // 阶段四任务 4.2：外包验收 Task 完成 → 自动验收闭环（completed/返工/rejected/转人工）
-      if (result.outcome === 'completed') {
-        try {
-          const { handleOutsourcingReviewTaskCompleted } = await import('../domain/outsourcing-review');
-          handleOutsourcingReviewTaskCompleted(this.db, completedTask);
-        } catch (e) {
-          log.warn('outsourcing review completion handling failed', { taskId: task.id, err: e instanceof Error ? e.message : String(e) });
-        }
-      }
       // R2：任务级自动验收——验收 Task 完成 → 判定落地（PASS 交付 / FAIL 返工 / 低置信升级用户）
       if (result.outcome === 'completed') {
         try {
@@ -1116,32 +1083,6 @@ export class TaskEngine {
           handleAcceptanceReviewTaskCompleted(this.db, completedTask);
         } catch (e) {
           log.warn('acceptance review completion handling failed', { taskId: task.id, err: e instanceof Error ? e.message : String(e) });
-        }
-      }
-      // B2B 外包：承接任务完成后触发交付（契约标记 delivered，通知甲方验收）。
-      // 幂等：非外包任务或契约非 in_progress 时返回 null，无副作用。
-      if (result.outcome === 'completed') {
-        const deliveredContract = onOutsourcedTaskCompleted(this.db, task.id);
-        if (deliveredContract) {
-          realtime.publish(makeLifecycleEvent('outsource.delivered', {
-            contractId: deliveredContract.id,
-            outsourcedTaskId: task.id,
-          }, { companyId: deliveredContract.sourceCompanyId, taskId: task.id }));
-          // 自动触发3：跨公司契约 delivered → 甲乙双方 task-clarification 讨论辅助交接验收
-          try { this.triggerHandoverDiscussion(deliveredContract, task, company.id, project); } catch (e) { log.warn('handover discussion trigger failed', { taskId: task.id, err: e instanceof Error ? e.message : String(e) }); }
-          // 阶段四任务 4.2：自动验收——给甲方第一负责人派 [验收] Task（条件不满足时静默跳过）
-          try {
-            const { triggerAutoReview } = await import('../domain/outsourcing-review');
-            const reviewTask = triggerAutoReview(this.db, deliveredContract);
-            if (reviewTask) {
-              realtime.publish(makeLifecycleEvent('outsource.review-auto-triggered', {
-                contractId: deliveredContract.id,
-                reviewTaskId: reviewTask.id,
-              }, { companyId: deliveredContract.sourceCompanyId, projectId: deliveredContract.sourceProjectId, taskId: task.id }));
-            }
-          } catch (e) {
-            log.warn('auto review trigger failed', { taskId: task.id, err: e instanceof Error ? e.message : String(e) });
-          }
         }
       }
       // 自动触发1：验收不达标（acceptance_criteria 有 met=false）→ quality-review 讨论
@@ -1512,58 +1453,6 @@ export class TaskEngine {
     log.info('auto conflict-resolution discussion triggered', { taskId: task.id, discussionId: disc.id, conflictsCount: conflicts.length });
   }
 
-  /**
-   * 自动触发3：跨公司契约 delivered → task-clarification 讨论辅助交接验收。
-   * 乙方交付后、甲方验收前，甲乙双方讨论对齐交付预期（避免验收返工）。
-   * 跨公司讨论：参与者在甲方公司侧（第一负责人），议题含乙方交付信息。
-   */
-  private triggerHandoverDiscussion(contract: NonNullable<ReturnType<typeof onOutsourcedTaskCompleted>>, task: ReturnType<typeof getTask>, providerCompanyId: string, providerProject: ReturnType<typeof getProject>): void {
-    // 讨论建在甲方公司项目下（契约的 sourceCompanyId 是甲方）
-    try {
-      const sourceProject = getProject(this.db, contract.sourceProjectId);
-      const participants: string[] = [];
-      if (sourceProject.firstAgentId) participants.push(sourceProject.firstAgentId);
-      // 加入甲方原任务 assignee（如果有）
-      if (contract.sourceTaskId) {
-        try {
-          const sourceTask = getTask(this.db, contract.sourceTaskId);
-          if (sourceTask.assigneeAgentId && !participants.includes(sourceTask.assigneeAgentId)) participants.push(sourceTask.assigneeAgentId);
-        } catch { /* */ }
-      }
-      if (participants.length < 1) return;
-      // 单方也可发起（甲方内部先对齐验收标准），不强制 2 人——createDiscussion 会校验
-      // 这里用甲方第一负责人自讨论（若只有 1 人则跳过，避免 < 2 报错）
-      if (participants.length < 2) {
-        log.info('handover discussion skipped: only 1 participant on source side', { contractId: contract.id });
-        return;
-      }
-      const disc = createDiscussion(this.db, {
-        projectId: sourceProject.id,
-        topic: `外包交付验收对齐：${contract.title}`,
-        participantAgentIds: participants,
-        sourceTaskId: contract.sourceTaskId ?? task.id,
-        scenario: 'task-clarification',
-        maxTurns: 6,
-        context: {
-          contractId: contract.id,
-          providerCompanyId,
-          providerProjectId: providerProject.id,
-          outsourcedTaskId: task.id,
-          deliverableDir: contract.deliverableDir,
-          acceptanceCriteria: contract.acceptanceCriteria,
-          instruction: '乙方已完成外包任务并交付产物。请甲乙双方对齐验收标准与交付预期，确保验收一次通过、减少返工。',
-        },
-      });
-      startDiscussionRoom(this.db, disc.id);
-      realtime.publish(makeLifecycleEvent('discussion.auto-triggered', {
-        discussionId: disc.id, scenario: 'task-clarification', taskId: task.id, projectId: sourceProject.id,
-      }, { companyId: contract.sourceCompanyId, projectId: sourceProject.id, taskId: task.id }));
-      log.info('auto handover discussion triggered', { contractId: contract.id, discussionId: disc.id });
-    } catch (e) {
-      log.warn('handover discussion failed', { contractId: contract.id, err: e instanceof Error ? e.message : String(e) });
-    }
-  }
-
   private createPublishConflictResolutionTask(input: {
     task: ReturnType<typeof getTask>;
     assigneeAgentId: string;
@@ -1893,7 +1782,7 @@ function resolveExecutorCredentialForTask(
     ? executorProfile.credentialRef.reference
     : undefined;
   try {
-    return resolveExecutorCredentialEnv(db, agent.profileId, companyId, provider, legacyEnv, providerFallback, profileRef);
+    return resolveExecutorCredentialEnv(db, agent.profileId, provider, legacyEnv, providerFallback, profileRef);
   } catch {
     // credential_definition 表缺失或查询异常:回退到 legacy + provider 默认
     return legacyEnv ?? providerFallback;

@@ -13,7 +13,6 @@ import { settleDrainingAgents } from '../domain/agent';
 import { drainReflectionQueue, recoverStuckReflections, enqueueIdleReflections } from '../domain/reflection';
 import { settleMemoryVotes } from '../domain/memory';
 import { generateInspectorSuggestions } from '../domain/inspector';
-import { autoAcceptContract, createOutsourcedTask, revertAcceptToPending } from '../domain/outsourcing-contract';
 import type { SetupGenerator } from '../domain/setup-assistant';
 import { getSystemSettings } from '../domain/setting';
 import { ensureSystemAgents } from '../domain/system-agents';
@@ -120,12 +119,6 @@ export class ProjectRuntimeCoordinator {
           log.warn('inspector alert scan failed', { error: error instanceof Error ? error.message : String(error) });
         }
       }
-      // 阶段四任务 4.1：pending 外包契约自动接受（乙方在线且未关闭自动接受时）。
-      try {
-        this.acceptPendingOutsourcing();
-      } catch (error) {
-        log.warn('auto accept outsourcing scan failed', { error: error instanceof Error ? error.message : String(error) });
-      }
       // E4.3 空闲自主反思（默认关）：每 60 秒扫描一次；只入队（LLM 消化走独立反思定时器）。
       if (Date.now() - this.lastIdleReflectionRun >= this.idleReflectionIntervalMs) {
         this.lastIdleReflectionRun = Date.now();
@@ -207,8 +200,8 @@ export class ProjectRuntimeCoordinator {
   }
 
   async pumpProject(projectId: string): Promise<RuntimeTickResult> {
-    const project = this.db.prepare('SELECT company_id, state FROM project WHERE id=?').get(projectId) as
-      | { company_id: string; state: string }
+    const project = this.db.prepare('SELECT state FROM project WHERE id=?').get(projectId) as
+      | { state: string }
       | undefined;
     if (!project) return { recoveredLeases: 0, plannedTasks: [], pumpedTasks: 0, settledCompanies: [], releasedMirrors: [] };
     const company = getWorkbench(this.db);
@@ -402,47 +395,6 @@ export class ProjectRuntimeCoordinator {
       }
     }
     return alerts;
-  }
-
-  /** 阶段四任务 4.1：扫描 pending 外包契约，条件满足时自动接受（AI 对 AI）。 */
-  private acceptPendingOutsourcing(): number {
-    let accepted = 0;
-    const rows = this.db
-      .prepare(`SELECT id FROM outsourcing_contract WHERE state='pending'`)
-      .all() as { id: string }[];
-    for (const { id } of rows) {
-      try {
-        const contract = autoAcceptContract(this.db, id);
-        if (contract && contract.state === 'accepted') {
-          // 阶段四任务 4.1 补全：接受后立即创建乙方承接任务（与 API /accept 端点流程对齐），
-          // 否则契约停在 accepted，乙方永不执行。
-          try {
-            const { task } = createOutsourcedTask(this.db, id);
-            accepted++;
-            log.info('outsourcing contract auto-accepted', {
-              contractId: id,
-              liaisonAgentId: contract.vendorLiaisonAgentId,
-              outsourcedTaskId: task.id,
-            });
-          } catch (taskError) {
-            // Review 修复（M-1）：承接任务创建失败时回滚到 pending（清空对接人），
-            // 契约可被下次 tick 重新接受，不再永久卡在 accepted。
-            // M-1 退避：传 autoBackoff 累加失败计数 + 设下次允许时间，避免每 2s tick 反复空转。
-            revertAcceptToPending(this.db, id, true);
-            log.warn('auto accept outsourcing: createOutsourcedTask failed, contract reverted to pending (backoff applied)', {
-              contractId: id,
-              error: taskError instanceof Error ? taskError.message : String(taskError),
-            });
-          }
-        }
-      } catch (error) {
-        log.warn('auto accept outsourcing failed', {
-          contractId: id,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
-    return accepted;
   }
 
   private settleDrainingCompanies(): string[] {

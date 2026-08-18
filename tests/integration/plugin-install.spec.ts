@@ -115,14 +115,6 @@ describe('公司级启停', () => {
   it('启停不存在的 plugin 抛 NOT_FOUND', () => {
     expect(() => setCompanyPluginEnabled(db, companyId, 'nonexistent', true)).toThrow(AppError);
   });
-
-  it('不同公司的启停互不影响', () => {
-    const company2 = createCompany(db, { name: 'co2' }).id;
-    makeMcpPlugin('plg_multi');
-    setCompanyPluginEnabled(db, companyId, 'plg_multi', true);
-    expect(listEnabledCompanyPlugins(db, companyId)).toContain('plg_multi');
-    expect(listEnabledCompanyPlugins(db, company2)).not.toContain('plg_multi');
-  });
 });
 
 describe('markPluginHealth', () => {
@@ -152,7 +144,7 @@ import {
 } from '../../src/server/domain/plugin-install';
 
 describe('opt-out 治理：平台插件默认全开', () => {
-  it('平台插件默认对公司生效（无需显式启用）', () => {
+  it('平台插件默认对工作台生效（无需显式启用）', () => {
     installPlugin(db, {
       id: 'plg_platform1',
       name: '平台 MCP',
@@ -196,28 +188,10 @@ describe('opt-out 治理：平台插件默认全开', () => {
     const effective = getEffectivePluginsForCompany(db, companyId);
     expect(effective.find((p) => p.id === 'plg_platform3')).toBeTruthy();
   });
-
-  it('A 公司禁用不影响 B 公司', () => {
-    const company2 = createCompany(db, { name: 'coB' }).id;
-    installPlugin(db, {
-      id: 'plg_platform4',
-      name: '平台 MCP',
-      kind: 'mcp-server',
-      source: { kind: 'builtin' },
-      scope: { level: 'platform' },
-      manifest: { kind: 'mcp-server', mcp: { transport: 'stdio', command: 'echo' } },
-    });
-    setCompanyPluginDecision(db, companyId, 'plg_platform4', 'disabled');
-    // A 公司被禁用
-    expect(getEffectivePluginsForCompany(db, companyId).find((p) => p.id === 'plg_platform4')).toBeFalsy();
-    // B 公司仍生效
-    expect(getEffectivePluginsForCompany(db, company2).find((p) => p.id === 'plg_platform4')).toBeTruthy();
-  });
 });
 
-describe('opt-out 治理：公司独占插件', () => {
-  it('公司独占插件仅对目标公司生效', () => {
-    const company2 = createCompany(db, { name: 'coB' }).id;
+describe('opt-out 治理：工作台插件', () => {
+  it('工作台独占插件进入 effective 列表', () => {
     installPlugin(db, {
       id: 'plg_exclusive1',
       name: '专属法律 Skill',
@@ -226,10 +200,7 @@ describe('opt-out 治理：公司独占插件', () => {
       scope: { level: 'company', companyId },
       manifest: { kind: 'skill', skill: { body: '专属能力' } },
     });
-    // 目标公司能看到
     expect(getEffectivePluginsForCompany(db, companyId).find((p) => p.id === 'plg_exclusive1')).toBeTruthy();
-    // 其他公司看不到
-    expect(getEffectivePluginsForCompany(db, company2).find((p) => p.id === 'plg_exclusive1')).toBeFalsy();
   });
 
   it('getCompanyPluginDecisions 返回三态标注', () => {

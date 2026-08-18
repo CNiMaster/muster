@@ -36,7 +36,7 @@ export interface OutsourcingDecision {
  */
 export function hasInternalCapability(
   db: DB,
-  companyId: string,
+  _companyId: string,
   capabilityIds: string[],
 ): boolean {
   if (capabilityIds.length === 0) return true; // 无能力要求视为内部可做
@@ -44,20 +44,20 @@ export function hasInternalCapability(
   const row = db
     .prepare(
       `SELECT 1 FROM capability_binding
-       WHERE company_id = ? AND capability_id IN (${placeholders})
+       WHERE capability_id IN (${placeholders})
          AND employee_id IS NOT NULL
        LIMIT 1`,
     )
-    .get(companyId, ...capabilityIds) as { '1': number } | undefined;
+    .get(...capabilityIds) as { '1': number } | undefined;
   return !!row;
 }
 
 /**
- * 找到公司内具备指定能力的在线员工（用于 internal 路径推荐 assignee）。
+ * 找到工作台内具备指定能力的在线员工（用于 internal 路径推荐 assignee）。
  */
 export function findInternalAssignee(
   db: DB,
-  companyId: string,
+  _companyId: string,
   capabilityIds: string[],
 ): string | null {
   if (capabilityIds.length === 0) return null;
@@ -66,12 +66,12 @@ export function findInternalAssignee(
     .prepare(
       `SELECT cb.employee_id FROM capability_binding cb
        JOIN agent_definition a ON a.id = cb.employee_id
-       WHERE cb.company_id = ? AND cb.capability_id IN (${placeholders})
+       WHERE cb.capability_id IN (${placeholders})
          AND cb.employee_id IS NOT NULL
          AND a.availability_state = 'online'
        LIMIT 1`,
     )
-    .get(companyId, ...capabilityIds) as { employee_id: string } | undefined;
+    .get(...capabilityIds) as { employee_id: string } | undefined;
   return row?.employee_id ?? null;
 }
 

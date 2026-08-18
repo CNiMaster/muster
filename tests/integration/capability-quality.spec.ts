@@ -31,12 +31,12 @@ function fixture() {
   return { c, worker, project };
 }
 
-function insertBinding(companyId: string, capabilityId: string, toolIds: string[]) {
+function insertBinding(_companyId: string, capabilityId: string, toolIds: string[]) {
   const now = new Date().toISOString();
   db.prepare(
-    `INSERT INTO capability_binding (id, company_id, employee_id, scope, scope_key, capability_id, skill_ids_json, purpose, load_when, created_at, updated_at)
-     VALUES (?, ?, NULL, 'role', 'worker', ?, '[]', '测试能力', 'always', ?, ?)`,
-  ).run(`cb_${capabilityId}`, companyId, capabilityId, now, now);
+    `INSERT INTO capability_binding (id, employee_id, scope, scope_key, capability_id, skill_ids_json, purpose, load_when, created_at, updated_at)
+     VALUES (?, NULL, 'role', 'worker', ?, '[]', '测试能力', 'always', ?, ?)`,
+  ).run(`cb_${capabilityId}`, capabilityId, now, now);
   db.prepare('UPDATE capability_binding SET recommended_tool_ids_json = ? WHERE id = ?').run(JSON.stringify(toolIds), `cb_${capabilityId}`);
 }
 

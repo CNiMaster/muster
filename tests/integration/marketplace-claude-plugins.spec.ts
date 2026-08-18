@@ -133,7 +133,7 @@ describe('installClaudeCodePlugin（安装为 skill 注入）', () => {
       { fetcher: mockFetcher(), replaceExisting: true },
     );
     expect(fresh.id).not.toBe(old.id);
-    const disabled = db.prepare('SELECT decision FROM company_plugin WHERE company_id = ? AND plugin_id = ?').get(company.id, old.id) as { decision: string } | undefined;
+    const disabled = db.prepare('SELECT decision FROM workbench_plugin WHERE plugin_id = ?').get(old.id) as { decision: string } | undefined;
     expect(disabled?.decision).toBe('disabled');
   });
 

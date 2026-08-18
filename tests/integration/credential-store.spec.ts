@@ -57,25 +57,16 @@ describe('credential store', () => {
       const profileId = 'ap_test_credential';
 
       // 平台默认
-      const platformDefault = resolveCredentialKey(db, null, 'c_test', 'cred_openai_key');
+      const platformDefault = resolveCredentialKey(db, null, 'cred_openai_key');
       expect(platformDefault).toBe('OPENAI_API_KEY');
-
-      // 公司级覆盖已退役：即使存在 company_credential 覆盖行也不再生效（三级→两级）
-      db.prepare(`INSERT INTO company_credential (company_id, credential_definition_id, override_key, enabled, created_at, updated_at)
-        VALUES (?, ?, 'COMPANY_OPENAI_KEY', 1, ?, ?)`)
-        .run('c_test', 'cred_openai_key', new Date().toISOString(), new Date().toISOString());
-      expect(resolveCredentialKey(db, null, 'c_test', 'cred_openai_key')).toBe('OPENAI_API_KEY');
-      expect(resolveCredentialKey(db, 'ap_test', 'c_test', 'cred_openai_key')).toBe('OPENAI_API_KEY');
 
       // 员工级覆盖(最高优先)
       setEmployeeCredentialOverride(profileId, 'cred_openai_key', 'MY_OPENAI_KEY');
-      expect(resolveCredentialKey(db, profileId, 'c_test', 'cred_openai_key')).toBe('MY_OPENAI_KEY');
-      // 无 companyId 时员工级也生效
-      expect(resolveCredentialKey(db, profileId, null, 'cred_openai_key')).toBe('MY_OPENAI_KEY');
+      expect(resolveCredentialKey(db, profileId, 'cred_openai_key')).toBe('MY_OPENAI_KEY');
 
       // 清除员工覆盖后回退到平台默认
       setEmployeeCredentialOverride(profileId, 'cred_openai_key', null);
-      expect(resolveCredentialKey(db, profileId, 'c_test', 'cred_openai_key')).toBe('OPENAI_API_KEY');
+      expect(resolveCredentialKey(db, profileId, 'cred_openai_key')).toBe('OPENAI_API_KEY');
     } finally {
       close();
     }
@@ -86,15 +77,15 @@ describe('credential store', () => {
     try {
       seedDefaultCredentialDefinitions(db);
       // 有 credential_definition 时,按 provider 匹配
-      const env = resolveExecutorCredentialEnv(db, null, null, 'openai', undefined, 'OPENAI_API_KEY');
+      const env = resolveExecutorCredentialEnv(db, null, 'openai', undefined, 'OPENAI_API_KEY');
       expect(env).toBe('OPENAI_API_KEY');
 
       // legacy apiKeyEnv 优先级低于 credential_definition
-      const envWithLegacy = resolveExecutorCredentialEnv(db, null, null, 'openai', 'LEGACY_KEY', 'OPENAI_API_KEY');
+      const envWithLegacy = resolveExecutorCredentialEnv(db, null, 'openai', 'LEGACY_KEY', 'OPENAI_API_KEY');
       expect(envWithLegacy).toBe('OPENAI_API_KEY'); // credential_definition 命中,忽略 legacy
 
       // 不匹配的 provider 回退到 legacy
-      const envFallback = resolveExecutorCredentialEnv(db, null, null, 'custom-cli', 'LEGACY_KEY', 'CUSTOM_CLI_API_KEY');
+      const envFallback = resolveExecutorCredentialEnv(db, null, 'custom-cli', 'LEGACY_KEY', 'CUSTOM_CLI_API_KEY');
       expect(envFallback).toBe('LEGACY_KEY');
     } finally {
       close();
@@ -121,7 +112,7 @@ describe('credential store', () => {
   it('returns null for non-existent credential definition', () => {
     const { db, close } = makeTestDb();
     try {
-      expect(resolveCredentialKey(db, null, null, 'does_not_exist')).toBeNull();
+      expect(resolveCredentialKey(db, null, 'does_not_exist')).toBeNull();
     } finally {
       close();
     }
