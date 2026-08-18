@@ -51,7 +51,7 @@ describe('credential store', () => {
     try {
       seedDefaultCredentialDefinitions(db);
       // 创建测试公司
-      db.prepare(`INSERT INTO company (id, name, state, charter, created_at, updated_at) VALUES (?, ?, 'off', '', ?, ?)`)
+      db.prepare(`INSERT INTO workbench (id, name, state, charter, created_at, updated_at) VALUES (?, ?, 'off', '', ?, ?)`)
         .run('c_test', '测试公司', new Date().toISOString(), new Date().toISOString());
       // profileId 只需合法格式(getAgentHomePath 校验格式,不查 DB)
       const profileId = 'ap_test_credential';

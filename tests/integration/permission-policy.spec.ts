@@ -93,10 +93,10 @@ describe('permission policy = approval strategy × allowed scope', () => {
       const lead = createAgent(db, { companyId: company.id, name: '负责人', role: 'lead' });
       const policy = createPermissionPolicy(db, { name: 'P', approvalStrategy: 'ask-always', scope: 'task' });
 
-      db.prepare("UPDATE company SET state='off' WHERE id=?").run(company.id);
+      db.prepare("UPDATE workbench SET state='off' WHERE id=?").run(company.id);
       expect(() => bindEmployeePermissionPolicy(db, lead.id, policy.id)).not.toThrow();
 
-      db.prepare("UPDATE company SET state='online' WHERE id=?").run(company.id);
+      db.prepare("UPDATE workbench SET state='online' WHERE id=?").run(company.id);
       expect(() => bindEmployeePermissionPolicy(db, lead.id, policy.id)).toThrowError(/下班/);
     } finally { close(); }
   });

@@ -1,7 +1,6 @@
 /**
- * Workbench 领域：隐式单例工作台（公司退役批次 D Task1 起作为公司域的替代）。
+ * Workbench 领域：隐式单例工作台（公司退役批次 D Task6 起正式使用 workbench 表）。
  *
- * 语义继承自 company（SQL 仍读 `FROM company`，终局迁移 RENAME 后翻表名）：
  * 状态机：off → online → (draining → off) | (review_paused → online)
  * - off：可改组织配置，不执行 Task。
  * - online：组织配置锁定，项目线程可领取 Task。
@@ -15,15 +14,13 @@ import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
 import type { CompanyState } from '../../shared/types';
 import { realtime } from '../realtime';
-import { log } from '../logger';
 
 /** 公司退役批次D 执行期复核：first_agent_id/review_mode 为活列（蜂群放蜂请示/审批升级/审批门控），本批保留。 */
 export type WorkbenchState = CompanyState;
 
 /** 读单例工作台；无行返回 null（测试/零组织库场景，DTO 常量填充用）。 */
 export function getWorkbenchOrNull(db: DB): Workbench | null {
-  const row = (db.prepare('SELECT * FROM company WHERE archived_at IS NULL ORDER BY created_at ASC LIMIT 1').get()
-    ?? db.prepare('SELECT * FROM company LIMIT 1').get()) as WorkbenchRow | undefined;
+  const row = db.prepare('SELECT * FROM workbench ORDER BY created_at ASC LIMIT 1').get() as WorkbenchRow | undefined;
   return row ? fromRow(row) : null;
 }
 
@@ -76,23 +73,18 @@ export const DEFAULT_WORKBENCH_NAME = '默认工作台';
 
 /** 读单例工作台；无行则抛（正常路径启动已 ensure）。 */
 export function getWorkbench(db: DB): Workbench {
-  const row = (db.prepare('SELECT * FROM company WHERE archived_at IS NULL ORDER BY created_at ASC LIMIT 1').get()
-    ?? db.prepare('SELECT * FROM company LIMIT 1').get()) as WorkbenchRow | undefined;
+  const row = db.prepare('SELECT * FROM workbench ORDER BY created_at ASC LIMIT 1').get() as WorkbenchRow | undefined;
   if (!row) throw new AppError(ErrorCode.NOT_FOUND, '未找到默认工作台（启动时应 ensureWorkbench 创建）');
   return fromRow(row);
 }
 
 /**
- * 单例解析：有在营公司则取最早；一个都没有则创建「默认工作台」（无员工、无模板、下班态）。
+ * 单例解析：有工作台行则取最早；一个都没有则创建「默认工作台」（无员工、无模板、下班态）。
  * 需要工作台归属的入口（启动 seed、路由解析、quick 建项目）都走这里。
  */
 export function ensureWorkbench(db: DB): { workbench: Workbench; created: boolean } {
-  const row = db.prepare('SELECT * FROM company WHERE archived_at IS NULL ORDER BY created_at ASC LIMIT 1').get() as WorkbenchRow | undefined;
+  const row = db.prepare('SELECT * FROM workbench ORDER BY created_at ASC LIMIT 1').get() as WorkbenchRow | undefined;
   if (row) {
-    const extra = db.prepare('SELECT COUNT(*) AS n FROM company WHERE archived_at IS NULL').get() as { n: number };
-    if (extra.n > 1) {
-      log.warn('workbench: multiple active companies, using oldest as default workbench', { count: extra.n });
-    }
     return { workbench: fromRow(row), created: false };
   }
   return { workbench: createWorkbenchRow(db, { name: DEFAULT_WORKBENCH_NAME, kind: 'general' }), created: true };
@@ -103,7 +95,7 @@ export function restoreWorkbench(db: DB, input: { id: string; name: string; kind
   const id = input.id;
   const now = nowIso();
   db.prepare(
-    `INSERT INTO company (id, name, kind, state, charter, contract_json, first_agent_id, review_mode, shutdown_paused, created_at, updated_at)
+    `INSERT INTO workbench (id, name, kind, state, charter, contract_json, first_agent_id, review_mode, shutdown_paused, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
   ).run(
     id,
@@ -121,23 +113,13 @@ export function restoreWorkbench(db: DB, input: { id: string; name: string; kind
 }
 
 function createWorkbenchRow(db: DB, input: { name: string; kind?: string; charter?: string; contractJson?: Record<string, unknown> }): Workbench {
-  const id = shortId('co_');
+  const id = shortId('wb_');
   const now = nowIso();
   db.prepare(
-    `INSERT INTO company (id, name, kind, state, charter, contract_json, first_agent_id, created_at, updated_at, review_mode)
+    `INSERT INTO workbench (id, name, kind, state, charter, contract_json, first_agent_id, created_at, updated_at, review_mode)
      VALUES (?, ?, ?, 'off', ?, ?, NULL, ?, ?, 'blocking')`,
   ).run(id, input.name, input.kind ?? 'novel', input.charter ?? '', JSON.stringify(input.contractJson ?? {}), now, now);
-  return fromRow(db.prepare('SELECT * FROM company WHERE id=?').get(id) as WorkbenchRow);
-}
-
-/** 工作台名在在营行中是否可用。 */
-function checkNameAvailable(db: DB, name: string, excludeId?: string): boolean {
-  const trimmed = name.trim();
-  if (!trimmed) return false;
-  const rows = db.prepare(
-    `SELECT id FROM company WHERE name=? AND archived_at IS NULL${excludeId ? ' AND id<>?' : ''}`,
-  ).all(trimmed, ...(excludeId ? [excludeId] : []));
-  return rows.length === 0;
+  return fromRow(db.prepare('SELECT * FROM workbench WHERE id=?').get(id) as WorkbenchRow);
 }
 
 export function updateWorkbench(
@@ -152,12 +134,6 @@ export function updateWorkbench(
   if (cur.state !== 'off' && (definedPatch.firstAgentId !== undefined || definedPatch.name !== undefined)) {
     throw new AppError(ErrorCode.COMPANY_LOCKED, '上班期间不能修改组织配置');
   }
-  // 改名查重（仅在营行内唯一）
-  if (definedPatch.name !== undefined && definedPatch.name !== cur.name) {
-    if (!checkNameAvailable(db, definedPatch.name, cur.id)) {
-      throw new AppError(ErrorCode.VALIDATION, `已存在同名在营公司：${definedPatch.name}`);
-    }
-  }
   const next: Workbench = {
     ...cur,
     ...definedPatch,
@@ -166,7 +142,7 @@ export function updateWorkbench(
     updatedAt: nowIso(),
   };
   db.prepare(
-    `UPDATE company SET name=?, kind=?, charter=?, contract_json=?, first_agent_id=?, review_mode=?, updated_at=? WHERE id=?`,
+    `UPDATE workbench SET name=?, kind=?, charter=?, contract_json=?, first_agent_id=?, review_mode=?, updated_at=? WHERE id=?`,
   ).run(next.name, next.kind, next.charter, JSON.stringify(next.contractJson), next.firstAgentId, next.reviewMode, next.updatedAt, cur.id);
   return getWorkbench(db);
 }
@@ -186,14 +162,14 @@ export function transitionWorkbench(db: DB, target: WorkbenchState): Workbench {
     throw new AppError(ErrorCode.CONFLICT, `非法状态迁移：${cur.state} → ${target}`);
   }
   // L1：手动上线（任何来源）清除"上次优雅关机"标记——用户主动启动的工作台不再属于自动恢复集
-  db.prepare('UPDATE company SET state=?, updated_at=?, shutdown_paused = CASE WHEN ? THEN 0 ELSE shutdown_paused END WHERE id=?')
+  db.prepare('UPDATE workbench SET state=?, updated_at=?, shutdown_paused = CASE WHEN ? THEN 0 ELSE shutdown_paused END WHERE id=?')
     .run(target, nowIso(), target === 'online' ? 1 : 0, cur.id);
   const updated = getWorkbench(db);
   // L1：状态变更实时广播（关机进度动画 / 标签栏状态即时刷新）
   try {
     realtime.publish({
       id: shortId('ev_'),
-      type: 'company.state',
+      type: 'workbench.state',
       occurredAt: nowIso(),
       payload: { state: updated.state },
     });
@@ -210,7 +186,7 @@ export function transitionWorkbench(db: DB, target: WorkbenchState): Workbench {
 export function beginGracefulShutdown(db: DB): Array<{ id: string; name: string }> {
   const wb = getWorkbench(db);
   if (wb.state !== 'online') return [];
-  db.prepare('UPDATE company SET shutdown_paused=1 WHERE id=?').run(wb.id);
+  db.prepare('UPDATE workbench SET shutdown_paused=1 WHERE id=?').run(wb.id);
   try {
     transitionWorkbench(db, 'draining');
   } catch {

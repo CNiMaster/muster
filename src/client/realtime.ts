@@ -34,7 +34,7 @@ export function queryKeysForRealtimeEvent(event: RealtimeEvent): QueryKey[] {
   // 改版 B4：对话消息实时刷新——message.created 失效所有消息线程（4 秒轮询降级为兜底）
   if (event.type === 'message.created') keys.push(['messages']);
   // L1：工作台状态实时刷新（关机进度/胶囊状态；公司退役批次B 单例键）
-  if (event.type === 'company.state') {
+  if (event.type === 'company.state' || event.type === 'workbench.state') {
     keys.push(['workbench']);
     keys.push(['workbench-cockpit']);
   }

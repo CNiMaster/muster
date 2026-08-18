@@ -366,9 +366,9 @@ export function deleteAgent(db: DB, id: string): void {
   if (cur.isInspector) {
     throw new AppError(ErrorCode.CONFLICT, '监察员工是系统稳定性岗位，不能删除；可以修改配置');
   }
-  // 若该员工是公司/项目的第一负责人，先清除（防 DEFERRABLE FK 冲突）
+  // 若该员工是工作台/项目的第一负责人，先清除（防 DEFERRABLE FK 冲突）
   db.transaction(() => {
-    db.prepare('UPDATE company SET first_agent_id=NULL WHERE first_agent_id=?').run(id);
+    db.prepare('UPDATE workbench SET first_agent_id=NULL WHERE first_agent_id=?').run(id);
     db.prepare('UPDATE project SET first_agent_id=NULL WHERE first_agent_id=?').run(id);
     db.prepare('DELETE FROM agent_definition WHERE id=?').run(id);
   })();

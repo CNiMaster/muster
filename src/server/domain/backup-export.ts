@@ -336,7 +336,7 @@ function uniquifyCompanyName(db: DB, base: string): string {
 }
 
 function checkNameTaken(db: DB, name: string): boolean {
-  return (db.prepare('SELECT COUNT(*) as n FROM company WHERE name=?').get(name) as { n: number }).n > 0;
+  return (db.prepare('SELECT COUNT(*) as n FROM workbench WHERE name=?').get(name) as { n: number }).n > 0;
 }
 
 /** 查找同名的现有档案；否则从备份档案重建（保留用户改过的预置人内容）。 */

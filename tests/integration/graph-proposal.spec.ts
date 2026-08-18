@@ -86,7 +86,7 @@ describe('B3.1 自然语言图变更提案', () => {
   it('上班期间 propose 被拒绝', async () => {
     const c = createCompany(db, { name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
-    db.prepare("UPDATE company SET state='online' WHERE id=?").run(c.id);
+    db.prepare("UPDATE workbench SET state='online' WHERE id=?").run(c.id);
     await expect(
       proposeGraphChange(
         db,

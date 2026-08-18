@@ -270,11 +270,11 @@ export function completeHandover(db: DB, id: string, opts?: { musterHome?: strin
   // 执行离职前：若离职员工是公司/项目的 first_agent，转移给接手人或清除（防 FK 冲突）
   let companyId = 'default';
   db.transaction(() => {
-    const company = db.prepare('SELECT id, first_agent_id FROM company LIMIT 1').get() as { id: string; first_agent_id: string | null } | undefined;
+    const company = db.prepare('SELECT id, first_agent_id FROM workbench LIMIT 1').get() as { id: string; first_agent_id: string | null } | undefined;
     if (company) {
       companyId = company.id;
       if (company.first_agent_id === cur.departingEmployeeId) {
-        db.prepare('UPDATE company SET first_agent_id=? WHERE id=?').run(cur.receiverEmployeeId, company.id);
+        db.prepare('UPDATE workbench SET first_agent_id=? WHERE id=?').run(cur.receiverEmployeeId, company.id);
       }
     }
     // 项目的 first_agent_id 同理（ON DELETE SET NULL 会自动处理，但显式转移更优）

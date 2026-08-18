@@ -38,7 +38,7 @@ beforeEach(() => {
     isInspector: false,
     stance: '',
   }).id;
-  db.prepare("UPDATE company SET state='online', first_agent_id=? WHERE id=?").run(agentA, companyA);
+  db.prepare("UPDATE workbench SET state='online', first_agent_id=? WHERE id=?").run(agentA, companyA);
   db.prepare("UPDATE agent_definition SET availability_state='online' WHERE id = ?").run(agentA);
 });
 

@@ -243,8 +243,8 @@ describe('B1.8 关系归档与恢复', () => {
     const a = createAgent(db, { companyId: c.id, name: 'a', role: 'lead' });
     const b = createAgent(db, { companyId: c.id, name: 'b', role: 'writer' });
     const edge = addRelationship(db, { companyId: c.id, kind: 'org', sourceId: a.id, targetId: b.id });
-    // 切到 online（绕过 assertCompanyHealthy 直接改 state）
-    db.prepare("UPDATE company SET state='online' WHERE id=?").run(c.id);
+    // 切到 online（绕过 assertWorkbenchHealthy 直接改 state）
+    db.prepare("UPDATE workbench SET state='online' WHERE id=?").run(c.id);
     expect(() => archiveRelationship(db, edge.id)).toThrow(AppError);
   });
 });

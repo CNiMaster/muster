@@ -35,7 +35,7 @@ beforeEach(() => {
   receiverId = createAgent(db, {
     companyId, name: '接手人', role: 'engineer', systemPrompt: '', skills: [], tools: [], permissions: {}, executor: {},
   }).id;
-  db.prepare("UPDATE company SET state='online', first_agent_id=? WHERE id=?").run(receiverId, companyId);
+  db.prepare("UPDATE workbench SET state='online', first_agent_id=? WHERE id=?").run(receiverId, companyId);
   projectId = createProject(db, { companyId, name: '项目', initialState: 'active' }).id;
 });
 
@@ -106,12 +106,12 @@ describe('交接阶段 2：指定接手人', () => {
   });
 
   it('指定接手人（公司退役批次D：单例工作台下不再校验接手人所属公司）', () => {
-    db.prepare("UPDATE company SET state='off' WHERE id=?").run(companyId);
+    db.prepare("UPDATE workbench SET state='off' WHERE id=?").run(companyId);
     const other = createAgent(db, {
       companyId: createCompany(db, { name: '其他公司' }).id,
       name: '外人', role: 'x', systemPrompt: '', skills: [], tools: [], permissions: {}, executor: {},
     }).id;
-    db.prepare("UPDATE company SET state='online' WHERE id=?").run(companyId);
+    db.prepare("UPDATE workbench SET state='online' WHERE id=?").run(companyId);
     const record = createHandover(db, { departingEmployeeId: departingId });
     // 同工作台语义：任意员工都可被指定为接手人（不再按公司归属拒绝）
     expect(() => assignReceiver(db, record.id, other)).not.toThrow();
@@ -178,11 +178,11 @@ describe('连环交接（owner 始终单一）', () => {
     let owner = db.prepare('SELECT owner_agent_id FROM artifact WHERE path=?').get('doc.md') as { owner_agent_id: string };
     expect(owner.owner_agent_id).toBe(receiverId);
     // B→C：新建第三人
-    db.prepare("UPDATE company SET state='off' WHERE id=?").run(companyId);
+    db.prepare("UPDATE workbench SET state='off' WHERE id=?").run(companyId);
     const personC = createAgent(db, {
       companyId, name: 'C', role: 'engineer', systemPrompt: '', skills: [], tools: [], permissions: {}, executor: {},
     }).id;
-    db.prepare("UPDATE company SET state='online' WHERE id=?").run(companyId);
+    db.prepare("UPDATE workbench SET state='online' WHERE id=?").run(companyId);
     const r2 = createHandover(db, { departingEmployeeId: receiverId });
     assignReceiver(db, r2.id, personC);
     startReceiving(db, r2.id);

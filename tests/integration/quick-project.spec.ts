@@ -32,14 +32,6 @@ describe('createQuickProject 项目优先入口', () => {
     expect(result.companyId).toBe(existing.id);
   });
 
-  it('全部归档：不算在营，仍会新建默认工作台', () => {
-    const archived = createCompany(db, { name: '老团队' });
-    db.prepare('UPDATE company SET archived_at=? WHERE id=?').run(new Date().toISOString(), archived.id);
-    const result = createQuickProject(db, { name: '重新开始' });
-    expect(result.createdWorkspace).toBe(true);
-    expect(result.companyId).not.toBe(archived.id);
-  });
-
   it('默认工作台里建项目后再 quick：继续落同一工作台', () => {
     const first = createQuickProject(db, { name: '项目一' });
     const second = createQuickProject(db, { name: '项目二' });
@@ -48,10 +40,10 @@ describe('createQuickProject 项目优先入口', () => {
     void createAgent; // 保持 import 语义（工作台无员工也可建项目）
   });
 
-  it('既有公司带员工时项目第一负责人沿用公司默认（不强制新员工）', () => {
+  it('既有工作台带员工时项目第一负责人沿用工作台默认（不强制新员工）', () => {
     const existing = createCompany(db, { name: '团队' });
     const lead = createAgent(db, { companyId: existing.id, name: '领班', role: 'lead' });
-    db.prepare('UPDATE company SET first_agent_id=? WHERE id=?').run(lead.id, existing.id);
+    db.prepare('UPDATE workbench SET first_agent_id=? WHERE id=?').run(lead.id, existing.id);
     const result = createQuickProject(db, { name: '项目' });
     expect(result.project.firstAgentId).toBe(lead.id);
     void createProject;

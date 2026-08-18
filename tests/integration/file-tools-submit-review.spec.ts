@@ -77,7 +77,7 @@ describe('file-tools submit_review', () => {
 
   it('parallel 模式不阻塞 Task', async () => {
     const c = createCompany(db, { name: '并行工具公司' });
-    db.prepare("UPDATE company SET review_mode='parallel' WHERE id=?").run(c.id);
+    db.prepare("UPDATE workbench SET review_mode='parallel' WHERE id=?").run(c.id);
     const writer = createAgent(db, { companyId: c.id, name: 'writer', role: 'writer' });
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: workdir, firstAgentId: writer.id });
     const task = createTask(db, { projectId: p.id, title: '写功法', assigneeAgentId: writer.id });

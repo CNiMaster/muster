@@ -36,7 +36,7 @@ beforeEach(() => {
     permissions: {},
     executor: {},
   }).id;
-  db.prepare("UPDATE company SET state='online', first_agent_id=? WHERE id=?").run(leadAgent, companyId);
+  db.prepare("UPDATE workbench SET state='online', first_agent_id=? WHERE id=?").run(leadAgent, companyId);
 });
 
 afterEach(() => tdb.close());
@@ -68,7 +68,7 @@ describe('临时工招聘', () => {
 
   it('复用人才市场现有人：is_temp_only 不变，出现在人才市场', () => {
     // 先下班，正常招一个正式员工（进人才市场）
-    db.prepare("UPDATE company SET state='off' WHERE id=?").run(companyId);
+    db.prepare("UPDATE workbench SET state='off' WHERE id=?").run(companyId);
     const perm = createAgent(db, {
       name: '正式员工',
       role: 'engineer',
@@ -78,7 +78,7 @@ describe('临时工招聘', () => {
       permissions: {},
       executor: {},
     });
-    db.prepare("UPDATE company SET state='online' WHERE id=?").run(companyId);
+    db.prepare("UPDATE workbench SET state='online' WHERE id=?").run(companyId);
     const permProfile = getAgent(db, perm.id).profileId;
 
     const result = createTempEmployment(db, {
@@ -154,7 +154,7 @@ describe('临时工开除', () => {
   });
 
   it('人才市场来的人开除：保留 profile（仍在人才市场）', () => {
-    db.prepare("UPDATE company SET state='off' WHERE id=?").run(companyId);
+    db.prepare("UPDATE workbench SET state='off' WHERE id=?").run(companyId);
     const perm = createAgent(db, {
       name: '可复用员工',
       role: 'engineer',
@@ -164,7 +164,7 @@ describe('临时工开除', () => {
       permissions: {},
       executor: {},
     });
-    db.prepare("UPDATE company SET state='online' WHERE id=?").run(companyId);
+    db.prepare("UPDATE workbench SET state='online' WHERE id=?").run(companyId);
     const permProfile = getAgent(db, perm.id).profileId;
     // 作为临时工复用到同公司（简化测试：直接构造 is_temp_only=0 的临时工）
     const result = createTempEmployment(db, { profileId: permProfile, role: 'temp' });

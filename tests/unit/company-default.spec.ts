@@ -26,23 +26,15 @@ describe('ensureDefaultCompany 单例原语', () => {
     const second = ensureDefaultCompany(db);
     expect(second.created).toBe(false);
     expect(second.company.id).toBe(first.company.id);
-    const { n } = db.prepare('SELECT COUNT(*) AS n FROM company').get() as { n: number };
+    const { n } = db.prepare('SELECT COUNT(*) AS n FROM workbench').get() as { n: number };
     expect(n).toBe(1);
   });
 
-  it('存在多个在营公司：取 created_at 最早者', () => {
+  it('存在多个公司行：取 created_at 最早者', () => {
     const older = createCompany(db, { name: '老团队', kind: 'general' });
     createCompany(db, { name: '新团队', kind: 'general' });
     const { company, created } = ensureDefaultCompany(db);
     expect(created).toBe(false);
     expect(company.id).toBe(older.id);
-  });
-
-  it('归档公司不计入在营：全部归档时新建默认工作台', () => {
-    const archived = createCompany(db, { name: '老团队' });
-    db.prepare('UPDATE company SET archived_at=? WHERE id=?').run(new Date().toISOString(), archived.id);
-    const { company, created } = ensureDefaultCompany(db);
-    expect(created).toBe(true);
-    expect(company.id).not.toBe(archived.id);
   });
 });
