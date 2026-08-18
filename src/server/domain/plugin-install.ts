@@ -50,8 +50,8 @@ function toSourceRef(s: PluginSource): string | null {
       return null;
     case 'executor-native':
       return s.provider;
-    case 'company':
-      return s.companyId;
+    case 'workbench':
+      return null;
     case 'project':
       return s.projectId;
     case 'marketplace':
@@ -69,8 +69,8 @@ function toScopeId(s: PluginScope): string | null {
   switch (s.level) {
     case 'platform':
       return null;
-    case 'company':
-      return s.companyId;
+    case 'workbench':
+      return null;
     case 'project':
       return s.projectId;
     case 'employee':
@@ -131,7 +131,6 @@ export function removePlugin(db: DB, id: string): void {
  */
 export function setCompanyPluginDecision(
   db: DB,
-  companyId: string,
   pluginId: string,
   decision: 'enabled' | 'disabled',
   enabledBy?: string,
@@ -160,19 +159,18 @@ export function setCompanyPluginDecision(
  */
 export function setCompanyPluginEnabled(
   db: DB,
-  companyId: string,
   pluginId: string,
   enabled: boolean,
   enabledBy?: string,
 ): void {
-  setCompanyPluginDecision(db, companyId, pluginId, enabled ? 'enabled' : 'disabled', enabledBy);
+  setCompanyPluginDecision(db, pluginId, enabled ? 'enabled' : 'disabled', enabledBy);
 }
 
 /**
  * 查询工作台显式禁用的平台插件 id 集合（opt-out 计算用）。
  * 这是 opt-out 模型的热路径：effective = 平台插件 MINUS 这个集合。
  */
-export function listDisabledCompanyPlugins(db: DB, _companyId?: string): Set<string> {
+export function listDisabledCompanyPlugins(db: DB): Set<string> {
   const rows = db
     .prepare(
       `SELECT plugin_id FROM workbench_plugin WHERE decision = 'disabled'`,
@@ -188,7 +186,6 @@ export function listDisabledCompanyPlugins(db: DB, _companyId?: string): Set<str
  */
 export function getCompanyPluginDecisions(
   db: DB,
-  _companyId?: string,
 ): Map<string, 'enabled' | 'disabled'> {
   const rows = db
     .prepare('SELECT plugin_id, decision FROM workbench_plugin')
@@ -201,19 +198,19 @@ export function getCompanyPluginDecisions(
  *
  * 生效规则：
  *   - 平台插件（scope.level='platform'）：默认启用，减去工作台显式禁用的
- *   - 工作台插件（scope.level='company' 或其他）：未被显式禁用；同样排除 status='disabled'
+ *   - 工作台插件（scope.level='workbench' 或其他）：未被显式禁用；同样排除 status='disabled'
  *
  * assembleTools 调用此函数决定加载哪些 MCP server。
  */
-export function getEffectivePluginsForCompany(db: DB, companyId?: string): Plugin[] {
-  const disabledSet = listDisabledCompanyPlugins(db, companyId);
+export function getEffectivePluginsForCompany(db: DB): Plugin[] {
+  const disabledSet = listDisabledCompanyPlugins(db);
   // 平台级插件：默认全开，减去显式禁用；status='disabled' 的实体行（商城平台级「装新停旧」）不生效
   const platformPlugins = listPlugins(db, { scopeLevel: 'platform' }).filter(
     (p) => !disabledSet.has(p.id) && p.status !== 'disabled',
   );
   // 工作台级插件：未被显式禁用；同样排除 status='disabled'
   const companyPlugins = listPlugins(db).filter(
-    (p) => p.scope.level === 'company' && !disabledSet.has(p.id) && p.status !== 'disabled',
+    (p) => p.scope.level === 'workbench' && !disabledSet.has(p.id) && p.status !== 'disabled',
   );
   // 按 id 去重（理论上两类不会重叠，防御性）
   const byId = new Map<string, Plugin>();
@@ -245,9 +242,9 @@ export function isEntityPlugin(p: Plugin): boolean {
  * 一次查询构建工作台生效 skill 的（归一化 name → body）索引。
  * 注入链热路径（resolveTaskSkills）只扫一遍全量插件，避免每个候选各扫一次。
  */
-export function collectEffectivePluginSkills(db: DB, companyId?: string): Map<string, string> {
+export function collectEffectivePluginSkills(db: DB): Map<string, string> {
   const map = new Map<string, string>();
-  for (const p of getEffectivePluginsForCompany(db, companyId)) {
+  for (const p of getEffectivePluginsForCompany(db)) {
     if (p.kind !== 'skill' || p.manifest.kind !== 'skill') continue;
     map.set(p.name.trim().toLowerCase(), p.manifest.skill.body);
   }
@@ -258,8 +255,8 @@ export function collectEffectivePluginSkills(db: DB, companyId?: string): Map<st
  * 查询工作台启用的 plugin id 列表（opt-out 迁移后语义=effective）。
  * 保留旧函数名供 assembleTools 等历史调用方使用，内部转 effective 计算。
  */
-export function listEnabledCompanyPlugins(db: DB, companyId?: string): string[] {
-  return getEffectivePluginsForCompany(db, companyId).map((p) => p.id);
+export function listEnabledCompanyPlugins(db: DB): string[] {
+  return getEffectivePluginsForCompany(db).map((p) => p.id);
 }
 
 /** 标记 plugin 健康检查结果（连不上时记 health_error）。 */

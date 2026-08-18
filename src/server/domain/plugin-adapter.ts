@@ -234,8 +234,8 @@ function parseSource(kind: string, ref: string | null): PluginSource {
       return { kind: 'builtin' };
     case 'executor-native':
       return { kind: 'executor-native', provider: ref ?? '' };
-    case 'company':
-      return { kind: 'company', companyId: ref ?? '' };
+    case 'workbench':
+      return { kind: 'workbench' };
     case 'project':
       return { kind: 'project', projectId: ref ?? '' };
     case 'marketplace':
@@ -251,8 +251,8 @@ function parseScope(level: string, id: string | null): PluginScope {
   switch (level) {
     case 'platform':
       return { level: 'platform' };
-    case 'company':
-      return { level: 'company', companyId: id ?? '' };
+    case 'workbench':
+      return { level: 'workbench' };
     case 'project':
       return { level: 'project', projectId: id ?? '' };
     case 'employee':
@@ -277,10 +277,8 @@ export interface ListPluginsOptions {
   kind?: PluginKind;
   /** 按 status 过滤。 */
   status?: PluginStatus;
-  /** 按 scope.level 过滤（platform/company/project/employee）。 */
+  /** 按 scope.level 过滤（platform/workbench/project/employee）。 */
   scopeLevel?: PluginScope['level'];
-  /** 按 scope.companyId 过滤（仅 level='company' 时有意义）。 */
-  scopeCompanyId?: string;
 }
 
 /**
@@ -325,11 +323,6 @@ export function listPlugins(db: DB, opts: ListPluginsOptions = {}): Plugin[] {
   }
   if (opts.scopeLevel) {
     result = result.filter((p) => p.scope.level === opts.scopeLevel);
-  }
-  if (opts.scopeCompanyId) {
-    result = result.filter(
-      (p) => p.scope.level === 'company' && p.scope.companyId === opts.scopeCompanyId,
-    );
   }
 
   return result;

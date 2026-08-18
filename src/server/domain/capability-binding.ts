@@ -218,7 +218,7 @@ export function resolveTaskSkills(
 
   // 注入链（spec M1）：plugin 表（商城安装/公司生效）**优先于**仓库 bundled 目录——
   // 安装的新版本必须盖过内置旧版（反之商城同名校准永远进不了上下文）。
-  const pluginSkills = collectEffectivePluginSkills(db, project.companyId);
+  const pluginSkills = collectEffectivePluginSkills(db);
   return [...selected.values()].map((candidate) => {
     if (disabled.has(candidate.skillId)) return { ...candidate, status: 'disabled' as const };
     const content = pluginSkills.get(candidate.skillId.trim().toLowerCase())

@@ -35,15 +35,6 @@ export interface CredentialDefinition {
   updatedAt: string;
 }
 
-export interface CompanyCredential {
-  companyId: string;
-  credentialDefinitionId: string;
-  overrideKey: string | null;
-  enabled: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-
 interface CredentialDefinitionRow {
   id: string;
   name: string;
@@ -53,15 +44,6 @@ interface CredentialDefinitionRow {
   description: string;
   applicable_executors: string;
   is_default: number;
-  created_at: string;
-  updated_at: string;
-}
-
-interface CompanyCredentialRow {
-  company_id: string;
-  credential_definition_id: string;
-  override_key: string | null;
-  enabled: number;
   created_at: string;
   updated_at: string;
 }
@@ -76,17 +58,6 @@ function defFromRow(row: CredentialDefinitionRow): CredentialDefinition {
     description: row.description,
     applicableExecutors: row.applicable_executors ? row.applicable_executors.split(',').filter(Boolean) : [],
     isDefault: row.is_default === 1,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
-
-function companyCredFromRow(row: CompanyCredentialRow): CompanyCredential {
-  return {
-    companyId: row.company_id,
-    credentialDefinitionId: row.credential_definition_id,
-    overrideKey: row.override_key,
-    enabled: row.enabled === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

@@ -104,15 +104,6 @@ export interface CredentialDefinitionDTO {
   updatedAt: string;
 }
 
-export interface CompanyCredentialDTO {
-  credentialDefinitionId: string;
-  overrideKey: string | null;
-  enabled: boolean;
-  createdAt: string;
-  updatedAt: string;
-  definition: CredentialDefinitionDTO;
-}
-
 export interface ProjectMaterialDTO {
   id: string;
   projectId: string;
@@ -2189,7 +2180,7 @@ export function useMarketplacePresets() {
 export function useInstallPreset() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { presetId: string; scope?: { level: 'platform' | 'company' }; replaceExisting?: boolean }) =>
+    mutationFn: (input: { presetId: string; scope?: { level: 'platform' | 'workbench' }; replaceExisting?: boolean }) =>
       api.post<Plugin>('/api/plugins/marketplace/install-preset', {
         presetId: input.presetId,
         scope: input.scope ?? { level: 'platform' },
@@ -2222,7 +2213,7 @@ export function useMarketplaceCatalog(query: string) {
 export function useInstallClaudePlugin() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { pluginName: string; scope?: { level: 'platform' | 'company' }; replaceExisting?: boolean }) =>
+    mutationFn: (input: { pluginName: string; scope?: { level: 'platform' | 'workbench' }; replaceExisting?: boolean }) =>
       api.post<Plugin>('/api/plugins/marketplace/install-claude-plugin', {
         pluginName: input.pluginName,
         scope: input.scope ?? { level: 'platform' },

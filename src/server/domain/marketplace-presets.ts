@@ -114,8 +114,8 @@ export function listMarketplacePresets(db: DB): PresetWithStatus[] {
     .map(({ it }) => it);
 }
 
-/** 安装范围（marketplace 仅支持 platform/company 两层）。 */
-export type PresetInstallScope = { level: 'platform' } | { level: 'company'; companyId: string };
+/** 安装范围（marketplace 仅支持 platform/workbench 两层）。 */
+export type PresetInstallScope = { level: 'platform' } | { level: 'workbench' };
 
 /** 远程拉取 SKILL.md 全文（raw.githubusercontent.com，pin=commit sha/tag）。 */
 export async function fetchRawSkill(repo: string, path: string, pin: string): Promise<string> {
@@ -240,10 +240,10 @@ export function disableExistingForScope(
 ): void {
   const now = nowIso();
   for (const id of existingIds) {
-    if (scope.level === 'company') {
+    if (scope.level === 'workbench') {
       if (isEntityId(id)) {
         try {
-          setCompanyPluginDecision(db, scope.companyId, id, 'disabled', enabledBy);
+          setCompanyPluginDecision(db, id, 'disabled', enabledBy);
         } catch {
           /* 旧条目可能已删，忽略 */
         }
@@ -271,7 +271,7 @@ export function isEntityId(id: string): boolean {
 }
 
 function toPluginScope(scope: PresetInstallScope): PluginScope {
-  return scope.level === 'platform' ? { level: 'platform' } : { level: 'company', companyId: scope.companyId };
+  return scope.level === 'platform' ? { level: 'platform' } : { level: 'workbench' };
 }
 
 /** 判断现有 plugin 来源是否与预置同源（marketplace + 同 registry 标签 + 同 preset id）。 */

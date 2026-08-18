@@ -142,7 +142,7 @@ export function searchMarketplace(
 /** 安装时的 scope 形态（PluginScope 的子集，marketplace 仅支持这三层）。 */
 export type InstallScope =
   | { level: 'platform' }
-  | { level: 'company'; companyId: string }
+  | { level: 'workbench' }
   | { level: 'project'; projectId: string };
 
 /**

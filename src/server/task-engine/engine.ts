@@ -47,7 +47,7 @@ import { dispatchGapResearch } from '../domain/gap-research';
 import { applyAdaptiveAdjustment, canRunMore } from '../domain/executor-concurrency';
 import { markExecutorFailure, markExecutorSuccess } from '../domain/executor-failover';
 import { isSwarmLinkedTask } from '../domain/staging';
-import { getCompany } from '../domain/company';
+import { getWorkbench } from '../domain/workbench';
 import { createWorktree, removeWorktree, ensureStagingWorktree } from '../worktree/manager';
 /** 批次 D2：读取任务 inputProtocol 里的消息级选项（模式/模型/思考），非法值忽略。 */
 function readMessageOptions(input: Record<string, unknown>): { mode?: 'plan' | 'ask-always' | 'ask-by-rule' | 'no-approval' | 'deny'; model?: string; thinking?: 'off' | 'low' | 'medium' | 'high' } {
@@ -216,10 +216,10 @@ export class TaskEngine {
   private async _pumpThread(threadId: string): Promise<boolean> {
     const thread = getThread(this.db, threadId);
     const project = getProject(this.db, thread.projectId);
-    const company = getCompany(this.db, project.companyId);
+    const workbench = getWorkbench(this.db);
 
-    // 公司不在 online 不领取
-    if (company.state !== 'online') return false;
+    // 工作台不在 online 不领取
+    if (workbench.state !== 'online') return false;
 
     const agent = getAgent(this.db, thread.agentId);
     // spec 2026-08-12-settings-overhaul B4：按执行器并发门控——每次 pump 先做自适应调整，
@@ -464,7 +464,7 @@ export class TaskEngine {
         readonlyDirs: collectReadonlyReferenceDirs(this.db, task.projectId),
         // PRD Phase 3：员工级执行器配置 + 凭据三层解析(员工覆盖 > 公司覆盖 > 平台默认 > legacy/系统回退)
         agentExecutor: effectiveExecutor,
-        apiKeyEnv: resolveExecutorCredentialForTask(this.db, agent, company.id, executorProfile, effectiveExecutor, this.defaultProvider),
+        apiKeyEnv: resolveExecutorCredentialForTask(this.db, agent, workbench.id, executorProfile, effectiveExecutor, this.defaultProvider),
         // WP10 识图直读：仅执行器声明 vision 才原生送图（未声明的不拼 image parts——纯文本模型会被
         // provider 400 拒绝，降级路径靠 system prompt 提示走工具/路径读取）
         imageAttachments: (Array.isArray(effectiveExecutor?.capabilities) && effectiveExecutor.capabilities.includes('vision')
@@ -488,7 +488,7 @@ export class TaskEngine {
                 projectRoot: project.rootDir,
                 workspaceRoot: getActiveWorkspace(this.db)?.rootDir ?? project.rootDir,
                 employeeId: agent.id,
-                companyId: company.id,
+                companyId: workbench.id,
                 projectId: project.id,
                 taskId: task.id,
               })
@@ -515,7 +515,7 @@ export class TaskEngine {
               const aiResult = await evaluateWithAi(this.db, {
                 action: request.action, command: request.command, path: request.path,
                 workingDir, employeeRole: agent.role, taskTitle: task.title,
-                companyId: company.id, projectId: project.id, policyId: permissionPolicy.id,
+                companyId: workbench.id, projectId: project.id, policyId: permissionPolicy.id,
               });
               if (aiResult.verdict === 'unsafe') {
                 recordRejectionForLearning(this.db, { policyId: permissionPolicy.id, action: request.action, command: request.command, reason: aiResult.reason });
@@ -595,7 +595,7 @@ export class TaskEngine {
       // B3a：装配工具集（内置 + 已启用 MCP），失败不阻塞（降级为纯内置）
       try {
         const { assembleTools } = await import('../executors/tool-assembly');
-        const assembled = await assembleTools(this.db, company.id);
+        const assembled = await assembleTools(this.db);
         ctx.toolRegistry = assembled.registry;
         ctx.mcpPool = assembled.pool;
         mcpPool = assembled.pool; // 提升引用，供 finally 清理
@@ -775,7 +775,7 @@ export class TaskEngine {
         const plan = result.swarmPlan;
         result.swarmPlan = undefined;
         const isDispatcher = agent.isSystem && agent.role === DISPATCHER_ROLE;
-        const isLead = agent.role === 'lead' || agent.id === company.firstAgentId;
+        const isLead = agent.role === 'lead' || agent.id === workbench.firstAgentId;
         try {
           if (isDispatcher || isLead) {
             const materialized = materializeSwarm(this.db, task, plan, { requesterAgentId: agent.id });
@@ -786,11 +786,11 @@ export class TaskEngine {
           } else {
             const activeSwarms = countActiveSwarmsByRequester(this.db, agent.id);
             if (plan.workers.length > EXPERT_SWARM_LIMITS.maxWidth || activeSwarms > 0) {
-              if (!company.firstAgentId) throw new Error('工作台缺少第一负责人，无法请示放蜂');
+              if (!workbench.firstAgentId) throw new Error('工作台缺少第一负责人，无法请示放蜂');
               const escalated = escalateSwarmRequest(this.db, {
-                companyId: company.id,
+                companyId: workbench.id,
                 projectId: project.id,
-                leadAgentId: company.firstAgentId,
+                leadAgentId: workbench.firstAgentId,
                 requesterAgentId: agent.id,
                 requesterName: agent.name,
                 plan,
@@ -1043,7 +1043,7 @@ export class TaskEngine {
           const proto = task.inputProtocol as { scope?: unknown; scopeId?: unknown };
           const scopeOk = proto.scope === 'workbench' || proto.scope === 'project';
           startDebate(this.db, {
-            companyId: company.id,
+            companyId: workbench.id,
             projectId: project.id,
             question: result.question ?? task.title,
             options: result.questionOptions!,

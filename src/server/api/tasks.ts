@@ -35,7 +35,6 @@ import { listTaskEvents } from '../domain/task-event';
 import { listTrace, type TraceKind } from '../domain/execution-trace';
 import { listTaskMessages, addTaskMessage } from '../domain/task-message';
 import { getProject } from '../domain/project';
-import { getCompany } from '../domain/company';
 import { realtime } from '../realtime';
 import type { TaskState } from '../../shared/types';
 

@@ -6,7 +6,7 @@
  */
 import type { DB } from '../db/client';
 import type { ResolvedTaskSkill } from '../../shared/types';
-import { getCompany } from '../domain/company';
+import { getWorkbench } from '../domain/workbench';
 import { getProject } from '../domain/project';
 import { getAgent, listAgents } from '../domain/agent';
 import { ensureDispatcherAgentId, DISPATCHER_ROLE, JUDGE_ROLE } from '../domain/system-agents';
@@ -82,7 +82,7 @@ export function assembleContext(
   } = {},
 ): AssembledContext {
   const project = getProject(db, task.projectId);
-  const company = getCompany(db, project.companyId);
+  const workbench = getWorkbench(db);
   const agent = task.assigneeAgentId ? getAgent(db, task.assigneeAgentId) : null;
   const lightweight = options.lightweight === true;
 
@@ -145,8 +145,8 @@ export function assembleContext(
   }
   // 轻量模式：身份/职责/议题之后直接进入输出契约，跳过组织级大段上下文
   if (!lightweight) {
-    if (company.charter) {
-      sp.push('# 公司章程', company.charter, '');
+    if (workbench.charter) {
+      sp.push('# 工作台章程', workbench.charter, '');
     }
     sp.push('# 项目说明', project.description || project.name, '');
     // R3：worktree/发布语义教学——避免 agent 自行 merge/checkout 污染主干
@@ -312,7 +312,7 @@ export function assembleContext(
   const archiveQuery = [task.title, task.summary].filter(Boolean).join(' ').slice(0, 120);
   if (archiveQuery) {
     const archiveHits = searchArchive(db, {
-      companyId: company.id,
+      companyId: workbench.id,
       excludeProjectId: project.id,
       query: archiveQuery,
       limit: 5,
@@ -438,7 +438,7 @@ export function assembleContext(
   const wfNodeId = task.inputProtocol.workflowNodeId as string | undefined;
   if (wfId && wfNodeId) {
     try {
-      const wf = getWorkflow(db, project.companyId, wfId);
+      const wf = getWorkflow(db, workbench.id, wfId);
       const branches = wf.edges
         .filter((e) => e.sourceId === wfNodeId)
         .map((e) => ({

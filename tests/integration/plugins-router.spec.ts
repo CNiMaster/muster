@@ -50,10 +50,11 @@ describe('marketplace install-preset 路由', () => {
     const res = await fetch(`${base}/api/plugins/marketplace/install-preset`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ presetId: 'mcp-filesystem', scope: { level: 'company' } }),
+      body: JSON.stringify({ presetId: 'mcp-filesystem', scope: { level: 'workbench' } }),
     });
-    expect(res.status).toBe(400);
-    const orphan = tdb.db.prepare('SELECT COUNT(*) AS n FROM plugin WHERE scope_id = ?').get('') as { n: number };
+    // workbench 档不再需要 companyId；本用例库中无工作台 → 配置锁守卫读库时 404 挡下，不落孤儿 plugin
+    expect(res.status).toBe(404);
+    const orphan = tdb.db.prepare('SELECT COUNT(*) AS n FROM plugin').get() as { n: number };
     expect(orphan.n).toBe(0);
   });
 
@@ -63,7 +64,7 @@ describe('marketplace install-preset 路由', () => {
     const res = await fetch(`${base}/api/plugins/marketplace/install-preset`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ presetId: 'mcp-filesystem', scope: { level: 'company', companyId: company.id } }),
+      body: JSON.stringify({ presetId: 'mcp-filesystem', scope: { level: 'workbench' } }),
     });
     expect(res.status).toBe(409);
   });
@@ -72,9 +73,10 @@ describe('marketplace install-preset 路由', () => {
     const res = await fetch(`${base}/api/plugins/marketplace/install-claude-plugin`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ pluginName: 'commit-commands', scope: { level: 'company' } }),
+      body: JSON.stringify({ pluginName: 'commit-commands', scope: { level: 'workbench' } }),
     });
-    expect(res.status).toBe(400);
+    // workbench 档不再需要 companyId；无工作台 → 404（配置锁守卫在读库时挡下）
+    expect(res.status).toBe(404);
   });
 
   it('install-claude-plugin：公司上班 → 409（在发起任何网络拉取之前被锁拒绝）', async () => {
@@ -83,7 +85,7 @@ describe('marketplace install-preset 路由', () => {
     const res = await fetch(`${base}/api/plugins/marketplace/install-claude-plugin`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ pluginName: 'commit-commands', scope: { level: 'company', companyId: company.id } }),
+      body: JSON.stringify({ pluginName: 'commit-commands', scope: { level: 'workbench' } }),
     });
     expect(res.status).toBe(409);
     const body = (await res.json()) as { error: { code: string } };

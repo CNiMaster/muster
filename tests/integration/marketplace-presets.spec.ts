@@ -51,7 +51,7 @@ describe('marketplace presets 状态与安装', () => {
   it('raw-skill 预置：装后变 installed 且 plugin 落库', async () => {
     const { db } = makeTestDb();
     const company = createCompany(db, { name: 'C' });
-    const plugin = await installPreset(db, 'skill-docx', { level: 'company', companyId: company.id }, { fetcher: fakeFetcher });
+    const plugin = await installPreset(db, 'skill-docx', { level: 'workbench' }, { fetcher: fakeFetcher });
     expect(plugin.kind).toBe('skill');
     expect(plugin.source.kind).toBe('marketplace');
     const list = listMarketplacePresets(db);
@@ -61,7 +61,7 @@ describe('marketplace presets 状态与安装', () => {
   it('mcp-command 预置：装为 mcp-server 且 manifest 含 command/args', async () => {
     const { db } = makeTestDb();
     const company = createCompany(db, { name: 'C' });
-    const plugin = await installPreset(db, 'mcp-filesystem', { level: 'company', companyId: company.id });
+    const plugin = await installPreset(db, 'mcp-filesystem', { level: 'workbench' });
     expect(plugin.kind).toBe('mcp-server');
     expect(plugin.manifest.kind).toBe('mcp-server');
     if (plugin.manifest.kind === 'mcp-server') {
@@ -73,9 +73,9 @@ describe('marketplace presets 状态与安装', () => {
   it('同源重复安装 → CONFLICT（已安装）', async () => {
     const { db } = makeTestDb();
     const company = createCompany(db, { name: 'C' });
-    await installPreset(db, 'skill-docx', { level: 'company', companyId: company.id }, { fetcher: fakeFetcher });
+    await installPreset(db, 'skill-docx', { level: 'workbench' }, { fetcher: fakeFetcher });
     await expect(
-      installPreset(db, 'skill-docx', { level: 'company', companyId: company.id }, { fetcher: fakeFetcher }),
+      installPreset(db, 'skill-docx', { level: 'workbench' }, { fetcher: fakeFetcher }),
     ).rejects.toMatchObject({ code: 'conflict' });
   });
 
@@ -94,17 +94,17 @@ describe('marketplace presets 状态与安装', () => {
     expect(listMarketplacePresets(db).find((p) => p.id === 'skill-docx')?.installState).toBe('conflict');
     // 不替换 → 报冲突
     await expect(
-      installPreset(db, 'skill-docx', { level: 'company', companyId: company.id }, { fetcher: fakeFetcher }),
+      installPreset(db, 'skill-docx', { level: 'workbench' }, { fetcher: fakeFetcher }),
     ).rejects.toMatchObject({ code: 'conflict' });
     // 替换 → 装新，旧条目在公司 scope 被禁用
     const fresh = await installPreset(
       db,
       'skill-docx',
-      { level: 'company', companyId: company.id },
+      { level: 'workbench' },
       { fetcher: fakeFetcher, replaceExisting: true },
     );
     expect(fresh.id).not.toBe(old.id);
-    const effective = getEffectivePluginsForCompany(db, company.id);
+    const effective = getEffectivePluginsForCompany(db);
     const docx = effective.find((p) => p.name === 'docx' && p.kind === 'skill');
     expect(docx?.id).toBe(fresh.id); // winner 是新装的，旧的已被禁用不生效
   });
@@ -117,7 +117,7 @@ describe('注入链：安装的 skill 真实进入任务上下文', () => {
     const lead = createAgent(db, { companyId: company.id, name: '负责人', role: 'lead' });
     const project = createProject(db, { companyId: company.id, name: 'P', firstAgentId: lead.id });
     // 安装 docx skill（公司 scope）
-    await installPreset(db, 'skill-docx', { level: 'company', companyId: company.id }, { fetcher: fakeFetcher });
+    await installPreset(db, 'skill-docx', { level: 'workbench' }, { fetcher: fakeFetcher });
     const task = createTask(db, {
       projectId: project.id,
       assigneeAgentId: lead.id,
@@ -135,8 +135,8 @@ describe('M4 质量信号排序（推荐反映真实可用性）', () => {
   it('有质量信号的条目浮到前部；信号变化 → 排序变化', async () => {
     const { db } = makeTestDb();
     const company = createCompany(db, { name: 'C' });
-    const fs = await installPreset(db, 'mcp-filesystem', { level: 'company', companyId: company.id });
-    const gh = await installPreset(db, 'mcp-github', { level: 'company', companyId: company.id });
+    const fs = await installPreset(db, 'mcp-filesystem', { level: 'workbench' });
+    const gh = await installPreset(db, 'mcp-github', { level: 'workbench' });
 
     // 无信号：保持策展目录顺序（filesystem 在 github 前）
     const order0 = listMarketplacePresets(db).map((p) => p.id);
@@ -174,7 +174,7 @@ describe('review 修复：平台级装新停旧 + 注入优先级 + winner 身�
     // 平台级「装新停旧」
     const fresh = await installPreset(db, 'mcp-github', { level: 'platform' }, { replaceExisting: true });
     expect(fresh.id).not.toBe(old.id);
-    const effective = getEffectivePluginsForCompany(db, company.id);
+    const effective = getEffectivePluginsForCompany(db);
     const github = effective.find((p) => p.kind === 'mcp-server' && p.name === 'github');
     // 旧条目被 status=disabled 排除，新条目成为唯一 winner（C1 曾失败：旧行先入者胜出）
     expect(github?.id).toBe(fresh.id);
@@ -193,7 +193,7 @@ describe('review 修复：平台级装新停旧 + 注入优先级 + winner 身�
       name: 'incremental-implementation',
       kind: 'skill',
       source: { kind: 'marketplace', registry: 'manual', ref: 'test' },
-      scope: { level: 'company', companyId: company.id },
+      scope: { level: 'workbench' },
       manifest: { kind: 'skill', skill: { body: '# 商城新版正文' } },
     });
     const task = createTask(db, {
@@ -219,7 +219,7 @@ describe('review 修复：平台级装新停旧 + 注入优先级 + winner 身�
       scope: { level: 'platform' },
       manifest: { kind: 'skill', skill: { body: '# 实体行' } },
     });
-    const effective = getEffectivePluginsForCompany(db, company.id);
+    const effective = getEffectivePluginsForCompany(db);
     const hits = effective.filter((p) => p.kind === 'skill' && p.name === 'incremental-implementation');
     expect(hits.length).toBe(1);
     expect(hits[0].id.startsWith('plg_')).toBe(true); // 胜者是实体行而非 skill:xxx 视图
@@ -245,7 +245,7 @@ describe('getEffectivePluginsForCompany 同名 winner 唯一（防御）', () =>
       scope: { level: 'platform' },
       manifest: { kind: 'mcp-server', mcp: { transport: 'stdio', command: 'npx', args: ['b'] } },
     });
-    const effective = getEffectivePluginsForCompany(db, company.id);
+    const effective = getEffectivePluginsForCompany(db);
     const github = effective.filter((p) => p.kind === 'mcp-server' && p.name === 'github');
     expect(github.length).toBe(1); // 唯一 winner，不双双进上下文
   });

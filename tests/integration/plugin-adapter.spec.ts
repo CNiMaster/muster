@@ -172,9 +172,9 @@ describe('listPlugins 数据库优先', () => {
       'skill:overlap',
       '数据库覆盖版',
       'skill',
-      'company',
+      'workbench',
       'co_1',
-      'company',
+      'workbench',
       'co_1',
       JSON.stringify({ kind: 'skill', skill: { body: 'db body' } }),
       'enabled',
@@ -187,7 +187,7 @@ describe('listPlugins 数据库优先', () => {
     const overlap = plugins.find((p) => p.id === 'skill:overlap');
     expect(overlap?.name).toBe('数据库覆盖版');
     expect(overlap?.status).toBe('enabled');
-    expect(overlap?.scope).toEqual({ level: 'company', companyId: 'co_1' });
+    expect(overlap?.scope).toEqual({ level: 'workbench' });
   });
 
   it('dbOnly 跳过只读视图', () => {

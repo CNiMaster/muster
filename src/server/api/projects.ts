@@ -34,7 +34,7 @@ import {
   ensureProjectThreads,
   compactThreadWithMemory,
 } from '../domain/thread';
-import { getCompany } from '../domain/company';
+import { getWorkbench } from '../domain/workbench';
 import { getAgent } from '../domain/agent';
 import { syncAgentMemoryFiles } from '../domain/agent-home';
 import { stageStatus } from '../worktree/manager';
@@ -99,7 +99,7 @@ projectsRouter.post(
     const companyId = companyIdOf(req);
     const project = createProject(db, { companyId, ...input });
     ensureProjectThreads(db, project.id);
-    if (getCompany(db, companyId).kind === 'novel') {
+    if (getWorkbench(db).kind === 'novel') {
       initializeNovelProject(db, project.id);
       registerDefaultNovelScheduleTriggers(db, project.id);
     }

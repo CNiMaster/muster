@@ -127,7 +127,7 @@ interface CompanyLite {
 function PluginGovernRow({ plugin, companies }: { plugin: Plugin; companies: CompanyLite[] }): React.ReactElement {
   const [expanded, setExpanded] = useState(false);
   const activeCompanies = companies.filter((c) => c.state !== 'archived');
-  const isExclusive = plugin.scope.level === 'company';
+  const isExclusive = plugin.scope.level === 'workbench';
 
   return (
     <li className="plugin-govern-row">

@@ -68,7 +68,7 @@ pluginsRouter.get(
 const companyEnableHandler = asyncHandler(async (req, res) => {
   assertWorkbenchOff(getDb());
   // opt-out：enable = 撤销禁用，恢复平台默认全开
-  setCompanyPluginDecision(getDb(), '', param(req, 'id'), 'enabled');
+  setCompanyPluginDecision(getDb(), param(req, 'id'), 'enabled');
   realtime.publish(makeLifecycleEvent('plugin.enabled', { pluginId: param(req, 'id') }, {}));
   res.json({ ok: true });
 });
@@ -77,7 +77,7 @@ pluginsRouter.post('/:id/enable', companyEnableHandler);
 const companyDisableHandler = asyncHandler(async (req, res) => {
   assertWorkbenchOff(getDb());
   // opt-out：disable = 显式禁用某平台插件
-  setCompanyPluginDecision(getDb(), '', param(req, 'id'), 'disabled');
+  setCompanyPluginDecision(getDb(), param(req, 'id'), 'disabled');
   realtime.publish(makeLifecycleEvent('plugin.disabled', { pluginId: param(req, 'id') }, {}));
   res.json({ ok: true });
 });
@@ -91,7 +91,7 @@ const companyEffectiveHandler = asyncHandler(async (_req, res) => {
   // 为每个插件标注工作台对其的三态决策：default（平台默认全开）/ enabled（显式启用痕迹）/ disabled（显式禁用）/ exclusive（工作台独占）
   const annotated = effective.map((p) => {
     let companyDecision: 'default' | 'enabled' | 'disabled' | 'exclusive';
-    if (p.scope.level === 'company') {
+    if (p.scope.level === 'workbench') {
       companyDecision = 'exclusive';
     } else {
       companyDecision = (decisions.get(p.id) as 'enabled' | 'disabled' | undefined) ?? 'default';
@@ -108,9 +108,9 @@ const companyEnabledHandler = asyncHandler(async (_req, res) => {
 });
 pluginsRouter.get('/enabled', companyEnabledHandler);
 
-// 工作台独占插件列表（scope=company）
+// 工作台独占插件列表（scope=workbench）
 const companyScopedHandler = asyncHandler(async (_req, res) => {
-  res.json(listPlugins(getDb(), { scopeLevel: 'company' }));
+  res.json(listPlugins(getDb(), { scopeLevel: 'workbench' }));
 });
 pluginsRouter.get('/company-scoped', companyScopedHandler);
 
@@ -132,7 +132,7 @@ const companyExclusiveHandler = asyncHandler(async (req, res) => {
     ...parsed,
     source: parsed.source as import('../../shared/plugin').PluginSource,
     // 强制 scope 为工作台独占
-    scope: { level: 'company', companyId: '' },
+    scope: { level: 'workbench' },
     manifest: parsed.manifest as import('../../shared/plugin').Plugin['manifest'],
   });
   realtime.publish(makeLifecycleEvent('plugin.installed', { pluginId: plugin.id }, {}));
@@ -246,7 +246,7 @@ const installEntrySchema = z.object({
     kind: z.enum(['skill', 'mcp-server']),
     maturity: z.enum(['experimental', 'stable', 'deprecated']),
   }),
-  scope: z.object({ level: z.enum(['platform', 'company', 'project', 'employee']) }).passthrough(),
+  scope: z.object({ level: z.enum(['platform', 'workbench', 'project', 'employee']) }).passthrough(),
 });
 
 pluginsRouter.post(
@@ -304,7 +304,7 @@ const installPresetSchema = z.object({
   presetId: z.string().min(1),
   scope: z.discriminatedUnion('level', [
     z.object({ level: z.literal('platform') }),
-    z.object({ level: z.literal('company'), companyId: z.string().min(1) }),
+    z.object({ level: z.literal('workbench') }),
   ]),
   replaceExisting: z.boolean().optional(),
 });
@@ -315,10 +315,10 @@ pluginsRouter.post(
     const input = installPresetSchema.parse(req.body);
     const db = getDb();
     // 工作台级安装/停旧属于组织能力配置变更：与其它启停路由一致，要求工作台下班（org 配置锁）
-    if (input.scope.level === 'company') assertWorkbenchOff(db);
+    if (input.scope.level === 'workbench') assertWorkbenchOff(db);
     const scope = input.scope.level === 'platform'
       ? { level: 'platform' as const }
-      : { level: 'company' as const, companyId: '' };
+      : { level: 'workbench' as const };
     const plugin = await installPreset(db, input.presetId, scope, {
       replaceExisting: input.replaceExisting,
     });
@@ -332,7 +332,7 @@ const installClaudePluginSchema = z.object({
   pluginName: z.string().min(1),
   scope: z.discriminatedUnion('level', [
     z.object({ level: z.literal('platform') }),
-    z.object({ level: z.literal('company'), companyId: z.string().min(1) }),
+    z.object({ level: z.literal('workbench') }),
   ]),
   replaceExisting: z.boolean().optional(),
 });
@@ -342,10 +342,10 @@ pluginsRouter.post(
   asyncHandler(async (req, res) => {
     const input = installClaudePluginSchema.parse(req.body);
     const db = getDb();
-    if (input.scope.level === 'company') assertWorkbenchOff(db);
+    if (input.scope.level === 'workbench') assertWorkbenchOff(db);
     const scope = input.scope.level === 'platform'
       ? { level: 'platform' as const }
-      : { level: 'company' as const, companyId: '' };
+      : { level: 'workbench' as const };
     const plugin = await installClaudeCodePlugin(db, input.pluginName, scope, {
       replaceExisting: input.replaceExisting,
     });
@@ -363,7 +363,7 @@ pluginsRouter.post(
       .object({
         capability: z.string().min(1),
         context: z.string().optional(),
-        companyId: z.string().optional(),
+        scope: z.enum(['platform', 'workbench']).optional(),
       })
       .parse(req.body);
     const plugin = await authorSkill(getDb(), input);
