@@ -56,13 +56,16 @@ Key constraints for all new work:
 
 剩余（收尾项）：外包契约状态机 → 跨项目交付协议的改造（项目对项目，替代公司对公司，需为保留的契约域设计新入口）。
 
-## 公司概念退役 A+B+C（2026-08-18，worktree feat/company-retirement）
+## 公司概念退役 A+B+C+D（2026-08-18，分支 feat/company-drop）
 
-- **语义坍缩为隐式单例工作台（不动表结构）**：`ensureDefaultCompany(db)`（domain/company.ts）取首个在营公司、无则建「默认工作台」(general)；启动 seed 幂等确保、恰一个在营且非默认名则改名（星河软件→默认工作台）；多公司在营仅 log.warn 取最早，不自动归并。`createQuickProject` 复用该原语。表与各表 `company_id` 列均保留（物理去列=远期 D 批）。
-- **API 面**：/api/companies/:companyId/* 全部下线；资源组去段扁平（/api/blueprints /api/agents /api/employees /api/departments /api/projects /api/relationships /api/workflows /api/messages /api/events /api/expert-candidates /api/blueprint-optimization /api/plugins/* /api/employees/temp /api/outsource/* /api/handover /api/permission-changes /api/permissions/binding）；单例组收进 `/api/workbench/*`（读/状态机/聚合/自动化/关机/凭据：GET+PATCH /、clock-in/out、cockpit、status-board、usage、debates、activity、automation、artifacts、archive/search、shutdown）。`companyIdOf(req)`（middleware.ts）统一解析默认工作台——注意 Express 5 mergeParams 在 router 入口快照父参数，中间件改 req.params 不传导，且带 `:id` 的资源路由会误读，故一律走 ensureDefaultCompany。
-- **前端**：删除 useDefaultCompanyId/useCompanies；hooks 全量去 companyId 参数并切新路径；workbench 族 hooks 命名 useWorkbench/useWorkbenchCockpit/useWorkbenchAction/useWorkbenchAutomations/useWorkbenchDebates/useWorkbenchArtifacts/useEvents/useStatusBoard；realtime 失效键单例化（workbench-cockpit/events/status-board）。
-- **测试基建隔离**：smoke（run-all.mjs）无 MUSTER_API 时自起隔离服务器（临时 MUSTER_HOME+随机端口,跑完清理,屏蔽模块 process.exit 连坐）；e2e 固定 /tmp/muster-e2e-run + global-setup 每次清理 + 探针打 /api/workbench + 零项目态用例在 00-bootstrap.spec.ts 按序最先。
-- **顺带修复**：f3e2c01 引入的 blueprint-optimization 路由参数错名（optimize-chat 原必 404）。
+- **批次 A+B+C（语义坍缩与路径收敛）**：/api/companies/* 全部下线；资源组去段扁平，单例组收进 `/api/workbench/*`。`companyIdOf(req)` 统一解析单例工作台。
+- **批次 D（物理去列与终局迁移）**：
+  - **迁移 A（20260819000000_company_drop_org.sql）**：重构 11 张组织/人员/对话表（`agent_definition`, `agent_profile`, `company_employee`, `department`, `relationship`, `project`, `workflow_template`, `workflow_edge`, `conversation_message`, `inbox_item`, `discussion`）彻底删除 `company_id` 列，`conversation_message.scope_kind` CHECK 限制为 `('workbench','project')`。
+  - **迁移 B（20260819000100_company_drop_assets.sql）**：重构 10 张任务/知识资产表（`task`, `project_task`, `swarm_run`, `debate`, `project_trigger`, `blueprint`, `blueprint_v2`, `blueprint_optimization_item`, `task_closeout_summary`, `business_review`）彻底删除 `company_id` 列。
+  - **迁移 C（20260819000200_company_drop_satellites.sql）**：重构 5 张能力卫星表（`expert_candidate`, `capability_usage_stat`, `company_optimization_report`, `structure_change_log`, `report_action_item`）删除 `company_id` 列；退役 `outsourcing_contract`/`outsourcing_contract_event` 死表，解锁 33 例单测。
+  - **迁移 D（20260819000300_company_rename_workbench.sql）**：`company` 表瘦身并 RENAME 为 `workbench` 单例表（保留 `first_agent_id`, `review_mode`, `shutdown_paused` 活列，物理删除 `archived_at`, `archived_reason`, `executor_tier_*` 死列）。
+  - **契约与事件全链去 companyId**：`src/shared/types.ts`, `src/shared/lifecycle-events.ts`, `src/client/api/types.ts` 全面剥除 `companyId`；事件类型由 `company.state` 演进为 `workbench.state`；`PRAGMA foreign_key_check` 完整性断言通过。
+- **测试基线**：tsc 0 错误；全量 188 测试文件 1253 测试用例 100% 通过（0 失败，2 skipped）；Playwright e2e 18/18 通过；HTTP 冒烟 6/6 全通。
 
 ## UI 重构 2026-08-16（批次 A-E，项目主导 + Composer 全功能 + 固定员工收敛）
 

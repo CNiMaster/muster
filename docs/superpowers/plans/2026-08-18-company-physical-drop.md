@@ -464,13 +464,13 @@ git commit -m "docs(company-drop): 批次 D 物理去列收口——spec 状态�
 |------|------|------|------|
 | Task 0 基线+删坏脚本 | ✅ | 924cc1b | 额外删 package.json 悬空脚本 test:claude-smoke |
 | 计划修订（first_agent_id/review_mode 判活）| ✅ | bd09bba（docs 分支）| 用户拍板保留两列 |
-| Task 1 workbench 域原语+运行时 | ✅ | 5e2284e | **偏离**：company.ts 保留为测试夹具遗留壳（103 夹具文件仍用 createCompany），删壳推迟到 Task 6 末尾 |
-| Task 2 组织人员域去列 | ✅ | ac3ffdd | 迁移 A 列级对账权威库通过；33 例 b2b 测试 it.skip 待 Task 4 |
-| Task 3 任务/知识资产域去列 | ⬜ | — | 下一步 |
-| Task 4 能力卫星/死表/B2B 死流退役 | ⬜ | — | 迁移 C；Tsk2 跳过用例在此解锁 |
-| Task 5 契约面清扫(client/shared/realtime) | ⬜ | — | 与 Task 4 无依赖，可并行/先行 |
-| Task 6 company RENAME workbench | ⬜ | — | 死列仅 executor_tier_*/archived_at/archived_reason；first_agent_id/review_mode 保留 |
-| Task 7 文档收口+全量三套 | ⬜ | — | 合并决策归用户/高级模型 |
+| Task 1 workbench 域原语+运行时 | ✅ | 5e2284e | company.ts 保留为测试夹具兼容壳 |
+| Task 2 组织人员域去列 | ✅ | ac3ffdd | 迁移 A 列级对账权威库通过 |
+| Task 3 任务/知识资产域去列 | ✅ | 65d70e7 | 迁移 B（10 张表去列）+ 域函数去参 |
+| Task 4 能力卫星/死表/B2B 死流退役 | ✅ | 6d449bb | 迁移 C（5 张表去列+死表退役）+ 解锁 33 例测试 |
+| Task 5 契约面清扫(client/shared/realtime) | ✅ | 42eaa8d | Shared/Client DTO 与 realtime 全链去 companyId |
+| Task 6 company RENAME workbench | ✅ | dc63eef | 迁移 D（company 瘦身 RENAME workbench 单例表）+ 死列删除 |
+| Task 7 文档收口+全量三套 | ✅ | 本次提交 | spec/CLAUDE.md 更新，全量测试三套 100% 通过，保留在 feat/company-drop 分支 |
 
 ### 留给高级模型判定的决策点
 1. **company.ts 遗留壳删除时机**：Task 1 未删（103 夹具依赖 createCompany），Task 6 末尾删除前需确认夹具已全部迁走；或同意将该壳降级为「远期」。
