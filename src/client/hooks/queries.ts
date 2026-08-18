@@ -72,7 +72,7 @@ export interface ProjectProposal {
   initialTaskTitle: string;
 }
 export interface ProjectTaskThreadDTO { id:string; employeeId:string; executorProfileId:string|null; vendorSessionId:string|null; previousVendorSessionId:string|null; state:string; runCount:number; transcriptBytes:number; compactionCount:number; lastCompactionAt:string|null; updatedAt:string }
-export interface ProjectTaskDTO { id:string; projectId:string; seq:number; title:string; brief:string; state:'active'|'completed'|'archived'; launchState:'draft'|'ready_for_confirmation'|'confirmed'; launchBrief:ProjectLaunchBrief; capabilityDiscovery:ProjectLaunchDiscovery|null; launchConfirmedAt:string|null; completedAt:string|null; archivedAt:string|null; createdAt:string; updatedAt:string; threads?:ProjectTaskThreadDTO[] }
+export interface ProjectTaskDTO { id:string; projectId:string; seq:number; title:string; brief:string; state:'active'|'completed'|'archived'; pinned:boolean; launchState:'draft'|'ready_for_confirmation'|'confirmed'; launchBrief:ProjectLaunchBrief; capabilityDiscovery:ProjectLaunchDiscovery|null; launchConfirmedAt:string|null; completedAt:string|null; archivedAt:string|null; createdAt:string; updatedAt:string; threads?:ProjectTaskThreadDTO[] }
 
 export interface ToolRegistryDTO {
   id: string;
@@ -1007,6 +1007,17 @@ export function useProjectTasks(projectId:string|undefined){return useQuery({que
 export function useProjectTask(projectId:string|undefined,id:string|undefined){return useQuery({queryKey:['project-task',projectId,id],queryFn:()=>api.get<ProjectTaskDTO>(`/api/projects/${projectId}/project-tasks/${id}`),enabled:!!projectId&&!!id,refetchInterval:4000});}
 export function useCreateProjectTask(){const qc=useQueryClient();return useMutation({mutationFn:({projectId,...input}:{projectId:string;title:string;brief?:string;launchBrief?:ProjectLaunchBrief})=>api.post<ProjectTaskDTO>(`/api/projects/${projectId}/project-tasks`,input),onSuccess:data=>qc.invalidateQueries({queryKey:['project-tasks',data.projectId]})});}
 export function useProjectTaskAction(){const qc=useQueryClient();return useMutation({mutationFn:({projectId,id,action}:{projectId:string;id:string;action:'complete'|'archive'})=>api.post<ProjectTaskDTO>(`/api/projects/${projectId}/project-tasks/${id}/${action}`),onSuccess:data=>{qc.invalidateQueries({queryKey:['project-tasks',data.projectId]});qc.invalidateQueries({queryKey:['project-task',data.projectId,data.id]});}});}
+/** 管理工作台批2：置顶/取消置顶（仅列表排序）。 */
+export function usePinProjectTask(){const qc=useQueryClient();return useMutation({mutationFn:({projectId,id,pinned}:{projectId:string;id:string;pinned:boolean})=>api.post<ProjectTaskDTO>(`/api/projects/${projectId}/project-tasks/${id}/pin`,{pinned}),onSuccess:data=>{qc.invalidateQueries({queryKey:['project-tasks',data.projectId]});qc.invalidateQueries({queryKey:['standalone-tasks']});}});}
+/** 管理工作台批2：删除归档任务的平台记录（不触碰仓库文件）。 */
+export function useDeleteProjectTaskRecord(){const qc=useQueryClient();return useMutation({mutationFn:({projectId,id}:{projectId:string;id:string})=>api.delete(`/api/projects/${projectId}/project-tasks/${id}`),onSuccess:(_d,v)=>{qc.invalidateQueries({queryKey:['project-tasks',v.projectId]});qc.invalidateQueries({queryKey:['standalone-tasks']});}});}
+/** 管理工作台批2：独立任务区（隐藏载体项目 + 其任务，pinned 置顶序）。 */
+export function useStandaloneTasks(){return useQuery({queryKey:['standalone-tasks'],queryFn:()=>api.get<{projectId:string;tasks:ProjectTaskDTO[]}>('/api/projects/standalone-tasks')});}
+/** 管理工作台批2：项目目录树（只读）。 */
+export interface FileTreeNodeDTO{name:string;path:string;kind:'dir'|'file';size:number|null;children?:FileTreeNodeDTO[];}
+export function useProjectFileTree(projectId:string|undefined,path=''){return useQuery({queryKey:['project-files-tree',projectId,path],queryFn:()=>api.get<FileTreeNodeDTO[]>(`/api/projects/${projectId}/files/tree?path=${encodeURIComponent(path)}`),enabled:!!projectId});}
+/** 管理工作台批2：移除项目（默认隐藏；deleteRecords=true 删平台记录——均不动仓库目录）。 */
+export function useRemoveProject(){const qc=useQueryClient();return useMutation({mutationFn:({id,deleteRecords}:{id:string;deleteRecords?:boolean})=>api.delete(`/api/projects/${id}`,{deleteRecords}),onSuccess:()=>{qc.invalidateQueries({queryKey:['projects']});}});}
 export function useDiscoverProjectLaunch(){const qc=useQueryClient();return useMutation({mutationFn:({projectId,id,launchBrief}:{projectId:string;id:string;launchBrief:ProjectLaunchBrief})=>api.post<ProjectTaskDTO>(`/api/projects/${projectId}/project-tasks/${id}/discover-capabilities`,{launchBrief}),onSuccess:data=>{qc.invalidateQueries({queryKey:['project-tasks',data.projectId]});qc.setQueryData(['project-task',data.projectId,data.id],data);}});}
 export function useConfirmProjectLaunch(){const qc=useQueryClient();return useMutation({mutationFn:({projectId,id,launchBrief}:{projectId:string;id:string;launchBrief:ProjectLaunchBrief})=>api.post<ProjectTaskDTO>(`/api/projects/${projectId}/project-tasks/${id}/confirm-launch`,{launchBrief}),onSuccess:data=>{qc.invalidateQueries({queryKey:['project-tasks',data.projectId]});qc.setQueryData(['project-task',data.projectId,data.id],data);}});}
 

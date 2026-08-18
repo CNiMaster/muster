@@ -1,6 +1,6 @@
 import type React from 'react';
 import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   useProject,
   useAgents,
@@ -92,7 +92,14 @@ function NewProject(): React.ReactElement {
   const { data: playbookOptions } = usePlaybooksForTemplate(company?.kind);
 
   const [mode, setMode] = useState<'standard' | 'wizard'>('wizard');
-  const effectiveMode = isNovelWorkspace ? mode : 'standard';
+  // 管理工作台批2：?mode=open 打开本地目录——接管既有项目（强制标准表单，聚焦目录输入）
+  const [searchParams] = useSearchParams();
+  const openMode = searchParams.get('mode') === 'open';
+  const effectiveMode = openMode ? 'standard' : (isNovelWorkspace ? mode : 'standard');
+  const openDirFocusRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (openMode) openDirFocusRef.current?.focus();
+  }, [openMode]);
 
   // 基础表单状态
   const [name, setName] = useState('');
@@ -284,8 +291,13 @@ function NewProject(): React.ReactElement {
           )}
         </div>
       ) : (
-        <Card title="标准创建项目">
+        <Card title={openMode ? '打开本地项目（接管既有目录）' : '标准创建项目'}>
           <div className="form-stack">
+            {openMode && (
+              <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+                📂 填入既有项目的绝对路径即可接管该目录：已是 git 仓库则直接在其上工作，否则会自动初始化。目录内容不会被移动或修改。
+              </p>
+            )}
             <Field label="项目名称" required>
               <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={creationPreset.namePlaceholder} />
             </Field>
@@ -301,12 +313,20 @@ function NewProject(): React.ReactElement {
                 ))}
               </Select>
             </Field>
-            <Field label="项目目录（可选）" hint="留空则在默认工作区自动生成。一个工作台可同时跑多个项目，每个项目独立目录。必须填绝对路径，且在 MUSTER_ALLOWED_ROOTS 允许范围内。">
-              <Input value={rootDir} onChange={(e) => setRootDir(e.target.value)} placeholder="例如：/Users/you/code/my-project" />
+            <Field label={openMode ? '本地项目目录（必填）' : '项目目录（可选）'} hint={openMode
+              ? '填入既有项目的绝对路径（在 MUSTER_ALLOWED_ROOTS 允许范围内）。目录不会被移动或修改。'
+              : '留空则在默认工作区自动生成。一个工作台可同时跑多个项目，每个项目独立目录。必须填绝对路径，且在 MUSTER_ALLOWED_ROOTS 允许范围内。'}>
+              <input
+                ref={openMode ? openDirFocusRef : undefined}
+                value={rootDir}
+                onChange={(e) => setRootDir(e.target.value)}
+                placeholder={openMode ? '/Users/you/code/my-project' : '例如：/Users/you/code/my-project'}
+                style={{ width: '100%', fontSize: 13, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)' }}
+              />
             </Field>
             <div>
-              <Button onClick={submit} disabled={!name.trim()} loading={createProject.isPending}>
-                创建项目
+              <Button onClick={submit} disabled={!name.trim() || (openMode && !rootDir.trim())} loading={createProject.isPending}>
+                {openMode ? '打开项目' : '创建项目'}
               </Button>
             </div>
           </div>
