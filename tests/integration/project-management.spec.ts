@@ -1,0 +1,201 @@
+/**
+ * 管理工作台批1：项目移除双语义 / 目录树 / 独立任务载体 / 任务置顶与记录删除。
+ */
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import express from 'express';
+import http from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { makeTestDb } from './setup';
+import { setDbForTest, closeDb, type DB } from '../../src/server/db/client';
+import { ensureWorkbench } from '../../src/server/domain/workbench';
+import {
+  createProject,
+  ensureStandaloneProject,
+  listProjects,
+  removeProject,
+  getProject,
+} from '../../src/server/domain/project';
+import {
+  archiveProjectTask,
+  createProjectTask,
+  deleteProjectTaskRecord,
+  listProjectTasks,
+  setProjectTaskPinned,
+} from '../../src/server/domain/project-task';
+import { listProjectFileTree } from '../../src/server/domain/project-files';
+import { createTask } from '../../src/server/domain/task';
+import { createAgent } from '../../src/server/domain/agent';
+import { projectsRouter, projectById } from '../../src/server/api/projects';
+import { errorMiddleware } from '../../src/server/api/middleware';
+import { AppError } from '../../src/shared/errors';
+
+let tdb: ReturnType<typeof makeTestDb>;
+let db: DB;
+let tmpRoot: string;
+
+beforeEach(() => {
+  tdb = makeTestDb();
+  db = tdb.db;
+  setDbForTest(db);
+  ensureWorkbench(db);
+  tmpRoot = mkdtempSync('/tmp/muster-pm-'); // 必须在默认 ALLOWED_ROOTS(/tmp) 内，macOS 的 os.tmpdir() 在 /var/folders 会被拒
+});
+
+afterEach(() => {
+  closeDb();
+  tdb.close();
+  rmSync(tmpRoot, { recursive: true, force: true });
+});
+
+function proj(name: string, rootDir?: string) {
+  return createProject(db, { name, rootDir, initialState: 'active' });
+}
+
+describe('移除项目（三点菜单语义）', () => {
+  it('默认＝隐藏：列表不显示、记录完整保留、目录不动', () => {
+    const p = proj('A', tmpRoot);
+    const lead = createAgent(db, { companyId: ensureWorkbench(db).workbench.id, name: 'lead', role: 'lead' });
+    createProjectTask(db, { projectId: p.id, title: 't1' });
+    createTask(db, { projectId: p.id, assigneeAgentId: lead.id, title: '子任务' });
+
+    const r = removeProject(db, p.id);
+
+    expect(r).toEqual({ removed: true, recordsDeleted: false });
+    // 记录完整保留（域层全量可见；显示过滤在 API 层 view 过滤用例验证）
+    expect((getProject(db, p.id).settings as Record<string, unknown>).removed).toBe(true);
+    expect(listProjects(db).map((x) => x.id)).toContain(p.id);
+    // 铁律：仓库目录原样
+    expect(existsSync(tmpRoot)).toBe(true);
+  });
+
+  it('deleteRecords=true＝删平台记录，但绝不删仓库目录', () => {
+    const p = proj('B', tmpRoot);
+    const lead = createAgent(db, { companyId: ensureWorkbench(db).workbench.id, name: 'lead2', role: 'lead' });
+    const pt = createProjectTask(db, { projectId: p.id, title: 't' });
+    createTask(db, { projectId: p.id, projectTaskId: pt.id, assigneeAgentId: lead.id, title: '运行中' });
+    writeFileSync(path.join(tmpRoot, 'user-file.txt'), '用户数据');
+
+    const r = removeProject(db, p.id, { deleteRecords: true });
+
+    expect(r).toEqual({ removed: true, recordsDeleted: true });
+    expect(() => getProject(db, p.id)).toThrow(/not found/);
+    // 级联清理：task/project_task 行消失
+    expect((db.prepare('SELECT COUNT(*) c FROM task').get() as { c: number }).c).toBe(0);
+    expect((db.prepare('SELECT COUNT(*) c FROM project_task').get() as { c: number }).c).toBe(0);
+    // 铁律：目录与用户文件原样保留
+    expect(existsSync(path.join(tmpRoot, 'user-file.txt'))).toBe(true);
+  });
+
+  it('基础设施项目（独立任务）不可移除', () => {
+    const { project } = ensureStandaloneProject(db);
+    expect(() => removeProject(db, project.id)).toThrow(AppError);
+  });
+});
+
+describe('目录树（只读 + 防逃逸）', () => {
+  it('列目录树：目录在前、忽略 .git/node_modules、size 有值', () => {
+    mkdirSync(path.join(tmpRoot, 'docs'));
+    mkdirSync(path.join(tmpRoot, '.git'));
+    writeFileSync(path.join(tmpRoot, 'README.md'), 'x');
+    writeFileSync(path.join(tmpRoot, 'docs', 'a.md'), 'y');
+
+    const p = proj('C', tmpRoot);
+    const tree = listProjectFileTree(db, p.id);
+
+    expect(tree.map((n) => n.name)).toEqual(['docs', 'README.md']);
+    expect(tree[0]!.children!.map((c: { name: string }) => c.name)).toEqual(['a.md']);
+    expect(tree[1]!.size).toBe(1);
+  });
+
+  it('路径逃逸被拒（../ 指向 rootDir 之外）', () => {
+    const p = proj('D', tmpRoot);
+    expect(() => listProjectFileTree(db, p.id, '../outside')).toThrow(/路径逃逸/);
+  });
+
+  it('depth=1 只列一层', () => {
+    mkdirSync(path.join(tmpRoot, 'sub'));
+    writeFileSync(path.join(tmpRoot, 'sub', 'f.txt'), 'x');
+    const p = proj('E', tmpRoot);
+    const tree = listProjectFileTree(db, p.id, '', 1);
+    const sub = tree.find((n) => n.name === 'sub')!;
+    expect(sub.children).toEqual([]);
+  });
+});
+
+describe('独立任务载体', () => {
+  it('幂等创建隐藏项目，任务挂载与置顶复用现有通道', () => {
+    const first = ensureStandaloneProject(db);
+    const second = ensureStandaloneProject(db);
+    expect(second.created).toBe(false);
+    expect(second.project.id).toBe(first.project.id);
+    expect((first.project.settings as Record<string, unknown>).standalone).toBe(true);
+
+    const a = createProjectTask(db, { projectId: first.project.id, title: '买咖啡' });
+    const b = createProjectTask(db, { projectId: first.project.id, title: '写周报' });
+    setProjectTaskPinned(db, a.id, true, first.project.id);
+
+    const list = listProjectTasks(db, first.project.id);
+    expect(list.map((t) => t.title)).toEqual(['买咖啡', '写周报']);
+    expect(list[0]!.pinned).toBe(true);
+
+    // 归档 → 删除记录（不触碰文件）
+    archiveProjectTask(db, a.id, first.project.id);
+    deleteProjectTaskRecord(db, a.id, first.project.id);
+    expect(listProjectTasks(db, first.project.id).map((t) => t.id)).toEqual([b.id]);
+  });
+
+  it('未归档的任务不可直接删除记录', () => {
+    const { project } = ensureStandaloneProject(db);
+    const t = createProjectTask(db, { projectId: project.id, title: '进行中' });
+    expect(() => deleteProjectTaskRecord(db, t.id, project.id)).toThrow(/仅归档/);
+  });
+});
+
+describe('API 层：view 过滤与 DELETE 端点', () => {
+  let server: http.Server;
+  let base: string;
+
+  beforeEach(async () => {
+    const app = express();
+    app.use(express.json());
+    app.use('/projects', projectsRouter);
+    app.use('/projects/:id', projectById);
+    app.use(errorMiddleware);
+    server = app.listen(0, '127.0.0.1');
+    await new Promise<void>((r) => server.once('listening', r));
+    base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  });
+  afterEach(() => { server.close(); });
+
+  it('view=archived/removed 过滤正确；DELETE 隐藏后从 active 消失', async () => {
+    const active = proj('活跃', tmpRoot);
+    const archived = proj('已归档', tmpRoot);
+    const { updateProject } = await import('../../src/server/domain/project');
+    updateProject(db, archived.id, { state: 'archived' });
+
+    const activeList = (await (await fetch(`${base}/projects`)).json()) as Array<{ name: string }>;
+    expect(activeList.map((p) => p.name)).toContain('活跃');
+    expect(activeList.map((p) => p.name)).not.toContain('已归档');
+
+    const archivedList = (await (await fetch(`${base}/projects?view=archived`)).json()) as Array<{ name: string }>;
+    expect(archivedList.map((p) => p.name)).toEqual(['已归档']);
+
+    const del = await fetch(`${base}/projects/${active.id}`, { method: 'DELETE', headers: { 'content-type': 'application/json' }, body: '{}' });
+    expect(del.status).toBe(200);
+    const after = (await (await fetch(`${base}/projects`)).json()) as Array<{ name: string }>;
+    expect(after.map((p) => p.name)).not.toContain('活跃');
+    const removedList = (await (await fetch(`${base}/projects?view=removed`)).json()) as Array<{ name: string }>;
+    expect(removedList.map((p) => p.name)).toContain('活跃');
+  });
+
+  it('standalone-tasks：懒建载体并列任务', async () => {
+    const r = await fetch(`${base}/projects/standalone-tasks`);
+    expect(r.status).toBe(200);
+    const body = (await r.json()) as { projectId: string; tasks: Array<{ title: string }> };
+    expect(body.projectId).toBeTruthy();
+    expect(Array.isArray(body.tasks)).toBe(true);
+  });
+});

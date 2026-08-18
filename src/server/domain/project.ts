@@ -177,6 +177,56 @@ export function ensureInboxProject(db: DB, companyId?: string): { project: Proje
 }
 
 /**
+ * 管理工作台批1：独立任务载体——隐藏的「独立任务」项目。
+ * 不依赖业务项目的小任务挂这里（收件箱同款模式：settings.standalone=true，
+ * 项目列表/驾驶舱过滤隐藏，创建/归档/置顶全部复用 project-task 通道）。
+ */
+export function ensureStandaloneProject(db: DB): { project: Project; created: boolean } {
+  const rows = db.prepare('SELECT * FROM project').all() as ProjectRow[];
+  const existing = rows.map((r) => fromRow(db, r)).find((p) => (p.settings as Record<string, unknown>)?.standalone === true);
+  if (existing) return { project: existing, created: false };
+  const project = createProject(db, {
+    name: '独立任务',
+    description: '不依赖项目的小任务载体：这里的任务经独立任务区创建与查看。',
+    initialState: 'active',
+  });
+  const flagged = updateProject(db, project.id, {
+    settings: { ...(project.settings as Record<string, unknown>), standalone: true },
+  });
+  return { project: flagged, created: true };
+}
+
+/**
+ * 管理工作台批1：移除项目（三点菜单「移除」）。
+ * - 默认＝隐藏：settings.removed=true，项目列表不显示，记录完整保留（可恢复）。
+ * - deleteRecords=true＝删除平台记录：先取消未终态任务，再删 project 行
+ *   （0001 迁移的 FK ON DELETE CASCADE 自动清 task/project_task/artifact/material 等行）。
+ *   **铁律：绝不触碰用户项目仓库目录（rootDir 及其下所有文件原样保留）。**
+ * - 基础设施项目（收件箱/独立任务）不可移除。
+ */
+export function removeProject(db: DB, id: string, options: { deleteRecords?: boolean } = {}): { removed: boolean; recordsDeleted: boolean } {
+  const project = getProject(db, id);
+  const settings = project.settings as Record<string, unknown>;
+  if (settings.inbox === true || settings.standalone === true) {
+    throw new AppError(ErrorCode.CONFLICT, '基础设施项目（收件箱/独立任务）不可移除');
+  }
+  if (options.deleteRecords) {
+    db.transaction(() => {
+      const now = nowIso();
+      db.prepare(
+        `UPDATE task SET state='cancelled', lease_owner_thread_id=NULL, lease_expires_at=NULL, heartbeat_at=NULL, updated_at=?
+         WHERE project_id=? AND state NOT IN ('completed','failed','cancelled')`,
+      ).run(now, id);
+      db.prepare("UPDATE project_task SET state='archived', archived_at=?, updated_at=? WHERE project_id=? AND state!='archived'").run(now, now, id);
+      db.prepare('DELETE FROM project WHERE id=?').run(id);
+    })();
+    return { removed: true, recordsDeleted: true };
+  }
+  updateProject(db, id, { settings: { ...settings, removed: true } });
+  return { removed: true, recordsDeleted: false };
+}
+
+/**
  * 蓝图组织批次4c：项目优先入口——用户手里只有"一件要办的事"，不回答"哪家公司来做"。
  * 自动落在默认工作台：取首个在营公司；一个都没有则顺手创建（无员工、无模板、下班态的空壳工作台）。
  * 组织决策从入口消失：公司/工作台是懒创建的容器，不是用户的第一步。

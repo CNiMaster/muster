@@ -19,8 +19,10 @@ import { getDb } from '../db/client';
 import {
   createProject,
   createQuickProject,
+  ensureStandaloneProject,
   getProject,
   listProjects,
+  removeProject,
   updateProject,
   addProjectReference,
   listProjectReferences,
@@ -42,7 +44,8 @@ import { promoteProjectStagingIfAny } from '../domain/staging';
 import { deleteProjectTrigger, listProjectTriggers, registerDefaultNovelScheduleTriggers, registerScheduleTrigger, setProjectTriggerEnabled } from '../domain/triggers';
 import { initializeNovelProject } from '../domain/novel-template';
 import { getCharacterGraph } from '../domain/character-graph';
-import {archiveProjectTask,completeProjectTask,createProjectTask,getProjectTaskInProject,listProjectTasks} from '../domain/project-task';
+import {archiveProjectTask,completeProjectTask,createProjectTask,deleteProjectTaskRecord,getProjectTaskInProject,listProjectTasks,setProjectTaskPinned} from '../domain/project-task';
+import { listProjectFileTree } from '../domain/project-files';
 import {listProjectTaskThreads} from '../domain/project-task-thread';
 import { realtime } from '../realtime';
 import { makeLifecycleEvent } from '../../shared/lifecycle-events';
@@ -86,8 +89,36 @@ const createProjectSchema = z.object({
 projectsRouter.get(
   '/',
   asyncHandler(async (req, res) => {
-    // Review 修复 I2：收件箱项目是对话基础设施，不进项目列表。
-    res.json(listProjects(getDb(), companyIdOf(req)).filter((p) => (p.settings as Record<string, unknown>)?.inbox !== true));
+    const db = getDb();
+    // Review 修复 I2：收件箱/独立任务项目是对话与管理基础设施，不进项目列表。
+    const visible = listProjects(db, companyIdOf(req)).filter(
+      (p) => {
+        const s = p.settings as Record<string, unknown>;
+        return s.inbox !== true && s.standalone !== true;
+      },
+    );
+    const view = (req.query.view as string) ?? 'active';
+    if (view === 'archived') {
+      // 归档区：被归档的项目（可还原/可删记录），不含仅隐藏的
+      res.json(visible.filter((p) => p.state === 'archived'));
+      return;
+    }
+    if (view === 'removed') {
+      // 已移除区：仅隐藏未删记录的项目（可恢复显示/可彻底删除记录）
+      res.json(visible.filter((p) => (p.settings as Record<string, unknown>)?.removed === true));
+      return;
+    }
+    res.json(visible.filter((p) => p.state !== 'archived' && (p.settings as Record<string, unknown>)?.removed !== true));
+  }),
+);
+
+/** 管理工作台批1：独立任务区——确保载体项目并列出其任务（pinned 置顶序）。 */
+projectsRouter.get(
+  '/standalone-tasks',
+  asyncHandler(async (_req, res) => {
+    const db = getDb();
+    const { project } = ensureStandaloneProject(db);
+    res.json({ projectId: project.id, tasks: listProjectTasks(db, project.id) });
   }),
 );
 
@@ -230,6 +261,29 @@ projectById.post('/project-tasks/:projectTaskId/discover-capabilities',asyncHand
 projectById.post('/project-tasks/:projectTaskId/confirm-launch',asyncHandler(async(req,res)=>{const projectId=param(req,'id'),projectTask=getProjectTaskInProject(getDb(),param(req,'projectTaskId'),projectId);const brief=projectLaunchBriefSchema.parse(req.body?.launchBrief??projectTask.launchBrief);confirmProjectLaunch(getDb(),projectTask.id,brief);const updated=getProjectTaskInProject(getDb(),projectTask.id,projectId);realtime.publish(makeLifecycleEvent('project-task.launch_confirmed',{projectTaskId:projectTask.id},{projectId}));res.json(updated);}));
 projectById.post('/project-tasks/:projectTaskId/complete',asyncHandler(async(req,res)=>{const projectId=param(req,'id'),task=completeProjectTask(getDb(),param(req,'projectTaskId'),projectId);realtime.publish(makeLifecycleEvent('project-task.completed',{projectTaskId:task.id},{projectId}));res.json(task);}));
 projectById.post('/project-tasks/:projectTaskId/archive',asyncHandler(async(req,res)=>{const projectId=param(req,'id'),task=archiveProjectTask(getDb(),param(req,'projectTaskId'),projectId);realtime.publish(makeLifecycleEvent('project-task.archived',{projectTaskId:task.id},{projectId}));res.json(task);}));
+/** 管理工作台批1：置顶/取消置顶（仅列表排序）。 */
+projectById.post('/project-tasks/:projectTaskId/pin',asyncHandler(async(req,res)=>{const input=z.object({pinned:z.boolean()}).parse(req.body);const task=setProjectTaskPinned(getDb(),param(req,'projectTaskId'),input.pinned,param(req,'id'));res.json(task);}));
+/** 管理工作台批1：删除归档任务的平台记录（不触碰仓库文件）。 */
+projectById.delete('/project-tasks/:projectTaskId',asyncHandler(async(req,res)=>{deleteProjectTaskRecord(getDb(),param(req,'projectTaskId'),param(req,'id'));res.json({ok:true});}));
+
+/** 管理工作台批1：项目目录树（只读浏览；防逃逸同 artifact 口径）。 */
+projectById.get('/files/tree',asyncHandler(async(req,res)=>{
+  const relPath=(req.query.path as string)??'';
+  const depth=Number((req.query.depth as string)??'4');
+  res.json(listProjectFileTree(getDb(),param(req,'id'),relPath,Number.isFinite(depth)?depth:4));
+}));
+
+/**
+ * 管理工作台批1：移除项目。
+ * 默认＝隐藏（settings.removed=true，记录保留可恢复）；deleteRecords=true＝删除平台记录。
+ * 铁律：任何分支都不触碰用户项目仓库目录。
+ */
+projectById.delete('/',asyncHandler(async(req,res)=>{
+  const input=z.object({deleteRecords:z.boolean().optional()}).parse(req.body??{});
+  const result=removeProject(getDb(),param(req,'id'),input);
+  realtime.publish(makeLifecycleEvent('project.removed',{projectId:param(req,'id')},{}));
+  res.json(result);
+}));
 
 // B4 staffing：精确分配员工到项目（按 agentIds 创建 primary thread，区别于 ensureProjectThreads 全公司批量）
 projectById.post('/staff',asyncHandler(async(req,res)=>{const input=z.object({agentIds:z.array(z.string().min(1)).min(1)}).parse(req.body);const projectId=param(req,'id');const threads=input.agentIds.map((agentId)=>ensurePrimaryThread(getDb(),projectId,agentId));res.status(201).json({ok:true,threadIds:threads.map((t)=>t.id)});}));

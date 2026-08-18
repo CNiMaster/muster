@@ -115,6 +115,8 @@ export interface LifecycleEventPayloadMap {
     outcome: 'forward' | 'rollback' | 'completed';
   };
   'project.readiness-passed': { projectId: string };
+  /** 管理工作台批1：项目被移除出显示区（隐藏或删除平台记录；不动仓库文件）。 */
+  'project.removed': { projectId: string };
   'project.rollback': {
     projectId: string;
     from: ProjectPhase;
