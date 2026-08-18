@@ -96,17 +96,6 @@ describe('enqueueIdleReflections（补排队）', () => {
     expect(enqueueIdleReflections(db, 2)).toBe(2);
     expect(reflectionCount()).toBe(2);
   });
-
-  it.skip('只认本公司任务（单例工作台退役多公司隔离）', () => {
-    const { c } = fixture();
-    const c2 = createCompany(db, { name: 'ev2' });
-    const w2 = createAgent(db, { companyId: c2.id, name: 'w2', role: 'worker' });
-    const p2 = createProject(db, { companyId: c2.id, name: 'p2', rootDir: '/tmp/p2', firstAgentId: w2.id, initialState: 'active' });
-    const t = createTask(db, { projectId: p2.id, assigneeAgentId: w2.id, title: '别的公司的' });
-    done(p2.id, w2.id, t.id);
-
-    expect(enqueueIdleReflections(db, 10)).toBe(0);
-  });
 });
 
 describe('runIdleReflectionPass（coordinator 护栏）', () => {
