@@ -25,9 +25,10 @@ function sanitizePathSegment(s: string): string {
 }
 
 /** 为未指定 rootDir 的项目生成唯一默认路径，避免同名项目共享工作区。 */
-function defaultRootDir(workspaceRoot: string, companyName: string, projectName: string, projectId: string): string {
+function defaultRootDir(workspaceRoot: string, projectName: string, projectId: string): string {
   const projectSegment = `${sanitizePathSegment(projectName)}-${sanitizePathSegment(projectId)}`;
-  return join(workspaceRoot, 'companies', sanitizePathSegment(companyName), 'projects', projectSegment);
+  // 公司退役批次D：去 companies/<公司名> 层级——单例工作台下项目直接挂 workspace/projects/
+  return join(workspaceRoot, 'projects', projectSegment);
 }
 
 export type ProjectState =
@@ -126,7 +127,6 @@ export function createProject(
   const requestedRootDir = input.rootDir?.trim();
   const rootDir = requestedRootDir || defaultRootDir(
     ensureDefaultWorkspace(db, join(homedir(), 'MusterWorkspace')).rootDir,
-    workbench.name,
     input.name,
     id,
   );

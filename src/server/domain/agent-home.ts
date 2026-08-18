@@ -27,7 +27,7 @@ export function materializeAgentHome(profile: AgentProfile, musterHome = SERVER_
     'memory/daily',
     'memory/lessons',
     'memory/index',
-    'companies',
+    'workbench',
     'projects',
     'sessions',
     'scratch',
@@ -80,7 +80,7 @@ export function syncAgentMemoryFiles(db: DB, profileId: string, musterHome = SER
   );
   const companyScoped = entries.filter((entry) => entry.scope === 'company');
   if (companyScoped.length > 0) {
-    atomicWrite(join(home, 'companies', 'default', 'MEMORY.md'), renderMemorySnapshot('工作台任职记忆', companyScoped));
+    atomicWrite(join(home, 'workbench', 'default', 'MEMORY.md'), renderMemorySnapshot('工作台任职记忆', companyScoped));
   }
   const projectIds = new Set(entries.flatMap((entry) => entry.projectId ? [entry.projectId] : []));
   for (const projectId of projectIds) {

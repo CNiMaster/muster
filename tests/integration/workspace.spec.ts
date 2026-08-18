@@ -52,7 +52,7 @@ describe('workspace domain', () => {
     const project = createProject(db, { companyId: company.id, name: '商城 项目' });
 
     expect(workspace.rootDir).toBe(resolve('/tmp/muster-main'));
-    expect(project.rootDir).toContain('/tmp/muster-main/companies/软件-公司/projects/商城-项目-');
+    expect(project.rootDir).toContain('/tmp/muster-main/projects/商城-项目-');
   });
 
   it('M-6：迁移中断（文件已移动、DB 未提交）后 recoverInterruptedMigrations 自愈补提路径', () => {

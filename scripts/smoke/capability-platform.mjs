@@ -16,11 +16,9 @@ await check('健康检查 200', async () => {
   if (r.status !== 200 || r.body.status !== 'ok') throw new Error(`status=${r.status}`);
 });
 
-let companyId;
-await check('建公司', async () => {
-  const r = await api.post('/api/workbench', { name: `冒烟公司-${Date.now()}`, kind: 'general' });
-  if (r.status !== 201) throw new Error(`status ${r.status}`);
-  companyId = r.body.id;
+await check('单例工作台已就绪（启动 ensure）', async () => {
+  const r = await api.get('/api/workbench');
+  if (r.status !== 200) throw new Error(`status ${r.status}`);
 });
 
 let projectId;
@@ -61,7 +59,7 @@ let mcpPluginId;
 await check('B3a 安装 stdio MCP plugin', async () => {
   const r = await api.post('/api/plugins', {
     name: '冒烟 MCP', kind: 'mcp-server',
-    source: { kind: 'company', companyId }, scope: { level: 'company', companyId },
+    source: { kind: 'workbench' }, scope: { level: 'workbench' },
     manifest: { kind: 'mcp-server', mcp: { transport: 'stdio', command: 'echo', args: ['hi'] } },
   });
   if (r.status !== 201) throw new Error(`status ${r.status}`);
@@ -71,7 +69,7 @@ await check('B3a 安装 stdio MCP plugin', async () => {
 await check('B6 安装 SSE MCP plugin（headers 落库）', async () => {
   const r = await api.post('/api/plugins', {
     name: '冒烟 SSE', kind: 'mcp-server',
-    source: { kind: 'company', companyId }, scope: { level: 'company', companyId },
+    source: { kind: 'workbench' }, scope: { level: 'workbench' },
     manifest: { kind: 'mcp-server', mcp: { transport: 'sse', url: 'http://example.com/sse', headers: { Authorization: 'Bearer x' } } },
   });
   if (r.status !== 201) throw new Error(`status ${r.status}`);
@@ -79,10 +77,10 @@ await check('B6 安装 SSE MCP plugin（headers 落库）', async () => {
   if (got.body.manifest.mcp.headers?.Authorization !== 'Bearer x') throw new Error('headers 未落库');
 });
 
-await check('B3a 公司 off 时启用 plugin（正向）', async () => {
-  const r = await api.post(`/api/plugins/companies/${companyId}/plugins/${mcpPluginId}/enable`, {});
+await check('B3a 工作台 off 时启用 plugin（正向）', async () => {
+  const r = await api.post(`/api/plugins/${mcpPluginId}/enable`, {});
   if (r.status !== 200) throw new Error(`status ${r.status}: ${JSON.stringify(r.body)}`);
-  const en = await api.get(`/api/plugins/companies/${companyId}/plugins/enabled`);
+  const en = await api.get('/api/plugins/enabled');
   if (!en.body.includes(mcpPluginId)) throw new Error('未在启用列表');
 });
 
