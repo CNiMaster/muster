@@ -1,3 +1,4 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 import { describe, expect, it } from 'vitest';
 import { makeTestDb } from './setup';
 import {
@@ -9,7 +10,7 @@ import {
   savePermissionRule,
   bindEmployeePermissionPolicy,
 } from '../../src/server/domain/permission';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createAgent } from '../../src/server/domain/agent';
 import { executeFileTool } from '../../src/server/executors/tools/file-tools';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
@@ -89,7 +90,7 @@ describe('permission policy = approval strategy × allowed scope', () => {
   it('bindEmployeePermissionPolicy 锁仍按工作台下班态（D4-3）', () => {
     const { db, close } = makeTestDb();
     try {
-      const company = createCompany(db, { name: '默认工作台', kind: 'general' });
+      const company = restoreWorkbench(db, { id: 'wb_fix_1', name: '默认工作台', kind: 'general' });
       const lead = createAgent(db, { companyId: company.id, name: '负责人', role: 'lead' });
       const policy = createPermissionPolicy(db, { name: 'P', approvalStrategy: 'ask-always', scope: 'task' });
 

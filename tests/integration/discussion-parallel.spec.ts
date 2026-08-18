@@ -1,3 +1,4 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * Discussion 并行轮次（阶段七任务 7.3）集成测试。
  *
@@ -11,7 +12,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { makeTestDb, makeTempGitRepo } from './setup';
 import { setDbForTest } from '../../src/server/db/client';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject } from '../../src/server/domain/project';
 import {
@@ -35,7 +36,7 @@ beforeEach(() => {
 });
 
 function fixture() {
-  const c = createCompany(db, { name: 'co' });
+  const c = restoreWorkbench(db, { id: 'wb_fix_1', name: 'co' });
   const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
   const writer = createAgent(db, { companyId: c.id, name: 'writer', role: 'writer' });
   const designer = createAgent(db, { companyId: c.id, name: 'designer', role: 'designer' });

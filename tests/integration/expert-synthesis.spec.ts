@@ -19,7 +19,7 @@ const tmpHome = mkdtempSync(path.join(os.tmpdir(), 'muster-personas-'));
 process.env.MUSTER_HOME = tmpHome;
 
 const { makeTestDb } = await import('./setup');
-const { createCompany } = await import('../../src/server/domain/company');
+const { restoreWorkbench } = await import('../../src/server/domain/workbench');
 const { createAgent } = await import('../../src/server/domain/agent');
 const { createProject } = await import('../../src/server/domain/project');
 const { createTask, completeTask } = await import('../../src/server/domain/task');
@@ -48,7 +48,7 @@ afterEach(() => {
 });
 
 function seed() {
-  const c = createCompany(db, { name: '公司' });
+  const c = restoreWorkbench(db, { id: 'wb_fix_1', name: '公司' });
   const lead = createAgent(db, { companyId: c.id, name: '干员', role: 'lead' });
   const p = createProject(db, {
     companyId: c.id, name: '项目', rootDir: '/tmp/p', firstAgentId: lead.id, initialState: 'active',

@@ -1,10 +1,11 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * 员工评级测试：计算（任务完成/记忆/外包验收加权）/ 手动调整 / 阈值映射 / 接入点。
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { makeTestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject } from '../../src/server/domain/project';
 import { createTask, type Task } from '../../src/server/domain/task';
@@ -25,7 +26,7 @@ let profileId: string;
 beforeEach(() => {
   tdb = makeTestDb();
   db = tdb.db;
-  companyId = createCompany(db, { name: '评级公司' }).id;
+  companyId = restoreWorkbench(db, { id: 'wb_fix_1', name: '评级公司' }).id;
   const agent = createAgent(db, {
     companyId,
     name: '被评员工',

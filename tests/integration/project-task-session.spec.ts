@@ -1,6 +1,7 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 import {describe,expect,it} from 'vitest';
 import {makeTestDb} from './setup';
-import {createCompany} from '../../src/server/domain/company';
+;
 import {createProject} from '../../src/server/domain/project';
 import {createAgent} from '../../src/server/domain/agent';
 import {createProjectTask,archiveProjectTask,completeProjectTask,listProjectTasks} from '../../src/server/domain/project-task';
@@ -11,7 +12,7 @@ import {discoverProjectLaunchCapabilities,confirmProjectLaunch} from '../../src/
 describe('project task context boundary',()=>{
   it('creates employee vendor sessions lazily per user-created project task',()=>{
     const{db,close}=makeTestDb();try{
-      const company=createCompany(db,{name:'公司'});
+      const company=restoreWorkbench(db, { id: 'wb_fix_1', name:'公司' });
       const employee=createAgent(db,{companyId:company.id,name:'员工',role:'developer'});
       const project=createProject(db, {companyId:company.id,name:'项目',rootDir:'/tmp/project', initialState: 'active'});
       const first=createProjectTask(db,{projectId:project.id,title:'功能一'});
@@ -26,7 +27,7 @@ describe('project task context boundary',()=>{
 
   it('associates employee work orders and refuses new work after archive',()=>{
     const{db,close}=makeTestDb();try{
-      const company=createCompany(db,{name:'公司'});
+      const company=restoreWorkbench(db, { id: 'wb_fix_2', name:'公司' });
       const employee=createAgent(db,{companyId:company.id,name:'员工',role:'developer'});
       const project=createProject(db, {companyId:company.id,name:'项目',rootDir:'/tmp/project', initialState: 'active'});
       const projectTask=createProjectTask(db,{projectId:project.id,title:'用户任务'});
@@ -41,7 +42,7 @@ describe('project task context boundary',()=>{
 
   it('creates a compatibility project task for legacy root work orders',()=>{
     const{db,close}=makeTestDb();try{
-      const company=createCompany(db,{name:'公司'});
+      const company=restoreWorkbench(db, { id: 'wb_fix_3', name:'公司' });
       const project=createProject(db, {companyId:company.id,name:'项目',rootDir:'/tmp/project', initialState: 'active'});
       const root=createTask(db,{projectId:project.id,title:'旧根任务'});
       const child=createTask(db,{projectId:project.id,parentTaskId:root.id,title:'旧子任务'});
@@ -53,7 +54,7 @@ describe('project task context boundary',()=>{
 
   it('refuses to complete or archive a project task through another project boundary',()=>{
     const{db,close}=makeTestDb();try{
-      const company=createCompany(db,{name:'公司'});
+      const company=restoreWorkbench(db, { id: 'wb_fix_4', name:'公司' });
       const first=createProject(db, {companyId:company.id,name:'项目一',rootDir:'/tmp/project-one', initialState: 'active'});
       const second=createProject(db, {companyId:company.id,name:'项目二',rootDir:'/tmp/project-two', initialState: 'active'});
       const projectTask=createProjectTask(db,{projectId:second.id,title:'项目二任务'});
@@ -65,7 +66,7 @@ describe('project task context boundary',()=>{
 
   it('keeps production work behind confirmed requirements, capability discovery, and visual approval',()=>{
     const{db,close}=makeTestDb();try{
-      const company=createCompany(db,{name:'公司'});
+      const company=restoreWorkbench(db, { id: 'wb_fix_5', name:'公司' });
       const employee=createAgent(db,{companyId:company.id,name:'员工',role:'designer'});
       const project=createProject(db, {companyId:company.id,name:'项目',rootDir:'/tmp/project', initialState: 'active'});
       const launchBrief={expectedOutcome:'交付经过用户确认的发布视觉方案',audience:'产品用户',effectAndStyle:'克制科技感',constraints:'不得使用未授权素材',deliverables:['设计稿'],requiredCapabilityIds:['visual-design'],requiredSkillIds:[],externalResearchNeeds:['竞品参考'],references:[],needsVisualConfirmation:true,visualReferences:[]};

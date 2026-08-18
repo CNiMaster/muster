@@ -18,7 +18,7 @@ import { createProject } from '../../src/server/domain/project';
 import { ensurePrimaryThread } from '../../src/server/domain/thread';
 import {getThread} from '../../src/server/domain/thread';
 import { answerClarification, cancelTask, createTask, getTask, listTasks, resumeTask } from '../../src/server/domain/task';
-import { clockIn } from '../../src/server/domain/company';
+import { clockIn } from '../../src/server/domain/workbench';
 import { TaskEngine } from '../../src/server/task-engine/engine';
 import { FakeExecutor } from '../../src/server/task-engine/fake-executor';
 import { getProjectTaskThread } from '../../src/server/domain/project-task-thread';
@@ -47,7 +47,7 @@ afterEach(() => {
 describe('engine → worktree → publish wiring', () => {
   it('pumpThread 驱动执行：worktree 写文件 → 发布到正式目录 → session 持久化', async () => {
     const r = createNovelCompany(db, { name: 'co' });
-    clockIn(db, r.company.id);
+    clockIn(db);
     const project = createProject(db, {
       companyId: r.company.id,
       name: 'novel',
@@ -121,7 +121,7 @@ describe('engine → worktree → publish wiring', () => {
 
   it('第一负责人完成用户消息 Task 后把摘要回复到项目对话', async () => {
     const r = createNovelCompany(db, { name: 'co' });
-    clockIn(db, r.company.id);
+    clockIn(db);
     const project = createProject(db, {
       companyId: r.company.id,
       name: 'novel',
@@ -154,7 +154,7 @@ describe('engine → worktree → publish wiring', () => {
 
   it('waiting_input 恢复后沿用原 worktree，不丢失未发布草稿', async () => {
     const r = createNovelCompany(db, { name: 'co' });
-    clockIn(db, r.company.id);
+    clockIn(db);
     const project = createProject(db, {
       companyId: r.company.id,
       name: 'novel',
@@ -213,7 +213,7 @@ describe('engine → worktree → publish wiring', () => {
 
   it('发布冲突保留现场并派第一负责人，AI 裁决后关闭原 Task 与冲突记录', async () => {
     const r = createNovelCompany(db, { name: 'co' });
-    clockIn(db, r.company.id);
+    clockIn(db);
     const project = createProject(db, {
       companyId: r.company.id,
       name: 'novel',
@@ -296,7 +296,7 @@ describe('engine → worktree → publish wiring', () => {
 
   it('裁决执行失败时升级记录，并可从失败 Task 重试后继续收口', async () => {
     const r = createNovelCompany(db, { name: 'co' });
-    clockIn(db, r.company.id);
+    clockIn(db);
     const project = createProject(db, {
       companyId: r.company.id,
       name: 'novel',
@@ -349,7 +349,7 @@ describe('engine → worktree → publish wiring', () => {
 
   it('尚未执行的裁决被取消时立即升级记录，并允许用户恢复同一裁决 Task', async () => {
     const r = createNovelCompany(db, { name: 'co' });
-    clockIn(db, r.company.id);
+    clockIn(db);
     const project = createProject(db, { companyId: r.company.id, name: 'novel', rootDir: projectRoot, firstAgentId: r.agents.lead.id, initialState: 'active'});
     ensureGitRepo(projectRoot);
     writeFileSync(path.join(projectRoot, 'doc.md'), '基线\n');
@@ -388,7 +388,7 @@ describe('engine → worktree → publish wiring', () => {
 
   it('原 Task 在裁决运行期间被取消时，发布前预检阻止最终版落入主干', async () => {
     const r = createNovelCompany(db, { name: 'co' });
-    clockIn(db, r.company.id);
+    clockIn(db);
     const project = createProject(db, { companyId: r.company.id, name: 'novel', rootDir: projectRoot, firstAgentId: r.agents.lead.id, initialState: 'active'});
     ensureGitRepo(projectRoot);
     writeFileSync(path.join(projectRoot, 'doc.md'), '基线\n');
@@ -425,7 +425,7 @@ describe('engine → worktree → publish wiring', () => {
 
   it('Git 发布后数据库收口异常时自动 revert，不留下主干与 Task 状态分裂', async () => {
     const r = createNovelCompany(db, { name: 'co' });
-    clockIn(db, r.company.id);
+    clockIn(db);
     const project = createProject(db, { companyId: r.company.id, name: 'novel', rootDir: projectRoot, firstAgentId: r.agents.lead.id, initialState: 'active'});
     ensureGitRepo(projectRoot);
     writeFileSync(path.join(projectRoot, 'doc.md'), '基线\n');
@@ -466,7 +466,7 @@ describe('engine → worktree → publish wiring', () => {
 
   it('裁决期间主干再次漂移时只再派一轮，并由新 worktree 完成最终裁决', async () => {
     const r = createNovelCompany(db, { name: 'co' });
-    clockIn(db, r.company.id);
+    clockIn(db);
     const project = createProject(db, {
       companyId: r.company.id,
       name: 'novel',
@@ -527,7 +527,7 @@ describe('engine → worktree → publish wiring', () => {
 
   it('两轮裁决仍冲突时整条发布链统一升级，不留下伪装为裁决中的记录', async () => {
     const r = createNovelCompany(db, { name: 'co' });
-    clockIn(db, r.company.id);
+    clockIn(db);
     const project = createProject(db, {
       companyId: r.company.id,
       name: 'novel',
@@ -571,7 +571,7 @@ describe('engine → worktree → publish wiring', () => {
 
   it('执行器抛 timeout → 自动重试，3 次后 Task 标 failed（阶段一任务 1.4）', async () => {
     const r = createNovelCompany(db, { name: 'co' });
-    clockIn(db, r.company.id);
+    clockIn(db);
     const project = createProject(db, {
       companyId: r.company.id,
       name: 'novel',
@@ -613,7 +613,7 @@ describe('engine → worktree → publish wiring', () => {
 
   it('发布链路：worktree 多文件产出全部合并到正式目录', async () => {
     const r = createNovelCompany(db, { name: 'co' });
-    clockIn(db, r.company.id);
+    clockIn(db);
     const project = createProject(db, {
       companyId: r.company.id,
       name: 'novel',
@@ -680,7 +680,7 @@ describe('engine → worktree → publish wiring', () => {
 
   it('员工未绑定时按任务标签走三级默认执行器（阶段二任务 2.1）', async () => {
     const r = createNovelCompany(db, { name: 'co' });
-    clockIn(db, r.company.id);
+    clockIn(db);
     const project = createProject(db, {
       companyId: r.company.id,
       name: 'novel',

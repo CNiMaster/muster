@@ -1,3 +1,4 @@
+import { clockIn, restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * 蜂群失败自动修复（执行过程展示批次4）：
  * - 不可恢复失败的蜂 → 自动生成替补蜂（换思路：注入失败摘要 + 教训）
@@ -8,7 +9,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { makeTestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { clockIn, createCompany } from '../../src/server/domain/company';
+;
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject } from '../../src/server/domain/project';
 import { createSwarmRun } from '../../src/server/domain/swarm';
@@ -23,10 +24,10 @@ let db: DB;
 
 function makeSwarmFixture(): { rootId: string; beeId: string; synthesisId: string } {
   // 真实语义：蜂群由系统隐形岗「调度中心」派发（is_system 豁免 contactAllow 守卫）
-  const company = createCompany(db, { name: 'co' });
+  const company = restoreWorkbench(db, { id: 'wb_fix_1', name: 'co' });
   const lead = createAgent(db, { companyId: company.id, name: 'lead', role: 'lead' });
   const project = createProject(db, { companyId: company.id, name: 'novel', rootDir: '/tmp/swarm-repair', firstAgentId: lead.id, initialState: 'active' });
-  clockIn(db, company.id);
+  clockIn(db);
   const sys = ensureSystemAgents(db, company.id);
   const dispatcher = sys.dispatcherAgentId;
   const root = createTask(db, {

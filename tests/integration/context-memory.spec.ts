@@ -1,7 +1,8 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { DB } from '../../src/server/db/client';
 import { createAgent } from '../../src/server/domain/agent';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createMemoryCandidate } from '../../src/server/domain/memory';
 import { createProject } from '../../src/server/domain/project';
 import { createTask } from '../../src/server/domain/task';
@@ -14,7 +15,7 @@ beforeEach(() => { db = makeTestDb().db; });
 
 describe('execution context from profile and layered memory', () => {
   it('session 丢失时仍按身份、任职、项目、记忆顺序重建', () => {
-    const company = createCompany(db, { name: '公司', charter: '公司章程内容' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_1', name: '公司', charter: '公司章程内容' });
     const agent = createAgent(db, {
       companyId: company.id, name: '员工', role: 'architect', responsibilities: '负责架构', systemPrompt: '稳定身份：谨慎验证',
     });
@@ -35,7 +36,7 @@ describe('execution context from profile and layered memory', () => {
   });
 
   it('共享同一执行器的两个 Profile 不会读取彼此个人记忆', () => {
-    const company = createCompany(db, { name: '公司' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_2', name: '公司' });
     const first = createAgent(db, { companyId: company.id, name: '甲', role: 'engineer', executor: { provider: 'claude-cli' } });
     const second = createAgent(db, { companyId: company.id, name: '乙', role: 'engineer', executor: { provider: 'claude-cli' } });
     const project = createProject(db, { companyId: company.id, name: '项目' });

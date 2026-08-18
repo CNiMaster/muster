@@ -1,3 +1,4 @@
+import { transitionWorkbench, restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * 能力商城 API 路由回归测试（review I2）。
  *
@@ -11,7 +12,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { makeTestDb } from './setup';
 import { setDbForTest, closeDb } from '../../src/server/db/client';
-import { createCompany, transitionCompany } from '../../src/server/domain/company';
+;
 import { pluginsRouter } from '../../src/server/api/plugins';
 import { errorMiddleware } from '../../src/server/api/middleware';
 
@@ -59,8 +60,8 @@ describe('marketplace install-preset 路由', () => {
   });
 
   it('scope=company 且公司上班 → 409（org 配置锁，不允许上班期间改能力配置）', async () => {
-    const company = createCompany(tdb.db, { name: 'C' });
-    transitionCompany(tdb.db, company.id, 'online');
+    const company = restoreWorkbench(tdb.db, { id: 'wb_fix_1', name: 'C' });
+    transitionWorkbench(tdb.db, 'online');
     const res = await fetch(`${base}/api/plugins/marketplace/install-preset`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -80,8 +81,8 @@ describe('marketplace install-preset 路由', () => {
   });
 
   it('install-claude-plugin：公司上班 → 409（在发起任何网络拉取之前被锁拒绝）', async () => {
-    const company = createCompany(tdb.db, { name: 'C' });
-    transitionCompany(tdb.db, company.id, 'online');
+    const company = restoreWorkbench(tdb.db, { id: 'wb_fix_2', name: 'C' });
+    transitionWorkbench(tdb.db, 'online');
     const res = await fetch(`${base}/api/plugins/marketplace/install-claude-plugin`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

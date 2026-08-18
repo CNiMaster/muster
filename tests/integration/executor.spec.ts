@@ -1,3 +1,4 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * Phase 3 测试：
  - AgentRunResult Zod 校验
@@ -11,7 +12,7 @@ import type { DB } from '../../src/server/db/client';
 import { agentRunResultSchema, prepareClaudeSessionForCwd } from '../../src/server/executors/claude-code-adapter';
 import { assembleContext } from '../../src/server/executors/context';
 import { detectRepeatedFailure, detectNoProgress } from '../../src/server/executors/safety';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createAgent, updateAgent } from '../../src/server/domain/agent';
 import { createProject } from '../../src/server/domain/project';
 import { createTask, completeTask, markRunning } from '../../src/server/domain/task';
@@ -88,7 +89,7 @@ describe('AgentRunResult schema', () => {
 
 describe('context assembly', () => {
   it('装配系统提示包含公司章程/项目说明/职责', () => {
-    const c = createCompany(db, { name: 'co', charter: '公司章程内容' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_1', name: 'co', charter: '公司章程内容' });
     const a = createAgent(db, {
       companyId: c.id,
       name: 'writer',
@@ -123,7 +124,7 @@ describe('context assembly', () => {
 
 describe('usage recording and budget', () => {
   it('记录用量并按项目/员工聚合', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_2', name: 'co' });
     const a = createAgent(db, { companyId: c.id, name: 'writer', role: 'writer' });
     const p = createProject(db, { companyId: c.id, name: 'novel', rootDir: '/tmp/n' });
     const t = createTask(db, { projectId: p.id, title: 't' });
@@ -150,7 +151,7 @@ describe('usage recording and budget', () => {
   });
 
   it('软预算达到时 isSoftCapReached 返回 true', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_3', name: 'co' });
     const a = createAgent(db, { companyId: c.id, name: 'writer', role: 'writer' });
     const p = createProject(db, { companyId: c.id, name: 'novel', rootDir: '/tmp/n' });
     const t = createTask(db, { projectId: p.id, title: 't' });
@@ -164,7 +165,7 @@ describe('usage recording and budget', () => {
   });
 
   it('硬预算超出抛 EXECUTOR_BUDGET_EXCEEDED', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_4', name: 'co' });
     const a = createAgent(db, { companyId: c.id, name: 'writer', role: 'writer' });
     const p = createProject(db, { companyId: c.id, name: 'novel', rootDir: '/tmp/n' });
     const t = createTask(db, { projectId: p.id, title: 't' });
@@ -185,7 +186,7 @@ describe('usage recording and budget', () => {
 
 describe('safety: repeated failure & no progress', () => {
   it('重复失败检测', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_5', name: 'co' });
     const a = createAgent(db, { companyId: c.id, name: 'writer', role: 'writer' });
     const p = createProject(db, { companyId: c.id, name: 'novel', rootDir: '/tmp/n' });
     const t = createTask(db, { projectId: p.id, title: 't' });
@@ -196,7 +197,7 @@ describe('safety: repeated failure & no progress', () => {
   });
 
   it('无进展检测：多次执行无 artifact', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_6', name: 'co' });
     const a = createAgent(db, { companyId: c.id, name: 'writer', role: 'writer' });
     const p = createProject(db, { companyId: c.id, name: 'novel', rootDir: '/tmp/n' });
     const t = createTask(db, { projectId: p.id, assigneeAgentId: a.id, title: 't' });

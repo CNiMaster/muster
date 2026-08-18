@@ -1,10 +1,11 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * 业务产物审批闭环集成测试。
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { makeTestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject } from '../../src/server/domain/project';
 import { createTask } from '../../src/server/domain/task';
@@ -25,7 +26,7 @@ beforeEach(() => {
 
 describe('业务审批闭环', () => {
   it('blocking 模式：提交后阻塞 Task，批准后恢复', () => {
-    const c = createCompany(db, { name: '审批公司' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_1', name: '审批公司' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/p', firstAgentId: lead.id });
     const task = createTask(db, { projectId: p.id, title: '写章节', assigneeAgentId: lead.id });
@@ -56,7 +57,7 @@ describe('业务审批闭环', () => {
   });
 
   it('打回：派发新 Task 给同一员工，原 Task 标记 cancelled', () => {
-    const c = createCompany(db, { name: '返工公司' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_2', name: '返工公司' });
     const writer = createAgent(db, { companyId: c.id, name: 'writer', role: 'writer' });
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/p2', firstAgentId: writer.id });
     const task = createTask(db, { projectId: p.id, title: '原稿', assigneeAgentId: writer.id });
@@ -94,7 +95,7 @@ describe('业务审批闭环', () => {
   });
 
   it('parallel 模式：提交后不阻塞 Task', () => {
-    const c = createCompany(db, { name: '并行公司' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_3', name: '并行公司' });
     db.prepare("UPDATE workbench SET review_mode='parallel' WHERE id=?").run(c.id);
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/p3', firstAgentId: lead.id });
@@ -118,7 +119,7 @@ describe('业务审批闭环', () => {
   });
 
   it('重复决定同一审批被拒绝', () => {
-    const c = createCompany(db, { name: '重复公司' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_4', name: '重复公司' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
     const review = submitBusinessReview(db, {
       companyId: c.id,
@@ -133,7 +134,7 @@ describe('业务审批闭环', () => {
   });
 
   it('列表按公司和状态过滤', () => {
-    const c = createCompany(db, { name: '列表公司' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_5', name: '列表公司' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
     submitBusinessReview(db, { companyId: c.id, employeeId: lead.id, reviewKind: 'custom', subjectId: '1', subjectSnapshot: {}, title: 'A' });
     submitBusinessReview(db, { companyId: c.id, employeeId: lead.id, reviewKind: 'custom', subjectId: '2', subjectSnapshot: {}, title: 'B' });
@@ -142,7 +143,7 @@ describe('业务审批闭环', () => {
   });
 
   it('getAgent 带出 executorProfileId/permissionPolicyId', () => {
-    const c = createCompany(db, { name: '绑定公司' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_6', name: '绑定公司' });
     const agent = createAgent(db, { companyId: c.id, name: 'a', role: 'lead' });
     const got = getAgent(db, agent.id);
     expect(got.executorProfileId).toBeNull();

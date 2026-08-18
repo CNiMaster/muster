@@ -1,7 +1,8 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { DB } from '../../src/server/db/client';
 import { createAgent } from '../../src/server/domain/agent';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { getEmployeeRuntime } from '../../src/server/domain/employee-runtime';
 import { createProject } from '../../src/server/domain/project';
 import { createProjectTask } from '../../src/server/domain/project-task';
@@ -14,7 +15,7 @@ beforeEach(() => { db = makeTestDb().db; });
 
 describe('employee runtime', () => {
   it('groups project task threads and work orders beneath the correct employment', () => {
-    const company = createCompany(db, { name: 'A' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_1', name: 'A' });
     const employee = createAgent(db, { companyId: company.id, name: '工程师', role: 'engineer' });
     const project = createProject(db, { companyId: company.id, name: '产品', rootDir: '/tmp/muster-runtime-a', initialState: 'active'});
     const projectTask = createProjectTask(db, { projectId: project.id, title: '完成运行闭环' });
@@ -33,7 +34,7 @@ describe('employee runtime', () => {
   });
 
   it('does not include another profile runtime even inside the same company', () => {
-    const company = createCompany(db, { name: 'A' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_2', name: 'A' });
     const employee = createAgent(db, { companyId: company.id, name: '甲', role: 'engineer' });
     const other = createAgent(db, { companyId: company.id, name: '乙', role: 'reviewer' });
     const project = createProject(db, { companyId: company.id, name: '产品', rootDir: '/tmp/muster-runtime-b', initialState: 'active'});

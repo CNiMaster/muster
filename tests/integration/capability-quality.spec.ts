@@ -1,3 +1,4 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * 能力质量反馈闭环 + 跨类型缺口检测 集成测试
  * (spec 2026-08-12-capability-marketplace-quality-loop B2/B3)。
@@ -5,7 +6,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { makeTestDb, makeTempGitRepo } from './setup';
 import { setDbForTest, type DB } from '../../src/server/db/client';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject } from '../../src/server/domain/project';
 import { createTask } from '../../src/server/domain/task';
@@ -25,7 +26,7 @@ beforeEach(() => {
 });
 
 function fixture() {
-  const c = createCompany(db, { name: 'co' });
+  const c = restoreWorkbench(db, { id: 'wb_fix_1', name: 'co' });
   const worker = createAgent(db, { companyId: c.id, name: 'worker', role: 'worker' });
   const project = createProject(db, { companyId: c.id, name: 'p', rootDir: makeTempGitRepo(), firstAgentId: worker.id, initialState: 'active' });
   return { c, worker, project };

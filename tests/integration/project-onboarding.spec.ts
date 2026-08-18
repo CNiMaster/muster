@@ -1,3 +1,4 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * B4 readiness 后端测试：
  * - getProjectReadiness/setProjectReadiness 读写（含 settings 命名空间隔离）
@@ -8,7 +9,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { makeTestDb, makeTempGitRepo } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createProject, getProject, type ProjectState } from '../../src/server/domain/project';
 import {
   getProjectReadiness,
@@ -27,7 +28,7 @@ let projectId: string;
 beforeEach(() => {
   tdb = makeTestDb();
   db = tdb.db;
-  companyId = createCompany(db, { name: 'co' }).id;
+  companyId = restoreWorkbench(db, { id: 'wb_fix_1', name: 'co' }).id;
   projectId = createProject(db, {
     companyId,
     name: 'p',

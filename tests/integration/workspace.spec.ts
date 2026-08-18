@@ -1,9 +1,10 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 import { resolve } from 'node:path';
 import { cpSync, mkdtempSync, mkdirSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { DB } from '../../src/server/db/client';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createProject } from '../../src/server/domain/project';
 import {
   createWorkspace,
@@ -46,7 +47,7 @@ describe('workspace domain', () => {
 
   it('项目默认目录位于激活工作区的公司目录中', () => {
     const workspace = createWorkspace(db, { name: '主工作区', rootDir: '/tmp/muster-main' });
-    const company = createCompany(db, { name: '软件 公司' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_1', name: '软件 公司' });
 
     const project = createProject(db, { companyId: company.id, name: '商城 项目' });
 
@@ -60,7 +61,7 @@ describe('workspace domain', () => {
     const newRoot = resolve(base, 'ws-new');
     mkdirSync(resolve(oldRoot, 'companies'), { recursive: true });
     const workspace = createWorkspace(db, { name: '主工作区', rootDir: oldRoot });
-    const company = createCompany(db, { name: '软件公司' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_2', name: '软件公司' });
     const project = createProject(db, { companyId: company.id, name: '商城项目' });
     // 项目目录在旧工作区内（物理目录）
     mkdirSync(project.rootDir, { recursive: true });

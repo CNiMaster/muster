@@ -1,3 +1,4 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * 执行器档案管理（阶段二任务 2.2）单元测试。
  *
@@ -8,7 +9,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { makeTestDb } from '../integration/setup';
 import { setDbForTest } from '../../src/server/db/client';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createAgent } from '../../src/server/domain/agent';
 import {
   createExecutorProfile,
@@ -54,7 +55,7 @@ describe('执行器档案管理（阶段二任务 2.2）', () => {
   });
 
   it('deleteExecutorProfile 解除智能体绑定并清理探针', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_1', name: 'co' });
     const agent = createAgent(db, { companyId: c.id, name: 'w', role: 'writer' });
     const profile = createExecutorProfile(db, {
       name: 'Gemini',

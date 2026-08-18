@@ -1,10 +1,11 @@
+import { getWorkbench, transitionWorkbench } from '../../src/server/domain/workbench';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DB } from '../../src/server/db/client';
 import {  makeTestDb, makeTempGitRepo, createNovelCompany } from './setup';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject, updateProject } from '../../src/server/domain/project';
-import { transitionCompany, getCompany } from '../../src/server/domain/company';
+import { transitionWorkbench, getWorkbench } from '../../src/server/domain/workbench';
 import { listThreads } from '../../src/server/domain/thread';
 import { listTasks } from '../../src/server/domain/task';
 import { createTask } from '../../src/server/domain/task';
@@ -51,7 +52,7 @@ describe('ProjectRuntimeCoordinator', () => {
       initialState: 'active',
     });
     createProjectTask(db, { projectId: project.id, title: '启动作品' });
-    transitionCompany(db, novel.company.id, 'online');
+    transitionWorkbench(db, 'online');
     const engine = new TaskEngine(db, new FakeExecutor().script([]));
     const coordinator = new ProjectRuntimeCoordinator(db, engine);
 
@@ -70,13 +71,13 @@ describe('ProjectRuntimeCoordinator', () => {
       rootDir: makeTempGitRepo(),
       initialState: 'active',
     });
-    transitionCompany(db, novel.company.id, 'online');
-    transitionCompany(db, novel.company.id, 'draining');
+    transitionWorkbench(db, 'online');
+    transitionWorkbench(db, 'draining');
     const coordinator = new ProjectRuntimeCoordinator(db, new TaskEngine(db, new FakeExecutor()));
 
     await coordinator.tick({ pump: false });
 
-    expect(getCompany(db, novel.company.id).state).toBe('off');
+    expect(getWorkbench(db).state).toBe('off');
   });
 
   it('完成数达到项目阈值后自动进入复盘且不再规划新任务', async () => {
@@ -93,12 +94,12 @@ describe('ProjectRuntimeCoordinator', () => {
     }
     db.prepare("UPDATE task SET state='completed', outcome='completed', completed_at=? WHERE project_id=?")
       .run(new Date().toISOString(), project.id);
-    transitionCompany(db, novel.company.id, 'online');
+    transitionWorkbench(db, 'online');
     const coordinator = new ProjectRuntimeCoordinator(db, new TaskEngine(db, new FakeExecutor()));
 
     await coordinator.tick({ pump: false });
 
-    expect(getCompany(db, novel.company.id).state).toBe('review_paused');
+    expect(getWorkbench(db).state).toBe('review_paused');
     expect(listReports(db, project.id)).toHaveLength(1);
     expect(listTasks(db, project.id).filter((task) => task.title.startsWith('[规划]'))).toHaveLength(0);
   });
@@ -121,7 +122,7 @@ describe('ProjectRuntimeCoordinator', () => {
       assigneeAgentId: novel.agents.lead.id,
       title: '正式规划任务',
     });
-    transitionCompany(db, novel.company.id, 'online');
+    transitionWorkbench(db, 'online');
     const coordinator = new ProjectRuntimeCoordinator(db, new TaskEngine(db, new FakeExecutor()));
 
     await coordinator.tick({ pump: false });
@@ -142,7 +143,7 @@ describe('ProjectRuntimeCoordinator', () => {
       topic: '正在讨论',
       participantAgentIds: [novel.agents.writer.id],
     });
-    transitionCompany(db, novel.company.id, 'online');
+    transitionWorkbench(db, 'online');
     const fake = new FakeExecutor().script([{
       delayMs: 5_000,
       result: { outcome: 'completed', summary: '迟到结论', outboundTasks: [], artifacts: [] },
@@ -179,7 +180,7 @@ describe('ProjectRuntimeCoordinator', () => {
       initialState: 'active',
     });
     createProjectTask(db, { projectId: project.id, title: '启动作品' });
-    transitionCompany(db, novel.company.id, 'online');
+    transitionWorkbench(db, 'online');
     // 超时的 waiting_input（40 分钟前更新）
     const staleInput = createTask(db, { projectId: project.id, assigneeAgentId: novel.agents.writer.id, title: '等澄清的活' });
     db.prepare("UPDATE task SET state='waiting_input', updated_at=? WHERE id=?")
@@ -219,7 +220,7 @@ describe('ProjectRuntimeCoordinator', () => {
       initialState: 'active',
     });
     createProjectTask(db, { projectId: project.id, title: '启动作品' });
-    transitionCompany(db, novel.company.id, 'online');
+    transitionWorkbench(db, 'online');
     const stale = createTask(db, { projectId: project.id, assigneeAgentId: novel.agents.writer.id, title: '等澄清的活' });
     db.prepare("UPDATE task SET state='waiting_input', updated_at=? WHERE id=?")
       .run(new Date(Date.now() - 40 * 60_000).toISOString(), stale.id);
@@ -253,7 +254,7 @@ describe('ProjectRuntimeCoordinator', () => {
         new Date(Date.now() - 20 * 60_000).toISOString(),
         stuck.id,
       );
-    transitionCompany(db, novel.company.id, 'online');
+    transitionWorkbench(db, 'online');
     const coordinator = new ProjectRuntimeCoordinator(db, new TaskEngine(db, new FakeExecutor()));
     await coordinator.tick({ pump: false });
 
@@ -297,7 +298,7 @@ describe('ProjectRuntimeCoordinator', () => {
         new Date(Date.now() - 20 * 60_000).toISOString(),
         stuck.id,
       );
-    transitionCompany(db, novel.company.id, 'online');
+    transitionWorkbench(db, 'online');
     const coordinator = new ProjectRuntimeCoordinator(db, new TaskEngine(db, new FakeExecutor()));
     // 连续两次 tick：第二次在 60 秒 Inspector 间隔内不会重扫
     await coordinator.tick({ pump: false });

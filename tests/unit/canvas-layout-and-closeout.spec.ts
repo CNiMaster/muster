@@ -1,3 +1,4 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { getDb, setDbForTest, closeDb, DB } from '../../src/server/db/client';
 import { makeTestDb, TestDb } from '../integration/setup';
@@ -11,7 +12,7 @@ import {
   getTaskCloseoutSummary,
 } from '../../src/server/domain/task-closeout';
 import { createTask } from '../../src/server/domain/task';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createProject } from '../../src/server/domain/project';
 import { clonePersonaAsUser, updateUserCustomConfig } from '../../src/server/domain/agent-profile';
 
@@ -106,7 +107,7 @@ describe('Canvas Layout Sidecar & Codex Task Closeout (Phase 3)', () => {
   describe('Task Closeout 8-Section Summary Generation', () => {
     it('generates 8-section closeout summary and detects user talent positive evolution', () => {
       const db = getDb();
-      const company = createCompany(db, { name: `Closeout Co ${Date.now()}` });
+      const company = restoreWorkbench(db, { id: 'wb_fix_1', name: `Closeout Co ${Date.now()}` });
       const project = createProject(db, { companyId: company.id, name: 'Closeout Project' });
 
       const rawTalent = clonePersonaAsUser(db, 'frontend/engineering-frontend-developer', 'Master React Builder');

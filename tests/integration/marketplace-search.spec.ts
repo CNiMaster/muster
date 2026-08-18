@@ -1,9 +1,10 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * 能力商城官方源搜索 M3 集成测试。
  * 全部用 mock fetcher（不碰外网）：归一化 / 安装状态标记 / 降级路径 / 手动来源未审核。
  */
 import { describe, expect, it } from 'vitest';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { installPlugin } from '../../src/server/domain/plugin-install';
 import {
   searchPresets,
@@ -43,7 +44,7 @@ describe('searchPresets（本地策展搜索 + 安装状态）', () => {
 
   it('同名状态标注：同源（marketplace）installed；异源（builtin）conflict', async () => {
     const { db } = makeTestDb();
-    const company = createCompany(db, { name: 'C' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_1', name: 'C' });
     // 同源：marketplace 来源的 docx → installed
     installPlugin(db, {
       name: 'docx',

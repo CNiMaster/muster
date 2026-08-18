@@ -1,7 +1,8 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { makeTestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createProject } from '../../src/server/domain/project';
 import { createArtifactAndContent, readArtifactContent, writeArtifactContent } from '../../src/server/domain/artifact-content';
 import { listArtifacts } from '../../src/server/domain/artifact';
@@ -19,7 +20,7 @@ beforeEach(() => {
 
 describe('Artifacts workspace domain & APIs', () => {
   it('可以自动注册并写入/读取可编辑的 artifact 内容', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_1', name: 'co' });
     const rootDir = path.resolve('/tmp/muster-test-art-dir-' + Math.random().toString(36).slice(2, 6));
     const p = createProject(db, { companyId: c.id, name: 'proj', rootDir });
 
@@ -57,7 +58,7 @@ describe('Artifacts workspace domain & APIs', () => {
   });
 
   it('如果尝试写入未注册的/不可编辑的(只读派生)成果应该抛错', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_2', name: 'co' });
     const rootDir = path.resolve('/tmp/muster-test-art-dir-' + Math.random().toString(36).slice(2, 6));
     const p = createProject(db, { companyId: c.id, name: 'proj', rootDir });
 
@@ -84,7 +85,7 @@ describe('Artifacts workspace domain & APIs', () => {
   });
 
   it('防止路径逃逸安全拦截', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_3', name: 'co' });
     const rootDir = path.resolve('/tmp/muster-test-art-dir-' + Math.random().toString(36).slice(2, 6));
     const p = createProject(db, { companyId: c.id, name: 'proj', rootDir });
 

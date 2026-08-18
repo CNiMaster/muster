@@ -1,3 +1,4 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * 讨论室集成测试（设计二-方案B）。
  *
@@ -12,7 +13,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { makeTestDb, makeTempGitRepo } from './setup';
 import { setDbForTest } from '../../src/server/db/client';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject } from '../../src/server/domain/project';
 import { createTask, completeTask, getTask, claimNextTask, markRunning } from '../../src/server/domain/task';
@@ -39,7 +40,7 @@ beforeEach(() => {
 });
 
 function fixture() {
-  const c = createCompany(db, { name: 'co' });
+  const c = restoreWorkbench(db, { id: 'wb_fix_1', name: 'co' });
   const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
   const writer = createAgent(db, { companyId: c.id, name: 'writer', role: 'writer' });
   const editor = createAgent(db, { companyId: c.id, name: 'editor', role: 'editor' });
@@ -367,8 +368,8 @@ describe('系统自动触发讨论场景验证', () => {
   });
 
   it('task-clarification 场景：跨公司交接对齐（甲方内部讨论）', () => {
-    const c1 = createCompany(db, { name: '甲方' });
-    const c2 = createCompany(db, { name: '乙方' });
+    const c1 = restoreWorkbench(db, { id: 'wb_fix_2', name: '甲方' });
+    const c2 = restoreWorkbench(db, { id: 'wb_fix_3', name: '乙方' });
     const buyer = createAgent(db, { companyId: c1.id, name: 'buyer', role: 'lead' });
     const buyer2 = createAgent(db, { companyId: c1.id, name: 'reviewer', role: 'editor' });
     const project1 = createProject(db, { companyId: c1.id, name: '甲项目', rootDir: makeTempGitRepo(), firstAgentId: buyer.id, initialState: 'active' });

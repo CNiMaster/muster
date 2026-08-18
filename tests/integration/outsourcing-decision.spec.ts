@@ -1,3 +1,4 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * 用工决策树测试（蓝图组织批次5：B2B 拆件后——内部 / 临时工选拔 两路径）。
  * "跨公司找乙方"（findVendorCompany / outsource 路径）已退役：
@@ -6,7 +7,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { makeTestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createAgent } from '../../src/server/domain/agent';
 import { createCapabilityBinding } from '../../src/server/domain/capability-binding';
 import {
@@ -22,7 +23,7 @@ let agentA: string;
 beforeEach(() => {
   tdb = makeTestDb();
   db = tdb.db;
-  companyA = createCompany(db, { name: '游戏公司' }).id;
+  companyA = restoreWorkbench(db, { id: 'wb_fix_1', name: '游戏公司' }).id;
   agentA = createAgent(db, {
     companyId: companyA,
     name: '负责人',

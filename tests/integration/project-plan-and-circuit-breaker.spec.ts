@@ -1,3 +1,4 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * B5 编排测试：
  * - PlanVersion CRUD（createPlanVersion/getActive/list，version 自增 + supersede）
@@ -7,7 +8,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { makeTestDb, makeTempGitRepo } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject, type ProjectState } from '../../src/server/domain/project';
 import {
@@ -35,7 +36,7 @@ let agentId: string;
 beforeEach(() => {
   tdb = makeTestDb();
   db = tdb.db;
-  companyId = createCompany(db, { name: 'co' }).id;
+  companyId = restoreWorkbench(db, { id: 'wb_fix_1', name: 'co' }).id;
   agentId = createAgent(db, { companyId, name: 'lead', role: 'lead' }).id;
   projectId = createProject(db, {
     companyId,

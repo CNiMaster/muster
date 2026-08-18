@@ -1,3 +1,4 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * 蓝图组织重构 批次2：跨项目归档检索集成测试。
  *
@@ -9,7 +10,7 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { DB } from '../../src/server/db/client';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject, updateProject } from '../../src/server/domain/project';
 import { createTask } from '../../src/server/domain/task';
@@ -22,7 +23,7 @@ let db: DB;
 beforeEach(() => { db = makeTestDb().db; });
 
 function seed() {
-  const c = createCompany(db, { name: '公司' });
+  const c = restoreWorkbench(db, { id: 'wb_fix_1', name: '公司' });
   const agent = createAgent(db, { companyId: c.id, name: '员工', role: 'lead' });
   // 旧项目（有经验记忆 + 调研摘要 + 成果）+ 当前项目
   const old = createProject(db, { companyId: c.id, name: '旧项目', rootDir: '/tmp/old', firstAgentId: agent.id, initialState: 'active' });
@@ -76,7 +77,7 @@ describe('searchArchive 跨项目归档检索', () => {
   it('公司隔离：别家公司的归档不泄露', () => {
     const ctx = seed();
     seedArchive(ctx);
-    const other = createCompany(db, { name: '别家公司' });
+    const other = restoreWorkbench(db, { id: 'wb_fix_2', name: '别家公司' });
     const otherAgent = createAgent(db, { name: '外人', role: 'lead' });
     const otherProject = createProject(db, { companyId: ctx.c.id, name: '别家项目', rootDir: '/tmp/other', firstAgentId: otherAgent.id, initialState: 'active' });
     const mem = createMemoryCandidate(db, {

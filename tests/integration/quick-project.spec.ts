@@ -1,3 +1,4 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * 蓝图组织重构 批次4c：项目优先入口 集成测试。
  *
@@ -9,7 +10,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { makeTestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject, createQuickProject, listProjects } from '../../src/server/domain/project';
 
@@ -26,7 +27,7 @@ describe('createQuickProject 项目优先入口', () => {
   });
 
   it('已有在营公司：直接复用首个，不新建工作台', () => {
-    const existing = createCompany(db, { name: '既有团队' });
+    const existing = restoreWorkbench(db, { id: 'wb_fix_1', name: '既有团队' });
     const result = createQuickProject(db, { name: '新项目' });
     expect(result.createdWorkspace).toBe(false);
     expect(result.companyId).toBe(existing.id);
@@ -41,7 +42,7 @@ describe('createQuickProject 项目优先入口', () => {
   });
 
   it('既有工作台带员工时项目第一负责人沿用工作台默认（不强制新员工）', () => {
-    const existing = createCompany(db, { name: '团队' });
+    const existing = restoreWorkbench(db, { id: 'wb_fix_2', name: '团队' });
     const lead = createAgent(db, { companyId: existing.id, name: '领班', role: 'lead' });
     db.prepare('UPDATE workbench SET first_agent_id=? WHERE id=?').run(lead.id, existing.id);
     const result = createQuickProject(db, { name: '项目' });

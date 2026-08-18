@@ -1,10 +1,11 @@
+import { clockIn, restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * 指挥系统批次3：结构化选项（questionOptions）+ 对话可见追问。
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import { makeTestDb, makeTempGitRepo } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { clockIn, createCompany } from '../../src/server/domain/company';
+;
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject } from '../../src/server/domain/project';
 import { answerClarification, completeTask, createTask, getTask } from '../../src/server/domain/task';
@@ -42,10 +43,10 @@ describe('契约：questionOptions', () => {
 
 describe('落库与回答', () => {
   it('completeTask 持久化选项；answerClarification 按 optionId 回答并重新入队', () => {
-    const company = createCompany(db, { name: 'co' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_1', name: 'co' });
     const lead = createAgent(db, { companyId: company.id, name: 'lead', role: 'lead' });
     const project = createProject(db, { companyId: company.id, name: 'p', rootDir: makeTempGitRepo(), firstAgentId: lead.id, initialState: 'active' });
-    clockIn(db, company.id);
+    clockIn(db);
     let task = createTask(db, { projectId: project.id, assigneeAgentId: lead.id, title: '决策' });
     db.prepare("UPDATE task SET state='running' WHERE id=?").run(task.id);
     task = completeTask(db, task.id, {
@@ -78,10 +79,10 @@ describe('落库与回答', () => {
 
 describe('对话可见追问', () => {
   it('waiting_input 无选项 → 对话窗收到问题原文；completed 回复正常', async () => {
-    const company = createCompany(db, { name: 'co' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_2', name: 'co' });
     const lead = createAgent(db, { companyId: company.id, name: 'lead', role: 'lead' });
     const project = createProject(db, { companyId: company.id, name: 'p', rootDir: makeTempGitRepo(), firstAgentId: lead.id, initialState: 'active' });
-    clockIn(db, company.id);
+    clockIn(db);
 
     const fake = new FakeExecutor();
     const engine = new TaskEngine(db, fake);
@@ -134,10 +135,10 @@ describe('对话可见追问', () => {
   });
 
   it('waiting_input 带 ≥2 选项 → 不发裸问题（自动进评审庭，见 debate.spec）；1 个选项 → 发原文+选项列表', async () => {
-    const company = createCompany(db, { name: 'co' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_3', name: 'co' });
     const lead = createAgent(db, { companyId: company.id, name: 'lead', role: 'lead' });
     const project = createProject(db, { companyId: company.id, name: 'p', rootDir: makeTempGitRepo(), firstAgentId: lead.id, initialState: 'active' });
-    clockIn(db, company.id);
+    clockIn(db);
 
     const fake = new FakeExecutor();
     const engine = new TaskEngine(db, fake);

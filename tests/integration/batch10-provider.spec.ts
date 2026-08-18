@@ -1,3 +1,4 @@
+import { updateWorkbench, transitionWorkbench, restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * Batch 10 集成测试：多 provider 执行器抽象。
  * - provider 字段读写 + 校验
@@ -8,7 +9,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { makeTestDb, type TestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createCompany, updateCompany, transitionCompany } from '../../src/server/domain/company';
+;
 import { createProject } from '../../src/server/domain/project';
 import { createAgent, updateAgent, getAgent } from '../../src/server/domain/agent';
 import { ensurePrimaryThread } from '../../src/server/domain/thread';
@@ -74,7 +75,7 @@ describe('Batch 10.1 provider 类型与默认', () => {
 
 describe('Batch 10.2 agent executor.provider 字段', () => {
   it('createAgent 接受合法 provider', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_1', name: 'co' });
     const a = createAgent(db, {
       companyId: c.id,
       name: 'gpt',
@@ -86,21 +87,21 @@ describe('Batch 10.2 agent executor.provider 字段', () => {
   });
 
   it('createAgent 拒绝非法 provider', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_2', name: 'co' });
     expect(() =>
       createAgent(db, { companyId: c.id, name: 'x', role: 'r', executor: { provider: 'invalid' } }),
     ).toThrow();
   });
 
   it('updateAgent 可切换 provider', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_3', name: 'co' });
     const a = createAgent(db, { companyId: c.id, name: 'x', role: 'r', executor: { provider: 'openai' } });
     updateAgent(db, a.id, { executor: { provider: 'gemini', model: 'gemini-2.0-flash' } });
     expect(getAgent(db, a.id).executor.provider).toBe('gemini');
   });
 
   it('无 provider 字段向后兼容（不报错）', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_4', name: 'co' });
     const a = createAgent(db, { companyId: c.id, name: 'x', role: 'r' });
     expect(getAgent(db, a.id).executor.provider).toBeUndefined();
   });
@@ -161,7 +162,7 @@ describe('Batch 10.4 TaskEngine adapter registry 分发', () => {
   });
 
   it('openai agent 的 Task 被 openai adapter 执行', async () => {
-    const c = createCompany(db, { name: 'multi-provider' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_5', name: 'multi-provider' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
     const writer = createAgent(db, {
       companyId: c.id,
@@ -169,8 +170,8 @@ describe('Batch 10.4 TaskEngine adapter registry 分发', () => {
       role: 'writer',
       executor: { provider: 'openai', model: 'gpt-4o' },
     });
-    updateCompany(db, c.id, { firstAgentId: lead.id });
-    transitionCompany(db, c.id, 'online');
+    updateWorkbench(db, { firstAgentId: lead.id });
+    transitionWorkbench(db, 'online');
     const root = makeTmpRoot();
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: root, firstAgentId: lead.id });
     const writerThread = ensurePrimaryThread(db, p.id, writer.id);

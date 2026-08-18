@@ -1,10 +1,11 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * Batch 2 v1 缺口补丁的集成测试（B2.1 / B2.2 / B2.3 / B2.4）。
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { makeTestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createProject, updateProject } from '../../src/server/domain/project';
 import { createAgent } from '../../src/server/domain/agent';
 import { createMirror, ensurePrimaryThread, releaseProjectMirrors } from '../../src/server/domain/thread';
@@ -31,7 +32,7 @@ beforeEach(() => {
 
 describe('B2.1 项目结束自动释放镜像', () => {
   it('releaseProjectMirrors 删除 idle mirror，保留 primary', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_1', name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/p1', firstAgentId: lead.id, initialState: 'active'});
     ensurePrimaryThread(db, p.id, lead.id);
@@ -50,7 +51,7 @@ describe('B2.1 项目结束自动释放镜像', () => {
 
 describe('B2.2 时间·里程碑触发复盘', () => {
   it('时间间隔达到时触发 time 复盘', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_2', name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/p2', firstAgentId: lead.id, initialState: 'active'});
     // 项目 createdAt 是当下；时间间隔 1 小时，now 推到 2 小时后
@@ -61,7 +62,7 @@ describe('B2.2 时间·里程碑触发复盘', () => {
   });
 
   it('里程碑时间到达时触发 milestone 复盘', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_3', name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/p3', firstAgentId: lead.id, initialState: 'active'});
     const milestone = new Date(Date.now() - 1000).toISOString();
@@ -71,7 +72,7 @@ describe('B2.2 时间·里程碑触发复盘', () => {
   });
 
   it('已有 open 复盘时不再触发', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_4', name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/p4', firstAgentId: lead.id, initialState: 'active'});
     db.prepare("UPDATE workbench SET state='online' WHERE id=?").run(c.id);
@@ -83,7 +84,7 @@ describe('B2.2 时间·里程碑触发复盘', () => {
 
 describe('B2.3 多模型 token 归集 + 公司级聚合', () => {
   it('recordUsageBatch 主模型 + 次模型分别入库', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_5', name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/p5', firstAgentId: lead.id, initialState: 'active'});
     const th = ensurePrimaryThread(db, p.id, lead.id);
@@ -101,7 +102,7 @@ describe('B2.3 多模型 token 归集 + 公司级聚合', () => {
   });
 
   it('summarizeCompanyUsage 跨项目聚合', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_6', name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
     const p1 = createProject(db, { companyId: c.id, name: 'p1', rootDir: '/tmp/p6a', firstAgentId: lead.id, initialState: 'active'});
     const p2 = createProject(db, { companyId: c.id, name: 'p2', rootDir: '/tmp/p6b', firstAgentId: lead.id, initialState: 'active'});
@@ -127,7 +128,7 @@ describe('B2.3 多模型 token 归集 + 公司级聚合', () => {
 
 describe('B2.4 讨论结论→建议 Task', () => {
   it('brainstorm 完成后创建建议 Task，claimNextTask 不领取建议', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_7', name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/p7', firstAgentId: lead.id, initialState: 'active'});
 
@@ -159,7 +160,7 @@ describe('B2.4 讨论结论→建议 Task', () => {
   });
 
   it('acceptSuggestion 清除标记并恢复优先级', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_8', name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/p8', firstAgentId: lead.id, initialState: 'active'});
     const t = createTask(db, {
@@ -177,7 +178,7 @@ describe('B2.4 讨论结论→建议 Task', () => {
 
 describe('B2.soak 连续 Task 稳定性 minitest', () => {
   it('连续创建 50 个 Task 并完成，无重复 seq，无丢任务', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_9', name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/p9', firstAgentId: lead.id, initialState: 'active'});
     const ids: string[] = [];

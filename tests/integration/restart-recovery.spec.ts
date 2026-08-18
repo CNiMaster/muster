@@ -18,7 +18,7 @@ import {
   listTasks,
   getTask,
 } from '../../src/server/domain/task';
-import { getCompany } from '../../src/server/domain/company';
+import { getWorkbench } from '../../src/server/domain/workbench';
 import { getProject } from '../../src/server/domain/project';
 
 let tdb: ReturnType<typeof makeTestDb>;
@@ -64,7 +64,7 @@ describe('restart recovery', () => {
     completeTask(db, t.id, { outcome: 'completed', summary: '完成', outboundTasks: [], artifacts: [] });
 
     // 模拟重启：重新打开 db（同一 in-memory 实例表示状态在重启后保留）
-    const companyAgain = getCompany(db, r.company.id);
+    const companyAgain = getWorkbench(db);
     const projectAgain = getProject(db, project.id);
     const tasks = listTasks(db, project.id);
     expect(companyAgain.id).toBe(r.company.id);

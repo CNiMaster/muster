@@ -1,7 +1,8 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { DB } from '../../src/server/db/client';
 import { createAgent } from '../../src/server/domain/agent';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { getEmploymentHealth } from '../../src/server/domain/executor-health';
 import { bindEmployeeExecutorProfile, createExecutorProfile } from '../../src/server/domain/executor-profile';
 import { bindEmployeePermissionPolicy, createPermissionPolicy } from '../../src/server/domain/permission';
@@ -12,7 +13,7 @@ let db: DB;
 beforeEach(() => { db = makeTestDb().db; });
 
 function prepare(manifestId = 'codex-cli') {
-  const company = createCompany(db, { name: 'A' });
+  const company = restoreWorkbench(db, { id: 'wb_fix_1', name: 'A' });
   const employee = createAgent(db, { companyId: company.id, name: '员工', role: 'engineer' });
   const executor = createExecutorProfile(db, { name: '执行器', manifestId, config: manifestId === 'custom-cli' ? { binaryPath: '/bin/echo' } : {} });
   const policy = createPermissionPolicy(db, { name: '项目权限', approvalStrategy: 'ask-by-rule', scope: 'project' });

@@ -50,14 +50,14 @@ export function makeTempGitRepo(): string {
  * 生产路径的默认员工 = 第一负责人 + 验收员（ensureWorkspaceStaff），专家角色由任务穿戴人设生成。
  */
 import type { DB } from '../../src/server/db/client';
-import { createCompany, updateCompany, type Company } from '../../src/server/domain/company';
+import { restoreWorkbench, updateWorkbench, type Workbench } from '../../src/server/domain/workbench';
 import { createAgent, type AgentDefinition, type CreateAgentInput } from '../../src/server/domain/agent';
 import { addRelationship } from '../../src/server/domain/graph';
 import { createDepartment, type Department } from '../../src/server/domain/department';
 import { GENRE_EXTENSION_PACKS } from '../../src/server/domain/novel-template';
 
 export interface NovelTemplateResult {
-  company: Company;
+  company: Workbench;
   departments: Department[];
   agents: {
     lead: AgentDefinition;
@@ -70,7 +70,8 @@ export interface NovelTemplateResult {
 }
 
 export function createNovelCompany(db: DB, input: { name: string; charter?: string; departments?: Array<{ name: string; purpose?: string }>; genres?: string[] }): NovelTemplateResult {
-  const company = createCompany(db, { name: input.name, kind: 'novel', charter: input.charter });
+  // 唯一 id：同一测试库允许多次实例化（小说项目类测试串行建多个工作台场景已退役，防呆保留）
+  const company = restoreWorkbench(db, { id: `wb_novel_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, name: input.name, kind: 'novel', charter: input.charter });
   const departments = (input.departments?.length ? input.departments : [{ name: '创作部', purpose: '正文、人物与情节协作' }, { name: '运营监察', purpose: '一致性检查' }]).map((d) => createDepartment(db, { companyId: company.id, name: d.name, rules: { purpose: d.purpose ?? '' } }));
   const mk = (name: string, role: string, responsibilities: string, extra: Partial<CreateAgentInput> = {}): AgentDefinition =>
     createAgent(db, { companyId: company.id, departmentId: departments[0]?.id, name, role, responsibilities, contactAllow: [], ...extra });
@@ -88,7 +89,7 @@ export function createNovelCompany(db: DB, input: { name: string; charter?: stri
       extra.push(mk(r.name, r.role, r.responsibilities));
     }
   }
-  const updatedCompany = updateCompany(db, company.id, { firstAgentId: lead.id });
+  const updatedCompany = updateWorkbench(db, { firstAgentId: lead.id });
   for (const a of [writer, character, plot, inspector, ...extra]) {
     addRelationship(db, { companyId: company.id, kind: 'org', sourceId: lead.id, targetId: a.id, label: '管辖' });
   }

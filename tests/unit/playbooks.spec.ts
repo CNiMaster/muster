@@ -1,3 +1,4 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * 项目 Playbook（阶段六任务 6.2）单元测试。
  *
@@ -9,7 +10,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { makeTestDb, makeTempGitRepo } from '../integration/setup';
 import { setDbForTest } from '../../src/server/db/client';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject, getProject } from '../../src/server/domain/project';
 import { listPlaybooks, getPlaybook, playbooksForCompanyTemplate } from '../../src/server/domain/playbooks';
@@ -58,7 +59,7 @@ describe('项目 Playbook（阶段六任务 6.2）', () => {
   });
 
   it('createProject 持久化 playbookId', () => {
-    const c = createCompany(db, { name: '内容工作台', kind: 'content' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_1', name: '内容工作台', kind: 'content' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
     const project = createProject(db, {
       companyId: c.id,

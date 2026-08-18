@@ -31,7 +31,7 @@ import { findBestAssignee } from './agent-router';
 import {assertProjectTaskActive,createProjectTask} from './project-task';
 import {assertProjectLaunchConfirmed} from './project-launch';
 import {assertProjectActive} from './project-readiness';
-import { getCompany } from './company';
+import { getWorkbench } from './workbench';
 import { recordSuspension, resolveSuspensionByTask } from './task-suspension';
 import { checkSwarmLimits, greyBeeAfterTask, handleSwarmTaskFailure, maybeAutoRepairBee, recordSwarmNodeOutcome, reportBeeCompletion } from './swarm';
 import { handleDebateTaskFailure, recordDecisionFromClarify } from './debate';
@@ -304,7 +304,7 @@ function nextSeq(db: DB, projectId: string): number {
 
 export function createTask(db: DB, input: CreateTaskInput): Task {
   const project = getProject(db, input.projectId);
-  const company = getCompany(db, project.companyId);
+  const company = getWorkbench(db);
   const taskProtocol = (company.contractJson.taskProtocol ?? {}) as { inputFields?: unknown; outputFields?: unknown };
   // 阶段七任务 7.2：未指定 assignee 但声明了 requiredCapabilityIds 时，自动按能力路由选专家；
   // 无匹配候选时 fallback 到项目第一负责人（路由结果记录进 inputProtocol，可审计）。

@@ -1,7 +1,8 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { DB } from '../../src/server/db/client';
 import { makeTestDb } from './setup';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createAgent } from '../../src/server/domain/agent';
 import { addProjectReference, createProject } from '../../src/server/domain/project';
 import { createTask } from '../../src/server/domain/task';
@@ -16,7 +17,7 @@ beforeEach(() => {
 
 describe('explicit context references', () => {
   it('加载当前项目已登记成果', () => {
-    const company = createCompany(db, { name: 'co' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_1', name: 'co' });
     const writer = createAgent(db, { companyId: company.id, name: 'writer', role: 'writer' });
     const project = createProject(db, { companyId: company.id, name: 'book', rootDir: '/tmp/muster-context-current' });
     createArtifactAndContent(db, project.id, {
@@ -37,7 +38,7 @@ describe('explicit context references', () => {
   });
 
   it('只加载已授权的跨项目引用', () => {
-    const company = createCompany(db, { name: 'co' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_2', name: 'co' });
     const writer = createAgent(db, { companyId: company.id, name: 'writer', role: 'writer' });
     const source = createProject(db, { companyId: company.id, name: 'source', rootDir: '/tmp/muster-context-source' });
     const target = createProject(db, { companyId: company.id, name: 'target', rootDir: '/tmp/muster-context-target' });
@@ -58,7 +59,7 @@ describe('explicit context references', () => {
   });
 
   it('拒绝未授权跨项目引用', () => {
-    const company = createCompany(db, { name: 'co' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_3', name: 'co' });
     const writer = createAgent(db, { companyId: company.id, name: 'writer', role: 'writer' });
     const source = createProject(db, { companyId: company.id, name: 'source', rootDir: '/tmp/muster-context-denied-source' });
     const target = createProject(db, { companyId: company.id, name: 'target', rootDir: '/tmp/muster-context-denied-target' });

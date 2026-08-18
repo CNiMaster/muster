@@ -1,3 +1,4 @@
+import { updateWorkbench, restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * Batch 1 v1 缺口补丁的集成测试（B1.3 / B1.4 / B1.5 / B1.7 / B1.8）。
  * B1.1（外部打开）涉及进程调用，B1.2 回滚已有 worktree.spec 覆盖，B1.6 是前端组件，不在此处验证。
@@ -5,7 +6,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { makeTestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createCompany, updateCompany } from '../../src/server/domain/company';
+;
 import {
   createProject,
   addProjectReference,
@@ -37,7 +38,7 @@ beforeEach(() => {
 
 describe('B1.3 项目健康校验', () => {
   it('缺少第一负责人时 checkProjectHealth 返回问题清单', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_1', name: 'co' });
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/p1' });
     const issues = checkProjectHealth(db, p.id);
     expect(issues.length).toBeGreaterThan(0);
@@ -46,17 +47,17 @@ describe('B1.3 项目健康校验', () => {
   });
 
   it('设置第一负责人后 assertProjectHealthy 不抛错', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_2', name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
-    updateCompany(db, c.id, { firstAgentId: lead.id });
+    updateWorkbench(db, { firstAgentId: lead.id });
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/p2', firstAgentId: lead.id });
     expect(() => assertProjectHealthy(db, p.id)).not.toThrow();
   });
 
   it('引用的源项目不存在时报 broken reference', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_3', name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
-    updateCompany(db, c.id, { firstAgentId: lead.id });
+    updateWorkbench(db, { firstAgentId: lead.id });
     const source = createProject(db, { companyId: c.id, name: 'source', rootDir: '/tmp/src', firstAgentId: lead.id });
     const consumer = createProject(db, { companyId: c.id, name: 'consumer', rootDir: '/tmp/consumer', firstAgentId: lead.id });
     addProjectReference(db, { projectId: consumer.id, sourceProjectId: source.id });
@@ -72,7 +73,7 @@ describe('B1.3 项目健康校验', () => {
 
 describe('B1.4 工作流责任岗位校验', () => {
   it('validateWorkflowResponsibility 报告未指派责任人的 step', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_4', name: 'co' });
     saveWorkflow(db, c.id, 'main', {
       nodes: [
         { id: 'start', kind: 'start', label: '开始', position: { x: 0, y: 0 } },
@@ -93,7 +94,7 @@ describe('B1.4 工作流责任岗位校验', () => {
   });
 
   it('startWorkflow 在责任岗位缺失时拒绝启动', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_5', name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/p3', firstAgentId: lead.id });
     saveWorkflow(db, c.id, 'main', {
@@ -111,7 +112,7 @@ describe('B1.4 工作流责任岗位校验', () => {
   });
 
   it('startWorkflow 在责任岗位齐全时正常启动', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_6', name: 'co' });
     const writer = createAgent(db, { companyId: c.id, name: 'writer', role: 'writer' });
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/p4' });
     saveWorkflow(db, c.id, 'main', {
@@ -133,7 +134,7 @@ describe('B1.4 工作流责任岗位校验', () => {
 
 describe('B1.5 监察器心跳检查', () => {
   it('claimed 状态但无心跳的 Task 产生 stuck 建议', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_7', name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/p5', firstAgentId: lead.id });
     const t = createTask(db, {
@@ -154,7 +155,7 @@ describe('B1.5 监察器心跳检查', () => {
 
 describe('B1.7 关键事件聚合 feed', () => {
   it('listProjectEvents 返回关键事件并按时间倒序', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_8', name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/p6', firstAgentId: lead.id });
     const t = createTask(db, { projectId: p.id, assigneeAgentId: lead.id, title: 'eventful' });
@@ -177,7 +178,7 @@ describe('B1.7 关键事件聚合 feed', () => {
   });
 
   it('listCompanyEvents 跨项目聚合', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_9', name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
     const p1 = createProject(db, { companyId: c.id, name: 'p1', rootDir: '/tmp/p7a', firstAgentId: lead.id });
     const p2 = createProject(db, { companyId: c.id, name: 'p2', rootDir: '/tmp/p7b', firstAgentId: lead.id });
@@ -193,7 +194,7 @@ describe('B1.7 关键事件聚合 feed', () => {
   });
 
   it('非关键事件 kind 不出现在 feed 中', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_10', name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/p7c', firstAgentId: lead.id });
     const t = createTask(db, { projectId: p.id, assigneeAgentId: lead.id, title: 'x' });
@@ -205,7 +206,7 @@ describe('B1.7 关键事件聚合 feed', () => {
 
 describe('B1.8 关系归档与恢复', () => {
   it('归档通信边后默认不列出，恢复后重新出现', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_11', name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
     const writer = createAgent(db, { companyId: c.id, name: 'writer', role: 'writer' });
     const edge = addRelationship(db, { companyId: c.id, kind: 'communication', sourceId: lead.id, targetId: writer.id });
@@ -228,7 +229,7 @@ describe('B1.8 关系归档与恢复', () => {
   });
 
   it('归档组织边不影响 contact_allow', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_12', name: 'co' });
     const a = createAgent(db, { companyId: c.id, name: 'a', role: 'lead' });
     const b = createAgent(db, { companyId: c.id, name: 'b', role: 'writer' });
     const edge = addRelationship(db, { companyId: c.id, kind: 'org', sourceId: a.id, targetId: b.id });
@@ -239,7 +240,7 @@ describe('B1.8 关系归档与恢复', () => {
   });
 
   it('上班期间禁止归档', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_13', name: 'co' });
     const a = createAgent(db, { companyId: c.id, name: 'a', role: 'lead' });
     const b = createAgent(db, { companyId: c.id, name: 'b', role: 'writer' });
     const edge = addRelationship(db, { companyId: c.id, kind: 'org', sourceId: a.id, targetId: b.id });

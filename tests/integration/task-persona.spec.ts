@@ -1,3 +1,4 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * 蓝图组织重构 批次1：任务人设（task.persona_id）集成测试。
  *
@@ -12,7 +13,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { makeTestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
 import * as llmCallModule from '../../src/server/domain/llm-call';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject } from '../../src/server/domain/project';
 import { createTask, failTask } from '../../src/server/domain/task';
@@ -43,7 +44,7 @@ const PERSONA_ID = 'product/product-manager';
 
 /** 标准 active 项目 + 员工。 */
 function seed() {
-  const c = createCompany(db, { name: '公司', charter: '公司章程内容' });
+  const c = restoreWorkbench(db, { id: 'wb_fix_1', name: '公司', charter: '公司章程内容' });
   const agent = createAgent(db, { companyId: c.id, name: '员工', role: 'lead', systemPrompt: '稳定身份：谨慎验证' });
   const p = createProject(db, {
     companyId: c.id, name: '项目', rootDir: '/tmp/p', firstAgentId: agent.id, initialState: 'active',

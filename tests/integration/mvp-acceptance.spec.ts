@@ -32,7 +32,7 @@ import {
   closeReport,
 } from '../../src/server/domain/report';
 import { dispatchCorrectionTask } from '../../src/server/domain/triggers';
-import { transitionCompany } from '../../src/server/domain/company';
+import { transitionWorkbench } from '../../src/server/domain/workbench';
 import { TaskEngine } from '../../src/server/task-engine/engine';
 import { FakeExecutor } from '../../src/server/task-engine/fake-executor';
 import { ensureGitRepo, createWorktree, commitAll } from '../../src/server/worktree/manager';
@@ -63,7 +63,7 @@ describe('MVP acceptance: 一个小说阶段完整闭环', () => {
       firstAgentId: r.agents.lead.id,
       initialState: 'active',
     });
-    transitionCompany(db, r.company.id, 'online');
+    transitionWorkbench(db, 'online');
     const writerThread = ensurePrimaryThread(db, project.id, r.agents.writer.id);
     const charThread = ensurePrimaryThread(db, project.id, r.agents.character.id);
 

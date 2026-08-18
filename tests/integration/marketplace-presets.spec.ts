@@ -1,3 +1,4 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * 能力商城预置策展 M1 集成测试。
  *
@@ -5,7 +6,7 @@
  * 注入链（安装的 skill 真实进入 resolveTaskSkills）/ getEffectivePluginsForCompany 同名 winner 唯一。
  */
 import { describe, expect, it } from 'vitest';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createProject } from '../../src/server/domain/project';
 import { createAgent } from '../../src/server/domain/agent';
 import { createTask } from '../../src/server/domain/task';
@@ -50,7 +51,7 @@ describe('marketplace presets 状态与安装', () => {
 
   it('raw-skill 预置：装后变 installed 且 plugin 落库', async () => {
     const { db } = makeTestDb();
-    const company = createCompany(db, { name: 'C' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_1', name: 'C' });
     const plugin = await installPreset(db, 'skill-docx', { level: 'workbench' }, { fetcher: fakeFetcher });
     expect(plugin.kind).toBe('skill');
     expect(plugin.source.kind).toBe('marketplace');
@@ -60,7 +61,7 @@ describe('marketplace presets 状态与安装', () => {
 
   it('mcp-command 预置：装为 mcp-server 且 manifest 含 command/args', async () => {
     const { db } = makeTestDb();
-    const company = createCompany(db, { name: 'C' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_2', name: 'C' });
     const plugin = await installPreset(db, 'mcp-filesystem', { level: 'workbench' });
     expect(plugin.kind).toBe('mcp-server');
     expect(plugin.manifest.kind).toBe('mcp-server');
@@ -72,7 +73,7 @@ describe('marketplace presets 状态与安装', () => {
 
   it('同源重复安装 → CONFLICT（已安装）', async () => {
     const { db } = makeTestDb();
-    const company = createCompany(db, { name: 'C' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_3', name: 'C' });
     await installPreset(db, 'skill-docx', { level: 'workbench' }, { fetcher: fakeFetcher });
     await expect(
       installPreset(db, 'skill-docx', { level: 'workbench' }, { fetcher: fakeFetcher }),
@@ -81,7 +82,7 @@ describe('marketplace presets 状态与安装', () => {
 
   it('异源同名：不替换 → CONFLICT；replaceExisting → 装新停旧', async () => {
     const { db } = makeTestDb();
-    const company = createCompany(db, { name: 'C' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_4', name: 'C' });
     // 先装一个异源同名 skill（builtin source 占位）
     const old = installPlugin(db, {
       name: 'docx',
@@ -113,7 +114,7 @@ describe('marketplace presets 状态与安装', () => {
 describe('注入链：安装的 skill 真实进入任务上下文', () => {
   it('resolveTaskSkills 命中 requiredSkillIds 时读 plugin 表 skill 正文', async () => {
     const { db } = makeTestDb();
-    const company = createCompany(db, { name: 'C' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_5', name: 'C' });
     const lead = createAgent(db, { companyId: company.id, name: '负责人', role: 'lead' });
     const project = createProject(db, { companyId: company.id, name: 'P', firstAgentId: lead.id });
     // 安装 docx skill（公司 scope）
@@ -134,7 +135,7 @@ describe('注入链：安装的 skill 真实进入任务上下文', () => {
 describe('M4 质量信号排序（推荐反映真实可用性）', () => {
   it('有质量信号的条目浮到前部；信号变化 → 排序变化', async () => {
     const { db } = makeTestDb();
-    const company = createCompany(db, { name: 'C' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_6', name: 'C' });
     const fs = await installPreset(db, 'mcp-filesystem', { level: 'workbench' });
     const gh = await installPreset(db, 'mcp-github', { level: 'workbench' });
 
@@ -162,7 +163,7 @@ describe('M4 质量信号排序（推荐反映真实可用性）', () => {
 describe('review 修复：平台级装新停旧 + 注入优先级 + winner 身份（C1/H1）', () => {
   it('C1：平台 scope 装新停旧——旧条目 status=disabled 后，新条目成为 effective winner', async () => {
     const { db } = makeTestDb();
-    const company = createCompany(db, { name: 'C' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_7', name: 'C' });
     // 旧同名平台条目（模拟用户此前装过 github MCP）
     const old = installPlugin(db, {
       name: 'github',
@@ -185,7 +186,7 @@ describe('review 修复：平台级装新停旧 + 注入优先级 + winner 身�
 
   it('H1：注入链 plugin 优先于仓库 bundled 目录——商城新正文盖过内置同名 skill', async () => {
     const { db } = makeTestDb();
-    const company = createCompany(db, { name: 'C' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_8', name: 'C' });
     const lead = createAgent(db, { companyId: company.id, name: '负责人', role: 'lead' });
     const project = createProject(db, { companyId: company.id, name: 'P', firstAgentId: lead.id });
     // 装一个与仓库内置同名的 skill（incremental-implementation 在 skills/ 目录存在），正文标记商城版本
@@ -211,7 +212,7 @@ describe('review 修复：平台级装新停旧 + 注入优先级 + winner 身�
 
   it('winner 身份：实体行盖过只读视图同名条目（不只数量=1）', () => {
     const { db } = makeTestDb();
-    const company = createCompany(db, { name: 'C' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_9', name: 'C' });
     installPlugin(db, {
       name: 'incremental-implementation',
       kind: 'skill',
@@ -229,7 +230,7 @@ describe('review 修复：平台级装新停旧 + 注入优先级 + winner 身�
 describe('getEffectivePluginsForCompany 同名 winner 唯一（防御）', () => {
   it('实体行 > 只读视图：同名只返回实体行', () => {
     const { db } = makeTestDb();
-    const company = createCompany(db, { name: 'C' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_10', name: 'C' });
     // 直接插两条同名实体行（绕过 installPreset 的去重，模拟历史脏数据）
     installPlugin(db, {
       name: 'github',

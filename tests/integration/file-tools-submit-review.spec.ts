@@ -1,3 +1,4 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * file-tools 的 submit_review 工具集成测试：Agent 通过工具调用提交业务审批。
  * 验证：FILE_TOOLS 注册了 submit_review；调用后产生 business_review 记录；
@@ -10,7 +11,7 @@ import { join } from 'node:path';
 import { executeFileTool, FILE_TOOLS, type ToolCall } from '../../src/server/executors/tools/file-tools';
 import { makeTestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject } from '../../src/server/domain/project';
 import { createTask } from '../../src/server/domain/task';
@@ -33,7 +34,7 @@ describe('file-tools submit_review', () => {
   });
 
   it('Agent 调用 submit_review 后产生审批记录并阻塞 Task（blocking 模式）', async () => {
-    const c = createCompany(db, { name: '工具审批公司' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_1', name: '工具审批公司' });
     const writer = createAgent(db, { companyId: c.id, name: 'writer', role: 'writer' });
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: workdir, firstAgentId: writer.id });
     const task = createTask(db, { projectId: p.id, title: '写人物', assigneeAgentId: writer.id });
@@ -76,7 +77,7 @@ describe('file-tools submit_review', () => {
   });
 
   it('parallel 模式不阻塞 Task', async () => {
-    const c = createCompany(db, { name: '并行工具公司' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_2', name: '并行工具公司' });
     db.prepare("UPDATE workbench SET review_mode='parallel' WHERE id=?").run(c.id);
     const writer = createAgent(db, { companyId: c.id, name: 'writer', role: 'writer' });
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: workdir, firstAgentId: writer.id });
@@ -95,7 +96,7 @@ describe('file-tools submit_review', () => {
   });
 
   it('非法 review_kind 被拒绝', async () => {
-    const c = createCompany(db, { name: '校验公司' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_3', name: '校验公司' });
     const writer = createAgent(db, { companyId: c.id, name: 'writer', role: 'writer' });
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: workdir, firstAgentId: writer.id });
     const task = createTask(db, { projectId: p.id, title: 't', assigneeAgentId: writer.id });

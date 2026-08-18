@@ -1,3 +1,4 @@
+import { updateWorkbench, transitionWorkbench, restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * 长时间运行 soak minitest（PRD Phase 8，清单 282/289）。
  * 比单点 minitest 更完整：50 Task 串行 + 3 次会话压缩 + 1 次 mirror 扩容 + 1 次复盘，
@@ -6,7 +7,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { makeTestDb, type TestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createCompany, updateCompany, transitionCompany } from '../../src/server/domain/company';
+;
 import { createProject } from '../../src/server/domain/project';
 import { createAgent } from '../../src/server/domain/agent';
 import {
@@ -37,10 +38,10 @@ afterEach(() => {
 
 describe('soak: 50 Task 串行 + 压缩 + mirror + 复盘', () => {
   it('全程无状态泄漏', () => {
-    const c = createCompany(db, { name: 'soak 公司' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_1', name: 'soak 公司' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
-    updateCompany(db, c.id, { firstAgentId: lead.id });
-    transitionCompany(db, c.id, 'online');
+    updateWorkbench(db, { firstAgentId: lead.id });
+    transitionWorkbench(db, 'online');
     const p = createProject(db, {
       companyId: c.id,
       name: 'soak 项目',
@@ -176,10 +177,10 @@ describe('soak: 50 Task 串行 + 压缩 + mirror + 复盘', () => {
   });
 
   it('会话压缩后 exec_count 重置、session 清空', () => {
-    const c = createCompany(db, { name: '压缩公司' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_2', name: '压缩公司' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
-    updateCompany(db, c.id, { firstAgentId: lead.id });
-    transitionCompany(db, c.id, 'online');
+    updateWorkbench(db, { firstAgentId: lead.id });
+    transitionWorkbench(db, 'online');
     const p = createProject(db, {
       companyId: c.id,
       name: '压缩项目',

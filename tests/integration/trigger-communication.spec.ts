@@ -1,6 +1,7 @@
+import { clockIn, restoreWorkbench, updateWorkbench } from '../../src/server/domain/workbench';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { DB } from '../../src/server/db/client';
-import { clockIn, createCompany, updateCompany } from '../../src/server/domain/company';
+;
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject } from '../../src/server/domain/project';
 import { createProjectTask } from '../../src/server/domain/project-task';
@@ -22,7 +23,7 @@ beforeEach(() => {
 
 describe('schedule trigger dispatch', () => {
   it('到期后派发一次，未再次到期时不会重复派发', () => {
-    const company = createCompany(db, { name: 'co' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_1', name: 'co' });
     const inspector = createAgent(db, {
       companyId: company.id,
       name: 'inspector',
@@ -36,7 +37,7 @@ describe('schedule trigger dispatch', () => {
       firstAgentId: inspector.id,
       initialState: 'active',
     });
-    clockIn(db, company.id);
+    clockIn(db);
     registerScheduleTrigger(db, {
       projectId: project.id,
       intervalMs: 1_000,
@@ -51,7 +52,7 @@ describe('schedule trigger dispatch', () => {
   });
 
   it('公司下班时不派发，到期项在上班后补派发', () => {
-    const company = createCompany(db, { name: 'co' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_2', name: 'co' });
     const lead = createAgent(db, { companyId: company.id, name: 'lead', role: 'lead' });
     const project = createProject(db, {
       companyId: company.id,
@@ -68,16 +69,16 @@ describe('schedule trigger dispatch', () => {
     });
 
     expect(dispatchDueScheduleTriggers(db, new Date('2026-01-01T00:00:01.000Z'))).toEqual([]);
-    clockIn(db, company.id);
+    clockIn(db);
     expect(dispatchDueScheduleTriggers(db, new Date('2026-01-01T00:00:01.000Z'))).toHaveLength(1);
   });
 
   it('通用计划在既有项目任务上下文中派发并支持停用删除', () => {
-    const company = createCompany(db, { name: 'co' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_3', name: 'co' });
     const lead = createAgent(db, { companyId: company.id, name: 'lead', role: 'lead' });
     const project = createProject(db, { companyId: company.id, name: 'project', rootDir: '/tmp/generic-schedule', firstAgentId: lead.id, initialState: 'active'});
     const projectTask = createProjectTask(db, { projectId: project.id, title: '持续质量检查' });
-    clockIn(db, company.id);
+    clockIn(db);
     const trigger = registerScheduleTrigger(db, {
       projectId: project.id,
       intervalMs: 1_000,
@@ -96,8 +97,8 @@ describe('schedule trigger dispatch', () => {
 
 describe('task communication permission', () => {
   it('公司任务交接格式自动进入员工工作单协议', () => {
-    const company = createCompany(db, { name: 'co' });
-    const updated = updateCompany(db, company.id, { contractJson: { taskProtocol: { inputFields: ['goal', 'acceptance'], outputFields: ['summary', 'artifacts'] } } });
+    const company = restoreWorkbench(db, { id: 'wb_fix_4', name: 'co' });
+    const updated = updateWorkbench(db, { contractJson: { taskProtocol: { inputFields: ['goal', 'acceptance'], outputFields: ['summary', 'artifacts'] } } });
     expect(updated.name).toBe('co');
     expect(updated.charter).toBe(company.charter);
     const lead = createAgent(db, { companyId: company.id, name: 'lead', role: 'lead' });
@@ -108,8 +109,8 @@ describe('task communication permission', () => {
   });
 
   it('创建员工时校验 contactAllow 存在（公司退役批次D：不再校验联系人所属公司）', () => {
-    const company = createCompany(db, { name: 'co' });
-    const otherCompany = createCompany(db, { name: 'other' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_5', name: 'co' });
+    const otherCompany = restoreWorkbench(db, { id: 'wb_fix_6', name: 'other' });
     const outsider = createAgent(db, {
       companyId: otherCompany.id,
       name: 'outsider',
@@ -137,7 +138,7 @@ describe('task communication permission', () => {
   });
 
   it('拒绝 dispatcher 联系 contactAllow 之外的员工', () => {
-    const company = createCompany(db, { name: 'co' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_7', name: 'co' });
     const sender = createAgent(db, { companyId: company.id, name: 'sender', role: 'lead' });
     const recipient = createAgent(db, { companyId: company.id, name: 'recipient', role: 'writer' });
     const project = createProject(db, {
@@ -158,7 +159,7 @@ describe('task communication permission', () => {
   });
 
   it('允许 dispatcher 联系 contactAllow 中的员工', () => {
-    const company = createCompany(db, { name: 'co' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_8', name: 'co' });
     const recipient = createAgent(db, { companyId: company.id, name: 'recipient', role: 'writer' });
     const sender = createAgent(db, {
       companyId: company.id,

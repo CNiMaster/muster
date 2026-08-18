@@ -1,10 +1,11 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * 离职交接工作流测试（批次 C）：四阶段 + owner 转移 + 连环交接。
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { makeTestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject } from '../../src/server/domain/project';
 import {
@@ -28,7 +29,7 @@ let projectId: string;
 beforeEach(() => {
   tdb = makeTestDb();
   db = tdb.db;
-  companyId = createCompany(db, { name: '交接公司' }).id;
+  companyId = restoreWorkbench(db, { id: 'wb_fix_1', name: '交接公司' }).id;
   departingId = createAgent(db, {
     companyId, name: '离职员工', role: 'engineer', systemPrompt: '', skills: [], tools: [], permissions: {}, executor: {},
   }).id;
@@ -108,7 +109,7 @@ describe('交接阶段 2：指定接手人', () => {
   it('指定接手人（公司退役批次D：单例工作台下不再校验接手人所属公司）', () => {
     db.prepare("UPDATE workbench SET state='off' WHERE id=?").run(companyId);
     const other = createAgent(db, {
-      companyId: createCompany(db, { name: '其他公司' }).id,
+      companyId: restoreWorkbench(db, { id: 'wb_fix_2', name: '其他公司' }).id,
       name: '外人', role: 'x', systemPrompt: '', skills: [], tools: [], permissions: {}, executor: {},
     }).id;
     db.prepare("UPDATE workbench SET state='online' WHERE id=?").run(companyId);

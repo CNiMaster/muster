@@ -1,3 +1,4 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * 记忆优势分：注入记账 + 终态结算 + 排序升级（集成测试）。
  *
@@ -8,7 +9,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { makeTestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject } from '../../src/server/domain/project';
 import { createTask } from '../../src/server/domain/task';
@@ -42,7 +43,7 @@ afterEach(() => {
 /** 标准 active 项目 + lead 员工 + 档案。 */
 function seed() {
   const profile = createAgentProfile(db, { displayName: '员工' });
-  const c = createCompany(db, { name: '优势公司' });
+  const c = restoreWorkbench(db, { id: 'wb_fix_1', name: '优势公司' });
   const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
   const p = createProject(db, {
     companyId: c.id, name: 'p', rootDir: '/tmp/p', firstAgentId: lead.id, initialState: 'active',

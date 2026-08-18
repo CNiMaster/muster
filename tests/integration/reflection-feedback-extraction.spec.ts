@@ -1,3 +1,4 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * E1.2 用户反馈提取进反思（接通偏好记忆）集成测试。
  *
@@ -11,7 +12,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { makeTestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
 import * as llmCallModule from '../../src/server/domain/llm-call';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject } from '../../src/server/domain/project';
 import { createTask } from '../../src/server/domain/task';
@@ -32,7 +33,7 @@ afterEach(() => {
 });
 
 function seed() {
-  const c = createCompany(db, { name: '偏好公司' });
+  const c = restoreWorkbench(db, { id: 'wb_fix_1', name: '偏好公司' });
   const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
   const p = createProject(db, {
     companyId: c.id, name: 'p', rootDir: '/tmp/p', firstAgentId: lead.id, initialState: 'active',

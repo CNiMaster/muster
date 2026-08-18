@@ -1,3 +1,4 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * 蓝图组织重构 批次4：选择面规则 + 用户发起探讨 集成测试。
  *
@@ -9,7 +10,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { makeTestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createAgent, listAgents } from '../../src/server/domain/agent';
 import { createProject } from '../../src/server/domain/project';
 import { createTempEmployment } from '../../src/server/domain/temp-worker';
@@ -22,7 +23,7 @@ let db: DB;
 beforeEach(() => { db = makeTestDb().db; });
 
 function seed() {
-  const c = createCompany(db, { name: '公司' });
+  const c = restoreWorkbench(db, { id: 'wb_fix_1', name: '公司' });
   const lead = createAgent(db, { companyId: c.id, name: '领班', role: 'lead' });
   const member = createAgent(db, { companyId: c.id, name: '成员', role: 'engineer' });
   const p = createProject(db, {
@@ -96,7 +97,7 @@ describe('startUserDiscussion 用户发起探讨', () => {
 
   it('跨公司员工可参与（公司退役批次D：agent 归属单例工作台，不再拒绝）', () => {
     const { lead, p } = seed();
-    const other = createCompany(db, { name: '别家公司' });
+    const other = restoreWorkbench(db, { id: 'wb_fix_2', name: '别家公司' });
     const outsider = createAgent(db, { companyId: other.id, name: '外人', role: 'engineer' });
     expect(() => startUserDiscussion(db, {
       projectId: p.id,

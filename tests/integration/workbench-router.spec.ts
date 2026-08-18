@@ -8,7 +8,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { makeTestDb } from './setup';
 import { setDbForTest, closeDb } from '../../src/server/db/client';
-import { DEFAULT_WORKBENCH_NAME, ensureDefaultCompany } from '../../src/server/domain/company';
+import { DEFAULT_WORKBENCH_NAME, ensureWorkbench } from '../../src/server/domain/workbench';
 import { createAgent } from '../../src/server/domain/agent';
 import { workbenchRouter } from '../../src/server/api/workbench';
 
@@ -36,7 +36,7 @@ afterEach(async () => {
 describe('workbench 单例路由', () => {
   /** 确保默认工作台存在并配好第一负责人（clock-in 健康检查要求）。 */
   async function seedWorkbenchWithLead(): Promise<void> {
-    const companyId = ensureDefaultCompany(tdb.db).company.id;
+    const companyId = ensureWorkbench(tdb.db).workbench.id;
     const lead = createAgent(tdb.db, { companyId, name: '负责人', role: 'lead' });
     await fetch(`${base}/api/workbench`, {
       method: 'PATCH',

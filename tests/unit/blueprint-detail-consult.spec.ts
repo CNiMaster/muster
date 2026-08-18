@@ -1,3 +1,4 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { getDb, setDbForTest, closeDb, DB } from '../../src/server/db/client';
 import { makeTestDb, TestDb } from '../integration/setup';
@@ -8,7 +9,7 @@ import {
   publishBlueprintDebugResult,
   listBlueprintVersions,
 } from '../../src/server/domain/blueprint';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createProject } from '../../src/server/domain/project';
 import { clonePersonaAsUser, updateUserCustomConfig } from '../../src/server/domain/agent-profile';
 
@@ -29,7 +30,7 @@ describe('Blueprint Detail, Debug Adopt & Positive Evolution', () => {
 
   it('calculates multi-dimensional scorecard and maps active user talent on staffing slots', () => {
     const db = getDb();
-    const company = createCompany(db, { name: `BP Co ${Date.now()}` });
+    const company = restoreWorkbench(db, { id: 'wb_fix_1', name: `BP Co ${Date.now()}` });
     const project = createProject(db, { companyId: company.id, name: 'Web Project' });
 
     // Seed blueprint with 3 wins and 1 loss
@@ -83,7 +84,7 @@ describe('Blueprint Detail, Debug Adopt & Positive Evolution', () => {
 
   it('atomically publishes blueprint debug results and commits version', () => {
     const db = getDb();
-    const company = createCompany(db, { name: `Debug Co ${Date.now()}` });
+    const company = restoreWorkbench(db, { id: 'wb_fix_1', name: `Debug Co ${Date.now()}` });
     const project = createProject(db, { companyId: company.id, name: 'Web Project' });
 
     const bp = evolveBlueprint(db, {
@@ -120,7 +121,7 @@ describe('Blueprint Detail, Debug Adopt & Positive Evolution', () => {
 
   it('positive evolution distills user talent win, negative shield protects baseline', () => {
     const db = getDb();
-    const company = createCompany(db, { name: `Shield Co ${Date.now()}` });
+    const company = restoreWorkbench(db, { id: 'wb_fix_1', name: `Shield Co ${Date.now()}` });
     const project = createProject(db, { companyId: company.id, name: 'Web Project' });
 
     const officialBp = evolveBlueprint(db, {

@@ -1,3 +1,4 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * API 执行器能力提示按探针结果分化（阶段二任务 2.3）单元测试。
  *
@@ -9,7 +10,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { makeTestDb, makeTempGitRepo } from '../integration/setup';
 import { setDbForTest } from '../../src/server/db/client';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject } from '../../src/server/domain/project';
 import { createTask } from '../../src/server/domain/task';
@@ -28,7 +29,7 @@ beforeEach(() => {
 });
 
 function fixture() {
-  const c = createCompany(db, { name: 'co' });
+  const c = restoreWorkbench(db, { id: 'wb_fix_1', name: 'co' });
   const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
   const project = createProject(db, {
     companyId: c.id,

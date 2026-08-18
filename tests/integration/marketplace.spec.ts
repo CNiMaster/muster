@@ -1,3 +1,4 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * B3b marketplace 测试：
  * - searchLocalSkills 在临时目录构造 skill 并检索
@@ -12,7 +13,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { makeTestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createCompany } from '../../src/server/domain/company';
+;
 import {
   searchLocalSkills,
   searchMarketplace,
@@ -86,7 +87,7 @@ describe('searchMarketplace', () => {
 
 describe('installMarketplaceEntry', () => {
   it('local skill 安装为 Plugin', () => {
-    const companyId = createCompany(db, { name: 'co' }).id;
+    const companyId = restoreWorkbench(db, { id: 'wb_fix_1', name: 'co' }).id;
     writeSkill('installable', 'installable', '可安装');
     const entry: MarketplaceEntry = {
       id: 'installable',

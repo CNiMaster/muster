@@ -1,3 +1,4 @@
+import { transitionWorkbench, restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * E4.3 空闲自主反思（默认关闭）集成测试。
  *
@@ -7,7 +8,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { makeTestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createCompany, transitionCompany } from '../../src/server/domain/company';
+;
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject } from '../../src/server/domain/project';
 import { createTask, completeTask, failTask, getTask, markRunning, claimNextTask } from '../../src/server/domain/task';
@@ -30,7 +31,7 @@ afterEach(() => {
 });
 
 function fixture() {
-  const c = createCompany(db, { name: 'ev' });
+  const c = restoreWorkbench(db, { id: 'wb_fix_1', name: 'ev' });
   const worker = createAgent(db, { companyId: c.id, name: 'worker', role: 'worker' });
   const p = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/p', firstAgentId: worker.id, initialState: 'active' });
   return { c, worker, p };
@@ -101,7 +102,7 @@ describe('enqueueIdleReflections（补排队）', () => {
 describe('runIdleReflectionPass（coordinator 护栏）', () => {
   it('开关默认关 → 不动作', () => {
     const { c, worker, p } = fixture();
-    transitionCompany(db, c.id, 'online');
+    transitionWorkbench(db, 'online');
     const t = createTask(db, { projectId: p.id, assigneeAgentId: worker.id, title: 'A' });
     done(p.id, worker.id, t.id);
 
@@ -111,7 +112,7 @@ describe('runIdleReflectionPass（coordinator 护栏）', () => {
 
   it('开关开但预算 0 → 不动作（0 = 关闭）', () => {
     const { c, worker, p } = fixture();
-    transitionCompany(db, c.id, 'online');
+    transitionWorkbench(db, 'online');
     const t = createTask(db, { projectId: p.id, assigneeAgentId: worker.id, title: 'A' });
     done(p.id, worker.id, t.id);
     enableIdleReflection(0);
@@ -121,7 +122,7 @@ describe('runIdleReflectionPass（coordinator 护栏）', () => {
 
   it('开关开 + 预算>0 + 公司空闲 → 入队', () => {
     const { c, worker, p } = fixture();
-    transitionCompany(db, c.id, 'online');
+    transitionWorkbench(db, 'online');
     const t = createTask(db, { projectId: p.id, assigneeAgentId: worker.id, title: 'A' });
     done(p.id, worker.id, t.id);
     enableIdleReflection(1);
@@ -132,7 +133,7 @@ describe('runIdleReflectionPass（coordinator 护栏）', () => {
 
   it('公司有活跃正式任务 → 让位不入队', () => {
     const { c, worker, p } = fixture();
-    transitionCompany(db, c.id, 'online');
+    transitionWorkbench(db, 'online');
     // 任务保持 queued（活跃）
     createTask(db, { projectId: p.id, assigneeAgentId: worker.id, title: '在跑' });
     const t2 = createTask(db, { projectId: p.id, assigneeAgentId: worker.id, title: '已完' });
@@ -155,7 +156,7 @@ describe('runIdleReflectionPass（coordinator 护栏）', () => {
 
   it('当日花费已达预算 → 不入队', () => {
     const { c, worker, p } = fixture();
-    transitionCompany(db, c.id, 'online');
+    transitionWorkbench(db, 'online');
     const t = createTask(db, { projectId: p.id, assigneeAgentId: worker.id, title: 'A' });
     done(p.id, worker.id, t.id);
     const [thread] = ensureProjectThreads(db, p.id);

@@ -1,3 +1,4 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * B3.1 自然语言图变更提案测试。
  * 用 FakeSetupGenerator 避免 Claude 依赖，验证 propose/apply 全链路。
@@ -5,7 +6,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { makeTestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createAgent } from '../../src/server/domain/agent';
 import { listRelationships } from '../../src/server/domain/graph';
 import {
@@ -33,7 +34,7 @@ function makeFakeGenerator(output: unknown): SetupGenerator {
 
 describe('B3.1 自然语言图变更提案', () => {
   it('propose 解析 add_edge 并产出 diff', async () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_1', name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: '李四', role: 'lead' });
     const writer = createAgent(db, { companyId: c.id, name: '王五', role: 'writer' });
     const proposal: GraphChangeProposal = {
@@ -49,7 +50,7 @@ describe('B3.1 自然语言图变更提案', () => {
   });
 
   it('apply 幂等：已存在的边不重复创建', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_2', name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
     const writer = createAgent(db, { companyId: c.id, name: 'writer', role: 'writer' });
     const proposal: GraphChangeProposal = {
@@ -66,7 +67,7 @@ describe('B3.1 自然语言图变更提案', () => {
   });
 
   it('apply remove_edge 走归档（软删除）', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_3', name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
     const writer = createAgent(db, { companyId: c.id, name: 'writer', role: 'writer' });
     // 先加
@@ -84,7 +85,7 @@ describe('B3.1 自然语言图变更提案', () => {
   });
 
   it('上班期间 propose 被拒绝', async () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_4', name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
     db.prepare("UPDATE workbench SET state='online' WHERE id=?").run(c.id);
     await expect(
@@ -97,7 +98,7 @@ describe('B3.1 自然语言图变更提案', () => {
   });
 
   it('sourceId 缺失时用 sourceHint 模糊匹配', async () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_5', name: 'co' });
     createAgent(db, { companyId: c.id, name: '张三', role: 'lead' });
     createAgent(db, { companyId: c.id, name: '李四', role: 'writer' });
     const proposal: GraphChangeProposal = {

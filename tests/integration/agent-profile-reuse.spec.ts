@@ -1,3 +1,4 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { DB } from '../../src/server/db/client';
 import {
@@ -7,7 +8,7 @@ import {
   resetAgentProfileToBase,
   updateAgentProfile,
 } from '../../src/server/domain/agent-profile';
-import { createCompany } from '../../src/server/domain/company';
+;
 import {
   createMemoryCandidate,
   listMemoryEntries,
@@ -53,8 +54,8 @@ describe('Agent Profile reuse and reset', () => {
 
   it('引用复用同一 Profile，但公司任职 ID 相互隔离', () => {
     const profile = createAgentProfile(db, { displayName: '共享员工' });
-    const firstCompany = createCompany(db, { name: '甲公司' });
-    const secondCompany = createCompany(db, { name: '乙公司' });
+    const firstCompany = restoreWorkbench(db, { id: 'wb_fix_1', name: '甲公司' });
+    const secondCompany = restoreWorkbench(db, { id: 'wb_fix_2', name: '乙公司' });
     const first = recruitAgentProfile(db, { companyId: firstCompany.id, profileId: profile.id, role: 'architect' });
     const second = recruitAgentProfile(db, { companyId: secondCompany.id, profileId: profile.id, role: 'reviewer' });
 
@@ -64,7 +65,7 @@ describe('Agent Profile reuse and reset', () => {
 
   it('恢复基础能力不删除记忆，清空个人记忆不改变能力和任职', () => {
     const profile = createAgentProfile(db, { displayName: '员工', soul: '基础身份', capabilities: { skills: ['base'] } });
-    const company = createCompany(db, { name: '公司' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_3', name: '公司' });
     recruitAgentProfile(db, { companyId: company.id, profileId: profile.id, role: 'engineer' });
     createMemoryCandidate(db, {
       profileId: profile.id, scope: 'personal', content: '私人经验', author: 'user', confidence: 1,

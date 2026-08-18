@@ -67,7 +67,7 @@ Key constraints for all new work:
   - **迁移 E（20260819000400_company_drop_leftovers.sql，终审补）**：`plugin` 表 CHECK 的 'company' 档改 'workbench'（存量值 CASE 映射、scope_id 清空）；补删漏网列 `permission_rule.company_id`/`task_reflection.company_id`。
   - **迁移 runner 外键规程（终审修复）**：`runMigrations` 逐文件事务外 `PRAGMA foreign_keys=OFF`、文件内 `foreign_key_check` 违规即回滚（SQLite 官方表重建规程）——此前 FK=ON 下 DROP 被未重建子表外键拒绝/级联误删，空库测试掩盖。
   - **plugin 契约 workbench 化（终审修复）**：`PluginScope`/`PluginSource` 的 `'company'` 成员改 `'workbench'`（无 id 载荷）；plugins API/marketplace/skill-author/plugin-adapter 全链去 `companyId:''` 空串占位；`setCompanyPluginDecision` 等签名去公司参。
-  - **运行时换域（终审修复）**：engine/context/projects/tasks 的 `getCompany` import 全部改 `domain/workbench`；`company.ts` 仅存为测试夹具壳（103 文件依赖，删除另开微批）。上下文注入标签 `# 公司章程`→`# 工作台章程`。
+  - **运行时换域与壳删除（终审+微批）**：全部生产代码（engine/context/projects/tasks/report/acceptance-review/conversation/graph-proposal/gap-research 等）改用 `domain/workbench`；`src/server/domain/company.ts` 遗留壳**已删除**——104 个测试文件夹具迁移到 workbench 域原语（`restoreWorkbench` 带名/kind 直插=夹具入口，`ensureWorkbench` 单例解析），多公司语义测试（改名查重/列表过滤/跨公司咨询拒绝）随概念退役删除或单例化改写。上下文注入标签 `# 公司章程`→`# 工作台章程`。
   - **真实库迁移（2026-08-18 执行，脚本 `scripts/company-drop-migrate-real-db.mts` 留档）**：备份至 `~/.muster-backups/` → 清理 103 家冒烟垃圾公司（仅留 `co_default_workspace`，其组织数据完整保留）→ 迁移 A-E → 断言全过（foreign_key_check 空、workbench 单行、漏网列已删）。
 - **契约与事件**：`src/shared/types.ts`, `src/shared/lifecycle-events.ts`, `src/client/api/types.ts` 全面剥除 `companyId`；事件类型由 `company.state` 演进为 `workbench.state`。
 - **测试基线**：tsc 0 错误；vitest 全量除 web-tools 3 例（本地沙箱 DNS 环境性失败）全过、2 skipped（多公司隔离语义过时）；e2e 与冒烟基线见批次收口记录。

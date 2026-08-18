@@ -1,10 +1,11 @@
+import { updateWorkbench, transitionWorkbench, restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * Batch 14 集成测试：手动压缩 + 上下文大小估算。
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { makeTestDb, type TestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createCompany, updateCompany, transitionCompany } from '../../src/server/domain/company';
+;
 import { createProject } from '../../src/server/domain/project';
 import { createAgent } from '../../src/server/domain/agent';
 import { ensurePrimaryThread, clearSessionForCompaction, incrementExecCount, setClaudeSession, getThread } from '../../src/server/domain/thread';
@@ -37,10 +38,10 @@ function makeTmpRoot(): string {
 
 describe('Batch 14 手动压缩', () => {
   it('clearSessionForCompaction 清空 session 并写入手动摘要', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_1', name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
-    updateCompany(db, c.id, { firstAgentId: lead.id });
-    transitionCompany(db, c.id, 'online');
+    updateWorkbench(db, { firstAgentId: lead.id });
+    transitionWorkbench(db, 'online');
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: makeTmpRoot(), firstAgentId: lead.id });
     const th = ensurePrimaryThread(db, p.id, lead.id);
     setClaudeSession(db, th.id, 'sess-old');
@@ -54,10 +55,10 @@ describe('Batch 14 手动压缩', () => {
   });
 
   it('手动压缩后 exec_count 重置为 0', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_2', name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
-    updateCompany(db, c.id, { firstAgentId: lead.id });
-    transitionCompany(db, c.id, 'online');
+    updateWorkbench(db, { firstAgentId: lead.id });
+    transitionWorkbench(db, 'online');
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: makeTmpRoot(), firstAgentId: lead.id });
     const th = ensurePrimaryThread(db, p.id, lead.id);
     incrementExecCount(db, th.id);
@@ -72,10 +73,10 @@ describe('Batch 14 手动压缩', () => {
 
 describe('Batch 14 上下文大小估算', () => {
   it('context-size 返回 execCount、estimatedTokens、recentTaskCount', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_3', name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
-    updateCompany(db, c.id, { firstAgentId: lead.id });
-    transitionCompany(db, c.id, 'online');
+    updateWorkbench(db, { firstAgentId: lead.id });
+    transitionWorkbench(db, 'online');
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: makeTmpRoot(), firstAgentId: lead.id });
     const th = ensurePrimaryThread(db, p.id, lead.id);
 
@@ -105,10 +106,10 @@ describe('Batch 14 上下文大小估算', () => {
   });
 
   it('compaction_summary 注入后 estimatedTokens 增加', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_4', name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
-    updateCompany(db, c.id, { firstAgentId: lead.id });
-    transitionCompany(db, c.id, 'online');
+    updateWorkbench(db, { firstAgentId: lead.id });
+    transitionWorkbench(db, 'online');
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: makeTmpRoot(), firstAgentId: lead.id });
     const th = ensurePrimaryThread(db, p.id, lead.id);
 

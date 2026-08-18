@@ -1,9 +1,10 @@
+import { clockIn, restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * 指挥系统批次1：定时自动化补齐——每天 N 点时刻语义 / 防叠跑 / 公司级触发器 / 晨醒开关。
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { DB } from '../../src/server/db/client';
-import { clockIn, createCompany } from '../../src/server/domain/company';
+;
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject } from '../../src/server/domain/project';
 import { createProjectTask } from '../../src/server/domain/project-task';
@@ -26,7 +27,7 @@ beforeEach(() => {
 });
 
 function makeCompanyFixture() {
-  const company = createCompany(db, { name: 'co' });
+  const company = restoreWorkbench(db, { id: 'wb_fix_1', name: 'co' });
   const lead = createAgent(db, { companyId: company.id, name: 'lead', role: 'lead' });
   const project = createProject(db, {
     companyId: company.id,
@@ -35,7 +36,7 @@ function makeCompanyFixture() {
     firstAgentId: lead.id,
     initialState: 'active',
   });
-  clockIn(db, company.id);
+  clockIn(db);
   return { company, lead, project };
 }
 
@@ -121,10 +122,10 @@ describe('防叠跑护栏', () => {
 
 describe('公司级触发器', () => {
   it('公司还没有项目时不派发且不推进 next_run_at；有项目后派发给第一负责人', () => {
-    const company = createCompany(db, { name: 'co' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_2', name: 'co' });
     const lead = createAgent(db, { companyId: company.id, name: 'lead', role: 'lead' });
     updateCompanyFirstAgent(company.id, lead.id);
-    clockIn(db, company.id);
+    clockIn(db);
     registerScheduleTrigger(db, {
       companyId: company.id,
       intervalMs: 60_000,
@@ -159,10 +160,10 @@ describe('公司级触发器', () => {
   });
 
   it('公司级 daily 触发器 + 管理面（list/启停/删除）', () => {
-    const company = createCompany(db, { name: 'co' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_3', name: 'co' });
     const lead = createAgent(db, { companyId: company.id, name: 'lead', role: 'lead' });
     updateCompanyFirstAgent(company.id, lead.id);
-    clockIn(db, company.id);
+    clockIn(db);
     registerScheduleTrigger(db, {
       companyId: company.id,
       timeOfDay: '09:00',

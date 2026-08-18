@@ -1,10 +1,11 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * 权限委托链 + 审计日志测试（批次 B）。
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { makeTestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject } from '../../src/server/domain/project';
 import { addRelationship } from '../../src/server/domain/graph';
@@ -31,7 +32,7 @@ let projectId: string;
 beforeEach(() => {
   tdb = makeTestDb();
   db = tdb.db;
-  companyId = createCompany(db, { name: '委托链公司' }).id;
+  companyId = restoreWorkbench(db, { id: 'wb_fix_1', name: '委托链公司' }).id;
   managerId = createAgent(db, {
     companyId, name: '经理', role: 'lead', systemPrompt: '', skills: [], tools: [], permissions: {}, executor: {},
   }).id;

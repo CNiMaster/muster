@@ -1,8 +1,9 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createAgent } from '../../src/server/domain/agent';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createProject } from '../../src/server/domain/project';
 import { createTask } from '../../src/server/domain/task';
 import { resolveTaskSkills } from '../../src/server/domain/capability-binding';
@@ -29,7 +30,7 @@ describe('task skill resolution', () => {
   it('loads explicit, field, and employee bindings while omitting unrelated legacy skills', () => {
     const { db, close } = makeTestDb();
     try {
-      const company = createCompany(db, { name: 'Acme' });
+      const company = restoreWorkbench(db, { id: 'wb_fix_1', name: 'Acme' });
       const engineer = createAgent(db, {
         companyId: company.id,
         name: '工程师',
@@ -74,7 +75,7 @@ describe('task skill resolution', () => {
   it('uses legacy agent skills only when the task has no binding metadata', () => {
     const { db, close } = makeTestDb();
     try {
-      const company = createCompany(db, { name: 'Legacy' });
+      const company = restoreWorkbench(db, { id: 'wb_fix_2', name: 'Legacy' });
       const agent = createAgent(db, { companyId: company.id, name: '旧员工', role: 'worker', skills: ['code-simplification'] });
       const project = createProject(db, { companyId: company.id, name: '旧项目' });
       const task = createTask(db, { projectId: project.id, assigneeAgentId: agent.id, title: '旧任务' });

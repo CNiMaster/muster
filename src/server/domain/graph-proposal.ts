@@ -13,7 +13,7 @@
 import { z } from 'zod';
 import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
-import { isOrgLocked } from './company';
+import { isOrgLocked } from './workbench';
 import { getAgent, listAgents } from './agent';
 import {
   addRelationship,
@@ -65,7 +65,7 @@ export async function proposeGraphChange(
   input: GraphProposalInput,
   generator: SetupGenerator,
 ): Promise<GraphProposalResult> {
-  if (isOrgLocked(db, input.companyId)) {
+  if (isOrgLocked(db)) {
     throw new AppError(ErrorCode.COMPANY_LOCKED, '上班期间不能修改关系图');
   }
   const agents = listAgents(db);
@@ -115,7 +115,7 @@ export async function proposeGraphChange(
 
 /** 应用已确认的提案。幂等：已存在的边不重复创建；已不存在的边跳过。 */
 export function applyGraphProposal(db: DB, input: GraphProposalInput, proposal: GraphChangeProposal): GraphDiff {
-  if (isOrgLocked(db, input.companyId)) {
+  if (isOrgLocked(db)) {
     throw new AppError(ErrorCode.COMPANY_LOCKED, '上班期间不能修改关系图');
   }
   const agents = listAgents(db);

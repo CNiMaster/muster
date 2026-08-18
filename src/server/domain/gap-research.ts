@@ -12,7 +12,7 @@ import type { DB } from '../db/client';
 import type { Task } from './task';
 import { createTask } from './task';
 import { getProject } from './project';
-import { getCompany } from './company';
+import { getWorkbench } from './workbench';
 import { listAgents } from './agent';
 import { listTaskEvents, appendTaskEvent } from './task-event';
 import { DEFAULT_REGISTRY, findRegistryCandidatesForGaps } from './capability-registry';
@@ -30,7 +30,7 @@ export interface GapResearchResult {
  */
 export function dispatchGapResearch(db: DB, task: Task, gaps: CapabilityGap[]): GapResearchResult {
   const project = getProject(db, task.projectId);
-  const company = getCompany(db, project.companyId);
+  const company = getWorkbench(db);
   const contract = (company.contractJson ?? {}) as Record<string, unknown>;
 
   // opt-in：默认关，避免自动派单噪声/成本与 PRD「不自动执行建议」冲突。

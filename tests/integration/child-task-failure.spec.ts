@@ -1,3 +1,4 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * 子任务失败兜底（阶段一任务 1.1）集成测试。
  *
@@ -12,7 +13,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { makeTestDb, makeTempGitRepo } from './setup';
 import { setDbForTest } from '../../src/server/db/client';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject } from '../../src/server/domain/project';
 import {
@@ -39,7 +40,7 @@ beforeEach(() => {
 });
 
 function fixture() {
-  const c = createCompany(db, { name: 'co' });
+  const c = restoreWorkbench(db, { id: 'wb_fix_1', name: 'co' });
   const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
   const worker = createAgent(db, { companyId: c.id, name: 'worker', role: 'worker' });
   const project = createProject(db, {

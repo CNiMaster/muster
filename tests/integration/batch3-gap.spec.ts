@@ -1,3 +1,4 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * Batch 3 v1 缺口补丁的集成测试（B3.2 / B3.3 / B3.4）。
  * - B3.1 已在 graph-proposal.spec.ts 单独覆盖。
@@ -10,7 +11,7 @@ import { makeTestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
 import path from 'node:path';
 import { writeFileSync, mkdirSync, existsSync, rmSync } from 'node:fs';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createProject, addProjectReference } from '../../src/server/domain/project';
 import { createAgent } from '../../src/server/domain/agent';
 import {
@@ -33,7 +34,7 @@ beforeEach(() => {
 
 describe('B3.2 会话压缩/轮换', () => {
   it('incrementExecCount 累加并在达阈值时返回 shouldCompact', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_1', name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/p1', firstAgentId: lead.id });
     const th = ensurePrimaryThread(db, p.id, lead.id);
@@ -52,7 +53,7 @@ describe('B3.2 会话压缩/轮换', () => {
   });
 
   it('clearSessionForCompaction 清空 session 并写入摘要', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_2', name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/p2', firstAgentId: lead.id });
     const th = ensurePrimaryThread(db, p.id, lead.id);
@@ -154,7 +155,7 @@ describe('B3.3 二进制独占锁排队', () => {
 
 describe('B3.4 授权参考目录的 Claude 直接访问', () => {
   it('addProjectReference 后 engine 能收集 readonlyDirs', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_3', name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
     const source = createProject(db, { companyId: c.id, name: 'source', rootDir: '/tmp/src-x', firstAgentId: lead.id });
     const consumer = createProject(db, { companyId: c.id, name: 'consumer', rootDir: '/tmp/consumer-x', firstAgentId: lead.id });
@@ -180,7 +181,7 @@ describe('B3.4 授权参考目录的 Claude 直接访问', () => {
 
 describe('B3.soak minitest: engine 完整闭环', () => {
   it('createTask → claim → complete 串行 30 次无残留锁/无重复 seq', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_4', name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/p9b', firstAgentId: lead.id });
     for (let i = 0; i < 30; i++) {

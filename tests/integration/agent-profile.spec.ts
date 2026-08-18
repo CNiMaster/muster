@@ -1,6 +1,7 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { DB } from '../../src/server/db/client';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createAgent, deleteAgent, recruitAgentProfile, updateAgent } from '../../src/server/domain/agent';
 import {
   createAgentProfile,
@@ -19,7 +20,7 @@ beforeEach(() => {
 
 describe('Agent Profile and company employment', () => {
   it('新员工在同一事务内创建全局档案和兼容任职记录', () => {
-    const company = createCompany(db, { name: '软件公司' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_1', name: '软件公司' });
     const agent = createAgent(db, {
       companyId: company.id,
       name: '小林',
@@ -40,8 +41,8 @@ describe('Agent Profile and company employment', () => {
   });
 
   it('同一 Profile 可跨公司任职，但岗位上下文相互隔离', () => {
-    const firstCompany = createCompany(db, { name: '甲公司' });
-    const secondCompany = createCompany(db, { name: '乙公司' });
+    const firstCompany = restoreWorkbench(db, { id: 'wb_fix_2', name: '甲公司' });
+    const secondCompany = restoreWorkbench(db, { id: 'wb_fix_3', name: '乙公司' });
     const profile = createAgentProfile(db, {
       displayName: '阿青',
       soul: '善于拆解复杂问题',
@@ -58,7 +59,7 @@ describe('Agent Profile and company employment', () => {
   });
 
   it('修改任职岗位不改变全局身份和能力', () => {
-    const company = createCompany(db, { name: '公司' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_4', name: '公司' });
     const profile = createAgentProfile(db, { displayName: '小周', soul: '独立思考', capabilities: { skills: ['review'] } });
     const employee = recruitAgentProfile(db, { companyId: company.id, profileId: profile.id, role: 'reviewer' });
 
@@ -69,7 +70,7 @@ describe('Agent Profile and company employment', () => {
   });
 
   it('删除任职不会删除 Profile', () => {
-    const company = createCompany(db, { name: '公司' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_5', name: '公司' });
     const profile = createAgentProfile(db, { displayName: '小吴' });
     const employee = recruitAgentProfile(db, { companyId: company.id, profileId: profile.id, role: 'assistant' });
 
@@ -80,7 +81,7 @@ describe('Agent Profile and company employment', () => {
   });
 
   it('更新全局档案不会覆盖任职岗位', () => {
-    const company = createCompany(db, { name: '公司' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_6', name: '公司' });
     const profile = createAgentProfile(db, { displayName: '旧名字' });
     const employee = recruitAgentProfile(db, { companyId: company.id, profileId: profile.id, role: 'writer' });
 

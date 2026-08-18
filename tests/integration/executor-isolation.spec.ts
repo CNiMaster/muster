@@ -1,7 +1,8 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 import { describe, expect, it } from 'vitest';
 import { join } from 'node:path';
 import { makeTestDb } from './setup';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createAgent } from '../../src/server/domain/agent';
 import { bindEmployeeExecutorProfile, createExecutorProfile, getEmployeeExecutorProfile } from '../../src/server/domain/executor-profile';
 import { buildRunIsolation, withExecutorConcurrency } from '../../src/server/executors/run-isolation';
@@ -10,7 +11,7 @@ describe('shared executor isolation', () => {
   it('binds two employees to one fixed profile while giving every run distinct state paths', () => {
     const { db, close } = makeTestDb();
     try {
-      const company = createCompany(db, { name: '平台公司' });
+      const company = restoreWorkbench(db, { id: 'wb_fix_1', name: '平台公司' });
       const a = createAgent(db, { companyId: company.id, name: '甲', role: 'developer' });
       const b = createAgent(db, { companyId: company.id, name: '乙', role: 'reviewer' });
       const profile = createExecutorProfile(db, { name: '共享 Codex', manifestId: 'codex-cli' });

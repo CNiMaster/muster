@@ -1,3 +1,4 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * R1：人设配枪——工具供给层 集成测试。
  *
@@ -11,7 +12,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { makeTestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject } from '../../src/server/domain/project';
 import { createTask } from '../../src/server/domain/task';
@@ -26,7 +27,7 @@ let db: DB;
 beforeEach(() => { db = makeTestDb().db; });
 
 function seed() {
-  const c = createCompany(db, { name: '公司' });
+  const c = restoreWorkbench(db, { id: 'wb_fix_1', name: '公司' });
   const agent = createAgent(db, { companyId: c.id, name: '干员', role: 'lead' });
   const p = createProject(db, {
     companyId: c.id, name: '项目', rootDir: '/tmp/p', firstAgentId: agent.id, initialState: 'active',

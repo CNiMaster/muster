@@ -1,3 +1,4 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * 专家链路修复（WP1）+ 模型档位（WP9）集成测试。
  *
@@ -11,7 +12,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { makeTestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject } from '../../src/server/domain/project';
 import { createProjectTask } from '../../src/server/domain/project-task';
@@ -38,7 +39,7 @@ afterEach(() => {
 });
 
 function seed() {
-  const c = createCompany(db, { name: '公司' });
+  const c = restoreWorkbench(db, { id: 'wb_fix_1', name: '公司' });
   const lead = createAgent(db, { companyId: c.id, name: '干员', role: 'lead' });
   const p = createProject(db, {
     companyId: c.id, name: '项目', rootDir: '/tmp/p', firstAgentId: lead.id, initialState: 'active',

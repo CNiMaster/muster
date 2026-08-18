@@ -1,3 +1,4 @@
+import { updateWorkbench, restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * Batch 5 集成测试：员工级执行器配置 + 用户级凭据引用 + 会话时间轮换。
  * - agent.executor.model/claudeBin/timeoutMs 通过 normalizeAgentExecutor 进入 ctx.agentExecutor。
@@ -7,7 +8,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { makeTestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createCompany, updateCompany } from '../../src/server/domain/company';
+;
 import { createProject } from '../../src/server/domain/project';
 import { createAgent, updateAgent, getAgent } from '../../src/server/domain/agent';
 import { ensurePrimaryThread, incrementExecCount, setClaudeSession, rotateSession, getThread } from '../../src/server/domain/thread';
@@ -29,8 +30,8 @@ afterEach(() => {
 
 describe('Batch 5.1 员工级执行器配置', () => {
   it('createAgent 接受合法 executor 配置', () => {
-    const c = createCompany(db, { name: 'co' });
-    updateCompany(db, c.id, { firstAgentId: undefined }); // 解锁需先 off
+    const c = restoreWorkbench(db, { id: 'wb_fix_1', name: 'co' });
+    updateWorkbench(db, { firstAgentId: undefined }); // 解锁需先 off
     const a = createAgent(db, {
       companyId: c.id,
       name: 'bob',
@@ -44,7 +45,7 @@ describe('Batch 5.1 员工级执行器配置', () => {
   });
 
   it('createAgent 拒绝非法 apiKeyEnv（含小写/特殊字符）', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_2', name: 'co' });
     expect(() =>
       createAgent(db, { companyId: c.id, name: 'x', role: 'r', executor: { apiKeyEnv: 'invalid-lower' } }),
     ).toThrow();
@@ -57,7 +58,7 @@ describe('Batch 5.1 员工级执行器配置', () => {
   });
 
   it('createAgent 接受合法 apiKeyEnv（大写字母+数字+下划线）', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_3', name: 'co' });
     const a = createAgent(db, {
       companyId: c.id,
       name: 'bob',
@@ -68,13 +69,13 @@ describe('Batch 5.1 员工级执行器配置', () => {
   });
 
   it('updateAgent 拒绝非法 executor 字段（负 timeoutMs）', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_4', name: 'co' });
     const a = createAgent(db, { companyId: c.id, name: 'x', role: 'r' });
     expect(() => updateAgent(db, a.id, { executor: { timeoutMs: -1 } })).toThrow();
   });
 
   it('updateAgent 拒绝非布尔 skipPermissions', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_5', name: 'co' });
     const a = createAgent(db, { companyId: c.id, name: 'x', role: 'r' });
     expect(() => updateAgent(db, a.id, { executor: { skipPermissions: 'yes' as unknown as boolean } })).toThrow();
   });
@@ -82,7 +83,7 @@ describe('Batch 5.1 员工级执行器配置', () => {
 
 describe('Batch 5.2 会话时间轮换', () => {
   it('incrementExecCount 默认不触发 shouldRotate（无 last_rotation_at 记录）', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_6', name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/r1', firstAgentId: lead.id });
     const th = ensurePrimaryThread(db, p.id, lead.id);
@@ -91,7 +92,7 @@ describe('Batch 5.2 会话时间轮换', () => {
   });
 
   it('rotateSession 清空 session 并写入 last_rotation_at', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_7', name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/r2', firstAgentId: lead.id });
     const th = ensurePrimaryThread(db, p.id, lead.id);
@@ -102,7 +103,7 @@ describe('Batch 5.2 会话时间轮换', () => {
   });
 
   it('last_rotation_at 过期后 incrementExecCount 返回 shouldRotate', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_8', name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/r3', firstAgentId: lead.id });
     const th = ensurePrimaryThread(db, p.id, lead.id);
@@ -115,7 +116,7 @@ describe('Batch 5.2 会话时间轮换', () => {
   });
 
   it('rotationHours=0 关闭时间轮换', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_9', name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/r4', firstAgentId: lead.id });
     const th = ensurePrimaryThread(db, p.id, lead.id);
@@ -130,7 +131,7 @@ describe('Batch 5.2 会话时间轮换', () => {
 describe('Batch 5.3 normalizeAgentExecutor / extractApiKeyEnv（引擎侧）', () => {
   it('通过内联校验确认 normalizeAgentExecutor 逻辑：仅保留已知字段', () => {
     // 直接测 agent 创建后保留的 executor 结构是否被正确读取
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_10', name: 'co' });
     const a = createAgent(db, {
       companyId: c.id,
       name: 'bob',
@@ -145,7 +146,7 @@ describe('Batch 5.3 normalizeAgentExecutor / extractApiKeyEnv（引擎侧）', (
   });
 
   it('AppError 在非法 executor 时抛出且带正确信息', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_11', name: 'co' });
     let err: unknown;
     try {
       createAgent(db, { companyId: c.id, name: 'x', role: 'r', executor: { apiKeyEnv: 'bad name' } });

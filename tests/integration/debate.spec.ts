@@ -1,10 +1,11 @@
+import { clockIn, restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * 指挥系统批次4：对抗评审庭——编排 / 裁决分流（自动采纳 vs 升级）/ 偏好记忆 / 引擎自动触发。
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import { makeTestDb, makeTempGitRepo } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { clockIn, createCompany } from '../../src/server/domain/company';
+;
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject } from '../../src/server/domain/project';
 import { answerClarification, completeTask, createTask, getTask } from '../../src/server/domain/task';
@@ -37,7 +38,7 @@ const OPTIONS: QuestionOption[] = [
 ];
 
 function fixture() {
-  const company = createCompany(db, { name: 'co' });
+  const company = restoreWorkbench(db, { id: 'wb_fix_1', name: 'co' });
   const lead = createAgent(db, { companyId: company.id, name: 'lead', role: 'lead' });
   const project = createProject(db, {
     companyId: company.id,
@@ -46,7 +47,7 @@ function fixture() {
     firstAgentId: lead.id,
     initialState: 'active',
   });
-  clockIn(db, company.id);
+  clockIn(db);
   const sys = ensureSystemAgents(db, company.id);
   return { company, lead, project, ...sys };
 }

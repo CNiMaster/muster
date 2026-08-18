@@ -1,6 +1,7 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 import { describe, expect, it } from 'vitest';
 import { createAgent } from '../../src/server/domain/agent';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createPermissionPolicy, recordApprovalDecision, requestApproval } from '../../src/server/domain/permission';
 import { createProject } from '../../src/server/domain/project';
 import { clearTaskApprovalWait, createTask, getTask, markTaskWaitingApproval } from '../../src/server/domain/task';
@@ -9,7 +10,7 @@ import { makeTestDb } from './setup';
 describe('approval waiting state', () => {
   it('keeps an online run owned while waiting and only requeues persisted waits', () => {
     const db = makeTestDb().db;
-    const company = createCompany(db, { name: 'A' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_1', name: 'A' });
     const employee = createAgent(db, { companyId: company.id, name: '员工', role: 'engineer' });
     const project = createProject(db, { companyId: company.id, name: '产品', rootDir: '/tmp/muster-approval-state' });
     const task = createTask(db, { projectId: project.id, assigneeAgentId: employee.id, title: '审批测试' });

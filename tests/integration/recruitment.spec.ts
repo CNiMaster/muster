@@ -1,6 +1,7 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 import { describe, expect, it } from 'vitest';
 import { createAgentProfile } from '../../src/server/domain/agent-profile';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createDepartment } from '../../src/server/domain/department';
 import { createExecutorProfile } from '../../src/server/domain/executor-profile';
 import { createPermissionPolicy } from '../../src/server/domain/permission';
@@ -12,7 +13,7 @@ describe('recruitment draft', () => {
   it.each(['reuse-profile', 'new-profile'] as const)('recruits %s through the same bound employment contract', (source) => {
     const { db, close } = makeTestDb();
     try {
-      const company = createCompany(db, { name: 'Acme' });
+      const company = restoreWorkbench(db, { id: 'wb_fix_1', name: 'Acme' });
       const department = createDepartment(db, { companyId: company.id, name: '工程部' });
       const executor = createExecutorProfile(db, { name: 'Codex', manifestId: 'codex-cli' });
       const policy = createPermissionPolicy(db, { name: '项目权限', approvalStrategy: 'ask-by-rule', scope: 'project' });

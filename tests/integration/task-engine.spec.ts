@@ -1,3 +1,4 @@
+import { clockIn, restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * Phase 2 验收测试：
  - Task 状态机
@@ -9,7 +10,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { makeTestDb, makeTempGitRepo } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createCompany, clockIn } from '../../src/server/domain/company';
+;
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject, updateProject } from '../../src/server/domain/project';
 import { ensurePrimaryThread, createMirror, getThread } from '../../src/server/domain/thread';
@@ -42,7 +43,7 @@ beforeEach(() => {
 });
 
 function fixture() {
-  const c = createCompany(db, { name: 'co' });
+  const c = restoreWorkbench(db, { id: 'wb_fix_1', name: 'co' });
   const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
   const writer = createAgent(db, { companyId: c.id, name: 'writer', role: 'writer' });
   const project = createProject(db, { companyId: c.id, name: 'novel', rootDir: makeTempGitRepo(), firstAgentId: lead.id, initialState: 'active'});
@@ -237,7 +238,7 @@ describe('clarification rounds', () => {
 describe('fake executor end-to-end', () => {
   it('假执行器驱动 Task 闭环', async () => {
     const { c, project, writer } = fixture();
-    clockIn(db, c.id); // 引擎要求公司 online 才领取
+    clockIn(db); // 引擎要求公司 online 才领取
     createTask(db, { projectId: project.id, assigneeAgentId: writer.id, title: '写章节' });
     const thread = ensurePrimaryThread(db, project.id, writer.id);
 
@@ -285,7 +286,7 @@ describe('fake executor end-to-end', () => {
 describe('engine stop：在跑任务回退 queued 而非 failed', () => {
   it('stop() 中止在跑任务后任务回 queued（清租约），线程回 idle，下次启动可重跑', async () => {
     const { c, project, writer } = fixture();
-    clockIn(db, c.id);
+    clockIn(db);
     const t = createTask(db, { projectId: project.id, assigneeAgentId: writer.id, title: '写章节' });
     const thread = ensurePrimaryThread(db, project.id, writer.id);
 

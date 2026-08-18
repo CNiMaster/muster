@@ -1,14 +1,7 @@
+import { ensureWorkbench, updateWorkbench, transitionWorkbench, clockIn, clockOut, isOrgLocked, type Workbench } from '../../src/server/domain/workbench';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { getDb, type DB } from '../../src/server/db/client';
-import {
-  ensureWorkbench,
-  getWorkbench,
-  updateWorkbench,
-  transitionWorkbench,
-  clockIn,
-  clockOut,
-  isOrgLocked,
-} from '../../src/server/domain/workbench';
+;
 
 describe('Workbench table and domain operations', () => {
   let db: DB;

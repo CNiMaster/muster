@@ -1,3 +1,4 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * 公司退役批次A：蓝图路由双挂 + blueprint-optimization 参数修复回归。
  *
@@ -12,7 +13,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { makeTestDb } from './setup';
 import { setDbForTest, closeDb } from '../../src/server/db/client';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { evolveBlueprint } from '../../src/server/domain/blueprint';
 import { blueprintOptimizationRouter } from '../../src/server/api/blueprint-optimization';
 import { blueprintsRouter } from '../../src/server/api/blueprints';
@@ -42,7 +43,7 @@ afterEach(async () => {
 
 function seedBlueprint(): { companyId: string; blueprintId: string } {
   const db = tdb.db;
-  const company = createCompany(db, { name: '默认工作台', kind: 'general' });
+  const company = restoreWorkbench(db, { id: 'wb_fix_1', name: '默认工作台', kind: 'general' });
   const bp = evolveBlueprint(db, {
     companyId: company.id,
     projectId: 'p_seed',

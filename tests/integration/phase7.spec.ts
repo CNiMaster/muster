@@ -11,7 +11,7 @@ import { generateInspectorSuggestions } from '../../src/server/domain/inspector'
 import { openReportCycle, addReportNote, closeReport, shouldTriggerReport, getReport } from '../../src/server/domain/report';
 import { startBrainstorm, interruptActiveBrainstorms } from '../../src/server/domain/brainstorm';
 import { dispatchCorrectionTask } from '../../src/server/domain/triggers';
-import { getCompany } from '../../src/server/domain/company';
+import { getWorkbench } from '../../src/server/domain/workbench';
 
 let tdb: ReturnType<typeof makeTestDb>;
 let db: DB;
@@ -91,7 +91,7 @@ describe('report cycle', () => {
     createTask(db, { projectId: fx.project.id, assigneeAgentId: fx.agents.writer.id, title: 't' });
     const r = openReportCycle(db, { projectId: fx.project.id, triggerKind: 'task_count' });
     expect(r.state).toBe('open');
-    expect(getCompany(db, fx.company.id).state).toBe('review_paused');
+    expect(getWorkbench(db).state).toBe('review_paused');
   });
 
   it('添加备注 → 转修正 Task → 关闭', () => {

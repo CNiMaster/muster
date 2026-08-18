@@ -1,7 +1,8 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { DB } from '../../src/server/db/client';
 import { createAgentProfile } from '../../src/server/domain/agent-profile';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createProject } from '../../src/server/domain/project';
 import {
   approveMemoryCandidate,
@@ -50,7 +51,7 @@ describe('layered memory', () => {
 
   it('项目事实可自动批准，但个人和 Skill 不能绕过审批', () => {
     const profile = createAgentProfile(db, { displayName: '员工' });
-    const company = createCompany(db, { name: '公司' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_1', name: '公司' });
     const project = createProject(db, { companyId: company.id, name: '项目' });
     const projectFact = createMemoryCandidate(db, {
       profileId: profile.id,
@@ -117,7 +118,7 @@ describe('layered memory', () => {
   it('全文检索严格限制 Profile 与当前公司/项目作用域', () => {
     const first = createAgentProfile(db, { displayName: '甲' });
     const second = createAgentProfile(db, { displayName: '乙' });
-    const company = createCompany(db, { name: '公司' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_2', name: '公司' });
     const project = createProject(db, { companyId: company.id, name: '项目' });
     const otherProject = createProject(db, { companyId: company.id, name: '其他项目' });
     for (const input of [

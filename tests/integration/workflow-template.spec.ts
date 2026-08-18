@@ -1,10 +1,11 @@
+import { transitionWorkbench, restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * 可复用工作流模板库 集成测试（spec 2026-08-12 B3）。
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { makeTestDb } from './setup';
 import { setDbForTest, type DB } from '../../src/server/db/client';
-import { createCompany, transitionCompany } from '../../src/server/domain/company';
+;
 import { saveWorkflowTemplate, getWorkflowTemplate, listWorkflowTemplates, instantiateWorkflowFromTemplate } from '../../src/server/domain/workflow-template';
 import { getWorkflow } from '../../src/server/domain/workflow';
 
@@ -47,8 +48,8 @@ describe('workflow-template（B3 可复用工作流模板）', () => {
   });
 
   it('实例化到公司 workflow：节点/边出现，且不与模板 id 冲突（可多次实例化）', () => {
-    const c = createCompany(db, { name: 'co' });
-    transitionCompany(db, c.id, 'off'); // 实例化需下班态
+    const c = restoreWorkbench(db, { id: 'wb_fix_1', name: 'co' });
+    transitionWorkbench(db, 'off'); // 实例化需下班态
     const t = saveWorkflowTemplate(db, { name: 'T', nodes: NODES, edges: EDGES });
 
     const r1 = instantiateWorkflowFromTemplate(db, c.id, t.id, 'wf-1');
@@ -65,8 +66,8 @@ describe('workflow-template（B3 可复用工作流模板）', () => {
   });
 
   it('实例化覆盖目标 workflow 既有内容', () => {
-    const c = createCompany(db, { name: 'co' });
-    transitionCompany(db, c.id, 'off');
+    const c = restoreWorkbench(db, { id: 'wb_fix_2', name: 'co' });
+    transitionWorkbench(db, 'off');
     const t = saveWorkflowTemplate(db, { name: 'T', nodes: NODES, edges: EDGES });
     instantiateWorkflowFromTemplate(db, c.id, t.id, 'wf');
     // 再次实例化同一 workflow 应替换而非叠加

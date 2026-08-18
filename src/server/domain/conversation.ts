@@ -9,7 +9,6 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { shortId, nowIso } from '../../shared/utils';
 import { AppError, ErrorCode } from '../../shared/errors';
-import { getCompany } from './company';
 import { getWorkbench } from './workbench';
 import { getProject, ensureInboxProject } from './project';
 import { createTask } from './task';
@@ -281,7 +280,7 @@ export function postUserMessage(db: DB, input: PostUserMessageInput): {
   } else {
     const p = getProject(db, input.scopeId);
     companyId = p.companyId;
-    firstAgentId = p.firstAgentId ?? getCompany(db, p.companyId).firstAgentId;
+    firstAgentId = p.firstAgentId ?? getWorkbench(db).firstAgentId;
     projectId = p.id;
   }
   // 批次 E：零组织工作台对话即开工——没有第一负责人时懒确保固定员工再派发

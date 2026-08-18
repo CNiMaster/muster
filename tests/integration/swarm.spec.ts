@@ -1,9 +1,10 @@
+import { clockIn, getWorkbench, restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * 指挥系统批次2：蜂群——系统隐形岗 / 工蜂 / 蜂群落地与限额 / 失败可观测（记账·告警·熔断·停群）。
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { DB } from '../../src/server/db/client';
-import { clockIn, createCompany } from '../../src/server/domain/company';
+;
 import { createAgent, getAgent, listAgents } from '../../src/server/domain/agent';
 import { createProject } from '../../src/server/domain/project';
 import { createProjectTask } from '../../src/server/domain/project-task';
@@ -30,7 +31,7 @@ beforeEach(() => {
 });
 
 function fixture() {
-  const company = createCompany(db, { name: 'co' });
+  const company = restoreWorkbench(db, { id: 'wb_fix_1', name: 'co' });
   const lead = createAgent(db, { companyId: company.id, name: 'lead', role: 'lead' });
   const project = createProject(db, {
     companyId: company.id,
@@ -39,7 +40,7 @@ function fixture() {
     firstAgentId: lead.id,
     initialState: 'active',
   });
-  clockIn(db, company.id);
+  clockIn(db);
   const sys = ensureSystemAgents(db);
   return { company, lead, project, ...sys };
 }
@@ -72,7 +73,7 @@ describe('W0 系统隐形岗', () => {
   });
 
   it('getDispatcherAgentId 不存在时返回 null 不创建', () => {
-    const company = createCompany(db, { name: 'co' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_2', name: 'co' });
     expect(getDispatcherAgentId(db, company.id)).toBeNull();
   });
 });

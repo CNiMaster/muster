@@ -1,3 +1,4 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * 蓝图组织重构 批次4e：系统隐形岗与公司生命周期解耦 集成测试。
  *
@@ -9,7 +10,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { makeTestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createAgent, listAgents } from '../../src/server/domain/agent';
 import { createProject } from '../../src/server/domain/project';
 import { createTask } from '../../src/server/domain/task';
@@ -21,7 +22,7 @@ beforeEach(() => { db = makeTestDb().db; });
 
 describe('系统隐形岗懒确保（批次4e）', () => {
   it('公司从未上线：首次装配上下文即创建调度中心并注入 swarmDispatcher', () => {
-    const company = createCompany(db, { name: '工作台' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_1', name: '工作台' });
     const agent = createAgent(db, { companyId: company.id, name: '干员', role: 'lead' });
     const project = createProject(db, {
       companyId: company.id, name: '项目', rootDir: '/tmp/p', firstAgentId: agent.id, initialState: 'active',
@@ -43,7 +44,7 @@ describe('系统隐形岗懒确保（批次4e）', () => {
   });
 
   it('懒确保幂等：多次装配不重复创建，花名册仍隐藏', () => {
-    const company = createCompany(db, { name: '工作台' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_2', name: '工作台' });
     const agent = createAgent(db, { companyId: company.id, name: '干员', role: 'lead' });
     const project = createProject(db, {
       companyId: company.id, name: '项目', rootDir: '/tmp/p', firstAgentId: agent.id, initialState: 'active',

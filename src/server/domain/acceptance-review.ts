@@ -14,7 +14,7 @@ import type { AcceptanceItem, Task } from './task';
 import { createTask, getTask } from './task';
 import { appendTaskEvent } from './task-event';
 import { getProject } from './project';
-import { getCompany } from './company';
+import { getWorkbench } from './workbench';
 import { getAgent } from './agent';
 import { postSystemMessage } from './conversation';
 import { promoteProjectStagingIfAny } from './staging';
@@ -73,8 +73,8 @@ function readCtx(task: Task): AcceptanceReviewCtx | null {
 }
 
 /** 工作台是否开启自动验收（默认开；contractJson.autoReview === false 关闭）。 */
-export function isAutoAcceptanceEnabled(db: DB, companyId: string): boolean {
-  const company = getCompany(db, companyId);
+export function isAutoAcceptanceEnabled(db: DB, _companyId: string): boolean {
+  const company = getWorkbench(db);
   const contractJson = (company.contractJson ?? {}) as Record<string, unknown>;
   return contractJson.autoReview !== false;
 }

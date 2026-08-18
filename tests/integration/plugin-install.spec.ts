@@ -1,3 +1,4 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * B3a Plugin 写侧测试：
  * - installPlugin upsert
@@ -8,7 +9,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { makeTestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createCompany } from '../../src/server/domain/company';
+;
 import {
   installPlugin,
   removePlugin,
@@ -26,7 +27,7 @@ let companyId: string;
 beforeEach(() => {
   tdb = makeTestDb();
   db = tdb.db;
-  companyId = createCompany(db, { name: 'co' }).id;
+  companyId = restoreWorkbench(db, { id: 'wb_fix_1', name: 'co' }).id;
 });
 
 afterEach(() => tdb.close());

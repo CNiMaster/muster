@@ -1,7 +1,8 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { DB } from '../../src/server/db/client';
 import { createAgent } from '../../src/server/domain/agent';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { listMemoryCandidates } from '../../src/server/domain/memory';
 import { createProject } from '../../src/server/domain/project';
 import {
@@ -18,7 +19,7 @@ beforeEach(() => { db = makeTestDb().db; });
 
 describe('memory-safe session compaction', () => {
   it('flush 失败时保留旧 session 和旧摘要', () => {
-    const company = createCompany(db, { name: '公司' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_1', name: '公司' });
     const agent = createAgent(db, { companyId: company.id, name: '员工', role: 'engineer' });
     const project = createProject(db, { companyId: company.id, name: '项目' });
     const thread = ensurePrimaryThread(db, project.id, agent.id);
@@ -36,7 +37,7 @@ describe('memory-safe session compaction', () => {
   });
 
   it('成功时先保存项目记忆，再保留旧 session 引用并轮换', () => {
-    const company = createCompany(db, { name: '公司' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_2', name: '公司' });
     const agent = createAgent(db, { companyId: company.id, name: '员工', role: 'engineer' });
     const project = createProject(db, { companyId: company.id, name: '项目' });
     const thread = ensurePrimaryThread(db, project.id, agent.id);

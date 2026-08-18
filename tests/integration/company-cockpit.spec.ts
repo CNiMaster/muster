@@ -1,7 +1,8 @@
+import { updateWorkbench, restoreWorkbench } from '../../src/server/domain/workbench';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { DB } from '../../src/server/db/client';
 import { createAgent } from '../../src/server/domain/agent';
-import { createCompany, updateCompany } from '../../src/server/domain/company';
+;
 import { getWorkbenchCockpit } from '../../src/server/domain/workbench-cockpit';
 import {
   bindEmployeeExecutorProfile,
@@ -51,14 +52,10 @@ function connectEmployee(employeeId: string): void {
 
 describe('workbench cockpit', () => {
   it('aggregates real approvals, executor health and role coverage', () => {
-    const company = createCompany(db, {
-      name: 'Acme',
-      kind: 'software',
-      contractJson: { requiredRoles: ['lead', 'engineer'] },
-    });
+    const company = restoreWorkbench(db, { id: 'wb_fix_acme', name: 'Acme', kind: 'software', contractJson: { requiredRoles: ['lead', 'engineer'] } });
     const lead = createAgent(db, { companyId: company.id, name: '负责人', role: 'lead' });
     createAgent(db, { companyId: company.id, name: '工程师', role: 'engineer' });
-    updateCompany(db, company.id, { firstAgentId: lead.id });
+    updateWorkbench(db, { firstAgentId: lead.id });
     connectEmployee(lead.id);
     const project = createProject(db, { companyId: company.id, name: '产品' });
     updateProject(db, project.id, { state: 'active' });
@@ -81,8 +78,8 @@ describe('workbench cockpit', () => {
   });
 
   it('聚合所有员工与审批（单例工作台下无公司隔离）', () => {
-    const company = createCompany(db, { name: 'A' });
-    const other = createCompany(db, { name: 'B' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_1', name: 'A' });
+    const other = restoreWorkbench(db, { id: 'wb_fix_2', name: 'B' });
     const outsider = createAgent(db, { companyId: other.id, name: '外部员工', role: 'lead' });
     connectEmployee(outsider.id);
     const policy = db.prepare('SELECT permission_policy_id id FROM company_employee WHERE id=?').get(outsider.id) as { id: string };

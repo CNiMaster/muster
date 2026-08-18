@@ -1,10 +1,11 @@
+import { clockIn, restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * 指挥系统 review 修复回归（B1 记账 / B2 隐岗线程 / I3 行映射 / I5 辩论失败 / I6 决策去重 / I7 done 契约）。
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import { makeTestDb, makeTempGitRepo } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { clockIn, createCompany } from '../../src/server/domain/company';
+;
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject } from '../../src/server/domain/project';
 import { claimNextTask, completeTask, createTask, failTask, getTask, listTasksBySwarm } from '../../src/server/domain/task';
@@ -23,7 +24,7 @@ beforeEach(() => {
 });
 
 function fixture() {
-  const company = createCompany(db, { name: 'co' });
+  const company = restoreWorkbench(db, { id: 'wb_fix_1', name: 'co' });
   const lead = createAgent(db, { companyId: company.id, name: 'lead', role: 'lead' });
   const project = createProject(db, {
     companyId: company.id,
@@ -32,7 +33,7 @@ function fixture() {
     firstAgentId: lead.id,
     initialState: 'active',
   });
-  clockIn(db, company.id);
+  clockIn(db);
   const sys = ensureSystemAgents(db, company.id);
   return { company, lead, project, ...sys };
 }

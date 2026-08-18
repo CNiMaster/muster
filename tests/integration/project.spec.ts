@@ -1,3 +1,4 @@
+import { clockIn, restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * Phase 1 验收测试：
  - 同一员工可同时进入两个项目，互不串线。
@@ -7,7 +8,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { makeTestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createCompany, clockIn } from '../../src/server/domain/company';
+;
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject, addProjectReference, assertCanReadSource } from '../../src/server/domain/project';
 import { ensurePrimaryThread, updateThreadState, createMirror } from '../../src/server/domain/thread';
@@ -25,7 +26,7 @@ beforeEach(() => {
 
 describe('default project root', () => {
   it('同一公司下的同名项目使用不同的自动目录', () => {
-    const company = createCompany(db, { name: '小说 公司' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_1', name: '小说 公司' });
 
     const first = createProject(db, { companyId: company.id, name: '同名 项目' });
     const second = createProject(db, { companyId: company.id, name: '同名 项目' });
@@ -38,7 +39,7 @@ describe('default project root', () => {
 
 describe('employee across projects', () => {
   it('同一员工进入两个项目，thread 隔离', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_2', name: 'co' });
     const a = createAgent(db, { companyId: c.id, name: 'writer', role: 'writer' });
     const p1 = createProject(db, { companyId: c.id, name: '小说 A', rootDir: '/tmp/a' });
     const p2 = createProject(db, { companyId: c.id, name: '小说 B', rootDir: '/tmp/b' });
@@ -56,7 +57,7 @@ describe('employee across projects', () => {
   });
 
   it('ensurePrimaryThread 幂等：同员工同项目返回同一 thread', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_3', name: 'co' });
     const a = createAgent(db, { companyId: c.id, name: 'writer', role: 'writer' });
     const p = createProject(db, { companyId: c.id, name: 'novel', rootDir: '/tmp/n' });
     const t1 = ensurePrimaryThread(db, p.id, a.id);
@@ -67,7 +68,7 @@ describe('employee across projects', () => {
 
 describe('cross-project read-only reference', () => {
   it('可只读引用另一个项目', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_4', name: 'co' });
     const src = createProject(db, { companyId: c.id, name: 'src', rootDir: '/tmp/src' });
     const dst = createProject(db, { companyId: c.id, name: 'dst', rootDir: '/tmp/dst' });
     const ref = addProjectReference(db, { projectId: dst.id, sourceProjectId: src.id });
@@ -76,14 +77,14 @@ describe('cross-project read-only reference', () => {
   });
 
   it('未授权的只读访问抛错', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_5', name: 'co' });
     const a = createProject(db, { companyId: c.id, name: 'a', rootDir: '/tmp/a' });
     const b = createProject(db, { companyId: c.id, name: 'b', rootDir: '/tmp/b' });
     expect(() => assertCanReadSource(db, b.id, a.id)).toThrowError(AppError);
   });
 
   it('不能引用自身', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_6', name: 'co' });
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/p' });
     expect(() => addProjectReference(db, { projectId: p.id, sourceProjectId: p.id })).toThrow();
   });
@@ -91,7 +92,7 @@ describe('cross-project read-only reference', () => {
 
 describe('mirror isolation', () => {
   it('mirror thread 与 primary 隔离，root 指向 primary', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_7', name: 'co' });
     const a = createAgent(db, { companyId: c.id, name: 'writer', role: 'writer' });
     const p = createProject(db, { companyId: c.id, name: 'novel', rootDir: '/tmp/n' });
     const primary = ensurePrimaryThread(db, p.id, a.id);
@@ -104,7 +105,7 @@ describe('mirror isolation', () => {
 
 describe('graph validation', () => {
   it('新增/删除通信边原子同步派发权限', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_8', name: 'co' });
     const writer = createAgent(db, { companyId: c.id, name: 'writer', role: 'writer' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
     const project = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/p' });
@@ -133,7 +134,7 @@ describe('graph validation', () => {
   });
 
   it('加入 contact_allow 后通信合法', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_9', name: 'co' });
     const writer = createAgent(db, { companyId: c.id, name: 'writer', role: 'writer' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead', contactAllow: [writer.id] });
     addRelationship(db, { companyId: c.id, kind: 'communication', sourceId: lead.id, targetId: writer.id });
@@ -141,10 +142,10 @@ describe('graph validation', () => {
   });
 
   it('上班后禁止改关系图', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_10', name: 'co' });
     const a1 = createAgent(db, { companyId: c.id, name: 'a1', role: 'r' });
     const a2 = createAgent(db, { companyId: c.id, name: 'a2', role: 'r' });
-    clockIn(db, c.id);
+    clockIn(db);
     expect(() =>
       addRelationship(db, { companyId: c.id, kind: 'org', sourceId: a1.id, targetId: a2.id }),
     ).toThrow();

@@ -1,3 +1,4 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * 双 Loop 地基 + 任务驱动闭环（P0/P1/P2）集成测试。
  *
@@ -11,7 +12,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { makeTestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createAgent } from '../../src/server/domain/agent';
 import { getAgent } from '../../src/server/domain/agent';
 import { createProject } from '../../src/server/domain/project';
@@ -42,7 +43,7 @@ beforeEach(() => {
 
 /** 标准三件套：公司 + lead 员工 + 项目。 */
 function seed() {
-  const c = createCompany(db, { name: '测试公司' });
+  const c = restoreWorkbench(db, { id: 'wb_fix_1', name: '测试公司' });
   const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
   const p = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/p', firstAgentId: lead.id });
   return { c, lead, p };
@@ -198,7 +199,7 @@ describe('P1 开始段有界对齐', () => {
   });
 
   it(`达 MAX_ALIGNMENT_ROUNDS(${MAX_ALIGNMENT_ROUNDS}) 上报第一负责人`, () => {
-    const c = createCompany(db, { name: '上报公司' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_2', name: '上报公司' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/p', firstAgentId: lead.id, initialState: 'active' });
     const task = createTask(db, { projectId: p.id, title: 't', assigneeAgentId: lead.id });

@@ -1,3 +1,4 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { getDb, setDbForTest, closeDb, DB } from '../../src/server/db/client';
 import { makeTestDb, TestDb } from '../integration/setup';
@@ -10,7 +11,7 @@ import {
   findUserTalentForPersona,
 } from '../../src/server/domain/agent-profile';
 import { createTask, getTask } from '../../src/server/domain/task';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createProject } from '../../src/server/domain/project';
 import { createAgent } from '../../src/server/domain/agent';
 import { evolveBlueprint } from '../../src/server/domain/blueprint';
@@ -85,7 +86,7 @@ describe('Talent Market & Auto-Dispatch Routing (Phase 1)', () => {
 
   it('routes task to user custom talent when auto-dispatch is enabled, falls back to official baseline when resting', () => {
     const db = getDb();
-    const company = createCompany(db, { name: `Dispatch Co ${Date.now()}` });
+    const company = restoreWorkbench(db, { id: 'wb_fix_1', name: `Dispatch Co ${Date.now()}` });
     const project = createProject(db, { companyId: company.id, name: 'Web Project' });
     const agent = createAgent(db, { companyId: company.id, name: 'Lead Dev', role: 'lead' });
 

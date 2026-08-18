@@ -90,7 +90,7 @@ export function ensureWorkbench(db: DB): { workbench: Workbench; created: boolea
   return { workbench: createWorkbenchRow(db, { name: DEFAULT_WORKBENCH_NAME, kind: 'general' }), created: true };
 }
 
-/** 创建单例行（仅 ensureWorkbench 与备份恢复内部使用；多行仅过渡期测试夹具经 createCompany 允许）。 */
+/** 直插单例行（备份恢复与测试夹具入口；生产路径恒经 ensureWorkbench 单例解析）。 */
 export function restoreWorkbench(db: DB, input: { id: string; name: string; kind?: string; charter?: string; contractJson?: Record<string, unknown>; state?: WorkbenchState; createdAt?: string; updatedAt?: string; firstAgentId?: string | null; reviewMode?: 'blocking' | 'parallel' }): Workbench {
   const id = input.id;
   const now = nowIso();

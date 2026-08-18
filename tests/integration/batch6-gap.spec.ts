@@ -1,3 +1,4 @@
+import { updateWorkbench, transitionWorkbench, restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * Batch 6 集成测试：校验自动化 + 责任岗位 + 状态看板聚合 + 复盘配置。
  * - 6.1 工作流校验（有限循环允许、断裂流程报错）；缺失责任岗位检测。
@@ -7,7 +8,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { makeTestDb, type TestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createCompany, updateCompany, transitionCompany } from '../../src/server/domain/company';
+;
 import { createProject, checkProjectHealth, assertProjectHealthy } from '../../src/server/domain/project';
 import { createAgent, listAgents } from '../../src/server/domain/agent';
 import { listDepartments } from '../../src/server/domain/department';
@@ -87,7 +88,7 @@ function aggregateStatusBoard(db: DB, companyId: string) {
 
 describe('Batch 6.1 工作流校验 + 责任岗位', () => {
   it('validateWorkflow 允许有限循环（可退出到 end）', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_1', name: 'co' });
     saveWorkflow(db, c.id, 'wf', {
       nodes: [
         { id: 'start', kind: 'start' as const, label: '开始', position: { x: 0, y: 0 } },
@@ -107,7 +108,7 @@ describe('Batch 6.1 工作流校验 + 责任岗位', () => {
   });
 
   it('validateWorkflow 检测断裂流程', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_2', name: 'co' });
     saveWorkflow(db, c.id, 'wf', {
       nodes: [
         { id: 'start', kind: 'start' as const, label: '开始', position: { x: 0, y: 0 } },
@@ -124,9 +125,9 @@ describe('Batch 6.1 工作流校验 + 责任岗位', () => {
   });
 
   it('checkProjectHealth 检测缺失责任岗位的成果', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_3', name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
-    updateCompany(db, c.id, { firstAgentId: lead.id });
+    updateWorkbench(db, { firstAgentId: lead.id });
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/p', firstAgentId: lead.id });
     // 创建一个无 owner 的管理类成果
     initializeArtifactContent(db, p.id, {
@@ -140,9 +141,9 @@ describe('Batch 6.1 工作流校验 + 责任岗位', () => {
   });
 
   it('assertProjectHealthy 对无主成果抛出', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_4', name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
-    updateCompany(db, c.id, { firstAgentId: lead.id });
+    updateWorkbench(db, { firstAgentId: lead.id });
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/p2', firstAgentId: lead.id });
     initializeArtifactContent(db, p.id, {
       path: 'canon/orphan2.md',
@@ -156,11 +157,11 @@ describe('Batch 6.1 工作流校验 + 责任岗位', () => {
 
 describe('Batch 6.2 状态看板聚合', () => {
   it('聚合返回部门、员工 availability、当前 Task、积压数', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_5', name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: '负责人', role: 'lead' });
     const writer = createAgent(db, { companyId: c.id, name: '写手', role: 'writer' });
-    updateCompany(db, c.id, { firstAgentId: lead.id });
-    transitionCompany(db, c.id, 'online');
+    updateWorkbench(db, { firstAgentId: lead.id });
+    transitionWorkbench(db, 'online');
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/sb', firstAgentId: lead.id });
     const leadThread = ensurePrimaryThread(db, p.id, lead.id);
     ensurePrimaryThread(db, p.id, writer.id);
@@ -183,10 +184,10 @@ describe('Batch 6.2 状态看板聚合', () => {
 
 describe('Batch 6.3 复盘触发配置', () => {
   it('更新项目 settings 后 shouldTriggerReport 行为变化', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_6', name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
-    updateCompany(db, c.id, { firstAgentId: lead.id });
-    transitionCompany(db, c.id, 'online');
+    updateWorkbench(db, { firstAgentId: lead.id });
+    transitionWorkbench(db, 'online');
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/rv', firstAgentId: lead.id });
     const th = ensurePrimaryThread(db, p.id, lead.id);
 

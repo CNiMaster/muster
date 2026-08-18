@@ -10,7 +10,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { makeTestDb, makeTempGitRepo } from './setup';
 import { getDb, setDbForTest } from '../../src/server/db/client';
-import { createCompany } from '../../src/server/domain/company';
+import { ensureWorkbench } from '../../src/server/domain/workbench';
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject } from '../../src/server/domain/project';
 import { createTask, completeTask, getTask, claimNextTask, markRunning } from '../../src/server/domain/task';
@@ -29,7 +29,7 @@ beforeEach(() => {
 });
 
 function fixture() {
-  const c = createCompany(db, { name: 'co' });
+  const c = ensureWorkbench(db).workbench;
   const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
   const writer = createAgent(db, { companyId: c.id, name: 'writer', role: 'writer' });
   const project = createProject(db, { companyId: c.id, name: 'novel', rootDir: makeTempGitRepo(), firstAgentId: lead.id, initialState: 'active' });
@@ -98,17 +98,16 @@ describe('ask_colleague 工具（设计二-方案A）', () => {
     expect(replyMsg!.content).toContain('孤儿，被武林宗门收养');
   });
 
-  it('跨公司咨询被接受（公司退役批次D：agent 归属单例工作台，咨询不限公司）', async () => {
-    const c1 = createCompany(db, { name: 'co1' });
-    const c2 = createCompany(db, { name: 'co2' });
-    const w1 = createAgent(db, { companyId: c1.id, name: 'w1', role: 'writer' });
-    const w2 = createAgent(db, { companyId: c2.id, name: 'w2', role: 'writer' });
-    const project = createProject(db, { companyId: c1.id, name: 'p', rootDir: makeTempGitRepo(), firstAgentId: w1.id, initialState: 'active' });
+  it('任意同事咨询被接受（公司退役批次D：agent 归属单例工作台，咨询不限归属）', async () => {
+    const wb = ensureWorkbench(db).workbench;
+    const w1 = createAgent(db, { companyId: wb.id, name: 'w1', role: 'writer' });
+    const w2 = createAgent(db, { companyId: wb.id, name: 'w2', role: 'writer' });
+    const project = createProject(db, { companyId: wb.id, name: 'p', rootDir: makeTempGitRepo(), firstAgentId: w1.id, initialState: 'active' });
     const askerTask = createTask(db, { projectId: project.id, assigneeAgentId: w1.id, title: 't' });
     const call: ToolCall = { id: 'tc', name: 'ask_colleague', args: { recipient_agent_id: w2.id, question: 'q' } };
     const ctx = makeConsultationContext(askerTask.id, project.id, askerTask.projectTaskId, w1.id);
     const result = await executeTool(call, ctx);
-    // 单例工作台下所有员工同属一个工作台，跨公司咨询成功发起
+    // 单例工作台下所有员工同属一个工作台，跨员工咨询成功发起
     expect(result.content).toContain('已向 w2（writer）发起咨询');
   });
 

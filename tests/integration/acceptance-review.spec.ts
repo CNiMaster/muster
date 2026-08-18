@@ -1,3 +1,4 @@
+import { clockIn, restoreWorkbench, updateWorkbench } from '../../src/server/domain/workbench';
 /**
  * R2：验收员 + 任务级自动验收 集成测试。
  *
@@ -11,7 +12,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { makeTestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createCompany, updateCompany } from '../../src/server/domain/company';
+;
 import { createAgent, deleteAgent, listAgents } from '../../src/server/domain/agent';
 import { createProject } from '../../src/server/domain/project';
 import { createTask, getTask, completeTask } from '../../src/server/domain/task';
@@ -34,7 +35,7 @@ let db: DB;
 beforeEach(() => { db = makeTestDb().db; });
 
 function seed() {
-  const c = createCompany(db, { name: '公司' });
+  const c = restoreWorkbench(db, { id: 'wb_fix_1', name: '公司' });
   const lead = createAgent(db, { companyId: c.id, name: '干员', role: 'lead' });
   const p = createProject(db, {
     companyId: c.id, name: '项目', rootDir: '/tmp/p', firstAgentId: lead.id, initialState: 'active',
@@ -117,7 +118,7 @@ describe('maybeTriggerAcceptanceReview 触发', () => {
 
   it('开关关（contractJson.autoReview=false）→ 不触发', () => {
     const { c, lead, p } = seed();
-    updateCompany(db, c.id, { contractJson: { autoReview: false } });
+    updateWorkbench(db, { contractJson: { autoReview: false } });
     const task = taskWithCriteria(p.id, lead.id);
     expect(isAutoAcceptanceEnabled(db, c.id)).toBe(false);
     expect(maybeTriggerAcceptanceReview(db, task)).toBeNull();
@@ -311,7 +312,7 @@ describe('引擎级回归（Review 终审 C1：完成行快照）', () => {
     const { createNovelCompany } = await import('./setup');
     const { createProject } = await import('../../src/server/domain/project');
     const { ensurePrimaryThread } = await import('../../src/server/domain/thread');
-    const { clockIn } = await import('../../src/server/domain/company');
+    const { clockIn } = await import('../../src/server/domain/workbench');
     const { TaskEngine } = await import('../../src/server/task-engine/engine');
     const { FakeExecutor } = await import('../../src/server/task-engine/fake-executor');
     const { ensureGitRepo, commitAll } = await import('../../src/server/worktree/manager');
@@ -320,7 +321,7 @@ describe('引擎级回归（Review 终审 C1：完成行快照）', () => {
     const projectRoot = mkdtempSync(path.join(tmpdir(), 'muster-accept-'));
     try {
       const r = createNovelCompany(db, { name: 'co' });
-      clockIn(db, r.company.id);
+      clockIn(db);
       const project = createProject(db, {
         companyId: r.company.id, name: 'novel', rootDir: projectRoot,
         firstAgentId: r.agents.lead.id, initialState: 'active',

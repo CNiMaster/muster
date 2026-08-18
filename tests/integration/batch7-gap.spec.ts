@@ -4,7 +4,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {  makeTestDb, type TestDb, createNovelCompany } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createCompany, transitionCompany } from '../../src/server/domain/company';
+import { transitionWorkbench } from '../../src/server/domain/workbench';
 import { createProject } from '../../src/server/domain/project';
 import { listAgents } from '../../src/server/domain/agent';
 import { initializeNovelProject, GENRE_EXTENSION_PACKS, MAINTENANCE_ROLES,  } from '../../src/server/domain/novel-template';
@@ -91,7 +91,7 @@ describe('Batch 7.1+7.2 题材扩展包与可选岗位', () => {
 
   it('initializeNovelProject 在有 worldview 岗位时把 worldbuilding 成果归属给它', () => {
     const r = createNovelCompany(db, { name: '归属公司', genres: ['scifi'] });
-    transitionCompany(db, r.company.id, 'online');
+    transitionWorkbench(db, 'online');
     const p = createProject(db, {
       companyId: r.company.id,
       name: 'p',
@@ -121,7 +121,7 @@ describe('Batch 7.3 维护事件动态岗位', () => {
 
   it('基础公司章节完成只派发 character + plot 维护 Task', () => {
     const r = createNovelCompany(db, { name: '基础维护公司' });
-    transitionCompany(db, r.company.id, 'online');
+    transitionWorkbench(db, 'online');
     const p = createProject(db, {
       companyId: r.company.id,
       name: 'p',
@@ -140,7 +140,7 @@ describe('Batch 7.3 维护事件动态岗位', () => {
 
   it('scifi 公司章节完成派发 character + plot + worldview 三个维护 Task', () => {
     const r = createNovelCompany(db, { name: '科幻维护公司', genres: ['scifi'] });
-    transitionCompany(db, r.company.id, 'online');
+    transitionWorkbench(db, 'online');
     const p = createProject(db, {
       companyId: r.company.id,
       name: 'p',
@@ -159,7 +159,7 @@ describe('Batch 7.3 维护事件动态岗位', () => {
 
   it('复合公司（continuity+style）章节完成派发 5 个维护 Task', () => {
     const r = createNovelCompany(db, { name: '复合维护公司', genres: ['continuity', 'style'] });
-    transitionCompany(db, r.company.id, 'online');
+    transitionWorkbench(db, 'online');
     const p = createProject(db, {
       companyId: r.company.id,
       name: 'p',
@@ -181,7 +181,7 @@ describe('Batch 7.3 维护事件动态岗位', () => {
 describe('Batch 7.4 人物关系图', () => {
   it('getCharacterGraph 在无人物档案时返回空图', () => {
     const r = createNovelCompany(db, { name: '空图公司' });
-    transitionCompany(db, r.company.id, 'online');
+    transitionWorkbench(db, 'online');
     const p = createProject(db, {
       companyId: r.company.id,
       name: 'p',
@@ -195,7 +195,7 @@ describe('Batch 7.4 人物关系图', () => {
 
   it('getCharacterGraph 解析标题形式的人物节点', () => {
     const r = createNovelCompany(db, { name: '节点公司' });
-    transitionCompany(db, r.company.id, 'online');
+    transitionWorkbench(db, 'online');
     const p = createProject(db, {
       companyId: r.company.id,
       name: 'p',
@@ -212,7 +212,7 @@ describe('Batch 7.4 人物关系图', () => {
 
   it('getCharacterGraph 解析关系边', () => {
     const r = createNovelCompany(db, { name: '边公司' });
-    transitionCompany(db, r.company.id, 'online');
+    transitionWorkbench(db, 'online');
     const root = makeTmpRoot();
     const p = createProject(db, {
       companyId: r.company.id,

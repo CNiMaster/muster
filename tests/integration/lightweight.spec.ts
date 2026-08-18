@@ -1,3 +1,4 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * 轻量化测试（agent 间交互轻量化三件套）。
  *
@@ -8,7 +9,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { makeTestDb, makeTempGitRepo } from './setup';
 import { setDbForTest } from '../../src/server/db/client';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject } from '../../src/server/domain/project';
 import { createTask, getTask } from '../../src/server/domain/task';
@@ -27,7 +28,7 @@ beforeEach(() => {
 });
 
 function fixture() {
-  const c = createCompany(db, { name: 'co' });
+  const c = restoreWorkbench(db, { id: 'wb_fix_1', name: 'co' });
   const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
   const writer = createAgent(db, { companyId: c.id, name: 'writer', role: 'writer' });
   const project = createProject(db, { companyId: c.id, name: 'novel', rootDir: makeTempGitRepo(), firstAgentId: lead.id, initialState: 'active' });
@@ -94,7 +95,7 @@ describe('notify_colleague（轻量化-3）', () => {
   });
 
   it('跨公司通知被接受（公司退役批次D：agent 归属单例工作台，通知不再限公司）', async () => {
-    const c2 = createCompany(db, { name: 'co2' });
+    const c2 = restoreWorkbench(db, { id: 'wb_fix_2', name: 'co2' });
     const outsider = createAgent(db, { companyId: c2.id, name: 'out', role: 'x' });
     const { lead, project } = fixture();
     const askerTask = createTask(db, { projectId: project.id, assigneeAgentId: lead.id, title: 't' });

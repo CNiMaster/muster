@@ -1,10 +1,11 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * 临时工生命周期测试：招聘 → greyed → 转正 / 开除两种路径 / is_temp_only 区分。
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { makeTestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createAgent, getAgent } from '../../src/server/domain/agent';
 import {
   createTempEmployment,
@@ -26,7 +27,7 @@ let leadAgent: string;
 beforeEach(() => {
   tdb = makeTestDb();
   db = tdb.db;
-  companyId = createCompany(db, { name: '测试公司' }).id;
+  companyId = restoreWorkbench(db, { id: 'wb_fix_1', name: '测试公司' }).id;
   leadAgent = createAgent(db, {
     name: '负责人',
     role: 'lead',

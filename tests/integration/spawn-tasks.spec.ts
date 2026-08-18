@@ -1,3 +1,4 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * spawn_tasks 并行派发（阶段七任务 7.1）集成测试。
  *
@@ -11,7 +12,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { makeTestDb, makeTempGitRepo } from './setup';
 import { setDbForTest } from '../../src/server/db/client';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject } from '../../src/server/domain/project';
 import { createTask, getTask, completeTask, areDependenciesMet } from '../../src/server/domain/task';
@@ -29,7 +30,7 @@ beforeEach(() => {
 });
 
 function fixture() {
-  const c = createCompany(db, { name: 'co' });
+  const c = restoreWorkbench(db, { id: 'wb_fix_1', name: 'co' });
   const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
   const explorer = createAgent(db, { companyId: c.id, name: 'explorer', role: 'explorer' });
   const librarian = createAgent(db, { companyId: c.id, name: 'librarian', role: 'librarian' });
@@ -200,7 +201,7 @@ describe('spawn_tasks 工具（阶段七任务 7.1）', () => {
 
   it('未授权联系人派发被拒绝（公司退役批次D：跨公司归属已坍缩，通信白名单守卫仍生效）', async () => {
     const { lead, project } = fixture();
-    const other = createCompany(db, { name: 'other' });
+    const other = restoreWorkbench(db, { id: 'wb_fix_2', name: 'other' });
     const stranger = createAgent(db, { companyId: other.id, name: 'stranger', role: 'x' });
     const parent = createTask(db, { projectId: project.id, assigneeAgentId: lead.id, title: '主任务' });
     const call: ToolCall = {

@@ -1,3 +1,4 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * E1.4 task.rework_count + 质量进评级 集成测试（组织记忆系统 E1 批次）。
  *
@@ -10,7 +11,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { makeTestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject } from '../../src/server/domain/project';
 import { createTask, getTask } from '../../src/server/domain/task';
@@ -34,7 +35,7 @@ afterEach(() => {
 });
 
 function seed() {
-  const c = createCompany(db, { name: '质量公司' });
+  const c = restoreWorkbench(db, { id: 'wb_fix_1', name: '质量公司' });
   const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
   const p = createProject(db, {
     companyId: c.id, name: 'p', rootDir: '/tmp/p', firstAgentId: lead.id, initialState: 'active',

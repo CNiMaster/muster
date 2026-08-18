@@ -1,3 +1,4 @@
+import { restoreWorkbench } from '../../src/server/domain/workbench';
 /**
  * B2 状态机集成测试：
  * - createProject 默认 drafting
@@ -9,7 +10,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { makeTestDb, makeTempGitRepo } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createCompany } from '../../src/server/domain/company';
+;
 import { createProject, getProject, type ProjectState } from '../../src/server/domain/project';
 import {
   assertCanTransition,
@@ -37,7 +38,7 @@ let companyId: string;
 beforeEach(() => {
   tdb = makeTestDb();
   db = tdb.db;
-  const company = createCompany(db, { name: '测试公司' });
+  const company = restoreWorkbench(db, { id: 'wb_fix_1', name: '测试公司' });
   companyId = company.id;
 });
 

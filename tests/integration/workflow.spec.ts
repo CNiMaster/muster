@@ -1,7 +1,8 @@
+import { transitionWorkbench, restoreWorkbench } from '../../src/server/domain/workbench';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { makeTestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createCompany, transitionCompany } from '../../src/server/domain/company';
+;
 import {
   advanceWorkflowTask,
   getWorkflow,
@@ -26,7 +27,7 @@ beforeEach(() => {
 
 describe('Workflow Graph domain logic', () => {
   it('可以正确保存和加载工作流节点及连线', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_1', name: 'co' });
     const workflowId = 'test-flow';
 
     const nodes = [
@@ -54,8 +55,8 @@ describe('Workflow Graph domain logic', () => {
   });
 
   it('公司上班时（LOCK）禁止修改工作流图', () => {
-    const c = createCompany(db, { name: 'co' });
-    transitionCompany(db, c.id, 'online'); // 上班锁组织
+    const c = restoreWorkbench(db, { id: 'wb_fix_2', name: 'co' });
+    transitionWorkbench(db, 'online'); // 上班锁组织
 
     const nodes = [
       { id: 'start_1', kind: 'start' as const, label: '开始', position: { x: 100, y: 100 } },
@@ -69,7 +70,7 @@ describe('Workflow Graph domain logic', () => {
   });
 
   it('校验规则 1：缺失 start/end 节点报错', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_3', name: 'co' });
     const workflowId = 'main';
 
     // 只有 step 节点
@@ -84,7 +85,7 @@ describe('Workflow Graph domain logic', () => {
   });
 
   it('校验规则 2：多个 start 节点报错', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_4', name: 'co' });
     const workflowId = 'main';
 
     saveWorkflow(db, c.id, workflowId, {
@@ -104,7 +105,7 @@ describe('Workflow Graph domain logic', () => {
   });
 
   it('校验规则 3：孤立节点和不可达节点报错', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_5', name: 'co' });
     const workflowId = 'main';
 
     saveWorkflow(db, c.id, workflowId, {
@@ -127,7 +128,7 @@ describe('Workflow Graph domain logic', () => {
   });
 
   it('校验规则 4：死路（无法到达结束节点）报错', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_6', name: 'co' });
     const workflowId = 'main';
 
     // 步骤 2 连向别处或者没有出路，不能到达 end_1
@@ -151,7 +152,7 @@ describe('Workflow Graph domain logic', () => {
   });
 
   it('完美的流程图应当校验全绿（通过）', () => {
-    const c = createCompany(db, { name: 'co' });
+    const c = restoreWorkbench(db, { id: 'wb_fix_7', name: 'co' });
     const workflowId = 'main';
 
     saveWorkflow(db, c.id, workflowId, {
@@ -176,7 +177,7 @@ describe('Workflow Graph domain logic', () => {
   });
 
   it('结构化工作流节点可生成 Task，并在完成后创建明确后继', () => {
-    const company = createCompany(db, { name: 'co' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_8', name: 'co' });
     const writer = createAgent(db, { companyId: company.id, name: 'writer', role: 'writer' });
     const project = createProject(db, {
       companyId: company.id,
@@ -253,8 +254,8 @@ describe('Workflow Graph domain logic', () => {
   });
 
   it('工作流节点责任人配置（公司退役批次D：agent 归属单例工作台，跨公司校验已坍缩）', () => {
-    const company = createCompany(db, { name: 'co' });
-    const other = createCompany(db, { name: 'other' });
+    const company = restoreWorkbench(db, { id: 'wb_fix_9', name: 'co' });
+    const other = restoreWorkbench(db, { id: 'wb_fix_10', name: 'other' });
     const outsider = createAgent(db, { companyId: other.id, name: 'outside', role: 'writer' });
     // 单例工作台下所有任职公司Id 恒为工作台 id，不再按公司归属拒绝
     expect(() => saveWorkflow(db, company.id, 'bad', {

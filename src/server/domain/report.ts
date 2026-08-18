@@ -12,7 +12,7 @@ import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
 import { getProject } from './project';
-import { transitionCompany } from './company';
+import { transitionWorkbench } from './workbench';
 import { listTasks } from './task';
 import { listAgents } from './agent';
 import { listThreads } from './thread';
@@ -69,7 +69,7 @@ export function openReportCycle(
 ): ReportSummary {
   const project = getProject(db, input.projectId);
   // 切到 review_paused（停止领取新 Task）
-  transitionCompany(db, project.companyId, 'review_paused');
+  transitionWorkbench(db, 'review_paused');
 
   const cycleNo = nextCycleNo(db, input.projectId);
   const id = shortId('rc_');
