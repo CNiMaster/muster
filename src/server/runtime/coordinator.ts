@@ -70,7 +70,7 @@ export function runIdleReflectionPass(db: DB): Array<{ companyId: string; enqueu
       )
       .get(today) as { c: number };
     if (spendToday.c >= budgetUSD) continue;
-    const enqueued = enqueueIdleReflections(db, company.id, 2);
+    const enqueued = enqueueIdleReflections(db, 2);
     if (enqueued > 0) results.push({ companyId: company.id, enqueued });
   }
   return results;

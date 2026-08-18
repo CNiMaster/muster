@@ -160,7 +160,9 @@ DROP TABLE decision_record;
 ALTER TABLE decision_record_new RENAME TO decision_record;
 CREATE INDEX idx_decision_created ON decision_record(created_at);
 
--- 9. task_closeout_summary
+-- 9. task_closeout_summary（形状无关重建：真实库存在历史漂移旧形状——
+--    有 summary_title/timeline_turns_json 等、无 blueprint_id/sections_json 等；
+--    两形状共同列 = id/task_id/project_id/persona_id/created_at，仅抄共同列，其余以本 DDL 为准）
 CREATE TABLE task_closeout_summary_new (
   id TEXT PRIMARY KEY,
   task_id TEXT NOT NULL UNIQUE REFERENCES task(id) ON DELETE CASCADE,
@@ -174,7 +176,8 @@ CREATE TABLE task_closeout_summary_new (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
-INSERT INTO task_closeout_summary_new SELECT id, task_id, project_id, blueprint_id, persona_id, is_user_override, sections_json, closeout_markdown, status, created_at, updated_at FROM task_closeout_summary;
+INSERT INTO task_closeout_summary_new (id, task_id, project_id, persona_id, created_at)
+  SELECT id, task_id, project_id, persona_id, created_at FROM task_closeout_summary;
 DROP TABLE task_closeout_summary;
 ALTER TABLE task_closeout_summary_new RENAME TO task_closeout_summary;
 CREATE INDEX idx_closeout_task ON task_closeout_summary(task_id);
