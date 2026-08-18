@@ -21,23 +21,25 @@ export function getCompanyCockpit(db: DB, companyId: string): CompanyCockpitDTO 
   const active = projects.filter((project) => project.state === 'active').length;
   const attention = projects.filter((project) => project.state === 'paused').length;
   const risks: CompanyCockpitDTO['risks'] = [];
+  // 公司退役：公司页路由已下线，href 改指现存页面（/agents=人才管理、/=首页项目列表、/projects/new=建项目）。
   if (pending > 0) risks.push({ kind: 'approval', label: `${pending} 项审批等待处理`, href: '/permissions' });
-  if (employees.blocked > 0) risks.push({ kind: 'executor', label: `${employees.blocked} 位员工尚不能运行`, href: `/companies/${companyId}?tab=team` });
-  if (attention > 0) risks.push({ kind: 'project', label: `${attention} 个项目需要处理`, href: `/companies/${companyId}?tab=projects` });
+  if (employees.blocked > 0) risks.push({ kind: 'executor', label: `${employees.blocked} 位员工尚不能运行`, href: '/agents' });
+  if (attention > 0) risks.push({ kind: 'project', label: `${attention} 个项目需要处理`, href: '/' });
 
   let nextAction: CompanyCockpitDTO['nextAction'];
   if (pending > 0) {
     nextAction = { kind: 'handle-approval', label: `处理 ${pending} 项审批`, description: '审批中的工作单正在等待你的决定。', href: '/permissions' };
   } else if (employees.total === 0) {
-    nextAction = { kind: 'recruit', label: '组建团队', description: '先招募负责人和执行岗位，才能开始分配工作。', href: `/companies/${companyId}?tab=team` };
+    nextAction = { kind: 'recruit', label: '组建团队', description: '先招募负责人和执行岗位，才能开始分配工作。', href: '/agents' };
   } else if (employees.blocked > 0) {
-    nextAction = { kind: 'fix-runtime', label: '完成员工运行配置', description: `${employees.blocked} 位员工缺少可用执行器、权限或成功联通测试。`, href: `/companies/${companyId}?tab=team` };
+    nextAction = { kind: 'fix-runtime', label: '完成员工运行配置', description: `${employees.blocked} 位员工缺少可用执行器、权限或成功联通测试。`, href: '/agents' };
   } else if (projects.length === 0) {
-    nextAction = { kind: 'create-project', label: '创建第一个项目', description: '项目为任务提供独立目录和沙盒。', href: `/companies/${companyId}?tab=projects` };
+    nextAction = { kind: 'create-project', label: '创建第一个项目', description: '项目为任务提供独立目录和沙盒。', href: '/projects/new' };
   } else if (company.state === 'off') {
-    nextAction = { kind: 'clock-in', label: '让公司开始工作', description: '团队与项目已准备好，可以启动公司。', href: `/companies/${companyId}` };
+    // 上下班开关在项目工作区，指向当前项目页。
+    nextAction = { kind: 'clock-in', label: '让公司开始工作', description: '团队与项目已准备好，可以启动公司。', href: `/projects/${projects[0]!.id}` };
   } else if (attention > 0) {
-    nextAction = { kind: 'review-project', label: '处理暂停项目', description: '有项目处于暂停状态，需要确认下一步。', href: `/companies/${companyId}?tab=projects` };
+    nextAction = { kind: 'review-project', label: '处理暂停项目', description: '有项目处于暂停状态，需要确认下一步。', href: '/' };
   } else {
     nextAction = { kind: 'open-project', label: '继续当前项目', description: '进入项目任务工作区继续推进。', href: `/projects/${projects[0]!.id}` };
   }

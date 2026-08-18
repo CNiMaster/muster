@@ -15,9 +15,7 @@
 import { useMemo, useState } from 'react';
 import type React from 'react';
 import { Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { usePlugins, useToggleCompanyPlugin, useWorkbench } from '../hooks/queries';
-import { api } from '../api/client';
+import { usePlugins, useToggleCompanyPlugin, useWorkbench, useEffectiveCompanyPlugins } from '../hooks/queries';
 import type { Plugin, EffectivePlugin, CompanyPluginDecision } from '../api/types';
 import { Badge } from '../components/Badge';
 import { Button, toast } from '../components/Button';
@@ -173,8 +171,8 @@ function CompanyMatrix({ plugin, companies }: { plugin: Plugin; companies: Compa
   const [filter, setFilter] = useState('');
   const [expanded, setExpanded] = useState(companies.length <= 6);
 
-  // 每个 CompanyToggle 内部用 useCompanyEffectiveDecision 查该工作台决策；
-  // React Query 按 ['effective-plugins', companyId] 去重缓存，同工作台只请求一次。
+  // 每个 CompanyToggle 内部用 useCompanyEffectiveDecision 查询；
+  // React Query 共享 ['effective-plugins'] 缓存，全页只请求一次（单例工作台）。
   const filtered = companies.filter((c) => c.name.toLowerCase().includes(filter.toLowerCase()));
 
   if (companies.length === 0) {
@@ -277,11 +275,8 @@ function ExclusiveDetail({ plugin }: { plugin: Plugin }): React.ReactElement {
 // 当前用 effective endpoint 全量取一次再过滤（工作台数适中时够用；工作台极多时应改批量预取）。
 
 function useCompanyEffectiveDecision(companyId: string, pluginId: string): { decision: CompanyPluginDecision } {
-  const { data } = useQuery({
-    queryKey: ['effective-plugins', companyId],
-    queryFn: () => api.get<EffectivePlugin[]>(`/api/plugins/companies/${companyId}/plugins/effective`),
-    staleTime: 10_000,
-  });
+  void companyId; // 公司退役：单例工作台，决策即默认工作台决策（原按公司拼 URL 随旧路径下线）
+  const { data } = useEffectiveCompanyPlugins();
   // 不在 effective 列表里 = 被禁用（平台插件）
   const found = (data ?? []).find((p: EffectivePlugin) => p.id === pluginId);
   const decision: CompanyPluginDecision = found ? found.companyDecision : 'disabled';
