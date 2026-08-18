@@ -399,7 +399,7 @@ export function handleChapterCompleted(db: DB, ev: ChapterCompletedEvent): strin
     }
   }
   const project = getProject(db, ev.projectId);
-  const agents = listAgents(db, project.companyId);
+  const agents = listAgents(db);
   const dispatched: string[] = [];
 
   const byRole = (role: string): string | undefined => agents.find((a) => a.role === role)?.id;
@@ -447,7 +447,7 @@ export function handleChapterCompleted(db: DB, ev: ChapterCompletedEvent): strin
 /** 派发定时一致性检查 Task（可被 scheduler 调用）。 */
 export function dispatchConsistencyCheck(db: DB, projectId: string, checkKind: ConsistencyCheckKind): string | null {
   const project = getProject(db, projectId);
-  const inspector = listAgents(db, project.companyId).find((a) => a.isInspector);
+  const inspector = listAgents(db).find((a) => a.isInspector);
   const target = inspector?.id ?? project.firstAgentId;
   if (!target) return null;
   const labels: Record<typeof checkKind, string> = {

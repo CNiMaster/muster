@@ -56,7 +56,7 @@ describe('交接阶段 1：创建 + drafting', () => {
   it('创建交接记录，自动汇总产物清单', () => {
     insertArtifact('a.md', departingId);
     insertArtifact('b.md', departingId);
-    const record = createHandover(db, { companyId, departingEmployeeId: departingId });
+    const record = createHandover(db, { departingEmployeeId: departingId });
     expect(record.state).toBe('drafting');
     expect(record.artifactInventory).toHaveLength(1); // 1 个项目
     expect(record.artifactInventory[0].items).toHaveLength(2); // 2 个产物
@@ -64,17 +64,17 @@ describe('交接阶段 1：创建 + drafting', () => {
   });
 
   it('无产物时清单为空', () => {
-    const record = createHandover(db, { companyId, departingEmployeeId: departingId });
+    const record = createHandover(db, { departingEmployeeId: departingId });
     expect(record.artifactInventory).toHaveLength(0);
   });
 
   it('已有未完成交接时报错', () => {
-    createHandover(db, { companyId, departingEmployeeId: departingId });
-    expect(() => createHandover(db, { companyId, departingEmployeeId: departingId })).toThrow(/未完成/);
+    createHandover(db, { departingEmployeeId: departingId });
+    expect(() => createHandover(db, { departingEmployeeId: departingId })).toThrow(/未完成/);
   });
 
   it('更新交接内容（记录/经验/待办）', () => {
-    const record = createHandover(db, { companyId, departingEmployeeId: departingId });
+    const record = createHandover(db, { departingEmployeeId: departingId });
     const updated = updateHandoverContent(db, record.id, {
       handoverNote: '工作交接记录',
       lessons: ['经验1', '经验2'],
@@ -86,7 +86,7 @@ describe('交接阶段 1：创建 + drafting', () => {
   });
 
   it('非 drafting 态不能更新内容', () => {
-    const record = createHandover(db, { companyId, departingEmployeeId: departingId });
+    const record = createHandover(db, { departingEmployeeId: departingId });
     assignReceiver(db, record.id, receiverId);
     expect(() => updateHandoverContent(db, record.id, { handoverNote: 'x' })).toThrow(/drafting/);
   });
@@ -94,26 +94,27 @@ describe('交接阶段 1：创建 + drafting', () => {
 
 describe('交接阶段 2：指定接手人', () => {
   it('drafting → awaiting', () => {
-    const record = createHandover(db, { companyId, departingEmployeeId: departingId });
+    const record = createHandover(db, { departingEmployeeId: departingId });
     const assigned = assignReceiver(db, record.id, receiverId);
     expect(assigned.state).toBe('awaiting');
     expect(assigned.receiverEmployeeId).toBe(receiverId);
   });
 
   it('不能交接给自己', () => {
-    const record = createHandover(db, { companyId, departingEmployeeId: departingId });
+    const record = createHandover(db, { departingEmployeeId: departingId });
     expect(() => assignReceiver(db, record.id, departingId)).toThrow(/自己/);
   });
 
-  it('接手人不属于该公司报错', () => {
+  it('指定接手人（公司退役批次D：单例工作台下不再校验接手人所属公司）', () => {
     db.prepare("UPDATE company SET state='off' WHERE id=?").run(companyId);
     const other = createAgent(db, {
       companyId: createCompany(db, { name: '其他公司' }).id,
       name: '外人', role: 'x', systemPrompt: '', skills: [], tools: [], permissions: {}, executor: {},
     }).id;
     db.prepare("UPDATE company SET state='online' WHERE id=?").run(companyId);
-    const record = createHandover(db, { companyId, departingEmployeeId: departingId });
-    expect(() => assignReceiver(db, record.id, other)).toThrow(/不属于/);
+    const record = createHandover(db, { departingEmployeeId: departingId });
+    // 同工作台语义：任意员工都可被指定为接手人（不再按公司归属拒绝）
+    expect(() => assignReceiver(db, record.id, other)).not.toThrow();
   });
 });
 
@@ -121,7 +122,7 @@ describe('交接阶段 3：接收 + 产物转移', () => {
   it('awaiting → receiving → transfer → owner 指针更新', () => {
     insertArtifact('a.md', departingId);
     insertArtifact('b.md', departingId);
-    const record = createHandover(db, { companyId, departingEmployeeId: departingId });
+    const record = createHandover(db, { departingEmployeeId: departingId });
     assignReceiver(db, record.id, receiverId);
     startReceiving(db, record.id);
     const { transferred } = transferArtifactsInHandover(db, record.id, projectId);
@@ -137,7 +138,7 @@ describe('交接阶段 3：接收 + 产物转移', () => {
 
   it('非 receiving 态不能转移', () => {
     insertArtifact('a.md', departingId);
-    const record = createHandover(db, { companyId, departingEmployeeId: departingId });
+    const record = createHandover(db, { departingEmployeeId: departingId });
     assignReceiver(db, record.id, receiverId);
     expect(() => transferArtifactsInHandover(db, record.id, projectId)).toThrow(/receiving/);
   });
@@ -146,7 +147,7 @@ describe('交接阶段 3：接收 + 产物转移', () => {
 describe('交接阶段 4：完成（离职生效）', () => {
   it('receiving → completed，员工任职删除', () => {
     insertArtifact('a.md', departingId);
-    const record = createHandover(db, { companyId, departingEmployeeId: departingId });
+    const record = createHandover(db, { departingEmployeeId: departingId });
     assignReceiver(db, record.id, receiverId);
     startReceiving(db, record.id);
     transferArtifactsInHandover(db, record.id, projectId);
@@ -159,7 +160,7 @@ describe('交接阶段 4：完成（离职生效）', () => {
   });
 
   it('未指定接手人不能完成', () => {
-    const record = createHandover(db, { companyId, departingEmployeeId: departingId });
+    const record = createHandover(db, { departingEmployeeId: departingId });
     expect(() => completeHandover(db, record.id)).toThrow(/接手人/);
   });
 });
@@ -168,7 +169,7 @@ describe('连环交接（owner 始终单一）', () => {
   it('A→B→C：最终 owner 是 C（不叠加）', () => {
     insertArtifact('doc.md', departingId);
     // A→B
-    const r1 = createHandover(db, { companyId, departingEmployeeId: departingId });
+    const r1 = createHandover(db, { departingEmployeeId: departingId });
     assignReceiver(db, r1.id, receiverId);
     startReceiving(db, r1.id);
     transferArtifactsInHandover(db, r1.id, projectId);
@@ -182,7 +183,7 @@ describe('连环交接（owner 始终单一）', () => {
       companyId, name: 'C', role: 'engineer', systemPrompt: '', skills: [], tools: [], permissions: {}, executor: {},
     }).id;
     db.prepare("UPDATE company SET state='online' WHERE id=?").run(companyId);
-    const r2 = createHandover(db, { companyId, departingEmployeeId: receiverId });
+    const r2 = createHandover(db, { departingEmployeeId: receiverId });
     assignReceiver(db, r2.id, personC);
     startReceiving(db, r2.id);
     transferArtifactsInHandover(db, r2.id, projectId);
@@ -195,14 +196,14 @@ describe('连环交接（owner 始终单一）', () => {
 
 describe('取消交接 + offboardEmployee', () => {
   it('取消交接', () => {
-    const record = createHandover(db, { companyId, departingEmployeeId: departingId });
+    const record = createHandover(db, { departingEmployeeId: departingId });
     const cancelled = cancelHandover(db, record.id);
     expect(cancelled.state).toBe('cancelled');
   });
 
   it('completed 态不能取消', () => {
     insertArtifact('a.md', departingId);
-    const record = createHandover(db, { companyId, departingEmployeeId: departingId });
+    const record = createHandover(db, { departingEmployeeId: departingId });
     assignReceiver(db, record.id, receiverId);
     startReceiving(db, record.id);
     transferArtifactsInHandover(db, record.id, projectId);
@@ -211,7 +212,7 @@ describe('取消交接 + offboardEmployee', () => {
   });
 
   it('offboardEmployee 创建交接记录', () => {
-    const record = offboardEmployee(db, companyId, departingId);
+    const record = offboardEmployee(db, departingId);
     expect(record.state).toBe('drafting');
     expect(record.departingEmployeeId).toBe(departingId);
   });

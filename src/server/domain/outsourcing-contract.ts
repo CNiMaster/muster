@@ -355,7 +355,7 @@ export function autoAcceptContract(db: DB, id: string): OutsourcingContract | nu
   if (contractJson.autoAcceptOutsourcing === false) return null;
 
   const required = contract.requiredCapabilityIds ?? [];
-  const agents = listAgents(db, contract.targetCompanyId);
+  const agents = listAgents(db);
   const online = agents.filter((a) => a.availabilityState === 'online');
   // 优先：能力匹配（requiredCapabilityIds ∩ skills）；
   // Review 修复（L-8）：required 为空时原写法 `.find(() => true)` 直接取 online[0]（创建顺序），

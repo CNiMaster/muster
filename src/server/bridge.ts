@@ -238,7 +238,6 @@ bridgeRouter.post('/submit-review', (req, res) => {
     const agentSnapshot = (req.body?.snapshot as Record<string, unknown>) ?? {};
     const enrichedSnapshot = enrichReviewSnapshot(db, projectRow.id, reviewKind, subjectId, agentSnapshot);
     const review = submitBusinessReview(db, {
-      companyId: projectRow.company_id,
       projectId: projectRow.id,
       taskId,
       employeeId: taskRow.assignee_agent_id ?? '',

@@ -564,7 +564,6 @@ export function createWorkerBee(
   input: { companyId: string; projectId: string; requesterAgentId: string; index: number },
 ): string {
   const { agentId } = createTempEmployment(db, {
-    companyId: input.companyId,
     role: SWARM_WORKER_ROLE,
     requesterAgentId: input.requesterAgentId,
     name: `工蜂-${input.index + 1}`,

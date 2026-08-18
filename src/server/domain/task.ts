@@ -394,12 +394,9 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
   // 咨询任务（isConsultation）也跳过 contactAllow（同事咨询属正常协作，已在 ask_colleague handler 内校验同公司）。
   const bypassGuards = !!input.outsourcingContext || !!input.isConsultation;
   if (!bypassGuards) {
-    if (assignee && assignee.companyId !== project.companyId) {
-      throw new AppError(ErrorCode.UNAUTHORIZED, `员工 ${assignee.id} 不属于项目所在公司`);
-    }
-    if (dispatcher && dispatcher.companyId !== project.companyId) {
-      throw new AppError(ErrorCode.UNAUTHORIZED, `派发者 ${dispatcher.id} 不属于项目所在公司`);
-    }
+    // 公司退役批次D：agent 归属已是单例工作台（companyId 恒为工作台 id），
+    // 跨公司 assignee/dispatcher 校验坍缩为存在性检验（上面 getAgent 已做）；
+    // createTask 的 company_id 列语义保留（Task3）。contactAllow 沟通守卫仍保留。
     // 指挥系统：系统隐形岗（调度中心）的派发对象是一次性工蜂/汇总任务（系统管理），豁免 contactAllow
     if (dispatcher && assignee && dispatcher.id !== assignee.id && !dispatcher.isSystem && !dispatcher.contactAllow.includes(assignee.id) && !input.swarmManaged) {
       // 蓝图组织批次3：动态通信图——同项目团队成员（在该项目有线程）互可派发，

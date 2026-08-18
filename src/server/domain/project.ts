@@ -133,10 +133,9 @@ export function createProject(
   );
   const firstAgentId = input.firstAgentId ?? company.firstAgentId ?? undefined;
   if (firstAgentId) {
-    const firstAgent = getAgent(db, firstAgentId);
-    if (firstAgent.companyId !== company.id) {
-      throw new AppError(ErrorCode.VALIDATION, '项目第一负责人必须属于项目所在公司');
-    }
+    // 公司退役批次D：agent 归属已是单例工作台（companyId 恒为工作台 id），
+    // 跨公司校验坍缩为存在性校验（类比 assertDepartmentInCompany）；createProject 的 company_id 列语义保留（Task3）。
+    getAgent(db, firstAgentId);
   }
   const state = input.initialState ?? 'drafting';
   const now = nowIso();
@@ -194,7 +193,7 @@ export function createQuickProject(db: DB, input: { name: string; description?: 
   // 公司退役批次A：「取首个在营公司、无则在营则建默认工作台」收敛到 ensureDefaultCompany 单例原语
   const { company, created } = ensureDefaultCompany(db);
   // 组织 = f(活)：固定员工幂等确保（零组织决策，但对话可立即派发）
-  const staff = ensureWorkspaceStaff(db, company.id);
+  const staff = ensureWorkspaceStaff(db);
   return {
     project: createProject(db, { companyId: company.id, name: input.name, description: input.description, firstAgentId: staff.leadAgentId }),
     companyId: company.id,

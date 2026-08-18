@@ -59,7 +59,7 @@ export function discoverProjectLaunchCapabilities(db: DB, projectTaskId: string,
   const task = getProjectTask(db, projectTaskId);
   const project = getProject(db, task.projectId);
   const brief = projectLaunchBriefSchema.parse(input);
-  const employees = listAgents(db, project.companyId);
+  const employees = listAgents(db);
   const bindings = listCapabilityBindings(db, project.companyId);
   const tools = listCompanyTools(db, project.companyId);
   const capabilityIds = [...new Set(brief.requiredCapabilityIds.map((value) => value.trim()).filter(Boolean))];

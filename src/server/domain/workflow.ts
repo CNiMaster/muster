@@ -229,7 +229,7 @@ function normalizeAndValidateProps(
       throw new AppError(ErrorCode.VALIDATION, `节点「${node.label}」责任人必须属于当前公司`);
     }
   }
-  if (assigneeRole && !listAgents(db, companyId).some((agent) => agent.role === assigneeRole)) {
+  if (assigneeRole && !listAgents(db).some((agent) => agent.role === assigneeRole)) {
     throw new AppError(ErrorCode.VALIDATION, `节点「${node.label}」责任角色不存在：${assigneeRole}`);
   }
   const priority = typeof raw.priority === 'number' ? raw.priority : 5;
@@ -270,7 +270,7 @@ export function materializeWorkflowTask(
     throw new AppError(ErrorCode.VALIDATION, `${node.kind} 节点不能直接生成为 Task`);
   }
   const props = normalizeAndValidateProps(db, project.companyId, node) as unknown as WorkflowStepProps;
-  const agents = listAgents(db, project.companyId);
+  const agents = listAgents(db);
   const assignee = props.assigneeAgentId
     ? agents.find((agent) => agent.id === props.assigneeAgentId)
     : props.assigneeRole
@@ -638,7 +638,7 @@ export function validateWorkflowResponsibility(
 ): string[] {
   const { nodes } = getWorkflow(db, companyId, workflowId);
   const errors: string[] = [];
-  const agents = listAgents(db, companyId);
+  const agents = listAgents(db);
   const existingRoles = new Set(agents.map((a) => a.role));
   const existingAgentIds = new Set(agents.map((a) => a.id));
   for (const n of nodes) {

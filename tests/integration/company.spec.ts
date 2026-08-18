@@ -106,16 +106,18 @@ describe('org config lock', () => {
     expect(() => createAgent(db, { companyId: c.id, name: '新', role: 'writer' })).toThrow();
   });
 
-  it('部门仅可在下班状态管理，员工只能加入本公司部门', () => {
+  it('部门仅可在下班状态管理；单例工作台下不再校验部门归属公司', () => {
     const company = createCompany(db, { name: 'co' });
     const other = createCompany(db, { name: 'other' });
     const editorial = createDepartment(db, { companyId: company.id, name: '编辑部' });
     const foreign = createDepartment(db, { companyId: other.id, name: '外部部门' });
     expect(updateDepartment(db, editorial.id, { name: '创作部' }).name).toBe('创作部');
-    expect(listDepartments(db, company.id).map((department) => department.name)).toEqual(['创作部']);
+    // 公司退役批次D：department.company_id 列已删除，listDepartments 返回全量（无公司隔离）
+    expect(listDepartments(db).map((department) => department.name).sort()).toEqual(['创作部', '外部部门']);
+    // 部门归属校验坍缩为「部门存在即合法」（跨公司部门不再拒绝）
     expect(() =>
       createAgent(db, { companyId: company.id, departmentId: foreign.id, name: '错配', role: 'writer' }),
-    ).toThrow(/部门必须属于/);
+    ).not.toThrow();
 
     clockIn(db, company.id);
     expect(() => createDepartment(db, { companyId: company.id, name: '上班新增' })).toThrowError(AppError);

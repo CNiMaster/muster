@@ -125,13 +125,12 @@ export interface TempSelectionResult {
 
 export function selectTempForNeed(
   db: DB,
-  companyId: string,
   capabilityIds: string[],
   role: string,
   opts?: { responsibilities?: string; sourceContractId?: string; executor?: Record<string, unknown>; permissions?: Record<string, unknown>; requesterAgentId?: string },
 ): TempSelectionResult {
   // ② 复用 greyed 临时工（高星级优先）
-  const greyedAgentId = findGreyedTempForReuse(db, companyId, capabilityIds);
+  const greyedAgentId = findGreyedTempForReuse(db, capabilityIds);
   if (greyedAgentId) {
     reactivateGreyedTemp(db, greyedAgentId);
     const profileRow = db.prepare('SELECT profile_id FROM agent_definition WHERE id=?').get(greyedAgentId) as { profile_id: string } | undefined;
@@ -165,7 +164,6 @@ export function selectTempForNeed(
 
   // ③④ 走 createTempEmployment（复用 or 新建）
   const result = createTempEmployment(db, {
-    companyId,
     profileId: existingProfileId,
     role,
     responsibilities: opts?.responsibilities,

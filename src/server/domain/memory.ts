@@ -2,6 +2,7 @@ import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { nowIso, shortId } from '../../shared/utils';
 import { getAgentProfile } from './agent-profile';
+import { getWorkbenchOrNull } from './workbench';
 
 export type MemoryScope = 'personal' | 'company' | 'project' | 'skill';
 export type MemoryCandidateStatus = 'pending' | 'approved' | 'rejected';
@@ -58,23 +59,23 @@ export interface MemoryEntry {
 }
 
 type CandidateRow = {
-  id: string; profile_id: string; scope: MemoryScope; company_id: string | null; project_id: string | null;
+  id: string; profile_id: string; scope: MemoryScope; project_id: string | null;
   content: string; source_task_id: string | null; source_message_id: string | null; author: string;
   confidence: number; can_influence: number; status: MemoryCandidateStatus; quarantine_reason: string | null;
   expires_at: string | null; reviewed_by: string | null; reviewed_at: string | null; created_at: string;
   fingerprint: string | null; persona_key: string | null;
 };
 type EntryRow = {
-  id: string; profile_id: string; scope: MemoryScope; company_id: string | null; project_id: string | null;
+  id: string; profile_id: string; scope: MemoryScope; project_id: string | null;
   content: string; version: number; state: MemoryEntryState; can_influence: number;
   source_candidate_id: string | null; expires_at: string | null; created_at: string; updated_at: string;
   fingerprint: string | null; persona_key: string | null;
   hit_count: number; vote_count: number; adv_sum: number;
 };
 
-function candidateFromRow(row: CandidateRow): MemoryCandidate {
+function candidateFromRow(db: DB, row: CandidateRow): MemoryCandidate {
   return {
-    id: row.id, profileId: row.profile_id, scope: row.scope, companyId: row.company_id, projectId: row.project_id,
+    id: row.id, profileId: row.profile_id, scope: row.scope, companyId: getWorkbenchOrNull(db)?.id ?? null, projectId: row.project_id,
     content: row.content, sourceTaskId: row.source_task_id, sourceMessageId: row.source_message_id,
     author: row.author, confidence: row.confidence, canInfluence: row.can_influence === 1, status: row.status,
     quarantineReason: row.quarantine_reason, expiresAt: row.expires_at, reviewedBy: row.reviewed_by,
@@ -83,9 +84,9 @@ function candidateFromRow(row: CandidateRow): MemoryCandidate {
   };
 }
 
-function entryFromRow(row: EntryRow): MemoryEntry {
+function entryFromRow(db: DB, row: EntryRow): MemoryEntry {
   return {
-    id: row.id, profileId: row.profile_id, scope: row.scope, companyId: row.company_id, projectId: row.project_id,
+    id: row.id, profileId: row.profile_id, scope: row.scope, companyId: getWorkbenchOrNull(db)?.id ?? null, projectId: row.project_id,
     content: row.content, version: row.version, state: row.state, canInfluence: row.can_influence === 1,
     sourceCandidateId: row.source_candidate_id, expiresAt: row.expires_at, createdAt: row.created_at, updatedAt: row.updated_at,
     fingerprint: row.fingerprint,
@@ -95,7 +96,7 @@ function entryFromRow(row: EntryRow): MemoryEntry {
 }
 
 export function createMemoryCandidate(db: DB, input: {
-  profileId: string; scope: MemoryScope; companyId?: string; projectId?: string; content: string;
+  profileId: string; scope: MemoryScope; projectId?: string; content: string;
   sourceTaskId?: string; sourceMessageId?: string; author: string; confidence: number;
   canInfluence: boolean; expiresAt?: string; allowAutoApprove?: boolean;
   /** E2.1 结构化 category 标签（形如 "design:color"），供晋升流聚类；省略则无标签。 */
@@ -104,7 +105,7 @@ export function createMemoryCandidate(db: DB, input: {
   personaKey?: string;
 }): MemoryCandidate {
   getAgentProfile(db, input.profileId);
-  validateScope(input.scope, input.companyId, input.projectId);
+  validateScope(input.scope, input.projectId);
   if (input.personaKey && input.scope !== 'skill') {
     throw new AppError(ErrorCode.VALIDATION, '人设键只允许用于 skill 记忆（方法论挂在人设上）');
   }
@@ -116,11 +117,11 @@ export function createMemoryCandidate(db: DB, input: {
   const now = nowIso();
   db.prepare(
     `INSERT INTO memory_candidate (
-      id, profile_id, scope, company_id, project_id, content, source_task_id, source_message_id,
+      id, profile_id, scope, project_id, content, source_task_id, source_message_id,
       author, confidence, can_influence, status, quarantine_reason, expires_at, created_at, fingerprint, persona_key
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)`,
   ).run(
-    id, input.profileId, input.scope, input.companyId ?? null, input.projectId ?? null, content,
+    id, input.profileId, input.scope, input.projectId ?? null, content,
     input.sourceTaskId ?? null, input.sourceMessageId ?? null, input.author, input.confidence,
     input.canInfluence ? 1 : 0, quarantineReason, input.expiresAt ?? null, now, input.fingerprint ?? null,
     input.personaKey ?? null,
@@ -138,14 +139,14 @@ export function createMemoryCandidate(db: DB, input: {
 export function getMemoryCandidate(db: DB, id: string): MemoryCandidate {
   const row = db.prepare('SELECT * FROM memory_candidate WHERE id=?').get(id) as CandidateRow | undefined;
   if (!row) throw new AppError(ErrorCode.NOT_FOUND, `memory candidate ${id} not found`);
-  return candidateFromRow(row);
+  return candidateFromRow(db, row);
 }
 
 export function listMemoryCandidates(db: DB, filter: { profileId: string; status?: MemoryCandidateStatus }): MemoryCandidate[] {
   const rows = filter.status
     ? db.prepare('SELECT * FROM memory_candidate WHERE profile_id=? AND status=? ORDER BY created_at, id').all(filter.profileId, filter.status)
     : db.prepare('SELECT * FROM memory_candidate WHERE profile_id=? ORDER BY created_at, id').all(filter.profileId);
-  return (rows as CandidateRow[]).map(candidateFromRow);
+  return (rows as CandidateRow[]).map((row) => candidateFromRow(db, row));
 }
 
 export function approveMemoryCandidate(db: DB, id: string, reviewer: string): MemoryEntry {
@@ -159,11 +160,11 @@ export function approveMemoryCandidate(db: DB, id: string, reviewer: string): Me
     const entryId = shortId('me_');
     db.prepare(
       `INSERT INTO memory_entry (
-        id, profile_id, scope, company_id, project_id, content, version, state,
+        id, profile_id, scope, project_id, content, version, state,
         can_influence, source_candidate_id, expires_at, created_at, updated_at, fingerprint, persona_key
-      ) VALUES (?, ?, ?, ?, ?, ?, 1, 'active', ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, 1, 'active', ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
-      entryId, candidate.profileId, candidate.scope, candidate.companyId, candidate.projectId,
+      entryId, candidate.profileId, candidate.scope, candidate.projectId,
       candidate.content, candidate.canInfluence ? 1 : 0, candidate.id, candidate.expiresAt, now, now, candidate.fingerprint,
       candidate.personaKey,
     );
@@ -184,20 +185,19 @@ export function rejectMemoryCandidate(db: DB, id: string, reviewer: string): Mem
 export function getMemoryEntry(db: DB, id: string): MemoryEntry {
   const row = db.prepare('SELECT * FROM memory_entry WHERE id=?').get(id) as EntryRow | undefined;
   if (!row) throw new AppError(ErrorCode.NOT_FOUND, `memory entry ${id} not found`);
-  return entryFromRow(row);
+  return entryFromRow(db, row);
 }
 
 export function listMemoryEntries(db: DB, filter: {
-  profileId: string; scope?: MemoryScope; companyId?: string; projectId?: string; includeDeleted?: boolean;
+  profileId: string; scope?: MemoryScope; projectId?: string; includeDeleted?: boolean;
 }): MemoryEntry[] {
   const clauses = ['profile_id=?'];
   const values: unknown[] = [filter.profileId];
   if (filter.scope) { clauses.push('scope=?'); values.push(filter.scope); }
-  if (filter.companyId) { clauses.push('company_id=?'); values.push(filter.companyId); }
   if (filter.projectId) { clauses.push('project_id=?'); values.push(filter.projectId); }
   if (!filter.includeDeleted) clauses.push("state!='deleted'");
   return (db.prepare(`SELECT * FROM memory_entry WHERE ${clauses.join(' AND ')} ORDER BY updated_at DESC, id`).all(...values) as EntryRow[])
-    .map(entryFromRow);
+    .map((row) => entryFromRow(db, row));
 }
 
 export function correctMemoryEntry(db: DB, id: string, content: string, changedBy: string): MemoryEntry {
@@ -242,7 +242,7 @@ export function deleteMemoryEntry(db: DB, id: string, changedBy: string): Memory
 }
 
 export function searchMemory(db: DB, input: {
-  profileId: string; query: string; companyId?: string; projectId?: string; limit?: number;
+  profileId: string; query: string; projectId?: string; limit?: number;
 }): MemoryEntry[] {
   const query = input.query.trim();
   if (!query) return [];
@@ -253,16 +253,16 @@ export function searchMemory(db: DB, input: {
        AND (m.expires_at IS NULL OR m.expires_at > ?)
        AND (
          m.scope IN ('personal','skill')
-         OR (m.scope='company' AND m.company_id=?)
-         OR (m.scope='project' AND m.company_id=? AND m.project_id=?)
+         OR (m.scope='company')
+         OR (m.scope='project' AND m.project_id=?)
        )
        AND (m.content LIKE ? OR m.id IN (SELECT entry_id FROM memory_fts WHERE memory_fts MATCH ?))
      ORDER BY m.updated_at DESC LIMIT ?`,
   ).all(
-    input.profileId, now, input.companyId ?? null, input.companyId ?? null, input.projectId ?? null,
+    input.profileId, now, input.projectId ?? null,
     `%${query}%`, `${escapeFtsQuery(query)}*`, Math.min(Math.max(input.limit ?? 8, 1), 50),
   ) as EntryRow[];
-  return rows.map(entryFromRow);
+  return rows.map((row) => entryFromRow(db, row));
 }
 
 /**
@@ -301,7 +301,7 @@ const MIN_BASELINE_TASKS = 3;
 const SHRINK_K = 5;
 
 export function loadContextMemories(db: DB, input: {
-  profileId: string; companyId: string; projectId: string; limit?: number;
+  profileId: string; projectId: string; limit?: number;
 /**
    * 渐进式加载：当传入 query 时，company/project 记忆仅注入与当前任务相关的（词元级 LIKE + FTS5 命中），
    * 避免把全量记忆塞进 system prompt 淹没上下文；为空则回退全量（按 scope 优先级）。
@@ -332,7 +332,7 @@ export function loadContextMemories(db: DB, input: {
   if (!trimmedQuery) {
     const fullValues: unknown[] = [input.profileId, now];
     if (input.personaKey) fullValues.push(input.personaKey);
-    fullValues.push(input.companyId, input.companyId, input.projectId, limit);
+    fullValues.push(input.projectId, limit);
     const rows = db.prepare(
       `SELECT * FROM memory_entry
        WHERE profile_id=? AND state IN ('active','locked')
@@ -340,12 +340,12 @@ export function loadContextMemories(db: DB, input: {
          AND (
            scope='personal'
            OR ${skillClause}
-           OR (scope='company' AND company_id=?)
-           OR (scope='project' AND company_id=? AND project_id=?)
+           OR (scope='company')
+           OR (scope='project' AND project_id=?)
          )
        ORDER BY ${orderClause} LIMIT ?`,
     ).all(...fullValues) as EntryRow[];
-    return recordInjected(db, input.taskId, rows.map(entryFromRow));
+    return recordInjected(db, input.taskId, rows.map((row) => entryFromRow(db, row)));
   }
   // query 非空 → personal/skill 仍全量（skill 按人设过滤）；company/project 仅注入相关记忆。
   // 每个词元独立 OR 命中（英文整词、中文整段 + 二元组），既渐进又不丢用户的稳定偏好。
@@ -355,7 +355,7 @@ export function loadContextMemories(db: DB, input: {
     .join(' OR ');
   const values: unknown[] = [input.profileId, now];
   if (input.personaKey) values.push(input.personaKey);
-  values.push(input.companyId, input.companyId, input.projectId);
+  values.push(input.projectId);
   for (const token of tokens) {
     values.push(`%${token}%`, `${escapeFtsQuery(token)}*`);
   }
@@ -367,12 +367,12 @@ export function loadContextMemories(db: DB, input: {
        AND (
          scope='personal'
          OR ${skillClause}
-         OR ((scope='company' AND company_id=?) OR (scope='project' AND company_id=? AND project_id=?))
+         OR ((scope='company') OR (scope='project' AND project_id=?))
              AND (${matchOrs})
        )
      ORDER BY ${orderClause} LIMIT ?`,
   ).all(...values) as EntryRow[];
-  return recordInjected(db, input.taskId, rows.map(entryFromRow));
+  return recordInjected(db, input.taskId, rows.map((row) => entryFromRow(db, row)));
 }
 
 /**
@@ -480,17 +480,15 @@ export function flushThreadMemory(db: DB, input: {
   const content = input.content.trim();
   if (!content) return null;
   const row = db.prepare(
-    `SELECT a.profile_id, p.company_id, t.project_id
+    `SELECT a.profile_id, t.project_id
      FROM project_agent_thread t
      JOIN agent_definition a ON a.id=t.agent_id
-     JOIN project p ON p.id=t.project_id
      WHERE t.id=?`,
-  ).get(input.threadId) as { profile_id: string; company_id: string; project_id: string } | undefined;
+  ).get(input.threadId) as { profile_id: string; project_id: string } | undefined;
   if (!row) throw new AppError(ErrorCode.NOT_FOUND, `thread ${input.threadId} not found`);
   return createMemoryCandidate(db, {
     profileId: row.profile_id,
     scope: 'project',
-    companyId: row.company_id,
     projectId: row.project_id,
     content,
     sourceTaskId: input.sourceTaskId,
@@ -501,11 +499,10 @@ export function flushThreadMemory(db: DB, input: {
   });
 }
 
-function validateScope(scope: MemoryScope, companyId?: string, projectId?: string): void {
-  if (scope === 'company' && !companyId) throw new AppError(ErrorCode.VALIDATION, '公司记忆必须指定公司');
-  if (scope === 'project' && (!companyId || !projectId)) throw new AppError(ErrorCode.VALIDATION, '项目记忆必须指定公司和项目');
-  if ((scope === 'personal' || scope === 'skill') && (companyId || projectId)) {
-    throw new AppError(ErrorCode.VALIDATION, '个人或 Skill 记忆不能绑定公司/项目');
+function validateScope(scope: MemoryScope, projectId?: string): void {
+  if (scope === 'project' && !projectId) throw new AppError(ErrorCode.VALIDATION, '项目记忆必须指定项目');
+  if ((scope === 'personal' || scope === 'skill') && projectId) {
+    throw new AppError(ErrorCode.VALIDATION, '个人或 Skill 记忆不能绑定项目');
   }
 }
 
@@ -560,7 +557,7 @@ export function copyPersonalMemoryEntries(db: DB, sourceProfileId: string, targe
       fingerprint: source.fingerprint,
     });
     const entry = db.prepare('SELECT * FROM memory_entry WHERE source_candidate_id=?').get(candidate.id) as EntryRow | undefined;
-    if (entry) copies.push(entryFromRow(entry));
+    if (entry) copies.push(entryFromRow(db, entry));
   }
   return copies;
 }

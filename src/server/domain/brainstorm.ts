@@ -89,7 +89,7 @@ export function startBrainstorm(db: DB, setup: BrainstormSetup): BrainstormResul
   // 解析参与者：支持自动选闲置员工（PRD Phase 8，清单 275）
   let participantAgentIds = setup.participantAgentIds;
   if (setup.autoSelectParticipants && setup.autoSelectParticipants.count > 0) {
-    const allAgents = listAgents(db, project.companyId).filter((a) => a.availabilityState === 'online');
+    const allAgents = listAgents(db).filter((a) => a.availabilityState === 'online');
     const activeTasks = listTasks(db, setup.projectId).filter((t) =>
       ['claimed', 'running'].includes(t.state),
     );
@@ -105,7 +105,7 @@ export function startBrainstorm(db: DB, setup: BrainstormSetup): BrainstormResul
   }
 
   // 校验参与者存在
-  const agents = listAgents(db, project.companyId);
+  const agents = listAgents(db);
   for (const pid of participantAgentIds) {
     if (!agents.some((a) => a.id === pid)) {
       throw new AppError(ErrorCode.NOT_FOUND, `参与者 ${pid} 不存在`);

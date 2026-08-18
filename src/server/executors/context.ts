@@ -287,7 +287,6 @@ export function assembleContext(
     const query = [task.title, task.summary].filter(Boolean).join(' ').slice(0, 120);
     const memories = loadContextMemories(db, {
       profileId: agent.profileId,
-      companyId: company.id,
       projectId: project.id,
       personaKey: task.personaId,
       query,
@@ -394,7 +393,7 @@ export function assembleContext(
   const recentMessages = listTaskMessages(db, task.id).slice(-6);
   // 轻量模式：跳过 referencedArtifacts 全量加载（咨询/发言不需要引用大文件）
   const referencedArtifacts = lightweight ? {} : loadReferencedArtifacts(db, task);
-  const companyAgents = listAgents(db, company.id);
+  const companyAgents = listAgents(db);
   const availableContacts = lightweight ? [] : (agent
     ? agent.contactAllow.flatMap((contactId) => {
         const contact = companyAgents.find((candidate) => candidate.id === contactId);
@@ -422,7 +421,7 @@ export function assembleContext(
   if (!lightweight) {
     try {
       inputPacket.swarmDispatcher = {
-        id: ensureDispatcherAgentId(db, company.id),
+        id: ensureDispatcherAgentId(db),
         name: '调度中心',
         usage: '需要大规模并行（大范围调研/信息扫描/批量评估）时，用 done 的 outboundTasks 派给此 id（recipientAgentId）；调度中心会拆解成工蜂群并行执行并汇总。',
       };

@@ -61,7 +61,7 @@ describe('B3.1 自然语言图变更提案', () => {
     const diff2 = applyGraphProposal(db, { companyId: c.id, kind: 'org', naturalLanguage: '' }, proposal);
     expect(diff2.added.length).toBe(0);
     // 实际只有一条边
-    const edges = listRelationships(db, c.id, 'org');
+    const edges = listRelationships(db, 'org');
     expect(edges.length).toBe(1);
   });
 
@@ -78,9 +78,9 @@ describe('B3.1 自然语言图变更提案', () => {
     const diff = applyGraphProposal(db, { companyId: c.id, kind: 'org', naturalLanguage: '' }, proposal);
     expect(diff.removed.length).toBe(1);
     // 默认 listRelationships 不返回归档
-    expect(listRelationships(db, c.id, 'org').length).toBe(0);
+    expect(listRelationships(db, 'org').length).toBe(0);
     // includeArchived 时仍可看到
-    expect(listRelationships(db, c.id, 'org', { includeArchived: true }).length).toBe(1);
+    expect(listRelationships(db, 'org', { includeArchived: true }).length).toBe(1);
   });
 
   it('上班期间 propose 被拒绝', async () => {

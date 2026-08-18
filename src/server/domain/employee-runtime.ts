@@ -1,11 +1,10 @@
 import type { DB } from '../db/client';
 import type { EmployeeRuntimeDTO } from '../../shared/types';
 import { getAgentProfile, listProfileEmployments } from './agent-profile';
+import { getWorkbench } from './workbench';
 
 interface RuntimeRow {
   employee_id: string;
-  company_id: string;
-  company_name: string;
   role: string;
   project_id: string;
   project_name: string;
@@ -27,17 +26,16 @@ export function getEmployeeRuntime(db: DB, profileId: string): EmployeeRuntimeDT
   getAgentProfile(db, profileId);
   const employments = listProfileEmployments(db, profileId);
   const rows = db.prepare(`
-    SELECT ce.id employee_id, ce.company_id, c.name company_name, ce.role,
+    SELECT ce.id employee_id, ce.role,
       p.id project_id, p.name project_name, ptt.id thread_id,
       pt.id project_task_id, pt.title project_task_title, pt.state project_task_state,
       ptt.state thread_state, ptt.vendor_session_id, ptt.previous_vendor_session_id,
       ptt.run_count, ptt.compaction_count, ptt.transcript_bytes, ptt.updated_at,
       COUNT(DISTINCT t.id) work_order_count
     FROM company_employee ce
-    JOIN company c ON c.id=ce.company_id
     JOIN project_task_thread ptt ON ptt.employee_id=ce.legacy_agent_id
     JOIN project_task pt ON pt.id=ptt.project_task_id
-    JOIN project p ON p.id=pt.project_id AND p.company_id=ce.company_id
+    JOIN project p ON p.id=pt.project_id
     LEFT JOIN task t ON t.assignee_task_thread_id=ptt.id
     WHERE ce.profile_id=?
     GROUP BY ptt.id
@@ -50,7 +48,7 @@ export function getEmployeeRuntime(db: DB, profileId: string): EmployeeRuntimeDT
     return {
       employeeId: employment.id,
       companyId: employment.companyId,
-      companyName: employmentRows[0]?.company_name ?? (db.prepare('SELECT name FROM company WHERE id=?').get(employment.companyId) as { name: string }).name,
+      companyName: getWorkbench(db).name,
       role: employment.role,
       projects: projectIds.map((projectId) => {
         const projectRows = employmentRows.filter((row) => row.project_id === projectId);

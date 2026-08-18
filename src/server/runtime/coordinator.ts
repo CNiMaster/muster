@@ -147,13 +147,13 @@ export class ProjectRuntimeCoordinator {
         // 指挥系统 W0：online 公司幂等确保系统隐形岗（调度中心/评审中心）
         if (company.state === 'online') {
           try {
-            ensureSystemAgents(this.db, company.id);
+            ensureSystemAgents(this.db);
           } catch (error) {
             log.warn('ensure system agents failed', { companyId: company.id, error: error instanceof Error ? error.message : String(error) });
           }
         }
         if (company.state !== 'online') continue;
-        settleDrainingAgents(this.db, company.id);
+        settleDrainingAgents(this.db);
         for (const project of listProjects(this.db, company.id)) {
           // archived/completed：级联释放 mirror（PRD Phase 5.4）；paused 仍保留镜像便于恢复。
           if (project.state === 'archived' || project.state === 'completed') {

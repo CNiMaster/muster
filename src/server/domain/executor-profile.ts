@@ -6,6 +6,7 @@ import { existsSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { redactSensitiveText } from '../../shared/redaction';
 import { DEFAULT_MAX_CONCURRENCY } from './executor-concurrency';
+import { getWorkbench } from './workbench';
 
 export type CredentialReference = { kind: 'env' | 'keychain' | 'cli-login' | 'encrypted-local'; reference: string };
 
@@ -100,9 +101,9 @@ export function listExecutorProfiles(db: DB): ExecutorProfile[] {
 
 export function bindEmployeeExecutorProfile(db: DB, employeeId: string, executorProfileId: string): void {
   getExecutorProfile(db, executorProfileId);
-  const employment = db.prepare('SELECT c.state FROM company_employee ce JOIN company c ON c.id=ce.company_id WHERE ce.id=?').get(employeeId) as { state: string } | undefined;
+  const employment = db.prepare('SELECT id FROM company_employee WHERE id=?').get(employeeId) as { id: string } | undefined;
   if (!employment) throw new AppError(ErrorCode.NOT_FOUND, `公司员工不存在: ${employeeId}`);
-  if (employment.state !== 'off') throw new AppError(ErrorCode.CONFLICT, '公司下班后才能修改员工执行器');
+  if (getWorkbench(db).state !== 'off') throw new AppError(ErrorCode.CONFLICT, '公司下班后才能修改员工执行器');
   const result = db.prepare('UPDATE company_employee SET executor_profile_id=?, updated_at=? WHERE id=?').run(executorProfileId, nowIso(), employeeId);
   if (result.changes !== 1) throw new AppError(ErrorCode.NOT_FOUND, `公司员工不存在: ${employeeId}`);
 }

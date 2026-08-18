@@ -112,7 +112,7 @@ export function listThreads(db: DB, projectId: string): ProjectAgentThread[] {
 /** 为项目中的全部正式员工幂等建立 primary thread。 */
 export function ensureProjectThreads(db: DB, projectId: string): ProjectAgentThread[] {
   const project = getProject(db, projectId);
-  for (const agent of listAgents(db, project.companyId)) {
+  for (const agent of listAgents(db)) {
     ensurePrimaryThread(db, projectId, agent.id);
   }
   return listThreads(db, projectId).filter((thread) => thread.kind === 'primary');

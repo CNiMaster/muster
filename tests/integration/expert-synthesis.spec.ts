@@ -111,10 +111,11 @@ describe('信号 → 自动入库（免确认）', () => {
     expect(listExpertCandidates(db, c.id).some((x) => x.source === 'generalist_record')).toBe(true);
 
     // 同名终止：手工造一个与 fallback 草稿同名的用户人设 → 同型新信号不重复写文件，
-    // 但落一行 adopted 溯源（signal_key 终止，不再每 tick 重付 LLM 起草）
-    const c2 = createCompany(db, { name: '公司2' });
-    const lead2 = createAgent(db, { companyId: c2.id, name: '干员2', role: 'lead' });
-    const p2 = createProject(db, { companyId: c2.id, name: '项目2', rootDir: '/tmp/p2', firstAgentId: lead2.id, initialState: 'active' });
+    // 但落一行 adopted 溯源（signal_key 终止，不再每 tick 重付 LLM 起草）。
+    // 公司退役批次D：agent 归属已是单例工作台（本项目、原 c2 的跨公司场景坍缩），
+    // 故在同一个工作台下另建项目 + 员工模拟第二组信号（firstAgentId 不属于本测试关注点，不设）。
+    const lead2 = createAgent(db, { name: '干员2', role: 'lead' });
+    const p2 = createProject(db, { companyId: c.id, name: '项目2', rootDir: '/tmp/p2', initialState: 'active' });
     mkdirSync(path.join(USER_PERSONAS_ROOT, 'specialized'), { recursive: true });
     writeFileSync(path.join(USER_PERSONAS_ROOT, 'specialized', 'quarterly-report.md'), [
       '---', 'name: 撰写季度经营分析Q2专家', 'description: 测试同名', '---',
@@ -123,14 +124,14 @@ describe('信号 → 自动入库（免确认）', () => {
     for (let i = 0; i < 3; i++) {
       completeDirect(p2.id, lead2.id, '撰写季度经营分析Q2');
     }
-    expect(await maybeSynthesizeExpertCandidates(db, c2.id)).toBe(0); // 未新写文件
-    const rows = listExpertCandidates(db, c2.id);
-    expect(rows).toHaveLength(1);
-    expect(rows[0]!.status).toBe('adopted'); // 自建同名 = 信号已消化（补录溯源）
-    expect(rows[0]!.personaId).toBe('user/specialized/quarterly-report');
+    expect(await maybeSynthesizeExpertCandidates(db, c.id)).toBe(0); // 未新写文件
+    const rows = listExpertCandidates(db, c.id);
+    const q2Row = rows.find((x) => x.personaId === 'user/specialized/quarterly-report');
+    expect(q2Row).toBeDefined();
+    expect(q2Row!.status).toBe('adopted'); // 自建同名 = 信号已消化（补录溯源）
     // signal_key 已落：后续 tick 不再处理
-    expect(await maybeSynthesizeExpertCandidates(db, c2.id)).toBe(0);
-    expect(listExpertCandidates(db, c2.id)).toHaveLength(1);
+    expect(await maybeSynthesizeExpertCandidates(db, c.id)).toBe(0);
+    expect(listExpertCandidates(db, c.id).filter((x) => x.personaId === 'user/specialized/quarterly-report')).toHaveLength(1);
     // 库内同名人设只有手工那一个（未重复写文件）
     expect(listPersonas().filter((p) => p.name === '撰写季度经营分析Q2专家')).toHaveLength(1);
   });

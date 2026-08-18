@@ -159,7 +159,7 @@ export const MAINTENANCE_ROLES = [
 /** 创建长篇小说项目的渐进式基础成果。幂等，不覆盖已有内容。 */
 export function initializeNovelProject(db: DB, projectId: string): Artifact[] {
   const project = getProject(db, projectId);
-  const agents = listAgents(db, project.companyId);
+  const agents = listAgents(db);
   const owner = (role: string): string | undefined => agents.find((agent) => agent.role === role)?.id;
   const hasRole = (role: string): boolean => agents.some((agent) => agent.role === role);
   // 若存在专门岗位，则把对应成果归属给它；否则回退到 plot/writer

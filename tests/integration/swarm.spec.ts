@@ -39,21 +39,21 @@ function fixture() {
     initialState: 'active',
   });
   clockIn(db, company.id);
-  const sys = ensureSystemAgents(db, company.id);
+  const sys = ensureSystemAgents(db);
   return { company, lead, project, ...sys };
 }
 
 describe('W0 系统隐形岗', () => {
   it('ensureSystemAgents 幂等创建调度中心/评审中心；花名册默认隐藏、includeHidden 可见、claimNextTask 可领取', () => {
     const { company, project, dispatcherAgentId } = fixture();
-    const again = ensureSystemAgents(db, company.id);
+    const again = ensureSystemAgents(db);
     expect(again.dispatcherAgentId).toBe(dispatcherAgentId);
     expect(getAgent(db, dispatcherAgentId).role).toBe(DISPATCHER_ROLE);
     expect(getAgent(db, dispatcherAgentId).isSystem).toBe(true);
 
-    const visible = listAgents(db, company.id);
+    const visible = listAgents(db);
     expect(visible.some((a) => a.id === dispatcherAgentId)).toBe(false);
-    expect(listAgents(db, company.id, { includeHidden: true }).some((a) => a.id === dispatcherAgentId)).toBe(true);
+    expect(listAgents(db, { includeHidden: true }).some((a) => a.id === dispatcherAgentId)).toBe(true);
 
     // 隐藏 ≠ 不可领取：调度中心任务能被自己的线程领走
     const task = createTask(db, { projectId: project.id, assigneeAgentId: dispatcherAgentId, title: '组织蜂群', priority: 9 });

@@ -312,7 +312,6 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
   const existing = reflection.profileId
     ? searchMemory(db, {
         profileId,
-        companyId: reflection.companyId,
         projectId: reflection.projectId,
         query: task.title.slice(0, 40),
         limit: 5,
@@ -404,7 +403,6 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
     const candidate = createMemoryCandidate(db, {
       profileId,
       scope: 'project',
-      companyId: reflection.companyId,
       projectId: reflection.projectId,
       content: lesson.body,
       sourceTaskId: reflection.taskId,
@@ -424,7 +422,6 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
     createMemoryCandidate(db, {
       profileId,
       scope: 'project',
-      companyId: reflection.companyId,
       projectId: reflection.projectId,
       content: `【协作规则】${rule.body}`,
       sourceTaskId: reflection.taskId,

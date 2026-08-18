@@ -107,7 +107,7 @@ describe('task communication permission', () => {
     expect(task.outputProtocol.requiredFields).toEqual(['summary', 'artifacts']);
   });
 
-  it('创建员工时拒绝不存在或不属于本公司的 contactAllow', () => {
+  it('创建员工时校验 contactAllow 存在（公司退役批次D：不再校验联系人所属公司）', () => {
     const company = createCompany(db, { name: 'co' });
     const otherCompany = createCompany(db, { name: 'other' });
     const outsider = createAgent(db, {
@@ -116,6 +116,7 @@ describe('task communication permission', () => {
       role: 'writer',
     });
 
+    // 不存在的员工仍拒绝
     expect(() =>
       createAgent(db, {
         companyId: company.id,
@@ -124,6 +125,7 @@ describe('task communication permission', () => {
         contactAllow: ['writer'],
       }),
     ).toThrow(/联系人/);
+    // 单例工作台语义：联系人存在即合法（不再按公司归属拒绝）
     expect(() =>
       createAgent(db, {
         companyId: company.id,
@@ -131,7 +133,7 @@ describe('task communication permission', () => {
         role: 'lead',
         contactAllow: [outsider.id],
       }),
-    ).toThrow(/联系人/);
+    ).not.toThrow();
   });
 
   it('拒绝 dispatcher 联系 contactAllow 之外的员工', () => {

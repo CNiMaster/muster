@@ -18,7 +18,7 @@ import { nowIso } from '../../shared/utils';
 import { createAgent, getAgent } from './agent';
 import { createAgentProfile, getAgentProfile } from './agent-profile';
 import { getAgentHomePath } from './agent-home';
-import { getCompany } from './company';
+import { getWorkbench } from './workbench';
 import { bindDefaultDenyPolicy, getRoleTemplate, TEMPLATE_NAMES } from './permission-templates';
 import { getEmployeePermissionPolicy, bindEmployeePermissionPolicy } from './permission';
 
@@ -26,7 +26,6 @@ import { getEmployeePermissionPolicy, bindEmployeePermissionPolicy } from './per
 export type TempStatus = 'active' | 'greyed' | 'dismissed';
 
 export interface CreateTempEmploymentInput {
-  companyId: string;
   /** 复用人才市场现有人；不传则新建（is_temp_only=1）。 */
   profileId?: string;
   role: string;
@@ -61,10 +60,7 @@ export interface TempEmploymentResult {
  * 走 createAgent 但用 tempRecruit 豁免（允许 online 态招临时工）。
  */
 export function createTempEmployment(db: DB, input: CreateTempEmploymentInput): TempEmploymentResult {
-  const company = getCompany(db, input.companyId);
-  if (company.archivedAt) {
-    throw new AppError(ErrorCode.VALIDATION, '公司已归档，不能招聘临时工');
-  }
+  getWorkbench(db); // 工作台存在性校验（单例不归档，无需 archivedAt 检查）
 
   let profileId = input.profileId;
   let isNewProfile = false;
@@ -90,7 +86,6 @@ export function createTempEmployment(db: DB, input: CreateTempEmploymentInput): 
   // 走 createAgent（tempRecruit 豁免 org lock）
   // 临时工的工作关系仅限发起者（小范围，对其他人隐形）——contactAllow 只含 requester
   const agent = createAgent(db, {
-    companyId: input.companyId,
     profileId,
     name: getAgentProfile(db, profileId).displayName,
     role: input.role,
@@ -176,7 +171,6 @@ export function markTempGreyed(db: DB, agentId: string): void {
  */
 export function findGreyedTempForReuse(
   db: DB,
-  companyId: string,
   capabilityIds: string[],
 ): string | null {
   if (capabilityIds.length === 0) {
@@ -184,10 +178,10 @@ export function findGreyedTempForReuse(
     const row = db
       .prepare(
         `SELECT ce.legacy_agent_id FROM company_employee ce
-         WHERE ce.company_id = ? AND ce.employment_type = 'temp' AND ce.temp_status = 'greyed'
+         WHERE ce.employment_type = 'temp' AND ce.temp_status = 'greyed'
          ORDER BY ce.updated_at DESC LIMIT 1`,
       )
-      .get(companyId) as { legacy_agent_id: string } | undefined;
+      .get() as { legacy_agent_id: string } | undefined;
     return row?.legacy_agent_id ?? null;
   }
   const placeholders = capabilityIds.map(() => '?').join(',');
@@ -196,7 +190,7 @@ export function findGreyedTempForReuse(
     .prepare(
       `SELECT ce.legacy_agent_id FROM company_employee ce
        JOIN agent_profile ap ON ap.id = ce.profile_id
-       WHERE ce.company_id = ? AND ce.employment_type = 'temp' AND ce.temp_status = 'greyed'
+       WHERE ce.employment_type = 'temp' AND ce.temp_status = 'greyed'
          AND EXISTS (
            SELECT 1 FROM capability_binding cb
            WHERE cb.employee_id = ce.legacy_agent_id
@@ -204,7 +198,7 @@ export function findGreyedTempForReuse(
          )
        ORDER BY ap.rating DESC, ce.updated_at DESC LIMIT 1`,
     )
-    .get(companyId, ...capabilityIds) as { legacy_agent_id: string } | undefined;
+    .get(...capabilityIds) as { legacy_agent_id: string } | undefined;
   return row?.legacy_agent_id ?? null;
 }
 

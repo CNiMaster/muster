@@ -54,11 +54,11 @@ describe('系统隐形岗懒确保（批次4e）', () => {
     assembleContext(db, task);
     assembleContext(db, task);
 
-    const dispatchers = listAgents(db, company.id, { includeHidden: true })
+    const dispatchers = listAgents(db, { includeHidden: true })
       .filter((a) => a.role === DISPATCHER_ROLE && a.isSystem);
     expect(dispatchers).toHaveLength(1);
     // 默认花名册（@候选来源）不出现
-    expect(listAgents(db, company.id).some((a) => a.role === DISPATCHER_ROLE)).toBe(false);
+    expect(listAgents(db).some((a) => a.role === DISPATCHER_ROLE)).toBe(false);
     void JUDGE_ROLE;
   });
 });

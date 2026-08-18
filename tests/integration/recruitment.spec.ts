@@ -33,7 +33,6 @@ describe('recruitment draft', () => {
       const employment = db.prepare('SELECT * FROM company_employee WHERE id=?').get(agent.id) as Record<string, unknown>;
 
       expect(employment).toMatchObject({
-        company_id: company.id,
         department_id: department.id,
         executor_profile_id: executor.id,
         permission_policy_id: policy.id,

@@ -415,7 +415,6 @@ async function submitReviewHandler(call: ToolCall, ctx: ToolContext): Promise<To
       };
     }
     const review = submitBusinessReview(db, {
-      companyId: projectRow.company_id,
       projectId: projectRow.id,
       taskId,
       employeeId: taskRow.assignee_agent_id ?? '',
@@ -546,7 +545,7 @@ async function notifyColleagueHandler(call: ToolCall, ctx: ToolContext): Promise
         const projectRow = db.prepare('SELECT company_id FROM project WHERE id=?').get(cctx.askerProjectId) as { company_id: string } | undefined;
         if (projectRow) {
           postSystemMessage(db, {
-            scopeKind: 'company',
+            scopeKind: 'workbench',
             scopeId: projectRow.company_id,
             role: 'system',
             author: askerAgentId,

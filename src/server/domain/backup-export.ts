@@ -37,10 +37,10 @@ export function exportMusterBackup(db: DB): MusterBackup {
         charter: wb.charter,
         contractJson: wb.contractJson,
         archivedAt: null,
-        departments: listDepartments(db, wb.id).map((d) => ({ name: d.name, rules: d.rules })),
-        employees: listAgents(db, wb.id).map((a) => ({
+        departments: listDepartments(db).map((d) => ({ name: d.name, rules: d.rules })),
+        employees: listAgents(db).map((a) => ({
           profileId: a.profileId,
-          departmentName: a.departmentId ? listDepartments(db, wb.id).find((d) => d.id === a.departmentId)?.name ?? null : null,
+          departmentName: a.departmentId ? listDepartments(db).find((d) => d.id === a.departmentId)?.name ?? null : null,
           name: a.name,
           role: a.role,
           responsibilities: a.responsibilities,
@@ -294,14 +294,13 @@ function importCompany(db: DB, company: MusterCompanyExport, backup: MusterBacku
   // 重建部门，记名称 → id 供员工映射
   const departmentIds = new Map<string, string>();
   for (const dept of company.departments) {
-    const createdDept = createDepartment(db, { companyId, name: dept.name, rules: dept.rules });
+    const createdDept = createDepartment(db, { name: dept.name, rules: dept.rules });
     departmentIds.set(dept.name, createdDept.id);
   }
   // 重建员工（复用现有档案或新建）
   for (const emp of company.employees) {
     const profileId = findOrCreateProfile(db, emp, backup, summary);
     createAgent(db, {
-      companyId,
       profileId,
       departmentId: emp.departmentName ? departmentIds.get(emp.departmentName) : undefined,
       name: emp.name,

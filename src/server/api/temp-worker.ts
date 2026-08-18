@@ -42,7 +42,6 @@ const recruitSchema = z.object({
 const recruitTempHandler = asyncHandler(async (req, res) => {
   const input = recruitSchema.parse(req.body);
   const result = createTempEmployment(getDb(), {
-    companyId: companyIdOf(req),
     ...input,
   });
   realtime.publish(makeLifecycleEvent('employee.temp-recruited', {
@@ -103,16 +102,16 @@ const reactivateTempHandler = asyncHandler(async (req, res) => {
 });
 tempWorkerRouter.post('/employees/:id/reactivate', reactivateTempHandler);
 
-// 列出临时工（含 greyed）
-const listTempHandler = asyncHandler(async (req, res) => {
+// 列出临时工（含 greyed；单例工作台下临时工为全局可见）
+const listTempHandler = asyncHandler(async (_req, res) => {
   const rows = getDb().prepare(
     `SELECT ce.*, ad.name, ad.profile_id, ap.display_name, ap.rating
      FROM company_employee ce
      JOIN agent_definition ad ON ad.id = ce.legacy_agent_id
      JOIN agent_profile ap ON ap.id = ce.profile_id
-     WHERE ce.company_id = ? AND ce.employment_type = 'temp'
+     WHERE ce.employment_type = 'temp'
      ORDER BY ce.temp_status, ce.created_at DESC`,
-  ).all(companyIdOf(req));
+  ).all();
   res.json(rows);
 });
 tempWorkerRouter.get('/employees/temp', listTempHandler);

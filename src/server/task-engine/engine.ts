@@ -183,7 +183,7 @@ export class TaskEngine {
       if (proto.trigger !== 'user_message') return;
       if (typeof proto.scope !== 'string' || typeof proto.scopeId !== 'string') return;
       postSystemMessage(this.db, {
-        scopeKind: proto.scope as 'company' | 'project',
+        scopeKind: proto.scope as 'workbench' | 'project',
         scopeId: proto.scopeId,
         role: 'event',
         author: 'system',
@@ -1068,14 +1068,14 @@ export class TaskEngine {
       ) {
         try {
           const proto = task.inputProtocol as { scope?: unknown; scopeId?: unknown };
-          const scopeOk = proto.scope === 'company' || proto.scope === 'project';
+          const scopeOk = proto.scope === 'workbench' || proto.scope === 'project';
           startDebate(this.db, {
             companyId: company.id,
             projectId: project.id,
             question: result.question ?? task.title,
             options: result.questionOptions!,
             originTaskId: task.id,
-            originScopeKind: scopeOk ? proto.scope as 'company' | 'project' : undefined,
+            originScopeKind: scopeOk ? proto.scope as 'workbench' | 'project' : undefined,
             originScopeId: scopeOk && typeof proto.scopeId === 'string' ? proto.scopeId : undefined,
           });
           debateStarted = true;
@@ -1275,10 +1275,10 @@ export class TaskEngine {
         }
       }
       const isConvTask = task.inputProtocol.trigger === 'user_message'
-        && (task.inputProtocol.scope === 'project' || task.inputProtocol.scope === 'company')
+        && (task.inputProtocol.scope === 'project' || task.inputProtocol.scope === 'workbench')
         && typeof task.inputProtocol.scopeId === 'string';
       // 类型窄化：isConvTask 复合条件不自动收窄 inputProtocol 字段类型，此处显式收窄供下方播报使用
-      const convScope = isConvTask ? (task.inputProtocol.scope as 'project' | 'company') : null;
+      const convScope = isConvTask ? (task.inputProtocol.scope as 'project' | 'workbench') : null;
       const convScopeId = isConvTask ? (task.inputProtocol.scopeId as string) : null;
       if (debateStarted && isConvTask) {
         // 两难已进评审庭：对话先收到启动播报，完整问题等辩论结论（自动采纳播报/升级时再发）

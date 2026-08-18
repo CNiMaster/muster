@@ -21,6 +21,7 @@ import { getAgent } from './agent';
 import { getProject } from './project';
 import { postSystemMessage } from './conversation';
 import { createMirror, removeMirror, listMirrorsOfRoot, ensurePrimaryThread } from './thread';
+import { getWorkbench } from './workbench';
 
 export type DiscussionState = 'open' | 'concluding' | 'concluded' | 'closed';
 export type ParticipantRole = 'member' | 'moderator';
@@ -144,7 +145,7 @@ export interface DiscussionConclusion {
 }
 
 interface DiscussionRow {
-  id: string; project_id: string; company_id: string; topic: string; initiator_agent_id: string | null;
+  id: string; project_id: string; topic: string; initiator_agent_id: string | null;
   state: DiscussionState; current_speaker_agent_id: string | null; current_turn_task_id: string | null;
   turn_count: number; max_turns: number; context_json: string; minutes: string | null; conclusion_json: string | null;
   source_task_id: string | null; mode: DiscussionMode | null; created_at: string; updated_at: string;
@@ -152,9 +153,9 @@ interface DiscussionRow {
 interface ParticipantRow { discussion_id: string; agent_id: string; role: ParticipantRole; turn_index: number; joined_at: string }
 interface TurnRow { id: string; discussion_id: string; task_id: string; speaker_agent_id: string; turn_index: number; content: string | null; created_at: string }
 
-function fromRow(r: DiscussionRow): Discussion {
+function fromRow(db: DB, r: DiscussionRow): Discussion {
   return {
-    id: r.id, projectId: r.project_id, companyId: r.company_id, topic: r.topic,
+    id: r.id, projectId: r.project_id, companyId: getWorkbench(db).id, topic: r.topic,
     initiatorAgentId: r.initiator_agent_id, state: r.state,
     currentSpeakerAgentId: r.current_speaker_agent_id, currentTurnTaskId: r.current_turn_task_id,
     turnCount: r.turn_count, maxTurns: r.max_turns, context: JSON.parse(r.context_json ?? '{}'),
@@ -168,14 +169,14 @@ function fromRow(r: DiscussionRow): Discussion {
 export function getDiscussion(db: DB, id: string): Discussion {
   const row = db.prepare('SELECT * FROM discussion WHERE id=?').get(id) as DiscussionRow | undefined;
   if (!row) throw new AppError(ErrorCode.NOT_FOUND, `讨论室不存在: ${id}`);
-  return fromRow(row);
+  return fromRow(db, row);
 }
 
 export function listDiscussions(db: DB, projectId: string, state?: DiscussionState): Discussion[] {
   const rows = state
     ? db.prepare('SELECT * FROM discussion WHERE project_id=? AND state=? ORDER BY created_at DESC').all(projectId, state) as DiscussionRow[]
     : db.prepare('SELECT * FROM discussion WHERE project_id=? ORDER BY created_at DESC').all(projectId) as DiscussionRow[];
-  return rows.map(fromRow);
+  return rows.map((row) => fromRow(db, row));
 }
 
 export function listParticipants(db: DB, discussionId: string): DiscussionParticipant[] {
@@ -243,8 +244,8 @@ export function createDiscussion(db: DB, input: {
   const id = shortId('disc_');
   const now = nowIso();
   const contextWithScenario = { ...(input.context ?? {}), scenario, scenarioGuidance: scenarioConfig.conclusionAction };
-  db.prepare(`INSERT INTO discussion (id,project_id,company_id,topic,initiator_agent_id,state,max_turns,context_json,source_task_id,mode,created_at,updated_at) VALUES (?,?,?,?,?, 'open', ?, ?, ?, ?, ?, ?)`)
-    .run(id, project.id, project.companyId, input.topic, input.initiatorAgentId ?? null, input.maxTurns ?? 12, JSON.stringify(contextWithScenario), input.sourceTaskId ?? null, input.mode ?? 'sequential', now, now);
+  db.prepare(`INSERT INTO discussion (id,project_id,topic,initiator_agent_id,state,max_turns,context_json,source_task_id,mode,created_at,updated_at) VALUES (?,?,?,?, 'open', ?, ?, ?, ?, ?, ?)`)
+    .run(id, project.id, input.topic, input.initiatorAgentId ?? null, input.maxTurns ?? 12, JSON.stringify(contextWithScenario), input.sourceTaskId ?? null, input.mode ?? 'sequential', now, now);
   // 注册参与者（第一个是 moderator）
   ordered.forEach((agentId, idx) => {
     db.prepare('INSERT INTO discussion_participant (discussion_id,agent_id,role,turn_index,joined_at) VALUES (?, ?, ?, ?, ?)')

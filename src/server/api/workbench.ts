@@ -91,11 +91,13 @@ workbenchRouter.post('/drain', stateEndpoint('draining'));
 workbenchRouter.post('/review-pause', stateEndpoint('review_paused'));
 workbenchRouter.post('/resume', stateEndpoint('online'));
 
-/** 驾驶舱（原 GET /api/companies/:id/cockpit）。 */
+/** 驾驶舱（原 GET /api/companies/:id/cockpit）。空库自动建默认工作台（同 GET /api/workbench 语义）。 */
 workbenchRouter.get(
   '/cockpit',
   asyncHandler(async (req, res) => {
-    res.json(getWorkbenchCockpit(getDb(), companyIdOf(req)));
+    const db = getDb();
+    ensureWorkbench(db);
+    res.json(getWorkbenchCockpit(db));
   }),
 );
 
@@ -236,8 +238,8 @@ workbenchRouter.get(
   asyncHandler(async (req, res) => {
     const db = getDb();
     const companyId = companyIdOf(req);
-    const departments = listDepartments(db, companyId);
-    const agents = listAgents(db, companyId);
+    const departments = listDepartments(db);
+    const agents = listAgents(db);
     // 该公司所有项目下的线程与活跃 Task
     const threads = db
       .prepare(

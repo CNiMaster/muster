@@ -252,10 +252,11 @@ describe('Workflow Graph domain logic', () => {
     expect(listTasks(db, project.id)).toHaveLength(2);
   });
 
-  it('拒绝把工作流节点责任人配置为其他公司员工', () => {
+  it('工作流节点责任人配置（公司退役批次D：agent 归属单例工作台，跨公司校验已坍缩）', () => {
     const company = createCompany(db, { name: 'co' });
     const other = createCompany(db, { name: 'other' });
     const outsider = createAgent(db, { companyId: other.id, name: 'outside', role: 'writer' });
+    // 单例工作台下所有任职公司Id 恒为工作台 id，不再按公司归属拒绝
     expect(() => saveWorkflow(db, company.id, 'bad', {
       nodes: [
         { id: 'start', kind: 'start', label: '开始', position: { x: 0, y: 0 } },
@@ -277,6 +278,6 @@ describe('Workflow Graph domain logic', () => {
         { sourceId: 'start', targetId: 'step' },
         { sourceId: 'step', targetId: 'end' },
       ],
-    })).toThrow(/责任人必须属于/);
+    })).not.toThrow();
   });
 });

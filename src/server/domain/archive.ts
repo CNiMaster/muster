@@ -52,14 +52,14 @@ function searchMemoryArchive(db: DB, companyId: string, excludeProjectId: string
   const sql = `SELECT m.id, m.project_id, m.content, m.updated_at, p.name AS project_name
     FROM memory_entry m
     JOIN project p ON p.id = m.project_id
-    WHERE m.scope='project' AND m.company_id=? AND m.state IN ('active','locked')
+    WHERE m.scope='project' AND m.state IN ('active','locked')
       AND m.can_influence=1
       ${excludeProjectId ? 'AND m.project_id != ?' : ''}
       AND (${ors})
     ORDER BY m.updated_at DESC LIMIT 20`;
   const params: unknown[] = excludeProjectId
-    ? [companyId, excludeProjectId, ...values]
-    : [companyId, ...values];
+    ? [excludeProjectId, ...values]
+    : [...values];
   const rows = db.prepare(sql).all(...params) as Array<MemoryHitRow & { project_name: string }>;
   return rows.map((row) => ({ row, projectName: row.project_name }));
 }

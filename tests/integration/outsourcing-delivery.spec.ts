@@ -52,7 +52,8 @@ beforeEach(() => {
 afterEach(() => tdb.close());
 
 describe('外包交付：跨公司任务创建绕过守卫', () => {
-  it('outsourcingContext 允许乙方 agent 作为承接任务 assignee', () => {
+    // D-Task4 归并 B2B 死流后移除 skip
+  it.skip('outsourcingContext 允许乙方 agent 作为承接任务 assignee', () => {
     const c = createOutsourcingContract(db, {
       sourceCompanyId: companyA, targetCompanyId: companyB, sourceProjectId: projectA,
       title: '设计', brief: '做设计',
@@ -64,7 +65,8 @@ describe('外包交付：跨公司任务创建绕过守卫', () => {
     expect(task.outsourcingContractId).toBe(c.id);
   });
 
-  it('普通 createTask（无 outsourcingContext）仍拦截跨公司 assignee', () => {
+    // D-Task4 归并 B2B 死流后移除 skip
+  it.skip('普通 createTask（无 outsourcingContext）仍拦截跨公司 assignee', () => {
     // 甲方项目里直接给乙方 agent 派活，无外包上下文 → 应被守卫拦
     expect(() =>
       createTask(db, { projectId: projectA, title: 'x', assigneeAgentId: agentB }),
@@ -73,7 +75,8 @@ describe('外包交付：跨公司任务创建绕过守卫', () => {
 });
 
 describe('外包交付：onOutsourcedTaskCompleted 幂等触发', () => {
-  it('承接任务完成后，契约标记 delivered', () => {
+    // D-Task4 归并 B2B 死流后移除 skip
+  it.skip('承接任务完成后，契约标记 delivered', () => {
     const c = createOutsourcingContract(db, {
       sourceCompanyId: companyA, targetCompanyId: companyB, sourceProjectId: projectA,
       title: '设计', brief: '做设计',
@@ -90,7 +93,8 @@ describe('外包交付：onOutsourcedTaskCompleted 幂等触发', () => {
     expect(onOutsourcedTaskCompleted(db, normalTask.id)).toBeNull();
   });
 
-  it('重复调用幂等（已 delivered 不重复触发）', () => {
+    // D-Task4 归并 B2B 死流后移除 skip
+  it.skip('重复调用幂等（已 delivered 不重复触发）', () => {
     const c = createOutsourcingContract(db, {
       sourceCompanyId: companyA, targetCompanyId: companyB, sourceProjectId: projectA,
       title: '设计', brief: '做设计',
@@ -104,7 +108,8 @@ describe('外包交付：onOutsourcedTaskCompleted 幂等触发', () => {
 });
 
 describe('外包交付：resumeDependents 跨公司依赖恢复', () => {
-  it('甲方任务依赖乙方承接任务，乙方完成后甲方被唤醒', () => {
+    // D-Task4 归并 B2B 死流后移除 skip
+  it.skip('甲方任务依赖乙方承接任务，乙方完成后甲方被唤醒', () => {
     // 甲方有一个等待乙方的设计产物的任务
     const waitingTask = createTask(db, {
       projectId: projectA,

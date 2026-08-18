@@ -88,12 +88,12 @@ describe('notify_colleague（轻量化-3）', () => {
     const result = await executeTool(call, ctx);
     expect(result.content).toContain('已通知 newbie');
     // 公司对话流有通知
-    const companyMsgs = db.prepare("SELECT content FROM conversation_message WHERE scope_kind='company' AND content LIKE '%员工通知%'").all() as Array<{ content: string }>;
+    const companyMsgs = db.prepare("SELECT content FROM conversation_message WHERE scope_kind='workbench' AND content LIKE '%员工通知%'").all() as Array<{ content: string }>;
     expect(companyMsgs.length).toBe(1);
     expect(companyMsgs[0].content).toContain('欢迎入职');
   });
 
-  it('跨公司通知被拒绝', async () => {
+  it('跨公司通知被接受（公司退役批次D：agent 归属单例工作台，通知不再限公司）', async () => {
     const c2 = createCompany(db, { name: 'co2' });
     const outsider = createAgent(db, { companyId: c2.id, name: 'out', role: 'x' });
     const { lead, project } = fixture();
@@ -101,7 +101,8 @@ describe('notify_colleague（轻量化-3）', () => {
     const call: ToolCall = { id: 'tc', name: 'notify_colleague', args: { recipient_agent_id: outsider.id, message: 'hi' } };
     const ctx = makeCtx(askerTask.id, project.id, askerTask.projectTaskId, lead.id);
     const result = await executeTool(call, ctx);
-    expect(result.content).toContain('不属于本公司');
+    // 单例工作台下所有员工同属一个工作台，通知成功
+    expect(result.content).toContain('已通知 out');
   });
 
   it('缺 consultationContext 时优雅降级', async () => {

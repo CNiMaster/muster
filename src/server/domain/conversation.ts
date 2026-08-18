@@ -10,6 +10,7 @@ import path from 'node:path';
 import { shortId, nowIso } from '../../shared/utils';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { getCompany } from './company';
+import { getWorkbench } from './workbench';
 import { getProject, ensureInboxProject } from './project';
 import { createTask } from './task';
 import { getAgent } from './agent';
@@ -17,7 +18,7 @@ import { getMaterial } from './material';
 import { ensureWorkspaceStaff } from './workspace-staff';
 import { realtime } from '../realtime';
 
-export type ScopeKind = 'company' | 'project';
+export type ScopeKind = 'workbench' | 'project';
 export type MessageRole = 'user' | 'assistant' | 'system' | 'event';
 
 /**
@@ -30,7 +31,7 @@ function publishMessageCreated(message: ConversationMessage): void {
     realtime.publish({
       id: shortId('ev_'),
       type: 'message.created',
-      companyId: message.scopeKind === 'company' ? message.scopeId : undefined,
+      companyId: message.scopeKind === 'workbench' ? message.scopeId : undefined,
       projectId: message.scopeKind === 'project' ? message.scopeId : undefined,
       taskId: message.refTaskId ?? undefined,
       occurredAt: message.createdAt,
@@ -137,7 +138,7 @@ function fromRow(r: ConvRow): ConversationMessage {
 }
 
 function assertScope(db: DB, kind: ScopeKind, id: string): void {
-  if (kind === 'company') getCompany(db, id);
+  if (kind === 'workbench') getWorkbench(db);
   else getProject(db, id);
 }
 
@@ -146,7 +147,7 @@ export function listMessages(db: DB, kind: ScopeKind, scopeId: string, agentId?:
   assertScope(db, kind, scopeId);
   if (agentId) {
     const agent = getAgent(db, agentId);
-    const companyId = kind === 'company' ? scopeId : getProject(db, scopeId).companyId;
+    const companyId = kind === 'workbench' ? scopeId : getProject(db, scopeId).companyId;
     if (agent.companyId !== companyId) {
       throw new AppError(ErrorCode.UNAUTHORIZED, `员工 ${agentId} 不属于当前公司`);
     }
@@ -271,8 +272,8 @@ export function postUserMessage(db: DB, input: PostUserMessageInput): {
   let projectId: string | null = null;
   let companyId: string;
   let inboxCreated = false;
-  if (input.scopeKind === 'company') {
-    const c = getCompany(db, input.scopeId);
+  if (input.scopeKind === 'workbench') {
+    const c = getWorkbench(db);
     companyId = c.id;
     firstAgentId = c.firstAgentId;
     // 蓝图组织批次4d：公司对话落收件箱项目（随手问载体），不再随机借用第一个业务项目。
@@ -287,7 +288,7 @@ export function postUserMessage(db: DB, input: PostUserMessageInput): {
   }
   // 批次 E：零组织工作台对话即开工——没有第一负责人时懒确保固定员工再派发
   if (!firstAgentId) {
-    firstAgentId = ensureWorkspaceStaff(db, companyId).leadAgentId;
+    firstAgentId = ensureWorkspaceStaff(db).leadAgentId;
   }
 
   // 附件归属校验：素材必须属于本 scope 解析出的项目（防跨项目引用）

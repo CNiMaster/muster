@@ -31,7 +31,6 @@ memoryRouter.get('/candidates', asyncHandler(async (req, res) => {
 memoryRouter.post('/candidates', asyncHandler(async (req, res) => {
   const input = z.object({
     scope: scopeSchema,
-    companyId: z.string().optional(),
     projectId: z.string().optional(),
     content: z.string().min(1),
     sourceTaskId: z.string().optional(),
@@ -60,14 +59,13 @@ memoryRouter.post('/candidates/:candidateId/:action', asyncHandler(async (req, r
 memoryRouter.get('/entries', asyncHandler(async (req, res) => {
   const profileId = param(req, 'profileId');
   const query = z.string().optional().parse(req.query.query);
-  const companyId = z.string().optional().parse(req.query.companyId);
   const projectId = z.string().optional().parse(req.query.projectId);
   if (query?.trim()) {
-    res.json(searchMemory(getDb(), { profileId, query, companyId, projectId }));
+    res.json(searchMemory(getDb(), { profileId, query, projectId }));
     return;
   }
   const scope = scopeSchema.optional().parse(req.query.scope);
-  res.json(listMemoryEntries(getDb(), { profileId, scope, companyId, projectId }));
+  res.json(listMemoryEntries(getDb(), { profileId, scope, projectId }));
 }));
 
 memoryRouter.patch('/entries/:entryId', asyncHandler(async (req, res) => {

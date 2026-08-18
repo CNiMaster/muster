@@ -45,7 +45,7 @@ const createAgentSchema = z.object({
 agentsRouter.get(
   '/',
   asyncHandler(async (req, res) => {
-    res.json(listAgents(getDb(), companyIdOf(req)));
+    res.json(listAgents(getDb()));
   }),
 );
 
@@ -54,7 +54,7 @@ agentsRouter.post(
   asyncHandler(async (req, res) => {
     const input = createAgentSchema.parse(req.body);
     const db = getDb();
-    const agent = createAgent(db, { companyId: companyIdOf(req), ...input });
+    const agent = createAgent(db, { ...input });
     materializeAgentHome(getAgentProfile(db, agent.profileId));
     res.status(201).json(agent);
   }),

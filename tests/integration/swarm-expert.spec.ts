@@ -43,7 +43,7 @@ beforeEach(() => {
 
 describe('swarm expert team', () => {
   it('混合专家蜂群：worker personaId 穿戴到工蜂任务，显式优先', () => {
-    const lead = db.prepare("SELECT id FROM agent_definition WHERE company_id=? AND role='lead'").get(companyId) as { id: string };
+    const lead = db.prepare("SELECT id FROM agent_definition WHERE role='lead'").get() as { id: string };
     const source = makeTask(lead.id);
     const plan = {
       goal: '写一份行业报告',
@@ -63,7 +63,7 @@ describe('swarm expert team', () => {
   });
 
   it('不存在的 personaId 优雅降级为匿名', () => {
-    const lead = db.prepare("SELECT id FROM agent_definition WHERE company_id=? AND role='lead'").get(companyId) as { id: string };
+    const lead = db.prepare("SELECT id FROM agent_definition WHERE role='lead'").get() as { id: string };
     const source = makeTask(lead.id);
     const materialized = materializeSwarm(db, source, { goal: 'g', workers: [{ title: 'x', brief: 'b', personaId: 'p_ghost' }] }, { requesterAgentId: lead.id });
     const bee = getTask(db, materialized.beeTaskIds[0]!);
@@ -71,7 +71,7 @@ describe('swarm expert team', () => {
   });
 
   it('专家自主：限额快照 3 蜂/单层/$1 且 requester 落库', () => {
-    const expert = db.prepare("SELECT id FROM agent_definition WHERE company_id=? AND role='writer'").get(companyId) as { id: string };
+    const expert = db.prepare("SELECT id FROM agent_definition WHERE role='writer'").get() as { id: string };
     const source = makeTask(expert.id);
     const plan = { goal: 'g', workers: [{ title: 'a', brief: 'b' }, { title: 'c', brief: 'd' }] };
     const materialized = materializeSwarm(db, source, plan, { requesterAgentId: expert.id, limitsOverride: EXPERT_SWARM_LIMITS });
@@ -84,8 +84,8 @@ describe('swarm expert team', () => {
   });
 
   it('超限升级：超过 3 只不建群，改派 [蜂群请示] 给第一负责人', () => {
-    const expert = db.prepare("SELECT id FROM agent_definition WHERE company_id=? AND role='writer'").get(companyId) as { id: string };
-    const lead = db.prepare("SELECT id FROM agent_definition WHERE company_id=? AND role='lead'").get(companyId) as { id: string };
+    const expert = db.prepare("SELECT id FROM agent_definition WHERE role='writer'").get() as { id: string };
+    const lead = db.prepare("SELECT id FROM agent_definition WHERE role='lead'").get() as { id: string };
     const source = makeTask(expert.id);
     const plan = { goal: 'g', workers: [1, 2, 3, 4].map((i) => ({ title: `子题${i}`, brief: 'b' })) };
     const escalated = escalateSwarmRequest(db, {

@@ -125,9 +125,8 @@ function debaterPrompt(option: QuestionOption, allOptions: QuestionOption[]): st
 - 对手立场：${others || '（无）'}。每轮输出 300 字以内，结论先行。`;
 }
 
-function createDebater(db: DB, input: { companyId: string; projectId: string; index: number; option: QuestionOption; allOptions: QuestionOption[]; judgeAgentId: string }): string {
+function createDebater(db: DB, input: { projectId: string; index: number; option: QuestionOption; allOptions: QuestionOption[]; judgeAgentId: string }): string {
   const { agentId } = createTempEmployment(db, {
-    companyId: input.companyId,
     role: DEBATER_ROLE,
     requesterAgentId: input.judgeAgentId,
     name: ADVOCATE_NAMES[input.index] ?? `辩手${input.index + 1}`,
@@ -162,7 +161,7 @@ export interface StartDebateInput {
   options: QuestionOption[];
   /** 两难的来源任务（waiting_input 挂着等裁决；裁决后自动回答或升级）。 */
   originTaskId: string;
-  originScopeKind?: 'company' | 'project';
+  originScopeKind?: 'workbench' | 'project';
   originScopeId?: string;
 }
 
@@ -177,7 +176,7 @@ export function startDebate(db: DB, input: StartDebateInput): StartedDebate {
   if (input.options.length < 2) {
     throw new AppError(ErrorCode.VALIDATION, '评审庭至少需要 2 个选项');
   }
-  const { judgeAgentId } = ensureSystemAgents(db, input.companyId);
+  const { judgeAgentId } = ensureSystemAgents(db);
   // 评审岗是隐形岗，不在 ensureProjectThreads（按可见花名册）覆盖内——显式建线程
   ensurePrimaryThread(db, input.projectId, judgeAgentId);
   const advocates = input.options.slice(0, DEBATE_MAX_ADVOCATES);
@@ -206,7 +205,6 @@ export function startDebate(db: DB, input: StartDebateInput): StartedDebate {
   const debaterAgentIds: string[] = [];
   for (const [index, option] of advocates.entries()) {
     const debaterAgentId = createDebater(db, {
-      companyId: input.companyId,
       projectId: input.projectId,
       index,
       option,
@@ -299,10 +297,10 @@ function escalateDebateToUser(db: DB, debateId: string, opts: { flaws?: Array<{ 
   const scopeInfo = db.prepare('SELECT origin_scope_kind AS k, origin_scope_id AS s FROM debate WHERE id=?').get(debateId) as { k: string | null; s: string | null };
   if (scopeInfo.k && scopeInfo.s) {
     postSystemMessage(db, {
-      scopeKind: scopeInfo.k as 'company' | 'project',
+      scopeKind: scopeInfo.k as 'workbench' | 'project',
       scopeId: scopeInfo.s!,
       role: 'assistant',
-      author: getJudgeAgentId(db, debate.companyId) ?? 'system',
+      author: getJudgeAgentId(db) ?? 'system',
       content: `[需要你拍板] ${formatOptionsContent(debate.question, debate.options, flaws)}`,
       refTaskId: debate.originTaskId,
     });
@@ -390,7 +388,7 @@ export function finalizeDebate(db: DB, debateId: string, verdict: DebateVerdict)
     });
     if (canPost) {
       postSystemMessage(db, {
-        scopeKind: scopeInfo.k as 'company' | 'project',
+        scopeKind: scopeInfo.k as 'workbench' | 'project',
         scopeId: scopeInfo.s!,
         role: 'event',
         author: 'system',
@@ -429,6 +427,6 @@ export function recordDecisionFromClarify(db: DB, taskId: string, option: Questi
 }
 
 /** 兼容外部引用：确认评审岗存在时返回其 id。 */
-export function judgeAgentOf(db: DB, companyId: string): string | null {
-  return getJudgeAgentId(db, companyId) ?? ensureSystemAgents(db, companyId).judgeAgentId;
+export function judgeAgentOf(db: DB): string | null {
+  return getJudgeAgentId(db) ?? ensureSystemAgents(db).judgeAgentId;
 }

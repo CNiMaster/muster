@@ -62,7 +62,7 @@ const dispatchHandler = asyncHandler(async (req, res) => {
   }
   // recruit：选拔优先级链（greyed 复用 → 人才库 → 创建）自动招募临时工
   const tempRole = input.requiredCapabilityIds?.[0] ?? '临时专员';
-  const result = selectTempForNeed(db, sourceCompanyId, input.requiredCapabilityIds ?? [], tempRole, {
+  const result = selectTempForNeed(db, input.requiredCapabilityIds ?? [], tempRole, {
     responsibilities: input.brief,
   });
   realtime.publish(makeLifecycleEvent('employee.temp-recruited', {

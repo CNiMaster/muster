@@ -103,7 +103,7 @@ describe('对话可见追问', () => {
       assigneeAgentId: lead.id,
       title: '写作',
       priority: 9,
-      inputProtocol: { trigger: 'user_message', scope: 'company', scopeId: company.id, content: '写一章' },
+      inputProtocol: { trigger: 'user_message', scope: 'workbench', scopeId: company.id, content: '写一章' },
     });
     db.prepare(
       `INSERT INTO project_agent_thread (id, project_id, agent_id, kind, root_thread_id, claude_session_id, context_json, state, created_at, updated_at)
@@ -112,7 +112,7 @@ describe('对话可见追问', () => {
     await engine.pumpThread('th_q1');
 
     expect(getTask(db, t1.id).state).toBe('waiting_input');
-    const companyMessages = listMessages(db, 'company', company.id);
+    const companyMessages = listMessages(db, 'workbench', company.id);
     const questionMsg = companyMessages.find((m) => m.role === 'assistant' && m.refTaskId === t1.id);
     expect(questionMsg).toBeDefined();
     expect(questionMsg!.content).toContain('主角叫什么名字？');
@@ -126,10 +126,10 @@ describe('对话可见追问', () => {
       assigneeAgentId: lead.id,
       title: '执行',
       priority: 9,
-      inputProtocol: { trigger: 'user_message', scope: 'company', scopeId: company.id, content: '执行' },
+      inputProtocol: { trigger: 'user_message', scope: 'workbench', scopeId: company.id, content: '执行' },
     });
     await engine.pumpThread('th_q1');
-    const after = listMessages(db, 'company', company.id);
+    const after = listMessages(db, 'workbench', company.id);
     expect(after.some((m) => m.role === 'assistant' && m.content === '搞定了')).toBe(true);
   });
 
@@ -158,7 +158,7 @@ describe('对话可见追问', () => {
       assigneeAgentId: lead.id,
       title: '配置',
       priority: 9,
-      inputProtocol: { trigger: 'user_message', scope: 'company', scopeId: company.id, content: '初始化' },
+      inputProtocol: { trigger: 'user_message', scope: 'workbench', scopeId: company.id, content: '初始化' },
     });
     db.prepare(
       `INSERT INTO project_agent_thread (id, project_id, agent_id, kind, root_thread_id, claude_session_id, context_json, state, created_at, updated_at)
@@ -166,7 +166,7 @@ describe('对话可见追问', () => {
     ).run(project.id, lead.id);
     await engine.pumpThread('th_q2');
 
-    const messages = listMessages(db, 'company', company.id);
+    const messages = listMessages(db, 'workbench', company.id);
     const questionMsg = messages.find((m) => m.role === 'assistant');
     expect(questionMsg).toBeDefined();
     expect(questionMsg!.content).toContain('用默认配置吗？');

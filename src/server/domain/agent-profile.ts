@@ -3,6 +3,7 @@ import { AppError, ErrorCode } from '../../shared/errors';
 import { nowIso, shortId } from '../../shared/utils';
 import { copyPersonalMemoryEntries } from './memory';
 import { getPersona } from './persona-library';
+import { getWorkbench } from './workbench';
 
 export interface AgentProfile {
   id: string;
@@ -74,7 +75,6 @@ interface ProfileRow {
 interface EmployeeRow {
   id: string;
   profile_id: string;
-  company_id: string;
   legacy_agent_id: string;
   department_id: string | null;
   role: string;
@@ -111,11 +111,11 @@ function profileFromRow(row: ProfileRow): AgentProfile {
   };
 }
 
-function employeeFromRow(row: EmployeeRow): CompanyEmployee {
+function employeeFromRow(db: DB, row: EmployeeRow): CompanyEmployee {
   return {
     id: row.id,
     profileId: row.profile_id,
-    companyId: row.company_id,
+    companyId: getWorkbench(db).id,
     legacyAgentId: row.legacy_agent_id,
     departmentId: row.department_id,
     role: row.role,
@@ -317,7 +317,6 @@ export function clonePersonaAsUser(db: DB, personaId: string, customName?: strin
 export function createCompanyEmployeeRecord(db: DB, input: {
   id: string;
   profileId: string;
-  companyId: string;
   legacyAgentId: string;
   departmentId?: string | null;
   role: string;
@@ -330,11 +329,11 @@ export function createCompanyEmployeeRecord(db: DB, input: {
   const now = input.createdAt ?? nowIso();
   db.prepare(
     `INSERT INTO company_employee (
-      id, profile_id, company_id, legacy_agent_id, department_id, role,
+      id, profile_id, legacy_agent_id, department_id, role,
       responsibilities, executor_json, permission_json, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
-    input.id, input.profileId, input.companyId, input.legacyAgentId, input.departmentId ?? null,
+    input.id, input.profileId, input.legacyAgentId, input.departmentId ?? null,
     input.role, input.responsibilities ?? '', JSON.stringify(input.executor ?? {}),
     JSON.stringify(input.permission ?? {}), now, now,
   );
@@ -344,13 +343,13 @@ export function createCompanyEmployeeRecord(db: DB, input: {
 export function getCompanyEmployee(db: DB, id: string): CompanyEmployee {
   const row = db.prepare('SELECT * FROM company_employee WHERE id=?').get(id) as EmployeeRow | undefined;
   if (!row) throw new AppError(ErrorCode.NOT_FOUND, `company employee ${id} not found`);
-  return employeeFromRow(row);
+  return employeeFromRow(db, row);
 }
 
 export function listProfileEmployments(db: DB, profileId: string): CompanyEmployee[] {
   getAgentProfile(db, profileId);
   return (db.prepare('SELECT * FROM company_employee WHERE profile_id=? ORDER BY created_at, id').all(profileId) as EmployeeRow[])
-    .map(employeeFromRow);
+    .map((row) => employeeFromRow(db, row));
 }
 
 export function syncCompanyEmployeeRecord(db: DB, input: {

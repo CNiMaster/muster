@@ -38,7 +38,7 @@ graphsRouter.get(
   asyncHandler(async (req, res) => {
     const kind = req.query.kind as 'org' | 'communication' | undefined;
     const includeArchived = req.query.includeArchived === '1' || req.query.includeArchived === 'true';
-    res.json(listRelationships(getDb(), companyIdOf(req), kind, { includeArchived }));
+    res.json(listRelationships(getDb(), kind, { includeArchived }));
   }),
 );
 
@@ -46,7 +46,7 @@ graphsRouter.post(
   '/',
   asyncHandler(async (req, res) => {
     const input = addRelSchema.parse(req.body);
-    res.status(201).json(addRelationship(getDb(), { companyId: companyIdOf(req), ...input }));
+    res.status(201).json(addRelationship(getDb(), { ...input }));
   }),
 );
 
@@ -75,7 +75,7 @@ graphsRouter.post(
 graphsRouter.post(
   '/validate',
   asyncHandler(async (req, res) => {
-    res.json({ errors: validateCommunication(getDb(), companyIdOf(req)) });
+    res.json({ errors: validateCommunication(getDb()) });
   }),
 );
 

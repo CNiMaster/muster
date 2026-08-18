@@ -94,7 +94,7 @@ describe('startUserDiscussion 用户发起探讨', () => {
     expect(count).toBe(0);
   });
 
-  it('跨公司员工作为参与者被拒绝', () => {
+  it('跨公司员工可参与（公司退役批次D：agent 归属单例工作台，不再拒绝）', () => {
     const { lead, p } = seed();
     const other = createCompany(db, { name: '别家公司' });
     const outsider = createAgent(db, { companyId: other.id, name: '外人', role: 'engineer' });
@@ -102,7 +102,7 @@ describe('startUserDiscussion 用户发起探讨', () => {
       projectId: p.id,
       topic: '议题',
       participantAgentIds: [lead.id, outsider.id],
-    })).toThrow(/不属于项目所在公司/);
+    })).not.toThrow();
   });
 
   it('参与者不足 2 人被拒绝', () => {

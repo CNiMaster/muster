@@ -17,11 +17,11 @@ const bodySchema = z.object({
 });
 
 departmentsRouter.get('/', asyncHandler(async (req, res) => {
-  res.json(listDepartments(getDb(), companyIdOf(req)));
+  res.json(listDepartments(getDb()));
 }));
 departmentsRouter.post('/', asyncHandler(async (req, res) => {
   const input = bodySchema.parse(req.body);
-  res.status(201).json(createDepartment(getDb(), { companyId: companyIdOf(req), ...input }));
+  res.status(201).json(createDepartment(getDb(), { ...input }));
 }));
 departmentsRouter.patch('/:id', asyncHandler(async (req, res) => {
   const current = getDepartment(getDb(), param(req, 'id'));

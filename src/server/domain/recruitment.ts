@@ -24,7 +24,6 @@ export function recruitFromDraft(db: DB, companyId: string, draft: RecruitmentDr
       }).id;
     }
     const agent = recruitAgentProfile(db, {
-      companyId,
       profileId,
       role: draft.role,
       responsibilities: draft.responsibilities,

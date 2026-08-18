@@ -77,16 +77,17 @@ describe('searchArchive 跨项目归档检索', () => {
     const ctx = seed();
     seedArchive(ctx);
     const other = createCompany(db, { name: '别家公司' });
-    const otherAgent = createAgent(db, { companyId: other.id, name: '外人', role: 'lead' });
-    const otherProject = createProject(db, { companyId: other.id, name: '别家项目', rootDir: '/tmp/other', firstAgentId: otherAgent.id, initialState: 'active' });
+    const otherAgent = createAgent(db, { name: '外人', role: 'lead' });
+    const otherProject = createProject(db, { companyId: ctx.c.id, name: '别家项目', rootDir: '/tmp/other', firstAgentId: otherAgent.id, initialState: 'active' });
     const mem = createMemoryCandidate(db, {
-      profileId: otherAgent.profileId, scope: 'project', companyId: other.id, projectId: otherProject.id,
+      profileId: otherAgent.profileId, scope: 'project', projectId: otherProject.id,
       content: '别家公司的落地页机密经验', author: 'user', confidence: 1, canInfluence: true,
     });
     approveMemoryCandidate(db, mem.id, 'user');
 
     const hits = searchArchive(db, { companyId: ctx.c.id, query: '落地页' });
-    expect(hits.some((h) => h.text.includes('别家公司'))).toBe(false);
+    // 公司退役批次D：memory_entry.company_id 已删除，归档检索不再按公司隔离——全量项目记忆可见
+    expect(hits.some((h) => h.text.includes('别家公司'))).toBe(true);
   });
 
   it('待审批记忆不进归档（只检索已批准经验）', () => {

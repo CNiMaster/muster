@@ -30,7 +30,7 @@ export interface InspectorSuggestion {
 
 export function generateInspectorSuggestions(db: DB, projectId: string): InspectorSuggestion[] {
   const project = getProject(db, projectId);
-  const agents = listAgents(db, project.companyId);
+  const agents = listAgents(db);
   const tasks = listTasks(db, projectId);
   const threads = listThreads(db, projectId);
   const out: InspectorSuggestion[] = [];

@@ -228,8 +228,7 @@ export function deleteCompany(db: DB, id: string): void {
   }
   // 外键级联（migration 0001/0016 定义了 ON DELETE CASCADE）会处理 task/project/agent_definition 等。
   // company_employee 的 legacy_agent_id 指向 agent_definition，删除 agent_definition 会级联删 employee。
-  // 但为确保彻底，显式删一层。
-  db.prepare('DELETE FROM company_employee WHERE company_id=?').run(id);
+  // 公司退役批次D：company_employee.company_id 列已删除，不再显式按公司删任职（级联仍覆盖）。
   db.prepare('DELETE FROM company WHERE id=?').run(id);
 }
 

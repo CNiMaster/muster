@@ -46,7 +46,6 @@ const createChangeSchema = z.object({
 const createChangeHandler = asyncHandler(async (req, res) => {
   const input = createChangeSchema.parse(req.body);
   const req2 = createPermissionChangeRequest(getDb(), {
-    companyId: companyIdOf(req),
     ...input,
   });
   realtime.publish(makeLifecycleEvent('permission.change-requested' as never, {

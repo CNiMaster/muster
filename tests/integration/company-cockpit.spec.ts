@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { DB } from '../../src/server/db/client';
 import { createAgent } from '../../src/server/domain/agent';
 import { createCompany, updateCompany } from '../../src/server/domain/company';
-import { getCompanyCockpit } from '../../src/server/domain/company-cockpit';
+import { getWorkbenchCockpit } from '../../src/server/domain/workbench-cockpit';
 import {
   bindEmployeeExecutorProfile,
   createExecutorProfile,
@@ -49,7 +49,7 @@ function connectEmployee(employeeId: string): void {
   );
 }
 
-describe('company cockpit', () => {
+describe('workbench cockpit', () => {
   it('aggregates real approvals, executor health and role coverage', () => {
     const company = createCompany(db, {
       name: 'Acme',
@@ -70,7 +70,7 @@ describe('company cockpit', () => {
       action: 'git-push',
     });
 
-    const cockpit = getCompanyCockpit(db, company.id);
+    const cockpit = getWorkbenchCockpit(db);
 
     expect(cockpit.approvals.pending).toBe(1);
     expect(cockpit.employees).toMatchObject({ total: 2, blocked: 1 });
@@ -80,7 +80,7 @@ describe('company cockpit', () => {
     expect(cockpit.nextAction.kind).toBe('handle-approval');
   });
 
-  it('does not leak approvals or employees from another company', () => {
+  it('聚合所有员工与审批（单例工作台下无公司隔离）', () => {
     const company = createCompany(db, { name: 'A' });
     const other = createCompany(db, { name: 'B' });
     const outsider = createAgent(db, { companyId: other.id, name: '外部员工', role: 'lead' });
@@ -88,10 +88,11 @@ describe('company cockpit', () => {
     const policy = db.prepare('SELECT permission_policy_id id FROM company_employee WHERE id=?').get(outsider.id) as { id: string };
     requestApproval(db, { policyId: policy.id, employeeId: outsider.id, taskId: 'other_task', action: 'git-push' });
 
-    const cockpit = getCompanyCockpit(db, company.id);
+    const cockpit = getWorkbenchCockpit(db);
 
-    expect(cockpit.employees.total).toBe(0);
-    expect(cockpit.approvals.pending).toBe(0);
+    // 公司退役批次D：company_id 列已删除，工作台驾驶舱聚合全量员工与审批，不再按公司隔离。
+    expect(cockpit.employees.total).toBe(1);
+    expect(cockpit.approvals.pending).toBe(1);
   });
 
 });

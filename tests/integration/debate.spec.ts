@@ -66,7 +66,7 @@ describe('编排（确定性依赖链）', () => {
       question: '快糙还是稳好？',
       options: OPTIONS,
       originTaskId: origin.id,
-      originScopeKind: 'company',
+      originScopeKind: 'workbench',
       originScopeId: company.id,
     });
     expect(started.debaterTaskIds).toHaveLength(4); // 2 辩手 × 2 轮
@@ -132,7 +132,7 @@ describe('裁决分流', () => {
       question: '快糙还是稳好？',
       options: OPTIONS,
       originTaskId: origin.id,
-      originScopeKind: 'company',
+      originScopeKind: 'workbench',
       originScopeId: company.id,
     });
     return { company, project, origin: completed, started, judgeAgentId };
@@ -155,7 +155,7 @@ describe('裁决分流', () => {
     expect(decisions[0].chosen).toContain('方案B');
     expect(decisions[0].source).toBe('auto');
     // 对话播报
-    const msgs = listMessages(db, 'company', company.id);
+    const msgs = listMessages(db, 'workbench', company.id);
     expect(msgs.some((m) => m.role === 'event' && m.content.includes('已裁决') && m.content.includes('方案B'))).toBe(true);
     // 辩手回收
     expect(db.prepare('SELECT id FROM agent_definition WHERE id=?').get(debaterId)).toBeUndefined();
@@ -179,7 +179,7 @@ describe('裁决分流', () => {
     expect(after.questionOptions?.find((o) => o.id === 'a')?.cons).toContain('债务风险');
     const taskMessages = listTaskMessages(db, origin.id);
     expect(taskMessages.some((m) => m.content.includes('[评审庭]') && m.content.includes('需要你拍板') && m.content.includes('致命伤'))).toBe(true);
-    const convMsgs = listMessages(db, 'company', company.id);
+    const convMsgs = listMessages(db, 'workbench', company.id);
     expect(convMsgs.some((m) => m.role === 'assistant' && m.content.includes('[需要你拍板]') && m.content.includes('⚠ 致命伤：B 耽误上线窗口'))).toBe(true);
     // 用户随后选择 → decision_record(source=user) 且关联该辩论
     answerClarification(db, origin.id, { optionId: 'a' });
@@ -192,7 +192,7 @@ describe('裁决分流', () => {
   it('用户已抢先回答后辩论才升级 → 不再打扰（无对话播报/无任务消息），仅事件留痕', () => {
     const { company, origin, started } = makeOpenDebate();
     answerClarification(db, origin.id, { optionId: 'b' }); // 用户手动选了 B，任务已 queued
-    const before = listMessages(db, 'company', company.id).length;
+    const before = listMessages(db, 'workbench', company.id).length;
     const msgBefore = listTaskMessages(db, origin.id).length;
     finalizeDebate(db, started.debateId, {
       recommendedOptionId: 'a',
@@ -201,7 +201,7 @@ describe('裁决分流', () => {
       flaws: [{ optionId: 'a', flaw: 'x' }],
     });
     expect(getTask(db, origin.id).state).toBe('queued'); // 保持用户的选择
-    expect(listMessages(db, 'company', company.id).length).toBe(before); // 无新对话消息
+    expect(listMessages(db, 'workbench', company.id).length).toBe(before); // 无新对话消息
     expect(listTaskMessages(db, origin.id)).toHaveLength(msgBefore); // 无新任务消息（不再打扰）
     expect(listTaskEvents(db, origin.id).some((e) => e.kind === 'debate_escalated')).toBe(true); // 仅事件留痕
   });
@@ -231,7 +231,7 @@ describe('引擎端到端：两难自动进评审庭 → 辩论 → 裁决', () 
       assigneeAgentId: lead.id,
       title: '用户消息任务',
       priority: 9,
-      inputProtocol: { trigger: 'user_message', scope: 'company', scopeId: company.id, content: '帮我权衡' },
+      inputProtocol: { trigger: 'user_message', scope: 'workbench', scopeId: company.id, content: '帮我权衡' },
     });
     ensurePrimaryThread(db, project.id, lead.id);
     await engine.pumpThread(threadIdFor(lead.id, project));
@@ -239,7 +239,7 @@ describe('引擎端到端：两难自动进评审庭 → 辩论 → 裁决', () 
     expect(getTask(db, origin.id).state).toBe('waiting_input');
     const debateRow = db.prepare('SELECT id FROM debate WHERE origin_task_id=?').get(origin.id) as { id: string };
     expect(debateRow).toBeDefined();
-    const convMsgs = listMessages(db, 'company', company.id);
+    const convMsgs = listMessages(db, 'workbench', company.id);
     expect(convMsgs.some((m) => m.content.includes('[评审庭] 遇到两难'))).toBe(true);
     expect(convMsgs.some((m) => m.role === 'assistant' && m.content.startsWith('选快还是选稳？'))).toBe(false); // 未发裸问题
 
@@ -248,7 +248,7 @@ describe('引擎端到端：两难自动进评审庭 → 辩论 → 裁决', () 
       `SELECT DISTINCT a.id FROM agent_definition a JOIN task t ON t.assignee_agent_id=a.id WHERE t.parent_task_id=? AND a.role=?`,
     ).all(origin.id, DEBATER_ROLE).map((r: { id: string }) => r.id) as string[];
     expect(debaterIds).toHaveLength(2);
-    const judgeId = db.prepare("SELECT id FROM agent_definition WHERE role='debate-judge' AND company_id=?").get(company.id) as { id: string };
+    const judgeId = db.prepare("SELECT id FROM agent_definition WHERE role='debate-judge' LIMIT 1").get() as { id: string };
     fake.script([
       { result: { outcome: 'completed' as const, summary: '立论A：快！', outboundTasks: [], artifacts: [] } },
       { result: { outcome: 'completed' as const, summary: '立论B：稳！', outboundTasks: [], artifacts: [] } },
@@ -274,7 +274,7 @@ describe('引擎端到端：两难自动进评审庭 → 辩论 → 裁决', () 
     expect(getTask(db, origin.id).state).toBe('queued');
     const debateStatus = db.prepare('SELECT status FROM debate WHERE id=?').get(debateRow.id) as { status: string };
     expect(debateStatus.status).toBe('resolved');
-    const after = listMessages(db, 'company', company.id);
+    const after = listMessages(db, 'workbench', company.id);
     expect(after.some((m) => m.content.includes('已裁决') && m.content.includes('方案A'))).toBe(true);
     // 辩手已回收
     expect(db.prepare('SELECT COUNT(*) AS c FROM agent_definition WHERE role=?').get(DEBATER_ROLE)).toMatchObject({ c: 0 });

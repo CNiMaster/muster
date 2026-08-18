@@ -14,7 +14,7 @@ import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { nowIso, shortId } from '../../shared/utils';
 import { getAgent } from './agent';
-import { getCompany } from './company';
+import { getWorkbench } from './workbench';
 import { savePermissionRule, getEmployeePermissionPolicy } from './permission';
 
 /** 权限变更申请的状态。 */
@@ -41,7 +41,6 @@ export interface PermissionChangeRequest {
 
 interface ChangeRequestRow {
   id: string;
-  company_id: string;
   requester_employee_id: string;
   target_path_prefix: string | null;
   requested_effect: string;
@@ -57,10 +56,10 @@ interface ChangeRequestRow {
   updated_at: string;
 }
 
-function fromRow(r: ChangeRequestRow): PermissionChangeRequest {
+function fromRow(db: DB, r: ChangeRequestRow): PermissionChangeRequest {
   return {
     id: r.id,
-    companyId: r.company_id,
+    companyId: getWorkbench(db).id,
     requesterEmployeeId: r.requester_employee_id,
     targetPathPrefix: r.target_path_prefix,
     requestedEffect: r.requested_effect as 'allow' | 'deny',
@@ -83,19 +82,18 @@ function fromRow(r: ChangeRequestRow): PermissionChangeRequest {
  * 所以查 source_id WHERE target_id = employee。
  */
 export function findDirectManager(db: DB, employeeId: string): string | null {
-  const agent = getAgent(db, employeeId);
+  getAgent(db, employeeId);
   // org 边：source_id 是负责人
   const row = db
     .prepare(
       `SELECT source_id FROM relationship
-       WHERE company_id = ? AND kind = 'org' AND target_id = ?
+       WHERE kind = 'org' AND target_id = ?
        LIMIT 1`,
     )
-    .get(agent.companyId, employeeId) as { source_id: string } | undefined;
+    .get(employeeId) as { source_id: string } | undefined;
   if (row?.source_id) return row.source_id;
-  // 无 org 边 → 公司第一负责人
-  const company = getCompany(db, agent.companyId);
-  return company.firstAgentId ?? null;
+  // 无 org 边 → 工作台第一负责人
+  return getWorkbench(db).firstAgentId ?? null;
 }
 
 /**
@@ -107,7 +105,6 @@ export function resolveApprover(db: DB, employeeId: string): string | null {
 }
 
 export interface CreateChangeRequestInput {
-  companyId: string;
   requesterEmployeeId: string;
   targetPathPrefix?: string;
   requestedEffect?: 'allow' | 'deny';
@@ -118,14 +115,11 @@ export interface CreateChangeRequestInput {
 
 /**
  * 下级申请权限变更。
- * 自动路由审批人（直接负责人 / 公司第一负责人）。
+ * 自动路由审批人（直接负责人 / 工作台第一负责人）。
  */
 export function createPermissionChangeRequest(db: DB, input: CreateChangeRequestInput): PermissionChangeRequest {
-  // 校验申请人属于该公司
-  const requester = getAgent(db, input.requesterEmployeeId);
-  if (requester.companyId !== input.companyId) {
-    throw new AppError(ErrorCode.UNAUTHORIZED, '申请人不属于该公司');
-  }
+  // 校验申请人存在（同工作台语义下无需再比对公司归属）
+  getAgent(db, input.requesterEmployeeId);
   if (!input.reason.trim()) {
     throw new AppError(ErrorCode.VALIDATION, '申请原因不能为空');
   }
@@ -141,11 +135,11 @@ export function createPermissionChangeRequest(db: DB, input: CreateChangeRequest
   const id = shortId('pcr_');
   db.prepare(
     `INSERT INTO permission_change_request
-      (id, company_id, requester_employee_id, target_path_prefix, requested_effect, requested_action,
+      (id, requester_employee_id, target_path_prefix, requested_effect, requested_action,
        requested_scope, reason, approver_employee_id, state, valid_until, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
   ).run(
-    id, input.companyId, input.requesterEmployeeId, input.targetPathPrefix ?? null,
+    id, input.requesterEmployeeId, input.targetPathPrefix ?? null,
     input.requestedEffect ?? 'allow', input.requestedAction ?? null,
     input.requestedScope, input.reason, approverId, validUntil, now, now,
   );
@@ -155,7 +149,7 @@ export function createPermissionChangeRequest(db: DB, input: CreateChangeRequest
 export function getPermissionChangeRequest(db: DB, id: string): PermissionChangeRequest {
   const row = db.prepare('SELECT * FROM permission_change_request WHERE id=?').get(id) as ChangeRequestRow | undefined;
   if (!row) throw new AppError(ErrorCode.NOT_FOUND, `权限变更申请 ${id} 不存在`);
-  return fromRow(row);
+  return fromRow(db, row);
 }
 
 /** 列出某员工待审批的申请（作为审批人）。 */
@@ -167,7 +161,7 @@ export function listPendingApprovals(db: DB, approverEmployeeId: string): Permis
        ORDER BY created_at DESC`,
     )
     .all(approverEmployeeId) as ChangeRequestRow[];
-  return rows.map(fromRow);
+  return rows.map((row) => fromRow(db, row));
 }
 
 /** 列出某员工提交的申请（作为申请人）。 */
@@ -175,7 +169,7 @@ export function listMyRequests(db: DB, requesterEmployeeId: string): PermissionC
   const rows = db
     .prepare('SELECT * FROM permission_change_request WHERE requester_employee_id=? ORDER BY created_at DESC')
     .all(requesterEmployeeId) as ChangeRequestRow[];
-  return rows.map(fromRow);
+  return rows.map((row) => fromRow(db, row));
 }
 
 /**

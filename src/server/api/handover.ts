@@ -39,7 +39,7 @@ export const handoverRouter = Router();
 const createSchema = z.object({ departingEmployeeId: z.string().min(1) });
 const createHandoverHandler = asyncHandler(async (req, res) => {
   const input = createSchema.parse(req.body);
-  const record = createHandover(getDb(), { companyId: companyIdOf(req), departingEmployeeId: input.departingEmployeeId });
+  const record = createHandover(getDb(), { departingEmployeeId: input.departingEmployeeId });
   realtime.publish(makeLifecycleEvent('handover.created' as never, {
     handoverId: record.id,
     departingEmployeeId: record.departingEmployeeId,
@@ -50,7 +50,7 @@ handoverRouter.post('/handover', createHandoverHandler);
 
 // 列出公司交接记录
 const listHandoversHandler = asyncHandler(async (req, res) => {
-  res.json(listHandovers(getDb(), companyIdOf(req)));
+  res.json(listHandovers(getDb()));
 });
 handoverRouter.get('/handover', listHandoversHandler);
 
@@ -132,7 +132,7 @@ handoverRouter.post(
 
 // 正式员工离职入口（创建交接记录）—— 公司退役批次A双挂（旧 /companies/:companyId/employees/:eid/offboard 与新 /employees/:eid/offboard）
 const offboardHandler = asyncHandler(async (req, res) => {
-  const record = offboardEmployee(getDb(), companyIdOf(req), param(req, 'employeeId'));
+  const record = offboardEmployee(getDb(), param(req, 'employeeId'));
   res.status(201).json(record);
 });
 handoverRouter.post('/employees/:employeeId/offboard', offboardHandler);

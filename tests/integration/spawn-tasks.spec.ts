@@ -198,7 +198,7 @@ describe('spawn_tasks 工具（阶段七任务 7.1）', () => {
     expect(deps.n).toBe(0);
   });
 
-  it('跨公司派发被拒绝', async () => {
+  it('未授权联系人派发被拒绝（公司退役批次D：跨公司归属已坍缩，通信白名单守卫仍生效）', async () => {
     const { lead, project } = fixture();
     const other = createCompany(db, { name: 'other' });
     const stranger = createAgent(db, { companyId: other.id, name: 'stranger', role: 'x' });
@@ -209,7 +209,8 @@ describe('spawn_tasks 工具（阶段七任务 7.1）', () => {
       args: { tasks: [{ title: '越权任务', assignee_agent_id: stranger.id }] },
     };
     const result = await executeTool(call, makeContext(parent.id, project.id, parent.projectTaskId, lead.id));
-    expect(result.content).toContain('不属于本公司');
+    // 单例工作台语义下不再按公司拒绝，但 lead 未授权联系 stranger → 仍被通信白名单拦截
+    expect(result.content).toContain('未授权联系');
     const children = db.prepare('SELECT COUNT(*) n FROM task WHERE parent_task_id=?').get(parent.id) as { n: number };
     expect(children.n).toBe(0);
   });

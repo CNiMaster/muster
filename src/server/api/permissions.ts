@@ -21,7 +21,7 @@ permissionsRouter.put('/employees/:employeeId/policy/:policyId', asyncHandler(as
 /** 按工作台批量绑定权限策略到所有员工（要求工作台下班）—— 公司退役批次A双挂（旧 /companies/:companyId/binding 与新 /binding）。 */
 const companyBindingHandler = asyncHandler(async (req, res) => {
   const input = z.object({ policyId: z.string().min(1) }).parse(req.body);
-  const result = bindCompanyEmployeesPermission(getDb(), companyIdOf(req), input.policyId);
+  const result = bindCompanyEmployeesPermission(getDb(), input.policyId);
   res.json(result);
 });
 permissionsRouter.post('/binding', companyBindingHandler);

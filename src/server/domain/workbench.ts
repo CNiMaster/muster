@@ -20,6 +20,12 @@ import { log } from '../logger';
 /** 公司退役批次D 执行期复核：first_agent_id/review_mode 为活列（蜂群放蜂请示/审批升级/审批门控），本批保留。 */
 export type WorkbenchState = CompanyState;
 
+/** 读单例工作台；无行返回 null（测试/零组织库场景，DTO 常量填充用）。 */
+export function getWorkbenchOrNull(db: DB): Workbench | null {
+  const row = db.prepare('SELECT * FROM company LIMIT 1').get() as WorkbenchRow | undefined;
+  return row ? fromRow(row) : null;
+}
+
 export interface Workbench {
   id: string;
   name: string;
