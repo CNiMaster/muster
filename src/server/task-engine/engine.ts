@@ -34,7 +34,8 @@ import { getAgent } from '../domain/agent';
 import { assembleContext } from '../executors/context';
 import { materializeSwarm, countActiveSwarmsByRequester, escalateSwarmRequest, EXPERT_SWARM_LIMITS } from '../domain/swarm';
 import { finalizeDebate, startDebate } from '../domain/debate';
-import { DISPATCHER_ROLE, JUDGE_ROLE, HR_ROLE } from '../domain/system-agents';
+import { DISPATCHER_ROLE, JUDGE_ROLE, HR_ROLE, AUTOMATION_ROLE } from '../domain/system-agents';
+import { materializeAutomationPlan } from '../domain/automation';
 import { materializeStaffingPlan } from '../domain/specialist-pool';
 import { getExecutorManifest, providerForManifest } from '../executors/manifests';
 import { assertSafeToRun } from '../executors/safety';
@@ -52,6 +53,17 @@ import { resolveContextWindow } from '../domain/executor-profile';
 import { generateCompactionSummary } from '../domain/compaction-summary';
 import { getWorkbench } from '../domain/workbench';
 import { createWorktree, removeWorktree, ensureStagingWorktree, ensureTaskStagingWorktree, listTaskBranchChanges, listTaskBranchChangeStatus } from '../worktree/manager';
+/** 自动化节奏的人话标签（播报/摘要用）。 */
+function scheduleLabel(schedule: { kind: string; intervalMinutes?: number; timeOfDay?: string }): string {
+  if (schedule.kind === 'daily') return `每天 ${schedule.timeOfDay ?? ''} `;
+  if (schedule.kind === 'interval' && schedule.intervalMinutes) {
+    return schedule.intervalMinutes >= 60 && schedule.intervalMinutes % 60 === 0
+      ? `每 ${schedule.intervalMinutes / 60} 小时 `
+      : `每 ${schedule.intervalMinutes} 分钟 `;
+  }
+  return '';
+}
+
 /** 批次 D2：读取任务 inputProtocol 里的消息级选项（模式/模型/思考），非法值忽略。 */
 function readMessageOptions(input: Record<string, unknown>): { mode?: 'plan' | 'ask-always' | 'ask-by-rule' | 'no-approval' | 'deny'; model?: string; thinking?: 'off' | 'low' | 'medium' | 'high' } {
   const mode = input.mode;
@@ -818,6 +830,36 @@ export class TaskEngine {
         } catch (error) {
           result.outcome = 'blocked';
           result.summary = `蜂群建立失败：${error instanceof Error ? error.message : String(error)}`;
+        }
+      }
+
+      // 整改计划 Part2 批次5：自动化管家 automationPlan 兑现——对话创建自动化（chat 入口与表单共用
+      // materializeAutomationPlan 落库）。普通智能体返回的一律忽略（与 swarmPlan/staffingPlan 同守卫模式）。
+      if (result.automationPlan && agent.isSystem && agent.role === AUTOMATION_ROLE) {
+        const plan = result.automationPlan;
+        result.automationPlan = undefined;
+        try {
+          const created = materializeAutomationPlan(this.db, {
+            kind: plan.kind,
+            config: plan.config,
+            projectId: plan.projectId,
+            schedule: plan.schedule.kind === 'interval'
+              ? { kind: 'interval', intervalMs: plan.schedule.intervalMinutes * 60_000 }
+              : { kind: 'daily', timeOfDay: plan.schedule.timeOfDay },
+          });
+          const project = getProject(this.db, plan.projectId);
+          result.summary = `已创建自动化（${created.id}）：${scheduleLabel(plan.schedule)}拉取 ${plan.config.repo} 的 GitHub Issues，派给「${project.name}」负责人处理。`;
+          realtime.publish({
+            id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            type: 'automation.created',
+            projectId: plan.projectId,
+            taskId: task.id,
+            occurredAt: new Date().toISOString(),
+            payload: { automationId: created.id, kind: created.kind, repo: plan.config.repo },
+          });
+        } catch (error) {
+          result.summary = `自动化创建失败：${error instanceof Error ? error.message : String(error)}（请补全后重试）`;
+          log.warn('automation plan materialization failed', { taskId: task.id, err: String(error) });
         }
       }
 

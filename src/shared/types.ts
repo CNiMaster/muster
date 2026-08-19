@@ -121,6 +121,13 @@ export interface AgentRunResult {
    * 每位专家落成项目专家池常驻条目（只加不减、跨任务复用），建好后即可被派遣。
    */
   staffingPlan?: StaffingPlan;
+  /** 整改计划 Part2 批次5：自动化管家契约——对话创建自动化（引擎按 assignee=管家兑现）。 */
+  automationPlan?: {
+    kind: 'github-issues';
+    config: { repo: string; labelFilter?: string };
+    schedule: { kind: 'interval'; intervalMinutes: number } | { kind: 'daily'; timeOfDay: string };
+    projectId: string;
+  };
 }
 
 /** 人事岗的专家供给计划。 */

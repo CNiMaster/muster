@@ -55,6 +55,7 @@ const BusinessReviewPage = lazyRetry(() => import('./pages/BusinessReviewPage').
 const ProjectSettingsPage = lazyRetry(() => import('./pages/ProjectSettingsPage').then((m) => ({ default: m.ProjectSettingsPage })));
 const ProjectPlansPage = lazyRetry(() => import('./pages/ProjectPlansPage').then((m) => ({ default: m.ProjectPlansPage })));
 const ArchivePage = lazyRetry(() => import('./pages/ArchivePage').then((m) => ({ default: m.ArchivePage })));
+const AutomationPage = lazyRetry(() => import('./pages/AutomationPage').then((m) => ({ default: m.AutomationPage })));
 const BlueprintLibraryPage = lazyRetry(() => import('./pages/BlueprintLibraryPage').then((m) => ({ default: m.BlueprintLibraryPage })));
 const BlueprintDetailPage = lazyRetry(() => import('./pages/BlueprintDetailPage').then((m) => ({ default: m.BlueprintDetailPage })));
 const BlueprintCanvasPage = lazyRetry(() => import('./pages/BlueprintCanvasPage').then((m) => ({ default: m.BlueprintCanvasPage })));
@@ -79,6 +80,7 @@ const router = createBrowserRouter([
       { index: true, element: <HomePage /> },
       { path: 'projects/new', element: <ProjectPage /> },
       { path: 'archive', element: <ArchivePage /> },
+      { path: 'automations', element: <AutomationPage /> },
       { path: 'blueprints', element: <BlueprintLibraryPage /> },
       { path: 'blueprints/:blueprintId', element: <BlueprintDetailPage /> },
       { path: 'blueprints/:blueprintId/canvas', element: <BlueprintCanvasPage /> },

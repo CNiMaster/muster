@@ -52,6 +52,20 @@ const staffingPlanSchema = z.object({
   })).min(1),
 });
 
+// 整改计划 Part2 批次 5：自动化管家 done 契约（对话创建自动化；一期 kind 仅 github-issues）
+const automationPlanSchema = z.object({
+  kind: z.literal('github-issues'),
+  config: z.object({
+    repo: z.string().regex(/^[\w.-]+\/[\w.-]+$/, 'owner/repo'),
+    labelFilter: z.string().optional(),
+  }),
+  schedule: z.union([
+    z.object({ kind: z.literal('interval'), intervalMinutes: z.number().int().min(1).max(1440) }),
+    z.object({ kind: z.literal('daily'), timeOfDay: z.string().regex(/^\d{2}:\d{2}$/) }),
+  ]),
+  projectId: z.string().min(1),
+});
+
 export const agentRunResultSchema = z.object({
   outcome: z.enum(['completed', 'waiting_input', 'waiting_dependency', 'blocked']),
   summary: z.string(),
@@ -68,6 +82,7 @@ export const agentRunResultSchema = z.object({
   swarmPlan: swarmPlanSchema.optional(),
   /** 组织模型批次二：专家供给计划（仅人事系统岗被兑现）。 */
   staffingPlan: staffingPlanSchema.optional(),
+  automationPlan: automationPlanSchema.optional(),
 });
 
 /** JSON Schema 描述，传给模型的 structured output 约束。 */
@@ -184,6 +199,31 @@ export const AGENT_RESULT_JSON_SCHEMA = {
         },
       },
       required: ['specialists'],
+    },
+    automationPlan: {
+      type: 'object',
+      properties: {
+        kind: { type: 'string', enum: ['github-issues'] },
+        config: {
+          type: 'object',
+          properties: {
+            repo: { type: 'string' },
+            labelFilter: { type: 'string' },
+          },
+          required: ['repo'],
+        },
+        schedule: {
+          type: 'object',
+          properties: {
+            kind: { type: 'string', enum: ['interval', 'daily'] },
+            intervalMinutes: { type: 'number' },
+            timeOfDay: { type: 'string' },
+          },
+          required: ['kind'],
+        },
+        projectId: { type: 'string' },
+      },
+      required: ['kind', 'config', 'schedule', 'projectId'],
     },
   },
   required: ['outcome', 'summary'],

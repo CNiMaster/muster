@@ -10,7 +10,7 @@ import os from 'node:os';
 import { getWorkbench } from '../domain/workbench';
 import { getProject } from '../domain/project';
 import { getAgent, listAgents, type AgentDefinition } from '../domain/agent';
-import { ensureDispatcherAgentId, DISPATCHER_ROLE, JUDGE_ROLE, HR_ROLE } from '../domain/system-agents';
+import { ensureDispatcherAgentId, DISPATCHER_ROLE, JUDGE_ROLE, HR_ROLE, AUTOMATION_ROLE } from '../domain/system-agents';
 import { listTaskMessages } from '../domain/task-message';
 import type { Task } from '../domain/task';
 import { getTask as loadTask } from '../domain/task';
@@ -434,6 +434,24 @@ export function assembleContext(
       '2. 「## 分歧」：汇总各工蜂/专家间的分歧点与裁决结论（若各方一致无分歧，请显式写明"无分歧"）；',
       '3. 「## 风险」：指出遗留风险、未决事项或后续建议。',
       '若缺失任意一段标题，系统会在结果中标注契约违约留痕。',
+      '',
+    );
+  }
+  // 整改计划 Part2 批次5：自动化管家专属——automationPlan 契约 + 可绑定项目清单
+  if (agent?.isSystem && agent.role === AUTOMATION_ROLE) {
+    const bindableProjects = db.prepare("SELECT id, name FROM project WHERE state IN ('active','draining') AND COALESCE(settings_json,'') NOT LIKE '%inbox%' ORDER BY created_at DESC LIMIT 20").all() as Array<{ id: string; name: string }>;
+    sp.push(
+      '# 自动化契约（你是自动化管家，独有）',
+      '用户想在自动化页创建自动化时：先问清缺的信息（仓库 / 绑定项目 / 节奏），齐了在最终 JSON 里加 automationPlan 字段并置 outcome="completed"：',
+      'automationPlan: { "kind": "github-issues", "config": { "repo": "owner/repo", "labelFilter": "可选" },',
+      '  "schedule": { "kind": "interval", "intervalMinutes": 60 } 或 { "kind": "daily", "timeOfDay": "09:00" },',
+      '  "projectId": "从下方项目清单选" }',
+      '一期仅支持 github-issues（定时拉取仓库的开放 Issues，分派给绑定项目负责人处理）。信息不全时 outcome="waiting_input" 向用户提问。',
+      '',
+      '# 可绑定项目',
+      ...(bindableProjects.length > 0
+        ? bindableProjects.map((bp) => `- ${bp.name}（${bp.id}）`)
+        : ['（暂无可绑定项目——请用户先创建项目）']),
       '',
     );
   }

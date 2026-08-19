@@ -28,6 +28,7 @@ import { usageRouter } from './api/reports-usage';
 import { novelRouter, projectScopedNovel } from './api/novel';
 import { blueprintOptimizationRouter } from './api/blueprint-optimization';
 import { blueprintsRouter } from './api/blueprints';
+import { automationsRouter } from './api/automations';
 import { expertCandidatesRouter } from './api/expert-candidates';
 import { projectPhase7, reportByIdRouter, inspectorAlertRouter } from './api/phase7';
 import { companyMessagesRouter, projectMessagesRouter } from './api/conversation';
@@ -208,6 +209,7 @@ async function createApp(): Promise<AppHandle> {
   // 公司退役批次C：旧 /api/companies/:companyId/* 挂载已全部下线（新路径见下；handler 经 companyIdOf 解析默认工作台）
   app.use('/api/workbench', workbenchRouter);
   app.use('/api/blueprints', blueprintsRouter);
+  app.use('/api/automations', automationsRouter);
   app.use('/api/blueprint-optimization', blueprintOptimizationRouter);
   app.use('/api/agents', agentsRouter);
   app.use('/api/employees', companyEmployeesRouter);

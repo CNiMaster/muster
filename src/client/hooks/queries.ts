@@ -656,6 +656,53 @@ export function useProjectPendingMerges(projectId: string | undefined) {
 }
 
 /** 搁置提醒红点（manual 默认下的漏合兜底）：搁置≥5h 的待合并任务 + 孤儿 worktree 数。 */
+// ===== 自动化中心（整改计划 Part2 批次5）=====
+
+export interface AutomationDTO {
+  id: string;
+  kind: 'github-issues';
+  config: { repo: string; labelFilter?: string };
+  schedule: { kind: 'interval'; intervalMs?: number; timeOfDay?: string } | { kind: 'daily'; timeOfDay?: string; intervalMs?: number };
+  projectId: string;
+  enabled: boolean;
+  createdVia: 'chat' | 'form';
+  lastRunAt: string | null;
+  lastResult: string | null;
+  createdAt: string;
+}
+
+export function useAutomations() {
+  return useQuery({
+    queryKey: ['automations'],
+    queryFn: () => api.get<AutomationDTO[]>('/api/automations'),
+    refetchInterval: 30_000,
+  });
+}
+
+export function useAutomationSteward() {
+  return useQuery({
+    queryKey: ['automation-steward'],
+    queryFn: () => api.get<{ id: string; name: string; role: string; profileId: string }>('/api/automations/steward'),
+  });
+}
+
+export function useSetAutomationEnabled() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
+      api.patch<AutomationDTO>(`/api/automations/${id}`, { enabled }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['automations'] }),
+  });
+}
+
+export function useDeleteAutomation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.delete(`/api/automations/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['automations'] }),
+  });
+}
+
 export interface MergeAttentionDTO {
   staleMerges: number;
   orphans: number;

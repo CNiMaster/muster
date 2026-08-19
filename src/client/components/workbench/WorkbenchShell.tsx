@@ -36,6 +36,7 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
     { label: '新建项目', href: '/projects/new', group: '全局' },
     { label: '蓝图库', href: '/blueprints', group: '全局' },
     { label: '归档', href: '/archive', group: '全局' },
+    { label: '自动化', href: '/automations', group: '全局' },
     { label: '智能体库', href: '/agents', group: '全局' },
     { label: '执行器', href: '/executors', group: '全局' },
     { label: '权限', href: '/permissions', group: '全局' },

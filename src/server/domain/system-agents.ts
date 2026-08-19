@@ -136,6 +136,17 @@ export function ensureJudgeAgentId(db: DB): string {
   return ensureOne(db, JUDGE_ROLE, JUDGE_NAME, JUDGE_PROMPT);
 }
 
+/** 整改计划 Part2：自动化管家——平台自动化功能的固定岗，仅在自动化页可见（任职 hidden，visible_in='automation'）。 */
+export const AUTOMATION_ROLE = 'automation-steward';
+export const AUTOMATION_STEWARD_NAME = '自动化管家';
+
+/** 懒确保自动化管家（幂等）：任职保持 hidden（正常花名册不可见），visible_in 标记自动化页归属。 */
+export function ensureAutomationStewardAgentId(db: DB): string {
+  const id = ensureOne(db, AUTOMATION_ROLE, AUTOMATION_STEWARD_NAME, '', { visible: false });
+  db.prepare('UPDATE agent_definition SET visible_in=? WHERE id=? AND (visible_in IS NULL OR visible_in != ?)').run('automation', id, 'automation');
+  return id;
+}
+
 /** 组织模型批次二：懒确保人事岗（可见固定岗，专家供给）。 */
 export function ensureHrAgentId(db: DB): string {
   return ensureOne(db, HR_ROLE, HR_NAME, HR_PROMPT, { visible: true });
