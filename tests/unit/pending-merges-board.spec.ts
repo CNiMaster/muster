@@ -1,75 +1,79 @@
-import { describe, expect, it, beforeEach } from 'vitest';
-import { existsSync, writeFileSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+/**
+ * 待合并看板数据源（批次 H·修复轮）：listPendingTaskMerges 按项目任务聚合——
+ * 多任务各自集成领先各自入板；无领先不显示；manual/auto 模式随项目设置。
+ */
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
+import { execSync } from 'node:child_process';
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import type { DB } from '../../src/server/db/client';
 import { makeTestDb } from '../integration/setup';
 import { restoreWorkbench } from '../../src/server/domain/workbench';
-import { createProject } from '../../src/server/domain/project';
-import { createTask } from '../../src/server/domain/task';
-import { saveTaskRuntime } from '../../src/server/domain/task-runtime';
-import { ensureGitRepo, createWorktree, commitAll } from '../../src/server/worktree/manager';
-import { listPendingMerges, promoteTaskMerge } from '../../src/server/domain/staging';
+import { createProject, setProjectMergeMode } from '../../src/server/domain/project';
+import { ensureTaskStagingWorktree } from '../../src/server/worktree/manager';
+import { listPendingTaskMerges } from '../../src/server/domain/staging';
 
+let root: string;
 let db: DB;
+
+function git(dir: string, args: string[]): string {
+  return execSync([String.raw`git`, ...args.map((a) => JSON.stringify(a))].join(String.raw` `), { cwd: dir, encoding: String.raw`utf-8` }).trim();
+}
+
+function addPt(projectId: string, seq: number, title: string): string {
+  const id = `pt_b${seq}_${Math.random().toString(36).slice(2, 6)}`;
+  db.prepare(
+    "INSERT INTO project_task (id, project_id, seq, title, state, created_at, updated_at) VALUES (?,?,?,?, 'active', ?, ?)",
+  ).run(id, projectId, seq, title, new Date().toISOString(), new Date().toISOString());
+  return id;
+}
+
 beforeEach(() => {
+  root = mkdtempSync(path.join(tmpdir(), 'muster-board-'));
+  process.env.MUSTER_HOME = path.join(root, '.muster-home');
   db = makeTestDb().db;
 });
 
-describe('待合并看板与批量推进（批次 H）', () => {
-  it('多个 manual 任务完成并列入看板，支持逐项或批量合并', () => {
-    const rootDir = `/tmp/muster-test-board-${Date.now()}`;
-    mkdirSync(rootDir, { recursive: true });
-    ensureGitRepo(rootDir);
-    writeFileSync(join(rootDir, 'README.md'), '# Board Project\n');
-    commitAll(rootDir, 'initial');
+afterEach(() => {
+  rmSync(root, { recursive: true, force: true });
+  delete process.env.MUSTER_HOME;
+});
 
-    const workbench = restoreWorkbench(db, { id: 'wb_board_1', name: '工作台' });
-    const project = createProject(db, {
-      companyId: workbench.id,
-      name: '看板测试项目',
-      rootDir,
-      defaultMergeMode: 'manual',
-    });
+describe('待合并看板（批次 H·修复轮）', () => {
+  it('多任务各自集成领先各自入板；无领先不显示；auto 项目带 mergeMode 标记', () => {
+    const workbench = restoreWorkbench(db, { id: 'wb_board_fix', name: '工作台' });
+    const project = createProject(db, { companyId: workbench.id, name: '看板项目', initialState: 'active' });
+    mkdirSync(project.rootDir, { recursive: true });
+    execSync('git init -q && git config user.email t@t && git config user.name t', { cwd: project.rootDir });
+    writeFileSync(path.join(project.rootDir, 'base.txt'), 'base');
+    git(project.rootDir, ['add', '-A']);
+    git(project.rootDir, ['commit', '-m', 'base']);
 
-    // 1. 创建 2 个 manual 任务并产出不同文件
-    const task1 = createTask(db, { projectId: project.id, title: '任务 1: 编写文档', mergeMode: 'manual' });
-    const wt1 = createWorktree(rootDir, project.id, task1.id);
-    saveTaskRuntime(db, wt1);
-    writeFileSync(join(wt1.path, 'DOC.md'), 'docs content');
-    commitAll(wt1.path, 'feat: docs');
-    db.prepare("UPDATE task SET state='completed', summary='DOC 完成', artifacts_json=? WHERE id=?").run(
-      JSON.stringify([{ path: 'DOC.md', kind: 'file', operation: 'create' }]),
-      task1.id,
-    );
+    const pt1 = addPt(project.id, 1, '任务一');
+    const pt2 = addPt(project.id, 2, '任务二');
+    const pt3 = addPt(project.id, 3, '任务三');
 
-    const task2 = createTask(db, { projectId: project.id, title: '任务 2: 编写工具', mergeMode: 'manual' });
-    const wt2 = createWorktree(rootDir, project.id, task2.id);
-    saveTaskRuntime(db, wt2);
-    writeFileSync(join(wt2.path, 'TOOL.md'), 'tool content');
-    commitAll(wt2.path, 'feat: tool');
-    db.prepare("UPDATE task SET state='completed', summary='TOOL 完成', artifacts_json=? WHERE id=?").run(
-      JSON.stringify([{ path: 'TOOL.md', kind: 'file', operation: 'create' }]),
-      task2.id,
-    );
+    // pt1 集成分支领先 1；pt2 领先 2；pt3 不建分支
+    for (const [pt, files] of [[pt1, ['a.txt']], [pt2, ['b.txt', 'c.txt']]] as const) {
+      const staging = ensureTaskStagingWorktree(project.rootDir, project.id, pt);
+      // 逐文件一提交：pt1 领先 1，pt2 领先 2
+      for (const f of files) {
+        writeFileSync(path.join(staging.path, f), 'x');
+        git(staging.path, ['add', '-A']);
+        git(staging.path, ['commit', '-m', 'wip ' + f]);
+      }
+    }
 
-    // 2. 看板查询
-    const list = listPendingMerges(db, project.id);
-    expect(list).toHaveLength(2);
+    const items = listPendingTaskMerges(db, project.id);
+    expect(items).toHaveLength(2);
+    const byPt = new Map(items.map((i) => [i.projectTaskId, i]));
+    expect(byPt.get(pt1)!.aheadCommits).toBe(1);
+    expect(byPt.get(pt2)!.aheadCommits).toBe(2);
+    expect(byPt.has(pt3)).toBe(false);
+    expect(items.every((i) => i.mergeMode === 'manual')).toBe(true);
 
-    // 3. 逐项合并任务 1
-    const p1 = promoteTaskMerge(db, project.id, task1.id);
-    expect(p1.promoted).toBe(true);
-    expect(existsSync(join(rootDir, 'DOC.md'))).toBe(true);
-
-    // 4. 看板剩余 1 项
-    expect(listPendingMerges(db, project.id)).toHaveLength(1);
-
-    // 5. 合并任务 2
-    const p2 = promoteTaskMerge(db, project.id, task2.id);
-    expect(p2.promoted).toBe(true);
-    expect(existsSync(join(rootDir, 'TOOL.md'))).toBe(true);
-
-    // 6. 看板清空
-    expect(listPendingMerges(db, project.id)).toHaveLength(0);
+    setProjectMergeMode(db, project.id, 'auto');
+    expect(listPendingTaskMerges(db, project.id).every((i) => i.mergeMode === 'auto')).toBe(true);
   });
 });

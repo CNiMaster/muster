@@ -26,6 +26,8 @@ import {
   updateProject,
   addProjectReference,
   listProjectReferences,
+  getProjectMergeMode,
+  setProjectMergeMode,
 } from '../domain/project';
 import {
   ensurePrimaryThread,
@@ -40,12 +42,11 @@ import { generateCompactionSummary } from '../domain/compaction-summary';
 import { getWorkbench } from '../domain/workbench';
 import { getAgent } from '../domain/agent';
 import { syncAgentMemoryFiles } from '../domain/agent-home';
-import { stageStatus, detectOrphanWorktrees, cleanOrphanWorktrees } from '../worktree/manager';
+import { stageStatus, detectOrphanWorktrees, cleanOrphanWorktrees , taskStageStatus } from '../worktree/manager';
 import {
   promoteProjectStagingIfAny,
-  listPendingMerges,
-  promoteTaskMerge,
-  discardTaskMerge,
+  listPendingTaskMerges,
+  promoteTaskStaging,
 } from '../domain/staging';
 import { getProjectConflictTimeline } from '../domain/conflict-timeline';
 import { applyBlueprintCrewStaffing } from '../domain/blueprint';
@@ -200,36 +201,59 @@ projectById.post(
   }),
 );
 
-/** 批次 G：获取项目下所有待人工审查合并的 Task 列表 */
+/** 批次 G·修复轮：待合并看板数据源——各项目任务集成分支领先状态（系统侧） */
 projectById.get(
   '/merges',
   asyncHandler(async (req, res) => {
     const db = getDb();
     const project = getProject(db, param(req, 'id'));
-    res.json(listPendingMerges(db, project.id));
+    res.json(listPendingTaskMerges(db, project.id));
   }),
 );
 
-/** 批次 G：手动触发将 Task 暂存成果合入主干 */
-projectById.post(
-  '/merges/:taskId/promote',
+/** 批次 G·修复轮：任务合并状态（TaskTopBar「⏫ 合并」轮询用） */
+projectById.get(
+  '/project-tasks/:ptid/merge-status',
   asyncHandler(async (req, res) => {
     const db = getDb();
     const project = getProject(db, param(req, 'id'));
-    const taskId = param(req, 'taskId');
-    const result = promoteTaskMerge(db, project.id, taskId);
-    res.json(result);
+    const status = taskStageStatus(project.rootDir, project.id, param(req, 'ptid'));
+    const pending = db.prepare(
+      "SELECT COUNT(*) AS n FROM task WHERE project_task_id=? AND state IN ('queued','claimed','running','waiting_input','waiting_dependency','waiting_approval','paused','blocked')",
+    ).get(param(req, 'ptid')) as { n: number };
+    res.json({
+      exists: status.exists,
+      aheadCommits: status.aheadCommits,
+      pendingTasks: pending.n,
+      mergeMode: getProjectMergeMode(db, project.id),
+    });
   }),
 );
 
-/** 批次 G：放弃 Task 的暂存成果并安全清理工作树 */
+/**
+ * 批次 G·修复轮：任务级合并入口（定案 #2/#5）。
+ * mergeMode=auto 直接执行；manual 首调返回 needsConfirm（前端弹确认，可勾「以后自动合并」再带 confirm 重试）；
+ * 有非终态子任务仅提醒不阻止（pendingTasks 随结果返回）。premium concern/LLM 失败 → promoted:false + 播报。
+ */
 projectById.post(
-  '/merges/:taskId/discard',
+  '/project-tasks/:ptid/merge',
   asyncHandler(async (req, res) => {
     const db = getDb();
     const project = getProject(db, param(req, 'id'));
-    const taskId = param(req, 'taskId');
-    const result = discardTaskMerge(db, project.id, taskId);
+    const ptid = param(req, 'ptid');
+    const body = z.object({
+      confirm: z.boolean().optional(),
+      strategy: z.enum(['ours', 'theirs']).optional(),
+    }).parse(req.body ?? {});
+    const mergeMode = getProjectMergeMode(db, project.id);
+    if (mergeMode === 'manual' && !body.confirm) {
+      const pending = db.prepare(
+        "SELECT COUNT(*) AS n FROM task WHERE project_task_id=? AND state IN ('queued','claimed','running','waiting_input','waiting_dependency','waiting_approval','paused','blocked')",
+      ).get(ptid) as { n: number };
+      res.json({ promoted: false, needsConfirm: true, pendingTasks: pending.n, message: 'manual 模式：请确认合并' });
+      return;
+    }
+    const result = await promoteTaskStaging(db, project.id, ptid, { actor: 'ui', strategy: body.strategy });
     res.json(result);
   }),
 );
@@ -330,6 +354,18 @@ projectById.patch(
         ),
       );
       res.json(project);
+      return;
+    }
+    // 批次 G·修复轮：合并开关走 settings_json（manual=弹确认默认，auto=全自动）
+    if (patch.mergeMode !== undefined) {
+      const mode = z.enum(['manual', 'auto']).parse(patch.mergeMode);
+      const updated = setProjectMergeMode(getDb(), param(req, 'id'), mode);
+      const rest = { name: patch.name, description: patch.description, firstAgentId: patch.firstAgentId, settings: patch.settings, rootDir: patch.rootDir };
+      if (Object.values(rest).every((v) => v === undefined)) {
+        res.json(updated);
+        return;
+      }
+      res.json(updateProject(getDb(), param(req, 'id'), rest));
       return;
     }
     res.json(

@@ -51,7 +51,7 @@ import { isSwarmLinkedTask } from '../domain/staging';
 import { resolveContextWindow } from '../domain/executor-profile';
 import { generateCompactionSummary } from '../domain/compaction-summary';
 import { getWorkbench } from '../domain/workbench';
-import { createWorktree, removeWorktree, ensureStagingWorktree, listTaskBranchChanges } from '../worktree/manager';
+import { createWorktree, removeWorktree, ensureStagingWorktree, ensureTaskStagingWorktree, listTaskBranchChanges } from '../worktree/manager';
 /** 批次 D2：读取任务 inputProtocol 里的消息级选项（模式/模型/思考），非法值忽略。 */
 function readMessageOptions(input: Record<string, unknown>): { mode?: 'plan' | 'ask-always' | 'ask-by-rule' | 'no-approval' | 'deny'; model?: string; thinking?: 'off' | 'low' | 'medium' | 'high' } {
   const mode = input.mode;
@@ -341,11 +341,14 @@ export class TaskEngine {
         return true;
       }
       if (!worktreeInfo) {
-        // staging 一期：蜂群系任务（蜂/汇总/验收/返工/裁决）从 staging 集成分支切出——
-        // 基线与发布目标共用 isSwarmLinkedTask 谓词（review C1：缺一即闭环断裂）
-        const baseRef = isSwarmLinkedTask(task)
-          ? ensureStagingWorktree(worktreeSourceRoot, project.id).branch
-          : undefined;
+        // 修复轮批次 G：任务=合并确认单位——基线从所在 project_task 的任务集成分支切出
+        //（轮间文件连续性不再依赖发布成功；蜂群蜂/验收/返工天然继承同款基线，看到的是集成后的整体）。
+        // 与发布目标共用同一谓词（review C1：缺一即闭环断裂）；无 project_task 载体回落项目级 staging（蜂群系）或主干 HEAD。
+        const baseRef = task.projectTaskId
+          ? ensureTaskStagingWorktree(worktreeSourceRoot, project.id, task.projectTaskId).branch
+          : (isSwarmLinkedTask(task)
+            ? ensureStagingWorktree(worktreeSourceRoot, project.id).branch
+            : undefined);
         worktreeInfo = createWorktree(worktreeSourceRoot, project.id, task.id, baseRef);
         saveTaskRuntime(this.db, worktreeInfo);
       }
@@ -873,7 +876,7 @@ export class TaskEngine {
               handoff.lastSummary = summary;
               sessionManager.rotate(projectTaskThread.id, handoff);
               try {
-                this.db.prepare("UPDATE project_agent_thread SET compaction_summary=?, updated_at=? WHERE project_id=? AND agent_id=?").run(summary, new Date().toISOString(), project.id, agent.id);
+                this.db.prepare("UPDATE project_agent_thread SET compaction_summary=?, updated_at=? WHERE id=?").run(summary, new Date().toISOString(), thread.id);
               } catch { /* 容错 */ }
               realtime.publish(makeLifecycleEvent('session.rotated',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,previousSessionId,reason:'compact-unavailable'},{projectId:project.id,taskId:task.id}));
             }
@@ -883,7 +886,7 @@ export class TaskEngine {
             handoff.lastSummary = summary;
             sessionManager.rotate(projectTaskThread.id, handoff);
             try {
-              this.db.prepare("UPDATE project_agent_thread SET compaction_summary=?, updated_at=? WHERE project_id=? AND agent_id=?").run(summary, new Date().toISOString(), project.id, agent.id);
+              this.db.prepare("UPDATE project_agent_thread SET compaction_summary=?, updated_at=? WHERE id=?").run(summary, new Date().toISOString(), thread.id);
             } catch { /* 容错 */ }
             realtime.publish(makeLifecycleEvent('session.rotated',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,previousSessionId,reason:'compact-failed'},{projectId:project.id,taskId:task.id}));
             log.warn('vendor compaction failed; session rotated', { threadId: projectTaskThread.id, error: String(error) });
@@ -892,7 +895,7 @@ export class TaskEngine {
           const summary = await generateCompactionSummary(this.db, projectTaskThread.id);
           handoff.lastSummary = summary;
           try {
-            this.db.prepare("UPDATE project_agent_thread SET compaction_summary=?, updated_at=? WHERE project_id=? AND agent_id=?").run(summary, new Date().toISOString(), project.id, agent.id);
+            this.db.prepare("UPDATE project_agent_thread SET compaction_summary=?, updated_at=? WHERE id=?").run(summary, new Date().toISOString(), thread.id);
           } catch { /* 容错 */ }
           realtime.publish(makeLifecycleEvent('session.rotated',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,previousSessionId:result._sessionIdHint??ctx.sessionIdHint??null,reason:'hard-context-limit'},{projectId:project.id,taskId:task.id}));
           log.info('vendor session rotated at hard context limit', { threadId: projectTaskThread.id });
@@ -936,31 +939,29 @@ export class TaskEngine {
       }
 
       if (result.outcome === 'completed' && result.artifacts.length > 0 && worktreeInfo) {
-        if (task.mergeMode === 'manual') {
-          // 批次 G：manual 模式——生成待审查摘要与审查卡片，不自动合入，保留 worktree 等待用户确认
-          commitAll(worktreeInfo.path, `muster: task ${task.id} artifacts staged for manual review`);
-          preserveWorktree = true;
-          appendTaskEvent(this.db, task.id, 'merge_pending_review', {
-            branch: worktreeInfo.branch,
-            artifacts: result.artifacts,
-            summary: result.summary,
-          });
-          realtime.publish({
-            id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-            type: 'merge.pending_review',
-            projectId: project.id,
-            taskId: task.id,
-            occurredAt: new Date().toISOString(),
-            payload: { branch: worktreeInfo.branch, artifacts: result.artifacts, summary: result.summary },
-          });
-          log.info('manual merge pending review staged', { taskId: task.id, branch: worktreeInfo.branch, artifacts: result.artifacts.length });
-        } else {
+        {
           const publishTargetRoot = project.rootDir;
-          // staging 一期：蜂群系任务（蜂/汇总/验收/返工/裁决——isSwarmLinkedTask 统一谓词，
-          // 与 worktree 基线判定同源）发布到 staging worktree 检出目录，验收通过才 promote 回主干
-          const stagingTarget = isSwarmLinkedTask(task)
-            ? ensureStagingWorktree(project.rootDir, project.id).path
+          // 修复轮批次 G：任务=合并确认单位——所有 runtime task 产物发布进其 project_task 的
+          // 任务级集成分支（不碰主干），任务成果 promote 回主干才是门禁（promoteTaskStaging）。
+          // 兼容回落：无 project_task 载体的任务沿用项目级 staging（蜂群系）或直发主干（旧行为）。
+          const taskStagingTarget = task.projectTaskId
+            ? ensureTaskStagingWorktree(project.rootDir, project.id, task.projectTaskId).path
             : undefined;
+          const stagingTarget = taskStagingTarget
+            ?? (isSwarmLinkedTask(task)
+              ? ensureStagingWorktree(project.rootDir, project.id).path
+              : undefined);
+          // 定案 #9：完全访问（no-approval）任务发布范围为全量——worktree 全部变更，不走白名单
+          //（消除"计划合并了临时文件没合并"漏洞；仍只进任务集成区，主干门禁不变）
+          const fullPublish = messageOptions.mode === 'no-approval';
+          if (fullPublish) {
+            const allChanges = listTaskBranchChanges(project.rootDir, worktreeInfo).committed;
+            const declared = new Set(result.artifacts.map((a) => a.path));
+            for (const change of allChanges) {
+              if (!declared.has(change)) result.artifacts.push({ path: change, kind: 'file', operation: 'update' });
+            }
+            log.info('full-access publish (no whitelist)', { taskId: task.id, declared: declared.size, total: result.artifacts.length });
+          }
           const pub = this.publishArtifacts(task.id, thread.id, publishTargetRoot, worktreeInfo, result, stagingTarget);
           if (pub.blocked) {
             blockTaskForPublishConflict(

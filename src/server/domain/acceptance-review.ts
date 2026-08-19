@@ -112,6 +112,8 @@ export function maybeTriggerAcceptanceReview(db: DB, completedTask: Task): Task 
     const task = createTask(db, {
       projectId: project.id,
       assigneeAgentId: officerId,
+      // 修复轮批次 G：验收任务挂源任务的项目任务载体——worktree 从任务集成分支切出，看到的是集成后的整体
+      ...(completedTask.projectTaskId ? { projectTaskId: completedTask.projectTaskId } : {}),
       title: `[验收] ${completedTask.title}`,
       // 立场独立性：验收员不穿戴蓝图人设（否则可能穿上与产出者同款专家外套，同行评审同行）
       exemptBlueprintMatch: true,
@@ -281,6 +283,8 @@ export function handleAcceptanceReviewTaskCompleted(db: DB, reviewTask: Task): v
     const rework = createTask(db, {
       projectId: source.projectId,
       assigneeAgentId: source.assigneeAgentId,
+      // 修复轮批次 G：返工任务挂源任务的项目任务载体（同款任务级集成区基线）
+      ...(source.projectTaskId ? { projectTaskId: source.projectTaskId } : {}),
       title: `[返工] ${source.title}`,
       // 返工继承原验收标准：穿戴人设由原任务语义决定，不再叠加蓝图匹配
       exemptBlueprintMatch: true,

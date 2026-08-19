@@ -1627,6 +1627,61 @@ export interface PersonaMatchDto {
   matchedTokens: string[];
 }
 
+// ===== 任务级合并治理（批次 G·修复轮：任务=合并确认单位，promote 回主干才是门禁）=====
+
+export interface TaskMergeStatusDTO {
+  exists: boolean;
+  aheadCommits: number;
+  pendingTasks: number;
+  mergeMode: 'manual' | 'auto';
+}
+
+export interface TaskMergeResultDTO {
+  promoted: boolean;
+  needsConfirm?: boolean;
+  pendingTasks?: number;
+  message: string;
+  summary?: string;
+  conflicts?: string[];
+  reviewVerdict?: 'approve' | 'concern' | 'skipped';
+}
+
+/** 任务合并状态（TaskTopBar「⏫ 合并」轮询：领先提交数/在飞子任务/项目合并模式）。 */
+export function useTaskMergeStatus(projectId: string, projectTaskId: string | undefined) {
+  return useQuery({
+    queryKey: ['task-merge-status', projectId, projectTaskId],
+    queryFn: () => api.get<TaskMergeStatusDTO>(`/api/projects/${projectId}/project-tasks/${projectTaskId}/merge-status`),
+    enabled: Boolean(projectTaskId),
+    refetchInterval: 15_000,
+  });
+}
+
+/** 触发任务级合并（manual 首调返回 needsConfirm；确认后带 confirm 重试）。 */
+export function useMergeProjectTask(projectId: string, projectTaskId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { confirm?: boolean } = {}) =>
+      api.post<TaskMergeResultDTO>(`/api/projects/${projectId}/project-tasks/${projectTaskId}/merge`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['task-merge-status'] });
+      qc.invalidateQueries({ queryKey: ['pending-merges-board'] });
+    },
+  });
+}
+
+/** 「本项目以后自动合并」：写 settings_json.mergeMode。 */
+export function useSetProjectMergeMode(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (mergeMode: 'manual' | 'auto') =>
+      api.patch<Project>(`/api/projects/${projectId}`, { mergeMode }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['task-merge-status'] });
+      qc.invalidateQueries({ queryKey: ['project', projectId] });
+    },
+  });
+}
+
 /** 修复轮（批次 J）：一键采纳人设加入蓝图班底（可带分工 role） */
 export function useAdoptBlueprintPersona() {
   const qc = useQueryClient();

@@ -212,6 +212,104 @@ export function stageStatus(
   return { exists: true, aheadCommits, stagingHead: git(rootDir, ['rev-parse', branch]).stdout, mainHead };
 }
 
+// ===== 任务级集成区（批次 G·修复轮：任务=合并确认单位）=====
+
+export interface TaskStagingInfo {
+  projectId: string;
+  projectTaskId: string;
+  branch: string;
+  path: string;
+}
+
+export function taskStagingBranch(projectId: string, projectTaskId: string): string {
+  return `muster/${projectId}/pt-${projectTaskId}`;
+}
+
+export function taskStagingWorktreePath(projectTaskId: string): string {
+  return path.join(worktreeRoot(), `pt-${projectTaskId}`);
+}
+
+/**
+ * 确保项目任务的任务级集成分支与持久 worktree 存在（幂等，照 ensureStagingWorktree 模式）。
+ * 该分支是其下所有 runtime task（含蜂群蜂/验收/返工）的发布目标与审查现场；
+ * promote 回主干（promoteTaskStagingMerge）才是门禁——主干永远只进过审内容。
+ */
+export function ensureTaskStagingWorktree(rootDir: string, projectId: string, projectTaskId: string): TaskStagingInfo {
+  ensureGitRepo(rootDir);
+  const branch = taskStagingBranch(projectId, projectTaskId);
+  const wtPath = taskStagingWorktreePath(projectTaskId);
+  if (!git(rootDir, ['branch', '--list', branch]).stdout) {
+    git(rootDir, ['worktree', 'remove', '--force', wtPath], { allowFail: true });
+    if (existsSync(wtPath)) rmSync(wtPath, { recursive: true, force: true });
+    git(rootDir, ['worktree', 'add', '-b', branch, wtPath, 'HEAD']);
+    log.info('task staging worktree created', { projectId, projectTaskId, branch, wtPath });
+  } else if (!existsSync(wtPath)) {
+    git(rootDir, ['worktree', 'prune'], { allowFail: true });
+    git(rootDir, ['worktree', 'add', wtPath, branch]);
+    log.info('task staging worktree re-attached', { projectId, projectTaskId, branch, wtPath });
+  }
+  return { projectId, projectTaskId, branch, path: wtPath };
+}
+
+/** 任务集成分支的 git 事实（供合并按钮/看板/看门狗）：存在性、领先主干提交数、两侧 HEAD。 */
+export function taskStageStatus(
+  rootDir: string,
+  projectId: string,
+  projectTaskId: string,
+): { exists: boolean; aheadCommits: number; stagingHead: string | null; mainHead: string } {
+  ensureGitRepo(rootDir);
+  const branch = taskStagingBranch(projectId, projectTaskId);
+  const exists = Boolean(git(rootDir, ['branch', '--list', branch]).stdout);
+  const mainHead = git(rootDir, ['rev-parse', 'HEAD']).stdout;
+  if (!exists) return { exists: false, aheadCommits: 0, stagingHead: null, mainHead };
+  const aheadCommits = Number(git(rootDir, ['rev-list', '--count', `HEAD..${branch}`]).stdout || '0');
+  return { exists: true, aheadCommits, stagingHead: git(rootDir, ['rev-parse', branch]).stdout, mainHead };
+}
+
+/**
+ * 任务集成分支领先内容的 diff 概要（premium 审查输入）：--stat 全量 + 变更文件清单，文本 cap。
+ */
+export function taskStagingDiffSummary(rootDir: string, projectId: string, projectTaskId: string): string {
+  ensureGitRepo(rootDir);
+  const branch = taskStagingBranch(projectId, projectTaskId);
+  const stat = git(rootDir, ['diff', '--stat', `HEAD...${branch}`], { allowFail: true }).stdout;
+  return stat.slice(0, 4000);
+}
+
+/**
+ * promote：任务集成分支合并回主干。与 promoteStaging 同款机械（先兜底提交两侧、冲突 abort 列清单）。
+ * strategy：批次 I 冲突裁决自动选边用——'ours'（保主干侧）/ 'theirs'（采任务侧）= git merge -X 整边偏好。
+ */
+export function promoteTaskStagingMerge(
+  rootDir: string,
+  projectId: string,
+  projectTaskId: string,
+  options: { strategy?: 'ours' | 'theirs' } = {},
+): { promoted: boolean; message: string; mergeCommit?: string; conflicts?: string[] } {
+  git(rootDir, ['merge', '--abort'], { allowFail: true });
+  const staging = ensureTaskStagingWorktree(rootDir, projectId, projectTaskId);
+  commitAll(staging.path, 'muster: task staging pre-promote');
+  commitAll(rootDir, 'muster: user edits');
+  const args = ['merge', '--no-edit'];
+  if (options.strategy) args.push(`-X`, options.strategy);
+  args.push(staging.branch);
+  const r = git(rootDir, args, { allowFail: true });
+  if (r.status !== 0) {
+    const conflicts = git(rootDir, ['status', '--porcelain']).stdout
+      .split('\n')
+      .filter((l) => /^(UU|AA|DD|AU|UA|DU|UD)\s+/.test(l.trim()))
+      .map((l) => l.trim().replace(/^(UU|AA|DD|AU|UA|DU|UD)\s+/, '').trim())
+      .filter(Boolean);
+    git(rootDir, ['merge', '--abort'], { allowFail: true });
+    return {
+      promoted: false,
+      message: `任务集成分支合并冲突（${conflicts.length || '若干'} 个文件），已中止`,
+      conflicts,
+    };
+  }
+  return { promoted: true, message: '任务集成分支已合并回主干', mergeCommit: git(rootDir, ['rev-parse', 'HEAD']).stdout };
+}
+
 export interface OrphanWorktreeInfo {
   taskId: string;
   path: string;

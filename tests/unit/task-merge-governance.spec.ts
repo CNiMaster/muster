@@ -1,136 +1,167 @@
-import { describe, expect, it, beforeEach } from 'vitest';
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+/**
+ * 任务级集成区治理（批次 G·修复轮）：
+ * - ensureTaskStagingWorktree/taskStageStatus：分支 muster/<pid>/pt-<ptid>、幂等、领先计数
+ * - promoteTaskStaging：premium approve→合并回主干+记录+播报；concern→跳过留痕；LLM 失败→skipped 不阻塞
+ * - 合并开关：settings_json.mergeMode 默认 manual / setProjectMergeMode 切 auto
+ * - promote 冲突返回清单不自动吞；strategy 选边可解（批次 I 消费）
+ */
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { execSync } from 'node:child_process';
+import { mkdtempSync, writeFileSync, rmSync, existsSync, readFileSync, mkdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import type { DB } from '../../src/server/db/client';
 import { makeTestDb } from '../integration/setup';
 import { restoreWorkbench } from '../../src/server/domain/workbench';
-import { createAgent } from '../../src/server/domain/agent';
-import { createProject } from '../../src/server/domain/project';
-import { createTask, getTask } from '../../src/server/domain/task';
-import { saveTaskRuntime, getTaskRuntime } from '../../src/server/domain/task-runtime';
-import { ensureGitRepo, createWorktree, commitAll } from '../../src/server/worktree/manager';
-import { listPendingMerges, promoteTaskMerge, discardTaskMerge } from '../../src/server/domain/staging';
-import { listTaskEvents } from '../../src/server/domain/task-event';
+import { createProject, getProjectMergeMode, setProjectMergeMode } from '../../src/server/domain/project';
+import * as llmCallModule from '../../src/server/domain/llm-call';
+import {
+  ensureTaskStagingWorktree,
+  taskStageStatus,
+  promoteTaskStagingMerge,
+  taskStagingBranch,
+} from '../../src/server/worktree/manager';
+import {
+  listPendingTaskMerges,
+  promoteTaskStaging,
+} from '../../src/server/domain/staging';
 
+let root: string;
 let db: DB;
+
+function git(dir: string, args: string[]): string {
+  return execSync([String.raw`git`, ...args.map((a) => JSON.stringify(a))].join(String.raw` `), { cwd: dir, encoding: String.raw`utf-8` }).trim();
+}
+
+function projectRoot(projectId: string): string {
+  const row = db.prepare('SELECT root_dir FROM project WHERE id=?').get(projectId) as { root_dir: string };
+  return row.root_dir;
+}
+
+/** 造一个带任务集成分支领先 2 提交的项目夹具。 */
+function fixtureProject(tag = 'tmg'): { projectId: string; projectTaskId: string; stagingPath: string } {
+  const workbench = restoreWorkbench(db, { id: `wb_${tag}`, name: '工作台' });
+  const project = createProject(db, { companyId: workbench.id, name: '项目', initialState: 'active' });
+  const rootDir = project.rootDir;
+  mkdirSync(rootDir, { recursive: true });
+  execSync('git init -q && git config user.email t@t && git config user.name t', { cwd: rootDir });
+  writeFileSync(path.join(rootDir, 'base.txt'), 'base');
+  git(rootDir, ['add', '-A']);
+  git(rootDir, ['commit', '-m', 'base']);
+  const ptId = `pt_${tag}_${Math.random().toString(36).slice(2, 8)}`;
+  db.prepare(
+    "INSERT INTO project_task (id, project_id, seq, title, state, created_at, updated_at) VALUES (?,?,1,'集成任务','active',?,?)",
+  ).run(ptId, project.id, new Date().toISOString(), new Date().toISOString());
+  const staging = ensureTaskStagingWorktree(rootDir, project.id, ptId);
+  writeFileSync(path.join(staging.path, 'r1.txt'), 'round1');
+  git(staging.path, ['add', '-A']);
+  git(staging.path, ['commit', '-m', 'r1']);
+  writeFileSync(path.join(staging.path, 'r2.txt'), 'round2');
+  git(staging.path, ['add', '-A']);
+  git(staging.path, ['commit', '-m', 'r2']);
+  return { projectId: project.id, projectTaskId: ptId, stagingPath: staging.path };
+}
+
 beforeEach(() => {
+  vi.restoreAllMocks();
+  root = mkdtempSync(path.join(tmpdir(), 'muster-taskmerge-'));
+  process.env.MUSTER_HOME = path.join(root, '.muster-home');
   db = makeTestDb().db;
 });
 
-describe('任务级暂存工作树与合并模式治理（批次 G）', () => {
-  it('manual 模式：列出待审任务、手动合并成功合入主干并清理工作树', () => {
-    const rootDir = `/tmp/muster-test-merge-gov-${Date.now()}`;
-    mkdirSync(rootDir, { recursive: true });
-    ensureGitRepo(rootDir);
-    writeFileSync(join(rootDir, 'README.md'), '# Main Project\n');
-    commitAll(rootDir, 'initial commit');
+afterEach(() => {
+  rmSync(root, { recursive: true, force: true });
+  delete process.env.MUSTER_HOME;
+});
 
-    const workbench = restoreWorkbench(db, { id: 'wb_mg_1', name: '工作台' });
-    const agent = createAgent(db, { companyId: workbench.id, name: '开发干员', role: 'engineer' });
-    const project = createProject(db, {
-      companyId: workbench.id,
-      name: '治理项目',
-      rootDir,
-      defaultMergeMode: 'manual',
-    });
-
-    // 1. 创建 manual 模式 task
-    const task = createTask(db, {
-      projectId: project.id,
-      title: '实现用户认证模块',
-      assigneeAgentId: agent.id,
-      mergeMode: 'manual',
-    });
-    expect(task.mergeMode).toBe('manual');
-
-    // 2. 模拟 Task 在专属 worktree 中运行并产出产物
-    const wtInfo = createWorktree(rootDir, project.id, task.id);
-    saveTaskRuntime(db, wtInfo);
-
-    const artifactRelPath = 'src/auth.ts';
-    mkdirSync(join(wtInfo.path, 'src'), { recursive: true });
-    writeFileSync(join(wtInfo.path, artifactRelPath), 'export const auth = true;\n');
-    commitAll(wtInfo.path, 'feat: add auth module');
-
-    // 更新 task 终态为 completed 并记录产物
-    db.prepare("UPDATE task SET state='completed', summary=?, artifacts_json=? WHERE id=?").run(
-      '已实现用户认证模块',
-      JSON.stringify([{ path: artifactRelPath, kind: 'file', operation: 'create' }]),
-      task.id,
-    );
-
-    // 3. 查询待合入列表
-    const pendingList = listPendingMerges(db, project.id);
-    expect(pendingList).toHaveLength(1);
-    expect(pendingList[0].taskId).toBe(task.id);
-    expect(pendingList[0].title).toBe('实现用户认证模块');
-
-    // 4. 手动触发 promote
-    const promoteRes = promoteTaskMerge(db, project.id, task.id);
-    expect(promoteRes.promoted).toBe(true);
-
-    // 5. 验证主干已合入该文件，worktree runtime 已被清理
-    expect(existsSync(join(rootDir, artifactRelPath))).toBe(true);
-    expect(readFileSync(join(rootDir, artifactRelPath), 'utf8')).toBe('export const auth = true;\n');
-    expect(getTaskRuntime(db, task.id)).toBeUndefined();
-
-    // 6. 验证任务事件
-    const events = listTaskEvents(db, task.id);
-    expect(events.some((e) => e.kind === 'merge_promoted')).toBe(true);
-
-    // 7. 待合入列表已清空
-    expect(listPendingMerges(db, project.id)).toHaveLength(0);
+describe('任务级集成区（批次 G·修复轮）', () => {
+  it('ensureTaskStagingWorktree 幂等 + taskStageStatus 领先计数', () => {
+    const f = fixtureProject();
+    const rootDir = projectRoot(f.projectId);
+    const again = ensureTaskStagingWorktree(rootDir, f.projectId, f.projectTaskId);
+    expect(again.path).toBe(f.stagingPath);
+    const status = taskStageStatus(rootDir, f.projectId, f.projectTaskId);
+    expect(status.exists).toBe(true);
+    expect(status.aheadCommits).toBe(2);
+    expect(taskStagingBranch(f.projectId, f.projectTaskId)).toBe(`muster/${f.projectId}/pt-${f.projectTaskId}`);
   });
 
-  it('manual 模式：放弃变更安全清理工作树与 runtime，主干不受污染', () => {
-    const rootDir = `/tmp/muster-test-merge-discard-${Date.now()}`;
-    mkdirSync(rootDir, { recursive: true });
-    ensureGitRepo(rootDir);
-    writeFileSync(join(rootDir, 'README.md'), '# Main Project\n');
-    commitAll(rootDir, 'initial commit');
+  it('合并开关：默认 manual；setProjectMergeMode 写 settings_json', () => {
+    const workbench = restoreWorkbench(db, { id: 'wb_tmg_mode', name: '工作台' });
+    const project = createProject(db, { companyId: workbench.id, name: '项目', initialState: 'active' });
+    expect(getProjectMergeMode(db, project.id)).toBe('manual');
+    setProjectMergeMode(db, project.id, 'auto');
+    expect(getProjectMergeMode(db, project.id)).toBe('auto');
+  });
 
-    const workbench = restoreWorkbench(db, { id: 'wb_mg_disc', name: '工作台' });
-    const agent = createAgent(db, { companyId: workbench.id, name: '开发干员', role: 'engineer' });
-    const project = createProject(db, {
-      companyId: workbench.id,
-      name: '放弃测试项目',
-      rootDir,
-    });
+  it('promoteTaskStaging：premium approve → 合并回主干 + 审计记录 + 项目群播报', async () => {
+    const f = fixtureProject();
+    const rootDir = projectRoot(f.projectId);
+    vi.spyOn(llmCallModule, 'callLlm').mockResolvedValueOnce({
+      content: JSON.stringify({ verdict: 'approve', reason: '变更安全', summary: '合入两轮成果：r1/r2' }),
+    } as never);
+    const result = await promoteTaskStaging(db, f.projectId, f.projectTaskId, { actor: 'ui' });
+    expect(result.promoted).toBe(true);
+    expect(result.summary).toContain('两轮成果');
+    expect(existsSync(path.join(rootDir, 'r1.txt'))).toBe(true);
+    expect(existsSync(path.join(rootDir, 'r2.txt'))).toBe(true);
+    expect(taskStageStatus(rootDir, f.projectId, f.projectTaskId).aheadCommits).toBe(0);
+    const rec = db.prepare('SELECT * FROM task_merge_record WHERE project_task_id=?').all(f.projectTaskId) as Array<{ status: string; summary: string }>;
+    expect(rec).toHaveLength(1);
+    expect(rec[0]!.status).toBe('promoted');
+    const broadcast = db.prepare("SELECT content FROM conversation_message WHERE scope_id=? AND author='system'").all(f.projectId) as Array<{ content: string }>;
+    expect(broadcast.some((b) => b.content.includes('任务合并回主干'))).toBe(true);
+  });
 
-    const task = createTask(db, {
-      projectId: project.id,
-      title: '尝试实验性重构',
-      assigneeAgentId: agent.id,
-      mergeMode: 'manual',
-    });
+  it('promoteTaskStaging：concern → 本轮跳过留痕，主干不被污染', async () => {
+    const f = fixtureProject();
+    const rootDir = projectRoot(f.projectId);
+    vi.spyOn(llmCallModule, 'callLlm').mockResolvedValueOnce({
+      content: JSON.stringify({ verdict: 'concern', reason: '疑似误删配置文件', summary: '待人工检查' }),
+    } as never);
+    const result = await promoteTaskStaging(db, f.projectId, f.projectTaskId, { actor: 'ui' });
+    expect(result.promoted).toBe(false);
+    expect(result.reviewVerdict).toBe('concern');
+    expect(existsSync(path.join(rootDir, 'r1.txt'))).toBe(false);
+    const rec = db.prepare('SELECT status FROM task_merge_record WHERE project_task_id=?').get(f.projectTaskId) as { status: string };
+    expect(rec.status).toBe('concern');
+  });
 
-    const wtInfo = createWorktree(rootDir, project.id, task.id);
-    saveTaskRuntime(db, wtInfo);
+  it('promoteTaskStaging：LLM 失败 → skipped 不阻塞（下轮可重试）', async () => {
+    const f = fixtureProject();
+    vi.spyOn(llmCallModule, 'callLlm').mockRejectedValueOnce(new Error('net down') as never);
+    const result = await promoteTaskStaging(db, f.projectId, f.projectTaskId, { actor: 'watchdog' });
+    expect(result.promoted).toBe(false);
+    expect(result.reviewVerdict).toBe('skipped');
+    const rec = db.prepare('SELECT status FROM task_merge_record WHERE project_task_id=?').get(f.projectTaskId) as { status: string };
+    expect(rec.status).toBe('skipped');
+  });
 
-    const artifactRelPath = 'src/experimental.ts';
-    mkdirSync(join(wtInfo.path, 'src'), { recursive: true });
-    writeFileSync(join(wtInfo.path, artifactRelPath), 'export const exp = true;\n');
-    commitAll(wtInfo.path, 'feat: experimental');
+  it('listPendingTaskMerges：领先任务入看板，含在飞子任务计数', () => {
+    const f = fixtureProject();
+    const now = new Date().toISOString();
+    db.prepare(
+      "INSERT INTO task (id, project_id, project_task_id, seq, root_task_id, title, input_protocol_json, context_refs_json, output_protocol_json, priority, state, clarification_rounds, is_discussion, is_suggestion, budget_json, created_at, updated_at, swarm_depth) VALUES (?,?,?,?,?,'在飞','{}','{}','{}',5,'running',0,0,0,'{}',?,?,0)",
+    ).run('tk_inflight', f.projectId, f.projectTaskId, 1, 'tk_inflight', now, now);
+    const items = listPendingTaskMerges(db, f.projectId);
+    expect(items).toHaveLength(1);
+    expect(items[0]!.projectTaskId).toBe(f.projectTaskId);
+    expect(items[0]!.aheadCommits).toBe(2);
+    expect(items[0]!.pendingRuntimeTasks).toBe(1);
+    expect(items[0]!.mergeMode).toBe('manual');
+  });
 
-    db.prepare("UPDATE task SET state='completed', summary=?, artifacts_json=? WHERE id=?").run(
-      '实验性重构完成',
-      JSON.stringify([{ path: artifactRelPath, kind: 'file', operation: 'create' }]),
-      task.id,
-    );
-
-    expect(listPendingMerges(db, project.id)).toHaveLength(1);
-
-    // 执行放弃
-    const discardRes = discardTaskMerge(db, project.id, task.id);
-    expect(discardRes.discarded).toBe(true);
-
-    // 主干未合入该文件，worktree runtime 已被清理
-    expect(existsSync(join(rootDir, artifactRelPath))).toBe(false);
-    expect(getTaskRuntime(db, task.id)).toBeUndefined();
-
-    // 验证事件
-    const events = listTaskEvents(db, task.id);
-    expect(events.some((e) => e.kind === 'merge_discarded')).toBe(true);
-    expect(listPendingMerges(db, project.id)).toHaveLength(0);
+  it('promote 冲突 → 返回清单不自动吞；strategy 选边可解（批次 I 消费）', () => {
+    const f = fixtureProject();
+    const rootDir = projectRoot(f.projectId);
+    writeFileSync(path.join(rootDir, 'r1.txt'), 'main-side');
+    git(rootDir, ['add', '-A']);
+    git(rootDir, ['commit', '-m', 'main edit']);
+    const conflicted = promoteTaskStagingMerge(rootDir, f.projectId, f.projectTaskId);
+    expect(conflicted.promoted).toBe(false);
+    expect(conflicted.conflicts).toContain('r1.txt');
+    const resolved = promoteTaskStagingMerge(rootDir, f.projectId, f.projectTaskId, { strategy: 'theirs' });
+    expect(resolved.promoted).toBe(true);
+    expect(readFileSync(path.join(rootDir, 'r1.txt'), 'utf8')).toBe('round1');
   });
 });

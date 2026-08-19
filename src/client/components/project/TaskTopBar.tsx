@@ -25,6 +25,9 @@ import {
   useProjectTaskAction,
   usePinProjectTask,
   useMarkUnread,
+  useTaskMergeStatus,
+  useMergeProjectTask,
+  useSetProjectMergeMode,
   type ProjectTaskDTO,
 } from '../../hooks/queries';
 
@@ -56,6 +59,38 @@ export function TaskTopBar({ projectId, task, runtimeTaskId, rightExtra }: {
   const branches = useGitBranches(projectId, branchMenuOpen || graphOpen);
   const graph = useGitGraph(projectId, graphOpen);
   const checkout = useCheckoutBranch(projectId);
+  // 批次 G·修复轮：任务级合并——领先提交数轮询 + 合并触发 + 「以后自动合并」
+  const mergeStatus = useTaskMergeStatus(projectId, task.id);
+  const mergeTask = useMergeProjectTask(projectId, task.id);
+  const setMergeMode = useSetProjectMergeMode(projectId);
+  const [mergeConfirm, setMergeConfirm] = useState<{ pendingTasks: number } | null>(null);
+  const [mergeAutoAfter, setMergeAutoAfter] = useState(false);
+
+  const runMerge = (confirm: boolean, autoAfter: boolean): void => {
+    if (autoAfter) setMergeMode.mutate('auto');
+    mergeTask.mutate(
+      { confirm },
+      {
+        onSuccess: (r) => {
+          if (r.needsConfirm) {
+            setMergeConfirm({ pendingTasks: r.pendingTasks ?? 0 });
+            return;
+          }
+          if (r.promoted) {
+            toast('success', `已合并回主干：${r.summary ?? r.message}`);
+            setMergeConfirm(null);
+          } else if (r.conflicts?.length) {
+            toast('error', `合并冲突：${r.conflicts.slice(0, 3).join('、')}${r.conflicts.length > 3 ? ' 等' : ''}——已升级处理`);
+            setMergeConfirm(null);
+          } else {
+            toast('info', `本轮未合并：${r.message}`);
+            setMergeConfirm(null);
+          }
+        },
+        onError: (e) => toast('error', (e as Error).message),
+      },
+    );
+  };
   const openLocation = useOpenLocation(projectId);
   const rename = useRenameProjectTask();
   const action = useProjectTaskAction();
@@ -209,6 +244,18 @@ export function TaskTopBar({ projectId, task, runtimeTaskId, rightExtra }: {
         <span style={{ cursor: 'pointer', padding: '2px 6px' }}>⋯</span>
       </DropdownMenu>
 
+      {/* 批次 G·修复轮：任务级合并——产物在任务集成分支待合并时出现，显示领先提交数 */}
+      {mergeStatus.data?.exists && mergeStatus.data.aheadCommits > 0 && (
+        <button
+          type="button"
+          title={`合并任务集成区回主干（领先 ${mergeStatus.data.aheadCommits} 提交${mergeStatus.data.mergeMode === 'manual' ? '，需确认' : '，自动模式'}）`}
+          onClick={() => runMerge(mergeStatus.data?.mergeMode === 'auto', false)}
+          style={{ border: '1px solid var(--border)', background: 'var(--bg-elev)', cursor: 'pointer', fontSize: 11, padding: '3px 8px', borderRadius: 8, flexShrink: 0, display: 'inline-flex', gap: 4, alignItems: 'center' }}
+        >
+          ⬆️ 合并 <span style={{ background: 'var(--accent)', color: '#fff', borderRadius: 6, fontSize: 10, padding: '0 4px' }}>{mergeStatus.data.aheadCommits}</span>
+        </button>
+      )}
+
       {/* Finder / Terminal 打开切换 */}
       <div style={{ display: 'inline-flex', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', flexShrink: 0 }} title="选择用 Finder 还是终端打开任务目录">
         {([['finder', '🗂'], ['terminal', '⌨️']] as const).map(([mode, icon]) => (
@@ -240,6 +287,41 @@ export function TaskTopBar({ projectId, task, runtimeTaskId, rightExtra }: {
           <div><kbd>⌘K</kbd> 搜索或跳转 · <kbd>⌘B</kbd> 左栏 · <kbd>⌘⇧B</kbd> 右栏</div>
           <div>任务对话中可直接发指令开工；消息级选项在输入框左侧药丸。</div>
           <div>分支下拉可搜索/切换任务工作区分支；⋯ 菜单含置顶/重命名/归档/复制路径族。</div>
+        </div>
+      </Modal>
+      {/* 批次 G·修复轮：manual 模式合并确认弹窗（含"以后自动合并"；未完成仅提醒不阻止） */}
+      <Modal
+        open={mergeConfirm !== null}
+        onClose={() => setMergeConfirm(null)}
+        title="合并任务集成区回主干？"
+        size="sm"
+        footer={
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button type="button" onClick={() => setMergeConfirm(null)} style={{ fontSize: 13, padding: '6px 12px', borderRadius: 8, cursor: 'pointer' }}>取消</button>
+            <button
+              type="button"
+              disabled={mergeTask.isPending}
+              style={{ fontSize: 13, padding: '6px 12px', borderRadius: 8, cursor: 'pointer' }}
+              onClick={() => runMerge(true, mergeAutoAfter)}
+            >
+              确认合并
+            </button>
+          </div>
+        }
+      >
+        <div style={{ fontSize: 13, lineHeight: 1.8 }}>
+          {mergeConfirm && mergeConfirm.pendingTasks > 0 && (
+            <p style={{ color: 'var(--warn, #d97706)', margin: '0 0 8px' }}>
+              ⚠️ 该任务仍有 {mergeConfirm.pendingTasks} 个在飞子任务，现在合并的是当前集成区内容（中途合并合法，可继续执行）。
+            </p>
+          )}
+          <p style={{ margin: 0 }}>
+            将由 AI 审查变更后合并回主干；审查有疑虑或冲突时会保留现场并播报，不会自动吞。
+          </p>
+          <label style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 10, cursor: 'pointer' }}>
+            <input type="checkbox" checked={mergeAutoAfter} onChange={(e) => setMergeAutoAfter(e.target.checked)} />
+            本项目以后自动合并（写入项目合并模式 auto）
+          </label>
         </div>
       </Modal>
       {/* 重命名 Modal */}
