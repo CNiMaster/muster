@@ -9,7 +9,7 @@ import type { ResolvedTaskSkill } from '../../shared/types';
 import { getWorkbench } from '../domain/workbench';
 import { getProject } from '../domain/project';
 import { getAgent, listAgents } from '../domain/agent';
-import { ensureDispatcherAgentId, DISPATCHER_ROLE, JUDGE_ROLE } from '../domain/system-agents';
+import { ensureDispatcherAgentId, DISPATCHER_ROLE, JUDGE_ROLE, HR_ROLE } from '../domain/system-agents';
 import { listTaskMessages } from '../domain/task-message';
 import type { Task } from '../domain/task';
 import { getTask as loadTask } from '../domain/task';
@@ -26,6 +26,7 @@ import { listMaterials } from '../domain/material';
 import { getPersona, listPersonaIndex } from '../domain/persona-library';
 import { appendTaskEvent } from '../domain/task-event';
 import { searchArchive } from '../domain/archive';
+import { listProjectSpecialists, listStaffSpecialists, specialistLabel } from '../domain/specialist-pool';
 
 const MAX_REFERENCE_BYTES = 64 * 1024;
 const MAX_TOTAL_REFERENCE_BYTES = 256 * 1024;
@@ -351,14 +352,14 @@ export function assembleContext(
       '',
     );
   }
-  // 指挥系统 W3：养蜂人专属——swarmPlan 契约教学（其他岗位不教，返回也会被忽略）
-  if (agent?.isSystem && agent.role === DISPATCHER_ROLE) {
-    // 专家链路：人设库索引注入——养蜂人从"凭训练记忆盲猜 id"变为目录可见可选（persona_miss 的根治）。
+  // 指挥系统 W3 + 组织模型批次二：养蜂人/人事专属——人设库索引注入
+  // （选蜂/建专家都要按目录选人设，persona_miss 的根治）。
+  if (agent?.isSystem && (agent.role === DISPATCHER_ROLE || agent.role === HR_ROLE)) {
     const personaIndex = listPersonaIndex();
     if (personaIndex.length > 0) {
       sp.push(
-        '# 人设库索引（选蜂人设用）',
-        '为 worker 挑选 personaId 时从以下目录取（id 必须与目录逐字一致）；没有合适的就省略 personaId（匿名蜂），不要编造目录外的 id：',
+        '# 人设库索引（选人设用）',
+        '为工蜂/新专家挑选 personaId 时从以下目录取（id 必须与目录逐字一致）；没有合适的就省略 personaId（匿名蜂/通用专家），不要编造目录外的 id：',
         ...personaIndex.flatMap((d) => [
           `## ${d.domain}（${d.items.length} 位）`,
           ...d.items.map((i) => `- ${i.id} — ${i.name}${i.description ? `：${i.description}` : ''}`),
@@ -366,6 +367,9 @@ export function assembleContext(
         '',
       );
     }
+  }
+  // 指挥系统 W3：养蜂人专属——swarmPlan 契约教学（其他岗位不教，返回也会被忽略）
+  if (agent?.isSystem && agent.role === DISPATCHER_ROLE) {
     sp.push(
       '# 蜂群契约（你是养蜂人，独有）',
       '适合并行拆解的目标：在最终 JSON 里加 swarmPlan 字段并置 outcome="waiting_dependency"：',
@@ -373,6 +377,30 @@ export function assembleContext(
       '系统会为每只蜂创建一次性工蜂并行执行，全部完成后你收到 [蜂群汇总] 任务做收口报告。',
       '工蜂数量按需（够用就好）；超出系统上限会被截断。不适合并行的目标不要用 swarmPlan。',
       '三种蜂型：匿名（不写 personaId）/ 同种专家（全部 worker 同 personaId）/ 混合专家（不同 worker 不同 personaId）。',
+      '',
+    );
+  }
+  // 组织模型批次二：人事岗专属——专家池清单 + 专家供给契约
+  if (agent?.isSystem && agent.role === HR_ROLE) {
+    const projectSpecialists = listProjectSpecialists(db, project.id);
+    const staffSpecialists = listStaffSpecialists(db, project.id);
+    sp.push(
+      '# 专家池清单（你能供给的专家）',
+      ...(projectSpecialists.length > 0
+        ? [
+          '项目已有专家（优先建议复用，不要重复建）：',
+          ...projectSpecialists.map((s) => `- ${specialistLabel(db, s)} — ${s.specialty}（已用 ${s.useCount} 次${s.tier === 'staff' ? '，常驻专家' : ''}）`),
+        ]
+        : ['（本项目暂无专家，需要时按契约新建）']),
+      ...(staffSpecialists.length > 0
+        ? ['全局常驻专家（跨项目可借，建议复用）：', ...staffSpecialists.map((s) => `- ${specialistLabel(db, s)} — ${s.specialty}（他项目）`)]
+        : []),
+      '',
+      '# 专家供给契约（你是人事，独有）',
+      '确认缺人时，在最终 JSON 里加 staffingPlan 字段：',
+      'staffingPlan: { specialists: [ { specialty: "专长描述", personaId?: "建议穿戴的人设 id（从人设库索引选）", brief: "职责说明" } ] }',
+      '系统会为每位专家建立项目专家：常驻本项目、跨任务复用、只加不减，建好后出现在花名册即可被派遣。',
+      '能复用已有专家/我的 talent 时不要新建——在 summary 里点名建议复用即可。',
       '',
     );
   }

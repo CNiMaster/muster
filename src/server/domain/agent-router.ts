@@ -58,7 +58,9 @@ export function findBestAssignee(
   const capabilities = (requiredCapabilities ?? [])
     .filter((c) => typeof c === 'string' && c.trim())
     .map(normalizeCapability);
-  const agents = listAgents(db).filter((agent) => agent.id !== options.excludeAgentId);
+  // 组织模型批次二：系统岗（养蜂人/人事/裁决法庭）转可见后仍不参与能力路由——
+  // 它们只经专属通道（蜂群/用人需求/辩论）接活，不给普通任务自动分派。
+  const agents = listAgents(db).filter((agent) => agent.id !== options.excludeAgentId && !agent.isSystem);
   if (agents.length === 0) return null;
 
   // 执行器类型过滤：解析每个候选员工绑定的执行器档案 → manifest kind

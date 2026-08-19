@@ -17,13 +17,15 @@ Muster is a local multi-agent workbench. Persistent agents collaborate through p
 | 岗位 | 英文 | 职责 | 代码现状 |
 |---|---|---|---|
 | 负责人 | Lead | 用户单一接口，随时待命沟通；协调撤销/插话；定时/清单/随行讨论（三功能待做，批次三） | `project.firstAgentId` ✓ |
-| 养蜂人 | Beemaster | 放三种蜂：普通工蜂/同种专家蜂群/临时专家组；需要专家时从专家库取用或让人事专项设计 | = 原隐形「调度中心」（role=`swarm-dispatcher` 不变，显示名已改），转可见待做（批次二） |
-| 人事 | HR | 专家组织岗：维护专家库、创建专家（人造人）、按任务分派（用户自建且上岗中优先）、只加不减 | 待建（批次二） |
+| 养蜂人 | Beemaster | 放三种蜂：普通工蜂/同种专家蜂群/临时专家组；需要专家时从专家库取用或让人事专项设计 | **批次二已转可见**（role=`swarm-dispatcher` 不变，`ensureOne` visible 幂等自愈 unhide + 迁移 20260819000900；能力路由排除系统岗 agent-router.ts） |
+| 人事 | HR | 专家组织岗：维护专家库、创建专家（人造人）、按任务分派（用户自建且上岗中优先）、只加不减 | **批次二已建**（role=`hr` 可见系统岗；`staffingPlan {specialists[]}` done 契约 → engine 兑现 `materializeStaffingPlan`；上下文注入专家池清单+人设库索引） |
 | 验收员 | Reviewer | 质量验收 | `acceptance-officer.ts` ✓ |
 
 **隐形岗**：裁决法庭（Judge，原「评审中心」，role=`debate-judge` 不变）——对抗辩论裁决，置信≥阈值自动采纳、低置信升级用户；负责人不参与裁决。
 
 **执行层（非固定）**：工蜂（Worker，一次性即焚）/ 专家（Specialist，项目池复用+三级阶梯：临时创建→项目合同工 Contractor→常驻专家 Staff Specialist）/ 辩手（一次性）。专家并发默认不排队（认证执行器全 parallel；排队仅执行器档案配串行时——执行器属性非专家属性）。
+
+**项目专家池（批次二已交付，`specialist-pool.ts` + 迁移 20260819000900）**：`specialist_pool` 表按（项目×人设）记账——同专长第 1 次被需要只记需求计数（agent_id 空），第 2 次自动落成常驻项目专家（role=`specialist`，可见、tempRecruit 豁免 org lock 但不进临时工回收链），此后 `materializeSwarm` 的 persona 蜂池优先复用（不建临时蜂、同一专家跨任务延续线程与记忆）；use_count≥5 自动晋升 `staff`（常驻专家，跨项目可借）；只加不减——dismiss 仅改状态不删行。人事 staffingPlan 直接建池条目（via=hr，specialist_created 事件留痕）。反思门控按角色收紧：仅 `swarm-worker` 的一次性蜂抑制通用经验沉淀，项目专家照常沉淀（CRAFT 仍挂人设档案宿主全局共享）。
 
 **机制词**：随行讨论（aside，不建任务不打断）· 检查点插入（checkpoint insert，安全点才插）· 派发三模式（interleave 并行插入 / sequential 排队接力 / preempt-replace 抢占替换）· 清单（checklist 顺序门控）· 定时任务（scheduled）· 暂停 pause / 取消 cancel / 回滚 revert（撤销由负责人协调发起，下属不因用户说话而停）。
 

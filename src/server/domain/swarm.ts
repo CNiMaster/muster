@@ -17,6 +17,7 @@ import { AppError, ErrorCode } from '../../shared/errors';
 import { getSystemSettings } from './setting';
 import { addTaskMessage } from './task-message';
 import { appendTaskEvent } from './task-event';
+import { acquireSpecialistForPersona } from './specialist-pool';
 import { appendTrace } from './execution-trace';
 import { addDependency, cancelTask, createTask, getTask, type Task } from './task';
 import { promoteProjectStagingIfAny } from './staging';
@@ -653,16 +654,22 @@ export function materializeSwarm(
   const swarmId = swarm.id;
 
   for (const [index, worker] of workers.entries()) {
-    const beeAgentId = createWorkerBee(db, {
-      projectId: swarm.projectId,
-      requesterAgentId: rootDispatcherId,
-      index,
-    });
     const beePersonaId = resolveBeePersona(worker.personaId);
     if (worker.personaId && !beePersonaId) {
       // 专家链路：养蜂人指定的 personaId 不在库中——留痕（静默降级匿名蜂会丢失"缺什么专家"的信号，喂沉淀管道）
       appendTaskEvent(db, sourceTask.id, 'persona_miss', { requestedPersonaId: worker.personaId, beeTitle: worker.title, scope: 'swarm_bee' });
     }
+    // 组织模型批次二：persona 蜂优先走项目专家池——命中常驻专家则由它执行（跨任务延续记忆与线程，
+    // 不建临时蜂）；未命中记需求计数，同专长第 2 次被需要时自动落成常驻项目专家（临时蜂退役）。
+    const specialistHit = beePersonaId
+      ? acquireSpecialistForPersona(db, swarm.projectId, beePersonaId, worker.title)
+      : null;
+    const beeAgentId = specialistHit?.agentId
+      ?? createWorkerBee(db, {
+        projectId: swarm.projectId,
+        requesterAgentId: rootDispatcherId,
+        index,
+      });
     const beeTask = createTask(db, {
       projectId: swarm.projectId,
       parentTaskId: sourceTask.id,
@@ -689,6 +696,7 @@ export function materializeSwarm(
       childTitle: worker.title,
       recipient: beeAgentId,
       dispatcher: rootDispatcherId,
+      ...(specialistHit ? { specialist: true, specialistCreated: specialistHit.created } : {}),
     });
   }
 

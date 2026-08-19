@@ -116,6 +116,23 @@ export interface AgentRunResult {
    * confidence ≥ 设置阈值自动采纳；低于则升级用户（带优劣表）。
    */
   debateVerdict?: DebateVerdict;
+  /**
+   * 组织模型批次二：专家供给计划（仅人事系统岗的返回被兑现）。
+   * 每位专家落成项目专家池常驻条目（只加不减、跨任务复用），建好后即可被派遣。
+   */
+  staffingPlan?: StaffingPlan;
+}
+
+/** 人事岗的专家供给计划。 */
+export interface StaffingPlan {
+  specialists: Array<{
+    /** 专长描述（同时作为项目专家的职责文本）。 */
+    specialty: string;
+    /** 建议穿戴的人设 id（可选，从人设库索引选，缺省=通用专家）。 */
+    personaId?: string;
+    /** 这位专家的职责说明（存档供后续派遣参考）。 */
+    brief?: string;
+  }>;
 }
 
 /** 评审庭裁决。 */

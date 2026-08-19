@@ -58,7 +58,8 @@ describe('ProjectRuntimeCoordinator', () => {
 
     await coordinator.tick({ pump: false });
 
-    expect(listThreads(db, project.id)).toHaveLength(5);
+    // 组织模型批次二：养蜂人/人事转可见固定岗后同样补线程（5 员工 + 2 可见系统岗 = 7）
+    expect(listThreads(db, project.id)).toHaveLength(7);
     const planning = listTasks(db, project.id).filter((task) => task.title.startsWith('[规划]'));
     expect(planning).toHaveLength(1);
   });

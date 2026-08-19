@@ -43,6 +43,15 @@ const debateVerdictSchema = z.object({
   flaws: z.array(z.object({ optionId: z.string(), flaw: z.string() })).default([]),
 });
 
+// 组织模型批次二：人事岗的专家供给计划
+const staffingPlanSchema = z.object({
+  specialists: z.array(z.object({
+    specialty: z.string().min(1),
+    personaId: z.string().optional(),
+    brief: z.string().optional(),
+  })).min(1),
+});
+
 export const agentRunResultSchema = z.object({
   outcome: z.enum(['completed', 'waiting_input', 'waiting_dependency', 'blocked']),
   summary: z.string(),
@@ -57,6 +66,8 @@ export const agentRunResultSchema = z.object({
   acceptanceMet: z.array(z.object({ id: z.string(), met: z.boolean() })).optional(),
   /** 指挥系统 W3：蜂群计划（仅养蜂人系统岗被兑现）。 */
   swarmPlan: swarmPlanSchema.optional(),
+  /** 组织模型批次二：专家供给计划（仅人事系统岗被兑现）。 */
+  staffingPlan: staffingPlanSchema.optional(),
 });
 
 /** JSON Schema 描述，传给模型的 structured output 约束。 */
@@ -155,6 +166,24 @@ export const AGENT_RESULT_JSON_SCHEMA = {
         },
       },
       required: ['confidence', 'rationale', 'flaws'],
+    },
+    staffingPlan: {
+      type: 'object',
+      properties: {
+        specialists: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              specialty: { type: 'string' },
+              personaId: { type: 'string' },
+              brief: { type: 'string' },
+            },
+            required: ['specialty'],
+          },
+        },
+      },
+      required: ['specialists'],
     },
   },
   required: ['outcome', 'summary'],

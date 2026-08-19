@@ -34,7 +34,8 @@ import { getAgent } from '../domain/agent';
 import { assembleContext } from '../executors/context';
 import { materializeSwarm, countActiveSwarmsByRequester, escalateSwarmRequest, EXPERT_SWARM_LIMITS } from '../domain/swarm';
 import { finalizeDebate, startDebate } from '../domain/debate';
-import { DISPATCHER_ROLE, JUDGE_ROLE } from '../domain/system-agents';
+import { DISPATCHER_ROLE, JUDGE_ROLE, HR_ROLE } from '../domain/system-agents';
+import { materializeStaffingPlan } from '../domain/specialist-pool';
 import { getExecutorManifest, providerForManifest } from '../executors/manifests';
 import { assertSafeToRun } from '../executors/safety';
 import { getProject, listProjectReferences } from '../domain/project';
@@ -812,6 +813,29 @@ export class TaskEngine {
         } catch (error) {
           result.outcome = 'blocked';
           result.summary = `蜂群建立失败：${error instanceof Error ? error.message : String(error)}`;
+        }
+      }
+
+      // 组织模型批次二：人事岗 staffingPlan 兑现——逐位建立项目专家（常驻、只加不减、不自动派活，
+      // 建好即可被派遣）。普通智能体返回的 staffingPlan 一律忽略（与 swarmPlan 同守卫模式）。
+      if (result.staffingPlan && agent.isSystem && agent.role === HR_ROLE) {
+        const plan = result.staffingPlan;
+        result.staffingPlan = undefined;
+        try {
+          const { created } = materializeStaffingPlan(this.db, task.id, plan);
+          if (!result.summary) {
+            result.summary = `已建立 ${created.length} 位项目专家：${created.map((c) => c.specialty).join('、')}。已入项目专家池，可直接派遣。`;
+          }
+          realtime.publish({
+            id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            type: 'specialist.staffed',
+            projectId: project.id,
+            taskId: task.id,
+            occurredAt: new Date().toISOString(),
+            payload: { count: created.length, specialties: created.map((c) => c.specialty) },
+          });
+        } catch (error) {
+          log.warn('staffing plan materialization failed', { taskId: task.id, err: error instanceof Error ? error.message : String(error) });
         }
       }
 

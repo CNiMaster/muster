@@ -43,7 +43,7 @@ describe('系统隐形岗懒确保（批次4e）', () => {
     expect(getJudgeAgentId(db, company.id)).toBeNull();
   });
 
-  it('懒确保幂等：多次装配不重复创建，花名册仍隐藏', () => {
+  it('懒确保幂等：多次装配不重复创建；养蜂人可见、裁决法庭隐藏', () => {
     const company = restoreWorkbench(db, { id: 'wb_fix_2', name: '工作台' });
     const agent = createAgent(db, { companyId: company.id, name: '干员', role: 'lead' });
     const project = createProject(db, {
@@ -58,8 +58,9 @@ describe('系统隐形岗懒确保（批次4e）', () => {
     const dispatchers = listAgents(db, { includeHidden: true })
       .filter((a) => a.role === DISPATCHER_ROLE && a.isSystem);
     expect(dispatchers).toHaveLength(1);
-    // 默认花名册（@候选来源）不出现
-    expect(listAgents(db).some((a) => a.role === DISPATCHER_ROLE)).toBe(false);
+    // 组织模型批次二：养蜂人转可见固定岗（默认花名册出现）；裁决法庭仍隐形
+    expect(listAgents(db).some((a) => a.role === DISPATCHER_ROLE)).toBe(true);
+    expect(listAgents(db).some((a) => a.role === JUDGE_ROLE)).toBe(false);
     void JUDGE_ROLE;
   });
 });
