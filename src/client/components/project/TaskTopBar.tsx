@@ -120,7 +120,7 @@ export function TaskTopBar({ projectId, task, runtimeTaskId, rightExtra }: {
   };
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1, flexWrap: 'wrap' }}>
       {/* 任务名（自动生成）+ 项目名 */}
       <span style={{ fontSize: 11, color: 'var(--fg-subtle)', flexShrink: 0 }}>#{task.seq}</span>
       {task.unread && <span aria-label="未读" title="未读" style={{ width: 6, height: 6, borderRadius: 999, background: 'var(--accent)', flexShrink: 0 }} />}
