@@ -1155,6 +1155,15 @@ export class TaskEngine {
       if (result.outcome === 'completed' && result.acceptanceMet?.some((m) => m.met === false)) {
         try { this.triggerQualityReviewDiscussion(task, result.acceptanceMet!, agent, project); } catch (e) { log.warn('quality-review discussion trigger failed', { taskId: task.id, err: e instanceof Error ? e.message : String(e) }); }
       }
+      // 批次 I·修复轮：裁决法庭冲突裁决任务完成 → 解析 SIDE/CONFIDENCE（高置信自动选边重发布，低置信升级用户）
+      if (result.outcome === 'completed' && ((task.inputProtocol ?? {}) as Record<string, unknown>).conflictMerge) {
+        try {
+          const { handleConflictJudgeCompletion } = await import('../domain/conflict-judge');
+          await handleConflictJudgeCompletion(this.db, task.id);
+        } catch (e) {
+          log.warn('conflict judge completion failed', { taskId: task.id, err: e instanceof Error ? e.message : String(e) });
+        }
+      }
       // R2：收尾验收——任务 completed（有验收标准、开关开、非验收任务自身）→ 派 [验收] Task 给验收员。
       // 条件不满足时静默跳过（maybeTriggerAcceptanceReview 内部判定 + 幂等）。
       if (result.outcome === 'completed') {

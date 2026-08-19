@@ -141,3 +141,46 @@ export function getProjectConflictTimeline(db: DB, projectId: string): ConflictT
   timeline.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
   return timeline;
 }
+
+export interface IntentTimeline {
+  /** 展示行（开始时间倒序）：项目任务与用户消息混合，晚开始=更新用户意图。 */
+  lines: string[];
+  parties: Array<{ kind: 'project_task' | 'user_message'; title: string; startedAt: string }>;
+}
+
+/**
+ * 批次 I·修复轮：意图时间线构造——冲突各方任务/计划的**开始时间**（created_at，非完成时间）
+ * 倒序 + 用户本人消息倒序 top-N。语义判定为主，时间线仅加权不独裁（定案 #4）。
+ */
+export function buildIntentTimeline(db: DB, projectId: string, projectTaskId?: string): IntentTimeline {
+  const parties: IntentTimeline['parties'] = [];
+  const pts = db.prepare(
+    "SELECT seq, title, created_at FROM project_task WHERE project_id=? AND state IN ('active','completed') ORDER BY created_at DESC LIMIT 8",
+  ).all(projectId) as Array<{ seq: number; title: string; created_at: string }>;
+  for (const pt of pts) {
+    parties.push({
+      kind: 'project_task',
+      title: `任务 #${pt.seq} ${pt.title}`,
+      startedAt: pt.created_at,
+    });
+  }
+  const userMsgs = db.prepare(
+    "SELECT content, created_at FROM conversation_message WHERE scope_kind='project' AND scope_id=? AND role='user' ORDER BY created_at DESC LIMIT 5",
+  ).all(projectId) as Array<{ content: string; created_at: string }>;
+  for (const m of userMsgs) {
+    parties.push({
+      kind: 'user_message',
+      title: `你说：${m.content.slice(0, 80)}`,
+      startedAt: m.created_at,
+    });
+  }
+  parties.sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt));
+  const marker = projectTaskId ? '（本冲突任务）' : '';
+  const lines = parties.map((p) => {
+    const t = new Date(p.startedAt);
+    const hh = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
+    const label = p.kind === 'project_task' ? p.title : p.title;
+    return `- ${hh} 开始：${label}${p.kind === 'project_task' ? marker : ''}`;
+  });
+  return { lines, parties };
+}

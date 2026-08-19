@@ -14,6 +14,7 @@ import {
   taskStagingDiffSummary, promoteTaskStagingMerge,
 } from '../worktree/manager';
 import { callLlm } from './llm-call';
+import { dispatchConflictJudgment } from './conflict-judge';
 import { getProjectMergeMode } from './project';
 import { shortId, nowIso } from '../../shared/utils';
 import { realtime } from '../realtime';
@@ -279,7 +280,14 @@ export async function promoteTaskStaging(
   const merged = promoteTaskStagingMerge(project.rootDir, projectId, projectTaskId, { strategy: options.strategy });
   if (!merged.promoted) {
     recordTaskMerge(db, { projectId, projectTaskId, actor: options.actor ?? 'system', status: 'conflict', reviewVerdict: 'approve', summary: review.summary, diffStat, conflicts: merged.conflicts, aheadCommits: status.aheadCommits });
-    postBroadcast(db, projectId, `「⛔ 合并冲突」任务集成区合并回主干时冲突（${merged.conflicts?.length ?? '若干'} 个文件）：${(merged.conflicts ?? []).slice(0, 5).join('、')}。已中止，等待裁决。`);
+    postBroadcast(db, projectId, `「⛔ 合并冲突」任务集成区合并回主干时冲突（${merged.conflicts?.length ?? '若干'} 个文件）：${(merged.conflicts ?? []).slice(0, 5).join('、')}。已中止，已派裁决法庭按意图时间线加权裁定。`);
+    // 批次 I·修复轮：派裁决法庭（语义判定+开始时间加权；高置信自动选边，低置信升级用户）
+    try {
+      const conflictCount = db.prepare("SELECT COUNT(*) AS n FROM task_merge_record WHERE project_task_id=? AND status='conflict'").get(projectTaskId) as { n: number };
+      dispatchConflictJudgment(db, { projectId, projectTaskId, conflicts: merged.conflicts ?? [], attempt: conflictCount.n });
+    } catch (e) {
+      log.warn('conflict judge dispatch failed', { projectId, projectTaskId, err: String(e) });
+    }
     return { promoted: false, pendingTasks: pending.n, message: merged.message, conflicts: merged.conflicts, summary: review.summary, reviewVerdict: 'approve' };
   }
 
