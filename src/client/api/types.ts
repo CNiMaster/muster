@@ -238,8 +238,6 @@ export interface Task {
   supersededBy: string | null;
   /** 蓝图打法包：本任务派遣的人设（蓝图主槽匹配，null=未派遣）。 */
   personaId: string | null;
-  /** 合并模式治理（批次 G）：manual = 需人工确认合并；auto = 自动合入 */
-  mergeMode?: 'manual' | 'auto';
   createdAt: string;
   updatedAt: string;
 }

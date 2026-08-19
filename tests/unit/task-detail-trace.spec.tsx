@@ -28,8 +28,6 @@ vi.mock('../../src/client/hooks/queries', () => ({
   useTaskTrace: () => ({ data: [] }),
   useTaskCloseout: () => ({ data: undefined, isLoading: false }),
   useGenerateTaskCloseout: () => ({ mutate: vi.fn(), isPending: false }),
-  usePromoteTaskMerge: () => ({ mutate: vi.fn(), isPending: false }),
-  useDiscardTaskMerge: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 import { TaskDetailPage } from '../../src/client/pages/TaskDetailPage';
