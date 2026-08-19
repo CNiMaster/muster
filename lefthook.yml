@@ -1,0 +1,7 @@
+pre-push:
+  parallel: false
+  commands:
+    typecheck:
+      run: npm run typecheck
+    unit-and-integration-tests:
+      run: npx vitest run --exclude 'tests/e2e/**'

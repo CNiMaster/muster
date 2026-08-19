@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## About Muster
 
-Muster is a local multi-agent workbench. Persistent agents collaborate through project-scoped Tasks while fixed CLI or API executors run their work in isolated worktrees. Direction（2026-08-15 定案）：组织 = f(活)——智能体按任务穿戴人设，组织形状存在蓝图里（自动复盘进化），做完的东西进归档。详见下方「Blueprint Org Refactor」章节。
+Muster is a local multi-agent workbench. Persistent agents collaborate through project-scoped Tasks while fixed CLI or API executors run their work in isolated worktrees. Direction（2026-08-15 定案）：组织 = f(活)——智能体按任务穿戴人设，组织形状存在蓝图里（自动复盘进化），做完的东西进归档。当前状态：合并治理、会话压缩增强与蓝图人设小组已实施。详见下方「Blueprint Org Refactor」章节。
 
 **Agent personas and skills** — 3 local personas plus 200+ domain experts integrated from [jnMetaCode/agency-agents-zh](https://github.com/jnMetaCode/agency-agents-zh) into `personas/`. 20 skills from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) in `skills/`.
 
