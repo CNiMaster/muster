@@ -48,6 +48,7 @@ import { dispatchGapResearch } from '../domain/gap-research';
 import { applyAdaptiveAdjustment, canRunMore } from '../domain/executor-concurrency';
 import { markExecutorFailure, markExecutorSuccess } from '../domain/executor-failover';
 import { isSwarmLinkedTask } from '../domain/staging';
+import { resolveContextWindow } from '../domain/executor-profile';
 import { getWorkbench } from '../domain/workbench';
 import { createWorktree, removeWorktree, ensureStagingWorktree, listTaskBranchChanges } from '../worktree/manager';
 /** 批次 D2：读取任务 inputProtocol 里的消息级选项（模式/模型/思考），非法值忽略。 */
@@ -852,6 +853,7 @@ export class TaskEngine {
           transcriptBytes: Buffer.byteLength(JSON.stringify(ctx.inputPacket)) + Buffer.byteLength(result.summary),
           inputTokens: result._usage?.inputTokens,
           outputTokens: result._usage?.outputTokens,
+          contextWindow: resolveContextWindow(executorProfile),
           toolOutputBytes:Buffer.byteLength(JSON.stringify(result.artifacts)),
           durationMs:Date.now()-runStartedAt,
           handoff,

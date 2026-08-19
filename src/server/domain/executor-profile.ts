@@ -27,8 +27,19 @@ export interface ExecutorProfile {
   health: 'healthy' | 'unhealthy';
   consecutiveFailures: number;
   healthNote: string | null;
+  /** 上下文窗口 token 上限（批次 B；可选，默认 128k）。 */
+  contextWindowTokens?: number | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export const DEFAULT_CONTEXT_WINDOW_TOKENS = 128_000;
+
+export function resolveContextWindow(profile?: ExecutorProfile | null): number {
+  if (profile?.contextWindowTokens && profile.contextWindowTokens > 0) {
+    return profile.contextWindowTokens;
+  }
+  return DEFAULT_CONTEXT_WINDOW_TOKENS;
 }
 
 export interface ExecutionRun {
@@ -47,11 +58,11 @@ export interface ExecutionRun {
   createdAt: string;
 }
 
-type ProfileRow = { id: string; name: string; manifest_id: string; manifest_version: number; config_json: string; credential_ref_json: string; install_json: string; concurrency_mode: ExecutorConcurrency; max_concurrency: number | null; concurrency_locked: number | null; effective_concurrency: number | null; health: string | null; consecutive_failures: number | null; health_note: string | null; created_at: string; updated_at: string };
+type ProfileRow = { id: string; name: string; manifest_id: string; manifest_version: number; config_json: string; credential_ref_json: string; install_json: string; concurrency_mode: ExecutorConcurrency; max_concurrency: number | null; concurrency_locked: number | null; effective_concurrency: number | null; health: string | null; consecutive_failures: number | null; health_note: string | null; context_window_tokens?: number | null; created_at: string; updated_at: string };
 type RunRow = { id: string; executor_profile_id: string; employee_id: string; project_id: string; task_id: string; status: ExecutionRun['status']; manifest_snapshot_json: string; profile_snapshot_json: string; started_at: string | null; finished_at: string | null; failure_classification: string | null; failure_message: string | null; created_at: string };
 
 function profileFromRow(row: ProfileRow): ExecutorProfile {
-  return { id: row.id, name: row.name, manifestId: row.manifest_id, manifestVersion: row.manifest_version, config: JSON.parse(row.config_json), credentialRef: JSON.parse(row.credential_ref_json), install: JSON.parse(row.install_json), concurrencyMode: row.concurrency_mode, maxConcurrency: row.max_concurrency ?? DEFAULT_MAX_CONCURRENCY, concurrencyLocked: (row.concurrency_locked ?? 0) === 1, health: row.health === 'unhealthy' ? 'unhealthy' : 'healthy', consecutiveFailures: row.consecutive_failures ?? 0, healthNote: row.health_note ?? null, createdAt: row.created_at, updatedAt: row.updated_at };
+  return { id: row.id, name: row.name, manifestId: row.manifest_id, manifestVersion: row.manifest_version, config: JSON.parse(row.config_json), credentialRef: JSON.parse(row.credential_ref_json), install: JSON.parse(row.install_json), concurrencyMode: row.concurrency_mode, maxConcurrency: row.max_concurrency ?? DEFAULT_MAX_CONCURRENCY, concurrencyLocked: (row.concurrency_locked ?? 0) === 1, health: row.health === 'unhealthy' ? 'unhealthy' : 'healthy', consecutiveFailures: row.consecutive_failures ?? 0, healthNote: row.health_note ?? null, contextWindowTokens: row.context_window_tokens ?? null, createdAt: row.created_at, updatedAt: row.updated_at };
 }
 
 function assertNoSecretValues(value: unknown, path = 'config'): void {
@@ -64,7 +75,7 @@ function assertNoSecretValues(value: unknown, path = 'config'): void {
   }
 }
 
-export function createExecutorProfile(db: DB, input: { name: string; manifestId: string; config?: Record<string, unknown>; credentialRef?: CredentialReference; install?: Record<string, unknown>; concurrencyMode?: ExecutorConcurrency; maxConcurrency?: number; concurrencyLocked?: boolean }): ExecutorProfile {
+export function createExecutorProfile(db: DB, input: { name: string; manifestId: string; config?: Record<string, unknown>; credentialRef?: CredentialReference; install?: Record<string, unknown>; concurrencyMode?: ExecutorConcurrency; maxConcurrency?: number; concurrencyLocked?: boolean; contextWindowTokens?: number | null }): ExecutorProfile {
   const name = input.name.trim();
   if (!name) throw new AppError(ErrorCode.VALIDATION, '执行器档案名称不能为空');
   const manifest = getExecutorManifest(input.manifestId);
@@ -85,7 +96,7 @@ export function createExecutorProfile(db: DB, input: { name: string; manifestId:
   const id = shortId('ep_');
   const maxConcurrency = input.maxConcurrency ?? DEFAULT_MAX_CONCURRENCY;
   // effective_concurrency 初始化为 max：新档案从满并发开始（自适应只会下调/试探上调，不越过 max）。
-  db.prepare(`INSERT INTO executor_profile (id,name,manifest_id,manifest_version,config_json,credential_ref_json,install_json,concurrency_mode,max_concurrency,concurrency_locked,effective_concurrency,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id, name, manifest.id, manifest.version, JSON.stringify(input.config ?? {}), JSON.stringify(input.credentialRef ?? {}), JSON.stringify(input.install ?? {}), input.concurrencyMode ?? manifest.concurrency, maxConcurrency, input.concurrencyLocked ? 1 : 0, maxConcurrency, now, now);
+  db.prepare(`INSERT INTO executor_profile (id,name,manifest_id,manifest_version,config_json,credential_ref_json,install_json,concurrency_mode,max_concurrency,concurrency_locked,effective_concurrency,context_window_tokens,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id, name, manifest.id, manifest.version, JSON.stringify(input.config ?? {}), JSON.stringify(input.credentialRef ?? {}), JSON.stringify(input.install ?? {}), input.concurrencyMode ?? manifest.concurrency, maxConcurrency, input.concurrencyLocked ? 1 : 0, maxConcurrency, input.contextWindowTokens ?? null, now, now);
   return getExecutorProfile(db, id);
 }
 
@@ -114,11 +125,11 @@ export function getEmployeeExecutorProfile(db: DB, employeeId: string): Executor
   return row.executor_profile_id ? getExecutorProfile(db, row.executor_profile_id) : null;
 }
 
-/** 阶段二任务 2.2：更新执行器档案（名称/配置/凭据引用/并发模式/并发上限与锁定）。 */
+/** 阶段二任务 2.2：更新执行器档案（名称/配置/凭据引用/并发模式/并发上限与锁定/上下文窗口）。 */
 export function updateExecutorProfile(
   db: DB,
   id: string,
-  patch: { name?: string; config?: Record<string, unknown>; credentialRef?: CredentialReference; concurrencyMode?: ExecutorConcurrency; maxConcurrency?: number; concurrencyLocked?: boolean },
+  patch: { name?: string; config?: Record<string, unknown>; credentialRef?: CredentialReference; concurrencyMode?: ExecutorConcurrency; maxConcurrency?: number; concurrencyLocked?: boolean; contextWindowTokens?: number | null },
 ): ExecutorProfile {
   const cur = getExecutorProfile(db, id);
   const nextName = patch.name?.trim() || cur.name;
@@ -128,8 +139,9 @@ export function updateExecutorProfile(
     throw new AppError(ErrorCode.VALIDATION, '环境变量凭据引用格式无效');
   }
   const nextMax = patch.maxConcurrency ?? cur.maxConcurrency;
+  const nextWindow = patch.contextWindowTokens !== undefined ? patch.contextWindowTokens : cur.contextWindowTokens;
   db.prepare(
-    `UPDATE executor_profile SET name=?, config_json=?, credential_ref_json=?, concurrency_mode=?, max_concurrency=?, concurrency_locked=?, updated_at=? WHERE id=?`,
+    `UPDATE executor_profile SET name=?, config_json=?, credential_ref_json=?, concurrency_mode=?, max_concurrency=?, concurrency_locked=?, context_window_tokens=?, updated_at=? WHERE id=?`,
   ).run(
     nextName,
     JSON.stringify(patch.config ?? cur.config),
@@ -137,6 +149,7 @@ export function updateExecutorProfile(
     patch.concurrencyMode ?? cur.concurrencyMode,
     nextMax,
     patch.concurrencyLocked !== undefined ? (patch.concurrencyLocked ? 1 : 0) : (cur.concurrencyLocked ? 1 : 0),
+    nextWindow ?? null,
     nowIso(),
     id,
   );
