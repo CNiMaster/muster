@@ -49,6 +49,7 @@ import { applyAdaptiveAdjustment, canRunMore } from '../domain/executor-concurre
 import { markExecutorFailure, markExecutorSuccess } from '../domain/executor-failover';
 import { isSwarmLinkedTask } from '../domain/staging';
 import { resolveContextWindow } from '../domain/executor-profile';
+import { generateCompactionSummary } from '../domain/compaction-summary';
 import { getWorkbench } from '../domain/workbench';
 import { createWorktree, removeWorktree, ensureStagingWorktree, listTaskBranchChanges } from '../worktree/manager';
 /** 批次 D2：读取任务 inputProtocol 里的消息级选项（模式/模型/思考），非法值忽略。 */
@@ -867,13 +868,32 @@ export class TaskEngine {
               realtime.publish(makeLifecycleEvent('session.compacted',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,sessionId:sessionIdHint},{projectId:project.id,taskId:task.id}));
               log.info('vendor session compacted', { threadId: projectTaskThread.id });
             } else {
-              const previousSessionId=sessionIdHint??null;sessionManager.rotate(projectTaskThread.id, handoff);realtime.publish(makeLifecycleEvent('session.rotated',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,previousSessionId,reason:'compact-unavailable'},{projectId:project.id,taskId:task.id}));
+              const previousSessionId=sessionIdHint??null;
+              const summary = await generateCompactionSummary(this.db, projectTaskThread.id);
+              handoff.lastSummary = summary;
+              sessionManager.rotate(projectTaskThread.id, handoff);
+              try {
+                this.db.prepare("UPDATE project_agent_thread SET compaction_summary=?, updated_at=? WHERE project_id=? AND agent_id=?").run(summary, new Date().toISOString(), project.id, agent.id);
+              } catch { /* 容错 */ }
+              realtime.publish(makeLifecycleEvent('session.rotated',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,previousSessionId,reason:'compact-unavailable'},{projectId:project.id,taskId:task.id}));
             }
           } catch (error) {
-            const previousSessionId=sessionIdHint??null;sessionManager.rotate(projectTaskThread.id, handoff);realtime.publish(makeLifecycleEvent('session.rotated',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,previousSessionId,reason:'compact-failed'},{projectId:project.id,taskId:task.id}));
+            const previousSessionId=sessionIdHint??null;
+            const summary = await generateCompactionSummary(this.db, projectTaskThread.id);
+            handoff.lastSummary = summary;
+            sessionManager.rotate(projectTaskThread.id, handoff);
+            try {
+              this.db.prepare("UPDATE project_agent_thread SET compaction_summary=?, updated_at=? WHERE project_id=? AND agent_id=?").run(summary, new Date().toISOString(), project.id, agent.id);
+            } catch { /* 容错 */ }
+            realtime.publish(makeLifecycleEvent('session.rotated',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,previousSessionId,reason:'compact-failed'},{projectId:project.id,taskId:task.id}));
             log.warn('vendor compaction failed; session rotated', { threadId: projectTaskThread.id, error: String(error) });
           }
         } else if (decision.action === 'rotate') {
+          const summary = await generateCompactionSummary(this.db, projectTaskThread.id);
+          handoff.lastSummary = summary;
+          try {
+            this.db.prepare("UPDATE project_agent_thread SET compaction_summary=?, updated_at=? WHERE project_id=? AND agent_id=?").run(summary, new Date().toISOString(), project.id, agent.id);
+          } catch { /* 容错 */ }
           realtime.publish(makeLifecycleEvent('session.rotated',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,previousSessionId:result._sessionIdHint??ctx.sessionIdHint??null,reason:'hard-context-limit'},{projectId:project.id,taskId:task.id}));
           log.info('vendor session rotated at hard context limit', { threadId: projectTaskThread.id });
         }
