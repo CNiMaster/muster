@@ -35,6 +35,7 @@ const NotFoundPage = lazyRetry(() => import('./pages/NotFoundPage').then((m) => 
 const GraphPage = lazyRetry(() => import('./pages/GraphPage').then((m) => ({ default: m.GraphPage })));
 const ProjectPage = lazyRetry(() => import('./pages/ProjectPage').then((m) => ({ default: m.ProjectPage })));
 const TasksPage = lazyRetry(() => import('./pages/TasksPage').then((m) => ({ default: m.TasksPage })));
+const ProjectMergesPage = lazyRetry(() => import('./pages/ProjectMergesPage').then((m) => ({ default: m.ProjectMergesPage })));
 const UsagePage = lazyRetry(() => import('./pages/UsagePage').then((m) => ({ default: m.UsagePage })));
 const TaskDetailPage = lazyRetry(() => import('./pages/TaskDetailPage').then((m) => ({ default: m.TaskDetailPage })));
 const ArtifactsPage = lazyRetry(() => import('./pages/ArtifactsPage').then((m) => ({ default: m.ArtifactsPage })));
@@ -87,6 +88,7 @@ const router = createBrowserRouter([
       { path: 'projects/:projectId', element: <ProjectPage /> },
       { path: 'projects/:projectId/character-graph', element: <ProjectToolPageShell tool="character"><CharacterGraphPage /></ProjectToolPageShell> },
       { path: 'projects/:projectId/tasks', element: <ProjectToolPageShell tool="tasks"><TasksPage /></ProjectToolPageShell> },
+      { path: 'projects/:projectId/merges', element: <ProjectToolPageShell tool="merges"><ProjectMergesPage /></ProjectToolPageShell> },
       { path: 'projects/:projectId/plans', element: <ProjectToolPageShell tool="plans"><ProjectPlansPage /></ProjectToolPageShell> },
       { path: 'projects/:projectId/usage', element: <ProjectToolPageShell tool="usage"><UsagePage /></ProjectToolPageShell> },
       { path: 'projects/:projectId/artifacts', element: <ProjectToolPageShell tool="artifacts"><ArtifactsPage /></ProjectToolPageShell> },

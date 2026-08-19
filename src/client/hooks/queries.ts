@@ -682,6 +682,36 @@ export function useDiscardTaskMerge(projectId: string | undefined) {
   });
 }
 
+export interface OrphanWorktreeDTO {
+  taskId: string;
+  path: string;
+  branch: string;
+  reason: string;
+  mtime: string;
+}
+
+/** 批次 H：查询项目下的孤儿工作树 */
+export function useOrphanWorktrees(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ['orphan-worktrees', projectId],
+    queryFn: () => api.get<OrphanWorktreeDTO[]>(`/api/projects/${projectId}/orphan-worktrees`),
+    enabled: !!projectId,
+  });
+}
+
+/** 批次 H：清理项目下的孤儿工作树 */
+export function useCleanOrphanWorktrees(projectId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (targetTaskIds?: string[]) =>
+      api.post<{ cleanedCount: number; cleaned: OrphanWorktreeDTO[] }>(`/api/projects/${projectId}/orphan-worktrees/clean`, { targetTaskIds }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['orphan-worktrees', projectId] });
+      qc.invalidateQueries({ queryKey: ['project-merges', projectId] });
+    },
+  });
+}
+
 /** 蓝图组织批次4c：项目优先入口——零组织决策建项目（自动落默认工作台，无则顺手创建）。 */
 export function useQuickProject() {
   const qc = useQueryClient();

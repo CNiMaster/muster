@@ -40,7 +40,7 @@ import { generateCompactionSummary } from '../domain/compaction-summary';
 import { getWorkbench } from '../domain/workbench';
 import { getAgent } from '../domain/agent';
 import { syncAgentMemoryFiles } from '../domain/agent-home';
-import { stageStatus } from '../worktree/manager';
+import { stageStatus, detectOrphanWorktrees, cleanOrphanWorktrees } from '../worktree/manager';
 import {
   promoteProjectStagingIfAny,
   listPendingMerges,
@@ -229,6 +229,29 @@ projectById.post(
     const taskId = param(req, 'taskId');
     const result = discardTaskMerge(db, project.id, taskId);
     res.json(result);
+  }),
+);
+
+/** 批次 H：检测项目磁盘上的孤儿工作树 */
+projectById.get(
+  '/orphan-worktrees',
+  asyncHandler(async (req, res) => {
+    const db = getDb();
+    const project = getProject(db, param(req, 'id'));
+    res.json(detectOrphanWorktrees(db, project.rootDir, project.id));
+  }),
+);
+
+/** 批次 H：清理项目磁盘上的孤儿工作树 */
+projectById.post(
+  '/orphan-worktrees/clean',
+  asyncHandler(async (req, res) => {
+    const db = getDb();
+    const project = getProject(db, param(req, 'id'));
+    const body = z.object({
+      targetTaskIds: z.array(z.string()).optional(),
+    }).parse(req.body ?? {});
+    res.json(cleanOrphanWorktrees(db, project.rootDir, project.id, body.targetTaskIds));
   }),
 );
 

@@ -8,6 +8,7 @@ import { WorkbenchContextSwitcher } from './WorkbenchContextSwitcher';
 
 const TOOL_LABELS: Record<ProjectToolKey, string> = {
   tasks: '任务领取清单',
+  merges: '待合并成果',
   plans: '计划与自动化',
   dashboard: '运行概览',
   artifacts: '成果与文件',
