@@ -20,6 +20,7 @@ Muster is a local multi-agent workbench. Persistent agents collaborate through p
 | 养蜂人 | Beemaster | 放三种蜂：普通工蜂/同种专家蜂群/临时专家组；需要专家时从专家库取用或让人事专项设计 | **批次二已转可见**（role=`swarm-dispatcher` 不变，`ensureOne` visible 幂等自愈 unhide + 迁移 20260819000900；能力路由排除系统岗 agent-router.ts） |
 | 人事 | HR | 专家组织岗：维护专家库、创建专家（人造人）、按任务分派（用户自建且上岗中优先）、只加不减 | **批次二已建**（role=`hr` 可见系统岗；`staffingPlan {specialists[]}` done 契约 → engine 兑现 `materializeStaffingPlan`；上下文注入专家池清单+人设库索引） |
 | 验收员 | Reviewer | 质量验收 | `acceptance-officer.ts` ✓ |
+| 自动化管家 | Automation Steward | 平台自动化固定岗：对话创建自动化、组织编排（定时/循环）；仅在自动化页可见 | `system-agents.ts` ensureAutomationStewardAgentId（role=`automation-steward`，visible_in='automation'）|
 
 **隐形岗**：裁决法庭（Judge，原「评审中心」，role=`debate-judge` 不变）——对抗辩论裁决，置信≥阈值自动采纳、低置信升级用户；负责人不参与裁决。
 
@@ -46,7 +47,19 @@ Muster is a local multi-agent workbench. Persistent agents collaborate through p
 - **批次 I 冲突时间线加权裁决**：promote 冲突→派裁决法庭（debate-judge 隐岗懒确保），输入=冲突文件+意图时间线（任务**开始时间**倒序+用户消息倒序，晚开始=更新意图仅加权不独裁）+行协议契约 SIDE/CONFIDENCE/RATIONALE；置信≥debateMinConfidence 自动选边重发布（-X ours/theirs）+播报理由；低置信/解析失败/再冲突升级用户带时间线；只读时间线聚合器保留作展示层。
 - **批次 J 蓝图专家组合**：staffing 扩展 {personaId, personaName, role?}（分工）；命中派整组——多槽且未显式指定执行者→主任务+组员 runtime task（同 project_task 并行、findActiveSpecialistAgent 池优先、缺员 blueprint_crew_slot_unfilled 留痕不造人）；显式指定执行者只穿衣不派组；穿戴文案全量改「派遣」。
 
-迁移新增：20260819001400 executor_context_window / 20260819001500 task_merge（task_merge_record+task_merge_watchdog）。测试锚点：tests/unit/{context-env,session-context-window,compaction-summary,swarm-synthesis-contract,personal-memory-scope,blueprint-crew-staffing,task-merge-governance,pending-merges-board,orphan-worktree-detector,conflict-timeline-judge}.spec + tests/integration/engine-wiring（新契约：产物落任务集成分支）。
+迁移新增：20260819001400 executor_context_window / 20260819001500 task_merge（task_merge_record+task_merge_watchdog）。
+
+## 整改计划交付（2026-08-20，批次 1-8：流程闭环 + 自动化中心一期）
+
+计划：`docs/superpowers/plans/2026-08-19-remediation-and-automation.md`（含"不做与挂观察"留档）。
+
+- **批次1 全量发布删除分类**：no-approval 全量发布按 `git diff --name-status` 分类（D→operation:'delete'，R 拆删旧+增新），合并工作区未提交状态（porcelain 直连 spawnSync——`git()` 助手 trim stdout 会吃前导空格）；分类块在发布门之前（仅含删除的空声明任务也要发布）。
+- **批次2 promote 前确定性验证**：`pre-merge-checks.ts`——项目 `settings_json.preMergeChecks` 显式优先→探测 package.json scripts.typecheck→都无跳过；在任务集成 worktree 异步 spawn 执行（60s/300s 超时、sanitizeChildEnv、node_modules 软链用完即删）；失败→task_merge_record `check_failed`+播报+本轮跳过。门禁从"纯语义审查"补上"真的跑检查"层。
+- **批次3 教训层级升级**：反思 LESSON 段可选行 `<scope: persona>`+`<persona_key>`——高置信跨项目方法论单写 CRAFT（skill+persona_key 挂人设档案宿主，不写项目 LESSON）；蜂群 workers「由简入繁」排序教学。
+- **批次4 memory_candidate CHECK 漂移**：迁移 20260819001700 对齐 workspace 枚举（定位修正：病在 candidate 表非 entry 表）。
+- **批次5-8 自动化中心一期**：平台级基础功能（自动触发非人触发，与项目工作分层）。`/automations` 页（左管家对话/右列表+快速表单）；自动化管家岗（仅自动化页可见）；`automation` 表（kind github-issues/schedule interval|daily/绑定项目/created_via chat|form）；done 契约 `automationPlan`（zod+JSON Schema 双补）；coordinator 独立 timer 每 60s 扫到点自动化；GitHub Issues 链：gh 拉取（30s 超时失败记 health）→`github_issue_sync` 幂等记账（repo+number UNIQUE）→派绑定项目负责人分诊（自由分类/先验证复现/子任务[Issue #N]/铁律：产物只落集成区**绝不自动合并**）→待合并看板「Issue 处理」tab（任务状态+领先数=待审批标识）。迁移 20260819001800/20260819001900。
+
+**挂观察（触发条件）**：语义检索（召回明显漏→本地 embedding）；spawnSync 链路异步化（大仓库可感知卡顿）。**明确不做**：管理三件套（用户裁定理由留档计划文档）、issue 修完自动合并（等用户审批）、postmortem 自动化（自辩悖论）、裁决全自动。测试锚点：tests/unit/{context-env,session-context-window,compaction-summary,swarm-synthesis-contract,personal-memory-scope,blueprint-crew-staffing,task-merge-governance,pending-merges-board,orphan-worktree-detector,conflict-timeline-judge}.spec + tests/integration/engine-wiring（新契约：产物落任务集成分支）。
 
 **蓝图 ↔ 专家池对接（2026-08-19）**：createTask 蓝图命中且未显式指定执行者 → 优先派给项目专家池穿戴同款人设的常驻专家（staffingMode='specialist-pool'，跨任务延续线程记忆）；已指定执行者只穿衣不换人（user_override/official_benchmark 原语义不变）。
 
