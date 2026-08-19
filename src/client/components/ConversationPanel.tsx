@@ -31,9 +31,11 @@ export interface ConversationPanelProps {
   hideInput?: boolean;
   /** 撑满 flex 列父容器（默认固定 520px 高兜底块级父容器） */
   fill?: boolean;
+  /** 批次三：随行讨论收口——把结论转成正式工作单（讨论本身不建任务不打断；由调用方决定建单方式）。 */
+  onConvertToTask?: (extract: string) => void;
 }
 
-export function ConversationPanel({ scope, scopeId, title, recipientAgentId, projectTaskId, hideInput = false, fill = false }: ConversationPanelProps): React.ReactElement {
+export function ConversationPanel({ scope, scopeId, title, recipientAgentId, projectTaskId, hideInput = false, fill = false, onConvertToTask }: ConversationPanelProps): React.ReactElement {
   const { data: messages, isLoading } = useMessages(scope, scopeId, recipientAgentId);
   const { data: agents } = useAgents();
   const post = usePostMessage(scope, recipientAgentId);
@@ -196,6 +198,21 @@ export function ConversationPanel({ scope, scopeId, title, recipientAgentId, pro
             <Button onClick={send} disabled={!text.trim()} loading={post.isPending}>
               发送
             </Button>
+            {onConvertToTask && (
+              <Button
+                variant="ghost"
+                title="随行讨论收口：把输入框里的结论（或最近一条回复）转成正式工作单——讨论本身不建任务、不打断进行中的工作"
+                disabled={!text.trim() && !(messages ?? []).some((m) => m.role === 'assistant')}
+                onClick={() => {
+                  const lastAssistant = [...(messages ?? [])].reverse().find((m) => m.role === 'assistant');
+                  const extract = text.trim() || lastAssistant?.content?.slice(0, 400) || '';
+                  if (!extract) return;
+                  onConvertToTask(extract);
+                }}
+              >
+                转为任务
+              </Button>
+            )}
           </div>
         </div>
       )}

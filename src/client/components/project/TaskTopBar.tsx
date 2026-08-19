@@ -21,6 +21,7 @@ import {
   useCheckoutBranch,
   useOpenLocation,
   useRenameProjectTask,
+  useTaskAction,
   useProjectTaskAction,
   usePinProjectTask,
   useMarkUnread,
@@ -58,6 +59,7 @@ export function TaskTopBar({ projectId, task, runtimeTaskId, rightExtra }: {
   const openLocation = useOpenLocation(projectId);
   const rename = useRenameProjectTask();
   const action = useProjectTaskAction();
+  const taskAction = useTaskAction();
   const pin = usePinProjectTask();
   const markUnread = useMarkUnread();
 
@@ -182,6 +184,11 @@ export function TaskTopBar({ projectId, task, runtimeTaskId, rightExtra }: {
       <DropdownMenu
         label="任务更多操作"
         items={[
+          ...(runtimeTaskId ? [
+            { key: 'cancel', label: '⛔ 取消当前执行', onSelect: () => taskAction.mutate({ taskId: runtimeTaskId, action: 'cancel' }, { onSuccess: () => toast('success', '已取消当前执行（worktree 保留分支待找回）'), onError: (e: Error) => toast('error', e.message) }) },
+            { key: 'pause', label: '⏸ 暂停当前执行', onSelect: () => taskAction.mutate({ taskId: runtimeTaskId, action: 'pause' }, { onSuccess: () => toast('success', '已暂停（保留现场，可恢复）'), onError: (e: Error) => toast('error', e.message) }) },
+            { key: 'd0', label: '', divider: true, onSelect: () => {} },
+          ] : []),
           { key: 'pin', label: task.pinned ? '📍 取消置顶任务' : '📍 置顶任务', onSelect: () => pin.mutate({ projectId, id: task.id, pinned: !task.pinned }) },
           { key: 'rename', label: '✏️ 重命名任务', onSelect: () => { setRenameTitle(task.title); setRenameOpen(true); } },
           { key: 'archive', label: '📦 归档任务', onSelect: () => action.mutate({ projectId, id: task.id, action: 'archive' }, { onSuccess: () => toast('success', '已归档（归档页可还原）') }) },

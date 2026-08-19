@@ -579,7 +579,18 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
       />}
 
       {projectView === 'group' && <Card id="project-conversation" title="项目成员群聊">
-        <ConversationPanel scope="project" scopeId={projectId} projectTaskId={selectedProjectTaskId} title="项目群 · 可 @ 指定智能体" />
+        <ConversationPanel
+          scope="project"
+          scopeId={projectId}
+          projectTaskId={selectedProjectTaskId}
+          title="项目群 · 可 @ 指定智能体"
+          onConvertToTask={selectedProjectTaskId
+            ? (extract) => createWorkOrder.mutate(
+              { projectId, projectTaskId: selectedProjectTaskId, title: `随行讨论结论：${extract.slice(0, 40)}`, inputProtocol: { trigger: 'work_order', content: extract } },
+              { onSuccess: () => toast('success', '讨论结论已转为工作单') },
+            )
+            : undefined}
+        />
       </Card>}
 
       {projectView === 'activity' && <Card title="协作活动">
