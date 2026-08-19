@@ -236,8 +236,9 @@ export function assembleContext(
   }
   // 轻量模式（咨询/讨论发言）：注入议题与前序发言后直接进入输出契约，跳过技能/能力中心/桥接/记忆/素材
   const loadedSkills: ResolvedTaskSkill[] = [];
+  const taskProto = (task.inputProtocol ?? {}) as Record<string, unknown>;
   if (lightweight) {
-    const proto = (task.inputProtocol ?? {}) as Record<string, unknown>;
+    const proto = taskProto;
     if (typeof proto.instruction === 'string' && proto.instruction) sp.push('# 本任务说明', proto.instruction, '');
     if (typeof proto.question === 'string' && proto.question) sp.push('# 待答复问题', proto.question, '');
     // 讨论发言：注入议题背景（topic + context），保证发言者看到完整议题
@@ -416,9 +417,21 @@ export function assembleContext(
       '# 蜂群契约（你是养蜂人，独有）',
       '适合并行拆解的目标：在最终 JSON 里加 swarmPlan 字段并置 outcome="waiting_dependency"：',
       'swarmPlan: { goal: "总目标", workers: [ { title: "子题", brief: "给这只蜂的具体指令与边界", personaId?: "子题要求的专家人设" } ] }',
-      '系统会为每只蜂创建一次性工蜂并行执行，全部完成后你收到 [蜂群汇总] 任务做收口报告。',
+      '系统会为每只蜂创建一次性工蜂并行执行，全部完成后你收到 [蜂群汇总] 任务做收口报告。收口报告必须包含「结论」「分歧」「风险」三段标题（无分歧须显式写明"无分歧"）。',
       '工蜂数量按需（够用就好）；超出系统上限会被截断。不适合并行的目标不要用 swarmPlan。',
       '三种蜂型：匿名（不写 personaId）/ 同种专家（全部 worker 同 personaId）/ 混合专家（不同 worker 不同 personaId）。',
+      '',
+    );
+  }
+  // 批次 D：蜂群收口结构契约教学（汇总任务专属）
+  if (taskProto.swarmSynthesis === true || task.title.startsWith('[蜂群汇总]')) {
+    sp.push(
+      '# 蜂群收口结构契约（你是汇总任务执行者，三段必需）',
+      '你正在执行蜂群收口汇总任务。完成时的 summary 必须显式包含以下三段标题行结构：',
+      '1. 「## 结论」：精炼概括全群产出与目标达成度；',
+      '2. 「## 分歧」：汇总各工蜂/专家间的分歧点与裁决结论（若各方一致无分歧，请显式写明"无分歧"）；',
+      '3. 「## 风险」：指出遗留风险、未决事项或后续建议。',
+      '若缺失任意一段标题，系统会在结果中标注契约违约留痕。',
       '',
     );
   }
@@ -462,7 +475,6 @@ export function assembleContext(
   // ===== Input Packet =====
   // 蜂群汇总：每只蜂完成时把 [蜂成员汇报] 逐条写进汇总任务消息（reportBeeCompletion）。
   // 固定 6 条窗口在蜂数 >6 时会丢早期汇报——按蜂数扩窗（蜂汇报全保留 + 4 条系统消息余量）。
-  const taskProto = (task.inputProtocol ?? {}) as Record<string, unknown>;
   const swarmBeeCount = taskProto.swarmSynthesis === true
     ? Number((taskProto.swarm as { beeCount?: number } | undefined)?.beeCount ?? 0)
     : 0;

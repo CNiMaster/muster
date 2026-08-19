@@ -33,7 +33,7 @@ import {assertProjectLaunchConfirmed} from './project-launch';
 import {assertProjectActive} from './project-readiness';
 import { getWorkbench } from './workbench';
 import { recordSuspension, resolveSuspensionByTask } from './task-suspension';
-import { checkSwarmLimits, greyBeeAfterTask, handleSwarmTaskFailure, maybeAutoRepairBee, recordSwarmNodeOutcome, reportBeeCompletion } from './swarm';
+import { checkSwarmLimits, greyBeeAfterTask, handleSwarmTaskFailure, maybeAutoRepairBee, recordSwarmNodeOutcome, reportBeeCompletion, validateSwarmSynthesisSummary } from './swarm';
 import { handleDebateTaskFailure, recordDecisionFromClarify } from './debate';
 import { ensurePrimaryThread } from './thread';
 import { matchBlueprint, currentBlueprintVersion } from './blueprint';
@@ -678,6 +678,19 @@ export function completeTask(db: DB, taskId: string, result: AgentRunResult): Ta
     else if (result.outcome === 'waiting_dependency') nextState = 'waiting_dependency';
     else nextState = 'blocked';
 
+    // 批次 D：蜂群汇总任务收口契约校验
+    let finalSummary = result.summary;
+    if (result.outcome === 'completed' && ((cur.inputProtocol as Record<string, unknown>)?.swarmSynthesis === true || cur.title.startsWith('[蜂群汇总]'))) {
+      const contractCheck = validateSwarmSynthesisSummary(result.summary);
+      if (!contractCheck.valid) {
+        finalSummary = contractCheck.annotatedSummary;
+        appendTaskEvent(db, taskId, 'synthesis_contract_violation', {
+          missingSections: contractCheck.missingSections,
+          rawSummary: result.summary,
+        });
+      }
+    }
+
     db.prepare(
       `UPDATE task SET state=?, outcome=?, summary=?, question=?, question_options_json=?, artifacts_json=?, checkpoint=?,
         completed_at=?, lease_owner_thread_id=NULL, lease_expires_at=NULL,
@@ -687,7 +700,7 @@ export function completeTask(db: DB, taskId: string, result: AgentRunResult): Ta
     ).run(
       nextState,
       result.outcome,
-      result.summary,
+      finalSummary,
       result.question ?? null,
       result.questionOptions?.length ? JSON.stringify(result.questionOptions) : null,
       JSON.stringify(result.artifacts ?? []),
