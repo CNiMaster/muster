@@ -213,6 +213,11 @@ npm run smoke            # node scripts/smoke/run-all.mjs（需先 npm run dev�
 
 > **开源资源约定**：有现成开源/MCP 方案不自研；凡引入或借鉴开源资源（依赖、代码、设计）必须在根 `THIRD_PARTY_NOTICES.md` 登记（名称/仓库/许可/用途/引入日期/方式）——后期商业化/协议合规追溯用。
 
+> **文档留痕惯例（工程地基批次 E，2026-08-19）**：
+> - **spec/plan 状态行**：`docs/superpowers/specs|plans/` 新文档头部一律加 `状态：proposed | implemented | rejected`；**rejected 也入库**（附一句原因，替代方案为何不选留在正文）——被拒绝的设计是决策资产，不是垃圾。存量旧文档不回填。
+> - **postmortem**：重大缺陷修复后在 `docs/postmortem/NNNN-标题.md` 落一篇，四段模板=事实/根因/为什么自检没拦住/补强了什么。已存档：[0001 发布白名单静默丢](docs/postmortem/0001-publish-whitelist-silent-loss.md)（白名单外改动随分支强删）· [0002 迁移外键规程](docs/postmortem/0002-migration-fk-procedure.md)（空库测试掩盖真实库 FK 风险）· [0003 蜂群记忆三连丢](docs/postmortem/0003-swarm-memory-craft-loss.md)（汇总窗口截断/通用经验白写/CRAFT 真丢）。
+> - **本地门禁**：lefthook 仅挂 pre-push typecheck（`lefthook.yml`）；全量测试由 CI 兜底。改门禁前先问"最近有没有一次事故是它能拦住的"。
+
 ## Configuration (Environment Variables)
 
 | Variable | Default | Description |

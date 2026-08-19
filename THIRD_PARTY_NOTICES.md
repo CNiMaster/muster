@@ -16,5 +16,6 @@
 | addyosmani/agent-skills | https://github.com/addyosmani/agent-skills | MIT | `skills/` 20 个技能导入 | 2026-08 前 | 内容导入 |
 
 | dnd-kit (@dnd-kit/core, @dnd-kit/sortable, @dnd-kit/utilities) | https://github.com/clauderic/dnd-kit | MIT | 项目主页/侧栏列表拖拽排序（项目分组拖动与组内排序，批2） | 2026-08-18 | 依赖 |
+| lefthook | https://github.com/evilmartians/lefthook | MIT | git hooks 管理（pre-push typecheck 门禁，工程地基批次 E） | 2026-08-19 | 依赖 |
 
 > 历史既有依赖（express/react/better-sqlite3 等）以 `package.json` 与其各自 LICENSE 为准；本表登记「新增引用/借鉴」与内容级导入。
