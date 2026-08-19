@@ -49,6 +49,11 @@ export function queryKeysForRealtimeEvent(event: RealtimeEvent): QueryKey[] {
   if (event.type?.startsWith('bridge.')) {
     keys.push(['project-events'], ['events']);
   }
+  // 合并治理事件（review 修复 #5）：多入口合并/看门狗自动合并后秒级刷新徽标/看板/红点，
+  // 不等 15s/60s 轮询（staging 状态条与任务合并状态同族）
+  if (event.type === 'merge.promoted' || event.type === 'merge.discarded' || event.type.startsWith('publish.staging-')) {
+    keys.push(['task-merge-status'], ['pending-merges-board'], ['merge-attention'], ['staging-status']);
+  }
   // 执行过程 trace：精确失效任务时间线
   if (event.type === 'trace.append') {
     if (event.taskId) keys.push(['task-trace', event.taskId]);

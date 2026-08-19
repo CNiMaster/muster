@@ -7,6 +7,7 @@
 import type React from 'react';
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
 import {
   useProject,
@@ -32,6 +33,13 @@ export function ProjectMergesPage(): React.ReactElement {
   const { data: pending = [], isLoading: isMergesLoading } = useProjectPendingMerges(projectId);
   const { data: orphans = [] } = useOrphanWorktrees(projectId);
 
+  const qc = useQueryClient();
+  /** 裸 api.post 动作后手动失效（useMergeProjectTask 的 onSuccess 失效只覆盖顶栏入口） */
+  const invalidateMergeCaches = (): void => {
+    qc.invalidateQueries({ queryKey: ['task-merge-status'] });
+    qc.invalidateQueries({ queryKey: ['pending-merges-board'] });
+    qc.invalidateQueries({ queryKey: ['merge-attention'] });
+  };
   const discardStaging = useDiscardTaskStaging(projectId);
   const cleanOrphans = useCleanOrphanWorktrees(projectId);
 
@@ -54,6 +62,7 @@ export function ProjectMergesPage(): React.ReactElement {
       if (r.promoted) toast('success', `#${item.seq} 已合并：${r.summary ?? r.message}`);
       else if (r.conflicts?.length) toast('error', `#${item.seq} 冲突：${r.conflicts.slice(0, 3).join('、')}`);
       else toast('info', `#${item.seq} 本轮未合并：${r.message}`);
+      invalidateMergeCaches();
     } catch (e) {
       toast('error', (e as Error).message);
     } finally {
@@ -73,6 +82,7 @@ export function ProjectMergesPage(): React.ReactElement {
       } catch { /* 逐项播报，失败不中断批量 */ }
     }
     setMergingAll(false);
+    invalidateMergeCaches();
     if (ok > 0) toast('success', `批量合并完成：${ok}/${pending.length}`);
   };
 

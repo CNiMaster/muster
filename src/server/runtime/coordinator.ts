@@ -88,7 +88,7 @@ export class ProjectRuntimeCoordinator {
   private readonly inspectorIntervalMs = 60_000;
   /** E4.3 空闲自主反思扫描（默认关；每 60 秒检查一次，只入队不调 LLM）。 */
   private lastIdleReflectionRun = 0;
-  private lastStagingWatchdogRun = 0;
+  private stagingWatchdogTimer: NodeJS.Timeout | null = null;
   private readonly stagingWatchdogIntervalMs = 10 * 60_000;
   private readonly idleReflectionIntervalMs = 60_000;
 
@@ -132,28 +132,6 @@ export class ProjectRuntimeCoordinator {
           }
         } catch (error) {
           log.warn('idle reflection pass failed', { error: error instanceof Error ? error.message : String(error) });
-        }
-      }
-      // staging 合并看门狗（每 10 分钟）：集成现场领先且无在办流程（活跃蜂群/验收任务）时
-      // 自动 promote，冲突升级用户——堵"验收链断掉 → staging 无限积压"的缺口。
-      if (Date.now() - this.lastStagingWatchdogRun >= this.stagingWatchdogIntervalMs) {
-        this.lastStagingWatchdogRun = Date.now();
-        try {
-          const swept = sweepStaleStaging(this.db, { recheckMs: this.stagingWatchdogIntervalMs });
-          if (swept.promoted + swept.blocked > 0) {
-            log.info('staging watchdog swept', swept);
-          }
-        } catch (error) {
-          log.warn('staging watchdog failed', { error: error instanceof Error ? error.message : String(error) });
-        }
-        // 任务级集成区看门狗（批次 G·修复轮）：仅 auto 项目；manual 项目与孤儿永不碰
-        try {
-          const taskSwept = await sweepStaleTaskStaging(this.db, { recheckMs: this.stagingWatchdogIntervalMs });
-          if (taskSwept.promoted + taskSwept.blocked > 0) {
-            log.info('task staging watchdog swept', taskSwept);
-          }
-        } catch (error) {
-          log.warn('task staging watchdog failed', { error: error instanceof Error ? error.message : String(error) });
         }
       }
       const plannedTasks: string[] = [];
@@ -280,6 +258,23 @@ export class ProjectRuntimeCoordinator {
       }
     }, 10_000);
     this.reflectionTimer.unref?.();
+
+    // staging/任务级合并看门狗（每 10 分钟）：独立于 tick——promote 含 premium LLM 审查（单次最长 60s），
+    // 放 tick 内会持 ticking 互斥冻结整个调度循环（租约恢复/泵送/镜像释放停摆数分钟）。
+    this.stagingWatchdogTimer = setInterval(() => {
+      try {
+        const swept = sweepStaleStaging(this.db, { recheckMs: this.stagingWatchdogIntervalMs });
+        if (swept.promoted + swept.blocked > 0) log.info('staging watchdog swept', swept);
+      } catch (error) {
+        log.warn('staging watchdog failed', { error: error instanceof Error ? error.message : String(error) });
+      }
+      void sweepStaleTaskStaging(this.db, { recheckMs: this.stagingWatchdogIntervalMs })
+        .then((taskSwept) => {
+          if (taskSwept.promoted + taskSwept.blocked > 0) log.info('task staging watchdog swept', taskSwept);
+        })
+        .catch((error) => log.warn('task staging watchdog failed', { error: String(error) }));
+    }, this.stagingWatchdogIntervalMs);
+    this.stagingWatchdogTimer.unref?.();
   }
 
   stop(): void {
@@ -287,6 +282,8 @@ export class ProjectRuntimeCoordinator {
     this.timer = null;
     if (this.reflectionTimer) clearInterval(this.reflectionTimer);
     this.reflectionTimer = null;
+    if (this.stagingWatchdogTimer) clearInterval(this.stagingWatchdogTimer);
+    this.stagingWatchdogTimer = null;
   }
 
   /**

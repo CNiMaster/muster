@@ -10,8 +10,8 @@ import { getTask } from './task';
 import { appendTaskEvent } from './task-event';
 import { getTaskRuntime, deleteTaskRuntime } from './task-runtime';
 import {
-  stageStatus, promoteStaging, taskStageStatus, taskStagingBranch,
-  taskStagingDiffSummary, promoteTaskStagingMerge, taskStagingLastCommitAt, detectOrphanWorktrees,
+  stageStatus, promoteStaging, taskStageStatus,
+  taskStagingDiffSummary, promoteTaskStagingMerge, listTaskStagingRefs, branchAheadCount, detectOrphanWorktrees,
 } from '../worktree/manager';
 import { callLlm } from './llm-call';
 import { dispatchConflictJudgment } from './conflict-judge';
@@ -171,10 +171,15 @@ export function listPendingTaskMerges(db: DB, projectId: string): PendingTaskMer
   const pts = db.prepare(
     "SELECT id, seq, title, state FROM project_task WHERE project_id=? AND state IN ('active','completed') ORDER BY seq DESC",
   ).all(projectId) as Array<{ id: string; seq: number; title: string; state: string }>;
+  // review 修复 #3：一次 for-each-ref 拿全部分支（head+最后提交时间），只对存在的分支算领先数——
+  // 替代 O(任务数×6) 个 spawnSync 的逐任务探测（被 15s/60s 轮询三处消费）
+  const refs = listTaskStagingRefs(project.rootDir, projectId);
   const items: PendingTaskMergeItem[] = [];
   for (const pt of pts) {
-    const status = taskStageStatus(project.rootDir, projectId, pt.id);
-    if (!status.exists || status.aheadCommits === 0) continue;
+    const ref = refs.get(pt.id);
+    if (!ref) continue;
+    const aheadCommits = branchAheadCount(project.rootDir, ref.branch);
+    if (aheadCommits === 0) continue;
     const pending = db.prepare(
       "SELECT COUNT(*) AS n FROM task WHERE project_task_id=? AND state IN ('queued','claimed','running','waiting_input','waiting_dependency','waiting_approval','paused','blocked')",
     ).get(pt.id) as { n: number };
@@ -186,12 +191,12 @@ export function listPendingTaskMerges(db: DB, projectId: string): PendingTaskMer
       seq: pt.seq,
       title: pt.title,
       state: pt.state,
-      branch: taskStagingBranch(projectId, pt.id),
-      aheadCommits: status.aheadCommits,
+      branch: ref.branch,
+      aheadCommits,
       pendingRuntimeTasks: pending.n,
       mergeMode,
       lastMergeAt: last?.created_at ?? null,
-      staleHours: staleHoursSince(taskStagingLastCommitAt(project.rootDir, projectId, pt.id)),
+      staleHours: staleHoursSince(ref.lastCommitAt),
     });
   }
   return items;
@@ -289,7 +294,11 @@ export async function promoteTaskStaging(
     return { promoted: false, pendingTasks: pending.n, message: `审查 concern：${review.reason}`, summary: review.summary, reviewVerdict: 'concern' };
   }
 
-  const merged = promoteTaskStagingMerge(project.rootDir, projectId, projectTaskId, { strategy: options.strategy });
+  // review 修复 #4：审查快照是此刻的 stagingHead——merge 前复核未变，防审查窗口内新提交搭车进主干
+  const merged = promoteTaskStagingMerge(project.rootDir, projectId, projectTaskId, {
+    strategy: options.strategy,
+    expectedHead: status.stagingHead ?? undefined,
+  });
   if (!merged.promoted) {
     recordTaskMerge(db, { projectId, projectTaskId, actor: options.actor ?? 'system', status: 'conflict', reviewVerdict: 'approve', summary: review.summary, diffStat, conflicts: merged.conflicts, aheadCommits: status.aheadCommits });
     postBroadcast(db, projectId, `「⛔ 合并冲突」任务集成区合并回主干时冲突（${merged.conflicts?.length ?? '若干'} 个文件）：${(merged.conflicts ?? []).slice(0, 5).join('、')}。已中止，已派裁决法庭按意图时间线加权裁定。`);

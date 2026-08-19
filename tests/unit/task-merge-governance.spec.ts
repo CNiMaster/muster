@@ -151,6 +151,15 @@ describe('任务级集成区（批次 G·修复轮）', () => {
     expect(items[0]!.mergeMode).toBe('manual');
   });
 
+  it('promote TOCTOU：expectedHead 与当前不符 → 拒绝合并（审查窗口内新提交不能搭车进主干）', () => {
+    const f = fixtureProject();
+    const rootDir = projectRoot(f.projectId);
+    const stale = promoteTaskStagingMerge(rootDir, f.projectId, f.projectTaskId, { expectedHead: '0'.repeat(40) });
+    expect(stale.promoted).toBe(false);
+    expect(stale.message).toContain('内容已变化');
+    expect(existsSync(path.join(rootDir, 'r1.txt'))).toBe(false);
+  });
+
   it('promote 冲突 → 返回清单不自动吞；strategy 选边可解（批次 I 消费）', () => {
     const f = fixtureProject();
     const rootDir = projectRoot(f.projectId);

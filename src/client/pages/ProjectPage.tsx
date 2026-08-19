@@ -356,7 +356,12 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
   const [searchParams,setSearchParams]=useSearchParams();
   const requestedView = searchParams.get('view');
   const projectView = resolveProjectWorkbenchView(requestedView);
-  const [selectedProjectTaskId,setSelectedProjectTaskId]=useState<string|undefined>(()=>searchParams.get('projectTask')??undefined);
+  // review 修复 #1：projectTask=new 是「打开创建卡」的 URL 信号而非真实 id——初始 state 必须排除哨兵值，
+  // 否则 selectedProjectTaskId 卡死为 'new'（4s 一次 404 轮询，群聊发消息带 projectTaskId='new' 报错）
+  const [selectedProjectTaskId,setSelectedProjectTaskId]=useState<string|undefined>(()=>{
+    const p0=searchParams.get('projectTask');
+    return p0&&p0!=='new'?p0:undefined;
+  });
   const {data:selectedProjectTask}=useProjectTask(projectId,selectedProjectTaskId);
   const [projectTaskTitle,setProjectTaskTitle]=useState('');
   const [projectTaskBrief,setProjectTaskBrief]=useState('');
@@ -396,6 +401,8 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
       next.delete('projectTask');
       setSearchParams(next, { replace: true });
       setNewTaskSignal((n) => n + 1);
+      // 双保险：若 state 已被旧版本/直链塞入哨兵值，消费信号时复位，让自动选任务兜底生效
+      setSelectedProjectTaskId((cur) => (cur === 'new' ? undefined : cur));
     }
   }, [searchParams, setSearchParams]);
 

@@ -681,7 +681,9 @@ export function useDiscardTaskStaging(projectId: string | undefined) {
       ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['pending-merges-board', projectId] });
+      qc.invalidateQueries({ queryKey: ['pending-merges-board'] });
       qc.invalidateQueries({ queryKey: ['task-merge-status'] });
+      qc.invalidateQueries({ queryKey: ['merge-attention'] });
     },
   });
 }
@@ -715,6 +717,8 @@ export function useCleanOrphanWorktrees(projectId: string | undefined) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['orphan-worktrees', projectId] });
       qc.invalidateQueries({ queryKey: ['pending-merges-board', projectId] });
+      qc.invalidateQueries({ queryKey: ['pending-merges-board'] });
+      qc.invalidateQueries({ queryKey: ['merge-attention'] });
     },
   });
 }
@@ -1672,6 +1676,7 @@ export function useMergeProjectTask(projectId: string, projectTaskId: string | u
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['task-merge-status'] });
       qc.invalidateQueries({ queryKey: ['pending-merges-board'] });
+      qc.invalidateQueries({ queryKey: ['merge-attention'] });
     },
   });
 }

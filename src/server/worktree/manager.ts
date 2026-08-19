@@ -203,13 +203,19 @@ export function stageStatus(
   rootDir: string,
   projectId: string,
 ): { exists: boolean; aheadCommits: number; stagingHead: string | null; mainHead: string } {
-  ensureGitRepo(rootDir);
+  // 读路径无副作用（GET /staging-status 15s 轮询）：仓库未就绪不 mkdir+git init
+  if (!repoReady(rootDir)) return { exists: false, aheadCommits: 0, stagingHead: null, mainHead: '' };
   const branch = stagingBranch(projectId);
   const exists = Boolean(git(rootDir, ['branch', '--list', branch]).stdout);
   const mainHead = git(rootDir, ['rev-parse', 'HEAD']).stdout;
   if (!exists) return { exists: false, aheadCommits: 0, stagingHead: null, mainHead };
   const aheadCommits = Number(git(rootDir, ['rev-list', '--count', `HEAD..${branch}`]).stdout || '0');
   return { exists: true, aheadCommits, stagingHead: git(rootDir, ['rev-parse', branch]).stdout, mainHead };
+}
+
+/** 仓库就绪探测（读路径专用，无副作用）：项目目录缺 .git 时视为"尚无集成区"，不 mkdir 不 init。 */
+function repoReady(rootDir: string): boolean {
+  return existsSync(path.join(rootDir, '.git'));
 }
 
 // ===== 任务级集成区（批次 G·修复轮：任务=合并确认单位）=====
@@ -251,9 +257,36 @@ export function ensureTaskStagingWorktree(rootDir: string, projectId: string, pr
   return { projectId, projectTaskId, branch, path: wtPath };
 }
 
+/**
+ * 批量读取项目全部任务集成分支（看板/红点轮询专用，1 个子进程替代 O(任务数×6)）：
+ * key = projectTaskId，value = 分支/head/最后提交时间。领先数由调用方按需对存在分支单独 rev-list。
+ */
+export function listTaskStagingRefs(rootDir: string, projectId: string): Map<string, { branch: string; head: string; lastCommitAt: string }> {
+  const map = new Map<string, { branch: string; head: string; lastCommitAt: string }>();
+  if (!repoReady(rootDir)) return map;
+  const out = git(rootDir, [
+    'for-each-ref', '--format=%(refname:short) %(objectname) %(committerdate:iso8601-strict)',
+    `refs/heads/muster/${projectId}/*`,
+  ], { allowFail: true }).stdout;
+  const prefix = `muster/${projectId}/pt-`;
+  for (const line of out.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const [ref, head, ...rest] = trimmed.split(/\s+/);
+    if (!ref || !ref.startsWith(prefix) || !head) continue;
+    map.set(ref.slice(prefix.length), { branch: ref, head, lastCommitAt: rest.join(' ') });
+  }
+  return map;
+}
+
+/** 单分支领先主干提交数（配合 listTaskStagingRefs，只对存在的分支调用）。 */
+export function branchAheadCount(rootDir: string, branch: string): number {
+  return Number(git(rootDir, ['rev-list', '--count', `HEAD..${branch}`], { allowFail: true }).stdout || '0');
+}
+
 /** 任务集成分支最后一次提交时间（ISO，无提交/无分支为 null）——搁置提醒（≥5h 红点）数据源。 */
 export function taskStagingLastCommitAt(rootDir: string, projectId: string, projectTaskId: string): string | null {
-  ensureGitRepo(rootDir);
+  if (!repoReady(rootDir)) return null;
   const branch = taskStagingBranch(projectId, projectTaskId);
   if (!git(rootDir, ['branch', '--list', branch]).stdout) return null;
   const at = git(rootDir, ['log', '-1', '--format=%cI', branch], { allowFail: true }).stdout.trim();
@@ -266,7 +299,8 @@ export function taskStageStatus(
   projectId: string,
   projectTaskId: string,
 ): { exists: boolean; aheadCommits: number; stagingHead: string | null; mainHead: string } {
-  ensureGitRepo(rootDir);
+  // 读路径无副作用：仓库未就绪（新项目未跑首个任务/目录被移除）直接判不存在，不 mkdir+git init
+  if (!repoReady(rootDir)) return { exists: false, aheadCommits: 0, stagingHead: null, mainHead: '' };
   const branch = taskStagingBranch(projectId, projectTaskId);
   const exists = Boolean(git(rootDir, ['branch', '--list', branch]).stdout);
   const mainHead = git(rootDir, ['rev-parse', 'HEAD']).stdout;
@@ -293,8 +327,16 @@ export function promoteTaskStagingMerge(
   rootDir: string,
   projectId: string,
   projectTaskId: string,
-  options: { strategy?: 'ours' | 'theirs' } = {},
+  options: { strategy?: 'ours' | 'theirs'; expectedHead?: string } = {},
 ): { promoted: boolean; message: string; mergeCommit?: string; conflicts?: string[] } {
+  // review 修复 #4（TOCTOU）：审查的是快照时刻的分支头——合并前复核 head 未前进，
+  // 防止审查窗口（最长 60s）内新发布的未过审提交随本次 merge 进主干（主干只进过审内容）。
+  if (options.expectedHead) {
+    const current = git(rootDir, ['rev-parse', taskStagingBranch(projectId, projectTaskId)], { allowFail: true }).stdout.trim();
+    if (current !== options.expectedHead) {
+      return { promoted: false, message: '任务集成区在审查期间有新提交，内容已变化——请重新合并以纳入审查' };
+    }
+  }
   git(rootDir, ['merge', '--abort'], { allowFail: true });
   const staging = ensureTaskStagingWorktree(rootDir, projectId, projectTaskId);
   commitAll(staging.path, 'muster: task staging pre-promote');
@@ -336,7 +378,8 @@ export interface OrphanWorktreeInfo {
  * 用户自建或系统遗留；只识别标注，永不自动合并、看门狗永不碰。
  */
 export function detectOrphanWorktrees(db: DB, projectRootDir: string): OrphanWorktreeInfo[] {
-  ensureGitRepo(projectRootDir);
+  // 读路径无副作用：仓库未就绪时没有孤儿可言（也避免轮询 GET 复活被移除项目的目录）
+  if (!repoReady(projectRootDir)) return [];
   const porcelain = git(projectRootDir, ['worktree', 'list', '--porcelain']).stdout;
   // macOS 上 /var ↔ /private/var 符号链接会让 porcelain 输出与登记路径字符串不一致——统一 realpath 归一
   const norm = (p: string): string => { try { return realpathSync(p); } catch { return p; } };
