@@ -78,9 +78,9 @@ export function syncAgentMemoryFiles(db: DB, profileId: string, musterHome = SER
     join(home, 'memory/CORE.md'),
     renderMemorySnapshot('核心经验与 Skill', entries.filter((entry) => entry.scope === 'skill')),
   );
-  const companyScoped = entries.filter((entry) => entry.scope === 'company');
-  if (companyScoped.length > 0) {
-    atomicWrite(join(home, 'workbench', 'default', 'MEMORY.md'), renderMemorySnapshot('工作台任职记忆', companyScoped));
+  const workspaceScoped = entries.filter((entry) => entry.scope === 'workspace');
+  if (workspaceScoped.length > 0) {
+    atomicWrite(join(home, 'workbench', 'default', 'MEMORY.md'), renderMemorySnapshot('工作台任职记忆', workspaceScoped));
   }
   const projectIds = new Set(entries.flatMap((entry) => entry.projectId ? [entry.projectId] : []));
   for (const projectId of projectIds) {

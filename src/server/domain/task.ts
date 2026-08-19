@@ -40,6 +40,7 @@ import { matchBlueprint, currentBlueprintVersion } from './blueprint';
 import { getPersona } from './persona-library';
 import { requiredExecutorKindForCapabilities } from './capability-binding';
 import { findUserTalentForPersona } from './agent-profile';
+import { findActiveSpecialistAgent } from './specialist-pool';
 
 /**
  * 验收标准条目（双 Loop 地基 P0.1）。
@@ -345,6 +346,12 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
           .slice(0, 10);
         // 我的人才自动上岗：有在岗自有人才时顶替官方人设（快照进 inputProtocol，引擎应用专属配置）
         const userTalent = findUserTalentForPersona(db, slot.personaId);
+        // 组织模型批次二续：蓝图穿戴优先复用项目专家池——未显式指定执行者时直接派给
+        // 穿戴同款人设的常驻专家（跨任务延续线程与记忆）；已指定执行者则只穿衣不换人。
+        const specialistAgentId = !routedAssigneeId
+          ? findActiveSpecialistAgent(db, project.id, slot.personaId)
+          : null;
+        if (specialistAgentId) routedAssigneeId = specialistAgentId;
         // 打法包一期：班底生效——2-4 槽协作成员以名称+领域描述注入执行上下文
         const crew = match.blueprint.staffing.slice(1).map((s) => {
           const p = getPersona(s.personaId);
@@ -357,19 +364,23 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
           blueprintScore: Math.round(match.score * 100) / 100,
           ...(playbookTools.length > 0 ? { blueprintTools: playbookTools } : {}),
           ...(crew.length > 0 ? { staffingNotes: crew } : {}),
-          ...(userTalent ? {
-            userTalentOverride: {
-              profileId: userTalent.id,
-              displayName: userTalent.displayName,
-              soul: userTalent.soul,
-              principles: userTalent.principles,
-              customModel: userTalent.customModel,
-              customThinkingDepth: userTalent.customThinkingDepth,
-            },
-            staffingMode: 'user_override',
-          } : {
-            staffingMode: 'official_benchmark',
-          }),
+          ...(specialistAgentId
+            ? { staffingMode: 'specialist-pool' }
+            : userTalent
+              ? {
+                userTalentOverride: {
+                  profileId: userTalent.id,
+                  displayName: userTalent.displayName,
+                  soul: userTalent.soul,
+                  principles: userTalent.principles,
+                  customModel: userTalent.customModel,
+                  customThinkingDepth: userTalent.customThinkingDepth,
+                },
+                staffingMode: 'user_override',
+              }
+              : {
+                staffingMode: 'official_benchmark',
+              }),
         };
       }
     }

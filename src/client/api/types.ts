@@ -119,7 +119,7 @@ export interface BusinessReview {
 export interface MemoryCandidate {
   id: string;
   profileId: string;
-  scope: 'personal' | 'company' | 'project' | 'skill';
+  scope: 'personal' | 'workspace' | 'project' | 'skill';
   projectId: string | null;
   content: string;
   sourceTaskId: string | null;

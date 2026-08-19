@@ -4,7 +4,7 @@ import { nowIso, shortId } from '../../shared/utils';
 import { getAgentProfile, ensurePersonaArchiveProfile } from './agent-profile';
 import { getWorkbenchOrNull } from './workbench';
 
-export type MemoryScope = 'personal' | 'company' | 'project' | 'skill';
+export type MemoryScope = 'personal' | 'workspace' | 'project' | 'skill';
 export type MemoryCandidateStatus = 'pending' | 'approved' | 'rejected';
 export type MemoryEntryState = 'active' | 'locked' | 'superseded' | 'deleted';
 
@@ -267,7 +267,7 @@ export function searchMemory(db: DB, input: {
        AND (m.expires_at IS NULL OR m.expires_at > ?)
        AND (
          m.scope IN ('personal','skill')
-         OR (m.scope='company')
+         OR (m.scope='workspace')
          OR (m.scope='project' AND m.project_id=?)
        )
        AND (m.content LIKE ? OR m.id IN (SELECT entry_id FROM memory_fts WHERE memory_fts MATCH ?))
@@ -317,7 +317,7 @@ const SHRINK_K = 5;
 export function loadContextMemories(db: DB, input: {
   profileId: string; projectId: string; limit?: number;
 /**
-   * 渐进式加载：当传入 query 时，company/project 记忆仅注入与当前任务相关的（词元级 LIKE + FTS5 命中），
+   * 渐进式加载：当传入 query 时，workspace/project 记忆仅注入与当前任务相关的（词元级 LIKE + FTS5 命中），
    * 避免把全量记忆塞进 system prompt 淹没上下文；为空则回退全量（按 scope 优先级）。
    * 注意：personal 是用户的稳定偏好与核心身份，**永远全量注入**，不受 query 筛选——
    * 否则 agent 会因任务不相关而忘记用户的固定偏好（如"用中文回复"）。
@@ -339,7 +339,7 @@ export function loadContextMemories(db: DB, input: {
   // 排序：scope 优先级不变；同级内按收缩平均优势（adv_sum/(vote_count+5)，零票=0 退回时间序），
   // 新记忆靠 updated_at 时间序保底出场（探索通道），老而准的记忆靠战绩稳压新而平庸的；
   // id 兜底保证同毫秒创建的记忆排序确定。
-  const orderClause = `CASE scope WHEN 'personal' THEN 1 WHEN 'company' THEN 2 WHEN 'project' THEN 3 ELSE 4 END, adv_sum * 1.0 / (vote_count + ${SHRINK_K}) DESC, updated_at DESC, id`;
+  const orderClause = `CASE scope WHEN 'personal' THEN 1 WHEN 'workspace' THEN 2 WHEN 'project' THEN 3 ELSE 4 END, adv_sum * 1.0 / (vote_count + ${SHRINK_K}) DESC, updated_at DESC, id`;
   // skill 分支：人设方法论（persona_key 非空）按 persona_key 全局召回——方法论属于人设不属于执行者，
   // 蜂群专家蜂沉淀的 CRAFT 挂在人设档案宿主上，任何穿戴同款人设的执行体都能读到；
   // 通用技能记忆（persona_key IS NULL）仍按 profile 隔离（个人手艺不外泄）。
@@ -357,7 +357,7 @@ export function loadContextMemories(db: DB, input: {
        WHERE state IN ('active','locked')
          AND can_influence=1 AND (expires_at IS NULL OR expires_at > ?)
          AND (
-           (scope IN ('personal','company') AND profile_id=?)
+           (scope IN ('personal','workspace') AND profile_id=?)
            OR ${skillClause}
            OR (scope='project' AND profile_id=? AND project_id=?)
          )
@@ -365,7 +365,7 @@ export function loadContextMemories(db: DB, input: {
     ).all(...fullValues) as EntryRow[];
     return recordInjected(db, input.taskId, rows.map((row) => entryFromRow(db, row)));
   }
-  // query 非空 → personal/skill 仍全量（skill 按人设过滤）；company/project 仅注入相关记忆。
+  // query 非空 → personal/skill 仍全量（skill 按人设过滤）；workspace/project 仅注入相关记忆。
   // 每个词元独立 OR 命中（英文整词、中文整段 + 二元组），既渐进又不丢用户的稳定偏好。
   const tokens = expandMatchTokens(trimmedQuery);
   const matchOrs = tokens
@@ -386,7 +386,7 @@ export function loadContextMemories(db: DB, input: {
        AND (
          (scope='personal' AND profile_id=?)
          OR ${skillClause}
-         OR ((scope='company' AND profile_id=?) OR (scope='project' AND profile_id=? AND project_id=?))
+         OR ((scope='workspace' AND profile_id=?) OR (scope='project' AND profile_id=? AND project_id=?))
              AND (${matchOrs})
        )
      ORDER BY ${orderClause} LIMIT ?`,

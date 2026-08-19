@@ -11,6 +11,7 @@ import { isSoftCapReached, type Budget } from '../domain/usage';
 import { updateProject, getProject } from '../domain/project';
 import { settleDrainingAgents } from '../domain/agent';
 import { drainReflectionQueue, recoverStuckReflections, enqueueIdleReflections } from '../domain/reflection';
+import { sweepStaleStaging } from '../domain/staging';
 import { settleMemoryVotes } from '../domain/memory';
 import { generateInspectorSuggestions } from '../domain/inspector';
 import type { SetupGenerator } from '../domain/setup-assistant';
@@ -87,6 +88,8 @@ export class ProjectRuntimeCoordinator {
   private readonly inspectorIntervalMs = 60_000;
   /** E4.3 空闲自主反思扫描（默认关；每 60 秒检查一次，只入队不调 LLM）。 */
   private lastIdleReflectionRun = 0;
+  private lastStagingWatchdogRun = 0;
+  private readonly stagingWatchdogIntervalMs = 10 * 60_000;
   private readonly idleReflectionIntervalMs = 60_000;
 
   constructor(
@@ -129,6 +132,19 @@ export class ProjectRuntimeCoordinator {
           }
         } catch (error) {
           log.warn('idle reflection pass failed', { error: error instanceof Error ? error.message : String(error) });
+        }
+      }
+      // staging 合并看门狗（每 10 分钟）：集成现场领先且无在办流程（活跃蜂群/验收任务）时
+      // 自动 promote，冲突升级用户——堵"验收链断掉 → staging 无限积压"的缺口。
+      if (Date.now() - this.lastStagingWatchdogRun >= this.stagingWatchdogIntervalMs) {
+        this.lastStagingWatchdogRun = Date.now();
+        try {
+          const swept = sweepStaleStaging(this.db, { recheckMs: this.stagingWatchdogIntervalMs });
+          if (swept.promoted + swept.blocked > 0) {
+            log.info('staging watchdog swept', swept);
+          }
+        } catch (error) {
+          log.warn('staging watchdog failed', { error: error instanceof Error ? error.message : String(error) });
         }
       }
       const plannedTasks: string[] = [];

@@ -21,7 +21,7 @@ import { syncAgentMemoryFiles } from '../domain/agent-home';
 
 export const memoryRouter = Router({ mergeParams: true });
 
-const scopeSchema = z.enum(['personal', 'company', 'project', 'skill']);
+const scopeSchema = z.enum(['personal', 'workspace', 'project', 'skill']);
 
 memoryRouter.get('/candidates', asyncHandler(async (req, res) => {
   const status = z.enum(['pending', 'approved', 'rejected']).optional().parse(req.query.status);

@@ -69,6 +69,14 @@ export function listStaffSpecialists(db: DB, excludeProjectId?: string): Special
   return rows.map(fromRow).filter((e) => e.projectId !== excludeProjectId);
 }
 
+/** 纯查询：项目里是否有穿戴该人设的常驻专家（不记需求计数；蓝图路由等非蜂群通道用）。 */
+export function findActiveSpecialistAgent(db: DB, projectId: string, personaId: string): string | null {
+  const row = db.prepare(
+    "SELECT agent_id AS a FROM specialist_pool WHERE project_id=? AND persona_id=? AND status='active' AND agent_id IS NOT NULL LIMIT 1",
+  ).get(projectId, personaId) as { a: string } | undefined;
+  return row?.a ?? null;
+}
+
 function getEntry(db: DB, id: string): SpecialistPoolEntry {
   const row = db.prepare('SELECT * FROM specialist_pool WHERE id=?').get(id) as Row | undefined;
   if (!row) throw new AppError(ErrorCode.NOT_FOUND, `专家池条目不存在: ${id}`);

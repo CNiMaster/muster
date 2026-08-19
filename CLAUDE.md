@@ -29,7 +29,11 @@ Muster is a local multi-agent workbench. Persistent agents collaborate through p
 
 **机制词**：随行讨论（aside，不建任务不打断）· 检查点插入（checkpoint insert，安全点才插）· 派发三模式（interleave 并行插入 / sequential 排队接力 / preempt-replace 抢占替换）· 清单（checklist 顺序门控）· 定时任务（scheduled）· 暂停 pause / 取消 cancel / 回滚 revert（撤销由负责人协调发起，下属不因用户说话而停）。
 
-**记忆归属**：人设方法论（CRAFT，skill+persona_key）挂「人设方法论档案」宿主按人设全局召回（方法论属人设不属于执行者）；通用技能记忆按 profile 隔离；personal 跟人、project 锁项目。工蜂通用经验不单独沉淀（并入蜂群汇总），专家蜂 CRAFT 长存。
+**记忆归属（2026-08-19 起四体系定名）**：personal（用户画像，永远全量注入）/ **workspace**（工作台级、跟员工走、跨项目——原 'company' 枚举已迁移改名，UI 本就显示「工作台」；与蓝图无关，蓝图是打法包另一层）/ project（锁项目）/ skill（人设方法论，挂「人设方法论档案」宿主按 persona_key 全局召回——方法论属人设不属于执行者）。工蜂通用经验不单独沉淀（并入蜂群汇总），专家蜂 CRAFT 长存；项目专家（role=specialist）照常沉淀。
+
+**蓝图 ↔ 专家池对接（2026-08-19）**：createTask 蓝图命中且未显式指定执行者 → 优先派给项目专家池穿戴同款人设的常驻专家（staffingMode='specialist-pool'，跨任务延续线程记忆）；已指定执行者只穿衣不换人（user_override/official_benchmark 原语义不变）。
+
+**staging 合并看门狗（2026-08-19）**：合并责任链定论——普通任务完工即由发布管线直接合并主干；蜂群系产物进 staging，收口（无验收标准）或验收 PASS 自动 promote；唯一缺口（有验收标准但验收链断 → staging 无限积压）由看门狗堵上：coordinator 每 10 分钟 `sweepStaleStaging`（staging.ts），领先且无活跃蜂群、无在办 [验收] 任务 → 自动 promote，冲突升级用户（同 stagingHead 只提醒一次，`staging_watchdog` 表记账）。
 
 ## Product Direction: Local Agent Workbench（项目主导）
 

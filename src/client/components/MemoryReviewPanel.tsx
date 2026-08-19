@@ -33,7 +33,7 @@ export function MemoryReviewPanel({ profileId }: { profileId: string }): React.R
         <Select value={scope} onChange={(event) => setScope(event.target.value as typeof scope)} aria-label="记忆范围">
           <option value="all">全部范围</option>
           <option value="personal">个人</option>
-          <option value="company">工作台</option>
+          <option value="workspace">工作台</option>
           <option value="project">项目</option>
           <option value="skill">Skill</option>
         </Select>
@@ -126,7 +126,7 @@ export function MemoryReviewPanel({ profileId }: { profileId: string }): React.R
 }
 
 function scopeLabel(scope: MemoryCandidate['scope']): string {
-  return ({ personal: '个人', company: '工作台', project: '项目', skill: 'Skill' } as const)[scope];
+  return ({ personal: '个人', workspace: '工作台', project: '项目', skill: 'Skill' } as const)[scope];
 }
 
 /** 记忆优势分展示：正数带 + 号（好于项目平均消耗），保留两位；±0.005 内四舍五入为 0.00（吞掉 -0.00）。 */

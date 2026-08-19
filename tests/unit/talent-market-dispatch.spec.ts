@@ -14,6 +14,7 @@ import { createTask, getTask } from '../../src/server/domain/task';
 ;
 import { createProject } from '../../src/server/domain/project';
 import { createAgent } from '../../src/server/domain/agent';
+import { createProjectSpecialist } from '../../src/server/domain/specialist-pool';
 import { evolveBlueprint } from '../../src/server/domain/blueprint';
 
 describe('Talent Market & Auto-Dispatch Routing (Phase 1)', () => {
@@ -132,5 +133,45 @@ describe('Talent Market & Auto-Dispatch Routing (Phase 1)', () => {
     expect(taskWithOfficial.inputProtocol.blueprintMatched).toBeTruthy();
     expect(taskWithOfficial.inputProtocol.staffingMode).toBe('official_benchmark');
     expect(taskWithOfficial.inputProtocol.userTalentOverride).toBeUndefined();
+  });
+
+  it('routes unassigned blueprint-matched task to project specialist pool (组织模型批次二续)', () => {
+    const db = getDb();
+    const company = restoreWorkbench(db, { id: 'wb_fix_2', name: `Pool Co ${Date.now()}` });
+    const project = createProject(db, { companyId: company.id, name: 'Pool Project' });
+    const lead = createAgent(db, { companyId: company.id, name: 'Lead', role: 'lead' });
+    evolveBlueprint(db, {
+      companyId: company.id,
+      taskTitle: 'Develop React navigation bar',
+      personaId: 'frontend/engineering-frontend-developer',
+      personaName: 'React Developer',
+      win: true,
+      tools: [],
+      projectId: project.id,
+    });
+
+    // 项目专家池：该人设已落成常驻专家
+    const specialist = createProjectSpecialist(db, {
+      projectId: project.id,
+      specialty: 'React 开发',
+      personaId: 'frontend/engineering-frontend-developer',
+      via: 'manual',
+    });
+
+    // 未指定执行者 + 蓝图命中 → 直接派给池内常驻专家（跨任务延续线程与记忆）
+    const pooled = createTask(db, { projectId: project.id, title: 'Develop React navigation bar modal' });
+    expect(pooled.inputProtocol.blueprintMatched).toBeTruthy();
+    expect(pooled.inputProtocol.staffingMode).toBe('specialist-pool');
+    expect(pooled.assigneeAgentId).toBe(specialist.agentId);
+
+    // 已显式指定执行者 → 只穿衣不换人（维持原语义）
+    void lead;
+    const explicit = createTask(db, {
+      projectId: project.id,
+      title: 'Develop React navigation bar drawer',
+      assigneeAgentId: lead.id,
+    });
+    expect(explicit.inputProtocol.staffingMode).not.toBe('specialist-pool');
+    expect(explicit.assigneeAgentId).toBe(lead.id);
   });
 });
