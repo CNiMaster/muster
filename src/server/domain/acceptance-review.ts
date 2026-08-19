@@ -20,6 +20,7 @@ import { postSystemMessage } from './conversation';
 import { promoteProjectStagingIfAny } from './staging';
 import { ensurePrimaryThread } from './thread';
 import { ensureAcceptanceOfficer, ACCEPTANCE_OFFICER_ROLE } from './acceptance-officer';
+import { advanceChecklist } from './checklist';
 import { log } from '../logger';
 
 /** 验收判定置信阈值：低于则升级用户。 */
@@ -202,6 +203,17 @@ export function handleAcceptanceReviewTaskCompleted(db: DB, reviewTask: Task): v
         confidence: parsed.confidence,
         feedback: parsed.feedback,
       });
+      // 批次三第二片：清单条目验收 PASS → 自动解锁下一条（幂等：advance 只认当前 cursor 条目）
+      if (source.projectTaskId) {
+        try {
+          const advance = advanceChecklist(db, source.projectTaskId, source.id);
+          if (advance.done) {
+            appendTaskEvent(db, source.id, 'checklist_completed', { projectTaskId: source.projectTaskId });
+          }
+        } catch (e) {
+          log.warn('checklist advance failed on acceptance pass', { sourceTaskId: source.id, err: String(e) });
+        }
+      }
       // staging 一期：蜂群系源任务验收通过 → 集成现场 promote 回主干
       if (source.swarmId) {
         const promote = promoteProjectStagingIfAny(db, source.projectId, 'acceptance-passed');

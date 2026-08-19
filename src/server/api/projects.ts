@@ -45,6 +45,7 @@ import { deleteProjectTrigger, listProjectTriggers, registerDefaultNovelSchedule
 import { initializeNovelProject } from '../domain/novel-template';
 import { getCharacterGraph } from '../domain/character-graph';
 import {archiveProjectTask,completeProjectTask,createProjectTask,deleteProjectTaskRecord,getProjectTaskInProject,listProjectTasks,renameProjectTask,reorderProjectTasks,restoreProjectTask,setProjectTaskPinned,setProjectTaskUnread} from '../domain/project-task';
+import { createChecklist, getChecklist, advanceChecklist } from '../domain/checklist';
 import { listProjectFileTree } from '../domain/project-files';
 import { listBranches, gitGraph, checkoutInTaskWorktree } from '../domain/git-branches';
 import { getTaskContext, openLocation } from '../domain/open-location';
@@ -269,6 +270,22 @@ projectById.post('/project-tasks/:projectTaskId/restore',asyncHandler(async(req,
 projectById.patch('/project-tasks/:projectTaskId',asyncHandler(async(req,res)=>{const input=z.object({title:z.string().min(1)}).parse(req.body);res.json(renameProjectTask(getDb(),param(req,'projectTaskId'),input.title,param(req,'id')));}));
 /** 任务顶栏：标记已读/未读。 */
 projectById.post('/project-tasks/:projectTaskId/mark-unread',asyncHandler(async(req,res)=>{const input=z.object({unread:z.boolean()}).parse(req.body);res.json(setProjectTaskUnread(getDb(),param(req,'projectTaskId'),input.unread,param(req,'id')));}));
+
+// ===== 项目任务清单（批次三第二片：逐项执行，验收 PASS 自动解锁下一条）=====
+projectById.get('/project-tasks/:projectTaskId/checklist',asyncHandler(async(req,res)=>{res.json(getChecklist(getDb(),param(req,'projectTaskId')));}));
+projectById.post('/project-tasks/:projectTaskId/checklist',asyncHandler(async(req,res)=>{
+  const input=z.object({items:z.array(z.string().min(1)).min(1).max(50),assigneeAgentId:z.string().optional()}).parse(req.body);
+  res.status(201).json(createChecklist(getDb(),{projectId:param(req,'id'),projectTaskId:param(req,'projectTaskId'),items:input.items,assigneeAgentId:input.assigneeAgentId}));
+}));
+projectById.post('/project-tasks/:projectTaskId/checklist/next',asyncHandler(async(req,res)=>{
+  // 负责人手动放行：不依赖验收链，直接推进并派下一条（幂等同 advanceChecklist）
+  const projectTaskId=param(req,'projectTaskId');
+  const checklist=getChecklist(getDb(),projectTaskId);
+  if(!checklist)throw new AppError(ErrorCode.NOT_FOUND,'该项目任务没有清单');
+  if(checklist.state!=='active'){res.json({advanced:false,nextTaskId:null,done:true});return;}
+  const current=(getDb().prepare(`SELECT id FROM task WHERE project_task_id=? AND state IN ('queued','claimed','running','waiting_input','waiting_dependency','paused','blocked') ORDER BY seq DESC LIMIT 1`).get(projectTaskId) as {id:string}|undefined);
+  res.json(current?advanceChecklist(getDb(),projectTaskId,current.id):{advanced:false,nextTaskId:null,done:false});
+}));
 
 // ===== 任务顶栏：git 分支面与位置服务 =====
 projectById.get('/git/branches',asyncHandler(async(_req,res)=>{res.json(listBranches(getDb(),param(_req,'id')));}));

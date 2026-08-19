@@ -1019,6 +1019,12 @@ export function useDeleteProjectTaskRecord(){const qc=useQueryClient();return us
 /** 管理工作台批3：归档还原。 */
 export function useRestoreProjectTask(){const qc=useQueryClient();return useMutation({mutationFn:({projectId,id}:{projectId:string;id:string})=>api.post<ProjectTaskDTO>(`/api/projects/${projectId}/project-tasks/${id}/restore`),onSuccess:data=>{qc.invalidateQueries({queryKey:['project-tasks',data.projectId]});qc.invalidateQueries({queryKey:['standalone-tasks']});}});}
 
+/** 批次三第二片：项目任务清单（逐项执行，验收 PASS 自动解锁下一条）。 */
+export interface TaskChecklistDTO{projectTaskId:string;items:string[];cursor:number;state:'active'|'done';createdAt:string;updatedAt:string;}
+export function useTaskChecklist(projectId:string|undefined,projectTaskId:string|undefined){return useQuery({queryKey:['task-checklist',projectTaskId],queryFn:()=>api.get<TaskChecklistDTO|null>(`/api/projects/${projectId}/project-tasks/${projectTaskId}/checklist`),enabled:!!projectId&&!!projectTaskId});}
+export function useCreateChecklist(){const qc=useQueryClient();return useMutation({mutationFn:({projectId,projectTaskId,items,assigneeAgentId}:{projectId:string;projectTaskId:string;items:string[];assigneeAgentId?:string})=>api.post<TaskChecklistDTO>(`/api/projects/${projectId}/project-tasks/${projectTaskId}/checklist`,{items,assigneeAgentId}),onSuccess:(data)=>{qc.invalidateQueries({queryKey:['task-checklist',data.projectTaskId]});}});}
+export function useAdvanceChecklist(){const qc=useQueryClient();return useMutation({mutationFn:({projectId,projectTaskId}:{projectId:string;projectTaskId:string})=>api.post<{advanced:boolean;nextTaskId:string|null;done:boolean}>(`/api/projects/${projectId}/project-tasks/${projectTaskId}/checklist/next`,{}),onSuccess:(_d,v)=>{qc.invalidateQueries({queryKey:['task-checklist',v.projectTaskId]});}});}
+
 /** 任务顶栏：任务上下文（项目根/worktree 路径/分支/会话 ID/日志目录）。 */
 export interface TaskContextDTO{projectId:string;projectName:string;projectRootDir:string;worktreePath:string|null;branch:string|null;sessionId:string|null;runLogDir:string|null;}
 export function useTaskContext(projectId:string|undefined,projectTaskId:string|undefined){return useQuery({queryKey:['task-context',projectId,projectTaskId],queryFn:()=>api.get<TaskContextDTO>(`/api/projects/${projectId}/git/task-context?projectTaskId=${projectTaskId}`),enabled:!!projectId&&!!projectTaskId,refetchInterval:8000});}
