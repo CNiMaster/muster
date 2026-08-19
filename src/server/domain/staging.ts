@@ -12,8 +12,10 @@ import { getTaskRuntime, deleteTaskRuntime } from './task-runtime';
 import {
   stageStatus, promoteStaging, taskStageStatus,
   taskStagingDiffSummary, promoteTaskStagingMerge, listTaskStagingRefs, branchAheadCount, detectOrphanWorktrees,
+  ensureTaskStagingWorktree,
 } from '../worktree/manager';
 import { callLlm } from './llm-call';
+import { getPreMergeChecks, runPreMergeChecks } from './pre-merge-checks';
 import { dispatchConflictJudgment } from './conflict-judge';
 import { getProjectMergeMode } from './project';
 import { shortId, nowIso } from '../../shared/utils';
@@ -241,7 +243,7 @@ async function reviewTaskMerge(db: DB, projectId: string, projectTaskId: string,
 }
 
 function recordTaskMerge(db: DB, row: {
-  projectId: string; projectTaskId: string; actor: string; status: 'promoted' | 'concern' | 'skipped' | 'conflict';
+  projectId: string; projectTaskId: string; actor: string; status: 'promoted' | 'concern' | 'skipped' | 'conflict' | 'check_failed';
   reviewVerdict?: string; summary?: string; diffStat?: string; mergedFiles?: string[]; conflicts?: string[];
   commitHash?: string; aheadCommits: number;
 }): void {
@@ -292,6 +294,27 @@ export async function promoteTaskStaging(
     recordTaskMerge(db, { projectId, projectTaskId, actor: options.actor ?? 'system', status: 'concern', reviewVerdict: 'concern', summary: `${review.reason}\n${review.summary}`, diffStat, aheadCommits: status.aheadCommits });
     postBroadcast(db, projectId, `「⚠️ 合并审查提出疑虑」AI 审查未放行本次合并：${review.reason}。任务集成区保留现场，可人工检查后在待合并看板重试。`);
     return { promoted: false, pendingTasks: pending.n, message: `审查 concern：${review.reason}`, summary: review.summary, reviewVerdict: 'concern' };
+  }
+
+  // 整改批次 2：确定性检查——语义审查放行后、merge 前真跑项目检查命令（typecheck 类）。
+  // 失败 → check_failed 记录 + 播报 + 本轮跳过（与 concern 同语义，不阻塞下轮重试）。
+  const checks = getPreMergeChecks(db, projectId);
+  if (checks.length > 0) {
+    const stagingPath = ensureTaskStagingWorktree(project.rootDir, projectId, projectTaskId).path;
+    const checkRun = await runPreMergeChecks(project.rootDir, stagingPath, checks);
+    if (!checkRun.ok && checkRun.failed) {
+      recordTaskMerge(db, {
+        projectId, projectTaskId, actor: options.actor ?? 'system', status: 'check_failed',
+        reviewVerdict: 'approve', summary: `检查「${checkRun.failed.name}」未通过：${checkRun.failed.command}`,
+        diffStat, aheadCommits: status.aheadCommits,
+      });
+      postBroadcast(db, projectId, [
+        `「⛔ 合并前检查未通过」${checkRun.failed.name}：\`${checkRun.failed.command}\``,
+        '```', checkRun.failed.outputTail, '```',
+        '本轮已跳过合并；修复后重试即可（不阻塞下轮）。',
+      ].join('\n'));
+      return { promoted: false, pendingTasks: pending.n, message: `确定性检查未通过：${checkRun.failed.name}`, summary: review.summary, reviewVerdict: 'approve' };
+    }
   }
 
   // review 修复 #4：审查快照是此刻的 stagingHead——merge 前复核未变，防审查窗口内新提交搭车进主干

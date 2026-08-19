@@ -388,6 +388,14 @@ projectById.patch(
       res.json(project);
       return;
     }
+    // 整改批次 2：promote 前确定性检查命令（显式配置；未配置走 package.json typecheck 探测）
+    if (patch.preMergeChecks !== undefined) {
+      const checks = z.array(z.object({ name: z.string().min(1), command: z.string().min(1) })).max(10).parse(patch.preMergeChecks);
+      const cur = getProject(getDb(), param(req, 'id'));
+      const updated = updateProject(getDb(), param(req, 'id'), { settings: { ...cur.settings, preMergeChecks: checks } });
+      res.json(updated);
+      return;
+    }
     // 批次 G·修复轮：合并开关走 settings_json（manual=弹确认默认，auto=全自动）
     if (patch.mergeMode !== undefined) {
       const mode = z.enum(['manual', 'auto']).parse(patch.mergeMode);

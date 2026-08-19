@@ -310,7 +310,8 @@ async function runCommandHandler(call: ToolCall, ctx: ToolContext): Promise<Tool
  * 保留 PATH/HOME/USER/LANG/TERM/SHELL/EDITOR 等通用变量；
  * 剔除 API key、token、数据库路径、Muster 内部变量等。
  */
-function sanitizeChildEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+/** 整改批次2导出：promote 前确定性检查复用同一环境清洗口径（凭据/MUSTER_* 一律剔除）。 */
+export function sanitizeChildEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const ALLOW = new Set(['PATH', 'HOME', 'USER', 'LOGNAME', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TERM', 'SHELL', 'EDITOR', 'VISUAL', 'TMPDIR', 'TZ']);
   const cleaned: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(env)) {
