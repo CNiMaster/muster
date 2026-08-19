@@ -16,7 +16,7 @@ Muster is a local multi-agent workbench. Persistent agents collaborate through p
 
 | 岗位 | 英文 | 职责 | 代码现状 |
 |---|---|---|---|
-| 负责人 | Lead | 用户单一接口，随时待命沟通；协调撤销/插话；定时/清单/随行讨论（三功能待做，批次三） | `project.firstAgentId` ✓ |
+| 负责人 | Lead | 用户单一接口，随时待命沟通；协调撤销/插话；定时/清单/随行讨论 | `project.firstAgentId` ✓；批次三已交付：定时 once 模式（倒计时/指定时刻，执行一次即停）+项目级定时单默认派负责人（`3d0bf85`）、项目任务清单（逐项执行，验收 PASS 自动解锁下一条，`checklist.ts`，`247c103`）、随行讨论收口「转为任务」+TaskTopBar 取消/暂停撤销入口（`d7ff7c0`） |
 | 养蜂人 | Beemaster | 放三种蜂：普通工蜂/同种专家蜂群/临时专家组；需要专家时从专家库取用或让人事专项设计 | **批次二已转可见**（role=`swarm-dispatcher` 不变，`ensureOne` visible 幂等自愈 unhide + 迁移 20260819000900；能力路由排除系统岗 agent-router.ts） |
 | 人事 | HR | 专家组织岗：维护专家库、创建专家（人造人）、按任务分派（用户自建且上岗中优先）、只加不减 | **批次二已建**（role=`hr` 可见系统岗；`staffingPlan {specialists[]}` done 契约 → engine 兑现 `materializeStaffingPlan`；上下文注入专家池清单+人设库索引） |
 | 验收员 | Reviewer | 质量验收 | `acceptance-officer.ts` ✓ |
