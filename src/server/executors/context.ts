@@ -6,9 +6,10 @@
  */
 import type { DB } from '../db/client';
 import type { ResolvedTaskSkill } from '../../shared/types';
+import os from 'node:os';
 import { getWorkbench } from '../domain/workbench';
 import { getProject } from '../domain/project';
-import { getAgent, listAgents } from '../domain/agent';
+import { getAgent, listAgents, type AgentDefinition } from '../domain/agent';
 import { ensureDispatcherAgentId, DISPATCHER_ROLE, JUDGE_ROLE, HR_ROLE } from '../domain/system-agents';
 import { listTaskMessages } from '../domain/task-message';
 import type { Task } from '../domain/task';
@@ -27,6 +28,8 @@ import { getPersona, listPersonaIndex } from '../domain/persona-library';
 import { appendTaskEvent } from '../domain/task-event';
 import { searchArchive } from '../domain/archive';
 import { listProjectSpecialists, listStaffSpecialists, specialistLabel } from '../domain/specialist-pool';
+import { localTimezone } from '../domain/tz';
+import { getExecutorProfile } from '../domain/executor-profile';
 
 const MAX_REFERENCE_BYTES = 64 * 1024;
 const MAX_TOTAL_REFERENCE_BYTES = 256 * 1024;
@@ -94,6 +97,45 @@ export function assembleContext(
     sp.push('# 员工身份', profile.soul || profile.displayName, '');
     if (profile.principles.length > 0) sp.push('# 工作原则', profile.principles.map((item) => `- ${item}`).join('\n'), '');
   }
+
+  // 批次 A：运行环境信息段（当前本地日期+星期+时刻、时区、OS/架构、执行器类型与 binary）
+  const timeZone = localTimezone();
+  const now = new Date();
+  const dtf = new Intl.DateTimeFormat('zh-CN', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  const parts = dtf.formatToParts(now);
+  const getPart = (type: string): string => parts.find((p) => p.type === type)?.value ?? '';
+  const dateStr = `${getPart('year')}-${getPart('month')}-${getPart('day')}`;
+  const timeStr = `${getPart('hour')}:${getPart('minute')}`;
+  const weekdayStr = new Intl.DateTimeFormat('zh-CN', { timeZone, weekday: 'long' }).format(now);
+  const platformArch = `${process.platform}/${os.arch()}`;
+
+  const executorKind = options.executorKind ?? 'cli';
+  let binaryName = '';
+  if (agent?.executorProfileId) {
+    try {
+      const ep = getExecutorProfile(db, agent.executorProfileId);
+      if (ep?.config?.binaryPath && typeof ep.config.binaryPath === 'string') {
+        binaryName = ep.config.binaryPath;
+      }
+    } catch { /* 容错 */ }
+  }
+
+  sp.push(
+    '# 运行环境',
+    `当前时间：${dateStr} ${weekdayStr} ${timeStr} (${timeZone})`,
+    `运行平台：${platformArch}`,
+    `执行器类型：${executorKind}${binaryName ? ` (${binaryName})` : ''}`,
+    '',
+  );
+
   // 蓝图组织批次1：本次人设——身份层信息，轻量模式（咨询/讨论发言）同样注入。
   // persona 库可热变更：任务指定的 persona 已不存在时优雅跳过（不阻断执行），并留痕供专家沉淀管道观察缺什么专家。
   // 执行重试/会话恢复会重复装配上下文——同任务只留一次 persona_miss（查重防噪声）。
