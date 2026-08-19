@@ -6,6 +6,7 @@ dist/
 *.tsbuildinfo
 .muster/
 .muster-backups/
+.worktrees/
 .claude/
 .codegraph/
 .zcode/
