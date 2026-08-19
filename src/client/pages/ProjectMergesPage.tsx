@@ -15,6 +15,7 @@ import { Card } from '../components/Card';
 import { Badge } from '../components/Badge';
 import { CardSkeleton } from '../components/Skeleton';
 import { EmptyState, Icons } from '../components/EmptyState';
+import { ConflictTimelineCard } from '../components/ConflictTimelineCard';
 
 export function ProjectMergesPage(): React.ReactElement {
   const { projectId = '' } = useParams();
@@ -222,6 +223,11 @@ export function ProjectMergesPage(): React.ReactElement {
           </Card>
         </section>
       )}
+
+      {/* 冲突与裁决时间线 */}
+      <section style={{ marginTop: 24 }}>
+        <ConflictTimelineCard projectId={projectId} />
+      </section>
     </div>
   );
 }

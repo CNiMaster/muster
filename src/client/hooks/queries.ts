@@ -712,6 +712,26 @@ export function useCleanOrphanWorktrees(projectId: string | undefined) {
   });
 }
 
+export interface ConflictTimelineDTO {
+  id: string;
+  timestamp: string;
+  kind: 'conflict_detected' | 'judge_assigned' | 'debate_started' | 'resolved' | 'escalated' | 'merge_pending' | 'merge_promoted' | 'merge_discarded';
+  title: string;
+  description: string;
+  files: string[];
+  taskId?: string;
+  sourceTaskIds?: string[];
+}
+
+/** 批次 I：查询项目冲突与裁决时间线 */
+export function useProjectConflictTimeline(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ['conflict-timeline', projectId],
+    queryFn: () => api.get<ConflictTimelineDTO[]>(`/api/projects/${projectId}/conflicts/timeline`),
+    enabled: !!projectId,
+  });
+}
+
 /** 蓝图组织批次4c：项目优先入口——零组织决策建项目（自动落默认工作台，无则顺手创建）。 */
 export function useQuickProject() {
   const qc = useQueryClient();

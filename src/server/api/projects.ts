@@ -47,6 +47,7 @@ import {
   promoteTaskMerge,
   discardTaskMerge,
 } from '../domain/staging';
+import { getProjectConflictTimeline } from '../domain/conflict-timeline';
 import { deleteProjectTrigger, listProjectTriggers, registerDefaultNovelScheduleTriggers, registerScheduleTrigger, setProjectTriggerEnabled } from '../domain/triggers';
 import { initializeNovelProject } from '../domain/novel-template';
 import { getCharacterGraph } from '../domain/character-graph';
@@ -252,6 +253,16 @@ projectById.post(
       targetTaskIds: z.array(z.string()).optional(),
     }).parse(req.body ?? {});
     res.json(cleanOrphanWorktrees(db, project.rootDir, project.id, body.targetTaskIds));
+  }),
+);
+
+/** 批次 I：获取项目冲突与裁决时间线 */
+projectById.get(
+  '/conflicts/timeline',
+  asyncHandler(async (req, res) => {
+    const db = getDb();
+    const project = getProject(db, param(req, 'id'));
+    res.json(getProjectConflictTimeline(db, project.id));
   }),
 );
 
