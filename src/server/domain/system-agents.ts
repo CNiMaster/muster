@@ -1,5 +1,5 @@
 /**
- * 系统隐形岗（指挥系统 W0）：调度中心（蜂群）+ 评审中心（对抗评审庭）。
+ * 系统隐形岗（指挥系统 W0）：养蜂人（蜂群）+ 裁决法庭（对抗评审庭）。
  *
  * 产品语义：它们是工作台的"内置职能"而不是员工——自动存在、不出现在花名册、用户不可控。
  * 蓝图组织批次4e：与公司生命周期解耦——创建不再依赖"公司上线"时机（coordinator tick），
@@ -14,8 +14,8 @@ import { bindDefaultDenyPolicy } from './permission-templates';
 
 export const DISPATCHER_ROLE = 'swarm-dispatcher';
 export const JUDGE_ROLE = 'debate-judge';
-export const DISPATCHER_NAME = '调度中心';
-export const JUDGE_NAME = '评审中心';
+export const DISPATCHER_NAME = '养蜂人';
+export const JUDGE_NAME = '裁决法庭';
 
 const DISPATCHER_PROMPT = `你是「${DISPATCHER_NAME}」，公司的大规模并行工作指挥岗。你不做具体工作，只负责拆解、调度、收口。
 
@@ -94,12 +94,12 @@ export function getJudgeAgentId(db: DB): string | null {
   return findSystemAgent(db, JUDGE_ROLE);
 }
 
-/** 蓝图组织批次4e：懒确保调度中心（首次使用时创建，幂等；与公司上线时机解耦）。 */
+/** 蓝图组织批次4e：懒确保养蜂人（首次使用时创建，幂等；与公司上线时机解耦）。 */
 export function ensureDispatcherAgentId(db: DB): string {
   return ensureOne(db, DISPATCHER_ROLE, DISPATCHER_NAME, DISPATCHER_PROMPT);
 }
 
-/** 蓝图组织批次4e：懒确保评审中心（幂等）。 */
+/** 蓝图组织批次4e：懒确保裁决法庭（幂等）。 */
 export function ensureJudgeAgentId(db: DB): string {
   return ensureOne(db, JUDGE_ROLE, JUDGE_NAME, JUDGE_PROMPT);
 }

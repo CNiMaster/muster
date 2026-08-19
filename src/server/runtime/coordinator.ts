@@ -136,7 +136,7 @@ export class ProjectRuntimeCoordinator {
       let pumpedTasks = 0;
 
       for (const company of [getWorkbench(this.db)]) {
-        // 指挥系统 W0：online 公司幂等确保系统隐形岗（调度中心/评审中心）
+        // 指挥系统 W0：online 公司幂等确保系统隐形岗（养蜂人/裁决法庭）
         if (company.state === 'online') {
           try {
             ensureSystemAgents(this.db);

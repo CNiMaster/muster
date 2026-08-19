@@ -4,7 +4,7 @@ import { restoreWorkbench } from '../../src/server/domain/workbench';
  *
  * 验证：
  * - 懒确保：公司从未上线（未跑 coordinator tick / 未调 ensureSystemAgents），
- *   首次装配任务上下文即自动创建调度中心并注入 swarmDispatcher（幂等）。
+ *   首次装配任务上下文即自动创建养蜂人并注入 swarmDispatcher（幂等）。
  * - 懒确保幂等：多次装配不重复创建。
  */
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -21,7 +21,7 @@ let db: DB;
 beforeEach(() => { db = makeTestDb().db; });
 
 describe('系统隐形岗懒确保（批次4e）', () => {
-  it('公司从未上线：首次装配上下文即创建调度中心并注入 swarmDispatcher', () => {
+  it('公司从未上线：首次装配上下文即创建养蜂人并注入 swarmDispatcher', () => {
     const company = restoreWorkbench(db, { id: 'wb_fix_1', name: '工作台' });
     const agent = createAgent(db, { companyId: company.id, name: '干员', role: 'lead' });
     const project = createProject(db, {
@@ -35,11 +35,11 @@ describe('系统隐形岗懒确保（批次4e）', () => {
 
     const context = assembleContext(db, task);
 
-    // 装配后：调度中心自动存在并注入
+    // 装配后：养蜂人自动存在并注入
     const dispatcherId = getDispatcherAgentId(db, company.id);
     expect(dispatcherId).not.toBeNull();
     expect((context.inputPacket.swarmDispatcher as { id: string }).id).toBe(dispatcherId);
-    // 评审中心未涉及（仅调度在上下文装配路径懒创建；评审在开庭路径懒创建）
+    // 裁决法庭未涉及（仅调度在上下文装配路径懒创建；评审在开庭路径懒创建）
     expect(getJudgeAgentId(db, company.id)).toBeNull();
   });
 

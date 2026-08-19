@@ -55,7 +55,7 @@ export const agentRunResultSchema = z.object({
   workflowNextEdgeLabel: z.string().optional(),
   /** 双 Loop P2：agent 对每条验收标准的自评（对照 acceptance_criteria 的 id），供验收段半自动判定。 */
   acceptanceMet: z.array(z.object({ id: z.string(), met: z.boolean() })).optional(),
-  /** 指挥系统 W3：蜂群计划（仅调度中心系统岗被兑现）。 */
+  /** 指挥系统 W3：蜂群计划（仅养蜂人系统岗被兑现）。 */
   swarmPlan: swarmPlanSchema.optional(),
 });
 

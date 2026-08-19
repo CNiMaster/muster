@@ -129,7 +129,7 @@ describe('选择面/控制面分离：隐藏执行体的派发边界（Review �
     })).toThrow(/未授权联系/);
   });
 
-  it('系统隐形岗（调度中心）即使 hidden 任职仍可被派发（蜂群链路依赖）', () => {
+  it('系统隐形岗（养蜂人）即使 hidden 任职仍可被派发（蜂群链路依赖）', () => {
     const { c, lead, p } = seed();
     const dispatcherId = ensureDispatcherAgentId(db, c.id);
     ensurePrimaryThread(db, p.id, dispatcherId);
@@ -137,7 +137,7 @@ describe('选择面/控制面分离：隐藏执行体的派发边界（Review �
       projectId: p.id,
       dispatcherAgentId: lead.id,
       assigneeAgentId: dispatcherId,
-      title: '派给调度中心',
+      title: '派给养蜂人',
     });
     expect(task.assigneeAgentId).toBe(dispatcherId);
   });

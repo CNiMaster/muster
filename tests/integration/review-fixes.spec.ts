@@ -88,9 +88,9 @@ describe('B1：蜂群子任务入账 nodes_total（防提前 closeSwarm 误回�
 });
 
 describe('B2：任务指派给系统隐形岗时自动建线程（首个调度任务可领取）', () => {
-  it('员工 outboundTasks 派给调度中心（不手动建线程）→ 线程自动创建且任务可被领取', () => {
+  it('员工 outboundTasks 派给养蜂人（不手动建线程）→ 线程自动创建且任务可被领取', () => {
     const { lead, project, dispatcherAgentId } = fixture();
-    // lead 的任务带调度中心联系人权限（contactAllow 校验）——先给 lead 加联系人
+    // lead 的任务带养蜂人联系人权限（contactAllow 校验）——先给 lead 加联系人
     db.prepare('UPDATE agent_definition SET contact_allow_json=? WHERE id=?').run(JSON.stringify([dispatcherAgentId]), lead.id);
     const leadTask = createTask(db, { projectId: project.id, assigneeAgentId: lead.id, title: '组织调研' });
     db.prepare(
@@ -100,7 +100,7 @@ describe('B2：任务指派给系统隐形岗时自动建线程（首个调度�
     db.prepare("UPDATE task SET state='running' WHERE id=?").run(leadTask.id);
     completeTask(db, leadTask.id, {
       outcome: 'completed',
-      summary: '转交调度中心',
+      summary: '转交养蜂人',
       outboundTasks: [{ recipientAgentId: dispatcherAgentId, protocolId: 'p', title: '组织蜂群：调研 X', payload: {}, priority: 7 }],
       artifacts: [],
     });

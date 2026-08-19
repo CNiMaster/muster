@@ -769,8 +769,8 @@ export class TaskEngine {
       }
 
       // 指挥系统 W3 + 派遣分级（批次5）：任何非控制面智能体返回 swarmPlan 均可落地蜂群。
-      // 控制面（工蜂/辩手）永不自主；第一负责人与调度中心 = 全额四项限额；其他专家 = 小额自主，
-      // 超出额度或已有活跃蜂群 → 请示第一负责人（完整计划派发，负责人把关后自行转派调度中心或拒绝）。
+      // 控制面（工蜂/辩手）永不自主；第一负责人与养蜂人 = 全额四项限额；其他专家 = 小额自主，
+      // 超出额度或已有活跃蜂群 → 请示第一负责人（完整计划派发，负责人把关后自行转派养蜂人或拒绝）。
       if (result.swarmPlan && agent.role !== 'swarm-worker' && agent.role !== 'debater' && agent.role !== 'debate-judge') {
         const plan = result.swarmPlan;
         result.swarmPlan = undefined;
@@ -1011,7 +1011,7 @@ export class TaskEngine {
       // 后续验收类钩子必须用重新读取的新行，否则读到领取时快照（summary 恒为空 → 判定全部误升级）。
       const completedTask = getTask(this.db, task.id);
 
-      // 指挥系统批次4：评审中心返回 debateVerdict → 裁决落定（自动采纳/升级用户）
+      // 指挥系统批次4：裁决法庭返回 debateVerdict → 裁决落定（自动采纳/升级用户）
       if (
         result.debateVerdict
         && agent.isSystem

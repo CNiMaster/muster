@@ -226,7 +226,7 @@ export function searchPersonas(keyword: string): Persona[] {
   );
 }
 
-/** 人设索引条目：选人方（调度中心/蜂群规划）可见的精简目录项，不含正文。 */
+/** 人设索引条目：选人方（养蜂人/蜂群规划）可见的精简目录项，不含正文。 */
 export interface PersonaIndexEntry {
   id: string;
   name: string;

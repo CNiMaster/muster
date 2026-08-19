@@ -685,7 +685,7 @@ async function spawnTasksHandler(call: ToolCall, ctx: ToolContext): Promise<Tool
       if (recipient.companyId !== asker.companyId) {
         return { toolCallId: call.id, name: call.name, content: `错误：${recipient.name} 不属于本公司，不能派发` };
       }
-      // 指挥系统：系统隐形岗（调度中心）spawn 的对象是蜂/员工（系统管理），豁免 contactAllow（与 createTask 守卫一致）
+      // 指挥系统：系统隐形岗（养蜂人）spawn 的对象是蜂/员工（系统管理），豁免 contactAllow（与 createTask 守卫一致）
       if (recipientId !== askerAgentId && !asker.isSystem && !asker.contactAllow.includes(recipientId)) {
         return { toolCallId: call.id, name: call.name, content: `错误：员工 ${asker.name} 未授权联系 ${recipient.name}，不能派发` };
       }
@@ -1176,7 +1176,7 @@ const BUILTIN_TOOL_DEFINITIONS: ToolDefinition[] = [
           },
           swarmPlan: {
             type: 'object',
-            description: '仅调度中心可用：并行拆解计划（goal + workers[]），系统会创建一次性工蜂',
+            description: '仅养蜂人可用：并行拆解计划（goal + workers[]），系统会创建一次性工蜂',
             properties: {
               goal: { type: 'string' },
               workers: {
@@ -1192,7 +1192,7 @@ const BUILTIN_TOOL_DEFINITIONS: ToolDefinition[] = [
           },
           debateVerdict: {
             type: 'object',
-            description: '仅评审中心可用：辩论裁决（置信度/推荐项/各选项致命伤）',
+            description: '仅裁决法庭可用：辩论裁决（置信度/推荐项/各选项致命伤）',
             properties: {
               recommendedOptionId: { type: 'string' },
               confidence: { type: 'number' },

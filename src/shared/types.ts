@@ -106,13 +106,13 @@ export interface AgentRunResult {
   /** 双 Loop P2：agent 对每条验收标准的自评（对照 acceptance_criteria.id），供验收段半自动判定。 */
   acceptanceMet?: { id: string; met: boolean }[];
   /**
-   * 指挥系统 W3 + 派遣分级：蜂群计划——任何非控制面智能体（工蜂/辩手/评审中心除外）的返回都会被兑现，
-   * 按请求者身份分级限额（负责人/调度中心全额，专家小额，超限升级负责人）。
+   * 指挥系统 W3 + 派遣分级：蜂群计划——任何非控制面智能体（工蜂/辩手/裁决法庭除外）的返回都会被兑现，
+   * 按请求者身份分级限额（负责人/养蜂人全额，专家小额，超限升级负责人）。
    * 全执行器通用契约（done 结构化输出），不依赖工具循环——CLI/API 执行器同构。
    */
   swarmPlan?: SwarmPlan;
   /**
-   * 指挥系统批次4：评审裁决（仅评审中心系统岗的返回被兑现）。
+   * 指挥系统批次4：评审裁决（仅裁决法庭系统岗的返回被兑现）。
    * confidence ≥ 设置阈值自动采纳；低于则升级用户（带优劣表）。
    */
   debateVerdict?: DebateVerdict;
@@ -130,7 +130,7 @@ export interface DebateVerdict {
   flaws: Array<{ optionId: string; flaw: string }>;
 }
 
-/** 蜂群计划：调度中心把目标拆成一组独立工蜂任务。 */
+/** 蜂群计划：养蜂人把目标拆成一组独立工蜂任务。 */
 export interface SwarmPlan {
   goal: string;
   workers: Array<{

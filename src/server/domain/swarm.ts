@@ -6,8 +6,8 @@
  *
  * 失败可观测（用户核心关切）：单一记账咽喉——蜂任务终态统一过
  * recordSwarmNodeOutcome（completeTask/failTask/cancelTask 调用），
- * 更新整群计数；失败率过线 → 去重「蜂群告警」给调度中心；失败过半 → 自动熔断。
- * 蜂群内失败不走 [兜底]（那会打扰第一负责人），改道调度中心处置。
+ * 更新整群计数；失败率过线 → 去重「蜂群告警」给养蜂人；失败过半 → 自动熔断。
+ * 蜂群内失败不走 [兜底]（那会打扰第一负责人），改道养蜂人处置。
  *
  * 注：与 task.ts / temp-worker.ts 存在循环导入——ESM 函数级调用安全（不在模块加载期互相求值）。
  */
@@ -35,7 +35,7 @@ export interface SwarmLimits {
   budgetUsd: number;
 }
 
-/** 从系统设置读限额（上限非目标——分解多少由调度中心按需决定，这里只做熔断）。 */
+/** 从系统设置读限额（上限非目标——分解多少由养蜂人按需决定，这里只做熔断）。 */
 export function getSwarmLimits(db: DB): SwarmLimits {
   const s = getSystemSettings(db);
   return { maxDepth: s.swarmMaxDepth, maxWidth: s.swarmMaxWidth, maxNodes: s.swarmMaxNodes, budgetUsd: s.swarmBudgetUSD };
@@ -122,7 +122,7 @@ export function createSwarmRun(db: DB, input: {
   return getSwarmRun(db, id);
 }
 
-/** 专家自主额度（派遣分级批次5）：非第一负责人/调度中心的智能体可自主放的小蜂群。 */
+/** 专家自主额度（派遣分级批次5）：非第一负责人/养蜂人的智能体可自主放的小蜂群。 */
 export const EXPERT_SWARM_LIMITS = { maxDepth: 1, maxWidth: 3, maxNodes: 4, budgetUsd: 1 };
 
 /** 该智能体是否已有活跃蜂群（专家自主并发控制：同时最多 1 群）。 */
@@ -133,7 +133,7 @@ export function countActiveSwarmsByRequester(db: DB, agentId: string): number {
   return row.c;
 }
 
-/** 请示第一负责人：超限/并发冲突时把完整计划派给负责人把关（负责人可自行决定转派调度中心或拒绝）。 */
+/** 请示第一负责人：超限/并发冲突时把完整计划派给负责人把关（负责人可自行决定转派养蜂人或拒绝）。 */
 export function escalateSwarmRequest(db: DB, input: {
   companyId?: string; projectId: string; leadAgentId: string; requesterAgentId: string; requesterName: string; plan: SwarmPlan;
   /** 发起者任务 id：请示任务挂为其子任务，负责人完成请示即走既有父恢复链唤醒发起者。 */
@@ -232,7 +232,7 @@ function statusLabel(status: SwarmRun['status']): string {
 /**
  * 蜂任务终态记账（completeTask/failTask/cancelTask 调用）：
  * 1. 更新整群计数（failed 同时计入 done=已收口；根调度任务不计）。
- * 2. 失败率 ≥30%（≥3 个已收口节点）→ 去重「蜂群告警」给调度中心。
+ * 2. 失败率 ≥30%（≥3 个已收口节点）→ 去重「蜂群告警」给养蜂人。
  * 3. 失败 >50% → 自动熔断（取消剩余 + status=failed + 终局摘要）。
  * 4. 全部收口 → 关群 + 清理工蜂。
  */
@@ -262,7 +262,7 @@ export function recordSwarmNodeOutcome(db: DB, task: Task, kind: 'done' | 'faile
   }
 }
 
-/** 失败率 ≥30%（至少 3 个已收口节点且至少 1 个失败）→ 去重「蜂群告警」给调度中心。 */
+/** 失败率 ≥30%（至少 3 个已收口节点且至少 1 个失败）→ 去重「蜂群告警」给养蜂人。 */
 function maybeSwarmAlert(db: DB, swarmId: string, failedTask: Task): void {
   const swarm = getSwarmRun(db, swarmId);
   if (swarm.nodesDone < 3) return;
@@ -324,7 +324,7 @@ function maybeSwarmAlert(db: DB, swarmId: string, failedTask: Task): void {
   appendTaskEvent(db, swarm.rootTaskId, 'swarm_alert', { swarmId, failed: swarm.nodesFailed, settled: swarm.nodesDone });
 }
 
-/** 失败 >50%（≥2 个已收口）→ 自动熔断：取消剩余蜂、status=failed、终局摘要给调度中心。 */
+/** 失败 >50%（≥2 个已收口）→ 自动熔断：取消剩余蜂、status=failed、终局摘要给养蜂人。 */
 function maybeCircuitBreak(db: DB, swarmId: string): void {
   const swarm = getSwarmRun(db, swarmId);
   if (swarm.status !== 'active' || swarm.nodesDone < 2) return;
@@ -502,7 +502,7 @@ export function resumeSwarmDependentsAfterFailure(db: DB, failedTaskId: string):
 
 /**
  * 蜂群失败处置（failTask 对 swarm 任务的替代传播——不走 [兜底]/第一负责人）：
- * 1. 给根任务写失败通知（调度中心下次执行/告警处置可见）。
+ * 1. 给根任务写失败通知（养蜂人下次执行/告警处置可见）。
  * 2. 失败视为已收口，恢复被阻塞的等待方（汇总任务/父蜂继续走）。
  * 3. 记账（计数 + 告警评估 + 熔断评估）。
  */
@@ -547,7 +547,7 @@ export function reportBeeCompletion(db: DB, beeTask: Task): void {
 
 // ===== 工蜂与放蜂（W2/W3） =====
 
-const BEE_PROMPT = `你是蜂群工蜂：一次性任务执行者，为"调度中心"工作。
+const BEE_PROMPT = `你是蜂群工蜂：一次性任务执行者，为"养蜂人"工作。
 - 只做当前任务 inputPacket.swarm.brief 描述的事，不扩大范围。
 - 完成时必须返回结构化摘要：结论（一段话）+ 证据（要点列表，每条注明来源）+ 风险/信息缺失（如适用），总长不超过 500 字。
 - 如子题仍太大确需细分，可通过 done 的 outboundTasks 下派子任务（recipientAgentId 填新工蜂不可行——你没有创建权；填同事或留空交回调度），
@@ -581,12 +581,12 @@ export interface MaterializedSwarm {
 }
 
 /**
- * 蜂群落地（引擎在调度中心返回 swarmPlan 后调用）：
+ * 蜂群落地（引擎在养蜂人返回 swarmPlan 后调用）：
  * - 新群：swarm_run + 逐蜂建 agent+任务（depth=1）+ 独立汇总任务（depth=0，依赖全部蜂）
  *   + 根调度任务依赖汇总（waiting_dependency 收口）。
  * - 补蜂（sourceTask.inputProtocol.swarmId 指向活跃群，如 [蜂群告警] 处置）：不建新群不建新汇总，
  *   追加蜂到原群（nodes_total += N），汇报写入原汇总/根任务。
- * 扇出超上限：截断到上限并留事件（不硬失败——调度中心的反馈通道已关闭，截断优于丢弃）。
+ * 扇出超上限：截断到上限并留事件（不硬失败——养蜂人的反馈通道已关闭，截断优于丢弃）。
  */
 export function materializeSwarm(
   db: DB,
@@ -603,7 +603,7 @@ export function materializeSwarm(
   if (!rootDispatcherId) {
     throw new AppError(ErrorCode.VALIDATION, '调度任务缺少执行者，无法放蜂');
   }
-  // 调度中心是隐形岗，不在 ensureProjectThreads（按可见花名册）覆盖内——汇总/告警任务由它执行，显式建线程
+  // 养蜂人是隐形岗，不在 ensureProjectThreads（按可见花名册）覆盖内——汇总/告警任务由它执行，显式建线程
   ensurePrimaryThread(db, sourceTask.projectId, rootDispatcherId);
   const limits = opts.limitsOverride ?? getSwarmLimits(db);
   const proto = sourceTask.inputProtocol as Record<string, unknown>;
@@ -660,7 +660,7 @@ export function materializeSwarm(
     });
     const beePersonaId = resolveBeePersona(worker.personaId);
     if (worker.personaId && !beePersonaId) {
-      // 专家链路：调度中心指定的 personaId 不在库中——留痕（静默降级匿名蜂会丢失"缺什么专家"的信号，喂沉淀管道）
+      // 专家链路：养蜂人指定的 personaId 不在库中——留痕（静默降级匿名蜂会丢失"缺什么专家"的信号，喂沉淀管道）
       appendTaskEvent(db, sourceTask.id, 'persona_miss', { requestedPersonaId: worker.personaId, beeTitle: worker.title, scope: 'swarm_bee' });
     }
     const beeTask = createTask(db, {

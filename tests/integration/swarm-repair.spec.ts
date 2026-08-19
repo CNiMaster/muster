@@ -23,7 +23,7 @@ let tdb: ReturnType<typeof makeTestDb>;
 let db: DB;
 
 function makeSwarmFixture(): { rootId: string; beeId: string; synthesisId: string } {
-  // 真实语义：蜂群由系统隐形岗「调度中心」派发（is_system 豁免 contactAllow 守卫）
+  // 真实语义：蜂群由系统隐形岗「养蜂人」派发（is_system 豁免 contactAllow 守卫）
   const company = restoreWorkbench(db, { id: 'wb_fix_1', name: 'co' });
   const lead = createAgent(db, { companyId: company.id, name: 'lead', role: 'lead' });
   const project = createProject(db, { companyId: company.id, name: 'novel', rootDir: '/tmp/swarm-repair', firstAgentId: lead.id, initialState: 'active' });

@@ -363,7 +363,7 @@ function ExpertCandidatesSection(): React.ReactElement | null {
   if (userPersonas.length === 0 && historyList.length === 0) return null;
 
   const sourceLabel: Record<string, string> = {
-    persona_miss: '库缺口：调度中心需要的专家不存在',
+    persona_miss: '库缺口：养蜂人需要的专家不存在',
     bee_record: '蜂群战绩：匿名蜂反复打同一种活',
     generalist_record: '打法专家化：普通员工零返工连击',
   };

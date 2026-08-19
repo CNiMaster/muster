@@ -46,7 +46,7 @@ function fixture() {
 }
 
 describe('W0 系统隐形岗', () => {
-  it('ensureSystemAgents 幂等创建调度中心/评审中心；花名册默认隐藏、includeHidden 可见、claimNextTask 可领取', () => {
+  it('ensureSystemAgents 幂等创建养蜂人/裁决法庭；花名册默认隐藏、includeHidden 可见、claimNextTask 可领取', () => {
     const { company, project, dispatcherAgentId } = fixture();
     const again = ensureSystemAgents(db);
     expect(again.dispatcherAgentId).toBe(dispatcherAgentId);
@@ -57,7 +57,7 @@ describe('W0 系统隐形岗', () => {
     expect(visible.some((a) => a.id === dispatcherAgentId)).toBe(false);
     expect(listAgents(db, { includeHidden: true }).some((a) => a.id === dispatcherAgentId)).toBe(true);
 
-    // 隐藏 ≠ 不可领取：调度中心任务能被自己的线程领走
+    // 隐藏 ≠ 不可领取：养蜂人任务能被自己的线程领走
     const task = createTask(db, { projectId: project.id, assigneeAgentId: dispatcherAgentId, title: '组织蜂群', priority: 9 });
     const thread = db.prepare(
       `INSERT INTO project_agent_thread (id, project_id, agent_id, kind, root_thread_id, claude_session_id, context_json, state, created_at, updated_at)
@@ -243,7 +243,7 @@ describe('W4 失败可观测', () => {
     expect(rootMessages.some((m) => m.content.includes('[蜂成员失败]') && m.content.includes('网络崩溃'))).toBe(true);
   });
 
-  it('失败率 ≥30%（≥3 收口）→ 去重蜂群告警给调度中心；后续失败只追加不重派（不触发熔断：≤50%）', () => {
+  it('失败率 ≥30%（≥3 收口）→ 去重蜂群告警给养蜂人；后续失败只追加不重派（不触发熔断：≤50%）', () => {
     const { materialized, swarmId } = makeSwarm(4);
     completeBee(materialized.beeTaskIds[0]);
     completeBee(materialized.beeTaskIds[1]);
@@ -276,7 +276,7 @@ describe('W4 失败可观测', () => {
     // 剩余蜂被取消
     const remaining = getTask(db, materialized.beeTaskIds[2]);
     expect(remaining.state).toBe('cancelled');
-    // 根任务被保留（终局报告由调度中心产出）但被唤醒（依赖视为已收口）
+    // 根任务被保留（终局报告由养蜂人产出）但被唤醒（依赖视为已收口）
     expect(listTaskEvents(db, rootTask.id).some((e) => e.kind === 'swarm_circuit_broken')).toBe(true);
   });
 
@@ -312,11 +312,11 @@ describe('W4 失败可观测', () => {
 });
 
 describe('W3 引擎接线', () => {
-  it('调度中心/负责人返回 swarmPlan → 全额落地；控制面（工蜂）返回被忽略', async () => {
+  it('养蜂人/负责人返回 swarmPlan → 全额落地；控制面（工蜂）返回被忽略', async () => {
     const { project, dispatcherAgentId, lead } = fixture();
     const projectTask = createProjectTask(db, { projectId: project.id, title: '调研' });
 
-    // 调度中心任务：假执行器返回 swarmPlan
+    // 养蜂人任务：假执行器返回 swarmPlan
     const fake = new FakeExecutor();
     fake.script([
       {

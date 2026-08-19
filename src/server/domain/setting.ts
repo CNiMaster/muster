@@ -46,7 +46,7 @@ export interface SystemSettings {
   /** E4.3 空闲自主反思预算（USD/日）：公司当日总花费低于该值时才允许自动反思；0 = 关闭。 */
   autonomousReflectionBudgetUSD: number;
   /** 指挥系统批次1：晨醒（每日运营优化报告）开关，默认开（保持既有行为）。 */
-  /** 指挥系统批次2：蜂群最大下探深度（调度中心→蜂→子蜂…），上限非目标。 */
+  /** 指挥系统批次2：蜂群最大下探深度（养蜂人→蜂→子蜂…），上限非目标。 */
   swarmMaxDepth: number;
   /** 指挥系统批次2：蜂群每节点最大扇出宽度，上限非目标。 */
   swarmMaxWidth: number;

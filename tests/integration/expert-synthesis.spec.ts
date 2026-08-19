@@ -77,7 +77,7 @@ describe('信号 → 自动入库（免确认）', () => {
     expect(history[0]!.status).toBe('adopted');
     expect(history[0]!.personaId).toMatch(/^user\//);
     expect(history[0]!.source).toBe('persona_miss');
-    // 免确认：人设立即在库（调度中心索引即可见）
+    // 免确认：人设立即在库（养蜂人索引即可见）
     const persona = getPersona(history[0]!.personaId!);
     expect(persona).not.toBeNull();
     expect(persona!.source).toBe('user');

@@ -75,7 +75,7 @@ describe('一次性执行体 deny 权限绑定（R1）', () => {
     expect(policy!.approvalStrategy).toBe('deny');
   });
 
-  it('系统隐形岗（调度中心）创建即绑 deny 档', () => {
+  it('系统隐形岗（养蜂人）创建即绑 deny 档', () => {
     const { c } = seed();
     const sys = ensureSystemAgents(db, c.id);
     const policy = getEmployeePermissionPolicy(db, employmentId(sys.dispatcherAgentId));

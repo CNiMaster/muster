@@ -351,9 +351,9 @@ export function assembleContext(
       '',
     );
   }
-  // 指挥系统 W3：调度中心专属——swarmPlan 契约教学（其他岗位不教，返回也会被忽略）
+  // 指挥系统 W3：养蜂人专属——swarmPlan 契约教学（其他岗位不教，返回也会被忽略）
   if (agent?.isSystem && agent.role === DISPATCHER_ROLE) {
-    // 专家链路：人设库索引注入——调度中心从"凭训练记忆盲猜 id"变为目录可见可选（persona_miss 的根治）。
+    // 专家链路：人设库索引注入——养蜂人从"凭训练记忆盲猜 id"变为目录可见可选（persona_miss 的根治）。
     const personaIndex = listPersonaIndex();
     if (personaIndex.length > 0) {
       sp.push(
@@ -367,7 +367,7 @@ export function assembleContext(
       );
     }
     sp.push(
-      '# 蜂群契约（你是调度中心，独有）',
+      '# 蜂群契约（你是养蜂人，独有）',
       '适合并行拆解的目标：在最终 JSON 里加 swarmPlan 字段并置 outcome="waiting_dependency"：',
       'swarmPlan: { goal: "总目标", workers: [ { title: "子题", brief: "给这只蜂的具体指令与边界", personaId?: "子题要求的专家人设" } ] }',
       '系统会为每只蜂创建一次性工蜂并行执行，全部完成后你收到 [蜂群汇总] 任务做收口报告。',
@@ -376,10 +376,10 @@ export function assembleContext(
       '',
     );
   }
-  // 指挥系统批次4：评审中心专属——debateVerdict 契约教学
+  // 指挥系统批次4：裁决法庭专属——debateVerdict 契约教学
   if (agent?.isSystem && agent.role === JUDGE_ROLE) {
     sp.push(
-      '# 裁决契约（你是评审中心，独有）',
+      '# 裁决契约（你是裁决法庭，独有）',
       '在最终 JSON 里加 debateVerdict 字段：',
       'debateVerdict: { recommendedOptionId: "推荐选项id（都不推荐则省略）", confidence: 0~1, rationale: "理由", flaws: [ { optionId, flaw: "该选项的致命伤——最坏会发生什么、能否接受" } ] }',
       '置信 ≥ 阈值会自动采纳并继续执行；低于阈值转用户拍板。各辩手的立论/互攻材料在你的任务讨论流（[上游输出]）里。',
@@ -425,14 +425,14 @@ export function assembleContext(
   // WP10 识图直读：data-uri 图片不进提示词 JSON 块（否则 base64 灌满所有执行器的输入包，API 执行器双重携带）；
   // 图片经 ctx.imageAttachments 由 adapter 原生送入，文件路径提示已在【用户附件】文本里。
   delete inputPacket.userImages;
-  // 指挥系统：大规模并行任务的专职入口（调度中心是隐形岗，不在 availableContacts 里）
+  // 指挥系统：大规模并行任务的专职入口（养蜂人是隐形岗，不在 availableContacts 里）
   // 蓝图组织批次4e：懒确保——与公司上线时机解耦，首次装配上下文即自愈创建（幂等）。
   if (!lightweight) {
     try {
       inputPacket.swarmDispatcher = {
         id: ensureDispatcherAgentId(db),
-        name: '调度中心',
-        usage: '需要大规模并行（大范围调研/信息扫描/批量评估）时，用 done 的 outboundTasks 派给此 id（recipientAgentId）；调度中心会拆解成工蜂群并行执行并汇总。',
+        name: '养蜂人',
+        usage: '需要大规模并行（大范围调研/信息扫描/批量评估）时，用 done 的 outboundTasks 派给此 id（recipientAgentId）；养蜂人会拆解成工蜂群并行执行并汇总。',
       };
     } catch {
       // 防御：创建工作台异常时跳过注入，不阻断任务执行

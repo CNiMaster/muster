@@ -397,12 +397,12 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
     // 公司退役批次D：agent 归属已是单例工作台（companyId 恒为工作台 id），
     // 跨公司 assignee/dispatcher 校验坍缩为存在性检验（上面 getAgent 已做）；
     // createTask 的 company_id 列语义保留（Task3）。contactAllow 沟通守卫仍保留。
-    // 指挥系统：系统隐形岗（调度中心）的派发对象是一次性工蜂/汇总任务（系统管理），豁免 contactAllow
+    // 指挥系统：系统隐形岗（养蜂人）的派发对象是一次性工蜂/汇总任务（系统管理），豁免 contactAllow
     if (dispatcher && assignee && dispatcher.id !== assignee.id && !dispatcher.isSystem && !dispatcher.contactAllow.includes(assignee.id) && !input.swarmManaged) {
       // 蓝图组织批次3：动态通信图——同项目团队成员（在该项目有线程）互可派发，
       // 固定白名单不再是唯一通路；loop 防护（isDispatchLoop）仍然兜底。
       // Review 修复 I1：选择面/控制面分离——hidden 非系统执行体（蜂群工蜂/辩手）只受直属调度控制，
-      // 不进团队成员可派发范围；系统隐形岗（调度中心/评审中心）即使 hidden 任职也保持可派发（蜂群链路依赖）。
+      // 不进团队成员可派发范围；系统隐形岗（养蜂人/裁决法庭）即使 hidden 任职也保持可派发（蜂群链路依赖）。
       const crewMate = db.prepare(
         `SELECT 1 FROM project_agent_thread t
          WHERE t.project_id=? AND t.agent_id=?
@@ -465,7 +465,7 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
     db.prepare('UPDATE task SET root_task_id = ? WHERE id = ?').run(id, id);
   }
   appendTaskEvent(db, id, 'created', { seq, title: input.title });
-  // Review 修复 B2：任务指派给系统隐形岗（调度中心/评审中心）时自举线程——
+  // Review 修复 B2：任务指派给系统隐形岗（养蜂人/裁决法庭）时自举线程——
   // 隐岗不在 ensureProjectThreads（按可见花名册）覆盖内，否则首个派给它的任务永远无人领取
   if (routedAssigneeId && assignee?.isSystem) {
     try {
@@ -1141,8 +1141,8 @@ export function failTask(db: DB, taskId: string, message: string): Task {
   }
 
   const failed = getTask(db, taskId);
-  // 指挥系统：蜂群任务失败 → 改道调度中心处置（记账/告警/熔断/依赖解除），
-  // 不走 [兜底]（那会打扰第一负责人——蜂群的失败责任人是调度中心）
+  // 指挥系统：蜂群任务失败 → 改道养蜂人处置（记账/告警/熔断/依赖解除），
+  // 不走 [兜底]（那会打扰第一负责人——蜂群的失败责任人是养蜂人）
   if (failed.swarmId) {
     // 执行过程展示批次4：先自动修复（替补蜂入依赖图），再走记账/告警/熔断/依赖释放——
     // 顺序很重要：resumeSwarmDependentsAfterFailure 会把失败蜂的等待方视为已收口放行，

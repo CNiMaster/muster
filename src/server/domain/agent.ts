@@ -34,7 +34,7 @@ export interface AgentDefinition {
   isInspector: boolean;
   /** 立场/视角：讨论/辩论时锁定 Agent 观点，防止盲目跟风。空 = 不注入。 */
   stance: string;
-  /** 指挥系统：系统隐形岗（调度中心/评审中心），用户不可见不可控，任职记录 hidden=1。 */
+  /** 指挥系统：系统隐形岗（养蜂人/裁决法庭），用户不可见不可控，任职记录 hidden=1。 */
   isSystem: boolean;
   availabilityState: 'online' | 'draining' | 'off';
   createdAt: string;
@@ -138,7 +138,7 @@ export interface CreateAgentInput {
 
 function assertUnlocked(db: DB, opts?: { tempRecruit?: boolean; isSystem?: boolean; internalRecruit?: boolean }): void {
   // 临时工招聘豁免：允许公司 online 态招临时工（B2B 决策树 recruit 路径自动触发）
-  // 系统隐形岗豁免：调度中心/评审中心由 coordinator 在线幂等创建
+  // 系统隐形岗豁免：养蜂人/裁决法庭由 coordinator 在线幂等创建
   // R2 内部岗豁免：验收员等可见固定岗懒确保（任务完成时工作台通常 online，不豁免则永远建不出来）
   if (opts?.tempRecruit || opts?.isSystem || opts?.internalRecruit) return;
   if (getWorkbench(db).state !== 'off') {

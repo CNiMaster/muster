@@ -4,7 +4,7 @@
  * 编排（全确定性，零引擎改动）：
  *   R1 立论（N 个辩手并行，各防御一个选项，干净上下文）
  *   → R2 互攻（各辩手见他人 R1 输出——经 relayOutputToDependents 落进其任务消息——专攻致命伤）
- *   → 裁决任务给评审中心（依赖全部 R2，产出 debateVerdict）
+ *   → 裁决任务给裁决法庭（依赖全部 R2，产出 debateVerdict）
  *   → 置信 ≥ debateMinConfidence：自动采纳（answerClarification）继续执行；
  *     低于阈值：升级用户——优劣表 + 差评清单 + 选项按钮，不是裸问题。
  *
@@ -248,7 +248,7 @@ export function startDebate(db: DB, input: StartDebateInput): StartedDebate {
     for (const r1Id of r1Ids) addDependency(db, r2Id, r1Id);
   }
 
-  // 裁决任务给评审中心（干净立场；注入用户决策历史作偏好画像）
+  // 裁决任务给裁决法庭（干净立场；注入用户决策历史作偏好画像）
   const verdictTask = createTask(db, {
     ...base,
     assigneeAgentId: judgeAgentId,
@@ -347,7 +347,7 @@ export function handleDebateTaskFailure(db: DB, failedTask: { id: string; inputP
 }
 
 /**
- * 裁决落定（引擎在评审中心返回 debateVerdict 后调用）：
+ * 裁决落定（引擎在裁决法庭返回 debateVerdict 后调用）：
  * - 置信 ≥ debateMinConfidence 且有推荐项 → 自动采纳：answerClarification(originTask) 继续执行 + 决策记录(auto) + 对话播报。
  * - 否则 → 升级用户：任务保持 waiting_input，选项的 cons 补上致命伤，对话收到问题+差评清单（可一键选择）。
  */

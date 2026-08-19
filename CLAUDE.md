@@ -8,6 +8,27 @@ Muster is a local multi-agent workbench. Persistent agents collaborate through p
 
 **Agent personas and skills** — 3 local personas plus 200+ domain experts integrated from [jnMetaCode/agency-agents-zh](https://github.com/jnMetaCode/agency-agents-zh) into `personas/`. 20 skills from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) in `skills/`.
 
+## 组织与名词（2026-08-19 定案，全库统一）
+
+**命名原则**：不造概念，优先行业通用叫法（英文直译行业可懂）；无行业标准词的概念由用户定名。旧词已废弃：特派员/特工/锦衣卫/蜂王/变身（→穿戴人设）；「分身」保留但仅指讨论室 mirror。
+
+**四固定岗（全部对用户可见）**：
+
+| 岗位 | 英文 | 职责 | 代码现状 |
+|---|---|---|---|
+| 负责人 | Lead | 用户单一接口，随时待命沟通；协调撤销/插话；定时/清单/随行讨论（三功能待做，批次三） | `project.firstAgentId` ✓ |
+| 养蜂人 | Beemaster | 放三种蜂：普通工蜂/同种专家蜂群/临时专家组；需要专家时从专家库取用或让人事专项设计 | = 原隐形「调度中心」（role=`swarm-dispatcher` 不变，显示名已改），转可见待做（批次二） |
+| 人事 | HR | 专家组织岗：维护专家库、创建专家（人造人）、按任务分派（用户自建且上岗中优先）、只加不减 | 待建（批次二） |
+| 验收员 | Reviewer | 质量验收 | `acceptance-officer.ts` ✓ |
+
+**隐形岗**：裁决法庭（Judge，原「评审中心」，role=`debate-judge` 不变）——对抗辩论裁决，置信≥阈值自动采纳、低置信升级用户；负责人不参与裁决。
+
+**执行层（非固定）**：工蜂（Worker，一次性即焚）/ 专家（Specialist，项目池复用+三级阶梯：临时创建→项目合同工 Contractor→常驻专家 Staff Specialist）/ 辩手（一次性）。专家并发默认不排队（认证执行器全 parallel；排队仅执行器档案配串行时——执行器属性非专家属性）。
+
+**机制词**：随行讨论（aside，不建任务不打断）· 检查点插入（checkpoint insert，安全点才插）· 派发三模式（interleave 并行插入 / sequential 排队接力 / preempt-replace 抢占替换）· 清单（checklist 顺序门控）· 定时任务（scheduled）· 暂停 pause / 取消 cancel / 回滚 revert（撤销由负责人协调发起，下属不因用户说话而停）。
+
+**记忆归属**：人设方法论（CRAFT，skill+persona_key）挂「人设方法论档案」宿主按人设全局召回（方法论属人设不属于执行者）；通用技能记忆按 profile 隔离；personal 跟人、project 锁项目。工蜂通用经验不单独沉淀（并入蜂群汇总），专家蜂 CRAFT 长存。
+
 ## Product Direction: Local Agent Workbench（项目主导）
 
 Muster is a persistent, project-driven local Agent workbench. The former one-shot Leader → Worker → Verifier model is retained only as historical context.
@@ -50,7 +71,7 @@ Key constraints for all new work:
 - **选择面/控制面分离**：@候选、探讨参与者、单聊对象 = 花名册成员（listAgents 天然排除 hidden），永远排除蜂群工蜂/辩手/镜像；蜂群工蜂只受直属调度控制，用户侧只有聚合播报 + abort。
 - **动态通信图**：同项目团队成员（该项目有线程）互可派发，固定 contact_allow 白名单不再是唯一通路（createTask 守卫）；loop 防护不变。
 - **用户发起探讨**：`startUserDiscussion`（brainstorm 场景）——机制与智能体发起同构（分身参会/轮转/纪要回写群聊），参与者校验选择面规则。
-- **命名原则**：不造词。智能体/人设/蓝图/团队/临时工/转正/复用/复盘/调度中心/归档/工作台/记忆——全部为代码库现有词或行业通用词，中英文天然同对（agent/persona/blueprint/team/temp/convert/reactivate/retrospective/dispatcher/archive/workspace/memory）。
+- **命名原则**：不造词。智能体/人设/蓝图/团队/临时工/转正/复用/复盘/养蜂人/归档/工作台/记忆——全部为代码库现有词或行业通用词，中英文天然同对（agent/persona/blueprint/team/temp/convert/reactivate/retrospective/dispatcher/archive/workspace/memory）。
 
 已交付：批次1（人设原语+记忆归域）、批次2（归档检索+归档页）、批次3（蓝图环+动态通信图）、批次4a/4b（选择面规则+用户探讨）、批次4c（项目优先入口：`createQuickProject` 零组织决策 + 首页「我有件事要办」CTA）、批次4d（收件箱项目：公司对话落 `ensureInboxProject`）、批次4e（系统隐形岗懒确保：`ensureDispatcherAgentId`/`ensureJudgeAgentId` 首次使用即创建，与公司上线时机解耦；按工作台实例化而非全局单例——执行体必须同工作台是任务守卫的硬约束）、批次5（B2B 拆件：删外包中心 UI/路由/导航/hooks、删 `findVendorCompany` 与决策树 outsource 路径；dispatch 端点只留内部建议+临时工选拔；契约状态机/交付管线/返工/自动验收保留待改造为跨项目交付协议）、批次6（全量 UI 文案对齐：员工→智能体、公司→工作台，覆盖 src/client 全部用户可见文案与 tests/unit、tests/e2e 断言；服务端中文报错文案保持不动——被大量集成测试断言且属开发面）。Code review 修复：动态通信图排除 hidden 非系统执行体（蜂群工蜂/辩手只受直属调度，系统隐形岗保持可派发）；收件箱不进项目列表/驾驶舱计数并补 project.created 事件；退役蓝图遇同类新证据自动复活（避免 UNIQUE 冲突吞战绩）；归档检索空词元守卫。测试锚点：`tests/integration/task-persona.spec.ts`、`archive-search.spec.ts`、`blueprint.spec.ts`、`user-discussion.spec.ts`、`quick-project.spec.ts`、`conversation.spec.ts`（收件箱语义）、`system-agents-lazy.spec.ts`、`outsourcing-decision.spec.ts`（两路径）。
 
@@ -87,7 +108,7 @@ Key constraints for all new work:
 - **公司概念退场（无兼容）**：删 CompanyPage/CompanyListPage/CompanyWizardPage/`components/company/` 全目录与 `/companies/*` 全部路由；归档/蓝图库/组织图/协作流程改为全局路由 `/archive` `/blueprints` `/graphs/:kind` `/workflows/:workflowId`（公司/API 层退役见上方「公司概念退役 A+B+C」节，`useDefaultCompanyId` 已删除）。新建项目走 `/projects/new`；面包屑项目切换器带「＋ 新建项目」；左栏「＋ 新建任务」直建（URL `projectTask=new` 或 `newTaskSignal` 驱动创建卡）；项目页头部有工作台「上线/下班」生命周期胶囊（⌘K 命令面板同构）。
 - **对话空态居中→落底**：ProjectTaskWorkspace 空态（无消息且无执行过程）hero+composer 垂直居中；首条消息或出现执行后过渡为消息流占满+composer 底部常驻（`ptws-body`/`is-empty`/`is-started`）。
 - **公司模板平台删除**：TEMPLATE_BASES/template-registry/template-installation/template-architect/template-health(-findings)/company-setup/company-starter/role-templates 全删；`capability_binding` 通用查询并入 `capability-binding.ts`；迁移 drop 四张模板表；cockpit requiredRoles 缺岗告警移除。招募只剩 复用档案/新建档案 两源；`/api/novel/companies` 建司端点删除（题材预设 GENRE_EXTENSION_PACKS/MAINTENANCE_ROLES/initializeNovelProject 保留；`createNovelCompany` 降级为 tests/integration/setup.ts 夹具）。
-- **固定员工（组织=f(活) 收口）**：`workspace-staff.ts` `ensureWorkspaceStaff`——工作台默认只有 第一负责人(lead,internalRecruit 豁免懒建,绑经理档权限)+验收员(ensureAcceptanceOfficer)；调度中心/评审中心隐形懒确保不变；createQuickProject 与 postUserMessage（无第一负责人时）幂等调用。旧岗位名单全仓 grep 零残留（题材域/人设库除外）。
+- **固定员工（组织=f(活) 收口）**：`workspace-staff.ts` `ensureWorkspaceStaff`——工作台默认只有 第一负责人(lead,internalRecruit 豁免懒建,绑经理档权限)+验收员(ensureAcceptanceOfficer)；养蜂人/裁决法庭隐形懒确保不变；createQuickProject 与 postUserMessage（无第一负责人时）幂等调用。旧岗位名单全仓 grep 零残留（题材域/人设库除外）。
 - **Composer 全功能**：附件链路 = `POST /api/projects/:id/materials/upload`(octet-stream + x-file-name, 64MB 上限)→素材区 `materials/_uploads/` + commitAll 随仓库进后续任务 worktree；消息 `attachments_json` + 派发 inputProtocol 注入【用户附件】相对路径；`GET /:id/raw` 预览。任务药丸（切换归属）+ 分支药丸（只读 `muster/<project>/<task>`）。消息级选项 `options_json`(mode/model/thinking)：模式=计划(前缀指令+deny 只读沙盒)+三档审批(ask-always 升级审批/ask-by-rule/no-approval 降级放行)+只读；引擎 `readMessageOptions` 覆盖 `effectiveExecutor.model/thinkingDepth` 与审批策略（无员工策略时幂等绑员工档作审批载体）。斜杠命令面板（/plan /ask /rules /auto /readonly /default /model /think /task /new）。模型清单来自执行器档案+系统设置（不再硬编码）。
 - **测试基线**：单测/集成 179 文件 1266 过（web-tools 3 例为本地沙箱 DNS 拦截公网域名的环境性失败，非回归）；e2e 18/18；HTTP 冒烟 77/77；product-acceptance 改为零组织路径。
 
@@ -97,7 +118,7 @@ Key constraints for all new work:
 - **蓝图 = 打法包**（不再是"人设匹配器"）：`blueprint` 扩展 description（用户语言描述）、tools_json（execution_trace 按任务聚合工具记账 cap10）、rework_total/correction_total（多维战绩，综合评分=胜率60%+低返工25%+低纠正15%，样本<3 观察中）；班底 2-4 槽生效（协作成员以"协作班底"提示注入上下文，不另起执行体）；`stages_json` 二期预留（阶段工作流）。
 - **版本化**：`blueprint_version` 快照链（仅结构性变更出版——新建/班底/工具集/状态/回滚；纯计数不出版），中文摘要+证据，cap 30/蓝图，回滚恢复结构保战绩另记一版；API versions/rollback/description；任务穿戴审计含 blueprintVersion（标题条与 ExecutionTraceCard 显示"🎭 蓝图label vN"）。
 - **蓝图优化对话**（2026-08-17 定案，替代手动深度体检）：`blueprint-optimize-chat.ts` 每蓝图一条 AI 会话线（`blueprint_optimize_chat` 表）——用户围绕单蓝图沟通，LLM（premium 档，失败降级单蓝图确定性规则：高胜率≥80锁/低评分<30淘汰/缺描述润色）产出结构化提案落 `blueprint_optimization_item`（pending/applied/ignored，幂等），采纳落地全走版本化（合并=班底工具战绩并入+源退役）；提案动作限 lock/retire/merge/polish_description 四种。UI `/blueprints/:id/optimize`（BlueprintOptimizePage，对话+提案双栏）；公司级一键体检与 consult 整体检测已退役（前者按钮 URL 与路由错位本就 404）。
-- **蜂群专家团 + 派遣分级**：SwarmPlan.worker.personaId → 工蜂穿戴人设（三蜂型：匿名/同种专家/混合专家；显式优先于蓝图自动匹配，缺失优雅降级）；调度中心提示词+蜂群契约教学三种蜂型。派遣分级：第一负责人与调度中心=全额四项限额；其他专家=小额自主（3蜂/单层/$1/并发1群，`swarm_run.requester_agent_id` 落库），超限或并发冲突→「[蜂群请示]」派第一负责人把关（不建群、计划全文派发、负责人自行决定转派调度中心或拒绝，`swarmManaged` 旁路 crewMate 守卫）；控制面（工蜂/辩手）永不自主；蜂群树每蜂人设徽章；`swarm.request-escalated` 事件。
+- **蜂群专家团 + 派遣分级**：SwarmPlan.worker.personaId → 工蜂穿戴人设（三蜂型：匿名/同种专家/混合专家；显式优先于蓝图自动匹配，缺失优雅降级）；养蜂人提示词+蜂群契约教学三种蜂型。派遣分级：第一负责人与养蜂人=全额四项限额；其他专家=小额自主（3蜂/单层/$1/并发1群，`swarm_run.requester_agent_id` 落库），超限或并发冲突→「[蜂群请示]」派第一负责人把关（不建群、计划全文派发、负责人自行决定转派养蜂人或拒绝，`swarmManaged` 旁路 crewMate 守卫）；控制面（工蜂/辩手）永不自主；蜂群树每蜂人设徽章；`swarm.request-escalated` 事件。
 - **断电/意外安全基线（review 修复轮）**：DB=WAL+`synchronous=FULL` 显式（提交即 fsync，断电不丢已提交事务）；关键写链路全事务化——反思四类记忆候选+done 标记同事务（崩溃整体回滚，recoverStuckReflections 复位重做不产生重复候选）、drain 进化挪进行内（反思成功后同迭代记账，消除 done 后崩溃丢记账窗口）、进化记账与版本提交/版本提交与封顶删除/优化采纳与状态/建群全链各自单事务（崩溃不留半群或"已改蓝图但建议仍 pending"）；执行器新契约字段必须同时补 result-schema 的 zod 与 AGENT_RESULT_JSON_SCHEMA（zod strip 曾致 personaId 全链静默丢失）。
 - **记忆优势分（注入战绩排序，2026-08-17）**：`loadContextMemories` 排序从 `updated_at DESC` 升级为「收缩平均优势优先、时间序兜底」——解决"刚写的平庸记忆压过老而准记忆"。机制：注入记账（assembleContext 传 taskId → `memory_injection` 关联表 + `hit_count`，`(task,entry)` 唯一幂等，personal 豁免——用户偏好由用户背书不参选）；终态结算（`settleMemoryVotes` 10s 惰性扫描，不挂反思队列——反思在任务首次 waiting_input 就消耗 task_id UNIQUE，半程投票失真）：消耗分=`rework_count×2 + clarification_rounds×1`（追问走 clarification_rounds，原 conversation_message 纠正信号恒为 0 不可用），项目基线=`project_cost_stat` 已结算任务平均消耗（样本≥3 才启用，低于平均越多分越高），completed 记票 / failed 投中性 0 票（失败原因不明不冤枉不奖励且不计入基线）/ cancelled 与未终态不投；`voted_at` 守卫 + 单事务保证恰好一次（断电重扫不重复计票）；排序收缩常数 K=5（`adv_sum/(vote_count+5)`）防两次好运登顶。**扫描即过滤（review 修复）**：终态过滤放扫描 SQL 而非循环 continue——永久 waiting/cancelled 任务注入最早，会占满 LIMIT 窗口让结算静默停摆；验收未闭环推迟结算——验收返工的 `rework_count` 在源任务完成后才落（acceptance-review.ts 先加计数再发 acceptance_rework 事件），`acceptance_dispatched` 存在且未落闭环事件（passed/rework/escalated）且验收任务活着 → 推迟；验收任务死亡=事后门放行语义，此刻 rework_count 已是终值，正常结算。记忆中心面板展示「注入 N 次 · 平均优势 +x.x」。迁移 `20260817090000_memory_advantage.sql`。
 - **二期路线**（本轮未做）：stages_json 阶段工作流落地（每阶段=目标/人设/工具/产出）、组合管线生成器（复杂任务匹配多蓝图→顺序阶段编排，阶段内才用蜂群并行）、蓝图拆分/派生。
@@ -105,7 +126,7 @@ Key constraints for all new work:
 
 ## 六问收口：专家沉淀 + 模型档位 + 多模态工具化 + 流式（2026-08-17）
 
-- **专家链路修复**：调度中心上下文注入人设库索引（`persona-library.listPersonaIndex`，域分组、仅 role=swarm-dispatcher 任务注入）；personaId 未命中留 `persona_miss` 事件（蜂群 `resolveBeePersona` + 任务穿戴热删除两处）；验收/返工任务 `exemptBlueprintMatch` 豁免蓝图自动穿戴（防验收员穿与产出者同款人设）；蓝图 tools 读侧消费（命中蓝图时 `blueprintTools` 按使用次数 cap10 注入「# 本打法常用工具」）；`resolvedSkillIds` 落 inputProtocol + 任务条/ExecutionTraceCard 🧩 chips（注入去黑盒）。
+- **专家链路修复**：养蜂人上下文注入人设库索引（`persona-library.listPersonaIndex`，域分组、仅 role=swarm-dispatcher 任务注入）；personaId 未命中留 `persona_miss` 事件（蜂群 `resolveBeePersona` + 任务穿戴热删除两处）；验收/返工任务 `exemptBlueprintMatch` 豁免蓝图自动穿戴（防验收员穿与产出者同款人设）；蓝图 tools 读侧消费（命中蓝图时 `blueprintTools` 按使用次数 cap10 注入「# 本打法常用工具」）；`resolvedSkillIds` 落 inputProtocol + 任务条/ExecutionTraceCard 🧩 chips（注入去黑盒）。
 - **系统自建专家（persona 沉淀管道，组织=f(活) 专家侧，免人工确认）**：反思 drain 末尾 `maybeSynthesizeExpertCandidates` 三信号——persona_miss 同 id ≥2 / 匿名蜂同 swarm goal 完成 ≥3 零失败 / 无专家人设普通任务同类 ≥3 零返工（taskTypeOf 聚类）→ LLM 轻量档起草（失败降级规则引擎）→ **自动入库**写 `~/.muster/personas/{domain}/{slug}.md`（无审批闸；去重双保险=同 signal_key 历史存在不涌现+草稿名与库内精确同名跳过）；`expert_candidate` 表=沉淀历史（status adopted/dismissed，persona_id 溯源）。管理=查/改/删：历史列表 `/api/companies/:id/expert-candidates`；人设编辑/删除单门 `/api/agent-profiles/personas/:id`（PUT 整文件重写/DELETE 删文件并标历史 dismissed，仅 user/ 前缀，预置库只读）；AgentLibraryPage「自建专家」区（编辑表单+删除确认+沉淀历史折叠）。persona-library 双根扫描（repo `personas/` + 用户根，user/ id 前缀防撞、source 标记，mtime 聚合一级子域目录热加载+写后强刷缓存）。二期不做：转正专家合并/淘汰（挂 blueprint-optimizer）、预置 243 人设正文深度激活。
 - **模型档位（成本-能力匹配）**：设置键 `modelTierEconomy/Premium`（空=不覆盖零回归；标准档=不覆盖故无第三键）；`domain/model-tier.ts` 判定——轻量=蜂群工蜂(trigger=swarm_bee)/辩手/平台反思（`llm-call` tier 参数，反思/审批/技能起草默认轻量），高级=计划模式/验收/返工/裁决/蜂群请示；引擎合成顺序=消息显式 model > 档位键 > 执行器档案 model；composer 模型下拉三档快捷项。
 - **API 流式输出**：openai/gemini adapter 默认 SSE 流式（400/404/422 或「provider 忽略 stream 回整包 JSON」自动回退非流式）；tool_calls 增量按 index 聚合；`ExecutionEvents.onTextDelta` → 引擎 60ms 节流广播 `message.delta`/`message.delta.end`（payload 带 agentId/projectTaskId 归属——单聊面板不串入其他任务的流；前端 realtime 对 delta 不做缓存失效，`onStreamDelta` 订阅）；ConversationPanel 打字机气泡（按归属过滤、markdown 实时渲染、8000 字符截尾、5s 无活动/落库/流结束三路清泡）。
@@ -310,10 +331,10 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 
 三件事共享同一底座（N 个干净上下文的一次性子智能体并行 + 结构化回收 + 一个收口人）：
 
-- **系统隐形岗（W0）**：`agent_definition.is_system` + `company_employee.hidden`。coordinator tick 对 online 公司幂等创建「调度中心」（role=`swarm-dispatcher`，放蜂）与「评审中心」（role=`debate-judge`，裁决）。`listAgents` 默认过滤 hidden（花名册/能力路由/组织图一处生效，内部传 `includeHidden`），`claimNextTask` 不受影响（隐藏 ≠ 不可领取）。**隐岗不在 `ensureProjectThreads`（按可见花名册）覆盖内——创建隐岗任务前必须显式 `ensurePrimaryThread`**。
-- **蜂群（swarm）**：结构=树管控制面（`task.swarm_id/swarm_depth` + `swarm_run` 记账），依赖管执行面（`task_dependency` 收口）。调度中心经 done 结构化输出返回 `swarmPlan {goal, workers[]}`（全执行器通用契约，引擎仅在 assignee 是调度中心时兑现，engine.ts materializeSwarm 钩子）；系统建群（限额快照）+ 一次性工蜂（`createTempEmployment` + hidden，role=`swarm-worker`，干净上下文+结构化摘要纪律）+ **独立汇总任务**（依赖全蜂，避免父任务上下文已满）；蜂可经 outboundTasks 再下探。**四项限额**（设置键 swarmMaxDepth=3/MaxWidth=5/MaxNodes=30/BudgetUSD=5，上限非目标）：插入点在 `task.ts` completeTask 的 outbound 消费（超限 `swarm_limit_blocked` 留痕+continue）与 `spawn_tasks` handler；预算=usage_record 按 swarm_id 聚合。**失败可观测**（单一记账咽喉）：蜂终态统一过 `recordSwarmNodeOutcome`（completeTask/failTask/cancelTask 调用，根任务与告警任务不计数）；失败率 ≥30%（≥3 收口）→ 去重「蜂群告警」给调度中心（可返回新 swarmPlan 补蜂到原群）；失败 >50% → 自动熔断（取消剩余+status=failed+保留根任务产终局报告）；蜂失败视为已收口（`resumeSwarmDependentsAfterFailure` 解除依赖，汇总带着失败走）；蜂群内失败不走 [兜底] 改道调度中心。**失败自动修复**：不可恢复失败的蜂（非替补、无替补、群未熔断、未超全群上限 `swarmRepairMax`）由 `maybeAutoRepairBee` 自动生成替补蜂（`[替补]` 标题，inputProtocol.repair 注入失败摘要+反思教训作换思路依据，原蜂标 `superseded_by`，根任务留 `swarm_bee_repair_dispatched` 事件 + notice trace）。**管控**：`GET /api/tasks/:id/swarm`（树数据）+ `POST /api/tasks/:id/swarm/abort`（一键停群）；TaskDetailPage 右栏 SwarmTreeCard 树视图（状态着色/当前高亮/停群按钮/失败蜂「已重发 → 替补」链接）。
+- **系统隐形岗（W0）**：`agent_definition.is_system` + `company_employee.hidden`。coordinator tick 对 online 公司幂等创建「养蜂人」（role=`swarm-dispatcher`，放蜂）与「裁决法庭」（role=`debate-judge`，裁决）。`listAgents` 默认过滤 hidden（花名册/能力路由/组织图一处生效，内部传 `includeHidden`），`claimNextTask` 不受影响（隐藏 ≠ 不可领取）。**隐岗不在 `ensureProjectThreads`（按可见花名册）覆盖内——创建隐岗任务前必须显式 `ensurePrimaryThread`**。
+- **蜂群（swarm）**：结构=树管控制面（`task.swarm_id/swarm_depth` + `swarm_run` 记账），依赖管执行面（`task_dependency` 收口）。养蜂人经 done 结构化输出返回 `swarmPlan {goal, workers[]}`（全执行器通用契约，引擎仅在 assignee 是养蜂人时兑现，engine.ts materializeSwarm 钩子）；系统建群（限额快照）+ 一次性工蜂（`createTempEmployment` + hidden，role=`swarm-worker`，干净上下文+结构化摘要纪律）+ **独立汇总任务**（依赖全蜂，避免父任务上下文已满）；蜂可经 outboundTasks 再下探。**四项限额**（设置键 swarmMaxDepth=3/MaxWidth=5/MaxNodes=30/BudgetUSD=5，上限非目标）：插入点在 `task.ts` completeTask 的 outbound 消费（超限 `swarm_limit_blocked` 留痕+continue）与 `spawn_tasks` handler；预算=usage_record 按 swarm_id 聚合。**失败可观测**（单一记账咽喉）：蜂终态统一过 `recordSwarmNodeOutcome`（completeTask/failTask/cancelTask 调用，根任务与告警任务不计数）；失败率 ≥30%（≥3 收口）→ 去重「蜂群告警」给养蜂人（可返回新 swarmPlan 补蜂到原群）；失败 >50% → 自动熔断（取消剩余+status=failed+保留根任务产终局报告）；蜂失败视为已收口（`resumeSwarmDependentsAfterFailure` 解除依赖，汇总带着失败走）；蜂群内失败不走 [兜底] 改道养蜂人。**失败自动修复**：不可恢复失败的蜂（非替补、无替补、群未熔断、未超全群上限 `swarmRepairMax`）由 `maybeAutoRepairBee` 自动生成替补蜂（`[替补]` 标题，inputProtocol.repair 注入失败摘要+反思教训作换思路依据，原蜂标 `superseded_by`，根任务留 `swarm_bee_repair_dispatched` 事件 + notice trace）。**管控**：`GET /api/tasks/:id/swarm`（树数据）+ `POST /api/tasks/:id/swarm/abort`（一键停群）；TaskDetailPage 右栏 SwarmTreeCard 树视图（状态着色/当前高亮/停群按钮/失败蜂「已重发 → 替补」链接）。
 - **结构化选项 + 对话可见（B3）**：`AgentRunResult.questionOptions`（id/label/detail/pros/cons）+ `task.question_options_json`；`answerClarification(db, taskId, {answer?|optionId?})`（**签名已改**，optionId 落「【选项】label」消息）；引擎回帖条件含 waiting_input（对话窗能看到追问+选项，追问不去重）；MessageBubble/ClarifyCard 一键选择（useTaskOnce 无轮询，靠 task.* realtime 失效）。两难契约教学在 context.ts 输出契约段。
-- **对抗评审庭（debate）**：**无配额，两难即辩**。引擎门控：waiting_input 且 ≥2 选项（且非辩论/裁决任务自身）→ `startDebate` 拦截组庭，对话先收启动播报不发裸问题。编排零引擎改动、全确定性：R1 立论（≤3 辩手各防御一选项，隐藏临时 agent role=`debater`，stance 注入立场，干净上下文防锚定）→ R2 互攻（依赖全部 R1，上下文经 `relayOutputToDependents` 把上游 summary 落下游任务消息）→ 裁决任务给评审中心（依赖全部 R2，返回 `debateVerdict {recommendedOptionId?/confidence/rationale/flaws[]}`，同样走 done 契约）。两轮封顶（外部研究：3 轮后从众塌缩/跑题漂移）。裁决分流：置信 ≥ `debateMinConfidence`(0.6) → 自动采纳（answerClarification 继续执行 + decision_record source=auto + 对话播报）；低于 → 升级用户（选项 cons 补致命伤 + 任务消息差评清单 + 对话差评消息一键选择）；用户已抢先回答则不再打扰。**偏好记忆**：用户每次选项回答 → decision_record(source=user, 关联 debate) → `recentDecisions` 注入后续辩手/裁决上下文（userDecisions）→ 升级次数随使用下降。评审记录：`GET /api/companies/:id/debates` + 进化与报告页卡片。
+- **对抗评审庭（debate）**：**无配额，两难即辩**。引擎门控：waiting_input 且 ≥2 选项（且非辩论/裁决任务自身）→ `startDebate` 拦截组庭，对话先收启动播报不发裸问题。编排零引擎改动、全确定性：R1 立论（≤3 辩手各防御一选项，隐藏临时 agent role=`debater`，stance 注入立场，干净上下文防锚定）→ R2 互攻（依赖全部 R1，上下文经 `relayOutputToDependents` 把上游 summary 落下游任务消息）→ 裁决任务给裁决法庭（依赖全部 R2，返回 `debateVerdict {recommendedOptionId?/confidence/rationale/flaws[]}`，同样走 done 契约）。两轮封顶（外部研究：3 轮后从众塌缩/跑题漂移）。裁决分流：置信 ≥ `debateMinConfidence`(0.6) → 自动采纳（answerClarification 继续执行 + decision_record source=auto + 对话播报）；低于 → 升级用户（选项 cons 补致命伤 + 任务消息差评清单 + 对话差评消息一键选择）；用户已抢先回答则不再打扰。**偏好记忆**：用户每次选项回答 → decision_record(source=user, 关联 debate) → `recentDecisions` 注入后续辩手/裁决上下文（userDecisions）→ 升级次数随使用下降。评审记录：`GET /api/companies/:id/debates` + 进化与报告页卡片。
 
 ### 关键文件
 
@@ -391,7 +412,7 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 | `src/server/domain/memory.ts` | 记忆审核、作用域、版本、检索与安全扫描 |
 | `src/server/domain/swarm.ts` | **蜂群**：swarm_run 记账/四项限额/工蜂创建/materializeSwarm/失败处置（告警·熔断·停群·回收） |
 | `src/server/domain/debate.ts` | **对抗评审庭**：startDebate 确定性编排（R1→R2→裁决）/finalizeDebate 分流（自动采纳/升级）/decision_record 偏好 |
-| `src/server/domain/system-agents.ts` | **系统隐形岗**：ensureSystemAgents（调度中心/评审中心）幂等创建 |
+| `src/server/domain/system-agents.ts` | **系统隐形岗**：ensureSystemAgents（养蜂人/裁决法庭）幂等创建 |
 | `src/server/domain/tz.ts` | 时区墙上时刻↔UTC 换算（Intl 无依赖，DST 回程校验）——daily 触发器用 |
 | `src/server/domain/setting.ts` | SystemSettings 唯一设置模型（网络/外观/生成参数/并发/蜂群/评审阈值）+ 六步链示例 |
 | `src/server/runtime/egress.ts` | undici 全局出口（代理分流 + CA 注入，修改后重启生效） |
@@ -418,7 +439,7 @@ legacy/        # 旧 Leader/Worker/Verifier 代码（不参与构建，仅历史
 `publish_record` 由 `0002_conversation.sql` 创建，记录 Task 发布提交、合并文件、冲突与阻塞状态，供成果修改历史页读取。
 
 ### 已知工程取舍
-- **系统岗的结构化输出契约模式**：给系统隐形岗（调度中心/评审中心）扩展能力走 `AgentRunResult` 的可选字段（swarmPlan/debateVerdict）+ result-schema 同步，而不是注册工具——CLI 执行器没有工具循环，done 契约是全执行器唯一同构通道。引擎兑现前必须校验 assignee 的 isSystem+role（普通 agent 返回一律忽略）。
+- **系统岗的结构化输出契约模式**：给系统隐形岗（养蜂人/裁决法庭）扩展能力走 `AgentRunResult` 的可选字段（swarmPlan/debateVerdict）+ result-schema 同步，而不是注册工具——CLI 执行器没有工具循环，done 契约是全执行器唯一同构通道。引擎兑现前必须校验 assignee 的 isSystem+role（普通 agent 返回一律忽略）。
 - **隐岗与一次性 agent 的线程陷阱**：hidden 任职（系统岗/工蜂/辩手）不在 `ensureProjectThreads` 覆盖内；创建其任务前必须显式 `ensurePrimaryThread`，否则任务永远无人领取。蜂任务终态把蜂 grey（`markTempGreyed`），群/辩论关闭统一 `dismissTempWorker`（is_temp_only 硬删，审计留 task 行与事件）。
 - **better-sqlite3 嵌套事务安全但别滥用**：domain 钩子（swarm 记账/辩论收口）可能在 completeTask 事务内再开事务（自动 savepoint）；dismissTempWorker 内含 rmSync 文件 IO，事务内可用但慢，注意别在热路径。
 - **工具注册表优先于硬编码**：新增可执行工具（MCP/自定义/AI 生成）一律走 `RuntimeToolRegistry.register()`，不要再扩展 `file-tools.ts` 的 FILE_TOOLS 或 `executeFileTool` switch。`file-tools.ts` 已瘦身为"类型定义 + 工具定义数据"，运行时分发在 `registry.ts` 的 `executeTool`。

@@ -6,7 +6,7 @@ import { restoreWorkbench } from '../../src/server/domain/workbench';
  * - 豁免蓝图穿戴：exemptBlueprintMatch=true 的任务不被 matchBlueprint 自动穿人设（验收/返工防串立场）。
  * - 蓝图工具读侧消费：命中蓝图时 tools 记账进入 inputProtocol.blueprintTools。
  * - persona_miss 留痕：蜂群 worker 指定库外人设 → 根任务留事件 + 蜂降级匿名。
- * - 人设库索引：listPersonaIndex 域分组、条目结构完整（调度中心可见目录）。
+ * - 人设库索引：listPersonaIndex 域分组、条目结构完整（养蜂人可见目录）。
  * - 模型档位：modelTierForTask 判定（工蜂/辩手=轻量；计划/验收/裁决/请示=高级）+ 设置键往返。
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';

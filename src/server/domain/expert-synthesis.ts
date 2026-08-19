@@ -3,11 +3,11 @@
  *
  * 组织 = f(活) 的专家侧读取：系统从真实使用中发现「缺什么专家」并【自动入库】——
  * 信号命中 → 起草 → 直接写入 ~/.muster/personas/（persona-library 双根扫描即生效，
- * 调度中心索引即可见可派）。不设人工审批闸：错误沉淀可经人设管理「查/改/删」处理
+ * 养蜂人索引即可见可派）。不设人工审批闸：错误沉淀可经人设管理「查/改/删」处理
  * （AgentLibraryPage 自建专家区），同信号去重 + 同名去重防止重复涌现。
  *
  * 三类信号（每 tick 最多沉淀 2 位）：
- * - persona_miss：调度中心指定的 personaId 在库中不存在（同 id 重复 ≥2 次）——库覆盖缺口。
+ * - persona_miss：养蜂人指定的 personaId 在库中不存在（同 id 重复 ≥2 次）——库覆盖缺口。
  * - bee_record：匿名蜂按同一 swarm goal 完成 ≥3 只且零失败——该类活值得沉淀专属专家。
  * - generalist_record：无专家人设的普通任务按任务类型聚类胜绩 ≥3——普通员工打法可专家化。
  *
@@ -107,7 +107,7 @@ function collectSignals(db: DB, companyId?: string): DraftSignal[] {
       signalKey: `miss:${row.pid}`,
       sourceTaskId: null,
       sampleTitles: samples.map((s) => s.title),
-      focus: `调度中心多次需要「${row.pid}」领域专家但库中没有（${row.n} 次），相关任务：${samples.map((s) => s.title).join('、') || '（无样本）'}`,
+      focus: `养蜂人多次需要「${row.pid}」领域专家但库中没有（${row.n} 次），相关任务：${samples.map((s) => s.title).join('、') || '（无样本）'}`,
     });
   }
 
