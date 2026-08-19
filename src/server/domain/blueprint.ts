@@ -15,6 +15,7 @@ import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
 import { expandMatchTokens } from './memory';
 import { findUserTalentForPersona, type AgentProfile } from './agent-profile';
+import { listPersonas, getPersona, type Persona } from './persona-library';
 
 export type BlueprintStatus = 'active' | 'locked' | 'retired';
 
@@ -494,3 +495,64 @@ export function updateBlueprintDescription(db: DB, id: string, description: stri
   commitBlueprintVersion(db, id, '描述更新：以更清晰的语言说明这类活与当前打法', ['description']);
   return getBlueprint(db, id);
 }
+
+export interface PersonaMatch {
+  persona: Persona;
+  score: number;
+  matchedTokens: string[];
+}
+
+/**
+ * 批次 F：为指定蓝图匹配人设库 Top Matches（供右侧分栏展示与一键采纳为人设小组）。
+ */
+export function matchTopPersonasForBlueprint(db: DB, blueprintId: string, limit = 5): PersonaMatch[] {
+  const bp = getBlueprint(db, blueprintId);
+  const personas = listPersonas();
+  if (personas.length === 0) return [];
+
+  const bpTokens = meaningfulTokens(`${bp.label} ${bp.description} ${bp.taskType.replace(/\|/g, ' ')}`);
+  if (bpTokens.length === 0) return [];
+
+  const scored: PersonaMatch[] = [];
+  for (const p of personas) {
+    const pText = `${p.name} ${p.description} ${p.domain ?? ''} ${p.tools.join(' ')}`;
+    const pTokens = meaningfulTokens(pText);
+    const score = jaccard(bpTokens, pTokens);
+    const matchedTokens = bpTokens.filter((t) => pTokens.includes(t));
+    if (score > 0 || matchedTokens.length > 0) {
+      scored.push({
+        persona: p,
+        score: Math.round(score * 100) / 100,
+        matchedTokens,
+      });
+    }
+  }
+
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, limit);
+}
+
+/**
+ * 批次 F：一键采纳人设加入蓝图班底小组。
+ */
+export function addBlueprintStaffingSlot(
+  db: DB,
+  blueprintId: string,
+  slot: { personaId: string; personaName?: string },
+): Blueprint {
+  const bp = getBlueprint(db, blueprintId);
+  const existing = bp.staffing.find((s) => s.personaId === slot.personaId);
+  if (existing) return bp;
+
+  const personaName = slot.personaName ?? getPersona(slot.personaId)?.name ?? slot.personaId;
+  const nextStaffing = [...bp.staffing, { personaId: slot.personaId, personaName }];
+
+  db.prepare('UPDATE blueprint SET staffing_json=?, updated_at=? WHERE id=?').run(
+    JSON.stringify(nextStaffing),
+    nowIso(),
+    blueprintId,
+  );
+  commitBlueprintVersion(db, blueprintId, `采纳人设「${personaName}」进班底小组`, [`staffing:${slot.personaId}`]);
+  return getBlueprint(db, blueprintId);
+}
+

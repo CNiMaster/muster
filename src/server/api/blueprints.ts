@@ -26,6 +26,8 @@ import {
   getBlueprint,
   getBlueprintDetail,
   publishBlueprintDebugResult,
+  matchTopPersonasForBlueprint,
+  addBlueprintStaffingSlot,
 } from '../domain/blueprint';
 import { AppError, ErrorCode } from '../../shared/errors';
 
@@ -109,5 +111,28 @@ blueprintsRouter.post(
       evidenceTaskId: z.string().optional(),
     }).parse(req.body);
     res.json(publishBlueprintDebugResult(getDb(), { blueprintId: param(req, 'blueprintId'), ...body }));
+  }),
+);
+
+/** 批次 F：为指定蓝图获取人设库 Top Matches */
+blueprintsRouter.get(
+  '/:blueprintId/top-personas',
+  asyncHandler(async (req, res) => {
+    assertBlueprintExists(param(req, 'blueprintId'));
+    const limit = Number(req.query.limit ?? 5);
+    res.json(matchTopPersonasForBlueprint(getDb(), param(req, 'blueprintId'), limit));
+  }),
+);
+
+/** 批次 F：一键采纳人设加入蓝图班底小组 */
+blueprintsRouter.post(
+  '/:blueprintId/adopt-persona',
+  asyncHandler(async (req, res) => {
+    assertBlueprintExists(param(req, 'blueprintId'));
+    const body = z.object({
+      personaId: z.string().min(1),
+      personaName: z.string().optional(),
+    }).parse(req.body);
+    res.json(addBlueprintStaffingSlot(getDb(), param(req, 'blueprintId'), body));
   }),
 );
