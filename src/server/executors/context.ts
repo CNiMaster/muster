@@ -419,6 +419,7 @@ export function assembleContext(
       '适合并行拆解的目标：在最终 JSON 里加 swarmPlan 字段并置 outcome="waiting_dependency"：',
       'swarmPlan: { goal: "总目标", workers: [ { title: "子题", brief: "给这只蜂的具体指令与边界", personaId?: "子题要求的专家人设" } ] }',
       '系统会为每只蜂创建一次性工蜂并行执行，全部完成后你收到 [蜂群汇总] 任务做收口报告。收口报告必须包含「结论」「分歧」「风险」三段标题（无分歧须显式写明"无分歧"）。',
+      'workers 排序按「由简入繁」：简单子题排前面先跑，为复杂子题铺平上下文与依赖事实。',
       '工蜂数量按需（够用就好）；超出系统上限会被截断。不适合并行的目标不要用 swarmPlan。',
       '三种蜂型：匿名（不写 personaId）/ 同种专家（全部 worker 同 personaId）/ 混合专家（不同 worker 不同 personaId）。',
       '',

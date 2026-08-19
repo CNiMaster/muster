@@ -314,6 +314,8 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
   const system =
     '你是一个任务反思助手。从单个任务的执行结果中提炼沉淀：经验教训（LESSON）、协作规则（RULE），以及（仅当用户反馈含明确偏好信号时）用户偏好（PREFERENCE）。' +
     'LESSON 聚焦"下次同类任务怎么做更好"的单任务经验；' +
+    '整改批次3：LESSON 若本质是跨项目可复用的方法论（如"React 条件 hook 必须放在早退 return 之前"——任何项目穿对应人设都适用，而非仅本项目事实），' +
+    '在 LESSON 段追加一行 <scope: persona> 并再追加一行 <persona_key: 人设id或domain/技能slug>（执行人设已知时优先用它的 id）；属项目事实则不加这两行（默认 project）。' +
     'RULE 聚焦"涉及他人或其他岗位协同时应遵循的约定"（如交付前通知测试、加急任务在标题标注等）。' +
     'PREFERENCE 聚焦"用户明确表达过的个人偏好或忌讳"（如风格、语气、格式、内容、流程倾向），必须是用户视角的喜好陈述，不要把单次请求泛化为通用偏好；' +
     'PREFERENCE 正文必须以【domain】开头，domain ∈ 风格/语气/格式/内容/流程。' +
@@ -339,6 +341,8 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
     '[LESSON]',
     '<置信度 0-1 的小数>',
     '<fingerprint：domain:topic 形如 design:color，可省略>',
+    '<scope: persona——仅当正文属跨项目方法论时写此行，否则省略>',
+    '<persona_key: 人设id（如前端类方法论给 product/front-end-engineer 或按内容定 domain/slug）——scope 行存在时必写>',
     '<经验正文 50-150 字>',
     '[RULE]',
     '<置信度 0-1 的小数>',
@@ -401,7 +405,29 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
   let lessonCandidateId: string | null = null;
   // 断电安全：四类记忆候选 + done 标记同事务——崩溃时整体回滚，recoverStuckReflections 复位后重做不产生重复候选。
   db.transaction(() => {
-  if (!isEphemeralBee && lesson.body) {
+  // 整改批次3（用户定案：单写平台级）——反思判定 LESSON 属跨项目方法论（scope: persona）且高置信时，
+  // 升级写为 CRAFT（scope='skill'+persona_key，挂人设方法论档案宿主——任何项目穿戴/具备该技能者都召回），
+  // 不再重复写项目 LESSON：方法论属于平台，项目事实才进项目记忆。
+  const upgradedToCraft = !isEphemeralBee
+    && lesson.body
+    && lesson.scopeSuggestion === 'persona'
+    && lesson.scopePersonaKey
+    && lesson.confidence >= 0.8;
+  if (upgradedToCraft) {
+    const candidate = createMemoryCandidate(db, {
+      profileId: ensurePersonaArchiveProfile(db),
+      scope: 'skill',
+      personaKey: lesson.scopePersonaKey!,
+      content: lesson.body,
+      sourceTaskId: reflection.taskId,
+      author: 'agent',
+      confidence: lesson.confidence,
+      canInfluence: true,
+      allowAutoApprove: true,
+      fingerprint: lesson.fingerprint,
+    });
+    lessonCandidateId = candidate.id;
+  } else if (!isEphemeralBee && lesson.body) {
     const candidate = createMemoryCandidate(db, {
       profileId,
       scope: 'project',
@@ -495,14 +521,14 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
  * 格式：[SECTION] 头 → 置信度行 → 正文行。置信度缺省 0.7，正文截断 500 字。
  * 找不到段头或正文为 SKIPPED/空 → 返回空 body（表示该类无沉淀）。
  */
-function parseSection(text: string, section: 'LESSON' | 'RULE' | 'PREFERENCE' | 'CRAFT'): { confidence: number; fingerprint: string | null; body: string } {
+function parseSection(text: string, section: 'LESSON' | 'RULE' | 'PREFERENCE' | 'CRAFT'): { confidence: number; fingerprint: string | null; body: string; scopeSuggestion: 'project' | 'persona' | null; scopePersonaKey: string | null } {
   const re = new RegExp(`\\[${section}\\]\\s*([\\s\\S]*?)(?=\\[(?:LESSON|RULE|PREFERENCE|CRAFT)\\]|$)`, 'i');
   const match = re.exec(text);
-  if (!match) return { confidence: 0.7, fingerprint: null, body: '' };
+  if (!match) return { confidence: 0.7, fingerprint: null, body: '', scopeSuggestion: null, scopePersonaKey: null };
   const block = match[1]!.trim();
-  if (!block || /^SKIPPED/i.test(block)) return { confidence: 0.7, fingerprint: null, body: '' };
+  if (!block || /^SKIPPED/i.test(block)) return { confidence: 0.7, fingerprint: null, body: '', scopeSuggestion: null, scopePersonaKey: null };
   const lines = block.split('\n').filter((l) => l.trim());
-  if (lines.length === 0) return { confidence: 0.7, fingerprint: null, body: '' };
+  if (lines.length === 0) return { confidence: 0.7, fingerprint: null, body: '', scopeSuggestion: null, scopePersonaKey: null };
   let confidence = 0.7;
   let body = block;
   const firstNum = parseFloat(lines[0]!);
@@ -512,14 +538,29 @@ function parseSection(text: string, section: 'LESSON' | 'RULE' | 'PREFERENCE' | 
   }
   // E2.1 fingerprint 行：紧跟置信度后，形如 "domain:topic"（如 design:color）；匹配则提取，body 取剩余（兼容旧格式无标签）。
   let fingerprint: string | null = null;
-  const bodyLines = body.split('\n').filter((l) => l.trim());
+  let scopeSuggestion: 'project' | 'persona' | null = null;
+  let scopePersonaKey: string | null = null;
+  let bodyLines = body.split('\n').filter((l) => l.trim());
   if (bodyLines.length > 0 && /^[a-z0-9_\u4e00-\u9fa5]+:[a-z0-9_\u4e00-\u9fa5-]+$/i.test(bodyLines[0]!)) {
     fingerprint = bodyLines[0]!.trim().toLowerCase();
-    body = bodyLines.slice(1).join('\n').trim();
+    bodyLines = bodyLines.slice(1);
   }
+  // 整改批次3：<scope: persona> 与 <persona_key: xxx> 可选行（仅 LESSON 用；紧跟 fingerprint 后）
+  if (bodyLines.length > 0 && /^<\s*scope\s*:\s*persona\s*>$/i.test(bodyLines[0]!.trim())) {
+    scopeSuggestion = 'persona';
+    bodyLines = bodyLines.slice(1);
+    if (bodyLines.length > 0) {
+      const m = /^<\s*persona_key\s*:\s*(.+?)\s*>$/i.exec(bodyLines[0]!.trim());
+      if (m) {
+        scopePersonaKey = m[1]!;
+        bodyLines = bodyLines.slice(1);
+      }
+    }
+  }
+  body = bodyLines.join('\n').trim();
   body = body.slice(0, 500);
-  if (!body || /^SKIPPED/i.test(body)) return { confidence: 0.7, fingerprint: null, body: '' };
-  return { confidence, fingerprint, body };
+  if (!body || /^SKIPPED/i.test(body)) return { confidence: 0.7, fingerprint: null, body: '', scopeSuggestion: null, scopePersonaKey: null };
+  return { confidence, fingerprint, body, scopeSuggestion, scopePersonaKey };
 }
 
 /**
