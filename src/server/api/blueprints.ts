@@ -26,7 +26,6 @@ import {
   getBlueprint,
   getBlueprintDetail,
   publishBlueprintDebugResult,
-  matchTopPersonasForBlueprint,
   addBlueprintStaffingSlot,
   generateBlueprintCrewStaffing,
 } from '../domain/blueprint';
@@ -112,16 +111,6 @@ blueprintsRouter.post(
       evidenceTaskId: z.string().optional(),
     }).parse(req.body);
     res.json(publishBlueprintDebugResult(getDb(), { blueprintId: param(req, 'blueprintId'), ...body }));
-  }),
-);
-
-/** 批次 F：为指定蓝图获取人设库 Top Matches */
-blueprintsRouter.get(
-  '/:blueprintId/top-personas',
-  asyncHandler(async (req, res) => {
-    assertBlueprintExists(param(req, 'blueprintId'));
-    const limit = Number(req.query.limit ?? 5);
-    res.json(matchTopPersonasForBlueprint(getDb(), param(req, 'blueprintId'), limit));
   }),
 );
 

@@ -1627,24 +1627,14 @@ export interface PersonaMatchDto {
   matchedTokens: string[];
 }
 
-/** 批次 F：为指定蓝图获取人设库 Top Matches */
-export function useBlueprintTopPersonas(blueprintId: string | undefined) {
-  return useQuery({
-    queryKey: ['blueprint-top-personas', blueprintId],
-    queryFn: () => api.get<PersonaMatchDto[]>(`/api/blueprints/${blueprintId}/top-personas`),
-    enabled: !!blueprintId,
-  });
-}
-
-/** 批次 F：一键采纳人设加入蓝图班底小组 */
+/** 修复轮（批次 J）：一键采纳人设加入蓝图班底（可带分工 role） */
 export function useAdoptBlueprintPersona() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ blueprintId, personaId, personaName }: { blueprintId: string; personaId: string; personaName?: string }) =>
-      api.post<Blueprint>(`/api/blueprints/${blueprintId}/adopt-persona`, { personaId, personaName }),
+    mutationFn: ({ blueprintId, personaId, personaName, role }: { blueprintId: string; personaId: string; personaName?: string; role?: string }) =>
+      api.post<Blueprint>(`/api/blueprints/${blueprintId}/adopt-persona`, { personaId, personaName, role }),
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ['blueprint-detail', vars.blueprintId] });
-      qc.invalidateQueries({ queryKey: ['blueprint-top-personas', vars.blueprintId] });
       qc.invalidateQueries({ queryKey: ['blueprints'] });
     },
   });

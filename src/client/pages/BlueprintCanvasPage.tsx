@@ -34,7 +34,6 @@ import {
 import { Button, toast } from '../components/Button';
 import { Badge } from '../components/Badge';
 import { CardSkeleton } from '../components/Skeleton';
-import { BlueprintSpecialistSidebar } from '../components/BlueprintSpecialistSidebar';
 
 // 自定义节点：阶段工作流节点
 function StageNodeComponent({ data }: { data: any }): React.ReactElement {
@@ -364,10 +363,6 @@ export function BlueprintCanvasPage(): React.ReactElement {
           </ReactFlow>
         </div>
 
-        <BlueprintSpecialistSidebar
-          blueprintId={bp.id}
-          currentStaffingIds={bp.staffing.map((s) => s.personaId)}
-        />
       </div>
     </div>
   );

@@ -3,7 +3,7 @@ import type React from 'react';
 import { Link } from 'react-router-dom';
 import type { Agent, Task } from '../../api/types';
 import type { ProjectTaskDTO } from '../../hooks/queries';
-import { useArtifacts, useProjectTaskAction, useTaskSwarm } from '../../hooks/queries';
+import { useArtifacts, useBlueprintMatches, useProjectTaskAction, useTaskSwarm } from '../../hooks/queries';
 import type { CompanyCockpitDTO } from '../../../shared/types';
 import { Badge, StateBadge, stateLabel, taskStateTone } from '../Badge';
 import { Button, toast } from '../Button';
@@ -36,6 +36,8 @@ export function ProjectContextInspector({
   const { data: artifacts = [] } = useArtifacts(projectId);
   const activeTask = tasks.find((t) => t.id === selectedTask?.id || t.state === 'running') ?? tasks[0];
   const { data: swarmView } = useTaskSwarm(activeTask?.id);
+  // 修复轮（批次 F.2）：任务 → 最优蓝图 top-N（命中时显示，无人设命中不显示）
+  const { data: blueprintMatches = [] } = useBlueprintMatches(selectedTask?.title);
 
   const attentionTasks = tasks.filter((task) => ATTENTION_STATES.has(task.state));
   const runningCount = tasks.filter((task) => task.state === 'running' || task.state === 'claimed').length;
@@ -158,6 +160,40 @@ export function ProjectContextInspector({
                 收口 {swarmView.swarm.nodesDone}/{swarmView.swarm.nodesTotal}
                 {swarmView.swarm.nodesFailed > 0 && <span style={{ color: 'var(--err)' }}> (失败 {swarmView.swarm.nodesFailed})</span>}
               </p>
+            </div>
+          )}
+
+          {/* 修复轮（批次 F.2）：最优蓝图 top-N——按当前选中任务标题命中，无人设命中不显示 */}
+          {selectedTask && blueprintMatches.length > 0 && (
+            <div style={{ marginTop: '12px', padding: '10px', background: 'var(--bg-elev)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+              <div className="auxiliary-section-title" style={{ padding: 0, marginBottom: '6px' }}>
+                <span>🎭 已匹配最优蓝图 {blueprintMatches.length} 个</span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                {blueprintMatches.slice(0, 5).map((bp) => {
+                  const total = bp.wins + bp.losses;
+                  const winRate = total > 0 ? Math.round((bp.wins / total) * 100) : null;
+                  const crew = bp.staffing.map((s) => s.personaName || s.personaId).slice(0, 4).join(' · ');
+                  return (
+                    <Link
+                      key={bp.id}
+                      to={`/blueprints/${bp.id}`}
+                      style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px',
+                        padding: '4px 6px', borderRadius: 'var(--radius-sm)',
+                        background: 'var(--bg)', border: '1px solid var(--border-subtle)',
+                        fontSize: '12px', color: 'var(--fg)', textDecoration: 'none',
+                      }}
+                      title={crew || bp.description}
+                    >
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        🎭 {bp.label}
+                      </span>
+                      {winRate !== null && <Badge tone={winRate >= 60 ? 'ok' : 'neutral'}>{winRate}%</Badge>}
+                    </Link>
+                  );
+                })}
+              </div>
             </div>
           )}
         </section>
