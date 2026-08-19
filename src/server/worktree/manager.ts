@@ -83,6 +83,46 @@ export function removeWorktree(rootDir: string, info: WorktreeInfo, options: { k
 }
 
 /**
+ * 整改批次 1：带状态的分支变更（全量发布分类用）——D→真删除，R 拆 old(D)+new(A)。
+ * 合并两个来源：已提交（diff base..branch）+ 工作区未提交（status --porcelain，工作区状态优先）——
+ * 发布前的分类发生在 publish 的 worktree 提交之前，删除可能尚未提交。
+ */
+export function listTaskBranchChangeStatus(
+  rootDir: string,
+  info: WorktreeInfo,
+): Array<{ path: string; status: 'A' | 'D' | 'M' }> {
+  const merged = new Map<string, 'A' | 'D' | 'M'>();
+  const out = git(rootDir, ['diff', '--name-status', info.baseCommit, info.branch], { allowFail: true }).stdout;
+  for (const line of out.split('\n')) {
+    const cols = line.trim().split('\t');
+    if (cols.length < 2) continue;
+    const [st, ...paths] = cols;
+    if (st === 'D') merged.set(paths[0]!, 'D');
+    else if (st === 'A') merged.set(paths[0]!, 'A');
+    else if (st && st.startsWith('R')) {
+      // 重命名 = 删旧 + 增新
+      merged.set(paths[0]!, 'D');
+      merged.set(paths[1]!, 'A');
+    } else if (st === 'M') merged.set(paths[0]!, 'M');
+  }
+  // porcelain 固定格式：XY(2字符) + 空格 + path——前导空格是格式一部分（' D file'=未暂存删除），
+  // 不能走 git() 助手（它统一 trim stdout 会吃掉前导空格→路径首字符丢失），直连取原始输出
+  const statusRes = spawnSync('git', ['status', '--porcelain'], { cwd: info.path, encoding: 'utf8' });
+  const status = statusRes.stdout ?? '';
+  for (const raw of status.split('\n')) {
+    if (!raw.trim()) continue;
+    const xy = raw.slice(0, 2);
+    let rest = raw.slice(3);
+    const rename = /^.* -> (.+)$/.exec(rest);
+    if (rename) rest = rename[1]!;
+    if (xy.includes('D')) merged.set(rest, 'D');
+    else if (xy.includes('?')) merged.set(rest, 'A');
+    else merged.set(rest, 'M');
+  }
+  return [...merged.entries()].map(([path, st]) => ({ path, status: st }));
+}
+
+/**
  * 任务分支上的全部改动文件（防发布白名单外改动静默丢失的守护数据源）。
  * committed = base..branch 的 diff（发布时 commitAll 已把工作区全部提交）；
  * uncommitted = worktree 里尚未提交的改动（任务失败未走到发布时存在）。

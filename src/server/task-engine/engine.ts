@@ -51,7 +51,7 @@ import { isSwarmLinkedTask } from '../domain/staging';
 import { resolveContextWindow } from '../domain/executor-profile';
 import { generateCompactionSummary } from '../domain/compaction-summary';
 import { getWorkbench } from '../domain/workbench';
-import { createWorktree, removeWorktree, ensureStagingWorktree, ensureTaskStagingWorktree, listTaskBranchChanges } from '../worktree/manager';
+import { createWorktree, removeWorktree, ensureStagingWorktree, ensureTaskStagingWorktree, listTaskBranchChanges, listTaskBranchChangeStatus } from '../worktree/manager';
 /** 批次 D2：读取任务 inputProtocol 里的消息级选项（模式/模型/思考），非法值忽略。 */
 function readMessageOptions(input: Record<string, unknown>): { mode?: 'plan' | 'ask-always' | 'ask-by-rule' | 'no-approval' | 'deny'; model?: string; thinking?: 'off' | 'low' | 'medium' | 'high' } {
   const mode = input.mode;
@@ -938,6 +938,26 @@ export class TaskEngine {
         result = { ...result, artifacts: [] };
       }
 
+      // 定案 #9 + 整改批次 1：完全访问（no-approval）任务发布范围为全量——worktree 全部变更，不走白名单；
+      // 按状态分类（删除→operation:'delete'，原先一律 update 会因源文件缺失记冲突→整批阻塞+无意义裁决；
+      // 重命名拆删旧+增新）。放在发布门之前：仅含删除/全量变更的任务也要进发布（声明产物为空不再是跳过理由）。
+      if (messageOptions.mode === 'no-approval' && worktreeInfo) {
+        const declared = new Set(result.artifacts.map((a) => a.path));
+        let deletes = 0;
+        for (const change of listTaskBranchChangeStatus(project.rootDir, worktreeInfo)) {
+          if (declared.has(change.path)) continue;
+          if (change.status === 'D') deletes += 1;
+          result.artifacts.push({
+            path: change.path,
+            kind: 'file',
+            operation: change.status === 'D' ? 'delete' : 'update',
+          });
+        }
+        if (result.artifacts.length > declared.size) {
+          log.info('full-access publish (no whitelist)', { taskId: task.id, declared: declared.size, total: result.artifacts.length, deletes });
+        }
+      }
+
       if (result.outcome === 'completed' && result.artifacts.length > 0 && worktreeInfo) {
         {
           const publishTargetRoot = project.rootDir;
@@ -951,17 +971,6 @@ export class TaskEngine {
             ?? (isSwarmLinkedTask(task)
               ? ensureStagingWorktree(project.rootDir, project.id).path
               : undefined);
-          // 定案 #9：完全访问（no-approval）任务发布范围为全量——worktree 全部变更，不走白名单
-          //（消除"计划合并了临时文件没合并"漏洞；仍只进任务集成区，主干门禁不变）
-          const fullPublish = messageOptions.mode === 'no-approval';
-          if (fullPublish) {
-            const allChanges = listTaskBranchChanges(project.rootDir, worktreeInfo).committed;
-            const declared = new Set(result.artifacts.map((a) => a.path));
-            for (const change of allChanges) {
-              if (!declared.has(change)) result.artifacts.push({ path: change, kind: 'file', operation: 'update' });
-            }
-            log.info('full-access publish (no whitelist)', { taskId: task.id, declared: declared.size, total: result.artifacts.length });
-          }
           const pub = this.publishArtifacts(task.id, thread.id, publishTargetRoot, worktreeInfo, result, stagingTarget);
           if (pub.blocked) {
             blockTaskForPublishConflict(

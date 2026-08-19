@@ -26,6 +26,8 @@ export interface FakeScriptStep {
   writeFiles?: Record<string, string>;
   /** 运行前断言 worktree 中已有文件内容，用于验证等待态恢复。 */
   expectFiles?: Record<string, string>;
+  /** 整改批次 1：删除文件（相对 worktree 根）——模拟 agent 删除产物。 */
+  deleteFiles?: string[];
 }
 
 export class FakeExecutor implements ExecutionAdapter {
@@ -77,6 +79,13 @@ export class FakeExecutor implements ExecutionAdapter {
         const abs = path.resolve(ctx.workingDir, rel);
         mkdirSync(path.dirname(abs), { recursive: true });
         writeFileSync(abs, content);
+      }
+    }
+    if (step.deleteFiles?.length) {
+      const { rmSync } = await import('node:fs');
+      const path = await import('node:path');
+      for (const rel of step.deleteFiles) {
+        rmSync(path.resolve(ctx.workingDir, rel), { force: true });
       }
     }
     if (step.throw) {
