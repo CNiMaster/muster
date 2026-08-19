@@ -237,7 +237,7 @@ function SwarmTreeCard({ taskId }: { taskId: string }): React.ReactElement | nul
         </Link>
         <Badge tone={taskStateTone(task.state)}>{stateLabel(task.state)}</Badge>
         {task.personaId && (
-          <span className="mu-trace-blueprint-chip" title="本蜂穿戴的专家人设">
+          <span className="mu-trace-blueprint-chip" title="本蜂派遣的专家人设">
             🎭 {personas.find((p) => p.id === task.personaId)?.name ?? task.personaId}
           </span>
         )}

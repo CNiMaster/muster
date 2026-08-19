@@ -27,7 +27,6 @@ import {
   getBlueprintDetail,
   publishBlueprintDebugResult,
   addBlueprintStaffingSlot,
-  generateBlueprintCrewStaffing,
 } from '../domain/blueprint';
 import { AppError, ErrorCode } from '../../shared/errors';
 
@@ -122,16 +121,8 @@ blueprintsRouter.post(
     const body = z.object({
       personaId: z.string().min(1),
       personaName: z.string().optional(),
+      role: z.string().optional(),
     }).parse(req.body);
     res.json(addBlueprintStaffingSlot(getDb(), param(req, 'blueprintId'), body));
-  }),
-);
-
-/** 批次 J：获取蓝图专家团队编制推荐方案 */
-blueprintsRouter.get(
-  '/:blueprintId/crew-staffing',
-  asyncHandler(async (req, res) => {
-    assertBlueprintExists(param(req, 'blueprintId'));
-    res.json(generateBlueprintCrewStaffing(getDb(), param(req, 'blueprintId')));
   }),
 );

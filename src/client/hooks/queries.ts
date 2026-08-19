@@ -1492,7 +1492,7 @@ export interface Blueprint {
   taskType: string;
   label: string;
   description: string;
-  staffing: Array<{ personaId: string; personaName: string }>;
+  staffing: Array<{ personaId: string; personaName: string; role?: string }>;
   tools: Array<{ kind: 'skill' | 'tool' | 'mcp'; id: string; uses: number; wins: number }>;
   sourceProjectIds: string[];
   wins: number;
@@ -1591,7 +1591,7 @@ export function useUpdateBlueprintDescription() {
   });
 }
 
-/** 相关打法：按任务标题匹配 top-N 蓝图（去同簇；创建任务卡预览穿戴用）。 */
+/** 相关打法：按任务标题匹配 top-N 蓝图（去同簇；创建任务卡预览派遣用）。 */
 export function useBlueprintMatches(title: string | undefined) {
   const trimmed = (title ?? '').trim();
   return useQuery({

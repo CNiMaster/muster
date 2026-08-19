@@ -236,7 +236,7 @@ export interface Task {
   questionOptions: { id: string; label: string; detail?: string; pros?: string; cons?: string }[] | null;
   /** 执行过程展示批次4：失败蜂被自动修复重发后指向替补任务。 */
   supersededBy: string | null;
-  /** 蓝图打法包：本任务穿戴的人设（蓝图主槽匹配，null=未穿戴）。 */
+  /** 蓝图打法包：本任务派遣的人设（蓝图主槽匹配，null=未派遣）。 */
   personaId: string | null;
   /** 合并模式治理（批次 G）：manual = 需人工确认合并；auto = 自动合入 */
   mergeMode?: 'manual' | 'auto';

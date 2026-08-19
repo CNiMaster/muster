@@ -95,7 +95,7 @@ export function AgentProfilePage(): React.ReactElement {
       isAutoDispatch: next,
     }, {
       onSuccess: () => {
-        toast('info', next === 1 ? '已开启自动上岗（任务将优先穿戴此自有人才）' : '已进入休息状态（自动切回官方基准人设）');
+        toast('info', next === 1 ? '已开启自动上岗（任务将优先派遣此自有人才）' : '已进入休息状态（自动切回官方基准人设）');
       },
       onError: (err) => toast('error', (err as Error).message),
     });

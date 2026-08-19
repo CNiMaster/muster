@@ -333,7 +333,7 @@ export function AgentLibraryPage(): React.ReactElement {
           <h1>人才市场</h1>
           <p className="subtitle">
             组织 = f(活)。官方专家由系统自动维护与进化；自有人才由您完全掌控、永久保持。
-            开启「自动上岗」时，任务将优先穿戴您的专属人才；休息时自动切回官方基准。
+            开启「自动上岗」时，任务将优先派遣您的专属人才；休息时自动切回官方基准。
           </p>
         </div>
       </header>

@@ -94,7 +94,7 @@ export function BlueprintLibraryPage(): React.ReactElement {
           <h1>蓝图库</h1>
           <p className="subtitle">
             蓝图 = 打法包：什么类型的活 → 配什么人设班底 → 用什么工具 → 战绩如何。每次任务结束自动复盘进化；
-            新任务按蓝图自动穿戴最合适的人设。你觉得好用的打法，锁定它就不会再被自动修改。
+            新任务按蓝图自动派遣最合适的人设。你觉得好用的打法，锁定它就不会再被自动修改。
           </p>
         </div>
       </header>

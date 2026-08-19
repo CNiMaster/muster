@@ -173,7 +173,7 @@ export function ProjectContextInspector({
                 {blueprintMatches.slice(0, 5).map((bp) => {
                   const total = bp.wins + bp.losses;
                   const winRate = total > 0 ? Math.round((bp.wins / total) * 100) : null;
-                  const crew = bp.staffing.map((s) => s.personaName || s.personaId).slice(0, 4).join(' · ');
+                  const crew = bp.staffing.map((s) => `${s.personaName || s.personaId}${s.role ? `（${s.role}）` : ''}`).slice(0, 4).join(' · ');
                   return (
                     <Link
                       key={bp.id}

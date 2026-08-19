@@ -15,14 +15,15 @@ import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
 import { expandMatchTokens } from './memory';
 import { findUserTalentForPersona, type AgentProfile } from './agent-profile';
-import { listPersonas, getPersona, type Persona } from './persona-library';
-import { createAgent, type AgentDefinition } from './agent';
+import { getPersona } from './persona-library';
 
 export type BlueprintStatus = 'active' | 'locked' | 'retired';
 
 export interface BlueprintStaffingSlot {
   personaId: string;
   personaName: string;
+  /** 批次 J·修复轮：组内分工（如"调研"/"撰写"/"复核"）；旧数据无此字段=单人组合兼容。 */
+  role?: string;
 }
 
 export interface BlueprintStaffingDetailSlot extends BlueprintStaffingSlot {
@@ -497,56 +498,20 @@ export function updateBlueprintDescription(db: DB, id: string, description: stri
   return getBlueprint(db, id);
 }
 
-export interface PersonaMatch {
-  persona: Persona;
-  score: number;
-  matchedTokens: string[];
-}
-
-/**
- * 批次 F：为指定蓝图匹配人设库 Top Matches（供右侧分栏展示与一键采纳为人设小组）。
- */
-export function matchTopPersonasForBlueprint(db: DB, blueprintId: string, limit = 5): PersonaMatch[] {
-  const bp = getBlueprint(db, blueprintId);
-  const personas = listPersonas();
-  if (personas.length === 0) return [];
-
-  const bpTokens = meaningfulTokens(`${bp.label} ${bp.description} ${bp.taskType.replace(/\|/g, ' ')}`);
-  if (bpTokens.length === 0) return [];
-
-  const scored: PersonaMatch[] = [];
-  for (const p of personas) {
-    const pText = `${p.name} ${p.description} ${p.domain ?? ''} ${p.tools.join(' ')}`;
-    const pTokens = meaningfulTokens(pText);
-    const score = jaccard(bpTokens, pTokens);
-    const matchedTokens = bpTokens.filter((t) => pTokens.includes(t));
-    if (score > 0 || matchedTokens.length > 0) {
-      scored.push({
-        persona: p,
-        score: Math.round(score * 100) / 100,
-        matchedTokens,
-      });
-    }
-  }
-
-  scored.sort((a, b) => b.score - a.score);
-  return scored.slice(0, limit);
-}
-
 /**
  * 批次 F：一键采纳人设加入蓝图班底小组。
  */
 export function addBlueprintStaffingSlot(
   db: DB,
   blueprintId: string,
-  slot: { personaId: string; personaName?: string },
+  slot: { personaId: string; personaName?: string; role?: string },
 ): Blueprint {
   const bp = getBlueprint(db, blueprintId);
   const existing = bp.staffing.find((s) => s.personaId === slot.personaId);
   if (existing) return bp;
 
   const personaName = slot.personaName ?? getPersona(slot.personaId)?.name ?? slot.personaId;
-  const nextStaffing = [...bp.staffing, { personaId: slot.personaId, personaName }];
+  const nextStaffing = [...bp.staffing, { personaId: slot.personaId, personaName, ...(slot.role ? { role: slot.role } : {}) }];
 
   db.prepare('UPDATE blueprint SET staffing_json=?, updated_at=? WHERE id=?').run(
     JSON.stringify(nextStaffing),
@@ -556,116 +521,3 @@ export function addBlueprintStaffingSlot(
   commitBlueprintVersion(db, blueprintId, `采纳人设「${personaName}」进班底小组`, [`staffing:${slot.personaId}`]);
   return getBlueprint(db, blueprintId);
 }
-
-export interface CrewStaffingRecommendation {
-  roleName: string;
-  roleDescription: string;
-  recommendedPersona?: Persona;
-  matchScore: number;
-  domain: string;
-  suggestedTools: string[];
-}
-
-export interface BlueprintCrewStaffingPlan {
-  blueprintId: string;
-  blueprintTitle: string;
-  crew: CrewStaffingRecommendation[];
-}
-
-/**
- * 批次 J：根据蓝图画像与人设库，生成专家团队编制推荐方案。
- */
-export function generateBlueprintCrewStaffing(db: DB, blueprintId: string): BlueprintCrewStaffingPlan {
-  const bp = getBlueprint(db, blueprintId);
-  const personas = listPersonas();
-  const crew: CrewStaffingRecommendation[] = [];
-
-  // 1. 如果已有 staffing 明确指定了岗位
-  if (bp.staffing && bp.staffing.length > 0) {
-    for (const slot of bp.staffing) {
-      const p = personas.find((x) => x.id === slot.personaId);
-      crew.push({
-        roleName: slot.personaName || p?.name || slot.personaId,
-        roleDescription: p?.description || `负责蓝图「${bp.label}」关键工作交付`,
-        recommendedPersona: p,
-        matchScore: 1.0,
-        domain: p?.domain || bp.taskType,
-        suggestedTools: p?.tools || ['fs', 'git'],
-      });
-    }
-  }
-
-  // 2. 如果缺少或补充，从 persona library 中匹配 top matches
-  if (crew.length === 0) {
-    const topMatches = matchTopPersonasForBlueprint(db, blueprintId, 4);
-    if (topMatches.length > 0) {
-      for (const m of topMatches) {
-        crew.push({
-          roleName: m.persona.name,
-          roleDescription: m.persona.description,
-          recommendedPersona: m.persona,
-          matchScore: m.score,
-          domain: m.persona.domain || bp.taskType,
-          suggestedTools: m.persona.tools || ['fs', 'git'],
-        });
-      }
-    } else {
-      // 兜底基础编制
-      crew.push({
-        roleName: `${bp.label}专家`,
-        roleDescription: `主导「${bp.label}」全流程落地执行与成果验收`,
-        matchScore: 0.8,
-        domain: bp.taskType,
-        suggestedTools: ['fs', 'git', 'terminal'],
-      });
-    }
-  }
-
-  return {
-    blueprintId: bp.id,
-    blueprintTitle: bp.label,
-    crew,
-  };
-}
-
-/**
- * 批次 J：一键将蓝图专家团队编制方案入职到工作台/项目。
- */
-export function applyBlueprintCrewStaffing(
-  db: DB,
-  projectId: string,
-  blueprintId: string,
-  customCrew?: CrewStaffingRecommendation[],
-): { createdAgents: AgentDefinition[]; appliedCount: number } {
-  const plan = generateBlueprintCrewStaffing(db, blueprintId);
-  const targetCrew = customCrew && customCrew.length > 0 ? customCrew : plan.crew;
-
-  const existingAgents = db.prepare('SELECT name, role FROM agent_definition').all() as Array<{ name: string; role: string }>;
-  const existingNames = new Set(existingAgents.map((a) => a.name));
-
-  const createdAgents: AgentDefinition[] = [];
-
-  for (const member of targetCrew) {
-    const name = member.recommendedPersona?.name || member.roleName;
-    if (existingNames.has(name)) {
-      continue;
-    }
-
-    const agent = createAgent(db, {
-      name,
-      role: member.roleName,
-      responsibilities: member.roleDescription,
-      systemPrompt: member.recommendedPersona ? `${member.recommendedPersona.name}：${member.recommendedPersona.description}` : `负责 ${member.roleName}`,
-      tools: member.suggestedTools,
-      skills: member.recommendedPersona?.domain ? [member.recommendedPersona.domain] : [],
-      internalRecruit: true,
-    });
-
-    createdAgents.push(agent);
-    existingNames.add(name);
-  }
-
-  return { createdAgents, appliedCount: createdAgents.length };
-}
-
-
