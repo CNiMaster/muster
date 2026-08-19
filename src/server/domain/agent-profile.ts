@@ -211,6 +211,35 @@ export function getAgentProfile(db: DB, id: string): AgentProfile {
   return profileFromRow(row);
 }
 
+/**
+ * 「人设方法论档案」宿主 profile：一次性执行体（蜂群工蜂等）的 CRAFT 记忆归属。
+ * 固定 id + is_temp_only=1（不进任何人才/档案列表）+ 无 agent/任职行（永不被 dismiss 删除）。
+ * 记忆召回侧按 persona_key 全局命中 skill 记忆，宿主只是存储所有者，不参与执行。
+ */
+export const PERSONA_ARCHIVE_PROFILE_ID = 'ap_persona_archive';
+
+export function ensurePersonaArchiveProfile(db: DB): string {
+  const row = db.prepare('SELECT id FROM agent_profile WHERE id=?').get(PERSONA_ARCHIVE_PROFILE_ID) as
+    | { id: string }
+    | undefined;
+  if (row) return PERSONA_ARCHIVE_PROFILE_ID;
+  const now = nowIso();
+  db.transaction(() => {
+    db.prepare(
+      `INSERT INTO agent_profile (id, display_name, soul, principles_json, capabilities_json,
+        recommended_executor_json, recommended_permission_json, base_version, source, source_persona_id,
+        is_auto_dispatch, is_temp_only, custom_model, custom_thinking_depth, created_at, updated_at)
+       VALUES (?, '人设方法论档案', '', '[]', '{}', '{}', '{}', 1, 'system', NULL, 0, 1, NULL, NULL, ?, ?)`,
+    ).run(PERSONA_ARCHIVE_PROFILE_ID, now, now);
+    db.prepare('INSERT INTO agent_profile_base (profile_id, version, snapshot_json, created_at) VALUES (?, 1, ?, ?)').run(
+      PERSONA_ARCHIVE_PROFILE_ID,
+      JSON.stringify({ displayName: '人设方法论档案', soul: '', principles: [], capabilities: {}, recommendedExecutor: {}, recommendedPermission: {} }),
+      now,
+    );
+  })();
+  return PERSONA_ARCHIVE_PROFILE_ID;
+}
+
 export function listAgentProfiles(db: DB, opts?: { includeTempOnly?: boolean; source?: 'user' | 'system' | 'crystallized' }): AgentProfile[] {
   let sql = 'SELECT * FROM agent_profile WHERE 1=1';
   const params: unknown[] = [];

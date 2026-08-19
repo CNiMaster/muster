@@ -17,6 +17,8 @@ import { AppError, ErrorCode } from '../../shared/errors';
 import { nowIso } from '../../shared/utils';
 import { createAgent, getAgent } from './agent';
 import { createAgentProfile, getAgentProfile } from './agent-profile';
+import { preservePersonaCraftMemories } from './memory';
+import { log } from '../logger';
 import { getAgentHomePath } from './agent-home';
 import { getWorkbench } from './workbench';
 import { bindDefaultDenyPolicy, getRoleTemplate, TEMPLATE_NAMES } from './permission-templates';
@@ -276,7 +278,14 @@ export function dismissTempWorker(db: DB, agentId: string, opts: DismissTempOpti
       // 还有其他任职（虽然 is_temp_only=1 但被复用了），只清记忆分区，不删 profile/Home
       cleanupCompanyMemoryPartition(profileId, companyId, opts.musterHome);
     } else {
-      // 彻底删除
+      // 彻底删除。安全网：先迁移人设方法论记忆——专家蜂沉淀的 CRAFT（skill+persona_key）
+      // 挂到人设档案宿主上随人设长存，其余记忆随临时 profile 级联删除（蜂的通用经验并入蜂王汇总）。
+      try {
+        preservePersonaCraftMemories(db, profileId);
+      } catch (e) {
+        // 迁移失败不阻塞开除（记忆丢失降级为原有行为）
+        log.warn('persona craft memory migration failed on dismiss', { profileId, err: String(e) });
+      }
       cleanupCompanyMemoryPartition(profileId, companyId, opts.musterHome);
       db.prepare('DELETE FROM agent_profile WHERE id=?').run(profileId);
       // 删除整个 Agent Home（唯一删 Home 的场景）

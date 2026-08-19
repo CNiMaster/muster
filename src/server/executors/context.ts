@@ -390,7 +390,16 @@ export function assembleContext(
   const systemPrompt = sp.join('\n');
 
   // ===== Input Packet =====
-  const recentMessages = listTaskMessages(db, task.id).slice(-6);
+  // 蜂群汇总：每只蜂完成时把 [蜂成员汇报] 逐条写进汇总任务消息（reportBeeCompletion）。
+  // 固定 6 条窗口在蜂数 >6 时会丢早期汇报——按蜂数扩窗（蜂汇报全保留 + 4 条系统消息余量）。
+  const taskProto = (task.inputProtocol ?? {}) as Record<string, unknown>;
+  const swarmBeeCount = taskProto.swarmSynthesis === true
+    ? Number((taskProto.swarm as { beeCount?: number } | undefined)?.beeCount ?? 0)
+    : 0;
+  const allMessages = listTaskMessages(db, task.id);
+  const recentMessages = swarmBeeCount > 0
+    ? allMessages.slice(-Math.max(6, swarmBeeCount + 4))
+    : allMessages.slice(-6);
   // 轻量模式：跳过 referencedArtifacts 全量加载（咨询/发言不需要引用大文件）
   const referencedArtifacts = lightweight ? {} : loadReferencedArtifacts(db, task);
   const companyAgents = listAgents(db);

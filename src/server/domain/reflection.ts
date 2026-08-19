@@ -22,6 +22,7 @@ import { callLlm } from './llm-call';
 import { getTask, type Task } from './task';
 import { getAgent } from './agent';
 import { createMemoryCandidate, searchMemory } from './memory';
+import { ensurePersonaArchiveProfile } from './agent-profile';
 import { getPersona } from './persona-library';
 import { evolveBlueprint } from './blueprint';
 import { maybeSynthesizeExpertCandidates } from './expert-synthesis';
@@ -371,6 +372,17 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
   // 蓝图组织批次1：CRAFT 仅在任务穿戴了人设时解析（无人设任务 prompt 不含该段，返回也会被忽略）。
   const craft = task.personaId ? parseSection(text, 'CRAFT') : { confidence: 0, body: '', fingerprint: null as string | null };
 
+  // 蜂群工蜂的沉淀边界：工蜂 profile 是一次性的（群收口 dismiss 时 memory 的 ON DELETE CASCADE
+  // 会连记忆行一起删）。通用经验不单独沉淀——蜂王汇总任务与根任务的反思已覆盖项目侧结论；
+  // 只有穿戴人设的 CRAFT 方法论值得留：改挂「人设方法论档案」宿主，随人设全局复用。
+  const isSwarmBee = ((task.inputProtocol ?? {}) as Record<string, unknown>).swarmNode === true;
+  if (isSwarmBee && !(craft.body && task.personaId)) {
+    db.prepare(
+      `UPDATE task_reflection SET status='skipped', reflection_text=?, reflected_at=? WHERE id=?`,
+    ).run('蜂群工蜂：通用经验并入蜂王汇总任务，不单独沉淀', nowIso(), reflection.id);
+    return 'skipped';
+  }
+
   // 各类都没有有效内容 → skipped
   if (!lesson.body && !rule.body && !preferenceValid && !craft.body) {
     db.prepare(
@@ -384,7 +396,7 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
   let lessonCandidateId: string | null = null;
   // 断电安全：四类记忆候选 + done 标记同事务——崩溃时整体回滚，recoverStuckReflections 复位后重做不产生重复候选。
   db.transaction(() => {
-  if (lesson.body) {
+  if (!isSwarmBee && lesson.body) {
     const candidate = createMemoryCandidate(db, {
       profileId,
       scope: 'project',
@@ -403,7 +415,7 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
   // 沉淀 RULE（协作规则 / ontology 薄形态）：同 project scope，同样高置信自动批准。
   // 正文加【协作规则】前缀——与 LESSON 区分，便于在 memory 面板识别和将来按类型过滤。
   // 不单独记 candidate_id——可经 memory_candidate.source_task_id 反查（同 task 的第二条 candidate）。
-  if (rule.body) {
+  if (!isSwarmBee && rule.body) {
     createMemoryCandidate(db, {
       profileId,
       scope: 'project',
@@ -421,7 +433,7 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
   // E1.2 沉淀 PREFERENCE（用户偏好）：scope=personal，author=user 命中 memory.ts:99-101 自动批准（全量注入）。
   // body 带【domain】前缀，为 E2 晋升流 fingerprint 铺路。控量：单次最多 1 条，置信度 < 0.7 不产。
   let preferenceBody = '';
-  if (preferenceValid) {
+  if (!isSwarmBee && preferenceValid) {
     createMemoryCandidate(db, {
       profileId,
       scope: 'personal',
@@ -443,7 +455,8 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
   let craftBody = '';
   if (craft.body && task.personaId) {
     createMemoryCandidate(db, {
-      profileId,
+      // 蜂群工蜂的临时 profile 随群收口即删——CRAFT 挂人设档案宿主，方法论随人设长存
+      profileId: isSwarmBee ? ensurePersonaArchiveProfile(db) : profileId,
       scope: 'skill',
       personaKey: task.personaId,
       content: craft.body,

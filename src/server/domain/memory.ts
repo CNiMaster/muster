@@ -1,7 +1,7 @@
 import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { nowIso, shortId } from '../../shared/utils';
-import { getAgentProfile } from './agent-profile';
+import { getAgentProfile, ensurePersonaArchiveProfile } from './agent-profile';
 import { getWorkbenchOrNull } from './workbench';
 
 export type MemoryScope = 'personal' | 'company' | 'project' | 'skill';
@@ -239,10 +239,26 @@ export function deleteMemoryEntry(db: DB, id: string, changedBy: string): Memory
   return getMemoryEntry(db, id);
 }
 
+/**
+ * 把一次性执行体（蜂群工蜂等）profile 名下的人设方法论记忆改挂到「人设方法论档案」宿主。
+ * 必须在删除该 profile 前调用——memory_entry.profile_id 是 ON DELETE CASCADE，
+ * 不迁移的话专家蜂沉淀的 CRAFT 会随 profile 物理删除。
+ * 只迁移 skill+persona_key 行（含候选）；personal/project 记忆与临时执行体绑定，随删。
+ */
+export function preservePersonaCraftMemories(db: DB, fromProfileId: string): number {
+  const to = ensurePersonaArchiveProfile(db);
+  const entries = db
+    .prepare(`UPDATE memory_entry SET profile_id=? WHERE profile_id=? AND scope='skill' AND persona_key IS NOT NULL`)
+    .run(to, fromProfileId).changes;
+  const candidates = db
+    .prepare(`UPDATE memory_candidate SET profile_id=? WHERE profile_id=? AND scope='skill' AND persona_key IS NOT NULL`)
+    .run(to, fromProfileId).changes;
+  return entries + candidates;
+}
+
 export function searchMemory(db: DB, input: {
   profileId: string; query: string; projectId?: string; limit?: number;
-}): MemoryEntry[] {
-  const query = input.query.trim();
+}): MemoryEntry[] {  const query = input.query.trim();
   if (!query) return [];
   const now = nowIso();
   const rows = db.prepare(
@@ -305,8 +321,10 @@ export function loadContextMemories(db: DB, input: {
    * 避免把全量记忆塞进 system prompt 淹没上下文；为空则回退全量（按 scope 优先级）。
    * 注意：personal 是用户的稳定偏好与核心身份，**永远全量注入**，不受 query 筛选——
    * 否则 agent 会因任务不相关而忘记用户的固定偏好（如"用中文回复"）。
-   * 蓝图组织批次1：skill 记忆按人设过滤——任务穿戴人设时注入「该人设的方法论 + 通用技能记忆」，
-   * 不穿戴时只注入通用技能记忆（persona_key IS NULL）。人设方法论不污染无人设任务。
+ * 蓝图组织批次1：skill 记忆按人设过滤——任务穿戴人设时注入「该人设的方法论 + 通用技能记忆」，
+ * 不穿戴时只注入通用技能记忆（persona_key IS NULL）。人设方法论不污染无人设任务。
+ * 人设方法论（persona_key 非空）按 persona_key 全局召回（不分 profile 归属）——
+ * 方法论属于人设：蜂群专家蜂沉淀的 CRAFT 与固定员工沉淀的同池复用。
    * 不引入 embedding/向量——复用 searchMemory 已验证的 FTS5 路径即可。
    */
   query?: string;
@@ -322,24 +340,26 @@ export function loadContextMemories(db: DB, input: {
   // 新记忆靠 updated_at 时间序保底出场（探索通道），老而准的记忆靠战绩稳压新而平庸的；
   // id 兜底保证同毫秒创建的记忆排序确定。
   const orderClause = `CASE scope WHEN 'personal' THEN 1 WHEN 'company' THEN 2 WHEN 'project' THEN 3 ELSE 4 END, adv_sum * 1.0 / (vote_count + ${SHRINK_K}) DESC, updated_at DESC, id`;
-  // skill 分支按人设过滤：穿戴人设 → 该人设方法论 + 通用；未穿戴 → 仅通用。
+  // skill 分支：人设方法论（persona_key 非空）按 persona_key 全局召回——方法论属于人设不属于执行者，
+  // 蜂群专家蜂沉淀的 CRAFT 挂在人设档案宿主上，任何穿戴同款人设的执行体都能读到；
+  // 通用技能记忆（persona_key IS NULL）仍按 profile 隔离（个人手艺不外泄）。
   const skillClause = input.personaKey
-    ? "(scope='skill' AND (persona_key IS NULL OR persona_key=?))"
-    : "(scope='skill' AND persona_key IS NULL)";
+    ? "(scope='skill' AND ((persona_key IS NULL AND profile_id=?) OR persona_key=?))"
+    : "(scope='skill' AND persona_key IS NULL AND profile_id=?)";
   // query 为空 → 原全量逻辑（向后兼容，零破坏）。
   if (!trimmedQuery) {
-    const fullValues: unknown[] = [input.profileId, now];
-    if (input.personaKey) fullValues.push(input.personaKey);
-    fullValues.push(input.projectId, limit);
+    const fullValues: unknown[] = [now, input.profileId];
+    if (input.personaKey) fullValues.push(input.profileId, input.personaKey);
+    else fullValues.push(input.profileId);
+    fullValues.push(input.profileId, input.projectId, limit);
     const rows = db.prepare(
       `SELECT * FROM memory_entry
-       WHERE profile_id=? AND state IN ('active','locked')
+       WHERE state IN ('active','locked')
          AND can_influence=1 AND (expires_at IS NULL OR expires_at > ?)
          AND (
-           scope='personal'
+           (scope IN ('personal','company') AND profile_id=?)
            OR ${skillClause}
-           OR (scope='company')
-           OR (scope='project' AND project_id=?)
+           OR (scope='project' AND profile_id=? AND project_id=?)
          )
        ORDER BY ${orderClause} LIMIT ?`,
     ).all(...fullValues) as EntryRow[];
@@ -351,21 +371,22 @@ export function loadContextMemories(db: DB, input: {
   const matchOrs = tokens
     .map(() => '(content LIKE ? OR id IN (SELECT entry_id FROM memory_fts WHERE memory_fts MATCH ?))')
     .join(' OR ');
-  const values: unknown[] = [input.profileId, now];
-  if (input.personaKey) values.push(input.personaKey);
-  values.push(input.projectId);
+  const values: unknown[] = [now, input.profileId];
+  if (input.personaKey) values.push(input.profileId, input.personaKey);
+  else values.push(input.profileId);
+  values.push(input.profileId, input.profileId, input.projectId);
   for (const token of tokens) {
     values.push(`%${token}%`, `${escapeFtsQuery(token)}*`);
   }
   values.push(limit);
   const rows = db.prepare(
     `SELECT * FROM memory_entry
-     WHERE profile_id=? AND state IN ('active','locked')
+     WHERE state IN ('active','locked')
        AND can_influence=1 AND (expires_at IS NULL OR expires_at > ?)
        AND (
-         scope='personal'
+         (scope='personal' AND profile_id=?)
          OR ${skillClause}
-         OR ((scope='company') OR (scope='project' AND project_id=?))
+         OR ((scope='company' AND profile_id=?) OR (scope='project' AND profile_id=? AND project_id=?))
              AND (${matchOrs})
        )
      ORDER BY ${orderClause} LIMIT ?`,
