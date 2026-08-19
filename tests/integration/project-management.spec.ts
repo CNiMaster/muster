@@ -244,6 +244,14 @@ describe('任务顶栏（git 分支面 + rename/unread + task-context）', () =>
   });
 });
 
+describe('打开目录安全（review 修复）', () => {
+  it('允许范围外的目录被拒（不执行系统 open）', async () => {
+    const { openLocation } = await import('../../src/server/domain/open-location');
+    expect(() => openLocation('/etc', 'finder')).toThrow(/不在允许范围/);
+    expect(() => openLocation('/etc', 'terminal')).toThrow(/不在允许范围/);
+  });
+});
+
 describe('API 层：view 过滤与 DELETE 端点', () => {
   let server: http.Server;
   let base: string;

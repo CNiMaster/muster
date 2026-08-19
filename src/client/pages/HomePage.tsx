@@ -470,8 +470,10 @@ function TimelineTasks({ projects, sortMode }: { projects: Project[]; sortMode: 
   const flat = useMemo(() => {
     const all: Array<ProjectTaskDTO & { projectName: string; projectId: string }> = [];
     results.forEach((r, i) => {
+      const prj = projects[i];
+      if (!prj) return; // 并发删除的项目：跳过其残留查询结果
       for (const t of r.data ?? []) {
-        if (t.state === 'active') all.push({ ...t, projectName: projects[i]!.name, projectId: projects[i]!.id });
+        if (t.state === 'active') all.push({ ...t, projectName: prj.name, projectId: prj.id });
       }
     });
     all.sort((a, b) => (sortMode === 'updated' ? b.updatedAt.localeCompare(a.updatedAt) : b.createdAt.localeCompare(a.createdAt)));

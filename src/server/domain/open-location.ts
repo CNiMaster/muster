@@ -12,6 +12,7 @@ import { AppError, ErrorCode } from '../../shared/errors';
 import { getProject } from './project';
 import { getProjectTask } from './project-task';
 import { taskWorktreePath, taskWorktreeBranch } from './git-branches';
+import { isPathAllowed } from '../paths';
 
 export interface TaskContext {
   projectId: string;
@@ -50,8 +51,11 @@ export function getTaskContext(db: DB, projectTaskId: string): TaskContext {
   };
 }
 
-/** 在系统程序中打开目录：app='finder'|'terminal'。 */
+/** 在系统程序中打开目录：app='finder'|'terminal'。目录必须在 MUSTER_ALLOWED_ROOTS 允许范围内（同 artifacts/open 口径）。 */
 export function openLocation(dir: string, app: 'finder' | 'terminal'): void {
+  if (!isPathAllowed(dir)) {
+    throw new AppError(ErrorCode.UNAUTHORIZED, '路径不在允许范围内（MUSTER_ALLOWED_ROOTS）');
+  }
   const platform = process.platform;
   const cmd =
     app === 'terminal'
