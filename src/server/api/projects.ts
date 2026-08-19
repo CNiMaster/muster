@@ -47,6 +47,7 @@ import { stageStatus, detectOrphanWorktrees, cleanOrphanWorktrees, taskStageStat
 import {
   promoteProjectStagingIfAny,
   listPendingTaskMerges,
+  getMergeAttention,
   promoteTaskStaging,
 } from '../domain/staging';
 import { getProjectConflictTimeline } from '../domain/conflict-timeline';
@@ -198,6 +199,16 @@ projectById.post(
       });
     } catch { /* 事件失败不阻断 */ }
     res.json({ ok: true, promoted: result.promoted, message: result.message, conflicts: result.conflicts ?? [] });
+  }),
+);
+
+/** 搁置提醒红点数据源（右侧分栏聚合徽标 + 待合并导航项轮询用，轻量）。 */
+projectById.get(
+  '/merges/attention',
+  asyncHandler(async (req, res) => {
+    const db = getDb();
+    const project = getProject(db, param(req, 'id'));
+    res.json(getMergeAttention(db, project.id));
   }),
 );
 

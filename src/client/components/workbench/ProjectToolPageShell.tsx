@@ -1,6 +1,6 @@
 import type React from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { useAgents, useWorkbench, useWorkbenchCockpit, useDepartments, useProject, useProjectTask, useProjectTasks, useTask, useTasks } from '../../hooks/queries';
+import { useAgents, useWorkbench, useWorkbenchCockpit, useDepartments, useProject, useProjectTask, useProjectTasks, useTask, useTasks , useMergeAttention } from '../../hooks/queries';
 import { ProjectContextInspector } from './ProjectContextInspector';
 import { ProjectWorkNavigation, type ProjectToolKey } from './ProjectWorkNavigation';
 import { WorkbenchShell } from './WorkbenchShell';
@@ -34,13 +34,14 @@ export function ProjectToolPageShell({ tool, children, projectIdOverride, select
   const selectedId = selectedProjectTaskId ?? projectTasks?.find((item) => item.state === 'active')?.id ?? projectTasks?.[0]?.id;
   const { data: selectedTask } = useProjectTask(projectId, selectedId);
   const attentionCount = tasks?.filter((task) => task.state === 'blocked' || task.state === 'waiting_input').length ?? 0;
+  const { data: mergeAttention } = useMergeAttention(projectId);
 
   return <WorkbenchShell
     scopeKey={`project:${projectId}`}
     breadcrumb={<WorkbenchContextSwitcher projectId={projectId} projectName={project?.name ?? '项目'} projectTaskId={selectedId} sectionKey={tool} sectionLabel={TOOL_LABELS[tool]} novel={company?.kind === 'novel'} />}
     navigationLabel="项目组织与联系人"
     inspectorLabel="项目任务与运行"
-    attentionCount={attentionCount + (cockpit?.approvals.pending ?? 0)}
+    attentionCount={attentionCount + (cockpit?.approvals.pending ?? 0) + (mergeAttention?.total ?? 0)}
     primaryAction={<Link className="mu-btn mu-btn-primary mu-btn-sm" to={`/projects/${projectId}${selectedId ? `?projectTask=${selectedId}` : ''}`}>返回智能体中心</Link>}
     navigation={<ProjectWorkNavigation projectId={projectId} projectTasks={projectTasks ?? []} tasks={tasks ?? []} agents={agents ?? []} departments={departments ?? []} firstAgentId={project?.firstAgentId ?? company?.firstAgentId} selectedProjectTaskId={selectedId} view="tool" activeTool={tool} attentionCount={attentionCount} novel={company?.kind === 'novel'} onNewTask={() => navigate(`/projects/${projectId}?view=task&projectTask=new`)} />}
     inspector={<ProjectContextInspector projectId={projectId} projectState={project?.state ?? 'setup'} selectedTask={selectedTask} agents={agents ?? []} tasks={tasks ?? []} cockpit={cockpit} />}

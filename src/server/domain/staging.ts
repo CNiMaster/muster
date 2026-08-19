@@ -11,7 +11,7 @@ import { appendTaskEvent } from './task-event';
 import { getTaskRuntime, deleteTaskRuntime } from './task-runtime';
 import {
   stageStatus, promoteStaging, taskStageStatus, taskStagingBranch,
-  taskStagingDiffSummary, promoteTaskStagingMerge,
+  taskStagingDiffSummary, promoteTaskStagingMerge, taskStagingLastCommitAt, detectOrphanWorktrees,
 } from '../worktree/manager';
 import { callLlm } from './llm-call';
 import { dispatchConflictJudgment } from './conflict-judge';
@@ -150,6 +150,17 @@ export interface PendingTaskMergeItem {
   pendingRuntimeTasks: number;
   mergeMode: 'manual' | 'auto';
   lastMergeAt: string | null;
+  /** 搁置提醒：集成分支最后一次提交距今 ≥5h 时给小时数，否则 null（manual 默认下的漏合兜底）。 */
+  staleHours: number | null;
+}
+
+/** 搁置提醒阈值（小时）：manual 默认下任务集成区领先超过此时长未合并 → 红点提醒。 */
+export const STALE_MERGE_HOURS = 5;
+
+function staleHoursSince(at: string | null): number | null {
+  if (!at) return null;
+  const hours = (Date.now() - Date.parse(at)) / 3_600_000;
+  return hours >= STALE_MERGE_HOURS ? Math.floor(hours) : null;
 }
 
 /** 列出项目下集成分支领先主干的项目任务（待合并看板数据源·系统侧）。 */
@@ -180,6 +191,7 @@ export function listPendingTaskMerges(db: DB, projectId: string): PendingTaskMer
       pendingRuntimeTasks: pending.n,
       mergeMode,
       lastMergeAt: last?.created_at ?? null,
+      staleHours: staleHoursSince(taskStagingLastCommitAt(project.rootDir, projectId, pt.id)),
     });
   }
   return items;
@@ -365,4 +377,23 @@ function postBroadcast(db: DB, projectId: string, content: string): void {
   } catch (e) {
     log.warn('task merge broadcast failed', { projectId, err: String(e) });
   }
+}
+
+export interface MergeAttention {
+  /** 搁置 ≥5h 的待合并任务数（manual 默认下的漏合兜底红点）。 */
+  staleMerges: number;
+  /** 孤儿 worktree 数（永不自动合并，本身就是待处理异常）。 */
+  orphans: number;
+  total: number;
+}
+
+/** 红点数据源（右侧分栏聚合徽标 + 待合并导航项），轻量轮询用。 */
+export function getMergeAttention(db: DB, projectId: string): MergeAttention {
+  const staleMerges = listPendingTaskMerges(db, projectId).filter((m) => m.staleHours !== null).length;
+  let orphans = 0;
+  try {
+    const project = getProject(db, projectId);
+    orphans = detectOrphanWorktrees(db, project.rootDir).length;
+  } catch { /* 项目或仓库异常按 0 处理 */ }
+  return { staleMerges, orphans, total: staleMerges + orphans };
 }

@@ -28,7 +28,7 @@ import {
   useWorkbenchAction,
   useStagingStatus,
   usePromoteStaging,
-
+  useMergeAttention,
 } from '../hooks/queries';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
@@ -415,6 +415,10 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
   const stagingStatus = useStagingStatus(projectId).data;
   const promoteStaging = usePromoteStaging(projectId);
 
+  // 搁置提醒兜底：搁置≥5h 的待合并 + 孤儿 worktree 计入右侧分栏聚合红点
+  // （必须放在早退 return 之前——条件 hook 会让页面在 loading→ready 切换时崩溃）
+  const { data: mergeAttention } = useMergeAttention(projectId);
+
   if (!project) return <div className="loading">加载中…</div>;
 
   const selectedAgentId = searchParams.get('agent') ?? project.firstAgentId ?? company?.firstAgentId ?? agents?.[0]?.id;
@@ -506,7 +510,7 @@ function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement
       breadcrumb={<WorkbenchContextSwitcher projectId={project.id} projectName={project.name} projectTaskId={selectedProjectTaskId} sectionKey={projectView} sectionLabel={{ task: '项目任务', employee: selectedAgent?.name ?? '智能体', group: '项目群聊', activity: '协作活动' }[projectView]} novel={company?.kind === 'novel'} />}
       navigationLabel="项目组织与联系人"
       inspectorLabel="项目任务与运行"
-      attentionCount={attentionCount + (cockpit?.approvals.pending ?? 0)}
+      attentionCount={attentionCount + (cockpit?.approvals.pending ?? 0) + (mergeAttention?.total ?? 0)}
       primaryAction={<>
         {company && (
           company.state === 'off'

@@ -642,6 +642,7 @@ export interface PendingTaskMergeDTO {
   pendingRuntimeTasks: number;
   mergeMode: 'manual' | 'auto';
   lastMergeAt: string | null;
+  staleHours: number | null;
 }
 
 /** 批次 G·修复轮：项目下待合并的项目任务列表（15s 轮询） */
@@ -651,6 +652,22 @@ export function useProjectPendingMerges(projectId: string | undefined) {
     queryFn: () => api.get<PendingTaskMergeDTO[]>(`/api/projects/${projectId}/merges`),
     enabled: !!projectId,
     refetchInterval: 15_000,
+  });
+}
+
+/** 搁置提醒红点（manual 默认下的漏合兜底）：搁置≥5h 的待合并任务 + 孤儿 worktree 数。 */
+export interface MergeAttentionDTO {
+  staleMerges: number;
+  orphans: number;
+  total: number;
+}
+
+export function useMergeAttention(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ['merge-attention', projectId],
+    queryFn: () => api.get<MergeAttentionDTO>(`/api/projects/${projectId}/merges/attention`),
+    enabled: Boolean(projectId),
+    refetchInterval: 60_000,
   });
 }
 
@@ -675,6 +692,7 @@ export interface OrphanWorktreeDTO {
   reason: string;
   uncommittedFiles: string[];
   aheadCommits: number;
+  lastActivityAt: string | null;
 }
 
 /** 批次 H·修复轮：孤儿工作树（git worktree list − task_runtime 登记 − 系统集成区） */

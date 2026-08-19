@@ -94,6 +94,7 @@ export function ProjectMergesPage(): React.ReactElement {
                 #{item.seq} {item.title}
               </span>
               <Badge tone="info">领先 {item.aheadCommits} 提交</Badge>
+              {item.staleHours !== null && <Badge tone="err" title="任务集成区搁置 ≥5 小时未合并">搁置 {item.staleHours}h</Badge>}
               {item.pendingRuntimeTasks > 0 && <Badge tone="warn">{item.pendingRuntimeTasks} 在飞</Badge>}
               <Badge tone="neutral">{item.mergeMode === 'auto' ? '自动' : '手动'}</Badge>
               <Button size="sm" loading={mergingOne} onClick={() => void mergeOne(item)}>合并</Button>
@@ -117,6 +118,9 @@ export function ProjectMergesPage(): React.ReactElement {
               <span style={{ color: 'var(--fg-subtle)' }}>{o.branch ?? '（游离 HEAD）'}</span>
               {o.uncommittedFiles.length > 0 && <Badge tone="warn">{o.uncommittedFiles.length} 未提交</Badge>}
               {o.aheadCommits > 0 && <Badge tone="warn">{o.aheadCommits} 未合并提交</Badge>}
+              {o.lastActivityAt && (Date.now() - Date.parse(o.lastActivityAt)) / 3_600_000 >= 5 && (
+                <Badge tone="err" title="该工作区搁置 ≥5 小时">搁置 {Math.floor((Date.now() - Date.parse(o.lastActivityAt)) / 3_600_000)}h</Badge>
+              )}
               <Button size="sm" variant="ghost" onClick={() => setOrphanAsk(o)}>清理</Button>
             </div>
           ))

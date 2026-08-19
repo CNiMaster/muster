@@ -251,6 +251,15 @@ export function ensureTaskStagingWorktree(rootDir: string, projectId: string, pr
   return { projectId, projectTaskId, branch, path: wtPath };
 }
 
+/** 任务集成分支最后一次提交时间（ISO，无提交/无分支为 null）——搁置提醒（≥5h 红点）数据源。 */
+export function taskStagingLastCommitAt(rootDir: string, projectId: string, projectTaskId: string): string | null {
+  ensureGitRepo(rootDir);
+  const branch = taskStagingBranch(projectId, projectTaskId);
+  if (!git(rootDir, ['branch', '--list', branch]).stdout) return null;
+  const at = git(rootDir, ['log', '-1', '--format=%cI', branch], { allowFail: true }).stdout.trim();
+  return at || null;
+}
+
 /** 任务集成分支的 git 事实（供合并按钮/看板/看门狗）：存在性、领先主干提交数、两侧 HEAD。 */
 export function taskStageStatus(
   rootDir: string,
@@ -317,6 +326,8 @@ export interface OrphanWorktreeInfo {
   /** 丢弃防线（批次 H·修复轮）：未提交文件 + 未合并提交数——非空/非零时默认拒绝静默删，须显式 force。 */
   uncommittedFiles: string[];
   aheadCommits: number;
+  /** 搁置提醒数据源：该 worktree 分支最后一次提交时间（ISO；游离 HEAD 为 null）。 */
+  lastActivityAt: string | null;
 }
 
 /**
@@ -351,11 +362,13 @@ export function detectOrphanWorktrees(db: DB, projectRootDir: string): OrphanWor
     // 丢弃防线数据：未提交改动 + 相对主干的未合并提交
     let uncommittedFiles: string[] = [];
     let aheadCommits = 0;
+    let lastActivityAt: string | null = null;
     try {
       uncommittedFiles = git(wtPath, ['status', '--porcelain'], { allowFail: true }).stdout
         .split('\n').map((l) => l.trim()).filter(Boolean);
       if (branch && !detached) {
         aheadCommits = Number(git(projectRootDir, ['rev-list', '--count', `HEAD..${branch}`], { allowFail: true }).stdout || '0');
+        lastActivityAt = git(projectRootDir, ['log', '-1', '--format=%cI', branch], { allowFail: true }).stdout.trim() || null;
       }
     } catch { /* 目录损坏按空内容处理 */ }
 
@@ -365,6 +378,7 @@ export function detectOrphanWorktrees(db: DB, projectRootDir: string): OrphanWor
       reason: '未在 task_runtime 登记（用户自建或系统遗留）',
       uncommittedFiles,
       aheadCommits,
+      lastActivityAt,
     });
   }
   return orphans;

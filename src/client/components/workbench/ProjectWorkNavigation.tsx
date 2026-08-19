@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { Agent, Department, Task } from '../../api/types';
 import type { ProjectTaskDTO } from '../../hooks/queries';
-import { usePinProjectTask, useProjectTaskAction } from '../../hooks/queries';
+import { usePinProjectTask, useProjectTaskAction , useMergeAttention } from '../../hooks/queries';
 
 export type ProjectToolKey = 'tasks' | 'merges' | 'plans' | 'dashboard' | 'artifacts' | 'materials' | 'reports' | 'usage' | 'character' | 'settings';
 export type ProjectSurfaceView = 'task' | 'employee' | 'group' | 'activity' | 'tool';
@@ -54,6 +54,8 @@ export function ProjectWorkNavigation({
   /** 「＋ 新建任务」直接展开任务视图创建卡（而非跳转） */
   onNewTask: () => void;
 }): React.ReactElement {
+  // 搁置提醒红点：搁置≥5h 的待合并任务数（React Query 缓存与页面级轮询共享，不重复请求）
+  const { data: mergeAttention } = useMergeAttention(projectId);
   void novel;
 
   // 管理工作台批3：任务行置顶/归档 + >5 折叠显示更多 + 项目任务区折叠
@@ -242,6 +244,11 @@ export function ProjectWorkNavigation({
           <Link className={`work-nav-item ${activeTool === 'merges' ? 'is-active' : ''}`} to={`/projects/${projectId}/merges`}>
             <span className="work-nav-icon">🔀</span>
             <span className="work-nav-label">待合并成果</span>
+            {(mergeAttention?.staleMerges ?? 0) > 0 && (
+              <span title={`有 ${mergeAttention!.staleMerges} 个任务集成区搁置 ≥5 小时未合并`} style={{ marginLeft: 'auto', background: 'var(--err, #dc2626)', color: '#fff', borderRadius: 999, fontSize: 10, lineHeight: 1, padding: '2px 6px', flexShrink: 0 }}>
+                {mergeAttention!.staleMerges}
+              </span>
+            )}
           </Link>
           <Link className={`work-nav-item ${activeTool === 'artifacts' ? 'is-active' : ''}`} to={`/projects/${projectId}/artifacts`}>
             <span className="work-nav-icon">📦</span>
