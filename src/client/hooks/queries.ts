@@ -860,7 +860,7 @@ export interface ProjectAutomation {
   kind: 'event' | 'schedule';
   eventName: string | null;
   intervalMs: number | null;
-  scheduleKind: 'interval' | 'daily';
+  scheduleKind: 'interval' | 'daily' | 'once';
   timeOfDay: string | null;
   timezone: string | null;
   template: Record<string, unknown>;
@@ -871,7 +871,7 @@ export interface ProjectAutomation {
   updatedAt: string;
 }
 
-/** 定时计划的创建参数：interval（间隔分钟）或 daily（每天固定时刻）二选一。 */
+/** 定时计划的创建参数：interval（间隔分钟）/ daily（每天固定时刻）/ once（一次性 runAt）三选一。 */
 export type CreateScheduleInput = {
   title: string;
   intervalMinutes?: number;
@@ -879,7 +879,7 @@ export type CreateScheduleInput = {
   timezone?: string;
   assigneeAgentId?: string;
   priority?: number;
-} & ({ intervalMinutes: number } | { timeOfDay: string });
+} & ({ intervalMinutes: number } | { timeOfDay: string } | { runAt: string });
 
 export function useProjectAutomations(projectId: string | undefined) {
   return useQuery({
@@ -892,7 +892,7 @@ export function useProjectAutomations(projectId: string | undefined) {
 export function useCreateProjectSchedule() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ projectId, ...input }: { projectId: string; title: string; projectTaskId: string; intervalMinutes?: number; timeOfDay?: string; timezone?: string; assigneeAgentId?: string; priority?: number }) =>
+    mutationFn: ({ projectId, ...input }: { projectId: string; title: string; projectTaskId: string; intervalMinutes?: number; timeOfDay?: string; timezone?: string; runAt?: string; assigneeAgentId?: string; priority?: number }) =>
       api.post<ProjectAutomation>(`/api/projects/${projectId}/automation/schedules`, input),
     onSuccess: (data) => qc.invalidateQueries({ queryKey: ['project-automations', data.projectId] }),
   });

@@ -309,7 +309,7 @@ projectById.get('/automation', asyncHandler(async (req, res) => {
   res.json(listProjectTriggers(getDb(), param(req, 'id')));
 }));
 projectById.post('/automation/schedules', asyncHandler(async (req, res) => {
-  // 指挥系统批次1：interval（间隔）或 daily（每天固定时刻 timeOfDay 'HH:mm' + 可选时区）二选一
+  // 指挥系统批次1 + 批次三：interval（间隔）/ daily（每天固定时刻）/ once（一次性，倒计时或指定时刻）三选一
   const input = z.union([
     z.object({
       title: z.string().min(1),
@@ -322,6 +322,15 @@ projectById.post('/automation/schedules', asyncHandler(async (req, res) => {
       title: z.string().min(1),
       timeOfDay: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, '时刻格式应为 HH:mm'),
       timezone: z.string().max(100).optional(),
+      projectTaskId: z.string().min(1),
+      assigneeAgentId: z.string().optional(),
+      priority: z.number().int().min(1).max(9).optional(),
+    }),
+    z.object({
+      title: z.string().min(1),
+      runAt: z.string().datetime({ offset: true }).refine((v) => Date.parse(v) > Date.now() + 5_000, {
+        message: '一次性计划必须设定在至少 5 秒之后的时刻',
+      }),
       projectTaskId: z.string().min(1),
       assigneeAgentId: z.string().optional(),
       priority: z.number().int().min(1).max(9).optional(),
@@ -344,7 +353,9 @@ projectById.post('/automation/schedules', asyncHandler(async (req, res) => {
   };
   const created = 'timeOfDay' in input
     ? registerScheduleTrigger(getDb(), { projectId, timeOfDay: input.timeOfDay, timezone: input.timezone, template })
-    : registerScheduleTrigger(getDb(), { projectId, intervalMs: input.intervalMinutes * 60_000, template });
+    : 'runAt' in input
+      ? registerScheduleTrigger(getDb(), { projectId, runAt: input.runAt, template })
+      : registerScheduleTrigger(getDb(), { projectId, intervalMs: input.intervalMinutes * 60_000, template });
   res.status(201).json(listProjectTriggers(getDb(), projectId).find((item) => item.id === created.id));
 }));
 projectById.patch('/automation/:triggerId', asyncHandler(async (req, res) => {

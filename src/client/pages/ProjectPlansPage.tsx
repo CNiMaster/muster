@@ -24,8 +24,19 @@ const INTERVAL_OPTIONS = [
   { minutes: 10080, label: '每周' },
 ];
 const DAILY_MODE = 'daily';
+const ONCE_MODE = 'once';
 
-function intervalLabel(automation: { intervalMs: number | null; scheduleKind: 'interval' | 'daily'; timeOfDay: string | null; timezone: string | null }): string {
+function defaultRunAtLocal(): string {
+  // datetime-local 输入格式：默认 30 分钟后（倒计时的快捷默认）
+  const d = new Date(Date.now() + 30 * 60_000);
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function intervalLabel(automation: { intervalMs: number | null; scheduleKind: 'interval' | 'daily' | 'once'; timeOfDay: string | null; timezone: string | null; nextRunAt?: string | null }): string {
+  if (automation.scheduleKind === 'once') {
+    return `一次性${automation.nextRunAt ? ` · ${new Date(automation.nextRunAt).toLocaleString()}` : ''}`;
+  }
   if (automation.scheduleKind === 'daily' && automation.timeOfDay) {
     return `每天 ${automation.timeOfDay}${automation.timezone ? `（${automation.timezone}）` : ''}`;
   }
@@ -49,6 +60,7 @@ export function ProjectPlansPage(): React.ReactElement {
   const [projectTaskId, setProjectTaskId] = useState('');
   const [intervalMinutes, setIntervalMinutes] = useState('60');
   const [timeOfDay, setTimeOfDay] = useState('09:00');
+  const [runAtLocal, setRunAtLocal] = useState(defaultRunAtLocal());
   const activeProjectTasks = projectTasks.filter((item) => item.state === 'active');
   const claimPool = tasks.filter((task) => ['queued', 'claimed', 'running'].includes(task.state));
 
@@ -64,13 +76,19 @@ export function ProjectPlansPage(): React.ReactElement {
       projectTaskId,
       assigneeAgentId: assigneeId || undefined,
     };
-    createSchedule.mutate(
-      intervalMinutes === DAILY_MODE ? { ...base, timeOfDay } : { ...base, intervalMinutes: Number(intervalMinutes) },
-      {
-        onSuccess: () => { setTitle(''); toast('success', '计划任务已创建'); },
-        onError: (error) => toast('error', (error as Error).message),
+    const payload = intervalMinutes === DAILY_MODE
+      ? { ...base, timeOfDay }
+      : intervalMinutes === ONCE_MODE
+        ? { ...base, runAt: new Date(runAtLocal).toISOString() }
+        : { ...base, intervalMinutes: Number(intervalMinutes) };
+    createSchedule.mutate(payload, {
+      onSuccess: () => {
+        setTitle('');
+        if (intervalMinutes === ONCE_MODE) setRunAtLocal(defaultRunAtLocal());
+        toast('success', intervalMinutes === ONCE_MODE ? '一次性计划已设定，到点自动执行一次' : '计划任务已创建');
       },
-    );
+      onError: (error) => toast('error', (error as Error).message),
+    });
   };
 
   return <div className="project-plans-page">
@@ -94,10 +112,12 @@ export function ProjectPlansPage(): React.ReactElement {
           <Field label="执行周期"><Select value={intervalMinutes} onChange={(event) => setIntervalMinutes(event.target.value)}>
             {INTERVAL_OPTIONS.map((option) => <option key={option.minutes} value={option.minutes}>{option.label}</option>)}
             <option value={DAILY_MODE}>每天固定时刻</option>
+            <option value={ONCE_MODE}>一次性（倒计时/指定时刻）</option>
           </Select></Field>
           {intervalMinutes === DAILY_MODE && <Field label="时刻（HH:mm，服务器时区）" hint="例如 09:00 = 每天早上 9 点"><Input type="time" value={timeOfDay} onChange={(event) => setTimeOfDay(event.target.value)} /></Field>}
+          {intervalMinutes === ONCE_MODE && <Field label="执行时刻" hint="到点执行一次即停；选近未来=倒计时，选远未来=定时"><Input type="datetime-local" value={runAtLocal} onChange={(event) => setRunAtLocal(event.target.value)} /></Field>}
         </div>
-        <div className="schedule-composer-action"><span>项目任务归档后，对应计划会自动停用；上一次没跑完时本轮自动跳过。</span><Button onClick={submit} loading={createSchedule.isPending} disabled={!title.trim() || !projectTaskId || (intervalMinutes === DAILY_MODE && !timeOfDay)}>创建计划</Button></div>
+        <div className="schedule-composer-action"><span>项目任务归档后，对应计划会自动停用；上一次没跑完时本轮自动跳过。不指定执行人时默认交给第一负责人。</span><Button onClick={submit} loading={createSchedule.isPending} disabled={!title.trim() || !projectTaskId || (intervalMinutes === DAILY_MODE && !timeOfDay) || (intervalMinutes === ONCE_MODE && !runAtLocal)}>创建计划</Button></div>
       </div>
     </Card>
 

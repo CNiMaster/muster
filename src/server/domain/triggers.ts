@@ -24,7 +24,7 @@ interface ScheduleTriggerRow {
   id: string;
   project_id: string | null;
   interval_ms: number;
-  schedule_kind: 'interval' | 'daily';
+  schedule_kind: 'interval' | 'daily' | 'once';
   time_of_day: string | null;
   timezone: string | null;
   template_json: string;
@@ -40,7 +40,7 @@ export interface ProjectTrigger {
   kind: 'event' | 'schedule';
   eventName: string | null;
   intervalMs: number | null;
-  scheduleKind: 'interval' | 'daily';
+  scheduleKind: 'interval' | 'daily' | 'once';
   timeOfDay: string | null;
   timezone: string | null;
   template: Record<string, unknown>;
@@ -57,7 +57,7 @@ interface ProjectTriggerRow {
   kind: 'event' | 'schedule';
   event_name: string | null;
   interval_ms: number | null;
-  schedule_kind: 'interval' | 'daily';
+  schedule_kind: 'interval' | 'daily' | 'once';
   time_of_day: string | null;
   timezone: string | null;
   template_json: string;
@@ -107,6 +107,7 @@ function computeNextRunAt(
   if (row.schedule_kind === 'daily' && row.time_of_day) {
     return nextDailyOccurrence(now, row.time_of_day, row.timezone ?? localTimezone()).toISOString();
   }
+  // once：重启用时按存下的倒计时延迟重开（interval_ms = 注册时 runAt 与此刻的差）
   return new Date(now.getTime() + (row.interval_ms ?? 86_400_000)).toISOString();
 }
 
@@ -165,22 +166,36 @@ export interface RegisterScheduleTriggerInput {
   intervalMs?: number;
   /** daily 模式时刻 'HH:mm'（提供即 daily；与 intervalMs 互斥）。 */
   timeOfDay?: string;
+  /** 一次性模式执行时刻（ISO，须晚于 now；提供即 once——倒计时/指定时刻后执行一次即停）。 */
+  runAt?: string;
   /** IANA 时区，默认服务器本地。 */
   timezone?: string;
   template: Record<string, unknown>;
   now?: Date;
 }
 
-/** 注册一个定时触发器：interval（间隔）或 daily（每天固定时刻）。 */
+/** 注册一个定时触发器：interval（间隔）/ daily（每天固定时刻）/ once（一次性，倒计时或指定时刻）。 */
 export function registerScheduleTrigger(
   db: DB,
   input: RegisterScheduleTriggerInput,
 ): { id: string } {
   const isDaily = input.timeOfDay !== undefined;
+  const isOnce = input.runAt !== undefined;
+  if (isDaily && isOnce) {
+    throw new AppError(ErrorCode.VALIDATION, 'timeOfDay 与 runAt 只能二选一');
+  }
+  if (isOnce && input.intervalMs !== undefined) {
+    throw new AppError(ErrorCode.VALIDATION, 'runAt 与 intervalMs 只能二选一');
+  }
   if (isDaily && input.intervalMs !== undefined) {
     throw new AppError(ErrorCode.VALIDATION, 'timeOfDay 与 intervalMs 只能二选一');
   }
-  if (!isDaily && (!Number.isFinite(input.intervalMs) || (input.intervalMs ?? 0) <= 0)) {
+  const now = input.now ?? new Date();
+  const runAtMs = isOnce ? Date.parse(input.runAt!) : Number.NaN;
+  if (isOnce && (!Number.isFinite(runAtMs) || runAtMs <= now.getTime())) {
+    throw new AppError(ErrorCode.VALIDATION, 'runAt 必须是晚于当前时间的 ISO 时刻');
+  }
+  if (!isDaily && !isOnce && (!Number.isFinite(input.intervalMs) || (input.intervalMs ?? 0) <= 0)) {
     throw new AppError(ErrorCode.VALIDATION, 'intervalMs 必须是正数');
   }
   if (!input.projectId && !input.companyId) {
@@ -200,11 +215,15 @@ export function registerScheduleTrigger(
   }
 
   const id = shortId('tr_');
-  const now = input.now ?? new Date();
-  const intervalMs = isDaily ? 86_400_000 : input.intervalMs!;
-  const nextRunAt = isDaily
-    ? nextDailyOccurrence(now, input.timeOfDay!, timezone).toISOString()
-    : new Date(now.getTime() + intervalMs).toISOString();
+  const intervalMs = isDaily || isOnce
+    // once：interval_ms 存「此刻到执行时刻的延迟」——手动重新启用时按它重开倒计时
+    ? (isOnce ? Math.max(runAtMs - now.getTime(), 1) : 86_400_000)
+    : input.intervalMs!;
+  const nextRunAt = isOnce
+    ? new Date(runAtMs).toISOString()
+    : isDaily
+      ? nextDailyOccurrence(now, input.timeOfDay!, timezone).toISOString()
+      : new Date(now.getTime() + intervalMs).toISOString();
   db.prepare(
     `INSERT INTO trigger
        (id, project_id, kind, interval_ms, schedule_kind, time_of_day, timezone,
@@ -214,7 +233,7 @@ export function registerScheduleTrigger(
     id,
     input.projectId ?? null,
     intervalMs,
-    isDaily ? 'daily' : 'interval',
+    isOnce ? 'once' : isDaily ? 'daily' : 'interval',
     isDaily ? input.timeOfDay! : null,
     isDaily ? timezone : null,
     JSON.stringify(input.template),
@@ -272,13 +291,15 @@ export function dispatchDueScheduleTriggers(db: DB, now = new Date()): string[] 
       };
       const firedAt = now.toISOString();
       const nextRunAt = computeNextRunAt(current, now);
+      const isOnce = current.schedule_kind === 'once';
 
-      // 防叠跑：上次派发的 Task 还在跑/排队/等待 → 本轮跳过（推进 next_run_at，在旧任务上留痕）
+      // 防叠跑：上次派发的 Task 还在跑/排队/等待 → 本轮跳过（推进 next_run_at，在旧任务上留痕）。
+      // once 模式例外：不推进 next_run_at（保持到期），旧任务终态后下一轮立即补发——一次性计划不能被无限顺延。
       if (current.last_task_id) {
         const prev = db.prepare('SELECT id, state FROM task WHERE id = ?').get(current.last_task_id) as { id: string; state: string } | undefined;
         if (prev && OVERLAP_ACTIVE_STATES.has(prev.state)) {
           db.prepare('UPDATE trigger SET last_fired_at = ?, next_run_at = ?, updated_at = ? WHERE id = ?')
-            .run(firedAt, nextRunAt, firedAt, current.id);
+            .run(firedAt, isOnce ? current.next_run_at : nextRunAt, firedAt, current.id);
           appendTaskEvent(db, prev.id, 'trigger_skipped_overlap', { triggerId: current.id, at: firedAt });
           return null;
         }
@@ -303,9 +324,10 @@ export function dispatchDueScheduleTriggers(db: DB, now = new Date()): string[] 
             ...(template.inputProtocol ?? {}),
           },
         });
+        // once：一次性计划执行即停（interval_ms 保留倒计时延迟，手动重启用作重开）
         db.prepare(
-          'UPDATE trigger SET last_fired_at = ?, next_run_at = ?, updated_at = ?, last_task_id = ? WHERE id = ?',
-        ).run(firedAt, nextRunAt, firedAt, task.id, current.id);
+          `UPDATE trigger SET last_fired_at = ?, next_run_at = ?, updated_at = ?, last_task_id = ?, enabled = ? WHERE id = ?`,
+        ).run(firedAt, nextRunAt, firedAt, task.id, isOnce ? 0 : 1, current.id);
         return task.id;
       }
 
@@ -323,19 +345,23 @@ export function dispatchDueScheduleTriggers(db: DB, now = new Date()): string[] 
           db.prepare('UPDATE trigger SET enabled=0, updated_at=? WHERE id=?').run(firedAt, current.id);
           return null;
         }
+        // 批次三：定时单显式指定执行人语义——未指定时默认第一负责人（项目第一负责人，
+        // 缺省回退工作台第一负责人），"谁接单由流程决定"改为"负责人先接手再派"。
+        const projectFirstAgent = (db.prepare('SELECT first_agent_id AS a FROM project WHERE id=?').get(current.project_id) as { a: string | null }).a;
         createdTaskId = createTask(db, {
           projectId: current.project_id,
           projectTaskId: template.projectTaskId,
           title: `[计划] ${template.title}`,
-          assigneeAgentId: template.assigneeAgentId,
+          assigneeAgentId: template.assigneeAgentId ?? projectFirstAgent ?? workbench.firstAgentId ?? undefined,
           priority: template.priority ?? 5,
           inputProtocol: { trigger: 'schedule', scheduleTriggerId: current.id, ...(template.inputProtocol ?? {}) },
           outputProtocol: template.outputProtocol,
         }).id;
       }
+      // once：一次性计划执行即停（interval_ms 保留倒计时延迟，手动重启用作重开）
       db.prepare(
-        'UPDATE trigger SET last_fired_at = ?, next_run_at = ?, updated_at = ?, last_task_id = ? WHERE id = ?',
-      ).run(firedAt, nextRunAt, firedAt, createdTaskId, current.id);
+        `UPDATE trigger SET last_fired_at = ?, next_run_at = ?, updated_at = ?, last_task_id = ?, enabled = ? WHERE id = ?`,
+      ).run(firedAt, nextRunAt, firedAt, createdTaskId, isOnce ? 0 : 1, current.id);
       return createdTaskId;
     });
     if (taskId) dispatched.push(taskId);

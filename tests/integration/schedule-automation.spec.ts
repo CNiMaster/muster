@@ -120,6 +120,78 @@ describe('防叠跑护栏', () => {
   });
 });
 
+describe('once（一次性：倒计时/指定时刻）触发器（批次三）', () => {
+  it('到点执行一次即停（enabled=0），未指定执行人默认派第一负责人', () => {
+    const { project, lead } = makeCompanyFixture();
+    const projectTask = createProjectTask(db, { projectId: project.id, title: '提醒' });
+    registerScheduleTrigger(db, {
+      projectId: project.id,
+      runAt: '2026-01-01T08:30:00.000Z',
+      template: { title: '倒计时提醒', projectTaskId: projectTask.id },
+      now: new Date('2026-01-01T08:00:00.000Z'),
+    });
+    const row = db.prepare('SELECT schedule_kind, interval_ms, next_run_at, enabled FROM trigger').get() as
+      { schedule_kind: string; interval_ms: number; next_run_at: string; enabled: number };
+    expect(row.schedule_kind).toBe('once');
+    expect(row.next_run_at).toBe('2026-01-01T08:30:00.000Z');
+    expect(row.interval_ms).toBe(30 * 60_000); // 倒计时延迟留档（手动重启=重开倒计时）
+
+    // 未到点不派发
+    expect(dispatchDueScheduleTriggers(db, new Date('2026-01-01T08:29:00.000Z'))).toEqual([]);
+
+    // 到点：派发一次 + 执行即停 + 默认派第一负责人
+    const dispatched = dispatchDueScheduleTriggers(db, new Date('2026-01-01T08:31:00.000Z'));
+    expect(dispatched).toHaveLength(1);
+    const task = getTask(db, dispatched[0]);
+    expect(task.title).toBe('[计划] 倒计时提醒');
+    expect(task.assigneeAgentId).toBe(lead.id);
+    const after = db.prepare('SELECT enabled FROM trigger').get() as { enabled: number };
+    expect(after.enabled).toBe(0);
+
+    // 之后任何时刻不再派发（一次性）
+    setTaskState(db, task.id, 'completed');
+    expect(dispatchDueScheduleTriggers(db, new Date('2026-01-02T00:00:00.000Z'))).toEqual([]);
+    expect(listTasks(db, project.id)).toHaveLength(1);
+  });
+
+  it('runAt 不晚于 now 时拒绝注册', () => {
+    const { project } = makeCompanyFixture();
+    const projectTask = createProjectTask(db, { projectId: project.id, title: '提醒' });
+    expect(() => registerScheduleTrigger(db, {
+      projectId: project.id,
+      runAt: '2026-01-01T00:00:00.000Z',
+      template: { title: '过去时刻', projectTaskId: projectTask.id },
+      now: new Date('2026-01-01T08:00:00.000Z'),
+    })).toThrow(AppError);
+  });
+
+  it('防叠跑不顺延一次性计划：上一任务终态后下一轮立即补发', () => {
+    const { project } = makeCompanyFixture();
+    const projectTask = createProjectTask(db, { projectId: project.id, title: '提醒' });
+    registerScheduleTrigger(db, {
+      projectId: project.id,
+      runAt: '2026-01-01T01:00:00.000Z',
+      template: { title: '补发提醒', projectTaskId: projectTask.id },
+      now: new Date('2026-01-01T00:00:00.000Z'),
+    });
+    // 首发后手动重新启用（模拟"再来一次倒计时"被拦在上一任务仍跑时）
+    const first = dispatchDueScheduleTriggers(db, new Date('2026-01-01T01:01:00.000Z'));
+    expect(first).toHaveLength(1);
+    db.prepare('UPDATE trigger SET enabled=1, next_run_at=? WHERE kind=\'schedule\'').run('2026-01-01T01:01:00.000Z');
+    setTaskState(db, first[0], 'running');
+
+    // 旧任务在跑：跳过但 next_run_at 不推进（保持到期，不能把一次性计划无限顺延）
+    expect(dispatchDueScheduleTriggers(db, new Date('2026-01-01T01:02:00.000Z'))).toEqual([]);
+    const kept = db.prepare('SELECT next_run_at FROM trigger').get() as { next_run_at: string };
+    expect(kept.next_run_at).toBe('2026-01-01T01:01:00.000Z');
+
+    // 旧任务终态 → 下一轮立即补发
+    setTaskState(db, first[0], 'completed');
+    const second = dispatchDueScheduleTriggers(db, new Date('2026-01-01T01:03:00.000Z'));
+    expect(second).toHaveLength(1);
+  });
+});
+
 describe('公司级触发器', () => {
   it('公司还没有项目时不派发且不推进 next_run_at；有项目后派发给第一负责人', () => {
     const company = restoreWorkbench(db, { id: 'wb_fix_2', name: 'co' });
