@@ -15,12 +15,15 @@ import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
 import { expandMatchTokens } from './memory';
 import { findUserTalentForPersona, type AgentProfile } from './agent-profile';
+import { getPersona } from './persona-library';
 
 export type BlueprintStatus = 'active' | 'locked' | 'retired';
 
 export interface BlueprintStaffingSlot {
   personaId: string;
   personaName: string;
+  /** 批次 J·修复轮：组内分工（如"调研"/"撰写"/"复核"）；旧数据无此字段=单人组合兼容。 */
+  role?: string;
 }
 
 export interface BlueprintStaffingDetailSlot extends BlueprintStaffingSlot {
@@ -493,4 +496,28 @@ export function updateBlueprintDescription(db: DB, id: string, description: stri
   db.prepare('UPDATE blueprint SET description=?, updated_at=? WHERE id=?').run(trimmed, nowIso(), id);
   commitBlueprintVersion(db, id, '描述更新：以更清晰的语言说明这类活与当前打法', ['description']);
   return getBlueprint(db, id);
+}
+
+/**
+ * 批次 F：一键采纳人设加入蓝图班底小组。
+ */
+export function addBlueprintStaffingSlot(
+  db: DB,
+  blueprintId: string,
+  slot: { personaId: string; personaName?: string; role?: string },
+): Blueprint {
+  const bp = getBlueprint(db, blueprintId);
+  const existing = bp.staffing.find((s) => s.personaId === slot.personaId);
+  if (existing) return bp;
+
+  const personaName = slot.personaName ?? getPersona(slot.personaId)?.name ?? slot.personaId;
+  const nextStaffing = [...bp.staffing, { personaId: slot.personaId, personaName, ...(slot.role ? { role: slot.role } : {}) }];
+
+  db.prepare('UPDATE blueprint SET staffing_json=?, updated_at=? WHERE id=?').run(
+    JSON.stringify(nextStaffing),
+    nowIso(),
+    blueprintId,
+  );
+  commitBlueprintVersion(db, blueprintId, `采纳人设「${personaName}」进班底小组`, [`staffing:${slot.personaId}`]);
+  return getBlueprint(db, blueprintId);
 }

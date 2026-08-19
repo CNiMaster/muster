@@ -33,7 +33,7 @@ import {assertProjectLaunchConfirmed} from './project-launch';
 import {assertProjectActive} from './project-readiness';
 import { getWorkbench } from './workbench';
 import { recordSuspension, resolveSuspensionByTask } from './task-suspension';
-import { checkSwarmLimits, greyBeeAfterTask, handleSwarmTaskFailure, maybeAutoRepairBee, recordSwarmNodeOutcome, reportBeeCompletion } from './swarm';
+import { checkSwarmLimits, greyBeeAfterTask, handleSwarmTaskFailure, maybeAutoRepairBee, recordSwarmNodeOutcome, reportBeeCompletion, validateSwarmSynthesisSummary } from './swarm';
 import { handleDebateTaskFailure, recordDecisionFromClarify } from './debate';
 import { ensurePrimaryThread } from './thread';
 import { matchBlueprint, currentBlueprintVersion } from './blueprint';
@@ -326,6 +326,8 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
   // exemptBlueprintMatch：立场独立性任务（验收/返工）豁免——评审者不能穿与产出者同款的专家外套。
   let personaId = input.personaId ?? null;
   let blueprintMeta: Record<string, unknown> = {};
+  // 批次 J·修复轮：命中派整组的组员槽位（match 块内收集，INSERT 后派发）
+  let crewSlots: import('./blueprint').BlueprintStaffingSlot[] = [];
   if (!personaId
     && !input.exemptBlueprintMatch
     && !input.isDiscussion
@@ -334,6 +336,8 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
     && !(Array.isArray(input.knowledgeTargets) && input.knowledgeTargets.length > 0)
   ) {
     const routedAgent = routedAssigneeId ? getAgent(db, routedAssigneeId) : null;
+    // 批次 J·修复轮：命中派整组——仅当用户未显式指定执行者（已指定只穿衣不换人，语义同池路由）
+    const explicitAssignee = Boolean(input.assigneeAgentId);
     if (!routedAgent?.isSystem) {
       const match = matchBlueprint(db, project.companyId, input.title);
       const slot = match?.blueprint.staffing[0];
@@ -351,6 +355,10 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
         const specialistAgentId = !routedAssigneeId
           ? findActiveSpecialistAgent(db, project.id, slot.personaId)
           : null;
+        // 批次 J：2+ 槽班底升级为整组派遣（缺省并行；2-4 槽 cap 沿用 staffing 结构）
+        if (!explicitAssignee && match.blueprint.staffing.length > 1) {
+          crewSlots = match.blueprint.staffing.slice(1, 4);
+        }
         if (specialistAgentId) routedAssigneeId = specialistAgentId;
         // 打法包一期：班底生效——2-4 槽协作成员以名称+领域描述注入执行上下文
         const crew = match.blueprint.staffing.slice(1).map((s) => {
@@ -471,6 +479,32 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
     input.swarmDepth ?? 0,
     personaId,
   );
+  // 批次 J·修复轮：命中派整组——组内每位优先池内专家（跨任务延续线程记忆），
+  // 缺员降级留痕（blueprint_crew_slot_unfilled，供人事观察）不绕人事岗造 agent；
+  // 组员任务显式 personaId（不再叠加蓝图匹配）+ exemptBlueprintMatch，缺省并行（无依赖链）。
+  if (crewSlots.length > 0) {
+    for (const crewSlot of crewSlots) {
+      if (!getPersona(crewSlot.personaId)) {
+        appendTaskEvent(db, id, 'blueprint_crew_slot_unfilled', { personaId: crewSlot.personaId, reason: 'persona_missing' });
+        continue;
+      }
+      const specialist = findActiveSpecialistAgent(db, input.projectId, crewSlot.personaId);
+      if (!specialist) {
+        appendTaskEvent(db, id, 'blueprint_crew_slot_unfilled', { personaId: crewSlot.personaId, reason: 'no_pool_specialist' });
+      }
+      createTask(db, {
+        projectId: input.projectId,
+        projectTaskId,
+        parentTaskId: id,
+        ...(specialist ? { assigneeAgentId: specialist } : {}),
+        personaId: crewSlot.personaId,
+        exemptBlueprintMatch: true,
+        priority: input.priority,
+        title: `${crewSlot.personaName || crewSlot.personaId}${crewSlot.role ? `（${crewSlot.role}）` : ''}`,
+        inputProtocol: { crewMember: { personaId: crewSlot.personaId, role: crewSlot.role ?? null } },
+      });
+    }
+  }
   // 修正 root_task_id 自引用
   if (!input.parentTaskId && !input.rootTaskId) {
     db.prepare('UPDATE task SET root_task_id = ? WHERE id = ?').run(id, id);
@@ -678,6 +712,19 @@ export function completeTask(db: DB, taskId: string, result: AgentRunResult): Ta
     else if (result.outcome === 'waiting_dependency') nextState = 'waiting_dependency';
     else nextState = 'blocked';
 
+    // 批次 D：蜂群汇总任务收口契约校验
+    let finalSummary = result.summary;
+    if (result.outcome === 'completed' && ((cur.inputProtocol as Record<string, unknown>)?.swarmSynthesis === true || cur.title.startsWith('[蜂群汇总]'))) {
+      const contractCheck = validateSwarmSynthesisSummary(result.summary);
+      if (!contractCheck.valid) {
+        finalSummary = contractCheck.annotatedSummary;
+        appendTaskEvent(db, taskId, 'synthesis_contract_violation', {
+          missingSections: contractCheck.missingSections,
+          rawSummary: result.summary,
+        });
+      }
+    }
+
     db.prepare(
       `UPDATE task SET state=?, outcome=?, summary=?, question=?, question_options_json=?, artifacts_json=?, checkpoint=?,
         completed_at=?, lease_owner_thread_id=NULL, lease_expires_at=NULL,
@@ -687,7 +734,7 @@ export function completeTask(db: DB, taskId: string, result: AgentRunResult): Ta
     ).run(
       nextState,
       result.outcome,
-      result.summary,
+      finalSummary,
       result.question ?? null,
       result.questionOptions?.length ? JSON.stringify(result.questionOptions) : null,
       JSON.stringify(result.artifacts ?? []),

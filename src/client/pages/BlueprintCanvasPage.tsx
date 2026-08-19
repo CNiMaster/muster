@@ -345,21 +345,24 @@ export function BlueprintCanvasPage(): React.ReactElement {
         </div>
       </header>
 
-      {/* React Flow 画布区域 */}
-      <div style={{ flex: 1, width: '100%', position: 'relative' }}>
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          nodeTypes={nodeTypes}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          fitView
-        >
-          <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
-          <Controls />
-          <MiniMap nodeColor={(n) => n.type === 'stageNode' ? 'var(--accent)' : n.type === 'staffingNode' ? 'var(--ok)' : '#94a3b8'} />
-        </ReactFlow>
+      {/* React Flow 画布与右侧人设高匹配分栏 */}
+      <div style={{ flex: 1, width: '100%', display: 'flex', position: 'relative', overflow: 'hidden' }}>
+        <div style={{ flex: 1, height: '100%', position: 'relative' }}>
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            nodeTypes={nodeTypes}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            fitView
+          >
+            <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
+            <Controls />
+            <MiniMap nodeColor={(n) => n.type === 'stageNode' ? 'var(--accent)' : n.type === 'staffingNode' ? 'var(--ok)' : '#94a3b8'} />
+          </ReactFlow>
+        </div>
+
       </div>
     </div>
   );

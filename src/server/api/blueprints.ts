@@ -26,6 +26,7 @@ import {
   getBlueprint,
   getBlueprintDetail,
   publishBlueprintDebugResult,
+  addBlueprintStaffingSlot,
 } from '../domain/blueprint';
 import { AppError, ErrorCode } from '../../shared/errors';
 
@@ -109,5 +110,19 @@ blueprintsRouter.post(
       evidenceTaskId: z.string().optional(),
     }).parse(req.body);
     res.json(publishBlueprintDebugResult(getDb(), { blueprintId: param(req, 'blueprintId'), ...body }));
+  }),
+);
+
+/** 批次 F：一键采纳人设加入蓝图班底小组 */
+blueprintsRouter.post(
+  '/:blueprintId/adopt-persona',
+  asyncHandler(async (req, res) => {
+    assertBlueprintExists(param(req, 'blueprintId'));
+    const body = z.object({
+      personaId: z.string().min(1),
+      personaName: z.string().optional(),
+      role: z.string().optional(),
+    }).parse(req.body);
+    res.json(addBlueprintStaffingSlot(getDb(), param(req, 'blueprintId'), body));
   }),
 );

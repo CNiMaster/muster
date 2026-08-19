@@ -24,7 +24,7 @@ import { FakeExecutor } from '../../src/server/task-engine/fake-executor';
 import { getProjectTaskThread } from '../../src/server/domain/project-task-thread';
 import { createExecutorProfile } from '../../src/server/domain/executor-profile';
 import { setSetting } from '../../src/server/domain/setting';
-import { ensureGitRepo, commitAll } from '../../src/server/worktree/manager';
+import { ensureGitRepo, commitAll, ensureTaskStagingWorktree } from '../../src/server/worktree/manager';
 import { listArtifacts } from '../../src/server/domain/artifact';
 import { summarizeProjectUsage } from '../../src/server/domain/usage';
 import { listMessages, postUserMessage } from '../../src/server/domain/conversation';
@@ -33,6 +33,17 @@ import type { ExecutionAdapter } from '../../src/server/task-engine/executor';
 let tdb: ReturnType<typeof makeTestDb>;
 let db: DB;
 let projectRoot: string;
+
+/**
+ * 修复轮批次 G：任务=合并确认单位——所有 runtime task 产物发布进其 project_task 的
+ * 任务级集成分支（muster/<pid>/pt-<ptid> 的 worktree 检出目录），不再直落项目根。
+ * 本 spec 中每个测试的发布/冲突/裁决断言全部改为对该集成区的断言（promote 回主干另见
+ * task-merge-governance.spec）。取第一个任务（seq 最小）的 project_task 载体。
+ */
+function taskStageDir(projectId: string): string {
+  const first = listTasks(db, projectId).reduce((a, b) => (a.seq <= b.seq ? a : b));
+  return ensureTaskStagingWorktree(projectRoot, projectId, first.projectTaskId).path;
+}
 
 beforeEach(() => {
   tdb = makeTestDb();
@@ -102,7 +113,7 @@ describe('engine → worktree → publish wiring', () => {
     expect(t.summary).toBe('第1章完成');
 
     // 成果已发布到正式项目目录
-    const published = path.join(projectRoot, 'chapters/01.md');
+    const published = path.join(taskStageDir(project.id), 'chapters/01.md');
     expect(existsSync(published)).toBe(true);
     expect(readFileSync(published, 'utf8')).toContain('李墨登场');
 
@@ -207,7 +218,7 @@ describe('engine → worktree → publish wiring', () => {
     await engine.pumpThread(thread.id);
 
     expect(getTask(db, task.id).state).toBe('completed');
-    expect(readFileSync(path.join(projectRoot, 'drafts/ch01.md'), 'utf8')).toContain('主角叫李墨');
+    expect(readFileSync(path.join(taskStageDir(project.id), 'drafts/ch01.md'), 'utf8')).toContain('主角叫李墨');
     expect(db.prepare('SELECT 1 FROM task_runtime WHERE task_id=?').get(task.id)).toBeUndefined();
   });
 
@@ -239,7 +250,7 @@ describe('engine → worktree → publish wiring', () => {
         runs += 1;
         if (runs === 1) {
           writeFileSync(path.join(ctx.workingDir, 'doc.md'), '原任务版本\n');
-          writeFileSync(path.join(projectRoot, 'doc.md'), '并行发布版本\n');
+          writeFileSync(path.join(taskStageDir(project.id), 'doc.md'), '并行发布版本\n');
           commitAll(projectRoot, 'parallel publish');
           return {
             outcome: 'completed', summary: '原任务完成', outboundTasks: [],
@@ -277,7 +288,7 @@ describe('engine → worktree → publish wiring', () => {
 
     await engine.pumpThread(leadThread.id);
 
-    expect(readFileSync(path.join(projectRoot, 'doc.md'), 'utf8')).toBe('第一负责人裁决版\n');
+    expect(readFileSync(path.join(taskStageDir(project.id), 'doc.md'), 'utf8')).toBe('第一负责人裁决版\n');
     expect(getTask(db, sourceTask.id).state).toBe('completed');
     expect(getTask(db, resolutionTask!.id).state).toBe('completed');
     expect(db.prepare('SELECT 1 FROM task_runtime WHERE task_id=?').get(sourceTask.id)).toBeUndefined();
@@ -316,7 +327,7 @@ describe('engine → worktree → publish wiring', () => {
         runs += 1;
         if (runs === 1) {
           writeFileSync(path.join(ctx.workingDir, 'doc.md'), '原任务版本\n');
-          writeFileSync(path.join(projectRoot, 'doc.md'), '主干版本\n');
+          writeFileSync(path.join(taskStageDir(project.id), 'doc.md'), '主干版本\n');
           commitAll(projectRoot, 'main change');
         } else if (runs === 2) {
           throw new Error('fatal resolution executor error');
@@ -343,7 +354,7 @@ describe('engine → worktree → publish wiring', () => {
 
     expect(getTask(db, sourceTask.id).state).toBe('completed');
     expect(getTask(db, resolutionTask.id).state).toBe('completed');
-    expect(readFileSync(path.join(projectRoot, 'doc.md'), 'utf8')).toBe('重试后的裁决版\n');
+    expect(readFileSync(path.join(taskStageDir(project.id), 'doc.md'), 'utf8')).toBe('重试后的裁决版\n');
     expect((db.prepare('SELECT status FROM publish_record WHERE task_id=?').get(sourceTask.id) as { status: string }).status).toBe('resolved');
   });
 
@@ -363,7 +374,7 @@ describe('engine → worktree → publish wiring', () => {
         runs += 1;
         if (runs === 1) {
           writeFileSync(path.join(ctx.workingDir, 'doc.md'), '原任务版本\n');
-          writeFileSync(path.join(projectRoot, 'doc.md'), '主干版本\n');
+          writeFileSync(path.join(taskStageDir(project.id), 'doc.md'), '主干版本\n');
           commitAll(projectRoot, 'main change');
         } else {
           writeFileSync(path.join(ctx.workingDir, 'doc.md'), '取消后恢复的裁决版\n');
@@ -383,7 +394,7 @@ describe('engine → worktree → publish wiring', () => {
 
     expect(getTask(db, resolutionTask.id).state).toBe('completed');
     expect(getTask(db, sourceTask.id).state).toBe('completed');
-    expect(readFileSync(path.join(projectRoot, 'doc.md'), 'utf8')).toBe('取消后恢复的裁决版\n');
+    expect(readFileSync(path.join(taskStageDir(project.id), 'doc.md'), 'utf8')).toBe('取消后恢复的裁决版\n');
   });
 
   it('原 Task 在裁决运行期间被取消时，发布前预检阻止最终版落入主干', async () => {
@@ -402,7 +413,7 @@ describe('engine → worktree → publish wiring', () => {
         runs += 1;
         if (runs === 1) {
           writeFileSync(path.join(ctx.workingDir, 'doc.md'), '原任务版本\n');
-          writeFileSync(path.join(projectRoot, 'doc.md'), '应保留的主干版本\n');
+          writeFileSync(path.join(taskStageDir(project.id), 'doc.md'), '应保留的主干版本\n');
           commitAll(projectRoot, 'main change');
         } else {
           writeFileSync(path.join(ctx.workingDir, 'doc.md'), '不应发布的裁决版\n');
@@ -417,7 +428,7 @@ describe('engine → worktree → publish wiring', () => {
     const resolutionTask = listTasks(db, project.id).find((candidate) => candidate.inputProtocol.reason === 'publish_conflict')!;
     await engine.pumpThread(leadThread.id);
 
-    expect(readFileSync(path.join(projectRoot, 'doc.md'), 'utf8')).toBe('应保留的主干版本\n');
+    expect(readFileSync(path.join(taskStageDir(project.id), 'doc.md'), 'utf8')).toBe('应保留的主干版本\n');
     expect(getTask(db, sourceTask.id).state).toBe('cancelled');
     expect(getTask(db, resolutionTask.id).state).toBe('failed');
     expect((db.prepare('SELECT COUNT(*) AS count FROM publish_record WHERE task_id=? AND blocked=0').get(resolutionTask.id) as { count: number }).count).toBe(0);
@@ -439,7 +450,7 @@ describe('engine → worktree → publish wiring', () => {
         runs += 1;
         if (runs === 1) {
           writeFileSync(path.join(ctx.workingDir, 'doc.md'), '原任务版本\n');
-          writeFileSync(path.join(projectRoot, 'doc.md'), '回滚后应恢复的主干版本\n');
+          writeFileSync(path.join(taskStageDir(project.id), 'doc.md'), '回滚后应恢复的主干版本\n');
           commitAll(projectRoot, 'main change');
         } else {
           writeFileSync(path.join(ctx.workingDir, 'doc.md'), '会被补偿撤销的裁决版\n');
@@ -457,7 +468,7 @@ describe('engine → worktree → publish wiring', () => {
 
     await engine.pumpThread(leadThread.id);
 
-    expect(readFileSync(path.join(projectRoot, 'doc.md'), 'utf8')).toBe('回滚后应恢复的主干版本\n');
+    expect(readFileSync(path.join(taskStageDir(project.id), 'doc.md'), 'utf8')).toBe('回滚后应恢复的主干版本\n');
     expect(getTask(db, sourceTask.id).state).toBe('blocked');
     expect(getTask(db, resolutionTask.id).state).toBe('failed');
     const compensated = db.prepare('SELECT rolled_back FROM publish_record WHERE task_id=? AND blocked=0').get(resolutionTask.id) as { rolled_back: number };
@@ -487,11 +498,11 @@ describe('engine → worktree → publish wiring', () => {
         runs += 1;
         if (runs === 1) {
           writeFileSync(path.join(ctx.workingDir, 'doc.md'), '原任务版本\n');
-          writeFileSync(path.join(projectRoot, 'doc.md'), '主干版本一\n');
+          writeFileSync(path.join(taskStageDir(project.id), 'doc.md'), '主干版本一\n');
           commitAll(projectRoot, 'main one');
         } else if (runs === 2) {
           writeFileSync(path.join(ctx.workingDir, 'doc.md'), '裁决版本一\n');
-          writeFileSync(path.join(projectRoot, 'doc.md'), '主干版本二\n');
+          writeFileSync(path.join(taskStageDir(project.id), 'doc.md'), '主干版本二\n');
           commitAll(projectRoot, 'main two');
         } else {
           const publishId = String(ctx.task.inputProtocol.publishId);
@@ -516,7 +527,7 @@ describe('engine → worktree → publish wiring', () => {
 
     await engine.pumpThread(leadThread.id);
 
-    expect(readFileSync(path.join(projectRoot, 'doc.md'), 'utf8')).toBe('最终裁决版\n');
+    expect(readFileSync(path.join(taskStageDir(project.id), 'doc.md'), 'utf8')).toBe('最终裁决版\n');
     expect(getTask(db, sourceTask.id).state).toBe('completed');
     expect(getTask(db, firstResolution.id).state).toBe('completed');
     expect(getTask(db, secondResolution.id).state).toBe('completed');
@@ -546,7 +557,7 @@ describe('engine → worktree → publish wiring', () => {
       async run(ctx) {
         runs += 1;
         writeFileSync(path.join(ctx.workingDir, 'doc.md'), `任务版本 ${runs}\n`);
-        writeFileSync(path.join(projectRoot, 'doc.md'), `并行主干版本 ${runs}\n`);
+        writeFileSync(path.join(taskStageDir(project.id), 'doc.md'), `并行主干版本 ${runs}\n`);
         commitAll(projectRoot, `parallel ${runs}`);
         return {
           outcome: 'completed', summary: `run ${runs}`, outboundTasks: [],
@@ -648,9 +659,9 @@ describe('engine → worktree → publish wiring', () => {
     const engine = new TaskEngine(db, fake);
     await engine.pumpThread(thread.id);
 
-    expect(existsSync(path.join(projectRoot, 'chapters/01.md'))).toBe(true);
-    expect(existsSync(path.join(projectRoot, 'notes/ideas.md'))).toBe(true);
-    expect(readFileSync(path.join(projectRoot, 'chapters/01.md'), 'utf8')).toBe('# 第一章\n');
+    expect(existsSync(path.join(taskStageDir(project.id), 'chapters/01.md'))).toBe(true);
+    expect(existsSync(path.join(taskStageDir(project.id), 'notes/ideas.md'))).toBe(true);
+    expect(readFileSync(path.join(taskStageDir(project.id), 'chapters/01.md'), 'utf8')).toBe('# 第一章\n');
   });
 
   it('公司不上班时 pumpThread 不领取', async () => {

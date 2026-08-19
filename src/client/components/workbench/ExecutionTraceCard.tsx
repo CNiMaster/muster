@@ -113,7 +113,7 @@ export function ExecutionTraceCard({ task }: { task: Task }): React.ReactElement
             return (
               <span
                 className="mu-trace-blueprint-chip"
-                title={`当前穿戴打法：${label}（打法包：蓝图由任务终态反思自动进化；锁定可冻结）`}
+                title={`当前派遣打法：${label}（打法包：蓝图由任务终态反思自动进化；锁定可冻结）`}
               >
                 🎭 {label}
               </span>

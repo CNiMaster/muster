@@ -11,7 +11,7 @@ import { isSoftCapReached, type Budget } from '../domain/usage';
 import { updateProject, getProject } from '../domain/project';
 import { settleDrainingAgents } from '../domain/agent';
 import { drainReflectionQueue, recoverStuckReflections, enqueueIdleReflections } from '../domain/reflection';
-import { sweepStaleStaging } from '../domain/staging';
+import { sweepStaleStaging, sweepStaleTaskStaging } from '../domain/staging';
 import { settleMemoryVotes } from '../domain/memory';
 import { generateInspectorSuggestions } from '../domain/inspector';
 import type { SetupGenerator } from '../domain/setup-assistant';
@@ -145,6 +145,15 @@ export class ProjectRuntimeCoordinator {
           }
         } catch (error) {
           log.warn('staging watchdog failed', { error: error instanceof Error ? error.message : String(error) });
+        }
+        // 任务级集成区看门狗（批次 G·修复轮）：仅 auto 项目；manual 项目与孤儿永不碰
+        try {
+          const taskSwept = await sweepStaleTaskStaging(this.db, { recheckMs: this.stagingWatchdogIntervalMs });
+          if (taskSwept.promoted + taskSwept.blocked > 0) {
+            log.info('task staging watchdog swept', taskSwept);
+          }
+        } catch (error) {
+          log.warn('task staging watchdog failed', { error: error instanceof Error ? error.message : String(error) });
         }
       }
       const plannedTasks: string[] = [];

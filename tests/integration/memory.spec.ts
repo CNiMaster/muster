@@ -115,7 +115,7 @@ describe('layered memory', () => {
     expect(getMemoryEntry(db, entry.id).state).toBe('deleted');
   });
 
-  it('全文检索严格限制 Profile 与当前公司/项目作用域', () => {
+  it('全文检索作用域：project 锁项目；personal 跨 profile 全局可见（定案 #8：偏好属于用户）', () => {
     const first = createAgentProfile(db, { displayName: '甲' });
     const second = createAgentProfile(db, { displayName: '乙' });
     const company = restoreWorkbench(db, { id: 'wb_fix_2', name: '公司' });
@@ -132,8 +132,10 @@ describe('layered memory', () => {
 
     const results = searchMemory(db, { profileId: first.id, companyId: company.id, projectId: project.id, query: '蓝色' });
     expect(results.map((item) => item.content)).toEqual(expect.arrayContaining(['统一使用蓝色主题', '蓝色主题用于当前项目']));
+    // project 记忆严格锁项目
     expect(results.map((item) => item.content).join('\n')).not.toContain('其他项目');
-    expect(results.map((item) => item.content).join('\n')).not.toContain('乙员工');
+    // 修复轮（批次 F 定案 #8）：personal=用户偏好——乙沉淀的偏好对甲同样可检索
+    expect(results.map((item) => item.content)).toContain('乙员工的蓝色主题');
   });
 
   it('可疑提示注入或凭据窃取内容进入隔离待审区', () => {

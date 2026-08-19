@@ -5,7 +5,7 @@ import type { Agent, Department, Task } from '../../api/types';
 import type { ProjectTaskDTO } from '../../hooks/queries';
 import { usePinProjectTask, useProjectTaskAction } from '../../hooks/queries';
 
-export type ProjectToolKey = 'tasks' | 'plans' | 'dashboard' | 'artifacts' | 'materials' | 'reports' | 'usage' | 'character' | 'settings';
+export type ProjectToolKey = 'tasks' | 'merges' | 'plans' | 'dashboard' | 'artifacts' | 'materials' | 'reports' | 'usage' | 'character' | 'settings';
 export type ProjectSurfaceView = 'task' | 'employee' | 'group' | 'activity' | 'tool';
 
 const COMMON_TASK_VERBS = /^(完成|梳理|建立|实现|测试|修复|优化|设计|开发|检查|更新|创建|明确|制定|处理|进行|准备|编写|验证)/;
@@ -238,6 +238,10 @@ export function ProjectWorkNavigation({
             <span className="work-nav-icon">📋</span>
             <span className="work-nav-label">任务领取清单</span>
             {attentionCount > 0 && <span className="work-nav-count">{attentionCount}</span>}
+          </Link>
+          <Link className={`work-nav-item ${activeTool === 'merges' ? 'is-active' : ''}`} to={`/projects/${projectId}/merges`}>
+            <span className="work-nav-icon">🔀</span>
+            <span className="work-nav-label">待合并成果</span>
           </Link>
           <Link className={`work-nav-item ${activeTool === 'artifacts' ? 'is-active' : ''}`} to={`/projects/${projectId}/artifacts`}>
             <span className="work-nav-icon">📦</span>

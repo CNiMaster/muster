@@ -263,17 +263,19 @@ export function searchMemory(db: DB, input: {
   const now = nowIso();
   const rows = db.prepare(
     `SELECT DISTINCT m.* FROM memory_entry m
-     WHERE m.profile_id=? AND m.state IN ('active','locked')
+     WHERE m.state IN ('active','locked')
        AND (m.expires_at IS NULL OR m.expires_at > ?)
        AND (
-         m.scope IN ('personal','skill')
-         OR (m.scope='workspace')
-         OR (m.scope='project' AND m.project_id=?)
+         -- 修复轮（批次 F 定案 #8）：personal 是用户偏好，属于用户不属于员工——检索全局可见，不按 profile 过滤
+         (m.scope='personal')
+         OR (m.scope='skill' AND m.profile_id=?)
+         OR (m.scope='workspace' AND m.profile_id=?)
+         OR (m.scope='project' AND m.profile_id=? AND m.project_id=?)
        )
        AND (m.content LIKE ? OR m.id IN (SELECT entry_id FROM memory_fts WHERE memory_fts MATCH ?))
      ORDER BY m.updated_at DESC LIMIT ?`,
   ).all(
-    input.profileId, now, input.projectId ?? null,
+    now, input.profileId, input.profileId, input.profileId, input.projectId ?? null,
     `%${query}%`, `${escapeFtsQuery(query)}*`, Math.min(Math.max(input.limit ?? 8, 1), 50),
   ) as EntryRow[];
   return rows.map((row) => entryFromRow(db, row));
@@ -357,7 +359,9 @@ export function loadContextMemories(db: DB, input: {
        WHERE state IN ('active','locked')
          AND can_influence=1 AND (expires_at IS NULL OR expires_at > ?)
          AND (
-           (scope IN ('personal','workspace') AND profile_id=?)
+           -- 修复轮（批次 F 定案 #8）：personal=用户偏好，去掉 profile/project 过滤——乙能读到甲沉淀的用户偏好
+           (scope='personal')
+           OR (scope='workspace' AND profile_id=?)
            OR ${skillClause}
            OR (scope='project' AND profile_id=? AND project_id=?)
          )
@@ -371,7 +375,7 @@ export function loadContextMemories(db: DB, input: {
   const matchOrs = tokens
     .map(() => '(content LIKE ? OR id IN (SELECT entry_id FROM memory_fts WHERE memory_fts MATCH ?))')
     .join(' OR ');
-  const values: unknown[] = [now, input.profileId];
+  const values: unknown[] = [now];
   if (input.personaKey) values.push(input.profileId, input.personaKey);
   else values.push(input.profileId);
   values.push(input.profileId, input.profileId, input.projectId);
@@ -384,7 +388,7 @@ export function loadContextMemories(db: DB, input: {
      WHERE state IN ('active','locked')
        AND can_influence=1 AND (expires_at IS NULL OR expires_at > ?)
        AND (
-         (scope='personal' AND profile_id=?)
+         (scope='personal')
          OR ${skillClause}
          OR ((scope='workspace' AND profile_id=?) OR (scope='project' AND profile_id=? AND project_id=?))
              AND (${matchOrs})

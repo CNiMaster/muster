@@ -143,6 +143,17 @@ export function createProject(
   return getProject(db, id);
 }
 
+/** 批次 G（定案 #2）：项目合并开关——manual=弹确认（默认），auto=全自动；存 settings_json 零列变更。 */
+export function getProjectMergeMode(db: DB, projectId: string): 'manual' | 'auto' {
+  const p = getProject(db, projectId);
+  return (p.settings as Record<string, unknown>)?.mergeMode === 'auto' ? 'auto' : 'manual';
+}
+
+export function setProjectMergeMode(db: DB, projectId: string, mode: 'manual' | 'auto'): Project {
+  const p = getProject(db, projectId);
+  return updateProject(db, projectId, { settings: { ...p.settings, mergeMode: mode } });
+}
+
 export function getProject(db: DB, id: string): Project {
   const row = db.prepare('SELECT * FROM project WHERE id = ?').get(id) as ProjectRow | undefined;
   if (!row) throw new AppError(ErrorCode.NOT_FOUND, `project ${id} not found`);

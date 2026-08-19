@@ -37,7 +37,7 @@ describe('execution context from profile and layered memory', () => {
     expect(context.systemPrompt).toContain('当前项目决定采用事件驱动架构');
   });
 
-  it('共享同一执行器的两个 Profile 不会读取彼此个人记忆', () => {
+  it('共享同一执行器的两个 Profile 能读到彼此沉淀的用户偏好（定案 #8：偏好属于用户不属于员工）', () => {
     const company = restoreWorkbench(db, { id: 'wb_fix_2', name: '公司' });
     const first = createAgent(db, { companyId: company.id, name: '甲', role: 'engineer', executor: { provider: 'claude-cli' } });
     const second = createAgent(db, { companyId: company.id, name: '乙', role: 'engineer', executor: { provider: 'claude-cli' } });
@@ -55,7 +55,8 @@ describe('execution context from profile and layered memory', () => {
     const context = assembleContext(db, task);
 
     expect(context.systemPrompt).toContain('甲的私有偏好');
-    expect(context.systemPrompt).not.toContain('乙的私有偏好');
+    // 修复轮（批次 F）：personal=用户偏好全局可见——乙沉淀的偏好同样注入甲的上下文
+    expect(context.systemPrompt).toContain('乙的私有偏好');
   });
 });
 

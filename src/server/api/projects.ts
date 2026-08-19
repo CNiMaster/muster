@@ -26,6 +26,8 @@ import {
   updateProject,
   addProjectReference,
   listProjectReferences,
+  getProjectMergeMode,
+  setProjectMergeMode,
 } from '../domain/project';
 import {
   ensurePrimaryThread,
@@ -36,11 +38,18 @@ import {
   ensureProjectThreads,
   compactThreadWithMemory,
 } from '../domain/thread';
+import { generateCompactionSummary } from '../domain/compaction-summary';
 import { getWorkbench } from '../domain/workbench';
 import { getAgent } from '../domain/agent';
 import { syncAgentMemoryFiles } from '../domain/agent-home';
-import { stageStatus } from '../worktree/manager';
-import { promoteProjectStagingIfAny } from '../domain/staging';
+import { postSystemMessage } from '../domain/conversation';
+import { stageStatus, detectOrphanWorktrees, cleanOrphanWorktrees, taskStageStatus, taskStagingBranch, discardTaskStaging } from '../worktree/manager';
+import {
+  promoteProjectStagingIfAny,
+  listPendingTaskMerges,
+  promoteTaskStaging,
+} from '../domain/staging';
+import { getProjectConflictTimeline } from '../domain/conflict-timeline';
 import { deleteProjectTrigger, listProjectTriggers, registerDefaultNovelScheduleTriggers, registerScheduleTrigger, setProjectTriggerEnabled } from '../domain/triggers';
 import { initializeNovelProject } from '../domain/novel-template';
 import { getCharacterGraph } from '../domain/character-graph';
@@ -192,6 +201,129 @@ projectById.post(
   }),
 );
 
+/** 批次 G·修复轮：待合并看板数据源——各项目任务集成分支领先状态（系统侧） */
+projectById.get(
+  '/merges',
+  asyncHandler(async (req, res) => {
+    const db = getDb();
+    const project = getProject(db, param(req, 'id'));
+    res.json(listPendingTaskMerges(db, project.id));
+  }),
+);
+
+/** 批次 G·修复轮：任务合并状态（TaskTopBar「⏫ 合并」轮询用） */
+projectById.get(
+  '/project-tasks/:ptid/merge-status',
+  asyncHandler(async (req, res) => {
+    const db = getDb();
+    const project = getProject(db, param(req, 'id'));
+    const status = taskStageStatus(project.rootDir, project.id, param(req, 'ptid'));
+    const pending = db.prepare(
+      "SELECT COUNT(*) AS n FROM task WHERE project_task_id=? AND state IN ('queued','claimed','running','waiting_input','waiting_dependency','waiting_approval','paused','blocked')",
+    ).get(param(req, 'ptid')) as { n: number };
+    res.json({
+      exists: status.exists,
+      aheadCommits: status.aheadCommits,
+      pendingTasks: pending.n,
+      mergeMode: getProjectMergeMode(db, project.id),
+    });
+  }),
+);
+
+/**
+ * 批次 G·修复轮：任务级合并入口（定案 #2/#5）。
+ * mergeMode=auto 直接执行；manual 首调返回 needsConfirm（前端弹确认，可勾「以后自动合并」再带 confirm 重试）；
+ * 有非终态子任务仅提醒不阻止（pendingTasks 随结果返回）。premium concern/LLM 失败 → promoted:false + 播报。
+ */
+projectById.post(
+  '/project-tasks/:ptid/merge',
+  asyncHandler(async (req, res) => {
+    const db = getDb();
+    const project = getProject(db, param(req, 'id'));
+    const ptid = param(req, 'ptid');
+    const body = z.object({
+      confirm: z.boolean().optional(),
+      strategy: z.enum(['ours', 'theirs']).optional(),
+    }).parse(req.body ?? {});
+    const mergeMode = getProjectMergeMode(db, project.id);
+    if (mergeMode === 'manual' && !body.confirm) {
+      const pending = db.prepare(
+        "SELECT COUNT(*) AS n FROM task WHERE project_task_id=? AND state IN ('queued','claimed','running','waiting_input','waiting_dependency','waiting_approval','paused','blocked')",
+      ).get(ptid) as { n: number };
+      res.json({ promoted: false, needsConfirm: true, pendingTasks: pending.n, message: 'manual 模式：请确认合并' });
+      return;
+    }
+    const result = await promoteTaskStaging(db, project.id, ptid, { actor: 'ui', strategy: body.strategy });
+    res.json(result);
+  }),
+);
+
+/** 批次 H：检测项目磁盘上的孤儿工作树 */
+projectById.get(
+  '/orphan-worktrees',
+  asyncHandler(async (req, res) => {
+    const db = getDb();
+    const project = getProject(db, param(req, 'id'));
+    res.json(detectOrphanWorktrees(db, project.rootDir));
+  }),
+);
+
+/** 批次 H·修复轮：清理孤儿工作树——有未合并内容时默认拒绝（blocked 返回内容清单），force=显式确认后才清 */
+projectById.post(
+  '/orphan-worktrees/clean',
+  asyncHandler(async (req, res) => {
+    const db = getDb();
+    const project = getProject(db, param(req, 'id'));
+    const body = z.object({
+      targets: z.array(z.string()).optional(),
+      force: z.boolean().optional(),
+    }).parse(req.body ?? {});
+    res.json(cleanOrphanWorktrees(db, project.rootDir, body));
+  }),
+);
+
+/** 批次 H·修复轮：丢弃任务集成区（ahead 内容即"未合并内容"，须 force 显式确认；播报留痕） */
+projectById.post(
+  '/project-tasks/:ptid/discard',
+  asyncHandler(async (req, res) => {
+    const db = getDb();
+    const project = getProject(db, param(req, 'id'));
+    const ptid = param(req, 'ptid');
+    const body = z.object({ force: z.boolean().optional() }).parse(req.body ?? {});
+    const status = taskStageStatus(project.rootDir, project.id, ptid);
+    if (!status.exists || status.aheadCommits === 0) {
+      res.json({ discarded: false, message: '该任务集成区没有待处理内容' });
+      return;
+    }
+    if (!body.force) {
+      res.json({ discarded: false, needsForce: true, aheadCommits: status.aheadCommits, message: `集成区有 ${status.aheadCommits} 个未合并提交，丢弃需显式确认` });
+      return;
+    }
+    const branch = taskStagingBranch(project.id, ptid);
+    discardTaskStaging(project.rootDir, project.id, ptid);
+    db.prepare('DELETE FROM task_merge_watchdog WHERE project_task_id=?').run(ptid);
+    postSystemMessage(db, { scopeKind: 'project', scopeId: project.id, role: 'system', author: 'system', content: `「🗑 任务集成区已丢弃」#${ptid} 的 ${status.aheadCommits} 个未合并提交已按用户指令删除（分支 ${branch}）。` });
+    realtime.publish({
+      id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      type: 'merge.discarded',
+      projectId: project.id,
+      occurredAt: new Date().toISOString(),
+      payload: { projectTaskId: ptid, branch, aheadCommits: status.aheadCommits },
+    });
+    res.json({ discarded: true, message: '集成区已丢弃' });
+  }),
+);
+
+/** 批次 I：获取项目冲突与裁决时间线 */
+projectById.get(
+  '/conflicts/timeline',
+  asyncHandler(async (req, res) => {
+    const db = getDb();
+    const project = getProject(db, param(req, 'id'));
+    res.json(getProjectConflictTimeline(db, project.id));
+  }),
+);
+
 projectById.patch(
   '/',
   asyncHandler(async (req, res) => {
@@ -243,6 +375,18 @@ projectById.patch(
         ),
       );
       res.json(project);
+      return;
+    }
+    // 批次 G·修复轮：合并开关走 settings_json（manual=弹确认默认，auto=全自动）
+    if (patch.mergeMode !== undefined) {
+      const mode = z.enum(['manual', 'auto']).parse(patch.mergeMode);
+      const updated = setProjectMergeMode(getDb(), param(req, 'id'), mode);
+      const rest = { name: patch.name, description: patch.description, firstAgentId: patch.firstAgentId, settings: patch.settings, rootDir: patch.rootDir };
+      if (Object.values(rest).every((v) => v === undefined)) {
+        res.json(updated);
+        return;
+      }
+      res.json(updateProject(getDb(), param(req, 'id'), rest));
       return;
     }
     res.json(
@@ -437,7 +581,7 @@ projectById.post(
     const threadId = param(req, 'threadId');
     const t = getThread(db, threadId);
     const input = z.object({ summary: z.string().optional() }).parse(req.body ?? {});
-    const summary = input.summary?.trim() || `[手动压缩 ${new Date().toISOString()}] 用户手动清空上下文`;
+    const summary = input.summary?.trim() || (await generateCompactionSummary(db, t.id));
     compactThreadWithMemory(db, t.id, { summary, memoryContent: summary });
     syncAgentMemoryFiles(db, getAgent(db, t.agentId).profileId);
     res.json({ ok: true, threadId: t.id });

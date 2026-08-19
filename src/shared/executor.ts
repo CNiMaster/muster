@@ -95,6 +95,8 @@ export interface ExecutorProfile {
   maxConcurrency?: number;
   /** 锁定后自适应不越界不上调（B4）。 */
   concurrencyLocked?: boolean;
+  /** 上下文窗口 token 上限（批次 B；可选，默认 128k）。 */
+  contextWindowTokens?: number | null;
   createdAt: string;
   updatedAt: string;
   /** 列表端点附带的最近一次连通测试结果。 */

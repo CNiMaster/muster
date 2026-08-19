@@ -546,6 +546,37 @@ export function reportBeeCompletion(db: DB, beeTask: Task): void {
   });
 }
 
+/**
+ * 批次 D：蜂群汇总任务收口结构契约校验。
+ * 校验 summary 是否包含「结论」「分歧」「风险」三段（宽松匹配，无分歧须显式写"无分歧"）。
+ */
+export function validateSwarmSynthesisSummary(summary: string | null | undefined): {
+  valid: boolean;
+  missingSections: string[];
+  annotatedSummary: string;
+} {
+  const text = summary ?? '';
+  const missing: string[] = [];
+
+  if (!text.includes('结论')) {
+    missing.push('结论');
+  }
+  if (!text.includes('分歧')) {
+    missing.push('分歧');
+  }
+  if (!text.includes('风险')) {
+    missing.push('风险');
+  }
+
+  if (missing.length === 0) {
+    return { valid: true, missingSections: [], annotatedSummary: text };
+  }
+
+  const tag = `[收口契约不完整：缺${missing.join('、')}段]`;
+  const annotatedSummary = text ? `${tag} ${text}` : tag;
+  return { valid: false, missingSections: missing, annotatedSummary };
+}
+
 // ===== 工蜂与放蜂（W2/W3） =====
 
 const BEE_PROMPT = `你是蜂群工蜂：一次性任务执行者，为"养蜂人"工作。

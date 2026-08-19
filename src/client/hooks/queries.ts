@@ -631,6 +631,133 @@ export function usePromoteStaging(projectId: string | undefined) {
   });
 }
 
+/** 批次 H·修复轮：待合并看板条目（系统侧=各项目任务集成分支领先状态） */
+export interface PendingTaskMergeDTO {
+  projectTaskId: string;
+  seq: number;
+  title: string;
+  state: string;
+  branch: string;
+  aheadCommits: number;
+  pendingRuntimeTasks: number;
+  mergeMode: 'manual' | 'auto';
+  lastMergeAt: string | null;
+}
+
+/** 批次 G·修复轮：项目下待合并的项目任务列表（15s 轮询） */
+export function useProjectPendingMerges(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ['pending-merges-board', projectId],
+    queryFn: () => api.get<PendingTaskMergeDTO[]>(`/api/projects/${projectId}/merges`),
+    enabled: !!projectId,
+    refetchInterval: 15_000,
+  });
+}
+
+/** 批次 H·修复轮：丢弃任务集成区（有未合并提交时 needsForce，确认后 force 重试） */
+export function useDiscardTaskStaging(projectId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectTaskId, force }: { projectTaskId: string; force?: boolean }) =>
+      api.post<{ discarded: boolean; needsForce?: boolean; aheadCommits?: number; message: string }>(
+        `/api/projects/${projectId}/project-tasks/${projectTaskId}/discard`, { force },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['pending-merges-board', projectId] });
+      qc.invalidateQueries({ queryKey: ['task-merge-status'] });
+    },
+  });
+}
+
+export interface OrphanWorktreeDTO {
+  path: string;
+  branch: string | null;
+  reason: string;
+  uncommittedFiles: string[];
+  aheadCommits: number;
+}
+
+/** 批次 H·修复轮：孤儿工作树（git worktree list − task_runtime 登记 − 系统集成区） */
+export function useOrphanWorktrees(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ['orphan-worktrees', projectId],
+    queryFn: () => api.get<OrphanWorktreeDTO[]>(`/api/projects/${projectId}/orphan-worktrees`),
+    enabled: !!projectId,
+  });
+}
+
+/** 批次 H·修复轮：清理孤儿——有未合并内容时服务端拒绝并返回 blocked（三选：强制丢弃/查看/取消） */
+export function useCleanOrphanWorktrees(projectId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ targets, force }: { targets?: string[]; force?: boolean }) =>
+      api.post<{ cleanedCount: number; cleaned: OrphanWorktreeDTO[]; blocked: Array<OrphanWorktreeDTO & { contents: string[] }> }>(
+        `/api/projects/${projectId}/orphan-worktrees/clean`, { targets, force },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['orphan-worktrees', projectId] });
+      qc.invalidateQueries({ queryKey: ['pending-merges-board', projectId] });
+    },
+  });
+}
+
+export interface ConflictTimelineDTO {
+  id: string;
+  timestamp: string;
+  kind: 'conflict_detected' | 'judge_assigned' | 'debate_started' | 'resolved' | 'escalated' | 'merge_pending' | 'merge_promoted' | 'merge_discarded';
+  title: string;
+  description: string;
+  files: string[];
+  taskId?: string;
+  sourceTaskIds?: string[];
+}
+
+/** 批次 I：查询项目冲突与裁决时间线 */
+export function useProjectConflictTimeline(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ['conflict-timeline', projectId],
+    queryFn: () => api.get<ConflictTimelineDTO[]>(`/api/projects/${projectId}/conflicts/timeline`),
+    enabled: !!projectId,
+  });
+}
+
+export interface CrewStaffingRecommendationDTO {
+  roleName: string;
+  roleDescription: string;
+  recommendedPersona?: PersonaDTO;
+  matchScore: number;
+  domain: string;
+  suggestedTools: string[];
+}
+
+export interface BlueprintCrewStaffingPlanDTO {
+  blueprintId: string;
+  blueprintTitle: string;
+  crew: CrewStaffingRecommendationDTO[];
+}
+
+/** 批次 J：查询蓝图专家团队编制推荐方案 */
+export function useBlueprintCrewStaffing(blueprintId: string | undefined) {
+  return useQuery({
+    queryKey: ['blueprint-crew-staffing', blueprintId],
+    queryFn: () => api.get<BlueprintCrewStaffingPlanDTO>(`/api/blueprints/${blueprintId}/crew-staffing`),
+    enabled: !!blueprintId,
+  });
+}
+
+/** 批次 J：一键采纳蓝图专家团队入职到项目 */
+export function useApplyBlueprintCrew(projectId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ blueprintId, crew }: { blueprintId: string; crew?: CrewStaffingRecommendationDTO[] }) =>
+      api.post<{ createdAgents: Agent[]; appliedCount: number }>(`/api/projects/${projectId}/blueprints/${blueprintId}/apply-crew`, { crew }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['agents'] });
+      qc.invalidateQueries({ queryKey: ['workbench'] });
+    },
+  });
+}
+
 /** 蓝图组织批次4c：项目优先入口——零组织决策建项目（自动落默认工作台，无则顺手创建）。 */
 export function useQuickProject() {
   const qc = useQueryClient();
@@ -1365,7 +1492,7 @@ export interface Blueprint {
   taskType: string;
   label: string;
   description: string;
-  staffing: Array<{ personaId: string; personaName: string }>;
+  staffing: Array<{ personaId: string; personaName: string; role?: string }>;
   tools: Array<{ kind: 'skill' | 'tool' | 'mcp'; id: string; uses: number; wins: number }>;
   sourceProjectIds: string[];
   wins: number;
@@ -1464,13 +1591,96 @@ export function useUpdateBlueprintDescription() {
   });
 }
 
-/** 相关打法：按任务标题匹配 top-N 蓝图（去同簇；创建任务卡预览穿戴用）。 */
+/** 相关打法：按任务标题匹配 top-N 蓝图（去同簇；创建任务卡预览派遣用）。 */
 export function useBlueprintMatches(title: string | undefined) {
   const trimmed = (title ?? '').trim();
   return useQuery({
     queryKey: ['blueprint-matches', trimmed],
     queryFn: () => api.get<Blueprint[]>(`/api/blueprints/match-preview?title=${encodeURIComponent(trimmed)}`),
     enabled: trimmed.length >= 4,
+  });
+}
+
+export interface PersonaMatchDto {
+  persona: {
+    id: string;
+    domain: string | null;
+    name: string;
+    description: string;
+    emoji: string;
+    color: string;
+    tools: string[];
+    source: 'builtin' | 'user';
+  };
+  score: number;
+  matchedTokens: string[];
+}
+
+// ===== 任务级合并治理（批次 G·修复轮：任务=合并确认单位，promote 回主干才是门禁）=====
+
+export interface TaskMergeStatusDTO {
+  exists: boolean;
+  aheadCommits: number;
+  pendingTasks: number;
+  mergeMode: 'manual' | 'auto';
+}
+
+export interface TaskMergeResultDTO {
+  promoted: boolean;
+  needsConfirm?: boolean;
+  pendingTasks?: number;
+  message: string;
+  summary?: string;
+  conflicts?: string[];
+  reviewVerdict?: 'approve' | 'concern' | 'skipped';
+}
+
+/** 任务合并状态（TaskTopBar「⏫ 合并」轮询：领先提交数/在飞子任务/项目合并模式）。 */
+export function useTaskMergeStatus(projectId: string, projectTaskId: string | undefined) {
+  return useQuery({
+    queryKey: ['task-merge-status', projectId, projectTaskId],
+    queryFn: () => api.get<TaskMergeStatusDTO>(`/api/projects/${projectId}/project-tasks/${projectTaskId}/merge-status`),
+    enabled: Boolean(projectTaskId),
+    refetchInterval: 15_000,
+  });
+}
+
+/** 触发任务级合并（manual 首调返回 needsConfirm；确认后带 confirm 重试）。 */
+export function useMergeProjectTask(projectId: string, projectTaskId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { confirm?: boolean } = {}) =>
+      api.post<TaskMergeResultDTO>(`/api/projects/${projectId}/project-tasks/${projectTaskId}/merge`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['task-merge-status'] });
+      qc.invalidateQueries({ queryKey: ['pending-merges-board'] });
+    },
+  });
+}
+
+/** 「本项目以后自动合并」：写 settings_json.mergeMode。 */
+export function useSetProjectMergeMode(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (mergeMode: 'manual' | 'auto') =>
+      api.patch<Project>(`/api/projects/${projectId}`, { mergeMode }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['task-merge-status'] });
+      qc.invalidateQueries({ queryKey: ['project', projectId] });
+    },
+  });
+}
+
+/** 修复轮（批次 J）：一键采纳人设加入蓝图班底（可带分工 role） */
+export function useAdoptBlueprintPersona() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ blueprintId, personaId, personaName, role }: { blueprintId: string; personaId: string; personaName?: string; role?: string }) =>
+      api.post<Blueprint>(`/api/blueprints/${blueprintId}/adopt-persona`, { personaId, personaName, role }),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ['blueprint-detail', vars.blueprintId] });
+      qc.invalidateQueries({ queryKey: ['blueprints'] });
+    },
   });
 }
 

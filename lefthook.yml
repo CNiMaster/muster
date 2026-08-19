@@ -1,0 +1,8 @@
+# 工程地基（批次 E·修复轮）：仅 pre-push 挂 typecheck——拦"agent 自检通过但机制有洞"的最低一层。
+# 全量测试由 CI 兜底（check-and-unit + e2e job）。不挂 pre-commit、不引 eslint：
+# DSH「治理 9/10 可持续 3/10」教训，门禁每层都是持续维护成本。
+pre-push:
+  parallel: false
+  commands:
+    typecheck:
+      run: npm run typecheck

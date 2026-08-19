@@ -6,9 +6,10 @@
  */
 import type { DB } from '../db/client';
 import type { ResolvedTaskSkill } from '../../shared/types';
+import os from 'node:os';
 import { getWorkbench } from '../domain/workbench';
 import { getProject } from '../domain/project';
-import { getAgent, listAgents } from '../domain/agent';
+import { getAgent, listAgents, type AgentDefinition } from '../domain/agent';
 import { ensureDispatcherAgentId, DISPATCHER_ROLE, JUDGE_ROLE, HR_ROLE } from '../domain/system-agents';
 import { listTaskMessages } from '../domain/task-message';
 import type { Task } from '../domain/task';
@@ -27,6 +28,8 @@ import { getPersona, listPersonaIndex } from '../domain/persona-library';
 import { appendTaskEvent } from '../domain/task-event';
 import { searchArchive } from '../domain/archive';
 import { listProjectSpecialists, listStaffSpecialists, specialistLabel } from '../domain/specialist-pool';
+import { localTimezone } from '../domain/tz';
+import { getExecutorProfile } from '../domain/executor-profile';
 
 const MAX_REFERENCE_BYTES = 64 * 1024;
 const MAX_TOTAL_REFERENCE_BYTES = 256 * 1024;
@@ -94,6 +97,46 @@ export function assembleContext(
     sp.push('# 员工身份', profile.soul || profile.displayName, '');
     if (profile.principles.length > 0) sp.push('# 工作原则', profile.principles.map((item) => `- ${item}`).join('\n'), '');
   }
+
+  // 批次 A：运行环境信息段（当前本地日期+星期+时刻、时区、OS/架构、执行器类型与 binary）
+  const timeZone = localTimezone();
+  const now = new Date();
+  const dtf = new Intl.DateTimeFormat('zh-CN', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  const parts = dtf.formatToParts(now);
+  const getPart = (type: string): string => parts.find((p) => p.type === type)?.value ?? '';
+  const dateStr = `${getPart('year')}-${getPart('month')}-${getPart('day')}`;
+  const timeStr = `${getPart('hour')}:${getPart('minute')}`;
+  const weekdayStr = new Intl.DateTimeFormat('zh-CN', { timeZone, weekday: 'long' }).format(now);
+  const platformArch = `${process.platform}/${os.arch()}`;
+
+  const executorKind = options.executorKind ?? 'cli';
+  let binaryName = '';
+  if (agent?.executorProfileId) {
+    try {
+      const ep = getExecutorProfile(db, agent.executorProfileId);
+      if (ep?.config?.binaryPath && typeof ep.config.binaryPath === 'string') {
+        // 只注 binary 名不注绝对路径（环境段只放平台事实，路径属工作区段）
+        binaryName = ep.config.binaryPath.split('/').pop() ?? '';
+      }
+    } catch { /* 容错 */ }
+  }
+
+  sp.push(
+    '# 运行环境',
+    `当前时间：${dateStr} ${weekdayStr} ${timeStr} (${timeZone})`,
+    `运行平台：${platformArch}`,
+    `执行器类型：${executorKind}${binaryName ? ` (${binaryName})` : ''}`,
+    '',
+  );
+
   // 蓝图组织批次1：本次人设——身份层信息，轻量模式（咨询/讨论发言）同样注入。
   // persona 库可热变更：任务指定的 persona 已不存在时优雅跳过（不阻断执行），并留痕供专家沉淀管道观察缺什么专家。
   // 执行重试/会话恢复会重复装配上下文——同任务只留一次 persona_miss（查重防噪声）。
@@ -194,8 +237,9 @@ export function assembleContext(
   }
   // 轻量模式（咨询/讨论发言）：注入议题与前序发言后直接进入输出契约，跳过技能/能力中心/桥接/记忆/素材
   const loadedSkills: ResolvedTaskSkill[] = [];
+  const taskProto = (task.inputProtocol ?? {}) as Record<string, unknown>;
   if (lightweight) {
-    const proto = (task.inputProtocol ?? {}) as Record<string, unknown>;
+    const proto = taskProto;
     if (typeof proto.instruction === 'string' && proto.instruction) sp.push('# 本任务说明', proto.instruction, '');
     if (typeof proto.question === 'string' && proto.question) sp.push('# 待答复问题', proto.question, '');
     // 讨论发言：注入议题背景（topic + context），保证发言者看到完整议题
@@ -374,9 +418,21 @@ export function assembleContext(
       '# 蜂群契约（你是养蜂人，独有）',
       '适合并行拆解的目标：在最终 JSON 里加 swarmPlan 字段并置 outcome="waiting_dependency"：',
       'swarmPlan: { goal: "总目标", workers: [ { title: "子题", brief: "给这只蜂的具体指令与边界", personaId?: "子题要求的专家人设" } ] }',
-      '系统会为每只蜂创建一次性工蜂并行执行，全部完成后你收到 [蜂群汇总] 任务做收口报告。',
+      '系统会为每只蜂创建一次性工蜂并行执行，全部完成后你收到 [蜂群汇总] 任务做收口报告。收口报告必须包含「结论」「分歧」「风险」三段标题（无分歧须显式写明"无分歧"）。',
       '工蜂数量按需（够用就好）；超出系统上限会被截断。不适合并行的目标不要用 swarmPlan。',
       '三种蜂型：匿名（不写 personaId）/ 同种专家（全部 worker 同 personaId）/ 混合专家（不同 worker 不同 personaId）。',
+      '',
+    );
+  }
+  // 批次 D：蜂群收口结构契约教学（汇总任务专属）
+  if (taskProto.swarmSynthesis === true || task.title.startsWith('[蜂群汇总]')) {
+    sp.push(
+      '# 蜂群收口结构契约（你是汇总任务执行者，三段必需）',
+      '你正在执行蜂群收口汇总任务。完成时的 summary 必须显式包含以下三段标题行结构：',
+      '1. 「## 结论」：精炼概括全群产出与目标达成度；',
+      '2. 「## 分歧」：汇总各工蜂/专家间的分歧点与裁决结论（若各方一致无分歧，请显式写明"无分歧"）；',
+      '3. 「## 风险」：指出遗留风险、未决事项或后续建议。',
+      '若缺失任意一段标题，系统会在结果中标注契约违约留痕。',
       '',
     );
   }
@@ -420,7 +476,6 @@ export function assembleContext(
   // ===== Input Packet =====
   // 蜂群汇总：每只蜂完成时把 [蜂成员汇报] 逐条写进汇总任务消息（reportBeeCompletion）。
   // 固定 6 条窗口在蜂数 >6 时会丢早期汇报——按蜂数扩窗（蜂汇报全保留 + 4 条系统消息余量）。
-  const taskProto = (task.inputProtocol ?? {}) as Record<string, unknown>;
   const swarmBeeCount = taskProto.swarmSynthesis === true
     ? Number((taskProto.swarm as { beeCount?: number } | undefined)?.beeCount ?? 0)
     : 0;
