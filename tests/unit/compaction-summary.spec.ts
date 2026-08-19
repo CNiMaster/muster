@@ -5,7 +5,8 @@ import { restoreWorkbench } from '../../src/server/domain/workbench';
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject } from '../../src/server/domain/project';
 import { createTask, markRunning, completeTask } from '../../src/server/domain/task';
-import { ensurePrimaryThread, getCompactionSummary, compactThreadWithAutoSummary } from '../../src/server/domain/thread';
+import { ensurePrimaryThread, getCompactionSummary, compactThreadWithMemory } from '../../src/server/domain/thread';
+import { generateCompactionSummary } from '../../src/server/domain/compaction-summary';
 import { generateCompactionSummary } from '../../src/server/domain/compaction-summary';
 import * as llmCallModule from '../../src/server/domain/llm-call';
 
@@ -64,7 +65,7 @@ describe('压缩自动摘要（批次 C，economy 档）', () => {
     expect(summary).toContain('过往执行记录已归档，上下文已延续');
   });
 
-  it('路径 ①：compactThreadWithAutoSummary 自动提炼并写入 project_agent_thread', async () => {
+  it('路径 ②：手动压缩未输摘要 → generateCompactionSummary 自动提炼并写入 project_agent_thread', async () => {
     const workbench = restoreWorkbench(db, { id: 'wb_cs_p1', name: '工作台' });
     const agent = createAgent(db, { companyId: workbench.id, name: '工程师', role: 'engineer' });
     const project = createProject(db, { companyId: workbench.id, name: '项目' });
@@ -79,8 +80,10 @@ describe('压缩自动摘要（批次 C，economy 档）', () => {
       usage: { promptTokens: 50, completionTokens: 20 },
     });
 
-    const summary = await compactThreadWithAutoSummary(db, thread.id);
+    // API 口径（projects.ts /threads/:id/compact）：未输摘要 → 自动生成后落库
+    const summary = await generateCompactionSummary(db, thread.id);
     expect(summary).toBe('自动生成的会话摘要测试');
+    compactThreadWithMemory(db, thread.id, { summary, memoryContent: summary });
     expect(getCompactionSummary(db, thread.id)).toBe('自动生成的会话摘要测试');
   });
 });

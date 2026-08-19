@@ -188,14 +188,6 @@ export function clearSessionForCompaction(db: DB, id: string, summary: string): 
   ).run(nowIso(), summary, nowIso(), id);
 }
 
-/** 批次 C：阈值触发或自动压缩，使用 economy 档 LLM 提炼摘要并清空 session。 */
-export async function compactThreadWithAutoSummary(db: DB, id: string): Promise<string> {
-  const { generateCompactionSummary } = await import('./compaction-summary');
-  const summary = await generateCompactionSummary(db, id);
-  clearSessionForCompaction(db, id, summary);
-  return summary;
-}
-
 export function compactThreadWithMemory(db: DB, id: string, input: {
   summary: string;
   memoryContent: string;

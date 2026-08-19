@@ -31,6 +31,23 @@ Muster is a local multi-agent workbench. Persistent agents collaborate through p
 
 **记忆归属（2026-08-19 起四体系定名）**：personal（用户画像，永远全量注入）/ **workspace**（工作台级、跟员工走、跨项目——原 'company' 枚举已迁移改名，UI 本就显示「工作台」；与蓝图无关，蓝图是打法包另一层）/ project（锁项目）/ skill（人设方法论，挂「人设方法论档案」宿主按 persona_key 全局召回——方法论属人设不属于执行者）。工蜂通用经验不单独沉淀（并入蜂群汇总），专家蜂 CRAFT 长存；项目专家（role=specialist）照常沉淀。
 
+## 合并治理大计划交付（2026-08-19，批次 A-J + 修复轮）
+
+原计划+修复计划随分支入库：`docs/superpowers/plans/2026-08-19-merge-governance-and-blueprint-crews.md` + `2026-08-19-merge-gov-fix-round.md`。修复轮前情：执行 agent 完成首轮后被 review 判定 F/G/H/I/J 未对齐（F 方向做反、G 核心架构缺失且蜂群旁路、H 清理不安全、I 只有查看器、J 做成计划外功能），修复轮逐批对齐原计划。
+
+- **批次 A 运行环境信息**：assembleContext 注入「# 运行环境」（日期/星期/时刻/时区（tz.ts 口径）/平台架构/执行器类型+binary 名，不注绝对路径）。
+- **批次 B contextWindow**：executor_profile.context_window_tokens（迁移 20260819001400）+ resolveContextWindow（档案>128k 默认）；engine recordRun 传参激活 SessionManager 0.75/0.9 token 比例判定（此前恒 0 从未生效）。
+- **批次 C 压缩自动摘要**：compaction-summary.ts economy 档 LLM（≤400 字，失败降级固定文案不阻塞）；手动压缩未输摘要自动生成 + 引擎 rotate 降级路径均落 compaction_summary（Claude 从裸丢变摘要延续；Codex 原生 compact 不动）；写入按 thread.id（修镜像行双写）。
+- **批次 D 蜂群收口契约**：汇总任务 summary 必含「结论/分歧/风险」三段（无分歧须显式），缺失前缀标注+synthesis_contract_violation 事件；契约教学先行（context.ts）。
+- **批次 E 工程地基**：lefthook pre-push（devDependency+prepare，仅 typecheck，CI 兜底全量）；CI=e2e job+独立 build；THIRD_PARTY_NOTICES 登记；spec/plan 状态行惯例（rejected 也入库）+ postmortem 目录（0001 发布白名单静默丢/0002 迁移 FK 规程/0003 蜂群记忆三连丢，四段模板：事实/根因/为什么自检没拦住/补强）。
+- **批次 F personal 全局**：loadContextMemories/searchMemory personal 去 profile/project 过滤（定案 #8 偏好属于用户不属于员工，乙可读甲沉淀偏好，仍全量注入）；「🎭 已匹配最优蓝图 N 个」卡挂 ProjectContextInspector（任务→蓝图 top-N 方向）。
+- **批次 G 任务级集成区（核心）**：**任务=合并确认单位**——所有 runtime task（必带 project_task 载体）基线从 `muster/<pid>/pt-<ptid>` 任务集成分支切出、产物发布进它（不碰主干），promote 回主干才是门禁；mergeMode 走 project.settings_json（默认 manual，auto 全自动）；promoteTaskStaging=diff 概要→callLlm premium approve/concern+合并摘要→merge（concern/LLM 失败跳过播报不阻塞；成功记 task_merge_record+项目群播报）；TaskTopBar「⬆️ 合并」（领先徽章 15s 轮询/manual 确认弹窗含"以后自动合并"/未完成仅提醒不阻止）；看门狗 sweepStaleTaskStaging（仅 auto 项目+无在飞+无在办验收，task_merge_watchdog 去重，manual 与孤儿永不碰）；no-approval 完全访问任务发布范围全量（定案 #9）；验收/返工任务挂源任务 project_task（审查现场=集成区整体）。
+- **批次 H 待合并看板**：`/projects/:id/merges`（系统待合并+孤儿区）；孤儿检测 git worktree list−task_runtime−系统集成区（realpath 归一修 macOS 符号链接）；**丢弃/清理强制内容检测**（有未提交/未合并内容默认拒绝返清单，force 显式确认才删——复盘 0001 防线，堵死 branch -D 静默丢改动复活）。
+- **批次 I 冲突时间线加权裁决**：promote 冲突→派裁决法庭（debate-judge 隐岗懒确保），输入=冲突文件+意图时间线（任务**开始时间**倒序+用户消息倒序，晚开始=更新意图仅加权不独裁）+行协议契约 SIDE/CONFIDENCE/RATIONALE；置信≥debateMinConfidence 自动选边重发布（-X ours/theirs）+播报理由；低置信/解析失败/再冲突升级用户带时间线；只读时间线聚合器保留作展示层。
+- **批次 J 蓝图专家组合**：staffing 扩展 {personaId, personaName, role?}（分工）；命中派整组——多槽且未显式指定执行者→主任务+组员 runtime task（同 project_task 并行、findActiveSpecialistAgent 池优先、缺员 blueprint_crew_slot_unfilled 留痕不造人）；显式指定执行者只穿衣不派组；穿戴文案全量改「派遣」。
+
+迁移新增：20260819001400 executor_context_window / 20260819001500 task_merge（task_merge_record+task_merge_watchdog）。测试锚点：tests/unit/{context-env,session-context-window,compaction-summary,swarm-synthesis-contract,personal-memory-scope,blueprint-crew-staffing,task-merge-governance,pending-merges-board,orphan-worktree-detector,conflict-timeline-judge}.spec + tests/integration/engine-wiring（新契约：产物落任务集成分支）。
+
 **蓝图 ↔ 专家池对接（2026-08-19）**：createTask 蓝图命中且未显式指定执行者 → 优先派给项目专家池穿戴同款人设的常驻专家（staffingMode='specialist-pool'，跨任务延续线程记忆）；已指定执行者只穿衣不换人（user_override/official_benchmark 原语义不变）。
 
 **staging 合并看门狗（2026-08-19）**：合并责任链定论——普通任务完工即由发布管线直接合并主干；蜂群系产物进 staging，收口（无验收标准）或验收 PASS 自动 promote；唯一缺口（有验收标准但验收链断 → staging 无限积压）由看门狗堵上：coordinator 每 10 分钟 `sweepStaleStaging`（staging.ts），领先且无活跃蜂群、无在办 [验收] 任务 → 自动 promote，冲突升级用户（同 stagingHead 只提醒一次，`staging_watchdog` 表记账）。

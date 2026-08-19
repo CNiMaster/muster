@@ -1,6 +1,6 @@
 # 合并治理大计划 · 修复轮实施计划（2026-08-19 review 后）
 
-> 状态：approved（实施中）
+> 状态：implemented（修复 1-8 全部交付；验证门：tsc 0 错 + vitest 1320/1320 全绿）
 >
 > 背景：`feat/merge-governance-and-blueprint-crews` 分支由执行 agent 完成，review 判定**不可直接合并**。批次 A/B/D 达标保留；C/E 部分达标；F 方向做反；G 核心架构未做且引入蜂群旁路 bug；H 清理路径不安全；I 只做了只读查看器；J 做成了计划外功能。本计划逐项修复对齐原计划（`2026-08-19-merge-governance-and-blueprint-crews.md`，已随本分支入库）。一批一提交，每批过验证门（typecheck 0 错 + vitest 全绿，web-tools 3 例环境基线除外）。
 

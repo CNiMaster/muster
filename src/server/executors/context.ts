@@ -123,7 +123,8 @@ export function assembleContext(
     try {
       const ep = getExecutorProfile(db, agent.executorProfileId);
       if (ep?.config?.binaryPath && typeof ep.config.binaryPath === 'string') {
-        binaryName = ep.config.binaryPath;
+        // 只注 binary 名不注绝对路径（环境段只放平台事实，路径属工作区段）
+        binaryName = ep.config.binaryPath.split('/').pop() ?? '';
       }
     } catch { /* 容错 */ }
   }
