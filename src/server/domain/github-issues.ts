@@ -15,6 +15,7 @@ import { getProject } from './project';
 import { createTask } from './task';
 import { ensurePrimaryThread } from './thread';
 import type { AutomationRecord } from './automation';
+import { listTaskStagingRefs, branchAheadCount } from '../worktree/manager';
 
 export interface GithubIssueItem {
   number: number;
@@ -134,4 +135,73 @@ export async function syncGithubIssues(
   }
   log.info('github issues synced', { automationId: automation.id, repo, newCount, skipped });
   return { newCount, skipped };
+}
+
+export interface IssueBoardItem {
+  repo: string;
+  number: number;
+  title: string;
+  status: string;
+  taskId: string | null;
+  taskState: string | null;
+  taskSeq: number | null;
+  projectTaskId: string | null;
+  /** 集成区领先提交数（任务未完成/无产物时为 0）；>0 即「待审批合并」。 */
+  aheadCommits: number;
+  syncedAt: string;
+}
+
+/** Issue 处理看板（整改 Part2 批次7）：issue → 分诊任务状态 → 集成区领先数（待审批标识）。 */
+export function listIssueBoard(db: DB, projectId?: string): IssueBoardItem[] {
+  const rows = db.prepare(
+    `SELECT g.repo, g.number, g.title, g.status, g.task_id, g.synced_at,
+            t.state AS task_state, t.seq AS task_seq, t.project_task_id
+     FROM github_issue_sync g
+     LEFT JOIN task t ON t.id = g.task_id
+     ${projectId ? 'WHERE g.project_id = ?' : ''}
+     ORDER BY g.synced_at DESC`,
+  ).all(...(projectId ? [projectId] : [])) as Array<{
+    repo: string; number: number; title: string; status: string; task_id: string | null; synced_at: string;
+    task_state: string | null; task_seq: number | null; project_task_id: string | null;
+  }>;
+  // 集成区领先数按项目批量取（for-each-ref 一次/项目）
+  const aheadByProjectTask = new Map<string, { project: string; pt: string }>();
+  const projectIds = new Set<string>();
+  for (const r of rows) {
+    if (r.project_task_id && r.task_state === 'completed') aheadByProjectTask.set(r.project_task_id, { project: '', pt: r.project_task_id });
+  }
+  for (const r of rows) {
+    if (r.project_task_id) projectIds.add(r.project_task_id);
+  }
+  // 取所在项目：project_task → project
+  const ptToProject = new Map<string, string>();
+  for (const pt of aheadByProjectTask.keys()) {
+    const p = db.prepare('SELECT project_id FROM project_task WHERE id=?').get(pt) as { project_id: string } | undefined;
+    if (p) ptToProject.set(pt, p.project_id);
+  }
+  const aheadCache = new Map<string, Map<string, { branch: string; head: string; lastCommitAt: string }>>();
+  for (const pid of new Set(ptToProject.values())) {
+    const project = getProject(db, pid);
+    aheadCache.set(pid, listTaskStagingRefs(project.rootDir, pid));
+  }
+  const aheadOf = (pt: string): number => {
+    const pid = ptToProject.get(pt);
+    if (!pid) return 0;
+    const refs = aheadCache.get(pid);
+    const ref = refs?.get(pt);
+    if (!ref) return 0;
+    return branchAheadCount(getProject(db, pid).rootDir, ref.branch);
+  };
+  return rows.map((r) => ({
+    repo: r.repo,
+    number: r.number,
+    title: r.title,
+    status: r.status,
+    taskId: r.task_id,
+    taskState: r.task_state,
+    taskSeq: r.task_seq,
+    projectTaskId: r.project_task_id,
+    aheadCommits: r.project_task_id && r.task_state === 'completed' ? aheadOf(r.project_task_id) : 0,
+    syncedAt: r.synced_at,
+  }));
 }

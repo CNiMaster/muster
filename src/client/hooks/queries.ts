@@ -695,11 +695,45 @@ export function useSetAutomationEnabled() {
   });
 }
 
+export function useCreateAutomationForm() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: {
+      kind: 'github-issues';
+      config: { repo: string; labelFilter?: string };
+      schedule: { kind: 'interval'; intervalMinutes: number } | { kind: 'daily'; timeOfDay: string };
+      projectId: string;
+    }) => api.post<AutomationDTO>('/api/automations', body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['automations'] }),
+  });
+}
+
 export function useDeleteAutomation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.delete(`/api/automations/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['automations'] }),
+  });
+}
+
+export interface IssueBoardItemDTO {
+  repo: string;
+  number: number;
+  title: string;
+  status: string;
+  taskId: string | null;
+  taskState: string | null;
+  taskSeq: number | null;
+  projectTaskId: string | null;
+  aheadCommits: number;
+  syncedAt: string;
+}
+
+export function useIssueBoard(projectId?: string) {
+  return useQuery({
+    queryKey: ['issue-board', projectId ?? 'all'],
+    queryFn: () => api.get<IssueBoardItemDTO[]>(`/api/automations/issues-board${projectId ? `?projectId=${projectId}` : ''}`),
+    refetchInterval: 30_000,
   });
 }
 

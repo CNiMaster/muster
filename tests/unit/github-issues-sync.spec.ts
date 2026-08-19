@@ -13,7 +13,7 @@ import { createAgent } from '../../src/server/domain/agent';
 import { createProject } from '../../src/server/domain/project';
 import { listTasks } from '../../src/server/domain/task';
 import { createAutomation, isAutomationDue, listDueAutomations, getAutomation } from '../../src/server/domain/automation';
-import { parseIssuesFromGhOutput, syncGithubIssues, type GithubIssueItem } from '../../src/server/domain/github-issues';
+import { parseIssuesFromGhOutput, syncGithubIssues, listIssueBoard, type GithubIssueItem } from '../../src/server/domain/github-issues';
 
 let db: DB;
 beforeEach(() => {
@@ -109,5 +109,30 @@ describe('到点判定', () => {
     const today0930 = new Date(today10); today0930.setHours(9, 30, 0, 0);
     markRun(daily.id, today0930.toISOString());
     expect(isAutomationDue(getAutomation(db, daily.id), today10)).toBe(false);
+  });
+});
+
+describe('Issue 处理看板聚合', () => {
+  it('issue → 任务状态 → 集成区领先（完成且领先>0 → 待审批标识）', async () => {
+    const workbench = restoreWorkbench(db, { id: 'wb_board_gh', name: '工作台' });
+    const lead = createAgent(db, { companyId: workbench.id, name: '负责人', role: 'lead' }).id;
+    const projectId = createProject(db, { companyId: workbench.id, name: 'p', firstAgentId: lead, initialState: 'active' }).id;
+    const automation = createAutomation(db, {
+      kind: 'github-issues', config: { repo: 'a/b' },
+      schedule: { kind: 'interval', intervalMs: 3_600_000 }, projectId, createdVia: 'form',
+    });
+    await syncGithubIssues(db, automation, { fetcher: async () => [{ number: 9, title: '崩溃', body: '', labels: [] }] });
+
+    const board = listIssueBoard(db, projectId);
+    expect(board).toHaveLength(1);
+    expect(board[0]!.number).toBe(9);
+    expect(board[0]!.taskState).toBe('queued'); // 刚派发
+    expect(board[0]!.aheadCommits).toBe(0); // 未完成无集成区领先
+    // 模拟任务完成且集成区领先
+    const taskId = board[0]!.taskId!;
+    db.prepare("UPDATE task SET state='completed', outcome='completed' WHERE id=?").run(taskId);
+    const board2 = listIssueBoard(db, projectId);
+    expect(board2[0]!.taskState).toBe('completed');
+    expect(board2[0]!.aheadCommits).toBe(0); // 无 git 仓库集成区分支 → 0（真实领先在 e2e/集成环境验证）
   });
 });

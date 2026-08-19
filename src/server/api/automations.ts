@@ -15,6 +15,7 @@ import { AppError, ErrorCode } from '../../shared/errors';
 import {
   listAutomations, createAutomation, setAutomationEnabled, deleteAutomation,
 } from '../domain/automation';
+import { listIssueBoard } from '../domain/github-issues';
 import { ensureAutomationStewardAgentId } from '../domain/system-agents';
 import { getAgent } from '../domain/agent';
 
@@ -22,6 +23,12 @@ export const automationsRouter = Router();
 
 automationsRouter.get('/', asyncHandler(async (_req, res) => {
   res.json(listAutomations(getDb()));
+}));
+
+/** Issue 处理看板（整改 Part2 批次7）：issue → 任务状态 → 集成区领先（待审批标识）。 */
+automationsRouter.get('/issues-board', asyncHandler(async (req, res) => {
+  const projectId = typeof req.query.projectId === 'string' ? req.query.projectId : undefined;
+  res.json(listIssueBoard(getDb(), projectId));
 }));
 
 automationsRouter.get('/steward', asyncHandler(async (_req, res) => {

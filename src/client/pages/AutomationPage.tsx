@@ -8,7 +8,7 @@ import type React from 'react';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  useWorkbench, useAutomations, useAutomationSteward, useSetAutomationEnabled, useDeleteAutomation, useProjects,
+  useWorkbench, useAutomations, useAutomationSteward, useSetAutomationEnabled, useDeleteAutomation, useProjects, useCreateAutomationForm,
 } from '../hooks/queries';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
@@ -31,7 +31,43 @@ export function AutomationPage(): React.ReactElement {
   const { data: projects = [] } = useProjects();
   const setEnabled = useSetAutomationEnabled();
   const remove = useDeleteAutomation();
+  const createForm = useCreateAutomationForm();
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
+  const [repo, setRepo] = useState('');
+  const [labelFilter, setLabelFilter] = useState('');
+  const [projectId, setProjectId] = useState('');
+  const [scheduleKind, setScheduleKind] = useState<'interval' | 'daily'>('interval');
+  const [intervalMinutes, setIntervalMinutes] = useState(60);
+  const [timeOfDay, setTimeOfDay] = useState('09:00');
+
+  const submitCreate = (): void => {
+    if (!/^[\w.-]+\/[\w.-]+$/.test(repo.trim())) {
+      toast('error', '仓库须为 owner/repo 形式');
+      return;
+    }
+    if (!projectId) {
+      toast('error', '请选择绑定的项目');
+      return;
+    }
+    createForm.mutate(
+      {
+        kind: 'github-issues',
+        config: { repo: repo.trim(), ...(labelFilter.trim() ? { labelFilter: labelFilter.trim() } : {}) },
+        schedule: scheduleKind === 'interval' ? { kind: 'interval', intervalMinutes } : { kind: 'daily', timeOfDay },
+        projectId,
+      },
+      {
+        onSuccess: () => {
+          toast('success', `已创建：${repo.trim()} 的 Issues 自动化`);
+          setFormOpen(false);
+          setRepo('');
+          setLabelFilter('');
+        },
+        onError: (e) => toast('error', (e as Error).message),
+      },
+    );
+  };
 
   if (isLoading) return <CardSkeleton />;
 
@@ -64,7 +100,42 @@ export function AutomationPage(): React.ReactElement {
       <Card>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
           <h3 style={{ margin: 0, fontSize: 14 }}>📋 自动化（{automations.length}）</h3>
+          <Button size="sm" onClick={() => setFormOpen((v) => !v)}>{formOpen ? '收起' : '＋ 新建'}</Button>
         </div>
+        {formOpen && (
+          <div style={{ padding: 12, background: 'var(--bg-elev)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)', marginBottom: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>GitHub Issues 自动化</div>
+            <input value={repo} onChange={(e) => setRepo(e.target.value)} placeholder="owner/repo（如 CNiMaster/muster）" style={{ fontSize: 13, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)' }} />
+            <input value={labelFilter} onChange={(e) => setLabelFilter(e.target.value)} placeholder="label 过滤（可选，如 bug）" style={{ fontSize: 13, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)' }} />
+            <select value={projectId} onChange={(e) => setProjectId(e.target.value)} style={{ fontSize: 13, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)' }}>
+              <option value="">绑定项目（负责人按时领取处理）…</option>
+              {projects.filter((p) => (p as { settings?: Record<string, unknown> })?.settings?.inbox !== true).map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <select value={scheduleKind} onChange={(e) => setScheduleKind(e.target.value as 'interval' | 'daily')} style={{ fontSize: 13, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)' }}>
+                <option value="interval">按间隔循环</option>
+                <option value="daily">每天定点</option>
+              </select>
+              {scheduleKind === 'interval' ? (
+                <select value={intervalMinutes} onChange={(e) => setIntervalMinutes(Number(e.target.value))} style={{ fontSize: 13, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)' }}>
+                  <option value={15}>每 15 分钟</option>
+                  <option value={30}>每 30 分钟</option>
+                  <option value={60}>每 1 小时</option>
+                  <option value={360}>每 6 小时</option>
+                  <option value={1440}>每 24 小时</option>
+                </select>
+              ) : (
+                <input type="time" value={timeOfDay} onChange={(e) => setTimeOfDay(e.target.value)} style={{ fontSize: 13, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)' }} />
+              )}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <Button variant="ghost" size="sm" onClick={() => setFormOpen(false)}>取消</Button>
+              <Button size="sm" loading={createForm.isPending} onClick={submitCreate}>创建</Button>
+            </div>
+          </div>
+        )}
         {automations.length === 0 ? (
           <EmptyState icon="⚙️" title="还没有自动化" />
         ) : (

@@ -5,6 +5,7 @@
  * - 底部：冲突与裁决时间线（批次 I 展示层）。
  */
 import type React from 'react';
+import { Link } from 'react-router-dom';
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
@@ -15,6 +16,7 @@ import {
   useDiscardTaskStaging,
   useOrphanWorktrees,
   useCleanOrphanWorktrees,
+  useIssueBoard,
   type PendingTaskMergeDTO,
   type OrphanWorktreeDTO,
   type TaskMergeResultDTO,
@@ -26,6 +28,7 @@ import { CardSkeleton } from '../components/Skeleton';
 import { EmptyState } from '../components/EmptyState';
 import { Modal } from '../components/Modal';
 import { ConflictTimelineCard } from '../components/ConflictTimelineCard';
+
 
 export function ProjectMergesPage(): React.ReactElement {
   const { projectId = '' } = useParams();
@@ -44,6 +47,8 @@ export function ProjectMergesPage(): React.ReactElement {
   const cleanOrphans = useCleanOrphanWorktrees(projectId);
 
   const [mergingAll, setMergingAll] = useState(false);
+  const [activeTab, setActiveTab] = useState<'merges' | 'issues'>('merges');
+  const { data: issueBoard = [] } = useIssueBoard(projectId);
   const [mergingOne, setMergingOne] = useState(false);
   const [discardAsk, setDiscardAsk] = useState<PendingTaskMergeDTO | null>(null);
   const [orphanAsk, setOrphanAsk] = useState<OrphanWorktreeDTO | null>(null);
@@ -88,6 +93,38 @@ export function ProjectMergesPage(): React.ReactElement {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div style={{ display: 'flex', gap: '4px' }}>
+        <button type="button" className={`mu-composer-pill ${activeTab === 'merges' ? 'is-highlight' : ''}`} onClick={() => setActiveTab('merges')}>
+          <span>🔀 待合并</span>
+        </button>
+        <button type="button" className={`mu-composer-pill ${activeTab === 'issues' ? 'is-highlight' : ''}`} onClick={() => setActiveTab('issues')}>
+          <span>🐙 Issue 处理</span>
+        </button>
+      </div>
+      {activeTab === 'issues' ? (
+        <Card>
+          <h3 style={{ margin: '0 0 10px', fontSize: 14 }}>🐙 Issue 处理（{issueBoard.length}）</h3>
+          <p style={{ margin: '0 0 8px', fontSize: 12, color: 'var(--fg-subtle)' }}>GitHub Issues 自动化的处理现场——分诊→修复→集成区，全程等你在「待合并」审批。</p>
+          {issueBoard.length === 0 ? (
+            <EmptyState icon="🐙" title="没有同步中的 issue" />
+          ) : (
+            issueBoard.map((it) => (
+              <div key={`${it.repo}#${it.number}`} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 4px', borderBottom: '1px solid var(--border-subtle)', fontSize: 13 }}>
+                <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={it.title}>
+                  {it.repo}#{it.number} {it.title}
+                </span>
+                {it.taskState ? (
+                  <Link to={`/tasks/${it.taskId}`} style={{ fontSize: 12 }}>#{it.taskSeq} <Badge tone={it.taskState === "completed" ? "ok" : it.taskState === "running" ? "info" : "neutral"}>{it.taskState === "completed" ? "已完成" : it.taskState === "running" ? "进行中" : it.taskState ?? ""}</Badge></Link>
+                ) : (
+                  <Badge tone="neutral">未派发</Badge>
+                )}
+                {it.aheadCommits > 0 && <Badge tone="ok">待审批合并（领先 {it.aheadCommits}）</Badge>}
+              </div>
+            ))
+          )}
+        </Card>
+      ) : (
+      <>
       <Card>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
           <h3 style={{ margin: 0, fontSize: 14 }}>⬆️ 待合并任务（{pending.length}）</h3>
@@ -211,6 +248,8 @@ export function ProjectMergesPage(): React.ReactElement {
           <p style={{ fontSize: 13, margin: 0 }}>该工作区无未合并内容，可安全清理。</p>
         )}
       </Modal>
+      </>
+      )}
     </div>
   );
 }
