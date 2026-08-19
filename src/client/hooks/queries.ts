@@ -631,66 +631,53 @@ export function usePromoteStaging(projectId: string | undefined) {
   });
 }
 
-export interface PendingMergeDTO {
-  taskId: string;
+/** 批次 H·修复轮：待合并看板条目（系统侧=各项目任务集成分支领先状态） */
+export interface PendingTaskMergeDTO {
   projectTaskId: string;
   seq: number;
   title: string;
+  state: string;
   branch: string;
-  worktreePath: string;
-  summary: string;
-  artifacts: Array<{ path: string; kind?: string }>;
-  createdAt: string;
-  assigneeAgentId: string | null;
+  aheadCommits: number;
+  pendingRuntimeTasks: number;
+  mergeMode: 'manual' | 'auto';
+  lastMergeAt: string | null;
 }
 
-/** 批次 G：项目下待合并审查的 Task 列表 */
+/** 批次 G·修复轮：项目下待合并的项目任务列表（15s 轮询） */
 export function useProjectPendingMerges(projectId: string | undefined) {
   return useQuery({
-    queryKey: ['project-merges', projectId],
-    queryFn: () => api.get<PendingMergeDTO[]>(`/api/projects/${projectId}/merges`),
+    queryKey: ['pending-merges-board', projectId],
+    queryFn: () => api.get<PendingTaskMergeDTO[]>(`/api/projects/${projectId}/merges`),
     enabled: !!projectId,
-    refetchInterval: 10_000,
+    refetchInterval: 15_000,
   });
 }
 
-/** 批次 G：手动触发将 Task 暂存成果合入主干 */
-export function usePromoteTaskMerge(projectId: string | undefined) {
+/** 批次 H·修复轮：丢弃任务集成区（有未合并提交时 needsForce，确认后 force 重试） */
+export function useDiscardTaskStaging(projectId: string | undefined) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (taskId: string) =>
-      api.post<{ promoted: boolean; message: string; conflicts?: string[] }>(`/api/projects/${projectId}/merges/${taskId}/promote`, {}),
+    mutationFn: ({ projectTaskId, force }: { projectTaskId: string; force?: boolean }) =>
+      api.post<{ discarded: boolean; needsForce?: boolean; aheadCommits?: number; message: string }>(
+        `/api/projects/${projectId}/project-tasks/${projectTaskId}/discard`, { force },
+      ),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['project-merges', projectId] });
-      qc.invalidateQueries({ queryKey: ['project-tasks', projectId] });
-      qc.invalidateQueries({ queryKey: ['staging-status', projectId] });
-    },
-  });
-}
-
-/** 批次 G：放弃 Task 的暂存成果并安全清理工作树 */
-export function useDiscardTaskMerge(projectId: string | undefined) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (taskId: string) =>
-      api.post<{ discarded: boolean; message: string }>(`/api/projects/${projectId}/merges/${taskId}/discard`, {}),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['project-merges', projectId] });
-      qc.invalidateQueries({ queryKey: ['project-tasks', projectId] });
-      qc.invalidateQueries({ queryKey: ['staging-status', projectId] });
+      qc.invalidateQueries({ queryKey: ['pending-merges-board', projectId] });
+      qc.invalidateQueries({ queryKey: ['task-merge-status'] });
     },
   });
 }
 
 export interface OrphanWorktreeDTO {
-  taskId: string;
   path: string;
-  branch: string;
+  branch: string | null;
   reason: string;
-  mtime: string;
+  uncommittedFiles: string[];
+  aheadCommits: number;
 }
 
-/** 批次 H：查询项目下的孤儿工作树 */
+/** 批次 H·修复轮：孤儿工作树（git worktree list − task_runtime 登记 − 系统集成区） */
 export function useOrphanWorktrees(projectId: string | undefined) {
   return useQuery({
     queryKey: ['orphan-worktrees', projectId],
@@ -699,15 +686,17 @@ export function useOrphanWorktrees(projectId: string | undefined) {
   });
 }
 
-/** 批次 H：清理项目下的孤儿工作树 */
+/** 批次 H·修复轮：清理孤儿——有未合并内容时服务端拒绝并返回 blocked（三选：强制丢弃/查看/取消） */
 export function useCleanOrphanWorktrees(projectId: string | undefined) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (targetTaskIds?: string[]) =>
-      api.post<{ cleanedCount: number; cleaned: OrphanWorktreeDTO[] }>(`/api/projects/${projectId}/orphan-worktrees/clean`, { targetTaskIds }),
+    mutationFn: ({ targets, force }: { targets?: string[]; force?: boolean }) =>
+      api.post<{ cleanedCount: number; cleaned: OrphanWorktreeDTO[]; blocked: Array<OrphanWorktreeDTO & { contents: string[] }> }>(
+        `/api/projects/${projectId}/orphan-worktrees/clean`, { targets, force },
+      ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['orphan-worktrees', projectId] });
-      qc.invalidateQueries({ queryKey: ['project-merges', projectId] });
+      qc.invalidateQueries({ queryKey: ['pending-merges-board', projectId] });
     },
   });
 }

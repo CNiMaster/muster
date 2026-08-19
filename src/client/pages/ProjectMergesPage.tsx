@@ -1,233 +1,202 @@
+/**
+ * 待合并看板（批次 H·修复轮）：
+ * - 系统侧：各项目任务集成分支领先状态——单合并（AI 审查流）/批量合并/丢弃（未合并提交须显式确认）。
+ * - 孤儿区：git worktree list − task_runtime 登记——识别标注、清理有未合并内容防线（强制丢弃须确认）。
+ * - 底部：冲突与裁决时间线（批次 I 展示层）。
+ */
 import type React from 'react';
 import { useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
+import { api } from '../api/client';
 import {
   useProject,
   useProjectPendingMerges,
-  usePromoteTaskMerge,
-  useDiscardTaskMerge,
+  useDiscardTaskStaging,
   useOrphanWorktrees,
   useCleanOrphanWorktrees,
-  useAgents,
+  type PendingTaskMergeDTO,
+  type OrphanWorktreeDTO,
+  type TaskMergeResultDTO,
 } from '../hooks/queries';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
 import { Badge } from '../components/Badge';
 import { CardSkeleton } from '../components/Skeleton';
-import { EmptyState, Icons } from '../components/EmptyState';
+import { EmptyState } from '../components/EmptyState';
+import { Modal } from '../components/Modal';
 import { ConflictTimelineCard } from '../components/ConflictTimelineCard';
 
 export function ProjectMergesPage(): React.ReactElement {
   const { projectId = '' } = useParams();
   const { data: project, isLoading: isProjLoading } = useProject(projectId);
-  const { data: pendingMerges = [], isLoading: isMergesLoading } = useProjectPendingMerges(projectId);
-  const { data: orphans = [], isLoading: isOrphansLoading } = useOrphanWorktrees(projectId);
-  const { data: agents = [] } = useAgents();
+  const { data: pending = [], isLoading: isMergesLoading } = useProjectPendingMerges(projectId);
+  const { data: orphans = [] } = useOrphanWorktrees(projectId);
 
-  const promoteMutation = usePromoteTaskMerge(projectId);
-  const discardMutation = useDiscardTaskMerge(projectId);
-  const cleanOrphansMutation = useCleanOrphanWorktrees(projectId);
+  const discardStaging = useDiscardTaskStaging(projectId);
+  const cleanOrphans = useCleanOrphanWorktrees(projectId);
 
   const [mergingAll, setMergingAll] = useState(false);
+  const [mergingOne, setMergingOne] = useState(false);
+  const [discardAsk, setDiscardAsk] = useState<PendingTaskMergeDTO | null>(null);
+  const [orphanAsk, setOrphanAsk] = useState<OrphanWorktreeDTO | null>(null);
 
   if (isProjLoading || isMergesLoading) return <CardSkeleton />;
+  void project;
 
-  const handlePromote = (taskId: string, title: string) => {
-    promoteMutation.mutate(taskId, {
-      onSuccess: (res) => {
-        if (res.promoted) toast('success', `任务「${title}」成果已合入主干`);
-        else toast('error', res.message);
-      },
-      onError: (err) => toast('error', (err as Error).message),
-    });
-  };
-
-  const handleDiscard = (taskId: string, title: string) => {
-    discardMutation.mutate(taskId, {
-      onSuccess: () => toast('info', `已放弃任务「${title}」变更`),
-      onError: (err) => toast('error', (err as Error).message),
-    });
-  };
-
-  const handlePromoteAll = async () => {
-    if (!pendingMerges.length) return;
-    setMergingAll(true);
-    let successCount = 0;
-    for (const item of pendingMerges) {
-      try {
-        const res = await promoteMutation.mutateAsync(item.taskId);
-        if (res.promoted) successCount++;
-      } catch (e) {
-        toast('error', `合并「${item.title}」失败: ${(e as Error).message}`);
+  /** 单条合并：manual 首调 needsConfirm → 自动带 confirm 重试（看板口径=点击即意图明确） */
+  const mergeOne = async (item: PendingTaskMergeDTO): Promise<void> => {
+    setMergingOne(true);
+    try {
+      let r = await api.post<TaskMergeResultDTO>(`/api/projects/${projectId}/project-tasks/${item.projectTaskId}/merge`, { confirm: item.mergeMode === 'auto' });
+      if (r.needsConfirm) {
+        r = await api.post<TaskMergeResultDTO>(`/api/projects/${projectId}/project-tasks/${item.projectTaskId}/merge`, { confirm: true });
       }
+      if (r.promoted) toast('success', `#${item.seq} 已合并：${r.summary ?? r.message}`);
+      else if (r.conflicts?.length) toast('error', `#${item.seq} 冲突：${r.conflicts.slice(0, 3).join('、')}`);
+      else toast('info', `#${item.seq} 本轮未合并：${r.message}`);
+    } catch (e) {
+      toast('error', (e as Error).message);
+    } finally {
+      setMergingOne(false);
+    }
+  };
+
+  const mergeAll = async (): Promise<void> => {
+    if (!pending.length) return;
+    setMergingAll(true);
+    let ok = 0;
+    for (const item of pending) {
+      try {
+        const r = await api.post<TaskMergeResultDTO>(`/api/projects/${projectId}/project-tasks/${item.projectTaskId}/merge`, { confirm: true });
+        if (r.promoted) ok += 1;
+        else if (r.conflicts?.length) toast('error', `#${item.seq} 冲突：${r.conflicts.slice(0, 3).join('、')}`);
+      } catch { /* 逐项播报，失败不中断批量 */ }
     }
     setMergingAll(false);
-    toast('success', `批量合并完成：成功合入 ${successCount} 项成果`);
-  };
-
-  const handleCleanOrphans = () => {
-    cleanOrphansMutation.mutate(undefined, {
-      onSuccess: (res) => toast('success', `已成功清理 ${res.cleanedCount} 个孤儿工作树`),
-      onError: (err) => toast('error', (err as Error).message),
-    });
+    if (ok > 0) toast('success', `批量合并完成：${ok}/${pending.length}`);
   };
 
   return (
-    <div className="project-merges-page section-stack" style={{ maxWidth: 1000, margin: '0 auto', padding: '20px' }}>
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
-        <div>
-          <div className="subtitle" style={{ margin: 0 }}>
-            <Link to={`/projects/${projectId}`}>← 返回项目主页</Link>
-            <span style={{ margin: '0 8px' }}>·</span>
-            <span className="muted">{project?.name}</span>
-          </div>
-          <h1 style={{ margin: '8px 0 4px', fontSize: 22 }}>🔀 待合并成果看板</h1>
-          <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-            任务级暂存工作树治理：人工审查智能体成果，一键合并或安全放弃。
-          </p>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <Card>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <h3 style={{ margin: 0, fontSize: 14 }}>⬆️ 待合并任务（{pending.length}）</h3>
+          {pending.length > 1 && (
+            <Button size="sm" variant="ghost" loading={mergingAll} onClick={() => void mergeAll()}>批量合并全部</Button>
+          )}
         </div>
-
-        {pendingMerges.length > 0 && (
-          <Button variant="primary" onClick={handlePromoteAll} loading={mergingAll}>
-            🚀 全部一键合入 ({pendingMerges.length})
-          </Button>
-        )}
-      </header>
-
-      {/* 待合并列表 */}
-      <section style={{ display: 'grid', gap: 16 }}>
-        <h2 style={{ fontSize: 16, margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span>待合并任务成果</span>
-          <Badge tone={pendingMerges.length > 0 ? 'warn' : 'ok'}>{pendingMerges.length} 项待合入</Badge>
-        </h2>
-
-        {pendingMerges.length === 0 ? (
-          <Card>
-            <EmptyState
-              icon={<span style={{ fontSize: 32 }}>✅</span>}
-              title="当前暂无待合并成果"
-              hint="所有任务均已自动或手动合入主干工作区。"
-            />
-          </Card>
+        {pending.length === 0 ? (
+          <EmptyState icon="✅" title="没有待合并的任务" />
         ) : (
-          pendingMerges.map((item) => {
-            const assignee = agents.find((a) => a.id === item.assigneeAgentId);
-            return (
-              <Card key={item.taskId} style={{ borderLeft: '4px solid var(--accent)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                      <strong style={{ fontSize: 15 }}>#{item.seq} {item.title}</strong>
-                      <Badge tone="info">{assignee?.name || '智能体'}</Badge>
-                      <span className="muted" style={{ fontSize: 11 }}>{new Date(item.createdAt).toLocaleString()}</span>
-                    </div>
-                    <div className="muted" style={{ fontSize: 12, display: 'flex', gap: 12, marginBottom: 8 }}>
-                      <span>🌿 分支: <code>{item.branch}</code></span>
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <Button
-                      size="sm"
-                      variant="primary"
-                      onClick={() => handlePromote(item.taskId, item.title)}
-                      loading={promoteMutation.isPending}
-                    >
-                      🚀 合入主干
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="danger"
-                      onClick={() => handleDiscard(item.taskId, item.title)}
-                      loading={discardMutation.isPending}
-                    >
-                      🗑️ 放弃
-                    </Button>
-                  </div>
-                </div>
-
-                {item.summary && (
-                  <p style={{ margin: '8px 0', fontSize: 13, background: 'var(--bg-elev)', padding: '8px 12px', borderRadius: 6 }}>
-                    {item.summary}
-                  </p>
-                )}
-
-                {item.artifacts.length > 0 && (
-                  <div style={{ marginTop: 8 }}>
-                    <strong style={{ fontSize: 12, color: 'var(--fg-muted)' }}>
-                      📁 产出文件 ({item.artifacts.length}):
-                    </strong>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
-                      {item.artifacts.map((art) => (
-                        <span
-                          key={art.path}
-                          style={{
-                            fontSize: 11,
-                            padding: '2px 8px',
-                            borderRadius: 4,
-                            background: 'var(--bg-elev)',
-                            border: '1px solid var(--border)',
-                            fontFamily: 'monospace',
-                          }}
-                        >
-                          {art.path}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </Card>
-            );
-          })
+          pending.map((item) => (
+            <div key={item.projectTaskId} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 4px', borderBottom: '1px solid var(--border-subtle)' }}>
+              <span style={{ fontSize: 13, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                #{item.seq} {item.title}
+              </span>
+              <Badge tone="info">领先 {item.aheadCommits} 提交</Badge>
+              {item.pendingRuntimeTasks > 0 && <Badge tone="warn">{item.pendingRuntimeTasks} 在飞</Badge>}
+              <Badge tone="neutral">{item.mergeMode === 'auto' ? '自动' : '手动'}</Badge>
+              <Button size="sm" loading={mergingOne} onClick={() => void mergeOne(item)}>合并</Button>
+              <Button size="sm" variant="ghost" onClick={() => setDiscardAsk(item)}>丢弃</Button>
+            </div>
+          ))
         )}
-      </section>
+      </Card>
 
-      {/* 孤儿工作树检测与清理 */}
-      {orphans.length > 0 && (
-        <section style={{ marginTop: 24, display: 'grid', gap: 12 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h2 style={{ fontSize: 16, margin: 0, color: 'var(--warn)' }}>
-              ⚠️ 检测到 {orphans.length} 个残留孤儿工作树
-            </h2>
+      <Card>
+        <h3 style={{ margin: '0 0 10px', fontSize: 14 }}>🧩 孤儿工作区（{orphans.length}）</h3>
+        <p style={{ margin: '0 0 8px', fontSize: 12, color: 'var(--fg-subtle)' }}>
+          未在系统登记的 worktree（用户自建或遗留）。永不自动合并、看门狗永不碰；清理有未合并内容防线。
+        </p>
+        {orphans.length === 0 ? (
+          <EmptyState icon="🧹" title="没有孤儿工作区" />
+        ) : (
+          orphans.map((o) => (
+            <div key={o.path} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 4px', borderBottom: '1px solid var(--border-subtle)', fontSize: 12 }}>
+              <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={o.path}>{o.path}</span>
+              <span style={{ color: 'var(--fg-subtle)' }}>{o.branch ?? '（游离 HEAD）'}</span>
+              {o.uncommittedFiles.length > 0 && <Badge tone="warn">{o.uncommittedFiles.length} 未提交</Badge>}
+              {o.aheadCommits > 0 && <Badge tone="warn">{o.aheadCommits} 未合并提交</Badge>}
+              <Button size="sm" variant="ghost" onClick={() => setOrphanAsk(o)}>清理</Button>
+            </div>
+          ))
+        )}
+      </Card>
+
+      <ConflictTimelineCard projectId={projectId} />
+
+      {/* 丢弃任务集成区确认（有未合并提交须显式确认——复盘 0001 防线） */}
+      <Modal
+        open={discardAsk !== null}
+        onClose={() => setDiscardAsk(null)}
+        title="丢弃任务集成区？"
+        size="sm"
+        footer={
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <Button variant="ghost" onClick={() => setDiscardAsk(null)}>取消</Button>
             <Button
-              size="sm"
-              variant="ghost"
-              onClick={handleCleanOrphans}
-              loading={cleanOrphansMutation.isPending}
+              onClick={() => {
+                if (!discardAsk) return;
+                discardStaging.mutate(
+                  { projectTaskId: discardAsk.projectTaskId, force: true },
+                  {
+                    onSuccess: (r) => { toast(r.discarded ? 'success' : 'info', r.message); setDiscardAsk(null); },
+                    onError: (e) => toast('error', (e as Error).message),
+                  },
+                );
+              }}
             >
-              🧹 一键清理孤儿工作树
+              确认丢弃
             </Button>
           </div>
+        }
+      >
+        <p style={{ fontSize: 13, margin: 0 }}>
+          「{discardAsk?.title}」集成区有 <strong>{discardAsk?.aheadCommits ?? 0}</strong> 个未合并提交，丢弃后不可找回。也可以先「合并」审阅后再决定。
+        </p>
+      </Modal>
 
-          <Card style={{ background: 'rgba(245, 158, 11, 0.05)', borderColor: 'var(--warn)' }}>
-            <div style={{ display: 'grid', gap: 8 }}>
-              {orphans.map((o) => (
-                <div
-                  key={o.taskId}
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    fontSize: 12,
-                    padding: '6px 0',
-                    borderBottom: '1px dashed rgba(245, 158, 11, 0.2)',
-                  }}
-                >
-                  <div>
-                    <code>{o.taskId}</code> · <span className="muted">{o.reason}</span>
-                  </div>
-                  <span className="muted">{new Date(o.mtime).toLocaleString()}</span>
-                </div>
-              ))}
-            </div>
-          </Card>
-        </section>
-      )}
-
-      {/* 冲突与裁决时间线 */}
-      <section style={{ marginTop: 24 }}>
-        <ConflictTimelineCard projectId={projectId} />
-      </section>
+      {/* 孤儿清理确认（有内容→强制丢弃；无内容→直接清） */}
+      <Modal
+        open={orphanAsk !== null}
+        onClose={() => setOrphanAsk(null)}
+        title="清理孤儿工作区"
+        size="sm"
+        footer={
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <Button variant="ghost" onClick={() => setOrphanAsk(null)}>取消</Button>
+            <Button
+              onClick={() => {
+                if (!orphanAsk) return;
+                cleanOrphans.mutate(
+                  { targets: [orphanAsk.path], force: true },
+                  {
+                    onSuccess: (r) => {
+                      if (r.blocked.length > 0) toast('error', '清理被拦：仍有未合并内容');
+                      else toast('success', `已清理 ${r.cleanedCount} 个`);
+                      setOrphanAsk(null);
+                    },
+                    onError: (e) => toast('error', (e as Error).message),
+                  },
+                );
+              }}
+            >
+              {orphanAsk && (orphanAsk.uncommittedFiles.length > 0 || orphanAsk.aheadCommits > 0) ? '强制丢弃并清理' : '清理'}
+            </Button>
+          </div>
+        }
+      >
+        {orphanAsk && (orphanAsk.uncommittedFiles.length > 0 || orphanAsk.aheadCommits > 0) ? (
+          <div style={{ fontSize: 12 }}>
+            <p style={{ color: 'var(--warn, #d97706)', marginTop: 0 }}>⚠️ 该工作区有未合并内容，默认拒绝清理。内容清单：</p>
+            <pre style={{ maxHeight: '30vh', overflow: 'auto', background: 'var(--bg-elev)', padding: 8, borderRadius: 8 }}>
+{[...orphanAsk.uncommittedFiles.slice(0, 20), ...(orphanAsk.aheadCommits > 0 ? [`…另有 ${orphanAsk.aheadCommits} 个未合并提交`] : [])].join('\n') || '（空）'}
+            </pre>
+          </div>
+        ) : (
+          <p style={{ fontSize: 13, margin: 0 }}>该工作区无未合并内容，可安全清理。</p>
+        )}
+      </Modal>
     </div>
   );
 }

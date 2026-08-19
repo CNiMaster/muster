@@ -1028,7 +1028,9 @@ export class TaskEngine {
             })();
           } catch (finalizeError) {
             try {
-              this.publishQueue.rollback(pub.id, project.rootDir);
+              // 修复轮批次 G：发布提交落在发布目标根（任务集成分支 worktree / staging / 项目根），
+              // 补偿 revert 必须在提交所在的检出执行，否则跨分支 revert 必冲突
+              this.publishQueue.rollback(pub.id, stagingTarget ?? project.rootDir);
             } catch (rollbackError) {
               throw new AppError(
                 ErrorCode.WORKTREE_CONFLICT,

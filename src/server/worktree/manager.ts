@@ -7,7 +7,7 @@
  - worktree 路径：~/.muster/worktrees/<taskId>
  */
 import { execSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, rmSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import type { DB } from '../db/client';
 import { SERVER_CONFIG } from '../env';
@@ -311,126 +311,116 @@ export function promoteTaskStagingMerge(
 }
 
 export interface OrphanWorktreeInfo {
-  taskId: string;
   path: string;
-  branch: string;
+  branch: string | null;
   reason: string;
-  mtime: string;
+  /** 丢弃防线（批次 H·修复轮）：未提交文件 + 未合并提交数——非空/非零时默认拒绝静默删，须显式 force。 */
+  uncommittedFiles: string[];
+  aheadCommits: number;
 }
 
 /**
- * 批次 H：孤儿工作树检测。
- * 识别残留在磁盘但无活动任务、或任务已处于终态（且非 pending review）的 worktree。
+ * 批次 H·修复轮：孤儿 worktree 检测——`git worktree list --porcelain` 全量 − task_runtime 登记集
+ * − 系统 staging worktree（项目级 staging-<pid> / 任务级 pt-<ptid>）。
+ * 用户自建或系统遗留；只识别标注，永不自动合并、看门狗永不碰。
  */
-export function detectOrphanWorktrees(
-  db: DB,
-  projectRootDir: string,
-  projectId: string,
-): OrphanWorktreeInfo[] {
-  const root = worktreeRoot();
-  if (!existsSync(root)) return [];
+export function detectOrphanWorktrees(db: DB, projectRootDir: string): OrphanWorktreeInfo[] {
+  ensureGitRepo(projectRootDir);
+  const porcelain = git(projectRootDir, ['worktree', 'list', '--porcelain']).stdout;
+  // macOS 上 /var ↔ /private/var 符号链接会让 porcelain 输出与登记路径字符串不一致——统一 realpath 归一
+  const norm = (p: string): string => { try { return realpathSync(p); } catch { return p; } };
+  const registered = new Set(
+    (db.prepare('SELECT worktree_path FROM task_runtime').all() as Array<{ worktree_path: string }>).map((r) => norm(r.worktree_path)),
+  );
+  const wtRoot = norm(worktreeRoot());
+  const stagingPrefixes = [path.join(wtRoot, 'staging-'), path.join(wtRoot, 'pt-')];
 
-  const entries = readdirSync(root);
   const orphans: OrphanWorktreeInfo[] = [];
+  for (const block of porcelain.split('\n\n')) {
+    const lines = block.split('\n').filter(Boolean);
+    const wt = lines.find((l) => l.startsWith('worktree '));
+    if (!wt) continue;
+    const wtPath = norm(wt.slice('worktree '.length));
+    if (wtPath === norm(projectRootDir)) continue; // 主干检出本身
+    if (registered.has(wtPath)) continue; // 系统登记的任务工作区
+    if (stagingPrefixes.some((prefix) => wtPath.startsWith(prefix))) continue; // 系统集成区
+    const branchLine = lines.find((l) => l.startsWith('branch '));
+    const branch = branchLine ? branchLine.slice('branch '.length) : null;
+    const detached = lines.some((l) => l === 'detached');
 
-  for (const entry of entries) {
-    if (entry.startsWith('staging-') || entry.startsWith('.')) continue;
-
-    const wtPath = path.join(root, entry);
-    let stat;
+    // 丢弃防线数据：未提交改动 + 相对主干的未合并提交
+    let uncommittedFiles: string[] = [];
+    let aheadCommits = 0;
     try {
-      stat = statSync(wtPath);
-      if (!stat.isDirectory()) continue;
-    } catch {
-      continue;
-    }
-
-    const taskId = entry;
-    const branch = `muster/${projectId}/${taskId}`;
-
-    // 检查 task 是否属于本项目
-    const taskRow = db.prepare('SELECT id, project_id, state, merge_mode FROM task WHERE id = ?').get(taskId) as
-      | { id: string; project_id: string; state: string; merge_mode?: string }
-      | undefined;
-
-    if (!taskRow) {
-      orphans.push({
-        taskId,
-        path: wtPath,
-        branch,
-        reason: '任务已在数据库中删除或不存在',
-        mtime: stat.mtime.toISOString(),
-      });
-      continue;
-    }
-
-    if (taskRow.project_id !== projectId) {
-      continue;
-    }
-
-    // 检查 task_runtime
-    const runtime = db.prepare('SELECT 1 FROM task_runtime WHERE task_id = ?').get(taskId);
-    if (!runtime) {
-      orphans.push({
-        taskId,
-        path: wtPath,
-        branch,
-        reason: '工作区未在 task_runtime 注册（孤儿目录）',
-        mtime: stat.mtime.toISOString(),
-      });
-      continue;
-    }
-
-    // 若任务已达终态，且不是 manual 模式待审核
-    if (['completed', 'failed', 'cancelled'].includes(taskRow.state)) {
-      if (taskRow.merge_mode !== 'manual' || taskRow.state !== 'completed') {
-        orphans.push({
-          taskId,
-          path: wtPath,
-          branch,
-          reason: `任务已结束（状态：${taskRow.state}），工作区未正常回收`,
-          mtime: stat.mtime.toISOString(),
-        });
+      uncommittedFiles = git(wtPath, ['status', '--porcelain'], { allowFail: true }).stdout
+        .split('\n').map((l) => l.trim()).filter(Boolean);
+      if (branch && !detached) {
+        aheadCommits = Number(git(projectRootDir, ['rev-list', '--count', `HEAD..${branch}`], { allowFail: true }).stdout || '0');
       }
-    }
-  }
+    } catch { /* 目录损坏按空内容处理 */ }
 
+    orphans.push({
+      path: wtPath,
+      branch,
+      reason: '未在 task_runtime 登记（用户自建或系统遗留）',
+      uncommittedFiles,
+      aheadCommits,
+    });
+  }
   return orphans;
 }
 
+/** 批次 H·修复轮：丢弃任务集成区——删集成分支与 worktree（调用方须已完成内容确认）。 */
+export function discardTaskStaging(rootDir: string, projectId: string, projectTaskId: string): void {
+  ensureGitRepo(rootDir);
+  const branch = taskStagingBranch(projectId, projectTaskId);
+  const wtPath = taskStagingWorktreePath(projectTaskId);
+  git(rootDir, ['worktree', 'remove', '--force', wtPath], { allowFail: true });
+  git(rootDir, ['branch', '-D', branch], { allowFail: true });
+  git(rootDir, ['worktree', 'prune'], { allowFail: true });
+}
+
 /**
- * 批次 H：清理孤儿工作树。
+ * 批次 H·修复轮：清理孤儿 worktree——**强制内容检测防误删**（复盘 0001 教训）：
+ * 有未提交文件或未合并提交且未显式 force → 拒绝清理并返回 contents 待人工三选（丢弃/合并/取消）；
+ * 无内容或 force=true → 删 worktree + 分支（branch -D 仅在有登记分支时）。
  */
 export function cleanOrphanWorktrees(
   db: DB,
   projectRootDir: string,
-  projectId: string,
-  targetTaskIds?: string[],
-): { cleanedCount: number; cleaned: OrphanWorktreeInfo[] } {
-  const allOrphans = detectOrphanWorktrees(db, projectRootDir, projectId);
-  const targets = targetTaskIds && targetTaskIds.length > 0
-    ? allOrphans.filter((o) => targetTaskIds.includes(o.taskId))
-    : allOrphans;
+  options: { targets?: string[]; force?: boolean } = {},
+): {
+  cleanedCount: number;
+  cleaned: OrphanWorktreeInfo[];
+  blocked: Array<OrphanWorktreeInfo & { contents: string[] }>;
+} {
+  const all = detectOrphanWorktrees(db, projectRootDir);
+  const targets = options.targets?.length
+    ? all.filter((o) => options.targets!.includes(o.path))
+    : all;
+  const cleaned: OrphanWorktreeInfo[] = [];
+  const blocked: Array<OrphanWorktreeInfo & { contents: string[] }> = [];
 
   for (const orphan of targets) {
-    try {
-      git(projectRootDir, ['worktree', 'remove', '--force', orphan.path], { allowFail: true });
-    } catch { /* 容错 */ }
-    if (existsSync(orphan.path)) {
-      try {
-        rmSync(orphan.path, { recursive: true, force: true });
-      } catch { /* 容错 */ }
+    const hasContent = orphan.uncommittedFiles.length > 0 || orphan.aheadCommits > 0;
+    if (hasContent && !options.force) {
+      blocked.push({
+        ...orphan,
+        contents: [
+          ...orphan.uncommittedFiles.slice(0, 20),
+          ...(orphan.aheadCommits > 0 ? [`…另有 ${orphan.aheadCommits} 个未合并提交`] : []),
+        ],
+      });
+      continue;
     }
-    try {
-      git(projectRootDir, ['branch', '-D', orphan.branch], { allowFail: true });
-    } catch { /* 容错 */ }
-    db.prepare('DELETE FROM task_runtime WHERE task_id = ?').run(orphan.taskId);
+    git(projectRootDir, ['worktree', 'remove', '--force', orphan.path], { allowFail: true });
+    if (existsSync(orphan.path)) {
+      try { rmSync(orphan.path, { recursive: true, force: true }); } catch { /* 容错 */ }
+    }
+    if (orphan.branch) git(projectRootDir, ['branch', '-D', orphan.branch], { allowFail: true });
+    db.prepare('DELETE FROM task_runtime WHERE worktree_path = ?').run(orphan.path);
+    cleaned.push(orphan);
   }
-
-  try {
-    git(projectRootDir, ['worktree', 'prune'], { allowFail: true });
-  } catch { /* 容错 */ }
-
-  return { cleanedCount: targets.length, cleaned: targets };
+  git(projectRootDir, ['worktree', 'prune'], { allowFail: true });
+  return { cleanedCount: cleaned.length, cleaned, blocked };
 }
-

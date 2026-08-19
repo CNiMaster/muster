@@ -42,7 +42,8 @@ import { generateCompactionSummary } from '../domain/compaction-summary';
 import { getWorkbench } from '../domain/workbench';
 import { getAgent } from '../domain/agent';
 import { syncAgentMemoryFiles } from '../domain/agent-home';
-import { stageStatus, detectOrphanWorktrees, cleanOrphanWorktrees , taskStageStatus } from '../worktree/manager';
+import { postSystemMessage } from '../domain/conversation';
+import { stageStatus, detectOrphanWorktrees, cleanOrphanWorktrees, taskStageStatus, taskStagingBranch, discardTaskStaging } from '../worktree/manager';
 import {
   promoteProjectStagingIfAny,
   listPendingTaskMerges,
@@ -264,20 +265,53 @@ projectById.get(
   asyncHandler(async (req, res) => {
     const db = getDb();
     const project = getProject(db, param(req, 'id'));
-    res.json(detectOrphanWorktrees(db, project.rootDir, project.id));
+    res.json(detectOrphanWorktrees(db, project.rootDir));
   }),
 );
 
-/** 批次 H：清理项目磁盘上的孤儿工作树 */
+/** 批次 H·修复轮：清理孤儿工作树——有未合并内容时默认拒绝（blocked 返回内容清单），force=显式确认后才清 */
 projectById.post(
   '/orphan-worktrees/clean',
   asyncHandler(async (req, res) => {
     const db = getDb();
     const project = getProject(db, param(req, 'id'));
     const body = z.object({
-      targetTaskIds: z.array(z.string()).optional(),
+      targets: z.array(z.string()).optional(),
+      force: z.boolean().optional(),
     }).parse(req.body ?? {});
-    res.json(cleanOrphanWorktrees(db, project.rootDir, project.id, body.targetTaskIds));
+    res.json(cleanOrphanWorktrees(db, project.rootDir, body));
+  }),
+);
+
+/** 批次 H·修复轮：丢弃任务集成区（ahead 内容即"未合并内容"，须 force 显式确认；播报留痕） */
+projectById.post(
+  '/project-tasks/:ptid/discard',
+  asyncHandler(async (req, res) => {
+    const db = getDb();
+    const project = getProject(db, param(req, 'id'));
+    const ptid = param(req, 'ptid');
+    const body = z.object({ force: z.boolean().optional() }).parse(req.body ?? {});
+    const status = taskStageStatus(project.rootDir, project.id, ptid);
+    if (!status.exists || status.aheadCommits === 0) {
+      res.json({ discarded: false, message: '该任务集成区没有待处理内容' });
+      return;
+    }
+    if (!body.force) {
+      res.json({ discarded: false, needsForce: true, aheadCommits: status.aheadCommits, message: `集成区有 ${status.aheadCommits} 个未合并提交，丢弃需显式确认` });
+      return;
+    }
+    const branch = taskStagingBranch(project.id, ptid);
+    discardTaskStaging(project.rootDir, project.id, ptid);
+    db.prepare('DELETE FROM task_merge_watchdog WHERE project_task_id=?').run(ptid);
+    postSystemMessage(db, { scopeKind: 'project', scopeId: project.id, role: 'system', author: 'system', content: `「🗑 任务集成区已丢弃」#${ptid} 的 ${status.aheadCommits} 个未合并提交已按用户指令删除（分支 ${branch}）。` });
+    realtime.publish({
+      id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      type: 'merge.discarded',
+      projectId: project.id,
+      occurredAt: new Date().toISOString(),
+      payload: { projectTaskId: ptid, branch, aheadCommits: status.aheadCommits },
+    });
+    res.json({ discarded: true, message: '集成区已丢弃' });
   }),
 );
 
