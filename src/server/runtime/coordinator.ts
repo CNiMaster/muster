@@ -12,6 +12,8 @@ import { updateProject, getProject } from '../domain/project';
 import { settleDrainingAgents } from '../domain/agent';
 import { drainReflectionQueue, recoverStuckReflections, enqueueIdleReflections } from '../domain/reflection';
 import { sweepStaleStaging, sweepStaleTaskStaging } from '../domain/staging';
+import { listDueAutomations, markAutomationRun } from '../domain/automation';
+import { syncGithubIssues } from '../domain/github-issues';
 import { settleMemoryVotes } from '../domain/memory';
 import { generateInspectorSuggestions } from '../domain/inspector';
 import type { SetupGenerator } from '../domain/setup-assistant';
@@ -89,6 +91,7 @@ export class ProjectRuntimeCoordinator {
   /** E4.3 空闲自主反思扫描（默认关；每 60 秒检查一次，只入队不调 LLM）。 */
   private lastIdleReflectionRun = 0;
   private stagingWatchdogTimer: NodeJS.Timeout | null = null;
+  private automationTimer: NodeJS.Timeout | null = null;
   private readonly stagingWatchdogIntervalMs = 10 * 60_000;
   private readonly idleReflectionIntervalMs = 60_000;
 
@@ -275,6 +278,27 @@ export class ProjectRuntimeCoordinator {
         .catch((error) => log.warn('task staging watchdog failed', { error: String(error) }));
     }, this.stagingWatchdogIntervalMs);
     this.stagingWatchdogTimer.unref?.();
+
+    // 自动化中心（整改 Part2 批次6）：每 60s 扫到点的自动化并执行——独立 timer（gh 网络 IO +
+    // 后续执行链绝不占 tick）；失败记 health 跳过本轮，不轰炸。
+    this.automationTimer = setInterval(() => {
+      void (async () => {
+        for (const automation of listDueAutomations(this.db)) {
+          try {
+            if (automation.kind === 'github-issues') {
+              const r = await syncGithubIssues(this.db, automation);
+              markAutomationRun(this.db, automation.id, `新增 ${r.newCount} · 已知 ${r.skipped}`);
+            } else {
+              markAutomationRun(this.db, automation.id, `未知类型 ${automation.kind}，已跳过`);
+            }
+          } catch (error) {
+            markAutomationRun(this.db, automation.id, `失败：${String(error).slice(0, 200)}`);
+            log.warn('automation run failed', { automationId: automation.id, kind: automation.kind, err: String(error) });
+          }
+        }
+      })();
+    }, 60_000);
+    this.automationTimer.unref?.();
   }
 
   stop(): void {
@@ -284,6 +308,8 @@ export class ProjectRuntimeCoordinator {
     this.reflectionTimer = null;
     if (this.stagingWatchdogTimer) clearInterval(this.stagingWatchdogTimer);
     this.stagingWatchdogTimer = null;
+    if (this.automationTimer) clearInterval(this.automationTimer);
+    this.automationTimer = null;
   }
 
   /**

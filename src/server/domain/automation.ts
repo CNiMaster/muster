@@ -140,3 +140,28 @@ export function materializeAutomationPlan(db: DB, plan: {
 }): AutomationRecord {
   return createAutomation(db, { ...plan, createdVia: 'chat' });
 }
+
+/** 到点判定（coordinator 每分钟扫）：interval=距上次运行满间隔；daily=今天本地时刻已过且今天未跑。 */
+export function isAutomationDue(a: AutomationRecord, now = new Date()): boolean {
+  if (!a.enabled) return false;
+  if (a.schedule.kind === 'interval') {
+    if (!a.schedule.intervalMs) return false;
+    if (!a.lastRunAt) return true;
+    return now.getTime() - Date.parse(a.lastRunAt) >= a.schedule.intervalMs;
+  }
+  if (a.schedule.kind === 'daily') {
+    const [hh, mm] = (a.schedule.timeOfDay ?? '').split(':').map((x) => Number(x));
+    if (!Number.isFinite(hh) || !Number.isFinite(mm)) return false;
+    const dueAt = new Date(now); dueAt.setHours(hh, mm, 0, 0);
+    if (now < dueAt) return false;
+    if (!a.lastRunAt) return true;
+    const last = new Date(Date.parse(a.lastRunAt));
+    return last.getFullYear() !== now.getFullYear() || last.getMonth() !== now.getMonth() || last.getDate() !== now.getDate();
+  }
+  return false;
+}
+
+/** 到点的启用自动化（coordinator 扫描入口）。 */
+export function listDueAutomations(db: DB, now = new Date()): AutomationRecord[] {
+  return listAutomations(db).filter((a) => isAutomationDue(a, now));
+}
