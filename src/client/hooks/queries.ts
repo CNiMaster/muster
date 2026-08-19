@@ -732,6 +732,43 @@ export function useProjectConflictTimeline(projectId: string | undefined) {
   });
 }
 
+export interface CrewStaffingRecommendationDTO {
+  roleName: string;
+  roleDescription: string;
+  recommendedPersona?: PersonaDTO;
+  matchScore: number;
+  domain: string;
+  suggestedTools: string[];
+}
+
+export interface BlueprintCrewStaffingPlanDTO {
+  blueprintId: string;
+  blueprintTitle: string;
+  crew: CrewStaffingRecommendationDTO[];
+}
+
+/** 批次 J：查询蓝图专家团队编制推荐方案 */
+export function useBlueprintCrewStaffing(blueprintId: string | undefined) {
+  return useQuery({
+    queryKey: ['blueprint-crew-staffing', blueprintId],
+    queryFn: () => api.get<BlueprintCrewStaffingPlanDTO>(`/api/blueprints/${blueprintId}/crew-staffing`),
+    enabled: !!blueprintId,
+  });
+}
+
+/** 批次 J：一键采纳蓝图专家团队入职到项目 */
+export function useApplyBlueprintCrew(projectId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ blueprintId, crew }: { blueprintId: string; crew?: CrewStaffingRecommendationDTO[] }) =>
+      api.post<{ createdAgents: Agent[]; appliedCount: number }>(`/api/projects/${projectId}/blueprints/${blueprintId}/apply-crew`, { crew }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['agents'] });
+      qc.invalidateQueries({ queryKey: ['workbench'] });
+    },
+  });
+}
+
 /** 蓝图组织批次4c：项目优先入口——零组织决策建项目（自动落默认工作台，无则顺手创建）。 */
 export function useQuickProject() {
   const qc = useQueryClient();

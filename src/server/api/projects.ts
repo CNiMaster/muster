@@ -48,6 +48,7 @@ import {
   discardTaskMerge,
 } from '../domain/staging';
 import { getProjectConflictTimeline } from '../domain/conflict-timeline';
+import { applyBlueprintCrewStaffing } from '../domain/blueprint';
 import { deleteProjectTrigger, listProjectTriggers, registerDefaultNovelScheduleTriggers, registerScheduleTrigger, setProjectTriggerEnabled } from '../domain/triggers';
 import { initializeNovelProject } from '../domain/novel-template';
 import { getCharacterGraph } from '../domain/character-graph';
@@ -263,6 +264,18 @@ projectById.get(
     const db = getDb();
     const project = getProject(db, param(req, 'id'));
     res.json(getProjectConflictTimeline(db, project.id));
+  }),
+);
+
+/** 批次 J：一键采纳蓝图专家团队编制方案入职到项目 */
+projectById.post(
+  '/blueprints/:blueprintId/apply-crew',
+  asyncHandler(async (req, res) => {
+    const db = getDb();
+    const project = getProject(db, param(req, 'id'));
+    const blueprintId = param(req, 'blueprintId');
+    const result = applyBlueprintCrewStaffing(db, project.id, blueprintId, req.body?.crew);
+    res.json(result);
   }),
 );
 

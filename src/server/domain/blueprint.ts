@@ -16,6 +16,7 @@ import { shortId, nowIso } from '../../shared/utils';
 import { expandMatchTokens } from './memory';
 import { findUserTalentForPersona, type AgentProfile } from './agent-profile';
 import { listPersonas, getPersona, type Persona } from './persona-library';
+import { createAgent, type AgentDefinition } from './agent';
 
 export type BlueprintStatus = 'active' | 'locked' | 'retired';
 
@@ -555,4 +556,116 @@ export function addBlueprintStaffingSlot(
   commitBlueprintVersion(db, blueprintId, `采纳人设「${personaName}」进班底小组`, [`staffing:${slot.personaId}`]);
   return getBlueprint(db, blueprintId);
 }
+
+export interface CrewStaffingRecommendation {
+  roleName: string;
+  roleDescription: string;
+  recommendedPersona?: Persona;
+  matchScore: number;
+  domain: string;
+  suggestedTools: string[];
+}
+
+export interface BlueprintCrewStaffingPlan {
+  blueprintId: string;
+  blueprintTitle: string;
+  crew: CrewStaffingRecommendation[];
+}
+
+/**
+ * 批次 J：根据蓝图画像与人设库，生成专家团队编制推荐方案。
+ */
+export function generateBlueprintCrewStaffing(db: DB, blueprintId: string): BlueprintCrewStaffingPlan {
+  const bp = getBlueprint(db, blueprintId);
+  const personas = listPersonas();
+  const crew: CrewStaffingRecommendation[] = [];
+
+  // 1. 如果已有 staffing 明确指定了岗位
+  if (bp.staffing && bp.staffing.length > 0) {
+    for (const slot of bp.staffing) {
+      const p = personas.find((x) => x.id === slot.personaId);
+      crew.push({
+        roleName: slot.personaName || p?.name || slot.personaId,
+        roleDescription: p?.description || `负责蓝图「${bp.label}」关键工作交付`,
+        recommendedPersona: p,
+        matchScore: 1.0,
+        domain: p?.domain || bp.taskType,
+        suggestedTools: p?.tools || ['fs', 'git'],
+      });
+    }
+  }
+
+  // 2. 如果缺少或补充，从 persona library 中匹配 top matches
+  if (crew.length === 0) {
+    const topMatches = matchTopPersonasForBlueprint(db, blueprintId, 4);
+    if (topMatches.length > 0) {
+      for (const m of topMatches) {
+        crew.push({
+          roleName: m.persona.name,
+          roleDescription: m.persona.description,
+          recommendedPersona: m.persona,
+          matchScore: m.score,
+          domain: m.persona.domain || bp.taskType,
+          suggestedTools: m.persona.tools || ['fs', 'git'],
+        });
+      }
+    } else {
+      // 兜底基础编制
+      crew.push({
+        roleName: `${bp.label}专家`,
+        roleDescription: `主导「${bp.label}」全流程落地执行与成果验收`,
+        matchScore: 0.8,
+        domain: bp.taskType,
+        suggestedTools: ['fs', 'git', 'terminal'],
+      });
+    }
+  }
+
+  return {
+    blueprintId: bp.id,
+    blueprintTitle: bp.label,
+    crew,
+  };
+}
+
+/**
+ * 批次 J：一键将蓝图专家团队编制方案入职到工作台/项目。
+ */
+export function applyBlueprintCrewStaffing(
+  db: DB,
+  projectId: string,
+  blueprintId: string,
+  customCrew?: CrewStaffingRecommendation[],
+): { createdAgents: AgentDefinition[]; appliedCount: number } {
+  const plan = generateBlueprintCrewStaffing(db, blueprintId);
+  const targetCrew = customCrew && customCrew.length > 0 ? customCrew : plan.crew;
+
+  const existingAgents = db.prepare('SELECT name, role FROM agent_definition').all() as Array<{ name: string; role: string }>;
+  const existingNames = new Set(existingAgents.map((a) => a.name));
+
+  const createdAgents: AgentDefinition[] = [];
+
+  for (const member of targetCrew) {
+    const name = member.recommendedPersona?.name || member.roleName;
+    if (existingNames.has(name)) {
+      continue;
+    }
+
+    const agent = createAgent(db, {
+      name,
+      role: member.roleName,
+      responsibilities: member.roleDescription,
+      systemPrompt: member.recommendedPersona ? `${member.recommendedPersona.name}：${member.recommendedPersona.description}` : `负责 ${member.roleName}`,
+      tools: member.suggestedTools,
+      skills: member.recommendedPersona?.domain ? [member.recommendedPersona.domain] : [],
+      internalRecruit: true,
+    });
+
+    createdAgents.push(agent);
+    existingNames.add(name);
+  }
+
+  return { createdAgents, appliedCount: createdAgents.length };
+}
+
 
