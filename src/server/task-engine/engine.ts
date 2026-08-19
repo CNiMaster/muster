@@ -936,23 +936,42 @@ export class TaskEngine {
       }
 
       if (result.outcome === 'completed' && result.artifacts.length > 0 && worktreeInfo) {
-        const publishTargetRoot = project.rootDir;
-        // staging 一期：蜂群系任务（蜂/汇总/验收/返工/裁决——isSwarmLinkedTask 统一谓词，
-        // 与 worktree 基线判定同源）发布到 staging worktree 检出目录，验收通过才 promote 回主干
-        const stagingTarget = isSwarmLinkedTask(task)
-          ? ensureStagingWorktree(project.rootDir, project.id).path
-          : undefined;
-        const pub = this.publishArtifacts(task.id, thread.id, publishTargetRoot, worktreeInfo, result, stagingTarget);
-        if (pub.blocked) {
-          blockTaskForPublishConflict(
-            this.db,
-            task.id,
-            `成果发布冲突：${pub.conflicts.join(', ')}`,
-            result.artifacts,
-          );
+        if (task.mergeMode === 'manual') {
+          // 批次 G：manual 模式——生成待审查摘要与审查卡片，不自动合入，保留 worktree 等待用户确认
+          commitAll(worktreeInfo.path, `muster: task ${task.id} artifacts staged for manual review`);
           preserveWorktree = true;
-          updateThreadState(this.db, thread.id, 'paused');
-          const nextAttempt = resolutionContext ? resolutionContext.attempt + 1 : 1;
+          appendTaskEvent(this.db, task.id, 'merge_pending_review', {
+            branch: worktreeInfo.branch,
+            artifacts: result.artifacts,
+            summary: result.summary,
+          });
+          realtime.publish({
+            id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            type: 'merge.pending_review',
+            projectId: project.id,
+            taskId: task.id,
+            occurredAt: new Date().toISOString(),
+            payload: { branch: worktreeInfo.branch, artifacts: result.artifacts, summary: result.summary },
+          });
+          log.info('manual merge pending review staged', { taskId: task.id, branch: worktreeInfo.branch, artifacts: result.artifacts.length });
+        } else {
+          const publishTargetRoot = project.rootDir;
+          // staging 一期：蜂群系任务（蜂/汇总/验收/返工/裁决——isSwarmLinkedTask 统一谓词，
+          // 与 worktree 基线判定同源）发布到 staging worktree 检出目录，验收通过才 promote 回主干
+          const stagingTarget = isSwarmLinkedTask(task)
+            ? ensureStagingWorktree(project.rootDir, project.id).path
+            : undefined;
+          const pub = this.publishArtifacts(task.id, thread.id, publishTargetRoot, worktreeInfo, result, stagingTarget);
+          if (pub.blocked) {
+            blockTaskForPublishConflict(
+              this.db,
+              task.id,
+              `成果发布冲突：${pub.conflicts.join(', ')}`,
+              result.artifacts,
+            );
+            preserveWorktree = true;
+            updateThreadState(this.db, thread.id, 'paused');
+            const nextAttempt = resolutionContext ? resolutionContext.attempt + 1 : 1;
           const rootPublishId = resolutionContext?.rootPublishId ?? pub.id;
           const sourceTaskIds = [...new Set([...(resolutionContext?.sourceTaskIds ?? []), task.id])];
           if (project.firstAgentId && nextAttempt <= 2) {
@@ -1037,6 +1056,7 @@ export class TaskEngine {
             sourceTaskIds,
             mergedFiles: pub.mergedFiles,
           }, { projectId: project.id, taskId: task.id }));
+        }
         }
       }
 

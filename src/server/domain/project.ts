@@ -73,6 +73,8 @@ export interface Project {
   settings: Record<string, unknown>;
   /** 阶段六任务 6.2：项目 Playbook（工作模式），可空。 */
   playbookId: string | null;
+  /** 合并模式治理（批次 G）：manual = 需人工确认合并；auto = 自动合入 */
+  defaultMergeMode: 'manual' | 'auto';
   createdAt: string;
   updatedAt: string;
 }
@@ -86,6 +88,7 @@ interface ProjectRow {
   state: string;
   settings_json: string;
   playbook_id: string | null;
+  default_merge_mode?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -101,6 +104,7 @@ function fromRow(db: DB, r: ProjectRow): Project {
     state: r.state as ProjectState,
     settings: JSON.parse(r.settings_json ?? '{}'),
     playbookId: r.playbook_id ?? null,
+    defaultMergeMode: (r.default_merge_mode === 'manual' ? 'manual' : 'auto') as 'manual' | 'auto',
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -118,6 +122,7 @@ export function createProject(
     initialState?: ProjectState;
     /** 阶段六任务 6.2：项目 Playbook（工作模式），可空。 */
     playbookId?: string;
+    defaultMergeMode?: 'manual' | 'auto';
   },
 ): Project {
   const workbench = getWorkbench(db);
@@ -135,11 +140,12 @@ export function createProject(
     getAgent(db, firstAgentId);
   }
   const state = input.initialState ?? 'drafting';
+  const defaultMergeMode = input.defaultMergeMode ?? 'auto';
   const now = nowIso();
   db.prepare(
-    `INSERT INTO project (id, name, description, root_dir, first_agent_id, state, settings_json, playbook_id, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, '{}', ?, ?, ?)`,
-  ).run(id, input.name, input.description ?? '', rootDir, firstAgentId ?? null, state, input.playbookId ?? null, now, now);
+    `INSERT INTO project (id, name, description, root_dir, first_agent_id, state, settings_json, playbook_id, default_merge_mode, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, '{}', ?, ?, ?, ?)`,
+  ).run(id, input.name, input.description ?? '', rootDir, firstAgentId ?? null, state, input.playbookId ?? null, defaultMergeMode, now, now);
   return getProject(db, id);
 }
 
@@ -249,7 +255,7 @@ export function createQuickProject(db: DB, input: { name: string; description?: 
 export function updateProject(
   db: DB,
   id: string,
-  patch: Partial<Pick<Project, 'name' | 'description' | 'firstAgentId' | 'state' | 'settings' | 'rootDir'>>,
+  patch: Partial<Pick<Project, 'name' | 'description' | 'firstAgentId' | 'state' | 'settings' | 'rootDir' | 'defaultMergeMode'>>,
 ): Project {
   const cur = getProject(db, id);
 
@@ -266,11 +272,12 @@ export function updateProject(
     // 过滤掉 patch 中 undefined 的字段，避免部分更新时把现有字段覆盖为 undefined
     ...(Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)) as Partial<Project>),
     settings: patch.settings ?? cur.settings,
+    defaultMergeMode: patch.defaultMergeMode ?? cur.defaultMergeMode,
     updatedAt: nowIso(),
   };
   db.prepare(
-    `UPDATE project SET name=?, description=?, root_dir=?, first_agent_id=?, state=?, settings_json=?, updated_at=? WHERE id=?`,
-  ).run(next.name, next.description, next.rootDir, next.firstAgentId, next.state, JSON.stringify(next.settings), next.updatedAt, id);
+    `UPDATE project SET name=?, description=?, root_dir=?, first_agent_id=?, state=?, settings_json=?, default_merge_mode=?, updated_at=? WHERE id=?`,
+  ).run(next.name, next.description, next.rootDir, next.firstAgentId, next.state, JSON.stringify(next.settings), next.defaultMergeMode, next.updatedAt, id);
   return getProject(db, id);
 }
 

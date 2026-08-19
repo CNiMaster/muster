@@ -122,6 +122,8 @@ export interface Task {
   personaId: string | null;
   /** 执行过程展示批次4：失败蜂被自动修复重发后指向替补任务。 */
   supersededBy: string | null;
+  /** 合并模式治理（批次 G）：manual = 需人工确认合并；auto = 自动合入 */
+  mergeMode: 'manual' | 'auto';
 }
 
 interface TaskRow {
@@ -172,6 +174,7 @@ interface TaskRow {
   swarm_depth: number;
   question_options_json: string | null;
   persona_id: string | null;
+  merge_mode?: string | null;
 }
 
 function fromRow(r: TaskRow): Task {
@@ -226,6 +229,7 @@ function fromRow(r: TaskRow): Task {
       ? (JSON.parse(r.question_options_json) as import('../../shared/types').QuestionOption[])
       : null,
     personaId: (r as { persona_id?: string | null }).persona_id ?? null,
+    mergeMode: (r.merge_mode === 'manual' ? 'manual' : 'auto') as 'manual' | 'auto',
   };
 }
 
@@ -250,6 +254,8 @@ export interface CreateTaskInput {
   /** 双 Loop 地基 P0.1：验收标准 checklist，升为一等数据。 */
   acceptanceCriteria?: AcceptanceItem[];
   deadlineAt?: string;
+  /** 合并模式治理（批次 G）：manual = 需人工确认合并；auto = 自动合入 */
+  mergeMode?: 'manual' | 'auto';
   /**
    * B2B 外包上下文：当本 task 是某外包契约的承接任务时传入。
    * 存在则跳过同公司守卫（assignee/dispatcher 可跨公司）+ contactAllow 检查，
@@ -448,14 +454,15 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
       rootTaskId = id; // 自引用，INSERT 后再 UPDATE
     }
   }
+  const mergeMode = input.mergeMode ?? project.defaultMergeMode ?? 'auto';
   db.prepare(
     `INSERT INTO task
       (id, project_id, project_task_id, seq, root_task_id, parent_task_id, dispatcher_agent_id, assignee_agent_id,
        assignee_thread_id, assignee_task_thread_id, title, input_protocol_json, context_refs_json, output_protocol_json,
        priority, state, lease_owner_thread_id, lease_expires_at, heartbeat_at, outcome, summary,
        question, artifacts_json, checkpoint, clarification_rounds, is_discussion, is_suggestion, budget_json,
-       deadline_at, completed_at, created_at, updated_at, acceptance_criteria, outsourcing_contract_id, swarm_id, swarm_depth, persona_id)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'queued',NULL,NULL,NULL,NULL,'',NULL,'[]',NULL,0,?,?,'{}',?,NULL,?,?,?,?,?,?,?)`,
+       deadline_at, completed_at, created_at, updated_at, acceptance_criteria, outsourcing_contract_id, swarm_id, swarm_depth, persona_id, merge_mode)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'queued',NULL,NULL,NULL,NULL,'',NULL,'[]',NULL,0,?,?,'{}',?,NULL,?,?,?,?,?,?,?,?)`,
   ).run(
     id, input.projectId,projectTaskId, seq, rootTaskId, input.parentTaskId ?? null, input.dispatcherAgentId ?? null,
     routedAssigneeId, null,null, input.title,
@@ -470,6 +477,7 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
     input.swarmId ?? null,
     input.swarmDepth ?? 0,
     personaId,
+    mergeMode,
   );
   // 修正 root_task_id 自引用
   if (!input.parentTaskId && !input.rootTaskId) {

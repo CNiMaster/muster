@@ -6,7 +6,12 @@
 import type { DB } from '../db/client';
 import { log } from '../logger';
 import { getProject } from './project';
-import { stageStatus, promoteStaging } from '../worktree/manager';
+import { getTask } from './task';
+import { appendTaskEvent } from './task-event';
+import { getTaskRuntime, deleteTaskRuntime } from './task-runtime';
+import { stageStatus, promoteStaging, removeWorktree } from '../worktree/manager';
+import { PublishQueue } from '../worktree/publish-queue';
+import { realtime } from '../realtime';
 import { postSystemMessage } from './conversation';
 
 export interface StagingPromoteResult {
@@ -126,3 +131,146 @@ function postStagingWatchdogMessage(db: DB, projectId: string, ahead: number, re
     log.warn('staging watchdog broadcast failed', { projectId, err: String(e) });
   }
 }
+
+export interface PendingMergeItem {
+  taskId: string;
+  projectTaskId: string;
+  seq: number;
+  title: string;
+  branch: string;
+  worktreePath: string;
+  summary: string;
+  artifacts: Array<{ path: string; kind?: string }>;
+  createdAt: string;
+  assigneeAgentId: string | null;
+}
+
+/**
+ * 批次 G：列出项目下待人工审查合并的 Task 列表。
+ */
+export function listPendingMerges(db: DB, projectId: string): PendingMergeItem[] {
+  const rows = db.prepare(
+    `SELECT t.id, t.project_task_id, t.seq, t.title, t.summary, t.artifacts_json, t.created_at, t.assignee_agent_id, tr.branch, tr.worktree_path
+     FROM task t
+     JOIN task_runtime tr ON tr.task_id = t.id
+     WHERE t.project_id = ? AND t.merge_mode = 'manual' AND t.state = 'completed'
+     ORDER BY t.seq DESC`,
+  ).all(projectId) as Array<{
+    id: string;
+    project_task_id: string;
+    seq: number;
+    title: string;
+    summary: string;
+    artifacts_json: string;
+    created_at: string;
+    assignee_agent_id: string | null;
+    branch: string;
+    worktree_path: string;
+  }>;
+
+  return rows.map((r) => ({
+    taskId: r.id,
+    projectTaskId: r.project_task_id,
+    seq: r.seq,
+    title: r.title,
+    branch: r.branch,
+    worktreePath: r.worktree_path,
+    summary: r.summary,
+    artifacts: JSON.parse(r.artifacts_json ?? '[]'),
+    createdAt: r.created_at,
+    assigneeAgentId: r.assignee_agent_id,
+  }));
+}
+
+/**
+ * 批次 G：手动触发将 Task 工作树成果合入主干。
+ */
+export function promoteTaskMerge(db: DB, projectId: string, taskId: string): StagingPromoteResult {
+  const project = getProject(db, projectId);
+  if (!project) return { promoted: false, message: '项目不存在', aheadCommits: 0 };
+  const task = getTask(db, taskId);
+  if (!task || task.projectId !== projectId) {
+    return { promoted: false, message: '任务不存在或不属于当前项目', aheadCommits: 0 };
+  }
+
+  const runtime = getTaskRuntime(db, taskId);
+  if (!runtime) {
+    return { promoted: false, message: '未找到该任务的工作区运行态（可能已合并或清理）', aheadCommits: 0 };
+  }
+
+  try {
+    const pubQueue = new PublishQueue(db);
+    const pub = pubQueue.publish({
+      taskId: task.id,
+      threadId: task.assigneeThreadId ?? task.id,
+      worktreePath: runtime.path,
+      baseCommit: runtime.baseCommit,
+      projectRootDir: project.rootDir,
+      artifacts: task.artifacts,
+    });
+
+    if (pub.blocked) {
+      return { promoted: false, message: `成果合并冲突：${pub.conflicts.join(', ')}`, conflicts: pub.conflicts, aheadCommits: 1 };
+    }
+
+    // 成功合入：清理 worktree 和 runtime
+    try {
+      removeWorktree(project.rootDir, runtime, { keepBranch: false });
+    } catch { /* 容错 */ }
+    deleteTaskRuntime(db, taskId);
+
+    appendTaskEvent(db, taskId, 'merge_promoted', {
+      branch: runtime.branch,
+      commitHash: pub.commitHash,
+    });
+
+    realtime.publish({
+      id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      type: 'merge.promoted',
+      projectId,
+      taskId,
+      occurredAt: new Date().toISOString(),
+      payload: { branch: runtime.branch, commitHash: pub.commitHash },
+    });
+
+    return { promoted: true, message: '手动合并成功已合入主干', aheadCommits: 1 };
+  } catch (err) {
+    return { promoted: false, message: `合并失败：${err instanceof Error ? err.message : String(err)}`, aheadCommits: 0 };
+  }
+}
+
+/**
+ * 批次 G：放弃 Task 的变更，安全清理工作区与分支。
+ */
+export function discardTaskMerge(db: DB, projectId: string, taskId: string): { discarded: boolean; message: string } {
+  const project = getProject(db, projectId);
+  if (!project) return { discarded: false, message: '项目不存在' };
+  const task = getTask(db, taskId);
+  if (!task || task.projectId !== projectId) {
+    return { discarded: false, message: '任务不存在或不属于当前项目' };
+  }
+
+  const runtime = getTaskRuntime(db, taskId);
+  if (runtime) {
+    try {
+      removeWorktree(project.rootDir, runtime, { keepBranch: false });
+    } catch { /* 容错 */ }
+    deleteTaskRuntime(db, taskId);
+  }
+
+  appendTaskEvent(db, taskId, 'merge_discarded', {
+    branch: runtime?.branch,
+  });
+
+  realtime.publish({
+    id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    type: 'merge.discarded',
+    projectId,
+    taskId,
+    occurredAt: new Date().toISOString(),
+    payload: { branch: runtime?.branch },
+  });
+
+  return { discarded: true, message: '已放弃变更并安全清理工作区' };
+}
+

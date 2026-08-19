@@ -14,6 +14,8 @@ import {
   usePersonas,
   useTaskCloseout,
   useGenerateTaskCloseout,
+  usePromoteTaskMerge,
+  useDiscardTaskMerge,
 } from '../hooks/queries';
 import type { Task } from '../api/types';
 import { Card } from '../components/Card';
@@ -33,6 +35,10 @@ export function TaskDetailPage(): React.ReactElement {
   // A5 幂等展示：已有 plan_approved 事件则不再显示「同意计划并执行」（域层同样幂等返回既有任务）
   const { data: taskEvents } = useTaskEvents(taskId);
   const planApproved = (taskEvents ?? []).some((e) => e.kind === 'plan_approved');
+  const isPendingMerge = (taskEvents ?? []).some((e) => e.kind === 'merge_pending_review')
+    && !(taskEvents ?? []).some((e) => e.kind === 'merge_promoted' || e.kind === 'merge_discarded');
+  const promoteMergeMutation = usePromoteTaskMerge(task?.projectId);
+  const discardMergeMutation = useDiscardTaskMerge(task?.projectId);
 
   if (!task) {
     return (
@@ -107,6 +113,45 @@ export function TaskDetailPage(): React.ReactElement {
 
       <div className="task-detail-layout">
         <div>
+          {isPendingMerge && (
+            <Card
+              title="⏳ 成果暂存待合入（手动合并治理）"
+              className="section"
+              style={{ borderColor: 'var(--accent)', background: 'rgba(59, 130, 246, 0.04)', marginBottom: 'var(--space-4)' }}
+            >
+              <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--fg)' }}>
+                该任务已执行完成并暂存在独立工作树分支。请审查产物后确认合入主干或放弃变更。
+              </p>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <Button
+                  variant="primary"
+                  onClick={() => {
+                    promoteMergeMutation.mutate(task.id, {
+                      onSuccess: (res) => {
+                        if (res.promoted) toast('success', '已成功合入主干');
+                        else toast('error', res.message);
+                      },
+                    });
+                  }}
+                  loading={promoteMergeMutation.isPending}
+                >
+                  🚀 一键合入主干
+                </Button>
+                <Button
+                  variant="danger"
+                  onClick={() => {
+                    discardMergeMutation.mutate(task.id, {
+                      onSuccess: () => toast('info', '已放弃变更并清理暂存工作树'),
+                    });
+                  }}
+                  loading={discardMergeMutation.isPending}
+                >
+                  🗑️ 放弃变更
+                </Button>
+              </div>
+            </Card>
+          )}
+
           {task.state === 'waiting_input' && <ClarifyCard taskId={task.id} task={task} onSubmit={(ans) => doAction('clarify', ans)} onOption={(optionId) => doAction('clarify', undefined, optionId)} loading={action.isPending} />}
           
           {task.summary === '被正式 Task 打断，提前结束' && (

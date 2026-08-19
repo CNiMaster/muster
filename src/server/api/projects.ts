@@ -41,7 +41,12 @@ import { getWorkbench } from '../domain/workbench';
 import { getAgent } from '../domain/agent';
 import { syncAgentMemoryFiles } from '../domain/agent-home';
 import { stageStatus } from '../worktree/manager';
-import { promoteProjectStagingIfAny } from '../domain/staging';
+import {
+  promoteProjectStagingIfAny,
+  listPendingMerges,
+  promoteTaskMerge,
+  discardTaskMerge,
+} from '../domain/staging';
 import { deleteProjectTrigger, listProjectTriggers, registerDefaultNovelScheduleTriggers, registerScheduleTrigger, setProjectTriggerEnabled } from '../domain/triggers';
 import { initializeNovelProject } from '../domain/novel-template';
 import { getCharacterGraph } from '../domain/character-graph';
@@ -190,6 +195,40 @@ projectById.post(
       });
     } catch { /* 事件失败不阻断 */ }
     res.json({ ok: true, promoted: result.promoted, message: result.message, conflicts: result.conflicts ?? [] });
+  }),
+);
+
+/** 批次 G：获取项目下所有待人工审查合并的 Task 列表 */
+projectById.get(
+  '/merges',
+  asyncHandler(async (req, res) => {
+    const db = getDb();
+    const project = getProject(db, param(req, 'id'));
+    res.json(listPendingMerges(db, project.id));
+  }),
+);
+
+/** 批次 G：手动触发将 Task 暂存成果合入主干 */
+projectById.post(
+  '/merges/:taskId/promote',
+  asyncHandler(async (req, res) => {
+    const db = getDb();
+    const project = getProject(db, param(req, 'id'));
+    const taskId = param(req, 'taskId');
+    const result = promoteTaskMerge(db, project.id, taskId);
+    res.json(result);
+  }),
+);
+
+/** 批次 G：放弃 Task 的暂存成果并安全清理工作树 */
+projectById.post(
+  '/merges/:taskId/discard',
+  asyncHandler(async (req, res) => {
+    const db = getDb();
+    const project = getProject(db, param(req, 'id'));
+    const taskId = param(req, 'taskId');
+    const result = discardTaskMerge(db, project.id, taskId);
+    res.json(result);
   }),
 );
 

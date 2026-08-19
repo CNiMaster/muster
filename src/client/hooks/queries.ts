@@ -631,6 +631,57 @@ export function usePromoteStaging(projectId: string | undefined) {
   });
 }
 
+export interface PendingMergeDTO {
+  taskId: string;
+  projectTaskId: string;
+  seq: number;
+  title: string;
+  branch: string;
+  worktreePath: string;
+  summary: string;
+  artifacts: Array<{ path: string; kind?: string }>;
+  createdAt: string;
+  assigneeAgentId: string | null;
+}
+
+/** 批次 G：项目下待合并审查的 Task 列表 */
+export function useProjectPendingMerges(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ['project-merges', projectId],
+    queryFn: () => api.get<PendingMergeDTO[]>(`/api/projects/${projectId}/merges`),
+    enabled: !!projectId,
+    refetchInterval: 10_000,
+  });
+}
+
+/** 批次 G：手动触发将 Task 暂存成果合入主干 */
+export function usePromoteTaskMerge(projectId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (taskId: string) =>
+      api.post<{ promoted: boolean; message: string; conflicts?: string[] }>(`/api/projects/${projectId}/merges/${taskId}/promote`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['project-merges', projectId] });
+      qc.invalidateQueries({ queryKey: ['project-tasks', projectId] });
+      qc.invalidateQueries({ queryKey: ['staging-status', projectId] });
+    },
+  });
+}
+
+/** 批次 G：放弃 Task 的暂存成果并安全清理工作树 */
+export function useDiscardTaskMerge(projectId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (taskId: string) =>
+      api.post<{ discarded: boolean; message: string }>(`/api/projects/${projectId}/merges/${taskId}/discard`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['project-merges', projectId] });
+      qc.invalidateQueries({ queryKey: ['project-tasks', projectId] });
+      qc.invalidateQueries({ queryKey: ['staging-status', projectId] });
+    },
+  });
+}
+
 /** 蓝图组织批次4c：项目优先入口——零组织决策建项目（自动落默认工作台，无则顺手创建）。 */
 export function useQuickProject() {
   const qc = useQueryClient();
