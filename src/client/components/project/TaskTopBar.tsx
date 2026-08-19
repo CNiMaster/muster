@@ -119,12 +119,16 @@ export function TaskTopBar({ projectId, task, runtimeTaskId, rightExtra }: {
                 style={{ width: '100%', boxSizing: 'border-box', fontSize: 12, padding: '5px 8px', borderRadius: 6, border: '1px solid var(--border)', marginBottom: 4 }}
               />
               <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+                {!worktreePath && (
+                  <div className="muted" style={{ fontSize: 12, padding: '4px 8px' }}>任务尚无工作区——先运行任务后再切换分支</div>
+                )}
                 {filteredBranches.map((b) => (
                   <button
                     key={b.name}
                     type="button"
                     title={b.lastCommit}
-                    style={{ display: 'flex', gap: 6, width: '100%', textAlign: 'left', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 12, padding: '4px 8px', borderRadius: 6, alignItems: 'center' }}
+                    disabled={!worktreePath}
+                    style={{ display: 'flex', gap: 6, width: '100%', textAlign: 'left', border: 'none', background: 'transparent', cursor: worktreePath ? 'pointer' : 'not-allowed', opacity: worktreePath ? 1 : 0.5, fontSize: 12, padding: '4px 8px', borderRadius: 6, alignItems: 'center' }}
                     onClick={() => {
                       checkout.mutate(
                         { projectTaskId: task.id, branch: b.name },
@@ -132,7 +136,7 @@ export function TaskTopBar({ projectId, task, runtimeTaskId, rightExtra }: {
                       );
                     }}
                   >
-                    <span style={{ width: 12, flexShrink: 0 }}>{b.current ? '✓' : ''}</span>
+                    <span style={{ width: 12, flexShrink: 0 }}>{b.name === branch ? '✓' : ''}</span>
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.name}</span>
                   </button>
                 ))}
@@ -148,7 +152,7 @@ export function TaskTopBar({ projectId, task, runtimeTaskId, rightExtra }: {
                 />
                 <button
                   type="button"
-                  disabled={!newBranch.trim() || checkout.isPending}
+                  disabled={!worktreePath || !newBranch.trim() || checkout.isPending}
                   style={{ fontSize: 12, padding: '5px 10px', borderRadius: 6, cursor: 'pointer' }}
                   onClick={() => {
                     const name = newBranch.trim();

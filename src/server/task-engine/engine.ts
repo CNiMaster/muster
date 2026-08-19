@@ -48,7 +48,7 @@ import { applyAdaptiveAdjustment, canRunMore } from '../domain/executor-concurre
 import { markExecutorFailure, markExecutorSuccess } from '../domain/executor-failover';
 import { isSwarmLinkedTask } from '../domain/staging';
 import { getWorkbench } from '../domain/workbench';
-import { createWorktree, removeWorktree, ensureStagingWorktree } from '../worktree/manager';
+import { createWorktree, removeWorktree, ensureStagingWorktree, listTaskBranchChanges } from '../worktree/manager';
 /** 批次 D2：读取任务 inputProtocol 里的消息级选项（模式/模型/思考），非法值忽略。 */
 function readMessageOptions(input: Record<string, unknown>): { mode?: 'plan' | 'ask-always' | 'ask-by-rule' | 'no-approval' | 'deny'; model?: string; thinking?: 'off' | 'low' | 'medium' | 'high' } {
   const mode = input.mode;
@@ -1350,11 +1350,36 @@ export class TaskEngine {
           /* ignore */
         }
       }
-      // 清理 worktree（已 publish 或失败都不再保留工作目录）
+      // 清理 worktree（已 publish 或失败都不再保留工作目录）。
+      // 守护：分支上若有"已提交/未提交但未随发布白名单落盘"的改动，删 worktree 但保留分支并
+      // 落 task_event——发布只合并 result.artifacts 白名单，agent 漏声明的改动原本会随 branch -D
+      // 静默丢失（连 git 历史都不剩）。留分支后可经 git 找回，事件里带文件清单。
       if (worktreeInfo && !preserveWorktree) {
         try {
-          // B2B 外包：worktree 基于甲方 repo 切出，清理也用甲方 rootDir
-          removeWorktree(worktreeSourceRoot, worktreeInfo);
+          const published = new Set(
+            (this.db.prepare('SELECT artifacts_json FROM publish_record WHERE task_id=?').all(task.id) as Array<{ artifacts_json: string }>)
+              .flatMap((row) => {
+                try {
+                  return (JSON.parse(row.artifacts_json ?? '[]') as Array<{ path: string }>).map((a) => a.path);
+                } catch {
+                  return [];
+                }
+              }),
+          );
+          const changes = listTaskBranchChanges(worktreeSourceRoot, worktreeInfo);
+          const unpublished = [...new Set([...changes.committed, ...changes.uncommitted])]
+            .filter((p) => !p.startsWith('.muster-conflicts/') && !published.has(p));
+          const keepBranch = unpublished.length > 0;
+          removeWorktree(worktreeSourceRoot, worktreeInfo, { keepBranch });
+          if (keepBranch) {
+            appendTaskEvent(this.db, task.id, 'unpublished_changes_kept', {
+              branch: worktreeInfo.branch,
+              count: unpublished.length,
+              files: unpublished.slice(0, 50),
+              note: '这些改动不在任务声明的产物清单里，未随发布落盘；分支已保留，可 git 找回',
+            });
+            log.warn('task branch kept: unpublished changes detected', { taskId: task.id, branch: worktreeInfo.branch, unpublished: unpublished.length });
+          }
           deleteTaskRuntime(this.db, task.id);
         } catch (e) {
           log.warn('worktree cleanup failed', { taskId: task.id, err: String(e) });

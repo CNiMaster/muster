@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { SERVER_CONFIG } from './env';
 import { log } from './logger';
 import { startGracefulShutdownSequence } from './runtime/shutdown';
+import { sweepStaleRunDirs } from './domain/run-housekeeping';
 import { healthRouter } from './api/health';
 import { agentsRouter } from './api/agents';
 import { projectsRouter, projectById, quickProjectsRouter } from './api/projects';
@@ -299,6 +300,13 @@ async function main(): Promise<void> {
   // 启动 Task 引擎轮询
   coordinator.start();
   triggerScheduler.start();
+
+  // 运行目录清扫：清掉超过 TTL 的 ~/.muster/runs/<runId>（tmp/logs 隔离目录，无消费侧清理链路）
+  try {
+    sweepStaleRunDirs();
+  } catch (e) {
+    log.warn('run dir sweep failed at startup', { err: String(e) });
+  }
 
   httpServer.listen(SERVER_CONFIG.port, SERVER_CONFIG.host, () => {
     log.info('muster server listening', {

@@ -74,9 +74,29 @@ export function createWorktree(rootDir: string, projectId: string, taskId: strin
   return { taskId, branch, path: wtPath, baseCommit: base };
 }
 
-export function removeWorktree(rootDir: string, info: WorktreeInfo): void {
+export function removeWorktree(rootDir: string, info: WorktreeInfo, options: { keepBranch?: boolean } = {}): void {
   git(rootDir, ['worktree', 'remove', '--force', info.path], { allowFail: true });
+  // keepBranch：分支上还有未随发布落盘的改动，删 worktree 但留分支（git 层可找回）
+  if (options.keepBranch) return;
   git(rootDir, ['branch', '-D', info.branch], { allowFail: true });
+}
+
+/**
+ * 任务分支上的全部改动文件（防发布白名单外改动静默丢失的守护数据源）。
+ * committed = base..branch 的 diff（发布时 commitAll 已把工作区全部提交）；
+ * uncommitted = worktree 里尚未提交的改动（任务失败未走到发布时存在）。
+ * 任一非空且不在发布白名单内 → 调用方应保分支留痕而非直接删除。
+ */
+export function listTaskBranchChanges(rootDir: string, info: WorktreeInfo): { committed: string[]; uncommitted: string[] } {
+  const committed = git(rootDir, ['diff', '--name-only', info.baseCommit, info.branch], { allowFail: true })
+    .stdout.split('\n').map((l) => l.trim()).filter(Boolean);
+  const status = git(info.path, ['status', '--porcelain'], { allowFail: true }).stdout;
+  const uncommitted = status.split('\n').map((l) => l.trim()).filter(Boolean).map((l) => {
+    const renamed = /^R\S*\s+.* -> (.+)$/.exec(l);
+    if (renamed) return renamed[1]!.trim();
+    return l.replace(/^[A-Z?]+\s+/, '').trim();
+  }).filter(Boolean);
+  return { committed, uncommitted };
 }
 
 export function commitAll(

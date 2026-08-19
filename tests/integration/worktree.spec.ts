@@ -19,8 +19,14 @@ import {
   removeWorktree,
   commitAll,
   currentHead,
+  listTaskBranchChanges,
 } from '../../src/server/worktree/manager';
 import { PublishQueue } from '../../src/server/worktree/publish-queue';
+
+function branchesOf(root: string): string[] {
+  return spawnSync('git', ['branch', '--list'], { cwd: root, encoding: 'utf8' })
+    .stdout.split('\n').map((l) => l.trim().replace(/^\*\s+/, '')).filter(Boolean);
+}
 
 let tmpRoot: string;
 let tdb: ReturnType<typeof makeTestDb>;
@@ -261,6 +267,74 @@ describe('publish queue', () => {
       rolled_back: number;
     };
     expect(rolledBack.rolled_back).toBe(0);
+  });
+});
+
+describe('unpublished changes guard（发布白名单外改动守护）', () => {
+  it('listTaskBranchChanges 同时报告已提交与未提交的改动文件', () => {
+    ensureGitRepo(tmpRoot);
+    commitAll(tmpRoot, 'baseline');
+    const info = createWorktree(tmpRoot, 'proj', 'task-guard');
+    writeFileSync(path.join(info.path, 'declared.md'), '声明过的\n');
+    writeFileSync(path.join(info.path, 'hidden.md'), '漏声明的\n');
+    commitAll(info.path, '提交两个文件');
+    writeFileSync(path.join(info.path, 'draft.txt'), '失败任务常见的未提交草稿\n');
+
+    const changes = listTaskBranchChanges(tmpRoot, info);
+    expect(changes.committed).toEqual(expect.arrayContaining(['declared.md', 'hidden.md']));
+    expect(changes.uncommitted).toContain('draft.txt');
+    removeWorktree(tmpRoot, info);
+  });
+
+  it('发布只落盘白名单，diff 减去白名单后能检出漏声明文件（引擎守护的数据链路）', () => {
+    ensureGitRepo(tmpRoot);
+    commitAll(tmpRoot, 'baseline');
+    const info = createWorktree(tmpRoot, 'proj', 'task-leak');
+    writeFileSync(path.join(info.path, 'declared.md'), '声明过的\n');
+    writeFileSync(path.join(info.path, 'hidden.md'), '漏声明的\n');
+    commitAll(info.path, 'task changes');
+
+    const q = new PublishQueue(db);
+    const pub = q.publish({
+      taskId: 'task-leak',
+      threadId: 'th1',
+      worktreePath: info.path,
+      baseCommit: info.baseCommit,
+      projectRootDir: tmpRoot,
+      artifacts: [{ path: 'declared.md', kind: 'markdown', operation: 'create' }],
+    });
+    expect(pub.blocked).toBe(false);
+
+    // 引擎 finally 守护同款计算：diff 全量 − publish_record 白名单
+    const published = new Set(
+      (db.prepare('SELECT artifacts_json FROM publish_record WHERE task_id=?').all('task-leak') as Array<{ artifacts_json: string }>)
+        .flatMap((row) => (JSON.parse(row.artifacts_json ?? '[]') as Array<{ path: string }>).map((a) => a.path)),
+    );
+    const unpublished = [...new Set(listTaskBranchChanges(tmpRoot, info).committed)]
+      .filter((p) => !p.startsWith('.muster-conflicts/') && !published.has(p));
+    expect(unpublished).toEqual(['hidden.md']);
+    removeWorktree(tmpRoot, info);
+  });
+
+  it('removeWorktree keepBranch=true 删目录留分支，分支内容可找回', () => {
+    ensureGitRepo(tmpRoot);
+    commitAll(tmpRoot, 'baseline');
+    const info = createWorktree(tmpRoot, 'proj', 'task-keep');
+    writeFileSync(path.join(info.path, 'only.md'), '未发布改动\n');
+    commitAll(info.path, 'unpublished work');
+
+    removeWorktree(tmpRoot, info, { keepBranch: true });
+    expect(existsSync(info.path)).toBe(false);
+    expect(branchesOf(tmpRoot)).toContain(info.branch);
+    // 分支内容仍在：git show 可取回
+    const content = spawnSync('git', ['show', `${info.branch}:only.md`], { cwd: tmpRoot, encoding: 'utf8' }).stdout;
+    expect(content).toContain('未发布改动');
+
+    // 常规路径（无保留）：目录与分支都删
+    const info2 = createWorktree(tmpRoot, 'proj', 'task-clean');
+    removeWorktree(tmpRoot, info2);
+    expect(existsSync(info2.path)).toBe(false);
+    expect(branchesOf(tmpRoot)).not.toContain(info2.branch);
   });
 });
 
