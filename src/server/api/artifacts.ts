@@ -20,12 +20,14 @@ import { asyncHandler, param } from './middleware';
 import { getDb } from '../db/client';
 import { listArtifacts, artifactGallery, deleteArtifact, buildRevealCommand } from '../domain/artifact';
 import { getProject } from '../domain/project';
+import { peekRepoRoot } from '../domain/task-repo';
 import { PublishQueue } from '../worktree/publish-queue';
 import {
   readArtifactContent,
   writeArtifactContent,
   createArtifactAndContent,
   resolveArtifactPath,
+  artifactBaseDir,
 } from '../domain/artifact-content';
 import { isPathAllowed } from '../paths';
 
@@ -53,7 +55,8 @@ projectArtifactsRouter.get(
     const projectId = param(req, 'id');
     const project = getProject(db, projectId);
     const pq = new PublishQueue(db);
-    res.json(pq.listRecords(project.rootDir));
+    // 修复轮 Fix5：发布记录随任务所在仓库（锚点/载体），与发布目标同源
+    res.json(pq.listRecords(peekRepoRoot(db, project) ?? project.rootDir));
   }),
 );
 
@@ -68,7 +71,7 @@ projectArtifactsRouter.get(
       res.status(400).json({ error: { code: 'validation', message: 'path required' } });
       return;
     }
-    const abs = resolveArtifactPath(project.rootDir, relPath);
+    const abs = resolveArtifactPath(artifactBaseDir(db, projectId, relPath), relPath);
     if (!existsSync(abs)) {
       res.status(404).end();
       return;
@@ -121,7 +124,7 @@ projectArtifactsRouter.post(
     const input = z.object({ path: z.string().min(1) }).parse(req.body);
     const db = getDb();
     const project = getProject(db, param(req, 'id'));
-    const abs = resolveArtifactPath(project.rootDir, input.path);
+    const abs = resolveArtifactPath(artifactBaseDir(db, project.id, input.path), input.path);
     if (!existsSync(abs)) {
       res.status(404).json({ error: { code: 'not_found', message: '文件不存在' } });
       return;
@@ -175,7 +178,7 @@ projectArtifactsRouter.post(
     const input = z.object({ path: z.string().min(1) }).parse(req.body);
     const db = getDb();
     const project = getProject(db, param(req, 'id'));
-    const abs = resolveArtifactPath(project.rootDir, input.path);
+    const abs = resolveArtifactPath(artifactBaseDir(db, project.id, input.path), input.path);
     if (!existsSync(abs)) {
       res.status(404).json({ error: { code: 'not_found', message: '文件不存在' } });
       return;
@@ -205,7 +208,7 @@ projectArtifactsRouter.delete(
     const { path: relPath } = z.object({ path: z.string().min(1) }).parse(req.body);
     const db = getDb();
     const project = getProject(db, param(req, 'id'));
-    const abs = resolveArtifactPath(project.rootDir, relPath);
+    const abs = resolveArtifactPath(artifactBaseDir(db, project.id, relPath), relPath);
     if (!isPathAllowed(abs)) {
       res.status(403).json({ error: { code: 'unauthorized', message: '路径不在允许的根目录内' } });
       return;
@@ -226,7 +229,7 @@ projectArtifactsRouter.post(
     const db = getDb();
     const project = getProject(db, param(req, 'id'));
     const pq = new PublishQueue(db);
-    pq.rollback(input.publishId, project.rootDir);
+    pq.rollback(input.publishId, peekRepoRoot(db, project) ?? project.rootDir);
     res.json({ ok: true, publishId: input.publishId });
   }),
 );

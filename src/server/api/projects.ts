@@ -67,7 +67,7 @@ import { projectLaunchBriefSchema } from '../../shared/project-launch';
 import { confirmProjectLaunch, discoverProjectLaunchCapabilities } from '../domain/project-launch';
 import { transitionProjectPhase } from '../domain/project-readiness';
 import { PHASE_ORDER, type ProjectState } from '../domain/project';
-import { resolveTaskRepoRoot } from '../domain/task-repo';
+import { resolveTaskRepoRoot, peekRepoRoot, projectRepoRoots } from '../domain/task-repo';
 import { listTrash, purgeFromTrash, restoreProject, trashProject } from '../domain/project-trash';
 import { attachProjectDir, detachProjectDir, listProjectDirs, resetProjectAnchor, setProjectAnchor } from '../domain/project-dirs';
 import { existsSync } from 'node:fs';
@@ -197,7 +197,8 @@ projectById.get(
   asyncHandler(async (req, res) => {
     const db = getDb();
     const project = getProject(db, param(req, 'id'));
-    const status = stageStatus(project.rootDir, project.id);
+    // 修复轮 Fix4：蜂群 staging 可能建在外部锚点仓库——读取同源（只读）
+    const status = stageStatus(peekRepoRoot(db, project) ?? project.rootDir, project.id);
     const pendingTasks = db.prepare(
       `SELECT COUNT(*) AS c FROM task
         WHERE project_id=? AND swarm_id IS NOT NULL AND state IN ('completed','failed','cancelled')`,
@@ -299,7 +300,13 @@ projectById.get(
   asyncHandler(async (req, res) => {
     const db = getDb();
     const project = getProject(db, param(req, 'id'));
-    res.json(detectOrphanWorktrees(db, project.rootDir));
+    res.json(projectRepoRoots(db, project).flatMap((root) => {
+      try {
+        return detectOrphanWorktrees(db, root);
+      } catch {
+        return [];
+      }
+    }));
   }),
 );
 
@@ -313,7 +320,13 @@ projectById.post(
       targets: z.array(z.string()).optional(),
       force: z.boolean().optional(),
     }).parse(req.body ?? {});
-    res.json(cleanOrphanWorktrees(db, project.rootDir, body));
+    res.json(projectRepoRoots(db, project).flatMap((root) => {
+      try {
+        return cleanOrphanWorktrees(db, root, body);
+      } catch {
+        return [];
+      }
+    }));
   }),
 );
 

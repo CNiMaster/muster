@@ -18,7 +18,7 @@ import { ensureWorkspaceStaff } from './workspace-staff';
 import { getAgent } from './agent';
 import { ensureDefaultWorkspace, getActiveWorkspace } from './workspace';
 import { defaultWorkspaceRoot, infraDir, sanitizeSegment, uniqueProjectSegment } from './workspace-layout';
-import { recordExternalRootDir } from './project-dirs';
+import { recordExternalRootDir, assertPathNotCrossingOtherProjects } from './project-dirs';
 
 /** 将任意字符串转为安全的路径片段：保留中文/字母数字，其余替换为 -（规矩统一在 workspace-layout）。 */
 function sanitizePathSegment(s: string): string {
@@ -135,6 +135,10 @@ export function createProject(
   // rootDir 未指定时自动生成默认路径，降低建项目门槛。
   // ensureGitRepo() 会在首个 worktree 创建时自动 mkdir + git init。
   const requestedRootDir = input.rootDir?.trim();
+  // 修复轮 Fix6：显式目录不得与任何既有项目目录交叉（与 attachProjectDir 同一治理口径）
+  if (requestedRootDir) {
+    assertPathNotCrossingOtherProjects(db, requestedRootDir);
+  }
   const wsRoot = ensureDefaultWorkspace(db, defaultWorkspaceRoot()).rootDir;
   const rootDir = requestedRootDir || defaultRootDir(db, wsRoot, input.name);
   const firstAgentId = input.firstAgentId ?? workbench.firstAgentId ?? undefined;
@@ -244,6 +248,8 @@ export function removeProject(db: DB, id: string, options: { deleteRecords?: boo
   if (options.deleteRecords) {
     db.transaction(() => {
       const now = nowIso();
+      // 修复轮 Fix2：inspector_alert 是唯一不带 ON DELETE CASCADE 的 project 外键，先清
+      db.prepare('DELETE FROM inspector_alert WHERE project_id=?').run(id);
       db.prepare(
         `UPDATE task SET state='cancelled', lease_owner_thread_id=NULL, lease_expires_at=NULL, heartbeat_at=NULL, updated_at=?
          WHERE project_id=? AND state NOT IN ('completed','failed','cancelled')`,

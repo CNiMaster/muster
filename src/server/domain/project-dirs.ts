@@ -110,6 +110,13 @@ export function attachProjectDir(db: DB, projectId: string, input: { path: strin
   if (settings.inbox === true || settings.standalone === true) {
     throw new AppError(ErrorCode.CONFLICT, '基础设施项目（收件箱/独立任务）不支持绑定目录');
   }
+  // 修复轮 Fix6：软件管理的 workspace 子树（projects/tasks/.system/.trash 及根本身）不可绑——
+  // 绑定=用户自有数据语义（可写授权/永不回收），软件目录混进来会破坏治理边界
+  const wsRoot = getActiveWorkspace(db)?.rootDir ?? defaultWorkspaceRoot();
+  const wsResolved = resolve(wsRoot);
+  if (path === wsResolved || path.startsWith(`${wsResolved}/`)) {
+    throw new AppError(ErrorCode.CONFLICT, '不能绑定软件工作区内部的目录（软件管理的区域不走绑定）');
+  }
   if (db.prepare('SELECT 1 FROM project_dir WHERE project_id=? AND path=?').get(projectId, path)) {
     throw new AppError(ErrorCode.CONFLICT, '该目录已绑定到本项目');
   }
@@ -138,12 +145,19 @@ export function detachProjectDir(db: DB, dirId: string): { detached: boolean } {
   return { detached: true };
 }
 
-/** 设为 worktree 锚点（仅 git 仓库；一项目至多一个，唯一部分索引兜底）。 */
+/** 设为 worktree 锚点（仅 git 仓库；一项目至多一个，唯一部分索引兜底）。修复轮 Fix6：有活跃任务时拒——中途换锚会让既有任务分支指向旧仓库。 */
 export function setProjectAnchor(db: DB, dirId: string): ProjectDir {
   const row = db.prepare('SELECT * FROM project_dir WHERE id=?').get(dirId) as DirRow | undefined;
   if (!row) throw new AppError(ErrorCode.NOT_FOUND, `绑定目录不存在: ${dirId}`);
   if (!isGitRepo(row.path)) {
     throw new AppError(ErrorCode.VALIDATION, '只有 git 仓库才能设为任务锚点（非 git 目录按直写+变更记录方式工作）');
+  }
+  const activeStates = ['queued', 'claimed', 'running', 'waiting_input', 'waiting_dependency', 'waiting_approval', 'paused', 'blocked'];
+  const active = db.prepare(
+    `SELECT COUNT(*) AS n FROM task WHERE project_id=? AND state IN (${activeStates.map(() => '?').join(',')})`,
+  ).get(row.project_id, ...activeStates) as { n: number };
+  if (active.n > 0) {
+    throw new AppError(ErrorCode.VALIDATION, `项目下还有 ${active.n} 个进行中任务，不能切换锚点（请先完成或取消，避免任务分支指向旧仓库）`);
   }
   db.transaction(() => {
     db.prepare('UPDATE project_dir SET is_anchor=0 WHERE project_id=?').run(row.project_id);
@@ -162,6 +176,20 @@ export function resetProjectAnchor(db: DB, projectId: string): { ok: true } {
 export function peekAnchorPath(db: DB, projectId: string): string | null {
   const row = db.prepare('SELECT path FROM project_dir WHERE project_id=? AND is_anchor=1').get(projectId) as { path: string } | undefined;
   return row?.path ?? null;
+}
+
+/** 创建项目时显式指定目录的交叉守卫（修复轮 Fix6）：不得与任何既有项目的目录交叉（含绑定目录）。 */
+export function assertPathNotCrossingOtherProjects(db: DB, rawPath: string): void {
+  const path = resolve(rawPath);
+  const others = [
+    ...(db.prepare('SELECT id AS project_id, root_dir AS path FROM project').all() as Array<{ project_id: string; path: string }>),
+    ...(db.prepare('SELECT project_id, path FROM project_dir').all() as Array<{ project_id: string; path: string }>),
+  ];
+  for (const o of others) {
+    if (overlaps(path, resolve(o.path))) {
+      throw new AppError(ErrorCode.CONFLICT, `目录与项目「${o.project_id}」的目录交叉（${o.path}），不能用作项目目录`);
+    }
+  }
 }
 
 /** 创建项目时记录 external 主目录行（供 createProject 调用；同路径幂等跳过）。 */

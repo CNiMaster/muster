@@ -13,7 +13,7 @@
  *   「不再提醒」偏好属 UI 层（本地记忆），服务端确认语义不变——系统废纸篓兜底常在。
  * - ghost 项目（目录从未落盘）允许入站：trash_dir=''，恢复/真删只动库不动盘。
  */
-import { existsSync, mkdirSync, renameSync } from 'node:fs';
+import { existsSync, mkdirSync, renameSync, cpSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir, platform } from 'node:os';
 import type { DB } from '../db/client';
@@ -25,6 +25,7 @@ import { defaultWorkspaceRoot, sanitizeSegment } from './workspace-layout';
 import { defaultRootDir } from './project';
 import { dirSizeBytes } from './workspace-audit';
 import { listPendingTaskMerges } from './staging';
+import { peekRepoRoot } from './task-repo';
 import { removeWorktree } from '../worktree/manager';
 import { getTaskRuntime, deleteTaskRuntime } from './task-runtime';
 
@@ -44,6 +45,18 @@ function workspaceRootOf(db: DB): string {
 
 function trashRoot(db: DB): string {
   return join(workspaceRootOf(db), '.trash');
+}
+
+/** 跨卷 rename 回退（EXDEV）：递归复制 + 删源——外部目录/外置盘工作区场景（修复轮 Fix6）。 */
+function renameWithFallback(src: string, dest: string): void {
+  try {
+    renameSync(src, dest);
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code;
+    if (code !== 'EXDEV' && code !== 'ENOTSUP' && code !== 'EPERM') throw e;
+    cpSync(src, dest, { recursive: true, force: true });
+    rmSync(src, { recursive: true, force: true });
+  }
 }
 
 /** 系统废纸篓目录：MUSTER_TRASH_DIR 覆盖（测试）；macOS ~/.Trash；Linux FreeDesktop；其余平台不支持真删。 */
@@ -85,43 +98,54 @@ export function trashProject(db: DB, projectId: string, options: { batchId?: str
     throw new AppError(ErrorCode.CONFLICT, `还不能移入回收站：${blockers.join('；')}`);
   }
 
-  // 终态任务残留的 worktree 清掉（分支随目录整体搬走，worktree 指针必须先删防悬空）
+  // 终态任务残留的 worktree 清掉（分支随目录整体搬走，worktree 指针必须先删防悬空）。
+  // 修复轮 Fix4：载体/锚点任务的 worktree 挂在各自仓库下——按任务自身载体解析根；
+  // 仓库已不存在时直接删物理 worktree 目录兜底（removeWorktree 对不存在的仓库是静默空转）。
   const staleRuntimes = db.prepare(
-    `SELECT t.id AS task_id FROM task t WHERE t.project_id=? AND t.state IN ('completed','failed','cancelled')`,
-  ).all(projectId) as Array<{ task_id: string }>;
-  for (const { task_id } of staleRuntimes) {
+    `SELECT t.id AS task_id, t.project_task_id AS pt_id FROM task t WHERE t.project_id=? AND t.state IN ('completed','failed','cancelled')`,
+  ).all(projectId) as Array<{ task_id: string; pt_id: string | null }>;
+  for (const { task_id, pt_id } of staleRuntimes) {
     const runtime = getTaskRuntime(db, task_id);
     if (!runtime) continue;
     try {
-      removeWorktree(project.rootDir, runtime);
+      const root = peekRepoRoot(db, project, pt_id);
+      if (root && existsSync(root)) {
+        removeWorktree(root, runtime);
+      } else if (existsSync(runtime.path)) {
+        rmSync(runtime.path, { recursive: true, force: true });
+      }
     } catch {
-      /* 目录可能从未落盘；尽力而为 */
+      /* 尽力而为 */
     }
     deleteTaskRuntime(db, task_id);
   }
 
-  const root = workspaceRootOf(db);
   const src = project.rootDir;
   let trashDir = '';
   if (existsSync(src)) {
     const base = src.split('/').pop() ?? 'project';
-    const stamp = nowIso().replace(/[-:T]/g, '').slice(0, 13); // YYYYMMDDHHMMSS
+    const stamp = nowIso().replace(/[-:T]/g, '').slice(0, 12); // YYYYMMDDHHMM
     let dest = join(trashRoot(db), `${stamp}-${base}`);
     for (let i = 2; existsSync(dest); i++) dest = join(trashRoot(db), `${stamp}-${base}-${i}`);
     mkdirSync(trashRoot(db), { recursive: true });
-    renameSync(src, dest);
+    renameWithFallback(src, dest);
     trashDir = dest;
   }
 
-  // 绑定自动化自动暂停 + 记账（恢复时提示重开，不自动重开）
-  const pausedIds = (db.prepare('SELECT id FROM automation WHERE project_id=? AND enabled=1').all(projectId) as Array<{ id: string }>).map((r) => r.id);
-  if (pausedIds.length > 0) {
-    db.prepare('UPDATE automation SET enabled=0, updated_at=? WHERE id IN (' + pausedIds.map(() => '?').join(',') + ')').run(nowIso(), ...pausedIds);
+  // 绑定自动化与项目定时触发器自动暂停 + 记账（修复轮 Fix3：trigger 不停会在到点时
+  // 于已腾空的原路径重建空仓库——"复活幽灵目录"；恢复时提示重开，不自动重开）
+  const pausedAutomationIds = (db.prepare('SELECT id FROM automation WHERE project_id=? AND enabled=1').all(projectId) as Array<{ id: string }>).map((r) => r.id);
+  if (pausedAutomationIds.length > 0) {
+    db.prepare('UPDATE automation SET enabled=0, updated_at=? WHERE id IN (' + pausedAutomationIds.map(() => '?').join(',') + ')').run(nowIso(), ...pausedAutomationIds);
+  }
+  const pausedTriggerIds = (db.prepare('SELECT id FROM trigger WHERE project_id=? AND enabled=1').all(projectId) as Array<{ id: string }>).map((r) => r.id);
+  if (pausedTriggerIds.length > 0) {
+    db.prepare('UPDATE trigger SET enabled=0, updated_at=? WHERE id IN (' + pausedTriggerIds.map(() => '?').join(',') + ')').run(nowIso(), ...pausedTriggerIds);
   }
 
   db.prepare(
     'INSERT INTO project_trash (project_id, original_root_dir, trash_dir, size_bytes, paused_automation_ids_json, batch_id, trashed_at) VALUES (?,?,?,?,?,?,?)',
-  ).run(projectId, src, trashDir, trashDir ? dirSizeBytes(trashDir) : 0, JSON.stringify(pausedIds), options.batchId ?? null, nowIso());
+  ).run(projectId, src, trashDir, trashDir ? dirSizeBytes(trashDir) : 0, JSON.stringify({ automations: pausedAutomationIds, triggers: pausedTriggerIds }), options.batchId ?? null, nowIso());
 
   // 隐藏：沿用 removed 语义（列表消费方已过滤）+ trashed 标记（回收站专属视图）
   updateProject(db, projectId, {
@@ -140,7 +164,28 @@ export interface TrashItem {
   trashedAt: string;
   staleDays: number;
   pausedAutomationIds: string[];
+  pausedTriggerIds: string[];
   batchId: string | null;
+}
+
+interface PausedLedger {
+  automations: string[];
+  triggers: string[];
+}
+
+/** 兼容读：批次2 旧结构是 string[]，修复轮起是 {automations, triggers}。 */
+function parsePausedLedger(raw: string | null | undefined): PausedLedger {
+  if (!raw) return { automations: [], triggers: [] };
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return { automations: parsed as string[], triggers: [] };
+    return {
+      automations: Array.isArray((parsed as PausedLedger).automations) ? (parsed as PausedLedger).automations : [],
+      triggers: Array.isArray((parsed as PausedLedger).triggers) ? (parsed as PausedLedger).triggers : [],
+    };
+  } catch {
+    return { automations: [], triggers: [] };
+  }
 }
 
 /** 回收站清单（可查/可追踪）。 */
@@ -149,22 +194,26 @@ export function listTrash(db: DB): TrashItem[] {
     `SELECT pt.*, p.name AS name, p.state AS state FROM project_trash pt JOIN project p ON p.id=pt.project_id ORDER BY pt.trashed_at DESC`,
   ).all() as Array<TrashRow & { name: string; state: string }>;
   const now = Date.now();
-  return rows.map((r) => ({
-    projectId: r.project_id,
-    name: r.name,
-    state: r.state,
-    originalRootDir: r.original_root_dir,
-    trashDir: r.trash_dir,
-    sizeBytes: r.size_bytes,
-    trashedAt: r.trashed_at,
-    staleDays: Math.floor((now - Date.parse(r.trashed_at)) / 86_400_000),
-    pausedAutomationIds: JSON.parse(r.paused_automation_ids_json ?? '[]') as string[],
-    batchId: r.batch_id,
-  }));
+  return rows.map((r) => {
+    const ledger = parsePausedLedger(r.paused_automation_ids_json);
+    return {
+      projectId: r.project_id,
+      name: r.name,
+      state: r.state,
+      originalRootDir: r.original_root_dir,
+      trashDir: r.trash_dir,
+      sizeBytes: r.size_bytes,
+      trashedAt: r.trashed_at,
+      staleDays: Math.floor((now - Date.parse(r.trashed_at)) / 86_400_000),
+      pausedAutomationIds: ledger.automations,
+      pausedTriggerIds: ledger.triggers,
+      batchId: r.batch_id,
+    };
+  });
 }
 
-/** 恢复：原位被占 → 同一撞名日期后缀规则换新目录。返回暂停过的自动化（提示用户重开）。 */
-export function restoreProject(db: DB, projectId: string): { projectId: string; rootDir: string; pausedAutomationIds: string[] } {
+/** 恢复：原位被占 → 同一撞名日期后缀规则换新目录。返回暂停过的自动化/定时器（提示用户重开）。 */
+export function restoreProject(db: DB, projectId: string): { projectId: string; rootDir: string; pausedAutomationIds: string[]; pausedTriggerIds: string[] } {
   const row = db.prepare('SELECT * FROM project_trash WHERE project_id=?').get(projectId) as TrashRow | undefined;
   if (!row) throw new AppError(ErrorCode.NOT_FOUND, '该项目不在回收站中');
   const project = getProject(db, projectId);
@@ -177,7 +226,7 @@ export function restoreProject(db: DB, projectId: string): { projectId: string; 
   }
   if (row.trash_dir && existsSync(row.trash_dir)) {
     mkdirSync(join(dest, '..'), { recursive: true });
-    renameSync(row.trash_dir, dest);
+    renameWithFallback(row.trash_dir, dest);
   }
   db.prepare('DELETE FROM project_trash WHERE project_id=?').run(projectId);
   // 直写库：不走 updateProject（其 rootDir 路径含物理迁移校验，而目录已在此处搬好）
@@ -186,7 +235,8 @@ export function restoreProject(db: DB, projectId: string): { projectId: string; 
   delete settings.removed;
   db.prepare('UPDATE project SET root_dir=?, settings_json=?, updated_at=? WHERE id=?')
     .run(dest, JSON.stringify(settings), nowIso(), projectId);
-  return { projectId, rootDir: dest, pausedAutomationIds: JSON.parse(row.paused_automation_ids_json ?? '[]') as string[] };
+  const ledger = parsePausedLedger(row.paused_automation_ids_json);
+  return { projectId, rootDir: dest, pausedAutomationIds: ledger.automations, pausedTriggerIds: ledger.triggers };
 }
 
 export interface PurgeResult {
@@ -213,24 +263,27 @@ export function purgeFromTrash(db: DB, ids: string[], confirm: string): PurgeRes
     throw new AppError(ErrorCode.VALIDATION, `确认文字不符：请输入「${expected}」后再试`);
   }
 
-  // 移入系统废纸篓（trash 机制，非 rm；同卷 rename，跨卷 mv 语义由 fs 处理）
+  // 移入系统废纸篓（trash 机制，非 rm；跨卷 renameWithFallback 回退为复制+删源）
   const target = systemTrashDir();
   let trashMovedTo: string | null = null;
-  const stamp = nowIso().replace(/[-:T]/g, '').slice(0, 13);
+  const stamp = nowIso().replace(/[-:T]/g, '').slice(0, 12);
   for (const row of rows) {
     if (!row.trash_dir || !existsSync(row.trash_dir)) continue;
     const base = sanitizeSegment(row.trash_dir.split('/').pop() ?? 'project');
     let dest = join(target, `${stamp}-${base}`);
     for (let i = 2; existsSync(dest); i++) dest = join(target, `${stamp}-${base}-${i}`);
     mkdirSync(target, { recursive: true });
-    renameSync(row.trash_dir, dest);
+    renameWithFallback(row.trash_dir, dest);
     trashMovedTo = target;
   }
 
-  // 删库（同 removeProject deleteRecords：取消任务→归档载体→删 project 行，FK 级联清 project_trash）
+  // 删库（同 removeProject deleteRecords：取消任务→归档载体→删 project 行，FK 级联清 project_trash）。
+  // 修复轮 Fix2：inspector_alert 是唯一不带 ON DELETE CASCADE 的 project 外键——
+  // 先清它，否则目录已进系统废纸篓后 DELETE 失败，项目永远卡在回收站（且重试跳过已移目录）。
   db.transaction(() => {
     const now = nowIso();
     for (const row of rows) {
+      db.prepare('DELETE FROM inspector_alert WHERE project_id=?').run(row.project_id);
       db.prepare(
         `UPDATE task SET state='cancelled', lease_owner_thread_id=NULL, lease_expires_at=NULL, heartbeat_at=NULL, updated_at=?
          WHERE project_id=? AND state NOT IN ('completed','failed','cancelled')`,

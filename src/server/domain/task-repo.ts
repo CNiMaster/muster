@@ -66,3 +66,36 @@ export function resolveTaskRepoRoot(db: DB, project: Project, projectTaskId?: st
   db.prepare('UPDATE project_task SET repo_root_dir=?, updated_at=updated_at WHERE id=?').run(dir, row.id);
   return dir;
 }
+
+/**
+ * 只读仓库根解析（修复轮）：看板/看门狗/孤儿扫描等读路径统一入口——绝不 mkdir/git init。
+ * - 业务项目：外部锚点（存在时） ?? project.rootDir
+ * - 独立任务载体：已记录的 repo_root_dir；未落盘返回 **null**（调用方跳过该载体）
+ */
+export function peekRepoRoot(db: DB, project: Project, projectTaskId?: string | null): string | null {
+  const standalone = (project.settings as Record<string, unknown>)?.standalone === true;
+  if (standalone) {
+    if (!projectTaskId) return project.rootDir;
+    const carrier = peekTaskRepoRoot(db, project, projectTaskId);
+    return carrier && existsSync(carrier) ? carrier : null;
+  }
+  const anchor = peekAnchorPath(db, project.id);
+  if (anchor && existsSync(anchor)) return anchor;
+  return project.rootDir;
+}
+
+/**
+ * 项目全部仓库根（去重，含磁盘上仍存在的）：主目录 + 外部锚点 + 各独立任务载体仓库。
+ * 孤儿 worktree 检测/清理等需要扫全量仓库的路径使用。
+ */
+export function projectRepoRoots(db: DB, project: Project): string[] {
+  const roots = new Set<string>();
+  if (existsSync(project.rootDir)) roots.add(project.rootDir);
+  const anchor = peekAnchorPath(db, project.id);
+  if (anchor && existsSync(anchor)) roots.add(anchor);
+  const carriers = db.prepare(
+    'SELECT repo_root_dir FROM project_task WHERE project_id=? AND repo_root_dir IS NOT NULL',
+  ).all(project.id) as Array<{ repo_root_dir: string }>;
+  for (const c of carriers) if (existsSync(c.repo_root_dir)) roots.add(c.repo_root_dir);
+  return [...roots];
+}

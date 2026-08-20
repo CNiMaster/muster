@@ -11,6 +11,7 @@ import { existsSync, readFileSync, symlinkSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type { DB } from '../db/client';
 import { getProject } from './project';
+import { peekRepoRoot } from './task-repo';
 import { sanitizeChildEnv } from '../executors/tools/registry';
 
 export interface PreMergeCheck {
@@ -41,7 +42,8 @@ export function getPreMergeChecks(db: DB, projectId: string): PreMergeCheck[] {
     return checks;
   }
   try {
-    const pkgPath = path.join(project.rootDir, 'package.json');
+    // 修复轮 Fix4：探测随任务所在仓库（外部锚点优先，只读）
+    const pkgPath = path.join(peekRepoRoot(db, project) ?? project.rootDir, 'package.json');
     if (!existsSync(pkgPath)) return [];
     const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as { scripts?: Record<string, unknown> };
     if (pkg.scripts && typeof pkg.scripts.typecheck === 'string') {

@@ -71,9 +71,9 @@ describe('绑定校验', () => {
     expect(() => attachProjectDir(tdb.db, b.id, { path: dir })).toThrowError(/交叉/);
     fs.mkdirSync(path.join(dir, 'sub'), { recursive: true });
     expect(() => attachProjectDir(tdb.db, b.id, { path: path.join(dir, 'sub') })).toThrowError(/交叉/);
-    // 本项目主目录的父层（projects/ 已随绑定前的主目录落盘而存在）
+    // 本项目主目录的父层=workspace 管辖区（修复轮 Fix6：先被工作区子树守卫拦下，语义更准）
     ensureGitRepo(a.rootDir);
-    expect(() => attachProjectDir(tdb.db, a.id, { path: path.dirname(a.rootDir) })).toThrowError(/交叉/);
+    expect(() => attachProjectDir(tdb.db, a.id, { path: path.dirname(a.rootDir) })).toThrowError(/软件工作区内部|交叉/);
   });
 
   it('基础设施项目拒绝绑定', () => {

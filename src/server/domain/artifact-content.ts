@@ -11,7 +11,27 @@ import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
 import { assertEditable, getArtifact, getArtifactByPath, listArtifacts, registerArtifact, type Artifact, type ArtifactKind } from './artifact';
 import { getProject } from './project';
+import { peekRepoRoot } from './task-repo';
 import { commitAll } from '../worktree/manager';
+
+/**
+ * artifact 所属仓库根（修复轮 Fix5）：产物发布进的是任务所在仓库（独立任务载体/外部锚点），
+ * 读取/编辑/回滚必须在同一仓库解析，否则锚点项目与载体任务永远"看不见"自己的文件。
+ * 有注册任务 → 按其载体/锚点；未注册（用户手建）→ 项目级锚点 ?? 主目录。只读窥探，绝不落盘。
+ */
+export function artifactBaseDir(db: DB, projectId: string, relPath?: string): string {
+  const project = getProject(db, projectId);
+  if (relPath) {
+    const art = getArtifactByPath(db, projectId, relPath);
+    const taskId = art?.createdTaskId;
+    if (taskId) {
+      const t = db.prepare('SELECT project_task_id FROM task WHERE id=?').get(taskId) as { project_task_id: string | null } | undefined;
+      const root = t?.project_task_id ? peekRepoRoot(db, project, t.project_task_id) : null;
+      if (root) return root;
+    }
+  }
+  return peekRepoRoot(db, project) ?? project.rootDir;
+}
 
 /** 解析项目内相对路径，使用 path.relative 避免 `/root-evil` 前缀绕过。 */
 export function resolveArtifactPath(rootDir: string, relPath: string): string {
@@ -26,8 +46,7 @@ export function resolveArtifactPath(rootDir: string, relPath: string): string {
 
 /** 读 artifact 内容。 */
 export function readArtifactContent(db: DB, projectId: string, relPath: string): string {
-  const project = getProject(db, projectId);
-  const abs = resolveArtifactPath(project.rootDir, relPath);
+  const abs = resolveArtifactPath(artifactBaseDir(db, projectId, relPath), relPath);
   if (!existsSync(abs)) return '';
   return readFileSync(abs, 'utf8');
 }
@@ -39,8 +58,8 @@ export function writeArtifactContent(
   relPath: string,
   content: string,
 ): void {
-  const project = getProject(db, projectId);
-  const abs = resolveArtifactPath(project.rootDir, relPath);
+  const base = artifactBaseDir(db, projectId, relPath);
+  const abs = resolveArtifactPath(base, relPath);
   // 必须是已注册的可编辑 artifact
   const art = getArtifactByPath(db, projectId, relPath);
   if (!art) {
@@ -53,7 +72,7 @@ export function writeArtifactContent(
   writeFileSync(abs, content);
   // R3：用户编辑即提交——兑现文件头 PRD 注释（可追踪提交），避免下次发布时被 git add -A 卷进 agent 发布提交。
   try {
-    commitAll(project.rootDir, 'muster: user edit');
+    commitAll(base, 'muster: user edit');
   } catch {
     // 提交失败不阻断保存（git 仓库异常时编辑仍生效，由下次发布的独立提交兜底）
   }

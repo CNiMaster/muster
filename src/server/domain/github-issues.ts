@@ -12,6 +12,7 @@ import { log } from '../logger';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
 import { getProject } from './project';
+import { peekRepoRoot } from './task-repo';
 import { createTask } from './task';
 import { ensurePrimaryThread } from './thread';
 import type { AutomationRecord } from './automation';
@@ -180,9 +181,13 @@ export function listIssueBoard(db: DB, projectId?: string): IssueBoardItem[] {
     if (p) ptToProject.set(pt, p.project_id);
   }
   const aheadCache = new Map<string, Map<string, { branch: string; head: string; lastCommitAt: string }>>();
+  const aheadRootCache = new Map<string, string>();
   for (const pid of new Set(ptToProject.values())) {
     const project = getProject(db, pid);
-    aheadCache.set(pid, listTaskStagingRefs(project.rootDir, pid));
+    // 修复轮 Fix4：任务级集成分支在载体/锚点仓库（只读窥探）
+    const root = peekRepoRoot(db, project) ?? project.rootDir;
+    aheadRootCache.set(pid, root);
+    aheadCache.set(pid, listTaskStagingRefs(root, pid));
   }
   const aheadOf = (pt: string): number => {
     const pid = ptToProject.get(pt);
@@ -190,7 +195,7 @@ export function listIssueBoard(db: DB, projectId?: string): IssueBoardItem[] {
     const refs = aheadCache.get(pid);
     const ref = refs?.get(pt);
     if (!ref) return 0;
-    return branchAheadCount(getProject(db, pid).rootDir, ref.branch);
+    return branchAheadCount(aheadRootCache.get(pid) ?? getProject(db, pid).rootDir, ref.branch);
   };
   return rows.map((r) => ({
     repo: r.repo,

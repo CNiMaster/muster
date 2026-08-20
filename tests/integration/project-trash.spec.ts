@@ -105,18 +105,23 @@ describe('回收站：移入/清单/恢复', () => {
     expect(trashProject(tdb.db, p.id).trashDir).toBe(trashDir);
   });
 
-  it('绑定自动化自动暂停；恢复后返回暂停清单提示重开', () => {
+  it('绑定自动化与项目定时器自动暂停；恢复后返回暂停清单提示重开（修复轮 Fix3）', () => {
     const p = makePausedProjectWithDir('自动化项目');
     tdb.db.prepare(
       `INSERT INTO automation (id, kind, config_json, schedule_kind, schedule_interval_ms, project_id, enabled, created_via, created_at, updated_at)
        VALUES ('au_1', 'github-issues', '{}', 'interval', 60000, ?, 1, 'form', '2026-08-20T00:00:00Z', '2026-08-20T00:00:00Z')`,
     ).run(p.id);
+    tdb.db.prepare(
+      `INSERT INTO trigger (id, project_id, kind, interval_ms, schedule_kind, template_json, enabled, created_at, updated_at)
+       VALUES ('trg_1', ?, 'schedule', 60000, 'interval', '{}', 1, '2026-08-20T00:00:00Z', '2026-08-20T00:00:00Z')`,
+    ).run(p.id);
     trashProject(tdb.db, p.id);
-    const enabled = tdb.db.prepare('SELECT enabled FROM automation WHERE id=?').get('au_1') as { enabled: number };
-    expect(enabled.enabled).toBe(0);
+    expect((tdb.db.prepare('SELECT enabled FROM automation WHERE id=?').get('au_1') as { enabled: number }).enabled).toBe(0);
+    expect((tdb.db.prepare('SELECT enabled FROM trigger WHERE id=?').get('trg_1') as { enabled: number }).enabled).toBe(0);
 
     const restored = restoreProject(tdb.db, p.id);
     expect(restored.pausedAutomationIds).toEqual(['au_1']);
+    expect(restored.pausedTriggerIds).toEqual(['trg_1']);
     expect(restored.rootDir).toBe(p.rootDir);
     expect(fs.existsSync(path.join(restored.rootDir, 'note.txt'))).toBe(true);
     const after = getProject(tdb.db, p.id);
@@ -127,9 +132,9 @@ describe('回收站：移入/清单/恢复', () => {
   it('恢复撞名：原位被新项目占用 → 日期后缀新目录', () => {
     const p = makePausedProjectWithDir('画册');
     trashProject(tdb.db, p.id);
-    // 真实撞名场景：新项目显式绑定原路径（旧 DB 行已不挡默认命名，此路径被新项目占用）
-    const p2 = createProject(tdb.db, { name: '新画册', initialState: 'paused', rootDir: p.rootDir });
-    ensureGitRepo(p2.rootDir);
+    // 真实剩余撞名场景：用户在 Finder 于原位手建了同名文件夹（createProject 显式指向
+    // 既有项目目录已被交叉守卫拦下——防误指他人项目）
+    fs.mkdirSync(p.rootDir, { recursive: true });
     const restored = restoreProject(tdb.db, p.id);
     expect(restored.rootDir).not.toBe(p.rootDir);
     expect(path.basename(restored.rootDir)).toMatch(/^画册-\d{8}/);
@@ -148,6 +153,12 @@ describe('回收站：移入/清单/恢复', () => {
 describe('回收站：真删（→系统废纸篓+删库）', () => {
   it('单个：确认文字=原目录名；错误拒绝；正确则目录进系统废纸篓+库删净', () => {
     const p = makePausedProjectWithDir('机密项目');
+    // 修复轮 Fix2：inspector_alert 是唯一无 CASCADE 的 project 外键——先落一条告警，
+    // 真删必须能清掉它（否则目录已进废纸篓而库删失败=永久卡死）
+    tdb.db.prepare(
+      `INSERT INTO inspector_alert (id, project_id, kind, message, severity, created_at)
+       VALUES ('ia_1', ?, 'stuck', '测试告警', 'high', '2026-08-20T00:00:00Z')`,
+    ).run(p.id);
     const original = p.rootDir;
     trashProject(tdb.db, p.id);
     // 错误确认

@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { makeTestDb } from './setup';
 import { ensureWorkbench } from '../../src/server/domain/workbench';
+import { recoverInterruptedMigrations } from '../../src/server/domain/workspace';
 import {
   createProject,
   ensureInboxProject,
@@ -210,6 +211,55 @@ describe('workspace 治理批次1：对账（只读）', () => {
       // 基础设施目录不进 projects 扫描
       expect(orphanDirs.some((d) => d.includes('.system'))).toBe(false);
     } finally {
+      close();
+    }
+  });
+});
+
+describe('workspace 治理修复轮：迁移重映射覆盖全部路径列（Fix1）', () => {
+  it('recoverInterruptedMigrations 重映射 project/repo_root_dir/project_trash/project_dir', () => {
+    const { db, close } = makeTestDb();
+    const oldRoot = fs.mkdtempSync(path.join(fs.realpathSync('/tmp'), 'muster-mig-old-'));
+    const newRoot = `${oldRoot}-new`;
+    try {
+      ensureWorkbench(db);
+      // 旧根下造三类实体：项目（external 记 project_dir 行）+ 独立任务载体 + 回收站目录
+      fs.mkdirSync(path.join(oldRoot, 'projects'), { recursive: true });
+      const projDir = path.join(oldRoot, 'projects', '甲项目');
+      fs.mkdirSync(projDir, { recursive: true });
+      const p = createProject(db, { name: '甲项目', initialState: 'paused', rootDir: projDir });
+      const carrier = path.join(oldRoot, 'tasks', '2026-08', '0820-1000-载体');
+      fs.mkdirSync(carrier, { recursive: true });
+      const pt = createProjectTask(db, { projectId: p.id, title: '载体' });
+      db.prepare('UPDATE project_task SET repo_root_dir=? WHERE id=?').run(carrier, pt.id);
+      const trashDir = path.join(oldRoot, '.trash', '20260820100000-甲项目');
+      fs.mkdirSync(trashDir, { recursive: true });
+      db.prepare(
+        `INSERT INTO project_trash (project_id, original_root_dir, trash_dir, size_bytes, paused_automation_ids_json, trashed_at)
+         VALUES (?, ?, ?, 0, '[]', '2026-08-20T10:00:00Z')`,
+      ).run(p.id, projDir, trashDir);
+
+      // 模拟「文件已移动、DB 未提交」的中断现场，走启动自愈补提（与 migrateWorkspace 同一重映射块）
+      fs.renameSync(oldRoot, newRoot);
+      db.prepare('UPDATE workspace SET status=?, migrate_target_dir=?, root_dir=? WHERE root_dir=?')
+        .run('migrating', newRoot, oldRoot, wsRoot());
+
+      const recovered = recoverInterruptedMigrations(db);
+      expect(recovered).toBe(1);
+      const proj = db.prepare('SELECT root_dir FROM project WHERE id=?').get(p.id) as { root_dir: string };
+      expect(proj.root_dir.startsWith(newRoot)).toBe(true);
+      expect(fs.existsSync(proj.root_dir)).toBe(true);
+      const ptRow = db.prepare('SELECT repo_root_dir FROM project_task WHERE id=?').get(pt.id) as { repo_root_dir: string };
+      expect(ptRow.repo_root_dir?.startsWith(newRoot)).toBe(true);
+      expect(fs.existsSync(ptRow.repo_root_dir!)).toBe(true);
+      const trashRow = db.prepare('SELECT trash_dir, original_root_dir FROM project_trash WHERE project_id=?').get(p.id) as { trash_dir: string; original_root_dir: string };
+      expect(trashRow.trash_dir.startsWith(newRoot)).toBe(true);
+      expect(trashRow.original_root_dir.startsWith(newRoot)).toBe(true);
+      const pdRow = db.prepare('SELECT path FROM project_dir WHERE project_id=?').get(p.id) as { path: string };
+      expect(pdRow.path.startsWith(newRoot)).toBe(true);
+    } finally {
+      fs.rmSync(newRoot, { recursive: true, force: true });
+      fs.rmSync(oldRoot, { recursive: true, force: true });
       close();
     }
   });

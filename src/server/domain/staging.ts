@@ -18,7 +18,7 @@ import { callLlm } from './llm-call';
 import { getPreMergeChecks, runPreMergeChecks } from './pre-merge-checks';
 import { dispatchConflictJudgment } from './conflict-judge';
 import { getProjectMergeMode } from './project';
-import { peekTaskRepoRoot, resolveTaskRepoRoot } from './task-repo';
+import { peekTaskRepoRoot, peekRepoRoot, projectRepoRoots, resolveTaskRepoRoot } from './task-repo';
 import { shortId, nowIso } from '../../shared/utils';
 import { realtime } from '../realtime';
 import { postSystemMessage } from './conversation';
@@ -49,11 +49,13 @@ export function isSwarmLinkedTask(task: { swarmId?: string | null; inputProtocol
 export function promoteProjectStagingIfAny(db: DB, projectId: string, reason: string): StagingPromoteResult {
   const project = getProject(db, projectId);
   if (!project) return { promoted: false, message: '项目不存在', aheadCommits: 0 };
-  const status = stageStatus(project.rootDir, projectId);
+  // 修复轮 Fix4：蜂群 staging 由引擎建在锚点仓库（有锚点时），读取同源
+  const root = peekRepoRoot(db, project) ?? project.rootDir;
+  const status = stageStatus(root, projectId);
   if (!status.exists || status.aheadCommits === 0) {
     return { promoted: false, message: '暂无待 promote 的 staging 内容', aheadCommits: 0 };
   }
-  const r = promoteStaging(project.rootDir, projectId);
+  const r = promoteStaging(root, projectId);
   log.info('staging promoted', { projectId, reason, promoted: r.promoted, conflicts: r.conflicts });
   return { promoted: r.promoted, message: r.message, conflicts: r.conflicts, aheadCommits: status.aheadCommits };
 }
@@ -83,7 +85,7 @@ export function sweepStaleStaging(db: DB, options: { recheckMs?: number } = {}):
   for (const { id } of projects) {
     try {
       const project = getProject(db, id);
-      const status = stageStatus(project.rootDir, id);
+      const status = stageStatus(peekRepoRoot(db, project) ?? project.rootDir, id);
       if (!status.exists || status.aheadCommits === 0 || !status.stagingHead) continue;
       checked += 1;
       const watchdog = db.prepare('SELECT * FROM staging_watchdog WHERE project_id=?').get(id) as
@@ -177,9 +179,11 @@ export function listPendingTaskMerges(db: DB, projectId: string): PendingTaskMer
   // review 修复 #3：一次 for-each-ref 拿全部分支（head+最后提交时间），只对存在的分支算领先数——
   // 替代 O(任务数×6) 个 spawnSync 的逐任务探测（被 15s/60s 轮询三处消费）
   // 治理批次1：独立任务按载体分仓——按载体仓库分组批量取 refs（只读窥探，不触发建目录）
+  // 修复轮 Fix4：业务项目的外部锚点同参——锚点在则 refs/领先数都在锚点仓库
   const standalone = (project.settings as Record<string, unknown>)?.standalone === true;
   const ptRoots = new Map<string, string>(); // ptId → repoRoot
   const uniqueRoots = new Set<string>();
+  const bizRoot = standalone ? null : (peekRepoRoot(db, project) ?? project.rootDir);
   if (standalone) {
     for (const pt of pts) {
       const root = peekTaskRepoRoot(db, project, pt.id);
@@ -187,8 +191,8 @@ export function listPendingTaskMerges(db: DB, projectId: string): PendingTaskMer
       ptRoots.set(pt.id, root);
       uniqueRoots.add(root);
     }
-  } else {
-    uniqueRoots.add(project.rootDir);
+  } else if (bizRoot) {
+    uniqueRoots.add(bizRoot);
   }
   type PtRef = { branch: string; head: string; lastCommitAt: string };
   const refsByRoot = new Map<string, Map<string, PtRef>>();
@@ -202,7 +206,7 @@ export function listPendingTaskMerges(db: DB, projectId: string): PendingTaskMer
   const fallbackRefs: Map<string, PtRef> = refsByRoot.get(project.rootDir) ?? new Map();
   const items: PendingTaskMergeItem[] = [];
   for (const pt of pts) {
-    const ptRoot = standalone ? (ptRoots.get(pt.id) ?? null) : project.rootDir;
+    const ptRoot = standalone ? (ptRoots.get(pt.id) ?? null) : bizRoot;
     const refs = ptRoot ? (refsByRoot.get(ptRoot) ?? fallbackRefs) : fallbackRefs;
     const ref = refs.get(pt.id);
     if (!ref) continue;
@@ -397,7 +401,10 @@ export async function sweepStaleTaskStaging(db: DB, options: { recheckMs?: numbe
         "SELECT id FROM project_task WHERE project_id=? AND state IN ('active','completed')",
       ).all(id) as Array<{ id: string }>;
       for (const pt of pts) {
-        const status = taskStageStatus(project.rootDir, id, pt.id);
+        // 修复轮 Fix4：任务级 staging 在载体/锚点仓库——只读窥探，未落盘载体跳过
+        const ptRoot = peekRepoRoot(db, project, pt.id);
+        if (!ptRoot) continue;
+        const status = taskStageStatus(ptRoot, id, pt.id);
         if (!status.exists || status.aheadCommits === 0 || !status.stagingHead) continue;
         checked += 1;
         const wd = db.prepare('SELECT * FROM task_merge_watchdog WHERE project_task_id=?').get(pt.id) as
@@ -453,7 +460,13 @@ export function getMergeAttention(db: DB, projectId: string): MergeAttention {
   let orphans = 0;
   try {
     const project = getProject(db, projectId);
-    orphans = detectOrphanWorktrees(db, project.rootDir).length;
+    orphans = projectRepoRoots(db, project).reduce((sum, root) => {
+      try {
+        return sum + detectOrphanWorktrees(db, root).length;
+      } catch {
+        return sum;
+      }
+    }, 0);
   } catch { /* 项目或仓库异常按 0 处理 */ }
   return { staleMerges, orphans, total: staleMerges + orphans };
 }
