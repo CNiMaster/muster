@@ -164,18 +164,15 @@ export function listIssueBoard(db: DB, projectId?: string): IssueBoardItem[] {
     repo: string; number: number; title: string; status: string; task_id: string | null; synced_at: string;
     task_state: string | null; task_seq: number | null; project_task_id: string | null;
   }>;
-  // 集成区领先数按项目批量取（for-each-ref 一次/项目）
-  const aheadByProjectTask = new Map<string, { project: string; pt: string }>();
-  const projectIds = new Set<string>();
+  // 集成区领先数按项目批量取（for-each-ref 一次/项目）；resolved 不再算——
+  // 每次 ahead 都是 git 子进程，历史 issue 无限累积会让轮询越来越重
+  const aheadByProjectTask = new Set<string>();
   for (const r of rows) {
-    if (r.project_task_id && r.task_state === 'completed') aheadByProjectTask.set(r.project_task_id, { project: '', pt: r.project_task_id });
-  }
-  for (const r of rows) {
-    if (r.project_task_id) projectIds.add(r.project_task_id);
+    if (r.project_task_id && r.task_state === 'completed' && r.status !== 'resolved') aheadByProjectTask.add(r.project_task_id);
   }
   // 取所在项目：project_task → project
   const ptToProject = new Map<string, string>();
-  for (const pt of aheadByProjectTask.keys()) {
+  for (const pt of aheadByProjectTask) {
     const p = db.prepare('SELECT project_id FROM project_task WHERE id=?').get(pt) as { project_id: string } | undefined;
     if (p) ptToProject.set(pt, p.project_id);
   }
@@ -201,7 +198,18 @@ export function listIssueBoard(db: DB, projectId?: string): IssueBoardItem[] {
     taskState: r.task_state,
     taskSeq: r.task_seq,
     projectTaskId: r.project_task_id,
-    aheadCommits: r.project_task_id && r.task_state === 'completed' ? aheadOf(r.project_task_id) : 0,
+    aheadCommits: r.project_task_id && r.task_state === 'completed' && r.status !== 'resolved' ? aheadOf(r.project_task_id) : 0,
     syncedAt: r.synced_at,
   }));
+}
+
+/**
+ * promote 成功后的 issue 记账收口：该任务链（project_task 下所有 runtime task）源自 issue 的记账置 resolved。
+ * 否则 status 恒为 dispatched，看板会为每条历史 issue 永久计算集成区领先（无界轮询）。
+ */
+export function markIssueSyncsResolved(db: DB, projectTaskId: string): number {
+  const r = db.prepare(
+    "UPDATE github_issue_sync SET status='resolved', updated_at=? WHERE status<>'resolved' AND task_id IN (SELECT id FROM task WHERE project_task_id=?)",
+  ).run(nowIso(), projectTaskId);
+  return r.changes;
 }

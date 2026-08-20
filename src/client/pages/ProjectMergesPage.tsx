@@ -48,7 +48,7 @@ export function ProjectMergesPage(): React.ReactElement {
 
   const [mergingAll, setMergingAll] = useState(false);
   const [activeTab, setActiveTab] = useState<'merges' | 'issues'>('merges');
-  const { data: issueBoard = [] } = useIssueBoard(projectId);
+  const { data: issueBoard = [] } = useIssueBoard(projectId, { active: activeTab === 'issues' });
   const [mergingOne, setMergingOne] = useState(false);
   const [discardAsk, setDiscardAsk] = useState<PendingTaskMergeDTO | null>(null);
   const [orphanAsk, setOrphanAsk] = useState<OrphanWorktreeDTO | null>(null);
@@ -118,6 +118,7 @@ export function ProjectMergesPage(): React.ReactElement {
                 ) : (
                   <Badge tone="neutral">未派发</Badge>
                 )}
+                {it.status === 'resolved' && <Badge tone="ok">已解决</Badge>}
                 {it.aheadCommits > 0 && <Badge tone="ok">待审批合并（领先 {it.aheadCommits}）</Badge>}
               </div>
             ))

@@ -18,6 +18,7 @@ import { callLlm } from './llm-call';
 import { getPreMergeChecks, runPreMergeChecks } from './pre-merge-checks';
 import { dispatchConflictJudgment } from './conflict-judge';
 import { getProjectMergeMode } from './project';
+import { markIssueSyncsResolved } from './github-issues';
 import { shortId, nowIso } from '../../shared/utils';
 import { realtime } from '../realtime';
 import { postSystemMessage } from './conversation';
@@ -337,6 +338,14 @@ export async function promoteTaskStaging(
 
   const mergedFiles = diffStat.split('\n').map((l) => l.split('|')[0]?.trim()).filter((f) => f && !f.includes('files changed'));
   recordTaskMerge(db, { projectId, projectTaskId, actor: options.actor ?? 'system', status: 'promoted', reviewVerdict: 'approve', summary: review.summary, diffStat, mergedFiles, commitHash: merged.mergeCommit, aheadCommits: status.aheadCommits });
+  // issue 记账收口：源自 GitHub issue 的任务链已随 promote 落主干，置 resolved 让看板停算其集成区领先。
+  // promote 已成功，收口失败只记日志不影响结果。
+  try {
+    const resolved = markIssueSyncsResolved(db, projectTaskId);
+    if (resolved > 0) log.info('issue syncs resolved by promote', { projectTaskId, resolved });
+  } catch (e) {
+    log.warn('issue sync resolve failed', { projectTaskId, err: String(e) });
+  }
   postBroadcast(db, projectId, `「✅ 任务合并回主干」${review.summary}${pending.n > 0 ? `（注意：该任务仍有 ${pending.n} 个在飞子任务）` : ''}`);
   realtime.publish({
     id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,

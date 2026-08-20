@@ -4,20 +4,39 @@
  * - 同步：新 issue 派项目负责人分诊任务（含教学：分类自由判断/先验证复现/绝不自动合并）；
  *   重复 issue 幂等跳过；gh 失败抛错（调用方记 health）
  * - 到点判定：interval 满间隔；daily 当天到点且未跑
+ * - 记账收口（review 修复）：promote 成功置 resolved；看板对 resolved 不再算集成区领先
+ *   （原 status 恒 dispatched，历史 issue 无限累积让每次轮询都白跑 git 子进程）
  */
-import { describe, expect, it, beforeEach } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import type { DB } from '../../src/server/db/client';
 import { makeTestDb } from '../integration/setup';
 import { restoreWorkbench } from '../../src/server/domain/workbench';
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject } from '../../src/server/domain/project';
-import { listTasks } from '../../src/server/domain/task';
+import { createTask, listTasks } from '../../src/server/domain/task';
 import { createAutomation, isAutomationDue, listDueAutomations, getAutomation } from '../../src/server/domain/automation';
-import { parseIssuesFromGhOutput, syncGithubIssues, listIssueBoard, type GithubIssueItem } from '../../src/server/domain/github-issues';
+import {
+  parseIssuesFromGhOutput, syncGithubIssues, listIssueBoard, markIssueSyncsResolved, type GithubIssueItem,
+} from '../../src/server/domain/github-issues';
+import { promoteTaskStaging } from '../../src/server/domain/staging';
+import { ensureGitRepo, ensureTaskStagingWorktree, commitAll } from '../../src/server/worktree/manager';
+import * as llmCallModule from '../../src/server/domain/llm-call';
+import { nowIso } from '../../src/shared/utils';
 
+let tmp: string;
 let db: DB;
 beforeEach(() => {
+  tmp = mkdtempSync(path.join(tmpdir(), 'muster-ghi-'));
+  process.env.MUSTER_HOME = path.join(tmp, 'muster-home');
   db = makeTestDb().db;
+});
+afterEach(() => {
+  vi.restoreAllMocks();
+  rmSync(tmp, { recursive: true, force: true });
+  delete process.env.MUSTER_HOME;
 });
 
 const ISSUES: GithubIssueItem[] = [
@@ -134,5 +153,71 @@ describe('Issue 处理看板聚合', () => {
     const board2 = listIssueBoard(db, projectId);
     expect(board2[0]!.taskState).toBe('completed');
     expect(board2[0]!.aheadCommits).toBe(0); // 无 git 仓库集成区分支 → 0（真实领先在 e2e/集成环境验证）
+  });
+});
+
+describe('issue 记账收口（review 修复：promote 成功 → resolved）', () => {
+  it('markIssueSyncsResolved：resolved 前看板算真实领先（git=1），置 resolved 后停算且行保留；幂等', async () => {
+    const workbench = restoreWorkbench(db, { id: 'wb_res', name: '工作台' });
+    const lead = createAgent(db, { companyId: workbench.id, name: '负责人', role: 'lead' }).id;
+    const rootDir = path.join(tmp, 'repo-res');
+    const projectId = createProject(db, { companyId: workbench.id, name: 'p', firstAgentId: lead, initialState: 'active', rootDir }).id;
+    const automation = createAutomation(db, {
+      kind: 'github-issues', config: { repo: 'a/b' },
+      schedule: { kind: 'interval', intervalMs: 3_600_000 }, projectId, createdVia: 'form',
+    });
+    await syncGithubIssues(db, automation, { fetcher: async () => [{ number: 21, title: '崩溃', body: '', labels: [] }] });
+    const row = db.prepare(
+      'SELECT g.task_id, t.project_task_id FROM github_issue_sync g JOIN task t ON t.id = g.task_id',
+    ).get() as { task_id: string; project_task_id: string };
+    db.prepare("UPDATE task SET state='completed', outcome='completed' WHERE id=?").run(row.task_id);
+
+    // 任务集成区真实领先 1：dispatched → 看板算出 aheadCommits=1（待审批标识）
+    mkdirSync(rootDir, { recursive: true });
+    ensureGitRepo(rootDir);
+    writeFileSync(path.join(rootDir, 'base.txt'), 'base');
+    commitAll(rootDir, 'base');
+    const staging = ensureTaskStagingWorktree(rootDir, projectId, row.project_task_id);
+    writeFileSync(path.join(staging.path, 'fix.txt'), 'fix');
+    commitAll(staging.path, 'issue fix');
+
+    const board1 = listIssueBoard(db, projectId);
+    expect(board1[0]!.status).toBe('dispatched');
+    expect(board1[0]!.aheadCommits).toBe(1);
+
+    // 收口：resolved → 不再查 git（领先恒 0），行保留可见；重复收口幂等
+    expect(markIssueSyncsResolved(db, row.project_task_id)).toBe(1);
+    const board2 = listIssueBoard(db, projectId);
+    expect(board2[0]!.status).toBe('resolved');
+    expect(board2[0]!.aheadCommits).toBe(0);
+    expect(markIssueSyncsResolved(db, row.project_task_id)).toBe(0);
+  });
+
+  it('promoteTaskStaging 成功 → 记账自动置 resolved（不再依赖手动收口）', async () => {
+    const workbench = restoreWorkbench(db, { id: 'wb_pr', name: '工作台' });
+    const lead = createAgent(db, { companyId: workbench.id, name: '负责人', role: 'lead' }).id;
+    const rootDir = path.join(tmp, 'repo-pr');
+    const projectId = createProject(db, { companyId: workbench.id, name: 'p', firstAgentId: lead, initialState: 'active', rootDir }).id;
+    mkdirSync(rootDir, { recursive: true });
+    ensureGitRepo(rootDir);
+    writeFileSync(path.join(rootDir, 'base.txt'), 'base');
+    commitAll(rootDir, 'base');
+    createTask(db, { projectId, assigneeAgentId: lead, title: '[Issue] #7 修复' });
+    const task = listTasks(db, projectId)[0]!;
+    db.prepare(
+      "INSERT INTO github_issue_sync (id, repo, number, project_id, task_id, title, status, synced_at, updated_at) VALUES (?,?,?,?,?,?,'dispatched',?,?)",
+    ).run('gis_test1', 'a/b', 7, projectId, task.id, '修复', nowIso(), nowIso());
+    const staging = ensureTaskStagingWorktree(rootDir, projectId, task.projectTaskId);
+    writeFileSync(path.join(staging.path, 'out.txt'), 'r');
+    commitAll(staging.path, 'fix');
+
+    vi.spyOn(llmCallModule, 'callLlm').mockResolvedValue({
+      content: JSON.stringify({ verdict: 'approve', reason: '安全', summary: '摘要' }),
+    } as never);
+    const r = await promoteTaskStaging(db, projectId, task.projectTaskId, { actor: 'ui' });
+    expect(r.promoted).toBe(true);
+    const gis = db.prepare('SELECT status FROM github_issue_sync WHERE id=?').get('gis_test1') as { status: string };
+    expect(gis.status).toBe('resolved');
+    expect(listIssueBoard(db, projectId)[0]!.aheadCommits).toBe(0);
   });
 });

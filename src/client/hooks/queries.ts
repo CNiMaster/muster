@@ -729,11 +729,14 @@ export interface IssueBoardItemDTO {
   syncedAt: string;
 }
 
-export function useIssueBoard(projectId?: string) {
+export function useIssueBoard(projectId?: string, options: { active?: boolean } = {}) {
+  // tab 感知轮询：服务端每次查询要跑 git 子进程算集成区领先，Issue 标签页不在前台就停轮询；
+  // active 进 queryKey——切回标签页即刻取新数据，不等下一个间隔
+  const active = options.active !== false;
   return useQuery({
-    queryKey: ['issue-board', projectId ?? 'all'],
+    queryKey: ['issue-board', projectId ?? 'all', active],
     queryFn: () => api.get<IssueBoardItemDTO[]>(`/api/automations/issues-board${projectId ? `?projectId=${projectId}` : ''}`),
-    refetchInterval: 30_000,
+    refetchInterval: active ? 30_000 : false,
   });
 }
 
@@ -932,6 +935,15 @@ export function useCreateProject() {
   return useMutation({
     mutationFn: (input: { name: string; rootDir?: string; description?: string; firstAgentId?: string; playbookId?: string }) =>
       api.post<Project>(`/api/projects`, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['projects'] }),
+  });
+}
+
+/** 2026-08-20 UI 重构：零项目时确保默认项目（显式 POST，GET /api/projects 保持纯读）。 */
+export function useEnsureDefaultProject() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<{ project: Project; created: boolean }>(`/api/projects/ensure-default`, {}),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['projects'] }),
   });
 }
