@@ -67,6 +67,7 @@ import { projectLaunchBriefSchema } from '../../shared/project-launch';
 import { confirmProjectLaunch, discoverProjectLaunchCapabilities } from '../domain/project-launch';
 import { transitionProjectPhase } from '../domain/project-readiness';
 import { PHASE_ORDER, type ProjectState } from '../domain/project';
+import { resolveTaskRepoRoot } from '../domain/task-repo';
 
 export const projectsRouter = Router({ mergeParams: true });
 export const projectScopedRouter = Router({ mergeParams: true });
@@ -228,7 +229,7 @@ projectById.get(
   asyncHandler(async (req, res) => {
     const db = getDb();
     const project = getProject(db, param(req, 'id'));
-    const status = taskStageStatus(project.rootDir, project.id, param(req, 'ptid'));
+    const status = taskStageStatus(resolveTaskRepoRoot(db, project, param(req, 'ptid')), project.id, param(req, 'ptid'));
     const pending = db.prepare(
       "SELECT COUNT(*) AS n FROM task WHERE project_task_id=? AND state IN ('queued','claimed','running','waiting_input','waiting_dependency','waiting_approval','paused','blocked')",
     ).get(param(req, 'ptid')) as { n: number };
@@ -301,7 +302,7 @@ projectById.post(
     const project = getProject(db, param(req, 'id'));
     const ptid = param(req, 'ptid');
     const body = z.object({ force: z.boolean().optional() }).parse(req.body ?? {});
-    const status = taskStageStatus(project.rootDir, project.id, ptid);
+    const status = taskStageStatus(resolveTaskRepoRoot(db, project, ptid), project.id, ptid);
     if (!status.exists || status.aheadCommits === 0) {
       res.json({ discarded: false, message: '该任务集成区没有待处理内容' });
       return;
@@ -311,7 +312,7 @@ projectById.post(
       return;
     }
     const branch = taskStagingBranch(project.id, ptid);
-    discardTaskStaging(project.rootDir, project.id, ptid);
+    discardTaskStaging(resolveTaskRepoRoot(db, project, ptid), project.id, ptid);
     db.prepare('DELETE FROM task_merge_watchdog WHERE project_task_id=?').run(ptid);
     postSystemMessage(db, { scopeKind: 'project', scopeId: project.id, role: 'system', author: 'system', content: `「🗑 任务集成区已丢弃」#${ptid} 的 ${status.aheadCommits} 个未合并提交已按用户指令删除（分支 ${branch}）。` });
     realtime.publish({

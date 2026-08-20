@@ -11,6 +11,7 @@ import type { DB } from '../../src/server/db/client';
 ;
 import { createAgent } from '../../src/server/domain/agent';
 import { createProject, addProjectReference, assertCanReadSource } from '../../src/server/domain/project';
+import { defaultWorkspaceRoot } from '../../src/server/domain/workspace-layout';
 import { ensurePrimaryThread, updateThreadState, createMirror } from '../../src/server/domain/thread';
 import { addRelationship, deleteRelationship, validateCommunication } from '../../src/server/domain/graph';
 import { createTask } from '../../src/server/domain/task';
@@ -32,8 +33,9 @@ describe('default project root', () => {
     const second = createProject(db, { companyId: company.id, name: '同名 项目' });
 
     expect(first.rootDir).not.toBe(second.rootDir);
-    expect(first.rootDir).toContain('/MusterWorkspace/projects/同名-项目-');
-    expect(second.rootDir).toContain('/MusterWorkspace/projects/同名-项目-');
+    // 2026-08-20 治理定案：先到者纯名字，撞名后来者加日期后缀（显示名永无后缀）
+    expect(first.rootDir).toBe(`${defaultWorkspaceRoot()}/projects/同名-项目`);
+    expect(second.rootDir).toMatch(/\/MusterWorkspace\/projects\/同名-项目-\d{8}$/);
   });
 });
 

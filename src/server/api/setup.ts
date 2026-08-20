@@ -11,16 +11,24 @@ import { Router } from 'express';
 import { z } from 'zod';
 import fs from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
 import { getDb } from '../db/client';
 import { asyncHandler } from './middleware';
 import { getSetting, setSetting } from '../domain/setting';
 import { createWorkspace, getActiveWorkspace, migrateWorkspace } from '../domain/workspace';
+import { defaultWorkspaceRoot } from '../domain/workspace-layout';
 
 export const setupRouter = Router();
 
-/** 预设的工作区目录名（用户不指定时用 ~/ 下的这个名字）。 */
+/**
+ * 预设的工作区目录名（用户不指定时用 ~/ 下的这个名字）。
+ * 默认根跟随 MUSTER_HOME（测试隔离），见 workspace-layout.defaultWorkspaceRoot。
+ */
 const DEFAULT_WORKSPACE_NAME = 'MusterWorkspace';
+
+/** 默认工作区目录（= defaultWorkspaceRoot：未设 MUSTER_HOME 时即 ~/MusterWorkspace）。 */
+function defaultWorkspaceDir(): string {
+  return defaultWorkspaceRoot();
+}
 
 /**
  * GET /api/setup/status
@@ -30,8 +38,7 @@ setupRouter.get('/status', asyncHandler(async (_req, res) => {
   const db = getDb();
   const done = getSetting(db, 'setup_wizard_done', '') === '1';
   const active = getActiveWorkspace(db);
-  const home = os.homedir();
-  const defaultDir = path.join(home, DEFAULT_WORKSPACE_NAME);
+  const defaultDir = defaultWorkspaceDir();
   res.json({
     done,
     hasWorkspace: Boolean(active),
@@ -55,15 +62,14 @@ setupRouter.get('/status', asyncHandler(async (_req, res) => {
 setupRouter.post('/workspace', asyncHandler(async (req, res) => {
   const input = z.object({ rootDir: z.string().optional() }).parse(req.body);
   const db = getDb();
-  const home = os.homedir();
-  const chosen = input.rootDir?.trim() || path.join(home, DEFAULT_WORKSPACE_NAME);
+  const chosen = input.rootDir?.trim() || defaultWorkspaceDir();
   const resolved = path.resolve(chosen);
 
   let finalDir = resolved;
   let nested = false;
   // 默认目录（~/MusterWorkspace）即使已有内容也直接使用——它就是 Muster 自己的工作区，
   // 避免递归嵌套成 MusterWorkspace/MusterWorkspace。
-  const isDefaultDir = resolved === path.join(home, DEFAULT_WORKSPACE_NAME);
+  const isDefaultDir = resolved === defaultWorkspaceDir();
   if (!isDefaultDir && fs.existsSync(resolved)) {
     const entries = fs.readdirSync(resolved);
     if (entries.length > 0) {

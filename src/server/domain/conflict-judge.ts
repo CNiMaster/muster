@@ -13,6 +13,7 @@
 import type { DB } from '../db/client';
 import { log } from '../logger';
 import { getProject } from './project';
+import { resolveTaskRepoRoot } from './task-repo';
 import { getTask, createTask } from './task';
 import { ensurePrimaryThread } from './thread';
 import { ensureJudgeAgentId } from './system-agents';
@@ -112,8 +113,8 @@ export async function handleConflictJudgeCompletion(db: DB, judgeTaskId: string)
     return;
   }
 
-  // 自动选边重发布：theirs=采任务集成区版本；ours=保主干版本
-  const merged = promoteTaskStagingMerge(project.rootDir, ctx.projectId, ctx.projectTaskId, { strategy: parsed.side });
+  // 自动选边重发布：theirs=采任务集成区版本；ours=保主干版本（治理批次1：载体仓库根解析）
+  const merged = promoteTaskStagingMerge(resolveTaskRepoRoot(db, project, ctx.projectTaskId), ctx.projectId, ctx.projectTaskId, { strategy: parsed.side });
   const sideText = parsed.side === 'theirs' ? '任务集成区新产出' : '主干既有成果';
   if (merged.promoted) {
     db.prepare(

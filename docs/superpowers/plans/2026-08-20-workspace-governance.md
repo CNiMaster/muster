@@ -1,0 +1,43 @@
+# Workspace 治理 + 任务优先 IA + 双模式（2026-08-20 定案）
+
+状态：批次1 已交付（implemented）；批次2-3 待做（proposed）；批次4-5 UI 批等 main UI 改动合入后再开。
+
+## 背景（问题实锤 2026-08-20）
+
+`~/MusterWorkspace/projects` 实测 367 个目录、**0 个真实用户项目**、356 个带 `.git`——全部是测试残留，且 2026-08-18 e2e 隔离（MUSTER_HOME）合入后仍在每天新增。根因：MUSTER_HOME 只隔离 DB/worktrees/runs，workspace 根写死 `join(homedir(), 'MusterWorkspace')`（project.ts defaultRootDir 调用点），测试建项目全部落真实目录，而 DB 是一次性的 → 目录成永久孤儿。叠加：`removeProject` 铁律永不碰目录（保护用户数据，正确）+ 无任何孤儿对账 → 只进不出。
+
+## 定案（用户拍板）
+
+1. **定位**：开源大众+程序员通用软件，无管理员，软件自运转（治理引擎照常自动跑，简单模式不亮术语）。
+2. **形态**：单应用双模式，默认简单模式，顶栏切换；项目类型只定首次默认。IA 任务优先——简单模式任务区在上/项目区在下，专家模式反之；手动调整持久化。
+3. **磁盘规矩**：`projects/<纯名>`（仅撞名时后来者加 `-YYYYMMDD`，同日到 `-HHmm`，终极 `-2`；显示名永无后缀）；独立任务载体 `tasks/<YYYY-MM>/<MMDD-HHmm>-<截断≤8字>/` 懒创建；基础设施（收件箱/独立任务）迁 `.system/`；回收站 `.trash/`（批次2）。每目录写 `.muster/dir.json` marker。
+4. **多目录绑定**：`project_dir` 表（system|external|attached）；新建项目三入口（默认位置/打开文件夹-系统选择器/远程连接-一期占位）；绑定即写授权；git 仓库自动作 worktree 锚点；非 git 直写+变更记录；附加目录永不进回收站、解绑不删盘。
+5. **回收站两段式**：项目→软件回收站（可查/追踪/恢复/单删/批删）→系统废纸篓（trash 机制非 rm）。真删手打确认（单个=目录名，批量=「删除N项」一次）；「不再提醒」后单删直入系统废纸篓；不自动清理，超30天仅标记。
+6. **明确不做**：不代删用户目录；两个界面/运行中自动切换；远程连接实现；非 git 附加目录任务级隔离；旧 id 后缀存量目录不迁移；上轮砍单 11 项维持（Eval Harness/忠实度 Verifier/coverage 门/ADR 迁移等，见同日会话记录）。
+
+## 批次1 已交付（本 commit）
+
+- **根因修复**：`workspace-layout.ts` 新模块=磁盘规矩唯一事实源；`defaultWorkspaceRoot()` 跟随 MUSTER_HOME（project.ts/muster-directories.ts/api/setup.ts 三处调用点切换）；真实用户未设该变量行为不变。
+- **命名规矩**：`uniqueProjectSegment`（纯名→日期后缀→分钟→-2，撞名判定=磁盘+DB root_dir）；`sanitizeSegment` NFC 规范化+去尾部点（Windows 兼容）；独立任务 `standaloneTaskSegment`；基础设施 `infraDir(.system/inbox|standalone-tasks)`。
+- **独立任务按载体分仓**：迁移 20260820000100 `project_task.repo_root_dir`；`task-repo.ts` `resolveTaskRepoRoot`（懒创建 mkdir+git init+task marker+记录；幂等；同分钟同标题 -2 递增）+ `peekTaskRepoRoot`（只读，看板/列表绝不触发落盘）；接线：engine.ts（worktree 源/权限根/发布链 6 处）、staging.ts（promote/看板按载体分组批量取 refs）、conflict-judge.ts、api/projects.ts（merge-status/discard）。同载体多轮共享一仓，pt-<ptid> 集成分支拓扑不变。
+- **改名跟随**：updateProject 改名且未显式指定 rootDir 时，系统管理目录（workspace/projects/ 下且目录名吻合旧名形态）同卷 mv 跟随；迁移失败（活跃任务等安全阀）降级为只改名不抛错。
+- **marker + 对账**：`ensureGitRepo` 落盘即写 `.muster/dir.json`（幂等保首录）；`workspace-audit.ts` 双向 diff（orphanMarked=带marker无记录 / unknown=无marker无记录 / ghostRecords=有记录无目录，只读绝不删）；`GET /api/workspaces/audit`；`scripts/workspace-audit.mts` dry-run 清单脚本（供人工清理 367 个残留参考，脚本不删任何东西）。
+- **测试隔离根治**：`tests/setup-env.ts`（vitest setupFile 首位）默认 `MUSTER_HOME=mkdtemp`+同步放行 MUSTER_ALLOWED_ROOTS——单测/e2e/smoke 三类泄漏全部断根；显式设置者不受影响（??= 语义）。
+- **验证**：tsc 0 错；vitest 212 文件 1356/1356（含新 workspace-governance.spec 10 例：命名/隔离/基础设施迁移/marker/载体分仓幂等+撞名/改名跟随+降级/对账三分）；e2e 24/24；**全量跑完后 `~/MusterWorkspace/projects` 前后 diff 零新增**。project.spec/workspace.spec 两处旧命名断言（`名-pr_` 后缀）随新规矩更新。
+
+## 批次2 待做：回收站域层+API
+
+两段式状态机（project.state='trashed'+original_path/size/trashed_at）+入站前置校验（项目停/无活跃任务/staging-*、pt-* worktree 与分支清空/绑定自动化自动暂停——防 git worktree 悬空）+恢复（保留原名，撞名走日期后缀规则；提示重开自动化）+真删（macOS trash 机制；单删手打目录名/批删手打「删除N项」一次/「不再提醒」偏好；跨卷提示）+测试（悬空/撞名/批删计数）。
+
+## 批次3 待做：project_dir 多目录绑定
+
+project_dir 表+绑定/解绑 API（解绑不删盘）+可写根授权（接 sandbox MUSTER_ALLOWED_ROOTS 机制）+锚点选择（git 检测→worktree 锚点）+「从现有文件夹创建项目」服务端+测试（绑外部 repo 开工）。
+
+## 批次4-5 待做（UI，等 main UI 改动合入后另开，防冲突）
+
+批次4：新建项目对话框（三入口+系统文件夹选择器）+存储管理页+回收站 UI（手打确认交互）+项目设置目录管理+删除入口统一+任务/项目分区顺序（模式默认+手动持久化）。
+批次5：双模式骨架（settings uiMode/路由白名单/命令面板过滤）+简单模式首页接线（HomePage 复活：快速输入默认建独立任务；项目内 view=task 隐藏 mode/branch/model/thinking 药丸；TaskTopBar 简化）。spec 文档 `docs/superpowers/specs/2026-08-20-simple-pro-mode-design.md`。
+
+## 存量清理（用户手动）
+
+367 个残留目录由用户人工删除（用户明确要求不代删）；辅助：`npx tsx scripts/workspace-audit.mts` 出孤儿/未知清单（unknown 类多为 marker 机制之前的存量泄漏，同样可人工确认后删）。

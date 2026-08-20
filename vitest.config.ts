@@ -15,7 +15,7 @@ export default defineConfig({
       'tests/unit/**/*.{test,spec}.{ts,tsx}',
       'tests/integration/**/*.{test,spec}.ts',
     ],
-    setupFiles: ['tests/unit/setup-dom.ts'],
+    setupFiles: ['tests/setup-env.ts', 'tests/unit/setup-dom.ts'],
     pool: 'forks',
   },
 });

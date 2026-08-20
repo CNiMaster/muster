@@ -13,6 +13,7 @@ import type { DB } from '../db/client';
 import { SERVER_CONFIG } from '../env';
 import { log } from '../logger';
 import { AppError, ErrorCode } from '../../shared/errors';
+import { writeDirMarker } from '../domain/workspace-layout';
 
 export interface WorktreeInfo {
   taskId: string;
@@ -34,11 +35,12 @@ function git(rootDir: string, args: string[], opts: { allowFail?: boolean } = {}
   return { stdout: (r.stdout ?? '').trim(), stderr: r.stderr ?? '', status: r.status ?? 0 };
 }
 
-/** 确保项目根是 git 仓库；新项目自动 init。 */
+/** 确保项目根是 git 仓库；新项目自动 init + 写软件目录 marker（孤儿对账依据，幂等）。 */
 export function ensureGitRepo(rootDir: string): void {
   if (!existsSync(rootDir)) {
     mkdirSync(rootDir, { recursive: true });
   }
+  writeDirMarker(rootDir, { kind: 'project' });
   if (!existsSync(path.join(rootDir, '.git'))) {
     log.info('initializing git repo', { rootDir });
     git(rootDir, ['init', '-q']);

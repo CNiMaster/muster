@@ -18,6 +18,7 @@ import { callLlm } from './llm-call';
 import { getPreMergeChecks, runPreMergeChecks } from './pre-merge-checks';
 import { dispatchConflictJudgment } from './conflict-judge';
 import { getProjectMergeMode } from './project';
+import { peekTaskRepoRoot, resolveTaskRepoRoot } from './task-repo';
 import { shortId, nowIso } from '../../shared/utils';
 import { realtime } from '../realtime';
 import { postSystemMessage } from './conversation';
@@ -175,12 +176,37 @@ export function listPendingTaskMerges(db: DB, projectId: string): PendingTaskMer
   ).all(projectId) as Array<{ id: string; seq: number; title: string; state: string }>;
   // review 修复 #3：一次 for-each-ref 拿全部分支（head+最后提交时间），只对存在的分支算领先数——
   // 替代 O(任务数×6) 个 spawnSync 的逐任务探测（被 15s/60s 轮询三处消费）
-  const refs = listTaskStagingRefs(project.rootDir, projectId);
+  // 治理批次1：独立任务按载体分仓——按载体仓库分组批量取 refs（只读窥探，不触发建目录）
+  const standalone = (project.settings as Record<string, unknown>)?.standalone === true;
+  const ptRoots = new Map<string, string>(); // ptId → repoRoot
+  const uniqueRoots = new Set<string>();
+  if (standalone) {
+    for (const pt of pts) {
+      const root = peekTaskRepoRoot(db, project, pt.id);
+      if (!root) continue;
+      ptRoots.set(pt.id, root);
+      uniqueRoots.add(root);
+    }
+  } else {
+    uniqueRoots.add(project.rootDir);
+  }
+  type PtRef = { branch: string; head: string; lastCommitAt: string };
+  const refsByRoot = new Map<string, Map<string, PtRef>>();
+  for (const root of uniqueRoots) {
+    try {
+      refsByRoot.set(root, listTaskStagingRefs(root, projectId));
+    } catch {
+      refsByRoot.set(root, new Map());
+    }
+  }
+  const fallbackRefs: Map<string, PtRef> = refsByRoot.get(project.rootDir) ?? new Map();
   const items: PendingTaskMergeItem[] = [];
   for (const pt of pts) {
+    const ptRoot = standalone ? (ptRoots.get(pt.id) ?? null) : project.rootDir;
+    const refs = ptRoot ? (refsByRoot.get(ptRoot) ?? fallbackRefs) : fallbackRefs;
     const ref = refs.get(pt.id);
     if (!ref) continue;
-    const aheadCommits = branchAheadCount(project.rootDir, ref.branch);
+    const aheadCommits = branchAheadCount(ptRoot ?? project.rootDir, ref.branch);
     if (aheadCommits === 0) continue;
     const pending = db.prepare(
       "SELECT COUNT(*) AS n FROM task WHERE project_task_id=? AND state IN ('queued','claimed','running','waiting_input','waiting_dependency','waiting_approval','paused','blocked')",
@@ -272,14 +298,16 @@ export async function promoteTaskStaging(
 ): Promise<TaskMergeResult> {
   const project = getProject(db, projectId);
   if (!project) return { promoted: false, message: '项目不存在' };
-  const status = taskStageStatus(project.rootDir, projectId, projectTaskId);
+  // 治理批次1：独立任务按载体分仓——staging/promote 均在载体仓库内进行
+  const repoRoot = resolveTaskRepoRoot(db, project, projectTaskId);
+  const status = taskStageStatus(repoRoot, projectId, projectTaskId);
   if (!status.exists || status.aheadCommits === 0) {
     return { promoted: false, message: '暂无待合并的任务集成内容' };
   }
   const pending = db.prepare(
     "SELECT COUNT(*) AS n FROM task WHERE project_task_id=? AND state IN ('queued','claimed','running','waiting_input','waiting_dependency','waiting_approval','paused','blocked')",
   ).get(projectTaskId) as { n: number };
-  const diffStat = taskStagingDiffSummary(project.rootDir, projectId, projectTaskId);
+  const diffStat = taskStagingDiffSummary(repoRoot, projectId, projectTaskId);
 
   // premium 审查（定案 #3）：concern / LLM 失败 → 跳过 + 播报
   let review: MergeReviewOutcome;
@@ -300,8 +328,8 @@ export async function promoteTaskStaging(
   // 失败 → check_failed 记录 + 播报 + 本轮跳过（与 concern 同语义，不阻塞下轮重试）。
   const checks = getPreMergeChecks(db, projectId);
   if (checks.length > 0) {
-    const stagingPath = ensureTaskStagingWorktree(project.rootDir, projectId, projectTaskId).path;
-    const checkRun = await runPreMergeChecks(project.rootDir, stagingPath, checks);
+    const stagingPath = ensureTaskStagingWorktree(repoRoot, projectId, projectTaskId).path;
+    const checkRun = await runPreMergeChecks(repoRoot, stagingPath, checks);
     if (!checkRun.ok && checkRun.failed) {
       recordTaskMerge(db, {
         projectId, projectTaskId, actor: options.actor ?? 'system', status: 'check_failed',
@@ -318,7 +346,7 @@ export async function promoteTaskStaging(
   }
 
   // review 修复 #4：审查快照是此刻的 stagingHead——merge 前复核未变，防审查窗口内新提交搭车进主干
-  const merged = promoteTaskStagingMerge(project.rootDir, projectId, projectTaskId, {
+  const merged = promoteTaskStagingMerge(repoRoot, projectId, projectTaskId, {
     strategy: options.strategy,
     expectedHead: status.stagingHead ?? undefined,
   });
