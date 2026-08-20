@@ -92,7 +92,8 @@ export function listTaskBranchChangeStatus(
   info: WorktreeInfo,
 ): Array<{ path: string; status: 'A' | 'D' | 'M' }> {
   const merged = new Map<string, 'A' | 'D' | 'M'>();
-  const out = git(rootDir, ['diff', '--name-status', info.baseCommit, info.branch], { allowFail: true }).stdout;
+  // core.quotePath=false：中文等非 ASCII 路径不走八进制转义（默认会把路径变成 "\344\270..." 字面量，与声明的 artifacts 永远对不上）
+  const out = git(rootDir, ['-c', 'core.quotePath=false', 'diff', '--name-status', info.baseCommit, info.branch], { allowFail: true }).stdout;
   for (const line of out.split('\n')) {
     const cols = line.trim().split('\t');
     if (cols.length < 2) continue;
@@ -107,19 +108,30 @@ export function listTaskBranchChangeStatus(
   }
   // porcelain 固定格式：XY(2字符) + 空格 + path——前导空格是格式一部分（' D file'=未暂存删除），
   // 不能走 git() 助手（它统一 trim stdout 会吃掉前导空格→路径首字符丢失），直连取原始输出
-  const statusRes = spawnSync('git', ['status', '--porcelain'], { cwd: info.path, encoding: 'utf8' });
+  const statusRes = spawnSync('git', ['-c', 'core.quotePath=false', 'status', '--porcelain'], { cwd: info.path, encoding: 'utf8' });
   const status = statusRes.stdout ?? '';
   for (const raw of status.split('\n')) {
     if (!raw.trim()) continue;
     const xy = raw.slice(0, 2);
     let rest = raw.slice(3);
-    const rename = /^.* -> (.+)$/.exec(rest);
-    if (rename) rest = rename[1]!;
+    const rename = /^(.*) -> (.+)$/.exec(rest);
+    if (rename) {
+      // 工作区重命名 = 删旧 + 增新（原先只留新路径且错标 M——旧路径的删除丢失，发布分类当无事发生）
+      merged.set(unquotePath(rename[1]!), 'D');
+      merged.set(unquotePath(rename[2]!), 'A');
+      continue;
+    }
+    rest = unquotePath(rest);
     if (xy.includes('D')) merged.set(rest, 'D');
     else if (xy.includes('?')) merged.set(rest, 'A');
     else merged.set(rest, 'M');
   }
   return [...merged.entries()].map(([path, st]) => ({ path, status: st }));
+}
+
+/** quotePath=false 后仅含引号/控制符的极端路径仍会被 git 加引号——剥外层引号还原。 */
+function unquotePath(p: string): string {
+  return p.length >= 2 && p.startsWith('"') && p.endsWith('"') ? p.slice(1, -1) : p;
 }
 
 /**
@@ -129,13 +141,14 @@ export function listTaskBranchChangeStatus(
  * 任一非空且不在发布白名单内 → 调用方应保分支留痕而非直接删除。
  */
 export function listTaskBranchChanges(rootDir: string, info: WorktreeInfo): { committed: string[]; uncommitted: string[] } {
-  const committed = git(rootDir, ['diff', '--name-only', info.baseCommit, info.branch], { allowFail: true })
+  const committed = git(rootDir, ['-c', 'core.quotePath=false', 'diff', '--name-only', info.baseCommit, info.branch], { allowFail: true })
     .stdout.split('\n').map((l) => l.trim()).filter(Boolean);
-  const status = git(info.path, ['status', '--porcelain'], { allowFail: true }).stdout;
-  const uncommitted = status.split('\n').map((l) => l.trim()).filter(Boolean).map((l) => {
-    const renamed = /^R\S*\s+.* -> (.+)$/.exec(l);
-    if (renamed) return renamed[1]!.trim();
-    return l.replace(/^[A-Z?]+\s+/, '').trim();
+  const status = git(info.path, ['-c', 'core.quotePath=false', 'status', '--porcelain'], { allowFail: true }).stdout;
+  const uncommitted = status.split('\n').map((l) => l.trim()).filter(Boolean).flatMap((l) => {
+    const renamed = /^R\S*\s+(.*) -> (.+)$/.exec(l);
+    // 重命名：旧路径的删除也是改动，两个路径都要进守护清单（只留新路径会让旧路径的丢失静默漏网）
+    if (renamed) return [renamed[1]!.trim(), renamed[2]!.trim()];
+    return [l.replace(/^[A-Z?]+\s+/, '').trim()];
   }).filter(Boolean);
   return { committed, uncommitted };
 }
