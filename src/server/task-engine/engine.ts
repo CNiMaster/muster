@@ -53,6 +53,7 @@ import { resolveContextWindow } from '../domain/executor-profile';
 import { generateCompactionSummary } from '../domain/compaction-summary';
 import { getWorkbench } from '../domain/workbench';
 import { resolveTaskRepoRoot } from '../domain/task-repo';
+import { attachedPaths } from '../domain/project-dirs';
 import { createWorktree, removeWorktree, ensureStagingWorktree, ensureTaskStagingWorktree, listTaskBranchChanges, listTaskBranchChangeStatus } from '../worktree/manager';
 /** 自动化节奏的人话标签（播报/摘要用）。 */
 function scheduleLabel(schedule: { kind: string; intervalMinutes?: number; timeOfDay?: string }): string {
@@ -605,7 +606,7 @@ export class TaskEngine {
           approvalStrategy: effectiveStrategy ?? permissionPolicy.approvalStrategy,
           scope: permissionPolicy.scope,
           allowedRoots: permissionPolicy.scope === 'task' ? [workingDir]
-            : permissionPolicy.scope === 'project' ? [repoRoot]
+            : permissionPolicy.scope === 'project' ? [repoRoot, ...attachedPaths(this.db, project.id)]
             : permissionPolicy.scope === 'workspace' ? [getActiveWorkspace(this.db)?.rootDir ?? repoRoot]
             : permissionPolicy.scope === 'selected-directories' ? permissionPolicy.selectedDirectories
             : [],

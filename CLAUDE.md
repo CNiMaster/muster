@@ -74,7 +74,9 @@ Muster is a local multi-agent workbench. Persistent agents collaborate through p
 - **仓库根解析**：引擎/看板/promote/discard 一律走 `task-repo.ts resolveTaskRepoRoot`（独立任务按载体）；只读路径（看板列表）用 `peekTaskRepoRoot`（绝不触发落盘）。
 - **项目改名跟随**：updateProject 改名时系统管理目录同卷 mv 跟随（活跃任务等安全阀拦下则降级只改名，不抛错）。
 - **对账（只读）**：`GET /api/workspaces/audit` + `npx tsx scripts/workspace-audit.mts`——orphanMarked/unknown/ghostRecords 三分；软件永不自动删目录，存量残留由用户人工清理。
-- **铁律不变**：软件永不挪/删用户自有目录；后续批次（回收站两段式/project_dir 多目录绑定/双模式 UI）见计划文档。
+- **回收站两段式（批次2）**：`project-trash.ts`——移入 `.trash/`（前置四拒：基础设施/active/进行中任务/未合并 pt-集成区防悬空；绑定自动化自动暂停记账）→ `GET /api/projects/trash`、`POST /:id/trash|/:id/restore|/trash/purge`；恢复撞名走同一日期后缀规则；真删=移系统废纸篓（非 rm，MUSTER_TRASH_DIR 可覆盖）+删库，确认语义服务端强制（单个=手打原目录名，批量=手打「删除N项」）。
+- **多目录绑定（批次3）**：`project_dir` 表（external/attached，主目录仍走 root_dir 合成行）——绑定即写授权（engine project scope allowedRoots 含 attachedPaths）；与任何项目目录交叉拒；锚点=绑定的 git 仓库（`resolveTaskRepoRoot` 优先外部锚点，worktree 从锚点切出）；解绑只删行；绑定目录永不 marker/git init（铁律）。
+- **铁律不变**：软件永不挪/删用户自有目录；剩余批次（UI：新建项目三入口/存储管理页/回收站界面/双模式骨架）见计划文档，等 main UI 改动合入后开。
 
 ## Product Direction: Local Agent Workbench（项目主导）
 

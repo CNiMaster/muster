@@ -18,6 +18,7 @@ import { ensureWorkspaceStaff } from './workspace-staff';
 import { getAgent } from './agent';
 import { ensureDefaultWorkspace, getActiveWorkspace } from './workspace';
 import { defaultWorkspaceRoot, infraDir, sanitizeSegment, uniqueProjectSegment } from './workspace-layout';
+import { recordExternalRootDir } from './project-dirs';
 
 /** 将任意字符串转为安全的路径片段：保留中文/字母数字，其余替换为 -（规矩统一在 workspace-layout）。 */
 function sanitizePathSegment(s: string): string {
@@ -134,11 +135,8 @@ export function createProject(
   // rootDir 未指定时自动生成默认路径，降低建项目门槛。
   // ensureGitRepo() 会在首个 worktree 创建时自动 mkdir + git init。
   const requestedRootDir = input.rootDir?.trim();
-  const rootDir = requestedRootDir || defaultRootDir(
-    db,
-    ensureDefaultWorkspace(db, defaultWorkspaceRoot()).rootDir,
-    input.name,
-  );
+  const wsRoot = ensureDefaultWorkspace(db, defaultWorkspaceRoot()).rootDir;
+  const rootDir = requestedRootDir || defaultRootDir(db, wsRoot, input.name);
   const firstAgentId = input.firstAgentId ?? workbench.firstAgentId ?? undefined;
   if (firstAgentId) {
     getAgent(db, firstAgentId);
@@ -149,6 +147,14 @@ export function createProject(
     `INSERT INTO project (id, name, description, root_dir, first_agent_id, state, settings_json, playbook_id, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, '{}', ?, ?, ?)`,
   ).run(id, input.name, input.description ?? '', rootDir, firstAgentId ?? null, state, input.playbookId ?? null, now, now);
+  // 治理批次3：用户显式指定且在 workspace 之外的目录 → 记 external 主目录行（幂等）。
+  // workspace 内（含 .system 基础设施）不记——那是系统管理目录。
+  if (requestedRootDir) {
+    const resolved = resolve(rootDir);
+    if (resolved !== wsRoot && !resolved.startsWith(`${wsRoot}/`)) {
+      recordExternalRootDir(db, id, resolved);
+    }
+  }
   return getProject(db, id);
 }
 

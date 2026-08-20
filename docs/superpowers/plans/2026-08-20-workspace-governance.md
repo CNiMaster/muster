@@ -1,6 +1,6 @@
 # Workspace 治理 + 任务优先 IA + 双模式（2026-08-20 定案）
 
-状态：批次1、批次2 已交付（implemented）；批次3 待做（proposed）；批次4-5 UI 批等 main UI 改动合入后再开。
+状态：批次1、批次2、批次3 已交付（implemented）；批次4-5 UI 批等 main UI 改动合入后再开。
 
 ## 背景（问题实锤 2026-08-20）
 
@@ -38,11 +38,20 @@
 - **测试** `tests/integration/project-trash.spec.ts` 10 例：四类前置校验拒（active/进行中任务/未合并集成区含真实 pt-staging 提交/基础设施）/移入记账+幂等/自动化暂停+恢复提示/恢复撞名后缀/ghost 入站恢复/真删单批确认语义+库删净+目录进（测试注入的）系统废纸篓。
 - **验证**：tsc 0 错；vitest 213 文件 1366/1366；e2e 24/24；真实 workspace 零新增。
 
-## 批次3 待做：project_dir 多目录绑定
+## 批次3 已交付：project_dir 多目录绑定
 
-project_dir 表+绑定/解绑 API（解绑不删盘）+可写根授权（接 sandbox MUSTER_ALLOWED_ROOTS 机制）+锚点选择（git 检测→worktree 锚点）+「从现有文件夹创建项目」服务端+测试（绑外部 repo 开工）。
+- **迁移 20260820000300** `project_dir` 表（project_id CASCADE/path/role=external|attached/label/is_anchor；`UNIQUE(project_id,path)` + 单锚点部分唯一索引）。**表只记 external/attached**——系统主目录仍走 `project.root_dir`（合成行，零双写漂移）。
+- **`src/server/domain/project-dirs.ts`**：
+  - `attachProjectDir`：绝对路径/存在/目录/同项目重复拒/**与任何项目的目录（含本项目主目录与已绑目录）祖先-后代交叉拒**（防跨项目误写）/基础设施项目拒。绑定永不写 marker、永不 git init（铁律：不动用户数据）。
+  - `listProjectDirs`：主目录合成行（role 按 workspace 内外判 system/external，isAnchor=无绑定锚点时主目录即锚点）+ 绑定行；`attachedPaths` 供授权消费。
+  - `setProjectAnchor`（仅 git 仓库；事务清旧设新）/`resetProjectAnchor`/`peekAnchorPath`（只读）。
+  - `detachProjectDir`：只删行不动盘。
+- **接线**：`resolveTaskRepoRoot` 业务项目优先外部锚点（锚点在=从锚点仓库切 worktree；standalone 载体逻辑不变）；engine 权限 `scope=project` 的 allowedRoots=[repoRoot, ...attachedPaths]（绑定即写授权，CLI 适配器 --add-dir 消费）；`createProject` 显式 rootDir 且在 workspace 外 → INSERT 后记 external 行（顺序修复 FK；workspace 内含 .system 不记）。
+- **API**：`GET /api/projects/:id/dirs`（含 isGitRepo 探测）、`POST /dirs {path,label}`、`DELETE /dirs/:dirId`、`POST /dirs/:dirId/anchor`、`POST /dirs/anchor/reset`。
+- **测试** `tests/integration/project-dirs.spec.ts` 7 例：绑定四类拒+交叉（跨项目/本项目主目录）+铁律（无 marker 不 init）/清单角色判定+解绑不动盘+external 幂等/锚点全链路（非 git 拒→设锚→resolveTaskRepoRoot=锚点→worktree 分支真实落锚点仓库→复位回主目录）。
+- **验证**：tsc 0 错；vitest 214 文件 1373/1373；e2e 24/24；真实 workspace 零新增。
 
-## 批次4-5 待做（UI，等 main UI 改动合入后另开，防冲突）
+## 批次4 待做（UI，等 main UI 改动合入后开）
 
 批次4：新建项目对话框（三入口+系统文件夹选择器）+存储管理页+回收站 UI（手打确认交互）+项目设置目录管理+删除入口统一+任务/项目分区顺序（模式默认+手动持久化）。
 批次5：双模式骨架（settings uiMode/路由白名单/命令面板过滤）+简单模式首页接线（HomePage 复活：快速输入默认建独立任务；项目内 view=task 隐藏 mode/branch/model/thinking 药丸；TaskTopBar 简化）。spec 文档 `docs/superpowers/specs/2026-08-20-simple-pro-mode-design.md`。

@@ -69,6 +69,9 @@ import { transitionProjectPhase } from '../domain/project-readiness';
 import { PHASE_ORDER, type ProjectState } from '../domain/project';
 import { resolveTaskRepoRoot } from '../domain/task-repo';
 import { listTrash, purgeFromTrash, restoreProject, trashProject } from '../domain/project-trash';
+import { attachProjectDir, detachProjectDir, listProjectDirs, resetProjectAnchor, setProjectAnchor } from '../domain/project-dirs';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 
 export const projectsRouter = Router({ mergeParams: true });
 export const projectScopedRouter = Router({ mergeParams: true });
@@ -515,6 +518,34 @@ projectById.post('/restore',asyncHandler(async(req,res)=>{
   const result=restoreProject(getDb(),param(req,'id'));
   realtime.publish(makeLifecycleEvent('project.restored',{projectId:param(req,'id')},{}));
   res.json(result);
+}));
+
+/** 治理批次3：项目目录清单（主目录合成行+绑定行；含锚点/git 状态，供设置页与授权展示）。 */
+projectById.get('/dirs',asyncHandler(async(req,res)=>{
+  const db=getDb();
+  const dirs=listProjectDirs(db,param(req,'id'));
+  res.json(dirs.map((d)=>({ ...d, isGitRepo: existsSync(join(d.path,'.git')) })));
+}));
+
+/** 治理批次3：绑定现有文件夹（绝对路径/存在/不与任何项目目录交叉；绑定即项目 scope 写授权）。 */
+projectById.post('/dirs',asyncHandler(async(req,res)=>{
+  const input=z.object({ path:z.string().min(1), label:z.string().max(60).optional() }).parse(req.body);
+  res.status(201).json(attachProjectDir(getDb(),param(req,'id'),input));
+}));
+
+/** 治理批次3：解绑（只断关联，绝不动盘）。 */
+projectById.delete('/dirs/:dirId',asyncHandler(async(req,res)=>{
+  res.json(detachProjectDir(getDb(),param(req,'dirId')));
+}));
+
+/** 治理批次3：设为任务锚点（仅绑定行且 git 仓库；任务 worktree 从该仓库切出）。 */
+projectById.post('/dirs/:dirId/anchor',asyncHandler(async(req,res)=>{
+  res.json(setProjectAnchor(getDb(),param(req,'dirId')));
+}));
+
+/** 治理批次3：锚点复位为主目录。 */
+projectById.post('/dirs/anchor/reset',asyncHandler(async(req,res)=>{
+  res.json(resetProjectAnchor(getDb(),param(req,'id')));
 }));
 
 // B4 staffing：精确分配员工到项目（按 agentIds 创建 primary thread，区别于 ensureProjectThreads 全公司批量）

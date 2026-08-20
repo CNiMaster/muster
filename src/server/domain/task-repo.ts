@@ -13,6 +13,7 @@ import type { DB } from '../db/client';
 import type { Project } from './project';
 import { getActiveWorkspace } from './workspace';
 import { defaultWorkspaceRoot, standaloneTaskSegment, writeDirMarker } from './workspace-layout';
+import { peekAnchorPath } from './project-dirs';
 import { ensureGitRepo } from '../worktree/manager';
 
 interface ProjectTaskRow {
@@ -31,8 +32,7 @@ function isStandalone(project: Project): boolean {
  * 供看板/列表类只读路径使用——绝不触发 mkdir/git init。
  */
 export function peekTaskRepoRoot(db: DB, project: Project, projectTaskId?: string | null): string | null {
-  if (!isStandalone(project) || !projectTaskId) return null;
-  const row = db.prepare('SELECT repo_root_dir FROM project_task WHERE id=?').get(projectTaskId) as { repo_root_dir: string | null } | undefined;
+  if (!isStandalone(project) || !projectTaskId) return null;  const row = db.prepare('SELECT repo_root_dir FROM project_task WHERE id=?').get(projectTaskId) as { repo_root_dir: string | null } | undefined;
   return row?.repo_root_dir ?? null;
 }
 
@@ -41,7 +41,13 @@ export function peekTaskRepoRoot(db: DB, project: Project, projectTaskId?: strin
  * 幂等：已有 repo_root_dir 直接返回；目录被用户手动删除时重建并保持记录。
  */
 export function resolveTaskRepoRoot(db: DB, project: Project, projectTaskId?: string | null): string {
-  if (!isStandalone(project) || !projectTaskId) return project.rootDir;
+  if (!isStandalone(project)) {
+    // 治理批次3：业务项目可设外部锚点（绑定的 git 仓库）——任务 worktree 从锚点仓库切出
+    const anchor = peekAnchorPath(db, project.id);
+    if (anchor && existsSync(anchor)) return anchor;
+    return project.rootDir;
+  }
+  if (!projectTaskId) return project.rootDir;
   const existing = peekTaskRepoRoot(db, project, projectTaskId);
   if (existing && existsSync(existing)) return existing;
   const row = db.prepare('SELECT id, title, created_at, repo_root_dir FROM project_task WHERE id=?').get(projectTaskId) as ProjectTaskRow | undefined;
