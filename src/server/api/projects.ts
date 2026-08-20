@@ -68,6 +68,7 @@ import { confirmProjectLaunch, discoverProjectLaunchCapabilities } from '../doma
 import { transitionProjectPhase } from '../domain/project-readiness';
 import { PHASE_ORDER, type ProjectState } from '../domain/project';
 import { resolveTaskRepoRoot } from '../domain/task-repo';
+import { listTrash, purgeFromTrash, restoreProject, trashProject } from '../domain/project-trash';
 
 export const projectsRouter = Router({ mergeParams: true });
 export const projectScopedRouter = Router({ mergeParams: true });
@@ -118,11 +119,30 @@ projectsRouter.get(
       return;
     }
     if (view === 'removed') {
-      // 已移除区：仅隐藏未删记录的项目（可恢复显示/可彻底删除记录）
-      res.json(visible.filter((p) => (p.settings as Record<string, unknown>)?.removed === true));
+      // 已移除区：仅隐藏未删记录的项目（可恢复显示/可彻底删除记录）；
+      // 治理批次2：回收站项目走专属 /trash 视图，不混入
+      const trashed = new Set(listTrash(db).map((t) => t.projectId));
+      res.json(visible.filter((p) => (p.settings as Record<string, unknown>)?.removed === true && !trashed.has(p.id)));
       return;
     }
     res.json(visible.filter((p) => p.state !== 'archived' && (p.settings as Record<string, unknown>)?.removed !== true));
+  }),
+);
+
+/** 治理批次2：软件回收站——清单（可查/可追踪/可恢复/可单删/可批删）。 */
+projectsRouter.get(
+  '/trash',
+  asyncHandler(async (_req, res) => {
+    res.json(listTrash(getDb()));
+  }),
+);
+
+/** 治理批次2：真删（→系统废纸篓+删库）。确认语义服务端强制：单个=手打原目录名；批量=手打「删除N项」。 */
+projectsRouter.post(
+  '/trash/purge',
+  asyncHandler(async (req, res) => {
+    const body = z.object({ ids: z.array(z.string().min(1)).min(1), confirm: z.string() }).parse(req.body);
+    res.json(purgeFromTrash(getDb(), body.ids, body.confirm));
   }),
 );
 
@@ -480,6 +500,20 @@ projectById.delete('/',asyncHandler(async(req,res)=>{
   const input=z.object({deleteRecords:z.boolean().optional()}).parse(req.body??{});
   const result=removeProject(getDb(),param(req,'id'),input);
   realtime.publish(makeLifecycleEvent('project.removed',{projectId:param(req,'id')},{}));
+  res.json(result);
+}));
+
+/** 治理批次2：移入软件回收站（前置校验不过返回人话阻塞清单；绑定自动化自动暂停）。 */
+projectById.post('/trash',asyncHandler(async(req,res)=>{
+  const result=trashProject(getDb(),param(req,'id'));
+  realtime.publish(makeLifecycleEvent('project.trashed',{projectId:param(req,'id')},{}));
+  res.json(result);
+}));
+
+/** 治理批次2：从回收站恢复（原位被占自动换撞名规则新目录；返回暂停过的自动化提示重开）。 */
+projectById.post('/restore',asyncHandler(async(req,res)=>{
+  const result=restoreProject(getDb(),param(req,'id'));
+  realtime.publish(makeLifecycleEvent('project.restored',{projectId:param(req,'id')},{}));
   res.json(result);
 }));
 

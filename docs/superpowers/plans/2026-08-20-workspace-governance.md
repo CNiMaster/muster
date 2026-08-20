@@ -1,6 +1,6 @@
 # Workspace 治理 + 任务优先 IA + 双模式（2026-08-20 定案）
 
-状态：批次1 已交付（implemented）；批次2-3 待做（proposed）；批次4-5 UI 批等 main UI 改动合入后再开。
+状态：批次1、批次2 已交付（implemented）；批次3 待做（proposed）；批次4-5 UI 批等 main UI 改动合入后再开。
 
 ## 背景（问题实锤 2026-08-20）
 
@@ -25,9 +25,18 @@
 - **测试隔离根治**：`tests/setup-env.ts`（vitest setupFile 首位）默认 `MUSTER_HOME=mkdtemp`+同步放行 MUSTER_ALLOWED_ROOTS——单测/e2e/smoke 三类泄漏全部断根；显式设置者不受影响（??= 语义）。
 - **验证**：tsc 0 错；vitest 212 文件 1356/1356（含新 workspace-governance.spec 10 例：命名/隔离/基础设施迁移/marker/载体分仓幂等+撞名/改名跟随+降级/对账三分）；e2e 24/24；**全量跑完后 `~/MusterWorkspace/projects` 前后 diff 零新增**。project.spec/workspace.spec 两处旧命名断言（`名-pr_` 后缀）随新规矩更新。
 
-## 批次2 待做：回收站域层+API
+## 批次2 已交付：回收站域层+API
 
-两段式状态机（project.state='trashed'+original_path/size/trashed_at）+入站前置校验（项目停/无活跃任务/staging-*、pt-* worktree 与分支清空/绑定自动化自动暂停——防 git worktree 悬空）+恢复（保留原名，撞名走日期后缀规则；提示重开自动化）+真删（macOS trash 机制；单删手打目录名/批删手打「删除N项」一次/「不再提醒」偏好；跨卷提示）+测试（悬空/撞名/批删计数）。
+- **迁移 20260820000200** `project_trash` 表（project_id PK CASCADE/original_root_dir/trash_dir/size_bytes/paused_automation_ids_json/batch_id/trashed_at）。
+- **`src/server/domain/project-trash.ts`**：
+  - `precheckTrashProject` 人话阻塞清单：基础设施拒/active 拒（先暂停或完结）/进行中任务拒（防丢草稿）/未合并 pt-集成区拒（防悬空，数据源=待合并看板）。
+  - `trashProject`：终态任务残留 worktree 先清（防指针悬空）→ 目录 rename 进 `.trash/<时间戳>-<名>/`（同卷原子）→ 绑定自动化 enabled=0 记账 → settings.trashed+removed 隐藏。幂等。ghost 项目（目录未落盘）允许入站（trash_dir=''）。
+  - `listTrash`：可查/可追踪清单（原名/原路径/大小/入站时间/搁置天数/暂停的自动化/批次号）。
+  - `restoreProject`：原位空闲回原位；被占（磁盘或 DB）→ 走同一撞名日期后缀规则换新目录；返回暂停过的自动化清单提示重开（不自动重开）。root_dir/settings 直写库（绕开 updateProject 的物理迁移校验——目录已搬好）。
+  - `purgeFromTrash`：确认语义服务端强制——单个=手打**原目录名**、批量=手打「删除N项」一次；真删=移入系统废纸篓（MUSTER_TRASH_DIR 覆盖/darwin ~/.Trash/linux FreeDesktop，非 rm；废纸篓内撞名加时间戳）+ 删库（取消任务→归档载体→删 project 行，FK 级联，同 removeProject deleteRecords）。「不再提醒」偏好属 UI 层（批次4），系统废纸篓兜底常在。
+- **API**：`GET /api/projects/trash`（清单）、`POST /api/projects/trash/purge {ids,confirm}`、`POST /api/projects/:id/trash`、`POST /api/projects/:id/restore`；`/api/projects?view=removed` 排除回收站项目（专属视图不混入）；生命周期事件 `project.trashed`/`project.restored`。
+- **测试** `tests/integration/project-trash.spec.ts` 10 例：四类前置校验拒（active/进行中任务/未合并集成区含真实 pt-staging 提交/基础设施）/移入记账+幂等/自动化暂停+恢复提示/恢复撞名后缀/ghost 入站恢复/真删单批确认语义+库删净+目录进（测试注入的）系统废纸篓。
+- **验证**：tsc 0 错；vitest 213 文件 1366/1366；e2e 24/24；真实 workspace 零新增。
 
 ## 批次3 待做：project_dir 多目录绑定
 

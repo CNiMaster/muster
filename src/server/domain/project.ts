@@ -28,8 +28,9 @@ function sanitizePathSegment(s: string): string {
  * 为未指定 rootDir 的项目生成唯一默认路径（2026-08-20 治理定案）：
  * projects/<纯名字>——仅撞名时后来者加日期后缀，先到者永远干净。
  * 撞名判定 = 磁盘已存在 OR 数据库已有项目占用该 root_dir。
+ * 导出供回收站恢复（撞名换新目录）复用。
  */
-function defaultRootDir(db: DB, workspaceRoot: string, projectName: string): string {
+export function defaultRootDir(db: DB, workspaceRoot: string, projectName: string): string {
   const projectsDir = join(workspaceRoot, 'projects');
   const taken = (segment: string) => {
     const candidate = join(projectsDir, segment);

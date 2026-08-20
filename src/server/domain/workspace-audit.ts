@@ -37,7 +37,8 @@ export interface WorkspaceAudit {
   ghostRecords: Array<{ projectId: string; name: string; rootDir: string }>;
 }
 
-function dirSizeBytes(dir: string): number {
+/** 粗算目录占用（逐层求和；出错按 0）。导出供回收站等域复用。 */
+export function dirSizeBytes(dir: string): number {
   // 粗算目录占用（du 慢；这里逐层求和，出错按 0）。只统计到目录级即可满足人工判断。
   let total = 0;
   const stack = [dir];
