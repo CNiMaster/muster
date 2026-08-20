@@ -19,6 +19,7 @@ import { getDb } from '../db/client';
 import {
   createProject,
   createQuickProject,
+  ensureDefaultProject,
   ensureStandaloneProject,
   getProject,
   listProjects,
@@ -132,6 +133,18 @@ projectsRouter.get(
     const db = getDb();
     const { project } = ensureStandaloneProject(db);
     res.json({ projectId: project.id, tasks: listProjectTasks(db, project.id) });
+  }),
+);
+
+/**
+ * 2026-08-20 UI 重构：确保至少一个默认项目（防零项目导致工作台空态断层）。
+ * 显式 POST 而非 GET 副作用——前端在「列表已加载且为空、且非新建路由」时调用；
+ * GET /api/projects 保持纯读（空列表契约不破坏，归档/移除视图绝不触发自动新建）。
+ */
+projectsRouter.post(
+  '/ensure-default',
+  asyncHandler(async (_req, res) => {
+    res.json(ensureDefaultProject(getDb()));
   }),
 );
 

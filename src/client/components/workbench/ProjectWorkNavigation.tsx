@@ -1,12 +1,28 @@
 import type React from 'react';
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
-import type { Agent, Department, Task } from '../../api/types';
+import { Link, useNavigate } from 'react-router-dom';
+import type { Agent, Department, Project, Task } from '../../api/types';
 import type { ProjectTaskDTO } from '../../hooks/queries';
-import { usePinProjectTask, useProjectTaskAction , useMergeAttention } from '../../hooks/queries';
+import {
+  usePinProjectTask,
+  useProjectTaskAction,
+  useMergeAttention,
+  useStandaloneTasks,
+  useCreateProjectTask,
+  useProjects,
+} from '../../hooks/queries';
+import { DropdownMenu } from '../DropdownMenu';
+import { toast } from '../Button';
 
 export type ProjectToolKey = 'tasks' | 'merges' | 'plans' | 'dashboard' | 'artifacts' | 'materials' | 'reports' | 'usage' | 'character' | 'settings';
 export type ProjectSurfaceView = 'task' | 'employee' | 'group' | 'activity' | 'tool';
+
+const UNGROUPED = Symbol('ungrouped');
+type GroupKey = string | typeof UNGROUPED;
+function groupOf(p: Project): GroupKey {
+  const g = p.settings?.group;
+  return typeof g === 'string' && g.trim() ? g : UNGROUPED;
+}
 
 const COMMON_TASK_VERBS = /^(完成|梳理|建立|实现|测试|修复|优化|设计|开发|检查|更新|创建|明确|制定|处理|进行|准备|编写|验证)/;
 const OPEN_TASK_STATES = new Set(['queued', 'claimed', 'running', 'waiting_input', 'waiting_dependency', 'waiting_approval', 'paused', 'blocked']);
@@ -58,55 +74,69 @@ export function ProjectWorkNavigation({
   const { data: mergeAttention } = useMergeAttention(projectId);
   void novel;
 
-  // 管理工作台批3：任务行置顶/归档 + >5 折叠显示更多 + 项目任务区折叠
+  const navigate = useNavigate();
+  const { data: projects = [] } = useProjects();
+  const { data: standaloneData } = useStandaloneTasks();
+  const createProjectTask = useCreateProjectTask();
   const pinTask = usePinProjectTask();
   const taskAction = useProjectTaskAction();
+
+  const [standaloneInput, setStandaloneInput] = useState('');
+  const [standaloneCollapsed, setStandaloneCollapsed] = useState(false);
+  const [projectsCollapsed, setProjectsCollapsed] = useState(false);
   const [showAllActive, setShowAllActive] = useState(false);
   const [tasksCollapsed, setTasksCollapsed] = useState(false);
 
-  const firstAgent = agents.find((agent) => agent.id === firstAgentId);
+  const standaloneTasks = (standaloneData?.tasks ?? []).filter((t) => t.state !== 'archived');
+  const standaloneProjectId = standaloneData?.projectId;
+
+  const handleAddStandalone = (): void => {
+    const t = standaloneInput.trim();
+    if (!t || !standaloneProjectId) return;
+    createProjectTask.mutate(
+      {
+        projectId: standaloneProjectId,
+        title: t,
+        launchBrief: {
+          expectedOutcome: t,
+          audience: '',
+          effectAndStyle: '',
+          constraints: '',
+          deliverables: [],
+          requiredCapabilityIds: [],
+          requiredSkillIds: [],
+          externalResearchNeeds: [],
+          references: [],
+          needsVisualConfirmation: false,
+          visualReferences: [],
+        },
+      },
+      {
+        onSuccess: () => {
+          setStandaloneInput('');
+          toast('success', '独立任务已添加');
+        },
+      },
+    );
+  };
+
   const activeProjectTasks = projectTasks.filter((item) => item.state === 'active');
   const historyProjectTasks = projectTasks.filter((item) => item.state !== 'active');
   const visibleActive = showAllActive ? activeProjectTasks : activeProjectTasks.slice(0, 5);
-  const groupHref = `/projects/${projectId}?view=group${selectedProjectTaskId ? `&projectTask=${selectedProjectTaskId}` : ''}`;
 
-  const departmentGroups = departments.map((department) => ({
-    ...department,
-    employees: agents.filter((agent) => agent.departmentId === department.id && agent.id !== firstAgentId),
-  }));
-  const unassigned = agents.filter((agent) => !agent.departmentId && agent.id !== firstAgentId);
-  const groups = [...departmentGroups, ...(unassigned.length ? [{ id: 'unassigned', name: '其他成员', rules: {}, createdAt: '', updatedAt: '', employees: unassigned }] : [])];
-
-  const employeeRow = (agent: Agent): React.ReactElement => {
-    const employeeTasks = tasks.filter((task) => task.assigneeAgentId === agent.id && OPEN_TASK_STATES.has(task.state));
-    const selected = view === 'employee' && selectedAgentId === agent.id;
-    return (
-      <div key={agent.id} className={`org-employee ${selected ? 'is-active' : ''}`}>
-        <Link className="org-employee-link" to={employeeHref(projectId, agent.id, selectedProjectTaskId)} aria-current={selected ? 'page' : undefined}>
-          <span className={`org-presence is-${agent.availabilityState}`} aria-hidden="true" />
-          <span className="org-avatar" aria-hidden="true">{agent.name.slice(0, 1)}</span>
-          <span className="org-employee-copy"><strong>{agent.name}</strong><small>{agent.role}</small></span>
-          {employeeTasks.length > 0 && <span className="work-nav-count">{employeeTasks.length}</span>}
-        </Link>
-        {employeeTasks.length > 0 && (
-          <div className="org-employee-tasks">
-            {employeeTasks.slice(0, selected ? 4 : 2).map((task) => (
-              <Link key={task.id} to={`/tasks/${task.id}`} title={task.title}>
-                <span className="org-task-state" data-state={task.state} aria-hidden="true" />
-                <span>{task.title}</span>
-              </Link>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  };
+  // 项目按分组聚合
+  const groupMap = new Map<string, Project[]>();
+  for (const p of projects) {
+    const g = typeof p.settings?.group === 'string' && p.settings.group.trim() ? p.settings.group.trim() : '未分组';
+    if (!groupMap.has(g)) groupMap.set(g, []);
+    groupMap.get(g)!.push(p);
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100%', justifyContent: 'space-between' }}>
       <div>
         {/* 顶部主操作：新建任务（直建，不跳转） */}
-        <div style={{ padding: '12px 10px 8px' }}>
+        <div style={{ padding: '10px 10px 6px' }}>
           <button
             type="button"
             className="mu-btn mu-btn-primary mu-btn-sm"
@@ -117,7 +147,129 @@ export function ProjectWorkNavigation({
           </button>
         </div>
 
-        {/* 核心项目任务列表（pinned 置顶序由服务端返回；>5 折叠；区块可折叠） */}
+        {/* 1. 独立任务区（随手记随手派） */}
+        <div className="work-nav-section" style={{ borderBottom: '1px solid var(--border-subtle)', paddingBottom: 6 }}>
+          <button
+            type="button"
+            className="work-nav-heading"
+            style={{ display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between', border: 'none', background: 'transparent', cursor: 'pointer', color: 'inherit', padding: 0 }}
+            onClick={() => setStandaloneCollapsed((v) => !v)}
+            aria-expanded={!standaloneCollapsed}
+          >
+            <span>{standaloneCollapsed ? '▸' : '▾'} ⚡ 独立任务</span>
+            <span style={{ fontSize: '11px', color: 'var(--fg-subtle)' }}>{standaloneTasks.length}</span>
+          </button>
+
+          {!standaloneCollapsed && (
+            <div style={{ padding: '4px 6px' }}>
+              <div style={{ display: 'flex', gap: 4, marginBottom: 6 }}>
+                <input
+                  value={standaloneInput}
+                  onChange={(e) => setStandaloneInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleAddStandalone(); }}
+                  placeholder="随手记小任务…"
+                  style={{ flex: 1, fontSize: 11, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border-subtle)', background: 'var(--bg-elev)', color: 'var(--fg)' }}
+                />
+                <button
+                  type="button"
+                  onClick={handleAddStandalone}
+                  disabled={!standaloneInput.trim()}
+                  style={{ border: 'none', background: 'var(--accent)', color: '#fff', borderRadius: 6, padding: '0 8px', fontSize: 11, cursor: 'pointer' }}
+                >
+                  ＋
+                </button>
+              </div>
+
+              {standaloneTasks.slice(0, 6).map((t) => {
+                const isSelected = selectedProjectTaskId === t.id;
+                return (
+                  <div key={t.id} className={`work-nav-item ${isSelected ? 'is-active' : ''}`} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 6px', borderRadius: 6 }}>
+                    <button
+                      type="button"
+                      aria-label={t.pinned ? '取消置顶' : '置顶'}
+                      style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 11, padding: 0 }}
+                      onClick={() => standaloneProjectId && pinTask.mutate({ projectId: standaloneProjectId, id: t.id, pinned: !t.pinned })}
+                    >
+                      {t.pinned ? '📌' : '🔘'}
+                    </button>
+                    <Link
+                      to={`/projects/${standaloneProjectId}?view=task&projectTask=${t.id}`}
+                      style={{ flex: 1, minWidth: 0, textDecoration: 'none', color: 'inherit', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                    >
+                      {t.unread ? <span aria-label="未读" style={{ display: 'inline-block', width: 5, height: 5, borderRadius: 999, background: 'var(--accent)', marginRight: 4 }} /> : null}
+                      {t.title}
+                    </Link>
+                    <button
+                      type="button"
+                      aria-label="归档"
+                      style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 11, color: 'var(--fg-subtle)', padding: 0 }}
+                      onClick={() => standaloneProjectId && taskAction.mutate({ projectId: standaloneProjectId, id: t.id, action: 'archive' })}
+                    >
+                      📦
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* 2. 全部项目与分组列表 */}
+        <div className="work-nav-section" style={{ borderBottom: '1px solid var(--border-subtle)', paddingBottom: 6 }}>
+          <div style={{ display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between', padding: '0 0 4px' }}>
+            <button
+              type="button"
+              className="work-nav-heading"
+              style={{ display: 'flex', alignItems: 'center', gap: 4, border: 'none', background: 'transparent', cursor: 'pointer', color: 'inherit', padding: 0 }}
+              onClick={() => setProjectsCollapsed((v) => !v)}
+              aria-expanded={!projectsCollapsed}
+            >
+              <span>{projectsCollapsed ? '▸' : '▾'} 📁 项目列表</span>
+              <span style={{ fontSize: '11px', color: 'var(--fg-subtle)' }}>{projects.length}</span>
+            </button>
+            <DropdownMenu
+              label="添加项目"
+              items={[
+                { key: 'new', label: '🆕 新建项目', onSelect: () => navigate('/projects/new') },
+                { key: 'open', label: '📂 打开本地目录…', onSelect: () => navigate('/projects/new?mode=open') },
+              ]}
+            >
+              <span style={{ cursor: 'pointer', fontSize: 12, color: 'var(--accent)', padding: '0 4px' }} title="添加或接管项目">＋</span>
+            </DropdownMenu>
+          </div>
+
+          {!projectsCollapsed && (
+            <div style={{ padding: '2px 0' }}>
+              {Array.from(groupMap.entries()).map(([gName, pList]) => (
+                <div key={gName} style={{ marginBottom: 4 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--fg-subtle)', padding: '2px 8px' }}>
+                    # {gName} ({pList.length})
+                  </div>
+                  {pList.map((p) => {
+                    const isCur = p.id === projectId;
+                    return (
+                      <Link
+                        key={p.id}
+                        className={`work-nav-item ${isCur ? 'is-active' : ''}`}
+                        to={`/projects/${p.id}`}
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 8px 4px 14px' }}
+                      >
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12 }}>
+                          {isCur ? '▸ ' : '• '}{p.name}
+                        </span>
+                        <span style={{ fontSize: 10, opacity: 0.7 }}>
+                          {p.state === 'active' ? '进行中' : p.state}
+                        </span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 3. 核心项目任务列表（pinned 置顶序由服务端返回；>5 折叠；区块可折叠） */}
         <div className="work-nav-section">
           <button
             type="button"
@@ -126,7 +278,7 @@ export function ProjectWorkNavigation({
             onClick={() => setTasksCollapsed((v) => !v)}
             aria-expanded={!tasksCollapsed}
           >
-            <span>{tasksCollapsed ? '▸' : '▾'} 项目任务</span>
+            <span>{tasksCollapsed ? '▸' : '▾'} 📌 当前项目任务</span>
             <span style={{ fontSize: '11px', color: 'var(--fg-subtle)' }}>{projectTasks.length}</span>
           </button>
 
@@ -210,54 +362,36 @@ export function ProjectWorkNavigation({
           )}
         </div>
 
-        {/* 团队协作入口（折叠收纳，避免满屏人员散落） */}
-        <div className="work-nav-section project-contacts">
-          <div className="work-nav-heading"><span>协作与沟通</span></div>
-          <Link className={`work-nav-item ${view === 'group' ? 'is-active' : ''}`} to={groupHref}>
-            <span className="work-nav-icon">💬</span>
-            <span className="work-nav-label">项目群聊</span>
-          </Link>
-          {firstAgent && (
-            <div className="pinned-contact" style={{ marginTop: '4px' }}>
-              <span className="pinned-label">置顶 · 第一负责人</span>
-              {employeeRow(firstAgent)}
-            </div>
-          )}
-          {groups.some(g => g.employees.length > 0) && (
-            <details className="org-department" style={{ marginTop: '4px' }}>
-              <summary><span>团队成员</span><span>{agents.length}</span></summary>
-              <div>
-                {groups.map((group) => group.employees.map(employeeRow))}
-              </div>
-            </details>
-          )}
-        </div>
-
-        {/* 常用功能入口 */}
+        {/* 4. 常用功能入口 */}
         <div className="work-nav-section">
           <div className="work-nav-heading"><span>工具与资产</span></div>
-          <Link className={`work-nav-item ${activeTool === 'tasks' ? 'is-active' : ''}`} to={`/projects/${projectId}/tasks`}>
-            <span className="work-nav-icon">📋</span>
-            <span className="work-nav-label">任务领取清单</span>
-            {attentionCount > 0 && <span className="work-nav-count">{attentionCount}</span>}
-          </Link>
-          <Link className={`work-nav-item ${activeTool === 'merges' ? 'is-active' : ''}`} to={`/projects/${projectId}/merges`}>
-            <span className="work-nav-icon">🔀</span>
-            <span className="work-nav-label">待合并成果</span>
-            {(mergeAttention?.staleMerges ?? 0) > 0 && (
-              <span title={`有 ${mergeAttention!.staleMerges} 个任务集成区搁置 ≥5 小时未合并`} style={{ marginLeft: 'auto', background: 'var(--err, #dc2626)', color: '#fff', borderRadius: 999, fontSize: 10, lineHeight: 1, padding: '2px 6px', flexShrink: 0 }}>
-                {mergeAttention!.staleMerges}
-              </span>
-            )}
-          </Link>
-          <Link className={`work-nav-item ${activeTool === 'artifacts' ? 'is-active' : ''}`} to={`/projects/${projectId}/artifacts`}>
-            <span className="work-nav-icon">📦</span>
-            <span className="work-nav-label">成果与文件</span>
-          </Link>
-          <Link className={`work-nav-item ${activeTool === 'plans' ? 'is-active' : ''}`} to={`/projects/${projectId}/plans`}>
-            <span className="work-nav-icon">⚡</span>
-            <span className="work-nav-label">自动化</span>
-          </Link>
+          {/* review 修复：新建项目外壳 projectId 为空——项目级工具链接跳过，避免 /projects//tasks 空段路由 */}
+          {projectId && (
+            <>
+              <Link className={`work-nav-item ${activeTool === 'tasks' ? 'is-active' : ''}`} to={`/projects/${projectId}/tasks`}>
+                <span className="work-nav-icon">📋</span>
+                <span className="work-nav-label">任务领取清单</span>
+                {attentionCount > 0 && <span className="work-nav-count">{attentionCount}</span>}
+              </Link>
+              <Link className={`work-nav-item ${activeTool === 'merges' ? 'is-active' : ''}`} to={`/projects/${projectId}/merges`}>
+                <span className="work-nav-icon">🔀</span>
+                <span className="work-nav-label">待合并成果</span>
+                {(mergeAttention?.staleMerges ?? 0) > 0 && (
+                  <span title={`有 ${mergeAttention!.staleMerges} 个任务集成区搁置 ≥5 小时未合并`} style={{ marginLeft: 'auto', background: 'var(--err, #dc2626)', color: '#fff', borderRadius: 999, fontSize: 10, lineHeight: 1, padding: '2px 6px', flexShrink: 0 }}>
+                    {mergeAttention!.staleMerges}
+                  </span>
+                )}
+              </Link>
+              <Link className={`work-nav-item ${activeTool === 'artifacts' ? 'is-active' : ''}`} to={`/projects/${projectId}/artifacts`}>
+                <span className="work-nav-icon">📦</span>
+                <span className="work-nav-label">成果与文件</span>
+              </Link>
+              <Link className={`work-nav-item ${activeTool === 'plans' ? 'is-active' : ''}`} to={`/projects/${projectId}/plans`}>
+                <span className="work-nav-icon">⚡</span>
+                <span className="work-nav-label">自动化</span>
+              </Link>
+            </>
+          )}
           <Link className="work-nav-item" to="/blueprints">
             <span className="work-nav-icon">🧭</span>
             <span className="work-nav-label">蓝图库</span>

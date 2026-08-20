@@ -1226,3 +1226,82 @@
 /* ===== WP5 流式打字机光标 ===== */
 .mu-stream-cursor { display: inline-block; animation: mu-stream-blink 0.9s steps(1) infinite; color: var(--accent); margin-left: 2px; }
 @keyframes mu-stream-blink { 50% { opacity: 0; } }
+
+/* ===== 中栏工作台表面容器与吸底标签栏 ===== */
+.workbench-surface {
+  padding: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+.work-surface-page {
+  width: 100% !important;
+  max-width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+.workbench-tabs-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.workbench-tabs-bar::-webkit-scrollbar {
+  display: none;
+}
+.workbench-bottom-tabs-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-surface, var(--bg-elev));
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex-shrink: 0;
+  min-height: 46px;
+  z-index: 25;
+}
+.workbench-bottom-tabs-bar::-webkit-scrollbar {
+  display: none;
+}
+.workbench-tab-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full, 999px);
+  background: var(--bg-soft);
+  color: var(--fg-muted);
+  font-family: inherit;
+  font-size: var(--text-xs, 12px);
+  font-weight: 550;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: all var(--duration-fast, 0.15s) var(--ease-out);
+  user-select: none;
+}
+.workbench-tab-pill:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+  border-color: var(--border-strong);
+}
+.workbench-tab-pill.is-active {
+  background: var(--bg-elev);
+  color: var(--accent);
+  border-color: var(--accent);
+  font-weight: 700;
+  box-shadow: var(--shadow-1);
+}
+
+
+

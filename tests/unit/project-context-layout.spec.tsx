@@ -59,9 +59,9 @@ describe('project task workspace layout', () => {
         </MemoryRouter>
       </QueryClientProvider>,
     );
-    expect(screen.getByText('👥 团队智能体')).toBeInTheDocument();
+    // 2026-08-20 UI 重构：检查器 tabs = 员工信息/任务清单/产物（员工中心抽屉语义不变）
+    expect(screen.getByText('👤 员工信息')).toBeInTheDocument();
     expect(screen.getByText('📋 任务清单')).toBeInTheDocument();
     expect(screen.getByText('📦 产物')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '对话' })).toBeInTheDocument();
   });
 });

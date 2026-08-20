@@ -23,6 +23,9 @@ import {
 import { getAgentProfile } from '../domain/agent-profile';
 import { materializeAgentHome } from '../domain/agent-home';
 
+import { ensureWorkspaceStaff } from '../domain/workspace-staff';
+import { getWorkbenchOrNull } from '../domain/workbench';
+
 export const agentsRouter = Router({ mergeParams: true });
 
 const createAgentSchema = z.object({
@@ -45,7 +48,12 @@ const createAgentSchema = z.object({
 agentsRouter.get(
   '/',
   asyncHandler(async (req, res) => {
-    res.json(listAgents(getDb()));
+    // review 修复：无 workbench 的裸库（测试/极早期）返回空列表而非 404——ensure 仅在 workbench 存在时执行
+    const db = getDb();
+    if (getWorkbenchOrNull(db)) {
+      ensureWorkspaceStaff(db);
+    }
+    res.json(listAgents(db));
   }),
 );
 

@@ -125,6 +125,11 @@ export function createProject(
   // rootDir 未指定时自动生成默认路径，降低建项目门槛。
   // ensureGitRepo() 会在首个 worktree 创建时自动 mkdir + git init。
   const requestedRootDir = input.rootDir?.trim();
+  // review 修复：显式目录（打开本地项目）必须是绝对路径——相对路径会在首个 worktree 时
+  // 被解析进服务进程 cwd（mkdir+git init 落错位置），与 migrateProjectRootDir 同口径
+  if (requestedRootDir && !isAbsolute(requestedRootDir)) {
+    throw new AppError(ErrorCode.VALIDATION, '项目目录必须是绝对路径');
+  }
   const rootDir = requestedRootDir || defaultRootDir(
     ensureDefaultWorkspace(db, join(homedir(), 'MusterWorkspace')).rootDir,
     input.name,
@@ -206,6 +211,27 @@ export function ensureStandaloneProject(db: DB): { project: Project; created: bo
   });
   return { project: flagged, created: true };
 }
+
+/**
+ * 确保工作台至少存在一个默认项目（防零项目导致工作台空态断层）。
+ */
+export function ensureDefaultProject(db: DB): { project: Project; created: boolean } {
+  const rows = db.prepare('SELECT * FROM project ORDER BY created_at ASC').all() as ProjectRow[];
+  const existing = rows.map((r) => fromRow(db, r)).find((p) => {
+    const s = p.settings as Record<string, unknown>;
+    return s.inbox !== true && s.standalone !== true && s.removed !== true && p.state !== 'archived';
+  });
+  if (existing) return { project: existing, created: false };
+  const staff = ensureWorkspaceStaff(db);
+  const project = createProject(db, {
+    name: '默认项目',
+    description: '工作台默认项目',
+    firstAgentId: staff.leadAgentId,
+    initialState: 'active',
+  });
+  return { project, created: true };
+}
+
 
 /**
  * 管理工作台批1：移除项目（三点菜单「移除」）。

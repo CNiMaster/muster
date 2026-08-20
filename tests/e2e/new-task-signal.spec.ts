@@ -23,8 +23,8 @@ test('工具页新建任务信号：创建卡弹出 + 群聊可用 + 无 new 哨
   // 创建卡弹出（URL 信号被消费为 newTaskSignal）
   await expect(page.getByPlaceholder('例如：重构前端三栏工作台布局')).toBeVisible();
 
-  // 切项目群聊并发消息（修复前：selectedProjectTaskId='new' → 发消息 projectTaskId='new' 报错）
-  await page.getByRole('link', { name: /项目群聊/ }).click();
+  // 切项目群聊并发消息（2026-08-20 UI 重构：群聊入口=底部药丸按钮；修复前 selectedProjectTaskId='new' → 发消息报错）
+  await page.getByRole('button', { name: /项目群聊/ }).click();
   const composer = page.locator('textarea').last();
   await composer.fill('群聊应可用：修复 new 哨兵卡死');
   await composer.press('Enter');

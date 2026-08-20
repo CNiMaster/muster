@@ -15,11 +15,12 @@ import { getEmployeePermissionPolicy } from './permission';
 import { getRoleTemplate } from './permission-templates';
 import { bindEmployeePermissionPolicy } from './permission';
 import { ensureAcceptanceOfficer } from './acceptance-officer';
+import { ensureDispatcherAgentId, ensureHrAgentId } from './system-agents';
 
 export const WORKSPACE_LEAD_NAME = '项目第一负责人';
 
-/** 确保工作台固定员工就位：第一负责人（可见）+ 验收员（可见）。幂等。 */
-export function ensureWorkspaceStaff(db: DB): { leadAgentId: string; acceptanceAgentId: string } {
+/** 确保工作台四固定员工就位：第一负责人 + 养蜂人 + 人事 + 验收员（全部可见）。幂等。 */
+export function ensureWorkspaceStaff(db: DB): { leadAgentId: string; acceptanceAgentId: string; dispatcherAgentId: string; hrAgentId: string } {
   const company = getWorkbench(db);
   const visibleAgents = listAgents(db);
   let lead = visibleAgents.find((a) => a.role === 'lead' && !a.isSystem);
@@ -43,8 +44,12 @@ export function ensureWorkspaceStaff(db: DB): { leadAgentId: string; acceptanceA
     }
   }
   const acceptanceAgentId = ensureAcceptanceOfficer(db);
+  const dispatcherAgentId = ensureDispatcherAgentId(db);
+  const hrAgentId = ensureHrAgentId(db);
+
   if (!company.firstAgentId) {
     updateWorkbench(db, { firstAgentId: lead.id });
   }
-  return { leadAgentId: lead.id, acceptanceAgentId };
+  return { leadAgentId: lead.id, acceptanceAgentId, dispatcherAgentId, hrAgentId };
 }
+
