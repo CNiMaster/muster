@@ -174,8 +174,15 @@ export function commitAll(
   return git(wtPath, ['rev-parse', 'HEAD']).stdout;
 }
 
+/** 当前 HEAD（worktree 路径用）。 */
 export function currentHead(wtPath: string): string {
   return git(wtPath, ['rev-parse', 'HEAD']).stdout;
+}
+
+/** 仓库 HEAD 的只读兜底版：非 git 仓库/失败返回 null 不抛——轮询链路用（看板 GET 不因 git 异常 500）。 */
+export function repoHeadOrNull(rootDir: string): string | null {
+  const r = git(rootDir, ['rev-parse', 'HEAD'], { allowFail: true });
+  return r.status === 0 && r.stdout ? r.stdout : null;
 }
 
 // ===== staging 集成审查（2026-08-17，spec: docs/superpowers/specs/2026-08-17-staging-integration-review.md）=====
@@ -361,7 +368,8 @@ export function taskStagingMergePreview(rootDir: string, branch: string): TaskSt
   const r = git(rootDir, ['-c', 'core.quotePath=false', 'merge-tree', '--write-tree', '--name-only', 'HEAD', branch], { allowFail: true });
   if (r.status === 0) return { supported: true, conflicted: false, conflicts: [] };
   const lines = r.stdout.split('\n').map((l) => l.trim()).filter(Boolean);
-  if (r.status === 1 && lines.length > 0 && /^[0-9a-f]{40}$/.test(lines[0]!)) {
+  // 树 OID：sha1 仓库 40-hex，sha256 仓库 64-hex（init.defaultHash=sha256 用户）
+  if (r.status === 1 && lines.length > 0 && /^([0-9a-f]{40}|[0-9a-f]{64})$/.test(lines[0]!)) {
     const conflicts = lines.slice(1).filter((l) => !l.startsWith('Auto-merging') && !l.startsWith('CONFLICT'));
     return { supported: true, conflicted: true, conflicts };
   }

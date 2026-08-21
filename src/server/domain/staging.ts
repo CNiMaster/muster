@@ -12,7 +12,7 @@ import { getTaskRuntime, deleteTaskRuntime } from './task-runtime';
 import {
   stageStatus, promoteStaging, taskStageStatus,
   taskStagingDiffSummary, promoteTaskStagingMerge, listTaskStagingRefs, branchAheadCount, branchBehindCount,
-  taskStagingMergePreview, currentHead, detectOrphanWorktrees,
+  taskStagingMergePreview, repoHeadOrNull, detectOrphanWorktrees,
   ensureTaskStagingWorktree,
 } from '../worktree/manager';
 import { callLlm } from './llm-call';
@@ -170,19 +170,22 @@ export const STALE_MERGE_HOURS = 5;
 
 /**
  * 合并预演缓存（key=仓库:分支:分支头:主干头）：15s 轮询下两端 head 未动即命中，
- * 稳态每仓库只多付 1 次 rev-parse（取 mainHead）；上限清空防泄漏。
+ * 稳态每仓库只付 1 次 rev-parse（mainHead 由调用方按仓库提升到循环外）；
+ * 不支持（老 git/sha256 解析失败）也记账，防每轮重复跑注定失败的 merge-tree；上限清空防泄漏。
  */
-const mergePreviewCache = new Map<string, { conflicted: boolean; conflicts: string[] }>();
+const mergePreviewCache = new Map<string, { conflicted: boolean; conflicts: string[] } | 'unsupported'>();
 
-function cachedMergePreview(root: string, branch: string, branchHead: string): { conflicted: boolean; conflicts: string[] } | undefined {
-  const mainHead = currentHead(root);
+function cachedMergePreview(root: string, branch: string, branchHead: string, mainHead: string): { conflicted: boolean; conflicts: string[] } | undefined {
   const key = `${root}:${branch}:${branchHead}:${mainHead}`;
   const hit = mergePreviewCache.get(key);
-  if (hit) return hit;
-  const preview = taskStagingMergePreview(root, branch);
-  if (!preview.supported) return undefined; // 老 git：不带字段，UI 不显示
-  const value = { conflicted: preview.conflicted, conflicts: preview.conflicts };
+  if (hit) return hit === 'unsupported' ? undefined : hit;
   if (mergePreviewCache.size > 200) mergePreviewCache.clear();
+  const preview = taskStagingMergePreview(root, branch);
+  if (!preview.supported) {
+    mergePreviewCache.set(key, 'unsupported');
+    return undefined; // 老 git：不带字段，UI 不显示
+  }
+  const value = { conflicted: preview.conflicted, conflicts: preview.conflicts };
   mergePreviewCache.set(key, value);
   return value;
 }
@@ -221,6 +224,7 @@ export function listPendingTaskMerges(db: DB, projectId: string): PendingTaskMer
   }
   type PtRef = { branch: string; head: string; lastCommitAt: string };
   const refsByRoot = new Map<string, Map<string, PtRef>>();
+  const mainHeadByRoot = new Map<string, string>();
   for (const root of uniqueRoots) {
     try {
       refsByRoot.set(root, listTaskStagingRefs(root, projectId));
@@ -238,8 +242,14 @@ export function listPendingTaskMerges(db: DB, projectId: string): PendingTaskMer
     const aheadCommits = branchAheadCount(ptRoot ?? project.rootDir, ref.branch);
     if (aheadCommits === 0) continue;
     const behindCommits = branchBehindCount(ptRoot ?? project.rootDir, ref.branch);
-    // 合并预演只对 behind>0 的行做（behind=0 是 fast-forward 不可能冲突——省 spawn）
-    const mergePreview = behindCommits > 0 ? cachedMergePreview(ptRoot ?? project.rootDir, ref.branch, ref.head) : undefined;
+    // 合并预演只对 behind>0 的行做（behind=0 是 fast-forward 不可能冲突——省 spawn）；
+    // mainHead 按仓库提升到循环外只取一次（rev-parse 是稳态轮询的主要固定开销）
+    let mergePreview: PendingTaskMergeItem['mergePreview'];
+    if (behindCommits > 0) {
+      const previewRoot = ptRoot ?? project.rootDir;
+      if (!mainHeadByRoot.has(previewRoot)) mainHeadByRoot.set(previewRoot, repoHeadOrNull(previewRoot) ?? '');
+      mergePreview = cachedMergePreview(previewRoot, ref.branch, ref.head, mainHeadByRoot.get(previewRoot)!);
+    }
     const pending = db.prepare(
       "SELECT COUNT(*) AS n FROM task WHERE project_task_id=? AND state IN ('queued','claimed','running','waiting_input','waiting_dependency','waiting_approval','paused','blocked')",
     ).get(pt.id) as { n: number };
