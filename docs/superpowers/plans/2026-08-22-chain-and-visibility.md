@@ -1,5 +1,9 @@
 # 任务链与组织可见性 实施计划
 
+> 状态：implemented（2026-08-22）——B1-B5 五批全部交付于分支 `feat/chain-and-visibility`，每批独立 commit，未合 main 待高级审查。
+> 交付验证：tsc 0 错；vitest 220 文件 1404/1404；e2e 24 过 6 败（6 败在基线 4e4fe6c 原样复现——ui-mode 状态泄漏族，非本计划回归）。
+> 体检修正 6 项均已落实（能力管理双层/visible_in=central/contactAllow 种子/观测修复/finalReturn 播报不造任务/砍 watchdog 联动）。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 落实“一个人就是一个公司”——用户只对负责人说话，后台 6 职能（负责人/人事/养蜂人/能力管理/验收员/裁决庭）隐形但事在右侧可见；任务链以双指向（下一个给谁可改默认给审核、可中转多人；验收后最终给谁不可改）显式流转必经验收→负责人→用户；三档是广深上限不绑模型组内自决；工具分默认套装与按需武器（常用自动带+新工具挑战）用户无须查看；人设按命中率补齐。
