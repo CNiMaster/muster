@@ -25,7 +25,7 @@ import { ensureProjectThreads } from '../domain/thread';
 import { summarizeCompanyUsage } from '../domain/usage';
 import { companyArtifactGallery } from '../domain/artifact';
 import { searchArchive } from '../domain/archive';
-import { listAgents } from '../domain/agent';
+import { listAgents, listPersistentAgents } from '../domain/agent';
 import { getAgent } from '../domain/agent';
 import { listDepartments } from '../domain/department';
 import { getWorkbenchCockpit } from '../domain/workbench-cockpit';
@@ -239,8 +239,8 @@ workbenchRouter.get(
     const db = getDb();
     const companyId = companyIdOf(req);
     const departments = listDepartments(db);
-    // B5 观测修复：驾驶舱按 includeHidden 统计——隐形中央岗计入在岗人数
-    const agents = listAgents(db, { includeHidden: true });
+    // B5 观测修复→审查修复：驾驶舱按持久员工统计——隐形中央岗计入，一次性工蜂/辩手不灌水
+    const agents = listPersistentAgents(db);
     // 工作台所有项目下的线程与活跃 Task
     const threads = db
       .prepare(

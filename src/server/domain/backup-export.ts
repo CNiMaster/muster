@@ -13,7 +13,7 @@ import { nowIso, shortId } from '../../shared/utils';
 import { getWorkbench, restoreWorkbench } from './workbench';
 import { createDepartment, listDepartments } from './department';
 import { createAgentProfile, listAgentProfiles } from './agent-profile';
-import { createAgent, listAgents } from './agent';
+import { createAgent, listAgents, listPersistentAgents } from './agent';
 import { listProjects } from './project';
 import { getMusterDirectories } from './muster-directories';
 import { AppError, ErrorCode } from '../../shared/errors';
@@ -38,8 +38,9 @@ export function exportMusterBackup(db: DB): MusterBackup {
         contractJson: wb.contractJson,
         archivedAt: null,
         departments: listDepartments(db).map((d) => ({ name: d.name, rules: d.rules })),
-        // B5 观测修复：备份含隐形中央岗——否则导出丢员工（恢复后验收链路断人）
-        employees: listAgents(db, { includeHidden: true }).map((a) => ({
+        // B5 观测修复→审查修复：备份含隐形中央岗（否则恢复后验收链路断人），
+        // 排除一次性执行体（活跃蜂群的工蜂快照会变成恢复后的僵尸员工）
+        employees: listPersistentAgents(db).map((a) => ({
           profileId: a.profileId,
           departmentName: a.departmentId ? listDepartments(db).find((d) => d.id === a.departmentId)?.name ?? null : null,
           name: a.name,

@@ -102,7 +102,7 @@ export function ConversationPanel({ scope, scopeId, title, recipientAgentId, pro
 
   const send = (): void => {
     if (!text.trim()) return;
-    const mentions = recipientAgentId ? [recipientAgentId] : extractMentions(text, agents ?? []);
+    const mentions = recipientAgentId ? [recipientAgentId] : extractMentions(text, rosterPlus);
     post.mutate(
       { scopeId, content: text, mentions, projectTaskId },
       {
@@ -327,8 +327,12 @@ function WaitingQuestionReply({ refTaskId }: { refTaskId: string | null }): Reac
 
 function extractMentions(text: string, agents: Array<{ id: string; name: string }>): string[] {
   const matches = text.match(/@([^\s@]+)/g) ?? [];
+  // B5 @负责人 关键词透传：前端不认的 token 原样上送，服务端展开为全部 lead 岗
+  // （干员名各异，按名匹配永远捕不到"负责人"——透传是唯一通路）
+  const LEAD_KEYWORDS = new Set(['负责人', '所有负责人']);
   const ids = matches.flatMap((match) => {
     const name = match.slice(1);
+    if (LEAD_KEYWORDS.has(name)) return [name];
     return agents.filter((agent) => agent.name === name).map((agent) => agent.id);
   });
   return [...new Set(ids)];

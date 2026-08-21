@@ -565,6 +565,8 @@ export function assembleContext(
       .map((h) => h.title);
     delete inputPacket.chainHistory;
   }
+  // B3 审查修复：装备决议快照不进提示词 JSON——# 装备决议 段已渲染（对齐 userImages 先例，防双重携带）
+  delete inputPacket.resolvedToolChain;
   // 指挥系统：大规模并行任务的专职入口（养蜂人是隐形岗，不在 availableContacts 里）
   // 蓝图组织批次4e：懒确保——与公司上线时机解耦，首次装配上下文即自愈创建（幂等）。
   if (!lightweight) {

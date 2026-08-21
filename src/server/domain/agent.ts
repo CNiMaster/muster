@@ -310,6 +310,20 @@ export function listAgents(db: DB, options?: { includeHidden?: boolean; visibleI
   return rows.map((row) => withEmploymentBindings(db, fromRow(db, row)));
 }
 
+/**
+ * 持久员工清单（审查修复）：报表/备份/驾驶舱的观测口径——可见花名册 + 隐形中央岗 + greyed 临时工，
+ * 排除一次性执行体（蜂群工蜂 swarm-worker / 辩手 debater——活跃蜂群期间的备份快照会把它们变成
+ * 恢复后的僵尸员工，报表也会被逐蜂条目灌爆）。
+ */
+export function listPersistentAgents(db: DB): AgentDefinition[] {
+  const rows = db.prepare(
+    `SELECT * FROM agent_definition
+     WHERE role NOT IN ('swarm-worker', 'debater')
+     ORDER BY created_at`,
+  ).all() as AgentRow[];
+  return rows.map((row) => withEmploymentBindings(db, fromRow(db, row)));
+}
+
 /** 附带 company_employee 表的执行器/权限绑定（legacy_agent_id 与 agent_definition.id 同值）。 */
 function withEmploymentBindings(db: DB, agent: AgentDefinition): AgentDefinition {
   const row = db.prepare(
