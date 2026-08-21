@@ -344,6 +344,30 @@ export function branchBehindCount(rootDir: string, branch: string): number {
   return Number(git(rootDir, ['rev-list', '--count', `${branch}..HEAD`], { allowFail: true }).stdout || '0');
 }
 
+export interface TaskStagingMergePreview {
+  /** 当前 git 是否支持 merge-tree --write-tree（老版本 false——调用方跳过预演不炸）。 */
+  supported: boolean;
+  conflicted: boolean;
+  conflicts: string[];
+}
+
+/**
+ * 合并预演（零副作用）：`git merge-tree --write-tree` 在对象层试合并 HEAD 与分支，不碰工作区/索引/引用。
+ * 实证输出约定（git 2.4x）：exit 0 干净（stdout=结果树 OID）；exit 1 且 stdout 首行为 40-hex 树 OID
+ * = 冲突（其后依次为冲突文件名段与 Auto-merging/CONFLICT 信息段）；exit 1 但 stdout 空（如坏 ref）
+ * 或其他失败 = 不支持/异常。--name-only 只列名；quotePath=false 防中文路径八进制转义。
+ */
+export function taskStagingMergePreview(rootDir: string, branch: string): TaskStagingMergePreview {
+  const r = git(rootDir, ['-c', 'core.quotePath=false', 'merge-tree', '--write-tree', '--name-only', 'HEAD', branch], { allowFail: true });
+  if (r.status === 0) return { supported: true, conflicted: false, conflicts: [] };
+  const lines = r.stdout.split('\n').map((l) => l.trim()).filter(Boolean);
+  if (r.status === 1 && lines.length > 0 && /^[0-9a-f]{40}$/.test(lines[0]!)) {
+    const conflicts = lines.slice(1).filter((l) => !l.startsWith('Auto-merging') && !l.startsWith('CONFLICT'));
+    return { supported: true, conflicted: true, conflicts };
+  }
+  return { supported: false, conflicted: false, conflicts: [] };
+}
+
 /** 任务集成分支最后一次提交时间（ISO，无提交/无分支为 null）——搁置提醒（≥5h 红点）数据源。 */
 export function taskStagingLastCommitAt(rootDir: string, projectId: string, projectTaskId: string): string | null {
   if (!repoReady(rootDir)) return null;

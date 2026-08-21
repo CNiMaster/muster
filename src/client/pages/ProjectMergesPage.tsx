@@ -143,6 +143,16 @@ export function ProjectMergesPage(): React.ReactElement {
               </span>
               <Badge tone="info">领先 {item.aheadCommits} 提交</Badge>
               {item.behindCommits > 0 && <Badge tone="warn" title="主干已从该任务基线前进——合并将是三方合并，可能与他任务改动交叠">主干已前进 {item.behindCommits}</Badge>}
+              {item.mergePreview?.conflicted && (
+                <Badge
+                  tone="err"
+                  title={item.mergePreview.conflicts.length > 0
+                    ? `预计冲突文件：${item.mergePreview.conflicts.slice(0, 3).join('、')}${item.mergePreview.conflicts.length > 3 ? ` 等 ${item.mergePreview.conflicts.length} 个` : ''}（合并预演：merge-tree 对象层试合并，零副作用）`
+                    : '合并预演检出冲突（对象层试合并，零副作用）'}
+                >
+                  ⚠ 预计冲突{item.mergePreview.conflicts.length > 0 ? ` ${item.mergePreview.conflicts.length} 处` : ''}
+                </Badge>
+              )}
               {item.staleHours !== null && <Badge tone="err" title="任务集成区搁置 ≥5 小时未合并">搁置 {item.staleHours}h</Badge>}
               {item.pendingRuntimeTasks > 0 && <Badge tone="warn">{item.pendingRuntimeTasks} 在飞</Badge>}
               <Badge tone="neutral">{item.mergeMode === 'auto' ? '自动' : '手动'}</Badge>

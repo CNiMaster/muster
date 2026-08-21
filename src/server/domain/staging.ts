@@ -11,7 +11,8 @@ import { appendTaskEvent } from './task-event';
 import { getTaskRuntime, deleteTaskRuntime } from './task-runtime';
 import {
   stageStatus, promoteStaging, taskStageStatus,
-  taskStagingDiffSummary, promoteTaskStagingMerge, listTaskStagingRefs, branchAheadCount, branchBehindCount, detectOrphanWorktrees,
+  taskStagingDiffSummary, promoteTaskStagingMerge, listTaskStagingRefs, branchAheadCount, branchBehindCount,
+  taskStagingMergePreview, currentHead, detectOrphanWorktrees,
   ensureTaskStagingWorktree,
 } from '../worktree/manager';
 import { callLlm } from './llm-call';
@@ -155,6 +156,8 @@ export interface PendingTaskMergeItem {
   aheadCommits: number;
   /** 主干已从该集成分支基线前进的提交数（behind>0 = 合并将是三方合并，分叉风险可见性）。 */
   behindCommits: number;
+  /** 合并预演（仅 behind>0 且 git 支持 merge-tree 时存在）：merge-tree 对象层试合并的冲突预测。 */
+  mergePreview?: { conflicted: boolean; conflicts: string[] };
   pendingRuntimeTasks: number;
   mergeMode: 'manual' | 'auto';
   lastMergeAt: string | null;
@@ -164,6 +167,25 @@ export interface PendingTaskMergeItem {
 
 /** 搁置提醒阈值（小时）：manual 默认下任务集成区领先超过此时长未合并 → 红点提醒。 */
 export const STALE_MERGE_HOURS = 5;
+
+/**
+ * 合并预演缓存（key=仓库:分支:分支头:主干头）：15s 轮询下两端 head 未动即命中，
+ * 稳态每仓库只多付 1 次 rev-parse（取 mainHead）；上限清空防泄漏。
+ */
+const mergePreviewCache = new Map<string, { conflicted: boolean; conflicts: string[] }>();
+
+function cachedMergePreview(root: string, branch: string, branchHead: string): { conflicted: boolean; conflicts: string[] } | undefined {
+  const mainHead = currentHead(root);
+  const key = `${root}:${branch}:${branchHead}:${mainHead}`;
+  const hit = mergePreviewCache.get(key);
+  if (hit) return hit;
+  const preview = taskStagingMergePreview(root, branch);
+  if (!preview.supported) return undefined; // 老 git：不带字段，UI 不显示
+  const value = { conflicted: preview.conflicted, conflicts: preview.conflicts };
+  if (mergePreviewCache.size > 200) mergePreviewCache.clear();
+  mergePreviewCache.set(key, value);
+  return value;
+}
 
 function staleHoursSince(at: string | null): number | null {
   if (!at) return null;
@@ -216,6 +238,8 @@ export function listPendingTaskMerges(db: DB, projectId: string): PendingTaskMer
     const aheadCommits = branchAheadCount(ptRoot ?? project.rootDir, ref.branch);
     if (aheadCommits === 0) continue;
     const behindCommits = branchBehindCount(ptRoot ?? project.rootDir, ref.branch);
+    // 合并预演只对 behind>0 的行做（behind=0 是 fast-forward 不可能冲突——省 spawn）
+    const mergePreview = behindCommits > 0 ? cachedMergePreview(ptRoot ?? project.rootDir, ref.branch, ref.head) : undefined;
     const pending = db.prepare(
       "SELECT COUNT(*) AS n FROM task WHERE project_task_id=? AND state IN ('queued','claimed','running','waiting_input','waiting_dependency','waiting_approval','paused','blocked')",
     ).get(pt.id) as { n: number };
@@ -230,6 +254,7 @@ export function listPendingTaskMerges(db: DB, projectId: string): PendingTaskMer
       branch: ref.branch,
       aheadCommits,
       behindCommits,
+      ...(mergePreview ? { mergePreview } : {}),
       pendingRuntimeTasks: pending.n,
       mergeMode,
       lastMergeAt: last?.created_at ?? null,

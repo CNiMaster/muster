@@ -107,3 +107,33 @@ describe('批次2：behind 徽章（分叉可见性）', () => {
     expect(after[0]!.aheadCommits).toBe(1);
   });
 });
+
+describe('批次3：merge-tree 合并预演（零副作用冲突预测）', () => {
+  it('同区域双改 → conflicted 且命中文件名；不重叠 → 干净；behind=0 → 无预演字段', () => {
+    // 冲突：集成分支与主干改了同一文件的同一行
+    const f = fixturePendingStaging('conf', { 'base.txt': 'staged-line\n' });
+    writeFileSync(path.join(f.rootDir, 'base.txt'), 'main-line\n');
+    git(f.rootDir, ['add', '-A']);
+    git(f.rootDir, ['commit', '-m', 'main diverges']);
+    const board = listPendingTaskMerges(db, f.projectId);
+    expect(board[0]!.behindCommits).toBe(1);
+    expect(board[0]!.mergePreview?.conflicted).toBe(true);
+    expect(board[0]!.mergePreview?.conflicts).toContain('base.txt');
+
+    // 干净：分支与主干各改各的文件
+    const f2 = fixturePendingStaging('clean', { 'branch-new.txt': 'x\n' });
+    writeFileSync(path.join(f2.rootDir, 'main-only.txt'), 'm\n');
+    git(f2.rootDir, ['add', '-A']);
+    git(f2.rootDir, ['commit', '-m', 'main other file']);
+    const board2 = listPendingTaskMerges(db, f2.projectId);
+    expect(board2[0]!.behindCommits).toBe(1);
+    expect(board2[0]!.mergePreview?.conflicted).toBe(false);
+    expect(board2[0]!.mergePreview?.conflicts).toEqual([]);
+
+    // behind=0：fast-forward 不可能冲突，无预演字段
+    const f3 = fixturePendingStaging('ff');
+    const board3 = listPendingTaskMerges(db, f3.projectId);
+    expect(board3[0]!.behindCommits).toBe(0);
+    expect(board3[0]!.mergePreview).toBeUndefined();
+  });
+});
