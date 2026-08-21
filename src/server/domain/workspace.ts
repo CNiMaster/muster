@@ -245,15 +245,27 @@ export function migrateWorkspace(db: DB, id: string, newRootDir: string): Migrat
 
   // 3. DB 更新（事务原子）：workspace.root_dir + 所有项目 root_dir 前缀重映射 + 标记完成。
   //    若此步抛错或进程中断，workspace 保持 migrating，由启动时 recoverInterruptedMigrations 补提。
+  //    治理修复轮：任务载体仓库（project_task.repo_root_dir）/回收站（project_trash 两列）/
+  //    绑定目录（project_dir.path）同样按前缀重映射——否则迁移后载体路径指向旧根，
+  //    resolveTaskRepoRoot 会误判目录丢失而分叉出空仓库。
   const oldPrefix = `${oldRoot}${oldRoot.endsWith('/') ? '' : '/'}`;
   const newPrefix = `${newRoot}${newRoot.endsWith('/') ? '' : '/'}`;
+  const remapPathColumn = (table: string, col: string): void => {
+    db.prepare(`UPDATE ${table} SET ${col} = ? || substr(${col}, ?) WHERE ${col} LIKE ?`)
+      .run(newPrefix, oldPrefix.length + 1, `${oldPrefix}%`);
+  };
   const remapped = db.transaction(() => {
     const now = nowIso();
     db.prepare("UPDATE workspace SET root_dir=?, status='normal', migrate_target_dir=NULL, updated_at=? WHERE id=?")
       .run(newRoot, now, id);
-    return db.prepare(
+    const changes = db.prepare(
       'UPDATE project SET root_dir = ? || substr(root_dir, ?) WHERE root_dir LIKE ?',
     ).run(newPrefix, oldPrefix.length + 1, `${oldPrefix}%`).changes;
+    remapPathColumn('project_task', 'repo_root_dir');
+    remapPathColumn('project_trash', 'trash_dir');
+    remapPathColumn('project_trash', 'original_root_dir');
+    remapPathColumn('project_dir', 'path');
+    return changes;
   })();
 
   return { workspace: getWorkspace(db, id), movedDirs: 1, remappedProjects: remapped, usedCopyFallback };
@@ -282,11 +294,19 @@ export function recoverInterruptedMigrations(db: DB): number {
     const oldRoot = row.root_dir;
     const oldPrefix = `${oldRoot}${oldRoot.endsWith('/') ? '' : '/'}`;
     const newPrefix = `${target}${target.endsWith('/') ? '' : '/'}`;
+    const remapPathColumn = (table: string, col: string): void => {
+      db.prepare(`UPDATE ${table} SET ${col} = ? || substr(${col}, ?) WHERE ${col} LIKE ?`)
+        .run(newPrefix, oldPrefix.length + 1, `${oldPrefix}%`);
+    };
     db.transaction(() => {
       db.prepare("UPDATE workspace SET root_dir=?, status='normal', migrate_target_dir=NULL, updated_at=? WHERE id=?")
         .run(target, now, row.id);
       db.prepare('UPDATE project SET root_dir = ? || substr(root_dir, ?) WHERE root_dir LIKE ?')
         .run(newPrefix, oldPrefix.length + 1, `${oldPrefix}%`);
+      remapPathColumn('project_task', 'repo_root_dir');
+      remapPathColumn('project_trash', 'trash_dir');
+      remapPathColumn('project_trash', 'original_root_dir');
+      remapPathColumn('project_dir', 'path');
     })();
     recovered++;
   }

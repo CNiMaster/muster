@@ -65,6 +65,19 @@ Muster is a local multi-agent workbench. Persistent agents collaborate through p
 
 **staging 合并看门狗（2026-08-19）**：合并责任链定论——普通任务完工即由发布管线直接合并主干；蜂群系产物进 staging，收口（无验收标准）或验收 PASS 自动 promote；唯一缺口（有验收标准但验收链断 → staging 无限积压）由看门狗堵上：coordinator 每 10 分钟 `sweepStaleStaging`（staging.ts），领先且无活跃蜂群、无在办 [验收] 任务 → 自动 promote，冲突升级用户（同 stagingHead 只提醒一次，`staging_watchdog` 表记账）。
 
+## Workspace 治理（2026-08-20 定案，分支 feat/workspace-governance，批次1 已交付）
+
+计划：`docs/superpowers/plans/2026-08-20-workspace-governance.md`（定案全记录+批次2-5 待做）。背景：真实 `~/MusterWorkspace/projects` 曾积累 367 个纯测试残留目录（MUSTER_HOME 不覆盖 workspace 根所致，2026-08-20 根因修复）。
+
+- **磁盘规矩（唯一事实源 `src/server/domain/workspace-layout.ts`）**：`projects/<纯名>`（仅撞名时后来者加 `-YYYYMMDD`/`-HHmm`/`-2`，显示名永无后缀）；独立任务载体仓库 `tasks/<YYYY-MM>/<MMDD-HHmm>-<截断≤8字>/`（project_task.repo_root_dir 记录，同载体多轮共享一仓，pt-<ptid> 集成拓扑不变）；基础设施（收件箱/独立任务）在 `.system/`；回收站 `.trash/`（批次2）。每系统目录写 `.muster/dir.json` marker（孤儿对账依据）。
+- **MUSTER_HOME 语义扩展**：设置时 workspace 默认根= `$MUSTER_HOME/MusterWorkspace`（defaultWorkspaceRoot()），未设= `~/MusterWorkspace` 不变。测试三通道全隔离：e2e（playwright webServer env）/ smoke（自起服务）/ **vitest（tests/setup-env.ts setupFile 默认补 MUSTER_HOME+放行测试根）**——任何测试不得再落真实家目录。
+- **仓库根解析**：引擎/看板/promote/discard 一律走 `task-repo.ts resolveTaskRepoRoot`（独立任务按载体）；只读路径（看板列表）用 `peekTaskRepoRoot`（绝不触发落盘）。
+- **项目改名跟随**：updateProject 改名时系统管理目录同卷 mv 跟随（活跃任务等安全阀拦下则降级只改名，不抛错）。
+- **对账（只读）**：`GET /api/workspaces/audit` + `npx tsx scripts/workspace-audit.mts`——orphanMarked/unknown/ghostRecords 三分；软件永不自动删目录，存量残留由用户人工清理。
+- **回收站两段式（批次2）**：`project-trash.ts`——移入 `.trash/`（前置四拒：基础设施/active/进行中任务/未合并 pt-集成区防悬空；绑定自动化自动暂停记账）→ `GET /api/projects/trash`、`POST /:id/trash|/:id/restore|/trash/purge`；恢复撞名走同一日期后缀规则；真删=移系统废纸篓（非 rm，MUSTER_TRASH_DIR 可覆盖）+删库，确认语义服务端强制（单个=手打原目录名，批量=手打「删除N项」）。
+- **多目录绑定（批次3）**：`project_dir` 表（external/attached，主目录仍走 root_dir 合成行）——绑定即写授权（engine project scope allowedRoots 含 attachedPaths）；与任何项目目录交叉拒；锚点=绑定的 git 仓库（`resolveTaskRepoRoot` 优先外部锚点，worktree 从锚点切出）；解绑只删行；绑定目录永不 marker/git init（铁律）。
+- **铁律不变**：软件永不挪/删用户自有目录；剩余批次（UI：新建项目三入口/存储管理页/回收站界面/双模式骨架）见计划文档，等 main UI 改动合入后开。
+
 ## Product Direction: Local Agent Workbench（项目主导）
 
 Muster is a persistent, project-driven local Agent workbench. The former one-shot Leader → Worker → Verifier model is retained only as historical context.

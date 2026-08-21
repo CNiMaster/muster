@@ -117,6 +117,10 @@ export interface LifecycleEventPayloadMap {
   'project.readiness-passed': { projectId: string };
   /** 管理工作台批1：项目被移除出显示区（隐藏或删除平台记录；不动仓库文件）。 */
   'project.removed': { projectId: string };
+  /** Workspace 治理批次2：项目移入软件回收站（目录搬 .trash/，绑定自动化暂停）。 */
+  'project.trashed': { projectId: string };
+  /** Workspace 治理批次2：项目从回收站恢复（原位被占时换了撞名规则新目录）。 */
+  'project.restored': { projectId: string };
   'project.rollback': {
     projectId: string;
     from: ProjectPhase;

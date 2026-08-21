@@ -16,19 +16,29 @@ import { shortId, nowIso } from '../../shared/utils';
 import { getWorkbench, getWorkbenchOrNull, ensureWorkbench } from './workbench';
 import { ensureWorkspaceStaff } from './workspace-staff';
 import { getAgent } from './agent';
-import { ensureDefaultWorkspace } from './workspace';
+import { ensureDefaultWorkspace, getActiveWorkspace } from './workspace';
+import { defaultWorkspaceRoot, infraDir, sanitizeSegment, uniqueProjectSegment } from './workspace-layout';
+import { recordExternalRootDir, assertPathNotCrossingOtherProjects } from './project-dirs';
 
-/** 将任意字符串转为安全的路径片段：保留中文/字母数字，其余替换为 -。 */
+/** 将任意字符串转为安全的路径片段：保留中文/字母数字，其余替换为 -（规矩统一在 workspace-layout）。 */
 function sanitizePathSegment(s: string): string {
-  const cleaned = s.trim().replace(/[\\/:*?"<>|\s]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
-  return cleaned || 'untitled';
+  return sanitizeSegment(s);
 }
 
-/** 为未指定 rootDir 的项目生成唯一默认路径，避免同名项目共享工作区。 */
-function defaultRootDir(workspaceRoot: string, projectName: string, projectId: string): string {
-  const projectSegment = `${sanitizePathSegment(projectName)}-${sanitizePathSegment(projectId)}`;
-  // 公司退役批次D：去 companies/<公司名> 层级——单例工作台下项目直接挂 workspace/projects/
-  return join(workspaceRoot, 'projects', projectSegment);
+/**
+ * 为未指定 rootDir 的项目生成唯一默认路径（2026-08-20 治理定案）：
+ * projects/<纯名字>——仅撞名时后来者加日期后缀，先到者永远干净。
+ * 撞名判定 = 磁盘已存在 OR 数据库已有项目占用该 root_dir。
+ * 导出供回收站恢复（撞名换新目录）复用。
+ */
+export function defaultRootDir(db: DB, workspaceRoot: string, projectName: string): string {
+  const projectsDir = join(workspaceRoot, 'projects');
+  const taken = (segment: string) => {
+    const candidate = join(projectsDir, segment);
+    if (existsSync(candidate)) return true;
+    return Boolean(db.prepare('SELECT 1 FROM project WHERE root_dir=?').get(candidate));
+  };
+  return join(projectsDir, uniqueProjectSegment(projectName, taken));
 }
 
 export type ProjectState =
@@ -126,15 +136,16 @@ export function createProject(
   // ensureGitRepo() 会在首个 worktree 创建时自动 mkdir + git init。
   const requestedRootDir = input.rootDir?.trim();
   // review 修复：显式目录（打开本地项目）必须是绝对路径——相对路径会在首个 worktree 时
-  // 被解析进服务进程 cwd（mkdir+git init 落错位置），与 migrateProjectRootDir 同口径
+  // 被解析进服务进程 cwd（mkdir+git init 落错位置），与 migrateProjectRootDir 同口径。
+  // 修复轮 Fix6：且不得与任何既有项目目录交叉（与 attachProjectDir 同一治理口径）。
   if (requestedRootDir && !isAbsolute(requestedRootDir)) {
     throw new AppError(ErrorCode.VALIDATION, '项目目录必须是绝对路径');
   }
-  const rootDir = requestedRootDir || defaultRootDir(
-    ensureDefaultWorkspace(db, join(homedir(), 'MusterWorkspace')).rootDir,
-    input.name,
-    id,
-  );
+  if (requestedRootDir) {
+    assertPathNotCrossingOtherProjects(db, requestedRootDir);
+  }
+  const wsRoot = ensureDefaultWorkspace(db, defaultWorkspaceRoot()).rootDir;
+  const rootDir = requestedRootDir || defaultRootDir(db, wsRoot, input.name);
   const firstAgentId = input.firstAgentId ?? workbench.firstAgentId ?? undefined;
   if (firstAgentId) {
     getAgent(db, firstAgentId);
@@ -145,6 +156,14 @@ export function createProject(
     `INSERT INTO project (id, name, description, root_dir, first_agent_id, state, settings_json, playbook_id, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, '{}', ?, ?, ?)`,
   ).run(id, input.name, input.description ?? '', rootDir, firstAgentId ?? null, state, input.playbookId ?? null, now, now);
+  // 治理批次3：用户显式指定且在 workspace 之外的目录 → 记 external 主目录行（幂等）。
+  // workspace 内（含 .system 基础设施）不记——那是系统管理目录。
+  if (requestedRootDir) {
+    const resolved = resolve(rootDir);
+    if (resolved !== wsRoot && !resolved.startsWith(`${wsRoot}/`)) {
+      recordExternalRootDir(db, id, resolved);
+    }
+  }
   return getProject(db, id);
 }
 
@@ -181,10 +200,12 @@ export function ensureInboxProject(db: DB, companyId?: string): { project: Proje
   const rows = db.prepare('SELECT * FROM project').all() as ProjectRow[];
   const existing = rows.map((r) => fromRow(db, r)).find((p) => (p.settings as Record<string, unknown>)?.inbox === true);
   if (existing) return { project: existing, created: false };
+  // 2026-08-20 治理：基础设施项目仓库迁入 .system/——projects/ 只放用户业务项目
   const project = createProject(db, {
     name: '收件箱',
     description: '随手问与冷启动对话的载体：这里的工作单来自工作台对话，不占用正式项目。',
     initialState: 'active',
+    rootDir: infraDir(ensureDefaultWorkspace(db, defaultWorkspaceRoot()).rootDir, 'inbox'),
   });
   const flagged = updateProject(db, project.id, {
     settings: { ...(project.settings as Record<string, unknown>), inbox: true },
@@ -201,10 +222,13 @@ export function ensureStandaloneProject(db: DB): { project: Project; created: bo
   const rows = db.prepare('SELECT * FROM project').all() as ProjectRow[];
   const existing = rows.map((r) => fromRow(db, r)).find((p) => (p.settings as Record<string, unknown>)?.standalone === true);
   if (existing) return { project: existing, created: false };
+  // 2026-08-20 治理：独立任务载体是基础设施，仓库在 .system/；各任务载体另有独立仓库
+  // （tasks/YYYY-MM/…，见 workspace-layout.resolveTaskRepoRoot）。
   const project = createProject(db, {
     name: '独立任务',
     description: '不依赖项目的小任务载体：这里的任务经独立任务区创建与查看。',
     initialState: 'active',
+    rootDir: infraDir(ensureDefaultWorkspace(db, defaultWorkspaceRoot()).rootDir, 'standalone-tasks'),
   });
   const flagged = updateProject(db, project.id, {
     settings: { ...(project.settings as Record<string, unknown>), standalone: true },
@@ -250,6 +274,8 @@ export function removeProject(db: DB, id: string, options: { deleteRecords?: boo
   if (options.deleteRecords) {
     db.transaction(() => {
       const now = nowIso();
+      // 修复轮 Fix2：inspector_alert 是唯一不带 ON DELETE CASCADE 的 project 外键，先清
+      db.prepare('DELETE FROM inspector_alert WHERE project_id=?').run(id);
       db.prepare(
         `UPDATE task SET state='cancelled', lease_owner_thread_id=NULL, lease_expires_at=NULL, heartbeat_at=NULL, updated_at=?
          WHERE project_id=? AND state NOT IN ('completed','failed','cancelled')`,
@@ -289,6 +315,34 @@ export function updateProject(
   patch: Partial<Pick<Project, 'name' | 'description' | 'firstAgentId' | 'state' | 'settings' | 'rootDir'>>,
 ): Project {
   const cur = getProject(db, id);
+
+  // 治理批次1：项目改名 → 系统自动管理的目录跟随改名（同卷 mv，纯名字规矩的另一半）。
+  // 仅当：非基础设施项目、当前目录在 workspace/projects/ 下、目录名与旧项目名吻合
+  //（纯名或撞名日期后缀形态）、且用户未显式指定新 rootDir。迁移失败（如仍有活跃任务）
+  // 时降级为只改库名不动目录——改名本身不该被目录迁移卡死。
+  if (patch.name !== undefined && patch.rootDir === undefined) {
+    const settings = cur.settings as Record<string, unknown>;
+    const infra = settings.inbox === true || settings.standalone === true;
+    const newName = patch.name.trim();
+    if (!infra && newName && newName !== cur.name) {
+      const workspaceRoot = getActiveWorkspace(db)?.rootDir ?? defaultWorkspaceRoot();
+      const curResolved = resolve(cur.rootDir);
+      const projectsRoot = resolve(join(workspaceRoot, 'projects'));
+      const oldSeg = sanitizeSegment(cur.name);
+      const base = curResolved.split('/').pop() ?? '';
+      const managed = curResolved.startsWith(`${projectsRoot}/`) && (base === oldSeg || base.startsWith(`${oldSeg}-`));
+      if (managed) {
+        try {
+          const candidate = defaultRootDir(db, workspaceRoot, newName);
+          if (resolve(candidate) !== curResolved) {
+            patch = { ...patch, rootDir: migrateProjectRootDir(db, id, cur.rootDir, candidate) };
+          }
+        } catch {
+          // 目录迁移不成功：仅改名，目录保持原位（对账工具可识别）
+        }
+      }
+    }
+  }
 
   // 迁移项目目录：仅在显式传入新 rootDir 且与当前不同时触发。
   // 安全约束：①新路径必须在 MUSTER_ALLOWED_ROOTS 内；②项目无活跃 task（避免丢失正在执行的 worktree 草稿）。

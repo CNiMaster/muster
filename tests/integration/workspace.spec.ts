@@ -52,7 +52,8 @@ describe('workspace domain', () => {
     const project = createProject(db, { companyId: company.id, name: '商城 项目' });
 
     expect(workspace.rootDir).toBe(resolve('/tmp/muster-main'));
-    expect(project.rootDir).toContain('/tmp/muster-main/projects/商城-项目-');
+    // 2026-08-20 治理定案：目录名=纯名字（撞名才加日期后缀），不再拼项目 id
+    expect(project.rootDir).toBe('/tmp/muster-main/projects/商城-项目');
   });
 
   it('M-6：迁移中断（文件已移动、DB 未提交）后 recoverInterruptedMigrations 自愈补提路径', () => {

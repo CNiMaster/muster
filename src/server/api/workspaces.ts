@@ -2,12 +2,18 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { getDb } from '../db/client';
 import { createWorkspace, getWorkspaceMigrationStatus, listWorkspaces, migrateWorkspace, setActiveWorkspace } from '../domain/workspace';
+import { auditWorkspace } from '../domain/workspace-audit';
 import { asyncHandler, param } from './middleware';
 
 export const workspacesRouter = Router();
 
 workspacesRouter.get('/', asyncHandler(async (_req, res) => {
   res.json(listWorkspaces(getDb()));
+}));
+
+/** 治理批次1：磁盘↔数据库对账（只读，绝不删除）——孤儿目录/幽灵记录清单。 */
+workspacesRouter.get('/audit', asyncHandler(async (_req, res) => {
+  res.json(auditWorkspace(getDb()));
 }));
 
 workspacesRouter.post('/', asyncHandler(async (req, res) => {

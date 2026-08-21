@@ -68,6 +68,11 @@ import { projectLaunchBriefSchema } from '../../shared/project-launch';
 import { confirmProjectLaunch, discoverProjectLaunchCapabilities } from '../domain/project-launch';
 import { transitionProjectPhase } from '../domain/project-readiness';
 import { PHASE_ORDER, type ProjectState } from '../domain/project';
+import { resolveTaskRepoRoot, peekRepoRoot, projectRepoRoots } from '../domain/task-repo';
+import { listTrash, purgeFromTrash, restoreProject, trashProject } from '../domain/project-trash';
+import { attachProjectDir, detachProjectDir, listProjectDirs, resetProjectAnchor, setProjectAnchor } from '../domain/project-dirs';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 
 export const projectsRouter = Router({ mergeParams: true });
 export const projectScopedRouter = Router({ mergeParams: true });
@@ -118,11 +123,30 @@ projectsRouter.get(
       return;
     }
     if (view === 'removed') {
-      // 已移除区：仅隐藏未删记录的项目（可恢复显示/可彻底删除记录）
-      res.json(visible.filter((p) => (p.settings as Record<string, unknown>)?.removed === true));
+      // 已移除区：仅隐藏未删记录的项目（可恢复显示/可彻底删除记录）；
+      // 治理批次2：回收站项目走专属 /trash 视图，不混入
+      const trashed = new Set(listTrash(db).map((t) => t.projectId));
+      res.json(visible.filter((p) => (p.settings as Record<string, unknown>)?.removed === true && !trashed.has(p.id)));
       return;
     }
     res.json(visible.filter((p) => p.state !== 'archived' && (p.settings as Record<string, unknown>)?.removed !== true));
+  }),
+);
+
+/** 治理批次2：软件回收站——清单（可查/可追踪/可恢复/可单删/可批删）。 */
+projectsRouter.get(
+  '/trash',
+  asyncHandler(async (_req, res) => {
+    res.json(listTrash(getDb()));
+  }),
+);
+
+/** 治理批次2：真删（→系统废纸篓+删库）。确认语义服务端强制：单个=手打原目录名；批量=手打「删除N项」。 */
+projectsRouter.post(
+  '/trash/purge',
+  asyncHandler(async (req, res) => {
+    const body = z.object({ ids: z.array(z.string().min(1)).min(1), confirm: z.string() }).parse(req.body);
+    res.json(purgeFromTrash(getDb(), body.ids, body.confirm));
   }),
 );
 
@@ -186,7 +210,8 @@ projectById.get(
   asyncHandler(async (req, res) => {
     const db = getDb();
     const project = getProject(db, param(req, 'id'));
-    const status = stageStatus(project.rootDir, project.id);
+    // 修复轮 Fix4：蜂群 staging 可能建在外部锚点仓库——读取同源（只读）
+    const status = stageStatus(peekRepoRoot(db, project) ?? project.rootDir, project.id);
     const pendingTasks = db.prepare(
       `SELECT COUNT(*) AS c FROM task
         WHERE project_id=? AND swarm_id IS NOT NULL AND state IN ('completed','failed','cancelled')`,
@@ -241,7 +266,7 @@ projectById.get(
   asyncHandler(async (req, res) => {
     const db = getDb();
     const project = getProject(db, param(req, 'id'));
-    const status = taskStageStatus(project.rootDir, project.id, param(req, 'ptid'));
+    const status = taskStageStatus(resolveTaskRepoRoot(db, project, param(req, 'ptid')), project.id, param(req, 'ptid'));
     const pending = db.prepare(
       "SELECT COUNT(*) AS n FROM task WHERE project_task_id=? AND state IN ('queued','claimed','running','waiting_input','waiting_dependency','waiting_approval','paused','blocked')",
     ).get(param(req, 'ptid')) as { n: number };
@@ -288,7 +313,13 @@ projectById.get(
   asyncHandler(async (req, res) => {
     const db = getDb();
     const project = getProject(db, param(req, 'id'));
-    res.json(detectOrphanWorktrees(db, project.rootDir));
+    res.json(projectRepoRoots(db, project).flatMap((root) => {
+      try {
+        return detectOrphanWorktrees(db, root);
+      } catch {
+        return [];
+      }
+    }));
   }),
 );
 
@@ -302,7 +333,13 @@ projectById.post(
       targets: z.array(z.string()).optional(),
       force: z.boolean().optional(),
     }).parse(req.body ?? {});
-    res.json(cleanOrphanWorktrees(db, project.rootDir, body));
+    res.json(projectRepoRoots(db, project).flatMap((root) => {
+      try {
+        return cleanOrphanWorktrees(db, root, body);
+      } catch {
+        return [];
+      }
+    }));
   }),
 );
 
@@ -314,7 +351,7 @@ projectById.post(
     const project = getProject(db, param(req, 'id'));
     const ptid = param(req, 'ptid');
     const body = z.object({ force: z.boolean().optional() }).parse(req.body ?? {});
-    const status = taskStageStatus(project.rootDir, project.id, ptid);
+    const status = taskStageStatus(resolveTaskRepoRoot(db, project, ptid), project.id, ptid);
     if (!status.exists || status.aheadCommits === 0) {
       res.json({ discarded: false, message: '该任务集成区没有待处理内容' });
       return;
@@ -324,7 +361,7 @@ projectById.post(
       return;
     }
     const branch = taskStagingBranch(project.id, ptid);
-    discardTaskStaging(project.rootDir, project.id, ptid);
+    discardTaskStaging(resolveTaskRepoRoot(db, project, ptid), project.id, ptid);
     db.prepare('DELETE FROM task_merge_watchdog WHERE project_task_id=?').run(ptid);
     postSystemMessage(db, { scopeKind: 'project', scopeId: project.id, role: 'system', author: 'system', content: `「🗑 任务集成区已丢弃」#${ptid} 的 ${status.aheadCommits} 个未合并提交已按用户指令删除（分支 ${branch}）。` });
     realtime.publish({
@@ -493,6 +530,48 @@ projectById.delete('/',asyncHandler(async(req,res)=>{
   const result=removeProject(getDb(),param(req,'id'),input);
   realtime.publish(makeLifecycleEvent('project.removed',{projectId:param(req,'id')},{}));
   res.json(result);
+}));
+
+/** 治理批次2：移入软件回收站（前置校验不过返回人话阻塞清单；绑定自动化自动暂停）。 */
+projectById.post('/trash',asyncHandler(async(req,res)=>{
+  const result=trashProject(getDb(),param(req,'id'));
+  realtime.publish(makeLifecycleEvent('project.trashed',{projectId:param(req,'id')},{}));
+  res.json(result);
+}));
+
+/** 治理批次2：从回收站恢复（原位被占自动换撞名规则新目录；返回暂停过的自动化提示重开）。 */
+projectById.post('/restore',asyncHandler(async(req,res)=>{
+  const result=restoreProject(getDb(),param(req,'id'));
+  realtime.publish(makeLifecycleEvent('project.restored',{projectId:param(req,'id')},{}));
+  res.json(result);
+}));
+
+/** 治理批次3：项目目录清单（主目录合成行+绑定行；含锚点/git 状态，供设置页与授权展示）。 */
+projectById.get('/dirs',asyncHandler(async(req,res)=>{
+  const db=getDb();
+  const dirs=listProjectDirs(db,param(req,'id'));
+  res.json(dirs.map((d)=>({ ...d, isGitRepo: existsSync(join(d.path,'.git')) })));
+}));
+
+/** 治理批次3：绑定现有文件夹（绝对路径/存在/不与任何项目目录交叉；绑定即项目 scope 写授权）。 */
+projectById.post('/dirs',asyncHandler(async(req,res)=>{
+  const input=z.object({ path:z.string().min(1), label:z.string().max(60).optional() }).parse(req.body);
+  res.status(201).json(attachProjectDir(getDb(),param(req,'id'),input));
+}));
+
+/** 治理批次3：解绑（只断关联，绝不动盘）。 */
+projectById.delete('/dirs/:dirId',asyncHandler(async(req,res)=>{
+  res.json(detachProjectDir(getDb(),param(req,'dirId')));
+}));
+
+/** 治理批次3：设为任务锚点（仅绑定行且 git 仓库；任务 worktree 从该仓库切出）。 */
+projectById.post('/dirs/:dirId/anchor',asyncHandler(async(req,res)=>{
+  res.json(setProjectAnchor(getDb(),param(req,'dirId')));
+}));
+
+/** 治理批次3：锚点复位为主目录。 */
+projectById.post('/dirs/anchor/reset',asyncHandler(async(req,res)=>{
+  res.json(resetProjectAnchor(getDb(),param(req,'id')));
 }));
 
 // B4 staffing：精确分配员工到项目（按 agentIds 创建 primary thread，区别于 ensureProjectThreads 全公司批量）

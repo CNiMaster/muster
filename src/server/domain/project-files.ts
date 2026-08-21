@@ -10,7 +10,7 @@ import path from 'node:path';
 import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { getProject } from './project';
-import { resolveArtifactPath } from './artifact-content';
+import { resolveArtifactPath, artifactBaseDir } from './artifact-content';
 import { isPathAllowed } from '../paths';
 
 export interface FileTreeNode {
@@ -59,7 +59,8 @@ function listDir(absDir: string, relBase: string, levels: number): FileTreeNode[
  */
 export function listProjectFileTree(db: DB, projectId: string, relPath = '', depth = MAX_TREE_DEPTH): FileTreeNode[] {
   const project = getProject(db, projectId);
-  const abs = resolveArtifactPath(project.rootDir, relPath || '.');
+  // 修复轮 Fix5：目录树随任务所在仓库（外部锚点优先；独立任务载体树在任务视图按载体展示）
+  const abs = resolveArtifactPath(artifactBaseDir(db, projectId, relPath), relPath || '.');
   if (!isPathAllowed(abs)) {
     throw new AppError(ErrorCode.UNAUTHORIZED, '路径不在允许范围内（MUSTER_ALLOWED_ROOTS）');
   }

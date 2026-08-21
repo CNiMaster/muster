@@ -10,10 +10,10 @@
  * - 程序数据目录 = MUSTER_HOME（默认 ~/.muster），可用环境变量覆盖。
  */
 import path from 'node:path';
-import os from 'node:os';
 import type { DB } from '../db/client';
 import { SERVER_CONFIG } from '../env';
 import { getActiveWorkspace } from './workspace';
+import { defaultWorkspaceRoot } from './workspace-layout';
 
 export interface MusterDirectories {
   /** 程序数据根目录（默认 ~/.muster，可被 MUSTER_HOME 覆盖）。 */
@@ -32,7 +32,7 @@ export function getMusterDirectories(db?: DB): MusterDirectories {
   const home = SERVER_CONFIG.musterDir;
   // 公司目录优先读 active workspace（用户可配置迁移），无则回退默认值。
   // workspace.rootDir 是项目根（如 ~/MusterWorkspace），公司文件在其 companies/ 子目录。
-  let companiesDir = path.join(os.homedir(), 'MusterWorkspace', 'companies');
+  let companiesDir = path.join(defaultWorkspaceRoot(), 'companies');
   if (db) {
     const active = getActiveWorkspace(db);
     if (active) companiesDir = path.join(active.rootDir, 'companies');

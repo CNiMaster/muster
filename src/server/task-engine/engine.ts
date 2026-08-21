@@ -52,6 +52,8 @@ import { isSwarmLinkedTask } from '../domain/staging';
 import { resolveContextWindow } from '../domain/executor-profile';
 import { generateCompactionSummary } from '../domain/compaction-summary';
 import { getWorkbench } from '../domain/workbench';
+import { resolveTaskRepoRoot } from '../domain/task-repo';
+import { attachedPaths } from '../domain/project-dirs';
 import { createWorktree, removeWorktree, ensureStagingWorktree, ensureTaskStagingWorktree, listTaskBranchChanges, listTaskBranchChangeStatus } from '../worktree/manager';
 /** 自动化节奏的人话标签（播报/摘要用）。 */
 function scheduleLabel(schedule: { kind: string; intervalMinutes?: number; timeOfDay?: string }): string {
@@ -338,13 +340,15 @@ export class TaskEngine {
     }
 
     // 创建 Task worktree（PRD：每个 Task 隔离 worktree）
+    // workspace 治理批次1：独立任务按载体分仓——repoRoot 可能≠project.rootDir
+    const repoRoot = resolveTaskRepoRoot(this.db, project, task.projectTaskId);
     let worktreeInfo: ReturnType<typeof createWorktree> | null = null;
     let preserveWorktree = false;
-    let workingDir = project.rootDir;
+    let workingDir = repoRoot;
     // B3a：MCP 连接池提升到 try 外，确保 finally 能清理（ctx 在 try 内定义，作用域不达 finally）
     let mcpPool: import('../executors/tools/mcp/client-pool').McpClientPool | undefined;
     const resolutionContext = getPublishConflictResolutionContext(task.inputProtocol);
-    const worktreeSourceRoot = project.rootDir;
+    const worktreeSourceRoot = repoRoot;
     try {
       worktreeInfo = getTaskRuntime(this.db, task.id) ?? null;
       if (worktreeInfo && !existsSync(worktreeInfo.path)) {
@@ -503,8 +507,8 @@ export class TaskEngine {
             ? evaluatePermission(this.db, employeePermissionPolicy.id, {
                 ...request,
                 taskRoot: workingDir,
-                projectRoot: project.rootDir,
-                workspaceRoot: getActiveWorkspace(this.db)?.rootDir ?? project.rootDir,
+                projectRoot: repoRoot,
+                workspaceRoot: getActiveWorkspace(this.db)?.rootDir ?? repoRoot,
                 employeeId: agent.id,
                 companyId: workbench.id,
                 projectId: project.id,
@@ -602,8 +606,8 @@ export class TaskEngine {
           approvalStrategy: effectiveStrategy ?? permissionPolicy.approvalStrategy,
           scope: permissionPolicy.scope,
           allowedRoots: permissionPolicy.scope === 'task' ? [workingDir]
-            : permissionPolicy.scope === 'project' ? [project.rootDir]
-            : permissionPolicy.scope === 'workspace' ? [getActiveWorkspace(this.db)?.rootDir ?? project.rootDir]
+            : permissionPolicy.scope === 'project' ? [repoRoot, ...attachedPaths(this.db, project.id)]
+            : permissionPolicy.scope === 'workspace' ? [getActiveWorkspace(this.db)?.rootDir ?? repoRoot]
             : permissionPolicy.scope === 'selected-directories' ? permissionPolicy.selectedDirectories
             : [],
         } : effectiveStrategy
@@ -986,7 +990,7 @@ export class TaskEngine {
       if (messageOptions.mode === 'no-approval' && worktreeInfo) {
         const declared = new Set(result.artifacts.map((a) => a.path));
         let deletes = 0;
-        for (const change of listTaskBranchChangeStatus(project.rootDir, worktreeInfo)) {
+        for (const change of listTaskBranchChangeStatus(repoRoot, worktreeInfo)) {
           if (declared.has(change.path)) continue;
           if (change.status === 'D') deletes += 1;
           result.artifacts.push({
@@ -1002,16 +1006,16 @@ export class TaskEngine {
 
       if (result.outcome === 'completed' && result.artifacts.length > 0 && worktreeInfo) {
         {
-          const publishTargetRoot = project.rootDir;
+          const publishTargetRoot = repoRoot;
           // 修复轮批次 G：任务=合并确认单位——所有 runtime task 产物发布进其 project_task 的
           // 任务级集成分支（不碰主干），任务成果 promote 回主干才是门禁（promoteTaskStaging）。
           // 兼容回落：无 project_task 载体的任务沿用项目级 staging（蜂群系）或直发主干（旧行为）。
           const taskStagingTarget = task.projectTaskId
-            ? ensureTaskStagingWorktree(project.rootDir, project.id, task.projectTaskId).path
+            ? ensureTaskStagingWorktree(repoRoot, project.id, task.projectTaskId).path
             : undefined;
           const stagingTarget = taskStagingTarget
             ?? (isSwarmLinkedTask(task)
-              ? ensureStagingWorktree(project.rootDir, project.id).path
+              ? ensureStagingWorktree(repoRoot, project.id).path
               : undefined);
           const pub = this.publishArtifacts(task.id, thread.id, publishTargetRoot, worktreeInfo, result, stagingTarget);
           if (pub.blocked) {
@@ -1081,7 +1085,7 @@ export class TaskEngine {
             try {
               // 修复轮批次 G：发布提交落在发布目标根（任务集成分支 worktree / staging / 项目根），
               // 补偿 revert 必须在提交所在的检出执行，否则跨分支 revert 必冲突
-              this.publishQueue.rollback(pub.id, stagingTarget ?? project.rootDir);
+              this.publishQueue.rollback(pub.id, stagingTarget ?? repoRoot);
             } catch (rollbackError) {
               throw new AppError(
                 ErrorCode.WORKTREE_CONFLICT,
@@ -1094,7 +1098,9 @@ export class TaskEngine {
             const sourceRuntime = getTaskRuntime(this.db, sourceTaskId);
             if (!sourceRuntime) continue;
             try {
-              removeWorktree(project.rootDir, sourceRuntime);
+              // 治理批次1：源任务可能属于独立任务的不同载体，按其自身载体解析仓库根
+              const sourcePt = (this.db.prepare('SELECT project_task_id FROM task WHERE id=?').get(sourceTaskId) as { project_task_id: string | null } | undefined)?.project_task_id ?? null;
+              removeWorktree(resolveTaskRepoRoot(this.db, project, sourcePt), sourceRuntime);
               deleteTaskRuntime(this.db, sourceTaskId);
             } catch (error) {
               log.warn('resolved conflict worktree cleanup failed', { sourceTaskId, error: String(error) });

@@ -44,6 +44,7 @@ beforeEach(() => {
   db = tdb.db;
   setDbForTest(db);
   ensureWorkbench(db);
+  usedRoots.clear();
   tmpRoot = mkdtempSync('/tmp/muster-pm-'); // 必须在默认 ALLOWED_ROOTS(/tmp) 内，macOS 的 os.tmpdir() 在 /var/folders 会被拒
 });
 
@@ -53,8 +54,17 @@ afterEach(() => {
   rmSync(tmpRoot, { recursive: true, force: true });
 });
 
+// 修复轮 Fix6 后显式目录不得跨项目交叉——同一夹具根首次使用保持原样（保住单项目路径断言），
+// 复用时加 -2/-3 后缀，各项目目录互不交叉
+const usedRoots = new Map<string, number>();
 function proj(name: string, rootDir?: string) {
-  return createProject(db, { name, rootDir, initialState: 'active' });
+  let dir = rootDir;
+  if (rootDir) {
+    const n = (usedRoots.get(rootDir) ?? 0) + 1;
+    usedRoots.set(rootDir, n);
+    dir = n === 1 ? rootDir : `${rootDir}-${n}`;
+  }
+  return createProject(db, { name, rootDir: dir, initialState: 'active' });
 }
 
 describe('移除项目（三点菜单语义）', () => {
