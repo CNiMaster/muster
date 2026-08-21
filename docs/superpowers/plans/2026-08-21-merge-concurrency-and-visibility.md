@@ -1,6 +1,6 @@
 # 合并并发收口 + 冲突事前可见性（2026-08-21）
 
-> 状态：in-progress（批次 1-4）
+> 状态：implemented（批次 0-4 全部交付；验证：tsc 0 错 + merge-concurrency.spec 3 例 + 全量回归，见收口提交）
 > 工作制：worktree `.worktrees/merge-concur` + 分支 `feat/merge-concurrency-and-visibility`（并行进程在 main 树活跃改 UI，隔离验证门）；收口协议=检查无误→对齐计划→合并回 main→删 worktree。
 
 ## 提交与合并时序口径（preamble，回填 CLAUDE.md）
