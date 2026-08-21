@@ -59,13 +59,14 @@ function completeReviewTask(reviewTaskId: string, summary: string): void {
 }
 
 describe('ensureAcceptanceOfficer 验收员实体', () => {
-  it('幂等创建；花名册可见；is_inspector 不可删除；经理档', () => {
+  it('幂等创建；B5 起隐形（visible_in=central）；is_inspector 不可删除；经理档', () => {
     const { c } = seed();
     const first = ensureAcceptanceOfficer(db, c.id);
     expect(ensureAcceptanceOfficer(db, c.id)).toBe(first);
 
-    const roster = listAgents(db, c.id);
-    const officer = roster.find((a) => a.id === first);
+    // B5：花名册不可见；中央口子可取
+    expect(listAgents(db, c.id).some((a) => a.id === first)).toBe(false);
+    const officer = listAgents(db, { visibleIn: 'central' }).find((a) => a.id === first);
     expect(officer).toBeDefined();
     expect(officer!.role).toBe(ACCEPTANCE_OFFICER_ROLE);
     expect(officer!.name).toBe(ACCEPTANCE_OFFICER_NAME);
@@ -84,8 +85,9 @@ describe('ensureAcceptanceOfficer 验收员实体', () => {
     db.prepare("UPDATE workbench SET state='online' WHERE id=?").run(c.id);
     const officerId = ensureAcceptanceOfficer(db, c.id);
     expect(officerId).toMatch(/^ag_/);
-    // 可见（未 hidden）
-    expect(listAgents(db, c.id).some((a) => a.id === officerId)).toBe(true);
+    // B5：隐形（未 hidden 断言翻面——验收进度在右侧卡与播报可见）
+    expect(listAgents(db, c.id).some((a) => a.id === officerId)).toBe(false);
+    expect(listAgents(db, { visibleIn: 'central' }).some((a) => a.id === officerId)).toBe(true);
     // 触发链路在 online 态完整可用
     const task = taskWithCriteria(p.id, lead.id);
     const reviewTask = maybeTriggerAcceptanceReview(db, task);
@@ -211,8 +213,12 @@ describe('handleAcceptanceReviewTaskCompleted 判定落地', () => {
 describe('Review 修复 I2/I3：轮回上限与闭环排除', () => {
   it('返工任务完成会触发新一轮验收（链条闭合）；超轮回上限升级用户', () => {
     const { lead, p } = seed();
-    // 第 1 轮：source FAIL → 返工 R1（reviewRound=1）
-    const source = taskWithCriteria(p.id, lead.id, '首轮任务');
+    // B2 三档广深：显式 heavy 档（上限 3 轮）验证轮回逻辑——默认 standard 现为 2 轮
+    const source = createTask(db, {
+      projectId: p.id, assigneeAgentId: lead.id, title: '首轮任务',
+      acceptanceCriteria: CRITERIA.map((c) => ({ ...c })),
+      inputProtocol: { breadthTier: 'heavy' },
+    });
     let review = maybeTriggerAcceptanceReview(db, source)!;
     completeReviewTask(review.id, 'VERDICT=FAIL\nCONFIDENCE=0.9\n第一轮不通过');
     handleAcceptanceReviewTaskCompleted(db, getTask(db, review.id));

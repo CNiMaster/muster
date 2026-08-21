@@ -3,7 +3,7 @@ import type React from 'react';
 import { Link } from 'react-router-dom';
 import type { Agent, Task } from '../../api/types';
 import type { ProjectTaskDTO } from '../../hooks/queries';
-import { useArtifacts, useBlueprintMatches, useProjectTaskAction, useTaskSwarm, useUiMode } from '../../hooks/queries';
+import { useArtifacts, useBlueprintMatches, useProjectSpecialists, useProjectTaskAction, useTaskSwarm, useUiMode } from '../../hooks/queries';
 import type { CompanyCockpitDTO } from '../../../shared/types';
 import { Badge, StateBadge, stateLabel, taskStateTone } from '../Badge';
 import { Button, toast } from '../Button';
@@ -39,6 +39,8 @@ export function ProjectContextInspector({
   const { data: artifacts = [] } = useArtifacts(projectId);
   const activeTask = tasks.find((t) => t.id === selectedTask?.id || t.state === 'running') ?? tasks[0];
   const { data: swarmView } = useTaskSwarm(activeTask?.id);
+  // B5 右侧三卡（非人员源，中央岗隐形后"事可见"）：专家池/蜂群/验收进度
+  const { data: specialists = [] } = useProjectSpecialists(projectId);
   // 修复轮（批次 F.2）：任务 → 最优蓝图 top-N（命中时显示，无人设命中不显示）
   const { data: blueprintMatches = [] } = useBlueprintMatches(selectedTask?.title);
 
@@ -251,8 +253,50 @@ export function ProjectContextInspector({
                 </p>
               )}
 
-              {/* 蜂群微视图（若有）——治理批次5：简单模式收起（后台照常跑） */}
-              {!uiSimple && swarmView?.swarm && (
+              {/* B5 专家池卡（常驻非人员源）：项目常驻专家与使用次数——中央岗隐形后"事可见" */}
+              {specialists.length > 0 && (
+                <div style={{ marginTop: '12px', padding: '10px', background: 'var(--bg-elev)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+                  <div className="auxiliary-section-title" style={{ padding: 0, marginBottom: '6px' }}>
+                    <span>🧑‍🔬 项目专家池</span>
+                    <Badge tone="info">{specialists.length}</Badge>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    {specialists.slice(0, 5).map((sp) => (
+                      <div key={sp.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', fontSize: '12px' }}>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={sp.specialty}>
+                          {sp.personaId ? `🎭 ${sp.personaId.split('/').pop()}` : '🧬 常驻专家'} · {sp.specialty.slice(0, 18)}
+                        </span>
+                        <Badge tone={sp.tier === 'staff' ? 'ok' : 'neutral'}>{sp.tier === 'staff' ? '跨项目' : `用 ${sp.useCount}`}</Badge>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* B5 验收进度卡（非人员源）：当前任务验收标准达标灯——验收员隐形后结果在此可见 */}
+              {(() => {
+                const criteria = activeTask?.acceptanceCriteria ?? [];
+                if (criteria.length === 0) return null;
+                const met = criteria.filter((c) => c.met === true).length;
+                const unmet = criteria.filter((c) => c.met === false).length;
+                return (
+                  <div style={{ marginTop: '12px', padding: '10px', background: 'var(--bg-elev)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+                    <div className="auxiliary-section-title" style={{ padding: 0, marginBottom: '6px' }}>
+                      <span>🔍 验收进度</span>
+                      <Badge tone={met === criteria.length ? 'ok' : unmet > 0 ? 'err' : 'neutral'}>{met}/{criteria.length}</Badge>
+                    </div>
+                    {criteria.slice(0, 4).map((c) => (
+                      <div key={c.id} style={{ fontSize: '12px', display: 'flex', gap: '6px', alignItems: 'center', padding: '2px 0' }}>
+                        <span>{c.met === true ? '✅' : c.met === false ? '❌' : '⏳'}</span>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={c.criterion}>{c.criterion}</span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+
+              {/* 蜂群微视图（若有）——B5 起常驻（中央养蜂人隐形，蜂群状态在此可见） */}
+              {swarmView?.swarm && (
                 <div style={{ marginTop: '12px', padding: '10px', background: 'var(--bg-elev)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
                   <div className="auxiliary-section-title" style={{ padding: 0, marginBottom: '6px' }}>
                     <span>🐝 蜂群拓扑 ({swarmView.tasks.length} 工蜂)</span>

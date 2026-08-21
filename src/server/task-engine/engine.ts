@@ -338,6 +338,15 @@ export class TaskEngine {
         log.warn('gap research dispatch failed', { taskId: task.id, err: e instanceof Error ? e.message : String(e) });
       }
     }
+    // B3 能力管理（热路径）：任务级工具链决议——默认套装提示 + 绑定/人设/蓝图/常用四层合并 +
+    // 质量排序 + 挑战建议，持久化 inputProtocol.resolvedToolChain（context 装配层消费）；
+    // 缺口触发冷路径 [装备请示]（能力管理隐形岗，只产建议不自动安装）。失败不阻断主流程。
+    try {
+      const { resolveToolChain } = await import('../domain/tool-chain');
+      resolveToolChain(this.db, task, capabilityGaps);
+    } catch (e) {
+      log.warn('tool chain resolve failed', { taskId: task.id, err: e instanceof Error ? e.message : String(e) });
+    }
 
     // 创建 Task worktree（PRD：每个 Task 隔离 worktree）
     // workspace 治理批次1：独立任务按载体分仓——repoRoot 可能≠project.rootDir

@@ -22,6 +22,7 @@ import { nowIso, shortId } from '../../shared/utils';
 import { callLlm } from './llm-call';
 import { taskTypeOf } from './blueprint';
 import { USER_PERSONAS_ROOT, getPersona, listPersonas, deleteUserPersona } from './persona-library';
+import { DEFAULT_TOOL_KIT } from './tool-chain';
 import { log } from '../logger';
 
 export interface ExpertCandidate {
@@ -319,17 +320,28 @@ export async function maybeSynthesizeExpertCandidates(db: DB, companyId?: string
     let created = 0;
     for (const signal of signals.slice(0, MAX_SIGNALS_PER_TICK)) {
       const draft = sanitizeDraft((await draftWithLlm(db, companyId ?? '', signal)) ?? fallbackDraft(signal));
-      const needle = draft.name.trim().toLowerCase();
+      // B4 专家配枪门禁：专家就该有专家的样子——新沉淀入库的人设必须带工具链。
+      // LLM 草稿未给 tools 时按规则兜底注入默认套装（read/write/edit/bash/webfetch——执行器内置恒有，
+      // 写进 frontmatter 让调度匹配有据）；防御分支：仍为空则 dismissed(no_tools) 不入库。
+      const gated: DraftCard = draft.tools.length > 0
+        ? draft
+        : { ...draft, tools: [...DEFAULT_TOOL_KIT] };
+      if (gated.tools.length === 0) {
+        insertCandidateRow(db, companyId ?? '', signal, draft, 'dismissed', null);
+        log.warn('expert candidate dismissed (no tools)', { signal: signal.signalKey, name: draft.name });
+        continue;
+      }
+      const needle = gated.name.trim().toLowerCase();
       const existing = listPersonas().find((p) => p.name.trim().toLowerCase() === needle);
       if (existing) {
         // 同名终止：自建同名视为该信号已消化（含崩溃孤儿补偿）；预置同名标记跳过
-        insertCandidateRow(db, companyId ?? '', signal, draft,
+        insertCandidateRow(db, companyId ?? '', signal, gated,
           existing.source === 'user' ? 'adopted' : 'dismissed',
           existing.source === 'user' ? existing.id : null);
         continue;
       }
-      const { personaId } = writeUserPersonaFile(draft);
-      insertCandidateRow(db, companyId ?? '', signal, draft, 'adopted', personaId);
+      const { personaId } = writeUserPersonaFile(gated);
+      insertCandidateRow(db, companyId ?? '', signal, gated, 'adopted', personaId);
       created += 1;
       log.info('expert synthesized (auto-adopted)', { personaId, source: signal.source, signal: signal.signalKey });
     }

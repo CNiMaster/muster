@@ -60,6 +60,8 @@ export interface SystemSettings {
   debateMinConfidence: number;
   /** 执行过程展示批次4：蜂群失败自动修复的全群重发上限（防失控放大）。 */
   swarmRepairMax: number;
+  /** 三档广深（B2）：新任务的默认档位（任务级 inputProtocol.breadthTier 可覆盖）。 */
+  breadthDefaultTier: 'light' | 'standard' | 'heavy';
   /** 模型档位（WP9 成本-能力匹配）：轻量档模型标识——蜂群工蜂/辩手/平台 LLM 反思等高并发低难度调用。空 = 不覆盖（沿用执行器档案模型）。 */
   modelTierEconomy: string;
   /** 模型档位：高级档模型标识——计划模式/验收/裁决/蜂群请示等高质量调用。空 = 不覆盖。 */
@@ -117,6 +119,10 @@ export function getSystemSettings(db: DB): SystemSettings {
     swarmMaxWidth: Number(getSetting(db, 'swarm_max_width', '5')),
     swarmMaxNodes,
     swarmRepairMax: Number(getSetting(db, 'swarm_repair_max', String(Math.max(1, Math.floor(swarmMaxNodes / 3))))),
+    breadthDefaultTier: (() => {
+      const t = getSetting(db, 'breadth_default_tier', 'standard');
+      return t === 'light' || t === 'heavy' ? t : 'standard';
+    })(),
     swarmBudgetUSD: Number(getSetting(db, 'swarm_budget_usd', '5')),
     debateMinConfidence: Number(getSetting(db, 'debate_min_confidence', '0.6')),
     modelTierEconomy: getSetting(db, 'model_tier_economy', ''),
@@ -199,6 +205,10 @@ export function saveSystemSettings(db: DB, settings: Partial<SystemSettings>): v
   }
   if (settings.swarmRepairMax !== undefined) {
     setSetting(db, 'swarm_repair_max', String(Math.max(1, Math.min(100, settings.swarmRepairMax))));
+  }
+  if (settings.breadthDefaultTier !== undefined) {
+    const t = settings.breadthDefaultTier;
+    setSetting(db, 'breadth_default_tier', t === 'light' || t === 'heavy' ? t : 'standard');
   }
   if (settings.debateMinConfidence !== undefined) {
     setSetting(db, 'debate_min_confidence', String(Math.max(0.5, Math.min(0.95, settings.debateMinConfidence))));

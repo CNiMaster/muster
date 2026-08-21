@@ -1,10 +1,11 @@
 /**
- * 系统岗（指挥系统 W0 + 组织模型批次二）：养蜂人（蜂群，可见固定岗）+ 人事（专家供给，可见固定岗）
- * + 裁决法庭（对抗评审庭，隐形）。
+ * 系统岗（B5 中央六岗制）：养蜂人（蜂群）+ 人事（专家供给）+ 能力管理（装备供给）
+ * + 裁决法庭（对抗评审）全部隐形（visible_in='central'）；验收员同制（acceptance-officer.ts）。
  *
- * 产品语义：系统岗是工作台的"内置职能"——自动存在、不可删除；养蜂人/人事对用户可见可对话
- * （组织模型 2026-08-19 定案：四固定岗全可见），裁决法庭保持隐形（只在辩论被召集时出场）。
- * 蓝图组织批次4e：与公司生命周期解耦——首次使用时懒确保，任何状态下幂等自愈。
+ * 产品语义：一个人就是一个公司——用户只对负责人说话，中央职能经负责人传达，
+ * 靠反思沉淀自动进化；"事"在右侧状态卡可见（专家池/蜂群/验收进度），
+ * "人"经 visible_in='central' 口子可被 @（GET /api/agents?visible_in=central）。
+ * 蓝图组织批次4e：与生命周期解耦——首次使用时懒确保，任何状态下幂等自愈。
  * 注：按工作台实例化而非全局单例——任务必须属于项目、项目属于工作台，
  * 执行体必须同工作台（createTask 守卫）；工作台模型下按工作台实例化即为产品意义上的全局。
  */
@@ -16,9 +17,11 @@ import { bindDefaultDenyPolicy } from './permission-templates';
 export const DISPATCHER_ROLE = 'swarm-dispatcher';
 export const JUDGE_ROLE = 'debate-judge';
 export const HR_ROLE = 'hr';
+export const CAPABILITY_ROLE = 'capability-manager';
 export const DISPATCHER_NAME = '养蜂人';
 export const JUDGE_NAME = '裁决法庭';
 export const HR_NAME = '人事';
+export const CAPABILITY_MANAGER_NAME = '能力管理';
 
 const DISPATCHER_PROMPT = `你是「${DISPATCHER_NAME}」，公司的大规模并行工作指挥岗。你不做具体工作，只负责拆解、调度、收口。
 
@@ -35,7 +38,7 @@ const DISPATCHER_PROMPT = `你是「${DISPATCHER_NAME}」，公司的大规模�
    - 混合专家蜂群：一个目标需要多种专业配合（不同 worker 给不同 personaId，如 调研+分析+写作 各一只）。
    人设 id 可在你的上下文中按子题主题检索（persona 库与记忆）；拿不准就匿名，不要硬编。
    指定 personaId 的蜂会优先复用项目专家池的常驻专家（同一专家跨任务延续记忆）；项目反复需要
-   同一专长时系统会自动把它沉淀为项目专家。缺专家时可建议用户找「人事」专项设计。
+   同一专长时系统会自动把它沉淀为项目专家。缺专家时向负责人建议由「人事」专项设计（经负责人传达，用户只对负责人说话）。
 4. 收到「[蜂群告警]」任务时（有蜂失败）：评估后三选一——
    a) 补蜂：返回新的 swarmPlan（只含需要补做的子题）；
    b) 缩群：直接完成汇报，说明用现有结果收口；
@@ -63,6 +66,18 @@ const HR_PROMPT = `你是「${HR_NAME}」，工作台的专家供给岗。你不
 3. 拆解需求时想清楚流程再定人选：不把活拆碎（一个人的事不拆两个专家），也不让一个专家包打天下。
 4. 用户自建人才（我的 talent）若在岗且匹配，优先建议使用，而不是新建。`;
 
+const CAPABILITY_PROMPT = `你是「${CAPABILITY_MANAGER_NAME}」，工作台的装备供给岗（隐形职能，服务执行者不面向用户）。你不做具体业务工作，只负责工具/能力的准备、建议与链接。
+
+职责：
+1. 收到「[装备请示]」任务时（某执行者缺某能力/工具用不了）：分析缺口，产出结构化建议——
+   summary 按契约返回：
+   GAP=<能力 id>
+   SUGGEST=<建议方案：用哪个已启用工具替代 / 建议安装什么（tool_registry 或商城条目 id）/ 自建插件方向>
+   RATIONALE=<一段理由：为什么这个方案适合该任务形态>
+2. 纪律：只产建议，绝不自行安装或修改配置——安装与配置变更走平台能力中心/商城（用户确认后生效）；
+   注册表内已有可用替代时优先建议替代，缺什么说什么，不编造工具 id。
+3. 常用工具已由系统自动携带（默认套装+使用频次），你只处理缺口与质量差（成功率低建议换用）两类请示。`;
+
 function findSystemAgent(db: DB, role: string): string | null {
   const row = db
     .prepare('SELECT id FROM agent_definition WHERE role=? AND is_system=1 LIMIT 1')
@@ -70,26 +85,27 @@ function findSystemAgent(db: DB, role: string): string | null {
   return row?.id ?? null;
 }
 
-function ensureOne(db: DB, role: string, name: string, prompt: string, options: { visible?: boolean } = {}): string {
+function ensureOne(db: DB, role: string, name: string, prompt: string, options: { visibleIn?: string } = {}): string {
   const existing = findSystemAgent(db, role);
   if (existing) {
-    // 可见岗幂等自愈：老库里任职行可能还是 hidden=1（组织模型批次二之前的创建路径）
-    if (options.visible) {
-      db.prepare('UPDATE company_employee SET hidden=0 WHERE legacy_agent_id=? AND hidden=1').run(existing);
+    // B5 中央岗分区幂等自愈：老库 visible_in 缺失时补上（hidden 不在此翻——迁移负责存量）
+    if (options.visibleIn) {
+      db.prepare('UPDATE agent_definition SET visible_in=? WHERE id=? AND (visible_in IS NULL OR visible_in != ?)')
+        .run(options.visibleIn, existing, options.visibleIn);
     }
     return existing;
   }
   const agent = createAgent(db, {
     name,
     role,
-    responsibilities: options.visible ? '系统固定职能岗（专家供给/蜂群调度）' : '系统内置职能岗（自动创建，不可见）',
+    responsibilities: '系统内置职能岗（自动创建，隐形——事在右侧状态卡可见）',
     systemPrompt: prompt,
     canDispatch: true,
     isSystem: true,
   });
-  // 组织模型批次二：养蜂人/人事是可见固定岗——撤掉 isSystem 默认的 hidden 标记
-  if (options.visible) {
-    db.prepare('UPDATE company_employee SET hidden=0 WHERE legacy_agent_id=?').run(agent.id);
+  // B5：中央职能全隐形（isSystem 默认 hidden），分区标记供 @ 下拉/群聊专用口子取数
+  if (options.visibleIn) {
+    db.prepare('UPDATE agent_definition SET visible_in=? WHERE id=?').run(options.visibleIn, agent.id);
   }
   // R1：系统岗默认绑 deny 档——它们只产结构化文本（swarmPlan/debateVerdict/staffingPlan），
   // API 执行器上不再零拦截（与 CLI 侧 fail-closed 对齐）。
@@ -103,14 +119,16 @@ export interface SystemAgents {
   hrAgentId: string;
 }
 
-/** 幂等确保系统岗存在（工作台任意状态可调用；coordinator tick 调用）。 */
+/** 幂等确保系统岗存在（工作台任意状态可调用；coordinator tick 调用）；确保后种中央互通白名单。 */
 export function ensureSystemAgents(db: DB): SystemAgents {
   getWorkbench(db);
-  return {
+  const ids = {
     dispatcherAgentId: ensureDispatcherAgentId(db),
     judgeAgentId: ensureJudgeAgentId(db),
     hrAgentId: ensureHrAgentId(db),
   };
+  ensureCentralContactAllow(db);
+  return ids;
 }
 
 /** 查询系统岗 id（不存在返回 null，不创建）。 */
@@ -126,14 +144,18 @@ export function getHrAgentId(db: DB): string | null {
   return findSystemAgent(db, HR_ROLE);
 }
 
-/** 蓝图组织批次4e：懒确保养蜂人（首次使用时创建，幂等；组织模型批次二起为可见固定岗）。 */
-export function ensureDispatcherAgentId(db: DB): string {
-  return ensureOne(db, DISPATCHER_ROLE, DISPATCHER_NAME, DISPATCHER_PROMPT, { visible: true });
+export function getCapabilityManagerAgentId(db: DB): string | null {
+  return findSystemAgent(db, CAPABILITY_ROLE);
 }
 
-/** 蓝图组织批次4e：懒确保裁决法庭（幂等，保持隐形）。 */
+/** B5：懒确保养蜂人（隐形中央岗——蜂群状态在右侧卡可见；@ 走 visible_in=central 口子）。 */
+export function ensureDispatcherAgentId(db: DB): string {
+  return ensureOne(db, DISPATCHER_ROLE, DISPATCHER_NAME, DISPATCHER_PROMPT, { visibleIn: 'central' });
+}
+
+/** B5：懒确保裁决法庭（隐形中央岗，只在辩论被召集时出场；群聊常驻可被 @）。 */
 export function ensureJudgeAgentId(db: DB): string {
-  return ensureOne(db, JUDGE_ROLE, JUDGE_NAME, JUDGE_PROMPT);
+  return ensureOne(db, JUDGE_ROLE, JUDGE_NAME, JUDGE_PROMPT, { visibleIn: 'central' });
 }
 
 /** 整改计划 Part2：自动化管家——平台自动化功能的固定岗，仅在自动化页可见（任职 hidden，visible_in='automation'）。 */
@@ -142,12 +164,68 @@ export const AUTOMATION_STEWARD_NAME = '自动化管家';
 
 /** 懒确保自动化管家（幂等）：任职保持 hidden（正常花名册不可见），visible_in 标记自动化页归属。 */
 export function ensureAutomationStewardAgentId(db: DB): string {
-  const id = ensureOne(db, AUTOMATION_ROLE, AUTOMATION_STEWARD_NAME, '', { visible: false });
-  db.prepare('UPDATE agent_definition SET visible_in=? WHERE id=? AND (visible_in IS NULL OR visible_in != ?)').run('automation', id, 'automation');
-  return id;
+  return ensureOne(db, AUTOMATION_ROLE, AUTOMATION_STEWARD_NAME, '', { visibleIn: 'automation' });
 }
 
-/** 组织模型批次二：懒确保人事岗（可见固定岗，专家供给）。 */
+/** B5：懒确保人事岗（隐形中央岗——专家池状态在右侧卡可见；需求经负责人传达）。 */
 export function ensureHrAgentId(db: DB): string {
-  return ensureOne(db, HR_ROLE, HR_NAME, HR_PROMPT, { visible: true });
+  return ensureOne(db, HR_ROLE, HR_NAME, HR_PROMPT, { visibleIn: 'central' });
+}
+
+/** B3 能力管理：懒确保装备供给岗（隐形——服务执行者不面向用户；热路径决议为纯代码，此岗只接冷路径请示）。 */
+export function ensureCapabilityManagerAgentId(db: DB): string {
+  return ensureOne(db, CAPABILITY_ROLE, CAPABILITY_MANAGER_NAME, CAPABILITY_PROMPT, { visibleIn: 'central' });
+}
+
+/** B5 中央岗角色集（白名单：讨论双闸/@ 下拉/群聊候选）。 */
+export const CENTRAL_STAFF_ROLES = [
+  'swarm-dispatcher',
+  'hr',
+  'capability-manager',
+  'acceptance-officer',
+  'debate-judge',
+] as const;
+
+/**
+ * B5 中央六岗互通：隐形后非系统隐藏体（验收员非 isSystem）会被 crewMate 派发守卫排除——
+ * 中央岗 + 负责人互写 contactAllow 种子（幂等，只增不减；验收员可能尚未懒确保，存在才互通）。
+ */
+export function ensureCentralContactAllow(db: DB): void {
+  try {
+    const wb = getWorkbench(db);
+    const centralIds = [
+      getDispatcherAgentId(db),
+      getJudgeAgentId(db),
+      getHrAgentId(db),
+      getCapabilityManagerAgentId(db),
+      (() => {
+        const row = db.prepare("SELECT id FROM agent_definition WHERE role='acceptance-officer' AND is_inspector=1 LIMIT 1")
+          .get() as { id: string } | undefined;
+        return row?.id ?? null;
+      })(),
+    ].filter((x): x is string => Boolean(x));
+    // 负责人取工作台 + 项目两级并集（负责人常只配在项目级，workbench.firstAgentId 可能为空）
+    const leadIds = new Set<string>();
+    if (wb.firstAgentId) leadIds.add(wb.firstAgentId);
+    for (const row of db.prepare('SELECT DISTINCT first_agent_id AS f FROM project WHERE first_agent_id IS NOT NULL').all() as Array<{ f: string }>) {
+      leadIds.add(row.f);
+    }
+    const members = [...centralIds, ...leadIds];
+    if (members.length < 2) return;
+    const now = new Date().toISOString();
+    for (const id of members) {
+      const row = db.prepare('SELECT contact_allow_json FROM agent_definition WHERE id=?').get(id) as
+        | { contact_allow_json: string }
+        | undefined;
+      if (!row) continue;
+      const cur = JSON.parse(row.contact_allow_json ?? '[]') as string[];
+      const next = [...new Set([...cur.filter((x) => typeof x === 'string'), ...members.filter((m) => m !== id)])];
+      if (next.length !== cur.length) {
+        db.prepare('UPDATE agent_definition SET contact_allow_json=?, updated_at=? WHERE id=?')
+          .run(JSON.stringify(next), now, id);
+      }
+    }
+  } catch {
+    /* 种子失败不阻断（下次 ensure 自愈） */
+  }
 }

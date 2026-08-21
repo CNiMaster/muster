@@ -14,7 +14,7 @@ import { shortId, nowIso } from '../../shared/utils';
 import { getProject } from './project';
 import { transitionWorkbench } from './workbench';
 import { listTasks } from './task';
-import { listAgents } from './agent';
+import { listPersistentAgents } from './agent';
 import { listThreads } from './thread';
 import { summarizeAgentUsage } from './usage';
 import type { ReportTrigger } from '../../shared/types';
@@ -94,7 +94,9 @@ function nextCycleNo(db: DB, projectId: string): number {
  */
 function buildSummary(db: DB, projectId: string): Record<string, unknown> {
   const project = getProject(db, projectId);
-  const agents = listAgents(db);
+  // B5 观测修复→审查修复：报表按持久员工聚合——隐形中央岗（验收员等）的活动不消失，
+  // 同时排除一次性执行体（蜂群工蜂/辩手）防逐蜂条目灌爆
+  const agents = listPersistentAgents(db);
   const tasks = listTasks(db, projectId);
   const byAgent = new Map<string, { completed: number; blocked: number; summaries: string[] }>();
 

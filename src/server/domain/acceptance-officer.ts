@@ -13,6 +13,7 @@ import { createAgent } from './agent';
 import { getWorkbench } from './workbench';
 import { getRoleTemplate } from './permission-templates';
 import { bindEmployeePermissionPolicy } from './permission';
+import { ensureCentralContactAllow } from './system-agents';
 
 export const ACCEPTANCE_OFFICER_ROLE = 'acceptance-officer';
 export const ACCEPTANCE_OFFICER_NAME = '验收员';
@@ -47,15 +48,19 @@ export function ensureAcceptanceOfficer(db: DB): string {
   const agent = createAgent(db, {
     name: ACCEPTANCE_OFFICER_NAME,
     role: ACCEPTANCE_OFFICER_ROLE,
-    responsibilities: '收尾验收：对照验收标准独立判定成果是否可交付；默认自动验收，用户可对话调整。',
+    responsibilities: '收尾验收：对照验收标准独立判定成果是否可交付；判定结果在右侧验收进度卡与项目对话播报可见。',
     systemPrompt: ACCEPTANCE_PROMPT,
     canDispatch: true,
     isInspector: true,
     permissions: { userDirectContact: true },
     // Review 修复 C1：验收员懒确保发生在任务完成时——工作台通常 online，
-    // 必须豁免 org lock（internalRecruit：豁免但不 hidden，保持可见员工语义）。
+    // 必须豁免 org lock（internalRecruit：豁免 org lock）。
     internalRecruit: true,
   });
+  // B5 中央岗隐形化：验收员转为隐形职能（非 isSystem 需显式翻 hidden）——花名册不出现，
+  // @ 走 visible_in='central' 口子；验收进度在右侧卡与项目对话播报可见（事可见人不直面）。
+  db.prepare('UPDATE company_employee SET hidden=1 WHERE legacy_agent_id=?').run(agent.id);
+  db.prepare("UPDATE agent_definition SET visible_in='central' WHERE id=?").run(agent.id);
   // 经理档（skipLock：与懒确保语义一致，工作台运行中也能自愈创建）
   try {
     const employment = db
@@ -67,5 +72,9 @@ export function ensureAcceptanceOfficer(db: DB): string {
   } catch {
     // 绑定失败不阻断验收员创建（CLI 侧 fail-closed 兜底）
   }
+  // B5：中央互通白名单（验收员非 isSystem，隐形后靠 contactAllow 种子保持可与负责人互派）
+  try {
+    ensureCentralContactAllow(db);
+  } catch { /* 种子失败下次自愈 */ }
   return agent.id;
 }

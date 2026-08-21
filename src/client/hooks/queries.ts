@@ -1198,6 +1198,38 @@ export function useDeleteCompanyAutomation() {
 }
 
 // ===== 蜂群（指挥系统批次2）=====
+/** B5 右侧专家池卡：项目常驻专家（非人员源——中央岗隐形后"事可见"）。 */
+export interface SpecialistPoolEntryDTO {
+  id: string;
+  projectId: string;
+  agentId: string | null;
+  personaId: string | null;
+  specialty: string;
+  tier: 'project' | 'staff';
+  status: string;
+  useCount: number;
+  createdVia: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function useProjectSpecialists(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ['project-specialists', projectId],
+    queryFn: () => api.get<SpecialistPoolEntryDTO[]>(`/api/projects/${projectId}/specialists`),
+    enabled: !!projectId,
+    refetchInterval: 15000,
+  });
+}
+
+/** B5 中央岗口子：@ 下拉/群聊候选专用（hidden 不影响）。 */
+export function useCentralAgents() {
+  return useQuery({
+    queryKey: ['agents', 'central'],
+    queryFn: () => api.get<Agent[]>(`/api/agents?visible_in=central`),
+  });
+}
+
 export function useTaskSwarm(taskId: string | undefined) {
   return useQuery({
     queryKey: ['task-swarm', taskId],
@@ -2292,6 +2324,7 @@ export function useSaveSystemSettings() {
       swarmMaxNodes?: number;
       swarmBudgetUSD?: number;
       swarmRepairMax?: number;
+      breadthDefaultTier?: 'light' | 'standard' | 'heavy';
       debateMinConfidence?: number;
       modelTierEconomy?: string;
       modelTierPremium?: string;

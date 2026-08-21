@@ -45,6 +45,7 @@ import { getAgent } from '../domain/agent';
 import { syncAgentMemoryFiles } from '../domain/agent-home';
 import { postSystemMessage } from '../domain/conversation';
 import { stageStatus, detectOrphanWorktrees, cleanOrphanWorktrees, taskStageStatus, taskStagingBranch, discardTaskStaging } from '../worktree/manager';
+import { listProjectSpecialists } from '../domain/specialist-pool';
 import {
   promoteProjectStagingIfAny,
   listPendingTaskMerges,
@@ -147,6 +148,15 @@ projectsRouter.post(
   asyncHandler(async (req, res) => {
     const body = z.object({ ids: z.array(z.string().min(1)).min(1), confirm: z.string() }).parse(req.body);
     res.json(purgeFromTrash(getDb(), body.ids, body.confirm));
+  }),
+);
+
+/** B5 右侧专家池卡：项目常驻专家薄封装（非人员源——中央岗隐形后"事可见"的取数口）。 */
+projectsRouter.get(
+  '/:id/specialists',
+  asyncHandler(async (req, res) => {
+    const db = getDb();
+    res.json(listProjectSpecialists(db, param(req, 'id')));
   }),
 );
 

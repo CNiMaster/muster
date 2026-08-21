@@ -11,7 +11,7 @@
 import type React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useMessages, usePostMessage, useAgents, useTaskOnce, useTaskAction, materialRawUrl, type ConversationMessage } from '../hooks/queries';
+import { useMessages, usePostMessage, useAgents, useCentralAgents, useTaskOnce, useTaskAction, materialRawUrl, type ConversationMessage } from '../hooks/queries';
 import { onStreamDelta } from '../realtime';
 import { Badge } from './Badge';
 import { Button } from './Button';
@@ -38,6 +38,8 @@ export interface ConversationPanelProps {
 export function ConversationPanel({ scope, scopeId, title, recipientAgentId, projectTaskId, hideInput = false, fill = false, onConvertToTask }: ConversationPanelProps): React.ReactElement {
   const { data: messages, isLoading } = useMessages(scope, scopeId, recipientAgentId);
   const { data: agents } = useAgents();
+  // B5 中央岗：@ 下拉并入六岗（hidden 不影响；用户可与中央职能直接说话）
+  const { data: centralAgents } = useCentralAgents();
   const post = usePostMessage(scope, recipientAgentId);
   const [text, setText] = useState('');
   const [showMentions, setShowMentions] = useState(false);
@@ -100,7 +102,7 @@ export function ConversationPanel({ scope, scopeId, title, recipientAgentId, pro
 
   const send = (): void => {
     if (!text.trim()) return;
-    const mentions = recipientAgentId ? [recipientAgentId] : extractMentions(text, agents ?? []);
+    const mentions = recipientAgentId ? [recipientAgentId] : extractMentions(text, rosterPlus);
     post.mutate(
       { scopeId, content: text, mentions, projectTaskId },
       {
@@ -130,7 +132,16 @@ export function ConversationPanel({ scope, scopeId, title, recipientAgentId, pro
   };
 
   const recipient = (agents ?? []).find((agent) => agent.id === recipientAgentId);
-  const mentionCandidates = recipientAgentId ? [] : (agents ?? []).filter((a) => a.name.includes(mentionFilter));
+  // B5：可见花名册 + 中央六岗（去重；中央岗带角色标签便于识别）
+  const rosterPlus = (() => {
+    const base = agents ?? [];
+    const seen = new Set(base.map((a) => a.id));
+    const extra = (centralAgents ?? []).filter((a) => !seen.has(a.id));
+    return [...base, ...extra];
+  })();
+  const mentionCandidates = recipientAgentId
+    ? []
+    : rosterPlus.filter((a) => a.name.includes(mentionFilter) || a.role.includes(mentionFilter));
 
   return (
     <div className={`mu-conv${fill ? ' is-fill' : ''}`}>
@@ -316,8 +327,12 @@ function WaitingQuestionReply({ refTaskId }: { refTaskId: string | null }): Reac
 
 function extractMentions(text: string, agents: Array<{ id: string; name: string }>): string[] {
   const matches = text.match(/@([^\s@]+)/g) ?? [];
+  // B5 @负责人 关键词透传：前端不认的 token 原样上送，服务端展开为全部 lead 岗
+  // （干员名各异，按名匹配永远捕不到"负责人"——透传是唯一通路）
+  const LEAD_KEYWORDS = new Set(['负责人', '所有负责人']);
   const ids = matches.flatMap((match) => {
     const name = match.slice(1);
+    if (LEAD_KEYWORDS.has(name)) return [name];
     return agents.filter((agent) => agent.name === name).map((agent) => agent.id);
   });
   return [...new Set(ids)];

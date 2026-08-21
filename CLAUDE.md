@@ -6,9 +6,9 @@
 
 本地单用户多智能体工作台：项目任务、智能体/人设、蓝图与归档协同。方向「组织 = f(活)」——组织形状在蓝图里（自动复盘进化）。**当前默认**：双模式（`uiMode simple|pro`，默认 simple，壳顶栏切换 + ModeGate 20 条（含任务领取清单路由））+ 存储管理 `/storage`（详见「Workspace 治理」）。
 
-## 组织与名词（四固定岗）
+## 组织与名词（B5 中央六岗制：一个人就是一个公司）
 
-负责人 / 养蜂人 / 人事 / 验收员（+ 自动化管家：仅自动化页可见；裁决法庭为隐形岗）。记忆四域：personal / workspace / project / skill。详见 `docs/superpowers/specs/org-model.md`。
+用户只对**负责人**说话（唯一可见入口）；六中央职能全隐形（`hidden=1 + visible_in='central'`，口子 `GET /api/agents?visible_in=central` 供 @ 下拉/群聊）：养蜂人（蜂群）/ 人事（专家供给）/ 能力管理（装备供给）/ 验收员 / 裁决法庭 + 自动化管家（仅自动化页）。"人"隐形"事"可见：右侧三卡（专家池/蜂群拓扑/验收进度）。任务链双指向：`下一个给谁`可改（默认验收员）+ `finalReturnAgentId` 链头不可改；三档广深 `breadthTier` 上限不绑模型。记忆四域：personal / workspace / project / skill。详见 `docs/superpowers/specs/org-model.md`。
 
 ## Workspace 治理
 

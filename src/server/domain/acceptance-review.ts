@@ -21,6 +21,7 @@ import { promoteProjectStagingIfAny } from './staging';
 import { ensurePrimaryThread } from './thread';
 import { ensureAcceptanceOfficer, ACCEPTANCE_OFFICER_ROLE } from './acceptance-officer';
 import { advanceChecklist } from './checklist';
+import { BREADTH_LIMITS, taskBreadthTier } from './breadth-tier';
 import { log } from '../logger';
 
 /** 验收判定置信阈值：低于则升级用户。 */
@@ -205,6 +206,25 @@ export function handleAcceptanceReviewTaskCompleted(db: DB, reviewTask: Task): v
         confidence: parsed.confidence,
         feedback: parsed.feedback,
       });
+      // 链路双指向（B1）：PASS 后按链头终拔回流——播报性质不造任务（中链送达由依赖恢复承担；
+      // finalReturn=负责人时本项目对话即用户可见闭环，链路法：验收→finalReturn→负责人→用户）。
+      const finalReturnProto = ((source.inputProtocol ?? {}) as Record<string, unknown>).finalReturnAgentId;
+      const finalReturnAgentId = typeof finalReturnProto === 'string' ? finalReturnProto : null;
+      if (finalReturnAgentId) {
+        const finalReturnName = (() => {
+          try { return getAgent(db, finalReturnAgentId).name; } catch { return null; }
+        })();
+        appendTaskEvent(db, source.id, 'final_return_routed', { finalReturnAgentId, reviewTaskId: reviewTask.id });
+        try {
+          postSystemMessage(db, {
+            scopeKind: 'project',
+            scopeId: source.projectId,
+            role: 'system',
+            author: officerName,
+            content: `[验收通过·回流] 「${source.title}」已交付${finalReturnName ? `，按链路约定回流给 ${finalReturnName}` : ''}。`,
+          });
+        } catch { /* 播报失败不阻断 */ }
+      }
       // 批次三第二片：清单条目验收 PASS → 自动解锁下一条（幂等：advance 只认当前 cursor 条目）
       if (source.projectTaskId) {
         try {
@@ -264,13 +284,16 @@ export function handleAcceptanceReviewTaskCompleted(db: DB, reviewTask: Task): v
     }
     const prevPayload = ((source.inputProtocol ?? {}) as { payload?: { reviewRound?: number } }).payload;
     const nextRound = (prevPayload?.reviewRound ?? 0) + 1;
-    if (nextRound > MAX_ACCEPTANCE_REWORK_ROUNDS) {
+    // 三档广深（B2）：返工轮次上限随源任务档位（轻=1/中=2/重=3；返工任务继承档位，链上口径一致）
+    const sourceTier = taskBreadthTier(db, (source.inputProtocol ?? {}) as Record<string, unknown>);
+    const maxRounds = BREADTH_LIMITS[sourceTier].acceptanceReworkRounds;
+    if (nextRound > maxRounds) {
       postSystemMessage(db, {
         scopeKind: 'workbench',
         scopeId: project.companyId,
         role: 'system',
         author: officerName,
-        content: `[验收升级] 「${source.title}」已返工 ${MAX_ACCEPTANCE_REWORK_ROUNDS} 轮仍未通过验收，请人工接管。意见：${parsed.feedback || '（无）'}`,
+        content: `[验收升级] 「${source.title}」已返工 ${maxRounds} 轮仍未通过验收，请人工接管。意见：${parsed.feedback || '（无）'}`,
       });
       appendTaskEvent(db, source.id, 'acceptance_escalated', {
         reason: 'max-rounds',
@@ -290,6 +313,8 @@ export function handleAcceptanceReviewTaskCompleted(db: DB, reviewTask: Task): v
       exemptBlueprintMatch: true,
       inputProtocol: {
         type: 'business_rework',
+        // 三档广深（B2）：返工继承源任务档位（后续轮次上限口径一致）
+        breadthTier: sourceTier,
         payload: {
           feedback: parsed.feedback,
           decision: parsed.verdict,

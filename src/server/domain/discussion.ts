@@ -22,6 +22,8 @@ import { getProject } from './project';
 import { postSystemMessage } from './conversation';
 import { createMirror, removeMirror, listMirrorsOfRoot, ensurePrimaryThread } from './thread';
 import { getWorkbench } from './workbench';
+import { BREADTH_LIMITS, taskBreadthTier } from './breadth-tier';
+import { CENTRAL_STAFF_ROLES } from './system-agents';
 
 export type DiscussionState = 'open' | 'concluding' | 'concluded' | 'closed';
 export type ParticipantRole = 'member' | 'moderator';
@@ -244,8 +246,19 @@ export function createDiscussion(db: DB, input: {
   const id = shortId('disc_');
   const now = nowIso();
   const contextWithScenario = { ...(input.context ?? {}), scenario, scenarioGuidance: scenarioConfig.conclusionAction };
+  // 三档广深（B2）：发言轮次默认随源任务档位（轻=6/中=12/重=20；聊完即收，不为走满轮次）——
+  // 显式 maxTurns 优先；无源任务（用户直接发起）按工作台默认档。
+  const maxTurnsDefault = (() => {
+    let proto: Record<string, unknown> | undefined;
+    if (input.sourceTaskId) {
+      try {
+        proto = (getTask(db, input.sourceTaskId).inputProtocol ?? {}) as Record<string, unknown>;
+      } catch { /* 源任务缺失回落工作台默认档 */ }
+    }
+    return BREADTH_LIMITS[taskBreadthTier(db, proto)].discussionMaxTurns;
+  })();
   db.prepare(`INSERT INTO discussion (id,project_id,topic,initiator_agent_id,state,max_turns,context_json,source_task_id,mode,created_at,updated_at) VALUES (?,?,?,?, 'open', ?, ?, ?, ?, ?, ?)`)
-    .run(id, project.id, input.topic, input.initiatorAgentId ?? null, input.maxTurns ?? 12, JSON.stringify(contextWithScenario), input.sourceTaskId ?? null, input.mode ?? 'sequential', now, now);
+    .run(id, project.id, input.topic, input.initiatorAgentId ?? null, input.maxTurns ?? maxTurnsDefault, JSON.stringify(contextWithScenario), input.sourceTaskId ?? null, input.mode ?? 'sequential', now, now);
   // 注册参与者（第一个是 moderator）
   ordered.forEach((agentId, idx) => {
     db.prepare('INSERT INTO discussion_participant (discussion_id,agent_id,role,turn_index,joined_at) VALUES (?, ?, ?, ?, ?)')
@@ -568,13 +581,14 @@ export function startUserDiscussion(db: DB, input: {
     if (agent.companyId !== project.companyId) {
       throw new AppError(ErrorCode.UNAUTHORIZED, `员工 ${id} 不属于项目所在公司`);
     }
-    if (agent.isSystem) {
+    // B5 双闸白名单：中央六岗（常驻群聊可被 @）放行；其余系统隐形岗仍拒（蜂群工蜂/辩手只受直属调度）
+    if (agent.isSystem && !(CENTRAL_STAFF_ROLES as readonly string[]).includes(agent.role)) {
       throw new AppError(ErrorCode.VALIDATION, `系统隐形岗（${agent.name}）不可参与探讨`);
     }
     const employment = db.prepare('SELECT hidden FROM company_employee WHERE legacy_agent_id=?').get(id) as
       | { hidden: number }
       | undefined;
-    if (employment?.hidden === 1) {
+    if (employment?.hidden === 1 && !(CENTRAL_STAFF_ROLES as readonly string[]).includes(agent.role)) {
       throw new AppError(ErrorCode.VALIDATION, `一次性执行体（${agent.name}）不可参与探讨：蜂群工蜂/辩手不进选择面，由其直属调度控制`);
     }
   }

@@ -25,6 +25,7 @@ import { createTempEmployment, dismissTempWorker, markTempGreyed } from './temp-
 import { ensurePrimaryThread } from './thread';
 import { getPersona } from './persona-library';
 import { getWorkbenchOrNull } from './workbench';
+import { clampSwarmLimits, isBreadthTier, taskBreadthTier } from './breadth-tier';
 import type { SwarmPlan } from '../../shared/types';
 
 export const SWARM_WORKER_ROLE = 'swarm-worker';
@@ -637,7 +638,10 @@ export function materializeSwarm(
   }
   // 养蜂人是隐形岗，不在 ensureProjectThreads（按可见花名册）覆盖内——汇总/告警任务由它执行，显式建线程
   ensurePrimaryThread(db, sourceTask.projectId, rootDispatcherId);
-  const limits = opts.limitsOverride ?? getSwarmLimits(db);
+  // 三档广深（B2）：蜂群三限按源任务档位钳制（min(基础限额, 档位上限)；预算不钳——金额属平台财务域）。
+  // 档位随群快照定格，群内后续 checkSwarmLimits 均按钳后值（档位只封顶，拆多少仍由养蜂人帽内自决）。
+  const tier = taskBreadthTier(db, sourceTask.inputProtocol as Record<string, unknown>);
+  const limits = clampSwarmLimits(opts.limitsOverride ?? getSwarmLimits(db), tier);
   const proto = sourceTask.inputProtocol as Record<string, unknown>;
   const appendSwarmId = typeof proto.swarmId === 'string' ? proto.swarmId : null;
 
@@ -679,7 +683,8 @@ export function materializeSwarm(
       rootTaskId: sourceTask.id,
       goal: plan.goal || sourceTask.title,
       requesterAgentId: opts.requesterAgentId,
-      limitsOverride: opts.limitsOverride,
+      // 档位钳制后的限额进群快照（B2：min(基础限额, 档位上限)；后续 checkSwarmLimits 均按钳后值）
+      limitsOverride: limits,
     });
   }
   const swarmId = swarm.id;
@@ -714,6 +719,8 @@ export function materializeSwarm(
         trigger: 'swarm_bee',
         swarm: { swarmId, goal: swarm.goal, brief: worker.brief, depth: 1 },
         swarmNode: true,
+        // 三档广深（B2）：蜂继承根任务档位（蜂自身验收轮次等按同档走）
+        breadthTier: tier,
       },
       priority: 5,
       skipLaunchGate: true,
@@ -841,6 +848,10 @@ export function maybeAutoRepairBee(db: DB, failedTask: Task, message: string): v
       trigger: 'swarm_bee',
       swarm: { swarmId, goal: swarm.goal, brief: originalBrief, depth: failedTask.swarmDepth },
       swarmNode: true,
+      // 三档广深（B2）：替补蜂继承档位（沿原蜂口径）
+      ...(isBreadthTier((failedTask.inputProtocol as Record<string, unknown>)?.breadthTier)
+        ? { breadthTier: (failedTask.inputProtocol as Record<string, unknown>).breadthTier }
+        : {}),
       repair: {
         ofTaskId: failedTask.id,
         ofSeq: failedTask.seq,
