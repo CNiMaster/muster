@@ -6,6 +6,11 @@
  */
 import { test, expect } from '@playwright/test';
 
+// 验收修复：预置 simple——任一步失败也不留 pro 污染后续重跑的"默认简单"断言
+test.beforeEach(async ({ request }) => {
+  await request.post('/api/settings/ui-mode', { data: { uiMode: 'simple' } });
+});
+
 test('双模式：默认简单 → 专业页提示 → 切专业生效持久 → 切回', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('navigation', { name: '项目组织与联系人' })).toBeVisible({ timeout: 15000 });
@@ -17,9 +22,10 @@ test('双模式：默认简单 → 专业页提示 → 切专业生效持久 →
   await expect(page.getByRole('link', { name: '蓝图库' })).toHaveCount(0);
   await page.getByRole('button', { name: '搜索或跳转' }).click();
   await expect(page.getByRole('link', { name: '自动化', exact: true })).toHaveCount(0);
-  await page.keyboard.press('Escape');
-  await expect(page.getByRole('link', { name: '存储管理' })).toHaveCount(1);
-  await expect(page.getByRole('link', { name: '归档' })).toHaveCount(1);
+  await page.getByRole('button', { name: '关闭搜索' }).click();
+  await expect(page.getByRole('link', { name: /存储管理$/ })).toHaveCount(1);
+  // 行尾锚定：避免「归档项目-xxx」这类项目名的子串误命中（全量序残留）
+  await expect(page.getByRole('link', { name: /归档$/ })).toHaveCount(1);
 
   // 2) 专业页在简单模式下给提示页（不静默重定向），可一键切换
   await page.goto('/blueprints');
@@ -48,7 +54,7 @@ test('命令面板按模式过滤：简单模式无蓝图库，专业模式有',
   await expect(page.getByRole('navigation', { name: '项目组织与联系人' })).toBeVisible({ timeout: 15000 });
   await page.getByRole('button', { name: '搜索或跳转' }).click();
   await expect(page.getByRole('link', { name: '蓝图库', exact: true })).toBeVisible();
-  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: '关闭搜索' }).click();
 
   await page.request.post('/api/settings/ui-mode', { data: { uiMode: 'simple' } });
   await page.goto('/');

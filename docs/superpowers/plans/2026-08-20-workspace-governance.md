@@ -63,7 +63,7 @@
 - **服务端**：SystemSettings.uiMode = simple|pro（默认 simple，`ui_mode` 配置键；轻量专用端点 `POST /api/settings/ui-mode`，不走主批量端点）。
 - **Hook**：`useUiMode()`（读 systemSettings；mutation 切换即时生效 + 查询缓存同步；`isSimple`/`setUiMode`/`toggle`/`saving`）。
 - **壳层**：WorkbenchShell 顶栏「简单/专业」切换钮（标题说明）+ 命令面板按模式过滤（simple 下隐藏蓝图库/自动化/执行器/权限/审批）。
-- **路由白名单**：ModeGate 包装专业页（简单模式下给提示页可一键切换，非静默重定向）；覆盖 16 条专业路由（blueprints/canvas 等全量 + merges/plans/usage 等工具页 + agents/executors 等系统页）。
+- **路由白名单**：ModeGate 包装专业页（简单模式下给提示页可一键切换，非静默重定向）；覆盖 20 条专业路由（验收轮补任务领取清单路由对称门控）（blueprints/canvas 等全量 + merges/plans/usage 等工具页 + agents/executors 等系统页）。
 - **导航缩表**：ProjectWorkNavigation 专业工具项按模式过滤（任务领取/待合并/自动化/蓝图库/智能体库 5 项为专业专属；成果/归档/存储管理保留）；任务/项目区先后 = 模式默认（简单→任务在上、专业→项目在上）+ 手动偏好 `muster:nav-tasks-first` 持久化（⇅ 钮在底部设置区）。
 - **项目内减负（简单模式）**：底部团队药丸条隐藏；composer 仅保留附件（智能体/模型/深度思考/任务/分支/模式药丸收起）；TaskTopBar 分支下拉/合并钮/Finder-Terminal 组收起（合并治理后台照常）；检查器收蜂群拓扑与蓝图匹配两区（后台照常跑）。
 - **e2e** simple-pro-mode.spec 2 例：默认简单→专业提示→切专业生效持久→切回收尾 / 命令面板按模式过滤。

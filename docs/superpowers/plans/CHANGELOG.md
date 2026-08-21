@@ -11,7 +11,7 @@
 - **迁移重映射（修复轮）**：`migrateWorkspace`/`recoverInterruptedMigrations` 除 `project.root_dir` 外追加 `project_task.repo_root_dir` 与回收站/绑定目录三列前缀重映射，防载体路径分叉空仓库；`createProject` 显式目录增 `isAbsolute` + `assertPathNotCrossingOtherProjects` 交叉守卫。
 - **回收站两段式（批次2）**：`project-trash.ts` —— 前置四拒；`GET /api/projects/trash`、`POST /:id/trash|/:id/restore|/trash/purge`；恢复撞名加日/时后缀；真删 = 系统废纸篓（非 rm）；单人手打目录名、批量「删除N项」、支持「不再提醒」后单删直入；`project_dir`External/attached、`resolveTaskRepoRoot` 外部锚点、`attachedPaths`。
 - **存储管理 UI（批次4）**：`POST /api/system/pick-folder`（darwin `osascript`）+ `/storage`（回收站+对账）+ 项目设置工作目录卡 + `/projects/new?mode=open`。
-- **双模式（批次5）**：`uiMode = simple|pro`（默认 simple，`POST /api/settings/ui-mode`）；顶栏「简单↔专业」钮；ModeGate 16 条专业路由；命令面板/导航工具项按模式过滤；任务/项目区先后=模式默认+手动偏好（`muster:nav-tasks-first`）；简单模式项目内减负（合并治理后台照常）。
+- **双模式（批次5）**：`uiMode = simple|pro`（默认 simple，`POST /api/settings/ui-mode`）；顶栏「简单↔专业」钮；ModeGate 20 条专业路由；命令面板/导航工具项按模式过滤；任务/项目区先后=模式默认+手动偏好（`muster:nav-tasks-first`）；简单模式项目内减负（合并治理后台照常）。
 
 ### 2026-08-20 整改批次 1-8：流程闭环 + 自动化中心一期
 

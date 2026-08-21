@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test';
 
 test('项目工作台三层视图形成完整入口', async ({ page }) => {
+  // 验收修复：该页/该元素为专业模式专属（ModeGate/药丸条）——预置 pro
+  await page.request.post('/api/settings/ui-mode', { data: { uiMode: 'pro' } });
   const suffix = Date.now();
   // 公司退役批次B/C：不再自建公司，直接用隐式单例工作台 + 全局新路径
   await page.request.get('/api/workbench');

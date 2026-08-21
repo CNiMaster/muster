@@ -4,6 +4,8 @@
 import { test, expect } from '@playwright/test';
 
 test('自动化页：管家对话面板 + 新建表单（表单创建经 API 全链路）', async ({ page }) => {
+  // 验收修复：该页/该元素为专业模式专属（ModeGate/药丸条）——预置 pro
+  await page.request.post('/api/settings/ui-mode', { data: { uiMode: 'pro' } });
   // 准备一个可绑定的项目
   const response = await page.request.post('/api/projects/quick', { data: { name: `自动化绑定-${Date.now()}` } });
   const { project } = await response.json();

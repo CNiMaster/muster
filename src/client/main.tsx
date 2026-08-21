@@ -114,7 +114,7 @@ const router = createBrowserRouter([
       { path: 'workflows/:workflowId', element: <ModeGate><WorkflowGraphPage /></ModeGate> },
       { path: 'projects/:projectId', element: <ProjectPage /> },
       { path: 'projects/:projectId/character-graph', element: <ProjectToolPageShell tool="character"><CharacterGraphPage /></ProjectToolPageShell> },
-      { path: 'projects/:projectId/tasks', element: <ProjectToolPageShell tool="tasks"><TasksPage /></ProjectToolPageShell> },
+      { path: 'projects/:projectId/tasks', element: <ProjectToolPageShell tool="tasks"><ModeGate><TasksPage /></ModeGate></ProjectToolPageShell> },
       { path: 'projects/:projectId/merges', element: <ProjectToolPageShell tool="merges"><ModeGate><ProjectMergesPage /></ModeGate></ProjectToolPageShell> },
       { path: 'projects/:projectId/plans', element: <ProjectToolPageShell tool="plans"><ModeGate><ProjectPlansPage /></ModeGate></ProjectToolPageShell> },
       { path: 'projects/:projectId/usage', element: <ProjectToolPageShell tool="usage"><ModeGate><UsagePage /></ModeGate></ProjectToolPageShell> },

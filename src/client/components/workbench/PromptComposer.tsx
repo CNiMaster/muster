@@ -207,7 +207,11 @@ export function PromptComposer({
     { token: 'think', label: '/think 思考深度', hint: '切换思考档位', apply: () => cycleThinking() },
     { token: 'task', label: '/task 切换任务', hint: '打开任务选择', apply: () => setOpenMenu('task') },
     { token: 'new', label: '/new 新建任务', hint: '展开新建任务卡', apply: () => onNewTask?.() },
-  ].filter((command) => onSelectMode || command.token === 'model' || command.token === 'think' || command.token === 'task' || command.token === 'new');
+  ].filter((command) => onSelectMode
+    || (command.token === 'model' && modelOptions && modelOptions.length > 0)
+    || (command.token === 'think' && onToggleThinking)
+    || (command.token === 'task' && taskOptions && taskOptions.length > 0 && onSelectTask)
+    || (command.token === 'new' && onNewTask));
   const visibleSlashCommands = slashToken === null ? [] : slashCommands.filter((c) => c.token.startsWith(slashToken));
 
   useEffect(() => {
@@ -428,16 +432,18 @@ export function PromptComposer({
             </div>
           )}
 
-          {/* 思考深度切换 */}
-          <button
-            type="button"
-            className={`mu-composer-pill ${thinkingDepth !== 'off' ? 'is-highlight' : ''}`}
-            onClick={cycleThinking}
-            title="切换思考深度模式"
-          >
-            <span className="mu-pill-icon">💭</span>
-            <span className="mu-pill-label">{thinkingLabel}</span>
-          </button>
+          {/* 思考深度切换（验收修复：简单模式 onToggleThinking 不传时隐藏——避免"点了没反应"的死药丸） */}
+          {onToggleThinking && (
+            <button
+              type="button"
+              className={`mu-composer-pill ${thinkingDepth !== 'off' ? 'is-highlight' : ''}`}
+              onClick={cycleThinking}
+              title="切换思考深度模式"
+            >
+              <span className="mu-pill-icon">💭</span>
+              <span className="mu-pill-label">{thinkingLabel}</span>
+            </button>
+          )}
 
           {/* + 菜单：添加图片 / 添加文件 */}
           {onAddFiles && (

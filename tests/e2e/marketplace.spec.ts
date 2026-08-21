@@ -6,6 +6,8 @@
 import { test, expect } from '@playwright/test';
 
 test('能力商城：浏览分类 + 一键安装 MCP 预置 + 去能力中心管理', async ({ page }) => {
+  // 验收修复：该页/该元素为专业模式专属（ModeGate/药丸条）——预置 pro
+  await page.request.post('/api/settings/ui-mode', { data: { uiMode: 'pro' } });
   await page.goto('/marketplace');
   await expect(page.getByRole('heading', { name: '能力商城' })).toBeVisible();
   // 一级分类 tab
@@ -30,6 +32,8 @@ test('能力商城：浏览分类 + 一键安装 MCP 预置 + 去能力中心管
 });
 
 test('能力商城：Skill tab 展示文档处理分组与 Anthropic 官方徽章', async ({ page }) => {
+  // 验收修复：该页/该元素为专业模式专属（ModeGate/药丸条）——预置 pro
+  await page.request.post('/api/settings/ui-mode', { data: { uiMode: 'pro' } });
   await page.goto('/marketplace');
   await page.getByRole('tab', { name: /Skill 技能/ }).click();
   await expect(page.getByText('文档处理')).toBeVisible();

@@ -6,6 +6,8 @@
 import { test, expect } from '@playwright/test';
 
 test('工具页新建任务信号：创建卡弹出 + 群聊可用 + 无 new 哨兵 404 轮询', async ({ page }) => {
+  // 验收修复：该页/该元素为专业模式专属（ModeGate/药丸条）——预置 pro
+  await page.request.post('/api/settings/ui-mode', { data: { uiMode: 'pro' } });
   const notFoundNew: string[] = [];
   page.on('response', (res) => {
     if (res.url().includes('/project-tasks/new') && res.status() === 404) notFoundNew.push(res.url());
