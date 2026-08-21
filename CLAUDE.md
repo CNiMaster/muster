@@ -32,55 +32,17 @@ Muster is a local multi-agent workbench. Persistent agents collaborate through p
 
 **记忆归属（2026-08-19 起四体系定名）**：personal（用户画像，永远全量注入）/ **workspace**（工作台级、跟员工走、跨项目——原 'company' 枚举已迁移改名，UI 本就显示「工作台」；与蓝图无关，蓝图是打法包另一层）/ project（锁项目）/ skill（人设方法论，挂「人设方法论档案」宿主按 persona_key 全局召回——方法论属人设不属于执行者）。工蜂通用经验不单独沉淀（并入蜂群汇总），专家蜂 CRAFT 长存；项目专家（role=specialist）照常沉淀。
 
-## 合并治理大计划交付（2026-08-19，批次 A-J + 修复轮）
+## 变更历史（按季度收敛）
 
-原计划+修复计划随分支入库：`docs/superpowers/plans/2026-08-19-merge-governance-and-blueprint-crews.md` + `2026-08-19-merge-gov-fix-round.md`。修复轮前情：执行 agent 完成首轮后被 review 判定 F/G/H/I/J 未对齐（F 方向做反、G 核心架构缺失且蜂群旁路、H 清理不安全、I 只有查看器、J 做成计划外功能），修复轮逐批对齐原计划。
+2026-Q3 及之前 → `docs/superpowers/plans/CHANGELOG.md` 一页式大事记（按季度收敛的变更小传）；
+`docs/superpowers/plans/2026-08-20-workspace-governance.md`、`2026-08-19-merge-governance-*` 等计划文档为批次小传。
 
-- **批次 A 运行环境信息**：assembleContext 注入「# 运行环境」（日期/星期/时刻/时区（tz.ts 口径）/平台架构/执行器类型+binary 名，不注绝对路径）。
-- **批次 B contextWindow**：executor_profile.context_window_tokens（迁移 20260819001400）+ resolveContextWindow（档案>128k 默认）；engine recordRun 传参激活 SessionManager 0.75/0.9 token 比例判定（此前恒 0 从未生效）。
-- **批次 C 压缩自动摘要**：compaction-summary.ts economy 档 LLM（≤400 字，失败降级固定文案不阻塞）；手动压缩未输摘要自动生成 + 引擎 rotate 降级路径均落 compaction_summary（Claude 从裸丢变摘要延续；Codex 原生 compact 不动）；写入按 thread.id（修镜像行双写）。
-- **批次 D 蜂群收口契约**：汇总任务 summary 必含「结论/分歧/风险」三段（无分歧须显式），缺失前缀标注+synthesis_contract_violation 事件；契约教学先行（context.ts）。
-- **批次 E 工程地基**：lefthook pre-push（devDependency+prepare，仅 typecheck，CI 兜底全量）；CI=e2e job+独立 build；THIRD_PARTY_NOTICES 登记；spec/plan 状态行惯例（rejected 也入库）+ postmortem 目录（0001 发布白名单静默丢/0002 迁移 FK 规程/0003 蜂群记忆三连丢，四段模板：事实/根因/为什么自检没拦住/补强）。
-- **批次 F personal 全局**：loadContextMemories/searchMemory personal 去 profile/project 过滤（定案 #8 偏好属于用户不属于员工，乙可读甲沉淀偏好，仍全量注入）；「🎭 已匹配最优蓝图 N 个」卡挂 ProjectContextInspector（任务→蓝图 top-N 方向）。
-- **批次 G 任务级集成区（核心）**：**任务=合并确认单位**——所有 runtime task（必带 project_task 载体）基线从 `muster/<pid>/pt-<ptid>` 任务集成分支切出、产物发布进它（不碰主干），promote 回主干才是门禁；mergeMode 走 project.settings_json（默认 manual，auto 全自动）；promoteTaskStaging=diff 概要→callLlm premium approve/concern+合并摘要→merge（concern/LLM 失败跳过播报不阻塞；成功记 task_merge_record+项目群播报）；TaskTopBar「⬆️ 合并」（领先徽章 15s 轮询/manual 确认弹窗含"以后自动合并"/未完成仅提醒不阻止）；看门狗 sweepStaleTaskStaging（仅 auto 项目+无在飞+无在办验收，task_merge_watchdog 去重，manual 与孤儿永不碰）；no-approval 完全访问任务发布范围全量（定案 #9）；验收/返工任务挂源任务 project_task（审查现场=集成区整体）。
-- **批次 H 待合并看板**：`/projects/:id/merges`（系统待合并+孤儿区）；孤儿检测 git worktree list−task_runtime−系统集成区（realpath 归一修 macOS 符号链接）；**丢弃/清理强制内容检测**（有未提交/未合并内容默认拒绝返清单，force 显式确认才删——复盘 0001 防线，堵死 branch -D 静默丢改动复活）。
-- **批次 I 冲突时间线加权裁决**：promote 冲突→派裁决法庭（debate-judge 隐岗懒确保），输入=冲突文件+意图时间线（任务**开始时间**倒序+用户消息倒序，晚开始=更新意图仅加权不独裁）+行协议契约 SIDE/CONFIDENCE/RATIONALE；置信≥debateMinConfidence 自动选边重发布（-X ours/theirs）+播报理由；低置信/解析失败/再冲突升级用户带时间线；只读时间线聚合器保留作展示层。
-- **批次 J 蓝图专家组合**：staffing 扩展 {personaId, personaName, role?}（分工）；命中派整组——多槽且未显式指定执行者→主任务+组员 runtime task（同 project_task 并行、findActiveSpecialistAgent 池优先、缺员 blueprint_crew_slot_unfilled 留痕不造人）；显式指定执行者只穿衣不派组；穿戴文案全量改「派遣」。
+## Workspace 治理（2026-08-20 定案，当前在 main）
 
-迁移新增：20260819001400 executor_context_window / 20260819001500 task_merge（task_merge_record+task_merge_watchdog）。
+计划 `docs/superpowers/plans/2026-08-20-workspace-governance.md`；历史台账见 `docs/superpowers/plans/CHANGELOG.md`。
 
-## 整改计划交付（2026-08-20，批次 1-8：流程闭环 + 自动化中心一期）
-
-计划：`docs/superpowers/plans/2026-08-19-remediation-and-automation.md`（含"不做与挂观察"留档）。
-
-- **批次1 全量发布删除分类**：no-approval 全量发布按 `git diff --name-status` 分类（D→operation:'delete'，R 拆删旧+增新），合并工作区未提交状态（porcelain 直连 spawnSync——`git()` 助手 trim stdout 会吃前导空格）；分类块在发布门之前（仅含删除的空声明任务也要发布）。
-- **批次2 promote 前确定性验证**：`pre-merge-checks.ts`——项目 `settings_json.preMergeChecks` 显式优先→探测 package.json scripts.typecheck→都无跳过；在任务集成 worktree 异步 spawn 执行（60s/300s 超时、sanitizeChildEnv、node_modules 软链用完即删）；失败→task_merge_record `check_failed`+播报+本轮跳过。门禁从"纯语义审查"补上"真的跑检查"层。
-- **批次3 教训层级升级**：反思 LESSON 段可选行 `<scope: persona>`+`<persona_key>`——高置信跨项目方法论单写 CRAFT（skill+persona_key 挂人设档案宿主，不写项目 LESSON）；蜂群 workers「由简入繁」排序教学。
-- **批次4 memory_candidate CHECK 漂移**：迁移 20260819001700 对齐 workspace 枚举（定位修正：病在 candidate 表非 entry 表）。
-- **批次5-8 自动化中心一期**：平台级基础功能（自动触发非人触发，与项目工作分层）。`/automations` 页（左管家对话/右列表+快速表单）；自动化管家岗（仅自动化页可见）；`automation` 表（kind github-issues/schedule interval|daily/绑定项目/created_via chat|form）；done 契约 `automationPlan`（zod+JSON Schema 双补）；coordinator 独立 timer 每 60s 扫到点自动化；GitHub Issues 链：gh 拉取（30s 超时失败记 health）→`github_issue_sync` 幂等记账（repo+number UNIQUE）→派绑定项目负责人分诊（自由分类/先验证复现/子任务[Issue #N]/铁律：产物只落集成区**绝不自动合并**）→待合并看板「Issue 处理」tab（任务状态+领先数=待审批标识）。迁移 20260819001800/20260819001900。
-
-**挂观察（触发条件）**：语义检索（召回明显漏→本地 embedding）；spawnSync 链路异步化（大仓库可感知卡顿）。**明确不做**：管理三件套（用户裁定理由留档计划文档）、issue 修完自动合并（等用户审批）、postmortem 自动化（自辩悖论）、裁决全自动。测试锚点：tests/unit/{context-env,session-context-window,compaction-summary,swarm-synthesis-contract,personal-memory-scope,blueprint-crew-staffing,task-merge-governance,pending-merges-board,orphan-worktree-detector,conflict-timeline-judge}.spec + tests/integration/engine-wiring（新契约：产物落任务集成分支）。
-
-**蓝图 ↔ 专家池对接（2026-08-19）**：createTask 蓝图命中且未显式指定执行者 → 优先派给项目专家池穿戴同款人设的常驻专家（staffingMode='specialist-pool'，跨任务延续线程记忆）；已指定执行者只穿衣不换人（user_override/official_benchmark 原语义不变）。
-
-**staging 合并看门狗（2026-08-19）**：合并责任链定论——普通任务完工即由发布管线直接合并主干；蜂群系产物进 staging，收口（无验收标准）或验收 PASS 自动 promote；唯一缺口（有验收标准但验收链断 → staging 无限积压）由看门狗堵上：coordinator 每 10 分钟 `sweepStaleStaging`（staging.ts），领先且无活跃蜂群、无在办 [验收] 任务 → 自动 promote，冲突升级用户（同 stagingHead 只提醒一次，`staging_watchdog` 表记账）。
-
-**提交与合并时序口径（2026-08-21 定案）**：worktree 提交与 main 提交在 git 层**完全等价**（同一仓库同一对象库，差别只是落点分支）；「提交完再合并」才有稳定快照供审查（TOCTOU 卫兵锚定分支头）、合并是单一原子操作、可 revert/bisect，「先合并再提交」会让审查对象与最终内容分离——正是门禁要防的形态。**约定：内容提交永远发生在分支上**（三处提交位：任务 worktree 引擎快照提交 → 集成分支 pt- 发布提交 → 主干）；main 只收两种提交——promote 的 merge commit 与 user edits 收口提交，任何内容不直接在 main 上提交。**并发口径**：promote 入口两条（UI 手动 + 看门狗自动）同走 `promoteTaskStaging`；合并序列 `promoteTaskStagingMerge` 全程同步无 await（原子不可交错），交错只发生在审查/检查 await 点；同一 projectTaskId 由模块级 in-flight Set 去重（双发起时后路返回「正在进行中」）。**冲突事前可见性三件套**：待合并看板行 behindCommits 徽章（主干已前进 N = 三方合并风险）＋ merge-tree 合并预演（`taskStagingMergePreview` 对象层试合并零副作用，仅 behind>0 行，head 四元组缓存）＋ behind=0 即 fast-forward 不预演；冲突事后处置仍走裁决法庭。挂观察：集成分支自动追平主干（main→pt）——触发条件见计划文档。
-
-## Workspace 治理（2026-08-20 定案，批次1-5 全部在 main 交付，2026-08-21 收口）
-
-计划：`docs/superpowers/plans/2026-08-20-workspace-governance.md`（定案全记录+批次1-5 全部交付）。背景：真实 `~/MusterWorkspace/projects` 曾积累 367 个纯测试残留目录（MUSTER_HOME 不覆盖 workspace 根所致，2026-08-20 根因修复）。
-
-- **磁盘规矩（唯一事实源 `src/server/domain/workspace-layout.ts`）**：`projects/<纯名>`（仅撞名时后来者加 `-YYYYMMDD`/`-HHmm`/`-2`，显示名永无后缀）；独立任务载体仓库 `tasks/<YYYY-MM>/<MMDD-HHmm>-<截断≤8字>/`（project_task.repo_root_dir 记录，同载体多轮共享一仓，pt-<ptid> 集成拓扑不变）；基础设施（收件箱/独立任务）在 `.system/`；回收站 `.trash/`（批次2）。每系统目录写 `.muster/dir.json` marker（孤儿对账依据）。
-- **MUSTER_HOME 语义扩展**：设置时 workspace 默认根= `$MUSTER_HOME/MusterWorkspace`（defaultWorkspaceRoot()），未设= `~/MusterWorkspace` 不变。测试三通道全隔离：e2e（playwright webServer env）/ smoke（自起服务）/ **vitest（tests/setup-env.ts setupFile 默认补 MUSTER_HOME+放行测试根）**——任何测试不得再落真实家目录。
-- **仓库根解析**：引擎/看板/promote/discard 一律走 `task-repo.ts resolveTaskRepoRoot`（独立任务按载体）；只读路径（看板列表）用 `peekTaskRepoRoot`（绝不触发落盘）。
-- **项目改名跟随**：updateProject 改名时系统管理目录同卷 mv 跟随（活跃任务等安全阀拦下则降级只改名，不抛错）。
-- **对账（只读）**：`GET /api/workspaces/audit` + `npx tsx scripts/workspace-audit.mts`——orphanMarked/unknown/ghostRecords 三分；软件永不自动删目录，存量残留由用户人工清理。
-- **回收站两段式（批次2）**：`project-trash.ts`——移入 `.trash/`（前置四拒：基础设施/active/进行中任务/未合并 pt-集成区防悬空；绑定自动化自动暂停记账）→ `GET /api/projects/trash`、`POST /:id/trash|/:id/restore|/trash/purge`；恢复撞名走同一日期后缀规则；真删=移系统废纸篓（非 rm，MUSTER_TRASH_DIR 可覆盖）+删库，确认语义服务端强制（单个=手打原目录名，批量=手打「删除N项」）。
-- **多目录绑定（批次3）**：`project_dir` 表（external/attached，主目录仍走 root_dir 合成行）——绑定即写授权（engine project scope allowedRoots 含 attachedPaths）；与任何项目目录交叉拒；锚点=绑定的 git 仓库（`resolveTaskRepoRoot` 优先外部锚点，worktree 从锚点切出）；解绑只删行；绑定目录永不 marker/git init（铁律）。
-- **存储管理 UI（批次4）**：系统选择器 `POST /api/system/pick-folder`（darwin 原生 osascript）；存储页 `/storage`（回收站+对账只读清单，手打确认）；项目设置工作目录卡（主目录+绑定行/锚点/解绑不动盘）+ 危险区移入回收；e2e storage-management.spec 4 例。
-- **双模式（批次5）**：设置 `uiMode = simple|pro`（默认 simple，`POST /api/settings/ui-mode` 轻量端点；壳顶栏「简单/专业」切换钮）；简单=任务优先、专业=全量；ModeGate 路由白名单（专业页在简单模式给提示页可一键切换）；命令面板与导航工具项按模式过滤；任务/项目区先后=模式默认+手动偏好（⇅ 钮经 `muster:nav-tasks-first` 持久化）；项目内减负：药丸条隐藏 / composer 药丸收敛(附件保留) / TaskTopBar 收起分支/合并/Finder 组 / 检查器收蜂群与蓝图区（治理后台照常跑）；e2e simple-pro-mode.spec 2 例；smoke/workbench-shell/task-topbar spec 适配为 pro 前提。
-- **铁律不变**：软件永不挪/删用户自有目录；plan 详见上。
+- **默认行为（当前 2 代）**：双模式（`uiMode simple|pro`，默认 simple；壳顶栏切换 + ModeGate 16 条 + 命令面板/导航过滤；任务/项目区先后=`muster:nav-tasks-first`；简单模式项目内减负）；存储管理 `/storage`（回收站 `GET /api/projects/trash` + 磁盘对账 `GET /api/workspaces/audit`）。合并治理等后台（staging/任务级集成区/看门狗）照常，不属 UI 口径。
+- **迁移口径（`src/server/domain/workspace-layout.ts`）**：`projects/<纯名>`（撞名再加 `-YYYYMMDD`/`-HHmm`/`-2`）；`tasks/<YYYY-MM>/<MMDD-HHmm>-<段>/`；`$MUSTER_HOME/MusterWorkspace`（`defaultWorkspaceRoot()`）。详见 CHANGELOG。
 
 ## Product Direction: Local Agent Workbench（项目主导）
 
@@ -113,132 +75,7 @@ Key constraints for all new work:
 
 > 当前成品边界是本地单用户多智能体工作台：项目任务、智能体/人设、蓝图、归档、固定执行器/权限、审批、会话健康和实时状态均已形成代码级闭环。服务端 company 域 = 工作台实例的数据载体（company 表/company_employee/状态机/API 仍在用），UI 层已统一为工作台文案、不出现公司语义。旧 Leader→Worker→Verifier 单次编排器不参与当前运行。
 
-## Blueprint Org Refactor（蓝图组织重构，2026-08-15 定案，分批落地）
-
-方向定案：**组织 = f(活)**。不再把"公司/员工"的人类组织隐喻当作一等概念——组织形状存在蓝图里，从真实使用中学出来。定案概念：
-
-- **智能体（agent）**= 有记忆的持久执行者（治理锚点：执行器/权限仍绑任职）；**人设（persona）**= `personas/` 库中按任务穿戴的身份，不产生任职（`task.persona_id`）。变身只是任务上下文的一部分。
-- **蓝图（blueprint）**= 任务类型 × 人设组合 × 战绩。反思队列消化后自动进化（`blueprint.ts` evolveBlueprint：Jaccard ≥0.4 聚类合并、胜负记账），新任务按标题词元匹配（≥0.2）自动穿戴（createTask 钩子，结果记 inputProtocol 审计）。用户零手动固化；蓝图库页可见/可锁/可淘汰。
-- **记忆归域三分类**：方法论→人设（skill scope + `persona_key`，反思 CRAFT 段产出，置信 ≥0.8 自动批准）、相处→智能体（personal，永远全量注入）、事实→项目（project）。skill 注入按当前任务人设过滤（人设方法论不串门）。
-- **归档（archive）= 知识库本体**：项目记忆 + 调研摘要 + 成果元数据共用一套跨项目检索（`archive.ts` searchArchive，公司隔离、排除当前项目）；干活时注入「# 相关旧档」，用户在归档页搜到的是同一套。
-- **选择面/控制面分离**：@候选、探讨参与者、单聊对象 = 花名册成员（listAgents 天然排除 hidden），永远排除蜂群工蜂/辩手/镜像；蜂群工蜂只受直属调度控制，用户侧只有聚合播报 + abort。
-- **动态通信图**：同项目团队成员（该项目有线程）互可派发，固定 contact_allow 白名单不再是唯一通路（createTask 守卫）；loop 防护不变。
-- **用户发起探讨**：`startUserDiscussion`（brainstorm 场景）——机制与智能体发起同构（分身参会/轮转/纪要回写群聊），参与者校验选择面规则。
-- **命名原则**：不造词。智能体/人设/蓝图/团队/临时工/转正/复用/复盘/养蜂人/归档/工作台/记忆——全部为代码库现有词或行业通用词，中英文天然同对（agent/persona/blueprint/team/temp/convert/reactivate/retrospective/dispatcher/archive/workspace/memory）。
-
-已交付：批次1（人设原语+记忆归域）、批次2（归档检索+归档页）、批次3（蓝图环+动态通信图）、批次4a/4b（选择面规则+用户探讨）、批次4c（项目优先入口：`createQuickProject` 零组织决策 + 首页「我有件事要办」CTA）、批次4d（收件箱项目：公司对话落 `ensureInboxProject`）、批次4e（系统隐形岗懒确保：`ensureDispatcherAgentId`/`ensureJudgeAgentId` 首次使用即创建，与公司上线时机解耦；按工作台实例化而非全局单例——执行体必须同工作台是任务守卫的硬约束）、批次5（B2B 拆件：删外包中心 UI/路由/导航/hooks、删 `findVendorCompany` 与决策树 outsource 路径；dispatch 端点只留内部建议+临时工选拔；契约状态机/交付管线/返工/自动验收保留待改造为跨项目交付协议）、批次6（全量 UI 文案对齐：员工→智能体、公司→工作台，覆盖 src/client 全部用户可见文案与 tests/unit、tests/e2e 断言；服务端中文报错文案保持不动——被大量集成测试断言且属开发面）。Code review 修复：动态通信图排除 hidden 非系统执行体（蜂群工蜂/辩手只受直属调度，系统隐形岗保持可派发）；收件箱不进项目列表/驾驶舱计数并补 project.created 事件；退役蓝图遇同类新证据自动复活（避免 UNIQUE 冲突吞战绩）；归档检索空词元守卫。测试锚点：`tests/integration/task-persona.spec.ts`、`archive-search.spec.ts`、`blueprint.spec.ts`、`user-discussion.spec.ts`、`quick-project.spec.ts`、`conversation.spec.ts`（收件箱语义）、`system-agents-lazy.spec.ts`、`outsourcing-decision.spec.ts`（两路径）。
-
-剩余（收尾项）：外包契约状态机 → 跨项目交付协议的改造（项目对项目，替代公司对公司，需为保留的契约域设计新入口）。
-
-## 公司概念退役 A+B+C+D（2026-08-18，分支 feat/company-drop）
-
-- **批次 A+B+C（语义坍缩与路径收敛）**：/api/companies/* 全部下线；资源组去段扁平，单例组收进 `/api/workbench/*`。`companyIdOf(req)` 统一解析单例工作台。
-- **批次 D（物理去列与终局迁移，含终审修复轮）**：
-  - **迁移 A（20260819000000_company_drop_org.sql）**：重建 11 张组织/人员/对话表去 `company_id`（`department`, `agent_definition`, `relationship`, `company_employee`, `memory_candidate`, `memory_entry`, `discussion`, `handover_record`, `permission_change_request`, `business_review`, `conversation_message`）；`conversation_message.scope_kind` CHECK 改 `('workbench','project')` 且带 CASE 值转换。列清单按权威库逐列对账。
-  - **迁移 B（20260819000100_company_drop_assets.sql）**：去列 11 处——重建 `workflow_node`, `workflow_edge`, `project`, `swarm_run`, `trigger`, `blueprint`, `debate`, `decision_record`，`task_closeout_summary` **形状无关重建**（真实库存在历史漂移旧形状，仅抄两形状共同列），`expert_candidate`/`blueprint_optimization_item` 裸列 DROP。
-  - **迁移 C（20260819000200_company_drop_satellites.sql）**：重建 `company_employee`/`task`（解除对 outsourcing_contract 的外键）、`capability_binding` 去列；`company_plugin`→`workbench_plugin`、`company_tool`→`workbench_tool` 改名去列；DROP 死表 `company_credential`/`company_optimization_report`/`promotion_candidate`/`company_template_installation`/`template_health_finding`/`outsourcing_contract`；B2B 契约死流域代码退役，解锁 33 例单测。
-  - **迁移 D（20260819000300_company_rename_workbench.sql）**：`company` 瘦身 RENAME `workbench` 单例表（保留 `first_agent_id`, `review_mode`, `shutdown_paused` 活列，删 `archived_at`, `archived_reason`, `executor_tier_*` 死列）。
-  - **迁移 E（20260819000400_company_drop_leftovers.sql，终审补）**：`plugin` 表 CHECK 的 'company' 档改 'workbench'（存量值 CASE 映射、scope_id 清空）；补删漏网列 `permission_rule.company_id`/`task_reflection.company_id`。
-  - **迁移 runner 外键规程（终审修复）**：`runMigrations` 逐文件事务外 `PRAGMA foreign_keys=OFF`、文件内 `foreign_key_check` 违规即回滚（SQLite 官方表重建规程）——此前 FK=ON 下 DROP 被未重建子表外键拒绝/级联误删，空库测试掩盖。
-  - **plugin 契约 workbench 化（终审修复）**：`PluginScope`/`PluginSource` 的 `'company'` 成员改 `'workbench'`（无 id 载荷）；plugins API/marketplace/skill-author/plugin-adapter 全链去 `companyId:''` 空串占位；`setCompanyPluginDecision` 等签名去公司参。
-  - **运行时换域与壳删除（终审+微批）**：全部生产代码（engine/context/projects/tasks/report/acceptance-review/conversation/graph-proposal/gap-research 等）改用 `domain/workbench`；`src/server/domain/company.ts` 遗留壳**已删除**——104 个测试文件夹具迁移到 workbench 域原语（`restoreWorkbench` 带名/kind 直插=夹具入口，`ensureWorkbench` 单例解析），多公司语义测试（改名查重/列表过滤/跨公司咨询拒绝）随概念退役删除或单例化改写。上下文注入标签 `# 公司章程`→`# 工作台章程`。
-  - **真实库迁移（2026-08-18 执行，脚本 `scripts/company-drop-migrate-real-db.mts` 留档）**：备份至 `~/.muster-backups/` → 清理 103 家冒烟垃圾公司（仅留 `co_default_workspace`，其组织数据完整保留）→ 迁移 A-E → 断言全过（foreign_key_check 空、workbench 单行、漏网列已删）。
-- **契约与事件**：`src/shared/types.ts`, `src/shared/lifecycle-events.ts`, `src/client/api/types.ts` 全面剥除 `companyId`；事件类型由 `company.state` 演进为 `workbench.state`。
-- **测试基线**：tsc 0 错误；vitest 全量除 web-tools 3 例（本地沙箱 DNS 环境性失败）全过、2 skipped（多公司隔离语义过时）；e2e 与冒烟基线见批次收口记录。
-
-## 项目/任务管理工作台（2026-08-18 批1-4）
-
-- **语义定案**：移除项目=移出显示区（可选删平台记录；**任何删除绝不触碰用户仓库目录**）；归档=进归档区可还原可删记录；独立任务=隐藏「独立任务」载体项目（收件箱同款 `settings.standalone`，零 schema 大改）；分组=手动自由分组（`project.settings_json` 承载 `group/sortOrder/removed`，零列变更）。
-- **服务端**：迁移 `20260819000500`（`project_task.pinned`）；`removeProject`（隐藏/删记录双语义，删前取消未终态任务，基础设施项目拒移除）；`listProjectFileTree`（只读目录树，复用 artifact 防逃逸口径，忽略 .git/node_modules，深度≤4 懒加载）；`GET /api/projects?view=archived|removed`、`DELETE /api/projects/:id`、`GET /:id/files/tree`、`POST/DELETE project-tasks/:id`（pin/删记录/restore）；状态机新增 `archived→active/drafting` 还原出口。
-- **客户端**：HomePage 重写为项目主页（去自动跳转）：紧凑对话开工 hero + 独立任务区（一行即建/置顶/归档）+ 分组管理（dnd-kit 组内拖动排序/跨组拖入/空组删除/组头折叠）+ 项目行（拖柄/折叠/状态徽章/active 任务前 5+「显示更多」/三点菜单：新建任务·查看文件·归档·移除双按钮确认）；`/projects/new?mode=open` 打开本地目录模式；侧栏 ProjectWorkNavigation 任务行置顶/归档 hover 操作+>5 折叠+区块折叠；切换器项目名旁「＋」；ArchivePage 增「归档项目」「归档任务」双 tab（还原/恢复显示/删记录，确认文案明示不动仓库）。公共组件：`DropdownMenu`、`FilesTreeModal`（树懒加载+文本预览）。
-- **修订轮（同日）**：项目行按钮定序 `⋯(其他功能,目前仅移除) → 📁查看文件 → ➕新建任务`（归档从行菜单移除，项目归档走归档区/API）；顶部工具条＝`#分组|项目` 视图切换 + 展开全部/收起全部 + 筛选排序（视图：按项目/时间线；排序：更新/创建时间）+ 归档入口；项目区头右侧「添加项目」、任务区（独立任务）头右侧「新建任务」；任务拖动排序持久化（迁移 `20260819000600` `project_task.sort_order`，`reorderProjectTasks` 自上而下赋 1..N，列表序 `pinned DESC, sort_order ASC, seq DESC`——未拖过的新任务靠顶）；时间线视图跨项目平铺 active 任务（useQueries）。
-- **任务顶栏（修订轮·二）**：任务视图中栏顶部＝`#seq 任务名 · 项目名 · 分支(worktree)下拉`——搜索分支/分支列表(当前✓)/创建并检出新分支/git 图谱(文本式 `git log --graph` Modal)；`⋯` 其他功能菜单＝置顶/重命名(Modal)/归档/标记未读｜在 Finder 中打开/复制路径(项目目录)/复制任务路径(worktree)/复制日志路径(`~/.muster/runs/<runId>/logs` 平台约定位)/复制会话 ID(线程 vendorSessionId 回退线程 id)/前往配置｜查看调用轨迹(/tasks/:id)｜反馈问题(GitHub Issues)；右侧＝Finder/终端打开切换(即点即开)/帮助(快捷键 Modal)/切换终端(系统 Terminal 打开任务目录——内置终端未做)/右侧面板(经 `WorkbenchUIContext` 复用 Shell 开合)。服务端：`domain/git-branches.ts`(列分支/图谱/任务 worktree 检出——无 worktree 拒绝，绝不越权动主干)+`domain/open-location.ts`(task-context 聚合+Finder/终端打开)；迁移 H `project_task.unread`(进入任务自动已读,列表未读圆点)；PATCH project-tasks/:id 重命名。**如实口径**：内置终端不做（用系统终端）；git 图谱文本式；日志目录适配器暂未写文件（目录可能为空）。
-- **测试**：集成 project-management.spec 15 例（移除双语义含目录保留断言/树防逃逸/深度语义/独立任务幂等置顶/还原链路）；e2e project-home.spec 3 例 + task-topbar.spec 1 例（分支下拉/⋯菜单全项/右侧按钮组/帮助弹窗），e2e 基线 22/22。
-
-## UI 重构 2026-08-16（批次 A-E，项目主导 + Composer 全功能 + 固定员工收敛）
-
-- **排版体系**：字号刻度全部由 `--app-font-size` 推导（默认 15px，`useAppearance` 只覆写这一个变量，标题随设置缩放）；最小可视字号 12px（数字角标 10-11px 例外）；`.mu-conv` 默认 520px、flex 父容器加 `fill`/`is-fill` 弹性填充。
-- **公司概念退场（无兼容）**：删 CompanyPage/CompanyListPage/CompanyWizardPage/`components/company/` 全目录与 `/companies/*` 全部路由；归档/蓝图库/组织图/协作流程改为全局路由 `/archive` `/blueprints` `/graphs/:kind` `/workflows/:workflowId`（公司/API 层退役见上方「公司概念退役 A+B+C」节，`useDefaultCompanyId` 已删除）。新建项目走 `/projects/new`；面包屑项目切换器带「＋ 新建项目」；左栏「＋ 新建任务」直建（URL `projectTask=new` 或 `newTaskSignal` 驱动创建卡）；项目页头部有工作台「上线/下班」生命周期胶囊（⌘K 命令面板同构）。
-- **对话空态居中→落底**：ProjectTaskWorkspace 空态（无消息且无执行过程）hero+composer 垂直居中；首条消息或出现执行后过渡为消息流占满+composer 底部常驻（`ptws-body`/`is-empty`/`is-started`）。
-- **公司模板平台删除**：TEMPLATE_BASES/template-registry/template-installation/template-architect/template-health(-findings)/company-setup/company-starter/role-templates 全删；`capability_binding` 通用查询并入 `capability-binding.ts`；迁移 drop 四张模板表；cockpit requiredRoles 缺岗告警移除。招募只剩 复用档案/新建档案 两源；`/api/novel/companies` 建司端点删除（题材预设 GENRE_EXTENSION_PACKS/MAINTENANCE_ROLES/initializeNovelProject 保留；`createNovelCompany` 降级为 tests/integration/setup.ts 夹具）。
-- **固定员工（组织=f(活) 收口）**：`workspace-staff.ts` `ensureWorkspaceStaff`——工作台默认只有 第一负责人(lead,internalRecruit 豁免懒建,绑经理档权限)+验收员(ensureAcceptanceOfficer)；养蜂人/裁决法庭隐形懒确保不变；createQuickProject 与 postUserMessage（无第一负责人时）幂等调用。旧岗位名单全仓 grep 零残留（题材域/人设库除外）。
-- **Composer 全功能**：附件链路 = `POST /api/projects/:id/materials/upload`(octet-stream + x-file-name, 64MB 上限)→素材区 `materials/_uploads/` + commitAll 随仓库进后续任务 worktree；消息 `attachments_json` + 派发 inputProtocol 注入【用户附件】相对路径；`GET /:id/raw` 预览。任务药丸（切换归属）+ 分支药丸（只读 `muster/<project>/<task>`）。消息级选项 `options_json`(mode/model/thinking)：模式=计划(前缀指令+deny 只读沙盒)+三档审批(ask-always 升级审批/ask-by-rule/no-approval 降级放行)+只读；引擎 `readMessageOptions` 覆盖 `effectiveExecutor.model/thinkingDepth` 与审批策略（无员工策略时幂等绑员工档作审批载体）。斜杠命令面板（/plan /ask /rules /auto /readonly /default /model /think /task /new）。模型清单来自执行器档案+系统设置（不再硬编码）。
-- **测试基线**：单测/集成 179 文件 1266 过（web-tools 3 例为本地沙箱 DNS 拦截公网域名的环境性失败，非回归）；e2e 18/18；HTTP 冒烟 77/77；product-acceptance 改为零组织路径。
-
-## 蓝图打法包 + 蜂群专家团（2026-08-16 进化环收拢，批次1-6）
-
-- **进化频率 = 每次任务结束**：晨醒每日定时退役（coordinator 调度/开关/设置项全删），任务终态反思队列（10s 排水）成为唯一进化驱动；晋升链（promotion/detectPromotions/候选表/API）与旧运营报告数据面（表/executor/evolution-summary/structure-versioning/entity-lock）整体删除，蓝图成为唯一进化与治理对象。
-- **蓝图 = 打法包**（不再是"人设匹配器"）：`blueprint` 扩展 description（用户语言描述）、tools_json（execution_trace 按任务聚合工具记账 cap10）、rework_total/correction_total（多维战绩，综合评分=胜率60%+低返工25%+低纠正15%，样本<3 观察中）；班底 2-4 槽生效（协作成员以"协作班底"提示注入上下文，不另起执行体）；`stages_json` 二期预留（阶段工作流）。
-- **版本化**：`blueprint_version` 快照链（仅结构性变更出版——新建/班底/工具集/状态/回滚；纯计数不出版），中文摘要+证据，cap 30/蓝图，回滚恢复结构保战绩另记一版；API versions/rollback/description；任务穿戴审计含 blueprintVersion（标题条与 ExecutionTraceCard 显示"🎭 蓝图label vN"）。
-- **蓝图优化对话**（2026-08-17 定案，替代手动深度体检）：`blueprint-optimize-chat.ts` 每蓝图一条 AI 会话线（`blueprint_optimize_chat` 表）——用户围绕单蓝图沟通，LLM（premium 档，失败降级单蓝图确定性规则：高胜率≥80锁/低评分<30淘汰/缺描述润色）产出结构化提案落 `blueprint_optimization_item`（pending/applied/ignored，幂等），采纳落地全走版本化（合并=班底工具战绩并入+源退役）；提案动作限 lock/retire/merge/polish_description 四种。UI `/blueprints/:id/optimize`（BlueprintOptimizePage，对话+提案双栏）；公司级一键体检与 consult 整体检测已退役（前者按钮 URL 与路由错位本就 404）。
-- **蜂群专家团 + 派遣分级**：SwarmPlan.worker.personaId → 工蜂穿戴人设（三蜂型：匿名/同种专家/混合专家；显式优先于蓝图自动匹配，缺失优雅降级）；养蜂人提示词+蜂群契约教学三种蜂型。派遣分级：第一负责人与养蜂人=全额四项限额；其他专家=小额自主（3蜂/单层/$1/并发1群，`swarm_run.requester_agent_id` 落库），超限或并发冲突→「[蜂群请示]」派第一负责人把关（不建群、计划全文派发、负责人自行决定转派养蜂人或拒绝，`swarmManaged` 旁路 crewMate 守卫）；控制面（工蜂/辩手）永不自主；蜂群树每蜂人设徽章；`swarm.request-escalated` 事件。
-- **断电/意外安全基线（review 修复轮）**：DB=WAL+`synchronous=FULL` 显式（提交即 fsync，断电不丢已提交事务）；关键写链路全事务化——反思四类记忆候选+done 标记同事务（崩溃整体回滚，recoverStuckReflections 复位重做不产生重复候选）、drain 进化挪进行内（反思成功后同迭代记账，消除 done 后崩溃丢记账窗口）、进化记账与版本提交/版本提交与封顶删除/优化采纳与状态/建群全链各自单事务（崩溃不留半群或"已改蓝图但建议仍 pending"）；执行器新契约字段必须同时补 result-schema 的 zod 与 AGENT_RESULT_JSON_SCHEMA（zod strip 曾致 personaId 全链静默丢失）。
-- **记忆优势分（注入战绩排序，2026-08-17）**：`loadContextMemories` 排序从 `updated_at DESC` 升级为「收缩平均优势优先、时间序兜底」——解决"刚写的平庸记忆压过老而准记忆"。机制：注入记账（assembleContext 传 taskId → `memory_injection` 关联表 + `hit_count`，`(task,entry)` 唯一幂等，personal 豁免——用户偏好由用户背书不参选）；终态结算（`settleMemoryVotes` 10s 惰性扫描，不挂反思队列——反思在任务首次 waiting_input 就消耗 task_id UNIQUE，半程投票失真）：消耗分=`rework_count×2 + clarification_rounds×1`（追问走 clarification_rounds，原 conversation_message 纠正信号恒为 0 不可用），项目基线=`project_cost_stat` 已结算任务平均消耗（样本≥3 才启用，低于平均越多分越高），completed 记票 / failed 投中性 0 票（失败原因不明不冤枉不奖励且不计入基线）/ cancelled 与未终态不投；`voted_at` 守卫 + 单事务保证恰好一次（断电重扫不重复计票）；排序收缩常数 K=5（`adv_sum/(vote_count+5)`）防两次好运登顶。**扫描即过滤（review 修复）**：终态过滤放扫描 SQL 而非循环 continue——永久 waiting/cancelled 任务注入最早，会占满 LIMIT 窗口让结算静默停摆；验收未闭环推迟结算——验收返工的 `rework_count` 在源任务完成后才落（acceptance-review.ts 先加计数再发 acceptance_rework 事件），`acceptance_dispatched` 存在且未落闭环事件（passed/rework/escalated）且验收任务活着 → 推迟；验收任务死亡=事后门放行语义，此刻 rework_count 已是终值，正常结算。记忆中心面板展示「注入 N 次 · 平均优势 +x.x」。迁移 `20260817090000_memory_advantage.sql`。
-- **二期路线**（本轮未做）：stages_json 阶段工作流落地（每阶段=目标/人设/工具/产出）、组合管线生成器（复杂任务匹配多蓝图→顺序阶段编排，阶段内才用蜂群并行）、蓝图拆分/派生。
-- 测试基线：单测/集成 174 文件 1227 过（web-tools 偶发本地沙箱 DNS 拦截为环境性非回归）、e2e 18/18。
-
-## 六问收口：专家沉淀 + 模型档位 + 多模态工具化 + 流式（2026-08-17）
-
-- **专家链路修复**：养蜂人上下文注入人设库索引（`persona-library.listPersonaIndex`，域分组、仅 role=swarm-dispatcher 任务注入）；personaId 未命中留 `persona_miss` 事件（蜂群 `resolveBeePersona` + 任务穿戴热删除两处）；验收/返工任务 `exemptBlueprintMatch` 豁免蓝图自动穿戴（防验收员穿与产出者同款人设）；蓝图 tools 读侧消费（命中蓝图时 `blueprintTools` 按使用次数 cap10 注入「# 本打法常用工具」）；`resolvedSkillIds` 落 inputProtocol + 任务条/ExecutionTraceCard 🧩 chips（注入去黑盒）。
-- **系统自建专家（persona 沉淀管道，组织=f(活) 专家侧，免人工确认）**：反思 drain 末尾 `maybeSynthesizeExpertCandidates` 三信号——persona_miss 同 id ≥2 / 匿名蜂同 swarm goal 完成 ≥3 零失败 / 无专家人设普通任务同类 ≥3 零返工（taskTypeOf 聚类）→ LLM 轻量档起草（失败降级规则引擎）→ **自动入库**写 `~/.muster/personas/{domain}/{slug}.md`（无审批闸；去重双保险=同 signal_key 历史存在不涌现+草稿名与库内精确同名跳过）；`expert_candidate` 表=沉淀历史（status adopted/dismissed，persona_id 溯源）。管理=查/改/删：历史列表 `/api/companies/:id/expert-candidates`；人设编辑/删除单门 `/api/agent-profiles/personas/:id`（PUT 整文件重写/DELETE 删文件并标历史 dismissed，仅 user/ 前缀，预置库只读）；AgentLibraryPage「自建专家」区（编辑表单+删除确认+沉淀历史折叠）。persona-library 双根扫描（repo `personas/` + 用户根，user/ id 前缀防撞、source 标记，mtime 聚合一级子域目录热加载+写后强刷缓存）。二期不做：转正专家合并/淘汰（挂 blueprint-optimizer）、预置 243 人设正文深度激活。
-- **模型档位（成本-能力匹配）**：设置键 `modelTierEconomy/Premium`（空=不覆盖零回归；标准档=不覆盖故无第三键）；`domain/model-tier.ts` 判定——轻量=蜂群工蜂(trigger=swarm_bee)/辩手/平台反思（`llm-call` tier 参数，反思/审批/技能起草默认轻量），高级=计划模式/验收/返工/裁决/蜂群请示；引擎合成顺序=消息显式 model > 档位键 > 执行器档案 model；composer 模型下拉三档快捷项。
-- **API 流式输出**：openai/gemini adapter 默认 SSE 流式（400/404/422 或「provider 忽略 stream 回整包 JSON」自动回退非流式）；tool_calls 增量按 index 聚合；`ExecutionEvents.onTextDelta` → 引擎 60ms 节流广播 `message.delta`/`message.delta.end`（payload 带 agentId/projectTaskId 归属——单聊面板不串入其他任务的流；前端 realtime 对 delta 不做缓存失效，`onStreamDelta` 订阅）；ConversationPanel 打字机气泡（按归属过滤、markdown 实时渲染、8000 字符截尾、5s 无活动/落库/流结束三路清泡）。
-- **对话渲染**：MarkdownPreview 重写为 react-markdown + remark-gfm + rehype-highlight（`.mu-md-*` 类名兼容既有消费方）；MessageBubble assistant 消息走 markdown（`.mu-msg-text.is-md`）+ hljs 主题跟随 data-theme（浅/深两套 GitHub 风调色）。
-- **多模态工具化（主模型管思考，多模态走工具）**：`AgentExecutorConfig.capabilities` 能力声明（ExecutorCenter 勾选 vision）；识图双路——图片附件转 data-uri（仅 png/jpeg/webp/gif，≤2MB/张 ×3）随任务下发（conversation `collectImageDataUris` → inputProtocol.userImages），**引擎级门控：仅 capabilities 含 vision 才塞 ctx.imageAttachments 产 image_url/inline_data 原生直读**（未声明连 parts 都不拼——纯文本模型不会被 provider 400，走「# 图像输入提示」引导工具/禁编造；userImages 不进 inputPacket 提示词 JSON）；内置 `image_generate` 工具（OpenAI 兼容 /images/generations，`imageGenModel` 设置键，产物落 worktree、文件名穿越净化，network 权限）；复活死字段——`requires_executor_kind` 进 `findBestAssignee` 过滤（`requiredExecutorKindForCapabilities`）、工具档案 `executor_kind` 进能力缺口检测。
-- **Browser 能力（WP6 选型落地，不自研）**：主选 microsoft/playwright-mcp（Apache-2.0，pin `@playwright/mcp@0.0.79`）；商城预置 `mcp-playwright`（新分类 `mcp-browser`，curatedBy 白名单扩 microsoft）+ `tools/browser/playwright-mcp.md` 档案；选型对比见 `docs/superpowers/specs/2026-08-17-browser-tool-selection.md`。
-- **研究交付**：`docs/superpowers/specs/2026-08-17-dsh-capability-gap-matrix.md`——deepseek-harness 48 插件包 × muster 对照矩阵；缺口优先级=spill 上下文溢写 > bundle 能力包分发 > 蓝图 stages 阶段化；不引 Cordis 不搬代码。
-- 测试锚点：`tests/integration/expert-chain.spec.ts`（豁免/miss留痕/索引/档位判定）、`expert-synthesis.spec.ts`（三信号/采纳/双根，MUSTER_HOME 动态隔离）、`tests/unit/openai-stream.spec.ts`（SSE 解析）、`image-tools.spec.ts`（文生图）。测试基线：单测/集成 178 文件 1250 过（web-tools 3 例为本地沙箱 DNS 拦截公网域名的环境性失败，非回归）+ e2e 18/18 + smoke 77/77。
-
-## 补缺批次 R1-R3（2026-08-16 交付，配枪/验收员/资产库）
-
-- **R1 人设配枪**：persona frontmatter `tools` 键解析（persona-library.ts）；穿戴人设时上下文含「# 人设工具」文本段 + 注册表归一化命中的工具进「# 能力中心」推荐卡（tool-recommendation.ts `normalizeToolId`）；**一次性执行体权限缺口修复**——临时工/系统隐形岗创建即绑「临时工」deny 档（permission-templates.ts `bindDefaultDenyPolicy`，API 执行器上不再零拦截，CLI 侧 fail-closed 不变；已有显式策略不覆盖，greyed 复用补绑）。
-- **R2 验收员（收尾环节）**：`acceptance-officer.ts` `ensureAcceptanceOfficer`——**可见正式员工**（is_inspector 不可删、花名册可见、可对话、可 @、经理权限档、三级默认执行器）；`acceptance-review.ts` 泛化外包自动验收——任务 completed 且有验收标准、工作台 contractJson.autoReview 未关（默认开）、产出者非验收员 → 派「[验收]」Task；验收员按 `VERDICT=PASS|FAIL|CHANGES` + `CONFIDENCE` 判定：PASS 交付留痕 / FAIL|CHANGES 派「[返工]」（继承验收标准 + feedback + rework_count++）/ 低置信或解析失败升级用户（对话播报 + 事件）。验收是事后门：失败兜底走通用失败播报，不阻塞主任务。
-- **R3 资产库 + git 正确性**：upsert 登记时记录 props（size/mime，排序/预览的数据基础；按大小排序 UI 待接）；`deleteArtifact`（文件+登记+git 提交删除+审计，历史可回滚）；`POST /artifacts/reveal` 资源管理器定位（buildRevealCommand：open -R / explorer /select / xdg-open；防护同 /open：项目内 + 允许根）；前端 ArtifactsPage 列表与归档画廊显示「来源任务」链接（created_task_id 首次 UI 消费）+ 画廊类型筛选；**git 两修**——`writeArtifactContent` 保存即提交（"muster: user edit"，兑现 PRD 注释）+ 发布前主干未提交改动先提交为独立提交（"muster: user edits"，不再卷进 agent 发布提交）；context 注入「# 工作区与发布」教学段（勿自行 merge/push）。
-- **Review 修复（R1-R3 评审后）**：C1 验收员创建走 `internalRecruit` 豁免（org-lock 豁免但不 hidden——online 态可懒确保，此前真实运行态永远建不出）；I2 验收→返工轮回上限（`MAX_ACCEPTANCE_REWORK_ROUNDS=3`，超限升级用户）；I3 外包验收任务（reason=outsourcing_review）不再叠加验收员；I4 临时工转正时 deny 档自动重绑为员工档；I5 reveal/delete 补允许根校验；派发+留痕同事务；返工 assignee 预检；验收任务带显式 instruction。
-
-测试锚点：`tests/integration/r1-persona-tools.spec.ts`、`acceptance-review.spec.ts`、`r3-assets-git.spec.ts`（已合入 main，随 2026-08-16 补缺批次交付）。
-
-## 人才市场双区、蓝图连线画布与标准化收尾（2026-08-17 交付落地）
-
-- **人才市场双区管理与自动上岗单开关**：
-  - **双区展示**：专区 A「系统预置与沉淀专区」（官方 211+ 领域专家，由系统自主进化，只读展示，支持一键复制为我的人才）；专区 B「我的人才管理区」（用户完全掌控调优，支持专属提示词/模型/思考深度配置，配置永久保持，系统绝不擅改）。
-  - **自动上岗单开关（🟢 自动上岗 / ⏸️ 休息中）**：自有人才开启自动上岗时，任务自动顶替官方人设并注入定制提示词与专属模型；休息中时自动切回官方基准。
-- **蓝图全貌展示、AI 优化对话与正向吸收升级**：
-  - **全貌只读展示**（`/blueprints/:id`）：标签、多维评分（胜率/返工率/纠正率/战力分）、人设班底（官方基准 vs 自有人才顶替标记）、常用工具战绩、版本时间线（可回滚至任一历史快照）。
-  - **AI 优化对话**（`/blueprints/:id/optimize`，`POST /api/companies/:id/blueprints/:bid/optimize-chat`）：每蓝图独立会话，用户把优化想法告诉 AI，AI 回复并产出结构化提案（同页采纳/忽略，版本化落地）。原「AI 顾问体检诊断」（consult 整体检测）已退役——不够精准，全局侧由任务终态自动进化覆盖。
-  - **正向吸收升级与负向隔离保护**：自有人才上岗零返工成功交付时，反思管线正向吸收其有效实践，自动升级官方蓝图基准配置（出版版本提交）；自有人才失败或返工时启动负向隔离保护，绝不劣化官方基准。
-  - **独立调试任务机制**：支持将蓝图单开独立任务调试演练，满意后原子回写（`debug-adopt`）。
-- **React Flow 12 蓝图工作流与资源连线画布**（参考 `ahamoment-101/Open-DeepSeek-Harness-Desktop`）：
-  - 路由 `/companies/:companyId/blueprints/:blueprintId/canvas`，支持 StageNode（阶段步骤）、StaffingNode（班底专家与顶替标记）、ToolNode（工具/技能）拓扑连线。
-  - **Sidecar 排布持久化**：读写 `canvas_layout` 表，视觉坐标与领域模型彻底解耦。
-  - **DAG 防环拦截**：客户端与服务端严格执行环路检测（`hasCycleInEdges`），杜绝循环依赖。
-- **标准化任务收尾归档（Codex Closeout Archive）**（参考 `ChenJinCloud/codex-closeout-archive`）：
-  - 任务完成时自动提取 8 节高密度结构化简报与速读 Markdown：目标背景、蓝图与班底（顶替标记）、核心交付物、关键决策、验收自评达标报告、工具调用审计、反思与打法进化、后续跟进与关联打法。
-  - 任务详情页渲染 `TaskCloseoutCard`，提供卡片与 Markdown 双模速读。
-
-测试锚点：`tests/unit/talent-market-dispatch.spec.ts`、`tests/unit/blueprint-detail-consult.spec.ts`、`tests/unit/canvas-layout-and-closeout.spec.ts`（全部通过）。
-
-## staging 集成审查（2026-08-17 一期交付：蜂群产物先入集成现场，验收后合并回主干）
-
-- **动机**：蜂群并行产物的「逐个审太慢、合并后再审有风险」；计划等待期间他人改动最多到 staging、主干纹丝不动。
-- **形态（不重写发布模型）**：保留文件级三方合并管线（锁/冲突裁决/publish_record 原样），仅把**蜂群系任务**（蜂/汇总，`task.swarmId`）的发布目标目录换成项目持久 staging worktree 检出目录（`ensureStagingWorktree`，分支 `muster/<project>/staging`）；`PublishQueue.publish` 增 `targetRootDir`（缺省=项目根，非蜂群零回归）。
-- **审查现场**：验收任务/返工任务创建时随 `sourceSwarmId` 标记，worktree 从 staging 头切出——验收员看到的是一**个集成后的整体**而非孤立产出；`publish-queue` 冲突链路原样工作于 staging。
-- **promote 三触发**：①验收 PASS（源任务属蜂群系，`acceptance-review.ts`）自动合并回主干；②蜂群收口且根任务无验收标准（`maybePromoteSwarmStaging`）自动合并；③手动 `POST /api/projects/:id/staging/promote`（项目页顶部「🟡蜂群集成现场在审 · 合并回主干」状态条，15s 轮询 `stageStatus`）。冲突不自动吞：`promoteStaging` abort 并返回文件清单，用户在主干手改后重试。
-- **计划同意并执行闭环（A5）**：`POST /api/tasks/:id/approve-plan`——计划模式任务 completed 后取其 `summary` 计划文本派发执行任务（`trigger=plan_execution`，mode 剥离=正常读写，refPlanTaskId/parentTaskId 关联）；任务详情页「✅ 同意计划并执行」按钮。
-- **回滚**：promote 后不满意 → 主干 `git revert -m 1 <mergeCommit>`（一期手动；spec 注明回滚按段）。
-- 测试锚点：`tests/unit/staging-worktree.spec.ts`（建/幂等/基线切出/promote 快进+冲突）、`tests/integration/publish-staging.spec.ts`（双蜂并发发布/冲突阻塞/promote 前主干不可见）、`tests/integration/staging-promote.spec.ts`（三触发）、`tests/unit/approve-plan.spec.ts`。
-- 设计文档：`docs/superpowers/specs/2026-08-17-staging-integration-review.md`、`docs/superpowers/plans/2026-08-17-staging-integration-review-plan.md`。
-
-## 执行器池统一（2026-08-17 交付：档位=档案 · 能力自动选脑）
-
-- **两套档位合一**：旧执行器三级（primary/secondary/tertiary）与模型档位（modelTierEconomy/Premium 模型字符串）退役为**档位=执行器档案**（CLI/API 一个选择框）。新键 `executor_tier_high/standard/low_id`（旧键兼容读取一版：high←primary、standard←secondary、low←tertiary）。设置页「执行器档位」三个档案下拉（顺带修掉 secondary/tertiary 无 UI 缺陷）；WP9 composer 档位快捷项退役。
-- **档位判定与选档**（`model-tier.ts`）：`taskExecutorTier` 合并两套分类器——蜂群工蜂/辩手/轻量咨询→low，计划/验收/裁决/请示/返工→high，其余 standard；`resolveProfileForTier`（不健康/已删回落）；`selectProfileForTask` 需 CLI 技能时沿 高→标准→低 选 CLI 档案（binding 钉死不参与路由，能力缺口走既有告警）。
-- **引擎模型链简化**：消息显式 > 自有人才 customModel > 执行器档案 config.model（档位已选档案，删除档位模型覆盖）。
-- **能力标签**（shared `EXECUTOR_CAPABILITIES`：vision/image-gen/video-gen/voice/long-context/code）：manifest `defaultCapabilities` 预填 + 模型名启发式 `suggestDefaultCapabilities` + 执行器中心全词表 chips（用户纠偏）；vision 软降级（既有 imageAttachments 门控），多模态生成类标签走工具层非脑池。
-- **展示与绑定**：执行器中心列表按档位分组（▲高/●标准/▼低/—未分配）+ 组内健康度>能力数>名称 + 能力 chips 筛选；修复员工↔执行器绑定 UI 断链（AgentProfilePage 任职卡「固定执行器」下拉）。
-- **凭据**：`profile.credentialRef`(env) 接入解析链 **员工>档案>工作台>平台**（engine 任务链路 + 能力探针均注入档案 ref）；`providerForManifest` 双实现去重收敛 manif客es.ts。
-- 测试锚点：`tests/unit/executor-capability.spec.ts`、`tests/unit/credential-chain.spec.ts`、`tests/integration/expert-chain.spec.ts`（新档位判定/档案解析/旧键兼容/不健康回落）。
-- 设计文档：`docs/superpowers/specs/2026-08-17-executor-pool-unification.md`、`docs/superpowers/plans/2026-08-17-executor-pool-plan.md`。
+> 上述早期批次的计划与小传已收敛进 `docs/superpowers/plans/CHANGELOG.md` 一页式大事记，选型与验证门见对应 plan。
 
 ## Commands
 
