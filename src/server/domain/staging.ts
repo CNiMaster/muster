@@ -301,6 +301,28 @@ export async function promoteTaskStaging(
   projectTaskId: string,
   options: { actor?: string; strategy?: 'ours' | 'theirs' } = {},
 ): Promise<TaskMergeResult> {
+  // 并发收口：UI 手动与看门狗自动（mergeMode='auto' 任务收口）可能同时发起同一任务的 promote——
+  // 两路都在审查 await 窗口内通过领先检查时，后落的一路会把 "Already up to date" 也记成功（重复记录+播报）。
+  // 同一 projectTaskId 同时只放一路；合并序列本身同步原子，这里的去重补掉唯一的脏窗口。
+  if (promoteInFlight.has(projectTaskId)) {
+    return { promoted: false, message: '该任务的合并正在进行中（手动/自动另一路已在发起），本轮跳过' };
+  }
+  promoteInFlight.add(projectTaskId);
+  try {
+    return await runPromoteTaskStaging(db, projectId, projectTaskId, options);
+  } finally {
+    promoteInFlight.delete(projectTaskId);
+  }
+}
+
+const promoteInFlight = new Set<string>();
+
+async function runPromoteTaskStaging(
+  db: DB,
+  projectId: string,
+  projectTaskId: string,
+  options: { actor?: string; strategy?: 'ours' | 'theirs' } = {},
+): Promise<TaskMergeResult> {
   const project = getProject(db, projectId);
   if (!project) return { promoted: false, message: '项目不存在' };
   // 治理批次1：独立任务按载体分仓——staging/promote 均在载体仓库内进行
