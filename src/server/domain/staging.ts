@@ -11,7 +11,8 @@ import { appendTaskEvent } from './task-event';
 import { getTaskRuntime, deleteTaskRuntime } from './task-runtime';
 import {
   stageStatus, promoteStaging, taskStageStatus,
-  taskStagingDiffSummary, promoteTaskStagingMerge, listTaskStagingRefs, branchAheadCount, detectOrphanWorktrees,
+  taskStagingDiffSummary, promoteTaskStagingMerge, listTaskStagingRefs, branchAheadCount, branchBehindCount,
+  taskStagingMergePreview, repoHeadOrNull, detectOrphanWorktrees,
   ensureTaskStagingWorktree,
 } from '../worktree/manager';
 import { callLlm } from './llm-call';
@@ -153,6 +154,10 @@ export interface PendingTaskMergeItem {
   state: string;
   branch: string;
   aheadCommits: number;
+  /** 主干已从该集成分支基线前进的提交数（behind>0 = 合并将是三方合并，分叉风险可见性）。 */
+  behindCommits: number;
+  /** 合并预演（仅 behind>0 且 git 支持 merge-tree 时存在）：merge-tree 对象层试合并的冲突预测。 */
+  mergePreview?: { conflicted: boolean; conflicts: string[] };
   pendingRuntimeTasks: number;
   mergeMode: 'manual' | 'auto';
   lastMergeAt: string | null;
@@ -162,6 +167,28 @@ export interface PendingTaskMergeItem {
 
 /** 搁置提醒阈值（小时）：manual 默认下任务集成区领先超过此时长未合并 → 红点提醒。 */
 export const STALE_MERGE_HOURS = 5;
+
+/**
+ * 合并预演缓存（key=仓库:分支:分支头:主干头）：15s 轮询下两端 head 未动即命中，
+ * 稳态每仓库只付 1 次 rev-parse（mainHead 由调用方按仓库提升到循环外）；
+ * 不支持（老 git/sha256 解析失败）也记账，防每轮重复跑注定失败的 merge-tree；上限清空防泄漏。
+ */
+const mergePreviewCache = new Map<string, { conflicted: boolean; conflicts: string[] } | 'unsupported'>();
+
+function cachedMergePreview(root: string, branch: string, branchHead: string, mainHead: string): { conflicted: boolean; conflicts: string[] } | undefined {
+  const key = `${root}:${branch}:${branchHead}:${mainHead}`;
+  const hit = mergePreviewCache.get(key);
+  if (hit) return hit === 'unsupported' ? undefined : hit;
+  if (mergePreviewCache.size > 200) mergePreviewCache.clear();
+  const preview = taskStagingMergePreview(root, branch);
+  if (!preview.supported) {
+    mergePreviewCache.set(key, 'unsupported');
+    return undefined; // 老 git：不带字段，UI 不显示
+  }
+  const value = { conflicted: preview.conflicted, conflicts: preview.conflicts };
+  mergePreviewCache.set(key, value);
+  return value;
+}
 
 function staleHoursSince(at: string | null): number | null {
   if (!at) return null;
@@ -197,6 +224,7 @@ export function listPendingTaskMerges(db: DB, projectId: string): PendingTaskMer
   }
   type PtRef = { branch: string; head: string; lastCommitAt: string };
   const refsByRoot = new Map<string, Map<string, PtRef>>();
+  const mainHeadByRoot = new Map<string, string>();
   for (const root of uniqueRoots) {
     try {
       refsByRoot.set(root, listTaskStagingRefs(root, projectId));
@@ -213,6 +241,15 @@ export function listPendingTaskMerges(db: DB, projectId: string): PendingTaskMer
     if (!ref) continue;
     const aheadCommits = branchAheadCount(ptRoot ?? project.rootDir, ref.branch);
     if (aheadCommits === 0) continue;
+    const behindCommits = branchBehindCount(ptRoot ?? project.rootDir, ref.branch);
+    // 合并预演只对 behind>0 的行做（behind=0 是 fast-forward 不可能冲突——省 spawn）；
+    // mainHead 按仓库提升到循环外只取一次（rev-parse 是稳态轮询的主要固定开销）
+    let mergePreview: PendingTaskMergeItem['mergePreview'];
+    if (behindCommits > 0) {
+      const previewRoot = ptRoot ?? project.rootDir;
+      if (!mainHeadByRoot.has(previewRoot)) mainHeadByRoot.set(previewRoot, repoHeadOrNull(previewRoot) ?? '');
+      mergePreview = cachedMergePreview(previewRoot, ref.branch, ref.head, mainHeadByRoot.get(previewRoot)!);
+    }
     const pending = db.prepare(
       "SELECT COUNT(*) AS n FROM task WHERE project_task_id=? AND state IN ('queued','claimed','running','waiting_input','waiting_dependency','waiting_approval','paused','blocked')",
     ).get(pt.id) as { n: number };
@@ -226,6 +263,8 @@ export function listPendingTaskMerges(db: DB, projectId: string): PendingTaskMer
       state: pt.state,
       branch: ref.branch,
       aheadCommits,
+      behindCommits,
+      ...(mergePreview ? { mergePreview } : {}),
       pendingRuntimeTasks: pending.n,
       mergeMode,
       lastMergeAt: last?.created_at ?? null,
@@ -296,6 +335,28 @@ function recordTaskMerge(db: DB, row: {
  * pendingTasks：该任务下仍有非终态 runtime task 时返回数量（提醒不阻止——中途合并合法，定案 #5）。
  */
 export async function promoteTaskStaging(
+  db: DB,
+  projectId: string,
+  projectTaskId: string,
+  options: { actor?: string; strategy?: 'ours' | 'theirs' } = {},
+): Promise<TaskMergeResult> {
+  // 并发收口：UI 手动与看门狗自动（mergeMode='auto' 任务收口）可能同时发起同一任务的 promote——
+  // 两路都在审查 await 窗口内通过领先检查时，后落的一路会把 "Already up to date" 也记成功（重复记录+播报）。
+  // 同一 projectTaskId 同时只放一路；合并序列本身同步原子，这里的去重补掉唯一的脏窗口。
+  if (promoteInFlight.has(projectTaskId)) {
+    return { promoted: false, message: '该任务的合并正在进行中（手动/自动另一路已在发起），本轮跳过' };
+  }
+  promoteInFlight.add(projectTaskId);
+  try {
+    return await runPromoteTaskStaging(db, projectId, projectTaskId, options);
+  } finally {
+    promoteInFlight.delete(projectTaskId);
+  }
+}
+
+const promoteInFlight = new Set<string>();
+
+async function runPromoteTaskStaging(
   db: DB,
   projectId: string,
   projectTaskId: string,

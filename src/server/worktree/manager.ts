@@ -174,8 +174,15 @@ export function commitAll(
   return git(wtPath, ['rev-parse', 'HEAD']).stdout;
 }
 
+/** 当前 HEAD（worktree 路径用）。 */
 export function currentHead(wtPath: string): string {
   return git(wtPath, ['rev-parse', 'HEAD']).stdout;
+}
+
+/** 仓库 HEAD 的只读兜底版：非 git 仓库/失败返回 null 不抛——轮询链路用（看板 GET 不因 git 异常 500）。 */
+export function repoHeadOrNull(rootDir: string): string | null {
+  const r = git(rootDir, ['rev-parse', 'HEAD'], { allowFail: true });
+  return r.status === 0 && r.stdout ? r.stdout : null;
 }
 
 // ===== staging 集成审查（2026-08-17，spec: docs/superpowers/specs/2026-08-17-staging-integration-review.md）=====
@@ -337,6 +344,36 @@ export function listTaskStagingRefs(rootDir: string, projectId: string): Map<str
 /** 单分支领先主干提交数（配合 listTaskStagingRefs，只对存在的分支调用）。 */
 export function branchAheadCount(rootDir: string, branch: string): number {
   return Number(git(rootDir, ['rev-list', '--count', `HEAD..${branch}`], { allowFail: true }).stdout || '0');
+}
+
+/** 单分支落后主干提交数（主干已从分支基线前进多少——分叉风险可见性；behind>0 时合并是三方合并）。 */
+export function branchBehindCount(rootDir: string, branch: string): number {
+  return Number(git(rootDir, ['rev-list', '--count', `${branch}..HEAD`], { allowFail: true }).stdout || '0');
+}
+
+export interface TaskStagingMergePreview {
+  /** 当前 git 是否支持 merge-tree --write-tree（老版本 false——调用方跳过预演不炸）。 */
+  supported: boolean;
+  conflicted: boolean;
+  conflicts: string[];
+}
+
+/**
+ * 合并预演（零副作用）：`git merge-tree --write-tree` 在对象层试合并 HEAD 与分支，不碰工作区/索引/引用。
+ * 实证输出约定（git 2.4x）：exit 0 干净（stdout=结果树 OID）；exit 1 且 stdout 首行为 40-hex 树 OID
+ * = 冲突（其后依次为冲突文件名段与 Auto-merging/CONFLICT 信息段）；exit 1 但 stdout 空（如坏 ref）
+ * 或其他失败 = 不支持/异常。--name-only 只列名；quotePath=false 防中文路径八进制转义。
+ */
+export function taskStagingMergePreview(rootDir: string, branch: string): TaskStagingMergePreview {
+  const r = git(rootDir, ['-c', 'core.quotePath=false', 'merge-tree', '--write-tree', '--name-only', 'HEAD', branch], { allowFail: true });
+  if (r.status === 0) return { supported: true, conflicted: false, conflicts: [] };
+  const lines = r.stdout.split('\n').map((l) => l.trim()).filter(Boolean);
+  // 树 OID：sha1 仓库 40-hex，sha256 仓库 64-hex（init.defaultHash=sha256 用户）
+  if (r.status === 1 && lines.length > 0 && /^([0-9a-f]{40}|[0-9a-f]{64})$/.test(lines[0]!)) {
+    const conflicts = lines.slice(1).filter((l) => !l.startsWith('Auto-merging') && !l.startsWith('CONFLICT'));
+    return { supported: true, conflicted: true, conflicts };
+  }
+  return { supported: false, conflicted: false, conflicts: [] };
 }
 
 /** 任务集成分支最后一次提交时间（ISO，无提交/无分支为 null）——搁置提醒（≥5h 红点）数据源。 */

@@ -639,6 +639,10 @@ export interface PendingTaskMergeDTO {
   state: string;
   branch: string;
   aheadCommits: number;
+  /** 主干已从该集成分支基线前进的提交数（>0 = 三方合并，分叉风险）。 */
+  behindCommits: number;
+  /** 合并预演（behind>0 且 git 支持时才有）：merge-tree 试合并的冲突预测。 */
+  mergePreview?: { conflicted: boolean; conflicts: string[] };
   pendingRuntimeTasks: number;
   mergeMode: 'manual' | 'auto';
   lastMergeAt: string | null;

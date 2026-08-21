@@ -65,6 +65,8 @@ Muster is a local multi-agent workbench. Persistent agents collaborate through p
 
 **staging 合并看门狗（2026-08-19）**：合并责任链定论——普通任务完工即由发布管线直接合并主干；蜂群系产物进 staging，收口（无验收标准）或验收 PASS 自动 promote；唯一缺口（有验收标准但验收链断 → staging 无限积压）由看门狗堵上：coordinator 每 10 分钟 `sweepStaleStaging`（staging.ts），领先且无活跃蜂群、无在办 [验收] 任务 → 自动 promote，冲突升级用户（同 stagingHead 只提醒一次，`staging_watchdog` 表记账）。
 
+**提交与合并时序口径（2026-08-21 定案）**：worktree 提交与 main 提交在 git 层**完全等价**（同一仓库同一对象库，差别只是落点分支）；「提交完再合并」才有稳定快照供审查（TOCTOU 卫兵锚定分支头）、合并是单一原子操作、可 revert/bisect，「先合并再提交」会让审查对象与最终内容分离——正是门禁要防的形态。**约定：内容提交永远发生在分支上**（三处提交位：任务 worktree 引擎快照提交 → 集成分支 pt- 发布提交 → 主干）；main 只收两种提交——promote 的 merge commit 与 user edits 收口提交，任何内容不直接在 main 上提交。**并发口径**：promote 入口两条（UI 手动 + 看门狗自动）同走 `promoteTaskStaging`；合并序列 `promoteTaskStagingMerge` 全程同步无 await（原子不可交错），交错只发生在审查/检查 await 点；同一 projectTaskId 由模块级 in-flight Set 去重（双发起时后路返回「正在进行中」）。**冲突事前可见性三件套**：待合并看板行 behindCommits 徽章（主干已前进 N = 三方合并风险）＋ merge-tree 合并预演（`taskStagingMergePreview` 对象层试合并零副作用，仅 behind>0 行，head 四元组缓存）＋ behind=0 即 fast-forward 不预演；冲突事后处置仍走裁决法庭。挂观察：集成分支自动追平主干（main→pt）——触发条件见计划文档。
+
 ## Workspace 治理（2026-08-20 定案，分支 feat/workspace-governance，批次1 已交付）
 
 计划：`docs/superpowers/plans/2026-08-20-workspace-governance.md`（定案全记录+批次2-5 待做）。背景：真实 `~/MusterWorkspace/projects` 曾积累 367 个纯测试残留目录（MUSTER_HOME 不覆盖 workspace 根所致，2026-08-20 根因修复）。
