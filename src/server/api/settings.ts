@@ -69,6 +69,8 @@ export const settingsUpdateSchema = z.object({
   modelTierPremium: z.string().max(200).optional(),
   // WP10 图像生成模型（image_generate 工具）
   imageGenModel: z.string().max(200).optional(),
+  // 批次 F.4：waiting_input 超时自动继续分钟数（0=一直等，默认；任务级可覆盖）
+  waitingAutoContinueMinutes: z.number().int().min(0).max(1440).optional(),
 });
 
 // 获取当前系统设置

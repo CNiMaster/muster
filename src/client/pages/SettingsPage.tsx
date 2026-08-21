@@ -60,6 +60,8 @@ export function SettingsPage(): React.ReactElement {
   const [swarmBudgetUSD, setSwarmBudgetUSD] = useState(5);
   const [swarmRepairMax, setSwarmRepairMax] = useState(10);
   const [breadthDefaultTier, setBreadthDefaultTier] = useState<'light' | 'standard' | 'heavy'>('standard');
+  // 批次 F.4：waiting_input 超时自动继续分钟数（0=一直等，默认）
+  const [waitingAutoContinue, setWaitingAutoContinue] = useState(0);
   const [testResult, setTestResult] = useState<any | null>(null);
 
   useEffect(() => {
@@ -97,6 +99,7 @@ export function SettingsPage(): React.ReactElement {
     setSwarmBudgetUSD(settings.swarmBudgetUSD ?? 5);
     setSwarmRepairMax(settings.swarmRepairMax ?? 10);
     setBreadthDefaultTier(settings.breadthDefaultTier ?? 'standard');
+    setWaitingAutoContinue(settings.waitingAutoContinueMinutes ?? 0);
   }, [settings]);
 
   const handleSave = (): void => {
@@ -105,7 +108,7 @@ export function SettingsPage(): React.ReactElement {
       return;
     }
     saveSettings.mutate(
-      { claudeBin, model, skipPermissions, timeoutMs, maxToolCalls, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierPrimaryId: tierPrimary, executorTierSecondaryId: tierSecondary, executorTierTertiaryId: tierTertiary, executorTierHighId: tierHigh, executorTierStandardId: tierStandard, executorTierLowId: tierLow, imageGenModel, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs, theme, fontFamily, fontSize, locale, codeTheme, autonomousReflectionEnabled, autonomousReflectionBudgetUSD, swarmMaxDepth, swarmMaxWidth, swarmMaxNodes, swarmBudgetUSD, swarmRepairMax, breadthDefaultTier },
+      { claudeBin, model, skipPermissions, timeoutMs, maxToolCalls, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierPrimaryId: tierPrimary, executorTierSecondaryId: tierSecondary, executorTierTertiaryId: tierTertiary, executorTierHighId: tierHigh, executorTierStandardId: tierStandard, executorTierLowId: tierLow, imageGenModel, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs, theme, fontFamily, fontSize, locale, codeTheme, autonomousReflectionEnabled, autonomousReflectionBudgetUSD, swarmMaxDepth, swarmMaxWidth, swarmMaxNodes, swarmBudgetUSD, swarmRepairMax, breadthDefaultTier, waitingAutoContinueMinutes: waitingAutoContinue },
       {
         onSuccess: () => toast('success', '系统设置已保存并实时生效'),
         onError: (error: any) => toast('error', error.message ?? '保存设置失败'),
@@ -196,6 +199,15 @@ export function SettingsPage(): React.ReactElement {
                     <span>允许跳过 CLI 权限拦截 (--dangerously-skip-permissions)</span>
                   </label>
                 </div>
+                <Field label="提问超时自动继续（分钟）" hint="任务提问后倒计时，到期未答复自动以「确认，请继续执行」续跑；0 = 一直等（默认）。等待卡上可按任务临时调整（重要 10 分钟 / 普通 5 分钟）">
+                  <Input
+                    type="number"
+                    min={0}
+                    max={1440}
+                    value={waitingAutoContinue}
+                    onChange={(e) => setWaitingAutoContinue(Math.max(0, Math.min(1440, Number(e.target.value) || 0)))}
+                  />
+                </Field>
               </div>
             </Card>
           )}

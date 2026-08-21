@@ -17,6 +17,7 @@ import { Badge } from './Badge';
 import { Button } from './Button';
 import { toast } from './Button';
 import { EmptyState, Icons } from './EmptyState';
+import { AutoContinueCountdown } from './project/AutoContinueCountdown';
 import { MarkdownPreview } from './MarkdownPreview';
 
 export interface ConversationPanelProps {
@@ -294,13 +295,17 @@ function WaitingQuestionReply({ refTaskId }: { refTaskId: string | null }): Reac
   const options = task.questionOptions ?? [];
   if (options.length === 0) {
     return (
-      <div style={{ marginTop: 6 }}>
+      <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <Link to={`/tasks/${refTaskId}`} className="mu-msg-task-link">等待你的回答 → 去回答</Link>
+        <AutoContinueCountdown task={task} />
       </div>
     );
   }
   return (
     <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <AutoContinueCountdown task={task} />
+      </div>
       {options.map((option, index) => (
         <button
           key={option.id}

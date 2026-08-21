@@ -21,6 +21,7 @@ import { Badge, taskStateTone, stateLabel } from '../components/Badge';
 import { Button, toast } from '../components/Button';
 import { Textarea, Field } from '../components/Form';
 import { EmptyState, Icons } from '../components/EmptyState';
+import { AutoContinueCountdown } from '../components/project/AutoContinueCountdown';
 import { getTaskProtocolRows, TASK_PROTOCOL_FIELD_LABELS } from '../domain/task-protocol';
 import { ExecutionTraceCard } from '../components/workbench/ExecutionTraceCard';
 
@@ -298,6 +299,10 @@ function ClarifyCard({ taskId, task, onSubmit, onOption, loading }: {
   return (
     <Card title="回答追问" style={{ borderColor: 'var(--warn)' }}>
       <div className="form-stack">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+          <span className="muted" style={{ fontSize: 12 }}>Task 暂停等待你的补充</span>
+          <AutoContinueCountdown task={task} />
+        </div>
         {options.length > 0 && (
           <div className="form-stack" style={{ gap: 8 }}>
             {options.map((option, index) => (

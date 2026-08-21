@@ -10,6 +10,7 @@ import { ConversationPanel } from '../ConversationPanel';
 import { ExecutionTraceCard } from '../workbench/ExecutionTraceCard';
 import { Input, Textarea, Field } from '../Form';
 import { TaskTopBar } from './TaskTopBar';
+import { AutoContinueCountdown } from './AutoContinueCountdown';
 
 export function ProjectTaskWorkspace({
   projectId,
@@ -211,6 +212,7 @@ export function ProjectTaskWorkspace({
                 <StateBadge domain="project-task" state={selectedTask.state} />
                 {activeRuntimeTask?.state === 'running' && (<Badge tone="ok" dot>运行中</Badge>)}
                 {activeRuntimeTask?.state === 'waiting_input' && (<Badge tone="warn" dot>等待答复</Badge>)}
+                {activeRuntimeTask?.state === 'waiting_input' && activeRuntimeTask && <AutoContinueCountdown task={activeRuntimeTask} />}
                 {activeRuntimeTask?.state === 'paused' && (<Badge tone="warn">已暂停</Badge>)}
                 {activeRuntimeTask?.state === 'blocked' && (<Badge tone="err" dot>阻塞</Badge>)}
               </div>

@@ -1401,6 +1401,19 @@ export function useTaskAction() {
   });
 }
 
+/** 批次 F.4：任务级超时自动继续快调——minutes=null 恢复跟随全局；0=本任务一直等；stop=true 永久停止本轮倒计时。 */
+export function useSetTaskAutoContinue() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ taskId, minutes, stop }: { taskId: string; minutes?: number | null; stop?: boolean }) =>
+      api.post<Task>(`/api/tasks/${taskId}/auto-continue`, { minutes, stop }),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['task', data.id] });
+      qc.invalidateQueries({ queryKey: ['tasks'] });
+    },
+  });
+}
+
 // ===== Threads =====
 export function useThreads(projectId: string | undefined) {
   return useQuery({

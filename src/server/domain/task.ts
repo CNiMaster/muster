@@ -33,7 +33,8 @@ import {assertProjectTaskActive,createProjectTask} from './project-task';
 import {assertProjectLaunchConfirmed} from './project-launch';
 import {assertProjectActive} from './project-readiness';
 import { getWorkbench } from './workbench';
-import { recordSuspension, resolveSuspensionByTask } from './task-suspension';
+import { recordSuspension, resolveSuspensionByTask, getActiveSuspension } from './task-suspension';
+import { getSetting } from './setting';
 import { checkSwarmLimits, greyBeeAfterTask, handleSwarmTaskFailure, maybeAutoRepairBee, recordSwarmNodeOutcome, reportBeeCompletion, validateSwarmSynthesisSummary } from './swarm';
 import { handleDebateTaskFailure, recordDecisionFromClarify } from './debate';
 import { ensurePrimaryThread } from './thread';
@@ -124,6 +125,12 @@ export interface Task {
   personaId: string | null;
   /** 执行过程展示批次4：失败蜂被自动修复重发后指向替补任务。 */
   supersededBy: string | null;
+  /** 批次 F.4：本任务超时自动继续分钟数（NULL=跟随全局设置；0=一直等）。 */
+  autoContinueMinutes: number | null;
+  /** 批次 F.4：用户交互永久停计标记（本轮等待不再自动继续；再进 waiting_input 重置）。 */
+  autoContinueStopped: boolean;
+  /** 批次 F.4：等待起点（仅 waiting_input 任务由 API 序列化层附带——活跃 clarification 挂起行创建时间；缺行回退 updated_at）。 */
+  waitingSince?: string | null;
 }
 
 interface TaskRow {
@@ -174,6 +181,8 @@ interface TaskRow {
   swarm_depth: number;
   question_options_json: string | null;
   persona_id: string | null;
+  auto_continue_minutes: number | null;
+  auto_continue_stopped: number;
 }
 
 function fromRow(r: TaskRow): Task {
@@ -228,6 +237,8 @@ function fromRow(r: TaskRow): Task {
       ? (JSON.parse(r.question_options_json) as import('../../shared/types').QuestionOption[])
       : null,
     personaId: (r as { persona_id?: string | null }).persona_id ?? null,
+    autoContinueMinutes: r.auto_continue_minutes ?? null,
+    autoContinueStopped: (r.auto_continue_stopped ?? 0) === 1,
   };
 }
 
@@ -777,6 +788,7 @@ export function completeTask(db: DB, taskId: string, result: AgentRunResult): Ta
       `UPDATE task SET state=?, outcome=?, summary=?, question=?, question_options_json=?, artifacts_json=?, checkpoint=?,
         completed_at=?, lease_owner_thread_id=NULL, lease_expires_at=NULL,
         interruption_count=interruption_count+?,
+        auto_continue_stopped=0,
         updated_at=?
        WHERE id=?`,
     ).run(
@@ -1035,7 +1047,8 @@ export function answerClarification(db: DB, taskId: string, input: { answer?: st
   const now = nowIso();
   db.transaction(() => {
     // 若用户用 /clarify 回答了一个对齐态 task，清掉 alignment_state 避免孤儿标记（与 answerAlignment 对称）。
-    db.prepare(`UPDATE task SET clarification_rounds=clarification_rounds+1, state='queued', alignment_state=NULL, updated_at=? WHERE id=?`).run(now, taskId);
+    // 批次 F.4：用户答复即永久停计（防答复后竞态触发自动继续）。
+    db.prepare(`UPDATE task SET clarification_rounds=clarification_rounds+1, state='queued', alignment_state=NULL, auto_continue_stopped=1, updated_at=? WHERE id=?`).run(now, taskId);
     addTaskMessage(db, taskId, { author: 'user', role: 'user', content: answer });
     appendTaskEvent(db, taskId, 'clarification_answered', option ? { optionId: option.id, optionLabel: option.label } : {});
     resolveSuspensionByTask(db, taskId, { resolution: 'resumed' });
@@ -1170,6 +1183,7 @@ export function requestAlignment(db: DB, taskId: string, question: string): Task
   db.prepare(
     `UPDATE task SET state='waiting_input', alignment_state='awaiting_alignment',
       question=?, summary=?, alignment_rounds=?, interruption_count=interruption_count+1,
+      auto_continue_stopped=0,
       lease_owner_thread_id=NULL, lease_expires_at=NULL, updated_at=? WHERE id=?`,
   ).run(question.slice(0, 2000), `[对齐] ${question.slice(0, 100)}`, nextRounds, now, taskId);
   appendTaskEvent(db, taskId, 'alignment_requested', { round: nextRounds });
@@ -1206,6 +1220,7 @@ export function answerAlignment(db: DB, taskId: string, answer: string, addition
       : existing;
     db.prepare(
       `UPDATE task SET state='queued', alignment_state=NULL, acceptance_criteria=?,
+        auto_continue_stopped=1,
         updated_at=? WHERE id=?`,
     ).run(JSON.stringify(merged), now, taskId);
     addTaskMessage(db, taskId, { author: 'user', role: 'user', content: answer });
@@ -1213,6 +1228,68 @@ export function answerAlignment(db: DB, taskId: string, answer: string, addition
     resolveSuspensionByTask(db, taskId, { resolution: 'resumed' });
   })();
   return getTask(db, taskId);
+}
+
+// ===== 批次 F.4：waiting_input 超时自动继续（默认一直等；全局设置 waiting_auto_continue_minutes 可开，任务级可覆盖）=====
+
+/** 任务级快调：minutes=null 恢复跟随全局；0=本任务一直等；stop=true/false 置/清永久停止标记。 */
+export function setTaskAutoContinue(db: DB, taskId: string, input: { minutes?: number | null; stop?: boolean }): Task {
+  const cur = getTask(db, taskId);
+  const sets: string[] = [];
+  const vals: unknown[] = [];
+  if (input.stop !== undefined) {
+    sets.push('auto_continue_stopped=?');
+    vals.push(input.stop ? 1 : 0);
+  }
+  if (input.minutes !== undefined) {
+    sets.push('auto_continue_minutes=?');
+    vals.push(input.minutes === null ? null : Math.max(0, Math.min(1440, Math.round(input.minutes))));
+  }
+  if (sets.length === 0) return cur;
+  db.prepare(`UPDATE task SET ${sets.join(', ')}, updated_at=? WHERE id=?`).run(...vals, nowIso(), taskId);
+  return getTask(db, taskId);
+}
+
+/** 等待起点：活跃 clarification 挂起行的创建时间（两入口均落挂起行）；缺行回退 updated_at。 */
+export function taskWaitingSince(db: DB, taskId: string): string {
+  const task = getTask(db, taskId);
+  if (task.state !== 'waiting_input') return task.updatedAt;
+  const suspension = getActiveSuspension(db, taskId);
+  return suspension?.createdAt ?? task.updatedAt;
+}
+
+/**
+ * 扫描到期 waiting_input 任务自动续跑（coordinator tick 内调用）。
+ * 生效分钟 = task.auto_continue_minutes ?? 全局设置（默认 0=一直等）；
+ * 任何用户交互（auto_continue_stopped=1）或进行中评审庭辩论跳过；
+ * 到期以 source='auto' 复用 answerClarification（state 校验天然防已答竞态）+ system 消息留痕。
+ */
+export function autoContinueDueWaitingTasks(db: DB, nowMs = Date.now()): number {
+  const globalMinutes = Number(getSetting(db, 'waiting_auto_continue_minutes', '0')) || 0;
+  const rows = db.prepare(`SELECT id FROM task WHERE state='waiting_input'`).all() as { id: string }[];
+  let continued = 0;
+  for (const { id } of rows) {
+    try {
+      const task = getTask(db, id);
+      if (task.autoContinueStopped) continue;
+      const minutes = task.autoContinueMinutes ?? globalMinutes;
+      if (!minutes || minutes <= 0) continue;
+      const sinceMs = new Date(taskWaitingSince(db, id)).getTime();
+      if (Number.isNaN(sinceMs) || nowMs - sinceMs < minutes * 60_000) continue;
+      // 评审庭辩论进行中不代答——等辩论流程自行收口（其结论同样走 answerClarification）
+      const debating = db
+        .prepare(`SELECT 1 FROM debate WHERE origin_task_id=? AND status IN ('open','escalated') LIMIT 1`)
+        .get(id);
+      if (debating) continue;
+      answerClarification(db, id, { answer: '确认，请继续执行', source: 'auto' });
+      addTaskMessage(db, id, { author: 'system', role: 'system', content: '⏱ 超时未答复，已自动继续执行（重要任务可在等待卡上调长或停止计时）' });
+      appendTaskEvent(db, id, 'auto_continued', { minutes });
+      continued++;
+    } catch {
+      // 竞态：任务刚被用户答复/取消/变更——state 校验抛错属预期，跳过即可
+    }
+  }
+  return continued;
 }
 
 // ===== 租约恢复（启动时 + 定期） =====

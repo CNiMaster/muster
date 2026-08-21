@@ -244,6 +244,12 @@ export interface Task {
   personaId: string | null;
   /** B5 验收进度：验收标准及达标标记（验收员隐形后，进度灯在检查器消费）。 */
   acceptanceCriteria: Array<{ id: string; criterion: string; met?: boolean }>;
+  /** 批次 F.4：本任务超时自动继续分钟数（null/缺省=跟随全局设置；0=本任务一直等）。 */
+  autoContinueMinutes?: number | null;
+  /** 批次 F.4：用户已永久停止本轮倒计时（答复/停止计时后为 true）。 */
+  autoContinueStopped?: boolean;
+  /** 批次 F.4：等待起点 ISO 时间（仅 waiting_input 任务由服务端附带）。 */
+  waitingSince?: string | null;
   createdAt: string;
   updatedAt: string;
 }

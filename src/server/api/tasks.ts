@@ -23,6 +23,9 @@ import {
   cancelTask,
   pauseTask,
   resumeTask,
+  setTaskAutoContinue,
+  taskWaitingSince,
+  type Task,
   acceptSuggestion,
   approvePlanTask,
   getTaskChain,
@@ -60,6 +63,12 @@ function publishTaskStateEvent(taskId: string, state: string): void {
 export const taskByProjectRouter = Router({ mergeParams: true });
 export const taskByIdRouter = Router({ mergeParams: true });
 
+/** 批次 F.4：waiting_input 任务附带等待起点（倒计时用）；其余状态原样返回（省挂起表查询）。 */
+function withWaitingSince(db: ReturnType<typeof getDb>, task: Task): Task {
+  if (task.state !== 'waiting_input') return task;
+  return { ...task, waitingSince: taskWaitingSince(db, task.id) };
+}
+
 const createTaskSchema = z.object({
   projectTaskId:z.string().optional(),
   title: z.string().min(1),
@@ -83,7 +92,8 @@ taskByProjectRouter.get(
   '/',
   asyncHandler(async (req, res) => {
     const state = req.query.state as TaskState | undefined;
-    res.json(listTasks(getDb(), param(req, 'id'), state));
+    const db = getDb();
+    res.json(listTasks(db, param(req, 'id'), state).map((task) => withWaitingSince(db, task)));
   }),
 );
 
@@ -103,7 +113,8 @@ taskByProjectRouter.post(
 taskByIdRouter.get(
   '/',
   asyncHandler(async (req, res) => {
-    res.json(getTask(getDb(), param(req, 'id')));
+    const db = getDb();
+    res.json(withWaitingSince(db, getTask(db, param(req, 'id'))));
   }),
 );
 
@@ -147,6 +158,18 @@ taskByIdRouter.post(
       optionId: z.string().min(1).optional(),
     }).refine((v) => !!v.answer !== !!v.optionId, { message: 'answer 与 optionId 必须二选一' }).parse(req.body);
     res.json(answerClarification(getDb(), param(req, 'id'), input));
+  }),
+);
+
+/** 批次 F.4：任务级超时自动继续快调——minutes=null 恢复跟随全局；0=本任务一直等；stop=true 永久停止本轮倒计时。 */
+taskByIdRouter.post(
+  '/auto-continue',
+  asyncHandler(async (req, res) => {
+    const input = z.object({
+      minutes: z.number().int().min(0).max(1440).nullable().optional(),
+      stop: z.boolean().optional(),
+    }).parse(req.body);
+    res.json(setTaskAutoContinue(getDb(), param(req, 'id'), input));
   }),
 );
 

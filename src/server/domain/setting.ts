@@ -72,6 +72,8 @@ export interface SystemSettings {
   executorTierLowId: string;
   /** WP10 图像生成模型（image_generate 工具调 OpenAI 兼容 /images/generations 用）。空 = gpt-image-1。 */
   imageGenModel: string;
+  /** 批次 F.4：waiting_input 超时自动继续分钟数（0=一直等，默认；任务级 auto_continue_minutes 可覆盖）。 */
+  waitingAutoContinueMinutes: number;
 }
 
 export function getSetting(db: DB, key: string, defaultValue: string): string {
@@ -132,6 +134,7 @@ export function getSystemSettings(db: DB): SystemSettings {
     executorTierStandardId: getSetting(db, 'executor_tier_standard_id', '') || getSetting(db, 'executor_tier_secondary_id', ''),
     executorTierLowId: getSetting(db, 'executor_tier_low_id', '') || getSetting(db, 'executor_tier_tertiary_id', ''),
     imageGenModel: getSetting(db, 'image_gen_model', ''),
+    waitingAutoContinueMinutes: Number(getSetting(db, 'waiting_auto_continue_minutes', '0')) || 0,
   };
 }
 
@@ -230,5 +233,8 @@ export function saveSystemSettings(db: DB, settings: Partial<SystemSettings>): v
   }
   if (settings.imageGenModel !== undefined) {
     setSetting(db, 'image_gen_model', settings.imageGenModel.trim());
+  }
+  if (settings.waitingAutoContinueMinutes !== undefined) {
+    setSetting(db, 'waiting_auto_continue_minutes', String(Math.max(0, Math.min(1440, Math.round(settings.waitingAutoContinueMinutes)))));
   }
 }
