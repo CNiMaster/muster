@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
@@ -10,6 +10,18 @@ function qcShell(uiMode: 'simple' | 'pro' = 'pro'): QueryClient {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   qc.setQueryData(['systemSettings'], { uiMode });
   return qc;
+}
+
+function renderShell(scopeKey: string): void {
+  render(
+    <QueryClientProvider client={qcShell()}>
+      <MemoryRouter>
+        <WorkbenchShell scopeKey={scopeKey} breadcrumb="工作台 / 项目" navigationLabel="项目工作列表" inspectorLabel="项目现场" navigation={<p>任务列表</p>} inspector={<p>当前现场</p>}>
+          <p>当前工作</p>
+        </WorkbenchShell>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
 }
 
 describe('calm workbench shell', () => {
@@ -64,5 +76,43 @@ describe('calm workbench shell', () => {
     await user.click(screen.getByRole('button', { name: '收起工作列表' }));
     rerender(<QueryClientProvider client={qcShell()}><MemoryRouter><WorkbenchShell scopeKey="project:responsive" breadcrumb="工作台 / 项目" navigationLabel="项目工作列表" inspectorLabel="项目现场" navigation={<p>任务列表</p>} inspector={<p>当前现场</p>}><p>当前工作</p></WorkbenchShell></MemoryRouter></QueryClientProvider>);
     expect(screen.queryByText('任务列表')).not.toBeInTheDocument();
+  });
+
+  it('批次F.2：拖拽右栏实时变宽、拖拽中不落盘、松手才持久化', () => {
+    renderShell('project:resize');
+    const handle = screen.getByRole('separator', { name: '调整右侧信息栏宽度' });
+    // 右栏默认 304：向左拖 40px 变宽到 344
+    fireEvent.pointerDown(handle, { pointerId: 7, clientX: 1000 });
+    fireEvent.pointerMove(handle, { pointerId: 7, clientX: 960 });
+    // 拖拽中仍是旧值（304），实时宽度只在内存里
+    expect(JSON.parse(localStorage.getItem('muster:workbench:project:resize') ?? '{}').rightWidth).toBe(304);
+    fireEvent.pointerUp(handle, { pointerId: 7, clientX: 960 });
+    expect(JSON.parse(localStorage.getItem('muster:workbench:project:resize') ?? '{}').rightWidth).toBe(344);
+  });
+
+  it('批次F.2：拖拽越界钳制在合法范围（右栏 ≤420）', () => {
+    renderShell('project:clamp');
+    const handle = screen.getByRole('separator', { name: '调整右侧信息栏宽度' });
+    fireEvent.pointerDown(handle, { pointerId: 7, clientX: 1000 });
+    fireEvent.pointerMove(handle, { pointerId: 7, clientX: 400 });
+    fireEvent.pointerUp(handle, { pointerId: 7, clientX: 400 });
+    expect(JSON.parse(localStorage.getItem('muster:workbench:project:clamp') ?? '{}').rightWidth).toBe(420);
+  });
+
+  it('批次F.2：双击手柄重置默认宽度', () => {
+    localStorage.setItem('muster:workbench:project:reset', JSON.stringify({ leftOpen: true, rightOpen: true, leftWidth: 300, rightWidth: 400 }));
+    renderShell('project:reset');
+    fireEvent.dblClick(screen.getByRole('separator', { name: '调整右侧信息栏宽度' }));
+    expect(JSON.parse(localStorage.getItem('muster:workbench:project:reset') ?? '{}').rightWidth).toBe(304);
+  });
+
+  it('批次F.2：窄视口（抽屉态）不渲染拖拽手柄', async () => {
+    renderShell('project:narrow');
+    expect(screen.getByRole('separator', { name: '调整右侧信息栏宽度' })).toBeInTheDocument();
+    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 1000 });
+    window.dispatchEvent(new Event('resize'));
+    await waitFor(() => {
+      expect(screen.queryByRole('separator', { name: '调整右侧信息栏宽度' })).not.toBeInTheDocument();
+    });
   });
 });

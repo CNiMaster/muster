@@ -843,6 +843,16 @@ p { margin: 0 0 var(--space-3) 0; }
 .workbench.has-left .workbench-grid{grid-template-columns:var(--work-left) minmax(var(--work-surface-min,520px),1fr) 0}.workbench.has-right .workbench-grid{grid-template-columns:0 minmax(var(--work-surface-min,520px),1fr) var(--work-right)}.workbench.has-left.has-right .workbench-grid{grid-template-columns:var(--work-left) minmax(var(--work-surface-min,520px),1fr) var(--work-right)}.workbench:not(.has-left):not(.has-right) .workbench-grid{grid-template-columns:minmax(0,1fr)}
 .workbench-navigation,.workbench-inspector{min-width:0;min-height:0;overflow:auto;background:var(--bg-soft)}.workbench-navigation{grid-column:1;border-right:1px solid var(--border)}.workbench-inspector{grid-column:3;border-left:1px solid var(--border)}
 .workbench:not(.has-left) .workbench-navigation,.workbench:not(.has-right) .workbench-inspector{display:none}.workbench-surface{grid-column:2;min-width:0;min-height:0;overflow:auto;padding:var(--space-4);background:var(--bg-elev)}.workbench:not(.has-left):not(.has-right) .workbench-surface{grid-column:1}
+/* 批次 F.2：栏宽拖拽手柄——绝对定位在栏边界上，桌面态可用（≤1179 抽屉态隐藏） */
+.workbench-grid{position:relative}
+.workbench-resizer{position:absolute;top:0;bottom:0;z-index:8;width:8px;cursor:col-resize;touch-action:none;outline:none}
+.workbench-resizer.is-left{left:calc(var(--work-left,248px) - 4px)}
+.workbench-resizer.is-right{right:calc(var(--work-right,304px) - 4px)}
+.workbench-resizer::after{content:'';position:absolute;top:0;bottom:0;left:4px;width:1px;background:transparent;transition:background var(--duration-fast) var(--ease-out)}
+.workbench-resizer:hover::after,.workbench-resizer:focus-visible::after{background:var(--accent)}
+.workbench.is-resizing .workbench-grid{transition:none}
+.workbench.is-resizing{user-select:none}
+@media(max-width:1179px){.workbench-resizer{display:none}}
 .work-nav-section{padding:10px 8px 2px}.work-nav-heading{display:flex;align-items:center;justify-content:space-between;margin:0 8px 6px;color:var(--fg-subtle);font-size: 12px;font-weight:800;letter-spacing:.09em;text-transform:uppercase}
 .work-nav-item{display:flex;align-items:center;gap:8px;width:100%;min-width:0;padding:7px 9px;border:0;border-radius:7px;color:var(--fg-muted);background:transparent;font:inherit;font-size:12px;text-align:left;text-decoration:none;cursor:pointer;transition:all var(--duration-fast) var(--ease-out)}.work-nav-item:hover{color:var(--fg);background:color-mix(in srgb,var(--bg-elev) 65%,transparent)}.work-nav-item.is-active{color:var(--fg);background:var(--bg-elev);box-shadow:var(--shadow-1);font-weight:700}
 .work-nav-icon{display:grid;place-items:center;width:20px;height:20px;flex:0 0 auto;border-radius:6px;background:var(--border-subtle);font-size: 12px}.work-nav-icon.task-mark{color:hsl(var(--task-hue) 42% 32%);background:hsl(var(--task-hue) 55% 90%);font-size: 11px;font-weight:850;letter-spacing:-.04em}.work-nav-item.is-active .work-nav-icon{color:#fff;background:var(--accent)}.work-nav-item.is-active .task-mark{background:hsl(var(--task-hue) 48% 42%)}.work-nav-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.work-nav-count{margin-left:auto;font-size: 12px;color:var(--fg-subtle)}

@@ -3,7 +3,7 @@ import type React from 'react';
 import { Link } from 'react-router-dom';
 import { WorkbenchGuide } from './WorkbenchGuide';
 import { useUiMode } from '../../hooks/queries';
-import { MIN_WORKBENCH_SURFACE_WIDTH, useWorkbenchPreferences } from './useWorkbenchPreferences';
+import { DEFAULT_WORKBENCH_PREFERENCES, MIN_WORKBENCH_SURFACE_WIDTH, PANE_WIDTH_BOUNDS, useWorkbenchPreferences } from './useWorkbenchPreferences';
 
 /**
  * 面板开关下放：中栏内容（如任务顶栏的「右侧面板」按钮）可经此 context
@@ -12,6 +12,63 @@ import { MIN_WORKBENCH_SURFACE_WIDTH, useWorkbenchPreferences } from './useWorkb
 export const WorkbenchUIContext = createContext<{ toggleRight: () => void; toggleLeft: () => void } | null>(null);
 export function useWorkbenchUI(): { toggleRight: () => void; toggleLeft: () => void } | null {
   return useContext(WorkbenchUIContext);
+}
+
+/** 批次 F.2：栏宽拖拽手柄——拖动实时预览（不落盘），松手才持久化；双击重置默认宽度；方向键微调。 */
+function WorkbenchResizer({ side, width, onResize, onActiveChange }: {
+  side: 'left' | 'right';
+  width: number;
+  onResize: (px: number, commit: boolean) => void;
+  onActiveChange: (active: boolean) => void;
+}): React.ReactElement {
+  const dragRef = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null);
+  const bounds = PANE_WIDTH_BOUNDS[side];
+  const defaultWidth = side === 'left' ? DEFAULT_WORKBENCH_PREFERENCES.leftWidth : DEFAULT_WORKBENCH_PREFERENCES.rightWidth;
+
+  return (
+    <div
+      className={`workbench-resizer is-${side}`}
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={side === 'left' ? '调整左侧列表宽度' : '调整右侧信息栏宽度'}
+      tabIndex={0}
+      onPointerDown={(event) => {
+        event.preventDefault();
+        dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startWidth: width };
+        // 指针捕获保证移出手柄区域仍持续收到事件；不可用时退化为普通拖拽
+        event.currentTarget.setPointerCapture?.(event.pointerId);
+        onActiveChange(true);
+      }}
+      onPointerMove={(event) => {
+        const drag = dragRef.current;
+        if (!drag || drag.pointerId !== event.pointerId) return;
+        // 左栏向右拖变宽；右栏向左拖变宽
+        const delta = side === 'left' ? event.clientX - drag.startX : drag.startX - event.clientX;
+        onResize(Math.min(bounds.max, Math.max(bounds.min, drag.startWidth + delta)), false);
+      }}
+      onPointerUp={(event) => {
+        if (!dragRef.current) return;
+        dragRef.current = null;
+        onActiveChange(false);
+        onResize(width, true);
+        void event;
+      }}
+      onPointerCancel={() => {
+        if (!dragRef.current) return;
+        dragRef.current = null;
+        onActiveChange(false);
+        onResize(width, true);
+      }}
+      onDoubleClick={() => onResize(defaultWidth, true)}
+      onKeyDown={(event) => {
+        const grow = side === 'left' ? event.key === 'ArrowRight' : event.key === 'ArrowLeft';
+        const shrink = side === 'left' ? event.key === 'ArrowLeft' : event.key === 'ArrowRight';
+        if (!grow && !shrink) return;
+        event.preventDefault();
+        onResize(width + (grow ? 16 : -16), true);
+      }}
+    />
+  );
 }
 
 export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspectorLabel, navigation, inspector, primaryAction, attentionCount = 0, commandOptions, children }: {
@@ -30,6 +87,7 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
   const ui = useUiMode();
   const [commandOpen, setCommandOpen] = useState(false);
   const [commandQuery, setCommandQuery] = useState('');
+  const [resizingPane, setResizingPane] = useState<'left' | 'right' | null>(null);
   const commandOpenRef = useRef(false);
   commandOpenRef.current = commandOpen;
 
@@ -72,7 +130,7 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
     '--work-surface-min': `${MIN_WORKBENCH_SURFACE_WIDTH}px`,
   } as React.CSSProperties;
   return <WorkbenchUIContext.Provider value={{ toggleRight: preferences.toggleRight, toggleLeft: preferences.toggleLeft }}>
-  <section className={`workbench ${preferences.leftOpen ? 'has-left' : ''} ${preferences.rightOpen ? 'has-right' : ''}`} style={style}>
+  <section className={`workbench ${preferences.leftOpen ? 'has-left' : ''} ${preferences.rightOpen ? 'has-right' : ''} ${resizingPane ? 'is-resizing' : ''}`} style={style}>
     <header className="workbench-header">
       <Link to="/" className="workbench-brand" aria-label="Muster 首页" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '28px', height: '28px', borderRadius: '7px', background: 'var(--accent)', color: '#fff', textDecoration: 'none', fontWeight: 850, fontSize: '13px' }}>
         <span>M</span>
@@ -88,6 +146,13 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
       <nav id="work-navigation" className="workbench-navigation" aria-label={navigationLabel}>{preferences.leftOpen ? navigation : null}</nav>
       <main className="workbench-surface">{children}</main>
       <aside id="work-inspector" className="workbench-inspector" aria-label={inspectorLabel}>{preferences.rightOpen ? inspector : null}</aside>
+      {/* 批次 F.2：桌面态栏宽拖拽（≤1179 抽屉态不渲染） */}
+      {preferences.viewportWidth >= 1180 && preferences.leftOpen && (
+        <WorkbenchResizer side="left" width={preferences.leftWidth} onResize={(px, commit) => preferences.setWidth('left', px, commit)} onActiveChange={(active) => setResizingPane(active ? 'left' : null)} />
+      )}
+      {preferences.viewportWidth >= 1180 && preferences.rightOpen && (
+        <WorkbenchResizer side="right" width={preferences.rightWidth} onResize={(px, commit) => preferences.setWidth('right', px, commit)} onActiveChange={(active) => setResizingPane(active ? 'right' : null)} />
+      )}
     </div>
     {(preferences.viewportWidth <= 1179 && (preferences.leftOpen || preferences.rightOpen)) && <div className="workbench-drawer-backdrop" onMouseDown={preferences.closeDrawers} aria-hidden="true" />}
     <WorkbenchGuide />
