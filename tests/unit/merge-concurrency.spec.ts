@@ -91,3 +91,19 @@ describe('批次1：promote in-flight 去重', () => {
     expect(rows.n).toBe(1); // 修复前：第二路 "Already up to date" 也记成功
   });
 });
+
+describe('批次2：behind 徽章（分叉可见性）', () => {
+  it('主干前进 1 提交 → 看板行 behindCommits=1（ahead 不变）；主干未动 → 0', () => {
+    const f = fixturePendingStaging('behind');
+    const before = listPendingTaskMerges(db, f.projectId);
+    expect(before).toHaveLength(1);
+    expect(before[0]!.behindCommits).toBe(0); // 基线未动（fast-forward 场景）
+    // 主干前进：模拟另一任务已 promote / 用户在主干直接提交
+    writeFileSync(path.join(f.rootDir, 'main-moved.txt'), 'moved\n');
+    git(f.rootDir, ['add', '-A']);
+    git(f.rootDir, ['commit', '-m', 'main advanced']);
+    const after = listPendingTaskMerges(db, f.projectId);
+    expect(after[0]!.behindCommits).toBe(1);
+    expect(after[0]!.aheadCommits).toBe(1);
+  });
+});

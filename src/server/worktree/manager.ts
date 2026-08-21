@@ -339,6 +339,11 @@ export function branchAheadCount(rootDir: string, branch: string): number {
   return Number(git(rootDir, ['rev-list', '--count', `HEAD..${branch}`], { allowFail: true }).stdout || '0');
 }
 
+/** 单分支落后主干提交数（主干已从分支基线前进多少——分叉风险可见性；behind>0 时合并是三方合并）。 */
+export function branchBehindCount(rootDir: string, branch: string): number {
+  return Number(git(rootDir, ['rev-list', '--count', `${branch}..HEAD`], { allowFail: true }).stdout || '0');
+}
+
 /** 任务集成分支最后一次提交时间（ISO，无提交/无分支为 null）——搁置提醒（≥5h 红点）数据源。 */
 export function taskStagingLastCommitAt(rootDir: string, projectId: string, projectTaskId: string): string | null {
   if (!repoReady(rootDir)) return null;

@@ -142,6 +142,7 @@ export function ProjectMergesPage(): React.ReactElement {
                 #{item.seq} {item.title}
               </span>
               <Badge tone="info">领先 {item.aheadCommits} 提交</Badge>
+              {item.behindCommits > 0 && <Badge tone="warn" title="主干已从该任务基线前进——合并将是三方合并，可能与他任务改动交叠">主干已前进 {item.behindCommits}</Badge>}
               {item.staleHours !== null && <Badge tone="err" title="任务集成区搁置 ≥5 小时未合并">搁置 {item.staleHours}h</Badge>}
               {item.pendingRuntimeTasks > 0 && <Badge tone="warn">{item.pendingRuntimeTasks} 在飞</Badge>}
               <Badge tone="neutral">{item.mergeMode === 'auto' ? '自动' : '手动'}</Badge>

@@ -11,7 +11,7 @@ import { appendTaskEvent } from './task-event';
 import { getTaskRuntime, deleteTaskRuntime } from './task-runtime';
 import {
   stageStatus, promoteStaging, taskStageStatus,
-  taskStagingDiffSummary, promoteTaskStagingMerge, listTaskStagingRefs, branchAheadCount, detectOrphanWorktrees,
+  taskStagingDiffSummary, promoteTaskStagingMerge, listTaskStagingRefs, branchAheadCount, branchBehindCount, detectOrphanWorktrees,
   ensureTaskStagingWorktree,
 } from '../worktree/manager';
 import { callLlm } from './llm-call';
@@ -153,6 +153,8 @@ export interface PendingTaskMergeItem {
   state: string;
   branch: string;
   aheadCommits: number;
+  /** 主干已从该集成分支基线前进的提交数（behind>0 = 合并将是三方合并，分叉风险可见性）。 */
+  behindCommits: number;
   pendingRuntimeTasks: number;
   mergeMode: 'manual' | 'auto';
   lastMergeAt: string | null;
@@ -213,6 +215,7 @@ export function listPendingTaskMerges(db: DB, projectId: string): PendingTaskMer
     if (!ref) continue;
     const aheadCommits = branchAheadCount(ptRoot ?? project.rootDir, ref.branch);
     if (aheadCommits === 0) continue;
+    const behindCommits = branchBehindCount(ptRoot ?? project.rootDir, ref.branch);
     const pending = db.prepare(
       "SELECT COUNT(*) AS n FROM task WHERE project_task_id=? AND state IN ('queued','claimed','running','waiting_input','waiting_dependency','waiting_approval','paused','blocked')",
     ).get(pt.id) as { n: number };
@@ -226,6 +229,7 @@ export function listPendingTaskMerges(db: DB, projectId: string): PendingTaskMer
       state: pt.state,
       branch: ref.branch,
       aheadCommits,
+      behindCommits,
       pendingRuntimeTasks: pending.n,
       mergeMode,
       lastMergeAt: last?.created_at ?? null,
