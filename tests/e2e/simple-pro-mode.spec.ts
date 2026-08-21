@@ -12,9 +12,12 @@ test('双模式：默认简单 → 专业页提示 → 切专业生效持久 →
 
   // 1) 默认简单模式：顶栏切换钮显示「简单」；导航收专业工具、留大众工具
   await expect(page.getByRole('button', { name: '切换到专业模式' })).toHaveText('简单');
+  // 待合并成果/蓝图库为导航项（项目内/全局各一处）；自动化为项目内工具页，首页无此导航，改为命令面板搜不到
   await expect(page.getByRole('link', { name: '待合并成果' })).toHaveCount(0);
   await expect(page.getByRole('link', { name: '蓝图库' })).toHaveCount(0);
-  await expect(page.getByRole('link', { name: '自动化' })).toHaveCount(0);
+  await page.getByRole('button', { name: '搜索或跳转' }).click();
+  await expect(page.getByRole('link', { name: '自动化', exact: true })).toHaveCount(0);
+  await page.keyboard.press('Escape');
   await expect(page.getByRole('link', { name: '存储管理' })).toHaveCount(1);
   await expect(page.getByRole('link', { name: '归档' })).toHaveCount(1);
 
