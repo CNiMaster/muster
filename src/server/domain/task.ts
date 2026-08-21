@@ -42,6 +42,7 @@ import { getPersona } from './persona-library';
 import { requiredExecutorKindForCapabilities } from './capability-binding';
 import { findUserTalentForPersona } from './agent-profile';
 import { findActiveSpecialistAgent } from './specialist-pool';
+import { BREADTH_LIMITS, taskBreadthTier } from './breadth-tier';
 
 /**
  * 验收标准条目（双 Loop 地基 P0.1）。
@@ -358,9 +359,9 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
         const specialistAgentId = !routedAssigneeId
           ? findActiveSpecialistAgent(db, project.id, slot.personaId)
           : null;
-        // 批次 J：2+ 槽班底升级为整组派遣（缺省并行；2-4 槽 cap 沿用 staffing 结构）
+        // 批次 J：2+ 槽班底升级为整组派遣（缺省并行；槽位上限随三档广深——轻=只主/中=2-3/重=满配 4）
         if (!explicitAssignee && match.blueprint.staffing.length > 1) {
-          crewSlots = match.blueprint.staffing.slice(1, 4);
+          crewSlots = match.blueprint.staffing.slice(1, BREADTH_LIMITS[taskBreadthTier(db, (input.inputProtocol ?? {}) as Record<string, unknown>)].crewSlots);
         }
         if (specialistAgentId) routedAssigneeId = specialistAgentId;
         // 打法包一期：班底生效——2-4 槽协作成员以名称+领域描述注入执行上下文

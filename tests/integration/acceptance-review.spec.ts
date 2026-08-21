@@ -211,8 +211,12 @@ describe('handleAcceptanceReviewTaskCompleted 判定落地', () => {
 describe('Review 修复 I2/I3：轮回上限与闭环排除', () => {
   it('返工任务完成会触发新一轮验收（链条闭合）；超轮回上限升级用户', () => {
     const { lead, p } = seed();
-    // 第 1 轮：source FAIL → 返工 R1（reviewRound=1）
-    const source = taskWithCriteria(p.id, lead.id, '首轮任务');
+    // B2 三档广深：显式 heavy 档（上限 3 轮）验证轮回逻辑——默认 standard 现为 2 轮
+    const source = createTask(db, {
+      projectId: p.id, assigneeAgentId: lead.id, title: '首轮任务',
+      acceptanceCriteria: CRITERIA.map((c) => ({ ...c })),
+      inputProtocol: { breadthTier: 'heavy' },
+    });
     let review = maybeTriggerAcceptanceReview(db, source)!;
     completeReviewTask(review.id, 'VERDICT=FAIL\nCONFIDENCE=0.9\n第一轮不通过');
     handleAcceptanceReviewTaskCompleted(db, getTask(db, review.id));

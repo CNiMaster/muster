@@ -62,6 +62,8 @@ export const settingsUpdateSchema = z.object({
   debateMinConfidence: z.number().min(0.5).max(0.95).optional(),
   // 执行过程展示批次4：蜂群失败自动修复全群上限
   swarmRepairMax: z.number().int().min(1).max(100).optional(),
+  // 三档广深（B2）：新任务默认档位（任务级 inputProtocol.breadthTier 可覆盖）
+  breadthDefaultTier: z.enum(['light', 'standard', 'heavy']).optional(),
   // WP9 模型档位（空串 = 未配置不覆盖；标准档 = 不覆盖故无键）
   modelTierEconomy: z.string().max(200).optional(),
   modelTierPremium: z.string().max(200).optional(),

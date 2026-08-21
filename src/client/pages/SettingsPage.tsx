@@ -59,6 +59,7 @@ export function SettingsPage(): React.ReactElement {
   const [swarmMaxNodes, setSwarmMaxNodes] = useState(30);
   const [swarmBudgetUSD, setSwarmBudgetUSD] = useState(5);
   const [swarmRepairMax, setSwarmRepairMax] = useState(10);
+  const [breadthDefaultTier, setBreadthDefaultTier] = useState<'light' | 'standard' | 'heavy'>('standard');
   const [testResult, setTestResult] = useState<any | null>(null);
 
   useEffect(() => {
@@ -95,6 +96,7 @@ export function SettingsPage(): React.ReactElement {
     setSwarmMaxNodes(settings.swarmMaxNodes ?? 30);
     setSwarmBudgetUSD(settings.swarmBudgetUSD ?? 5);
     setSwarmRepairMax(settings.swarmRepairMax ?? 10);
+    setBreadthDefaultTier(settings.breadthDefaultTier ?? 'standard');
   }, [settings]);
 
   const handleSave = (): void => {
@@ -103,7 +105,7 @@ export function SettingsPage(): React.ReactElement {
       return;
     }
     saveSettings.mutate(
-      { claudeBin, model, skipPermissions, timeoutMs, maxToolCalls, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierPrimaryId: tierPrimary, executorTierSecondaryId: tierSecondary, executorTierTertiaryId: tierTertiary, executorTierHighId: tierHigh, executorTierStandardId: tierStandard, executorTierLowId: tierLow, imageGenModel, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs, theme, fontFamily, fontSize, locale, codeTheme, autonomousReflectionEnabled, autonomousReflectionBudgetUSD, swarmMaxDepth, swarmMaxWidth, swarmMaxNodes, swarmBudgetUSD, swarmRepairMax },
+      { claudeBin, model, skipPermissions, timeoutMs, maxToolCalls, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierPrimaryId: tierPrimary, executorTierSecondaryId: tierSecondary, executorTierTertiaryId: tierTertiary, executorTierHighId: tierHigh, executorTierStandardId: tierStandard, executorTierLowId: tierLow, imageGenModel, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs, theme, fontFamily, fontSize, locale, codeTheme, autonomousReflectionEnabled, autonomousReflectionBudgetUSD, swarmMaxDepth, swarmMaxWidth, swarmMaxNodes, swarmBudgetUSD, swarmRepairMax, breadthDefaultTier },
       {
         onSuccess: () => toast('success', '系统设置已保存并实时生效'),
         onError: (error: any) => toast('error', error.message ?? '保存设置失败'),
@@ -267,6 +269,17 @@ export function SettingsPage(): React.ReactElement {
                     <Input type="number" value={swarmBudgetUSD} onChange={(e) => setSwarmBudgetUSD(Number(e.target.value))} />
                   </Field>
                 </div>
+                <Field label="默认广深档位（新任务；任务级可覆盖）">
+                  <select
+                    value={breadthDefaultTier}
+                    onChange={(e) => setBreadthDefaultTier(e.target.value as 'light' | 'standard' | 'heavy')}
+                    style={{ width: '100%', padding: '8px', borderRadius: 6, background: 'var(--bg-secondary, #1a1a2e)', color: 'inherit', border: '1px solid var(--border-color, #333)' }}
+                  >
+                    <option value="light">轻 · 快探/小修（1 专家 / 小蜂群 / 验收 1 轮）</option>
+                    <option value="standard">中 · 常规迭代（默认）</option>
+                    <option value="heavy">重 · 攻坚/高可靠（满配班组 / 大蜂群 / 验收 3 轮）</option>
+                  </select>
+                </Field>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px' }}>
                   <input type="checkbox" checked={autonomousReflectionEnabled} onChange={(e) => setAutonomousReflectionEnabled(e.target.checked)} />
                   <span>白日梦：空闲时自动反思近期任务（沉淀记忆 + 进化蓝图，默认关）</span>

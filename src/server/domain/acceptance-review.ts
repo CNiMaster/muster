@@ -21,6 +21,7 @@ import { promoteProjectStagingIfAny } from './staging';
 import { ensurePrimaryThread } from './thread';
 import { ensureAcceptanceOfficer, ACCEPTANCE_OFFICER_ROLE } from './acceptance-officer';
 import { advanceChecklist } from './checklist';
+import { BREADTH_LIMITS, taskBreadthTier } from './breadth-tier';
 import { log } from '../logger';
 
 /** 验收判定置信阈值：低于则升级用户。 */
@@ -283,13 +284,16 @@ export function handleAcceptanceReviewTaskCompleted(db: DB, reviewTask: Task): v
     }
     const prevPayload = ((source.inputProtocol ?? {}) as { payload?: { reviewRound?: number } }).payload;
     const nextRound = (prevPayload?.reviewRound ?? 0) + 1;
-    if (nextRound > MAX_ACCEPTANCE_REWORK_ROUNDS) {
+    // 三档广深（B2）：返工轮次上限随源任务档位（轻=1/中=2/重=3；返工任务继承档位，链上口径一致）
+    const sourceTier = taskBreadthTier(db, (source.inputProtocol ?? {}) as Record<string, unknown>);
+    const maxRounds = BREADTH_LIMITS[sourceTier].acceptanceReworkRounds;
+    if (nextRound > maxRounds) {
       postSystemMessage(db, {
         scopeKind: 'workbench',
         scopeId: project.companyId,
         role: 'system',
         author: officerName,
-        content: `[验收升级] 「${source.title}」已返工 ${MAX_ACCEPTANCE_REWORK_ROUNDS} 轮仍未通过验收，请人工接管。意见：${parsed.feedback || '（无）'}`,
+        content: `[验收升级] 「${source.title}」已返工 ${maxRounds} 轮仍未通过验收，请人工接管。意见：${parsed.feedback || '（无）'}`,
       });
       appendTaskEvent(db, source.id, 'acceptance_escalated', {
         reason: 'max-rounds',
@@ -309,6 +313,8 @@ export function handleAcceptanceReviewTaskCompleted(db: DB, reviewTask: Task): v
       exemptBlueprintMatch: true,
       inputProtocol: {
         type: 'business_rework',
+        // 三档广深（B2）：返工继承源任务档位（后续轮次上限口径一致）
+        breadthTier: sourceTier,
         payload: {
           feedback: parsed.feedback,
           decision: parsed.verdict,

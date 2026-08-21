@@ -2292,6 +2292,7 @@ export function useSaveSystemSettings() {
       swarmMaxNodes?: number;
       swarmBudgetUSD?: number;
       swarmRepairMax?: number;
+      breadthDefaultTier?: 'light' | 'standard' | 'heavy';
       debateMinConfidence?: number;
       modelTierEconomy?: string;
       modelTierPremium?: string;

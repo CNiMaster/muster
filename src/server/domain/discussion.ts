@@ -22,6 +22,7 @@ import { getProject } from './project';
 import { postSystemMessage } from './conversation';
 import { createMirror, removeMirror, listMirrorsOfRoot, ensurePrimaryThread } from './thread';
 import { getWorkbench } from './workbench';
+import { BREADTH_LIMITS, taskBreadthTier } from './breadth-tier';
 
 export type DiscussionState = 'open' | 'concluding' | 'concluded' | 'closed';
 export type ParticipantRole = 'member' | 'moderator';
@@ -244,8 +245,19 @@ export function createDiscussion(db: DB, input: {
   const id = shortId('disc_');
   const now = nowIso();
   const contextWithScenario = { ...(input.context ?? {}), scenario, scenarioGuidance: scenarioConfig.conclusionAction };
+  // 三档广深（B2）：发言轮次默认随源任务档位（轻=6/中=12/重=20；聊完即收，不为走满轮次）——
+  // 显式 maxTurns 优先；无源任务（用户直接发起）按工作台默认档。
+  const maxTurnsDefault = (() => {
+    let proto: Record<string, unknown> | undefined;
+    if (input.sourceTaskId) {
+      try {
+        proto = (getTask(db, input.sourceTaskId).inputProtocol ?? {}) as Record<string, unknown>;
+      } catch { /* 源任务缺失回落工作台默认档 */ }
+    }
+    return BREADTH_LIMITS[taskBreadthTier(db, proto)].discussionMaxTurns;
+  })();
   db.prepare(`INSERT INTO discussion (id,project_id,topic,initiator_agent_id,state,max_turns,context_json,source_task_id,mode,created_at,updated_at) VALUES (?,?,?,?, 'open', ?, ?, ?, ?, ?, ?)`)
-    .run(id, project.id, input.topic, input.initiatorAgentId ?? null, input.maxTurns ?? 12, JSON.stringify(contextWithScenario), input.sourceTaskId ?? null, input.mode ?? 'sequential', now, now);
+    .run(id, project.id, input.topic, input.initiatorAgentId ?? null, input.maxTurns ?? maxTurnsDefault, JSON.stringify(contextWithScenario), input.sourceTaskId ?? null, input.mode ?? 'sequential', now, now);
   // 注册参与者（第一个是 moderator）
   ordered.forEach((agentId, idx) => {
     db.prepare('INSERT INTO discussion_participant (discussion_id,agent_id,role,turn_index,joined_at) VALUES (?, ?, ?, ?, ?)')
