@@ -242,6 +242,8 @@ export interface Task {
   supersededBy: string | null;
   /** 蓝图打法包：本任务派遣的人设（蓝图主槽匹配，null=未派遣）。 */
   personaId: string | null;
+  /** B5 验收进度：验收标准及达标标记（验收员隐形后，进度灯在检查器消费）。 */
+  acceptanceCriteria: Array<{ id: string; criterion: string; met?: boolean }>;
   createdAt: string;
   updatedAt: string;
 }
