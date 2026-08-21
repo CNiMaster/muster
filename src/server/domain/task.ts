@@ -796,6 +796,16 @@ export function completeTask(db: DB, taskId: string, result: AgentRunResult): Ta
     );
     appendTaskEvent(db, taskId, nextState, { outcome: result.outcome });
 
+    // B4 极简日志（单事件，不做仪表不做科研）：广深档位/装备数/返工数——供白日梦与反思后续消费。
+    {
+      const chain = ((cur.inputProtocol ?? {}) as Record<string, unknown>).resolvedToolChain as { tools?: unknown[] } | undefined;
+      appendTaskEvent(db, taskId, 'chain_stats', {
+        breadthTier: (cur.inputProtocol as Record<string, unknown>).breadthTier ?? null,
+        toolChainCount: Array.isArray(chain?.tools) ? chain.tools.length : 0,
+        reworkCount: cur.reworkCount,
+      });
+    }
+
     // 指挥系统：蜂任务完成 → 汇总消息写回 + 蜂灰化 + 整群记账（可能触发关群）
     if (result.outcome === 'completed' && cur.swarmId) {
       try {
