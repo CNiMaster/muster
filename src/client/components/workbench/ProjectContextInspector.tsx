@@ -5,41 +5,92 @@ import type { Agent, Task } from '../../api/types';
 import type { ProjectTaskDTO } from '../../hooks/queries';
 import { useArtifacts, useBlueprintMatches, useProjectSpecialists, useProjectTaskAction, useTaskSwarm, useUiMode } from '../../hooks/queries';
 import type { CompanyCockpitDTO } from '../../../shared/types';
-import { Badge, StateBadge, stateLabel, taskStateTone } from '../Badge';
+import { Badge, StateBadge, taskStateTone } from '../Badge';
 import { Button, toast } from '../Button';
 import { DiscussionPanel } from './DiscussionPanel';
 
 const OPEN_STATES = new Set(['queued', 'claimed', 'running', 'waiting_input', 'waiting_dependency', 'waiting_approval', 'paused', 'blocked']);
 const ATTENTION_STATES = new Set(['waiting_input', 'waiting_approval', 'blocked', 'waiting_dependency']);
 
+// 批次 F：折叠组展开记忆（仿 mu-trace-expand——挂载读一次、切换即写、异常静默）
+const COLLAPSE_LS_PREFIX = 'muster:inspector-collapse:';
+function loadGroupOpen(groupId: string, fallback: boolean): boolean {
+  try {
+    const saved = localStorage.getItem(COLLAPSE_LS_PREFIX + groupId);
+    return saved === null ? fallback : saved === '1';
+  } catch {
+    return fallback;
+  }
+}
+function saveGroupOpen(groupId: string, open: boolean): void {
+  try {
+    localStorage.setItem(COLLAPSE_LS_PREFIX + groupId, open ? '1' : '0');
+  } catch {
+    /* 隐私模式等存储不可用场景静默降级 */
+  }
+}
+
+/** 右栏折叠分组：标题 + 计数徽章，展开状态按组持久化 */
+function InspectorGroup({
+  groupId,
+  title,
+  badge,
+  defaultOpen,
+  children,
+}: {
+  groupId: string;
+  title: string;
+  badge?: React.ReactNode;
+  defaultOpen: boolean;
+  children: React.ReactNode;
+}): React.ReactElement {
+  const [open, setOpen] = useState(() => loadGroupOpen(groupId, defaultOpen));
+  return (
+    <details
+      className="inspector-collapse"
+      open={open}
+      onToggle={(event) => {
+        const next = event.currentTarget.open;
+        setOpen(next);
+        saveGroupOpen(groupId, next);
+      }}
+    >
+      <summary>
+        <span>{title}</span>
+        {badge}
+      </summary>
+      <div>{children}</div>
+    </details>
+  );
+}
+
 export function ProjectContextInspector({
   projectId,
-  projectState,
   selectedTask,
   selectedAgentId,
   agents,
   tasks,
   cockpit,
-  onChatWithAgent,
 }: {
   projectId: string;
-  projectState: string;
   selectedTask?: ProjectTaskDTO;
   selectedAgentId?: string;
   agents: Agent[];
   tasks: Task[];
   cockpit?: CompanyCockpitDTO;
-  onChatWithAgent?: (agentId: string) => void;
 }): React.ReactElement {
   const currentAgent = agents.find((a) => a.id === selectedAgentId);
-  // 治理批次5：简单模式收起蜂群拓扑/蓝图匹配（后台治理照常）
+  // 治理批次5：简单模式收起蓝图匹配（后台治理照常）
   const { isSimple: uiSimple } = useUiMode();
-  const [activeTab, setActiveTab] = useState<'agent' | 'checklist' | 'artifacts'>('agent');
   const taskAction = useProjectTaskAction();
   const { data: artifacts = [] } = useArtifacts(projectId);
-  const activeTask = tasks.find((t) => t.id === selectedTask?.id || t.state === 'running') ?? tasks[0];
+  // 批次 F 修复：工作单以 projectTaskId 关联项目任务——此前 t.id 对 selectedTask.id 分属两个 ID 空间，永不命中
+  const activeTask =
+    (selectedTask ? tasks.find((t) => t.projectTaskId === selectedTask.id) : undefined) ??
+    tasks.find((t) => t.state === 'running') ??
+    tasks[0];
   const { data: swarmView } = useTaskSwarm(activeTask?.id);
-  // B5 右侧三卡（非人员源，中央岗隐形后"事可见"）：专家池/蜂群/验收进度
+  // B5 右侧三卡（非人员源，中央岗隐形后"事"可见）：专家池/蜂群/验收进度
   const { data: specialists = [] } = useProjectSpecialists(projectId);
   // 修复轮（批次 F.2）：任务 → 最优蓝图 top-N（命中时显示，无人设命中不显示）
   const { data: blueprintMatches = [] } = useBlueprintMatches(selectedTask?.title);
@@ -50,6 +101,10 @@ export function ProjectContextInspector({
   // 任务拆解的 Checklist（提取自 launchBrief deliverables 或 task 列表）
   const deliverables = (selectedTask?.launchBrief?.deliverables ?? []) as string[];
   const agentTasks = currentAgent ? tasks.filter((t) => t.assigneeAgentId === currentAgent.id && OPEN_STATES.has(t.state)) : [];
+  const criteria = activeTask?.acceptanceCriteria ?? [];
+  const criteriaMet = criteria.filter((c) => c.met === true).length;
+  const criteriaUnmet = criteria.filter((c) => c.met === false).length;
+  const showBlueprintCard = !uiSimple && selectedTask !== undefined && blueprintMatches.length > 0;
 
   const completeTask = (): void => {
     if (!selectedTask) return;
@@ -64,36 +119,7 @@ export function ProjectContextInspector({
 
   return (
     <div className="auxiliary-panel">
-      {/* 顶部 Tab 切换 */}
-      <div style={{ display: 'flex', gap: '4px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '8px' }}>
-        {currentAgent && (
-          <button
-            type="button"
-            className={`mu-composer-pill ${activeTab === 'agent' ? 'is-highlight' : ''}`}
-            onClick={() => setActiveTab('agent')}
-          >
-            <span>👤 员工信息</span>
-          </button>
-        )}
-        <button
-          type="button"
-          className={`mu-composer-pill ${activeTab === 'checklist' || (!currentAgent && activeTab === 'agent') ? 'is-highlight' : ''}`}
-          onClick={() => setActiveTab('checklist')}
-        >
-          <span>📋 任务清单</span>
-          {deliverables.length > 0 && <Badge tone="info">{deliverables.length}</Badge>}
-        </button>
-        <button
-          type="button"
-          className={`mu-composer-pill ${activeTab === 'artifacts' ? 'is-highlight' : ''}`}
-          onClick={() => setActiveTab('artifacts')}
-        >
-          <span>📦 产物</span>
-          <Badge tone="neutral">{artifacts.length}</Badge>
-        </button>
-      </div>
-
-      {/* 待办事项提醒（若有） */}
+      {/* 瞬时层：需要你关注（有事才出现，事毕即隐） */}
       {attentionTotal > 0 && (
         <div className="inspector-attention-section" style={{ borderRadius: 'var(--radius-md)', padding: '8px 10px' }}>
           <div className="inspector-section-heading">
@@ -115,8 +141,8 @@ export function ProjectContextInspector({
         </div>
       )}
 
-      {/* Tab 1: 当前人员专属信息 */}
-      {currentAgent && activeTab === 'agent' && (
+      {/* 当前选中对象：员工视图=员工卡；默认=当前任务头卡 */}
+      {currentAgent ? (
         <section className="auxiliary-section">
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px', background: 'var(--bg-elev)', borderRadius: 10, border: '1px solid var(--border-subtle)' }}>
             <span className="org-avatar" style={{ width: 36, height: 36, fontSize: 15, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
@@ -215,180 +241,196 @@ export function ProjectContextInspector({
             </div>
           )}
         </section>
-      )}
-
-      {/* Tab 2: 任务步骤清单 */}
-      {(activeTab === 'checklist' || (!currentAgent && activeTab === 'agent')) && (
+      ) : selectedTask ? (
         <section className="auxiliary-section">
           <div className="auxiliary-section-title">
-            <span>当前任务 Checklist</span>
-            {selectedTask && <StateBadge domain="project-task" state={selectedTask.state} />}
+            <span>当前任务</span>
+            <StateBadge domain="project-task" state={selectedTask.state} />
           </div>
-          {selectedTask ? (
-            <div>
-              <div style={{ padding: '8px', background: 'var(--bg-elev)', borderRadius: 'var(--radius-md)', marginBottom: '8px', border: '1px solid var(--border-subtle)' }}>
-                <strong style={{ fontSize: '12px', display: 'block' }}>#{selectedTask.seq} {selectedTask.title}</strong>
-                {selectedTask.brief && <p className="muted" style={{ margin: '4px 0 0', fontSize: '12px' }}>{selectedTask.brief}</p>}
-                {selectedTask.state === 'active' && (
-                  <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
-                    <Button size="sm" variant="ghost" loading={taskAction.isPending} onClick={completeTask}>
-                      ✓ 标记为完成
-                    </Button>
-                  </div>
-                )}
+          <div style={{ padding: '8px', background: 'var(--bg-elev)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+            <strong style={{ fontSize: '12px', display: 'block' }}>#{selectedTask.seq} {selectedTask.title}</strong>
+            {selectedTask.brief && <p className="muted" style={{ margin: '4px 0 0', fontSize: '12px' }}>{selectedTask.brief}</p>}
+            {selectedTask.state === 'active' && (
+              <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
+                <Button size="sm" variant="ghost" loading={taskAction.isPending} onClick={completeTask}>
+                  ✓ 标记为完成
+                </Button>
               </div>
-
-              {deliverables.length > 0 ? (
-                <ul className="task-checklist-list">
-                  {deliverables.map((item, index) => (
-                    <li key={index} className="task-checklist-item">
-                      <input type="checkbox" className="task-checklist-checkbox" defaultChecked={index === 0 && selectedTask.state === 'completed'} />
-                      <span>{item}</span>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="muted" style={{ fontSize: '12px', margin: '4px 0' }}>
-                  当前任务尚未配置具体交付步骤。智能体会根据对话自动规划执行。
-                </p>
-              )}
-
-              {/* B5 专家池卡（常驻非人员源）：项目常驻专家与使用次数——中央岗隐形后"事可见" */}
-              {specialists.length > 0 && (
-                <div style={{ marginTop: '12px', padding: '10px', background: 'var(--bg-elev)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
-                  <div className="auxiliary-section-title" style={{ padding: 0, marginBottom: '6px' }}>
-                    <span>🧑‍🔬 项目专家池</span>
-                    <Badge tone="info">{specialists.length}</Badge>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    {specialists.slice(0, 5).map((sp) => (
-                      <div key={sp.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', fontSize: '12px' }}>
-                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={sp.specialty}>
-                          {sp.personaId ? `🎭 ${sp.personaId.split('/').pop()}` : '🧬 常驻专家'} · {sp.specialty.slice(0, 18)}
-                        </span>
-                        <Badge tone={sp.tier === 'staff' ? 'ok' : 'neutral'}>{sp.tier === 'staff' ? '跨项目' : `用 ${sp.useCount}`}</Badge>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* B5 验收进度卡（非人员源）：当前任务验收标准达标灯——验收员隐形后结果在此可见 */}
-              {(() => {
-                const criteria = activeTask?.acceptanceCriteria ?? [];
-                if (criteria.length === 0) return null;
-                const met = criteria.filter((c) => c.met === true).length;
-                const unmet = criteria.filter((c) => c.met === false).length;
-                return (
-                  <div style={{ marginTop: '12px', padding: '10px', background: 'var(--bg-elev)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
-                    <div className="auxiliary-section-title" style={{ padding: 0, marginBottom: '6px' }}>
-                      <span>🔍 验收进度</span>
-                      <Badge tone={met === criteria.length ? 'ok' : unmet > 0 ? 'err' : 'neutral'}>{met}/{criteria.length}</Badge>
-                    </div>
-                    {criteria.slice(0, 4).map((c) => (
-                      <div key={c.id} style={{ fontSize: '12px', display: 'flex', gap: '6px', alignItems: 'center', padding: '2px 0' }}>
-                        <span>{c.met === true ? '✅' : c.met === false ? '❌' : '⏳'}</span>
-                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={c.criterion}>{c.criterion}</span>
-                      </div>
-                    ))}
-                  </div>
-                );
-              })()}
-
-              {/* 蜂群微视图（若有）——B5 起常驻（中央养蜂人隐形，蜂群状态在此可见） */}
-              {swarmView?.swarm && (
-                <div style={{ marginTop: '12px', padding: '10px', background: 'var(--bg-elev)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
-                  <div className="auxiliary-section-title" style={{ padding: 0, marginBottom: '6px' }}>
-                    <span>🐝 蜂群拓扑 ({swarmView.tasks.length} 工蜂)</span>
-                    <StateBadge domain="thread" state={swarmView.swarm.status} />
-                  </div>
-                  <p className="muted" style={{ margin: 0, fontSize: '12px' }}>
-                    收口 {swarmView.swarm.nodesDone}/{swarmView.swarm.nodesTotal}
-                    {swarmView.swarm.nodesFailed > 0 && <span style={{ color: 'var(--err)' }}> (失败 {swarmView.swarm.nodesFailed})</span>}
-                  </p>
-                </div>
-              )}
-
-              {/* 修复轮（批次 F.2）：最优蓝图 top-N——按当前选中任务标题命中（简单模式收起） */}
-              {!uiSimple && selectedTask && blueprintMatches.length > 0 && (
-                <div style={{ marginTop: '12px', padding: '10px', background: 'var(--bg-elev)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
-                  <div className="auxiliary-section-title" style={{ padding: 0, marginBottom: '6px' }}>
-                    <span>🎭 已匹配最优蓝图 {blueprintMatches.length} 个</span>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    {blueprintMatches.slice(0, 5).map((bp) => {
-                      const total = bp.wins + bp.losses;
-                      const winRate = total > 0 ? Math.round((bp.wins / total) * 100) : null;
-                      const crew = bp.staffing.map((s) => `${s.personaName || s.personaId}${s.role ? `（${s.role}）` : ''}`).slice(0, 4).join(' · ');
-                      return (
-                        <Link
-                          key={bp.id}
-                          to={`/blueprints/${bp.id}`}
-                          style={{
-                            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px',
-                            padding: '4px 6px', borderRadius: 'var(--radius-sm)',
-                            background: 'var(--bg)', border: '1px solid var(--border-subtle)',
-                            fontSize: '12px', color: 'var(--fg)', textDecoration: 'none',
-                          }}
-                          title={crew || bp.description}
-                        >
-                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            🎭 {bp.label}
-                          </span>
-                          {winRate !== null && <Badge tone={winRate >= 60 ? 'ok' : 'neutral'}>{winRate}%</Badge>}
-                        </Link>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : (
-            <p className="muted" style={{ fontSize: '12px' }}>选择或新建一个任务以查看步骤清单。</p>
-          )}
+            )}
+          </div>
         </section>
+      ) : (
+        <p className="muted" style={{ fontSize: '12px' }}>选择或新建一个任务以查看现场信息。</p>
       )}
 
-      {/* Tab 3: 产物与文件 */}
-      {activeTab === 'artifacts' && (
-        <section className="auxiliary-section">
-          <div className="auxiliary-section-title">
+      {/* 折叠组·任务现场（默认展开）：交付清单 + 验收进度 + 蜂群拓扑 */}
+      {selectedTask && (
+        <InspectorGroup
+          groupId="scene"
+          title="任务现场"
+          defaultOpen
+          badge={
+            criteria.length > 0 ? (
+              <Badge tone={criteriaMet === criteria.length ? 'ok' : criteriaUnmet > 0 ? 'err' : 'neutral'}>
+                {criteriaMet}/{criteria.length}
+              </Badge>
+            ) : undefined
+          }
+        >
+          {deliverables.length > 0 ? (
+            <ul className="task-checklist-list">
+              {deliverables.map((item, index) => (
+                <li key={index} className="task-checklist-item">
+                  <input type="checkbox" className="task-checklist-checkbox" defaultChecked={index === 0 && selectedTask.state === 'completed'} />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted" style={{ fontSize: '12px', margin: '4px 0' }}>
+              当前任务尚未配置具体交付步骤。智能体会根据对话自动规划执行。
+            </p>
+          )}
+
+          {/* B5 验收进度卡（非人员源）：当前任务验收标准达标灯——验收员隐形后结果在此可见 */}
+          {criteria.length > 0 && (
+            <div style={{ padding: '10px', background: 'var(--bg-elev)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+              <div className="auxiliary-section-title" style={{ padding: 0, marginBottom: '6px' }}>
+                <span>🔍 验收进度</span>
+                <Badge tone={criteriaMet === criteria.length ? 'ok' : criteriaUnmet > 0 ? 'err' : 'neutral'}>
+                  {criteriaMet}/{criteria.length}
+                </Badge>
+              </div>
+              {criteria.slice(0, 4).map((c) => (
+                <div key={c.id} style={{ fontSize: '12px', display: 'flex', gap: '6px', alignItems: 'center', padding: '2px 0' }}>
+                  <span>{c.met === true ? '✅' : c.met === false ? '❌' : '⏳'}</span>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={c.criterion}>{c.criterion}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* 蜂群微视图（若有）——B5 起常驻（中央养蜂人隐形，蜂群状态在此可见） */}
+          {swarmView?.swarm && (
+            <div style={{ padding: '10px', background: 'var(--bg-elev)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+              <div className="auxiliary-section-title" style={{ padding: 0, marginBottom: '6px' }}>
+                <span>🐝 蜂群拓扑 ({swarmView.tasks.length} 工蜂)</span>
+                <StateBadge domain="thread" state={swarmView.swarm.status} />
+              </div>
+              <p className="muted" style={{ margin: 0, fontSize: '12px' }}>
+                收口 {swarmView.swarm.nodesDone}/{swarmView.swarm.nodesTotal}
+                {swarmView.swarm.nodesFailed > 0 && <span style={{ color: 'var(--err)' }}> (失败 {swarmView.swarm.nodesFailed})</span>}
+              </p>
+            </div>
+          )}
+        </InspectorGroup>
+      )}
+
+      {/* 折叠组·班底与打法（默认收起；专家池不再依赖选中任务，工具页/无选中也可看） */}
+      {(specialists.length > 0 || showBlueprintCard) && (
+        <InspectorGroup
+          groupId="crew"
+          title="班底与打法"
+          defaultOpen={false}
+          badge={<Badge tone="neutral">{specialists.length + blueprintMatches.length}</Badge>}
+        >
+          {/* B5 专家池卡（常驻非人员源）：项目常驻专家与使用次数——中央岗隐形后"事"可见 */}
+          {specialists.length > 0 && (
+            <div style={{ padding: '10px', background: 'var(--bg-elev)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+              <div className="auxiliary-section-title" style={{ padding: 0, marginBottom: '6px' }}>
+                <span>🧑‍🔬 项目专家池</span>
+                <Badge tone="info">{specialists.length}</Badge>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                {specialists.slice(0, 5).map((sp) => (
+                  <div key={sp.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', fontSize: '12px' }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={sp.specialty}>
+                      {sp.personaId ? `🎭 ${sp.personaId.split('/').pop()}` : '🧬 常驻专家'} · {sp.specialty.slice(0, 18)}
+                    </span>
+                    <Badge tone={sp.tier === 'staff' ? 'ok' : 'neutral'}>{sp.tier === 'staff' ? '跨项目' : `用 ${sp.useCount}`}</Badge>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 修复轮（批次 F.2）：最优蓝图 top-N——按当前选中任务标题命中（简单模式收起） */}
+          {showBlueprintCard && (
+            <div style={{ padding: '10px', background: 'var(--bg-elev)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+              <div className="auxiliary-section-title" style={{ padding: 0, marginBottom: '6px' }}>
+                <span>🎭 已匹配最优蓝图 {blueprintMatches.length} 个</span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                {blueprintMatches.slice(0, 5).map((bp) => {
+                  const total = bp.wins + bp.losses;
+                  const winRate = total > 0 ? Math.round((bp.wins / total) * 100) : null;
+                  const crew = bp.staffing.map((s) => `${s.personaName || s.personaId}${s.role ? `（${s.role}）` : ''}`).slice(0, 4).join(' · ');
+                  return (
+                    <Link
+                      key={bp.id}
+                      to={`/blueprints/${bp.id}`}
+                      style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px',
+                        padding: '4px 6px', borderRadius: 'var(--radius-sm)',
+                        background: 'var(--bg)', border: '1px solid var(--border-subtle)',
+                        fontSize: '12px', color: 'var(--fg)', textDecoration: 'none',
+                      }}
+                      title={crew || bp.description}
+                    >
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        🎭 {bp.label}
+                      </span>
+                      {winRate !== null && <Badge tone={winRate >= 60 ? 'ok' : 'neutral'}>{winRate}%</Badge>}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </InspectorGroup>
+      )}
+
+      {/* 折叠组·产物（默认收起；空态整组不渲染——没有数据的卡不如没有这张卡） */}
+      {artifacts.length > 0 && (
+        <InspectorGroup
+          groupId="artifacts"
+          title="产物"
+          defaultOpen={false}
+          badge={<Badge tone="neutral">{artifacts.length}</Badge>}
+        >
+          <div className="auxiliary-section-title" style={{ padding: 0, marginBottom: '6px' }}>
             <span>产物与文件</span>
             {/* review 修复：新建项目外壳 projectId 为空时不渲染项目级链接（避免 /projects//artifacts 空段路由） */}
             {projectId && <Link to={`/projects/${projectId}/artifacts`} style={{ fontSize: '12px' }}>查看画廊 →</Link>}
           </div>
-          {artifacts.length > 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              {artifacts.slice(0, 8).map((art) => (
-                <Link
-                  key={art.id}
-                  to={`/projects/${projectId}/artifacts?path=${encodeURIComponent(art.path)}`}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '6px 8px',
-                    borderRadius: 'var(--radius-sm)',
-                    background: 'var(--bg-elev)',
-                    border: '1px solid var(--border-subtle)',
-                    fontSize: '12px',
-                    color: 'var(--fg)',
-                    textDecoration: 'none',
-                  }}
-                >
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📄 {art.path}</span>
-                  <Badge tone="neutral">{art.kind}</Badge>
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <p className="muted" style={{ fontSize: '12px' }}>尚未生成任何文件产物。</p>
-          )}
-        </section>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            {artifacts.slice(0, 8).map((art) => (
+              <Link
+                key={art.id}
+                to={`/projects/${projectId}/artifacts?path=${encodeURIComponent(art.path)}`}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '6px 8px',
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'var(--bg-elev)',
+                  border: '1px solid var(--border-subtle)',
+                  fontSize: '12px',
+                  color: 'var(--fg)',
+                  textDecoration: 'none',
+                }}
+              >
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📄 {art.path}</span>
+                <Badge tone="neutral">{art.kind}</Badge>
+              </Link>
+            ))}
+          </div>
+        </InspectorGroup>
       )}
 
-      {/* 探讨面板 */}
-      <DiscussionPanel projectId={projectId} agents={agents} />
+      {/* 探讨面板（projectId 为空的新建项目壳不发请求） */}
+      {projectId ? <DiscussionPanel projectId={projectId} agents={agents} /> : null}
     </div>
   );
 }

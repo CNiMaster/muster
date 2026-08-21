@@ -280,7 +280,6 @@ export function HomePage(): React.ReactElement {
       inspector={
         <ProjectContextInspector
           projectId={primaryProject?.id ?? ''}
-          projectState={primaryProject?.state ?? 'active'}
           agents={agents ?? []}
           tasks={primaryTasks ?? []}
           cockpit={cockpit}

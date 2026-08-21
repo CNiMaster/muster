@@ -1006,12 +1006,23 @@
   font-weight: var(--fw-semibold);
 }
 
-/* ===== Active Agent Team & Checklist & Swarm (右侧抽屉微卡片) ===== */
+/* ===== 右栏信息面板（批次 F 三层信息架构：瞬时区+纵向折叠分组流） ===== */
 .auxiliary-panel {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-3);
   padding: var(--space-3);
+}
+.auxiliary-panel .inspector-collapse {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-elev);
+  padding: 9px 10px;
+}
+.auxiliary-panel .inspector-collapse > summary {
+  color: var(--fg-muted);
+  font-weight: 800;
+  letter-spacing: 0.04em;
 }
 .auxiliary-section {
   display: flex;
@@ -1030,78 +1041,6 @@
   text-transform: uppercase;
   color: var(--fg-subtle);
 }
-.active-agent-team-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.active-agent-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--bg-elev);
-  transition: border-color var(--duration-fast) var(--ease-out);
-}
-.active-agent-row:hover {
-  border-color: var(--border-strong);
-}
-.active-agent-avatar {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  background: var(--bg-soft);
-  color: var(--accent);
-  font-size: 12px;
-  font-weight: 700;
-  flex-shrink: 0;
-}
-.active-agent-info {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  flex: 1;
-}
-.active-agent-top {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.active-agent-top strong {
-  font-size: var(--text-xs);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.active-agent-task-title {
-  font-size: 12px;
-  color: var(--fg-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  margin-top: 1px;
-}
-.active-agent-chat-btn {
-  padding: 3px 8px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  background: var(--bg-soft);
-  color: var(--fg);
-  font-size: 12px;
-  cursor: pointer;
-  transition: all var(--duration-fast) var(--ease-out);
-  flex-shrink: 0;
-}
-.active-agent-chat-btn:hover {
-  background: var(--accent);
-  color: #ffffff;
-  border-color: var(--accent);
-}
-
 .task-checklist-list {
   display: flex;
   flex-direction: column;

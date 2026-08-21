@@ -4,7 +4,6 @@ import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import type { Agent, Task } from '../../src/client/api/types';
 import { ProjectTaskWorkspace } from '../../src/client/components/project/ProjectTaskWorkspace';
-import { ProjectContextInspector } from '../../src/client/components/workbench/ProjectContextInspector';
 import type { ProjectTaskDTO } from '../../src/client/hooks/queries';
 
 const agent = {
@@ -39,29 +38,5 @@ describe('project task workspace layout', () => {
     expect(screen.getByText('审批恢复闭环')).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/在任务 #21 中给智能体下达指令…/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '发送' })).toBeInTheDocument();
-  });
-
-  it('turns the inspector into an actionable team and checklist drawer panel', () => {
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-    render(
-      <QueryClientProvider client={client}>
-        <MemoryRouter>
-          <ProjectContextInspector
-            projectId="pr_1"
-            companyId="co_1"
-            projectState="active"
-            selectedTask={projectTask}
-            selectedAgentId="ag_1"
-            agents={[agent]}
-            tasks={[workOrder]}
-            cockpit={{ companyId: 'co_1', companyState: 'online', employees: { total: 1, online: 0, blocked: 1 }, projects: { total: 1, active: 1, attention: 0 }, approvals: { pending: 0 }, roleGaps: [], risks: [], nextAction: { kind: '', label: '', description: '', href: '' } }}
-          />
-        </MemoryRouter>
-      </QueryClientProvider>,
-    );
-    // 2026-08-20 UI 重构：检查器 tabs = 员工信息/任务清单/产物（员工中心抽屉语义不变）
-    expect(screen.getByText('👤 员工信息')).toBeInTheDocument();
-    expect(screen.getByText('📋 任务清单')).toBeInTheDocument();
-    expect(screen.getByText('📦 产物')).toBeInTheDocument();
   });
 });

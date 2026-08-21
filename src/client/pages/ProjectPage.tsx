@@ -213,7 +213,7 @@ function NewProject(): React.ReactElement {
       navigationLabel="项目导航"
       inspectorLabel="现场信息"
       navigation={<ProjectWorkNavigation projectId="" projectTasks={[]} tasks={[]} agents={[]} departments={[]} view="task" attentionCount={0} novel={false} onNewTask={() => {}} />}
-      inspector={<ProjectContextInspector projectId="" projectState="active" agents={[]} tasks={[]} />}
+      inspector={<ProjectContextInspector projectId="" agents={[]} tasks={[]} />}
     >
       <div className="project-page work-surface-page" style={{ maxWidth: '800px', margin: '0 auto', padding: '16px 20px' }}>
         <header className="page-header" style={{ marginBottom: 16 }}>
@@ -604,7 +604,7 @@ export function ProjectDetail({ projectId }: { projectId: string }): React.React
             : null}
       </>}
       navigation={<ProjectWorkNavigation projectId={projectId} projectTasks={projectTasks ?? []} tasks={tasks ?? []} agents={agents ?? []} departments={departments ?? []} firstAgentId={project.firstAgentId ?? company?.firstAgentId} selectedProjectTaskId={selectedProjectTaskId} selectedAgentId={selectedAgentId} view={projectView} attentionCount={attentionCount} novel={company?.kind === 'novel'} onNewTask={openNewTaskCard} />}
-      inspector={<ProjectContextInspector projectId={projectId} projectState={project.state} selectedTask={selectedProjectTask} selectedAgentId={projectView === 'employee' ? selectedAgentId : undefined} agents={agents ?? []} tasks={tasks ?? []} cockpit={cockpit} onChatWithAgent={(agentId) => { const next = new URLSearchParams(searchParams); next.set('view', 'employee'); next.set('agent', agentId); setSearchParams(next); }} />}
+      inspector={<ProjectContextInspector projectId={projectId} selectedTask={selectedProjectTask} selectedAgentId={projectView === 'employee' ? selectedAgentId : undefined} agents={agents ?? []} tasks={tasks ?? []} cockpit={cockpit} />}
       commandOptions={[
         ...(projectTasks ?? []).slice(0, 5).map((item) => ({ label: `任务：${item.title}`, href: `/projects/${projectId}?view=task&projectTask=${item.id}`, group: '项目任务' })),
         ...(agents ?? []).slice(0, 5).map((agent) => ({ label: `智能体：${agent.name}`, href: `/projects/${projectId}?view=employee&agent=${agent.id}`, group: '团队成员' })),
