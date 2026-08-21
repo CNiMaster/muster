@@ -24,7 +24,7 @@ const r1 = await runSuite('工作台单例 + 生命周期', async (check) => {
     co = r.body;
     assertEq(co.state, 'off', '默认 state');
     assertEq(co.reviewMode, 'blocking', '默认 reviewMode');
-    assertEq(co.archivedAt, null, 'archivedAt');
+    // archivedAt 断言已删：company-drop 批次 D 删除了 workbench 死列（archived_at），响应无此字段
     const r2 = await api.get('/api/workbench');
     assertEq(r2.body.id, co.id, '幂等：同一工作台');
   });

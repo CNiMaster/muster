@@ -76,7 +76,8 @@ const r3 = await runSuite('公司独占插件', async (check) => {
   await check('安装公司独占插件', async () => {
     const r = await api.post(`/api/plugins/exclusive`, {
       name: uname('excl'), kind: 'skill',
-      source: { kind: 'company', companyId },
+      // 公司退役批次 E：source 枚举 'company'→'workbench'（无 id 载荷）
+      source: { kind: 'workbench' },
       manifest: { kind: 'skill', skill: { body: '专属能力' } },
     });
     assertStatus(r, 201, '独占安装');

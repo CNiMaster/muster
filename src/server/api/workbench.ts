@@ -25,7 +25,7 @@ import { ensureProjectThreads } from '../domain/thread';
 import { summarizeCompanyUsage } from '../domain/usage';
 import { companyArtifactGallery } from '../domain/artifact';
 import { searchArchive } from '../domain/archive';
-import { listAgents, listPersistentAgents } from '../domain/agent';
+import { listPersistentAgents } from '../domain/agent';
 import { getAgent } from '../domain/agent';
 import { listDepartments } from '../domain/department';
 import { getWorkbenchCockpit } from '../domain/workbench-cockpit';

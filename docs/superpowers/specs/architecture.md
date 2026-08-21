@@ -49,7 +49,7 @@ src/
                  # ProjectPlans / ProjectSettings / NotFound
     components/  # StatusBoard / EventFeedList / ActivityPanel / ConversationPanel / OnboardingGuide /
                  # ErrorBoundary / NaturalLanguageGraphPanel / BlockingIssues / MemoryReviewPanel /
-                 # StateExplanation（NextActionCard.tsx 为死代码，勿复用）+ 子目录 workbench/
+                 # StateExplanation + 子目录 workbench/
                  # （WorkbenchShell/PromptComposer/ExecutionTraceCard/ProjectWorkNavigation/
                  # ProjectContextInspector/DiscussionPanel/...）、project/、review/、settings/、agents/
     hooks/       # React Query hooks
