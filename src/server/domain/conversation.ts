@@ -327,6 +327,8 @@ export function postUserMessage(db: DB, input: PostUserMessageInput): {
           content: `${dispatchContent}${attachmentNote}`,
           mentions: input.mentions ?? [],
           attachments: userMessage.attachments,
+          // B3 用户意图锚点：用户原话即目标（前 300 字）——随任务链继承，执行与验收两侧注入防跑偏。
+          intentAnchor: { goal: input.content.trim().slice(0, 300) },
           ...(userImages.length > 0 ? { userImages } : {}),
           ...(options.mode ? { mode: options.mode } : {}),
           ...(options.model ? { model: options.model } : {}),

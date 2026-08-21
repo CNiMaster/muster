@@ -16,9 +16,11 @@ import { bindDefaultDenyPolicy } from './permission-templates';
 export const DISPATCHER_ROLE = 'swarm-dispatcher';
 export const JUDGE_ROLE = 'debate-judge';
 export const HR_ROLE = 'hr';
+export const CAPABILITY_ROLE = 'capability-manager';
 export const DISPATCHER_NAME = '养蜂人';
 export const JUDGE_NAME = '裁决法庭';
 export const HR_NAME = '人事';
+export const CAPABILITY_MANAGER_NAME = '能力管理';
 
 const DISPATCHER_PROMPT = `你是「${DISPATCHER_NAME}」，公司的大规模并行工作指挥岗。你不做具体工作，只负责拆解、调度、收口。
 
@@ -62,6 +64,18 @@ const HR_PROMPT = `你是「${HR_NAME}」，工作台的专家供给岗。你不
    系统会为每位专家建立「项目专家」：常驻本项目、跨任务复用、只加不减，建好后出现在花名册即可派遣。
 3. 拆解需求时想清楚流程再定人选：不把活拆碎（一个人的事不拆两个专家），也不让一个专家包打天下。
 4. 用户自建人才（我的 talent）若在岗且匹配，优先建议使用，而不是新建。`;
+
+const CAPABILITY_PROMPT = `你是「${CAPABILITY_MANAGER_NAME}」，工作台的装备供给岗（隐形职能，服务执行者不面向用户）。你不做具体业务工作，只负责工具/能力的准备、建议与链接。
+
+职责：
+1. 收到「[装备请示]」任务时（某执行者缺某能力/工具用不了）：分析缺口，产出结构化建议——
+   summary 按契约返回：
+   GAP=<能力 id>
+   SUGGEST=<建议方案：用哪个已启用工具替代 / 建议安装什么（tool_registry 或商城条目 id）/ 自建插件方向>
+   RATIONALE=<一段理由：为什么这个方案适合该任务形态>
+2. 纪律：只产建议，绝不自行安装或修改配置——安装与配置变更走平台能力中心/商城（用户确认后生效）；
+   注册表内已有可用替代时优先建议替代，缺什么说什么，不编造工具 id。
+3. 常用工具已由系统自动携带（默认套装+使用频次），你只处理缺口与质量差（成功率低建议换用）两类请示。`;
 
 function findSystemAgent(db: DB, role: string): string | null {
   const row = db
@@ -126,6 +140,10 @@ export function getHrAgentId(db: DB): string | null {
   return findSystemAgent(db, HR_ROLE);
 }
 
+export function getCapabilityManagerAgentId(db: DB): string | null {
+  return findSystemAgent(db, CAPABILITY_ROLE);
+}
+
 /** 蓝图组织批次4e：懒确保养蜂人（首次使用时创建，幂等；组织模型批次二起为可见固定岗）。 */
 export function ensureDispatcherAgentId(db: DB): string {
   return ensureOne(db, DISPATCHER_ROLE, DISPATCHER_NAME, DISPATCHER_PROMPT, { visible: true });
@@ -150,4 +168,9 @@ export function ensureAutomationStewardAgentId(db: DB): string {
 /** 组织模型批次二：懒确保人事岗（可见固定岗，专家供给）。 */
 export function ensureHrAgentId(db: DB): string {
   return ensureOne(db, HR_ROLE, HR_NAME, HR_PROMPT, { visible: true });
+}
+
+/** B3 能力管理：懒确保装备供给岗（隐形——服务执行者不面向用户；热路径决议为纯代码，此岗只接冷路径请示）。 */
+export function ensureCapabilityManagerAgentId(db: DB): string {
+  return ensureOne(db, CAPABILITY_ROLE, CAPABILITY_MANAGER_NAME, CAPABILITY_PROMPT);
 }

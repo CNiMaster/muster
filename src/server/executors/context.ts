@@ -23,6 +23,7 @@ import { getAgentProfile } from '../domain/agent-profile';
 import { loadContextMemories } from '../domain/memory';
 import { resolveTaskSkills } from '../domain/capability-binding';
 import { resolveToolRecommendations, buildCapabilityCenterSection } from '../domain/tool-recommendation';
+import { buildToolChainSection } from '../domain/tool-chain';
 import { listMaterials } from '../domain/material';
 import { getPersona, listPersonaIndex } from '../domain/persona-library';
 import { appendTaskEvent } from '../domain/task-event';
@@ -267,11 +268,40 @@ export function assembleContext(
       '',
     );
   }
+  // B3 用户意图锚点：任务契约的 goal/constraints/nonGoals（随链继承）——执行全程对齐"用户到底要什么、不做什么"。
+  {
+    const proto = (task.inputProtocol ?? {}) as Record<string, unknown>;
+    const anchor = proto.intentAnchor as { goal?: unknown; constraints?: unknown } | undefined;
+    const nonGoals = Array.isArray(proto.nonGoals) ? (proto.nonGoals as unknown[]).filter((x): x is string => typeof x === 'string') : [];
+    const goal = anchor && typeof anchor.goal === 'string' ? anchor.goal : '';
+    const constraints = anchor && Array.isArray(anchor.constraints)
+      ? (anchor.constraints as unknown[]).filter((x): x is string => typeof x === 'string')
+      : [];
+    if (goal || nonGoals.length > 0 || constraints.length > 0) {
+      sp.push('# 用户意图锚点', '');
+      if (goal) sp.push(`目标：${goal.slice(0, 300)}`);
+      if (constraints.length > 0) sp.push(`约束：${constraints.slice(0, 5).join('；')}`);
+      if (nonGoals.length > 0) sp.push(`不做（非目标）：${nonGoals.slice(0, 5).join('；')}`);
+      sp.push('执行与交付均不得偏离上述锚点；认为需要偏离时先说明理由并征求确认。', '');
+    }
+  }
   // 能力中心:注入工具推荐(员工名下 capabilityBindings 的 recommendedToolIds)
+  // B3 能力管理：有 resolvedToolChain 决议时消费快照（四层合并+质量排序+挑战建议，默认套装提示），
+  // 无决议回退原全量平铺（零回归）。
   if (agent) {
-    const toolRecommendations = resolveToolRecommendations(db, task);
-    const capabilityCenter = buildCapabilityCenterSection(toolRecommendations);
-    if (capabilityCenter) sp.push(capabilityCenter, '');
+    const resolved = (task.inputProtocol as Record<string, unknown>).resolvedToolChain as
+      | { defaultKit?: unknown; tools?: unknown; suggestedReplacements?: unknown }
+      | undefined;
+    const chainSection = resolved && Array.isArray(resolved.tools)
+      ? buildToolChainSection(resolved)
+      : null;
+    if (chainSection) {
+      sp.push(chainSection, '');
+    } else {
+      const toolRecommendations = resolveToolRecommendations(db, task);
+      const capabilityCenter = buildCapabilityCenterSection(toolRecommendations);
+      if (capabilityCenter) sp.push(capabilityCenter, '');
+    }
   }
   // 设计一-3：执行器能力边界提示（API 型按能力探针真实结果分化；具备命令能力的 API 不再被引导禁用 run_command）
   if (options.executorKind === 'api') {
