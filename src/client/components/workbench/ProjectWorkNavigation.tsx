@@ -400,6 +400,10 @@ export function ProjectWorkNavigation({
             <span className="work-nav-icon">🗂️</span>
             <span className="work-nav-label">归档</span>
           </Link>
+          <Link className="work-nav-item" to="/storage">
+            <span className="work-nav-icon">💾</span>
+            <span className="work-nav-label">存储管理</span>
+          </Link>
           <Link className="work-nav-item" to="/agents">
             <span className="work-nav-icon">👥</span>
             <span className="work-nav-label">智能体人才库</span>

@@ -2770,3 +2770,139 @@ export function useStartUserDiscussion(projectId: string | undefined) {
 }
 
 // ===== L1 优雅关机 / 一键恢复（前端无消费方的死 hooks 已随公司退役批次B删除） =====
+
+// ===== Workspace 治理批次4（2026-08-21）：目录绑定 / 回收站 / 对账 / 系统选择器 =====
+
+export interface ProjectDirDTO {
+  id: string;
+  projectId: string;
+  path: string;
+  role: 'system' | 'external' | 'attached';
+  label: string | null;
+  isAnchor: boolean;
+  createdAt: string;
+  isGitRepo?: boolean;
+}
+
+export function useProjectDirs(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ['project-dirs', projectId],
+    queryFn: () => api.get<ProjectDirDTO[]>(`/api/projects/${projectId}/dirs`),
+    enabled: Boolean(projectId),
+  });
+}
+
+export function useAttachProjectDir(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { path: string; label?: string }) =>
+      api.post<ProjectDirDTO>(`/api/projects/${projectId}/dirs`, input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['project-dirs', projectId] });
+      qc.invalidateQueries({ queryKey: ['project', projectId] });
+    },
+  });
+}
+
+export function useDetachProjectDir(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dirId: string) => api.delete<{ detached: boolean }>(`/api/projects/${projectId}/dirs/${dirId}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['project-dirs', projectId] }),
+  });
+}
+
+export function useSetProjectAnchor(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dirId: string) => api.post<ProjectDirDTO>(`/api/projects/${projectId}/dirs/${dirId}/anchor`, {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['project-dirs', projectId] }),
+  });
+}
+
+export function useResetProjectAnchor(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<{ ok: true }>(`/api/projects/${projectId}/dirs/anchor/reset`, {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['project-dirs', projectId] }),
+  });
+}
+
+export interface TrashItemDTO {
+  projectId: string;
+  name: string;
+  state: string;
+  originalRootDir: string;
+  trashDir: string;
+  sizeBytes: number;
+  trashedAt: string;
+  staleDays: number;
+  pausedAutomationIds: string[];
+  pausedTriggerIds: string[];
+  batchId: string | null;
+}
+
+export function useTrash() {
+  return useQuery({
+    queryKey: ['project-trash'],
+    queryFn: () => api.get<TrashItemDTO[]>('/api/projects/trash'),
+    refetchInterval: 30000,
+  });
+}
+
+export function useTrashProject() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (projectId: string) => api.post<{ projectId: string; trashDir: string }>(`/api/projects/${projectId}/trash`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['project-trash'] });
+      qc.invalidateQueries({ queryKey: ['projects'] });
+    },
+  });
+}
+
+export function useRestoreProject() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (projectId: string) =>
+      api.post<{ projectId: string; rootDir: string; pausedAutomationIds: string[]; pausedTriggerIds: string[] }>(`/api/projects/${projectId}/restore`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['project-trash'] });
+      qc.invalidateQueries({ queryKey: ['projects'] });
+    },
+  });
+}
+
+export function usePurgeFromTrash() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { ids: string[]; confirm: string }) =>
+      api.post<{ purged: number; trashMovedTo: string | null }>('/api/projects/trash/purge', input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['project-trash'] });
+      qc.invalidateQueries({ queryKey: ['projects'] });
+    },
+  });
+}
+
+export interface WorkspaceAuditDTO {
+  workspaceRoot: string;
+  projects: { okCount: number; orphanMarked: Array<{ dir: string; name: string; sizeBytes: number }>; unknown: Array<{ dir: string; name: string; sizeBytes: number }> };
+  tasks: { okCount: number; orphanMarked: Array<{ dir: string; name: string; sizeBytes: number }>; unknown: Array<{ dir: string; name: string; sizeBytes: number }> };
+  system: { dir: string; okCount: number; orphanMarked: Array<{ dir: string; name: string; sizeBytes: number }>; unknown: Array<{ dir: string; name: string; sizeBytes: number }> };
+  ghostRecords: Array<{ projectId: string; name: string; rootDir: string }>;
+}
+
+export function useWorkspaceAudit() {
+  return useQuery({
+    queryKey: ['workspace-audit'],
+    queryFn: () => api.get<WorkspaceAuditDTO>('/api/workspaces/audit'),
+  });
+}
+
+/** 系统选择文件夹窗口（macOS 原生；取消/不支持均以 cancelled 或错误返回，前端回落手填）。 */
+export function usePickFolder() {
+  return useMutation({
+    mutationFn: () => api.post<{ cancelled: boolean; path: string | null }>('/api/system/pick-folder', {}),
+  });
+}

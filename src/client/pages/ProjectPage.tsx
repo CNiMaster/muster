@@ -8,6 +8,7 @@ import {
   useAgents,
   useThreads,
   useCreateProject,
+  usePickFolder,
   useEnsureDefaultProject,
   useWorkbench,
   useCreateTask,
@@ -114,6 +115,7 @@ function NewProject(): React.ReactElement {
   const createProject = useCreateProject();
   const createProjectTask = useCreateProjectTask();
   const generateProjectProposal = useGenerateProjectProposal();
+  const pickFolder = usePickFolder();
   // 阶段六任务 6.2：项目 Playbook 选项
   const { data: playbookOptions } = usePlaybooksForTemplate(company?.kind);
 
@@ -355,13 +357,19 @@ function NewProject(): React.ReactElement {
               <Field label={openMode ? '本地项目目录（必填）' : '项目目录（可选）'} hint={openMode
                 ? '填入既有项目的绝对路径（在 MUSTER_ALLOWED_ROOTS 允许范围内）。目录不会被移动或修改。'
                 : '留空则在默认工作区自动生成。一个工作台可同时跑多个项目，每个项目独立目录。必须填绝对路径，且在 MUSTER_ALLOWED_ROOTS 允许范围内。'}>
-                <input
-                  ref={openMode ? openDirFocusRef : undefined}
-                  value={rootDir}
-                  onChange={(e) => setRootDir(e.target.value)}
-                  placeholder={openMode ? '/Users/you/code/my-project' : '例如：/Users/you/code/my-project'}
-                  style={{ width: '100%', fontSize: 13, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)' }}
-                />
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input
+                    ref={openMode ? openDirFocusRef : undefined}
+                    value={rootDir}
+                    onChange={(e) => setRootDir(e.target.value)}
+                    placeholder={openMode ? '/Users/you/code/my-project' : '例如：/Users/you/code/my-project'}
+                    style={{ flex: 1, fontSize: 13, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)' }}
+                  />
+                  <Button size="sm" variant="ghost" loading={pickFolder.isPending} onClick={() => pickFolder.mutate(undefined, {
+                    onSuccess: (r) => { if (r.cancelled || !r.path) return; setRootDir(r.path); },
+                    onError: (e) => toast('info', (e as Error).message),
+                  })}>选择…</Button>
+                </div>
               </Field>
               <div>
                 <Button onClick={submit} disabled={!name.trim() || (openMode && !rootDir.trim())} loading={createProject.isPending}>
