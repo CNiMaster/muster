@@ -527,6 +527,14 @@ export function assembleContext(
   // WP10 识图直读：data-uri 图片不进提示词 JSON 块（否则 base64 灌满所有执行器的输入包，API 执行器双重携带）；
   // 图片经 ctx.imageAttachments 由 adapter 原生送入，文件路径提示已在【用户附件】文本里。
   delete inputPacket.userImages;
+  // 链路双指向（B1）：链路历史压缩为标题路径注入（taskId/agentId 是机器标识，对模型无信息量；
+  // 完整 hop 结构留在 task.inputProtocol 供审计，不进提示词）。
+  if (Array.isArray(inputPacket.chainHistory)) {
+    inputPacket.chainPath = (inputPacket.chainHistory as Array<{ title: string }>)
+      .slice(-10)
+      .map((h) => h.title);
+    delete inputPacket.chainHistory;
+  }
   // 指挥系统：大规模并行任务的专职入口（养蜂人是隐形岗，不在 availableContacts 里）
   // 蓝图组织批次4e：懒确保——与公司上线时机解耦，首次装配上下文即自愈创建（幂等）。
   if (!lightweight) {

@@ -21,7 +21,8 @@ import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
 import { LEASE_TTL_MS, MAX_CLARIFY_ROUNDS, MAX_ALIGNMENT_ROUNDS } from '../../shared/constants';
 import { classifyFailureCategory, isRecoverableSessionError, MAX_AUTO_RETRY, AUTO_RETRY_DELAY_MS } from '../../shared/retry-policy';
-import type { AgentRunResult, ArtifactChange, TaskOutcome, TaskState } from '../../shared/types';
+import type { AgentRunResult, ArtifactChange, ChainHop, TaskOutcome, TaskState } from '../../shared/types';
+import { CHAIN_HISTORY_CAP } from '../../shared/types';
 import { getProject } from './project';
 import { getAgent } from './agent';
 import { appendTaskEvent } from './task-event';
@@ -274,6 +275,8 @@ export interface CreateTaskInput {
   swarmManaged?: boolean;
   /** 豁免蓝图自动穿戴：验收/返工等立场独立性任务保持执行者本体身份（防验收员穿上与产出者同款专家人设）。 */
   exemptBlueprintMatch?: boolean;
+  /** 链路双指向（B1）：显式终返——验收后最终回流给谁。仅 root 任务生效；子任务永远继承链头值。 */
+  finalReturnAgentId?: string;
 }
 
 const ALLOWED_TRANSITIONS: Record<TaskState, TaskState[]> = {
@@ -393,6 +396,39 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
       }
     }
   }
+  // 链路双指向（B1）——任务契约继承，全部落 inputProtocol（无 schema 迁移）：
+  // - finalReturnAgentId（验收后最终回流，链头约定不可改）：子任务永远以链头值为准（链头未约定时
+  //   回落负责人）；下游显式给出不同值仅记 final_return_violation 留痕，不生效。
+  // - chainHistory（途经记录）：父链 + 本跳，封顶 CHAIN_HISTORY_CAP——接任务方可见"谁给的、经过了谁"。
+  // - intentAnchor/nonGoals/failurePolicy：子任务未显式声明时继承父任务，防链路中途丢意图。
+  const id = shortId('tk_');
+  const explicitProto = (input.inputProtocol ?? {}) as Record<string, unknown>;
+  const requestedFinalReturn = typeof input.finalReturnAgentId === 'string'
+    ? input.finalReturnAgentId
+    : typeof explicitProto.finalReturnAgentId === 'string' ? explicitProto.finalReturnAgentId as string : undefined;
+  let finalReturnAgentId: string | null;
+  let chainHistory: ChainHop[];
+  const inheritedContract: Record<string, unknown> = {};
+  let finalReturnViolation: { requested: string; chainHead: string | null } | null = null;
+  if (input.parentTaskId) {
+    const parent = getTask(db, input.parentTaskId);
+    const parentProto = (parent.inputProtocol ?? {}) as Record<string, unknown>;
+    const chainHead = typeof parentProto.finalReturnAgentId === 'string' ? parentProto.finalReturnAgentId : null;
+    if (requestedFinalReturn !== undefined && requestedFinalReturn !== chainHead) {
+      finalReturnViolation = { requested: requestedFinalReturn, chainHead };
+    }
+    finalReturnAgentId = chainHead ?? project.firstAgentId ?? company.firstAgentId ?? null;
+    const parentHistory = Array.isArray(parentProto.chainHistory) ? (parentProto.chainHistory as ChainHop[]) : [];
+    chainHistory = [...parentHistory, { taskId: id, agentId: routedAssigneeId, title: input.title }].slice(-CHAIN_HISTORY_CAP);
+    for (const key of ['intentAnchor', 'nonGoals', 'failurePolicy'] as const) {
+      if (explicitProto[key] === undefined && parentProto[key] !== undefined) {
+        inheritedContract[key] = parentProto[key];
+      }
+    }
+  } else {
+    finalReturnAgentId = requestedFinalReturn ?? project.firstAgentId ?? company.firstAgentId ?? null;
+    chainHistory = [{ taskId: id, agentId: routedAssigneeId, title: input.title }];
+  }
   const inputProtocol = {
     ...(Array.isArray(taskProtocol.inputFields) ? { requiredFields: taskProtocol.inputFields } : {}),
     ...(input.inputProtocol ?? {}),
@@ -401,6 +437,10 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
     ...(input.knowledgeTargets ? { knowledgeTargets: input.knowledgeTargets } : {}),
     ...routedMeta,
     ...blueprintMeta,
+    // 链路双指向：放最后——继承与终返强制以链头为准（子任务显式值不生效）
+    ...inheritedContract,
+    ...(finalReturnAgentId ? { finalReturnAgentId } : {}),
+    chainHistory,
   };
   const outputProtocol = {
     ...(Array.isArray(taskProtocol.outputFields) ? { requiredFields: taskProtocol.outputFields } : {}),
@@ -439,7 +479,6 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
       }
     }
   }
-  const id = shortId('tk_');
   const now = nowIso();
   const seq = nextSeq(db, input.projectId);
   // root_task_id 默认 = 自身（仅当无 parent）；有 parent 时继承 parent 的 root
@@ -479,6 +518,14 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
     input.swarmDepth ?? 0,
     personaId,
   );
+  // 链路双指向（B1）：下游试图改终返 → 留痕不生效（以链头/负责人回流为准）
+  if (finalReturnViolation) {
+    appendTaskEvent(db, id, 'final_return_violation', {
+      requested: finalReturnViolation.requested,
+      chainHead: finalReturnViolation.chainHead,
+      applied: finalReturnAgentId,
+    });
+  }
   // 批次 J·修复轮：命中派整组——组内每位优先池内专家（跨任务延续线程记忆），
   // 缺员降级留痕（blueprint_crew_slot_unfilled，供人事观察）不绕人事岗造 agent；
   // 组员任务显式 personaId（不再叠加蓝图匹配）+ exemptBlueprintMatch，缺省并行（无依赖链）。
@@ -814,6 +861,13 @@ export function completeTask(db: DB, taskId: string, result: AgentRunResult): Ta
           }
         }
 
+        // 链路双指向（B1）：转派原因/分工透传子任务（chainReason/chainDivision——
+        // 不占 reason 键：inputProtocol.reason 是系统约定如 publish_conflict/child_task_failed）
+        const childPayload: Record<string, unknown> = {
+          ...(out.payload as Record<string, unknown>),
+          ...(out.reason?.trim() ? { chainReason: out.reason } : {}),
+          ...(out.division?.trim() ? { chainDivision: out.division } : {}),
+        };
         const child = createTask(db, {
           projectId: cur.projectId,
           parentTaskId: cur.id,
@@ -821,7 +875,7 @@ export function completeTask(db: DB, taskId: string, result: AgentRunResult): Ta
           dispatcherAgentId: dispatcherId ?? undefined,
           assigneeAgentId: out.recipientAgentId,
           title: out.title,
-          inputProtocol: out.payload,
+          inputProtocol: childPayload,
           priority: out.priority,
           ...(cur.swarmId ? { swarmId: cur.swarmId, swarmDepth: cur.swarmDepth + 1 } : {}),
         });
@@ -845,6 +899,7 @@ export function completeTask(db: DB, taskId: string, result: AgentRunResult): Ta
 
     // completed → 解除父 task 的 waiting_dependency（如果父 task 仅等待本 task）
     if (result.outcome === 'completed' && cur.parentTaskId) {
+      const parent = getTask(db, cur.parentTaskId);
       // 设计二-方案A：咨询任务完成时把回复写回父任务的讨论流（task_message role='dispatch'），
       // 父任务下次执行经 recentDiscussion 注入即可看到回复。
       const isConsultation = Boolean((cur.inputProtocol as Record<string, unknown>)?.consultation);
@@ -857,8 +912,19 @@ export function completeTask(db: DB, taskId: string, result: AgentRunResult): Ta
           content: `[咨询回复] ${replyPreview}`,
         });
         void asker; // author 已用 assignee；asker 仅作上下文保留
+      } else {
+        // 链路双指向（B1）：子任务完成摘要写回直接请求者——"谁要的回给谁"，不广播链路其他人。
+        // 跳过三类防双写/防噪音：蜂任务（[蜂成员汇报] 定向汇总）、讨论发言（completeDiscussionTurn
+        // 自持纪要）、spawn_join 父（any/quorum 收口时另有 [子任务汇总]）。
+        const isSpawnJoin = Boolean((parent.inputProtocol as Record<string, unknown>).spawnJoinPolicy);
+        if (!cur.swarmId && cur.isDiscussion !== 1 && !isSpawnJoin) {
+          addTaskMessage(db, cur.parentTaskId, {
+            author: cur.assigneeAgentId ?? 'system',
+            role: 'dispatch',
+            content: `[子任务完成] Task #${cur.seq}「${cur.title}」：${(result.summary ?? '').slice(0, 600)}`,
+          });
+        }
       }
-      const parent = getTask(db, cur.parentTaskId);
       if (parent.state === 'waiting_dependency') {
         // 阶段七任务 7.1：spawn_tasks 的 join 策略（any/quorum）——按策略提前恢复并取消其余子任务
         const parentProto = (parent.inputProtocol ?? {}) as Record<string, unknown>;

@@ -205,6 +205,25 @@ export function handleAcceptanceReviewTaskCompleted(db: DB, reviewTask: Task): v
         confidence: parsed.confidence,
         feedback: parsed.feedback,
       });
+      // 链路双指向（B1）：PASS 后按链头终拔回流——播报性质不造任务（中链送达由依赖恢复承担；
+      // finalReturn=负责人时本项目对话即用户可见闭环，链路法：验收→finalReturn→负责人→用户）。
+      const finalReturnProto = ((source.inputProtocol ?? {}) as Record<string, unknown>).finalReturnAgentId;
+      const finalReturnAgentId = typeof finalReturnProto === 'string' ? finalReturnProto : null;
+      if (finalReturnAgentId) {
+        const finalReturnName = (() => {
+          try { return getAgent(db, finalReturnAgentId).name; } catch { return null; }
+        })();
+        appendTaskEvent(db, source.id, 'final_return_routed', { finalReturnAgentId, reviewTaskId: reviewTask.id });
+        try {
+          postSystemMessage(db, {
+            scopeKind: 'project',
+            scopeId: source.projectId,
+            role: 'system',
+            author: officerName,
+            content: `[验收通过·回流] 「${source.title}」已交付${finalReturnName ? `，按链路约定回流给 ${finalReturnName}` : ''}。`,
+          });
+        } catch { /* 播报失败不阻断 */ }
+      }
       // 批次三第二片：清单条目验收 PASS → 自动解锁下一条（幂等：advance 只认当前 cursor 条目）
       if (source.projectTaskId) {
         try {

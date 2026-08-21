@@ -75,7 +75,37 @@ export interface OutboundTaskRequest {
   title: string;
   payload: Record<string, unknown>;
   priority: number;
+  /** 链路双指向（B1）：转派原因——为什么下一个给这个人（落子任务 inputProtocol.chainReason）。 */
+  reason?: string;
+  /** 链路双指向（B1）：分工说明——这个人负责什么（落子任务 inputProtocol.chainDivision）。 */
+  division?: string;
 }
+
+/** 链路途经记录封顶（防长链 inputProtocol 膨胀）。 */
+export const CHAIN_HISTORY_CAP = 20;
+
+/**
+ * 链路双指向（B1）：任务链途经记录——接任务方可见"谁给的、经过了谁"。
+ * 由 createTask 在建任务时写入（父链 + 本跳，封顶 CHAIN_HISTORY_CAP）。
+ */
+export interface ChainHop {
+  taskId: string;
+  agentId: string | null;
+  title: string;
+}
+
+/**
+ * 任务契约（B1，inputProtocol.intentAnchor 约定）：用户意图锚点——goal 是"用户到底要什么"，
+ * constraints 是不可违反约束，nonGoals 是明确不做的事（防跑偏）。随任务链继承。
+ */
+export interface IntentAnchor {
+  goal: string;
+  constraints?: string[];
+  nonGoals?: string[];
+}
+
+/** 任务契约（B1，inputProtocol.failurePolicy 约定）：失败处理约定。 */
+export type FailurePolicy = 'retry' | 'escalate' | 'rollback';
 
 export interface ArtifactChange {
   path: string;
