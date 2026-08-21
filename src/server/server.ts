@@ -41,6 +41,7 @@ import { projectArtifactsRouter } from './api/artifacts';
 import { companyEventsRouter, projectEventsRouter } from './api/events';
 import { workflowsRouter } from './api/workflows';
 import { settingsRouter } from './api/settings';
+import { systemRouter } from './api/system';
 import { departmentsRouter } from './api/departments';
 import { setupAssistantRouter } from './api/setup-assistant';
 import { workspacesRouter } from './api/workspaces';
@@ -233,6 +234,7 @@ async function createApp(): Promise<AppHandle> {
   app.use('/api/inspector/alerts', inspectorAlertRouter);
   app.use('/api/tasks/:id', taskByIdRouter);
   app.use('/api/settings', settingsRouter);
+  app.use('/api/system', systemRouter);
   app.use('/api/workspaces', workspacesRouter);
   app.use('/api/agent-profiles', agentProfilesRouter);
   app.use('/api/agent-profiles/:profileId/memory', memoryRouter);
