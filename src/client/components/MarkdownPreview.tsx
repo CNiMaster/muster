@@ -4,11 +4,35 @@
  * 2026-08-17 升级：原无依赖极简实现替换为 react-markdown 全量 GFM（表格/删除线/任务列表）
  * + rehype-highlight 代码高亮。类名保持 .mu-md-* 兼容既有样式与消费方（ArtifactsPage/编辑器/对话气泡）。
  * 流式输出（WP5）复用本组件：节流重渲即可。
+ * 批次 F.5：图片点击放大（Modal 复用）；表格横滚由 .mu-md-table-wrap 承担。
  */
 import type React from 'react';
+import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
+import { Modal } from './Modal';
+
+function ZoomableImage({ src, alt }: { src?: string; alt?: string }): React.ReactElement {
+  const [zoomed, setZoomed] = useState(false);
+  return (
+    <>
+      <img
+        className="mu-md-img"
+        src={src}
+        alt={alt ?? ''}
+        loading="lazy"
+        style={{ cursor: 'zoom-in', maxWidth: '100%', borderRadius: 'var(--radius-sm)' }}
+        onClick={() => setZoomed(true)}
+      />
+      {zoomed && (
+        <Modal open onClose={() => setZoomed(false)} title={alt ?? '图片预览'} size="xl">
+          <img src={src} alt={alt ?? ''} style={{ maxWidth: '100%', maxHeight: '72vh', display: 'block', margin: '0 auto' }} />
+        </Modal>
+      )}
+    </>
+  );
+}
 
 export function MarkdownPreview({ source }: { source: string }): React.ReactElement {
   return (
@@ -44,6 +68,7 @@ export function MarkdownPreview({ source }: { source: string }): React.ReactElem
               <table className="mu-md-table">{children}</table>
             </div>
           ),
+          img: ({ src, alt }) => <ZoomableImage src={typeof src === 'string' ? src : undefined} alt={typeof alt === 'string' ? alt : undefined} />,
         }}
       >
         {source}

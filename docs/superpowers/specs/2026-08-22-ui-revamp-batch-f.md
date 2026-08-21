@@ -1,6 +1,6 @@
 # UI 改版批次 F：右栏信息架构 + 预览容器 + 超时自动继续 + 轻量体验包
 
-状态：proposed（2026-08-22 立项；来源：对照 zcode docs/changelog 的 UI 评估轮）
+状态：implemented（2026-08-22 立项并实施；来源：对照 zcode docs/changelog 的 UI 评估轮）
 
 ## 背景与目标
 
@@ -56,9 +56,15 @@ nav 右缘/inspector 左缘 6px `.workbench-resizer`；pointerdown 捕获+move �
 
 ## F5 轻量体验包
 
-1. ConversationPanel 离底 >240px 显示「↓ 回到最新」；贴底时新消息保持贴底
-2. MarkdownPreview 表格横向滚动容器 + 图片点击放大（Modal）
-3. PromptComposer 粘贴 `text/html` 含 `<table>` 时优先 `text/plain`
+1. ConversationPanel 贴底追踪：离底 >60px 不再强制拽回（读历史不被打断），悬浮「↓ 回到最新」按钮；贴底时新消息自动跟随
+2. MarkdownPreview 图片点击放大（ZoomableImage + Modal size xl）
+3. 实施时核销两项（原计划内但已天然就位）：表格横向滚动——`.mu-md-table-wrap{overflow-x:auto}` 既有；粘贴表格保纯文本——composer 为纯 textarea，浏览器粘贴天然走 text/plain，无需处理
+
+## 实施补充记录
+
+- Express 5 命名通配符（`/preview/*path`）按段捕获为数组，`String()` 会把斜杠变逗号，需 `join('/')`（`param()` 助手的数组分支只取首段，不适用通配符）
+- 预览端点路径放 URL path 而非 query：HTML 内相对资源（img/css）自动解析回同端点前缀，静态资源可加载；脚本被 CSP `default-src 'none'` 禁止
+- 超时自动继续的「停止」为三态：`stop:true/false` 置/清标记（恢复入口需要）；答复路径也置 1 防竞态
 
 ## 不做但铺路
 

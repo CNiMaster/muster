@@ -487,6 +487,7 @@
 /* ===== Conversation ===== */
 /* 默认固定高（块级父容器兜底）；flex 列父容器中加 .is-fill 由外层拉伸 */
 .mu-conv {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 520px;
@@ -494,6 +495,26 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
   overflow: hidden;
+}
+/* 批次 F.5：读历史时离底悬浮「回到最新」 */
+.mu-conv-jump {
+  position: absolute;
+  bottom: 96px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 5px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  color: var(--fg);
+  background: var(--bg-elev);
+  box-shadow: var(--shadow-2);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.mu-conv-jump:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .mu-conv.is-fill {
   height: auto;

@@ -92,14 +92,31 @@ export function ConversationPanel({ scope, scopeId, title, recipientAgentId, pro
     if (persisted) clearStream(streamText.taskId);
   }, [messages]);
 
+  // 批次 F.5：贴底追踪——用户上滚离底时不再强制拽回（读历史不被打断），新消息到达仅贴底态跟随
+  const [pinnedToBottom, setPinnedToBottom] = useState(true);
+
+  const handleStreamScroll = (): void => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+    setPinnedToBottom(distance < 60);
+  };
+
+  const jumpToLatest = (): void => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    setPinnedToBottom(true);
+  };
+
   useEffect(() => {
-    if (!scrollRef.current) return;
+    if (!pinnedToBottom || !scrollRef.current) return;
     if (typeof scrollRef.current.scrollTo === 'function') {
       scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
     } else {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, streamText]);
+  }, [messages, streamText, pinnedToBottom]);
 
   const send = (): void => {
     if (!text.trim()) return;
@@ -147,7 +164,7 @@ export function ConversationPanel({ scope, scopeId, title, recipientAgentId, pro
   return (
     <div className={`mu-conv${fill ? ' is-fill' : ''}`}>
       {title && <div className="mu-conv-head">{title}</div>}
-      <div className="mu-conv-stream" ref={scrollRef}>
+      <div className="mu-conv-stream" ref={scrollRef} onScroll={handleStreamScroll}>
         {isLoading && <div className="muted" style={{ padding: 16 }}>加载中…</div>}
         {messages && messages.length === 0 && (
           <div style={{ padding: '32px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', gap: '12px', minHeight: '240px' }}>
@@ -182,6 +199,12 @@ export function ConversationPanel({ scope, scopeId, title, recipientAgentId, pro
           </div>
         )}
       </div>
+      {/* 批次 F.5：读历史时离底悬浮「回到最新」；贴底时自动跟随不显示 */}
+      {!pinnedToBottom && (
+        <button type="button" className="mu-conv-jump" onClick={jumpToLatest} aria-label="回到最新消息">
+          ↓ 回到最新
+        </button>
+      )}
       {!hideInput && (
         <div className="mu-conv-input-wrap">
           {showMentions && mentionCandidates.length > 0 && (
