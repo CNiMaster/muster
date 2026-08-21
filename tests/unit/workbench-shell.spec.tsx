@@ -2,7 +2,15 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { WorkbenchShell } from '../../src/client/components/workbench/WorkbenchShell';
+
+/** 治理批次5：Shell 内 useUiMode 需要 QueryClient；命令面板断言专业项时预置 pro。 */
+function qcShell(uiMode: 'simple' | 'pro' = 'pro'): QueryClient {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  qc.setQueryData(['systemSettings'], { uiMode });
+  return qc;
+}
 
 describe('calm workbench shell', () => {
   beforeEach(() => {
@@ -14,7 +22,7 @@ describe('calm workbench shell', () => {
 
   it('independently hides panes and persists the choice', async () => {
     const user = userEvent.setup();
-    render(<MemoryRouter><WorkbenchShell scopeKey="project:1" breadcrumb="工作台 / 项目" navigationLabel="项目工作列表" inspectorLabel="项目现场" navigation={<p>任务列表</p>} inspector={<p>当前现场</p>}><p>当前工作</p></WorkbenchShell></MemoryRouter>);
+    render(<QueryClientProvider client={qcShell()}><MemoryRouter><WorkbenchShell scopeKey="project:1" breadcrumb="工作台 / 项目" navigationLabel="项目工作列表" inspectorLabel="项目现场" navigation={<p>任务列表</p>} inspector={<p>当前现场</p>}><p>当前工作</p></WorkbenchShell></MemoryRouter></QueryClientProvider>);
     await user.click(screen.getByRole('button', { name: '收起工作列表' }));
     expect(screen.queryByText('任务列表')).not.toBeInTheDocument();
     expect(JSON.parse(localStorage.getItem('muster:workbench:project:1') ?? '{}').leftOpen).toBe(false);
@@ -24,7 +32,7 @@ describe('calm workbench shell', () => {
 
   it('opens the single global command menu from the toolbar', async () => {
     const user = userEvent.setup();
-    render(<MemoryRouter><WorkbenchShell scopeKey="company:1" breadcrumb="工作台" navigationLabel="工作台工作列表" inspectorLabel="工作台现场" navigation={<p>导航</p>} inspector={<p>现场</p>}><p>内容</p></WorkbenchShell></MemoryRouter>);
+    render(<QueryClientProvider client={qcShell()}><MemoryRouter><WorkbenchShell scopeKey="company:1" breadcrumb="工作台" navigationLabel="工作台工作列表" inspectorLabel="工作台现场" navigation={<p>导航</p>} inspector={<p>现场</p>}><p>内容</p></WorkbenchShell></MemoryRouter></QueryClientProvider>);
     await user.click(screen.getByRole('button', { name: '搜索或跳转' }));
     expect(screen.getByRole('dialog', { name: '搜索或跳转' })).toBeVisible();
     expect(within(screen.getByRole('dialog', { name: '搜索或跳转' })).getByRole('link', { name: '执行器' })).toBeVisible();
@@ -34,7 +42,7 @@ describe('calm workbench shell', () => {
 
   it('keeps the saved desktop pane choice when a narrow viewport temporarily hides it', async () => {
     const user = userEvent.setup();
-    const { rerender } = render(<MemoryRouter><WorkbenchShell scopeKey="project:responsive" breadcrumb="工作台 / 项目" navigationLabel="项目工作列表" inspectorLabel="项目现场" navigation={<p>任务列表</p>} inspector={<p>当前现场</p>}><p>当前工作</p></WorkbenchShell></MemoryRouter>);
+    const { rerender } = render(<QueryClientProvider client={qcShell()}><MemoryRouter><WorkbenchShell scopeKey="project:responsive" breadcrumb="工作台 / 项目" navigationLabel="项目工作列表" inspectorLabel="项目现场" navigation={<p>任务列表</p>} inspector={<p>当前现场</p>}><p>当前工作</p></WorkbenchShell></MemoryRouter></QueryClientProvider>);
     expect(screen.getByText('任务列表')).toBeVisible();
     expect(screen.getByText('当前现场')).toBeVisible();
 
@@ -54,7 +62,7 @@ describe('calm workbench shell', () => {
     });
 
     await user.click(screen.getByRole('button', { name: '收起工作列表' }));
-    rerender(<MemoryRouter><WorkbenchShell scopeKey="project:responsive" breadcrumb="工作台 / 项目" navigationLabel="项目工作列表" inspectorLabel="项目现场" navigation={<p>任务列表</p>} inspector={<p>当前现场</p>}><p>当前工作</p></WorkbenchShell></MemoryRouter>);
+    rerender(<QueryClientProvider client={qcShell()}><MemoryRouter><WorkbenchShell scopeKey="project:responsive" breadcrumb="工作台 / 项目" navigationLabel="项目工作列表" inspectorLabel="项目现场" navigation={<p>任务列表</p>} inspector={<p>当前现场</p>}><p>当前工作</p></WorkbenchShell></MemoryRouter></QueryClientProvider>);
     expect(screen.queryByText('任务列表')).not.toBeInTheDocument();
   });
 });

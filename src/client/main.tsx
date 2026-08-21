@@ -1,10 +1,11 @@
 import { lazy, StrictMode, Suspense } from 'react';
 import type React from 'react';
 import { createRoot } from 'react-dom/client';
-import { createBrowserRouter, RouterProvider } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider, useNavigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import './styles/global.css';
 import { App } from './App';
+import { useUiMode } from './hooks/queries';
 import { useToasts, ToastHost } from './components/Button';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { RealtimeSync } from './realtime';
@@ -73,6 +74,29 @@ const queryClient = new QueryClient({
   },
 });
 
+
+/**
+ * 治理批次5：专业页路由门——简单模式下访问专业页面给提示页（可一键切换），
+ * 不做静默重定向（用户需要知道"内容在，只是被模式收起来了"）。
+ */
+function ModeGate({ children }: { children: React.ReactElement }): React.ReactElement {
+  const ui = useUiMode();
+  const navigate = useNavigate();
+  if (!ui.isSimple) return children;
+  return (
+    <div style={{ minHeight: '60vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+      <div style={{ fontSize: 15, fontWeight: 700 }}>这一页属于专业模式</div>
+      <div style={{ fontSize: 13, color: 'var(--fg-subtle)', maxWidth: 360, textAlign: 'center' }}>
+        当前是简单模式：专注把任务说清楚、直接开干。专业工具（蓝图/执行器/合并看板等）收起来了。
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button type="button" className="mu-btn mu-btn-primary mu-btn-sm" onClick={() => ui.setUiMode('pro')} disabled={ui.saving}>切换到专业模式</button>
+        <button type="button" className="mu-btn mu-btn-ghost mu-btn-sm" onClick={() => navigate(-1)}>返回</button>
+      </div>
+    </div>
+  );
+}
+
 const router = createBrowserRouter([
   {
     path: '/',
@@ -81,34 +105,34 @@ const router = createBrowserRouter([
       { index: true, element: <ProjectPage /> },
       { path: 'projects/new', element: <ProjectPage /> },
       { path: 'archive', element: <ArchivePage /> },
-      { path: 'automations', element: <AutomationPage /> },
-      { path: 'blueprints', element: <BlueprintLibraryPage /> },
-      { path: 'blueprints/:blueprintId', element: <BlueprintDetailPage /> },
-      { path: 'blueprints/:blueprintId/canvas', element: <BlueprintCanvasPage /> },
-      { path: 'blueprints/:blueprintId/optimize', element: <BlueprintOptimizePage /> },
-      { path: 'graphs/:kind', element: <GraphPage /> },
-      { path: 'workflows/:workflowId', element: <WorkflowGraphPage /> },
+      { path: 'automations', element: <ModeGate><AutomationPage /></ModeGate> },
+      { path: 'blueprints', element: <ModeGate><BlueprintLibraryPage /></ModeGate> },
+      { path: 'blueprints/:blueprintId', element: <ModeGate><BlueprintDetailPage /></ModeGate> },
+      { path: 'blueprints/:blueprintId/canvas', element: <ModeGate><BlueprintCanvasPage /></ModeGate> },
+      { path: 'blueprints/:blueprintId/optimize', element: <ModeGate><BlueprintOptimizePage /></ModeGate> },
+      { path: 'graphs/:kind', element: <ModeGate><GraphPage /></ModeGate> },
+      { path: 'workflows/:workflowId', element: <ModeGate><WorkflowGraphPage /></ModeGate> },
       { path: 'projects/:projectId', element: <ProjectPage /> },
       { path: 'projects/:projectId/character-graph', element: <ProjectToolPageShell tool="character"><CharacterGraphPage /></ProjectToolPageShell> },
       { path: 'projects/:projectId/tasks', element: <ProjectToolPageShell tool="tasks"><TasksPage /></ProjectToolPageShell> },
-      { path: 'projects/:projectId/merges', element: <ProjectToolPageShell tool="merges"><ProjectMergesPage /></ProjectToolPageShell> },
-      { path: 'projects/:projectId/plans', element: <ProjectToolPageShell tool="plans"><ProjectPlansPage /></ProjectToolPageShell> },
-      { path: 'projects/:projectId/usage', element: <ProjectToolPageShell tool="usage"><UsagePage /></ProjectToolPageShell> },
+      { path: 'projects/:projectId/merges', element: <ProjectToolPageShell tool="merges"><ModeGate><ProjectMergesPage /></ModeGate></ProjectToolPageShell> },
+      { path: 'projects/:projectId/plans', element: <ProjectToolPageShell tool="plans"><ModeGate><ProjectPlansPage /></ModeGate></ProjectToolPageShell> },
+      { path: 'projects/:projectId/usage', element: <ProjectToolPageShell tool="usage"><ModeGate><UsagePage /></ModeGate></ProjectToolPageShell> },
       { path: 'projects/:projectId/artifacts', element: <ProjectToolPageShell tool="artifacts"><ArtifactsPage /></ProjectToolPageShell> },
       { path: 'projects/:projectId/materials', element: <ProjectToolPageShell tool="materials"><MaterialsPage /></ProjectToolPageShell> },
-      { path: 'projects/:projectId/reports', element: <ProjectToolPageShell tool="reports"><ReportsPage /></ProjectToolPageShell> },
-      { path: 'projects/:projectId/dashboard', element: <ProjectToolPageShell tool="dashboard"><DashboardPage /></ProjectToolPageShell> },
+      { path: 'projects/:projectId/reports', element: <ProjectToolPageShell tool="reports"><ModeGate><ReportsPage /></ModeGate></ProjectToolPageShell> },
+      { path: 'projects/:projectId/dashboard', element: <ProjectToolPageShell tool="dashboard"><ModeGate><DashboardPage /></ModeGate></ProjectToolPageShell> },
       { path: 'projects/:projectId/settings', element: <ProjectToolPageShell tool="settings"><ProjectSettingsPage /></ProjectToolPageShell> },
       { path: 'tasks/:taskId', element: <TaskDetailProjectShell><TaskDetailPage /></TaskDetailProjectShell> },
       { path: 'settings', element: <SettingsPage /> },
       { path: 'storage', element: <StoragePage /> },
-      { path: 'agents', element: <AgentLibraryPage /> },
-      { path: 'agents/:profileId', element: <AgentProfilePage /> },
-      { path: 'executors', element: <ExecutorCenterPage /> },
-      { path: 'permissions', element: <PermissionCenterPage /> },
-      { path: 'capabilities', element: <CapabilityCenterPage /> },
-      { path: 'marketplace', element: <MarketplacePage /> },
-      { path: 'reviews', element: <BusinessReviewPage /> },
+      { path: 'agents', element: <ModeGate><AgentLibraryPage /></ModeGate> },
+      { path: 'agents/:profileId', element: <ModeGate><AgentProfilePage /></ModeGate> },
+      { path: 'executors', element: <ModeGate><ExecutorCenterPage /></ModeGate> },
+      { path: 'permissions', element: <ModeGate><PermissionCenterPage /></ModeGate> },
+      { path: 'capabilities', element: <ModeGate><CapabilityCenterPage /></ModeGate> },
+      { path: 'marketplace', element: <ModeGate><MarketplacePage /></ModeGate> },
+      { path: 'reviews', element: <ModeGate><BusinessReviewPage /></ModeGate> },
       { path: '*', element: <NotFoundPage /> },
     ],
   },

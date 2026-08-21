@@ -5,6 +5,8 @@ import { AGENT_TIMEOUT_MS, MAX_TOOL_CALLS } from '../../shared/constants';
 import { DEFAULT_PROVIDER, PROVIDER_DEFAULT_BASE_URL, PROVIDER_DEFAULT_MODEL, PROVIDERS } from '../executors/provider';
 
 export interface SystemSettings {
+  /** 界面模式（治理批次5）：simple=简单模式（默认，任务优先，隐藏专业面板）；pro=专家模式（全量）。 */
+  uiMode: 'simple' | 'pro';
   claudeBin: string;
   model: string;
   skipPermissions: boolean;
@@ -87,6 +89,7 @@ export function setSetting(db: DB, key: string, value: string): void {
 export function getSystemSettings(db: DB): SystemSettings {
   const swarmMaxNodes = Number(getSetting(db, 'swarm_max_nodes', '30'));
   return {
+    uiMode: getSetting(db, 'ui_mode', 'simple') === 'pro' ? 'pro' : 'simple',
     claudeBin: getSetting(db, 'claude_bin', SERVER_CONFIG.claudeBin),
     model: getSetting(db, 'model', SERVER_CONFIG.model),
     skipPermissions: getSetting(db, 'skip_permissions', SERVER_CONFIG.skipPermissions ? 'true' : 'false') === 'true',
@@ -128,6 +131,9 @@ export function getSystemSettings(db: DB): SystemSettings {
 
 /** 批量保存系统设置。 */
 export function saveSystemSettings(db: DB, settings: Partial<SystemSettings>): void {
+  if (settings.uiMode !== undefined) {
+    setSetting(db, 'ui_mode', settings.uiMode === 'pro' ? 'pro' : 'simple');
+  }
   if (settings.claudeBin !== undefined) {
     setSetting(db, 'claude_bin', settings.claudeBin);
   }

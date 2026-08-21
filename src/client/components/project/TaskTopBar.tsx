@@ -10,6 +10,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type React from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useUiMode } from '../../hooks/queries';
 import { Modal } from '../Modal';
 import { DropdownMenu } from '../DropdownMenu';
 import { toast } from '../Button';
@@ -47,6 +48,8 @@ export function TaskTopBar({ projectId, task, runtimeTaskId, rightExtra }: {
   const navigate = useNavigate();
   const ctx = useTaskContext(projectId, task.id);
   const workbenchUI = useWorkbenchUI();
+  // 治理批次5：简单模式收起 git 操作区（分支下拉/合并/Finder/Terminal）——治理照常自动跑，只不亮术语
+  const { isSimple: uiSimple } = useUiMode();
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
   const [branchQuery, setBranchQuery] = useState('');
   const [newBranch, setNewBranch] = useState('');
@@ -131,7 +134,8 @@ export function TaskTopBar({ projectId, task, runtimeTaskId, rightExtra }: {
         </span>
       )}
 
-      {/* 分支（worktree）下拉 */}
+      {/* 分支（worktree）下拉——治理批次5：简单模式收起（治理照常自动跑，只不亮术语） */}
+      {!uiSimple && (
       <div style={{ position: 'relative', flexShrink: 0 }}>
         <button
           type="button"
@@ -210,6 +214,7 @@ export function TaskTopBar({ projectId, task, runtimeTaskId, rightExtra }: {
           </>
         )}
       </div>
+      )}
 
       <div style={{ flex: 1 }} />
 
@@ -244,8 +249,8 @@ export function TaskTopBar({ projectId, task, runtimeTaskId, rightExtra }: {
         <span style={{ cursor: 'pointer', padding: '2px 6px' }}>⋯</span>
       </DropdownMenu>
 
-      {/* 批次 G·修复轮：任务级合并——产物在任务集成分支待合并时出现，显示领先提交数 */}
-      {mergeStatus.data?.exists && mergeStatus.data.aheadCommits > 0 && (
+      {/* 批次 G·修复轮：任务级合并——产物在任务集成分支待合并时出现，显示领先提交数（简单模式收起） */}
+      {!uiSimple && mergeStatus.data?.exists && mergeStatus.data.aheadCommits > 0 && (
         <button
           type="button"
           title={`合并任务集成区回主干（领先 ${mergeStatus.data.aheadCommits} 提交${mergeStatus.data.mergeMode === 'manual' ? '，需确认' : '，自动模式'}）`}
@@ -256,7 +261,8 @@ export function TaskTopBar({ projectId, task, runtimeTaskId, rightExtra }: {
         </button>
       )}
 
-      {/* Finder / Terminal 打开切换 */}
+      {/* Finder / Terminal 打开切换（简单模式收起，保留 ⋯ 菜单里的 Finder 入口） */}
+      {!uiSimple && (
       <div style={{ display: 'inline-flex', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', flexShrink: 0 }} title="选择用 Finder 还是终端打开任务目录">
         {([['finder', '🗂'], ['terminal', '⌨️']] as const).map(([mode, icon]) => (
           <button
@@ -270,10 +276,11 @@ export function TaskTopBar({ projectId, task, runtimeTaskId, rightExtra }: {
           </button>
         ))}
       </div>
+      )}
       {/* 帮助 */}
       <button type="button" aria-label="帮助" title="帮助" onClick={() => setHelpOpen(true)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 13, padding: '2px 6px', flexShrink: 0 }}>？</button>
-      {/* 切换终端（在终端打开任务目录） */}
-      <button type="button" aria-label="切换终端" title="在终端打开任务目录" onClick={() => doOpen('terminal')} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 13, padding: '2px 6px', flexShrink: 0 }}>⌨️</button>
+      {/* 切换终端（在终端打开任务目录；简单模式收起） */}
+      {!uiSimple && <button type="button" aria-label="切换终端" title="在终端打开任务目录" onClick={() => doOpen('terminal')} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 13, padding: '2px 6px', flexShrink: 0 }}>⌨️</button>}
       {/* 右侧面板 */}
       <button type="button" aria-label="右侧面板" title="右侧面板" onClick={() => workbenchUI?.toggleRight()} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 13, padding: '2px 6px', flexShrink: 0 }}>▤</button>
 

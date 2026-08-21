@@ -47,6 +47,8 @@ test('新建项目表单页直达', async ({ page }) => {
 });
 
 test('蓝图库与归档作为全局工具页可达', async ({ page }) => {
+  // 治理批次5：蓝图库为专业页（ModeGate）——预置 pro
+  await page.request.post('/api/settings/ui-mode', { data: { uiMode: 'pro' } });
   await page.goto('/blueprints');
   await expect(page.getByRole('heading', { name: '蓝图库' })).toBeVisible();
   await page.goto('/archive');
@@ -54,6 +56,8 @@ test('蓝图库与归档作为全局工具页可达', async ({ page }) => {
 });
 
 test('智能体库展示全局档案与工作台任职', async ({ page }) => {
+  // 治理批次5：该页为专业页（ModeGate）
+  await page.request.post('/api/settings/ui-mode', { data: { uiMode: 'pro' } });
   const suffix = Date.now();
   // 公司退役批次C：不再自建公司，走隐式单例工作台 + 全局新路径
   await page.request.get('/api/workbench');
@@ -87,6 +91,8 @@ test('智能体库展示全局档案与工作台任职', async ({ page }) => {
 });
 
 test('执行器中心检测系统安装并提供官方安装引导', async ({ page }) => {
+  // 治理批次5：该页为专业页（ModeGate）
+  await page.request.post('/api/settings/ui-mode', { data: { uiMode: 'pro' } });
   await page.goto('/executors');
   await expect(page.getByRole('heading', { name: '执行器接入中心' })).toBeVisible();
   await expect(page.getByText('Codex CLI', { exact: true })).toBeVisible();
@@ -97,6 +103,8 @@ test('执行器中心检测系统安装并提供官方安装引导', async ({ pa
 });
 
 test('权限中心明确展示策略与范围并提供审批入口', async ({ page }) => {
+  // 治理批次5：该页为专业页（ModeGate）
+  await page.request.post('/api/settings/ui-mode', { data: { uiMode: 'pro' } });
   await page.goto('/permissions');
   await expect(page.getByRole('heading', { name: '权限与审批中心' })).toBeVisible();
   await expect(page.getByRole('button', { name: '创建项目 Turbo' })).toBeVisible();

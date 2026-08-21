@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import type React from 'react';
 import { Link } from 'react-router-dom';
 import { WorkbenchGuide } from './WorkbenchGuide';
+import { useUiMode } from '../../hooks/queries';
 import { MIN_WORKBENCH_SURFACE_WIDTH, useWorkbenchPreferences } from './useWorkbenchPreferences';
 
 /**
@@ -26,6 +27,7 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
   children: React.ReactNode;
 }): React.ReactElement {
   const preferences = useWorkbenchPreferences(scopeKey);
+  const ui = useUiMode();
   const [commandOpen, setCommandOpen] = useState(false);
   const [commandQuery, setCommandQuery] = useState('');
   const commandOpenRef = useRef(false);
@@ -34,16 +36,17 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
   const globalOptions = [
     { label: '首页', href: '/', group: '全局' },
     { label: '新建项目', href: '/projects/new', group: '全局' },
-    { label: '蓝图库', href: '/blueprints', group: '全局' },
     { label: '归档', href: '/archive', group: '全局' },
     { label: '存储管理', href: '/storage', group: '全局' },
-    { label: '自动化', href: '/automations', group: '全局' },
-    { label: '智能体库', href: '/agents', group: '全局' },
-    { label: '执行器', href: '/executors', group: '全局' },
-    { label: '权限', href: '/permissions', group: '全局' },
-    { label: '审批', href: '/reviews', group: '全局' },
     { label: '设置', href: '/settings', group: '全局' },
-  ];
+    // 专业模式专属入口（治理批次5：简单模式隐藏）
+    { label: '蓝图库', href: '/blueprints', group: ui.isSimple ? undefined : '全局', proOnly: true },
+    { label: '自动化', href: '/automations', group: ui.isSimple ? undefined : '全局', proOnly: true },
+    { label: '智能体库', href: '/agents', group: '全局', proOnly: true },
+    { label: '执行器', href: '/executors', group: '全局', proOnly: true },
+    { label: '权限', href: '/permissions', group: '全局', proOnly: true },
+    { label: '审批', href: '/reviews', group: '全局', proOnly: true },
+  ].filter((o) => !('proOnly' in o && o.proOnly && ui.isSimple) && o.group !== undefined);
   const options = [...(commandOptions ?? []), ...globalOptions];
   const query = commandQuery.trim().toLowerCase();
   const visible = query ? options.filter((option) => `${option.group ?? ''}${option.label}`.toLowerCase().includes(query)) : options;
@@ -78,6 +81,7 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
       <div className="workbench-breadcrumb">{breadcrumb}</div>
       <button type="button" className="workbench-command" aria-label="搜索或跳转" onClick={() => setCommandOpen(true)}><kbd>⌘ K</kbd><span>搜索或跳转</span></button>
       <button type="button" className="workbench-icon-button inspector-toggle" title={preferences.rightOpen ? '收起右侧现场信息' : '展开右侧现场信息'} aria-label={preferences.rightOpen ? '收起现场信息' : '展开现场信息'} aria-expanded={preferences.rightOpen} aria-controls="work-inspector" onClick={preferences.toggleRight}><span className="pane-toggle-glyph is-right" aria-hidden="true" />{attentionCount > 0 && <i>{attentionCount}</i>}</button>
+      <button type="button" className="workbench-icon-button" title={ui.isSimple ? '当前是简单模式：专注任务对话。点击切换到专业模式。' : '当前是专业模式：全量功能。点击切换回简单模式。'} aria-label={ui.isSimple ? '切换到专业模式' : '切换到简单模式'} onClick={ui.toggle} disabled={ui.saving} style={{ fontSize: 12, width: 'auto', padding: '0 8px' }}>{ui.isSimple ? '简单' : '专业'}</button>
       {primaryAction && <div className="workbench-primary-action">{primaryAction}</div>}
     </header>
     <div className="workbench-grid">

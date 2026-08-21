@@ -3,7 +3,7 @@ import type React from 'react';
 import { Link } from 'react-router-dom';
 import type { Agent, Task } from '../../api/types';
 import type { ProjectTaskDTO } from '../../hooks/queries';
-import { useArtifacts, useBlueprintMatches, useProjectTaskAction, useTaskSwarm } from '../../hooks/queries';
+import { useArtifacts, useBlueprintMatches, useProjectTaskAction, useTaskSwarm, useUiMode } from '../../hooks/queries';
 import type { CompanyCockpitDTO } from '../../../shared/types';
 import { Badge, StateBadge, stateLabel, taskStateTone } from '../Badge';
 import { Button, toast } from '../Button';
@@ -32,6 +32,8 @@ export function ProjectContextInspector({
   onChatWithAgent?: (agentId: string) => void;
 }): React.ReactElement {
   const currentAgent = agents.find((a) => a.id === selectedAgentId);
+  // 治理批次5：简单模式收起蜂群拓扑/蓝图匹配（后台治理照常）
+  const { isSimple: uiSimple } = useUiMode();
   const [activeTab, setActiveTab] = useState<'agent' | 'checklist' | 'artifacts'>('agent');
   const taskAction = useProjectTaskAction();
   const { data: artifacts = [] } = useArtifacts(projectId);
@@ -249,8 +251,8 @@ export function ProjectContextInspector({
                 </p>
               )}
 
-              {/* 蜂群微视图（若有） */}
-              {swarmView?.swarm && (
+              {/* 蜂群微视图（若有）——治理批次5：简单模式收起（后台照常跑） */}
+              {!uiSimple && swarmView?.swarm && (
                 <div style={{ marginTop: '12px', padding: '10px', background: 'var(--bg-elev)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
                   <div className="auxiliary-section-title" style={{ padding: 0, marginBottom: '6px' }}>
                     <span>🐝 蜂群拓扑 ({swarmView.tasks.length} 工蜂)</span>
@@ -263,8 +265,8 @@ export function ProjectContextInspector({
                 </div>
               )}
 
-              {/* 修复轮（批次 F.2）：最优蓝图 top-N——按当前选中任务标题命中，无人设命中不显示 */}
-              {selectedTask && blueprintMatches.length > 0 && (
+              {/* 修复轮（批次 F.2）：最优蓝图 top-N——按当前选中任务标题命中（简单模式收起） */}
+              {!uiSimple && selectedTask && blueprintMatches.length > 0 && (
                 <div style={{ marginTop: '12px', padding: '10px', background: 'var(--bg-elev)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
                   <div className="auxiliary-section-title" style={{ padding: 0, marginBottom: '6px' }}>
                     <span>🎭 已匹配最优蓝图 {blueprintMatches.length} 个</span>

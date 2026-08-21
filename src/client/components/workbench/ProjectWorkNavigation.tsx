@@ -1,5 +1,6 @@
 import type React from 'react';
-import { useState } from 'react';
+import { useUiMode } from '../../hooks/queries';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import type { Agent, Department, Project, Task } from '../../api/types';
 import type { ProjectTaskDTO } from '../../hooks/queries';
@@ -72,6 +73,15 @@ export function ProjectWorkNavigation({
 }): React.ReactElement {
   // 搁置提醒红点：搁置≥5h 的待合并任务数（React Query 缓存与页面级轮询共享，不重复请求）
   const { data: mergeAttention } = useMergeAttention(projectId);
+  // 治理批次5：双模式——工具项按模式过滤；任务/项目区顺序=模式默认+手动偏好（localStorage 持久化）
+  const ui = useUiMode();
+  const [tasksFirst, setTasksFirst] = useState<boolean>(() => {
+    const saved = localStorage.getItem('muster:nav-tasks-first');
+    return saved !== null ? saved === '1' : true; // 默认任务在上；专业模式默认项目在上（下方 useEffect 同步）
+  });
+  useEffect(() => {
+    if (localStorage.getItem('muster:nav-tasks-first') === null) setTasksFirst(ui.isSimple);
+  }, [ui.isSimple]);
   void novel;
 
   const navigate = useNavigate();
@@ -147,6 +157,187 @@ export function ProjectWorkNavigation({
           </button>
         </div>
 
+        {/* 治理批次5：任务/项目区顺序=模式默认+手动偏好；⇅ 在底部设置区 */}
+        {tasksFirst ? (
+          <>
+        {/* 1. 独立任务区（随手记随手派） */}
+        <div className="work-nav-section" style={{ borderBottom: '1px solid var(--border-subtle)', paddingBottom: 6 }}>
+          <button
+            type="button"
+            className="work-nav-heading"
+            style={{ display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between', border: 'none', background: 'transparent', cursor: 'pointer', color: 'inherit', padding: 0 }}
+            onClick={() => setStandaloneCollapsed((v) => !v)}
+            aria-expanded={!standaloneCollapsed}
+          >
+            <span>{standaloneCollapsed ? '▸' : '▾'} ⚡ 独立任务</span>
+            <span style={{ fontSize: '11px', color: 'var(--fg-subtle)' }}>{standaloneTasks.length}</span>
+          </button>
+
+          {!standaloneCollapsed && (
+            <div style={{ padding: '4px 6px' }}>
+              <div style={{ display: 'flex', gap: 4, marginBottom: 6 }}>
+                <input
+                  value={standaloneInput}
+                  onChange={(e) => setStandaloneInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleAddStandalone(); }}
+                  placeholder="随手记小任务…"
+                  style={{ flex: 1, fontSize: 11, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border-subtle)', background: 'var(--bg-elev)', color: 'var(--fg)' }}
+                />
+                <button
+                  type="button"
+                  onClick={handleAddStandalone}
+                  disabled={!standaloneInput.trim()}
+                  style={{ border: 'none', background: 'var(--accent)', color: '#fff', borderRadius: 6, padding: '0 8px', fontSize: 11, cursor: 'pointer' }}
+                >
+                  ＋
+                </button>
+              </div>
+
+              {standaloneTasks.slice(0, 6).map((t) => {
+                const isSelected = selectedProjectTaskId === t.id;
+                return (
+                  <div key={t.id} className={`work-nav-item ${isSelected ? 'is-active' : ''}`} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 6px', borderRadius: 6 }}>
+                    <button
+                      type="button"
+                      aria-label={t.pinned ? '取消置顶' : '置顶'}
+                      style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 11, padding: 0 }}
+                      onClick={() => standaloneProjectId && pinTask.mutate({ projectId: standaloneProjectId, id: t.id, pinned: !t.pinned })}
+                    >
+                      {t.pinned ? '📌' : '🔘'}
+                    </button>
+                    <Link
+                      to={`/projects/${standaloneProjectId}?view=task&projectTask=${t.id}`}
+                      style={{ flex: 1, minWidth: 0, textDecoration: 'none', color: 'inherit', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                    >
+                      {t.unread ? <span aria-label="未读" style={{ display: 'inline-block', width: 5, height: 5, borderRadius: 999, background: 'var(--accent)', marginRight: 4 }} /> : null}
+                      {t.title}
+                    </Link>
+                    <button
+                      type="button"
+                      aria-label="归档"
+                      style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 11, color: 'var(--fg-subtle)', padding: 0 }}
+                      onClick={() => standaloneProjectId && taskAction.mutate({ projectId: standaloneProjectId, id: t.id, action: 'archive' })}
+                    >
+                      📦
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        {/* 2. 全部项目与分组列表 */}
+        <div className="work-nav-section" style={{ borderBottom: '1px solid var(--border-subtle)', paddingBottom: 6 }}>
+          <div style={{ display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between', padding: '0 0 4px' }}>
+            <button
+              type="button"
+              className="work-nav-heading"
+              style={{ display: 'flex', alignItems: 'center', gap: 4, border: 'none', background: 'transparent', cursor: 'pointer', color: 'inherit', padding: 0 }}
+              onClick={() => setProjectsCollapsed((v) => !v)}
+              aria-expanded={!projectsCollapsed}
+            >
+              <span>{projectsCollapsed ? '▸' : '▾'} 📁 项目列表</span>
+              <span style={{ fontSize: '11px', color: 'var(--fg-subtle)' }}>{projects.length}</span>
+            </button>
+            <DropdownMenu
+              label="添加项目"
+              items={[
+                { key: 'new', label: '🆕 新建项目', onSelect: () => navigate('/projects/new') },
+                { key: 'open', label: '📂 打开本地目录…', onSelect: () => navigate('/projects/new?mode=open') },
+              ]}
+            >
+              <span style={{ cursor: 'pointer', fontSize: 12, color: 'var(--accent)', padding: '0 4px' }} title="添加或接管项目">＋</span>
+            </DropdownMenu>
+          </div>
+
+          {!projectsCollapsed && (
+            <div style={{ padding: '2px 0' }}>
+              {Array.from(groupMap.entries()).map(([gName, pList]) => (
+                <div key={gName} style={{ marginBottom: 4 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--fg-subtle)', padding: '2px 8px' }}>
+                    # {gName} ({pList.length})
+                  </div>
+                  {pList.map((p) => {
+                    const isCur = p.id === projectId;
+                    return (
+                      <Link
+                        key={p.id}
+                        className={`work-nav-item ${isCur ? 'is-active' : ''}`}
+                        to={`/projects/${p.id}`}
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 8px 4px 14px' }}
+                      >
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12 }}>
+                          {isCur ? '▸ ' : '• '}{p.name}
+                        </span>
+                        <span style={{ fontSize: 10, opacity: 0.7 }}>
+                          {p.state === 'active' ? '进行中' : p.state}
+                        </span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+          </>
+        ) : (
+          <>
+        {/* 2. 全部项目与分组列表 */}
+        <div className="work-nav-section" style={{ borderBottom: '1px solid var(--border-subtle)', paddingBottom: 6 }}>
+          <div style={{ display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between', padding: '0 0 4px' }}>
+            <button
+              type="button"
+              className="work-nav-heading"
+              style={{ display: 'flex', alignItems: 'center', gap: 4, border: 'none', background: 'transparent', cursor: 'pointer', color: 'inherit', padding: 0 }}
+              onClick={() => setProjectsCollapsed((v) => !v)}
+              aria-expanded={!projectsCollapsed}
+            >
+              <span>{projectsCollapsed ? '▸' : '▾'} 📁 项目列表</span>
+              <span style={{ fontSize: '11px', color: 'var(--fg-subtle)' }}>{projects.length}</span>
+            </button>
+            <DropdownMenu
+              label="添加项目"
+              items={[
+                { key: 'new', label: '🆕 新建项目', onSelect: () => navigate('/projects/new') },
+                { key: 'open', label: '📂 打开本地目录…', onSelect: () => navigate('/projects/new?mode=open') },
+              ]}
+            >
+              <span style={{ cursor: 'pointer', fontSize: 12, color: 'var(--accent)', padding: '0 4px' }} title="添加或接管项目">＋</span>
+            </DropdownMenu>
+          </div>
+
+          {!projectsCollapsed && (
+            <div style={{ padding: '2px 0' }}>
+              {Array.from(groupMap.entries()).map(([gName, pList]) => (
+                <div key={gName} style={{ marginBottom: 4 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--fg-subtle)', padding: '2px 8px' }}>
+                    # {gName} ({pList.length})
+                  </div>
+                  {pList.map((p) => {
+                    const isCur = p.id === projectId;
+                    return (
+                      <Link
+                        key={p.id}
+                        className={`work-nav-item ${isCur ? 'is-active' : ''}`}
+                        to={`/projects/${p.id}`}
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 8px 4px 14px' }}
+                      >
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12 }}>
+                          {isCur ? '▸ ' : '• '}{p.name}
+                        </span>
+                        <span style={{ fontSize: 10, opacity: 0.7 }}>
+                          {p.state === 'active' ? '进行中' : p.state}
+                        </span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
         {/* 1. 独立任务区（随手记随手派） */}
         <div className="work-nav-section" style={{ borderBottom: '1px solid var(--border-subtle)', paddingBottom: 6 }}>
           <button
@@ -214,61 +405,8 @@ export function ProjectWorkNavigation({
           )}
         </div>
 
-        {/* 2. 全部项目与分组列表 */}
-        <div className="work-nav-section" style={{ borderBottom: '1px solid var(--border-subtle)', paddingBottom: 6 }}>
-          <div style={{ display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between', padding: '0 0 4px' }}>
-            <button
-              type="button"
-              className="work-nav-heading"
-              style={{ display: 'flex', alignItems: 'center', gap: 4, border: 'none', background: 'transparent', cursor: 'pointer', color: 'inherit', padding: 0 }}
-              onClick={() => setProjectsCollapsed((v) => !v)}
-              aria-expanded={!projectsCollapsed}
-            >
-              <span>{projectsCollapsed ? '▸' : '▾'} 📁 项目列表</span>
-              <span style={{ fontSize: '11px', color: 'var(--fg-subtle)' }}>{projects.length}</span>
-            </button>
-            <DropdownMenu
-              label="添加项目"
-              items={[
-                { key: 'new', label: '🆕 新建项目', onSelect: () => navigate('/projects/new') },
-                { key: 'open', label: '📂 打开本地目录…', onSelect: () => navigate('/projects/new?mode=open') },
-              ]}
-            >
-              <span style={{ cursor: 'pointer', fontSize: 12, color: 'var(--accent)', padding: '0 4px' }} title="添加或接管项目">＋</span>
-            </DropdownMenu>
-          </div>
-
-          {!projectsCollapsed && (
-            <div style={{ padding: '2px 0' }}>
-              {Array.from(groupMap.entries()).map(([gName, pList]) => (
-                <div key={gName} style={{ marginBottom: 4 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--fg-subtle)', padding: '2px 8px' }}>
-                    # {gName} ({pList.length})
-                  </div>
-                  {pList.map((p) => {
-                    const isCur = p.id === projectId;
-                    return (
-                      <Link
-                        key={p.id}
-                        className={`work-nav-item ${isCur ? 'is-active' : ''}`}
-                        to={`/projects/${p.id}`}
-                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 8px 4px 14px' }}
-                      >
-                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12 }}>
-                          {isCur ? '▸ ' : '• '}{p.name}
-                        </span>
-                        <span style={{ fontSize: 10, opacity: 0.7 }}>
-                          {p.state === 'active' ? '进行中' : p.state}
-                        </span>
-                      </Link>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
+          </>
+        )}
         {/* 3. 核心项目任务列表（pinned 置顶序由服务端返回；>5 折叠；区块可折叠） */}
         <div className="work-nav-section">
           <button
@@ -368,12 +506,15 @@ export function ProjectWorkNavigation({
           {/* review 修复：新建项目外壳 projectId 为空——项目级工具链接跳过，避免 /projects//tasks 空段路由 */}
           {projectId && (
             <>
-              <Link className={`work-nav-item ${activeTool === 'tasks' ? 'is-active' : ''}`} to={`/projects/${projectId}/tasks`}>
-                <span className="work-nav-icon">📋</span>
-                <span className="work-nav-label">任务领取清单</span>
-                {attentionCount > 0 && <span className="work-nav-count">{attentionCount}</span>}
-              </Link>
-              <Link className={`work-nav-item ${activeTool === 'merges' ? 'is-active' : ''}`} to={`/projects/${projectId}/merges`}>
+              {!ui.isSimple && (
+                <Link className={`work-nav-item ${activeTool === 'tasks' ? 'is-active' : ''}`} to={`/projects/${projectId}/tasks`}>
+                  <span className="work-nav-icon">📋</span>
+                  <span className="work-nav-label">任务领取清单</span>
+                  {attentionCount > 0 && <span className="work-nav-count">{attentionCount}</span>}
+                </Link>
+              )}
+              {!ui.isSimple && (
+<Link className={`work-nav-item ${activeTool === 'merges' ? 'is-active' : ''}`} to={`/projects/${projectId}/merges`}>
                 <span className="work-nav-icon">🔀</span>
                 <span className="work-nav-label">待合并成果</span>
                 {(mergeAttention?.staleMerges ?? 0) > 0 && (
@@ -382,20 +523,25 @@ export function ProjectWorkNavigation({
                   </span>
                 )}
               </Link>
+)}
               <Link className={`work-nav-item ${activeTool === 'artifacts' ? 'is-active' : ''}`} to={`/projects/${projectId}/artifacts`}>
                 <span className="work-nav-icon">📦</span>
                 <span className="work-nav-label">成果与文件</span>
               </Link>
-              <Link className={`work-nav-item ${activeTool === 'plans' ? 'is-active' : ''}`} to={`/projects/${projectId}/plans`}>
+              {!ui.isSimple && (
+<Link className={`work-nav-item ${activeTool === 'plans' ? 'is-active' : ''}`} to={`/projects/${projectId}/plans`}>
                 <span className="work-nav-icon">⚡</span>
                 <span className="work-nav-label">自动化</span>
               </Link>
+)}
             </>
           )}
-          <Link className="work-nav-item" to="/blueprints">
+          {!ui.isSimple && (
+<Link className="work-nav-item" to="/blueprints">
             <span className="work-nav-icon">🧭</span>
             <span className="work-nav-label">蓝图库</span>
           </Link>
+)}
           <Link className="work-nav-item" to="/archive">
             <span className="work-nav-icon">🗂️</span>
             <span className="work-nav-label">归档</span>
@@ -404,15 +550,30 @@ export function ProjectWorkNavigation({
             <span className="work-nav-icon">💾</span>
             <span className="work-nav-label">存储管理</span>
           </Link>
-          <Link className="work-nav-item" to="/agents">
+          {!ui.isSimple && (
+<Link className="work-nav-item" to="/agents">
             <span className="work-nav-icon">👥</span>
             <span className="work-nav-label">智能体人才库</span>
           </Link>
+)}
         </div>
       </div>
 
       {/* 底部固定设置 */}
       <div style={{ padding: '8px 10px', borderTop: '1px solid var(--border-subtle)' }}>
+        <button
+          type="button"
+          className="work-nav-item"
+          style={{ width: '100%', border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--fg-subtle)', fontSize: 11, padding: '4px 8px', textAlign: 'left' }}
+          title={tasksFirst ? '当前：任务在上。点击改为项目在上' : '当前：项目在上。点击改为任务在上'}
+          onClick={() => {
+            const next = !tasksFirst;
+            setTasksFirst(next);
+            localStorage.setItem('muster:nav-tasks-first', next ? '1' : '0');
+          }}
+        >
+          ⇅ {tasksFirst ? '任务在上（点击调整）' : '项目在上（点击调整）'}
+        </button>
         <Link
           to="/settings"
           className="work-nav-item"

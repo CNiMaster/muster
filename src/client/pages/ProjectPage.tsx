@@ -9,6 +9,7 @@ import {
   useThreads,
   useCreateProject,
   usePickFolder,
+  useUiMode,
   useEnsureDefaultProject,
   useWorkbench,
   useCreateTask,
@@ -386,6 +387,7 @@ function NewProject(): React.ReactElement {
 
 export function ProjectDetail({ projectId }: { projectId: string }): React.ReactElement {
   useRecentProject(projectId);
+  const { isSimple: uiSimple } = useUiMode();
   const { data: project } = useProject(projectId);
   const { data: company } = useWorkbench();
   const { data: cockpit } = useWorkbenchCockpit();
@@ -816,7 +818,8 @@ export function ProjectDetail({ projectId }: { projectId: string }): React.React
   </details>}
 </div>
 
-      {/* 底部团队成员与任务标签栏（每个人一个标签） */}
+      {/* 底部团队成员与任务标签栏（每个人一个标签）。治理批次5：简单模式隐藏——对话舞台即全部 */}
+      {!uiSimple && (
       <div className="workbench-bottom-tabs-bar">
         <button
           type="button"
@@ -876,6 +879,7 @@ export function ProjectDetail({ projectId }: { projectId: string }): React.React
           );
         })}
       </div>
+      )}
     </div>
     </WorkbenchShell>
   );

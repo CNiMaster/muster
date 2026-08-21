@@ -1,6 +1,6 @@
 # Workspace 治理 + 任务优先 IA + 双模式（2026-08-20 定案）
 
-状态：批次1-4 已交付（implemented）；批次5（双模式）待做。2026-08-21 起在 main 直接开发（治理分支已合并删除）。
+状态：批次1-5 已全部在 main 交付（2026-08-21 收口）。
 
 ## 背景（问题实锤 2026-08-20）
 
@@ -58,10 +58,15 @@
 - **项目设置**：工作目录卡（主目录合成行+绑定行；角色/git/⚓锚点标记；设锚仅 git；解绑人话"文件夹未做任何改动"；绑定新目录=路径输入+选择器+备注名）；危险区「移入回收站…」（前置校验失败拆人话阻塞清单逐条展示）。
 - **e2e** storage-management.spec 4 例：页可达+对账渲染/工作目录管理渲染/回收站全链路（移入→存储页恢复）/彻底删除手打确认（错字禁用→正确放行）。
 
-## 批次5 待做（双模式骨架+简单模式）
+## 批次5 已交付（2026-08-21）：双模式（简单/专业）定制工作台
 
-批次4：新建项目对话框（三入口+系统文件夹选择器）+存储管理页+回收站 UI（手打确认交互）+项目设置目录管理+删除入口统一+任务/项目分区顺序（模式默认+手动持久化）。
-批次5：双模式骨架（settings uiMode/路由白名单/命令面板过滤）+简单模式首页接线（HomePage 复活：快速输入默认建独立任务；项目内 view=task 隐藏 mode/branch/model/thinking 药丸；TaskTopBar 简化）。spec 文档 `docs/superpowers/specs/2026-08-20-simple-pro-mode-design.md`。
+- **服务端**：SystemSettings.uiMode = simple|pro（默认 simple，`ui_mode` 配置键；轻量专用端点 `POST /api/settings/ui-mode`，不走主批量端点）。
+- **Hook**：`useUiMode()`（读 systemSettings；mutation 切换即时生效 + 查询缓存同步；`isSimple`/`setUiMode`/`toggle`/`saving`）。
+- **壳层**：WorkbenchShell 顶栏「简单/专业」切换钮（标题说明）+ 命令面板按模式过滤（simple 下隐藏蓝图库/自动化/执行器/权限/审批）。
+- **路由白名单**：ModeGate 包装专业页（简单模式下给提示页可一键切换，非静默重定向）；覆盖 16 条专业路由（blueprints/canvas 等全量 + merges/plans/usage 等工具页 + agents/executors 等系统页）。
+- **导航缩表**：ProjectWorkNavigation 专业工具项按模式过滤（任务领取/待合并/自动化/蓝图库/智能体库 5 项为专业专属；成果/归档/存储管理保留）；任务/项目区先后 = 模式默认（简单→任务在上、专业→项目在上）+ 手动偏好 `muster:nav-tasks-first` 持久化（⇅ 钮在底部设置区）。
+- **项目内减负（简单模式）**：底部团队药丸条隐藏；composer 仅保留附件（智能体/模型/深度思考/任务/分支/模式药丸收起）；TaskTopBar 分支下拉/合并钮/Finder-Terminal 组收起（合并治理后台照常）；检查器收蜂群拓扑与蓝图匹配两区（后台照常跑）。
+- **e2e** simple-pro-mode.spec 2 例：默认简单→专业提示→切专业生效持久→切回收尾 / 命令面板按模式过滤。
 
 ## 存量清理（用户手动）
 

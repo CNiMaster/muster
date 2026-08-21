@@ -4,12 +4,22 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { asyncHandler } from './middleware';
 import { getDb } from '../db/client';
-import { getSystemSettings, saveSystemSettings } from '../domain/setting';
+import { saveSystemSettings, getSystemSettings } from '../domain/setting';
 import { log } from '../logger';
 
 const execFileAsync = promisify(execFile);
 
 export const settingsRouter = Router();
+
+/** 治理批次5：界面模式切换（轻量专用端点——主批量端点 schema 必填全量，不适合单键切换）。 */
+settingsRouter.post(
+  '/ui-mode',
+  asyncHandler(async (req, res) => {
+    const input = z.object({ uiMode: z.enum(['simple', 'pro']) }).parse(req.body);
+    saveSystemSettings(getDb(), { uiMode: input.uiMode });
+    res.json({ uiMode: input.uiMode });
+  }),
+);
 
 /** 保存系统设置的 zod schema（导出供测试——六步链断点历史上就出在这里：zod 默认剥未知键）。 */
 export const settingsUpdateSchema = z.object({

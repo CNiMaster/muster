@@ -67,9 +67,9 @@ Muster is a local multi-agent workbench. Persistent agents collaborate through p
 
 **提交与合并时序口径（2026-08-21 定案）**：worktree 提交与 main 提交在 git 层**完全等价**（同一仓库同一对象库，差别只是落点分支）；「提交完再合并」才有稳定快照供审查（TOCTOU 卫兵锚定分支头）、合并是单一原子操作、可 revert/bisect，「先合并再提交」会让审查对象与最终内容分离——正是门禁要防的形态。**约定：内容提交永远发生在分支上**（三处提交位：任务 worktree 引擎快照提交 → 集成分支 pt- 发布提交 → 主干）；main 只收两种提交——promote 的 merge commit 与 user edits 收口提交，任何内容不直接在 main 上提交。**并发口径**：promote 入口两条（UI 手动 + 看门狗自动）同走 `promoteTaskStaging`；合并序列 `promoteTaskStagingMerge` 全程同步无 await（原子不可交错），交错只发生在审查/检查 await 点；同一 projectTaskId 由模块级 in-flight Set 去重（双发起时后路返回「正在进行中」）。**冲突事前可见性三件套**：待合并看板行 behindCommits 徽章（主干已前进 N = 三方合并风险）＋ merge-tree 合并预演（`taskStagingMergePreview` 对象层试合并零副作用，仅 behind>0 行，head 四元组缓存）＋ behind=0 即 fast-forward 不预演；冲突事后处置仍走裁决法庭。挂观察：集成分支自动追平主干（main→pt）——触发条件见计划文档。
 
-## Workspace 治理（2026-08-20 定案，分支 feat/workspace-governance，批次1 已交付）
+## Workspace 治理（2026-08-20 定案，批次1-5 全部在 main 交付，2026-08-21 收口）
 
-计划：`docs/superpowers/plans/2026-08-20-workspace-governance.md`（定案全记录+批次2-5 待做）。背景：真实 `~/MusterWorkspace/projects` 曾积累 367 个纯测试残留目录（MUSTER_HOME 不覆盖 workspace 根所致，2026-08-20 根因修复）。
+计划：`docs/superpowers/plans/2026-08-20-workspace-governance.md`（定案全记录+批次1-5 全部交付）。背景：真实 `~/MusterWorkspace/projects` 曾积累 367 个纯测试残留目录（MUSTER_HOME 不覆盖 workspace 根所致，2026-08-20 根因修复）。
 
 - **磁盘规矩（唯一事实源 `src/server/domain/workspace-layout.ts`）**：`projects/<纯名>`（仅撞名时后来者加 `-YYYYMMDD`/`-HHmm`/`-2`，显示名永无后缀）；独立任务载体仓库 `tasks/<YYYY-MM>/<MMDD-HHmm>-<截断≤8字>/`（project_task.repo_root_dir 记录，同载体多轮共享一仓，pt-<ptid> 集成拓扑不变）；基础设施（收件箱/独立任务）在 `.system/`；回收站 `.trash/`（批次2）。每系统目录写 `.muster/dir.json` marker（孤儿对账依据）。
 - **MUSTER_HOME 语义扩展**：设置时 workspace 默认根= `$MUSTER_HOME/MusterWorkspace`（defaultWorkspaceRoot()），未设= `~/MusterWorkspace` 不变。测试三通道全隔离：e2e（playwright webServer env）/ smoke（自起服务）/ **vitest（tests/setup-env.ts setupFile 默认补 MUSTER_HOME+放行测试根）**——任何测试不得再落真实家目录。
@@ -78,7 +78,9 @@ Muster is a local multi-agent workbench. Persistent agents collaborate through p
 - **对账（只读）**：`GET /api/workspaces/audit` + `npx tsx scripts/workspace-audit.mts`——orphanMarked/unknown/ghostRecords 三分；软件永不自动删目录，存量残留由用户人工清理。
 - **回收站两段式（批次2）**：`project-trash.ts`——移入 `.trash/`（前置四拒：基础设施/active/进行中任务/未合并 pt-集成区防悬空；绑定自动化自动暂停记账）→ `GET /api/projects/trash`、`POST /:id/trash|/:id/restore|/trash/purge`；恢复撞名走同一日期后缀规则；真删=移系统废纸篓（非 rm，MUSTER_TRASH_DIR 可覆盖）+删库，确认语义服务端强制（单个=手打原目录名，批量=手打「删除N项」）。
 - **多目录绑定（批次3）**：`project_dir` 表（external/attached，主目录仍走 root_dir 合成行）——绑定即写授权（engine project scope allowedRoots 含 attachedPaths）；与任何项目目录交叉拒；锚点=绑定的 git 仓库（`resolveTaskRepoRoot` 优先外部锚点，worktree 从锚点切出）；解绑只删行；绑定目录永不 marker/git init（铁律）。
-- **铁律不变**：软件永不挪/删用户自有目录；剩余批次（UI：新建项目三入口/存储管理页/回收站界面/双模式骨架）见计划文档，等 main UI 改动合入后开。
+- **存储管理 UI（批次4）**：系统选择器 `POST /api/system/pick-folder`（darwin 原生 osascript）；存储页 `/storage`（回收站+对账只读清单，手打确认）；项目设置工作目录卡（主目录+绑定行/锚点/解绑不动盘）+ 危险区移入回收；e2e storage-management.spec 4 例。
+- **双模式（批次5）**：设置 `uiMode = simple|pro`（默认 simple，`POST /api/settings/ui-mode` 轻量端点；壳顶栏「简单/专业」切换钮）；简单=任务优先、专业=全量；ModeGate 路由白名单（专业页在简单模式给提示页可一键切换）；命令面板与导航工具项按模式过滤；任务/项目区先后=模式默认+手动偏好（⇅ 钮经 `muster:nav-tasks-first` 持久化）；项目内减负：药丸条隐藏 / composer 药丸收敛(附件保留) / TaskTopBar 收起分支/合并/Finder 组 / 检查器收蜂群与蓝图区（治理后台照常跑）；e2e simple-pro-mode.spec 2 例；smoke/workbench-shell/task-topbar spec 适配为 pro 前提。
+- **铁律不变**：软件永不挪/删用户自有目录；plan 详见上。
 
 ## Product Direction: Local Agent Workbench（项目主导）
 

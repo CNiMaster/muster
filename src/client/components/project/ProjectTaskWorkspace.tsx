@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type React from 'react';
 import type { Agent, Task } from '../../api/types';
 import type { ProjectTaskDTO } from '../../hooks/queries';
-import { useTask, useProjectTaskAction, useTaskAction, usePostMessage, useMessages, useUploadMaterial, materialRawUrl, useExecutorProfiles, useSystemSettings, useBlueprintMatches, useTaskChecklist, useCreateChecklist, useAdvanceChecklist, type MessageAttachment } from '../../hooks/queries';
+import { useUiMode, useTask, useProjectTaskAction, useTaskAction, usePostMessage, useMessages, useUploadMaterial, materialRawUrl, useExecutorProfiles, useSystemSettings, useBlueprintMatches, useTaskChecklist, useCreateChecklist, useAdvanceChecklist, type MessageAttachment } from '../../hooks/queries';
 import { PromptComposer, type ComposerMode } from '../workbench/PromptComposer';
 import { Button, toast } from '../Button';
 import { StateBadge, Badge } from '../Badge';
@@ -36,6 +36,7 @@ export function ProjectTaskWorkspace({
   newTaskSignal?: number;
 }): React.ReactElement {
 
+  const ui = useUiMode();
   const [newTitle, setNewTitle] = useState('');
   const [newBrief, setNewBrief] = useState('');
   const [creating, setCreating] = useState(false);
@@ -411,25 +412,25 @@ export function ProjectTaskWorkspace({
                 ? `在任务 #${selectedTask.seq} 中给智能体下达指令…`
                 : '直接输入需求，或向智能体分配任务…'
           }
-          agents={agents}
-          selectedAgentId={selectedAgentId}
-          onSelectAgent={setSelectedAgentId}
-          currentModel={currentModel}
-          onSelectModel={setCurrentModel}
-          modelOptions={modelOptions}
-          thinkingDepth={thinkingDepth}
-          onToggleThinking={setThinkingDepth}
+          agents={ui.isSimple ? [] : agents}
+          selectedAgentId={ui.isSimple ? undefined : selectedAgentId}
+          onSelectAgent={ui.isSimple ? undefined : setSelectedAgentId}
+          currentModel={ui.isSimple ? '' : currentModel}
+          onSelectModel={ui.isSimple ? undefined : setCurrentModel}
+          modelOptions={ui.isSimple ? [] : modelOptions}
+          thinkingDepth={ui.isSimple ? 'off' : thinkingDepth}
+          onToggleThinking={ui.isSimple ? undefined : setThinkingDepth}
           attachments={attachments}
           onAddFiles={handleAddFiles}
           onRemoveAttachment={(materialId) => setAttachments((prev) => prev.filter((a) => a.materialId !== materialId))}
           uploading={uploadMaterial.isPending}
           attachmentUrl={(materialId) => materialRawUrl(projectId, materialId)}
-          taskOptions={projectTasks.map((t) => ({ id: t.id, label: `#${t.seq} ${t.title}` }))}
-          selectedTaskId={selectedTask?.id}
-          onSelectTask={onSelect}
-          branch={selectedTask ? `muster/${projectId}/${selectedTask.id}` : null}
-          mode={mode}
-          onSelectMode={setMode}
+          taskOptions={ui.isSimple ? [] : projectTasks.map((t) => ({ id: t.id, label: `#${t.seq} ${t.title}` }))}
+          selectedTaskId={ui.isSimple ? undefined : selectedTask?.id}
+          onSelectTask={ui.isSimple ? undefined : onSelect}
+          branch={ui.isSimple ? null : selectedTask ? `muster/${projectId}/${selectedTask.id}` : null}
+          mode={ui.isSimple ? undefined : mode}
+          onSelectMode={ui.isSimple ? undefined : setMode}
           onNewTask={() => setCreating(true)}
           loading={publishingWorkOrder || postMessage.isPending || directTaskAction.isPending}
           onSend={handleSendPrompt}

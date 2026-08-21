@@ -2910,3 +2910,25 @@ export function usePickFolder() {
     mutationFn: () => api.post<{ cancelled: boolean; path: string | null }>('/api/system/pick-folder', {}),
   });
 }
+
+// ===== Workspace 治理批次5：双模式（简单=默认·任务优先；专业=全量） =====
+
+/** 当前界面模式：默认 simple（加载期即简单模式，与产品默认一致）。 */
+export function useUiMode(): { uiMode: 'simple' | 'pro'; isSimple: boolean; setUiMode: (m: 'simple' | 'pro') => void; toggle: () => void; saving: boolean } {
+  const qc = useQueryClient();
+  const { data: settings } = useSystemSettings();
+  const mutation = useMutation({
+    mutationFn: (m: 'simple' | 'pro') => api.post<{ uiMode: 'simple' | 'pro' }>('/api/settings/ui-mode', { uiMode: m }),
+    onSuccess: (r) => {
+      qc.setQueryData(['systemSettings'], (prev: unknown) => (prev ? { ...(prev as object), uiMode: r.uiMode } : prev));
+    },
+  });
+  const uiMode = settings?.uiMode === 'pro' ? 'pro' : 'simple';
+  return {
+    uiMode,
+    isSimple: uiMode === 'simple',
+    setUiMode: (m) => mutation.mutate(m),
+    toggle: () => mutation.mutate(uiMode === 'pro' ? 'simple' : 'pro'),
+    saving: mutation.isPending,
+  };
+}

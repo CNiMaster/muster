@@ -4,6 +4,8 @@
 import { test, expect } from '@playwright/test';
 
 test('任务顶栏：分支下拉与⋯菜单、右侧按钮齐备', async ({ page }) => {
+  // 治理批次5：分支下拉/合并/Finder 组为专业模式专属——预置 pro
+  await page.request.post('/api/settings/ui-mode', { data: { uiMode: 'pro' } });
   const response = await page.request.post('/api/projects/quick', {
     data: { name: `顶栏项目-${Date.now()}` },
   });

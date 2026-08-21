@@ -13,8 +13,10 @@ const task = { id: 'tk_1', projectId: 'pr_1', projectTaskId: 'pt_1', seq: 3, tit
 
 describe('project task-first workbench navigation', () => {
   it('renders standalone/projects/tasks sections with selected task link and tool badge (2026-08-20 UI 重构后)', () => {
-    // 批3 起组件内置置顶/归档 mutation（react-query），渲染需 Provider
+    // 批3 起组件内置置顶/归档 mutation（react-query），渲染需 Provider；
+    // 治理批次5：专业工具链接仅专业模式渲染——预置 systemSettings 为 pro
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    qc.setQueryData(['systemSettings'], { uiMode: 'pro' });
     const pt = {
       id: 'pt_1', projectId: 'pr_1', seq: 3, title: '实现审批恢复', brief: '', state: 'active',
       pinned: false, unread: true, launchState: 'confirmed', launchBrief: {} as never,
