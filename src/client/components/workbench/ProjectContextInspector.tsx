@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import type { Agent, Task } from '../../api/types';
 import type { ProjectTaskDTO } from '../../hooks/queries';
 import { useArtifacts, useBlueprintMatches, useProjectSpecialists, useProjectTaskAction, useTaskSwarm, useUiMode } from '../../hooks/queries';
@@ -8,6 +8,7 @@ import type { CompanyCockpitDTO } from '../../../shared/types';
 import { Badge, StateBadge, taskStateTone } from '../Badge';
 import { Button, toast } from '../Button';
 import { DiscussionPanel } from './DiscussionPanel';
+import { InspectorPreviewHost } from './InspectorPreviewHost';
 
 const OPEN_STATES = new Set(['queued', 'claimed', 'running', 'waiting_input', 'waiting_dependency', 'waiting_approval', 'paused', 'blocked']);
 const ATTENTION_STATES = new Set(['waiting_input', 'waiting_approval', 'blocked', 'waiting_dependency']);
@@ -117,8 +118,20 @@ export function ProjectContextInspector({
     );
   };
 
+  const [, setSearchParams] = useSearchParams();
+  const openPreview = (relPath: string): void => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('preview', relPath);
+      return next;
+    });
+  };
+
   return (
     <div className="auxiliary-panel">
+      {/* 批次 F.3：右栏预览容器（?preview= 驱动；无参数时不占位） */}
+      <InspectorPreviewHost projectId={projectId} />
+
       {/* 瞬时层：需要你关注（有事才出现，事毕即隐） */}
       {attentionTotal > 0 && (
         <div className="inspector-attention-section" style={{ borderRadius: 'var(--radius-md)', padding: '8px 10px' }}>
@@ -405,25 +418,29 @@ export function ProjectContextInspector({
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
             {artifacts.slice(0, 8).map((art) => (
-              <Link
+              <button
                 key={art.id}
-                to={`/projects/${projectId}/artifacts?path=${encodeURIComponent(art.path)}`}
+                type="button"
+                title={`右栏预览 ${art.path}`}
+                onClick={() => openPreview(art.path)}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
+                  gap: 6,
                   padding: '6px 8px',
                   borderRadius: 'var(--radius-sm)',
                   background: 'var(--bg-elev)',
                   border: '1px solid var(--border-subtle)',
                   fontSize: '12px',
                   color: 'var(--fg)',
-                  textDecoration: 'none',
+                  cursor: 'pointer',
+                  textAlign: 'left',
                 }}
               >
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📄 {art.path}</span>
                 <Badge tone="neutral">{art.kind}</Badge>
-              </Link>
+              </button>
             ))}
           </div>
         </InspectorGroup>

@@ -11,6 +11,7 @@
 
  发布冲突不通过按钮强制覆盖：TaskEngine 会保留原 worktree，并给项目第一负责人派发可交互的裁决 Task。
  - GET    /api/projects/:id/artifacts/history
+ - GET    /api/projects/:id/artifacts/preview/*path  右栏预览（双校验 + HTML CSP，批次 F.3）
  */
 import { Router } from 'express';
 import { z } from 'zod';
@@ -89,6 +90,39 @@ projectArtifactsRouter.get(
       return;
     }
     res.json({ path, content: readArtifactContent(getDb(), param(req, 'id'), path) });
+  }),
+);
+
+const PREVIEW_HTML_CSP = "default-src 'none'; style-src 'unsafe-inline' 'self' data:; img-src 'self' data:; font-src 'self' data:; media-src 'self' data:";
+
+projectArtifactsRouter.get(
+  '/preview/*path',
+  asyncHandler(async (req, res) => {
+    const db = getDb();
+    const projectId = param(req, 'id');
+    // Express 5 命名通配符按段捕获为数组（['docs','index.html']），需重新拼回路径
+    const rawPath = req.params.path;
+    const relPath = decodeURIComponent(Array.isArray(rawPath) ? rawPath.join('/') : String(rawPath ?? ''));
+    if (!relPath) {
+      res.status(400).json({ error: { code: 'validation', message: 'path required' } });
+      return;
+    }
+    const project = getProject(db, projectId);
+    const abs = resolveArtifactPath(artifactBaseDir(db, projectId, relPath), relPath);
+    if (!existsSync(abs)) {
+      res.status(404).end();
+      return;
+    }
+    if (!isPathAllowed(abs)) {
+      res.status(403).json({ error: { code: 'unauthorized', message: '路径不在允许的根目录内' } });
+      return;
+    }
+    if (/\.(html?|xhtml)$/i.test(relPath)) {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('Content-Security-Policy', PREVIEW_HTML_CSP);
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+    }
+    res.sendFile(abs);
   }),
 );
 

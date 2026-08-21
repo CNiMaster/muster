@@ -18,6 +18,7 @@ const mockUseArtifacts = vi.fn(() => ({ data: [] }));
 const mockUseBlueprintMatches = vi.fn(() => ({ data: [] }));
 const mockUseProjectSpecialists = vi.fn(() => ({ data: [] }));
 const mockUseTaskSwarm = vi.fn(() => ({ data: undefined }));
+const mockUseArtifactContent = vi.fn(() => ({ data: undefined, isLoading: false }));
 
 vi.mock('../../src/client/hooks/queries', () => ({
   useUiMode: () => mockUseUiMode(),
@@ -25,6 +26,7 @@ vi.mock('../../src/client/hooks/queries', () => ({
   useBlueprintMatches: () => mockUseBlueprintMatches(),
   useProjectSpecialists: () => mockUseProjectSpecialists(),
   useTaskSwarm: () => mockUseTaskSwarm(),
+  useArtifactContent: () => mockUseArtifactContent(),
   useProjectTaskAction: () => ({ mutate: vi.fn(), isPending: false }),
   useProjectDiscussions: () => ({ data: [] }),
   useCloseDiscussion: () => ({ mutate: vi.fn(), isPending: false }),
@@ -74,6 +76,7 @@ beforeEach(() => {
   mockUseBlueprintMatches.mockReturnValue({ data: [] });
   mockUseProjectSpecialists.mockReturnValue({ data: [] });
   mockUseTaskSwarm.mockReturnValue({ data: undefined });
+  mockUseArtifactContent.mockReturnValue({ data: undefined, isLoading: false });
 });
 
 afterEach(cleanup);
@@ -155,5 +158,31 @@ describe('project context inspector（批次 F 三层信息架构）', () => {
     expect(screen.getByText('班底与打法')).toBeInTheDocument();
     const summary = screen.getByText('班底与打法').closest('summary')!;
     expect(summary.parentElement?.open).toBe(false);
+  });
+
+  it('批次F.3：产物条目点击在右栏打开预览（?preview= 驱动，图片走安全端点），关闭即移除', () => {
+    mockUseArtifacts.mockReturnValue({
+      data: [{ id: 'a1', kind: 'screenshot', path: 'shots/demo.png', ownerAgentId: null, mergeStrategy: 'staging', props: {}, createdTaskId: null }],
+    });
+    renderInspector();
+    fireEvent.click(screen.getByTitle('右栏预览 shots/demo.png'));
+    const img = screen.getByAltText('shots/demo.png') as HTMLImageElement;
+    expect(img.src).toContain('/api/projects/pr_1/artifacts/preview/shots/demo.png');
+    expect(screen.getByText('👁 demo.png')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '关闭预览' }));
+    expect(screen.queryByAltText('shots/demo.png')).not.toBeInTheDocument();
+  });
+
+  it('批次F.3：Markdown 预览走 content 端点渲染正文', () => {
+    mockUseArtifactContent.mockReturnValue({ data: { path: 'docs/readme.md', content: '# 预览标题' }, isLoading: false });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={['/?preview=docs/readme.md']}>
+          <ProjectContextInspector projectId="pr_1" agents={[agent]} tasks={[workOrder]} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    expect(screen.getByText('预览标题')).toBeInTheDocument();
   });
 });
