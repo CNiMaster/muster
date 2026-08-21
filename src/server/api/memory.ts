@@ -60,8 +60,11 @@ memoryRouter.get('/entries', asyncHandler(async (req, res) => {
   const profileId = param(req, 'profileId');
   const query = z.string().optional().parse(req.query.query);
   const projectId = z.string().optional().parse(req.query.projectId);
+  // 经验库 pull（X3）：tag/cause 过滤参数透传检索层（注入路径不消费）
+  const tag = z.string().optional().parse(req.query.tag);
+  const cause = z.enum(['model', 'method', 'context', 'tool']).optional().parse(req.query.cause);
   if (query?.trim()) {
-    res.json(searchMemory(getDb(), { profileId, query, projectId }));
+    res.json(searchMemory(getDb(), { profileId, query, projectId, ...(tag ? { tag } : {}), ...(cause ? { cause } : {}) }));
     return;
   }
   const scope = scopeSchema.optional().parse(req.query.scope);

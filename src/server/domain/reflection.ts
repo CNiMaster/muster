@@ -21,7 +21,7 @@ import { log } from '../logger';
 import { callLlm } from './llm-call';
 import { getTask, type Task } from './task';
 import { getAgent } from './agent';
-import { createMemoryCandidate, searchMemory } from './memory';
+import { createMemoryCandidate, searchMemory, expandMatchTokens } from './memory';
 import { ensurePersonaArchiveProfile } from './agent-profile';
 import { getPersona } from './persona-library';
 import { evolveBlueprint } from './blueprint';
@@ -249,7 +249,69 @@ export async function drainReflectionQueue(
   // WP3 系统自建专家：反思排水的同一 tick 顺带检查专家沉淀信号（≤2 张候选；
   // 全程 try/catch 不抛——沉淀是增值不是主流程；失败下次 tick 再来）。
   await maybeSynthesizeExpertCandidates(db);
+  // 经验库（X2）：跨项目晋升——project LESSON 在 ≥2 项目独立出现且高重叠 → workspace 晋升候选
+  //（pending 走既有审核，不自动入库——守 postmortem 自辩悖论边界：系统只建议，人拍板）。
+  try {
+    maybePromoteCrossProjectLessons(db);
+  } catch (err) {
+    log.warn('cross-project lesson promotion failed', { error: err instanceof Error ? err.message : String(err) });
+  }
   return { processed: rows.length, lessons };
+}
+
+/**
+ * 经验库跨项目晋升（X2）：专项→通用的确认通道——同 cause 的 project LESSON 在 ≥2 个不同项目
+ * 独立出现、内容词元 Jaccard ≥0.4 时，产一条 workspace 晋升候选（pending 审核制，不自动生效）。
+ * 幂等：晋升候选带 fingerprint `promote:<锚条目id>`，同锚只提议一次；每 tick 最多 1 条（防刷屏）。
+ */
+export function maybePromoteCrossProjectLessons(db: DB): string | null {
+  // 近 200 条 active 的 project 记忆（含 cause/tags，正文做词元重叠）
+  const rows = db.prepare(
+    `SELECT id, profile_id, project_id, content, cause FROM memory_entry
+     WHERE scope='project' AND state='active' AND project_id IS NOT NULL
+     ORDER BY updated_at DESC LIMIT 200`,
+  ).all() as Array<{ id: string; profile_id: string; project_id: string; content: string; cause: string | null }>;
+  if (rows.length < 2) return null;
+
+  const tokensOf = (text: string): Set<string> => new Set(expandMatchTokens(text.slice(0, 300)));
+  const tokenSets = new Map<string, Set<string>>();
+  for (const r of rows) tokenSets.set(r.id, tokensOf(r.content));
+
+  for (const anchor of rows) {
+    const aTokens = tokenSets.get(anchor.id)!;
+    if (aTokens.size < 4) continue; // 太短的正文重叠无意义
+    const twin = rows.find((r) =>
+      r.id !== anchor.id
+      && r.project_id !== anchor.project_id
+      && r.cause === anchor.cause // 归因相同（含双双未归因）
+      && (() => {
+        const b = tokenSets.get(r.id)!;
+        if (b.size < 4) return false;
+        let inter = 0;
+        for (const t of aTokens) if (b.has(t)) inter += 1;
+        return inter / (aTokens.size + b.size - inter) >= 0.4; // Jaccard
+      })(),
+    );
+    if (!twin) continue;
+    // 幂等：无序对键（A↔B 与 B↔A 同键，双向只提一次；任意状态存在即不再提）
+    const fp = `promote:${[anchor.id, twin.id].sort().join(':')}`;
+    const dup = db.prepare('SELECT 1 FROM memory_candidate WHERE fingerprint=? LIMIT 1').get(fp);
+    if (dup) continue;
+    const candidate = createMemoryCandidate(db, {
+      profileId: anchor.profile_id,
+      scope: 'workspace',
+      content: `【跨项目经验】${anchor.content.slice(0, 200)}（与项目 ${twin.project_id} 的同类经验高重叠，建议升为跨项目通用）`,
+      author: 'agent',
+      confidence: 0.75, // 建议置信：双项目独立出现的经验，但留审核裁量
+      canInfluence: true,
+      fingerprint: fp,
+      cause: anchor.cause,
+      tags: ['跨项目', '晋升建议'],
+    });
+    log.info('cross-project lesson promotion suggested', { anchorId: anchor.id, twinId: twin.id, candidateId: candidate.id });
+    return candidate.id; // 每 tick cap 1
+  }
+  return null;
 }
 
 /**
@@ -343,6 +405,8 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
     '<fingerprint：domain:topic 形如 design:color，可省略>',
     '<scope: persona——仅当正文属跨项目方法论时写此行，否则省略>',
     '<persona_key: 人设id（如前端类方法论给 product/front-end-engineer 或按内容定 domain/slug）——scope 行存在时必写>',
+    '<cause: model|method|context|tool——归因：教训源于模型能力不够/做法方法不对/上下文信息缺失/工具装备问题；判断不了就省略>',
+    '<tags: 逗号分隔的领域/任务类型标签（如"前端,部署"），便于日后按标签检索；可省略>',
     '<经验正文 50-150 字>',
     '[RULE]',
     '<置信度 0-1 的小数>',
@@ -425,6 +489,8 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
       canInfluence: true,
       allowAutoApprove: true,
       fingerprint: lesson.fingerprint,
+      cause: lesson.cause,
+      tags: lesson.tags,
     });
     lessonCandidateId = candidate.id;
   } else if (!isEphemeralBee && lesson.body) {
@@ -439,6 +505,8 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
       canInfluence: true,
       allowAutoApprove: lesson.confidence >= 0.8,
       fingerprint: lesson.fingerprint,
+      cause: lesson.cause,
+      tags: lesson.tags,
     });
     lessonCandidateId = candidate.id;
   }
@@ -521,14 +589,14 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
  * 格式：[SECTION] 头 → 置信度行 → 正文行。置信度缺省 0.7，正文截断 500 字。
  * 找不到段头或正文为 SKIPPED/空 → 返回空 body（表示该类无沉淀）。
  */
-function parseSection(text: string, section: 'LESSON' | 'RULE' | 'PREFERENCE' | 'CRAFT'): { confidence: number; fingerprint: string | null; body: string; scopeSuggestion: 'project' | 'persona' | null; scopePersonaKey: string | null } {
+function parseSection(text: string, section: 'LESSON' | 'RULE' | 'PREFERENCE' | 'CRAFT'): { confidence: number; fingerprint: string | null; body: string; scopeSuggestion: 'project' | 'persona' | null; scopePersonaKey: string | null; cause: import('./memory').MemoryCause | null; tags: string[] } {
   const re = new RegExp(`\\[${section}\\]\\s*([\\s\\S]*?)(?=\\[(?:LESSON|RULE|PREFERENCE|CRAFT)\\]|$)`, 'i');
   const match = re.exec(text);
-  if (!match) return { confidence: 0.7, fingerprint: null, body: '', scopeSuggestion: null, scopePersonaKey: null };
+  if (!match) return { confidence: 0.7, fingerprint: null, body: '', scopeSuggestion: null, scopePersonaKey: null, cause: null, tags: [] };
   const block = match[1]!.trim();
-  if (!block || /^SKIPPED/i.test(block)) return { confidence: 0.7, fingerprint: null, body: '', scopeSuggestion: null, scopePersonaKey: null };
+  if (!block || /^SKIPPED/i.test(block)) return { confidence: 0.7, fingerprint: null, body: '', scopeSuggestion: null, scopePersonaKey: null, cause: null, tags: [] };
   const lines = block.split('\n').filter((l) => l.trim());
-  if (lines.length === 0) return { confidence: 0.7, fingerprint: null, body: '', scopeSuggestion: null, scopePersonaKey: null };
+  if (lines.length === 0) return { confidence: 0.7, fingerprint: null, body: '', scopeSuggestion: null, scopePersonaKey: null, cause: null, tags: [] };
   let confidence = 0.7;
   let body = block;
   const firstNum = parseFloat(lines[0]!);
@@ -557,10 +625,27 @@ function parseSection(text: string, section: 'LESSON' | 'RULE' | 'PREFERENCE' | 
       }
     }
   }
+  // 经验库（X2）：<cause: …> 与 <tags: …> 可选行（紧跟 scope 行后；非法 cause 视为未归因不阻断）
+  let cause: import('./memory').MemoryCause | null = null;
+  let tags: string[] = [];
+  if (bodyLines.length > 0) {
+    const cm = /^<\s*cause\s*:\s*([a-z]+)\s*>$/i.exec(bodyLines[0]!.trim());
+    if (cm && (['model', 'method', 'context', 'tool'] as const).includes(cm[1]!.toLowerCase() as never)) {
+      cause = cm[1]!.toLowerCase() as import('./memory').MemoryCause;
+      bodyLines = bodyLines.slice(1);
+    }
+  }
+  if (bodyLines.length > 0) {
+    const tm = /^<\s*tags\s*:\s*(.+?)\s*>$/i.exec(bodyLines[0]!.trim());
+    if (tm) {
+      tags = tm[1]!.split(/[,，]/).map((t) => t.trim().toLowerCase()).filter(Boolean).slice(0, 5);
+      bodyLines = bodyLines.slice(1);
+    }
+  }
   body = bodyLines.join('\n').trim();
   body = body.slice(0, 500);
-  if (!body || /^SKIPPED/i.test(body)) return { confidence: 0.7, fingerprint: null, body: '', scopeSuggestion: null, scopePersonaKey: null };
-  return { confidence, fingerprint, body, scopeSuggestion, scopePersonaKey };
+  if (!body || /^SKIPPED/i.test(body)) return { confidence: 0.7, fingerprint: null, body: '', scopeSuggestion: null, scopePersonaKey: null, cause: null, tags: [] };
+  return { confidence, fingerprint, body, scopeSuggestion, scopePersonaKey, cause, tags };
 }
 
 /**

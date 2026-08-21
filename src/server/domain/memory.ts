@@ -8,6 +8,20 @@ export type MemoryScope = 'personal' | 'workspace' | 'project' | 'skill';
 export type MemoryCandidateStatus = 'pending' | 'approved' | 'rejected';
 export type MemoryEntryState = 'active' | 'locked' | 'superseded' | 'deleted';
 
+/** 经验归因受控词表（spec 2026-08-22-experience-library）：模型能力/方法/上下文/工具——四路由下游各取所需。 */
+export const MEMORY_CAUSES = ['model', 'method', 'context', 'tool'] as const;
+export type MemoryCause = (typeof MEMORY_CAUSES)[number];
+
+export function isMemoryCause(value: unknown): value is MemoryCause {
+  return typeof value === 'string' && (MEMORY_CAUSES as readonly string[]).includes(value);
+}
+
+/** 标签归一化：小写 trim 去空，cap 5（受控词表为主自由标签为辅——防自由标签泛滥）。 */
+export function normalizeMemoryTags(tags: unknown): string[] {
+  if (!Array.isArray(tags)) return [];
+  return [...new Set(tags.filter((t): t is string => typeof t === 'string').map((t) => t.trim().toLowerCase()).filter(Boolean))].slice(0, 5);
+}
+
 export interface MemoryCandidate {
   id: string;
   profileId: string;
@@ -29,6 +43,10 @@ export interface MemoryCandidate {
   fingerprint: string | null;
   /** 蓝图组织批次1：人设键（skill scope 的方法论归属，如 'product/product-manager'）；仅 skill scope 允许非空。 */
   personaKey: string | null;
+  /** 经验归因（受控四值；null=未归因，旧数据兼容）。 */
+  cause: MemoryCause | null;
+  /** 自由标签（小写归一化 cap 5；pull 检索用）。 */
+  tags: string[];
 }
 
 export interface MemoryEntry {
@@ -54,6 +72,10 @@ export interface MemoryEntry {
   voteCount: number;
   /** 记忆优势分：优势分累计（每票 = 项目基线 − 任务消耗）。 */
   advSum: number;
+  /** 经验归因（受控四值；null=未归因，旧数据兼容）。 */
+  cause: MemoryCause | null;
+  /** 自由标签（小写归一化 cap 5；pull 检索用，push 注入不消费）。 */
+  tags: string[];
 }
 
 type CandidateRow = {
@@ -62,6 +84,7 @@ type CandidateRow = {
   confidence: number; can_influence: number; status: MemoryCandidateStatus; quarantine_reason: string | null;
   expires_at: string | null; reviewed_by: string | null; reviewed_at: string | null; created_at: string;
   fingerprint: string | null; persona_key: string | null;
+  cause: string | null; tags_json: string;
 };
 type EntryRow = {
   id: string; profile_id: string; scope: MemoryScope; project_id: string | null;
@@ -69,6 +92,7 @@ type EntryRow = {
   source_candidate_id: string | null; expires_at: string | null; created_at: string; updated_at: string;
   fingerprint: string | null; persona_key: string | null;
   hit_count: number; vote_count: number; adv_sum: number;
+  cause: string | null; tags_json: string;
 };
 
 function candidateFromRow(_db: DB, row: CandidateRow): MemoryCandidate {
@@ -79,6 +103,8 @@ function candidateFromRow(_db: DB, row: CandidateRow): MemoryCandidate {
     quarantineReason: row.quarantine_reason, expiresAt: row.expires_at, reviewedBy: row.reviewed_by,
     reviewedAt: row.reviewed_at, createdAt: row.created_at, fingerprint: row.fingerprint,
     personaKey: row.persona_key ?? null,
+    cause: isMemoryCause(row.cause) ? row.cause : null,
+    tags: normalizeMemoryTags(JSON.parse(row.tags_json ?? '[]')),
   };
 }
 
@@ -90,6 +116,8 @@ function entryFromRow(_db: DB, row: EntryRow): MemoryEntry {
     fingerprint: row.fingerprint,
     personaKey: row.persona_key ?? null,
     hitCount: row.hit_count, voteCount: row.vote_count, advSum: row.adv_sum,
+    cause: isMemoryCause(row.cause) ? row.cause : null,
+    tags: normalizeMemoryTags(JSON.parse(row.tags_json ?? '[]')),
   };
 }
 
@@ -101,6 +129,10 @@ export function createMemoryCandidate(db: DB, input: {
   fingerprint?: string | null;
   /** 蓝图组织批次1：人设键——skill scope 的方法论归属（如 'product/product-manager'）。仅 skill scope 允许。 */
   personaKey?: string;
+  /** 经验归因（受控四值；非法值视为未归因，不阻断写入）。 */
+  cause?: MemoryCause | string | null;
+  /** 自由标签（归一化 cap 5）。 */
+  tags?: string[];
 }): MemoryCandidate {
   getAgentProfile(db, input.profileId);
   validateScope(input.scope, input.projectId);
@@ -113,16 +145,18 @@ export function createMemoryCandidate(db: DB, input: {
   const quarantineReason = scanMemoryContent(content);
   const id = shortId('mc_');
   const now = nowIso();
+  const cause = isMemoryCause(input.cause) ? input.cause : null;
+  const tags = normalizeMemoryTags(input.tags);
   db.prepare(
     `INSERT INTO memory_candidate (
       id, profile_id, scope, project_id, content, source_task_id, source_message_id,
-      author, confidence, can_influence, status, quarantine_reason, expires_at, created_at, fingerprint, persona_key
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)`,
+      author, confidence, can_influence, status, quarantine_reason, expires_at, created_at, fingerprint, persona_key, cause, tags_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id, input.profileId, input.scope, input.projectId ?? null, content,
     input.sourceTaskId ?? null, input.sourceMessageId ?? null, input.author, input.confidence,
     input.canInfluence ? 1 : 0, quarantineReason, input.expiresAt ?? null, now, input.fingerprint ?? null,
-    input.personaKey ?? null,
+    input.personaKey ?? null, cause, JSON.stringify(tags),
   );
   const canAutoApprove = !quarantineReason && input.allowAutoApprove === true && (
     input.scope === 'project'
@@ -159,12 +193,12 @@ export function approveMemoryCandidate(db: DB, id: string, reviewer: string): Me
     db.prepare(
       `INSERT INTO memory_entry (
         id, profile_id, scope, project_id, content, version, state,
-        can_influence, source_candidate_id, expires_at, created_at, updated_at, fingerprint, persona_key
-      ) VALUES (?, ?, ?, ?, ?, 1, 'active', ?, ?, ?, ?, ?, ?, ?)`,
+        can_influence, source_candidate_id, expires_at, created_at, updated_at, fingerprint, persona_key, cause, tags_json
+      ) VALUES (?, ?, ?, ?, ?, 1, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       entryId, candidate.profileId, candidate.scope, candidate.projectId,
       candidate.content, candidate.canInfluence ? 1 : 0, candidate.id, candidate.expiresAt, now, now, candidate.fingerprint,
-      candidate.personaKey,
+      candidate.personaKey, candidate.cause, JSON.stringify(candidate.tags),
     );
     insertMemoryVersion(db, entryId, 1, candidate.content, reviewer, candidate.id, now);
     indexMemory(db, entryId, candidate.profileId, candidate.content);
@@ -258,9 +292,17 @@ export function preservePersonaCraftMemories(db: DB, fromProfileId: string): num
 
 export function searchMemory(db: DB, input: {
   profileId: string; query: string; projectId?: string; limit?: number;
+  /** 经验库 pull：按标签过滤（小写归一化精确匹配 tags_json 元素）。 */
+  tag?: string;
+  /** 经验库 pull：按归因过滤（受控四值）。 */
+  cause?: MemoryCause;
 }): MemoryEntry[] {  const query = input.query.trim();
   if (!query) return [];
   const now = nowIso();
+  // 经验库 pull 过滤（spec 2026-08-22）：tag/cause 只作用于检索，注入路径（loadContextMemories）不消费。
+  const causeFilter = isMemoryCause(input.cause) ? input.cause : null;
+  // 标签值进 LIKE 模式：白名单字符（防 %/_ 通配与引号注入）；归一化后为空则不过滤
+  const tagFilter = (input.tag ?? '').trim().toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff_-]/g, '');
   const rows = db.prepare(
     `SELECT DISTINCT m.* FROM memory_entry m
      WHERE m.state IN ('active','locked')
@@ -273,10 +315,15 @@ export function searchMemory(db: DB, input: {
          OR (m.scope='project' AND m.profile_id=? AND m.project_id=?)
        )
        AND (m.content LIKE ? OR m.id IN (SELECT entry_id FROM memory_fts WHERE memory_fts MATCH ?))
+       AND (? IS NULL OR m.cause = ?)
+       AND (? = '' OR m.tags_json LIKE ?)
      ORDER BY m.updated_at DESC LIMIT ?`,
   ).all(
     now, input.profileId, input.profileId, input.profileId, input.projectId ?? null,
-    `%${query}%`, `${escapeFtsQuery(query)}*`, Math.min(Math.max(input.limit ?? 8, 1), 50),
+    `%${query}%`, `${escapeFtsQuery(query)}*`,
+    causeFilter, causeFilter,
+    tagFilter, `%"${tagFilter}"%`,
+    Math.min(Math.max(input.limit ?? 8, 1), 50),
   ) as EntryRow[];
   return rows.map((row) => entryFromRow(db, row));
 }

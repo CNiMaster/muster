@@ -147,6 +147,10 @@ export interface MemoryEntry {
   hitCount?: number;
   voteCount?: number;
   advSum?: number;
+  /** 经验归因（受控四值 model|method|context|tool；缺省=未归因）。 */
+  cause?: 'model' | 'method' | 'context' | 'tool' | null;
+  /** 自由标签（pull 检索用，注入路径不消费）。 */
+  tags?: string[];
 }
 
 /** 员工级执行器配置（与 server AgentExecutorJson 对齐）。 */

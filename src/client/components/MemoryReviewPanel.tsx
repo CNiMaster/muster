@@ -13,6 +13,11 @@ import { Button, toast } from './Button';
 import { Card } from './Card';
 import { Select } from './Form';
 
+/** 经验归因徽章文案（受控四值，X3）。 */
+function causeLabel(cause: string): string {
+  return cause === 'model' ? '归因·模型' : cause === 'method' ? '归因·方法' : cause === 'context' ? '归因·上下文' : '归因·工具';
+}
+
 export function MemoryReviewPanel({ profileId }: { profileId: string }): React.ReactElement {
   const { data: candidates } = useMemoryCandidates(profileId);
   const { data: entries } = useMemoryEntries(profileId);
@@ -82,7 +87,13 @@ export function MemoryReviewPanel({ profileId }: { profileId: string }): React.R
         {approved.map((entry) => (
           <article key={entry.id} className="memory-item">
             <div className="memory-item-main">
-              <div><Badge tone={entry.state === 'locked' ? 'warn' : 'ok'}>{scopeLabel(entry.scope)} · v{entry.version}</Badge></div>
+              <div>
+                <Badge tone={entry.state === 'locked' ? 'warn' : 'ok'}>{scopeLabel(entry.scope)} · v{entry.version}</Badge>
+                {entry.cause && <Badge tone="info">{causeLabel(entry.cause)}</Badge>}
+                {(entry.tags ?? []).map((t) => (
+                  <span key={t} style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: 'var(--bg-soft)', color: 'var(--fg-muted)', marginLeft: 4 }}>#{t}</span>
+                ))}
+              </div>
               <p>{entry.content}</p>
               <details>
                 <summary>版本与来源</summary>
