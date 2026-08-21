@@ -290,19 +290,22 @@ export function getAgent(db: DB, id: string): AgentDefinition {
 /**
  * 列出公司员工。默认过滤 hidden 任职（系统隐形岗 + 蜂群临时工蜂）——
  * 花名册/能力路由/组织图均走此处，一处过滤全面生效；内部系统逻辑传 includeHidden。
+ * B5 中央岗：visibleIn 按分区取（如 'central' 取中央六岗——@ 下拉/群聊候选专用，hidden 不影响）。
  */
-export function listAgents(db: DB, options?: { includeHidden?: boolean }): AgentDefinition[] {
+export function listAgents(db: DB, options?: { includeHidden?: boolean; visibleIn?: string }): AgentDefinition[] {
   const rows = (
     options?.includeHidden
       ? db.prepare('SELECT * FROM agent_definition ORDER BY created_at').all()
-      : db.prepare(
-        `SELECT a.* FROM agent_definition a
-         WHERE NOT EXISTS (
-           SELECT 1 FROM company_employee ce
-           WHERE ce.legacy_agent_id = a.id AND ce.hidden = 1
-         )
-         ORDER BY a.created_at`,
-      ).all()
+      : options?.visibleIn
+        ? db.prepare('SELECT * FROM agent_definition WHERE visible_in=? ORDER BY created_at').all(options.visibleIn)
+        : db.prepare(
+          `SELECT a.* FROM agent_definition a
+           WHERE NOT EXISTS (
+             SELECT 1 FROM company_employee ce
+             WHERE ce.legacy_agent_id = a.id AND ce.hidden = 1
+           )
+           ORDER BY a.created_at`,
+        ).all()
   ) as AgentRow[];
   return rows.map((row) => withEmploymentBindings(db, fromRow(db, row)));
 }

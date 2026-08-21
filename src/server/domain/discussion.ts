@@ -23,6 +23,7 @@ import { postSystemMessage } from './conversation';
 import { createMirror, removeMirror, listMirrorsOfRoot, ensurePrimaryThread } from './thread';
 import { getWorkbench } from './workbench';
 import { BREADTH_LIMITS, taskBreadthTier } from './breadth-tier';
+import { CENTRAL_STAFF_ROLES } from './system-agents';
 
 export type DiscussionState = 'open' | 'concluding' | 'concluded' | 'closed';
 export type ParticipantRole = 'member' | 'moderator';
@@ -580,13 +581,14 @@ export function startUserDiscussion(db: DB, input: {
     if (agent.companyId !== project.companyId) {
       throw new AppError(ErrorCode.UNAUTHORIZED, `员工 ${id} 不属于项目所在公司`);
     }
-    if (agent.isSystem) {
+    // B5 双闸白名单：中央六岗（常驻群聊可被 @）放行；其余系统隐形岗仍拒（蜂群工蜂/辩手只受直属调度）
+    if (agent.isSystem && !(CENTRAL_STAFF_ROLES as readonly string[]).includes(agent.role)) {
       throw new AppError(ErrorCode.VALIDATION, `系统隐形岗（${agent.name}）不可参与探讨`);
     }
     const employment = db.prepare('SELECT hidden FROM company_employee WHERE legacy_agent_id=?').get(id) as
       | { hidden: number }
       | undefined;
-    if (employment?.hidden === 1) {
+    if (employment?.hidden === 1 && !(CENTRAL_STAFF_ROLES as readonly string[]).includes(agent.role)) {
       throw new AppError(ErrorCode.VALIDATION, `一次性执行体（${agent.name}）不可参与探讨：蜂群工蜂/辩手不进选择面，由其直属调度控制`);
     }
   }

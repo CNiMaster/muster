@@ -53,11 +53,15 @@ describe('W0 系统岗', () => {
     expect(getAgent(db, dispatcherAgentId).role).toBe(DISPATCHER_ROLE);
     expect(getAgent(db, dispatcherAgentId).isSystem).toBe(true);
 
-    // 组织模型批次二：养蜂人/人事是可见固定岗；裁决法庭保持隐形（辩论召集时出场）
+    // B5 中央六岗制：养蜂人/人事隐形（visible_in='central' 口子可取）；裁决法庭同制（辩论召集时出场）
     const visible = listAgents(db);
-    expect(visible.some((a) => a.id === dispatcherAgentId)).toBe(true);
-    expect(visible.some((a) => a.id === again.hrAgentId)).toBe(true);
+    expect(visible.some((a) => a.id === dispatcherAgentId)).toBe(false);
+    expect(visible.some((a) => a.id === again.hrAgentId)).toBe(false);
     expect(visible.some((a) => a.id === again.judgeAgentId)).toBe(false);
+    const central = listAgents(db, { visibleIn: 'central' });
+    expect(central.some((a) => a.id === dispatcherAgentId)).toBe(true);
+    expect(central.some((a) => a.id === again.hrAgentId)).toBe(true);
+    expect(central.some((a) => a.id === again.judgeAgentId)).toBe(true);
     expect(listAgents(db, { includeHidden: true }).some((a) => a.id === again.judgeAgentId)).toBe(true);
     void company;
 

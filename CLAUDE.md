@@ -8,21 +8,25 @@ Muster is a local multi-agent workbench. Persistent agents collaborate through p
 
 **Agent personas and skills** — 3 local personas plus 200+ domain experts integrated from [jnMetaCode/agency-agents-zh](https://github.com/jnMetaCode/agency-agents-zh) into `personas/`. 20 skills from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) in `skills/`.
 
-## 组织与名词（2026-08-19 定案，全库统一）
+## 组织与名词（2026-08-19 定案；B5 中央六岗制 2026-08-22 修订）
 
 **命名原则**：不造概念，优先行业通用叫法（英文直译行业可懂）；无行业标准词的概念由用户定名。旧词已废弃：特派员/特工/锦衣卫/蜂王/变身（→穿戴人设）；「分身」保留但仅指讨论室 mirror。
 
-**四固定岗（全部对用户可见）**：
+**B5 中央六岗制（一个人就是一个公司）**：用户只对**负责人**说话；六中央职能全隐形（`hidden=1 + visible_in='central'`，`GET /api/agents?visible_in=central` 口子供 @ 下拉/群聊候选；讨论双闸按 `CENTRAL_STAFF_ROLES` 白名单放行；中央岗+负责人互写 contactAllow 种子）。"人"隐形"事"可见：右侧三卡（专家池 `specialist_pool` / 蜂群拓扑 `swarm_run` / 验收进度 `acceptanceCriteria`）非人员源常驻。
 
 | 岗位 | 英文 | 职责 | 代码现状 |
 |---|---|---|---|
-| 负责人 | Lead | 用户单一接口，随时待命沟通；协调撤销/插话；定时/清单/随行讨论 | `project.firstAgentId` ✓；批次三已交付：定时 once 模式（倒计时/指定时刻，执行一次即停）+项目级定时单默认派负责人（`3d0bf85`）、项目任务清单（逐项执行，验收 PASS 自动解锁下一条，`checklist.ts`，`247c103`）、随行讨论收口「转为任务」+TaskTopBar 取消/暂停撤销入口（`d7ff7c0`） |
-| 养蜂人 | Beemaster | 放三种蜂：普通工蜂/同种专家蜂群/临时专家组；需要专家时从专家库取用或让人事专项设计 | **批次二已转可见**（role=`swarm-dispatcher` 不变，`ensureOne` visible 幂等自愈 unhide + 迁移 20260819000900；能力路由排除系统岗 agent-router.ts） |
-| 人事 | HR | 专家组织岗：维护专家库、创建专家（人造人）、按任务分派（用户自建且上岗中优先）、只加不减 | **批次二已建**（role=`hr` 可见系统岗；`staffingPlan {specialists[]}` done 契约 → engine 兑现 `materializeStaffingPlan`；上下文注入专家池清单+人设库索引） |
-| 验收员 | Reviewer | 质量验收 | `acceptance-officer.ts` ✓ |
-| 自动化管家 | Automation Steward | 平台自动化固定岗：对话创建自动化、组织编排（定时/循环）；仅在自动化页可见 | `system-agents.ts` ensureAutomationStewardAgentId（role=`automation-steward`，visible_in='automation'）|
+| 负责人 | Lead | 用户单一接口（**唯一可见入口**），随时待命沟通；协调撤销/插话；定时/清单/随行讨论；@负责人 关键词服务端扇出 | `project.firstAgentId` ✓；定时 once 模式（`3d0bf85`）、项目任务清单（`checklist.ts`，`247c103`）、随行讨论收口（`d7ff7c0`）、conversation.ts LEAD_MENTION_KEYWORDS |
+| 养蜂人 | Beemaster | 放三种蜂：普通工蜂/同种专家蜂群/临时专家组；蜂群三限随根任务 breadthTier 钳制 | role=`swarm-dispatcher`（B5 隐形+visible_in='central'；swarm.ts clampSwarmLimits；蜂/替补继承档位） |
+| 人事 | HR | 专家组织岗：维护专家库、创建专家、按任务分派、只加不减 | role=`hr`（B5 隐形+central；`staffingPlan` done 契约 → engine 兑现；缺专家向负责人建议） |
+| 能力管理 | Capability Manager | 装备供给：任务级工具链决议（热路径纯代码 `tool-chain.ts`：默认套装+绑定/人设/蓝图/常用四层+质量挑战）；缺口冷路径 [装备请示] 只产建议不自动安装 | role=`capability-manager`（B3 建，B5 标 central；engine precheck 后 resolveToolChain） |
+| 验收员 | Reviewer | 质量验收+意图守护；返工轮次随档位（轻1/中2/重3） | `acceptance-officer.ts`（B5 隐形+central，is_inspector 不可删；PASS 按 finalReturnAgentId 回流播报） |
+| 裁决法庭 | Judge | 对抗辩论裁决，置信≥阈值自动采纳、低置信升级用户；负责人不参与裁决 | role=`debate-judge`（B5 central——群聊常驻可被 @） |
+| 自动化管家 | Automation Steward | 平台自动化固定岗：对话创建自动化；仅在自动化页可见 | `system-agents.ts`（role=`automation-steward`，visible_in='automation'）|
 
-**隐形岗**：裁决法庭（Judge，原「评审中心」，role=`debate-judge` 不变）——对抗辩论裁决，置信≥阈值自动采纳、低置信升级用户；负责人不参与裁决。
+**任务链双指向（B1）**：`下一个给谁`可改（outboundTasks reason/division → 子任务 chainReason/chainDivision，默认下一跳=验收员）；`验收后最终给谁`（inputProtocol.finalReturnAgentId）链头不可改（下游覆盖 → final_return_violation 留痕）；chainHistory 封顶 20（提示词压缩为 chainPath 标题路径）；[子任务完成] 回写直接请求者；意图契约 intentAnchor/nonGoals/failurePolicy 随链继承（postUserMessage 自动填 goal）。
+
+**三档广深（B2）**：`breadthTier light|standard|heavy`（inputProtocol 或系统设置 breadth_default_tier 默认 standard）——只限天花板不绑模型：轻 1槽/蜂1·3·4/验收1轮/讨论6轮，中 3槽/2·5·12/2轮/12轮，重 4槽/3·8·30/3轮/20轮；蜂群取 min(全局,档位)，预算不钳；watchdog 超时不联动。
 
 **执行层（非固定）**：工蜂（Worker，一次性即焚）/ 专家（Specialist，项目池复用+三级阶梯：临时创建→项目合同工 Contractor→常驻专家 Staff Specialist）/ 辩手（一次性）。专家并发默认不排队（认证执行器全 parallel；排队仅执行器档案配串行时——执行器属性非专家属性）。
 

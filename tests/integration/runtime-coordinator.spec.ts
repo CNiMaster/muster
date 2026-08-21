@@ -58,8 +58,8 @@ describe('ProjectRuntimeCoordinator', () => {
 
     await coordinator.tick({ pump: false });
 
-    // 组织模型批次二：养蜂人/人事转可见固定岗后同样补线程（5 员工 + 2 可见系统岗 = 7）
-    expect(listThreads(db, project.id)).toHaveLength(7);
+    // B5 中央六岗制：养蜂人/人事隐形后不再按可见花名册补线程（派发侧 ensurePrimaryThread 懒建兜底）
+    expect(listThreads(db, project.id)).toHaveLength(5);
     const planning = listTasks(db, project.id).filter((task) => task.title.startsWith('[规划]'));
     expect(planning).toHaveLength(1);
   });

@@ -59,13 +59,14 @@ function completeReviewTask(reviewTaskId: string, summary: string): void {
 }
 
 describe('ensureAcceptanceOfficer 验收员实体', () => {
-  it('幂等创建；花名册可见；is_inspector 不可删除；经理档', () => {
+  it('幂等创建；B5 起隐形（visible_in=central）；is_inspector 不可删除；经理档', () => {
     const { c } = seed();
     const first = ensureAcceptanceOfficer(db, c.id);
     expect(ensureAcceptanceOfficer(db, c.id)).toBe(first);
 
-    const roster = listAgents(db, c.id);
-    const officer = roster.find((a) => a.id === first);
+    // B5：花名册不可见；中央口子可取
+    expect(listAgents(db, c.id).some((a) => a.id === first)).toBe(false);
+    const officer = listAgents(db, { visibleIn: 'central' }).find((a) => a.id === first);
     expect(officer).toBeDefined();
     expect(officer!.role).toBe(ACCEPTANCE_OFFICER_ROLE);
     expect(officer!.name).toBe(ACCEPTANCE_OFFICER_NAME);
@@ -84,8 +85,9 @@ describe('ensureAcceptanceOfficer 验收员实体', () => {
     db.prepare("UPDATE workbench SET state='online' WHERE id=?").run(c.id);
     const officerId = ensureAcceptanceOfficer(db, c.id);
     expect(officerId).toMatch(/^ag_/);
-    // 可见（未 hidden）
-    expect(listAgents(db, c.id).some((a) => a.id === officerId)).toBe(true);
+    // B5：隐形（未 hidden 断言翻面——验收进度在右侧卡与播报可见）
+    expect(listAgents(db, c.id).some((a) => a.id === officerId)).toBe(false);
+    expect(listAgents(db, { visibleIn: 'central' }).some((a) => a.id === officerId)).toBe(true);
     // 触发链路在 online 态完整可用
     const task = taskWithCriteria(p.id, lead.id);
     const reviewTask = maybeTriggerAcceptanceReview(db, task);

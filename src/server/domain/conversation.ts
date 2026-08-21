@@ -296,7 +296,19 @@ export function postUserMessage(db: DB, input: PostUserMessageInput): {
     }
   }
 
-  const mentionedAgents = [...new Set(input.mentions ?? [])].map((agentId) => {    const agent = getAgent(db, agentId);
+  // B5 @负责人 关键词扇出：服务端展开为全部 lead 岗（当前单负责人；未来多负责人自动生效）。
+  // 前端按 name 匹配不认关键词，故在此展开后统一走 id 校验。
+  const LEAD_MENTION_KEYWORDS = new Set(['@负责人', '负责人', '@所有负责人', '所有负责人', 'lead', '@lead']);
+  const mentionTokens = [...new Set(input.mentions ?? [])];
+  const directMentionIds = mentionTokens.filter((t) => !LEAD_MENTION_KEYWORDS.has(t));
+  for (const token of mentionTokens) {
+    if (!LEAD_MENTION_KEYWORDS.has(token)) continue;
+    const leads = db
+      .prepare("SELECT id FROM agent_definition WHERE role='lead' AND is_system=0")
+      .all() as Array<{ id: string }>;
+    for (const l of leads) directMentionIds.push(l.id);
+  }
+  const mentionedAgents = [...new Set(directMentionIds)].map((agentId) => {    const agent = getAgent(db, agentId);
     if (agent.companyId !== companyId) {
       throw new AppError(ErrorCode.VALIDATION, `@员工 ${agentId} 不属于当前公司`);
     }

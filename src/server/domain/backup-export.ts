@@ -38,7 +38,8 @@ export function exportMusterBackup(db: DB): MusterBackup {
         contractJson: wb.contractJson,
         archivedAt: null,
         departments: listDepartments(db).map((d) => ({ name: d.name, rules: d.rules })),
-        employees: listAgents(db).map((a) => ({
+        // B5 观测修复：备份含隐形中央岗——否则导出丢员工（恢复后验收链路断人）
+        employees: listAgents(db, { includeHidden: true }).map((a) => ({
           profileId: a.profileId,
           departmentName: a.departmentId ? listDepartments(db).find((d) => d.id === a.departmentId)?.name ?? null : null,
           name: a.name,

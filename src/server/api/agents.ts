@@ -53,7 +53,9 @@ agentsRouter.get(
     if (getWorkbenchOrNull(db)) {
       ensureWorkspaceStaff(db);
     }
-    res.json(listAgents(db));
+    // B5 中央岗口子：?visible_in=central 取六岗（hidden 不影响）——@ 下拉/群聊候选专用
+    const visibleIn = typeof req.query.visible_in === 'string' && req.query.visible_in.trim() ? req.query.visible_in.trim() : undefined;
+    res.json(listAgents(db, visibleIn ? { visibleIn } : undefined));
   }),
 );
 

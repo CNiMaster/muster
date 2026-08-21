@@ -239,7 +239,8 @@ workbenchRouter.get(
     const db = getDb();
     const companyId = companyIdOf(req);
     const departments = listDepartments(db);
-    const agents = listAgents(db);
+    // B5 观测修复：驾驶舱按 includeHidden 统计——隐形中央岗计入在岗人数
+    const agents = listAgents(db, { includeHidden: true });
     // 工作台所有项目下的线程与活跃 Task
     const threads = db
       .prepare(

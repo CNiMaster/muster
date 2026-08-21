@@ -94,7 +94,8 @@ function nextCycleNo(db: DB, projectId: string): number {
  */
 function buildSummary(db: DB, projectId: string): Record<string, unknown> {
   const project = getProject(db, projectId);
-  const agents = listAgents(db);
+  // B5 观测修复：报表按 includeHidden 聚合——隐形中央岗（如验收员）的活动不从运营报表消失
+  const agents = listAgents(db, { includeHidden: true });
   const tasks = listTasks(db, projectId);
   const byAgent = new Map<string, { completed: number; blocked: number; summaries: string[] }>();
 

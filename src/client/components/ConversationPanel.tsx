@@ -11,7 +11,7 @@
 import type React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useMessages, usePostMessage, useAgents, useTaskOnce, useTaskAction, materialRawUrl, type ConversationMessage } from '../hooks/queries';
+import { useMessages, usePostMessage, useAgents, useCentralAgents, useTaskOnce, useTaskAction, materialRawUrl, type ConversationMessage } from '../hooks/queries';
 import { onStreamDelta } from '../realtime';
 import { Badge } from './Badge';
 import { Button } from './Button';
@@ -38,6 +38,8 @@ export interface ConversationPanelProps {
 export function ConversationPanel({ scope, scopeId, title, recipientAgentId, projectTaskId, hideInput = false, fill = false, onConvertToTask }: ConversationPanelProps): React.ReactElement {
   const { data: messages, isLoading } = useMessages(scope, scopeId, recipientAgentId);
   const { data: agents } = useAgents();
+  // B5 中央岗：@ 下拉并入六岗（hidden 不影响；用户可与中央职能直接说话）
+  const { data: centralAgents } = useCentralAgents();
   const post = usePostMessage(scope, recipientAgentId);
   const [text, setText] = useState('');
   const [showMentions, setShowMentions] = useState(false);
@@ -130,7 +132,16 @@ export function ConversationPanel({ scope, scopeId, title, recipientAgentId, pro
   };
 
   const recipient = (agents ?? []).find((agent) => agent.id === recipientAgentId);
-  const mentionCandidates = recipientAgentId ? [] : (agents ?? []).filter((a) => a.name.includes(mentionFilter));
+  // B5：可见花名册 + 中央六岗（去重；中央岗带角色标签便于识别）
+  const rosterPlus = (() => {
+    const base = agents ?? [];
+    const seen = new Set(base.map((a) => a.id));
+    const extra = (centralAgents ?? []).filter((a) => !seen.has(a.id));
+    return [...base, ...extra];
+  })();
+  const mentionCandidates = recipientAgentId
+    ? []
+    : rosterPlus.filter((a) => a.name.includes(mentionFilter) || a.role.includes(mentionFilter));
 
   return (
     <div className={`mu-conv${fill ? ' is-fill' : ''}`}>
