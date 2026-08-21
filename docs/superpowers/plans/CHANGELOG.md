@@ -23,11 +23,11 @@
 
 ### 2026-08-19 组织与名词统一
 
-详见 CLAUDE.md「组织与名词（2026-08-19 定案）」章，四固定岗 + 隐形岗 + 记忆四体系。
+详见 `docs/superpowers/specs/org-model.md`（四固定岗 + 隐形岗 + 记忆四体系）。
 
 ### 2026-08-18 公司概念退役 A+B+C+D | 项目/任务管理工作台（批1-4）
 
-见 `docs/superpowers/plans/2026-08-20-workspace-governance.md` 前身与 `CLAUDE.md` 当时小传。
+见 `docs/superpowers/plans/2026-08-20-workspace-governance.md` 与 `docs/superpowers/specs/architecture.md`。
 
 ### 2026-08-16 UI 重构 / 蓝图打法包 + 蜂群 | 六问 / 补缺 R1-R3 等早期批次 | staging / 执行器池
 

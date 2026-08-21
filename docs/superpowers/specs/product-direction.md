@@ -19,4 +19,12 @@ Muster is a persistent, project-driven local Agent workbench. The former one-sho
 9. 并发操作不得静默覆盖或丢失项目文件。
 10. 题材域保留小说（novel）预设；Multi-tenant SaaS / payments / 全量文档编辑不在本地成品边界。
 
-详见 `docs/superpowers/specs/2026-07-11-platform-workspace-agent-memory-templates-design.md`、`docs/superpowers/plans/2026-07-11-vnext-guided-workspace-foundation.md` 等。
+## 权威规划文档
+
+- `docs/superpowers/specs/2026-07-11-platform-workspace-agent-memory-templates-design.md` — vNext workspace/记忆/执行器/权限/模板/UX 总设计
+- `docs/superpowers/plans/2026-07-11-vnext-guided-workspace-foundation.md` — workspace/onboarding 地基（已交付验证）
+- `docs/superpowers/plans/2026-07-11-vnext-agent-profile-memory.md` — Agent Profile / Agent Home / 分层记忆 / 上下文恢复（已交付验证）
+- `docs/superpowers/specs/2026-08-12-settings-overhaul-design.md` — 系统设置四域
+- `docs/superpowers/specs/2026-08-14-capability-marketplace-design.md` — 能力商城
+- `docs/superpowers/specs/2026-08-14-command-system-design.md` — 指挥系统（定时/蜂群/评审庭）
+- `docs/agent-company-implementation-checklist.md` — 历史实现清单与验收记录

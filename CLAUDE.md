@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> 本文件 120–150 行薄契约：怎么启动、怎么验证、当前默认行为。碰到某域再跳对应专文，不在热上下文里叠全文。
+> 本文件是热上下文薄契约（~80 行）：怎么启动、怎么验证、当前默认行为。碰到某域再跳对应专文，不在热上下文里叠全文。
 
 ## About Muster
 
@@ -23,24 +23,30 @@ All real work belongs to a Project；平台管确定性，不抢语义决策；�
 ## Commands
 
 ```bash
+npm install              # 依赖（better-sqlite3 / react / vitest / playwright 等）
 npm run dev              # tsx watch，Express + Vite
+npm start                # 生产模式 node dist/server/server.js（需先 build）
 npm run typecheck        # tsc 全量
 npm test                 # vitest 全量
 npm run test:e2e         # playwright
 npm run build            # dist/
 ```
 
+> 另有 `test:watch` / `test:product-acceptance`（零模型领域验收）/ `test:claude-smoke`（真实 Claude 两轮冒烟）/ `smoke`（77 项 HTTP）。
+
 > 改 capability/plugin/project-readiness 等域后，`npm run dev` 下跑一遍 `npm run smoke`（77 项）。第三方引入登记 `THIRD_PARTY_NOTICES.md`。spec/plan 头部标 `状态：proposed|implemented|rejected`；重大修复落 `docs/postmortem/NNNN-*.md`。pre-push 仅 `typecheck`，全量由 CI 兜底。
 
 ## Configuration
 
-| Variable | Default |
-|---|---|
-| `MUSTER_PORT` | `3456` |
-| `MUSTER_HOME` | `~/.muster` |
-| `CLAUDE_BIN` | `claude` |
-| `MUSTER_ALLOWED_ROOTS` | `~:/tmp` |
-| `NODE_ENV` | `production`→`dist/client`，否则 Vite |
+| Variable | Default | 说明 |
+|---|---|---|
+| `MUSTER_PORT` / `MUSTER_HOST` | `3456` / `127.0.0.1` | 端口与绑定（本地单用户） |
+| `MUSTER_HOME` | `~/.muster` | 数据目录（muster.db、worktrees/） |
+| `CLAUDE_BIN` / `MUSTER_MODEL` | `claude` / 空 | CLI 路径与显式模型标识 |
+| `MUSTER_SKIP_PERMISSIONS` | `false` | **安全**：true 时给 Agent 传 `--dangerously-skip-permissions` |
+| `MUSTER_ALLOWED_ROOTS` | `~:/tmp` | 项目目录允许根（冒号分隔） |
+| `MUSTER_TRIGGER_POLL_INTERVAL_MS` | `1000` | 定时触发器轮询间隔 |
+| `NODE_ENV` | `production`→`dist/client` | 否则挂 Vite |
 
 `SQLite` 为唯一权威源（`src/server/db/migrations/*.sql`），`Language` 中文优先。
 
@@ -56,7 +62,7 @@ npm run build            # dist/
 ## 指令入口约定（不可随意修改）
 
 - `CLAUDE.md` 为唯一主指令文件；`AGENTS.md` / `GEMINI.md` 仅 `@CLAUDE.md`，不分叉。
-- `/init` 只更新 `CLAUDE.md`。
+- `/init` 只更新 `CLAUDE.md`；其他入口文件若已有更具体内容，必须先合并回 `CLAUDE.md` 再还原为 `@CLAUDE.md`。
 
 ## Supabase 数据库迁移约定（不可随意修改）
 
