@@ -3,7 +3,8 @@ import type React from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import type { Agent, Task } from '../../api/types';
 import type { ProjectTaskDTO } from '../../hooks/queries';
-import { useArtifacts, useBlueprintMatches, useProjectSpecialists, useProjectTaskAction, useTaskSwarm, useUiMode } from '../../hooks/queries';
+import { useArtifacts, useBlueprintMatches, useProjectSpecialists, useProjectTaskAction, useTaskSwarm,
+  useProjectHealth, useUiMode } from '../../hooks/queries';
 import type { CompanyCockpitDTO } from '../../../shared/types';
 import { Badge, StateBadge, taskStateTone } from '../Badge';
 import { Button, toast } from '../Button';
@@ -95,7 +96,9 @@ export function ProjectContextInspector({
   const { data: blueprintMatches = [] } = useBlueprintMatches(selectedTask?.title);
 
   const attentionTasks = tasks.filter((task) => ATTENTION_STATES.has(task.state));
-  const attentionTotal = attentionTasks.length + (cockpit?.approvals.pending ?? 0);
+  // 批次 H.3：健康聚合（失败任务与反复重试的卡点进关注区）
+  const { data: health } = useProjectHealth(projectId);
+  const attentionTotal = attentionTasks.length + (cockpit?.approvals.pending ?? 0) + (health && health.failedCount > 0 ? 1 : 0);
 
   // 任务拆解的 Checklist（提取自 launchBrief deliverables 或 task 列表）
   const deliverables = (selectedTask?.launchBrief?.deliverables ?? []) as string[];
@@ -150,6 +153,12 @@ export function ProjectContextInspector({
               <span>处理权限审批</span>
               <span>{cockpit!.approvals.pending}</span>
             </Link>
+          )}
+          {(health?.failedCount ?? 0) > 0 && (
+            <div style={{ fontSize: '12px', display: 'flex', justifyContent: 'space-between', padding: '4px 0', color: 'var(--fg-muted)' }}>
+              <span>失败任务{health!.aggregateFailureCount > health!.failedCount ? `（累计重试 ${health!.aggregateFailureCount} 次）` : ''}</span>
+              <span>{health!.failedCount}</span>
+            </div>
           )}
         </div>
       )}

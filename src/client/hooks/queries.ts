@@ -1287,6 +1287,22 @@ export function useCreateTask() {
 }
 
 export function useProjectTasks(projectId:string|undefined){return useQuery({queryKey:['project-tasks',projectId],queryFn:()=>api.get<ProjectTaskDTO[]>(`/api/projects/${projectId}/project-tasks`),enabled:!!projectId});}
+export interface ProjectHealth {
+  projectId: string;
+  activeCount: number;
+  failedCount: number;
+  aggregateFailureCount: number;
+}
+
+/** 批次 H.3：项目任务健康（胶囊/需要你关注区；realtime task.* 事件驱动刷新）。 */
+export function useProjectHealth(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ['project-health', projectId],
+    queryFn: () => api.get<ProjectHealth>(`/api/projects/${projectId}/health`),
+    enabled: !!projectId,
+  });
+}
+
 export function useProjectTask(projectId:string|undefined,id:string|undefined){return useQuery({queryKey:['project-task',projectId,id],queryFn:()=>api.get<ProjectTaskDTO>(`/api/projects/${projectId}/project-tasks/${id}`),enabled:!!projectId&&!!id,refetchInterval:4000});}
 export function useCreateProjectTask(){const qc=useQueryClient();return useMutation({mutationFn:({projectId,...input}:{projectId:string;title:string;brief?:string;launchBrief?:ProjectLaunchBrief})=>api.post<ProjectTaskDTO>(`/api/projects/${projectId}/project-tasks`,input),onSuccess:data=>{qc.invalidateQueries({queryKey:['project-tasks',data.projectId]});qc.invalidateQueries({queryKey:['standalone-tasks']});}});}
 export function useProjectTaskAction(){const qc=useQueryClient();return useMutation({mutationFn:({projectId,id,action}:{projectId:string;id:string;action:'complete'|'archive'})=>api.post<ProjectTaskDTO>(`/api/projects/${projectId}/project-tasks/${id}/${action}`),onSuccess:data=>{qc.invalidateQueries({queryKey:['project-tasks',data.projectId]});qc.invalidateQueries({queryKey:['project-task',data.projectId,data.id]});}});}

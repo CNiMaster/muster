@@ -51,3 +51,35 @@ export function getDispatcherHealth(db: DB, dispatcherAgentId: string): Dispatch
     aggregateFailureCount,
   };
 }
+
+export interface ProjectHealth {
+  projectId: string;
+  /** 活跃任务数（queued/claimed/running/waiting_*）。 */
+  activeCount: number;
+  /** failed 终态任务数。 */
+  failedCount: number;
+  /** 全项目任务累计失败次数（识别反复重试的卡点）。 */
+  aggregateFailureCount: number;
+}
+
+/**
+ * 项目级任务健康（批次 H.3 接线——本模块自此有生产消费方：胶囊/需要你关注区）。
+ * 纯查询：state 分组 + failure_count 聚合，任务明细由前端 useTasks 自行细分。
+ */
+export function getProjectHealth(db: DB, projectId: string): ProjectHealth {
+  const row = db
+    .prepare(
+      `SELECT
+         SUM(CASE WHEN state IN ('queued','claimed','running','waiting_input','waiting_dependency') THEN 1 ELSE 0 END) AS activeCount,
+         SUM(CASE WHEN state = 'failed' THEN 1 ELSE 0 END) AS failedCount,
+         SUM(failure_count) AS aggregateFailureCount
+       FROM task WHERE project_id = ?`,
+    )
+    .get(projectId) as { activeCount: number | null; failedCount: number | null; aggregateFailureCount: number | null };
+  return {
+    projectId,
+    activeCount: row.activeCount ?? 0,
+    failedCount: row.failedCount ?? 0,
+    aggregateFailureCount: row.aggregateFailureCount ?? 0,
+  };
+}

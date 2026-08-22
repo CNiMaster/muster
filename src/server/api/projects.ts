@@ -45,6 +45,7 @@ import { getAgent } from '../domain/agent';
 import { syncAgentMemoryFiles } from '../domain/agent-home';
 import { postSystemMessage } from '../domain/conversation';
 import { stageStatus, detectOrphanWorktrees, cleanOrphanWorktrees, taskStageStatus, taskStagingBranch, discardTaskStaging } from '../worktree/manager';
+import { getProjectHealth } from '../domain/subagent-health';
 import { listProjectSpecialists } from '../domain/specialist-pool';
 import {
   promoteProjectStagingIfAny,
@@ -148,6 +149,14 @@ projectsRouter.post(
   asyncHandler(async (req, res) => {
     const body = z.object({ ids: z.array(z.string().min(1)).min(1), confirm: z.string() }).parse(req.body);
     res.json(purgeFromTrash(getDb(), body.ids, body.confirm));
+  }),
+);
+
+/** 批次 H.3：项目任务健康聚合（胶囊/需要你关注区消费，subagent-health 域接线）。 */
+projectsRouter.get(
+  '/:id/health',
+  asyncHandler(async (req, res) => {
+    res.json(getProjectHealth(getDb(), param(req, 'id')));
   }),
 );
 

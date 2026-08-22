@@ -25,6 +25,7 @@ vi.mock('../../src/client/hooks/queries', () => ({
   useArtifacts: () => mockUseArtifacts(),
   useBlueprintMatches: () => mockUseBlueprintMatches(),
   useProjectSpecialists: () => mockUseProjectSpecialists(),
+  useProjectHealth: () => ({ data: { projectId: 'p1', activeCount: 0, failedCount: 0, aggregateFailureCount: 0 } }),
   useTaskSwarm: () => mockUseTaskSwarm(),
   useArtifactContent: () => mockUseArtifactContent(),
   useProjectTaskAction: () => ({ mutate: vi.fn(), isPending: false }),
