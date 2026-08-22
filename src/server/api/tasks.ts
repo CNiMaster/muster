@@ -37,6 +37,10 @@ import { AppError, ErrorCode } from '../../shared/errors';
 import { listTaskEvents } from '../domain/task-event';
 import { listTrace, type TraceKind } from '../domain/execution-trace';
 import { listTaskMessages, addTaskMessage } from '../domain/task-message';
+import { getTaskRuntime } from '../domain/task-runtime';
+import { resolveArtifactPath } from '../domain/artifact-content';
+import { isPathAllowed } from '../paths';
+import { existsSync, statSync } from 'node:fs';
 import { getProject } from '../domain/project';
 import { realtime } from '../realtime';
 import type { TaskState } from '../../shared/types';
@@ -122,6 +126,50 @@ taskByIdRouter.get(
   '/events',
   asyncHandler(async (req, res) => {
     res.json(listTaskEvents(getDb(), param(req, 'id')));
+  }),
+);
+
+/**
+ * 批次 H.4：任务 worktree 文件直读（运行中生成物预览的取数端点）。
+ * preview trace payload.origin='worktree' 的前端 URL 指向这里；任务结束 worktree 回收后 404。
+ * 路径防线与 /artifacts/raw 同口径（resolveArtifactPath realpath + isPathAllowed 白名单 + 先校验后探存在）。
+ */
+taskByIdRouter.get(
+  '/files/*path',
+  asyncHandler(async (req, res) => {
+    const rawPath = req.params.path;
+    const joined = Array.isArray(rawPath) ? rawPath.join('/') : String(rawPath ?? '');
+    let relPath: string;
+    try {
+      relPath = decodeURIComponent(joined);
+    } catch {
+      res.status(400).json({ error: { code: 'validation', message: 'path 编码不合法' } });
+      return;
+    }
+    if (!relPath) {
+      res.status(400).json({ error: { code: 'validation', message: 'path required' } });
+      return;
+    }
+    const runtime = getTaskRuntime(getDb(), param(req, 'id'));
+    if (!runtime) {
+      res.status(404).json({ error: { code: 'not_found', message: '任务工作区不存在（可能已回收）' } });
+      return;
+    }
+    const abs = resolveArtifactPath(runtime.path, relPath);
+    if (!isPathAllowed(abs)) {
+      res.status(403).json({ error: { code: 'unauthorized', message: '路径不在允许的根目录内' } });
+      return;
+    }
+    if (!existsSync(abs) || statSync(abs).isDirectory()) {
+      res.status(404).end();
+      return;
+    }
+    if (/\.(html?|xhtml|svg)$/i.test(relPath)) {
+      res.setHeader('Content-Type', /\.svg$/i.test(relPath) ? 'image/svg+xml' : 'text/html; charset=utf-8');
+      res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline' 'self' data:; img-src 'self' data:; font-src 'self' data:; media-src 'self' data:");
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+    }
+    res.sendFile(abs);
   }),
 );
 

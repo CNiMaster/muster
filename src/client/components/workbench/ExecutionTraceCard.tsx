@@ -164,6 +164,7 @@ export function ExecutionTraceCard({ task }: { task: Task }): React.ReactElement
         {(items ?? []).map((item) => (
           <TraceRow
             key={item.id}
+            taskId={task.id}
             item={item}
             expanded={isExpanded(item)}
             onToggle={() => toggleItem(item.id)}
@@ -181,11 +182,12 @@ export function ExecutionTraceCard({ task }: { task: Task }): React.ReactElement
   );
 }
 
-function TraceRow({ item, expanded, onToggle, projectId, onPreview }: {
+function TraceRow({ item, expanded, onToggle, projectId, taskId, onPreview }: {
   item: TraceItem;
   expanded: boolean;
   onToggle: () => void;
   projectId: string;
+  taskId: string;
   onPreview: (src: string | null) => void;
 }): React.ReactElement {
   const meta = KIND_META[item.kind];
@@ -207,18 +209,19 @@ function TraceRow({ item, expanded, onToggle, projectId, onPreview }: {
           {item.truncated && <span className="muted">（已截断）</span>}
         </div>
         {item.kind === 'preview' ? (
-          <TraceDetail item={item} projectId={projectId} onPreview={onPreview} />
+          <TraceDetail item={item} projectId={projectId} taskId={taskId} onPreview={onPreview} />
         ) : (
-          expanded && <TraceDetail item={item} projectId={projectId} onPreview={onPreview} />
+          expanded && <TraceDetail item={item} projectId={projectId} taskId={taskId} onPreview={onPreview} />
         )}
       </div>
     </div>
   );
 }
 
-function TraceDetail({ item, projectId, onPreview }: {
+function TraceDetail({ item, projectId, taskId, onPreview }: {
   item: TraceItem;
   projectId: string;
+  taskId: string;
   onPreview: (src: string | null) => void;
 }): React.ReactElement | null {
   const p = item.payload as Record<string, unknown>;
@@ -243,7 +246,11 @@ function TraceDetail({ item, projectId, onPreview }: {
     return <p className="mu-trace-plain">{String(p.text ?? item.summary ?? '')}</p>;
   }
   if (item.kind === 'preview') {
-    const src = `/api/projects/${projectId}/artifacts/raw?path=${encodeURIComponent(String(p.path ?? item.summary ?? ''))}`;
+    // 批次 H.4：origin='worktree' 的预览直读任务工作区（运行中生成物；任务结束回收后 404 由 onerror 兜底）
+    const rawPath = String(p.path ?? item.summary ?? '');
+    const src = p.origin === 'worktree'
+      ? `/api/tasks/${taskId}/files/${rawPath.split('/').map(encodeURIComponent).join('/')}`
+      : `/api/projects/${projectId}/artifacts/raw?path=${encodeURIComponent(rawPath)}`;
     return (
       <img
         src={src}
