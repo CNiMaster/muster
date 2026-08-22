@@ -111,8 +111,10 @@ export function ConversationPanel({ scope, scopeId, title, recipientAgentId, pro
 
   useEffect(() => {
     if (!pinnedToBottom || !scrollRef.current) return;
+    // 跟随用瞬时滚动：smooth 动画途中会触发中间 scroll 事件（瞬时离底>60px），
+    // 造成「回到最新」按钮闪烁与 pinned 抖动；跳转按钮保留 smooth。
     if (typeof scrollRef.current.scrollTo === 'function') {
-      scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+      scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight });
     } else {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }

@@ -15,7 +15,7 @@
  */
 import { Router } from 'express';
 import { z } from 'zod';
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { asyncHandler, param } from './middleware';
 import { getDb } from '../db/client';
@@ -102,23 +102,33 @@ projectArtifactsRouter.get(
     const projectId = param(req, 'id');
     // Express 5 命名通配符按段捕获为数组（['docs','index.html']），需重新拼回路径
     const rawPath = req.params.path;
-    const relPath = decodeURIComponent(Array.isArray(rawPath) ? rawPath.join('/') : String(rawPath ?? ''));
+    const joined = Array.isArray(rawPath) ? rawPath.join('/') : String(rawPath ?? '');
+    let relPath: string;
+    try {
+      relPath = decodeURIComponent(joined);
+    } catch {
+      // 畸形百分号序列（%ZZ 等）属请求错误，不是服务器故障
+      res.status(400).json({ error: { code: 'validation', message: 'path 编码不合法' } });
+      return;
+    }
     if (!relPath) {
       res.status(400).json({ error: { code: 'validation', message: 'path required' } });
       return;
     }
     const project = getProject(db, projectId);
     const abs = resolveArtifactPath(artifactBaseDir(db, projectId, relPath), relPath);
-    if (!existsSync(abs)) {
-      res.status(404).end();
-      return;
-    }
+    // 先校验后探存在：避免用 404/404-差异探测受限路径下文件是否存在
     if (!isPathAllowed(abs)) {
       res.status(403).json({ error: { code: 'unauthorized', message: '路径不在允许的根目录内' } });
       return;
     }
-    if (/\.(html?|xhtml)$/i.test(relPath)) {
-      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    if (!existsSync(abs) || statSync(abs).isDirectory()) {
+      res.status(404).end();
+      return;
+    }
+    // HTML 与 SVG 都按文档处理：SVG 直开时内嵌 <script> 可在同源执行，是 HTML CSP 的经典旁路，同样收紧
+    if (/\.(html?|xhtml|svg)$/i.test(relPath)) {
+      res.setHeader('Content-Type', /\.(svg)$/i.test(relPath) ? 'image/svg+xml' : 'text/html; charset=utf-8');
       res.setHeader('Content-Security-Policy', PREVIEW_HTML_CSP);
       res.setHeader('X-Content-Type-Options', 'nosniff');
     }

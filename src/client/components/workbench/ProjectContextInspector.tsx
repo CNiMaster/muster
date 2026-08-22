@@ -86,10 +86,8 @@ export function ProjectContextInspector({
   const taskAction = useProjectTaskAction();
   const { data: artifacts = [] } = useArtifacts(projectId);
   // 批次 F 修复：工作单以 projectTaskId 关联项目任务——此前 t.id 对 selectedTask.id 分属两个 ID 空间，永不命中
-  const activeTask =
-    (selectedTask ? tasks.find((t) => t.projectTaskId === selectedTask.id) : undefined) ??
-    tasks.find((t) => t.state === 'running') ??
-    tasks[0];
+  const matchedTask = selectedTask ? tasks.find((t) => t.projectTaskId === selectedTask.id) : undefined;
+  const activeTask = matchedTask ?? tasks.find((t) => t.state === 'running') ?? tasks[0];
   const { data: swarmView } = useTaskSwarm(activeTask?.id);
   // B5 右侧三卡（非人员源，中央岗隐形后"事"可见）：专家池/蜂群/验收进度
   const { data: specialists = [] } = useProjectSpecialists(projectId);
@@ -102,7 +100,9 @@ export function ProjectContextInspector({
   // 任务拆解的 Checklist（提取自 launchBrief deliverables 或 task 列表）
   const deliverables = (selectedTask?.launchBrief?.deliverables ?? []) as string[];
   const agentTasks = currentAgent ? tasks.filter((t) => t.assigneeAgentId === currentAgent.id && OPEN_STATES.has(t.state)) : [];
-  const criteria = activeTask?.acceptanceCriteria ?? [];
+  // 评审修复：验收标准只认"选中项目任务自己的工作单"——activeTask 会回落到第一个 running 工作单，
+  // 无匹配时会把别的任务的验收灯挂在本任务名下（蜂群卡保留回落：蜂群观测本就跨工作单）。
+  const criteria = matchedTask?.acceptanceCriteria ?? [];
   const criteriaMet = criteria.filter((c) => c.met === true).length;
   const criteriaUnmet = criteria.filter((c) => c.met === false).length;
   const showBlueprintCard = !uiSimple && selectedTask !== undefined && blueprintMatches.length > 0;

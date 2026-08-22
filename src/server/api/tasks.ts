@@ -161,7 +161,7 @@ taskByIdRouter.post(
   }),
 );
 
-/** 批次 F.4：任务级超时自动继续快调——minutes=null 恢复跟随全局；0=本任务一直等；stop=true 永久停止本轮倒计时。 */
+/** 批次 F.4：任务级超时自动继续快调——minutes=null 恢复跟随全局；0=本任务一直等；stop=true/false 置/清永久停止标记。 */
 taskByIdRouter.post(
   '/auto-continue',
   asyncHandler(async (req, res) => {
@@ -169,7 +169,8 @@ taskByIdRouter.post(
       minutes: z.number().int().min(0).max(1440).nullable().optional(),
       stop: z.boolean().optional(),
     }).parse(req.body);
-    res.json(setTaskAutoContinue(getDb(), param(req, 'id'), input));
+    const db = getDb();
+    res.json(withWaitingSince(db, setTaskAutoContinue(db, param(req, 'id'), input)));
   }),
 );
 

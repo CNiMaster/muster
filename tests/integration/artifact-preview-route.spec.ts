@@ -26,7 +26,10 @@ beforeEach(async () => {
   setDbForTest(tdb.db);
   rootDir = path.resolve('/tmp/muster-test-preview-' + Math.random().toString(36).slice(2, 8));
   mkdirSync(path.join(rootDir, 'docs'), { recursive: true });
+  mkdirSync(path.join(rootDir, 'assets'), { recursive: true });
   writeFileSync(path.join(rootDir, 'docs', 'index.html'), '<!doctype html><html><body><h1>预览页</h1></body></html>');
+  // SVG 内嵌脚本：直开时是 HTML CSP 的经典旁路，评审 I4 要求同样收紧
+  writeFileSync(path.join(rootDir, 'assets', 'icon.svg'), '<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><rect width="8" height="8"/></svg>');
   // 1x1 透明 PNG
   writeFileSync(
     path.join(rootDir, 'docs', 'dot.png'),
@@ -86,8 +89,24 @@ describe('artifacts preview 端点（批次 F.3）', () => {
     expect(res.status).not.toBe(200);
   });
 
-  it('不存在的文件 404', async () => {
+  it('不存在的文件 404；目录 404（评审 M10）', async () => {
     const res = await fetch(`${base}/api/projects/${projectId()}/artifacts/preview/docs/none.html`);
     expect(res.status).toBe(404);
+    const dirRes = await fetch(`${base}/api/projects/${projectId()}/artifacts/preview/docs`);
+    expect(dirRes.status).toBe(404);
+  });
+
+  it('评审 I4：SVG 预览同样附严格 CSP（直开内嵌脚本是 HTML CSP 的经典旁路）', async () => {
+    const res = await fetch(`${base}/api/projects/${projectId()}/artifacts/preview/assets/icon.svg`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('image/svg+xml');
+    const csp = res.headers.get('content-security-policy') ?? '';
+    expect(csp).toContain("default-src 'none'");
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+  });
+
+  it('评审 M10：畸形百分号编码返回 400 而非 500', async () => {
+    const res = await fetch(`${base}/api/projects/${projectId()}/artifacts/preview/%ZZbad`);
+    expect(res.status).toBe(400);
   });
 });

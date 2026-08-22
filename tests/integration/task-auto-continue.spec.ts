@@ -100,4 +100,15 @@ describe('autoContinueDueWaitingTasks（批次 F.4）', () => {
     expect(restored.autoContinueStopped).toBe(false);
     expect(restored.autoContinueMinutes).toBeNull();
   });
+
+  it('评审修复：恢复会重置等待起点——长期等待后恢复不会立即被代答', () => {
+    setSetting(db, 'waiting_auto_continue_minutes', '10');
+    const taskId = seedWaitingTask(40);
+    setTaskAutoContinue(db, taskId, { stop: true });
+    expect(autoContinueDueWaitingTasks(db)).toBe(0);
+    // 恢复：等待起点应重置为当前时刻，40 分钟的旧起点不再立即到期
+    setTaskAutoContinue(db, taskId, { stop: false });
+    expect(autoContinueDueWaitingTasks(db)).toBe(0);
+    expect(getTask(db, taskId).state).toBe('waiting_input');
+  });
 });

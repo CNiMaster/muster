@@ -35,6 +35,7 @@ import {assertProjectActive} from './project-readiness';
 import { getWorkbench } from './workbench';
 import { recordSuspension, resolveSuspensionByTask, getActiveSuspension } from './task-suspension';
 import { getSetting } from './setting';
+import { log } from '../logger';
 import { checkSwarmLimits, greyBeeAfterTask, handleSwarmTaskFailure, maybeAutoRepairBee, recordSwarmNodeOutcome, reportBeeCompletion, validateSwarmSynthesisSummary } from './swarm';
 import { handleDebateTaskFailure, recordDecisionFromClarify } from './debate';
 import { ensurePrimaryThread } from './thread';
@@ -1048,7 +1049,13 @@ export function answerClarification(db: DB, taskId: string, input: { answer?: st
   db.transaction(() => {
     // 若用户用 /clarify 回答了一个对齐态 task，清掉 alignment_state 避免孤儿标记（与 answerAlignment 对称）。
     // 批次 F.4：用户答复即永久停计（防答复后竞态触发自动继续）。
-    db.prepare(`UPDATE task SET clarification_rounds=clarification_rounds+1, state='queued', alignment_state=NULL, auto_continue_stopped=1, updated_at=? WHERE id=?`).run(now, taskId);
+    // UPDATE 带 state 守卫：单进程同步下预检查已闭合，此处为将来多写者兜底（不匹配行更新 0 条会抛错暴露竞态）。
+    const answered = db
+      .prepare(`UPDATE task SET clarification_rounds=clarification_rounds+1, state='queued', alignment_state=NULL, auto_continue_stopped=1, updated_at=? WHERE id=? AND state='waiting_input'`)
+      .run(now, taskId);
+    if (answered.changes === 0) {
+      throw new AppError(ErrorCode.TASK_INVALID_TRANSITION, `task ${taskId} 不在 waiting_input`);
+    }
     addTaskMessage(db, taskId, { author: 'user', role: 'user', content: answer });
     appendTaskEvent(db, taskId, 'clarification_answered', option ? { optionId: option.id, optionLabel: option.label } : {});
     resolveSuspensionByTask(db, taskId, { resolution: 'resumed' });
@@ -1232,9 +1239,12 @@ export function answerAlignment(db: DB, taskId: string, answer: string, addition
 
 // ===== 批次 F.4：waiting_input 超时自动继续（默认一直等；全局设置 waiting_auto_continue_minutes 可开，任务级可覆盖）=====
 
-/** 任务级快调：minutes=null 恢复跟随全局；0=本任务一直等；stop=true/false 置/清永久停止标记。 */
+/** 任务级快调：minutes=null 恢复跟随全局；0=本任务一直等；stop=true/false 置/清永久停止标记。
+ * 评审修复：恢复（stop:false）时若仍在等待，把活跃挂起行 created_at 重置为当前时刻——
+ * 等待起点（倒计时基准）随之重置，避免「停了 20 分钟再恢复→下个 tick 立即按旧起点到期代答」。 */
 export function setTaskAutoContinue(db: DB, taskId: string, input: { minutes?: number | null; stop?: boolean }): Task {
   const cur = getTask(db, taskId);
+  const now = nowIso();
   const sets: string[] = [];
   const vals: unknown[] = [];
   if (input.stop !== undefined) {
@@ -1246,7 +1256,10 @@ export function setTaskAutoContinue(db: DB, taskId: string, input: { minutes?: n
     vals.push(input.minutes === null ? null : Math.max(0, Math.min(1440, Math.round(input.minutes))));
   }
   if (sets.length === 0) return cur;
-  db.prepare(`UPDATE task SET ${sets.join(', ')}, updated_at=? WHERE id=?`).run(...vals, nowIso(), taskId);
+  db.prepare(`UPDATE task SET ${sets.join(', ')}, updated_at=? WHERE id=?`).run(...vals, now, taskId);
+  if (input.stop === false && cur.state === 'waiting_input') {
+    db.prepare(`UPDATE task_suspension SET created_at=? WHERE task_id=? AND resolved_at IS NULL`).run(now, taskId);
+  }
   return getTask(db, taskId);
 }
 
@@ -1285,8 +1298,13 @@ export function autoContinueDueWaitingTasks(db: DB, nowMs = Date.now()): number 
       addTaskMessage(db, id, { author: 'system', role: 'system', content: '⏱ 超时未答复，已自动继续执行（重要任务可在等待卡上调长或停止计时）' });
       appendTaskEvent(db, id, 'auto_continued', { minutes });
       continued++;
-    } catch {
-      // 竞态：任务刚被用户答复/取消/变更——state 校验抛错属预期，跳过即可
+    } catch (error) {
+      // 竞态（任务刚被用户答复/取消，state 校验抛错）属预期跳过；其余失败必须可见，
+      // 尤其 answer 成功而留痕写入失败的情况——不能让代答无声发生。
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/不在 waiting_input/.test(message)) {
+        log.warn('auto continue task failed', { taskId: id, error: message });
+      }
     }
   }
   return continued;

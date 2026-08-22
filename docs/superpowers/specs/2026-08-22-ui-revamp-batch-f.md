@@ -40,16 +40,17 @@ nav 右缘/inspector 左缘 6px `.workbench-resizer`；pointerdown 捕获+move �
 
 - 服务端 `GET /api/projects/:id/artifacts/preview?path=`：`resolveArtifactPath` + `isPathAllowed` 双校验（口径同 files/tree）；`.html/.htm` 走此端点并加 CSP（`default-src 'none'; style-src 'unsafe-inline' 'self' data:; img-src 'self' data:`）+ `X-Content-Type-Options: nosniff`；图片/音视频/PDF sendFile。现有 `/raw` 不动（有既有消费方）
 - 客户端 `InspectorPreviewHost`：URL `?preview=<path>` 驱动；类型分派复用 ArtifactsPage 正则（image/pdf/video/audio/md）；「放大」Modal size xl、「在画廊打开」、关闭
-- 已知限制：Markdown 内嵌相对路径图片不代理；worktree 未合并分支产物不可预览（无现成路由，留后续）
+- 已知限制：Markdown 内嵌相对路径图片不代理；worktree 未合并分支产物不可预览（无现成路由，留后续）；**路径校验为词法口径（resolveArtifactPath+isPathAllowed），不解析 symlink**——仓库内 symlink 指向允许根内任意位置会被放行，与 /raw、files/tree 共享同一已知取舍，如需收紧在 isPathAllowed 旁加 realpath 检查（评审 I5，待拍板）
 
 ## F4 waiting_input 超时自动继续
 
 - 迁移：task 表加 `auto_continue_minutes INTEGER NULL`（NULL=跟随全局；0=本任务一直等）、`auto_continue_stopped INTEGER NOT NULL DEFAULT 0`
 - 全局设置 `waiting_auto_continue_minutes` 默认 **0=一直等**（用户定案：默认不开启）
 - 生效分钟 = `task.auto_continue_minutes ?? 全局`；等待起点 = `task_suspension.created_at`（两入口均落挂起行；缺行回退 `updated_at`）
-- **任何用户交互永久停计（本轮）**：clarify/align 答复、显式停止计时、pause/cancel → `auto_continue_stopped=1`；再进 waiting_input 重置 0
-- 到期动作：`answerClarification(source:'auto', answer:'确认，请继续执行')` + system 消息留痕「超时未答复，已自动继续执行」；竞态由 answerClarification 的 state 校验兜底
-- 评审庭辩论进行中的任务跳过本轮
+- **用户交互永久停计（本轮）**：clarify/align 答复与显式「停止计时」置 `auto_continue_stopped=1`；pause/cancel 不写该标记——其本身使 state 离开 waiting_input，倒计时自然失效（评审 I7b 核实口径：两答复路径 + 显式停止是标记的全部写入点）
+- 到期动作：`answerClarification(source:'auto', answer:'确认，请继续执行')` + system 消息留痕「超时未答复，已自动继续执行」；竞态由 answerClarification 的 state 校验兜底（UPDATE 另带 state 守卫，多写者兜底）
+- **恢复（停止后再点恢复）重置等待起点**：把活跃挂起行 created_at 更新为当前时刻，倒计时从头计（评审 I2：否则按旧起点立即到期代答）
+- 评审庭辩论进行中的任务跳过本轮；单任务失败不再静默——非竞态错误记 log.warn
 - 任务级快调 API：`POST /api/tasks/:id/auto-continue`（minutes: 5/10/30/0/恢复跟随）
 - 挂点：coordinator tick 内 `reportStaleWaitingTasks` 旁独立 try/catch；与 30min STALE 上报自然分层
 - 前端：Task DTO 附 `waitingSince`/`autoContinueMinutes`/`autoContinueStopped`（仅 waiting_input 任务）；等待态 Badge 旁 mm:ss 倒计时+「停止计时」；ConversationPanel/ClarifyCard 倒计时条+分钟快调
@@ -74,6 +75,10 @@ nav 右缘/inspector 左缘 6px `.workbench-resizer`；pointerdown 捕获+move �
 ## 验收
 
 - 单测：`project-context-layout.spec.tsx` 重写（折叠组/默认展开/持久化/空态不渲染）；resizer 拖拽；settings schema 新键；InspectorPreviewHost 分派
-- 集成：auto-continue（自动 queued+留痕+人答竞态+辩论跳过+覆盖优先级）；preview 路由（逃逸 403/CSP/Content-Type）
-- e2e：右栏折叠持久化、预览打开、倒计时可见（新写）
-- 终验：`tsc -b --force` 0 错 → vitest 全量 → smoke 77（动了 task 域）→ e2e 全绿
+- 集成：auto-continue（自动 queued+留痕+人答竞态+辩论跳过+覆盖优先级+恢复重置计时）；preview 路由（逃逸 403/CSP（含 SVG）/Content-Type/目录 404/畸形编码 400）
+- e2e：**初版未写**（评审 I7a 核销：倒计时可见需 fake 执行器走完 claim→waiting 长链路，右栏折叠/预览已有单测+集成覆盖真实行为）——列下批补齐项，此处不虚报
+- 终验：`tsc -b --force` 0 错 → vitest 全量 → smoke（动了 task 域，当前 71 项）→ e2e 全绿
+
+## 评审轮（2026-08-22，评审后修复）
+
+Critical×1：queries.ts 类型修复终验时在 worktree 修了但未提交即合并，main tsc 红（评审抓回，补提交 85c84a9）——流程教训：**终验必须跑在已提交状态上**。Important×5 全修：恢复重置等待起点（挂起行 created_at 重置，否则按旧起点立即代答）/单任务失败记 log.warn（非竞态错误不再静默）/SVG 同样加 CSP（直开内嵌脚本是 HTML CSP 经典旁路）/拖拽中断 unmount 提交在途宽度+复位 is-resizing/spec 口径对齐。Minor 顺手修 5：auto-continue 响应补 waitingSince、answerClarification UPDATE 加 state 守卫、跟随滚动瞬时化防按钮闪烁、resizer focus()+aria-valuemin/now/max、验收卡只认匹配工作单（不再回落挂别人的验收灯）。**保留不改（M8）**：代答消息 author:'user' 与评审庭自动采纳先例一致，且「确认，请继续执行」语义上就要作为用户确认注入执行上下文，system 留痕消息已消除歧义。

@@ -22,6 +22,21 @@ function WorkbenchResizer({ side, width, onResize, onActiveChange }: {
   onActiveChange: (active: boolean) => void;
 }): React.ReactElement {
   const dragRef = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null);
+  // 评审修复：视口跨过 1180 或面板被关时手柄会带着进行中的拖拽卸载——unmount 时提交在途宽度并复位状态，
+  // 否则 liveWidths 内存覆盖残留、is-resizing（禁 transition/user-select）卡死整个会话。
+  const lastWidthRef = useRef(width);
+  lastWidthRef.current = width;
+  useEffect(
+    () => () => {
+      if (!dragRef.current) return;
+      dragRef.current = null;
+      onActiveChange(false);
+      onResize(lastWidthRef.current, true);
+    },
+    // 仅 unmount 清理：闭包回调经 ref 保真，无需响应 prop 变化
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
   const bounds = PANE_WIDTH_BOUNDS[side];
   const defaultWidth = side === 'left' ? DEFAULT_WORKBENCH_PREFERENCES.leftWidth : DEFAULT_WORKBENCH_PREFERENCES.rightWidth;
 
@@ -31,9 +46,13 @@ function WorkbenchResizer({ side, width, onResize, onActiveChange }: {
       role="separator"
       aria-orientation="vertical"
       aria-label={side === 'left' ? '调整左侧列表宽度' : '调整右侧信息栏宽度'}
+      aria-valuemin={bounds.min}
+      aria-valuemax={bounds.max}
+      aria-valuenow={width}
       tabIndex={0}
       onPointerDown={(event) => {
         event.preventDefault();
+        event.currentTarget.focus();
         dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startWidth: width };
         // 指针捕获保证移出手柄区域仍持续收到事件；不可用时退化为普通拖拽
         event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -46,18 +65,17 @@ function WorkbenchResizer({ side, width, onResize, onActiveChange }: {
         const delta = side === 'left' ? event.clientX - drag.startX : drag.startX - event.clientX;
         onResize(Math.min(bounds.max, Math.max(bounds.min, drag.startWidth + delta)), false);
       }}
-      onPointerUp={(event) => {
+      onPointerUp={() => {
         if (!dragRef.current) return;
         dragRef.current = null;
         onActiveChange(false);
-        onResize(width, true);
-        void event;
+        onResize(lastWidthRef.current, true);
       }}
       onPointerCancel={() => {
         if (!dragRef.current) return;
         dragRef.current = null;
         onActiveChange(false);
-        onResize(width, true);
+        onResize(lastWidthRef.current, true);
       }}
       onDoubleClick={() => onResize(defaultWidth, true)}
       onKeyDown={(event) => {
