@@ -71,6 +71,7 @@ import { getSystemSettings } from './domain/setting';
 import { applyGlobalEgress, buildEgressEnv } from './runtime/egress';
 import { TriggerScheduler } from './trigger-scheduler';
 import { ProjectRuntimeCoordinator } from './runtime/coordinator';
+import { KeepAwake } from './runtime/keepawake';
 import { listAgentProfiles } from './domain/agent-profile';
 import { materializeAgentHome, syncAgentMemoryFiles } from './domain/agent-home';
 import { autoDiscoverCertifiedExecutors } from './domain/executor-discovery';
@@ -293,6 +294,8 @@ async function main(): Promise<void> {
   }
 
   const { app, engine, triggerScheduler, coordinator } = await createApp();
+  // 批次 G.5：防休眠保活（默认 active——有正式活跃任务/trigger 临近触发时拉 caffeinate）
+  const keepawake = new KeepAwake(getDb());
   const httpServer = createServer(app);
 
   // Agent Bridge loopback 端口注入
@@ -304,6 +307,7 @@ async function main(): Promise<void> {
   // 启动 Task 引擎轮询
   coordinator.start();
   triggerScheduler.start();
+  keepawake.start();
 
   // 运行目录清扫：清掉超过 TTL 的 ~/.muster/runs/<runId>（tmp/logs 隔离目录，无消费侧清理链路）
   try {
@@ -329,6 +333,7 @@ async function main(): Promise<void> {
       engine.stop();
       coordinator.stop();
       triggerScheduler.stop();
+      keepawake.stop();
       httpServer.close();
       wss.close();
       setTimeout(() => process.exit(0), 300);
@@ -343,6 +348,7 @@ async function main(): Promise<void> {
         engine.stop();
         coordinator.stop();
         triggerScheduler.stop();
+        keepawake.stop();
         httpServer.close();
         wss.close();
         setTimeout(() => process.exit(0), 500);

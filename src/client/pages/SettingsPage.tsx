@@ -63,6 +63,8 @@ export function SettingsPage(): React.ReactElement {
   const [breadthDefaultTier, setBreadthDefaultTier] = useState<'light' | 'standard' | 'heavy'>('standard');
   // 批次 F.4：waiting_input 超时自动继续分钟数（0=一直等，默认）
   const [waitingAutoContinue, setWaitingAutoContinue] = useState(0);
+  // 批次 G.5：防休眠三态（active=有活跃任务时保活，默认；always=常驻；off）
+  const [preventSleep, setPreventSleep] = useState<'active' | 'always' | 'off'>('active');
   const [testResult, setTestResult] = useState<any | null>(null);
 
   useEffect(() => {
@@ -101,6 +103,7 @@ export function SettingsPage(): React.ReactElement {
     setSwarmRepairMax(settings.swarmRepairMax ?? 10);
     setBreadthDefaultTier(settings.breadthDefaultTier ?? 'standard');
     setWaitingAutoContinue(settings.waitingAutoContinueMinutes ?? 0);
+    setPreventSleep(settings.preventSleep ?? 'active');
   }, [settings]);
 
   const handleSave = (): void => {
@@ -109,7 +112,7 @@ export function SettingsPage(): React.ReactElement {
       return;
     }
     saveSettings.mutate(
-      { claudeBin, model, skipPermissions, timeoutMs, maxToolCalls, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierPrimaryId: tierPrimary, executorTierSecondaryId: tierSecondary, executorTierTertiaryId: tierTertiary, executorTierHighId: tierHigh, executorTierStandardId: tierStandard, executorTierLowId: tierLow, imageGenModel, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs, theme, fontFamily, fontSize, locale, codeTheme, autonomousReflectionEnabled, autonomousReflectionBudgetUSD, swarmMaxDepth, swarmMaxWidth, swarmMaxNodes, swarmBudgetUSD, swarmRepairMax, breadthDefaultTier, waitingAutoContinueMinutes: waitingAutoContinue },
+      { claudeBin, model, skipPermissions, timeoutMs, maxToolCalls, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierPrimaryId: tierPrimary, executorTierSecondaryId: tierSecondary, executorTierTertiaryId: tierTertiary, executorTierHighId: tierHigh, executorTierStandardId: tierStandard, executorTierLowId: tierLow, imageGenModel, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs, theme, fontFamily, fontSize, locale, codeTheme, autonomousReflectionEnabled, autonomousReflectionBudgetUSD, swarmMaxDepth, swarmMaxWidth, swarmMaxNodes, swarmBudgetUSD, swarmRepairMax, breadthDefaultTier, waitingAutoContinueMinutes: waitingAutoContinue, preventSleep },
       {
         onSuccess: () => toast('success', '系统设置已保存并实时生效'),
         onError: (error: any) => toast('error', error.message ?? '保存设置失败'),
@@ -200,6 +203,13 @@ export function SettingsPage(): React.ReactElement {
                     <span>允许跳过 CLI 权限拦截 (--dangerously-skip-permissions)</span>
                   </label>
                 </div>
+                <Field label="防休眠" hint="系统睡眠会让任务停摆、局域网连接断开。仅 macOS 生效（内建 caffeinate），其他平台随桌面版支持">
+                  <Select value={preventSleep} onChange={(e) => setPreventSleep(e.target.value as 'active' | 'always' | 'off')}>
+                    <option value="active">有任务在跑时保活（默认）</option>
+                    <option value="always">常驻保活</option>
+                    <option value="off">关闭</option>
+                  </Select>
+                </Field>
                 <Field label="提问超时自动继续（分钟）" hint="任务提问后倒计时，到期未答复自动以「确认，请继续执行」续跑；0 = 一直等（默认）。等待卡上可按任务临时调整（重要 10 分钟 / 普通 5 分钟）">
                   <Input
                     type="number"

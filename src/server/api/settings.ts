@@ -71,6 +71,7 @@ export const settingsUpdateSchema = z.object({
   imageGenModel: z.string().max(200).optional(),
   // 批次 F.4：waiting_input 超时自动继续分钟数（0=一直等，默认；任务级可覆盖）
   waitingAutoContinueMinutes: z.number().int().min(0).max(1440).optional(),
+  preventSleep: z.enum(['active', 'always', 'off']).optional(),
 });
 
 // 获取当前系统设置

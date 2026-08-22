@@ -2358,6 +2358,7 @@ export function useSaveSystemSettings() {
       modelTierPremium?: string;
       imageGenModel?: string;
       waitingAutoContinueMinutes?: number;
+      preventSleep?: 'active' | 'always' | 'off';
     }) => api.post<any>('/api/settings', settings),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['systemSettings'] });

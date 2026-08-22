@@ -74,6 +74,8 @@ export interface SystemSettings {
   imageGenModel: string;
   /** 批次 F.4：waiting_input 超时自动继续分钟数（0=一直等，默认；任务级 auto_continue_minutes 可覆盖）。 */
   waitingAutoContinueMinutes: number;
+  /** 防休眠（批次 G.5）：active=有活跃任务/临近触发时保活（默认）；always=常驻；off。 */
+  preventSleep: 'active' | 'always' | 'off';
 }
 
 export function getSetting(db: DB, key: string, defaultValue: string): string {
@@ -135,6 +137,9 @@ export function getSystemSettings(db: DB): SystemSettings {
     executorTierLowId: getSetting(db, 'executor_tier_low_id', '') || getSetting(db, 'executor_tier_tertiary_id', ''),
     imageGenModel: getSetting(db, 'image_gen_model', ''),
     waitingAutoContinueMinutes: Number(getSetting(db, 'waiting_auto_continue_minutes', '0')) || 0,
+    preventSleep: (['active', 'always', 'off'] as const).includes(getSetting(db, 'prevent_sleep', 'active') as 'active')
+      ? (getSetting(db, 'prevent_sleep', 'active') as 'active' | 'always' | 'off')
+      : 'active',
   };
 }
 
@@ -236,5 +241,8 @@ export function saveSystemSettings(db: DB, settings: Partial<SystemSettings>): v
   }
   if (settings.waitingAutoContinueMinutes !== undefined) {
     setSetting(db, 'waiting_auto_continue_minutes', String(Math.max(0, Math.min(1440, Math.round(settings.waitingAutoContinueMinutes)))));
+  }
+  if (settings.preventSleep !== undefined) {
+    setSetting(db, 'prevent_sleep', ['active', 'always', 'off'].includes(settings.preventSleep) ? settings.preventSleep : 'active');
   }
 }

@@ -601,6 +601,19 @@ export function listTasks(db: DB, projectId: string, state?: TaskState): Task[] 
   return rows.map(fromRow);
 }
 
+/**
+ * 全库正式活跃任务数（批次 G.5，防休眠条件）。
+ * 口径与 coordinator tick 的 formalActive 一致：非讨论 + 六状态——改状态机时两处同步。
+ */
+export function countActiveTasks(db: DB): number {
+  const row = db
+    .prepare(
+      "SELECT COUNT(*) AS n FROM task WHERE is_discussion=0 AND state IN ('queued','claimed','running','waiting_input','waiting_dependency','paused')",
+    )
+    .get() as { n: number };
+  return row.n;
+}
+
 /** 蜂群全树（camelCase 映射；指挥系统 W4 树视图数据源）。 */
 export function listTasksBySwarm(db: DB, swarmId: string): Task[] {
   const rows = db.prepare('SELECT * FROM task WHERE swarm_id = ? ORDER BY seq').all(swarmId) as TaskRow[];
