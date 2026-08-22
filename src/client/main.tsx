@@ -47,6 +47,7 @@ const WorkflowGraphPage = lazyRetry(() => import('./pages/WorkflowGraphPage').th
 const CharacterGraphPage = lazyRetry(() => import('./pages/CharacterGraphPage').then((m) => ({ default: m.CharacterGraphPage })));
 const StoragePage = lazyRetry(() => import('./pages/StoragePage').then((m) => ({ default: m.StoragePage })));
 const SettingsPage = lazyRetry(() => import('./pages/SettingsPage').then((m) => ({ default: m.SettingsPage })));
+const SideChatPage = lazyRetry(() => import('./pages/SideChatPage').then((m) => ({ default: m.SideChatPage })));
 const AgentLibraryPage = lazyRetry(() => import('./pages/AgentLibraryPage').then((m) => ({ default: m.AgentLibraryPage })));
 const AgentProfilePage = lazyRetry(() => import('./pages/AgentProfilePage').then((m) => ({ default: m.AgentProfilePage })));
 const ExecutorCenterPage = lazyRetry(() => import('./pages/ExecutorCenterPage').then((m) => ({ default: m.ExecutorCenterPage })));
@@ -124,6 +125,7 @@ const router = createBrowserRouter([
       { path: 'projects/:projectId/dashboard', element: <ProjectToolPageShell tool="dashboard"><ModeGate><DashboardPage /></ModeGate></ProjectToolPageShell> },
       { path: 'projects/:projectId/settings', element: <ProjectToolPageShell tool="settings"><ProjectSettingsPage /></ProjectToolPageShell> },
       { path: 'tasks/:taskId', element: <TaskDetailProjectShell><TaskDetailPage /></TaskDetailProjectShell> },
+      { path: 'side', element: <SideChatPage /> },
       { path: 'settings', element: <SettingsPage /> },
       { path: 'storage', element: <StoragePage /> },
       { path: 'agents', element: <ModeGate><AgentLibraryPage /></ModeGate> },

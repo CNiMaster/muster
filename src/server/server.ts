@@ -33,6 +33,7 @@ import { expertCandidatesRouter } from './api/expert-candidates';
 import { projectPhase7, reportByIdRouter, inspectorAlertRouter } from './api/phase7';
 import { companyMessagesRouter, projectMessagesRouter } from './api/conversation';
 import { pluginsRouter } from './api/plugins';
+import { sideRouter } from './api/side';
 import { outsourcingRouter } from './api/outsourcing';
 import { tempWorkerRouter } from './api/temp-worker';
 import { delegationRouter } from './api/permission-delegation';
@@ -227,6 +228,7 @@ async function createApp(): Promise<AppHandle> {
   app.use('/api/projects/quick', quickProjectsRouter);
   app.use('/api/projects/:id', projectById);
   app.use('/api/plugins', pluginsRouter);
+  app.use('/api/side', sideRouter);
   app.use('/api', outsourcingRouter);
   app.use('/api', tempWorkerRouter);
   app.use('/api', delegationRouter);
