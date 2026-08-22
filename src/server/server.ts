@@ -34,6 +34,7 @@ import { projectPhase7, reportByIdRouter, inspectorAlertRouter } from './api/pha
 import { companyMessagesRouter, projectMessagesRouter } from './api/conversation';
 import { pluginsRouter } from './api/plugins';
 import { sideRouter } from './api/side';
+import { specialistReviewsRouter } from './api/specialist-reviews';
 import { outsourcingRouter } from './api/outsourcing';
 import { tempWorkerRouter } from './api/temp-worker';
 import { delegationRouter } from './api/permission-delegation';
@@ -229,6 +230,7 @@ async function createApp(): Promise<AppHandle> {
   app.use('/api/projects/:id', projectById);
   app.use('/api/plugins', pluginsRouter);
   app.use('/api/side', sideRouter);
+  app.use('/api/specialist-reviews', specialistReviewsRouter);
   app.use('/api', outsourcingRouter);
   app.use('/api', tempWorkerRouter);
   app.use('/api', delegationRouter);

@@ -551,6 +551,13 @@ projectById.patch(
           ),
         );
       }
+      // 批次 J2 记忆盘点（盘点制）：归档触发人事待处置清单（晋升/归档/保留建议，用户拍板）
+      if (target === 'archived' && previousState !== 'archived') {
+        try {
+          const { createArchiveDispositions } = await import('../domain/specialist-review');
+          createArchiveDispositions(getDb(), project.id);
+        } catch { /* 清单生成失败不阻塞归档 */ }
+      }
       realtime.publish(
         makeLifecycleEvent(
           'project.phase-entered',
@@ -900,3 +907,17 @@ playbooksRouter.get('/:id', asyncHandler(async (req, res) => {
   }
   res.json(playbook);
 }));
+
+/** 批次 J1：手动借调全局 staff 专家进本项目（蜂群自动路径之外的人事/负责人手动口）。 */
+projectById.post(
+  '/specialists/:specialistId/borrow',
+  asyncHandler(async (req, res) => {
+    const { borrowStaffSpecialist } = await import('../domain/specialist-pool');
+    const result = borrowStaffSpecialist(getDb(), {
+      specialistId: param(req, 'specialistId'),
+      toProjectId: param(req, 'id'),
+      taskId: typeof req.body?.taskId === 'string' ? req.body.taskId : undefined,
+    });
+    res.status(201).json(result);
+  }),
+);

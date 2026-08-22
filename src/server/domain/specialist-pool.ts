@@ -121,13 +121,66 @@ function maybePromoteToStaff(db: DB, entry: SpecialistPoolEntry): SpecialistPool
   return entry;
 }
 
+/** 公开取条目（盘点处置等外部域用）。 */
+export function getSpecialistEntry(db: DB, id: string): SpecialistPoolEntry {
+  return getEntry(db, id);
+}
+
+/** 强制晋升 staff（盘点处置 promote 动作；幂等——已是 staff 直接返回）。 */
+export function forcePromoteToStaff(db: DB, id: string): SpecialistPoolEntry {
+  const entry = getEntry(db, id);
+  if (entry.tier !== 'staff') {
+    db.prepare("UPDATE specialist_pool SET tier='staff', updated_at=? WHERE id=?").run(nowIso(), id);
+  }
+  return getEntry(db, id);
+}
+
+/**
+ * 跨项目借调 staff 专家（批次 J1）：留痕 specialist_borrow + use 记账。
+ * 归还=记账非状态迁移（专家默认不排队不锁定）；借调不虚增本项目需求计数。
+ */
+export function borrowStaffSpecialist(db: DB, input: { specialistId: string; toProjectId: string; taskId?: string }): { agentId: string; borrowId: string } {
+  const entry = getEntry(db, input.specialistId);
+  if (entry.tier !== 'staff' || entry.status !== 'active' || !entry.agentId) {
+    throw new AppError(ErrorCode.CONFLICT, '只有在册常驻（staff）专家可被跨项目借调');
+  }
+  if (entry.projectId === input.toProjectId) {
+    throw new AppError(ErrorCode.VALIDATION, '同项目使用走 recordSpecialistUse，不算借调');
+  }
+  const now = nowIso();
+  const borrowId = shortId('sbr_');
+  db.transaction(() => {
+    db.prepare(
+      `INSERT INTO specialist_borrow (id, from_project_id, to_project_id, specialist_id, agent_id, task_id, created_at)
+       VALUES (?,?,?,?,?,?,?)`,
+    ).run(borrowId, entry.projectId, input.toProjectId, entry.id, entry.agentId, input.taskId ?? null, now);
+    db.prepare('UPDATE specialist_pool SET use_count=use_count+1, updated_at=? WHERE id=?').run(now, entry.id);
+  })();
+  return { agentId: entry.agentId, borrowId };
+}
+
+/**
+ * 借调候选匹配（蜂群 J1）：personaId 精确优先，specialty 关键词模糊兜底；
+ * 排除本项目（本项目有自己的池逻辑）与 dismissed。
+ */
+export function findStaffBorrowCandidate(db: DB, toProjectId: string, personaId: string | null, specialty: string): SpecialistPoolEntry | null {
+  const rows = db.prepare(
+    "SELECT * FROM specialist_pool WHERE tier='staff' AND status='active' AND agent_id IS NOT NULL ORDER BY use_count DESC LIMIT 100",
+  ).all() as Row[];
+  const entries = rows.map(fromRow).filter((e) => e.projectId !== toProjectId);
+  const byPersona = personaId ? entries.find((e) => e.personaId === personaId) : undefined;
+  if (byPersona) return byPersona;
+  const tokens = specialty.split(/[\s/·、,，]+/).filter((t) => t.length >= 2);
+  return entries.find((e) => tokens.some((t) => e.specialty.includes(t))) ?? null;
+}
+
 /**
  * 蜂群按人设取用专家（materializeSwarm 的 persona 蜂入口）：
  * - 已有常驻专家（agent_id 落位）→ 直接复用（use_count++，达阈值晋升 staff）。
  * - 只有需求计数行（agent_id 空）→ 计数 +1；达 PROMOTE_TO_AGENT_AT_USE 时落成常驻专家并返回。
  * - 无行 → 记第一条需求计数，返回 null（调用方本次仍走一次性临时蜂）。
  */
-export function acquireSpecialistForPersona(db: DB, projectId: string, personaId: string, specialty: string): { agentId: string; created: boolean } | null {
+export function acquireSpecialistForPersona(db: DB, projectId: string, personaId: string, specialty: string, taskId?: string): { agentId: string; created: boolean; borrowed?: boolean } | null {
   getProject(db, projectId);
   const row = db.prepare(
     "SELECT * FROM specialist_pool WHERE project_id=? AND persona_id=? AND status='active' ORDER BY created_at LIMIT 1",
@@ -137,6 +190,13 @@ export function acquireSpecialistForPersona(db: DB, projectId: string, personaId
     db.prepare('UPDATE specialist_pool SET use_count=use_count+1, updated_at=? WHERE id=?').run(now, row.id);
     maybePromoteToStaff(db, getEntry(db, row.id));
     return { agentId: row.agent_id, created: false };
+  }
+  // 批次 J1 借调兜底：本项目池无可执行专家（无计数行或计数行未落 agent）→ 先向全局 staff 借调
+  // （蜂群不私自造专家；借调不虚增本项目需求计数——本项目真实需求的沉淀仍由计数行负责）。
+  const borrowCandidate = findStaffBorrowCandidate(db, projectId, personaId, specialty);
+  if (borrowCandidate && (!row || !row.agent_id)) {
+    const borrowed = borrowStaffSpecialist(db, { specialistId: borrowCandidate.id, toProjectId: projectId, taskId });
+    return { agentId: borrowed.agentId, created: false, borrowed: true };
   }
   if (row) {
     const nextUse = row.use_count + 1;

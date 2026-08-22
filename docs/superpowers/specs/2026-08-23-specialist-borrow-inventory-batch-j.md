@@ -43,4 +43,6 @@
 
 ## 实施记录
 
-（待实施）
+- **J1 借调流**：迁移 20260823210000（specialist_borrow 留痕表）；borrowStaffSpecialist（staff-only/同项目拒/事务留痕+use 记账）+findStaffBorrowCandidate（persona 精确→speciality token≥2 模糊）+acquireSpecialistForPersona 借调兜底（**本项目池无可执行 agent 才借**；借调不虚增本项目需求计数——计数行只统计本项目真实需求；本项目池命中优先于借调）+手动借调 API POST /api/projects/:id/specialists/:sid/borrow。归档钩挂 API 层 PATCH state 分支（避免 project↔pool 循环依赖）。
+- **J2 盘点**：specialist_review 表同迁移；createArchiveDispositions（幂等：同 specialist 已有 pending 归档单跳过；三档启发 use≥5 晋升/≥2 归档保留/否则归档）；sweepIdleStaffSpecialists（staff 30 天 updated_at 阈值+按 specialist+kind pending 去重）挂 coordinator staging 看门狗节拍（每 10 分钟）；resolve 四动作（promote=forcePromoteToStaff 强制档/archive 与 dismiss=dismissSpecialist 保留行不派遣/keep 仅关单；重复处置 409）；resolveProjectReviews 按建议批量（晋升→promote 其余→archive，每条留痕）；API /api/specialist-reviews（GET/resolve/resolve-all/sweep-idle）；设置页新 tab「🧑‍🔬 专家盘点」=SpecialistReviewPanel（kind 徽章+四动作按钮）；人事 HR_PROMPT 静态补盘点制职责段（动态 pending 注入留 v2——清单经 UI/API 呈报用户，人事只建议不代拍）。
+- **测试**：集成 7（borrow 往返+拒两类/蜂群借调兜底含本项目优先时序/归档 HTTP 触发三档/idle 去重/resolve 四动作+409+批量/API 往返）+组件 3（空态/渲染/动作回调）。偏差记录：手动借调无独立 UI（API+蜂群自动路径覆盖主场景，UI 入口留需要时再加）。
