@@ -2342,6 +2342,7 @@ export function useSaveSystemSettings() {
       modelTierEconomy?: string;
       modelTierPremium?: string;
       imageGenModel?: string;
+      waitingAutoContinueMinutes?: number;
     }) => api.post<any>('/api/settings', settings),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['systemSettings'] });
