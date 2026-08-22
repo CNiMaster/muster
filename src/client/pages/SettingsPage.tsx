@@ -150,10 +150,19 @@ export function SettingsPage(): React.ReactElement {
 
       <div className="settings-split">
         {/* 左侧分类导航 */}
-        <nav className="settings-nav">
+        <nav className="settings-nav" aria-label="设置分组导航">
+          {/* 批次 G.6：两层导航——常用三卡日常高频；高级五卡低频专业 */}
+          <div className="settings-nav-group-label">常用</div>
           <button type="button" className={`settings-nav-item ${activeTab === 'general' ? 'is-active' : ''}`} onClick={() => setTab('general')}>
             <span>⚙️ 常规与执行器</span>
           </button>
+          <button type="button" className={`settings-nav-item ${activeTab === 'appearance' ? 'is-active' : ''}`} onClick={() => setTab('appearance')}>
+            <span>🎨 外观与主题</span>
+          </button>
+          <button type="button" className={`settings-nav-item ${activeTab === 'backup' ? 'is-active' : ''}`} onClick={() => setTab('backup')}>
+            <span>💾 数据库与备份</span>
+          </button>
+          <div className="settings-nav-group-label">高级</div>
           <button type="button" className={`settings-nav-item ${activeTab === 'models' ? 'is-active' : ''}`} onClick={() => setTab('models')}>
             <span>🧠 模型与分级</span>
           </button>
@@ -163,17 +172,11 @@ export function SettingsPage(): React.ReactElement {
           <button type="button" className={`settings-nav-item ${activeTab === 'network' ? 'is-active' : ''}`} onClick={() => setTab('network')}>
             <span>🌐 网络与出站代理</span>
           </button>
-          <button type="button" className={`settings-nav-item ${activeTab === 'appearance' ? 'is-active' : ''}`} onClick={() => setTab('appearance')}>
-            <span>🎨 外观与主题</span>
-          </button>
           <button type="button" className={`settings-nav-item ${activeTab === 'credentials' ? 'is-active' : ''}`} onClick={() => setTab('credentials')}>
             <span>🔑 凭据金库</span>
           </button>
           <button type="button" className={`settings-nav-item ${activeTab === 'tools' ? 'is-active' : ''}`} onClick={() => setTab('tools')}>
             <span>🔧 工具与 MCP 注册</span>
-          </button>
-          <button type="button" className={`settings-nav-item ${activeTab === 'backup' ? 'is-active' : ''}`} onClick={() => setTab('backup')}>
-            <span>💾 数据库与备份</span>
           </button>
         </nav>
 
@@ -350,6 +353,12 @@ export function SettingsPage(): React.ReactElement {
                     <option value="zh">简体中文 (Chinese)</option>
                     <option value="en">English</option>
                   </Select>
+                </Field>
+                <Field label="界面字体" hint="CSS font-family 值，留空使用默认字体栈">
+                  <Input value={fontFamily} onChange={(e) => setFontFamily(e.target.value)} placeholder="如 'PingFang SC', 'Microsoft YaHei', sans-serif" />
+                </Field>
+                <Field label="代码块主题" hint="编辑器与代码高亮主题名，默认 default">
+                  <Input value={codeTheme} onChange={(e) => setCodeTheme(e.target.value)} placeholder="default" />
                 </Field>
               </div>
             </Card>

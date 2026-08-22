@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
@@ -48,7 +48,7 @@ function renderPage(initialPath = '/settings'): ReturnType<typeof render> {
 
 describe('SettingsPage hook 顺序回归', () => {
   beforeEach(() => { __setSettings(undefined); });
-  afterEach(() => { vi.clearAllMocks(); });
+  afterEach(() => { vi.clearAllMocks(); cleanup(); });
 
   it('loading 态渲染不抛异常', () => {
     __setSettings(undefined);
@@ -90,5 +90,41 @@ describe('SettingsPage hook 顺序回归', () => {
         <MemoryRouter initialEntries={['/settings']}><Harness /></MemoryRouter>
       </QueryClientProvider>,
     )).not.toThrow();
+  });
+});
+
+describe('SettingsPage 两层导航与常规项（批次 G.5/G.6）', () => {
+  beforeEach(() => {
+    __setSettings({
+      claudeBin: '/usr/bin/claude', model: '', skipPermissions: false,
+      timeoutMs: 600000, maxToolCalls: 30, defaultProvider: 'claude-cli',
+      openaiBaseURL: 'https://api.openai.com/v1', openaiModel: 'gpt-4o', geminiModel: 'gemini-2.0-flash',
+      preventSleep: 'active',
+    });
+  });
+  afterEach(() => { vi.clearAllMocks(); cleanup(); });
+
+  it('导航分「常用/高级」两组，顺序重排：外观与备份上移到常用', () => {
+    renderPage();
+    const nav = screen.getByLabelText('设置分组导航');
+    expect(within(nav).getByText('常用')).toBeInTheDocument();
+    expect(within(nav).getByText('高级')).toBeInTheDocument();
+    const labels = within(nav).getAllByRole('button').map((b) => b.textContent);
+    // 常用：常规、外观、备份；高级：模型、蜂群、网络、凭据、工具
+    expect(labels).toEqual(['⚙️ 常规与执行器', '🎨 外观与主题', '💾 数据库与备份', '🧠 模型与分级', '🐝 蜂群调度与反思', '🌐 网络与出站代理', '🔑 凭据金库', '🔧 工具与 MCP 注册']);
+  });
+
+  it('常规 Tab 含防休眠三态下拉（G.5）', () => {
+    renderPage();
+    const select = screen.getByLabelText('防休眠') as HTMLSelectElement;
+    expect(select.value).toBe('active');
+    const options = Array.from(select.options).map((o) => o.value);
+    expect(options).toEqual(['active', 'always', 'off']);
+  });
+
+  it('外观 Tab 补齐字体与代码主题字段（G.6，useAppearance 此前已支持仅缺 UI）', () => {
+    renderPage('/settings?tab=appearance');
+    expect(screen.getByLabelText('界面字体')).toBeInTheDocument();
+    expect(screen.getByLabelText('代码块主题')).toBeInTheDocument();
   });
 });

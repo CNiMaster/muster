@@ -1118,6 +1118,17 @@
   position: sticky;
   top: 72px;
 }
+/* 批次 G.6：两层导航（常用/高级）分组标签 */
+.settings-nav-group-label {
+  font-size: 11px;
+  color: var(--fg-subtle);
+  letter-spacing: 0.06em;
+  padding: 10px 12px 2px;
+  user-select: none;
+}
+.settings-nav-group-label:first-child {
+  padding-top: 0;
+}
 .settings-nav-item {
   display: flex;
   align-items: center;
