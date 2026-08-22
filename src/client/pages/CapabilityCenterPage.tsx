@@ -41,6 +41,7 @@ const KIND_LABEL: Record<Plugin['kind'], string> = {
   tool: '工具',
   'bridge-action': 'Bridge',
   'ai-generated': 'AI 生成',
+  panel: '面板',
 };
 
 /** 提取 plugin 描述。 */

@@ -129,6 +129,8 @@ export function PromptComposer({
   const [text, setText] = useState(() => (draftStorageKey ? window.localStorage.getItem(draftStorageKey) ?? '' : ''));
   const [openMenu, setOpenMenu] = useState<'model' | 'persona' | 'task' | 'plus' | 'mode' | 'stop' | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  // 批次 I-a2：面板插件「引用到对话」事件通道（与父控 quotedContext 合流；父控优先）
+  const [panelQuote, setPanelQuote] = useState<string | undefined>();
   const [slashIndex, setSlashIndex] = useState(0);
   // 批次 H.9：@ 引用（员工/文件/任务三类候选；refs 上送带类型前缀 token，不动旧 mentions 语义）
   const [mentionIndex, setMentionIndex] = useState(0);
@@ -153,6 +155,16 @@ export function PromptComposer({
   useEffect(() => {
     adjustHeight();
   }, [text]);
+
+  // 批次 I-a2：监听面板插件标记引用事件（PanelPluginHost 派发；跨渲染树零提升接线）
+  useEffect(() => {
+    const onQuote = (e: Event): void => {
+      const text = (e as CustomEvent<{ text?: string }>).detail?.text;
+      if (typeof text === 'string' && text.trim()) setPanelQuote(text.slice(0, 2000));
+    };
+    window.addEventListener('muster:composer-quote', onQuote);
+    return () => window.removeEventListener('muster:composer-quote', onQuote);
+  }, []);
 
   // 同一挂载点切换会话（如切任务）时：先冲刷旧键未落盘文本再换装对应草稿——
   // 防抖计时器会随 key 变化被清理，不冲刷就丢"切换前最后 300ms 的输入"
@@ -241,9 +253,10 @@ export function PromptComposer({
   };
 
   const handleSend = (): void => {
-    if ((!text.trim() && attachments.length === 0 && !quotedContext) || disabled || loading) return;
+    if ((!text.trim() && attachments.length === 0 && !quotedContext && !panelQuote) || disabled || loading) return;
     // 批次 H.6：划选引用作为前缀随消息附上（"> 引用：…"）
-    const finalText = quotedContext ? `> 引用：${quotedContext.replace(/\n+/g, ' ').slice(0, 200)}\n\n${text.trim()}` : text.trim();
+    const effQuote = quotedContext ?? panelQuote;
+    const finalText = effQuote ? `> 引用：${effQuote.replace(/\n+/g, ' ').slice(0, 200)}\n\n${text.trim()}` : text.trim();
     onSend(finalText, {
       agentId: selectedAgentId,
       model: currentModel || undefined,
@@ -253,6 +266,7 @@ export function PromptComposer({
       refs: extractRefs().length > 0 ? extractRefs() : undefined,
     });
     setText('');
+    setPanelQuote(undefined); // 批次 I-a2：本地插件引用随发送清空
     if (draftStorageKey) window.localStorage.removeItem(draftStorageKey);
     if (textareaRef.current) {
       textareaRef.current.style.height = '42px';
@@ -363,12 +377,12 @@ export function PromptComposer({
       onDragLeave={() => setDragOver(false)}
       onDrop={handleDrop}
     >
-      {/* 批次 H.6：划选引用条 */}
-      {quotedContext && (
+      {/* 批次 H.6 划选引用条 / 批次 I-a2 面板插件标记引用（合流展示，父控优先） */}
+      {(quotedContext ?? panelQuote) && (
         <div className="mu-composer-attachments" style={{ alignItems: 'center' }}>
-          <span className="mu-composer-attachment-chip" style={{ fontStyle: 'italic' }} title={quotedContext}>
-            ❝ {quotedContext.replace(/\n+/g, ' ').slice(0, 80)}{quotedContext.length > 80 ? '…' : ''}
-            <button type="button" aria-label="移除引用" onClick={onClearQuoted} style={{ border: 0, background: 'none', cursor: 'pointer', padding: '0 2px' }}>×</button>
+          <span className="mu-composer-attachment-chip" style={{ fontStyle: 'italic' }} title={quotedContext ?? panelQuote}>
+            ❝ {(quotedContext ?? panelQuote)!.replace(/\n+/g, ' ').slice(0, 80)}{(quotedContext ?? panelQuote)!.length > 80 ? '…' : ''}
+            <button type="button" aria-label="移除引用" onClick={() => { onClearQuoted?.(); setPanelQuote(undefined); }} style={{ border: 0, background: 'none', cursor: 'pointer', padding: '0 2px' }}>×</button>
           </span>
         </div>
       )}
@@ -621,7 +635,7 @@ export function PromptComposer({
               ⏸ 暂停中…
             </Button>
           )}
-          {isRunning && !stopRequested && onStop && !(text.trim() || attachments.length > 0 || quotedContext) && (
+          {isRunning && !stopRequested && onStop && !(text.trim() || attachments.length > 0 || quotedContext || panelQuote) && (
             <div className="mu-composer-popover-wrap">
               <Button
                 size="sm"
@@ -662,7 +676,7 @@ export function PromptComposer({
             size="sm"
             variant="primary"
             loading={loading}
-            disabled={(!text.trim() && attachments.length === 0 && !quotedContext) || disabled}
+            disabled={(!text.trim() && attachments.length === 0 && !quotedContext && !panelQuote) || disabled}
             onClick={handleSend}
             className="mu-composer-send-btn"
           >

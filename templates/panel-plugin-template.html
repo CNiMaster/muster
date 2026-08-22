@@ -1,0 +1,46 @@
+<!doctype html>
+<!--
+  muster 面板插件模板 v1（批次 I-a）——专家照抄即合格。
+  运行环境：右栏 iframe，sandbox="allow-scripts"（opaque origin——无外部网络、
+  读不到工作台存储；CSP 允许内联脚本/样式，图片只许 data:/blob:）。
+  与宿主通信只能走 parent.postMessage，协议见 docs/plugins/panel-plugin-v1.md。
+-->
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>面板插件模板</title>
+<style>
+  body { font: 13px/1.6 system-ui, sans-serif; margin: 0; padding: 12px; }
+  .card { border: 1px solid #ddd; border-radius: 8px; padding: 10px 12px; }
+  button { padding: 4px 10px; border-radius: 6px; border: 1px solid #bbb; background: #fff; cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="card">
+  <p id="status">模板加载成功。把你的面板内容写在这里。</p>
+  <button id="send">回传一条标记到工作台</button>
+</div>
+<script>
+  // 1) 就绪上报：宿主收到后可按需调整 iframe 高度（≤720，超限被夹紧）
+  function ready(height) {
+    parent.postMessage({ v: 1, type: 'ready', height: height || document.body.scrollHeight }, '*');
+  }
+  // 2) 标记回传：payload 任意可 JSON 序列化数据（≤8KB，超限被截断）；label 是给人看的标签
+  function sendMarkup(payload, label) {
+    parent.postMessage({ v: 1, type: 'markup', payload: payload, label: label || '' }, '*');
+  }
+  // 3) 宿主 init（可选监听）：带 pluginId/projectId/taskId 上下文
+  window.addEventListener('message', function (e) {
+    if (e.data && e.data.v === 1 && e.data.type === 'init') {
+      document.getElementById('status').textContent =
+        '已连接工作台（project=' + e.data.context.projectId + '）';
+    }
+  });
+  document.getElementById('send').addEventListener('click', function () {
+    sendMarkup({ note: '这是一条来自插件的标记', at: new Date().toISOString() }, '示例标记');
+  });
+  window.addEventListener('load', function () { ready(); });
+</script>
+</body>
+</html>
