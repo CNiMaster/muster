@@ -286,8 +286,9 @@ bridgeRouter.post('/elevated-command', async (req, res) => {
     const MAX = 16 * 1024;
     g.child.stdout.on('data', (c: Buffer) => { if (out.length < MAX) out += c.toString('utf8').slice(0, MAX - out.length); });
     g.child.stderr.on('data', (c: Buffer) => { if (err.length < MAX) err += c.toString('utf8').slice(0, MAX - err.length); });
-    const code = await new Promise<number | null>((r) => g.child.once('close', (c) => r(c)));
-    res.json({ ok: code === 0, exitCode: code, stdout: out, stderr: err.slice(0, 2000) });
+    const ended = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((r) => g.child.once('close', (c, sig) => r({ code: c, signal: sig })));
+    const killedNote = ended.signal ? `\n[超时被强杀 ${ended.signal}（120s 上限，整进程组已终止）]` : '';
+    res.json({ ok: ended.code === 0 && !ended.signal, exitCode: ended.code, stdout: out, stderr: (err + killedNote).slice(0, 2000) });
   } catch (e) {
     res.status(500).json({ ok: false, error: e instanceof Error ? e.message : String(e) });
   }

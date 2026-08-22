@@ -148,3 +148,17 @@ describe('permission_audit 留档 + 设置链（H9b）', () => {
     expect(JSON.parse(implicitTask.input_protocol_json).mode).toBe('auto-edit');
   });
 });
+
+describe('计划/只读档读取放行（复审 F1）', () => {
+  it('deny 策略：read-file/network 放行；write-file/run-command 拒绝——计划模式不是瞎子', async () => {
+    const f = fixture();
+    const engine = new TaskEngine(db, new FakeExecutor());
+    const { guard } = makeGuard(engine, { ...f, mode: 'plan', strategy: 'deny' });
+    expect((await guard({ action: 'read-file', path: '/repo/a.ts' })).allowed).toBe(true);
+    expect((await guard({ action: 'network', path: 'https://example.com' })).allowed).toBe(true);
+    const w = await guard({ action: 'write-file', path: '/repo/a.ts' });
+    expect(w.allowed).toBe(false);
+    expect(w.message).toContain('只读');
+    expect((await guard({ action: 'run-command', command: 'npm test' })).allowed).toBe(false);
+  });
+});

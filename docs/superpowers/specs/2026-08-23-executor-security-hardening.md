@@ -76,6 +76,17 @@ L3 人工审批（升级兜底）：审查员拿不准/超策略/用户选全审
 
 - **H9c 实施**：bridge 新动作 `elevated-command`（POST，BRIDGE_ACTIONS 注册即入 CLI 能力清单 prompt）——申请（command+targetDirs≤4 绝对路径+reason）→ 红线黑名单 403 前置 → 审批卡（幂等 ensure，policyId=员工策略→ensureRolePermissionTemplates 员工模板→直插卡三级兜底；ai_reason 附申请理由+目标目录）→ broker 等待 → 批准后受托执行（guardedSpawn 临时 profile=任务 worktree+批准目录，逐命令授权≠全开后门；组信号+120s 超时同壳）→ stdout/stderr 随 HTTP 响应回 CLI；拒绝/超时返回明确指引。测试 4 例（批准全链含未批准目录 OS 拒+留档断言/拒绝路径/黑名单 403/参数校验）。
 
+
+## 复审轮实施记录（fix-h9-review-round）
+
+按八类镜头复审 H9a/b/c 已合并代码（197d1b1..291d03e），修五处：
+
+- **F1（Critical·功能）** 计划/只读档 guard「拒绝一切」把 read-file/list_files/network 也拒了——计划模式成一等档位（H9b 四档）后 agent 连读项目/查资料都不行，与「项目内只读」定义矛盾。修：deny 分支放行 read-file/network 两动作（变更类照拒）；security-mode.spec 补直测。
+- **F2（Security·过宽）** guardedSpawn 给**所有**调用点自动放行四个 CLI 家目录+整个 /tmp——run_command/受托越界这类任意命令也能写 ~/.claude、/tmp/*，围栏被自己人开后门。修：自动附加废除，改 `commonPaths: true` 显式开关（只有 spawn CLI 本体的 claude/codex 传入）；新增 commonCliWritableRoots() 导出。
+- **F3（功能潜伏·过窄，与 F2 同根）** opencode/antigravity/custom 走 writeSandboxProfile 只放行 worktree——真 CLI 运行时写自身配置目录/临时文件会被 OS 拒（mock runner 测试看不见，镜头4/8 类）。修：三适配器 writableRoots 追加 commonCliWritableRoots()。顺带清掉 antigravity try 块内 shadow 重复声明（内层 profile 永不 unlink=每次运行泄漏一个 .sb 临时文件）。
+- **F4（Security·超时杀不净）** Node 原生 spawn timeout 只杀直接子进程不杀进程组——run_command/elevated 超时后孙进程存活。修：guardedSpawn 自管超时定时器→killGroup('SIGKILL')；registry/bridge close 文案补 `[超时被强杀 SIGKILL]` 给模型可读终止原因。真实进程测试断言 signal==='SIGKILL'。
+- **F5（Minor·一致性）** auto-edit 恒审超时分支缺 approval.timed-out 事件+shutdown 文案，与 legacy 分支对齐。
+
 ## 分期
 
 - **H9a 统一执行壳**（纯工程）：四件套+探针单测+custom/opencode 补洞（env 清洗/进程组）。先行。

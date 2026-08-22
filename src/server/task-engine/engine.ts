@@ -1571,9 +1571,13 @@ export class TaskEngine {
   }): ((request: { action: string; path?: string; command?: string }) => Promise<{ allowed: boolean; message?: string }>) | undefined {
     if (!(env.permissionPolicy || env.effectiveStrategy)) return undefined;
     return async (request) => {
-      // 只读（plan/deny）：直接拒绝一切执行动作（CLI 侧同时落 read-only 沙盒）
+      // 只读（plan/deny）：拒绝一切变更动作，但放行读取（复审 F1：计划模式=项目内只读——
+      // read_file/list_files/联网查资料是制定计划的前提，全拒等于把计划模式做成瞎子）。
       if (env.effectiveStrategy === 'deny') {
-        return { allowed: false, message: '当前为只读模式：本次对话已设置为不执行任何变更动作' };
+        if (request.action === 'read-file' || request.action === 'network') {
+          return { allowed: true };
+        }
+        return { allowed: false, message: '当前为计划/只读模式：仅允许读取与查资料，不执行任何变更动作' };
       }
       let decision = env.employeePermissionPolicy
         ? evaluatePermission(this.db, env.employeePermissionPolicy.id, {
@@ -1621,7 +1625,7 @@ export class TaskEngine {
           realtime.publish(makeLifecycleEvent('approval.requested',{approvalId:approval.id,taskId:env.task.id,projectTaskId:env.task.projectTaskId,threadId:env.projectTaskThread.id},{projectId:env.project.id,taskId:env.task.id}));
           const resolution=await approvalBroker.wait(approval.id,600_000);
           if(resolution==='allow'||resolution==='deny')clearTaskApprovalWait(this.db,env.task.id);
-          else {env.approvalFailure.current=new RunFailure('approval_timeout',`审批请求 ${approval.id} 等待超时，已安全停止`);markTaskWaitingApproval(this.db,env.task.id,approval.id,'persistent');}
+          else {env.approvalFailure.current=new RunFailure('approval_timeout',`审批请求 ${approval.id} ${resolution==='shutdown'?'因 Muster 停止而安全拒绝':'等待超时，已安全停止'}`);markTaskWaitingApproval(this.db,env.task.id,approval.id,'persistent');realtime.publish(makeLifecycleEvent('approval.timed-out',{approvalId:approval.id,taskId:env.task.id},{projectId:env.project.id,taskId:env.task.id}));}
           return resolution==='allow'?{allowed:true}:{allowed:false,message:`审批请求 ${approval.id} ${resolution==='deny'?'已拒绝':'等待超时，已安全停止'}`};
         }
         // AI 审批辅助（四级递进）：高频操作先调 AI 判断。

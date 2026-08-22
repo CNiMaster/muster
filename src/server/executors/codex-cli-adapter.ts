@@ -48,7 +48,7 @@ class StdioCodexAppServer implements CodexAppServer{
   private initialized:Promise<void>;
   constructor(binary:string,options:{cwd:string;env:NodeJS.ProcessEnv}){
     // H9a 统一执行壳：进程组+env 清洗+seatbelt 围栏（worktree 外写被 OS 拒；codex 自带沙箱管它的工具，外层管它的越界）
-    const guarded=guardedSpawn(binary,['app-server','--listen','stdio://'],{cwd:options.cwd,writableRoots:[options.cwd],env:sanitizeChildEnv(options.env),id:'codex'});
+    const guarded=guardedSpawn(binary,['app-server','--listen','stdio://'],{cwd:options.cwd,writableRoots:[options.cwd],commonPaths:true,env:sanitizeChildEnv(options.env),id:'codex'});
     this.child=guarded.child;
     this.killGroup=guarded.killGroup;
     createInterface({input:this.child.stdout}).on('line',line=>this.handleLine(line));

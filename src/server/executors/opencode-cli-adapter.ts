@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { unlinkSync } from 'node:fs';
-import { guardedArgv, sanitizeChildEnv, writeSandboxProfile } from './spawn-shell';
+import { commonCliWritableRoots, guardedArgv, sanitizeChildEnv, writeSandboxProfile } from './spawn-shell';
 import { promisify } from 'node:util';
 import { readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -208,7 +208,7 @@ export class OpenCodeCliAdapter implements ExecutionAdapter {
     if (ctx.sessionIdHint) args.push('--session', ctx.sessionIdHint);
     const cleanupDenyGuard = await injectOpenCodeDenyGuard(ctx.workingDir);
     // H9a 统一执行壳：seatbelt 文件写围栏 + env 清洗（opencode 自带 permission.deny 管它内部，外层管越界写）
-    const profilePath = writeSandboxProfile({ writableRoots: [ctx.workingDir], profileDir: ctx.runTempDir, id: `opencode_${ctx.task.id}` });
+    const profilePath = writeSandboxProfile({ writableRoots: [ctx.workingDir, ...commonCliWritableRoots()], profileDir: ctx.runTempDir, id: `opencode_${ctx.task.id}` });
     const argv = guardedArgv(binary, args, profilePath);
     try {
       const result = await (this.options.runner ?? defaultRunner)(argv[0]!, argv.slice(1), {

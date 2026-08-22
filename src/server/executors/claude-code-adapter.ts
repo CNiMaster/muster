@@ -273,6 +273,7 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
       const guarded = guardedSpawn(opts.settings.claudeBin, args, {
         cwd: opts.cwd,
         writableRoots: [opts.cwd],
+        commonPaths: true, // CLI 本体：放行 CLI 家目录与系统 tmp（写自身 session/配置）
         env: childEnv,
         id: 'claude',
       });
