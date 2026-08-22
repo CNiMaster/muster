@@ -83,6 +83,8 @@ export interface ToolLoopOptions {
   timeoutMs: number;
   /** abort signal。 */
   signal?: AbortSignal;
+  /** H8 安全停信号：收到后不再开始新的模型调用/工具执行；等模型响应中则直接中止。 */
+  stopSignal?: AbortSignal;
   /** 模型名（用于 usage 记账）。 */
   model: string;
   permissionGuard?: (request: { action: string; path?: string; command?: string }) => { allowed: boolean; message?: string }|Promise<{ allowed: boolean; message?: string }>;
@@ -120,11 +122,27 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult
     opts.signal.addEventListener('abort', () => controller.abort(), { once: true });
   }
 
+  // H8 安全停：收到停止请求后不再开始新的模型调用/工具执行（等边界）；
+  // 若正在等模型响应则直接中止（fetch abort=立即停）。
+  // 初值检查：停止先于循环到达时 abort 事件已错过（aborted 信号不补发监听器）。
+  let stopRequested = opts.stopSignal?.aborted ?? false;
+  let inModelCall = false;
+  opts.stopSignal?.addEventListener('abort', () => {
+    stopRequested = true;
+    if (inModelCall) controller.abort();
+  }, { once: true });
+
   try {
     while (rounds < opts.maxToolCalls) {
-      if (controller.signal.aborted) break;
+      if (controller.signal.aborted || stopRequested) break;
       rounds++;
-      const modelResult = await opts.callModel(messages, controller.signal, tools);
+      inModelCall = true;
+      let modelResult;
+      try {
+        modelResult = await opts.callModel(messages, controller.signal, tools);
+      } finally {
+        inModelCall = false;
+      }
       totalInput += modelResult.usage.promptTokens;
       totalOutput += modelResult.usage.completionTokens;
       totalCached += modelResult.usage.cachedTokens ?? 0;
@@ -241,6 +259,8 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult
         if (tr.doneResult) {
           doneResult = tr.doneResult;
         }
+        // H8 安全停：当前工具已执行完（写文件/命令到边界），不再开始本轮下一个工具
+        if (stopRequested) break;
       }
 
       if (doneResult) {

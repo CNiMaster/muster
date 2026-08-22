@@ -2,13 +2,14 @@ import { useEffect, useState } from 'react';
 import type React from 'react';
 import type { Agent, Task } from '../../api/types';
 import type { ProjectTaskDTO } from '../../hooks/queries';
-import { useQueuedMessages, useQueuedMessageAction, useInterruptTask, useUiMode, useTask, useProjectTaskAction, useTaskAction, usePostMessage, useMessages, useUploadMaterial, materialRawUrl, useExecutorProfiles, useSystemSettings, useBlueprintMatches, useTaskChecklist, useCreateChecklist, useAdvanceChecklist, useArtifacts, type MessageAttachment } from '../../hooks/queries';
+import { useQueuedMessages, useQueuedMessageAction, useUiMode, useTask, useProjectTaskAction, useTaskAction, usePostMessage, useMessages, useUploadMaterial, materialRawUrl, useExecutorProfiles, useSystemSettings, useBlueprintMatches, useTaskChecklist, useCreateChecklist, useAdvanceChecklist, useArtifacts, useStopAllProjectTasks, type MessageAttachment } from '../../hooks/queries';
 import { PromptComposer, type ComposerMode } from '../workbench/PromptComposer';
 import { Button, toast } from '../Button';
 import { StateBadge, Badge } from '../Badge';
 import { ConversationPanel } from '../ConversationPanel';
 import { ExecutionTraceCard } from '../workbench/ExecutionTraceCard';
 import { LiveProcessBar } from '../workbench/LiveProcessBar';
+import { InterruptRecordCard } from '../workbench/InterruptRecordCard';
 import { QueueStrip } from './QueueStrip';
 import { Input, Textarea, Field } from '../Form';
 import { TaskTopBar } from './TaskTopBar';
@@ -94,7 +95,7 @@ export function ProjectTaskWorkspace({
   // 批次 H.5：排队条 + 插话打断（运行态判定绑 activeRuntimeTask 口径）
   const { data: queuedMessages = [] } = useQueuedMessages(projectId);
   const queueAction = useQueuedMessageAction(projectId);
-  const interrupt = useInterruptTask(projectId);
+  const stopAll = useStopAllProjectTasks(projectId);
   const runtimeBusy = activeRuntimeTask?.state === 'running' || activeRuntimeTask?.state === 'claimed';
   // 批次 H.6：划选引用（消息区选中→composer 引用条→随下轮输入附上）
   const [quotedContext, setQuotedContext] = useState<string | undefined>();
@@ -148,14 +149,14 @@ export function ProjectTaskWorkspace({
       );
     }
 
-    // 批次 H.5：运行中发送——按设置入队（等本轮结束 drain 送出）或打断插话
+    // 批次 H.5（H8 第五轮收敛）：运行中发送——入队（等本轮结束 drain 送出）或全局安全停后插话
     if (runtimeBusy && activeRuntimeTask) {
       if (interruptMode === 'interrupt') {
-        interrupt.mutate(activeRuntimeTask.id, {
+        stopAll.mutate({ projectId }, {
           onSuccess: () => {
             postMessage.mutate(
               { scopeId: projectId, content, mentions: options?.agentId ? [options.agentId] : [], refs: options?.refs, projectTaskId: selectedTask?.id, attachments: messageAttachments.length ? messageAttachments : undefined, options: messageOptions },
-              { onSuccess: () => toast('success', '已打断并插话'), onError: (e) => toast('error', (e as Error).message) },
+              { onSuccess: () => toast('success', '已请求暂停并送出插话——任务将在安全边界停下'), onError: (e) => toast('error', (e as Error).message) },
             );
           },
           onError: (e) => toast('error', (e as Error).message),
@@ -442,17 +443,35 @@ export function ProjectTaskWorkspace({
           </>
         )}
 
+        {activeRuntimeTask?.state === 'paused' && (
+          <InterruptRecordCard
+            task={activeRuntimeTask}
+            projectId={projectId}
+            onPrefill={(record) => { setQuotedContext(record); toast('success', '打断记录已附到输入框——补充你的要求后发送'); }}
+          />
+        )}
         {<QueueStrip projectId={projectId} messages={queuedMessages} />}
         <PromptComposer
           isRunning={runtimeBusy}
-          onStop={activeRuntimeTask ? () => interrupt.mutate(activeRuntimeTask.id, { onError: (e) => toast('error', (e as Error).message) }) : undefined}
+          onStop={() => stopAll.mutate({ projectId }, {
+            onSuccess: (d) => toast('success', d.stopped > 0 ? `已请求暂停 ${d.stopped} 个任务——各自在安全边界停下` : '当前没有执行中的任务'),
+            onError: (e) => toast('error', (e as Error).message),
+          })}
+          onStopImmediate={() => stopAll.mutate({ projectId, immediate: true }, {
+            onSuccess: (d) => toast('success', d.stopped > 0 ? `已立即停止 ${d.stopped} 个任务——现场保留在各任务的打断记录里` : '当前没有执行中的任务'),
+            onError: (e) => toast('error', (e as Error).message),
+          })}
+          stopRequested={tasks.some((t) => (t.state === 'running' || t.state === 'claimed') && t.stopRequested)}
+          runningCount={tasks.filter((t) => t.state === 'running' || t.state === 'claimed').length}
           quotedContext={quotedContext}
           onClearQuoted={() => setQuotedContext(undefined)}
           placeholder={
             activeRuntimeTask?.state === 'waiting_input'
               ? '智能体正在等待你的答复，直接输入即可继续执行…'
               : runtimeBusy
-                ? (interruptMode === 'queue' ? '继续输入以排队后续修改…' : '输入即打断插话（Enter 发送）…')
+                ? (tasks.some((t) => (t.state === 'running' || t.state === 'claimed') && t.stopRequested)
+                  ? '已请求暂停，等待各任务到安全边界…'
+                  : (interruptMode === 'queue' ? '继续输入以排队后续修改…' : '输入即安全停后插话（Enter 发送）…'))
                 : selectedTask
                   ? `在任务 #${selectedTask.seq} 中给智能体下达指令…`
                   : '直接输入需求，或向智能体分配任务…'

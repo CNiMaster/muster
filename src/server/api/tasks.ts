@@ -25,6 +25,8 @@ import {
   resumeTask,
   setTaskAutoContinue,
   interruptTask,
+  requestStopTask,
+  requeueStoppedTask,
   taskWaitingSince,
   type Task,
   acceptSuggestion,
@@ -38,7 +40,12 @@ import { AppError, ErrorCode } from '../../shared/errors';
 import { listTaskEvents } from '../domain/task-event';
 import { listTrace, type TraceKind } from '../domain/execution-trace';
 import { listTaskMessages, addTaskMessage } from '../domain/task-message';
-import { getTaskRuntime } from '../domain/task-runtime';
+import { getTaskRuntime, deleteTaskRuntime } from '../domain/task-runtime';
+import { resolveTaskRepoRoot } from '../domain/task-repo';
+import { removeWorktree } from '../worktree/manager';
+import { postSystemMessage, postUserMessage } from '../domain/conversation';
+import { getAgent } from '../domain/agent';
+import { ensureHrAgentId } from '../domain/system-agents';
 import { resolveArtifactPath } from '../domain/artifact-content';
 import { isPathAllowed } from '../paths';
 import { existsSync, statSync } from 'node:fs';
@@ -174,7 +181,10 @@ taskByIdRouter.get(
   }),
 );
 
-/** 批次 H.5：插话打断——置 queued + abort（回队列让位重跑，不判失败）。 */
+/**
+ * 批次 H.5：插话打断强停原语——置 queued + abort（回队列让位重跑，不判失败）。
+ * H8 起用户停止统一走 /stop（安全停：等边界 → paused + 打断记录）；本端点保留给引擎关机同款语义，UI 不再调用。
+ */
 taskByIdRouter.post(
   '/interrupt',
   asyncHandler(async (req, res) => {
@@ -184,6 +194,142 @@ taskByIdRouter.post(
     const engine = (req.app.locals as { engine?: { abortTask: (id: string) => boolean } }).engine;
     const aborted = engine ? engine.abortTask(taskId) : false;
     res.json({ ok: true, aborted });
+  }),
+);
+
+/** H8 安全停：请求暂停（受理回执即刻发对话区），执行器在工具边界停下，超时自动强停；immediate=true 立即强停（急救）。 */
+taskByIdRouter.post(
+  '/stop',
+  asyncHandler(async (req, res) => {
+    const db = getDb();
+    const taskId = param(req, 'id');
+    const { immediate = false } = z.object({ immediate: z.boolean().optional() }).parse(req.body ?? {});
+    const task = requestStopTask(db, taskId);
+    // 受理回执：带当前动作名（用户观察"机器有在响应我"）
+    const lastAction = listTrace(db, taskId).find((t) => t.kind === 'tool_call' || t.kind === 'file_edit')?.summary ?? null;
+    if ((task.inputProtocol.scope === 'project' || task.inputProtocol.scope === 'workbench') && typeof task.inputProtocol.scopeId === 'string') {
+      try {
+        postSystemMessage(db, {
+          scopeKind: task.inputProtocol.scope as 'project' | 'workbench',
+          scopeId: task.inputProtocol.scopeId,
+          role: 'assistant',
+          author: task.assigneeAgentId ?? 'system',
+          content: immediate
+            ? '已请求立即停止——正在终止当前执行（半成品会保留在打断记录里）。'
+            : `已请求暂停——${lastAction ? `等待当前动作（${lastAction}）完成后` : '等待执行边界'}停下；超过等待上限会自动强停并保留现场。`,
+          refTaskId: task.id,
+        });
+      } catch { /* 回执失败不影响停止 */ }
+    }
+    const engine = (req.app.locals as { engine?: { requestStop?: (id: string, opts?: { immediate?: boolean }) => boolean } }).engine;
+    const signalled = engine?.requestStop ? engine.requestStop(taskId, { immediate }) : false;
+    realtime.publish({
+      id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      type: 'task.stop_requested',
+      projectId: task.projectId,
+      taskId: task.id,
+      occurredAt: new Date().toISOString(),
+      payload: { signalled, immediate, lastAction },
+    });
+    res.json({ ok: true, signalled, immediate, task: getTask(db, taskId) });
+  }),
+);
+
+/** H8 打断记录「回退」：丢弃安全停保留的现场（worktree+分支），任务回 queued 从基线重跑。 */
+taskByIdRouter.post(
+  '/discard-stop',
+  asyncHandler(async (req, res) => {
+    const db = getDb();
+    const taskId = param(req, 'id');
+    const task = getTask(db, taskId);
+    if (task.state !== 'paused') {
+      throw new AppError(ErrorCode.TASK_INVALID_TRANSITION, `任务不在已暂停状态（${task.state}），无可回退的打断现场`);
+    }
+    const runtime = getTaskRuntime(db, taskId);
+    if (runtime) {
+      removeWorktree(resolveTaskRepoRoot(db, getProject(db, task.projectId), task.projectTaskId), runtime, { keepBranch: false });
+      deleteTaskRuntime(db, taskId);
+    }
+    const requeued = requeueStoppedTask(db, taskId);
+    publishTaskStateEvent(requeued.id, requeued.state);
+    res.json(requeued);
+  }),
+);
+
+/**
+ * H8 纠错（第六/七轮收敛）：点名出错的执行者——在跑先安全停他（流程内单点停），
+ * 用户描述问题后发给**纠错执行人的上级**（自动路由，不都给人事）：
+ * 中央岗（人事/养蜂人等系统岗）→ 第一负责人；有派遣人 → 派遣他的领导；
+ * 负责人本人被纠错 → 人事（重新安排）；兜底 → 第一负责人。
+ * 处置（重做/重排/修改工作/撤否）由收令上级判断，不交用户直发。
+ */
+taskByIdRouter.post(
+  '/correct',
+  asyncHandler(async (req, res) => {
+    const db = getDb();
+    const taskId = param(req, 'id');
+    const { problem } = z.object({ problem: z.string().min(1).max(2000) }).parse(req.body);
+    const task = getTask(db, taskId);
+    const project = getProject(db, task.projectId);
+    const hrId = ensureHrAgentId(db);
+
+    // ① 在跑先安全停（等边界→paused+打断记录；已在 paused/等待态则直接走消息）
+    if (task.state === 'running' || task.state === 'claimed') {
+      requestStopTask(db, taskId);
+      const engine = (req.app.locals as { engine?: { requestStop?: (id: string, opts?: { immediate?: boolean }) => boolean } }).engine;
+      engine?.requestStop?.(taskId);
+    }
+
+    // ② 打断记录（若有）并入纠错上下文
+    const interrupted = [...listTaskEvents(db, taskId)].reverse().find((e) => e.kind === 'interrupted');
+    const payload = (interrupted?.payload ?? {}) as { steps?: number; lastAction?: string | null; fileCount?: number };
+    const assignee = task.assigneeAgentId ? getAgent(db, task.assigneeAgentId) : null;
+    const dispatcher = task.dispatcherAgentId ? getAgent(db, task.dispatcherAgentId) : null;
+
+    // ③ 上级路由（第七/八轮定稿）：中央岗→负责人；有派遣人→派遣领导；兜底→负责人。
+    // 第一负责人本人不进纠错链——他与用户直接沟通，有问题用户直说（用户定稿）。
+    const leadId = project.firstAgentId ?? null;
+    let recipientId: string;
+    let recipientWhy: string;
+    if (!assignee) {
+      recipientId = leadId ?? hrId;
+      recipientWhy = '任务无执行者，交负责人处置';
+    } else if (assignee.id === leadId || assignee.role === 'lead') {
+      throw new AppError(ErrorCode.VALIDATION, '第一负责人与您直接沟通——请直接在对话中指出问题，无需走纠错流程');
+    } else if (assignee.isSystem) {
+      recipientId = leadId ?? hrId;
+      recipientWhy = `被纠错的是中央岗（${assignee.name}），其上级为第一负责人`;
+    } else if (dispatcher) {
+      recipientId = dispatcher.id;
+      recipientWhy = `由派遣他的上级（${dispatcher.name}）处置`;
+    } else {
+      recipientId = leadId ?? hrId;
+      recipientWhy = '无派遣记录，交第一负责人处置';
+    }
+    if ((getAgent(db, recipientId).permissions as { userDirectContact?: boolean } | undefined)?.userDirectContact === false) {
+      recipientId = leadId ?? hrId; // 收令人不开放直联（如隐形中央岗缺分区口子）→ 回落负责人
+      recipientWhy = '原收令人不开放用户直联，回落第一负责人';
+    }
+
+    const content = [
+      `【纠错】执行者 ${assignee?.name ?? '未知'} 的任务 #${task.seq}「${task.title}」被用户点名纠错（${recipientWhy}）：`,
+      problem,
+      interrupted
+        ? `- 停点：第 ${payload.steps ?? '?'} 步，最后动作 ${payload.lastAction ?? '无'}，已改文件 ${payload.fileCount ?? 0} 个（完整打断记录见任务事件）`
+        : '- 该任务当前无打断记录',
+      dispatcher && dispatcher.id !== recipientId ? `- 派遣人：${dispatcher.name}（请知悉并配合处置）` : '',
+      '请判断处置：重新安排人员 / 让对应人员重新工作 / 修改其工作；是否撤销这批改动也由你评估。若对其他执行者的工作有影响，请一并评估并调整。',
+    ].filter(Boolean).join('\n');
+
+    const { tasks: created } = postUserMessage(db, {
+      scopeKind: 'project',
+      scopeId: task.projectId,
+      content,
+      mentions: [recipientId],
+      projectTaskId: task.projectTaskId ?? undefined,
+    });
+    publishTaskStateEvent(task.id, getTask(db, taskId).state);
+    res.json({ ok: true, correctionTaskId: created[0]?.id ?? null, recipientId });
   }),
 );
 
@@ -272,7 +418,20 @@ taskByIdRouter.post(
 taskByIdRouter.post(
   '/pause',
   asyncHandler(async (req, res) => {
-    const task = pauseTask(getDb(), param(req, 'id'));
+    // H8 修复既有缺陷：运行中 pauseTask 只改状态不通知引擎，实际停不下来——
+    // 运行/已领取态改走安全停（等边界→paused+打断记录）；等待态维持原状态机暂停。
+    const db = getDb();
+    const taskId = param(req, 'id');
+    const before = getTask(db, taskId);
+    if (before.state === 'running' || before.state === 'claimed') {
+      const task = requestStopTask(db, taskId);
+      const engine = (req.app.locals as { engine?: { requestStop?: (id: string) => boolean } }).engine;
+      engine?.requestStop?.(taskId);
+      publishTaskStateEvent(task.id, task.state);
+      res.json(task);
+      return;
+    }
+    const task = pauseTask(db, taskId);
     publishTaskStateEvent(task.id, 'paused');
     res.json(task);
   }),

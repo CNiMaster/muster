@@ -71,9 +71,15 @@ export interface PromptComposerProps {
   draftKey?: string;
   /** 批次 H.9：@文件 引用候选（产物/仓库相对路径，挂载方从 useArtifacts 传入） */
   fileOptions?: Array<{ path: string }>;
-  /** 批次 H.5：任务运行中——发送键变方块停止键（点击打断，任务回队列让位重跑）。 */
+  /** H8（第五轮定稿）：主按钮=全局暂停（本项目全部执行中任务各自等安全边界）。 */
   isRunning?: boolean;
   onStop?: () => void;
+  /** H8：已请求暂停（等边界）——按钮转「暂停中…」禁用防连击。 */
+  stopRequested?: boolean;
+  /** H8 ⌄ 菜单：项目运行中任务数。 */
+  runningCount?: number;
+  /** H8 ⌄ 菜单：全局立即停止（急救：不等当前命令跑完，本项目全部执行中任务）。 */
+  onStopImmediate?: () => void;
   /** 批次 H.6：划选引用（消息区选中文字→随下轮输入附上）。 */
   quotedContext?: string;
   onClearQuoted?: () => void;
@@ -108,6 +114,9 @@ export function PromptComposer({
   fileOptions = [],
   isRunning = false,
   onStop,
+  stopRequested = false,
+  runningCount = 0,
+  onStopImmediate,
   quotedContext,
   onClearQuoted,
   onSend,
@@ -115,7 +124,7 @@ export function PromptComposer({
   // 批次 G.1：草稿按 draftKey 隔离持久化（muster:*:vN 约定）；无 key 保持纯内存行为
   const draftStorageKey = draftKey ? `muster:composer-draft:v1:${draftKey}` : null;
   const [text, setText] = useState(() => (draftStorageKey ? window.localStorage.getItem(draftStorageKey) ?? '' : ''));
-  const [openMenu, setOpenMenu] = useState<'model' | 'persona' | 'task' | 'plus' | 'mode' | null>(null);
+  const [openMenu, setOpenMenu] = useState<'model' | 'persona' | 'task' | 'plus' | 'mode' | 'stop' | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [slashIndex, setSlashIndex] = useState(0);
   // 批次 H.9：@ 引用（员工/文件/任务三类候选；refs 上送带类型前缀 token，不动旧 mentions 语义）
@@ -597,16 +606,54 @@ export function PromptComposer({
 
         <div className="mu-prompt-actions">
           <span className="mu-composer-hint">Shift+Enter 换行</span>
-          {isRunning && onStop && (
+          {/* H8（第五轮定稿）：主按钮=全局暂停；⌄=全局立即停止（急救）；等待窗口=暂停中…禁用。
+              单 agent 停止不做——出错的执行者停后在执行者目录里点名（撤销/审查）。 */}
+          {isRunning && stopRequested && (
             <Button
               size="sm"
               variant="danger"
-              onClick={onStop}
-              title="打断当前执行（任务回队列让位重跑）"
-              aria-label="停止当前执行"
+              disabled
+              title="已请求暂停，正在等各执行中的任务到达安全边界（写文件等写完/命令等跑完/等模型直接停）；超时自动强停并保留现场"
             >
-              ■
+              ⏸ 暂停中…
             </Button>
+          )}
+          {isRunning && !stopRequested && onStop && !(text.trim() || attachments.length > 0 || quotedContext) && (
+            <div className="mu-composer-popover-wrap">
+              <Button
+                size="sm"
+                variant="danger"
+                onClick={onStop}
+                title="暂停本项目全部执行中的任务（各自等安全边界停下；排队/等待中的不动），停下后出打断记录，可在执行者目录点名处理"
+                aria-label="暂停本项目全部任务"
+              >
+                ⏸ 暂停
+              </Button>
+              {onStopImmediate && (
+                <Button
+                  size="sm"
+                  variant="danger"
+                  onClick={() => setOpenMenu(openMenu === 'stop' ? null : 'stop')}
+                  aria-label="更多停止选项"
+                  title="立即停止全部（急救）"
+                >
+                  ⌄
+                </Button>
+              )}
+              {openMenu === 'stop' && onStopImmediate && (
+                <div className="mu-composer-dropdown" style={{ right: 0, bottom: '100%', marginBottom: 4, minWidth: 280 }}>
+                  <div className="mu-dropdown-header">停止选项</div>
+                  <button
+                    type="button"
+                    className="mu-dropdown-item"
+                    onClick={() => { setOpenMenu(null); onStopImmediate(); }}
+                    title="不等边界立刻终止本项目全部执行——半成品保留在各自打断记录里。急救用，如误跑破坏性命令"
+                  >
+                    <span>⚠ 立即停止本项目全部任务{runningCount > 0 ? `（${runningCount} 个执行中）` : ''}</span>
+                  </button>
+                </div>
+              )}
+            </div>
           )}
           <Button
             size="sm"

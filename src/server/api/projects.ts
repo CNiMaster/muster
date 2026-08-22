@@ -50,7 +50,7 @@ import { buildDispatchTree } from '../domain/dispatch-tree';
 import {
   listQueuedMessages, enqueueMessage, reorderQueuedMessages, editQueuedMessage, cancelQueuedMessage, flushQueuedMessage,
 } from '../domain/queued-message';
-import { interruptTask } from '../domain/task';
+import { requestStopTask } from '../domain/task';
 import { listProjectSpecialists } from '../domain/specialist-pool';
 import {
   promoteProjectStagingIfAny,
@@ -204,23 +204,46 @@ projectsRouter.delete(
   }),
 );
 
-/** ↑立即：打断当前执行（置 queued + abort）后立即送出该条。 */
+/** ↑立即：安全停当前执行（等边界→paused+打断记录，H8 语义）后立即送出该条。 */
 projectsRouter.post(
   '/:id/queued-messages/:messageId/flush',
   asyncHandler(async (req, res) => {
     const db = getDb();
     const projectId = param(req, 'id');
-    // 打断该项目正在跑的任务（先置 queued 再 abort——域层语义见 interruptTask）
+    // 安全停该项目正在跑的任务（I5 收敛：打断不是重跑——任务落 paused 留打断记录，新消息走新轮）
     const running = db.prepare("SELECT id FROM task WHERE project_id=? AND state IN ('running','claimed')").all(projectId) as Array<{ id: string }>;
-    const engine = (req.app.locals as { engine?: { abortTask: (id: string) => boolean } }).engine;
+    const engine = (req.app.locals as { engine?: { requestStop?: (id: string) => boolean } }).engine;
+    let stopped = 0;
     for (const t of running) {
       try {
-        interruptTask(db, t.id); // 评审 I6：复用域函数（置 queued+清租约，nowIso 口径），不再内联 SQL
-        engine?.abortTask(t.id);
-      } catch { /* 单任务打断失败不阻断送出 */ }
+        requestStopTask(db, t.id);
+        engine?.requestStop?.(t.id);
+        stopped += 1;
+      } catch { /* 单任务停止失败不阻断送出 */ }
     }
     flushQueuedMessage(db, param(req, 'messageId'));
-    res.json({ ok: true });
+    res.json({ ok: true, stopped });
+  }),
+);
+
+/** H8（第五轮定稿）全局停止：本项目全部执行中任务——默认安全停（等边界→paused+打断记录）；immediate=true 立即强停（急救）。 */
+projectsRouter.post(
+  '/:id/tasks/stop-all',
+  asyncHandler(async (req, res) => {
+    const db = getDb();
+    const projectId = param(req, 'id');
+    const { immediate = false } = z.object({ immediate: z.boolean().optional() }).parse(req.body ?? {});
+    const running = db.prepare("SELECT id FROM task WHERE project_id=? AND state IN ('running','claimed')").all(projectId) as Array<{ id: string }>;
+    const engine = (req.app.locals as { engine?: { requestStop?: (id: string, opts?: { immediate?: boolean }) => boolean } }).engine;
+    let stopped = 0;
+    for (const t of running) {
+      try {
+        requestStopTask(db, t.id);
+        engine?.requestStop?.(t.id, { immediate });
+        stopped += 1;
+      } catch { /* 单任务失败不阻断其余 */ }
+    }
+    res.json({ ok: true, stopped, total: running.length, immediate });
   }),
 );
 

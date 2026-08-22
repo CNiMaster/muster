@@ -110,6 +110,7 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
       events,
       settings: mergedSettings,
       signal: ctx.signal,
+      stopSignal: ctx.stopSignal,
       readonlyDirs: ctx.readonlyDirs,
       apiKeyValue,
       permissionGuard: ctx.permissionGuard,
@@ -120,7 +121,7 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
     let parsed = agentRunResultSchema.safeParse(
       execution.result.structuredOutput ?? tryParseJSON(execution.result.fullText),
     );
-    if (!parsed.success && execution.sessionId && !ctx.signal?.aborted) {
+    if (!parsed.success && execution.sessionId && !ctx.signal?.aborted && !ctx.stopSignal?.aborted) {
       log.warn('claude output missing structured result; requesting one format correction', {
         taskId: ctx.task.id,
       });
@@ -136,6 +137,7 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
         events,
         settings: mergedSettings,
         signal: ctx.signal,
+        stopSignal: ctx.stopSignal,
         disableTools: true,
         readonlyDirs: ctx.readonlyDirs,
         apiKeyValue,
@@ -199,6 +201,8 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
     /** Claude 相关设置子集。 */
     settings: Pick<SystemSettings, 'claudeBin' | 'model' | 'skipPermissions' | 'timeoutMs' | 'maxToolCalls'>;
     signal?: AbortSignal;
+    /** H8 安全停：SIGINT 优雅打断（CLI 收尾总结后自行退出），signal 仍是 SIGTERM 强停。 */
+    stopSignal?: AbortSignal;
     disableTools?: boolean;
     /** 授权只读目录（PRD Phase 3.4）。 */
     readonlyDirs?: string[];
@@ -277,6 +281,14 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
         proc.kill('SIGTERM');
       };
       opts.signal?.addEventListener('abort', abort, { once: true });
+      // H8 安全停：SIGINT 让 CLI 优雅收尾（当前工具跑完+总结），超时兜底由引擎 forceStop 走 SIGTERM。
+      // 初值守卫：停止先于监听注册到达时 abort 事件已错过（aborted 信号不补发监听器）。
+      opts.stopSignal?.addEventListener('abort', () => {
+        try { proc.kill('SIGINT'); } catch { /* 进程已退出 */ }
+      }, { once: true });
+      if (opts.stopSignal?.aborted) {
+        try { proc.kill('SIGINT'); } catch { /* 进程已退出 */ }
+      }
 
       let fullText = '';
       let structuredOutput: unknown = null;

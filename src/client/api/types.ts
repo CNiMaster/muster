@@ -250,6 +250,8 @@ export interface Task {
   autoContinueStopped?: boolean;
   /** 批次 F.4：等待起点 ISO 时间（仅 waiting_input 任务由服务端附带）。 */
   waitingSince?: string | null;
+  /** H8 安全停：true=已请求停止，等执行边界（前端据此切「停止中…」禁用态）。 */
+  stopRequested?: boolean;
   createdAt: string;
   updatedAt: string;
 }

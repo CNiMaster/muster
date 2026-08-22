@@ -112,7 +112,9 @@ import{SessionManager}from'../domain/session-manager';
 import{approvalBroker}from'../domain/approval-broker';
 import { classifyRunFailure, RunFailure, RunWatchdog } from './run-watchdog';
 import { makeLifecycleEvent } from '../../shared/lifecycle-events';
-import { appendTrace, type AppendTraceInput } from '../domain/execution-trace';
+import { appendTrace, listTrace, type AppendTraceInput } from '../domain/execution-trace';
+import { getSystemSettings } from '../domain/setting';
+import { spawnErrorHint } from '../executors/spawn-errors';
 import { scanWorktreeMediaPreviews } from '../runtime/media-preview';
 import { CLAUDE_FILE_TOOL_NAMES } from '../executors/claude-stream-events';
 
@@ -155,6 +157,8 @@ export class TaskEngine {
   private pollTimer: NodeJS.Timeout | null = null;
   private pumping = new Set<string>(); // 正在 pump 的 threadId，防重入
   private activeRuns = new Map<string, AbortController>();
+  /** H8 安全停：每 run 一个停止信号（边界等待）+ 超时强停定时器。 */
+  private activeStops = new Map<string, { controller: AbortController; hardTimer: NodeJS.Timeout | null }>();
   /** 服务端端口（用于 Agent Bridge loopback URL 构造） */
   serverPort: number = 3456;
 
@@ -354,6 +358,8 @@ export class TaskEngine {
     const repoRoot = resolveTaskRepoRoot(this.db, project, task.projectTaskId);
     let worktreeInfo: ReturnType<typeof createWorktree> | null = null;
     let preserveWorktree = false;
+    // H8 安全停：主中止信号句柄提升到 try 外（外层 catch 判 mode 用：主信号被 abort=forced，仅停止信号=boundary）
+    let runController: AbortController | null = null;
     let workingDir = repoRoot;
     // B3a：MCP 连接池提升到 try 外，确保 finally 能清理（ctx 在 try 内定义，作用域不达 finally）
     let mcpPool: import('../executors/tools/mcp/client-pool').McpClientPool | undefined;
@@ -657,15 +663,25 @@ export class TaskEngine {
           worktreeInfo.path,
         );
       }
-      const runController = new AbortController();
+      runController = new AbortController();
       this.activeRuns.set(task.id, runController);
       ctx.signal = runController.signal;
+      // H8 安全停：独立停止信号——执行器在工具调用边界检查（等模型=直接停，等命令=跑完再停）。
+      const stopController = new AbortController();
+      this.activeStops.set(task.id, { controller: stopController, hardTimer: null });
+      ctx.stopSignal = stopController.signal;
+      // H8：停机/重启遗留的停止请求——不动手执行，直接落打断记录回 paused（停止意图跨重启保真）。
+      if (task.stopRequested) {
+        preserveWorktree = true;
+        this.finalizeSafeStop(task, thread, project, worktreeInfo, worktreeSourceRoot, { mode: 'boundary', execSummary: '恢复时发现未完成的停止请求，已直接停下' });
+        return true;
+      }
       const configuredTimeout = effectiveExecutor?.timeoutMs ?? 10 * 60_000;
       const watchdog = new RunWatchdog({
         startupTimeoutMs: Math.min(60_000, configuredTimeout),
         idleTimeoutMs: Math.min(120_000, configuredTimeout),
         maxRuntimeMs: configuredTimeout,
-        abort: () => runController.abort('executor-watchdog'),
+        abort: () => runController?.abort('executor-watchdog'),
       });
       ctx.reportActivity = () => watchdog.activity();
       // 执行器类型：API 型无命令执行能力，systemPrompt 的桥接提示按此分化（P0-b）
@@ -794,7 +810,28 @@ export class TaskEngine {
         // 故障转移：run 成功即执行器存活证据，健康计数清零
         markExecutorSuccess(this.db, executorProfile?.id);
         if (executionRun) updateExecutionRunStatus(this.db, executionRun.id, result.outcome === 'completed' ? 'completed' : 'failed');
+        // H8 安全停：执行器返回时已请求停止——统一安全停收尾（API 边界停返回 blocked；
+        // CLI SIGINT 优雅收尾返回 completed+总结，都进打断记录而非继续任务流）。
+        if (getTask(this.db, task.id).stopRequested) {
+          preserveWorktree = true;
+          this.finalizeSafeStop(task, thread, project, worktreeInfo, worktreeSourceRoot, {
+            mode: 'boundary',
+            execSummary: result.summary,
+            execOutcome: result.outcome,
+          });
+          return true;
+        }
       } catch (error) {
+        // H8 安全停：停止引发的错误（边界主动 throw / 强停 AbortError）不算执行器故障，
+        // 不做健康记账，直接转安全停收尾。mode：主信号被 abort（急停/超时强停）=forced，仅停止信号=boundary。
+        if (getTask(this.db, task.id).stopRequested) {
+          preserveWorktree = true;
+          this.finalizeSafeStop(task, thread, project, worktreeInfo, worktreeSourceRoot, {
+            mode: runController?.signal.aborted ? 'forced' : 'boundary',
+            err: error,
+          });
+          return true;
+        }
         watchdog.complete();
         const failure=classifyRunFailure(error);
         if (executionRun) failExecutionRun(this.db, executionRun.id, failure.classification, failure.message);
@@ -1478,6 +1515,15 @@ export class TaskEngine {
         log.warn('task safely paused after approval bridge timeout', { taskId: task.id });
         return true;
       }
+      // H8 安全停：强制路径兜底（60s 边界超时 → forceStop abort）——不判失败，落打断记录。
+      if (getTask(this.db, task.id).stopRequested) {
+        preserveWorktree = true;
+        this.finalizeSafeStop(task, thread, project, worktreeInfo, worktreeSourceRoot, {
+          mode: runController?.signal.aborted ? 'forced' : 'boundary',
+          err: err,
+        });
+        return true;
+      }
       if (resolutionContext) {
         this.escalatePublishConflictResolution(resolutionContext, {
           projectId: project.id,
@@ -1513,6 +1559,10 @@ export class TaskEngine {
         }
       }
       this.activeRuns.delete(task.id);
+      // H8 安全停：清停止定时器（run 已收尾，强停兜底不再有意义）
+      const stopEntry = this.activeStops.get(task.id);
+      if (stopEntry?.hardTimer) clearTimeout(stopEntry.hardTimer);
+      this.activeStops.delete(task.id);
       // B3a：关闭 MCP 连接池（即使 task 失败也要清理子进程）
       if (mcpPool) {
         try {
@@ -1565,6 +1615,123 @@ export class TaskEngine {
     if (!controller) return false;
     controller.abort();
     return true;
+  }
+
+  /**
+   * H8 安全停入口（第四轮收敛：主按钮=暂停，立即停止在 ⌄ 菜单）：置边界停止信号，执行器在工具调用边界停下；
+   * 超过 stopGraceMs（默认 60s，设置可调）等不到边界则强停兜底（abort 主信号）。
+   * immediate=true（急救：误跑破坏性命令）跳过边界等待直接强停——半成品照样走打断记录。
+   * 前置：API 层已调 requestStopTask 置 stop_requested=1 并发过受理回执。
+   */
+  requestStop(taskId: string, opts?: { immediate?: boolean }): boolean {
+    const entry = this.activeStops.get(taskId);
+    if (!entry) return false; // run 不活跃（等待态/已停）——无需信号，状态由 API 层处理
+    if (opts?.immediate) {
+      appendTaskEvent(this.db, taskId, 'stop_forced', { reason: 'user-immediate' });
+      log.warn('immediate stop requested, forcing now', { taskId });
+      this.abortTask(taskId);
+      return true;
+    }
+    if (!entry.hardTimer) {
+      const graceMs = getSystemSettings(this.db).stopGraceMs;
+      entry.hardTimer = setTimeout(() => {
+        appendTaskEvent(this.db, taskId, 'stop_forced', { graceMs });
+        log.warn('safe stop grace timeout, forcing', { taskId, graceMs });
+        this.abortTask(taskId);
+      }, graceMs);
+      entry.hardTimer.unref?.();
+    }
+    entry.controller.abort();
+    return true;
+  }
+
+  /**
+   * H8 安全停统一收尾：paused 状态 + 保留 worktree（task_runtime 不删，"继续"复用）+
+   * 打断记录（task_event interrupted：停点/文件清单/摘要）+ 生效回执系统消息。
+   * 由 runTask 的三个汇入点调用（执行器返回后 / 内层 catch / 外层 catch）。
+   */
+  private finalizeSafeStop(
+    task: ReturnType<typeof getTask>,
+    thread: { id: string },
+    project: { id: string },
+    worktreeInfo: ReturnType<typeof createWorktree> | null,
+    worktreeSourceRoot: string,
+    info: { mode: 'boundary' | 'forced'; execSummary?: string; execOutcome?: string; err?: unknown },
+  ): void {
+    const now = nowIso();
+    this.db
+      .prepare(
+        `UPDATE task SET state='paused', stop_requested=0, interruption_count=interruption_count+1,
+           lease_owner_thread_id=NULL, lease_expires_at=NULL, heartbeat_at=NULL, updated_at=? WHERE id=?`,
+      )
+      .run(now, task.id);
+    appendTaskEvent(this.db, task.id, 'paused', { reason: 'safe-stop', mode: info.mode });
+
+    // 文件清单（worktree 可能不存在：无仓库任务/停得太早）
+    let files: string[] = [];
+    if (worktreeInfo && existsSync(worktreeInfo.path)) {
+      try {
+        const changes = listTaskBranchChanges(worktreeSourceRoot, worktreeInfo);
+        files = [...new Set([...changes.committed, ...changes.uncommitted])].filter(
+          (p) => !p.startsWith('.muster-conflicts/'),
+        );
+      } catch (e) {
+        log.warn('safe stop file listing failed', { taskId: task.id, err: String(e) });
+      }
+    }
+
+    // 停点：步数 + 最后动作（execution_trace 最新一条动作）
+    let steps = 0;
+    let lastAction: string | null = null;
+    try {
+      const traces = listTrace(this.db, task.id);
+      steps = traces.length;
+      lastAction = traces.find((t) => t.kind === 'tool_call' || t.kind === 'file_edit')?.summary ?? null;
+    } catch { /* trace 缺失不影响停止 */ }
+
+    appendTaskEvent(this.db, task.id, 'interrupted', {
+      mode: info.mode,
+      steps,
+      lastAction,
+      files: files.slice(0, 50),
+      fileCount: files.length,
+      summary: info.execSummary ?? null,
+      executorOutcome: info.execOutcome ?? null,
+      error: info.err instanceof Error ? info.err.message : info.err ? String(info.err) : null,
+    });
+
+    // 生效回执（用户可验证线索之一：对话区系统消息；另有状态徽章已暂停 + trace 停滚）
+    // 仅对话型任务有可回执的会话作用域（蜂/系统任务走事件与状态徽章）。
+    const convScopeOk = task.inputProtocol.scope === 'project' || task.inputProtocol.scope === 'workbench';
+    if (convScopeOk && typeof task.inputProtocol.scopeId === 'string') {
+      try {
+        postSystemMessage(this.db, {
+          scopeKind: task.inputProtocol.scope as 'project' | 'workbench',
+          scopeId: task.inputProtocol.scopeId,
+          role: 'assistant',
+          author: task.assigneeAgentId ?? 'system',
+          content:
+            `已暂停：执行了 ${steps} 步，改了 ${files.length} 个文件` +
+            (lastAction ? `。最后动作：${lastAction}` : '') +
+            (info.execSummary ? `\n收尾总结：${info.execSummary}` : '') +
+            '\n可通过打断记录「继续 / 补齐 / 回退」处理现场。',
+          refTaskId: task.id,
+        });
+      } catch (e) {
+        log.warn('safe stop receipt message failed', { taskId: task.id, err: String(e) });
+      }
+    }
+
+    updateThreadState(this.db, thread.id, 'paused');
+    realtime.publish({
+      id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      type: 'task.paused',
+      projectId: project.id,
+      taskId: task.id,
+      occurredAt: new Date().toISOString(),
+      payload: { reason: 'safe-stop', mode: info.mode, fileCount: files.length },
+    });
+    log.info('task safely stopped', { taskId: task.id, mode: info.mode, files: files.length, steps });
   }
 
   /** 发布 artifacts 到正式项目目录。冲突时把 Task 标 blocked。 */
@@ -1740,10 +1907,12 @@ export class TaskEngine {
 
     // timeout / 结构错误 / spawn 错 → failed（可重试或观察后重试）
     log.error('task failed', { taskId, err: msg });
-    const failed = failTask(this.db, taskId, `执行异常：${msg}`);
+    // H8 环境预检（产品侧）：spawn 失败识别 macOS 安全拦截特征 → 失败摘要追加可操作提示，不裸报错
+    const securityHint = spawnErrorHint(msg);
+    const failed = failTask(this.db, taskId, securityHint ? `执行异常：${msg}\n\n${securityHint}` : `执行异常：${msg}`);
     // 改版收尾：user_message 任务失败回写对话（未走自动重试的终态失败才回写，避免刷屏）
     if (failed.state === 'failed') {
-      this.notifyUserMessageMilestone(failed, `❌ 处理未完成：${msg.slice(0, 200)}`, taskId);
+      this.notifyUserMessageMilestone(failed, `❌ 处理未完成：${msg.slice(0, 200)}${securityHint ? `\n${securityHint}` : ''}`, taskId);
     }
 
     // Review 修复：讨论发言 task 失败时记录空发言，让讨论轮次能继续推进
@@ -1888,6 +2057,11 @@ export class TaskEngine {
     }
     for (const controller of this.activeRuns.values()) controller.abort('engine-stop');
     this.activeRuns.clear();
+    // H8：清安全停定时器，防止关机后强停兜底误触发
+    for (const entry of this.activeStops.values()) {
+      if (entry.hardTimer) clearTimeout(entry.hardTimer);
+    }
+    this.activeStops.clear();
   }
 }
 

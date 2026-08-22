@@ -73,6 +73,8 @@ export const settingsUpdateSchema = z.object({
   waitingAutoContinueMinutes: z.number().int().min(0).max(1440).optional(),
   preventSleep: z.enum(['active', 'always', 'off']).optional(),
   interruptMode: z.enum(['queue', 'interrupt']).optional(),
+  // H8 安全停：请求停止后等执行边界的超时毫秒数（5s-10min，默认 60s）
+  stopGraceMs: z.number().int().min(5000).max(600000).optional(),
 });
 
 // 获取当前系统设置

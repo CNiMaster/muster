@@ -1352,11 +1352,65 @@ export function useInterruptTask(projectId?: string) {
   });
 }
 
+/** H8 安全停：等执行边界暂停（paused+打断记录）；immediate=true 立即强停（急救）。 */
+export function useStopTask(projectId?: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { taskId: string; immediate?: boolean }) =>
+      api.post<{ ok: boolean; task: Task }>(`/api/tasks/${input.taskId}/stop`, { immediate: input.immediate ?? false }),
+    onSuccess: (data) => {
+      if (projectId) qc.invalidateQueries({ queryKey: ['tasks', projectId] });
+      qc.invalidateQueries({ queryKey: ['task', data.task.id] });
+      qc.invalidateQueries({ queryKey: ['messages'] });
+    },
+  });
+}
+
+/** H8 全局停止（第五轮定稿）：默认=全部安全停（等边界→paused+打断记录）；immediate=true 立即强停（急救）。 */
+export function useStopAllProjectTasks(projectId?: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { projectId: string; immediate?: boolean }) =>
+      api.post<{ ok: boolean; stopped: number; total: number; immediate: boolean }>(`/api/projects/${input.projectId}/tasks/stop-all`, { immediate: input.immediate ?? false }),
+    onSuccess: () => {
+      if (projectId) qc.invalidateQueries({ queryKey: ['tasks', projectId] });
+    },
+  });
+}
+
+/** H8 打断记录「回退」：丢弃保留的现场，任务回 queued 从基线重跑。 */
+export function useDiscardStoppedTask(projectId?: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (taskId: string) => api.post<Task>(`/api/tasks/${taskId}/discard-stop`, {}),
+    onSuccess: (data) => {
+      if (projectId) qc.invalidateQueries({ queryKey: ['tasks', projectId] });
+      qc.invalidateQueries({ queryKey: ['task', data.id] });
+      qc.invalidateQueries({ queryKey: ['task-events', data.id] });
+    },
+  });
+}
+
+/** H8 纠错（第六轮收敛）：安全停该执行者 + 用户问题描述 → 点名人事/负责人处置。 */
+export function useCorrectTask(projectId?: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { taskId: string; problem: string }) =>
+      api.post<{ ok: boolean; correctionTaskId: string | null }>(`/api/tasks/${input.taskId}/correct`, { problem: input.problem }),
+    onSuccess: () => {
+      if (projectId) qc.invalidateQueries({ queryKey: ['tasks', projectId] });
+      qc.invalidateQueries({ queryKey: ['messages'] });
+    },
+  });
+}
+
 // ===== 批次 H.2：派遣树（工作现场面板） =====
 export interface DispatchActor {
   id: string;
   name: string;
   kind: 'employee' | 'specialist' | 'bee';
+  /** H8 纠错：第一负责人与用户直接沟通，不进纠错链。 */
+  isLead?: boolean;
 }
 
 export interface DispatchTreeNodeDTO {
@@ -2526,6 +2580,7 @@ export function useSaveSystemSettings() {
       waitingAutoContinueMinutes?: number;
       preventSleep?: 'active' | 'always' | 'off';
       interruptMode?: 'queue' | 'interrupt';
+      stopGraceMs?: number;
     }) => api.post<any>('/api/settings', settings),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['systemSettings'] });

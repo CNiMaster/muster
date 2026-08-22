@@ -10,6 +10,8 @@ export interface DispatchActor {
   id: string;
   name: string;
   kind: 'employee' | 'specialist' | 'bee';
+  /** H8 纠错：第一负责人与用户直接沟通，不进纠错链（前端据此隐藏纠错按钮）。 */
+  isLead?: boolean;
 }
 
 export interface DispatchTreeNode {
@@ -64,6 +66,8 @@ function expandTree(all: Task[], seedIds: Set<string>): Set<string> {
 
 export function buildDispatchTree(db: DB, projectId: string, projectTaskId?: string): DispatchTree {
   const all = listTasks(db, projectId);
+  // H8 纠错：负责人标记（与用户直接沟通，不进纠错链）
+  const leadAgentId = (db.prepare('SELECT first_agent_id AS f FROM project WHERE id=?').get(projectId) as { f: string | null })?.f ?? null;
   let scope: Task[];
   if (projectTaskId) {
     const seed = new Set(all.filter((t) => t.projectTaskId === projectTaskId).map((t) => t.id));
@@ -95,7 +99,7 @@ export function buildDispatchTree(db: DB, projectId: string, projectTaskId?: str
     if (!meta) return { id, name: id, kind: 'employee' };
     const kind: DispatchActor['kind'] =
       meta.role === 'swarm-worker' || task?.swarmId ? 'bee' : specialists.has(id) ? 'specialist' : 'employee';
-    return { id, name: meta.name, kind };
+    return { id, name: meta.name, kind, isLead: meta.role === 'lead' || id === leadAgentId };
   };
 
   const now = Date.now();

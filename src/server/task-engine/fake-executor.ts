@@ -48,15 +48,8 @@ export class FakeExecutor implements ExecutionAdapter {
     };
     this.cursor++;
 
-    if (step.delayMs) {
-      await new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(resolve, step.delayMs);
-        ctx.signal?.addEventListener('abort', () => {
-          clearTimeout(timer);
-          reject(new Error('execution aborted'));
-        }, { once: true });
-      });
-    }
+    // H8：动作（输出/断言/写删文件）先落盘，再跑 delay（模拟命令执行中）——
+    // 这样停止落在命令期间时，已完成动作的产物保留在 worktree（真实时序：写完文件才起命令）。
     if (step.outputs) {
       for (const chunk of step.outputs) {
         events?.onOutput?.(chunk);
@@ -87,6 +80,20 @@ export class FakeExecutor implements ExecutionAdapter {
       for (const rel of step.deleteFiles) {
         rmSync(path.resolve(ctx.workingDir, rel), { force: true });
       }
+    }
+    if (step.delayMs) {
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(resolve, step.delayMs);
+        ctx.signal?.addEventListener('abort', () => {
+          clearTimeout(timer);
+          reject(new Error('execution aborted'));
+        }, { once: true });
+      });
+    }
+    // H8 安全停边界语义：delay 模拟"命令正在跑"——stopSignal 不打断它（等跑完），
+    // 到步末（=工具边界）才停下；此前已写的文件保留在 worktree 里。
+    if (ctx.stopSignal?.aborted) {
+      throw new Error('fake: stopped at boundary');
     }
     if (step.throw) {
       throw new Error(step.throw);

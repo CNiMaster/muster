@@ -14,6 +14,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "preflight": "node scripts/preflight.mjs",
     "test:product-acceptance": "tsx scripts/product-acceptance.ts",
     "build:server": "tsup",
     "build:migrations": "node -e \"require('fs').cpSync('src/server/db/migrations','dist/server/db/migrations',{recursive:true})\"",

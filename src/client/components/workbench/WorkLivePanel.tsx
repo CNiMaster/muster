@@ -7,7 +7,8 @@ import { useMemo, useState } from 'react';
 import type React from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Badge } from '../Badge';
-import { useTaskOnce, useDispatchTree, useProjectTasks, type DispatchTreeNodeDTO } from '../../hooks/queries';
+import { toast } from '../Button';
+import { useTaskOnce, useDispatchTree, useProjectTasks, useCorrectTask, useStopAllProjectTasks, type DispatchTreeNodeDTO } from '../../hooks/queries';
 import { ExecutionTraceCard } from './ExecutionTraceCard';
 import type { Task } from '../../api/types';
 
@@ -27,22 +28,79 @@ function durationLabel(ms: number): string {
   return min >= 60 ? `${Math.floor(min / 60)}h${min % 60}m` : `${min}m`;
 }
 
-function ExecutorRow({ node, onOpen }: { node: DispatchTreeNodeDTO; onOpen: (id: string) => void }): React.ReactElement {
+/**
+ * H8 纠错（第六轮收敛）：点名出错的执行者——在跑先安全停他，用户描述问题后
+ * 发给上级链（人事/负责人）处置（重做/重排/修改工作/撤否由组织判断）。
+ * 不提供用户直发撤销——用户对全局不了解（用户定稿）。
+ */
+function CorrectionMenu({ node, projectId }: { node: DispatchTreeNodeDTO; projectId: string }): React.ReactElement {
+  const [open, setOpen] = useState(false);
+  const [problem, setProblem] = useState('');
+  const correct = useCorrectTask(projectId);
+  const running = node.state === 'running' || node.state === 'claimed';
+
+  const submit = (): void => {
+    if (!problem.trim()) return;
+    correct.mutate(
+      { taskId: node.id, problem: problem.trim() },
+      {
+        onSuccess: () => { setOpen(false); setProblem(''); toast('success', `已点名纠错——${running ? '正在安全停下该执行者，' : ''}问题已转其上级处置`); },
+        onError: (e) => toast('error', (e as Error).message),
+      },
+    );
+  };
+
   return (
-    <button type="button" onClick={() => onOpen(node.id)} style={{ display: 'block', width: '100%', textAlign: 'left', border: 0, background: 'none', cursor: 'pointer', padding: '4px 2px', font: 'inherit' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, fontSize: 12 }}>
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {node.assignee ? `${node.assignee.name} · ` : ''}{node.title.replace(/^\[[^\]]+\]\s*/, '')}
+    <span style={{ position: 'relative', flexShrink: 0 }}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        title="纠错：安全停他 + 描述问题 → 人事/负责人处置（重做/重排/修改工作）"
+        style={{ border: '1px solid var(--border)', borderRadius: 6, background: 'none', cursor: 'pointer', color: 'var(--warn, #d97706)', fontSize: 10, padding: '0 5px', font: 'inherit' }}
+      >
+        纠错
+      </button>
+      {open && (
+        <span style={{ position: 'absolute', right: 0, top: '100%', zIndex: 30, display: 'block', width: 230, background: 'var(--bg-elev)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,.15)', padding: 6 }}>
+          <span style={{ display: 'block', fontSize: 10, color: 'var(--fg-subtle)', marginBottom: 4 }}>
+            {running ? '将先安全停下该执行者，' : ''}描述他的问题（转人事处置）：
+          </span>
+          <textarea
+            value={problem}
+            onChange={(e) => setProblem(e.target.value)}
+            rows={3}
+            placeholder="例如：他删错了文件 / 方向做反了…"
+            style={{ width: '100%', fontSize: 11, boxSizing: 'border-box', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg)', color: 'inherit', padding: 4 }}
+          />
+          <span style={{ display: 'flex', gap: 4, marginTop: 4, justifyContent: 'flex-end' }}>
+            <button type="button" onClick={() => setOpen(false)} style={{ border: 0, background: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--fg-subtle)', padding: '2px 6px', font: 'inherit' }}>取消</button>
+            <button type="button" disabled={!problem.trim() || correct.isPending} onClick={submit} style={{ border: '1px solid var(--border)', borderRadius: 6, background: 'var(--bg)', cursor: 'pointer', fontSize: 11, padding: '2px 8px', font: 'inherit' }}>发送</button>
+          </span>
         </span>
-        <span style={{ color: ACTIVE_STATES.has(node.state) ? 'var(--accent)' : 'var(--fg-subtle)', flexShrink: 0 }}>{stateLabel(node.state)}</span>
-      </div>
-      <div style={{ display: 'flex', gap: 6, fontSize: 10, color: 'var(--fg-subtle)' }}>
-        {node.assignee && <span>{KIND_LABEL[node.assignee.kind]}</span>}
-        <span>#{node.seq}</span>
-        <span>{durationLabel(node.durationMs)}</span>
-        {['completed', 'failed', 'cancelled'].includes(node.state) && <span>{stateLabel(node.state)}</span>}
-      </div>
-    </button>
+      )}
+    </span>
+  );
+}
+
+function ExecutorRow({ node, onOpen, projectId }: { node: DispatchTreeNodeDTO; onOpen: (id: string) => void; projectId: string }): React.ReactElement {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+      <button type="button" onClick={() => onOpen(node.id)} style={{ display: 'block', flex: 1, minWidth: 0, textAlign: 'left', border: 0, background: 'none', cursor: 'pointer', padding: '4px 2px', font: 'inherit' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, fontSize: 12 }}>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {node.assignee ? `${node.assignee.name} · ` : ''}{node.title.replace(/^\[[^\]]+\]\s*/, '')}
+          </span>
+          <span style={{ color: ACTIVE_STATES.has(node.state) ? 'var(--accent)' : 'var(--fg-subtle)', flexShrink: 0 }}>{stateLabel(node.state)}</span>
+        </div>
+        <div style={{ display: 'flex', gap: 6, fontSize: 10, color: 'var(--fg-subtle)' }}>
+          {node.assignee && <span>{KIND_LABEL[node.assignee.kind]}</span>}
+          <span>#{node.seq}</span>
+          <span>{durationLabel(node.durationMs)}</span>
+          {['completed', 'failed', 'cancelled'].includes(node.state) && <span>{stateLabel(node.state)}</span>}
+        </div>
+      </button>
+      {(node.state === 'running' || node.state === 'claimed' || node.state === 'paused') && !node.assignee?.isLead && <CorrectionMenu node={node} projectId={projectId} />}
+    </div>
   );
 }
 
@@ -68,6 +126,8 @@ export function WorkLivePanel({ projectId, selectedProjectTaskId }: { projectId:
   const nodes = tree?.tasks ?? [];
   const progress = tree?.progress ?? { done: 0, total: 0 };
   const progressRows = showAllProgress ? nodes : nodes.slice(0, 5);
+  const stopAll = useStopAllProjectTasks(projectId);
+  const runningCount = nodes.filter((n) => n.state === 'running' || n.state === 'claimed').length;
 
   const dispatchGroups = useMemo(() => {
     const groups = new Map<string, { dispatcherName: string; nodes: DispatchTreeNodeDTO[] }>();
@@ -94,7 +154,14 @@ export function WorkLivePanel({ projectId, selectedProjectTaskId }: { projectId:
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderBottom: '1px solid var(--border-subtle)' }}>
         <strong style={{ fontSize: 12 }}>工作现场</strong>
         <span style={{ fontSize: 10, color: 'var(--fg-subtle)' }}>进程 {progress.done}/{progress.total}</span>
-        <button type="button" onClick={close} aria-label="收起工作现场面板" style={{ marginLeft: 'auto', border: 0, background: 'none', cursor: 'pointer', color: 'var(--fg-muted)', padding: 0 }}>×</button>
+        {/* H8 全局停止第二入口（与主对话按钮同语义） */}
+        {runningCount > 0 && (
+          <>
+            <button type="button" disabled={stopAll.isPending} onClick={() => stopAll.mutate({ projectId }, { onSuccess: (d) => toast('success', `已请求暂停 ${d.stopped} 个任务——各自在安全边界停下`), onError: (e) => toast('error', (e as Error).message) })} title="全部安全停（等各任务到边界）" style={{ marginLeft: 'auto', border: '1px solid var(--border)', borderRadius: 6, background: 'none', cursor: 'pointer', fontSize: 10, padding: '1px 6px', font: 'inherit' }}>⏸ 全部暂停</button>
+            <button type="button" disabled={stopAll.isPending} onClick={() => { if (window.confirm('立即停止全部：不等当前命令跑完，可能有半成品（各自保留在打断记录里）。确定？')) stopAll.mutate({ projectId, immediate: true }, { onSuccess: (d) => toast('success', `已立即停止 ${d.stopped} 个任务`), onError: (e) => toast('error', (e as Error).message) }); }} title="急救：不等边界立刻全部停止" style={{ border: '1px solid var(--border)', borderRadius: 6, background: 'none', color: 'var(--danger, #dc2626)', cursor: 'pointer', fontSize: 10, padding: '1px 6px', font: 'inherit' }}>⚠ 急停</button>
+          </>
+        )}
+        <button type="button" onClick={close} aria-label="收起工作现场面板" style={{ marginLeft: runningCount > 0 ? 0 : 'auto', border: 0, background: 'none', cursor: 'pointer', color: 'var(--fg-muted)', padding: 0 }}>×</button>
       </div>
 
       {boardTaskId ? (
@@ -142,11 +209,11 @@ export function WorkLivePanel({ projectId, selectedProjectTaskId }: { projectId:
               dispatchGroups.map(([key, group]) => (
                 <div key={key} style={{ marginBottom: 4 }}>
                   <div style={{ fontSize: 10, color: 'var(--fg-subtle)' }}>{group.dispatcherName} 派了 ↓</div>
-                  {group.nodes.map((n) => <ExecutorRow key={n.id} node={n} onOpen={setBoardTaskId} />)}
+                  {group.nodes.map((n) => <ExecutorRow key={n.id} node={n} onOpen={setBoardTaskId} projectId={projectId} />)}
                 </div>
               ))
             ) : (
-              nodes.map((n) => <ExecutorRow key={n.id} node={n} onOpen={setBoardTaskId} />)
+              nodes.map((n) => <ExecutorRow key={n.id} node={n} onOpen={setBoardTaskId} projectId={projectId} />)
             )}
             {nodes.length === 0 && <p className="muted" style={{ fontSize: 11, margin: 0 }}>暂无执行记录</p>}
           </div>

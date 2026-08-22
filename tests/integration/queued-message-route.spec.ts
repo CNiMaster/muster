@@ -102,8 +102,10 @@ describe('排队 REST 端点（批次 H 评审修）', () => {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
     });
     expect(fl.status).toBe(200);
-    // running 任务被打断回 queued（interruptTask 域语义）
-    expect((db.prepare('SELECT state FROM task WHERE id=?').get('tk_r1') as { state: string }).state).toBe('queued');
+    // H8 新语义：安全停（置 stop_requested 等边界→paused+打断记录）——不再回 queued 让位重跑（I5 收敛）
+    const row = db.prepare('SELECT state, stop_requested FROM task WHERE id=?').get('tk_r1') as { state: string; stop_requested: number };
+    expect(row.stop_requested).toBe(1);
+    expect(['running', 'paused']).toContain(row.state); // 测试无引擎不落 paused，真实链路由 finalizeSafeStop 收尾
     // 送出：生成了用户消息任务，refs 透传进 inputProtocol
     const created = db.prepare("SELECT input_protocol_json FROM task WHERE title LIKE '%立即这条%'").get() as { input_protocol_json: string };
     const protocol = JSON.parse(created.input_protocol_json) as { refs?: string[]; content: string };

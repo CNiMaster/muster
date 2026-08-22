@@ -7,6 +7,7 @@
    waiting_input → claimed（轮到后） → running
    waiting_dependency → claimed（依赖完成） → running
    paused → claimed（恢复）→ running
+   paused → queued（H8 打断记录「回退」：丢弃现场从头重跑）
    blocked → queued（人工干预后重排）
    claimed/running → cancelled（任意时刻）
    任何 * → cancelled（用户取消）
@@ -132,6 +133,8 @@ export interface Task {
   autoContinueStopped: boolean;
   /** 批次 F.4：等待起点（仅 waiting_input 任务由 API 序列化层附带——活跃 clarification 挂起行创建时间；缺行回退 updated_at）。 */
   waitingSince?: string | null;
+  /** H8 安全停：true=已请求停止（引擎在工具边界检查后安全停下，收尾在 finalizeSafeStop）。 */
+  stopRequested: boolean;
 }
 
 interface TaskRow {
@@ -184,6 +187,7 @@ interface TaskRow {
   persona_id: string | null;
   auto_continue_minutes: number | null;
   auto_continue_stopped: number;
+  stop_requested: number;
 }
 
 function fromRow(r: TaskRow): Task {
@@ -240,6 +244,7 @@ function fromRow(r: TaskRow): Task {
     personaId: (r as { persona_id?: string | null }).persona_id ?? null,
     autoContinueMinutes: r.auto_continue_minutes ?? null,
     autoContinueStopped: (r.auto_continue_stopped ?? 0) === 1,
+    stopRequested: (r.stop_requested ?? 0) === 1,
   };
 }
 
@@ -299,7 +304,7 @@ const ALLOWED_TRANSITIONS: Record<TaskState, TaskState[]> = {
   waiting_input: ['claimed', 'cancelled'],
   waiting_dependency: ['claimed', 'cancelled'],
   waiting_approval: ['queued','cancelled'],
-  paused: ['claimed', 'cancelled'],
+  paused: ['claimed', 'queued', 'cancelled'],
   blocked: ['queued', 'cancelled'],
   completed: [],
   // failed → cancelled：第一负责人处理子任务失败时可选择「放弃」（cancel_child_task），
@@ -643,6 +648,18 @@ export function interruptTask(db: DB, taskId: string): void {
   if (r.changes === 0) {
     throw new AppError(ErrorCode.TASK_INVALID_TRANSITION, `任务 ${taskId} 不在运行中，无需打断`);
   }
+}
+
+/**
+ * H8 安全停入口（用户定稿：停止=单动作，内部按执行状态分级）。
+ * 只置 stop_requested 标记 + 落事件；边界等待/超时升级/收尾全部由引擎完成
+ * （requestStop → 执行器边界检查 → finalizeSafeStop）。幂等：重复请求只续期一次事件。
+ */
+export function requestStopTask(db: DB, taskId: string): Task {
+  const r = db.prepare('UPDATE task SET stop_requested=1, updated_at=? WHERE id=?').run(nowIso(), taskId);
+  if (r.changes === 0) throw new AppError(ErrorCode.NOT_FOUND, `任务不存在: ${taskId}`);
+  appendTaskEvent(db, taskId, 'stop_requested', {});
+  return getTask(db, taskId);
 }
 
 /**
@@ -1709,6 +1726,21 @@ export function pauseTask(db: DB, taskId: string): Task {
   return getTask(db, taskId);
 }
 
+/**
+ * H8 打断记录「回退」：丢弃安全停保留的现场，任务回 queued 从基线重跑。
+ * 现场清理（worktree/分支删除）由 API 层在调用前完成，域层只管状态机。
+ */
+export function requeueStoppedTask(db: DB, taskId: string): Task {
+  const cur = getTask(db, taskId);
+  assertTransition(cur.state, 'queued');
+  db.prepare(
+    `UPDATE task SET state='queued', stop_requested=0,
+      lease_owner_thread_id=NULL, lease_expires_at=NULL, heartbeat_at=NULL, updated_at=? WHERE id=?`,
+  ).run(nowIso(), taskId);
+  appendTaskEvent(db, taskId, 'stop_discarded', {});
+  return getTask(db, taskId);
+}
+
 export function resumeTask(db: DB, taskId: string): Task {
   const cur = getTask(db, taskId);
   const recoverableCancelledConflict = cur.state === 'cancelled' && cur.inputProtocol.reason === 'publish_conflict';
@@ -1720,7 +1752,7 @@ export function resumeTask(db: DB, taskId: string): Task {
   // 避免"手动救活一次后任何瞬态失败都直接上报"；也清理 wait_state 残留。
   db.prepare(
     `UPDATE task SET state=?, outcome=NULL, completed_at=NULL, wait_state=NULL,
-      auto_retry_count=0, retry_after_at=NULL,
+      auto_retry_count=0, retry_after_at=NULL, stop_requested=0,
       lease_owner_thread_id=NULL, lease_expires_at=NULL, heartbeat_at=NULL, updated_at=? WHERE id=?`,
   ).run(next, nowIso(), taskId);
   try {

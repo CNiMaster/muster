@@ -78,6 +78,8 @@ export interface SystemSettings {
   preventSleep: 'active' | 'always' | 'off';
   /** 运行中发送（批次 H.5）：queue=入队等本轮结束（默认）；interrupt=打断插话。 */
   interruptMode: 'queue' | 'interrupt';
+  /** H8 安全停：请求停止后等执行边界的超时毫秒数，到点强停（默认 60s，5s-10min）。 */
+  stopGraceMs: number;
 }
 
 export function getSetting(db: DB, key: string, defaultValue: string): string {
@@ -140,6 +142,7 @@ export function getSystemSettings(db: DB): SystemSettings {
     imageGenModel: getSetting(db, 'image_gen_model', ''),
     waitingAutoContinueMinutes: Number(getSetting(db, 'waiting_auto_continue_minutes', '0')) || 0,
     interruptMode: getSetting(db, 'interrupt_mode', 'queue') === 'interrupt' ? 'interrupt' : 'queue',
+    stopGraceMs: Math.max(5_000, Math.min(600_000, Number(getSetting(db, 'stop_grace_ms', '60000')) || 60_000)),
     preventSleep: (['active', 'always', 'off'] as const).includes(getSetting(db, 'prevent_sleep', 'active') as 'active')
       ? (getSetting(db, 'prevent_sleep', 'active') as 'active' | 'always' | 'off')
       : 'active',
@@ -250,5 +253,8 @@ export function saveSystemSettings(db: DB, settings: Partial<SystemSettings>): v
   }
   if (settings.interruptMode !== undefined) {
     setSetting(db, 'interrupt_mode', settings.interruptMode === 'interrupt' ? 'interrupt' : 'queue');
+  }
+  if (settings.stopGraceMs !== undefined) {
+    setSetting(db, 'stop_grace_ms', String(Math.max(5_000, Math.min(600_000, Math.round(settings.stopGraceMs)))));
   }
 }
