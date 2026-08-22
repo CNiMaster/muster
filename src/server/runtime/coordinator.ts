@@ -2,7 +2,7 @@ import type { DB } from '../db/client';
 import { getWorkbench, transitionWorkbench } from '../domain/workbench';
 import { listProjects } from '../domain/project';
 import { ensureProjectThreads, releaseProjectMirrors } from '../domain/thread';
-import { ensurePlanningTask, listTasks, recoverExpiredLeases, findStaleWaitingTasks, escalateToFirstResponder, createTask, autoContinueDueWaitingTasks } from '../domain/task';
+import { ensurePlanningTask, listTasks, recoverExpiredLeases, findStaleWaitingTasks, escalateToFirstResponder, createTask, autoContinueDueWaitingTasks, bootSelfCheck } from '../domain/task';
 import type { TaskEngine } from '../task-engine/engine';
 import { log } from '../logger';
 import { interruptActiveBrainstorms } from '../domain/brainstorm';
@@ -248,6 +248,15 @@ export class ProjectRuntimeCoordinator {
       if (stuck > 0) log.info('reflections recovered from stuck running state', { count: stuck });
     } catch (error) {
       log.warn('recover stuck reflections failed', { error: error instanceof Error ? error.message : String(error) });
+    }
+    // 批次 G.8：启动自检——过期租约显式复位 + waiting_input 缺挂起行补齐（独立 try/catch，失败不阻断启动）
+    try {
+      const fixed = bootSelfCheck(this.db);
+      if (fixed.fixedLeases > 0 || fixed.fixedSuspensions > 0) {
+        log.info('boot-self-check repaired task inconsistencies', fixed);
+      }
+    } catch (error) {
+      log.warn('boot self check failed', { error: error instanceof Error ? error.message : String(error) });
     }
     void this.tick();
     this.timer = setInterval(() => {

@@ -601,6 +601,33 @@ export function listTasks(db: DB, projectId: string, state?: TaskState): Task[] 
   return rows.map(fromRow);
 }
 
+
+/**
+ * 启动自检（批次 G.8，借鉴 zcode「启动时自动修复异常任务索引」）。
+ * 只做两类明确安全的修复，不动其他状态：
+ * ①显式再跑租约恢复（幂等——首 tick 本会跑，这里保证"启动即修复"而非等首个 tick）；
+ * ②waiting_input 却无未决挂起行的任务按 updated_at 补挂起行——F.4 等待起点/自动继续
+ *   都依赖挂起行，缺行会造成等待起点漂移与看板缺口（如崩溃前写入中断）。
+ */
+export function bootSelfCheck(db: DB): { fixedLeases: number; fixedSuspensions: number } {
+  const fixedLeases = recoverExpiredLeases(db);
+  const orphans = db
+    .prepare(
+      `SELECT t.id, t.updated_at FROM task t
+       WHERE t.state='waiting_input'
+         AND NOT EXISTS (SELECT 1 FROM task_suspension s WHERE s.task_id=t.id AND s.resolved_at IS NULL)`,
+    )
+    .all() as Array<{ id: string; updated_at: string }>;
+  const insertSuspension = db.prepare(
+    `INSERT INTO task_suspension (id, task_id, kind, reason, task_state, created_at)
+     VALUES (?, ?, 'clarification', 'boot-self-check 补挂起行（等待起点按任务 updated_at 回填）', 'waiting_input', ?)`,
+  );
+  db.transaction(() => {
+    for (const t of orphans) insertSuspension.run(shortId('sp_'), t.id, t.updated_at);
+  })();
+  return { fixedLeases, fixedSuspensions: orphans.length };
+}
+
 /**
  * 全库正式活跃任务数（批次 G.5，防休眠条件）。
  * 口径与 coordinator tick 的 formalActive 一致：非讨论 + 六状态——改状态机时两处同步。
