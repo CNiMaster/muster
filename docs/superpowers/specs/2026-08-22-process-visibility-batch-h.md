@@ -1,6 +1,6 @@
 # 批次 H「过程可见性 + 会话交互」
 
-状态：proposed（2026-08-22 与用户多轮定稿，待开工）
+状态：第一段 implemented（H0-H4+H9，2026-08-22）；第二段 pending
 来源：zcode 体验对标（用户逐件给 UI 形态）+ 多 agent 可观测性侦察（两轮代码核查）+ 用工模型定调讨论。
 
 ## 轮子边界（build vs reuse，长期原则）
@@ -48,3 +48,12 @@ worktree 纪律沿 F/G：spec 先行（本文件，开工时补 UI 验收截图/
 ## 不做（本批边界）
 
 回退历史树（仅撤销最近轮）；专家群借调流与盘点清单；跨项目全局搜索；群聊颜色（默认）；输入回滚/编辑重发（已砍，换 H7 复制角标）。
+
+## 第一段实施记录（H0-H4+H9，2026-08-22）
+
+- **H0 方案改定**：company_employee.profile_id NOT NULL（FK RESTRICT）使"蜂零档案"在现 schema 不可行——改**共享单例档案** ap_worker_bee_shared（固定 id，is_temp_only=0）：N 蜂一份档案，Agent Home 天然一份；createAgent 复用（tempRecruit 豁免）；引擎评级跳过蜂防污染共享档案；dismissWorkerBee 只删 agent 行（级联任职/线程）。上下文装配零改动（共享档案 soul=BEE_PROMPT 与 agent.system_prompt 一致）。
+- **H4 双挂点改单挂点**：codex/自定义 CLI 无 onToolCall 路径回调——统一为 15s 周期扫描 + finally 收尾兜底（removeWorktree 前），单一机制覆盖全部执行器；runId 用外提可变绑定（executionRun 声明在 try 块内）。新增任务级文件端点 /api/tasks/:id/files/*path（防线与 /raw 同口径），preview trace payload.origin='worktree' 分流。
+- **H1 撤销目录语义**：带 projectTaskId 的发布 commit 在任务集成分支——revert 必须在其 staging worktree 执行（publish_record.project_root 是身份键不是落盘位置）；undo 端点按 task.projectTaskId 定位 staging worktree。numstat 封装在主仓库根即可执行（对象库共享）。
+- **H9 token 设计**：refs 新字段带类型前缀（agent:/file:/task:），不动旧 mentions 语义；mention 候选 display→token 映射存组件 ref Map，发送时反查；服务端 file→路径注入、task→#seq/标题/状态/摘要注入、agent→recipients 并集扇出（每收件人一任务）。
+- **H2 面板挂点**：?panel=live URL 驱动（与 ?preview= 同模式）挂 inspector 顶部；胶囊 fixed 右上（workbench-guide 先例 z-70）不可拖动，有事才出现；二级看板复用 ExecutionTraceCard（useTaskOnce 取 Task）。
+- 测试口径：健康/派遣树等纯读聚合用 SQL 直置状态（状态机仪式无关）；realtime.spec 精确清单断言两处补新键（project-health/dispatch-tree）。
