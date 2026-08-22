@@ -8,7 +8,7 @@
  * - 分支药丸：只读展示当前任务的工作分支（muster/<project>/<task> 自动管理）
  * - 底部控制栏：模型选择 / 人设药丸 / 思考深度 / 发送（Enter 发送，Shift+Enter 换行）
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type React from 'react';
 import type { Agent } from '../../api/types';
 import { Button } from '../Button';
@@ -69,7 +69,9 @@ export interface PromptComposerProps {
   onNewTask?: () => void;
   /** 草稿持久化键（批次 G.1）：按会话隔离存 localStorage，切任务不丢未发送文本；缺省不持久化 */
   draftKey?: string;
-  onSend: (content: string, options?: { agentId?: string; model?: string; thinking?: string; attachments?: MessageAttachment[]; mode?: ComposerMode }) => void;
+  /** 批次 H.9：@文件 引用候选（产物/仓库相对路径，挂载方从 useArtifacts 传入） */
+  fileOptions?: Array<{ path: string }>;
+  onSend: (content: string, options?: { agentId?: string; model?: string; thinking?: string; attachments?: MessageAttachment[]; mode?: ComposerMode; refs?: string[] }) => void;
 }
 
 export function PromptComposer({
@@ -97,6 +99,7 @@ export function PromptComposer({
   onSelectMode,
   onNewTask,
   draftKey,
+  fileOptions = [],
   onSend,
 }: PromptComposerProps): React.ReactElement {
   // 批次 G.1：草稿按 draftKey 隔离持久化（muster:*:vN 约定）；无 key 保持纯内存行为
@@ -105,6 +108,9 @@ export function PromptComposer({
   const [openMenu, setOpenMenu] = useState<'model' | 'persona' | 'task' | 'plus' | 'mode' | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [slashIndex, setSlashIndex] = useState(0);
+  // 批次 H.9：@ 引用（员工/文件/任务三类候选；refs 上送带类型前缀 token，不动旧 mentions 语义）
+  const [mentionIndex, setMentionIndex] = useState(0);
+  const mentionMapRef = useRef(new Map<string, string>());
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -175,6 +181,12 @@ export function PromptComposer({
   }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
+    if (mentionCandidates.length > 0) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setMentionIndex((i) => (i + 1) % mentionCandidates.length); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); setMentionIndex((i) => (i - 1 + mentionCandidates.length) % mentionCandidates.length); return; }
+      if ((e.key === 'Enter' || e.key === 'Tab') && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); insertMention(mentionCandidates[Math.min(mentionIndex, mentionCandidates.length - 1)]!); return; }
+      if (e.key === 'Escape') { e.preventDefault(); setMentionIndex(-1); return; }
+    }
     if (visibleSlashCommands.length > 0) {
       if (e.key === 'ArrowDown') { e.preventDefault(); setSlashIndex((i) => (i + 1) % visibleSlashCommands.length); return; }
       if (e.key === 'ArrowUp') { e.preventDefault(); setSlashIndex((i) => (i - 1 + visibleSlashCommands.length) % visibleSlashCommands.length); return; }
@@ -214,6 +226,7 @@ export function PromptComposer({
       thinking: thinkingDepth,
       attachments: attachments.length > 0 ? attachments : undefined,
       mode: mode || undefined,
+      refs: extractRefs().length > 0 ? extractRefs() : undefined,
     });
     setText('');
     if (draftStorageKey) window.localStorage.removeItem(draftStorageKey);
@@ -256,6 +269,34 @@ export function PromptComposer({
     || (command.token === 'task' && taskOptions && taskOptions.length > 0 && onSelectTask)
     || (command.token === 'new' && onNewTask));
   const visibleSlashCommands = slashToken === null ? [] : slashCommands.filter((c) => c.token.startsWith(slashToken));
+
+  const mentionMatch = text.match(/(?:^|\s)@([^\s@]*)$/);
+  const mentionToken = mentionMatch?.[1] ?? null;
+  const mentionCandidates = useMemo(() => {
+    if (mentionToken === null) return [] as Array<{ display: string; token: string; group: string }>;
+    const lower = mentionToken.toLowerCase();
+    const list: Array<{ display: string; token: string; group: string }> = [
+      ...agents.filter((a) => a.name.toLowerCase().includes(lower)).slice(0, 3)
+        .map((a) => ({ display: a.name, token: `agent:${a.id}`, group: '员工' })),
+      ...taskOptions?.filter((t) => t.label.toLowerCase().includes(lower)).slice(0, 3)
+        .map((t) => ({ display: t.label, token: `task:${t.id}`, group: '任务' })) ?? [],
+      ...fileOptions.filter((f) => f.path.toLowerCase().includes(lower)).slice(0, 4)
+        .map((f) => ({ display: f.path, token: `file:${f.path}`, group: '文件' })),
+    ];
+    for (const c of list) mentionMapRef.current.set(c.display, c.token);
+    return list.slice(0, 8);
+  }, [mentionToken, agents, taskOptions, fileOptions]);
+  const insertMention = (candidate: { display: string; token: string }): void => {
+    setText((prev) => prev.replace(/@[^\s@]*$/, `@${candidate.display} `));
+    mentionMapRef.current.set(candidate.display, candidate.token);
+    setMentionIndex(0);
+    textareaRef.current?.focus();
+  };
+  const extractRefs = (): string[] => {
+    const tokens = [...text.matchAll(/@([^\s@]+)/g)].map((m) => m[1]!);
+    const refs = tokens.map((t) => mentionMapRef.current.get(t)).filter((t): t is string => !!t);
+    return [...new Set(refs)];
+  };
 
   useEffect(() => {
     setSlashIndex(0);
@@ -308,6 +349,23 @@ export function PromptComposer({
             </span>
           ))}
           {uploading && <span className="mu-composer-attachment-chip is-uploading">⏳ 上传中…</span>}
+        </div>
+      )}
+
+      {/* 批次 H.9：@ 引用面板（员工/文件/任务） */}
+      {mentionCandidates.length > 0 && mentionIndex >= 0 && (
+        <div className="mu-composer-slash">
+          {mentionCandidates.map((candidate, index) => (
+            <button
+              key={candidate.token}
+              type="button"
+              className={`mu-composer-slash-item ${index === Math.min(mentionIndex, mentionCandidates.length - 1) ? 'is-active' : ''}`}
+              onMouseDown={(e) => { e.preventDefault(); insertMention(candidate); }}
+            >
+              <span>@{candidate.display}</span>
+              <small>{candidate.group}</small>
+            </button>
+          ))}
         </div>
       )}
 

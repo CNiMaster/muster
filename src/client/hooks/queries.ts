@@ -1488,9 +1488,9 @@ export function useMessages(scope: 'company' | 'project', scopeId: string | unde
 export function usePostMessage(scope: 'company' | 'project', agentId?: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ scopeId, content, mentions, projectTaskId, attachments, options }: { scopeId: string; content: string; mentions?: string[]; projectTaskId?: string; attachments?: MessageAttachment[]; options?: { mode?: string; model?: string; thinking?: string } }) => {
+    mutationFn: ({ scopeId, content, mentions, refs, projectTaskId, attachments, options }: { scopeId: string; content: string; mentions?: string[]; refs?: string[]; projectTaskId?: string; attachments?: MessageAttachment[]; options?: { mode?: string; model?: string; thinking?: string } }) => {
       const url = scope === 'company' ? `/api/messages` : `/api/projects/${scopeId}/messages`;
-      return api.post<{ userMessage: ConversationMessage; task: unknown }>(url, { content, mentions, projectTaskId, attachments, options });
+      return api.post<{ userMessage: ConversationMessage; task: unknown }>(url, { content, mentions, refs, projectTaskId, attachments, options });
     },
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: ['messages', scope, vars.scopeId] });

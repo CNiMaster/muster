@@ -11,7 +11,7 @@ import { shortId, nowIso } from '../../shared/utils';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { getWorkbench } from './workbench';
 import { getProject, ensureInboxProject } from './project';
-import { createTask } from './task';
+import { createTask, getTask } from './task';
 import { getAgent } from './agent';
 import { getMaterial } from './material';
 import { ensureWorkspaceStaff } from './workspace-staff';
@@ -172,6 +172,8 @@ export interface PostUserMessageInput {
   content: string;
   /** @提及的员工 agent id（可选）。 */
   mentions?: string[];
+  /** 批次 H.9：@引用 token（agent:<id>/file:<path>/task:<id>），注入任务上下文与 recipients。 */
+  refs?: string[];
   /** 项目中的用户任务上下文；员工单聊与群聊都应显式落入该边界。 */
   projectTaskId?: string;
   /** 上传附件（引用项目素材区 material）。 */
@@ -240,6 +242,29 @@ export function postUserMessage(db: DB, input: PostUserMessageInput): {
   const attachmentNote = attachmentRefs.length > 0
     ? `\n\n【用户附件】\n${attachmentRefs.map((a) => `- ${a.name}（${a.kind}，${Math.max(1, Math.round(a.size / 1024))}KB）路径: ${a.repoPath ?? '（仅引用）'}`).join('\n')}\n附件已随仓库带入工作区，可直接读取。`
     : '';
+  // 批次 H.9：@引用注入（file/task 进任务上下文；agent 并入 recipients）——token 带类型前缀，未知前缀忽略
+  const refAgentIds: string[] = [];
+  const refLines: string[] = [];
+  for (const ref of (input.refs ?? []).slice(0, 10)) {
+    if (ref.startsWith('file:')) {
+      const filePath = ref.slice(5);
+      if (filePath) refLines.push(`- 引用文件：${filePath}（仓库相对路径，可直接读取）`);
+    } else if (ref.startsWith('task:')) {
+      try {
+        const refTask = getTask(db, ref.slice(5));
+        refLines.push(`- 引用任务：#${refTask.seq} ${refTask.title}（状态 ${refTask.state}）${refTask.summary ? ` 摘要：${refTask.summary.slice(0, 160)}` : ''}`);
+      } catch {
+        // 引用任务不存在时忽略，不阻断消息
+      }
+    } else if (ref.startsWith('agent:')) {
+      try {
+        refAgentIds.push(getAgent(db, ref.slice(6)).id);
+      } catch {
+        // 同上
+      }
+    }
+  }
+  const refNote = refLines.length > 0 ? `\n\n【用户引用】\n${refLines.join('\n')}` : '';
   const options: MessageOptions = {
     mode: input.options?.mode,
     model: input.options?.model?.trim() || undefined,
@@ -317,11 +342,14 @@ export function postUserMessage(db: DB, input: PostUserMessageInput): {
     }
     return agent;
   });
-  const recipients = mentionedAgents.length > 0
-    ? mentionedAgents.map((agent) => agent.id)
-    : firstAgentId
-      ? [firstAgentId]
-      : [];
+  const recipients = [...new Set([
+    ...(mentionedAgents.length > 0
+      ? mentionedAgents.map((agent) => agent.id)
+      : firstAgentId
+        ? [firstAgentId]
+        : []),
+    ...refAgentIds.filter((id) => projectId || true),
+  ])];
   // WP10 识图直读：图片附件转 data-uri 随任务下发（projectId 已解析，路径归属已校验）
   const userImages = projectId ? collectImageDataUris(db, attachmentRefs, projectId) : [];
   const tasks: Array<ReturnType<typeof createTask>> = [];
@@ -336,8 +364,9 @@ export function postUserMessage(db: DB, input: PostUserMessageInput): {
           trigger: 'user_message',
           scope: input.scopeKind,
           scopeId: input.scopeId,
-          content: `${dispatchContent}${attachmentNote}`,
+          content: `${dispatchContent}${attachmentNote}${refNote}`,
           mentions: input.mentions ?? [],
+          ...(input.refs?.length ? { refs: input.refs } : {}),
           attachments: userMessage.attachments,
           // B3 用户意图锚点：用户原话即目标（前 300 字）——随任务链继承，执行与验收两侧注入防跑偏。
           intentAnchor: { goal: input.content.trim().slice(0, 300) },

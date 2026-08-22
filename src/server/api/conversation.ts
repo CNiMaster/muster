@@ -34,6 +34,7 @@ companyMessagesRouter.post(
       .object({
         content: z.string().min(1),
         mentions: z.array(z.string()).optional(),
+    refs: z.array(z.string().max(300)).max(10).optional(),
         projectTaskId: z.string().optional(),
         attachments: z.array(attachmentSchema).optional(),
         options: optionsSchema.optional(),
@@ -64,6 +65,7 @@ projectMessagesRouter.post(
       .object({
         content: z.string().min(1),
         mentions: z.array(z.string()).optional(),
+    refs: z.array(z.string().max(300)).max(10).optional(),
         projectTaskId: z.string().optional(),
         attachments: z.array(attachmentSchema).optional(),
         options: optionsSchema.optional(),

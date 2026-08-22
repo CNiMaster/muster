@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type React from 'react';
 import type { Agent, Task } from '../../api/types';
 import type { ProjectTaskDTO } from '../../hooks/queries';
-import { useUiMode, useTask, useProjectTaskAction, useTaskAction, usePostMessage, useMessages, useUploadMaterial, materialRawUrl, useExecutorProfiles, useSystemSettings, useBlueprintMatches, useTaskChecklist, useCreateChecklist, useAdvanceChecklist, type MessageAttachment } from '../../hooks/queries';
+import { useUiMode, useTask, useProjectTaskAction, useTaskAction, usePostMessage, useMessages, useUploadMaterial, materialRawUrl, useExecutorProfiles, useSystemSettings, useBlueprintMatches, useTaskChecklist, useCreateChecklist, useAdvanceChecklist, useArtifacts, type MessageAttachment } from '../../hooks/queries';
 import { PromptComposer, type ComposerMode } from '../workbench/PromptComposer';
 import { Button, toast } from '../Button';
 import { StateBadge, Badge } from '../Badge';
@@ -37,6 +37,8 @@ export function ProjectTaskWorkspace({
   newTaskSignal?: number;
 }): React.ReactElement {
 
+  // 批次 H.9：@文件 引用候选（组件自取，免去 ProjectPage 透传）
+  const { data: composerArtifacts } = useArtifacts(projectId);
   const ui = useUiMode();
   const [newTitle, setNewTitle] = useState('');
   const [newBrief, setNewBrief] = useState('');
@@ -114,7 +116,7 @@ export function ProjectTaskWorkspace({
     }
   };
 
-  const handleSendPrompt = (content: string, options?: { agentId?: string; model?: string; thinking?: string; attachments?: MessageAttachment[]; mode?: ComposerMode }): void => {
+  const handleSendPrompt = (content: string, options?: { agentId?: string; model?: string; thinking?: string; attachments?: MessageAttachment[]; mode?: ComposerMode; refs?: string[] }): void => {
     if (!content.trim() && (options?.attachments?.length ?? 0) === 0) return;
     const messageAttachments = options?.attachments ?? [];
     // 后端归一化前的前端映射：med → medium；模式/模型/思考随消息下发
@@ -141,7 +143,7 @@ export function ProjectTaskWorkspace({
         onPublishWorkOrder(content, options?.agentId || selectedAgentId || undefined, messageOptions);
       } else {
         postMessage.mutate(
-          { scopeId: projectId, content, mentions: options?.agentId ? [options.agentId] : [], projectTaskId: selectedTask.id, attachments: messageAttachments.length ? messageAttachments : undefined, options: messageOptions },
+          { scopeId: projectId, content, mentions: options?.agentId ? [options.agentId] : [], refs: options?.refs, projectTaskId: selectedTask.id, attachments: messageAttachments.length ? messageAttachments : undefined, options: messageOptions },
           {
             onSuccess: () => toast('success', '指令已发送给智能体团队'),
             onError: (e) => toast('error', (e as Error).message),
@@ -435,6 +437,7 @@ export function ProjectTaskWorkspace({
           onSelectMode={ui.isSimple ? undefined : setMode}
           onNewTask={() => setCreating(true)}
           draftKey={selectedTask ? `task:${selectedTask.id}` : `project:${projectId}`}
+          fileOptions={(composerArtifacts ?? []).map((a) => ({ path: a.path }))}
           loading={publishingWorkOrder || postMessage.isPending || directTaskAction.isPending}
           onSend={handleSendPrompt}
         />
