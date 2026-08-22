@@ -36,7 +36,8 @@ describe('project task workspace layout', () => {
       </QueryClientProvider>,
     );
     expect(screen.getByText('审批恢复闭环')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText(/在任务 #21 中给智能体下达指令…/)).toBeInTheDocument();
+    // 批次 H.5：任务 running 中占位文案切为排队提示（原"在任务 #21 下达指令"是非运行态文案）
+    expect(screen.getByPlaceholderText(/继续输入以排队后续修改…/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '发送' })).toBeInTheDocument();
   });
 });
