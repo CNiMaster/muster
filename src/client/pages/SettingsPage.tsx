@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type React from 'react';
-import { useSaveSystemSettings, useSystemSettings, useTestConnection, useExecutorProfiles } from '../hooks/queries';
+import { useHealthStatus, useSaveSystemSettings, useSystemSettings, useTestConnection, useExecutorProfiles } from '../hooks/queries';
 import { Badge } from '../components/Badge';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
@@ -17,6 +17,7 @@ export function SettingsPage(): React.ReactElement {
   const saveSettings = useSaveSystemSettings();
   const testConnection = useTestConnection();
   const { data: executorProfiles = [] } = useExecutorProfiles();
+  const health = useHealthStatus();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const activeTab = (searchParams.get('tab') as SettingsTab) || 'general';
@@ -357,6 +358,9 @@ export function SettingsPage(): React.ReactElement {
           )}
         </div>
       </div>
+      <footer className="settings-footer" style={{ marginTop: '16px', fontSize: '12px', color: 'var(--fg-muted, #888)', textAlign: 'center' }}>
+        {health.data ? `muster v${health.data.version}` : 'muster'}
+      </footer>
     </div>
   );
 }

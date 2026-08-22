@@ -2302,6 +2302,21 @@ export function useSystemSettings() {
   });
 }
 
+export interface HealthStatus {
+  status: string;
+  service: string;
+  version: string;
+  time: string;
+}
+
+export function useHealthStatus() {
+  return useQuery({
+    queryKey: ['health'],
+    queryFn: () => api.get<HealthStatus>('/api/health'),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
 export function useSaveSystemSettings() {
   const qc = useQueryClient();
   return useMutation({
