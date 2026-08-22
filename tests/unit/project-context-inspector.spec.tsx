@@ -22,6 +22,9 @@ const mockUseArtifactContent = vi.fn(() => ({ data: undefined, isLoading: false 
 
 vi.mock('../../src/client/hooks/queries', () => ({
   useUiMode: () => mockUseUiMode(),
+  // 批次 I-a/I-b：右栏新租户 hook（无插件/无历史 → 组不渲染，mock 返回空态）
+  usePanelPlugins: () => ({ data: [] }),
+  useSideMessages: () => ({ data: [] }),
   useArtifacts: () => mockUseArtifacts(),
   useBlueprintMatches: () => mockUseBlueprintMatches(),
   useProjectSpecialists: () => mockUseProjectSpecialists(),
