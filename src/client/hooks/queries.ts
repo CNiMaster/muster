@@ -1287,6 +1287,71 @@ export function useCreateTask() {
 }
 
 export function useProjectTasks(projectId:string|undefined){return useQuery({queryKey:['project-tasks',projectId],queryFn:()=>api.get<ProjectTaskDTO[]>(`/api/projects/${projectId}/project-tasks`),enabled:!!projectId});}
+// ===== 批次 H.5：会话排队条 =====
+export interface QueuedMessage {
+  id: string;
+  projectId: string;
+  projectTaskId: string | null;
+  content: string;
+  position: number;
+  status: string;
+  createdAt: string;
+}
+
+export function useQueuedMessages(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ['queued-messages', projectId],
+    queryFn: () => api.get<QueuedMessage[]>(`/api/projects/${projectId}/queued-messages`),
+    enabled: !!projectId,
+    refetchInterval: 8000,
+  });
+}
+
+export function useQueuedMessageAction(projectId: string | undefined) {
+  const qc = useQueryClient();
+  const invalidate = (): void => {
+    qc.invalidateQueries({ queryKey: ['queued-messages', projectId] });
+    qc.invalidateQueries({ queryKey: ['messages'] });
+    qc.invalidateQueries({ queryKey: ['tasks', projectId] });
+  };
+  return {
+    enqueue: useMutation({
+      mutationFn: (input: { projectTaskId?: string; content: string; options?: Record<string, unknown> }) =>
+        api.post<QueuedMessage>(`/api/projects/${projectId}/queued-messages`, input),
+      onSuccess: invalidate,
+    }),
+    reorder: useMutation({
+      mutationFn: (orderedIds: string[]) =>
+        api.post<QueuedMessage[]>(`/api/projects/${projectId}/queued-messages/reorder`, { orderedIds }),
+      onSuccess: invalidate,
+    }),
+    edit: useMutation({
+      mutationFn: ({ id, content }: { id: string; content: string }) =>
+        api.put<QueuedMessage>(`/api/projects/${projectId}/queued-messages/${id}`, { content }),
+      onSuccess: invalidate,
+    }),
+    remove: useMutation({
+      mutationFn: (id: string) => api.delete<{ ok: boolean }>(`/api/projects/${projectId}/queued-messages/${id}`),
+      onSuccess: invalidate,
+    }),
+    flush: useMutation({
+      mutationFn: (id: string) => api.post<{ ok: boolean }>(`/api/projects/${projectId}/queued-messages/${id}/flush`, {}),
+      onSuccess: invalidate,
+    }),
+  };
+}
+
+/** 批次 H.5：插话打断（发送键方块态点击）。 */
+export function useInterruptTask(projectId?: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (taskId: string) => api.post<{ ok: boolean }>(`/api/tasks/${taskId}/interrupt`, {}),
+    onSuccess: () => {
+      if (projectId) qc.invalidateQueries({ queryKey: ['tasks', projectId] });
+    },
+  });
+}
+
 // ===== 批次 H.2：派遣树（工作现场面板） =====
 export interface DispatchActor {
   id: string;
@@ -2458,6 +2523,7 @@ export function useSaveSystemSettings() {
       imageGenModel?: string;
       waitingAutoContinueMinutes?: number;
       preventSleep?: 'active' | 'always' | 'off';
+      interruptMode?: 'queue' | 'interrupt';
     }) => api.post<any>('/api/settings', settings),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['systemSettings'] });

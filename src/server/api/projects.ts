@@ -47,6 +47,9 @@ import { postSystemMessage } from '../domain/conversation';
 import { stageStatus, detectOrphanWorktrees, cleanOrphanWorktrees, taskStageStatus, taskStagingBranch, discardTaskStaging } from '../worktree/manager';
 import { getProjectHealth } from '../domain/subagent-health';
 import { buildDispatchTree } from '../domain/dispatch-tree';
+import {
+  listQueuedMessages, enqueueMessage, reorderQueuedMessages, editQueuedMessage, cancelQueuedMessage, flushQueuedMessage,
+} from '../domain/queued-message';
 import { listProjectSpecialists } from '../domain/specialist-pool';
 import {
   promoteProjectStagingIfAny,
@@ -150,6 +153,72 @@ projectsRouter.post(
   asyncHandler(async (req, res) => {
     const body = z.object({ ids: z.array(z.string().min(1)).min(1), confirm: z.string() }).parse(req.body);
     res.json(purgeFromTrash(getDb(), body.ids, body.confirm));
+  }),
+);
+
+// ===== 批次 H.5：会话排队条（服务端持久化；drain 由 coordinator tick 驱动） =====
+projectsRouter.get(
+  '/:id/queued-messages',
+  asyncHandler(async (req, res) => {
+    res.json(listQueuedMessages(getDb(), param(req, 'id')));
+  }),
+);
+
+projectsRouter.post(
+  '/:id/queued-messages',
+  asyncHandler(async (req, res) => {
+    const input = z.object({
+      projectTaskId: z.string().optional(),
+      content: z.string().min(1),
+      options: z.record(z.string(), z.unknown()).optional(),
+      attachments: z.array(z.object({ materialId: z.string(), name: z.string(), kind: z.string(), size: z.number() })).optional(),
+    }).parse(req.body);
+    res.status(201).json(enqueueMessage(getDb(), { projectId: param(req, 'id'), ...input }));
+  }),
+);
+
+projectsRouter.post(
+  '/:id/queued-messages/reorder',
+  asyncHandler(async (req, res) => {
+    const { orderedIds } = z.object({ orderedIds: z.array(z.string()).max(50) }).parse(req.body);
+    reorderQueuedMessages(getDb(), param(req, 'id'), orderedIds);
+    res.json(listQueuedMessages(getDb(), param(req, 'id')));
+  }),
+);
+
+projectsRouter.patch(
+  '/:id/queued-messages/:messageId',
+  asyncHandler(async (req, res) => {
+    const { content } = z.object({ content: z.string().min(1) }).parse(req.body);
+    res.json(editQueuedMessage(getDb(), param(req, 'messageId'), content));
+  }),
+);
+
+projectsRouter.delete(
+  '/:id/queued-messages/:messageId',
+  asyncHandler(async (req, res) => {
+    cancelQueuedMessage(getDb(), param(req, 'messageId'));
+    res.json({ ok: true });
+  }),
+);
+
+/** ↑立即：打断当前执行（置 queued + abort）后立即送出该条。 */
+projectsRouter.post(
+  '/:id/queued-messages/:messageId/flush',
+  asyncHandler(async (req, res) => {
+    const db = getDb();
+    const projectId = param(req, 'id');
+    // 打断该项目正在跑的任务（先置 queued 再 abort——域层语义见 interruptTask）
+    const running = db.prepare("SELECT id FROM task WHERE project_id=? AND state IN ('running','claimed')").all(projectId) as Array<{ id: string }>;
+    const engine = (req.app.locals as { engine?: { abortTask: (id: string) => boolean } }).engine;
+    for (const t of running) {
+      try {
+        db.prepare("UPDATE task SET state='queued', lease_owner_thread_id=NULL, lease_expires_at=NULL, updated_at=datetime('now') WHERE id=?").run(t.id);
+        engine?.abortTask(t.id);
+      } catch { /* 单任务打断失败不阻断送出 */ }
+    }
+    flushQueuedMessage(db, param(req, 'messageId'));
+    res.json({ ok: true });
   }),
 );
 

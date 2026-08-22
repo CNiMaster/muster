@@ -632,6 +632,20 @@ export function bootSelfCheck(db: DB): { fixedLeases: number; fixedSuspensions: 
 }
 
 /**
+ * 插话打断（批次 H.5）：先置 state='queued' 再 abort——裸 abort 会被 runTask catch
+ * 判 permanent 失败（engine.ts AbortError 处理），置 queued 后 abort 走"让位重跑"分支。
+ * 由 API 层转调 engine.abortTask（域层不依赖引擎实例）。
+ */
+export function interruptTask(db: DB, taskId: string): void {
+  const r = db.prepare(
+    "UPDATE task SET state='queued', lease_owner_thread_id=NULL, lease_expires_at=NULL, updated_at=? WHERE id=? AND state IN ('running','claimed')",
+  ).run(nowIso(), taskId);
+  if (r.changes === 0) {
+    throw new AppError(ErrorCode.TASK_INVALID_TRANSITION, `任务 ${taskId} 不在运行中，无需打断`);
+  }
+}
+
+/**
  * 全库正式活跃任务数（批次 G.5，防休眠条件）。
  * 口径与 coordinator tick 的 formalActive 一致：非讨论 + 六状态——改状态机时两处同步。
  */

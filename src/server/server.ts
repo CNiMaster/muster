@@ -294,6 +294,8 @@ async function main(): Promise<void> {
   }
 
   const { app, engine, triggerScheduler, coordinator } = await createApp();
+  // 批次 H.5：REST 插话打断需要 engine.abortTask（置 queued 后调，见 /api/tasks/:id/interrupt）
+  app.locals.engine = engine;
   // 批次 G.5：防休眠保活（默认 active——有正式活跃任务/trigger 临近触发时拉 caffeinate）
   const keepawake = new KeepAwake(getDb());
   const httpServer = createServer(app);

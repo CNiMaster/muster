@@ -65,6 +65,8 @@ export function SettingsPage(): React.ReactElement {
   const [waitingAutoContinue, setWaitingAutoContinue] = useState(0);
   // 批次 G.5：防休眠三态（active=有活跃任务时保活，默认；always=常驻；off）
   const [preventSleep, setPreventSleep] = useState<'active' | 'always' | 'off'>('active');
+  // 批次 H.5：运行中发送行为（queue=排队等本轮结束，默认；interrupt=打断插话）
+  const [interruptMode, setInterruptMode] = useState<'queue' | 'interrupt'>('queue');
   const [testResult, setTestResult] = useState<any | null>(null);
 
   useEffect(() => {
@@ -104,6 +106,7 @@ export function SettingsPage(): React.ReactElement {
     setBreadthDefaultTier(settings.breadthDefaultTier ?? 'standard');
     setWaitingAutoContinue(settings.waitingAutoContinueMinutes ?? 0);
     setPreventSleep(settings.preventSleep ?? 'active');
+    setInterruptMode(settings.interruptMode ?? 'queue');
   }, [settings]);
 
   const handleSave = (): void => {
@@ -112,7 +115,7 @@ export function SettingsPage(): React.ReactElement {
       return;
     }
     saveSettings.mutate(
-      { claudeBin, model, skipPermissions, timeoutMs, maxToolCalls, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierPrimaryId: tierPrimary, executorTierSecondaryId: tierSecondary, executorTierTertiaryId: tierTertiary, executorTierHighId: tierHigh, executorTierStandardId: tierStandard, executorTierLowId: tierLow, imageGenModel, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs, theme, fontFamily, fontSize, locale, codeTheme, autonomousReflectionEnabled, autonomousReflectionBudgetUSD, swarmMaxDepth, swarmMaxWidth, swarmMaxNodes, swarmBudgetUSD, swarmRepairMax, breadthDefaultTier, waitingAutoContinueMinutes: waitingAutoContinue, preventSleep },
+      { claudeBin, model, skipPermissions, timeoutMs, maxToolCalls, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierPrimaryId: tierPrimary, executorTierSecondaryId: tierSecondary, executorTierTertiaryId: tierTertiary, executorTierHighId: tierHigh, executorTierStandardId: tierStandard, executorTierLowId: tierLow, imageGenModel, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs, theme, fontFamily, fontSize, locale, codeTheme, autonomousReflectionEnabled, autonomousReflectionBudgetUSD, swarmMaxDepth, swarmMaxWidth, swarmMaxNodes, swarmBudgetUSD, swarmRepairMax, breadthDefaultTier, waitingAutoContinueMinutes: waitingAutoContinue, preventSleep, interruptMode },
       {
         onSuccess: () => toast('success', '系统设置已保存并实时生效'),
         onError: (error: any) => toast('error', error.message ?? '保存设置失败'),
@@ -206,6 +209,12 @@ export function SettingsPage(): React.ReactElement {
                     <span>允许跳过 CLI 权限拦截 (--dangerously-skip-permissions)</span>
                   </label>
                 </div>
+                <Field label="运行中发送" hint="任务执行中你继续输入时的行为：排队等本轮结束自动送出（默认），或立即打断插话（任务回队列让位重跑）">
+                  <Select value={interruptMode} onChange={(e) => setInterruptMode(e.target.value as 'queue' | 'interrupt')}>
+                    <option value="queue">排队（本轮结束后送出）</option>
+                    <option value="interrupt">插话（立即打断）</option>
+                  </Select>
+                </Field>
                 <Field label="防休眠" hint="系统睡眠会让任务停摆、局域网连接断开。仅 macOS 生效（内建 caffeinate），其他平台随桌面版支持">
                   <Select value={preventSleep} onChange={(e) => setPreventSleep(e.target.value as 'active' | 'always' | 'off')}>
                     <option value="active">有任务在跑时保活（默认）</option>

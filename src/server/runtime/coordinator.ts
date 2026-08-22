@@ -3,6 +3,7 @@ import { getWorkbench, transitionWorkbench } from '../domain/workbench';
 import { listProjects } from '../domain/project';
 import { ensureProjectThreads, releaseProjectMirrors } from '../domain/thread';
 import { ensurePlanningTask, listTasks, recoverExpiredLeases, findStaleWaitingTasks, escalateToFirstResponder, createTask, autoContinueDueWaitingTasks, bootSelfCheck } from '../domain/task';
+import { drainProjectQueues } from '../domain/queued-message';
 import type { TaskEngine } from '../task-engine/engine';
 import { log } from '../logger';
 import { interruptActiveBrainstorms } from '../domain/brainstorm';
@@ -116,6 +117,12 @@ export class ProjectRuntimeCoordinator {
         autoContinueDueWaitingTasks(this.db);
       } catch (error) {
         log.warn('auto continue scan failed', { error: error instanceof Error ? error.message : String(error) });
+      }
+      // 批次 H.5：排队条 drain——项目空闲时按序送出（独立 try/catch 不阻断 tick）
+      try {
+        drainProjectQueues(this.db);
+      } catch (error) {
+        log.warn('queued message drain failed', { error: error instanceof Error ? error.message : String(error) });
       }
       // 阶段一任务 1.2：扫描 waiting_input/waiting_dependency 超时任务并上报第一负责人。
       // 独立 try/catch：超时上报失败不影响租约恢复与任务泵送。

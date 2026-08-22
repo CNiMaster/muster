@@ -24,6 +24,7 @@ import {
   pauseTask,
   resumeTask,
   setTaskAutoContinue,
+  interruptTask,
   taskWaitingSince,
   type Task,
   acceptSuggestion,
@@ -170,6 +171,19 @@ taskByIdRouter.get(
       res.setHeader('X-Content-Type-Options', 'nosniff');
     }
     res.sendFile(abs);
+  }),
+);
+
+/** 批次 H.5：插话打断——置 queued + abort（回队列让位重跑，不判失败）。 */
+taskByIdRouter.post(
+  '/interrupt',
+  asyncHandler(async (req, res) => {
+    const taskId = param(req, 'id');
+    interruptTask(getDb(), taskId);
+    // engine 实例经 app.locals 注入（server.ts createApp 挂载）；测试环境无引擎时仅置状态
+    const engine = (req.app.locals as { engine?: { abortTask: (id: string) => boolean } }).engine;
+    const aborted = engine ? engine.abortTask(taskId) : false;
+    res.json({ ok: true, aborted });
   }),
 );
 

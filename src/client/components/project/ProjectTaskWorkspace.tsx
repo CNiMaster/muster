@@ -2,13 +2,14 @@ import { useEffect, useState } from 'react';
 import type React from 'react';
 import type { Agent, Task } from '../../api/types';
 import type { ProjectTaskDTO } from '../../hooks/queries';
-import { useUiMode, useTask, useProjectTaskAction, useTaskAction, usePostMessage, useMessages, useUploadMaterial, materialRawUrl, useExecutorProfiles, useSystemSettings, useBlueprintMatches, useTaskChecklist, useCreateChecklist, useAdvanceChecklist, useArtifacts, type MessageAttachment } from '../../hooks/queries';
+import { useQueuedMessages, useQueuedMessageAction, useInterruptTask, useUiMode, useTask, useProjectTaskAction, useTaskAction, usePostMessage, useMessages, useUploadMaterial, materialRawUrl, useExecutorProfiles, useSystemSettings, useBlueprintMatches, useTaskChecklist, useCreateChecklist, useAdvanceChecklist, useArtifacts, type MessageAttachment } from '../../hooks/queries';
 import { PromptComposer, type ComposerMode } from '../workbench/PromptComposer';
 import { Button, toast } from '../Button';
 import { StateBadge, Badge } from '../Badge';
 import { ConversationPanel } from '../ConversationPanel';
 import { ExecutionTraceCard } from '../workbench/ExecutionTraceCard';
 import { LiveProcessBar } from '../workbench/LiveProcessBar';
+import { QueueStrip } from './QueueStrip';
 import { Input, Textarea, Field } from '../Form';
 import { TaskTopBar } from './TaskTopBar';
 import { AutoContinueCountdown } from './AutoContinueCountdown';
@@ -90,6 +91,13 @@ export function ProjectTaskWorkspace({
 
   // 获取当前正在运行、等待或暂停的 Task 执行记录
   const activeRuntimeTask = tasks.find((t) => t.state === 'running' || t.state === 'claimed' || t.state === 'waiting_input' || t.state === 'paused') ?? tasks[0];
+  // 批次 H.5：排队条 + 插话打断（运行态判定绑 activeRuntimeTask 口径）
+  const { data: queuedMessages = [] } = useQueuedMessages(projectId);
+  const queueAction = useQueuedMessageAction(projectId);
+  const interrupt = useInterruptTask(projectId);
+  const runtimeBusy = activeRuntimeTask?.state === 'running' || activeRuntimeTask?.state === 'claimed';
+  const settingsForMode = systemSettings as { interruptMode?: 'queue' | 'interrupt' } | undefined;
+  const interruptMode = settingsForMode?.interruptMode ?? 'queue';
   const { data: latestTask } = useTask(activeRuntimeTask?.id);
 
   const isTaskWaitingOrPaused = activeRuntimeTask?.state === 'waiting_input' || activeRuntimeTask?.state === 'paused';
@@ -136,6 +144,27 @@ export function ProjectTaskWorkspace({
           onError: (e) => toast('error', (e as Error).message),
         },
       );
+    }
+
+    // 批次 H.5：运行中发送——按设置入队（等本轮结束 drain 送出）或打断插话
+    if (runtimeBusy && activeRuntimeTask) {
+      if (interruptMode === 'interrupt') {
+        interrupt.mutate(activeRuntimeTask.id, {
+          onSuccess: () => {
+            postMessage.mutate(
+              { scopeId: projectId, content, mentions: options?.agentId ? [options.agentId] : [], refs: options?.refs, projectTaskId: selectedTask?.id, attachments: messageAttachments.length ? messageAttachments : undefined, options: messageOptions },
+              { onSuccess: () => toast('success', '已打断并插话'), onError: (e) => toast('error', (e as Error).message) },
+            );
+          },
+          onError: (e) => toast('error', (e as Error).message),
+        });
+      } else {
+        queueAction.enqueue.mutate(
+          { projectTaskId: selectedTask?.id, content, options: messageOptions as Record<string, unknown> },
+          { onSuccess: () => toast('success', '已排队——本轮结束后自动送出'), onError: (e) => toast('error', (e as Error).message) },
+        );
+      }
+      return;
     }
 
     // 如果有选中的任务，直接作为工作单派发或在对话中推进
@@ -410,13 +439,18 @@ export function ProjectTaskWorkspace({
           </>
         )}
 
+        {<QueueStrip projectId={projectId} messages={queuedMessages} />}
         <PromptComposer
+          isRunning={runtimeBusy}
+          onStop={activeRuntimeTask ? () => interrupt.mutate(activeRuntimeTask.id, { onError: (e) => toast('error', (e as Error).message) }) : undefined}
           placeholder={
             activeRuntimeTask?.state === 'waiting_input'
               ? '智能体正在等待你的答复，直接输入即可继续执行…'
-              : selectedTask
-                ? `在任务 #${selectedTask.seq} 中给智能体下达指令…`
-                : '直接输入需求，或向智能体分配任务…'
+              : runtimeBusy
+                ? (interruptMode === 'queue' ? '继续输入以排队后续修改…' : '输入即打断插话（Enter 发送）…')
+                : selectedTask
+                  ? `在任务 #${selectedTask.seq} 中给智能体下达指令…`
+                  : '直接输入需求，或向智能体分配任务…'
           }
           agents={ui.isSimple ? [] : agents}
           selectedAgentId={ui.isSimple ? undefined : selectedAgentId}

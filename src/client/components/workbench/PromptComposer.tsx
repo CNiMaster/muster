@@ -71,6 +71,9 @@ export interface PromptComposerProps {
   draftKey?: string;
   /** 批次 H.9：@文件 引用候选（产物/仓库相对路径，挂载方从 useArtifacts 传入） */
   fileOptions?: Array<{ path: string }>;
+  /** 批次 H.5：任务运行中——发送键变方块停止键（点击打断，任务回队列让位重跑）。 */
+  isRunning?: boolean;
+  onStop?: () => void;
   onSend: (content: string, options?: { agentId?: string; model?: string; thinking?: string; attachments?: MessageAttachment[]; mode?: ComposerMode; refs?: string[] }) => void;
 }
 
@@ -100,6 +103,8 @@ export function PromptComposer({
   onNewTask,
   draftKey,
   fileOptions = [],
+  isRunning = false,
+  onStop,
   onSend,
 }: PromptComposerProps): React.ReactElement {
   // 批次 G.1：草稿按 draftKey 隔离持久化（muster:*:vN 约定）；无 key 保持纯内存行为
@@ -570,6 +575,17 @@ export function PromptComposer({
 
         <div className="mu-prompt-actions">
           <span className="mu-composer-hint">Shift+Enter 换行</span>
+          {isRunning && onStop && (
+            <Button
+              size="sm"
+              variant="danger"
+              onClick={onStop}
+              title="打断当前执行（任务回队列让位重跑）"
+              aria-label="停止当前执行"
+            >
+              ■
+            </Button>
+          )}
           <Button
             size="sm"
             variant="primary"

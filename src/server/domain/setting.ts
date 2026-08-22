@@ -76,6 +76,8 @@ export interface SystemSettings {
   waitingAutoContinueMinutes: number;
   /** 防休眠（批次 G.5）：active=有活跃任务/临近触发时保活（默认）；always=常驻；off。 */
   preventSleep: 'active' | 'always' | 'off';
+  /** 运行中发送（批次 H.5）：queue=入队等本轮结束（默认）；interrupt=打断插话。 */
+  interruptMode: 'queue' | 'interrupt';
 }
 
 export function getSetting(db: DB, key: string, defaultValue: string): string {
@@ -137,6 +139,7 @@ export function getSystemSettings(db: DB): SystemSettings {
     executorTierLowId: getSetting(db, 'executor_tier_low_id', '') || getSetting(db, 'executor_tier_tertiary_id', ''),
     imageGenModel: getSetting(db, 'image_gen_model', ''),
     waitingAutoContinueMinutes: Number(getSetting(db, 'waiting_auto_continue_minutes', '0')) || 0,
+    interruptMode: getSetting(db, 'interrupt_mode', 'queue') === 'interrupt' ? 'interrupt' : 'queue',
     preventSleep: (['active', 'always', 'off'] as const).includes(getSetting(db, 'prevent_sleep', 'active') as 'active')
       ? (getSetting(db, 'prevent_sleep', 'active') as 'active' | 'always' | 'off')
       : 'active',
@@ -244,5 +247,8 @@ export function saveSystemSettings(db: DB, settings: Partial<SystemSettings>): v
   }
   if (settings.preventSleep !== undefined) {
     setSetting(db, 'prevent_sleep', ['active', 'always', 'off'].includes(settings.preventSleep) ? settings.preventSleep : 'active');
+  }
+  if (settings.interruptMode !== undefined) {
+    setSetting(db, 'interrupt_mode', settings.interruptMode === 'interrupt' ? 'interrupt' : 'queue');
   }
 }
