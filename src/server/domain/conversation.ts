@@ -8,6 +8,7 @@ import type { DB } from '../db/client';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { shortId, nowIso } from '../../shared/utils';
+import { getSystemSettings } from './setting';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { getWorkbench } from './workbench';
 import { getProject, ensureInboxProject } from './project';
@@ -68,7 +69,8 @@ export interface MessageAttachment {
 }
 
 /** 消息级执行模式：计划（只读规划）+ 三档审批 + 只读。 */
-export type MessageMode = 'plan' | 'ask-always' | 'ask-by-rule' | 'no-approval' | 'deny';
+/** H9b 四模式+旧五值兼容（engine modeToStrategy 归一）。 */
+export type MessageMode = 'plan' | 'ask-always' | 'ask-by-rule' | 'no-approval' | 'deny' | 'confirm-edits' | 'auto-edit' | 'full-access';
 
 export interface MessageOptions {
   mode?: MessageMode;
@@ -321,6 +323,12 @@ export function postUserMessage(db: DB, input: PostUserMessageInput): {
     }
   }
 
+  // H9b 全局默认权限档（仅消息未显式选档时生效；缺省 ''=跟随策略）
+  let effectiveSecurityMode: string | undefined;
+  try {
+    effectiveSecurityMode = getSystemSettings(db).securityMode || undefined;
+  } catch { /* 设置读取失败=跟随策略 */ }
+
   // B5 @负责人 关键词扇出：服务端展开为全部 lead 岗（当前单负责人；未来多负责人自动生效）。
   // 前端按 name 匹配不认关键词，故在此展开后统一走 id 校验。
   const LEAD_MENTION_KEYWORDS = new Set(['@负责人', '负责人', '@所有负责人', '所有负责人', 'lead', '@lead']);
@@ -371,7 +379,8 @@ export function postUserMessage(db: DB, input: PostUserMessageInput): {
           // B3 用户意图锚点：用户原话即目标（前 300 字）——随任务链继承，执行与验收两侧注入防跑偏。
           intentAnchor: { goal: input.content.trim().slice(0, 300) },
           ...(userImages.length > 0 ? { userImages } : {}),
-          ...(options.mode ? { mode: options.mode } : {}),
+          // H9b：消息未显式选档时注入全局默认权限档（缺省 ''=跟随策略，存量零变化）
+          ...(options.mode ? { mode: options.mode } : effectiveSecurityMode ? { mode: effectiveSecurityMode } : {}),
           ...(options.model ? { model: options.model } : {}),
           ...(options.thinking ? { thinking: options.thinking } : {}),
         },

@@ -68,6 +68,7 @@ export function SettingsPage(): React.ReactElement {
   // 批次 H.5：运行中发送行为（queue=排队等本轮结束，默认；interrupt=打断插话）
   const [interruptMode, setInterruptMode] = useState<'queue' | 'interrupt'>('queue');
   const [stopGraceSec, setStopGraceSec] = useState(60);
+  const [securityMode, setSecurityMode] = useState<'' | 'confirm-edits' | 'auto-edit' | 'plan' | 'full-access'>('');
   const [testResult, setTestResult] = useState<any | null>(null);
 
   useEffect(() => {
@@ -109,6 +110,7 @@ export function SettingsPage(): React.ReactElement {
     setPreventSleep(settings.preventSleep ?? 'active');
     setInterruptMode(settings.interruptMode ?? 'queue');
     setStopGraceSec(Math.round((settings.stopGraceMs ?? 60000) / 1000));
+    setSecurityMode(settings.securityMode ?? '');
   }, [settings]);
 
   const handleSave = (): void => {
@@ -117,7 +119,7 @@ export function SettingsPage(): React.ReactElement {
       return;
     }
     saveSettings.mutate(
-      { claudeBin, model, skipPermissions, timeoutMs, maxToolCalls, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierPrimaryId: tierPrimary, executorTierSecondaryId: tierSecondary, executorTierTertiaryId: tierTertiary, executorTierHighId: tierHigh, executorTierStandardId: tierStandard, executorTierLowId: tierLow, imageGenModel, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs, theme, fontFamily, fontSize, locale, codeTheme, autonomousReflectionEnabled, autonomousReflectionBudgetUSD, swarmMaxDepth, swarmMaxWidth, swarmMaxNodes, swarmBudgetUSD, swarmRepairMax, breadthDefaultTier, waitingAutoContinueMinutes: waitingAutoContinue, preventSleep, interruptMode, stopGraceMs: stopGraceSec * 1000 },
+      { claudeBin, model, skipPermissions, timeoutMs, maxToolCalls, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierPrimaryId: tierPrimary, executorTierSecondaryId: tierSecondary, executorTierTertiaryId: tierTertiary, executorTierHighId: tierHigh, executorTierStandardId: tierStandard, executorTierLowId: tierLow, imageGenModel, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs, theme, fontFamily, fontSize, locale, codeTheme, autonomousReflectionEnabled, autonomousReflectionBudgetUSD, swarmMaxDepth, swarmMaxWidth, swarmMaxNodes, swarmBudgetUSD, swarmRepairMax, breadthDefaultTier, waitingAutoContinueMinutes: waitingAutoContinue, preventSleep, interruptMode, stopGraceMs: stopGraceSec * 1000, securityMode },
       {
         onSuccess: () => toast('success', '系统设置已保存并实时生效'),
         onError: (error: any) => toast('error', error.message ?? '保存设置失败'),
@@ -217,7 +219,16 @@ export function SettingsPage(): React.ReactElement {
                     <option value="interrupt">插话（安全停后立即送出）</option>
                   </Select>
                 </Field>
-                <Field label="停止等待上限（秒）" hint="点击停止后等待当前动作（写文件/命令）到达安全边界的最长时间，到点自动强停并保留现场；默认 60 秒">
+                <Field label="默认权限档" hint="消息未显式选档时生效的全局权限档（H9b 四模式）。文件编辑自动放=git 可逆兜底；命令审批由安全审查员附风险分析；完全访问=AI 判定放行但红线必弹卡">
+                  <Select value={securityMode} onChange={(e) => setSecurityMode(e.target.value as typeof securityMode)}>
+                    <option value="">跟随任务/员工策略（默认）</option>
+                    <option value="auto-edit">自动编辑（命令全审批）</option>
+                    <option value="confirm-edits">变更前确认</option>
+                    <option value="plan">计划模式（只读规划）</option>
+                    <option value="full-access">完全访问（AI 判定）</option>
+                  </Select>
+                </Field>
+                                <Field label="停止等待上限（秒）" hint="点击停止后等待当前动作（写文件/命令）到达安全边界的最长时间，到点自动强停并保留现场；默认 60 秒">
                   <Input
                     type="number"
                     min={5}

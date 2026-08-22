@@ -66,17 +66,34 @@ function scheduleLabel(schedule: { kind: string; intervalMinutes?: number; timeO
   return '';
 }
 
-/** 批次 D2：读取任务 inputProtocol 里的消息级选项（模式/模型/思考），非法值忽略。 */
-function readMessageOptions(input: Record<string, unknown>): { mode?: 'plan' | 'ask-always' | 'ask-by-rule' | 'no-approval' | 'deny'; model?: string; thinking?: 'off' | 'low' | 'medium' | 'high' } {
+/**
+ * 批次 D2：读取任务 inputProtocol 里的消息级选项（模式/模型/思考），非法值忽略。
+ * H9b 四模式（ZCode 命名，六轮收敛）：confirm-edits 变更前确认 / auto-edit 自动编辑（默认）/
+ * plan 计划模式 / full-access 完全访问——旧五值保留兼容。
+ */
+export type SecurityMode = 'confirm-edits' | 'auto-edit' | 'plan' | 'full-access';
+const KNOWN_MODES = new Set(['confirm-edits', 'auto-edit', 'plan', 'full-access', 'plan', 'ask-always', 'ask-by-rule', 'no-approval', 'deny']);
+function readMessageOptions(input: Record<string, unknown>): { mode?: typeof KNOWN_MODES extends Set<infer T> ? T : never; model?: string; thinking?: 'off' | 'low' | 'medium' | 'high' } {
   const mode = input.mode;
   const model = typeof input.model === 'string' && input.model.trim() ? input.model.trim() : undefined;
   const rawThinking = input.thinking === 'med' ? 'medium' : input.thinking;
   const thinking = rawThinking === 'off' || rawThinking === 'low' || rawThinking === 'medium' || rawThinking === 'high' ? rawThinking : undefined;
   return {
-    mode: mode === 'plan' || mode === 'ask-always' || mode === 'ask-by-rule' || mode === 'no-approval' || mode === 'deny' ? mode : undefined,
+    mode: typeof mode === 'string' && KNOWN_MODES.has(mode) ? mode as 'confirm-edits' | 'auto-edit' | 'plan' | 'full-access' | 'ask-always' | 'ask-by-rule' | 'no-approval' | 'deny' : undefined,
     model,
     thinking,
   };
+}
+
+/** H9b：任意旧/新模式 → 审批策略（DB 枚举兼容层）。full-access 落 ask-by-rule——由 guard 的 AI 递进实现「safe 自动放/危险弹卡」。 */
+export function modeToStrategy(mode: string | undefined): 'ask-always' | 'ask-by-rule' | 'no-approval' | 'deny' | undefined {
+  switch (mode) {
+    case 'confirm-edits': case 'ask-always': return 'ask-always';
+    case 'auto-edit': case 'ask-by-rule': case 'full-access': return 'ask-by-rule';
+    case 'no-approval': return 'no-approval';
+    case 'plan': case 'deny': return 'deny';
+    default: return undefined;
+  }
 }
 
 import { commitAll } from '../worktree/manager';
@@ -479,12 +496,8 @@ export class TaskEngine {
         ...(userTalentOverride?.customThinkingDepth ? { thinkingDepth: userTalentOverride.customThinkingDepth as AgentExecutorConfig['thinkingDepth'] } : {}),
         ...(messageOptions.thinking ? { thinkingDepth: messageOptions.thinking } : {}),
       };
-      // 模式 → 审批策略映射：plan/deny=只读；ask-always/ask-by-rule/no-approval=三档审批
-      const modeStrategy = messageOptions.mode === 'ask-always' || messageOptions.mode === 'ask-by-rule' || messageOptions.mode === 'no-approval'
-        ? messageOptions.mode
-        : messageOptions.mode === 'plan' || messageOptions.mode === 'deny'
-          ? 'deny' as const
-          : undefined;
+      // 模式 → 审批策略映射（H9b 四模式经 modeToStrategy 归一；旧五值兼容）
+      const modeStrategy = modeToStrategy(messageOptions.mode);
       let employeePermissionPolicy = getEmployeePermissionPolicy(this.db, agent.id);
       if (!employeePermissionPolicy && modeStrategy && modeStrategy !== 'deny') {
         // 消息级审批模式需要策略/审批载体：幂等绑员工档模板（deny 只读不需要审批队列）
@@ -501,6 +514,17 @@ export class TaskEngine {
       const permissionPolicy = employeePermissionPolicy;
       const effectiveStrategy = modeStrategy ?? permissionPolicy?.approvalStrategy;
       let approvalFailure: RunFailure | null = null;
+      // H9b：原始判定函数（策略+模式分流+AI 递进/命令恒审），ctx 内包装留档。
+      const rawPermissionGuard = this.buildPermissionGuard({
+        task, project, workbench, agent,
+        workingDir, repoRoot,
+        permissionPolicy: permissionPolicy ?? undefined,
+        employeePermissionPolicy,
+        effectiveStrategy,
+        mode: messageOptions.mode,
+        executionRun, projectTaskThread, executorProfile,
+        approvalFailure: { get current() { return approvalFailure; }, set current(v) { approvalFailure = v as RunFailure | null; } },
+      });
       const ctx: ExecutionContext = {
         task: getTask(this.db, task.id),
         systemPrompt: '', // 由 assembleContext 装配
@@ -530,109 +554,20 @@ export class TaskEngine {
           baseUrl: `http://127.0.0.1:${this.serverPort}`,
           taskId: task.id,
         },
-        permissionGuard: (permissionPolicy || effectiveStrategy) ? async (request) => {
-          // 只读（plan/deny）：直接拒绝一切执行动作（CLI 侧同时落 read-only 沙盒）
-          if (effectiveStrategy === 'deny') {
-            return { allowed: false, message: '当前为只读模式：本次对话已设置为不执行任何变更动作' };
-          }
-          let decision = employeePermissionPolicy
-            ? evaluatePermission(this.db, employeePermissionPolicy.id, {
-                ...request,
-                taskRoot: workingDir,
-                projectRoot: repoRoot,
-                workspaceRoot: getActiveWorkspace(this.db)?.rootDir ?? repoRoot,
-                employeeId: agent.id,
-                companyId: workbench.id,
-                projectId: project.id,
-                taskId: task.id,
-              })
-            : { decision: 'allow' as const, reason: '无员工策略，默认放行' };
-          // 每步审批：放行结论升级为待审批
-          if (effectiveStrategy === 'ask-always' && decision.decision === 'allow') {
-            decision = { decision: 'approval-required', reason: '消息设置为每步审批' };
-          }
-          // 自动执行：待审批结论降级为放行（显式 deny 规则不受影响）
-          if (effectiveStrategy === 'no-approval' && decision.decision === 'approval-required') {
-            return { allowed: true };
-          }
-          if (!permissionPolicy) return { allowed: true };
-          if (decision.decision === 'allow') return { allowed: true };
-          if (decision.decision === 'approval-required') {
-            // AI 审批辅助（四级递进）：高频操作先调 AI 判断。
-            // - safe + project_scope 及以下 → 自动放行 + 自动建项目内规则
-            // - safe + company_scope/permanent → 单次执行 + 入批量审批队列（等人工升级）
-            // - unsafe → 拒绝 + 记录拒绝原因供学习
-            // - uncertain/硬高危 → 转人工审批
-            try {
-              const { evaluateWithAi, recordRejectionForLearning } = await import('../domain/ai-approval');
-              const { savePermissionRule } = await import('../domain/permission');
-              const aiResult = await evaluateWithAi(this.db, {
-                action: request.action, command: request.command, path: request.path,
-                workingDir, employeeRole: agent.role, taskTitle: task.title,
-                companyId: workbench.id, projectId: project.id, policyId: permissionPolicy.id,
-              });
-              if (aiResult.verdict === 'unsafe') {
-                recordRejectionForLearning(this.db, { policyId: permissionPolicy.id, action: request.action, command: request.command, reason: aiResult.reason });
-                realtime.publish(makeLifecycleEvent('approval.ai-denied', {
-                  approvalId: null, taskId: task.id, action: request.action,
-                  command: request.command?.slice(0, 100), reason: aiResult.reason,
-                }, { projectId: project.id, taskId: task.id }));
-                return { allowed: false, message: `AI 审批拒绝：${aiResult.reason}` };
-              }
-              if (aiResult.verdict === 'safe') {
-                // project_scope 及以下 → 自动建规则（极安全，AI 明确判可重复）
-                if (aiResult.highestSafeLevel === 'execute_once') {
-                  // 单次执行，不建规则（AI 认为有一定影响，参数敏感）
-                  realtime.publish(makeLifecycleEvent('approval.ai-approved', {
-                    approvalId: null, taskId: task.id, action: request.action,
-                    command: request.command?.slice(0, 100), reason: `单次执行：${aiResult.reason}`,
-                    level: 'execute_once',
-                  }, { projectId: project.id, taskId: task.id }));
-                  return { allowed: true };
-                }
-                if (aiResult.highestSafeLevel === 'project_scope') {
-                  // 自动建项目内 allow 规则（commandPattern 精确匹配 + projectId 限定）
-                  if (request.command) {
-                    try {
-                      const escaped = request.command.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                      savePermissionRule(this.db, permissionPolicy.id, {
-                        effect: 'allow', action: request.action,
-                        commandPattern: `^${escaped}$`, projectId: project.id,
-                      });
-                    } catch { /* 建规则失败不阻塞单次执行 */ }
-                  }
-                  realtime.publish(makeLifecycleEvent('approval.ai-approved', {
-                    approvalId: null, taskId: task.id, action: request.action,
-                    command: request.command?.slice(0, 100), reason: `项目内放行：${aiResult.reason}`,
-                    level: 'project_scope',
-                  }, { projectId: project.id, taskId: task.id }));
-                  return { allowed: true };
-                }
-                // company_scope/permanent → 单次执行 + 入批量审批队列等人工升级
-                const batchApproval = ensureApprovalRequest(this.db, { policyId: permissionPolicy.id, employeeId: agent.id, taskId: task.id, action: request.action, command: request.command, path: request.path });
-                this.db.prepare('UPDATE permission_approval SET ai_verdict=?, ai_suggestion=?, ai_reason=?, ai_confidence=?, safety_category=?, highest_safe_level=? WHERE id=?')
-                  .run(aiResult.verdict, 'batch-approve', aiResult.reason, aiResult.confidence, aiResult.safetyCategory, aiResult.highestSafeLevel, batchApproval.id);
-                realtime.publish(makeLifecycleEvent('approval.ai-approved', {
-                  approvalId: batchApproval.id, taskId: task.id, action: request.action,
-                  command: request.command?.slice(0, 100), reason: `单次执行，已入批量审批队列（建议升级到 ${aiResult.highestSafeLevel}）：${aiResult.reason}`,
-                  level: aiResult.highestSafeLevel,
-                }, { projectId: project.id, taskId: task.id }));
-                return { allowed: true }; // 单次执行不阻塞，批量升级等人工
-              }
-              // uncertain → 继续走人工审批
-            } catch (e) {
-              log.warn('AI 审批异常，转人工', { taskId: task.id, err: e instanceof Error ? e.message : String(e) });
-            }
-            const approval = ensureApprovalRequest(this.db, { policyId: permissionPolicy.id, employeeId: agent.id, taskId: task.id, action: request.action, command: request.command, path: request.path });
-            this.db.prepare('UPDATE permission_approval SET execution_run_id=?,project_task_thread_id=?,executor_profile_id=?,expires_at=?,recovery_json=? WHERE id=?').run(executionRun?.id??null,projectTaskThread.id,executorProfile?.id??null,new Date(Date.now()+600_000).toISOString(),JSON.stringify({vendorSessionId:projectTaskThread.vendorSessionId}),approval.id);
-            markTaskWaitingApproval(this.db,task.id,approval.id,'online');
-            realtime.publish(makeLifecycleEvent('approval.requested',{approvalId:approval.id,taskId:task.id,projectTaskId:task.projectTaskId,threadId:projectTaskThread.id},{projectId:project.id,taskId:task.id}));
-            const resolution=await approvalBroker.wait(approval.id,600_000);
-            if(resolution==='allow'||resolution==='deny')clearTaskApprovalWait(this.db,task.id);
-            else {approvalFailure=new RunFailure('approval_timeout',`审批请求 ${approval.id} ${resolution==='shutdown'?'因 Muster 停止而安全拒绝':'等待超时，已安全停止'}`);markTaskWaitingApproval(this.db,task.id,approval.id,'persistent');realtime.publish(makeLifecycleEvent('approval.timed-out',{approvalId:approval.id,taskId:task.id},{projectId:project.id,taskId:task.id}));}
-            return resolution==='allow'?{allowed:true}:{allowed:false,message:`审批请求 ${approval.id} ${resolution==='deny'?'已拒绝':'等待超时，已安全停止'}`};
-          }
-          return { allowed: false, message: decision.reason };
+        permissionGuard: rawPermissionGuard ? async (request: { action: string; path?: string; command?: string }) => {
+          const result = await rawPermissionGuard(request);
+          // H9b 安全审查留档：每次判定落 permission_audit（复盘可追责；失败不影响判定）
+          try {
+            const { recordSecurityAudit } = await import('../domain/security-audit');
+            recordSecurityAudit(this.db, {
+              taskId: task.id, projectId: project.id,
+              action: request.action, command: request.command,
+              mode: messageOptions.mode ?? effectiveStrategy ?? 'default',
+              verdict: result.allowed ? 'allow' : 'deny',
+              reason: result.message,
+            });
+          } catch { /* 留档失败不影响判定 */ }
+          return result;
         } : undefined,
         permissionPolicy: permissionPolicy ? {
           approvalStrategy: effectiveStrategy ?? permissionPolicy.approvalStrategy,
@@ -1611,6 +1546,160 @@ export class TaskEngine {
         }
       }
     }
+  }
+
+
+  /**
+   * H9b 抽取：权限 guard 构造（策略+模式分流+AI 递进/自动编辑命令恒审）——可测单元。
+   * env.approvalFailure 以 holder 传入（原闭包内可变变量）。
+   */
+  private buildPermissionGuard(env: {
+    task: ReturnType<typeof getTask>;
+    project: ReturnType<typeof getProject>;
+    workbench: ReturnType<typeof getWorkbench>;
+    agent: ReturnType<typeof getAgent>;
+    workingDir: string;
+    repoRoot: string;
+    permissionPolicy?: { id: string; approvalStrategy: 'ask-always'|'ask-by-rule'|'no-approval'|'deny'; scope: string; selectedDirectories?: string[] };
+    employeePermissionPolicy?: { id: string } | null;
+    effectiveStrategy?: 'ask-always' | 'ask-by-rule' | 'no-approval' | 'deny';
+    mode?: string;
+    executionRun?: { id: string } | null;
+    projectTaskThread: { id: string; vendorSessionId: string | null };
+    executorProfile?: { id: string } | null;
+    approvalFailure: { current: unknown };  // RunFailure|null 的 holder（结构松声明防循环类型依赖）
+  }): ((request: { action: string; path?: string; command?: string }) => Promise<{ allowed: boolean; message?: string }>) | undefined {
+    if (!(env.permissionPolicy || env.effectiveStrategy)) return undefined;
+    return async (request) => {
+      // 只读（plan/deny）：直接拒绝一切执行动作（CLI 侧同时落 read-only 沙盒）
+      if (env.effectiveStrategy === 'deny') {
+        return { allowed: false, message: '当前为只读模式：本次对话已设置为不执行任何变更动作' };
+      }
+      let decision = env.employeePermissionPolicy
+        ? evaluatePermission(this.db, env.employeePermissionPolicy.id, {
+            ...request,
+            taskRoot: env.workingDir,
+            projectRoot: env.repoRoot,
+            workspaceRoot: getActiveWorkspace(this.db)?.rootDir ?? env.repoRoot,
+            employeeId: env.agent.id,
+            companyId: env.workbench.id,
+            projectId: env.project.id,
+            taskId: env.task.id,
+          })
+        : { decision: 'allow' as const, reason: '无员工策略，默认放行' };
+      // 每步审批：放行结论升级为待审批
+      if (env.effectiveStrategy === 'ask-always' && decision.decision === 'allow') {
+        decision = { decision: 'approval-required', reason: '消息设置为每步审批' };
+      }
+      // 自动执行：待审批结论降级为放行（显式 deny 规则不受影响）
+      if (env.effectiveStrategy === 'no-approval' && decision.decision === 'approval-required') {
+        return { allowed: true };
+      }
+      if (!env.permissionPolicy) return { allowed: true };
+      if (decision.decision === 'allow') return { allowed: true };
+      if (decision.decision === 'approval-required') {
+        // H9b 自动编辑（用户三次定稿）：命令全部需要人工审批——安全审查员只做风险分析
+        // 附在审批卡上，无放行权（AI 自动放行是完全访问档特有：full-access→ask-by-rule 走下方 AI 递进）。
+        // 文件编辑不受此分支影响（write-file action 不在命令集）——worktree 内编辑自动放（git 可逆兜底）。
+        // H9b 自动编辑·前半（用户三次定稿）：文件编辑自动放——worktree 内编辑直放不走审批
+        // （git 可逆兜底 + isWithinWorkspace 硬围栏；越界写另有 OS 围栏拒）。只有命令走恒审。
+        if (env.mode === 'auto-edit' && ['write-file', 'edit-file', 'read-file'].includes(request.action)) {
+          return { allowed: true };
+        }
+        const SECURITY_COMMAND_ACTIONS = new Set(['run-command', 'git-push', 'system-install', 'deploy', 'credential-access', 'delete-outside-project']);
+        if (env.mode === 'auto-edit' && SECURITY_COMMAND_ACTIONS.has(request.action)) {
+          const approval = ensureApprovalRequest(this.db, { policyId: env.permissionPolicy.id, employeeId: env.agent.id, taskId: env.task.id, action: request.action, command: request.command, path: request.path });
+          // 审查员风险分析（仅文案；失败不阻塞审批卡）
+          try {
+            const { evaluateWithAi } = await import('../domain/ai-approval');
+            const ai = await evaluateWithAi(this.db, { action: request.action, command: request.command, path: request.path, workingDir: env.workingDir, employeeRole: env.agent.role, taskTitle: env.task.title, companyId: env.workbench.id, projectId: env.project.id, policyId: env.permissionPolicy.id });
+            this.db.prepare('UPDATE permission_approval SET ai_verdict=?,ai_suggestion=?,ai_reason=?,ai_confidence=?,safety_category=? WHERE id=?')
+              .run('uncertain', 'human-review', `【安全审查员风险分析（仅供参考，无放行权）】${ai.reason}（类别：${ai.safetyCategory}）`, ai.confidence, ai.safetyCategory, approval.id);
+          } catch { /* 分析失败不影响审批流 */ }
+          this.db.prepare('UPDATE permission_approval SET execution_run_id=?,project_task_thread_id=?,executor_profile_id=?,expires_at=?,recovery_json=? WHERE id=?').run(env.executionRun?.id??null,env.projectTaskThread.id,env.executorProfile?.id??null,new Date(Date.now()+600_000).toISOString(),JSON.stringify({vendorSessionId:(env.projectTaskThread as { vendorSessionId: string | null }).vendorSessionId}),approval.id);
+          markTaskWaitingApproval(this.db,env.task.id,approval.id,'online');
+          realtime.publish(makeLifecycleEvent('approval.requested',{approvalId:approval.id,taskId:env.task.id,projectTaskId:env.task.projectTaskId,threadId:env.projectTaskThread.id},{projectId:env.project.id,taskId:env.task.id}));
+          const resolution=await approvalBroker.wait(approval.id,600_000);
+          if(resolution==='allow'||resolution==='deny')clearTaskApprovalWait(this.db,env.task.id);
+          else {env.approvalFailure.current=new RunFailure('approval_timeout',`审批请求 ${approval.id} 等待超时，已安全停止`);markTaskWaitingApproval(this.db,env.task.id,approval.id,'persistent');}
+          return resolution==='allow'?{allowed:true}:{allowed:false,message:`审批请求 ${approval.id} ${resolution==='deny'?'已拒绝':'等待超时，已安全停止'}`};
+        }
+        // AI 审批辅助（四级递进）：高频操作先调 AI 判断。
+        // - safe + project_scope 及以下 → 自动放行 + 自动建项目内规则
+        // - safe + company_scope/permanent → 单次执行 + 入批量审批队列（等人工升级）
+        // - unsafe → 拒绝 + 记录拒绝原因供学习
+        // - uncertain/硬高危 → 转人工审批
+        try {
+          const { evaluateWithAi, recordRejectionForLearning } = await import('../domain/ai-approval');
+          const { savePermissionRule } = await import('../domain/permission');
+          const aiResult = await evaluateWithAi(this.db, {
+            action: request.action, command: request.command, path: request.path,
+            workingDir: env.workingDir, employeeRole: env.agent.role, taskTitle: env.task.title,
+            companyId: env.workbench.id, projectId: env.project.id, policyId: env.permissionPolicy.id,
+          });
+          if (aiResult.verdict === 'unsafe') {
+            recordRejectionForLearning(this.db, { policyId: env.permissionPolicy.id, action: request.action, command: request.command, reason: aiResult.reason });
+            realtime.publish(makeLifecycleEvent('approval.ai-denied', {
+              approvalId: null, taskId: env.task.id, action: request.action,
+              command: request.command?.slice(0, 100), reason: aiResult.reason,
+            }, { projectId: env.project.id, taskId: env.task.id }));
+            return { allowed: false, message: `AI 审批拒绝：${aiResult.reason}` };
+          }
+          if (aiResult.verdict === 'safe') {
+            // project_scope 及以下 → 自动建规则（极安全，AI 明确判可重复）
+            if (aiResult.highestSafeLevel === 'execute_once') {
+              // 单次执行，不建规则（AI 认为有一定影响，参数敏感）
+              realtime.publish(makeLifecycleEvent('approval.ai-approved', {
+                approvalId: null, taskId: env.task.id, action: request.action,
+                command: request.command?.slice(0, 100), reason: `单次执行：${aiResult.reason}`,
+                level: 'execute_once',
+              }, { projectId: env.project.id, taskId: env.task.id }));
+              return { allowed: true };
+            }
+            if (aiResult.highestSafeLevel === 'project_scope') {
+              // 自动建项目内 allow 规则（commandPattern 精确匹配 + projectId 限定）
+              if (request.command) {
+                try {
+                  const escaped = request.command.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                  savePermissionRule(this.db, env.permissionPolicy.id, {
+                    effect: 'allow', action: request.action,
+                    commandPattern: `^${escaped}$`, projectId: env.project.id,
+                  });
+                } catch { /* 建规则失败不阻塞单次执行 */ }
+              }
+              realtime.publish(makeLifecycleEvent('approval.ai-approved', {
+                approvalId: null, taskId: env.task.id, action: request.action,
+                command: request.command?.slice(0, 100), reason: `项目内放行：${aiResult.reason}`,
+                level: 'project_scope',
+              }, { projectId: env.project.id, taskId: env.task.id }));
+              return { allowed: true };
+            }
+            // company_scope/permanent → 单次执行 + 入批量审批队列等人工升级
+            const batchApproval = ensureApprovalRequest(this.db, { policyId: env.permissionPolicy.id, employeeId: env.agent.id, taskId: env.task.id, action: request.action, command: request.command, path: request.path });
+            this.db.prepare('UPDATE permission_approval SET ai_verdict=?, ai_suggestion=?, ai_reason=?, ai_confidence=?, safety_category=?, highest_safe_level=? WHERE id=?')
+              .run(aiResult.verdict, 'batch-approve', aiResult.reason, aiResult.confidence, aiResult.safetyCategory, aiResult.highestSafeLevel, batchApproval.id);
+            realtime.publish(makeLifecycleEvent('approval.ai-approved', {
+              approvalId: batchApproval.id, taskId: env.task.id, action: request.action,
+              command: request.command?.slice(0, 100), reason: `单次执行，已入批量审批队列（建议升级到 ${aiResult.highestSafeLevel}）：${aiResult.reason}`,
+              level: aiResult.highestSafeLevel,
+            }, { projectId: env.project.id, taskId: env.task.id }));
+            return { allowed: true }; // 单次执行不阻塞，批量升级等人工
+          }
+          // uncertain → 继续走人工审批
+        } catch (e) {
+          log.warn('AI 审批异常，转人工', { taskId: env.task.id, err: e instanceof Error ? e.message : String(e) });
+        }
+        const approval = ensureApprovalRequest(this.db, { policyId: env.permissionPolicy.id, employeeId: env.agent.id, taskId: env.task.id, action: request.action, command: request.command, path: request.path });
+        this.db.prepare('UPDATE permission_approval SET execution_run_id=?,project_task_thread_id=?,executor_profile_id=?,expires_at=?,recovery_json=? WHERE id=?').run(env.executionRun?.id??null,env.projectTaskThread.id,env.executorProfile?.id??null,new Date(Date.now()+600_000).toISOString(),JSON.stringify({vendorSessionId:(env.projectTaskThread as { vendorSessionId: string | null }).vendorSessionId}),approval.id);
+        markTaskWaitingApproval(this.db,env.task.id,approval.id,'online');
+        realtime.publish(makeLifecycleEvent('approval.requested',{approvalId:approval.id,taskId:env.task.id,projectTaskId:env.task.projectTaskId,threadId:env.projectTaskThread.id},{projectId:env.project.id,taskId:env.task.id}));
+        const resolution=await approvalBroker.wait(approval.id,600_000);
+        if(resolution==='allow'||resolution==='deny')clearTaskApprovalWait(this.db,env.task.id);
+        else {env.approvalFailure.current=new RunFailure('approval_timeout',`审批请求 ${approval.id} ${resolution==='shutdown'?'因 Muster 停止而安全拒绝':'等待超时，已安全停止'}`);markTaskWaitingApproval(this.db,env.task.id,approval.id,'persistent');realtime.publish(makeLifecycleEvent('approval.timed-out',{approvalId:approval.id,taskId:env.task.id},{projectId:env.project.id,taskId:env.task.id}));}
+        return resolution==='allow'?{allowed:true}:{allowed:false,message:`审批请求 ${approval.id} ${resolution==='deny'?'已拒绝':'等待超时，已安全停止'}`};
+      }
+      return { allowed: false, message: decision.reason };
+    };
   }
 
   /** 取消正在执行的 Task；用于正式工作抢占低优先级讨论。 */

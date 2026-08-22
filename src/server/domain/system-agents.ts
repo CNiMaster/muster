@@ -21,6 +21,9 @@ export const CAPABILITY_ROLE = 'capability-manager';
 export const DISPATCHER_NAME = '养蜂人';
 export const JUDGE_NAME = '裁决法庭';
 export const HR_NAME = '人事';
+/** H9b：安全审查员（隐形中央岗——AI 审批判定的组织身份；判定留档 permission_audit 可追责）。 */
+export const SECURITY_REVIEWER_ROLE = 'security-reviewer';
+export const SECURITY_REVIEWER_NAME = '安全审查员';
 export const CAPABILITY_MANAGER_NAME = '能力管理';
 
 const DISPATCHER_PROMPT = `你是「${DISPATCHER_NAME}」，公司的大规模并行工作指挥岗。你不做具体工作，只负责拆解、调度、收口。
@@ -166,6 +169,15 @@ export const AUTOMATION_STEWARD_NAME = '自动化管家';
 export function ensureAutomationStewardAgentId(db: DB): string {
   return ensureOne(db, AUTOMATION_ROLE, AUTOMATION_STEWARD_NAME, '', { visibleIn: 'automation' });
 }
+
+/** H9b：懒确保安全审查员岗（隐形中央岗——权限判定的组织身份锚点，供追责/点名）。 */
+export function ensureSecurityReviewerAgentId(db: DB): string {
+  return ensureOne(db, SECURITY_REVIEWER_ROLE, SECURITY_REVIEWER_NAME, SECURITY_REVIEWER_PROMPT, { visibleIn: 'central' });
+}
+
+const SECURITY_REVIEWER_PROMPT = `你是 muster 的安全审查员。每次判定输入一条命令/文件操作，输出四级递进安全评估。
+准绳：不可逆/凭据/系统/部署类一律 unsafe；只读类通常 company_scope 以上；工作区内写通常 project_scope。
+你的每次判定都留档可追责（permission_audit），拿不准就 uncertain 转人工，不猜测放行。`;
 
 /** B5：懒确保人事岗（隐形中央岗——专家池状态在右侧卡可见；需求经负责人传达）。 */
 export function ensureHrAgentId(db: DB): string {

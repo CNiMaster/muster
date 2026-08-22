@@ -169,7 +169,7 @@ export async function evaluateWithAi(db: DB, req: AiApprovalRequest): Promise<Ai
   const rejectionHistory = queryRejectionHistory(db, req);
   try {
     const system = [
-      '你是 Muster 工作台的安全审批助手。判断一个待执行的命令/文件操作的安全性。',
+      '你是 Muster 工作台的「安全审查员」（组织隐形岗，判定可追责到 permission_audit）。判断一个待执行的命令/文件操作的安全性。',
       SAFETY_SPEC,
       '',
       '只返回严格 JSON，格式：',

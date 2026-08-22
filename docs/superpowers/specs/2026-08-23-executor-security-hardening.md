@@ -68,6 +68,12 @@ L3 人工审批（升级兜底）：审查员拿不准/超策略/用户选全审
 - 判定走 L2/L3；批准后由 **Muster 受托执行**（spawn 带临时扩展 seatbelt profile——只开批准目录），结果回 CLI——CLI 进程本身始终窄围栏，逐命令授权≠全开后门。
 - 第一版降级：越界被拒+提示用户手动处理（不做受托执行），H9c 再补闭环。
 
+## 实施记录
+
+- **H9a 已合 main（9c4bcb6）**：spawn-shell 壳六接入点全落地；seatbelt 探针/进程组/env 回归单测；custom env 直通洞堵上。
+- **H9b 实施**：①四模式收敛（ComposerMode 新四档药丸+MessageMode 扩枚举+engine modeToStrategy 归一：confirm-edits→ask-always、auto-edit/full-access→ask-by-rule、plan/deny→deny；旧五值全兼容）②guard 抽取 buildPermissionGuard（可直测）+auto-edit 分支：文件编辑直放（用户三次定稿）+命令恒审（审批卡附审查员风险分析，AI 无放行权）③安全审查员岗（隐形中央岗）+evaluateWithAi prompt 身份注入④permission_audit 迁移+guard 包装留档+查询端点⑤security_mode 全局默认档（缺省 ''=跟随策略——存量零变化防审批风暴；设置页一键切换，postUserMessage 未显式选档时注入）⑥风险说明卡=现有审批卡载体（approvalBroker.wait+用户点按钮，无回车路径天然满足禁回车）。测试：security-mode.spec 5 例（归一/恒审全链 broker resolve/编辑直放/full-access AI 兜底转人工/留档+设置链+默认档注入）。
+- **实现偏差记录**：①默认档缺省 '' 而非直接 auto-edit——防存量消息全部进审批卡（翻转由用户在设置页显式选择）②guard 整词替换抽取时曾污染字符串字面量（delete-outside-project）已修——教训入盲区清单候选。
+
 ## 分期
 
 - **H9a 统一执行壳**（纯工程）：四件套+探针单测+custom/opencode 补洞（env 清洗/进程组）。先行。

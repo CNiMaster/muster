@@ -26,7 +26,7 @@ companyMessagesRouter.post(
   asyncHandler(async (req, res) => {
     const attachmentSchema = z.object({ materialId: z.string().min(1), name: z.string().min(1), kind: z.string().min(1), size: z.number().int().nonnegative() });
     const optionsSchema = z.object({
-      mode: z.enum(['plan', 'ask-always', 'ask-by-rule', 'no-approval', 'deny']).optional(),
+      mode: z.enum(['plan', 'ask-always', 'ask-by-rule', 'no-approval', 'deny', 'confirm-edits', 'auto-edit', 'full-access']).optional(), // H9b 新四档+旧五值兼容
       model: z.string().min(1).optional(),
       thinking: z.enum(['off', 'low', 'med', 'medium', 'high']).optional(),
     });
@@ -57,7 +57,7 @@ projectMessagesRouter.post(
   asyncHandler(async (req, res) => {
     const attachmentSchema = z.object({ materialId: z.string().min(1), name: z.string().min(1), kind: z.string().min(1), size: z.number().int().nonnegative() });
     const optionsSchema = z.object({
-      mode: z.enum(['plan', 'ask-always', 'ask-by-rule', 'no-approval', 'deny']).optional(),
+      mode: z.enum(['plan', 'ask-always', 'ask-by-rule', 'no-approval', 'deny', 'confirm-edits', 'auto-edit', 'full-access']).optional(), // H9b 新四档+旧五值兼容
       model: z.string().min(1).optional(),
       thinking: z.enum(['off', 'low', 'med', 'medium', 'high']).optional(),
     });

@@ -19,15 +19,18 @@ export interface ComposerTaskOption {
   label: string;
 }
 
-export type ComposerMode = '' | 'plan' | 'ask-always' | 'ask-by-rule' | 'no-approval' | 'deny';
+/**
+ * H9b 四模式（ZCode 命名，六轮收敛）：变更前确认/自动编辑(默认)/计划模式/完全访问。
+ * 旧五值保留类型兼容（服务端归一），药丸只展示新四档+跟随默认。
+ */
+export type ComposerMode = '' | 'confirm-edits' | 'auto-edit' | 'plan' | 'full-access' | 'ask-always' | 'ask-by-rule' | 'no-approval' | 'deny';
 
 export const COMPOSER_MODES: Array<{ id: ComposerMode; label: string; icon: string; hint: string }> = [
-  { id: '', label: '跟随默认策略', icon: '🛡', hint: '沿用任务/智能体的权限策略' },
-  { id: 'plan', label: '计划模式', icon: '🗺', hint: '只调研规划不动手，产出待确认方案' },
-  { id: 'ask-always', label: '每步审批', icon: '🛡', hint: '每个执行动作都要你批准' },
-  { id: 'ask-by-rule', label: '按规则审批', icon: '📋', hint: '规则放行，越界才审批' },
-  { id: 'no-approval', label: '自动执行', icon: '⚡', hint: '不弹审批，按范围直接执行' },
-  { id: 'deny', label: '只读', icon: '🔒', hint: '拒绝一切变更动作' },
+  { id: '', label: '跟随默认档', icon: '🛡', hint: '沿用全局默认权限档（设置页可改，默认=自动编辑）' },
+  { id: 'auto-edit', label: '自动编辑', icon: '📝', hint: '文件编辑自动放（git 可逆兜底）；命令全部需要审批——安全审查员只做风险分析' },
+  { id: 'confirm-edits', label: '变更前确认', icon: '🛡', hint: '文件和命令的每个变更动作都要你批准' },
+  { id: 'plan', label: '计划模式', icon: '🗺', hint: '只调研规划不动手（只读可建新文件），产出待确认方案' },
+  { id: 'full-access', label: '完全访问', icon: '⚡', hint: 'AI 判定：项目内影响小自动放；超项目目录/可能外溢/红线必弹审批卡' },
 ];
 
 interface SlashCommand {

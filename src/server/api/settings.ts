@@ -75,6 +75,8 @@ export const settingsUpdateSchema = z.object({
   interruptMode: z.enum(['queue', 'interrupt']).optional(),
   // H8 安全停：请求停止后等执行边界的超时毫秒数（5s-10min，默认 60s）
   stopGraceMs: z.number().int().min(5000).max(600000).optional(),
+  // H9b 全局默认权限档（''跟随策略）
+  securityMode: z.enum(['', 'confirm-edits', 'auto-edit', 'plan', 'full-access']).optional(),
 });
 
 // 获取当前系统设置
@@ -95,6 +97,18 @@ settingsRouter.post(
     const db = getDb();
     saveSystemSettings(db, input);
     res.json({ ok: true, settings: getSystemSettings(db) });
+  }),
+);
+
+// H9b：安全审查留档查询（工作现场/项目维度复盘）
+settingsRouter.get(
+  '/security-audits',
+  asyncHandler(async (req, res) => {
+    const { listSecurityAudits } = await import('../domain/security-audit');
+    const projectId = typeof req.query.projectId === 'string' ? req.query.projectId : undefined;
+    const taskId = typeof req.query.taskId === 'string' ? req.query.taskId : undefined;
+    const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
+    res.json(listSecurityAudits(getDb(), { projectId, taskId, limit: Number.isFinite(limit) ? limit : undefined }));
   }),
 );
 

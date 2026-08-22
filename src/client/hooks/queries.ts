@@ -2581,6 +2581,7 @@ export function useSaveSystemSettings() {
       preventSleep?: 'active' | 'always' | 'off';
       interruptMode?: 'queue' | 'interrupt';
       stopGraceMs?: number;
+      securityMode?: '' | 'confirm-edits' | 'auto-edit' | 'plan' | 'full-access';
     }) => api.post<any>('/api/settings', settings),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['systemSettings'] });

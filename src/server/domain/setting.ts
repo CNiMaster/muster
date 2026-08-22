@@ -80,6 +80,8 @@ export interface SystemSettings {
   interruptMode: 'queue' | 'interrupt';
   /** H8 安全停：请求停止后等执行边界的超时毫秒数，到点强停（默认 60s，5s-10min）。 */
   stopGraceMs: number;
+  /** H9b 全局默认权限档：''跟随任务/员工策略（存量零变化）| confirm-edits | auto-edit | plan | full-access。 */
+  securityMode: '' | 'confirm-edits' | 'auto-edit' | 'plan' | 'full-access';
 }
 
 export function getSetting(db: DB, key: string, defaultValue: string): string {
@@ -143,6 +145,7 @@ export function getSystemSettings(db: DB): SystemSettings {
     waitingAutoContinueMinutes: Number(getSetting(db, 'waiting_auto_continue_minutes', '0')) || 0,
     interruptMode: getSetting(db, 'interrupt_mode', 'queue') === 'interrupt' ? 'interrupt' : 'queue',
     stopGraceMs: Math.max(5_000, Math.min(600_000, Number(getSetting(db, 'stop_grace_ms', '60000')) || 60_000)),
+    securityMode: (['confirm-edits', 'auto-edit', 'plan', 'full-access'] as const).includes(getSetting(db, 'security_mode', '') as 'auto-edit') ? (getSetting(db, 'security_mode', '') as 'auto-edit') : '',
     preventSleep: (['active', 'always', 'off'] as const).includes(getSetting(db, 'prevent_sleep', 'active') as 'active')
       ? (getSetting(db, 'prevent_sleep', 'active') as 'active' | 'always' | 'off')
       : 'active',
@@ -256,5 +259,8 @@ export function saveSystemSettings(db: DB, settings: Partial<SystemSettings>): v
   }
   if (settings.stopGraceMs !== undefined) {
     setSetting(db, 'stop_grace_ms', String(Math.max(5_000, Math.min(600_000, Math.round(settings.stopGraceMs)))));
+  }
+  if (settings.securityMode !== undefined) {
+    setSetting(db, 'security_mode', ['', 'confirm-edits', 'auto-edit', 'plan', 'full-access'].includes(settings.securityMode) ? settings.securityMode : '');
   }
 }
