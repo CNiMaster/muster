@@ -8,7 +8,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import express from 'express';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdirSync, writeFileSync, rmSync, existsSync, symlinkSync } from 'node:fs';
 import path from 'node:path';
 import { makeTestDb } from './setup';
 import { setDbForTest, closeDb } from '../../src/server/db/client';
@@ -108,5 +108,49 @@ describe('artifacts preview 端点（批次 F.3）', () => {
   it('评审 M10：畸形百分号编码返回 400 而非 500', async () => {
     const res = await fetch(`${base}/api/projects/${projectId()}/artifacts/preview/%ZZbad`);
     expect(res.status).toBe(400);
+  });
+});
+
+describe('路径校验收紧（批次 G.0②：realpath 归一 + /raw、/content 补白名单）', () => {
+  // 项目根外放一个"库外"目标文件（仍在 /tmp 下，故能隔离测 realpath 防线而非根白名单）
+  let outsideDir: string;
+  let evilLink: string;
+
+  beforeEach(() => {
+    outsideDir = path.resolve('/tmp/muster-test-outside-' + Math.random().toString(36).slice(2, 8));
+    mkdirSync(outsideDir, { recursive: true });
+    writeFileSync(path.join(outsideDir, 'secret.txt'), '库外机密');
+    evilLink = path.join(rootDir, 'docs', 'evil-link.md');
+    symlinkSync(path.join(outsideDir, 'secret.txt'), evilLink);
+  });
+
+  afterEach(() => {
+    if (existsSync(outsideDir)) rmSync(outsideDir, { recursive: true, force: true });
+  });
+
+  it('preview：项目内符号链接指向根外文件 → 403（realpath 归一后现形）', async () => {
+    const res = await fetch(`${base}/api/projects/${projectId()}/artifacts/preview/docs/evil-link.md`);
+    expect(res.status).toBe(403);
+    expect(await res.text()).not.toContain('库外机密');
+  });
+
+  it('raw：同上符号链接 → 403（G.0② 前只查词法、无白名单，可直接读出）', async () => {
+    const res = await fetch(`${base}/api/projects/${projectId()}/artifacts/raw?path=${encodeURIComponent('docs/evil-link.md')}`);
+    expect(res.status).toBe(403);
+    expect(await res.text()).not.toContain('库外机密');
+  });
+
+  it('content：同上符号链接 → 403（域级 readArtifactContent 白名单兜底）', async () => {
+    const res = await fetch(`${base}/api/projects/${projectId()}/artifacts/content?path=${encodeURIComponent('docs/evil-link.md')}`);
+    expect(res.status).toBe(403);
+    expect(await res.text()).not.toContain('库外机密');
+  });
+
+  it('正常文件不受影响：raw 200、content 200（回归保障）', async () => {
+    const raw = await fetch(`${base}/api/projects/${projectId()}/artifacts/raw?path=${encodeURIComponent('docs/index.html')}`);
+    expect(raw.status).toBe(200);
+    const content = await fetch(`${base}/api/projects/${projectId()}/artifacts/content?path=${encodeURIComponent('docs/index.html')}`);
+    expect(content.status).toBe(200);
+    expect(((await content.json()) as { content: string }).content).toContain('预览页');
   });
 });

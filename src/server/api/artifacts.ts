@@ -73,6 +73,11 @@ projectArtifactsRouter.get(
       return;
     }
     const abs = resolveArtifactPath(artifactBaseDir(db, projectId, relPath), relPath);
+    // G.0②：补 MUSTER_ALLOWED_ROOTS 门（此前仅 /preview 有，/raw 缺失）；先校验后探存在，不泄露存在性
+    if (!isPathAllowed(abs)) {
+      res.status(403).json({ error: { code: 'unauthorized', message: '路径不在允许的根目录内' } });
+      return;
+    }
     if (!existsSync(abs)) {
       res.status(404).end();
       return;

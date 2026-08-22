@@ -4,11 +4,12 @@
  PRD：用户编辑器保存正文时同样创建可追踪提交；派生只读视图不可编辑。
  本模块直接在项目根目录读写文件（用户编辑路径，区别于 Task worktree 的 publish）。
  */
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
+import { isPathAllowed } from '../paths';
 import { assertEditable, getArtifact, getArtifactByPath, listArtifacts, registerArtifact, type Artifact, type ArtifactKind } from './artifact';
 import { getProject } from './project';
 import { peekRepoRoot } from './task-repo';
@@ -33,20 +34,55 @@ export function artifactBaseDir(db: DB, projectId: string, relPath?: string): st
   return peekRepoRoot(db, project) ?? project.rootDir;
 }
 
-/** 解析项目内相对路径，使用 path.relative 避免 `/root-evil` 前缀绕过。 */
-export function resolveArtifactPath(rootDir: string, relPath: string): string {
-  const root = path.resolve(rootDir);
-  const abs = path.resolve(root, relPath);
+/** 词法逃逸断言：abs 必须位于 root 之内（用 path.relative 防 `/root-evil` 前缀绕过）。 */
+function assertInside(root: string, abs: string): void {
   const relative = path.relative(root, abs);
   if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
     throw new AppError(ErrorCode.UNAUTHORIZED, '路径逃逸');
   }
+}
+
+function realpathSafe(p: string): string {
+  try {
+    return realpathSync(p);
+  } catch {
+    return path.resolve(p);
+  }
+}
+
+/**
+ * 解析项目内相对路径。两层防线（批次 G.0②，核销评审 I5）：
+ * 1. 词法检查（目标不存在也拦得住 `..` 类编码逃逸）；
+ * 2. 目标/父目录已存在时再经 realpath 归一复检——项目内符号链接指向库外在现形。
+ *    root 与 abs 成对归一，macOS /tmp→/private/tmp 一类系统级链接不会造成假逃逸。
+ */
+export function resolveArtifactPath(rootDir: string, relPath: string): string {
+  const root = path.resolve(rootDir);
+  const abs = path.resolve(root, relPath);
+  assertInside(root, abs);
+  if (existsSync(abs)) {
+    const realRoot = realpathSafe(root);
+    const realAbs = realpathSafe(abs);
+    assertInside(realRoot, realAbs);
+    return realAbs;
+  }
+  // 写入侧：文件还不存在，但父目录可能是符号链接，归一父目录防"经目录链接写出库外"
+  const dir = path.dirname(abs);
+  if (dir !== root && existsSync(dir)) {
+    const realRoot = realpathSafe(root);
+    const realDir = realpathSafe(dir);
+    assertInside(realRoot, realDir);
+    return path.join(realDir, path.basename(abs));
+  }
   return abs;
 }
 
-/** 读 artifact 内容。 */
+/** 读 artifact 内容（含 MUSTER_ALLOWED_ROOTS 白名单校验，域级兜底覆盖 API 与执行器两侧调用）。 */
 export function readArtifactContent(db: DB, projectId: string, relPath: string): string {
   const abs = resolveArtifactPath(artifactBaseDir(db, projectId, relPath), relPath);
+  if (!isPathAllowed(abs)) {
+    throw new AppError(ErrorCode.UNAUTHORIZED, '路径不在允许的根目录内');
+  }
   if (!existsSync(abs)) return '';
   return readFileSync(abs, 'utf8');
 }
