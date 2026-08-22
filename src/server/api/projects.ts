@@ -46,6 +46,7 @@ import { syncAgentMemoryFiles } from '../domain/agent-home';
 import { postSystemMessage } from '../domain/conversation';
 import { stageStatus, detectOrphanWorktrees, cleanOrphanWorktrees, taskStageStatus, taskStagingBranch, discardTaskStaging } from '../worktree/manager';
 import { getProjectHealth } from '../domain/subagent-health';
+import { buildDispatchTree } from '../domain/dispatch-tree';
 import { listProjectSpecialists } from '../domain/specialist-pool';
 import {
   promoteProjectStagingIfAny,
@@ -149,6 +150,15 @@ projectsRouter.post(
   asyncHandler(async (req, res) => {
     const body = z.object({ ids: z.array(z.string().min(1)).min(1), confirm: z.string() }).parse(req.body);
     res.json(purgeFromTrash(getDb(), body.ids, body.confirm));
+  }),
+);
+
+/** 批次 H.2：派遣树聚合（工作现场面板：任务树+执行者雇佣标签+进度）。 */
+projectsRouter.get(
+  '/:id/dispatch-tree',
+  asyncHandler(async (req, res) => {
+    const projectTaskId = typeof req.query.projectTask === 'string' && req.query.projectTask ? req.query.projectTask : undefined;
+    res.json(buildDispatchTree(getDb(), param(req, 'id'), projectTaskId));
   }),
 );
 

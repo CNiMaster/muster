@@ -20,6 +20,7 @@ describe('queryKeysForRealtimeEvent', () => {
       ['usage', 'pr_1'],
       ['project-events', 'pr_1'],
       ['project-health', 'pr_1'],
+      ['dispatch-tree', 'pr_1'],
       ['events'],
       ['status-board'],
     ]);

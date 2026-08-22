@@ -70,6 +70,7 @@ export function queryKeysForRealtimeEvent(event: RealtimeEvent): QueryKey[] {
       ['project-events', event.projectId],
       // 批次 H.3：任务健康聚合随任务事件刷新
       ['project-health', event.projectId],
+      ['dispatch-tree', event.projectId],
     );
     // B5：project.phase-* / rollback / readiness-passed 事件刷单个 project（wizard 消费）
     if (event.type.startsWith('project.')) keys.push(['project', event.projectId]);

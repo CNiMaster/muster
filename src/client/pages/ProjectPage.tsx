@@ -47,6 +47,7 @@ import { useRecentProject } from '../hooks/useRecentProject';
 import { WorkbenchShell } from '../components/workbench/WorkbenchShell';
 import { ProjectWorkNavigation } from '../components/workbench/ProjectWorkNavigation';
 import { ProjectContextInspector } from '../components/workbench/ProjectContextInspector';
+import { WorkCapsule } from '../components/workbench/WorkCapsule';
 import { ProjectTaskWorkspace } from '../components/project/ProjectTaskWorkspace';
 import { ProjectEmployeeWorkspace } from '../components/project/ProjectEmployeeWorkspace';
 import { WorkbenchContextSwitcher } from '../components/workbench/WorkbenchContextSwitcher';
@@ -620,6 +621,8 @@ export function ProjectDetail({ projectId }: { projectId: string }): React.React
       ]}
     >
     <div className="project-page work-surface-page" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      {/* 批次 H.2：工作胶囊（右上角悬浮，有事才出现；点击展开右栏工作现场面板） */}
+      <WorkCapsule projectId={projectId} tasks={tasks ?? []} agents={agents ?? []} />
       {/* 中栏主内容区（滚动） */}
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column' }}>
 

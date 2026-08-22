@@ -1287,6 +1287,37 @@ export function useCreateTask() {
 }
 
 export function useProjectTasks(projectId:string|undefined){return useQuery({queryKey:['project-tasks',projectId],queryFn:()=>api.get<ProjectTaskDTO[]>(`/api/projects/${projectId}/project-tasks`),enabled:!!projectId});}
+// ===== 批次 H.2：派遣树（工作现场面板） =====
+export interface DispatchActor {
+  id: string;
+  name: string;
+  kind: 'employee' | 'specialist' | 'bee';
+}
+
+export interface DispatchTreeNodeDTO {
+  id: string;
+  seq: number;
+  title: string;
+  state: string;
+  parentTaskId: string | null;
+  swarmId: string | null;
+  createdAt: string;
+  completedAt: string | null;
+  durationMs: number;
+  assignee: DispatchActor | null;
+  dispatcher: { id: string; name: string } | null;
+}
+
+export function useDispatchTree(projectId: string | undefined, projectTaskId: string | undefined) {
+  return useQuery({
+    queryKey: ['dispatch-tree', projectId, projectTaskId ?? null],
+    queryFn: () => api.get<{ progress: { done: number; total: number }; tasks: DispatchTreeNodeDTO[] }>(
+      `/api/projects/${projectId}/dispatch-tree${projectTaskId ? `?projectTask=${projectTaskId}` : ''}`,
+    ),
+    enabled: !!projectId,
+  });
+}
+
 export interface ProjectHealth {
   projectId: string;
   activeCount: number;

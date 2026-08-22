@@ -10,6 +10,7 @@ import { Badge, StateBadge, taskStateTone } from '../Badge';
 import { Button, toast } from '../Button';
 import { DiscussionPanel } from './DiscussionPanel';
 import { InspectorPreviewHost } from './InspectorPreviewHost';
+import { WorkLivePanel } from './WorkLivePanel';
 
 const OPEN_STATES = new Set(['queued', 'claimed', 'running', 'waiting_input', 'waiting_dependency', 'waiting_approval', 'paused', 'blocked']);
 const ATTENTION_STATES = new Set(['waiting_input', 'waiting_approval', 'blocked', 'waiting_dependency']);
@@ -121,7 +122,7 @@ export function ProjectContextInspector({
     );
   };
 
-  const [, setSearchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const openPreview = (relPath: string): void => {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
@@ -132,6 +133,8 @@ export function ProjectContextInspector({
 
   return (
     <div className="auxiliary-panel">
+      {/* 批次 H.2：工作现场面板（?panel=live 驱动，胶囊展开；三段式：计划/进程/执行者目录） */}
+      {searchParams.get('panel') === 'live' && <WorkLivePanel projectId={projectId} selectedProjectTaskId={selectedTask?.id} />}
       {/* 批次 F.3：右栏预览容器（?preview= 驱动；无参数时不占位） */}
       <InspectorPreviewHost projectId={projectId} />
 
