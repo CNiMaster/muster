@@ -20,6 +20,7 @@ import { spawn } from 'node:child_process';
 import { asyncHandler, param } from './middleware';
 import { getDb } from '../db/client';
 import { listArtifacts, artifactGallery, deleteArtifact, buildRevealCommand } from '../domain/artifact';
+import { getPlugin } from '../domain/plugin-adapter';
 import { getProject } from '../domain/project';
 import { peekRepoRoot } from '../domain/task-repo';
 import { PublishQueue } from '../worktree/publish-queue';
@@ -106,6 +107,77 @@ projectArtifactsRouter.get(
 );
 
 const PREVIEW_HTML_CSP = "default-src 'none'; style-src 'unsafe-inline' 'self' data:; img-src 'self' data:; font-src 'self' data:; media-src 'self' data:";
+
+/**
+ * 面板插件入口（批次 I-a）：与预览端点的差异点——CSP 允许内联脚本（面板要交互），
+ * 但 default-src 'none' 兜底无外部网络；客户端 iframe sandbox="allow-scripts"（无
+ * allow-same-origin=opaque origin）双防线。列表给右栏「面板插件」组渲染。
+ */
+projectArtifactsRouter.get(
+  '/panel-plugins',
+  asyncHandler(async (_req, res) => {
+    const { getEffectivePluginsForCompany } = await import('../domain/plugin-install');
+    const { panelEntryRelPath } = await import('../domain/panel-plugin');
+    const panels = getEffectivePluginsForCompany(getDb())
+      .filter((p) => p.kind === 'panel')
+      .map((p) => ({
+        id: p.id,
+        name: p.name,
+        title: (p.manifest as { panel?: { title?: string } }).panel?.title ?? p.name,
+        entry: panelEntryRelPath(p.manifest),
+        height: (p.manifest as { panel?: { height?: number | 'auto' } }).panel?.height,
+        maturity: p.maturity,
+      }))
+      .filter((p) => p.entry !== null);
+    res.json(panels);
+  }),
+);
+
+projectArtifactsRouter.get(
+  '/panel-plugins/:pluginId/entry',
+  asyncHandler(async (req, res) => {
+    const db = getDb();
+    const projectId = param(req, 'id');
+    // 复审 R1（I-a）：入口只许 iframe 内嵌（Sec-Fetch-Dest 门卫）——直接开标签页会以同源执行
+    // 脚本绕过 iframe opaque-origin 沙箱（虽 CSP connect-src 'none' 已断 fetch，导航外带仍可能）。
+    // 失败关闭：头缺失（老浏览器/裸 HTTP 客户端）同样拒绝。
+    const fetchDest = req.headers['sec-fetch-dest'];
+    if (fetchDest !== 'iframe') {
+      res.status(403).json({ error: { code: 'unauthorized', message: '面板插件入口仅供右栏沙箱内嵌使用（Sec-Fetch-Dest 校验失败）' } });
+      return;
+    }
+    const plugin = getPlugin(db, param(req, 'pluginId'));
+    if (!plugin || plugin.kind !== 'panel') {
+      res.status(404).json({ error: { code: 'not_found', message: '面板插件不存在' } });
+      return;
+    }
+    const { panelEntryRelPath, PANEL_ENTRY_CSP } = await import('../domain/panel-plugin');
+    const relPath = panelEntryRelPath(plugin.manifest);
+    if (!relPath) {
+      res.status(422).json({ error: { code: 'validation', message: '面板插件 manifest 不合法（entry）' } });
+      return;
+    }
+    let abs: string;
+    try {
+      abs = resolveArtifactPath(artifactBaseDir(db, projectId, relPath), relPath);
+    } catch {
+      res.status(403).json({ error: { code: 'unauthorized', message: '入口路径越界' } });
+      return;
+    }
+    if (!isPathAllowed(abs)) {
+      res.status(403).json({ error: { code: 'unauthorized', message: '路径不在允许的根目录内' } });
+      return;
+    }
+    if (!existsSync(abs) || statSync(abs).isDirectory()) {
+      res.status(404).json({ error: { code: 'not_found', message: `入口文件不存在：${relPath}` } });
+      return;
+    }
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Content-Security-Policy', PANEL_ENTRY_CSP);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.sendFile(abs);
+  }),
+);
 
 projectArtifactsRouter.get(
   '/preview/*path',

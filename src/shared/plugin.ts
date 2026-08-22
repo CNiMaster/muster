@@ -14,7 +14,7 @@
  */
 
 /** 插件形态。每种对应一种 manifest 结构。 */
-export type PluginKind = 'skill' | 'mcp-server' | 'tool' | 'bridge-action' | 'ai-generated';
+export type PluginKind = 'skill' | 'mcp-server' | 'tool' | 'bridge-action' | 'ai-generated' | 'panel';
 
 /** 能力来源。 */
 export type PluginSource =
@@ -102,13 +102,24 @@ export interface BridgeActionManifest {
   promptSection: string;
 }
 
+/** 面板插件 manifest（批次 I-a）：entry=项目内相对 HTML 路径，右栏 iframe 沙箱承载。 */
+export interface PanelPluginManifest {
+  /** 项目内相对路径，必须 .html 结尾（resolveArtifactPath 三防线校验）。 */
+  entry: string;
+  /** 展示标题（折叠卡+iframe title）。 */
+  title: string;
+  /** 初始高度 px；'auto'=等插件 ready 消息上报。上限 720。 */
+  height?: number | 'auto';
+}
+
 /** 判别联合：根据 kind 选用对应 manifest。 */
 export type PluginManifest =
   | { kind: 'skill'; skill: SkillManifest }
   | { kind: 'mcp-server'; mcp: McpServerManifest }
   | { kind: 'tool'; tool: ToolManifest }
   | { kind: 'bridge-action'; bridge: BridgeActionManifest }
-  | { kind: 'ai-generated'; skill: SkillManifest }; // AI 生成复用 SkillManifest 结构
+  | { kind: 'ai-generated'; skill: SkillManifest } // AI 生成复用 SkillManifest 结构
+  | { kind: 'panel'; panel: PanelPluginManifest };
 
 /**
  * Plugin：能力的统一形态。

@@ -25,6 +25,7 @@ import { z } from 'zod';
 import { asyncHandler, param, companyIdOf } from './middleware';
 import { getDb } from '../db/client';
 import { listPlugins, getPlugin } from '../domain/plugin-adapter';
+import { panelManifestSchema } from '../domain/panel-plugin';
 import {
   installPlugin,
   removePlugin,
@@ -118,7 +119,7 @@ pluginsRouter.get('/company-scoped', companyScopedHandler);
 const exclusiveInstallSchema = z.object({
   id: z.string().optional(),
   name: z.string().min(1),
-  kind: z.enum(['skill', 'mcp-server', 'tool', 'bridge-action', 'ai-generated']),
+  kind: z.enum(['skill', 'mcp-server', 'tool', 'bridge-action', 'ai-generated', 'panel']),
   source: z.unknown(),
   manifest: z.record(z.unknown()),
   permissions: z.array(z.string()).optional(),
@@ -128,6 +129,14 @@ const exclusiveInstallSchema = z.object({
 const companyExclusiveHandler = asyncHandler(async (req, res) => {
   assertWorkbenchOff(getDb());
   const parsed = exclusiveInstallSchema.parse(req.body);
+  // I-a：panel 插件 manifest 强校验（entry 相对 html 路径）——失败 400
+  if (parsed.kind === 'panel') {
+    const r = panelManifestSchema.safeParse(parsed.manifest.panel);
+    if (!r.success) {
+      res.status(400).json({ error: { code: 'validation', message: r.error.issues.map((i) => i.message).join('; ') } });
+      return;
+    }
+  }
   const plugin = installPlugin(getDb(), {
     ...parsed,
     source: parsed.source as import('../../shared/plugin').PluginSource,
@@ -152,7 +161,7 @@ pluginsRouter.get(
 const installSchema = z.object({
   id: z.string().optional(),
   name: z.string().min(1),
-  kind: z.enum(['skill', 'mcp-server', 'tool', 'bridge-action', 'ai-generated']),
+  kind: z.enum(['skill', 'mcp-server', 'tool', 'bridge-action', 'ai-generated', 'panel']),
   // source/scope 用 passthrough 接收任意结构，运行时由 installPlugin 的 toSourceKind/Ref 容错；
   // 此处用 unknown 转换避免 zod 判别联合与 TS PluginSource 的窄化冲突。
   source: z.unknown(),
@@ -167,6 +176,13 @@ pluginsRouter.post(
   '/',
   asyncHandler(async (req, res) => {
     const parsed = installSchema.parse(req.body);
+    if (parsed.kind === 'panel') {
+      const r = panelManifestSchema.safeParse(parsed.manifest.panel);
+      if (!r.success) {
+        res.status(400).json({ error: { code: 'validation', message: r.error.issues.map((i) => i.message).join('; ') } });
+        return;
+      }
+    }
     const input = {
       ...parsed,
       source: parsed.source as import('../../shared/plugin').PluginSource,

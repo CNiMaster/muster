@@ -69,4 +69,9 @@
 
 ## 实施记录
 
-（待实施）
+- **I-a1 协议+服务端**：PluginKind 扩 'panel'（迁移 20260823120000 表重建扩 CHECK——沿用 20260819000400 模式）；shared/panel-plugin-protocol.ts（v=1 三消息+守卫+8KB 截断+高度夹紧 720）；domain/panel-plugin.ts（zod manifest+PANEL_ENTRY_CSP）；plugins 两个安装端点 zod 扩枚举+safeParse 400；artifacts 两端点（/panel-plugins 列表 effective 过滤+entry 服务：三防线+403/404/422 分级）。
+- **I-a2 宿主 UI**：usePanelPlugins hook；PanelPluginHost（互斥折叠卡/iframe sandbox="allow-scripts"/ready 驱高/markup 标记卡片 cap20）；挂 ProjectContextInspector InspectorGroup（零插件零渲染）；「引用到对话」经 muster:composer-quote CustomEvent → PromptComposer 本地 panelQuote 与父控 quotedContext 合流（父控优先；发送附 "> 引用：" 前缀后清空）——接线选型=CustomEvent（inspector 与 composer 分属兄弟渲染树，零状态提升）。
+- **I-a3 专家产出路径**：templates/panel-plugin-template.html（ready+markup 骨架）+ docs/plugins/panel-plugin-v1.md（契约/安全模型/工作流）。
+- **复审轮（八类镜头）**：R1（安全·真绕过）——entry 端点直接开新标签页会以**同源**执行脚本绕过 iframe opaque-origin 沙箱（CSP connect-src 'none' 断 fetch 但导航外带仍可能）→ 加 Sec-Fetch-Dest 门卫（≠iframe 一律 403，头缺失失败关闭）+ CSP 补 form-action/base-uri 'none'。R2（镜头4 成对端到端）——composer 引用事件链无测试 → 补 prompt-composer-quote.spec 3 例。镜头5 提示词携带：tool-assembly 只认 mcp-server，panel 不进执行器提示词（核验过）。
+- **已知局限（记录不修）**：iframe onError 对 HTTP 404 不触发（浏览器不炸 iframe 网络错）——入口缺失表现为空白 iframe+沙箱说明文字；v1 接受，v2 可加宿主侧 HEAD 探测。
+- **测试**：单测 8（manifest+协议）/组件 5（宿主）/组件 3（composer 引用链）/集成 8（列表/entry/CSP/门卫/安装 400/201）/e2e 1（安装→组→iframe 沙箱属性+src）。

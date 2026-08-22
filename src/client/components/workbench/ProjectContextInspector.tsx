@@ -4,13 +4,14 @@ import { Link, useSearchParams } from 'react-router-dom';
 import type { Agent, Task } from '../../api/types';
 import type { ProjectTaskDTO } from '../../hooks/queries';
 import { useArtifacts, useBlueprintMatches, useProjectSpecialists, useProjectTaskAction, useTaskSwarm,
-  useProjectHealth, useUiMode } from '../../hooks/queries';
+  useProjectHealth, useUiMode, usePanelPlugins } from '../../hooks/queries';
 import type { CompanyCockpitDTO } from '../../../shared/types';
 import { Badge, StateBadge, taskStateTone } from '../Badge';
 import { Button, toast } from '../Button';
 import { DiscussionPanel } from './DiscussionPanel';
 import { InspectorPreviewHost } from './InspectorPreviewHost';
 import { WorkLivePanel } from './WorkLivePanel';
+import { PanelPluginHost } from './PanelPluginHost';
 
 const OPEN_STATES = new Set(['queued', 'claimed', 'running', 'waiting_input', 'waiting_dependency', 'waiting_approval', 'paused', 'blocked']);
 const ATTENTION_STATES = new Set(['waiting_input', 'waiting_approval', 'blocked', 'waiting_dependency']);
@@ -89,6 +90,7 @@ export function ProjectContextInspector({
   const { data: artifacts = [] } = useArtifacts(projectId);
   // 批次 F 修复：工作单以 projectTaskId 关联项目任务——此前 t.id 对 selectedTask.id 分属两个 ID 空间，永不命中
   const matchedTask = selectedTask ? tasks.find((t) => t.projectTaskId === selectedTask.id) : undefined;
+  const panelPlugins = (usePanelPlugins(projectId).data ?? []).filter((p) => p.entry);
   const activeTask = matchedTask ?? tasks.find((t) => t.state === 'running') ?? tasks[0];
   const { data: swarmView } = useTaskSwarm(activeTask?.id);
   // B5 右侧三卡（非人员源，中央岗隐形后"事"可见）：专家池/蜂群/验收进度
@@ -455,6 +457,18 @@ export function ProjectContextInspector({
               </button>
             ))}
           </div>
+        </InspectorGroup>
+      )}
+
+      {/* 面板插件（批次 I-a）：零插件零打扰——组只在有生效 panel 插件时渲染 */}
+      {panelPlugins.length > 0 && (
+        <InspectorGroup
+          groupId="panel-plugins"
+          title="面板插件"
+          defaultOpen={false}
+          badge={<Badge tone="info">{panelPlugins.length}</Badge>}
+        >
+          <PanelPluginHost projectId={projectId} taskId={matchedTask?.id} panels={panelPlugins} />
         </InspectorGroup>
       )}
 

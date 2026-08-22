@@ -1756,6 +1756,25 @@ export interface PublishRecord {
   publishedAt: string;
 }
 
+/** 面板插件列表（批次 I-a）：右栏「面板插件」组数据源；空=组不渲染。 */
+export interface PanelPluginDTO {
+  id: string;
+  name: string;
+  title: string;
+  entry: string | null;
+  height?: number | 'auto';
+  maturity: string;
+}
+
+export function usePanelPlugins(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ['panel-plugins', projectId],
+    queryFn: () => api.get<PanelPluginDTO[]>(`/api/projects/${projectId}/artifacts/panel-plugins`),
+    enabled: !!projectId,
+    staleTime: 60_000,
+  });
+}
+
 export function useArtifacts(projectId: string | undefined) {
   return useQuery({
     queryKey: ['artifacts', projectId],
