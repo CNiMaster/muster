@@ -83,3 +83,10 @@ Important×6：
 Minor 顺手修×9：死 filter/mention Escape 重置/LiveProcessBar 活跃口径补 paused·blocked/releaseSwarmBees 过期注释/共享蜂档案不进档案列表（listAgentProfiles 排除固定 id）/划选锚点归属容器/恒真断言/HTTP 测试含 refs 展开语义。
 Minor 记录不改×5：dispatch-tree O(n²)（规模可忍）/跨项目借调专家标签/派遣树无嵌套层级/Finder reveal 的 staging 语义（与 locate 对齐留后续）/灰化蜂最终回收无人做+findGreyedTempWorker 可复用蜂（遗留问题记后续批——养蜂人盘点）。
 Spec 偏差记录：③停止键形态（额外加键 vs 合一）——**H8 将按三态合一重建，届时消解**；①SwarmTreeCard 未改造（新建 WorkLivePanel 达成目标）；②LiveProcessBar 无雇佣徽标（徽标在面板内）。
+
+## 已知问题（非本批引入）：new-task-signal e2e 时序竞态
+
+- 现象：群聊 fill 后 ≤500ms 输入值被回滚为空（同一 DOM 节点、无重挂载、URL/视图恒定、无网络请求），消息未发出——间歇 ~40%。
+- 证据链：探针三轮（DOM tag 持续=节点复用；inputValue 回弹；REQS_AFTER_FILL 空窗口）；二分证实 pre-H（83df89a）同机同样复现——环境放大（新主电脑时序）非代码回归。
+- 已排除：worktree 重挂载/URL 闪切/Suspense 全树回滚（QueryClient 无 suspense）/安全弹窗（授权后仍复现）。
+- 处置：playwright retries=1 收口；根因（疑 React 18 并发渲染下的受控值回滚，需最小复现仓库专项排查）留待独立任务。
