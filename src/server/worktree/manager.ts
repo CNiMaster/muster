@@ -401,6 +401,39 @@ export function taskStageStatus(
   return { exists: true, aheadCommits, stagingHead: git(rootDir, ['rev-parse', branch]).stdout, mainHead };
 }
 
+/** 单文件行级统计（批次 H.1 轮末变更卡；二进制为 null）。 */
+export interface FileStat {
+  path: string;
+  adds: number | null;
+  dels: number | null;
+}
+
+/**
+ * commit 区间 per-file 行数统计（git diff --numstat）。
+ * 同仓库任意 worktree 均可执行（对象库共享；staging 分支的 commit 在项目根同样可 diff）。
+ */
+export function commitFileStats(rootDir: string, baseCommit: string, commitHash: string): FileStat[] {
+  const out = git(rootDir, ['-c', 'core.quotePath=false', 'diff', '--numstat', `${baseCommit}..${commitHash}`], { allowFail: true }).stdout;
+  return out
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      const [adds, dels, ...rest] = line.split('\t');
+      const filePath = rest.join('\t');
+      return {
+        path: filePath,
+        adds: adds === '-' ? null : Number(adds),
+        dels: dels === '-' ? null : Number(dels),
+      };
+    });
+}
+
+/** 单文件 unified diff 文本（审查视图用，cap 50k）。 */
+export function commitFileDiff(rootDir: string, baseCommit: string, commitHash: string, relPath: string): string {
+  const out = git(rootDir, ['-c', 'core.quotePath=false', 'diff', `${baseCommit}..${commitHash}`, '--', relPath], { allowFail: true }).stdout;
+  return out.slice(0, 50_000);
+}
+
 /**
  * 任务集成分支领先内容的 diff 概要（premium 审查输入）：--stat 全量 + 变更文件清单，文本 cap。
  */

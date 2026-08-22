@@ -8,6 +8,7 @@ import { Button, toast } from '../Button';
 import { StateBadge, Badge } from '../Badge';
 import { ConversationPanel } from '../ConversationPanel';
 import { ExecutionTraceCard } from '../workbench/ExecutionTraceCard';
+import { LiveProcessBar } from '../workbench/LiveProcessBar';
 import { Input, Textarea, Field } from '../Form';
 import { TaskTopBar } from './TaskTopBar';
 import { AutoContinueCountdown } from './AutoContinueCountdown';
@@ -394,6 +395,7 @@ export function ProjectTaskWorkspace({
                 <ExecutionTraceCard task={latestTask} />
               </div>
             )}
+            <LiveProcessBar task={activeRuntimeTask} tasks={tasks} agents={agents} />
             <div className="ptws-conv">
               <ConversationPanel
                 scope="project"

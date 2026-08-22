@@ -23,6 +23,7 @@ import { listArtifacts, artifactGallery, deleteArtifact, buildRevealCommand } fr
 import { getProject } from '../domain/project';
 import { peekRepoRoot } from '../domain/task-repo';
 import { PublishQueue } from '../worktree/publish-queue';
+import { commitFileStats, commitFileDiff, ensureTaskStagingWorktree } from '../worktree/manager';
 import {
   readArtifactContent,
   writeArtifactContent,
@@ -272,6 +273,127 @@ projectArtifactsRouter.delete(
     }
     deleteArtifact(db, param(req, 'id'), relPath, 'user');
     res.json({ ok: true });
+  }),
+);
+
+/** 批次 H.1：查任务最新发布记录（轮末变更卡数据源；无记录返回空 files）。 */
+function latestPublishedRecord(db: ReturnType<typeof getDb>, taskId: string) {
+  return db
+    .prepare("SELECT * FROM publish_record WHERE task_id=? AND blocked=0 ORDER BY published_at DESC LIMIT 1")
+    .get(taskId) as
+    | {
+        id: string; task_id: string; project_root: string; commit_hash: string;
+        source_base_commit: string; rolled_back: number; published_at: string;
+        merged_files_json: string;
+      }
+    | undefined;
+}
+
+/** 撤销目录（批次 H.1）：任务级集成分支发布 → staging worktree（commit 所在分支的检出）；否则项目根。 */
+function revertRootForTask(db: ReturnType<typeof getDb>, projectId: string, projectTaskId: string | null, repoRoot: string): string {
+  if (projectTaskId) {
+    try {
+      return ensureTaskStagingWorktree(repoRoot, projectId, projectTaskId).path;
+    } catch {
+      // staging worktree 不可得时退项目根（老记录直发主干）
+    }
+  }
+  return repoRoot;
+}
+
+projectArtifactsRouter.get(
+  '/round-changes',
+  asyncHandler(async (req, res) => {
+    const db = getDb();
+    const taskId = String(req.query.taskId ?? '');
+    if (!taskId) {
+      res.status(400).json({ error: { code: 'validation', message: 'taskId required' } });
+      return;
+    }
+    const record = latestPublishedRecord(db, taskId);
+    if (!record) {
+      res.json({ files: [], publishId: null });
+      return;
+    }
+    const project = getProject(db, param(req, 'id'));
+    const repoRoot = peekRepoRoot(db, project) ?? project.rootDir;
+    const files = commitFileStats(repoRoot, record.source_base_commit, record.commit_hash);
+    res.json({
+      publishId: record.id,
+      commitHash: record.commit_hash,
+      rolledBack: record.rolled_back === 1,
+      files,
+    });
+  }),
+);
+
+projectArtifactsRouter.get(
+  '/round-changes/file',
+  asyncHandler(async (req, res) => {
+    const taskId = String(req.query.taskId ?? '');
+    const filePath = String(req.query.path ?? '');
+    if (!taskId || !filePath) {
+      res.status(400).json({ error: { code: 'validation', message: 'taskId/path required' } });
+      return;
+    }
+    const db = getDb();
+    const record = latestPublishedRecord(db, taskId);
+    if (!record) {
+      res.status(404).json({ error: { code: 'not_found', message: '无发布记录' } });
+      return;
+    }
+    const project = getProject(db, param(req, 'id'));
+    const repoRoot = peekRepoRoot(db, project) ?? project.rootDir;
+    res.json({ path: filePath, diff: commitFileDiff(repoRoot, record.source_base_commit, record.commit_hash, filePath) });
+  }),
+);
+
+/** 定位文件绝对路径（复制绝对路径/开终端用）：staging 发布按 staging 根解析。 */
+projectArtifactsRouter.get(
+  '/round-changes/locate',
+  asyncHandler(async (req, res) => {
+    const taskId = String(req.query.taskId ?? '');
+    const filePath = String(req.query.path ?? '');
+    if (!taskId || !filePath) {
+      res.status(400).json({ error: { code: 'validation', message: 'taskId/path required' } });
+      return;
+    }
+    const db = getDb();
+    const record = latestPublishedRecord(db, taskId);
+    if (!record) {
+      res.status(404).json({ error: { code: 'not_found', message: '无发布记录' } });
+      return;
+    }
+    const task = db.prepare('SELECT project_task_id FROM task WHERE id=?').get(taskId) as { project_task_id: string | null } | undefined;
+    const project = getProject(db, param(req, 'id'));
+    const repoRoot = peekRepoRoot(db, project) ?? project.rootDir;
+    const base = revertRootForTask(db, project.id, task?.project_task_id ?? null, repoRoot);
+    const abs = resolveArtifactPath(base, filePath);
+    res.json({ abs, dir: abs.slice(0, Math.max(abs.lastIndexOf('/'), 0)) });
+  }),
+);
+
+/** 撤销本轮（批次 H.1）：revert 最新发布 commit——在 commit 所在分支的检出目录执行。 */
+projectArtifactsRouter.post(
+  '/round-changes/undo',
+  asyncHandler(async (req, res) => {
+    const taskId = z.string().min(1).parse(req.body?.taskId ?? '');
+    const db = getDb();
+    const record = latestPublishedRecord(db, taskId);
+    if (!record) {
+      res.status(404).json({ error: { code: 'not_found', message: '无发布记录' } });
+      return;
+    }
+    if (record.rolled_back === 1) {
+      res.status(409).json({ error: { code: 'conflict', message: '本轮已撤销' } });
+      return;
+    }
+    const task = db.prepare('SELECT project_task_id, project_id FROM task WHERE id=?').get(taskId) as { project_task_id: string | null; project_id: string } | undefined;
+    const project = getProject(db, param(req, 'id'));
+    const repoRoot = peekRepoRoot(db, project) ?? project.rootDir;
+    const revertRoot = revertRootForTask(db, project.id, task?.project_task_id ?? null, repoRoot);
+    new PublishQueue(db).rollback(record.id, revertRoot);
+    res.json({ ok: true, publishId: record.id });
   }),
 );
 

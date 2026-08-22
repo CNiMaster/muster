@@ -18,6 +18,7 @@ import { Button } from './Button';
 import { toast } from './Button';
 import { EmptyState, Icons } from './EmptyState';
 import { AutoContinueCountdown } from './project/AutoContinueCountdown';
+import { RoundChangesCard } from './workbench/RoundChangesCard';
 import { MarkdownPreview } from './MarkdownPreview';
 
 export interface ConversationPanelProps {
@@ -186,7 +187,7 @@ export function ConversationPanel({ scope, scopeId, title, recipientAgentId, pro
           </div>
         )}
         {messages?.map((m) => (
-          <MessageBubble key={m.id} message={m} agents={agents ?? []} />
+          <MessageBubble key={m.id} message={m} agents={agents ?? []} projectId={scope === 'project' ? scopeId : undefined} />
         ))}
         {streamText && streamText.text.trim().length > 0 && (
           <div className="mu-msg mu-msg-other">
@@ -257,7 +258,7 @@ export function ConversationPanel({ scope, scopeId, title, recipientAgentId, pro
   );
 }
 
-function MessageBubble({ message, agents }: { message: ConversationMessage; agents: { id: string; name: string; role: string }[] }): React.ReactElement {
+function MessageBubble({ message, agents, projectId }: { message: ConversationMessage; agents: { id: string; name: string; role: string }[]; projectId?: string }): React.ReactElement {
   if (message.role === 'event') {
     return (
       <div className="mu-msg mu-msg-event">
@@ -303,6 +304,9 @@ function MessageBubble({ message, agents }: { message: ConversationMessage; agen
           </div>
         )}
         {!isUser && <WaitingQuestionReply refTaskId={message.refTaskId} />}
+        {!isUser && message.role === 'assistant' && message.refTaskId && projectId && (
+          <RoundChangesCard projectId={projectId} taskId={message.refTaskId} />
+        )}
       </div>
     </div>
   );

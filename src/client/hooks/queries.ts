@@ -1295,6 +1295,58 @@ export interface ProjectHealth {
 }
 
 /** 批次 H.3：项目任务健康（胶囊/需要你关注区；realtime task.* 事件驱动刷新）。 */
+// ===== 批次 H.1：轮末变更卡（round-changes） =====
+export interface RoundChangeFile {
+  path: string;
+  adds: number | null;
+  dels: number | null;
+}
+
+export interface RoundChanges {
+  publishId: string | null;
+  commitHash?: string;
+  rolledBack?: boolean;
+  files: RoundChangeFile[];
+}
+
+export function useRoundChanges(projectId: string | undefined, taskId: string | undefined) {
+  return useQuery({
+    queryKey: ['round-changes', projectId, taskId],
+    queryFn: () => api.get<RoundChanges>(`/api/projects/${projectId}/artifacts/round-changes?taskId=${taskId}`),
+    enabled: !!projectId && !!taskId,
+  });
+}
+
+export function useRoundChangeFile(projectId: string | undefined, taskId: string | undefined, path: string | undefined) {
+  return useQuery({
+    queryKey: ['round-change-file', projectId, taskId, path],
+    queryFn: () => api.get<{ path: string; diff: string }>(`/api/projects/${projectId}/artifacts/round-changes/file?taskId=${taskId}&path=${encodeURIComponent(path!)}`),
+    enabled: !!projectId && !!taskId && !!path,
+    staleTime: 60_000,
+  });
+}
+
+export function useLocateRoundFile(projectId: string | undefined, taskId: string | undefined, path: string | undefined) {
+  return useQuery({
+    queryKey: ['round-locate', projectId, taskId, path],
+    queryFn: () => api.get<{ abs: string; dir: string }>(`/api/projects/${projectId}/artifacts/round-changes/locate?taskId=${taskId}&path=${encodeURIComponent(path!)}`),
+    enabled: !!projectId && !!taskId && !!path,
+    staleTime: Infinity,
+  });
+}
+
+export function useUndoRoundChange(projectId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (taskId: string) => api.post<{ ok: boolean }>(`/api/projects/${projectId}/artifacts/round-changes/undo`, { taskId }),
+    onSuccess: (_r, taskId) => {
+      qc.invalidateQueries({ queryKey: ['round-changes', projectId, taskId] });
+      qc.invalidateQueries({ queryKey: ['artifacts', projectId] });
+      qc.invalidateQueries({ queryKey: ['messages'] });
+    },
+  });
+}
+
 export function useProjectHealth(projectId: string | undefined) {
   return useQuery({
     queryKey: ['project-health', projectId],
