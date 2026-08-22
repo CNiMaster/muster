@@ -434,6 +434,7 @@ export function ProjectTaskWorkspace({
           mode={ui.isSimple ? undefined : mode}
           onSelectMode={ui.isSimple ? undefined : setMode}
           onNewTask={() => setCreating(true)}
+          draftKey={selectedTask ? `task:${selectedTask.id}` : `project:${projectId}`}
           loading={publishingWorkOrder || postMessage.isPending || directTaskAction.isPending}
           onSend={handleSendPrompt}
         />

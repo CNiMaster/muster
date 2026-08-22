@@ -332,6 +332,7 @@ export function HomePage(): React.ReactElement {
             onSelectModel={setCurrentModel}
             thinkingDepth={thinkingDepth}
             onToggleThinking={setThinkingDepth}
+            draftKey="home"
             loading={quickProject.isPending}
             onSend={handleStartWithPrompt}
           />

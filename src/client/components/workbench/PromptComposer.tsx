@@ -67,6 +67,8 @@ export interface PromptComposerProps {
   onSelectMode?: (mode: ComposerMode) => void;
   /** 斜杠命令 /new 的落地动作（打开新建任务卡） */
   onNewTask?: () => void;
+  /** 草稿持久化键（批次 G.1）：按会话隔离存 localStorage，切任务不丢未发送文本；缺省不持久化 */
+  draftKey?: string;
   onSend: (content: string, options?: { agentId?: string; model?: string; thinking?: string; attachments?: MessageAttachment[]; mode?: ComposerMode }) => void;
 }
 
@@ -94,9 +96,12 @@ export function PromptComposer({
   mode = '',
   onSelectMode,
   onNewTask,
+  draftKey,
   onSend,
 }: PromptComposerProps): React.ReactElement {
-  const [text, setText] = useState('');
+  // 批次 G.1：草稿按 draftKey 隔离持久化（muster:*:vN 约定）；无 key 保持纯内存行为
+  const draftStorageKey = draftKey ? `muster:composer-draft:v1:${draftKey}` : null;
+  const [text, setText] = useState(() => (draftStorageKey ? window.localStorage.getItem(draftStorageKey) ?? '' : ''));
   const [openMenu, setOpenMenu] = useState<'model' | 'persona' | 'task' | 'plus' | 'mode' | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [slashIndex, setSlashIndex] = useState(0);
@@ -120,6 +125,43 @@ export function PromptComposer({
   useEffect(() => {
     adjustHeight();
   }, [text]);
+
+  // 同一挂载点切换会话（如切任务）时：先冲刷旧键未落盘文本再换装对应草稿——
+  // 防抖计时器会随 key 变化被清理，不冲刷就丢"切换前最后 300ms 的输入"
+  const textRef = useRef(text);
+  textRef.current = text;
+  const prevDraftKeyRef = useRef<string | null>(draftStorageKey);
+  useEffect(() => {
+    if (!draftStorageKey) {
+      prevDraftKeyRef.current = null;
+      return;
+    }
+    const prevKey = prevDraftKeyRef.current;
+    if (prevKey && prevKey !== draftStorageKey && textRef.current) {
+      window.localStorage.setItem(prevKey, textRef.current);
+    }
+    prevDraftKeyRef.current = draftStorageKey;
+    setText(window.localStorage.getItem(draftStorageKey) ?? '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftStorageKey]);
+
+  // 输入防抖 300ms 落盘；清空即摘键，不留空串垃圾
+  useEffect(() => {
+    if (!draftStorageKey) return;
+    const timer = window.setTimeout(() => {
+      if (text) window.localStorage.setItem(draftStorageKey, text);
+      else window.localStorage.removeItem(draftStorageKey);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [text, draftStorageKey]);
+
+  // 卸载冲刷：防抖窗口内卸载（路由切换）不丢当前输入；发送清空后 text 为空串自然跳过
+  const draftStateRef = useRef({ key: draftStorageKey, text });
+  draftStateRef.current = { key: draftStorageKey, text };
+  useEffect(() => () => {
+    const { key, text: last } = draftStateRef.current;
+    if (key && last) window.localStorage.setItem(key, last);
+  }, []);
 
   // 点击外部关闭全部下拉
   useEffect(() => {
@@ -174,6 +216,7 @@ export function PromptComposer({
       mode: mode || undefined,
     });
     setText('');
+    if (draftStorageKey) window.localStorage.removeItem(draftStorageKey);
     if (textareaRef.current) {
       textareaRef.current.style.height = '42px';
     }
