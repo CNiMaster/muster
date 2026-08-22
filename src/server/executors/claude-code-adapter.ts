@@ -11,6 +11,7 @@
  */
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createInterface } from 'node:readline';
+import { guardedSpawn, sanitizeChildEnv } from './spawn-shell';
 import { randomUUID } from 'node:crypto';
 import {
   copyFileSync,
@@ -262,30 +263,26 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
         model: opts.settings.model || '(claude default)',
       });
 
-      const childEnv: NodeJS.ProcessEnv = { ...loginShellEnv };
-      // PRD Phase 3：用户级凭据引用——把员工配置的环境变量值注入子进程。
+      // PRD Phase 3 + H9a 统一执行壳：env 过清洗（保留 PATH/HOME/CLI 代理配置等非密变量）再注入员工凭据。
+      const childEnv: NodeJS.ProcessEnv = { ...sanitizeChildEnv(loginShellEnv) };
       if (opts.apiKeyValue) {
         childEnv.ANTHROPIC_API_KEY = opts.apiKeyValue;
       }
-      // H8 急停止损（第九轮）：detached 让 CLI 自成进程组（pid===pgid），停止/急停发组信号
-      // 一锅端 CLI+bash 工具+孙进程——否则任何单进程信号都够不着 CLI 起的 bash（rm 场景漏网）。
-      const proc = spawn(opts.settings.claudeBin, args, {
+      // H9a 统一执行壳：detached 进程组（急停组信号一锅端孙进程）+ seatbelt 文件写围栏
+      // （worktree+CLI 配置目录外写被 OS 拒）——与全部适配器同一套 spawn-shell 防线。
+      const guarded = guardedSpawn(opts.settings.claudeBin, args, {
         cwd: opts.cwd,
+        writableRoots: [opts.cwd],
         env: childEnv,
-        stdio: ['pipe', 'pipe', 'pipe'],
-        detached: true,
+        id: 'claude',
       });
+      const proc = guarded.child;
+      const killGroup = guarded.killGroup;
       proc.once('close',()=>{void permissionBridge?.close();});
       proc.once('error',()=>{void permissionBridge?.close();});
       proc.stdin.end();
 
       this.active.add(proc);
-      // 组信号：杀整组（CLI 主进程 + 它起的工具子进程）；组已不存在时回落单进程信号。
-      const killGroup = (sig: NodeJS.Signals): void => {
-        try { process.kill(-(proc.pid ?? 0), sig); } catch {
-          try { proc.kill(sig); } catch { /* 进程已退出 */ }
-        }
-      };
       const abort = (): void => {
         killGroup('SIGTERM');
         setTimeout(() => { try { process.kill(-(proc.pid ?? 0), 'SIGKILL'); } catch { /* 已退出 */ } }, 5_000);

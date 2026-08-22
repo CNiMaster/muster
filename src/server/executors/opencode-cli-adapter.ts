@@ -1,4 +1,6 @@
 import { execFile } from 'node:child_process';
+import { unlinkSync } from 'node:fs';
+import { guardedArgv, sanitizeChildEnv, writeSandboxProfile } from './spawn-shell';
 import { promisify } from 'node:util';
 import { readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -205,10 +207,13 @@ export class OpenCodeCliAdapter implements ExecutionAdapter {
     if (ctx.agentExecutor?.model) args.push('--model', ctx.agentExecutor.model);
     if (ctx.sessionIdHint) args.push('--session', ctx.sessionIdHint);
     const cleanupDenyGuard = await injectOpenCodeDenyGuard(ctx.workingDir);
+    // H9a 统一执行壳：seatbelt 文件写围栏 + env 清洗（opencode 自带 permission.deny 管它内部，外层管越界写）
+    const profilePath = writeSandboxProfile({ writableRoots: [ctx.workingDir], profileDir: ctx.runTempDir, id: `opencode_${ctx.task.id}` });
+    const argv = guardedArgv(binary, args, profilePath);
     try {
-      const result = await (this.options.runner ?? defaultRunner)(binary, args, {
+      const result = await (this.options.runner ?? defaultRunner)(argv[0]!, argv.slice(1), {
         cwd: ctx.workingDir,
-        env: await resolveCliEnvironment(),
+        env: sanitizeChildEnv(await resolveCliEnvironment()),
         signal: ctx.signal,
         timeout: ctx.agentExecutor?.timeoutMs ?? 600_000,
       });
@@ -231,6 +236,7 @@ export class OpenCodeCliAdapter implements ExecutionAdapter {
       if (!parsed.success) throw new AppError(ErrorCode.VALIDATION, 'OpenCode CLI 未返回有效的 AgentRunResult');
       return { ...parsed.data, _sessionIdHint: session ?? ctx.sessionIdHint };
     } finally {
+      if (profilePath) { try { unlinkSync(profilePath); } catch { /* best effort */ } }
       cleanupDenyGuard();
     }
   }

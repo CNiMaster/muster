@@ -129,7 +129,7 @@ export function getSandboxTools(
  * 保证新建文件场景（write_file 目标不存在）也能正确解析，同时不放过已存在
  * 路径段的符号链接（逃逸检查的关键）。
  */
-function realpathOrDeepestAncestor(p: string): string | null {
+export function realpathOrDeepestAncestor(p: string): string | null {
   const suffix: string[] = [];
   let cur = p;
   for (;;) {

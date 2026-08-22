@@ -17,10 +17,10 @@
  * AI 生成工具按同一接口注册进来。
  */
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync } from 'node:fs';
-import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { resolve } from 'node:path';
 import { isWithinWorkspace, checkBashCommand } from '../../sandbox';
+import { guardedSpawn } from '../spawn-shell';
 import { classifyCommand } from '../cli-permission-bridge';
 import { agentRunResultSchema } from '../result-schema';
 import { submitBusinessReview, type BusinessReviewKind } from '../../domain/business-review';
@@ -240,7 +240,7 @@ async function listFilesHandler(call: ToolCall, ctx: ToolContext): Promise<ToolR
  * 1. 黑名单（sandbox.checkBashCommand）：rm -rf /、mkfs、git push --force 等灾难性命令直接拒绝。
  * 2. permissionGuard（permissionAction='execute-command'）：HIGH_RISK（system-install/git-push/credential-access 等）
  *    自动进审批队列等用户确认。
- * 3. 工作目录隔离：spawn 的 cwd 固定为 ctx.workingDir，命令默认只能在该目录内操作。
+ * 3. 统一执行壳（H9a）：cwd 固定 + env 清洗 + seatbelt 文件写围栏（worktree 外写被 OS 拒）+ 进程组隔离。
  *
  * Review 修复（M-5）：更正安全边界说明——命令经 `sh -c` 走完整 shell 解释，`;`、`&&`、`|`、`$(...)`、
  * 反引号等拼接均有效；黑名单是正则匹配（可被变量拼接/$IFS/八进制等绕过），只作纵深防御的一层，
@@ -274,15 +274,16 @@ async function runCommandHandler(call: ToolCall, ctx: ToolContext): Promise<Tool
   }
   const timeoutMs = Math.min(Number(call.args.timeout_ms ?? 60_000) || 60_000, 300_000);
   return new Promise((resolveResult) => {
-    // 安全第 3 道：环境变量隔离。剔除 Muster 自身的凭据/数据库路径，
-    // 只保留系统 PATH/HOME/LANG 等让命令能跑，但不暴露宿主敏感配置。
-    const childEnv = sanitizeChildEnv(process.env);
-    const child = spawn('sh', ['-c', command], {
+    // 安全第 3/4 道（H9a 统一执行壳）：env 清洗 + seatbelt 文件写围栏（worktree 外写被 OS 拒）
+    // + 进程组隔离（detached，急停可组杀命令孙进程）。
+    const guarded = guardedSpawn('sh', ['-c', command], {
       cwd: ctx.workingDir,
-      env: childEnv,
+      writableRoots: [ctx.workingDir],
       stdio: ['ignore', 'pipe', 'pipe'],
-      timeout: timeoutMs,
+      timeoutMs,
+      id: 'run_command',
     });
+    const child = guarded.child;
     let stdout = '';
     let stderr = '';
     const MAX_OUTPUT = 16 * 1024;
@@ -310,20 +311,8 @@ async function runCommandHandler(call: ToolCall, ctx: ToolContext): Promise<Tool
  * 保留 PATH/HOME/USER/LANG/TERM/SHELL/EDITOR 等通用变量；
  * 剔除 API key、token、数据库路径、Muster 内部变量等。
  */
-/** 整改批次2导出：promote 前确定性检查复用同一环境清洗口径（凭据/MUSTER_* 一律剔除）。 */
-export function sanitizeChildEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const ALLOW = new Set(['PATH', 'HOME', 'USER', 'LOGNAME', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TERM', 'SHELL', 'EDITOR', 'VISUAL', 'TMPDIR', 'TZ']);
-  const cleaned: NodeJS.ProcessEnv = {};
-  for (const [key, value] of Object.entries(env)) {
-    if (value === undefined) continue;
-    // 1. 显式白名单变量
-    if (ALLOW.has(key)) { cleaned[key] = value; continue; }
-    // 2. 形如 XDG_*、npm_config_*（非含 key/token）的通用配置变量保留
-    if (/^(XDG_|npm_config_(?!.*key)color|npm_config_registry|npm_config_cache|npm_config_prefix)/i.test(key)) { cleaned[key] = value; continue; }
-    // 3. 其余一律剔除（含 OPENAI_API_KEY / ANTHROPIC_API_KEY / MUSTER_* / *_TOKEN / DATABASE_URL 等）
-  }
-  return cleaned;
-}
+/** 整改批次2导出：单一来源迁至 spawn-shell（H9a 统一执行壳），此处转发保持旧导入路径。 */
+export { sanitizeChildEnv } from '../spawn-shell';
 
 /** done handler：解析 AgentRunResult 并标记循环终止。 */
 async function doneHandler(call: ToolCall): Promise<ToolResult> {

@@ -23,7 +23,11 @@ describe('OpenCode CLI adapter', () => {
       sessionIdHint: 'known-session',
       agentExecutor: { binaryPath: '/usr/local/bin/opencode' },
     } as any);
-    const args = runner.mock.calls[0]![1];
+    const [bin0, argv0] = runner.mock.calls[0]!;
+    // H9a 统一执行壳：剥掉 sandbox-exec 包装后断言原契约
+    const idx = argv0.indexOf('--');
+    const args = idx >= 0 ? argv0.slice(idx + 2) : argv0;
+    if (idx >= 0) expect(bin0).toBe('/usr/bin/sandbox-exec');
     expect(args[0]).toBe('run');
     expect(args).toContain('--format');
     expect(args).toContain('json');

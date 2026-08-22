@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import type { ExecutionAdapter, ExecutionContext, ExecutionEvents, ExecutionRunResult } from '../task-engine/executor';
 import { AGENT_RESULT_JSON_SCHEMA, agentRunResultSchema } from './result-schema';
@@ -6,6 +6,7 @@ import { AppError, ErrorCode } from '../../shared/errors';
 import { evaluateCliToolRequest, type CliApprovalDecision } from './cli-permission-bridge';
 import { tryParseJSON } from '../../shared/utils';
 import { resolveCliEnvironment } from './cli-environment';
+import { guardedSpawn, sanitizeChildEnv } from './spawn-shell';
 
 export interface CodexApprovalRequest {kind:'command'|'file-change';command?:string;cwd:string;path?:string}
 export interface CodexAppServerRunInput {cwd:string;prompt:string;model?:string;existingThreadId?:string;outputSchema:Record<string,unknown>;approvalPolicy:'untrusted'|'never';sandbox:'read-only'|'workspace-write';signal?:AbortSignal;timeoutMs:number;onApproval:(request:CodexApprovalRequest)=>Promise<CliApprovalDecision>;onOutput?:(chunk:string)=>void}
@@ -40,12 +41,16 @@ async function createStdioAppServer(binary:string,options:{cwd:string;env:NodeJS
 
 class StdioCodexAppServer implements CodexAppServer{
   private child:ChildProcessWithoutNullStreams;
+  private killGroup:(sig:NodeJS.Signals)=>void;
   private nextId=1;
   private pending=new Map<number,{resolve:(value:any)=>void;reject:(error:Error)=>void}>();
   private turnWaiter?:{resolve:(value:{threadId:string;text:string;approvalDeniedMessage?:string})=>void;reject:(error:Error)=>void;threadId:string;text:string;approvalDeniedMessage?:string;onApproval:CodexAppServerRunInput['onApproval'];onOutput?:CodexAppServerRunInput['onOutput'];timer:NodeJS.Timeout};
   private initialized:Promise<void>;
   constructor(binary:string,options:{cwd:string;env:NodeJS.ProcessEnv}){
-    this.child=spawn(binary,['app-server','--listen','stdio://'],{cwd:options.cwd,env:options.env,stdio:['pipe','pipe','pipe']});
+    // H9a 统一执行壳：进程组+env 清洗+seatbelt 围栏（worktree 外写被 OS 拒；codex 自带沙箱管它的工具，外层管它的越界）
+    const guarded=guardedSpawn(binary,['app-server','--listen','stdio://'],{cwd:options.cwd,writableRoots:[options.cwd],env:sanitizeChildEnv(options.env),id:'codex'});
+    this.child=guarded.child;
+    this.killGroup=guarded.killGroup;
     createInterface({input:this.child.stdout}).on('line',line=>this.handleLine(line));
     let stderr='';this.child.stderr.on('data',chunk=>{stderr+=String(chunk);});
     this.child.on('exit',code=>{const error=new AppError(ErrorCode.INTERNAL,`Codex app-server 已退出 (${code??'signal'}): ${stderr.slice(-2000)}`);for(const item of this.pending.values())item.reject(error);this.turnWaiter?.reject(error);});
@@ -60,12 +65,12 @@ class StdioCodexAppServer implements CodexAppServer{
     // validates the final JSON with agentRunResultSchema instead.
     await this.request('turn/start',{threadId,input:[{type:'text',text:input.prompt,text_elements:[]}],cwd:input.cwd,approvalPolicy:input.approvalPolicy,model:input.model??null});
     return new Promise((resolve,reject)=>{
-      const timer=setTimeout(()=>{reject(new AppError(ErrorCode.INTERNAL,`Codex CLI 执行超时 (${input.timeoutMs}ms)`));this.child.kill('SIGTERM');},input.timeoutMs);
+      const timer=setTimeout(()=>{reject(new AppError(ErrorCode.INTERNAL,`Codex CLI 执行超时 (${input.timeoutMs}ms)`));this.killGroup('SIGTERM');},input.timeoutMs);
       this.turnWaiter={resolve:value=>{clearTimeout(timer);resolve(value);},reject:error=>{clearTimeout(timer);reject(error);},threadId,text:'',onApproval:input.onApproval,onOutput:input.onOutput,timer};
-      input.signal?.addEventListener('abort',()=>{this.child.kill('SIGTERM');reject(new AppError(ErrorCode.INTERNAL,'Codex CLI 执行已取消'));},{once:true});
+      input.signal?.addEventListener('abort',()=>{this.killGroup('SIGTERM');reject(new AppError(ErrorCode.INTERNAL,'Codex CLI 执行已取消'));},{once:true});
     });
   }
-  close():void{this.child.kill('SIGTERM');}
+  close():void{this.killGroup('SIGTERM');}
   async compact(threadId:string,cwd:string):Promise<void>{await this.initialized;await this.request('thread/resume',{threadId,cwd});await this.request('thread/compact/start',{threadId});}
   private request(method:string,params:unknown):Promise<any>{const id=this.nextId++;this.write({method,id,params});return new Promise((resolve,reject)=>this.pending.set(id,{resolve,reject}));}
   private notify(method:string,params?:unknown):void{this.write(params===undefined?{method}:{method,params});}
