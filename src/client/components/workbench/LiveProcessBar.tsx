@@ -9,7 +9,7 @@ import { Link } from 'react-router-dom';
 import { useTaskTrace } from '../../hooks/queries';
 import type { Agent, Task } from '../../api/types';
 
-const ACTIVE_STATES = new Set(['queued', 'claimed', 'running', 'waiting_input', 'waiting_dependency']);
+const ACTIVE_STATES = new Set(['queued', 'claimed', 'running', 'waiting_input', 'waiting_dependency', 'paused', 'blocked']);
 
 interface Agg {
   toolCalls: number;

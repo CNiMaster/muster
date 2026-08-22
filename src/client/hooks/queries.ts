@@ -1316,7 +1316,7 @@ export function useQueuedMessageAction(projectId: string | undefined) {
   };
   return {
     enqueue: useMutation({
-      mutationFn: (input: { projectTaskId?: string; content: string; options?: Record<string, unknown> }) =>
+      mutationFn: (input: { projectTaskId?: string; content: string; options?: Record<string, unknown>; refs?: string[]; attachments?: MessageAttachment[] }) =>
         api.post<QueuedMessage>(`/api/projects/${projectId}/queued-messages`, input),
       onSuccess: invalidate,
     }),
@@ -1327,7 +1327,7 @@ export function useQueuedMessageAction(projectId: string | undefined) {
     }),
     edit: useMutation({
       mutationFn: ({ id, content }: { id: string; content: string }) =>
-        api.put<QueuedMessage>(`/api/projects/${projectId}/queued-messages/${id}`, { content }),
+        api.patch<QueuedMessage>(`/api/projects/${projectId}/queued-messages/${id}`, { content }),
       onSuccess: invalidate,
     }),
     remove: useMutation({
@@ -1410,6 +1410,8 @@ export function useRoundChanges(projectId: string | undefined, taskId: string | 
     queryKey: ['round-changes', projectId, taskId],
     queryFn: () => api.get<RoundChanges>(`/api/projects/${projectId}/artifacts/round-changes?taskId=${taskId}`),
     enabled: !!projectId && !!taskId,
+    // 评审 I4：发布记录不可变——缓存 5 分钟；避免长对话 N 条历史消息各挂一查询放大 git 子进程
+    staleTime: 5 * 60_000,
   });
 }
 

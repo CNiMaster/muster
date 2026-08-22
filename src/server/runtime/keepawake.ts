@@ -37,6 +37,8 @@ export class KeepAwake {
 
   start(): void {
     if (this.timer) return;
+    // 显式关闭开关（测试/无头环境禁用——避免反复 spawn caffeinate 触发系统安全确认弹窗）
+    if (process.env.MUSTER_KEEPAWAKE === 'off') return;
     if (process.platform !== 'darwin') {
       if (!this.unsupportedNotified) {
         this.unsupportedNotified = true;

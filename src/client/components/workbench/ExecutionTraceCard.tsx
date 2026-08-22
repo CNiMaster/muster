@@ -254,17 +254,21 @@ function TraceDetail({ item, projectId, taskId, onPreview }: {
     return <p className="mu-trace-plain">{String(p.text ?? item.summary ?? '')}</p>;
   }
   if (item.kind === 'preview') {
-    // 批次 H.4：origin='worktree' 的预览直读任务工作区（运行中生成物；任务结束回收后 404 由 onerror 兜底）
+    // 批次 H.4：origin='worktree' 的预览直读任务工作区（运行中生成物）
     const rawPath = String(p.path ?? item.summary ?? '');
-    const src = p.origin === 'worktree'
-      ? `/api/tasks/${taskId}/files/${rawPath.split('/').map(encodeURIComponent).join('/')}`
-      : `/api/projects/${projectId}/artifacts/raw?path=${encodeURIComponent(rawPath)}`;
+    const worktreeSrc = `/api/tasks/${taskId}/files/${rawPath.split('/').map(encodeURIComponent).join('/')}`;
+    const projectSrc = `/api/projects/${projectId}/artifacts/raw?path=${encodeURIComponent(rawPath)}`;
+    const src = p.origin === 'worktree' ? worktreeSrc : projectSrc;
     return (
       <img
         src={src}
         alt={String(p.path ?? item.summary ?? '')}
         className="mu-trace-preview-img"
-        onClick={(e) => { e.stopPropagation(); onPreview(src); }}
+        onClick={(e) => { e.stopPropagation(); onPreview(e.currentTarget.src); }}
+        onError={(e) => {
+          // 评审 I2：worktree 回收后 404 → 回落项目产物端点（已发布则可见），仍失败由浏览器显示裂图 alt
+          if (e.currentTarget.src === worktreeSrc) e.currentTarget.src = projectSrc;
+        }}
       />
     );
   }

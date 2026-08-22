@@ -62,7 +62,7 @@ describe('queued-message 域（批次 H.5）', () => {
     // flush 单条立即送出（无视忙碌——调用方先完成打断）
     const first = listQueuedMessages(db, projectId)[0]!;
     flushQueuedMessage(db, first.id);
-    expect(first.status === 'pending' || true).toBe(true);
+    expect(db.prepare('SELECT status FROM queued_message WHERE id=?').get(first.id)).toMatchObject({ status: 'sent' });
     const after = listQueuedMessages(db, projectId);
     expect(after.map((m) => m.content)).toEqual(['排队消息2']);
 

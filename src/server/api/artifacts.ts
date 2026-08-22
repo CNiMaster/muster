@@ -23,7 +23,7 @@ import { listArtifacts, artifactGallery, deleteArtifact, buildRevealCommand } fr
 import { getProject } from '../domain/project';
 import { peekRepoRoot } from '../domain/task-repo';
 import { PublishQueue } from '../worktree/publish-queue';
-import { commitFileStats, commitFileDiff, ensureTaskStagingWorktree } from '../worktree/manager';
+import { commitFileStats, commitFileDiff, ensureTaskStagingWorktree, peekTaskStagingWorktree } from '../worktree/manager';
 import {
   readArtifactContent,
   writeArtifactContent,
@@ -367,7 +367,9 @@ projectArtifactsRouter.get(
     const task = db.prepare('SELECT project_task_id FROM task WHERE id=?').get(taskId) as { project_task_id: string | null } | undefined;
     const project = getProject(db, param(req, 'id'));
     const repoRoot = peekRepoRoot(db, project) ?? project.rootDir;
-    const base = revertRootForTask(db, project.id, task?.project_task_id ?? null, repoRoot);
+    // 评审 I3：locate 是只读端点——用 peek 绝不创建 worktree；staging 已回收时按项目根解析相对路径
+    const staging = task?.project_task_id ? peekTaskStagingWorktree(repoRoot, project.id, task.project_task_id) : null;
+    const base = staging?.path ?? repoRoot;
     const abs = resolveArtifactPath(base, filePath);
     res.json({ abs, dir: abs.slice(0, Math.max(abs.lastIndexOf('/'), 0)) });
   }),

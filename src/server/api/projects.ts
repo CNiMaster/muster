@@ -50,6 +50,7 @@ import { buildDispatchTree } from '../domain/dispatch-tree';
 import {
   listQueuedMessages, enqueueMessage, reorderQueuedMessages, editQueuedMessage, cancelQueuedMessage, flushQueuedMessage,
 } from '../domain/queued-message';
+import { interruptTask } from '../domain/task';
 import { listProjectSpecialists } from '../domain/specialist-pool';
 import {
   promoteProjectStagingIfAny,
@@ -172,6 +173,7 @@ projectsRouter.post(
       content: z.string().min(1),
       options: z.record(z.string(), z.unknown()).optional(),
       attachments: z.array(z.object({ materialId: z.string(), name: z.string(), kind: z.string(), size: z.number() })).optional(),
+      refs: z.array(z.string().max(300)).max(10).optional(),
     }).parse(req.body);
     res.status(201).json(enqueueMessage(getDb(), { projectId: param(req, 'id'), ...input }));
   }),
@@ -213,7 +215,7 @@ projectsRouter.post(
     const engine = (req.app.locals as { engine?: { abortTask: (id: string) => boolean } }).engine;
     for (const t of running) {
       try {
-        db.prepare("UPDATE task SET state='queued', lease_owner_thread_id=NULL, lease_expires_at=NULL, updated_at=datetime('now') WHERE id=?").run(t.id);
+        interruptTask(db, t.id); // 评审 I6：复用域函数（置 queued+清租约，nowIso 口径），不再内联 SQL
         engine?.abortTask(t.id);
       } catch { /* 单任务打断失败不阻断送出 */ }
     }

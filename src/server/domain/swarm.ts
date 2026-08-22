@@ -414,7 +414,7 @@ function closeSwarm(db: DB, swarmId: string): void {
 }
 
 /**
- * 回收工蜂：dismiss 是硬删（is_temp_only=1 连 profile + Agent Home 清理）——
+ * 回收工蜂（H.0 轻量化后）：dismissWorkerBee 只删 agent 行（共享档案与 Home 常驻不动）——
  * 审计保留在 task 行（标题/状态/摘要）与 task_event，不依赖 agent 行存在。
  * Review 修复 B1（防御层）：仍有在飞任务的蜂只 grey 不删——即使记账出现偏差，
  * 也绝不硬删正在执行的工蜂（其 agent 删除会导致任务 assignee 置空、永远无人领取）。

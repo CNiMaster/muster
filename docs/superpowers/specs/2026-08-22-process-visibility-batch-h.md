@@ -65,3 +65,28 @@ worktree 纪律沿 F/G：spec 先行（本文件，开工时补 UI 验收截图/
 - **H6 启用范围**：onSelectQuote 可选 prop——仅任务工作台传入启用；群聊/员工页旧面板不动。引用随发送以 "> 引用：…" 前缀进 content（服务端零改动）；仅引用无输入也可发送（disabled 条件含 quotedContext）。
 - **H7 终端折条**：不加新 trace kind，按工具名（Bash/bash/terminal/shell/zsh）前端判别覆盖样式（icon ▶_+等宽+左缘线）；isTerminalItem 导出供测试。
 - **测试口径**：clockIn 后不能建员工——worker 预建于 beforeEach；queued INSERT 占位符与列数对齐是初版 bug（11/10）。
+
+## 评审轮（2026-08-22，独立代理审 83df89a..78aefcc）
+
+Critical×2 全修：
+- **C1 排队重编全链 404**：客户端 PUT vs 服务端 PATCH——客户端改 PATCH；补排队六端点 HTTP 级测试（此前只有域层测试拦不住方法不匹配）。
+- **C2 排队模式静默丢 refs/附件**：迁移 20260822214500 加 refs_json 列；enqueue zod/域/flush 全链透传；客户端 enqueue 分支补传 refs+attachments。
+
+Important×6：
+- I1 首扫假预览：run 启动基线扫描（baselineOnly 只填 Set 不发 trace）——checkout 自带的既有媒体不再被当"生成文件"。
+- I2 worktree 预览裂图：img onError 回落项目产物端点（已发布则可见）。
+- I3 locate 副作用：新 peekTaskStagingWorktree 只读窥探，locate 不再 materialize staging worktree；副作用只留给 undo。
+- I4 查询放大：useRoundChanges staleTime 5min（发布记录不可变）；变更卡只挂最新一条 assistant 消息。
+- I5 插话双跑语义（打断后旧任务完整重跑+新任务并行）——**已知边界，H8 停止语义轮收敛**（软停=paused 而非回队列，见对话定稿设计）。
+- I6 flush 内联 SQL：复用 interruptTask 域函数（nowIso 口径统一）。
+
+Minor 顺手修×9：死 filter/mention Escape 重置/LiveProcessBar 活跃口径补 paused·blocked/releaseSwarmBees 过期注释/共享蜂档案不进档案列表（listAgentProfiles 排除固定 id）/划选锚点归属容器/恒真断言/HTTP 测试含 refs 展开语义。
+Minor 记录不改×5：dispatch-tree O(n²)（规模可忍）/跨项目借调专家标签/派遣树无嵌套层级/Finder reveal 的 staging 语义（与 locate 对齐留后续）/灰化蜂最终回收无人做+findGreyedTempWorker 可复用蜂（遗留问题记后续批——养蜂人盘点）。
+Spec 偏差记录：③停止键形态（额外加键 vs 合一）——**H8 将按三态合一重建，届时消解**；①SwarmTreeCard 未改造（新建 WorkLivePanel 达成目标）；②LiveProcessBar 无雇佣徽标（徽标在面板内）。
+
+## 已知问题（非本批引入）：new-task-signal e2e 时序竞态
+
+- 现象：群聊 fill 后 ≤500ms 输入值被回滚为空（同一 DOM 节点、无重挂载、URL/视图恒定、无网络请求），消息未发出——间歇 ~40%。
+- 证据链：探针三轮（DOM tag 持续=节点复用；inputValue 回弹；REQS_AFTER_FILL 空窗口）；二分证实 pre-H（83df89a）同机同样复现——环境放大（新主电脑时序）非代码回归。
+- 已排除：worktree 重挂载/URL 闪切/Suspense 全树回滚（QueryClient 无 suspense）/安全弹窗（授权后仍复现）。
+- 处置：playwright retries=1 收口；根因（疑 React 18 并发渲染下的受控值回滚，需最小复现仓库专项排查）留待独立任务。

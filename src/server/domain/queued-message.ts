@@ -15,6 +15,7 @@ export interface QueuedMessageRow {
   content: string;
   options: MessageOptions;
   attachments: MessageAttachment[];
+  refs: string[];
   position: number;
   status: 'pending' | 'sent' | 'cancelled';
   createdAt: string;
@@ -23,7 +24,7 @@ export interface QueuedMessageRow {
 
 interface RawRow {
   id: string; project_id: string; project_task_id: string | null; content: string;
-  options_json: string; attachments_json: string; position: number; status: string;
+  options_json: string; attachments_json: string; refs_json: string; position: number; status: string;
   created_at: string; updated_at: string;
 }
 
@@ -35,6 +36,7 @@ function fromRow(r: RawRow): QueuedMessageRow {
     content: r.content,
     options: JSON.parse(r.options_json ?? '{}'),
     attachments: JSON.parse(r.attachments_json ?? '[]'),
+    refs: JSON.parse(r.refs_json ?? '[]'),
     position: r.position,
     status: r.status as QueuedMessageRow['status'],
     createdAt: r.created_at,
@@ -44,16 +46,16 @@ function fromRow(r: RawRow): QueuedMessageRow {
 
 export function enqueueMessage(
   db: DB,
-  input: { projectId: string; projectTaskId?: string; content: string; options?: MessageOptions; attachments?: MessageAttachment[] },
+  input: { projectId: string; projectTaskId?: string; content: string; options?: MessageOptions; attachments?: MessageAttachment[]; refs?: string[] },
 ): QueuedMessageRow {
   if (!input.content.trim()) throw new AppError(ErrorCode.VALIDATION, '排队内容不能为空');
   const id = shortId('qm_');
   const now = nowIso();
   const next = ((db.prepare('SELECT MAX(position) m FROM queued_message WHERE project_id=?').get(input.projectId) as { m: number | null })?.m ?? 0) + 1;
   db.prepare(
-    `INSERT INTO queued_message (id, project_id, project_task_id, content, options_json, attachments_json, position, status, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?, 'pending', ?, ?)`,
-  ).run(id, input.projectId, input.projectTaskId ?? null, input.content, JSON.stringify(input.options ?? {}), JSON.stringify(input.attachments ?? []), next, now, now);
+    `INSERT INTO queued_message (id, project_id, project_task_id, content, options_json, attachments_json, refs_json, position, status, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?, ?, 'pending', ?, ?)`,
+  ).run(id, input.projectId, input.projectTaskId ?? null, input.content, JSON.stringify(input.options ?? {}), JSON.stringify(input.attachments ?? []), JSON.stringify((input.refs ?? []).slice(0, 10)), next, now, now);
   return getQueuedMessage(db, id);
 }
 
@@ -102,6 +104,7 @@ export function flushQueuedMessage(db: DB, id: string): void {
     content: m.content,
     projectTaskId: m.projectTaskId ?? undefined,
     attachments: m.attachments.length > 0 ? m.attachments : undefined,
+    refs: m.refs.length > 0 ? m.refs : undefined,
     ...(Object.keys(m.options).length > 0 ? { options: m.options } : {}),
   });
   db.prepare("UPDATE queued_message SET status='sent', updated_at=? WHERE id=?").run(nowIso(), id);

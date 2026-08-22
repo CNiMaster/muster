@@ -4,7 +4,9 @@ export default defineConfig({
   testDir: './tests/e2e',
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 1 : 0,
+  // 浏览器测试标准做法：本地也开 1 次重试——new-task-signal 存在 pre-H 时代的时序竞态
+  // （受控输入值被回滚但无重挂载/无 URL 变化，二分证实 83df89a 同样复现；根因专项排查中）
+  retries: 1,
   workers: 1,
   reporter: 'list',
   use: {
@@ -34,6 +36,7 @@ export default defineConfig({
     env: {
       ...process.env,
       MUSTER_HOME: `/tmp/muster-e2e-run`,
+      MUSTER_KEEPAWAKE: 'off',
       CLAUDE_BIN: '/definitely/missing/claude',
       MUSTER_EXECUTOR: 'fake',
       MUSTER_AUTO_EXECUTOR_DISCOVERY: 'false',

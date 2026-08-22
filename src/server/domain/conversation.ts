@@ -348,7 +348,7 @@ export function postUserMessage(db: DB, input: PostUserMessageInput): {
       : firstAgentId
         ? [firstAgentId]
         : []),
-    ...refAgentIds.filter((id) => projectId || true),
+    ...refAgentIds,
   ])];
   // WP10 识图直读：图片附件转 data-uri 随任务下发（projectId 已解析，路径归属已校验）
   const userImages = projectId ? collectImageDataUris(db, attachmentRefs, projectId) : [];

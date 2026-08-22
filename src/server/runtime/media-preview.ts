@@ -24,6 +24,7 @@ export function scanWorktreeMediaPreviews(
   runId: string | null | undefined,
   rootPath: string,
   emitted: Set<string>,
+  opts: { baselineOnly?: boolean } = {},
 ): number {
   const found: string[] = [];
   const walk = (dir: string, depth: number): void => {
@@ -46,6 +47,12 @@ export function scanWorktreeMediaPreviews(
   };
   walk(rootPath, 0);
 
+  // 评审 I1：基线模式只填 Set 不发 trace——run 启动时先吸收 worktree 里既有的媒体
+  // （分支完整 checkout 会带着历史资产，不吸收则首轮扫描把它们全当"生成文件"刷屏）
+  if (opts.baselineOnly) {
+    for (const rel of found) emitted.add(rel);
+    return 0;
+  }
   let added = 0;
   for (const rel of found) {
     if (emitted.has(rel)) continue;
