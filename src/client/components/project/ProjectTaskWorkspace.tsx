@@ -96,6 +96,8 @@ export function ProjectTaskWorkspace({
   const queueAction = useQueuedMessageAction(projectId);
   const interrupt = useInterruptTask(projectId);
   const runtimeBusy = activeRuntimeTask?.state === 'running' || activeRuntimeTask?.state === 'claimed';
+  // 批次 H.6：划选引用（消息区选中→composer 引用条→随下轮输入附上）
+  const [quotedContext, setQuotedContext] = useState<string | undefined>();
   const settingsForMode = systemSettings as { interruptMode?: 'queue' | 'interrupt' } | undefined;
   const interruptMode = settingsForMode?.interruptMode ?? 'queue';
   const { data: latestTask } = useTask(activeRuntimeTask?.id);
@@ -430,6 +432,7 @@ export function ProjectTaskWorkspace({
                 scope="project"
                 scopeId={projectId}
                 projectTaskId={selectedTask?.id}
+                onSelectQuote={setQuotedContext}
                 title={selectedTask ? `项目任务 #${selectedTask.seq} 对话现场` : '项目协作对话现场'}
                 recipientAgentId={selectedAgentId || undefined}
                 hideInput
@@ -443,6 +446,8 @@ export function ProjectTaskWorkspace({
         <PromptComposer
           isRunning={runtimeBusy}
           onStop={activeRuntimeTask ? () => interrupt.mutate(activeRuntimeTask.id, { onError: (e) => toast('error', (e as Error).message) }) : undefined}
+          quotedContext={quotedContext}
+          onClearQuoted={() => setQuotedContext(undefined)}
           placeholder={
             activeRuntimeTask?.state === 'waiting_input'
               ? '智能体正在等待你的答复，直接输入即可继续执行…'

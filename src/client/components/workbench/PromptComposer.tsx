@@ -74,6 +74,9 @@ export interface PromptComposerProps {
   /** 批次 H.5：任务运行中——发送键变方块停止键（点击打断，任务回队列让位重跑）。 */
   isRunning?: boolean;
   onStop?: () => void;
+  /** 批次 H.6：划选引用（消息区选中文字→随下轮输入附上）。 */
+  quotedContext?: string;
+  onClearQuoted?: () => void;
   onSend: (content: string, options?: { agentId?: string; model?: string; thinking?: string; attachments?: MessageAttachment[]; mode?: ComposerMode; refs?: string[] }) => void;
 }
 
@@ -105,6 +108,8 @@ export function PromptComposer({
   fileOptions = [],
   isRunning = false,
   onStop,
+  quotedContext,
+  onClearQuoted,
   onSend,
 }: PromptComposerProps): React.ReactElement {
   // 批次 G.1：草稿按 draftKey 隔离持久化（muster:*:vN 约定）；无 key 保持纯内存行为
@@ -224,8 +229,10 @@ export function PromptComposer({
   };
 
   const handleSend = (): void => {
-    if ((!text.trim() && attachments.length === 0) || disabled || loading) return;
-    onSend(text.trim(), {
+    if ((!text.trim() && attachments.length === 0 && !quotedContext) || disabled || loading) return;
+    // 批次 H.6：划选引用作为前缀随消息附上（"> 引用：…"）
+    const finalText = quotedContext ? `> 引用：${quotedContext.replace(/\n+/g, ' ').slice(0, 200)}\n\n${text.trim()}` : text.trim();
+    onSend(finalText, {
       agentId: selectedAgentId,
       model: currentModel || undefined,
       thinking: thinkingDepth,
@@ -339,6 +346,16 @@ export function PromptComposer({
       onDragLeave={() => setDragOver(false)}
       onDrop={handleDrop}
     >
+      {/* 批次 H.6：划选引用条 */}
+      {quotedContext && (
+        <div className="mu-composer-attachments" style={{ alignItems: 'center' }}>
+          <span className="mu-composer-attachment-chip" style={{ fontStyle: 'italic' }} title={quotedContext}>
+            ❝ {quotedContext.replace(/\n+/g, ' ').slice(0, 80)}{quotedContext.length > 80 ? '…' : ''}
+            <button type="button" aria-label="移除引用" onClick={onClearQuoted} style={{ border: 0, background: 'none', cursor: 'pointer', padding: '0 2px' }}>×</button>
+          </span>
+        </div>
+      )}
+
       {/* 附件芯片行 */}
       {(attachments.length > 0 || uploading) && (
         <div className="mu-composer-attachments">
@@ -590,7 +607,7 @@ export function PromptComposer({
             size="sm"
             variant="primary"
             loading={loading}
-            disabled={(!text.trim() && attachments.length === 0) || disabled}
+            disabled={(!text.trim() && attachments.length === 0 && !quotedContext) || disabled}
             onClick={handleSend}
             className="mu-composer-send-btn"
           >

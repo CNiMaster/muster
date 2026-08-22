@@ -31,13 +31,17 @@ export interface ConversationPanelProps {
   projectTaskId?: string;
   /** 是否隐藏内部输入框（使用外部 Composer 时） */
   hideInput?: boolean;
+  /** 批次 H.6：划选上下文——消息区选中文字回调（传入时启用浮出"添加到当前对话"按钮）。 */
+  onSelectQuote?: (text: string) => void;
   /** 撑满 flex 列父容器（默认固定 520px 高兜底块级父容器） */
   fill?: boolean;
   /** 批次三：随行讨论收口——把结论转成正式工作单（讨论本身不建任务不打断；由调用方决定建单方式）。 */
   onConvertToTask?: (extract: string) => void;
 }
 
-export function ConversationPanel({ scope, scopeId, title, recipientAgentId, projectTaskId, hideInput = false, fill = false, onConvertToTask }: ConversationPanelProps): React.ReactElement {
+export function ConversationPanel({ scope, scopeId, title, recipientAgentId, projectTaskId, hideInput = false, fill = false, onConvertToTask, onSelectQuote }: ConversationPanelProps): React.ReactElement {
+  // 批次 H.6：划选上下文——消息区选中文字浮出"添加到当前对话"
+  const [quoteSelection, setQuoteSelection] = useState<string | null>(null);
   const { data: messages, isLoading } = useMessages(scope, scopeId, recipientAgentId);
   const { data: agents } = useAgents();
   // B5 中央岗：@ 下拉并入六岗（hidden 不影响；用户可与中央职能直接说话）
@@ -167,7 +171,16 @@ export function ConversationPanel({ scope, scopeId, title, recipientAgentId, pro
   return (
     <div className={`mu-conv${fill ? ' is-fill' : ''}`}>
       {title && <div className="mu-conv-head">{title}</div>}
-      <div className="mu-conv-stream" ref={scrollRef} onScroll={handleStreamScroll}>
+      <div
+        className="mu-conv-stream"
+        ref={scrollRef}
+        onScroll={handleStreamScroll}
+        onMouseUp={() => {
+          if (!onSelectQuote) return;
+          const sel = window.getSelection?.()?.toString().trim() ?? '';
+          setQuoteSelection(sel.length >= 2 ? sel : null);
+        }}
+      >
         {isLoading && <div className="muted" style={{ padding: 16 }}>加载中…</div>}
         {messages && messages.length === 0 && (
           <div style={{ padding: '32px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', gap: '12px', minHeight: '240px' }}>
@@ -189,6 +202,19 @@ export function ConversationPanel({ scope, scopeId, title, recipientAgentId, pro
         {messages?.map((m) => (
           <MessageBubble key={m.id} message={m} agents={agents ?? []} projectId={scope === 'project' ? scopeId : undefined} />
         ))}
+        {/* 批次 H.6：划选浮钮 */}
+        {quoteSelection && onSelectQuote && (
+          <div style={{ position: 'sticky', bottom: 8, display: 'flex', justifyContent: 'center', zIndex: 5 }}>
+            <button
+              type="button"
+              className="mu-btn mu-btn-sm"
+              onClick={() => { onSelectQuote(quoteSelection); setQuoteSelection(null); window.getSelection?.()?.removeAllRanges(); }}
+              title={quoteSelection.slice(0, 60)}
+            >
+              ＋ 添加到当前对话（引用选中内容）
+            </button>
+          </div>
+        )}
         {streamText && streamText.text.trim().length > 0 && (
           <div className="mu-msg mu-msg-other">
             <div className="mu-msg-avatar" aria-hidden="true">✦</div>
@@ -259,6 +285,9 @@ export function ConversationPanel({ scope, scopeId, title, recipientAgentId, pro
 }
 
 function MessageBubble({ message, agents, projectId }: { message: ConversationMessage; agents: { id: string; name: string; role: string }[]; projectId?: string }): React.ReactElement {
+  const copyMessage = (): void => {
+    void navigator.clipboard?.writeText(message.content);
+  };
   if (message.role === 'event') {
     return (
       <div className="mu-msg mu-msg-event">
@@ -284,6 +313,8 @@ function MessageBubble({ message, agents, projectId }: { message: ConversationMe
               { plan: '🗺 计划模式', 'ask-always': '🛡 每步审批', 'ask-by-rule': '📋 按规则审批', 'no-approval': '⚡ 自动执行', deny: '🔒 只读' }[message.options.mode] ?? message.options.mode
             }</span>
           )}
+          {/* 批次 H.7：复制角标（hover 显示，替代已砍的编辑重发） */}
+          <button type="button" className="mu-msg-copy-btn" aria-label="复制消息内容" title="复制消息内容" onClick={copyMessage}>📋</button>
         </div>
         <div className={isUser ? 'mu-msg-text' : 'mu-msg-text is-md'}>
           {isUser ? message.content : <MarkdownPreview source={message.content} />}

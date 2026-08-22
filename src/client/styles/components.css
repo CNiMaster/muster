@@ -1185,6 +1185,15 @@
 .mu-md-table th, .mu-md-table td { border: 1px solid var(--border-subtle); padding: 4px 8px; text-align: left; }
 .mu-md-table th { background: var(--bg-soft); }
 
+/* 批次 H.7：消息复制角标（hover 显示，作者行右侧） */
+.mu-msg-author { position: relative; }
+.mu-msg-copy-btn {
+  display: none; position: absolute; right: 0; top: -2px;
+  border: 1px solid var(--border-subtle); background: var(--bg-elev);
+  border-radius: var(--radius-sm); cursor: pointer; font-size: 11px; padding: 1px 5px;
+}
+.mu-msg:hover .mu-msg-copy-btn { display: inline-block; }
+
 /* 批次 G.2：表格工具条（复制 TSV/下载 CSV）与代码块/图片复制下载按钮 */
 .mu-md-table-tools { display: flex; justify-content: flex-end; gap: 6px; margin-bottom: 4px; opacity: 0.65; }
 .mu-md-table-wrap:hover .mu-md-table-tools { opacity: 1; }

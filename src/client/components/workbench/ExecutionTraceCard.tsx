@@ -15,6 +15,13 @@ import { EmptyState, Icons } from '../EmptyState';
 
 type TraceKind = TraceItem['kind'];
 
+/** 批次 H.7：终端命令折条——按工具名判别（Bash/terminal 类），行内覆盖图标与样式。 */
+const TERMINAL_TOOL_NAMES = new Set(['Bash', 'bash', 'terminal', 'Terminal', 'shell', 'Shell', 'zsh']);
+export function isTerminalItem(item: TraceItem): boolean {
+  if (item.kind !== 'tool_call' && item.kind !== 'tool_result') return false;
+  return TERMINAL_TOOL_NAMES.has(String(item.name ?? item.summary?.split(':')[0] ?? ''));
+}
+
 const KIND_META: Record<TraceKind, { icon: string; label: string; tone: 'neutral' | 'info' | 'ok' | 'err' | 'warn' }> = {
   thinking: { icon: '💭', label: '思考', tone: 'neutral' },
   text: { icon: '📝', label: '输出', tone: 'neutral' },
@@ -191,15 +198,16 @@ function TraceRow({ item, expanded, onToggle, projectId, taskId, onPreview }: {
   onPreview: (src: string | null) => void;
 }): React.ReactElement {
   const meta = KIND_META[item.kind];
+  const terminal = isTerminalItem(item);
   return (
     <div
-      className={`mu-trace-item mu-trace-${item.kind}`}
+      className={`mu-trace-item mu-trace-${item.kind}${terminal ? ' mu-trace-terminal' : ''}`}
       onClick={onToggle}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}
     >
-      <span className="mu-trace-icon" aria-hidden="true">{meta.icon}</span>
+      <span className="mu-trace-icon" aria-hidden="true">{terminal ? '▶_' : meta.icon}</span>
       <div className="mu-trace-main">
         <div className="mu-trace-head">
           <Badge tone={meta.tone}>{meta.label}</Badge>
