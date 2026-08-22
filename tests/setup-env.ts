@@ -22,10 +22,11 @@ export const TEST_MUSTER_HOME_DEFAULT = mkdtempSync(path.join(tmpdir(), `muster-
 
 if (!process.env.MUSTER_HOME) {
   process.env.MUSTER_HOME = TEST_MUSTER_HOME_DEFAULT;
-  // 目录迁移白名单同步放行测试家（macOS tmpdir 在 /var/folders，不属默认 HOME:/tmp 根；
-  // 仅在未显式设置时补默认，语义与生产默认一致 + 测试沙盒）
+  // 目录迁移白名单同步放行测试家与系统 tmpdir（macOS tmpdir 在 /var/folders，不属默认
+  // HOME:/tmp 根；集成 spec 的 makeTmpRoot 亦建在 tmpdir 下——G.0② readArtifactContent
+  // 增白名单门后两者都必须放行，语义与生产默认一致 + 测试沙盒）；仅未显式设置时补默认
   if (!process.env.MUSTER_ALLOWED_ROOTS) {
-    process.env.MUSTER_ALLOWED_ROOTS = `${process.env.HOME ?? '/tmp'}:/tmp:${TEST_MUSTER_HOME_DEFAULT}`;
+    process.env.MUSTER_ALLOWED_ROOTS = `${process.env.HOME ?? '/tmp'}:/tmp:${TEST_MUSTER_HOME_DEFAULT}:${tmpdir()}`;
   }
 }
 
