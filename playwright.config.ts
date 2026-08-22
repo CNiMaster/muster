@@ -34,6 +34,7 @@ export default defineConfig({
     env: {
       ...process.env,
       MUSTER_HOME: `/tmp/muster-e2e-run`,
+      MUSTER_KEEPAWAKE: 'off',
       CLAUDE_BIN: '/definitely/missing/claude',
       MUSTER_EXECUTOR: 'fake',
       MUSTER_AUTO_EXECUTOR_DISCOVERY: 'false',
