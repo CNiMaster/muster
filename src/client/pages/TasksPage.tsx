@@ -7,6 +7,35 @@ import { Card } from '../components/Card';
 import { Badge, taskStateTone, stateLabel } from '../components/Badge';
 import { Input, Select, Field, Textarea } from '../components/Form';
 import { buildTaskInputProtocol } from '../domain/task-protocol';
+import type { Task } from '../api/types';
+
+/** 批次 G.4：任务栏排序口径。 */
+type TaskSort = 'seq' | 'created' | 'updated';
+
+const TASKS_PAGE_PREFS_KEY = 'muster:tasks-page:v1';
+
+interface TasksPagePrefs {
+  collapsed: string[];
+  sort: TaskSort;
+}
+
+function loadPrefs(): TasksPagePrefs {
+  try {
+    const raw = JSON.parse(window.localStorage.getItem(TASKS_PAGE_PREFS_KEY) ?? '{}') as Partial<TasksPagePrefs>;
+    const sort = raw.sort === 'created' || raw.sort === 'updated' ? raw.sort : 'seq';
+    return { collapsed: Array.isArray(raw.collapsed) ? raw.collapsed : [], sort };
+  } catch {
+    return { collapsed: [], sort: 'seq' };
+  }
+}
+
+function sortTasks(list: Task[] | undefined, sort: TaskSort): Task[] {
+  const arr = [...(list ?? [])];
+  if (sort === 'created') arr.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  else if (sort === 'updated') arr.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  else arr.sort((a, b) => b.seq - a.seq);
+  return arr;
+}
 
 export function TasksPage(): React.ReactElement {
   const { projectId = '' } = useParams();
@@ -26,12 +55,29 @@ export function TasksPage(): React.ReactElement {
   const [assignee, setAssignee] = useState(selectedAgentId);
   const [projectTaskId, setProjectTaskId] = useState(projectTasks.find((item) => item.state === 'active')?.id ?? '');
   const [priority, setPriority] = useState('5');
+  // 批次 G.4：列折叠与排序持久化（muster:*:vN 约定）；「显示全部」为会话态不持久化
+  const [prefs, setPrefs] = useState<TasksPagePrefs>(loadPrefs);
+  const [expanded, setExpanded] = useState<string[]>([]);
   const visibleAgents = selectedAgentId ? agents.filter((agent) => agent.id === selectedAgentId) : agents;
   const canSubmit = Boolean(title.trim() && goal.trim() && background.trim() && references.trim() && acceptance.trim() && deliverables.trim() && projectTaskId);
 
   useEffect(() => {
     if (!projectTaskId) setProjectTaskId(projectTasks.find((item) => item.state === 'active')?.id ?? '');
   }, [projectTaskId, projectTasks]);
+
+  const savePrefs = (next: TasksPagePrefs): void => {
+    setPrefs(next);
+    window.localStorage.setItem(TASKS_PAGE_PREFS_KEY, JSON.stringify(next));
+  };
+  const toggleCollapsed = (columnId: string): void => {
+    savePrefs({
+      ...prefs,
+      collapsed: prefs.collapsed.includes(columnId) ? prefs.collapsed.filter((id) => id !== columnId) : [...prefs.collapsed, columnId],
+    });
+  };
+  const toggleExpanded = (columnId: string): void => {
+    setExpanded((prev) => (prev.includes(columnId) ? prev.filter((id) => id !== columnId) : [...prev, columnId]));
+  };
 
   const submit = (): void => {
     if (!canSubmit) return;
@@ -57,6 +103,14 @@ export function TasksPage(): React.ReactElement {
     <div className="employee-filter-row" aria-label="按智能体筛选">
       <button type="button" className={!selectedAgentId ? 'is-active' : ''} onClick={() => setSearchParams({})}>全部智能体</button>
       {agents.map((agent) => <button type="button" key={agent.id} className={selectedAgentId === agent.id ? 'is-active' : ''} onClick={() => setSearchParams({ agent: agent.id })}>{agent.name}<span>{tasks.filter((task) => task.assigneeAgentId === agent.id && task.state !== 'completed' && task.state !== 'cancelled').length}</span></button>)}
+      <label className="muted" style={{ marginLeft: 'auto', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+        排序
+        <Select value={prefs.sort} aria-label="任务排序" onChange={(event) => savePrefs({ ...prefs, sort: event.target.value as TaskSort })} style={{ width: 'auto' }}>
+          <option value="seq">#seq 倒序</option>
+          <option value="created">最近创建</option>
+          <option value="updated">最近更新</option>
+        </Select>
+      </label>
     </div>
 
     <Card title="发布标准工作单" className="section compact-dispatch-card">
@@ -77,16 +131,58 @@ export function TasksPage(): React.ReactElement {
 
     <div className="employee-task-columns">
       {visibleAgents.map((agent) => {
-        const employeeTasks = tasks.filter((task) => task.assigneeAgentId === agent.id).sort((a, b) => b.seq - a.seq);
+        const employeeTasks = sortTasks(tasks.filter((task) => task.assigneeAgentId === agent.id), prefs.sort);
         const openCount = employeeTasks.filter((task) => !['completed', 'cancelled', 'failed'].includes(task.state)).length;
+        const collapsed = prefs.collapsed.includes(agent.id);
+        const isExpanded = expanded.includes(agent.id);
+        const shown = collapsed ? [] : isExpanded ? employeeTasks : employeeTasks.slice(0, 10);
         return <section key={agent.id} className="employee-task-column">
-          <header><Link to={`/projects/${projectId}?view=employee&agent=${agent.id}`}><span className="org-avatar" aria-hidden="true">{agent.name.slice(0, 1)}</span><span><strong>{agent.name}</strong><small>{agent.role}</small></span></Link><Badge>{openCount} 进行中</Badge></header>
-          <div>{employeeTasks.length ? employeeTasks.slice(0, 10).map((task) => <Link key={task.id} className="employee-board-task" to={`/tasks/${task.id}`}>
+          <header>
+            <Link to={`/projects/${projectId}?view=employee&agent=${agent.id}`}><span className="org-avatar" aria-hidden="true">{agent.name.slice(0, 1)}</span><span><strong>{agent.name}</strong><small>{agent.role}</small></span></Link>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <Badge>{openCount} 进行中</Badge>
+              <button
+                type="button"
+                aria-label={collapsed ? `展开 ${agent.name} 的任务栏` : `收起 ${agent.name} 的任务栏`}
+                aria-expanded={!collapsed}
+                title={collapsed ? '展开' : '收起'}
+                onClick={() => toggleCollapsed(agent.id)}
+                style={{ border: 0, background: 'none', cursor: 'pointer', color: 'var(--fg-muted)', padding: '0 2px' }}
+              >
+                {collapsed ? '▸' : '▾'}
+              </button>
+            </span>
+          </header>
+          {!collapsed && <div>{employeeTasks.length ? shown.map((task) => <Link key={task.id} className="employee-board-task" to={`/tasks/${task.id}`}>
             <span><strong>{task.title}</strong><small>#{task.seq} · {new Date(task.createdAt).toLocaleDateString()}</small></span><Badge tone={taskStateTone(task.state)}>{stateLabel(task.state)}</Badge>
-          </Link>) : <p className="muted">暂无任务</p>}</div>
+          </Link>) : <p className="muted">暂无任务</p>}
+            {!collapsed && employeeTasks.length > 10 && (
+              <button type="button" onClick={() => toggleExpanded(agent.id)} style={{ border: 0, background: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 12, padding: '4px 0' }}>
+                {isExpanded ? '收起全部' : `显示全部 ${employeeTasks.length} 条`}
+              </button>
+            )}
+          </div>}
         </section>;
       })}
-      {!selectedAgentId && tasks.some((task) => !task.assigneeAgentId) && <section className="employee-task-column"><header><strong>等待负责人分配</strong></header><div>{tasks.filter((task) => !task.assigneeAgentId).map((task) => <Link key={task.id} className="employee-board-task" to={`/tasks/${task.id}`}><strong>{task.title}</strong><Badge tone={taskStateTone(task.state)}>{stateLabel(task.state)}</Badge></Link>)}</div></section>}
+      {!selectedAgentId && tasks.some((task) => !task.assigneeAgentId) && (() => {
+        const unassigned = sortTasks(tasks.filter((task) => !task.assigneeAgentId), prefs.sort);
+        const collapsed = prefs.collapsed.includes('unassigned');
+        return <section className="employee-task-column">
+          <header>
+            <strong>等待负责人分配</strong>
+            <button
+              type="button"
+              aria-label={collapsed ? '展开等待分配栏' : '收起等待分配栏'}
+              aria-expanded={!collapsed}
+              onClick={() => toggleCollapsed('unassigned')}
+              style={{ border: 0, background: 'none', cursor: 'pointer', color: 'var(--fg-muted)', padding: '0 2px' }}
+            >
+              {collapsed ? '▸' : '▾'}
+            </button>
+          </header>
+          {!collapsed && <div>{unassigned.map((task) => <Link key={task.id} className="employee-board-task" to={`/tasks/${task.id}`}><strong>{task.title}</strong><Badge tone={taskStateTone(task.state)}>{stateLabel(task.state)}</Badge></Link>)}</div>}
+        </section>;
+      })()}
     </div>
   </div>;
 }
