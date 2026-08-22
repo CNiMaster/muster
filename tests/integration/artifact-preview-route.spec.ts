@@ -124,6 +124,32 @@ describe('路径校验收紧（批次 G.0②：realpath 归一 + /raw、/content
     symlinkSync(path.join(outsideDir, 'secret.txt'), evilLink);
   });
 
+  it('评审 I1：符号链接目录下再缺深层目录——读取 403（归一最近已存在祖先后现形）', async () => {
+    // docs/evil-dir → 库外目录；docs/evil-dir/sub/new.txt 的 sub 不存在
+    symlinkSync(outsideDir, path.join(rootDir, 'docs', 'evil-dir'));
+    const res = await fetch(`${base}/api/projects/${projectId()}/artifacts/content?path=${encodeURIComponent('docs/evil-dir/sub/new.txt')}`);
+    expect(res.status).toBe(403);
+  });
+
+  it('评审 I1：同上路径经创建端点写入 → 403 且库外目录未被穿链接创建', async () => {
+    symlinkSync(outsideDir, path.join(rootDir, 'docs', 'evil-dir'));
+    const res = await fetch(`${base}/api/projects/${projectId()}/artifacts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: 'docs/evil-dir/sub/new.txt', kind: 'text', content: '越狱内容' }),
+    });
+    expect(res.status).toBe(403);
+    expect(existsSync(path.join(outsideDir, 'sub', 'new.txt'))).toBe(false);
+  });
+
+  it('评审 I2：/raw 对 HTML/SVG 附严格 CSP 与 nosniff（与 /preview 口径一致）', async () => {
+    writeFileSync(path.join(rootDir, 'docs', 'evil.html'), '<!doctype html><script>alert(1)</script>');
+    const res = await fetch(`${base}/api/projects/${projectId()}/artifacts/raw?path=${encodeURIComponent('docs/evil.html')}`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-security-policy')).toContain("default-src 'none'");
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+  });
+
   afterEach(() => {
     if (existsSync(outsideDir)) rmSync(outsideDir, { recursive: true, force: true });
   });

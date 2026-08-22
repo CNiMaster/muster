@@ -58,7 +58,7 @@ function collectTableRows(node: React.ReactNode, rows: string[][]): void {
 }
 
 function csvEscape(cell: string): string {
-  return /[",\n]/.test(cell) ? `"${cell.replaceAll('"', '""')}"` : cell;
+  return /[",\r\n]/.test(cell) ? `"${cell.replaceAll('"', '""')}"` : cell;
 }
 
 function downloadTextFile(filename: string, content: string, mime: string): void {
@@ -68,7 +68,8 @@ function downloadTextFile(filename: string, content: string, mime: string): void
   a.href = url;
   a.download = filename;
   a.click();
-  URL.revokeObjectURL(url);
+  // Safari 下同步 revoke 偶发中断下载，推迟到下个宏任务再回收
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 function CopyButton({ getText, label = '复制' }: { getText: () => string; label?: string }): React.ReactElement {

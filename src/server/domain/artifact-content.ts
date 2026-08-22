@@ -51,29 +51,37 @@ function realpathSafe(p: string): string {
 }
 
 /**
- * 解析项目内相对路径。两层防线（批次 G.0②，核销评审 I5）：
+ * 解析项目内相对路径。两层防线（批次 G.0②，核销评审 I5；评审轮补写入侧深层缺口）：
  * 1. 词法检查（目标不存在也拦得住 `..` 类编码逃逸）；
- * 2. 目标/父目录已存在时再经 realpath 归一复检——项目内符号链接指向库外在现形。
- *    root 与 abs 成对归一，macOS /tmp→/private/tmp 一类系统级链接不会造成假逃逸。
+ * 2. realpath 归一复检——目标已存在归一目标；目标不存在则沿目录链向上找最近的已存在
+ *    祖先归一（不能只看直接父目录：`link/sub/new.txt` 这类"符号链接下再缺深层目录"，
+ *    mkdirSync(recursive) 会穿链接把目录建到库外）。root 与归一侧成对处理，
+ *    macOS /tmp→/private/tmp 一类系统级链接不会造成假逃逸。
+ * 已知残留：校验与实际 read/write/sendFile 之间存在符号链接替换窗口（TOCTOU），
+ * 本地单用户模型下接受。
  */
 export function resolveArtifactPath(rootDir: string, relPath: string): string {
   const root = path.resolve(rootDir);
   const abs = path.resolve(root, relPath);
   assertInside(root, abs);
+  const realRoot = realpathSafe(root);
   if (existsSync(abs)) {
-    const realRoot = realpathSafe(root);
     const realAbs = realpathSafe(abs);
     assertInside(realRoot, realAbs);
     return realAbs;
   }
-  // 写入侧：文件还不存在，但父目录可能是符号链接，归一父目录防"经目录链接写出库外"
-  const dir = path.dirname(abs);
-  if (dir !== root && existsSync(dir)) {
-    const realRoot = realpathSafe(root);
+  // 目标不存在：沿 dirname 向上找最近已存在祖先（至多走到项目根），realpath 后复检
+  let dir = path.dirname(abs);
+  while (!existsSync(dir) && dir !== root && dir !== path.dirname(dir)) {
+    dir = path.dirname(dir);
+  }
+  if (existsSync(dir)) {
     const realDir = realpathSafe(dir);
     assertInside(realRoot, realDir);
-    return path.join(realDir, path.basename(abs));
+    const rest = path.relative(dir, abs);
+    return rest ? path.join(realDir, rest) : realDir;
   }
+  // 连项目根都不存在（异常项目）：保持词法结果，行为与收紧前一致
   return abs;
 }
 

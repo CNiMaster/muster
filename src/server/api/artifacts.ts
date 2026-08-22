@@ -66,7 +66,6 @@ projectArtifactsRouter.get(
   asyncHandler(async (req, res) => {
     const db = getDb();
     const projectId = param(req, 'id');
-    const project = getProject(db, projectId);
     const relPath = String(req.query.path ?? '');
     if (!relPath) {
       res.status(400).json({ error: { code: 'validation', message: 'path required' } });
@@ -78,9 +77,16 @@ projectArtifactsRouter.get(
       res.status(403).json({ error: { code: 'unauthorized', message: '路径不在允许的根目录内' } });
       return;
     }
-    if (!existsSync(abs)) {
+    if (!existsSync(abs) || statSync(abs).isDirectory()) {
       res.status(404).end();
       return;
+    }
+    // 评审 I2：/raw 同样可被浏览器同源直开（iframe/顶层直达），HTML/SVG 必须附严格 CSP——
+    // 与 /preview 口径一致（F.3/I4 建立的防线）；对 img/video/pdf 消费无影响
+    if (/\.(html?|xhtml|svg)$/i.test(relPath)) {
+      res.setHeader('Content-Type', /\.svg$/i.test(relPath) ? 'image/svg+xml' : 'text/html; charset=utf-8');
+      res.setHeader('Content-Security-Policy', PREVIEW_HTML_CSP);
+      res.setHeader('X-Content-Type-Options', 'nosniff');
     }
     res.sendFile(abs);
   }),
@@ -174,12 +180,13 @@ projectArtifactsRouter.post(
     const db = getDb();
     const project = getProject(db, param(req, 'id'));
     const abs = resolveArtifactPath(artifactBaseDir(db, project.id, input.path), input.path);
-    if (!existsSync(abs)) {
-      res.status(404).json({ error: { code: 'not_found', message: '文件不存在' } });
-      return;
-    }
+    // 先校验后探存在：不向未授权请求泄露文件是否存在（对齐 /raw、/preview 口径）
     if (!isPathAllowed(abs)) {
       res.status(403).json({ error: { code: 'unauthorized', message: '路径不在允许的根目录内' } });
+      return;
+    }
+    if (!existsSync(abs)) {
+      res.status(404).json({ error: { code: 'not_found', message: '文件不存在' } });
       return;
     }
     const platform = process.platform;
@@ -228,12 +235,13 @@ projectArtifactsRouter.post(
     const db = getDb();
     const project = getProject(db, param(req, 'id'));
     const abs = resolveArtifactPath(artifactBaseDir(db, project.id, input.path), input.path);
-    if (!existsSync(abs)) {
-      res.status(404).json({ error: { code: 'not_found', message: '文件不存在' } });
-      return;
-    }
+    // 先校验后探存在：不向未授权请求泄露文件是否存在（对齐 /raw、/preview 口径）
     if (!isPathAllowed(abs)) {
       res.status(403).json({ error: { code: 'unauthorized', message: '路径不在允许的根目录内' } });
+      return;
+    }
+    if (!existsSync(abs)) {
+      res.status(404).json({ error: { code: 'not_found', message: '文件不存在' } });
       return;
     }
     const { command, args } = buildRevealCommand(abs);

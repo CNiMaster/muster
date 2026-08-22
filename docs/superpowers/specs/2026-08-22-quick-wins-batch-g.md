@@ -22,7 +22,7 @@ MarkdownPreview：①表格容器加悬浮「复制 TSV」「下载 CSV」（com
 
 ## G3 记忆面板过滤增强
 
-MemoryReviewPanel（现仅 scope 下拉；服务端 /entries 已支持 tag/cause query）：加 cause 下拉（四值受控词表）+ tag chips 多选 + 项目维度（useProjects 映射 projectId→name，条目项目徽章 + 项目筛选）。
+MemoryReviewPanel（现仅 scope 下拉；服务端 /entries 的 tag/cause 过滤仅 searchMemory 分支消费、列表分支不支持——故走客户端过滤）：加 cause 下拉（四值受控词表）+ tag chips 多选 + 项目维度（useProjects 映射 projectId→name，条目项目徽章 + 项目筛选）。
 
 ## G4 任务页分组折叠+排序
 
@@ -63,3 +63,10 @@ coordinator.start()（:243-252 现 recoverStuckReflections+首 tick）加 bootSe
 - **G5 countActiveTasks** 提为 domain 函数与 coordinator formalActive 内联口径注释绑定（改状态机两处同步）。
 - **G7 提交事故复盘**：prop 类型漏 proOnly 曾带错提交（管道吃掉 tsc 退出码），amend 修正——终验一律显式判 $? 不经管道。
 - 分工结论按计划执行：本批全部主会话实现；G2/G4 属"可清单化"类型，下批可试点外包。
+
+## 评审轮（2026-08-22，独立代理审 1e3b2ee..72b73f0）
+
+Critical×0；Important×2 全修：
+- **I1 写入侧深层符号链接缺口（实证可达）**：原实现只归一直接父目录——`link/sub/new.txt`（link→库外、sub 不存在）两处 existsSync 皆假→返回词法路径，mkdirSync(recursive) 穿链接把目录建到库外。修：目标不存在时沿 dirname 上溯最近已存在祖先（至多到项目根）realpath 复检；补读写两例回归。
+- **I2 /raw 缺 CSP**：HTML/SVG 经 /raw 同源直开可执行内嵌脚本（与 F.3/I4 建立的防线不一致，且草稿键等新增 localStorage 可被打）。修：/raw 对 .html/.xhtml/.svg 附 PREVIEW_HTML_CSP+nosniff（不影响 img/video/pdf 消费）。
+Minor×8 顺手修：keepawake timer unref+孤儿 caffeinate 残留注明；TOCTOU 边界注明（artifact-content 头注释）；paths 根缓存边界注明；/raw 目录 404 守卫；/open、/reveal 改先校验后探存在；csvEscape 补 \r+延迟 revoke；bootSelfCheck 前缀统一 susp_+查询入事务；spec G3 表述更正（服务端列表分支不支持 tag/cause）。Minor×1 不修：TasksPage 折叠键残留 stale agent id（无害有界）。

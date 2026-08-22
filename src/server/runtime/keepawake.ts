@@ -7,7 +7,9 @@
  * 设置 prevent_sleep：'active'（默认，有正式活跃任务或 trigger 临近触发时保活）
  * | 'always'（常驻）| 'off'。
  * 实现：仅 darwin 用系统内建 caffeinate（-i 阻空闲休眠，-s 阻交流电休眠，零依赖）；
- * 其他平台启动时记一次日志留待桌面打包期。30s 自有 timer 评估；stop() 进优雅关停链。
+ * 其他平台启动时记一次日志留待桌面打包期。30s 自有 timer 评估；stop() 进优雅关停链
+ * （强退/优雅两路都已覆盖）。已知残留：SIGKILL/断电等异常退出会留孤儿 caffeinate
+ * （机器保持不休眠直到它被手动 kill）——权衡后接受，属"宁可不睡"方向。
  */
 import { spawn, type ChildProcess } from 'node:child_process';
 import type { DB } from '../db/client';
@@ -51,6 +53,7 @@ export class KeepAwake {
         log.warn('keepawake evaluate failed', { err: String(err) });
       }
     }, CHECK_INTERVAL_MS);
+    this.timer.unref?.();
     this.evaluate();
   }
 

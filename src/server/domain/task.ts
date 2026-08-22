@@ -611,21 +611,24 @@ export function listTasks(db: DB, projectId: string, state?: TaskState): Task[] 
  */
 export function bootSelfCheck(db: DB): { fixedLeases: number; fixedSuspensions: number } {
   const fixedLeases = recoverExpiredLeases(db);
-  const orphans = db
-    .prepare(
-      `SELECT t.id, t.updated_at FROM task t
-       WHERE t.state='waiting_input'
-         AND NOT EXISTS (SELECT 1 FROM task_suspension s WHERE s.task_id=t.id AND s.resolved_at IS NULL)`,
-    )
-    .all() as Array<{ id: string; updated_at: string }>;
   const insertSuspension = db.prepare(
     `INSERT INTO task_suspension (id, task_id, kind, reason, task_state, created_at)
      VALUES (?, ?, 'clarification', 'boot-self-check 补挂起行（等待起点按任务 updated_at 回填）', 'waiting_input', ?)`,
   );
+  let fixed = 0;
   db.transaction(() => {
-    for (const t of orphans) insertSuspension.run(shortId('sp_'), t.id, t.updated_at);
+    // 查询与写入同事务，避免（理论上的）并发窗口内重复补行
+    const orphans = db
+      .prepare(
+        `SELECT t.id, t.updated_at FROM task t
+         WHERE t.state='waiting_input'
+           AND NOT EXISTS (SELECT 1 FROM task_suspension s WHERE s.task_id=t.id AND s.resolved_at IS NULL)`,
+      )
+      .all() as Array<{ id: string; updated_at: string }>;
+    for (const t of orphans) insertSuspension.run(shortId('susp_'), t.id, t.updated_at);
+    fixed = orphans.length;
   })();
-  return { fixedLeases, fixedSuspensions: orphans.length };
+  return { fixedLeases, fixedSuspensions: fixed };
 }
 
 /**
