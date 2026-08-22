@@ -267,27 +267,38 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
       if (opts.apiKeyValue) {
         childEnv.ANTHROPIC_API_KEY = opts.apiKeyValue;
       }
+      // H8 急停止损（第九轮）：detached 让 CLI 自成进程组（pid===pgid），停止/急停发组信号
+      // 一锅端 CLI+bash 工具+孙进程——否则任何单进程信号都够不着 CLI 起的 bash（rm 场景漏网）。
       const proc = spawn(opts.settings.claudeBin, args, {
         cwd: opts.cwd,
         env: childEnv,
         stdio: ['pipe', 'pipe', 'pipe'],
+        detached: true,
       });
       proc.once('close',()=>{void permissionBridge?.close();});
       proc.once('error',()=>{void permissionBridge?.close();});
       proc.stdin.end();
 
       this.active.add(proc);
+      // 组信号：杀整组（CLI 主进程 + 它起的工具子进程）；组已不存在时回落单进程信号。
+      const killGroup = (sig: NodeJS.Signals): void => {
+        try { process.kill(-(proc.pid ?? 0), sig); } catch {
+          try { proc.kill(sig); } catch { /* 进程已退出 */ }
+        }
+      };
       const abort = (): void => {
-        proc.kill('SIGTERM');
+        killGroup('SIGTERM');
+        setTimeout(() => { try { process.kill(-(proc.pid ?? 0), 'SIGKILL'); } catch { /* 已退出 */ } }, 5_000);
       };
       opts.signal?.addEventListener('abort', abort, { once: true });
-      // H8 安全停：SIGINT 让 CLI 优雅收尾（当前工具跑完+总结），超时兜底由引擎 forceStop 走 SIGTERM。
+      // H8 暂停（安全停）：SIGINT 组信号=终端 Ctrl+C 语义（前台进程组整组收）——CLI 收尾总结，
+      // 正在跑的 bash 工具被打断。超时兜底由引擎 forceStop 走 SIGTERM 组信号。
       // 初值守卫：停止先于监听注册到达时 abort 事件已错过（aborted 信号不补发监听器）。
       opts.stopSignal?.addEventListener('abort', () => {
-        try { proc.kill('SIGINT'); } catch { /* 进程已退出 */ }
+        killGroup('SIGINT');
       }, { once: true });
       if (opts.stopSignal?.aborted) {
-        try { proc.kill('SIGINT'); } catch { /* 进程已退出 */ }
+        killGroup('SIGINT');
       }
 
       let fullText = '';
@@ -308,8 +319,8 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
         if (!resolved) {
           resolved = true;
           log.warn('claude timed out', { timeoutMs: opts.settings.timeoutMs });
-          proc.kill('SIGTERM');
-          setTimeout(() => proc.kill('SIGKILL'), 5_000);
+          killGroup('SIGTERM');
+          setTimeout(() => { try { process.kill(-(proc.pid ?? 0), 'SIGKILL'); } catch { /* 已退出 */ } }, 5_000);
           resolve({
             result: {
               fullText: fullText || `(超时 ${opts.settings.timeoutMs / 1000}s)`,
@@ -347,7 +358,7 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
                 if (!resolved) {
                   resolved = true;
                   clearTimeout(timeout);
-                  proc.kill('SIGTERM');
+                  killGroup('SIGTERM');
                   resolve({
                     result: { fullText, structuredOutput: tryParseJSON(fullText) },
                     raw: this.collectStats(start, inputTokens, outputTokens, cacheReadTokens, cacheCreateTokens, toolCalls, costUSD, modelUsage),
@@ -407,6 +418,19 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
             sessionId: resultSessionId,
           });
         } else {
+          // H8 接续保真：被信号杀掉（SIGINT 收尾/SIGTERM 兜底）时非 0 退出——
+          // 已拿到的 session id 必须随结果带回（「继续」--resume 靠它），只有真崩溃才 reject。
+          if (resultSessionId) {
+            resolve({
+              result: {
+                fullText: fullText || `(被中断退出 ${code})`,
+                structuredOutput: structuredOutput ?? (fullText ? tryParseJSON(fullText) : null),
+              },
+              raw: this.collectStats(start, inputTokens, outputTokens, cacheReadTokens, cacheCreateTokens, toolCalls, costUSD, modelUsage),
+              sessionId: resultSessionId,
+            });
+            return;
+          }
           const detail = errLines.join('').slice(0, 500) || `exit ${code}`;
           reject(new AppError(ErrorCode.EXECUTOR_INVALID_OUTPUT, `claude 退出码 ${code}: ${detail}`));
         }
@@ -450,9 +474,9 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
   killAll(): void {
     for (const p of this.active) {
       try {
-        p.kill('SIGTERM');
+        process.kill(-(p.pid ?? 0), 'SIGTERM'); // H8：组信号——连工具子进程一起收
       } catch {
-        // ignore
+        try { p.kill('SIGTERM'); } catch { /* ignore */ }
       }
     }
     this.active.clear();

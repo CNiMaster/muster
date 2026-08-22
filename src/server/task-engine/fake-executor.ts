@@ -84,16 +84,28 @@ export class FakeExecutor implements ExecutionAdapter {
     if (step.delayMs) {
       await new Promise<void>((resolve, reject) => {
         const timer = setTimeout(resolve, step.delayMs);
+        // CLI 语义：SIGINT 打断正在跑的命令（模型收尾）——stopSignal 提前结束等待；
+        // 主 signal（SIGTERM 强杀）直接 reject（引擎 catch 收尾）。
         ctx.signal?.addEventListener('abort', () => {
           clearTimeout(timer);
           reject(new Error('execution aborted'));
         }, { once: true });
+        ctx.stopSignal?.addEventListener('abort', () => {
+          clearTimeout(timer);
+          resolve();
+        }, { once: true });
       });
     }
-    // H8 安全停边界语义：delay 模拟"命令正在跑"——stopSignal 不打断它（等跑完），
-    // 到步末（=工具边界）才停下；此前已写的文件保留在 worktree 里。
+    // H8 安全停边界：停止后不执行未开始的动作，返回带 session 的 blocked 结果
+    // （对齐真实 CLI SIGINT 收尾：session id 随结果带回，「继续」--resume 接得上）。
     if (ctx.stopSignal?.aborted) {
-      throw new Error('fake: stopped at boundary');
+      return {
+        outcome: 'blocked',
+        summary: 'fake: stopped at boundary',
+        outboundTasks: [],
+        artifacts: [],
+        _sessionIdHint: step.sessionId,
+      };
     }
     if (step.throw) {
       throw new Error(step.throw);

@@ -813,6 +813,10 @@ export class TaskEngine {
         // H8 安全停：执行器返回时已请求停止——统一安全停收尾（API 边界停返回 blocked；
         // CLI SIGINT 优雅收尾返回 completed+总结，都进打断记录而非继续任务流）。
         if (getTask(this.db, task.id).stopRequested) {
+          // 接续保真：先落 session id 再收尾（下方正常流程的持久化被 return 跳过，「继续」--resume 靠它）
+          if (result._sessionIdHint && result._sessionIdHint !== projectTaskThread.vendorSessionId) {
+            setProjectTaskThreadSession(this.db, projectTaskThread.id, result._sessionIdHint);
+          }
           preserveWorktree = true;
           this.finalizeSafeStop(task, thread, project, worktreeInfo, worktreeSourceRoot, {
             mode: 'boundary',
@@ -1618,27 +1622,28 @@ export class TaskEngine {
   }
 
   /**
-   * H8 安全停入口（第四轮收敛：主按钮=暂停，立即停止在 ⌄ 菜单）：置边界停止信号，执行器在工具调用边界停下；
-   * 超过 stopGraceMs（默认 60s，设置可调）等不到边界则强停兜底（abort 主信号）。
-   * immediate=true（急救：误跑破坏性命令）跳过边界等待直接强停——半成品照样走打断记录。
+   * H8 安全停入口（第四轮收敛：主按钮=暂停，立即停止在 ⌄ 菜单；第九轮定稿）：
+   * 暂停=置边界停止信号（CLI SIGINT 优雅收尾）+ stopGraceMs（默认 60s）超时强停兜底。
+   * immediate=true（急救）=直接强停不等收尾——SIGINT 对急停无意义（杀不到 bash 孙进程，
+   * 等 5s 反而放跑破坏性命令）；接续保真由「close 非0 带 session resolve + 停止点先持久化」承担，
+   * 孙进程止损由执行器进程组隔离（detached+组信号）承担。
    * 前置：API 层已调 requestStopTask 置 stop_requested=1 并发过受理回执。
    */
   requestStop(taskId: string, opts?: { immediate?: boolean }): boolean {
     const entry = this.activeStops.get(taskId);
     if (!entry) return false; // run 不活跃（等待态/已停）——无需信号，状态由 API 层处理
-    if (opts?.immediate) {
-      appendTaskEvent(this.db, taskId, 'stop_forced', { reason: 'user-immediate' });
-      log.warn('immediate stop requested, forcing now', { taskId });
+    const forceAbort = (reason: string, waitedMs: number): void => {
+      appendTaskEvent(this.db, taskId, 'stop_forced', { reason, waitedMs });
+      log.warn('safe stop forcing', { taskId, reason, waitedMs });
       this.abortTask(taskId);
+    };
+    if (opts?.immediate) {
+      forceAbort('user-immediate', 0);
       return true;
     }
     if (!entry.hardTimer) {
       const graceMs = getSystemSettings(this.db).stopGraceMs;
-      entry.hardTimer = setTimeout(() => {
-        appendTaskEvent(this.db, taskId, 'stop_forced', { graceMs });
-        log.warn('safe stop grace timeout, forcing', { taskId, graceMs });
-        this.abortTask(taskId);
-      }, graceMs);
+      entry.hardTimer = setTimeout(() => forceAbort('grace-timeout', graceMs), graceMs);
       entry.hardTimer.unref?.();
     }
     entry.controller.abort();

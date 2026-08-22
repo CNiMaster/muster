@@ -70,12 +70,12 @@ async function stopWhenRunning(engine: TaskEngine, taskId: string, opts?: { imme
 }
 
 describe('H8 安全停：引擎集成', () => {
-  it('边界停——命令跑完到边界停下：paused+打断记录+回执，已写文件保留在 worktree，不判失败', async () => {
+  it('边界停（暂停）——SIGINT 打断命令收尾：paused+打断记录+回执+session 落库，已写文件保留，不判失败', async () => {
     const { project, writer } = fixture();
     const { task, thread } = makeConversationTask(project.id, writer.id, '把草稿写出来');
     const fake = new FakeExecutor();
-    // 步1先写文件（已完成动作）；步骤2 delay=模拟"命令正在跑"（150ms）——停止不打断它，跑完后到边界（步末 throw，未开始的动作不再执行）
-    fake.script([{ writeFiles: { 'draft.txt': '写到一半' }, delayMs: 150 }]);
+    // 先写文件（已完成动作）→ delay=命令执行中；停止（SIGINT）打断命令收尾，返回带 session 的结果
+    fake.script([{ writeFiles: { 'draft.txt': '写到一半' }, delayMs: 5_000, sessionId: 'sess_fake_1' }]);
     const engine = new TaskEngine(db, fake);
     const p = engine.pumpThread(thread.id);
 
@@ -97,22 +97,26 @@ describe('H8 安全停：引擎集成', () => {
     const msgs = db.prepare("SELECT content FROM conversation_message WHERE scope_kind='project' ORDER BY created_at").all() as Array<{ content: string }>;
     expect(msgs.some((m) => m.content.includes('已暂停'))).toBe(true);
 
+    // 接续保真（第九轮修复）：session id 在安全停路径先落库——「继续」--resume 靠它
+    const threadRow = db.prepare('SELECT vendor_session_id FROM project_task_thread WHERE employee_id=?').get(writer.id) as { vendor_session_id: string | null };
+    expect(threadRow.vendor_session_id).toBe('sess_fake_1');
+
     // worktree 保留（task_runtime 未删）且半成品在
     const runtime = getTaskRuntime(db, task.id);
     expect(runtime).not.toBeNull();
     expect(existsSync(`${runtime!.path}/draft.txt`)).toBe(true);
   });
 
-  it('急停（immediate）——不等边界：同样 paused 落打断记录（mode forced）', async () => {
+  it('急停（immediate）——不等收尾直接强停：paused 落打断记录（mode forced）', async () => {
     const { project, writer } = fixture();
     const { task, thread } = makeConversationTask(project.id, writer.id, '长时间命令');
     const fake = new FakeExecutor();
-    fake.script([{ writeFiles: { 'x.txt': 'x' }, delayMs: 10_000 }]); // 长命令，急停不等它
+    fake.script([{ writeFiles: { 'x.txt': 'x' }, delayMs: 10_000, sessionId: 'sess_fake_2' }]);
     const engine = new TaskEngine(db, fake);
     const p = engine.pumpThread(thread.id);
 
     expect(await stopWhenRunning(engine, task.id, { immediate: true })).toBe(true);
-    await p; // abort 让 fake 的 delay 立即 reject → 引擎 catch → 安全停收尾（mode=forced：主信号被 abort）
+    await p; // forceAbort 立即 abort 主信号 → fake delay reject → 引擎 catch → forced 收尾
 
     const t = getTask(db, task.id);
     expect(t.state).toBe('paused');
@@ -122,7 +126,6 @@ describe('H8 安全停：引擎集成', () => {
     const interrupted = events.find((e) => e.kind === 'interrupted');
     expect((interrupted!.payload as { mode?: string }).mode).toBe('forced');
   });
-
   it('停止不记执行器健康故障（用户操作≠执行器故障）', async () => {
     const { project, writer } = fixture();
     const { task, thread } = makeConversationTask(project.id, writer.id, '检查健康记账');

@@ -15,7 +15,11 @@
 - **插话/排队 ↑立即**：同全局语义——stop-all 安全停 + 立即送出。
 - **第六轮（纠错命名与治理链）**：点名入口改名「**纠错**」；**不提供用户直发撤销**（用户对全局不了解，撤否由组织判断）。流程=先安全停该执行者（流程内单点停）→ 用户描述问题 → 发给上级链处置（重新安排/重做/修改工作/评估撤销；提示「对其他执行者有影响请一并调整」——影响面扩大判断也是 agent 的活）。
 - **第七轮（上级自动路由）**：纠错收令人=**被纠错执行人的上级**，不都给人事——中央岗（人事/养蜂人等系统岗）→ 第一负责人；有派遣人 → 派遣他的领导（蜂→养蜂人/被派专家→负责人自然成链）；负责人本人被纠错 → 人事（重新安排）；兜底 → 第一负责人。收令人不开放用户直联时回落负责人。
-- **已知问题（后续批次）**：立即停止杀 CLI 进程（SIGTERM→5s SIGKILL）后，其孙进程（bash 工具里的命令）可能孤儿继续跑——进程组隔离（spawn detached + 组信号）是执行器层既有缺口，本批不修。
+- **已知问题（后续批次）**：~~立即停止杀 CLI 进程后孙进程孤儿~~ **第九轮已修**：claude 适配器 spawn 改 `detached:true` 自成进程组，SIGINT/SIGTERM/SIGKILL 全走组信号 `kill(-pgid)`——急停连 bash 工具孙进程一锅端（终端 Ctrl+C 的前台进程组语义）；进程组止损有原语单测兜底。
+- **第九轮（急停接续保真，用户两问收敛）**：用户指出「杀进程会导致后面任务接不上」+「SIGINT 等 5s 对急停无意义（杀不到孙进程）」。核实与定稿：
+  1. **接续断点真存在**：适配器 close 非 0 退出走 reject 丢 session id；且安全停三汇入点在 session 持久化（runTask 正常流程 815 行）之前 return，跳过落库——「继续」时 --resume 无从谈起。修复：close 非 0 时已有 resultSessionId 则 resolve 部分结果带回（SIGTERM 杀掉也保得住，CLI session 文件流式落盘）；停止检查点先持久化 `_sessionIdHint` 再 finalize。
+  2. **急停回退直接强停**：SIGINT 阶梯（SIGINT+5s→SIGTERM）废弃——两种单进程信号都够不着孙进程，等 5s 纯放跑 rm；急停=forceAbort 立即执行（event `stop_forced` reason=user-immediate），接续保真由上面两点承担，孙进程止损由进程组隔离承担。
+  3. **暂停（SIGINT）语义澄清**：对 CLI，SIGINT=打断当前命令收尾（Ctrl+C 语义），不是「等命令跑完」——等边界仅 API 执行器（tool-loop）可精确做到；CLI 的组信号 SIGINT 顺带打断其工具子进程。fake-executor 对齐该语义（stopSignal 打断 delay 返回带 session 的 blocked 结果）。
 - **已知问题（非本批，main 同样复现）**：smoke-2 产物内容两例（GET content 403 路径不在允许的根目录内 / PUT 连锁 undefined）在 main@4dc7398 同挂，上一会话同机曾全绿——疑环境/路径漂移（isPathAllowed 解析口径），留专项排查；H8 与 main 行为一致。
 - 单任务 `/stop` 端点保留（TaskDetailPage 暂停按钮、pause rewire 等单任务语境用）；`/interrupt` 保留为强停原语（引擎关机同款），UI 不再调用。
 

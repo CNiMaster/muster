@@ -2,6 +2,7 @@
  * 批次 H8 单元：spawn 错误分类（Gatekeeper 特征）+ tool-loop 安全停边界。
  */
 import { describe, expect, it } from 'vitest';
+import { spawn } from 'node:child_process';
 import { classifySpawnError, spawnErrorHint } from '../../src/server/executors/spawn-errors';
 import { runToolLoop, type ToolLoopOptions } from '../../src/server/executors/tool-loop';
 import type { ChatMessage, ToolDefinition } from '../../src/shared/types';
@@ -83,4 +84,39 @@ describe('tool-loop 安全停边界（H8）', () => {
     expect(result.result).toBeNull();
     expect(calls).toBe(0); // 轮顶 stopRequested 检查：一轮都没开始
   });
+});
+
+describe('进程组止损原语（H8 第九轮：急停杀得掉孙进程）', () => {
+  it('detached 自成进程组 + kill(-pgid) 组信号：CLI 的 bash 孙进程一并被杀', async () => {
+    // 模拟真实形态：CLI 主进程（node）起一个长跑子进程（sleep 30 = 正在跑的 bash 工具）
+    const leader = spawn(process.execPath, ['-e', [
+      "const {spawn}=require('node:child_process');",
+      "const kid=spawn('sleep',['30'],{stdio:'ignore'});",
+      "console.log(kid.pid);",
+      "setInterval(()=>{},1000);",
+    ].join('')], { stdio: ['pipe', 'pipe', 'inherit'], detached: true });
+    const grandsonPid = await new Promise<number>((resolve, reject) => {
+      let out = '';
+      const t = setTimeout(() => reject(new Error('no pid output')), 5_000);
+      leader.stdout!.on('data', (d) => {
+        out += d.toString();
+        const m = /(\d+)/.exec(out.trim());
+        if (m) { clearTimeout(t); resolve(Number(m[1])); }
+      });
+      leader.on('error', reject);
+    });
+    expect(leader.pid).toBeTruthy();
+    expect(grandsonPid).toBeGreaterThan(0);
+
+    // 组信号（与 claude-code-adapter killGroup 同款）
+    process.kill(-leader.pid!, 'SIGTERM');
+
+    await new Promise<void>((resolve) => {
+      const t = setTimeout(resolve, 3_000);
+      leader.on('close', () => { clearTimeout(t); resolve(); });
+    });
+    // 孙进程随组死亡（kill 逃逸者抛 ESRCH；若还活着则失败=止损失效）
+    await new Promise((r) => setTimeout(r, 300));
+    expect(() => process.kill(grandsonPid, 0)).toThrow(); // ESRCH=已死
+  }, 15_000);
 });
