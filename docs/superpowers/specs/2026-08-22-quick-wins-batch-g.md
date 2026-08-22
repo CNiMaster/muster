@@ -1,6 +1,6 @@
 # 批次 G：快赢包（G0→G8 先简后难）
 
-状态：proposed
+状态：implemented
 日期：2026-08-22
 来源：完整 changelog 收割计划 A 档全量 + 防休眠（桌面版定调转正）+ 版本号地基 + 两笔核销（评审 I5 symlink、F4 e2e 倒计时）。
 约束：**零数据库迁移、零新依赖**（设置走 key-value 表；客户端偏好走 localStorage `muster:*:vN` 约定；保活用 macOS 内建 caffeinate）。
@@ -53,3 +53,13 @@ coordinator.start()（:243-252 现 recoverStuckReflections+首 tick）加 bootSe
 ## 不做
 
 输入法/机器人/订阅/SSH 远程；⌘K 全局跨项目搜索（二期需新 API）；防休眠 Windows/Linux（桌面打包期）；HomePage 复活（F 档）。
+
+## 实施补充记录（终稿）
+
+- **G0② realpath 成对归一是关键**：root 与 abs 必须同经 realpath（macOS /tmp→/private/tmp、/var→/private/var 系统级链接），单侧归一会假逃逸；isPathAllowed 根列表同样 realpath 化并缓存。写入侧对"文件不存在但父目录是符号链接"归一父目录防经目录链接写出库外。连带修复：tests/setup-env.ts 默认允许根补 os.tmpdir()（集成 spec makeTmpRoot 建在 /var/folders）。
+- **G0③ e2e 沙盒时序地雷**：Playwright 先起 webServer 后跑 globalSetup，旧 global-setup rmSync 把沙盒目录从运行中服务脚下删掉（服务靠已删 inode 续命，同进程用例全绿、进程外打开库必炸）。清理并入 webServer 命令，global-setup.ts 退役。运行时任务派工 API 被"需求与能力确认"前置拦截，e2e 直插 task 行（FK 需先建项目）。
+- **G1 切键竞态**：防抖计时器随 draftKey 变化被清理，切键需先冲刷旧键未落盘文本再换装；卸载冲刷沿批次 F 评审 I6 的 unmount 清理模式。
+- **G2 jsdom 坑**：userEvent.click 对该组件复制按钮静默不发（点击 img 正常，原因未深究，测试注释记录），改 fireEvent；navigator.clipboard 是 getter-only 需 defineProperty；URL.createObjectURL 需打桩。
+- **G5 countActiveTasks** 提为 domain 函数与 coordinator formalActive 内联口径注释绑定（改状态机两处同步）。
+- **G7 提交事故复盘**：prop 类型漏 proOnly 曾带错提交（管道吃掉 tsc 退出码），amend 修正——终验一律显式判 $? 不经管道。
+- 分工结论按计划执行：本批全部主会话实现；G2/G4 属"可清单化"类型，下批可试点外包。
