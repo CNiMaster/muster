@@ -296,10 +296,11 @@ async function runCommandHandler(call: ToolCall, ctx: ToolContext): Promise<Tool
     child.on('error', (err) => {
       resolveResult({ toolCallId: call.id, name: call.name, content: `命令执行失败：${err.message}` });
     });
-    child.on('close', (code) => {
+    child.on('close', (code, signal) => {
       const truncated = stdout.length >= MAX_OUTPUT ? '\n[stdout 已截断]' : '';
       const errTruncated = stderr.length >= MAX_OUTPUT ? '\n[stderr 已截断]' : '';
-      const exitInfo = code === 0 ? '' : `\n[退出码 ${code}]`;
+      // 复审 F4：超时=组 SIGKILL，code=null/signal='SIGKILL'——给模型可读的终止原因
+      const exitInfo = signal ? `\n[超时被强杀 ${signal}]` : code === 0 ? '' : `\n[退出码 ${code}]`;
       const combined = `${stdout}${truncated}${stderr ? `\n[stderr]\n${stderr}${errTruncated}` : ''}${exitInfo}`;
       resolveResult({ toolCallId: call.id, name: call.name, content: combined || '(命令无输出)' });
     });

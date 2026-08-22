@@ -7,9 +7,11 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { platform } from 'node:os';
 import { join } from 'node:path';
+import { realpathSync } from 'node:fs';
 import {
   SANDBOX_ENABLED,
   buildSandboxProfile,
+  commonCliWritableRoots,
   writeSandboxProfile,
   guardedArgv,
   sanitizeChildEnv,
@@ -67,7 +69,7 @@ describe('env 清洗（custom 直通洞回归，H9a）', () => {
 describe('guardedSpawn 真实探针（H9a：worktree 外写被 OS 拒）', () => {
   it.skipIf(!SANDBOX_ENABLED)('seatbelt 生效：白名单内可写、白名单外 Operation not permitted、进程组可杀', async () => {
     const allowDir = mkdtempSync(join(tmpdir(), 'sb-allow-'));
-    // 「外部」目录必须建在白名单之外——系统 tmp 已被壳自动放行（CLI 常规需要），故用家目录
+    // 「外部」目录必须建在白名单之外（家目录——复审 F2 后 tmp 也不再自动放行，严格调用点只认显式白名单）
     const outside = mkdtempSync(join(homedir(), '.muster-sb-outside-'));
     // 守护进程：写白名单文件 OK；持续存活等组信号
     const guarded = guardedSpawn('/bin/sh', ['-c', `echo ok > ${allowDir}/in.txt; while true; do sleep 1; done`], {
@@ -101,5 +103,43 @@ describe('guardedSpawn 真实探针（H9a：worktree 外写被 OS 拒）', () =>
     g.child.stdout!.on('data', (c) => { out += c; });
     await new Promise((r) => g.child.once('close', r));
     expect(out).toContain('hi');
+  }, 10_000);
+});
+
+describe('围栏白名单口径（复审 F2/F4）', () => {
+  it('严格调用点不含 CLI 家目录/tmp；commonCliWritableRoots 才附加（任意命令不开后门）', () => {
+    const strict = buildSandboxProfile(['/Users/me/wt']);
+    expect(strict).not.toContain('/private/tmp');
+    expect(strict).not.toContain('.claude');
+    const cli = buildSandboxProfile(['/Users/me/wt', ...commonCliWritableRoots()]);
+    expect(cli).toContain(`(allow file-write* (subpath "${realpathSync(tmpdir())}")`);
+  });
+
+  it.skipIf(!SANDBOX_ENABLED)('严格探针：tmp 根下写被 OS 拒（tmp 不再自动放行，复审 F2）', async () => {
+    const allowDir = mkdtempSync(join(tmpdir(), 'sb-strict-'));
+    const victim = `${realpathSync(tmpdir())}/muster-strict-${Date.now()}.txt`;
+    const g = guardedSpawn('/bin/sh', ['-c', `echo bad > ${victim}`], {
+      cwd: allowDir,
+      writableRoots: [allowDir],
+      stdio: ['ignore', 'ignore', 'ignore'],
+      id: 'strict-tmp',
+    });
+    const code = await new Promise<number | null>((r) => g.child.once('close', (c) => r(c)));
+    expect(code).not.toBe(0);
+    rmSync(allowDir, { recursive: true, force: true });
+  }, 15_000);
+
+  it('超时=整进程组 SIGKILL，不漏孙进程（复审 F4）', async () => {
+    const start = Date.now();
+    const g = guardedSpawn('/bin/sh', ['-c', 'sleep 30'], {
+      cwd: tmpdir(),
+      writableRoots: [],
+      stdio: ['ignore', 'ignore', 'ignore'],
+      timeoutMs: 500,
+      id: 'timeout-kill',
+    });
+    const ended = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((r) => g.child.once('close', (c, sg) => r({ code: c, signal: sg })));
+    expect(Date.now() - start).toBeLessThan(5_000);
+    expect(ended.signal).toBe('SIGKILL');
   }, 10_000);
 });

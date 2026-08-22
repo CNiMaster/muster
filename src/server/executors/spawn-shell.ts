@@ -31,6 +31,14 @@ function realPathOrKeep(p: string): string {
   return realpathOrDeepestAncestor(p) ?? p;
 }
 
+/**
+ * CLI 常驻可写根（CLI 家目录 + 系统 tmp 真实路径）：只有 spawn CLI 本体的调用点才放行——
+ * run_command/受托越界这类任意命令不放行（复审 F2：全调用点自动放行=给围栏开后门）。
+ */
+export function commonCliWritableRoots(): string[] {
+  return [...cliHomeDirs(), realPathOrKeep(tmpdir())];
+}
+
 /** 生成 seatbelt profile：全系统拒绝写 + 白名单子树放行（deny 在前 allow 在后覆盖）。 */
 export function buildSandboxProfile(writableRoots: string[]): string {
   const subs = [...new Set(writableRoots.map(realPathOrKeep).filter(Boolean))];
@@ -79,12 +87,15 @@ export function sanitizeChildEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 
 export interface GuardedSpawnOptions {
   cwd: string;
-  /** seatbelt 可写白名单（自动补 CLI 配置目录与系统 tmp 真实路径）。 */
+  /** seatbelt 可写白名单（按调用点显式给出；不自动附加 CLI 家目录/tmp——见 commonCliWritableRoots）。 */
   writableRoots: string[];
+  /** CLI 本体调用点传 true：附加 CLI 家目录与系统 tmp（写自身 session/配置/临时文件）。 */
+  commonPaths?: boolean;
   /** profile 落盘目录（缺省系统 tmp/muster-sandbox）。 */
   profileDir?: string;
   env?: NodeJS.ProcessEnv;
   stdio?: StdioOptions;
+  /** 超时：到点对整进程组 SIGKILL（复审 F4：Node 原生 timeout 只杀直接子进程，孙进程会漏）。 */
   timeoutMs?: number;
   id?: string;
 }
@@ -101,7 +112,7 @@ export interface GuardedChild {
  * 返回 child 与组信号帮手；profile 在进程退出后 best-effort 清理。
  */
 export function guardedSpawn(bin: string, args: string[], opts: GuardedSpawnOptions): GuardedChild {
-  const writableRoots = [...new Set([opts.cwd, ...opts.writableRoots, ...cliHomeDirs(), realPathOrKeep(tmpdir())])];
+  const writableRoots = [...new Set([opts.cwd, ...opts.writableRoots, ...(opts.commonPaths ? commonCliWritableRoots() : [])])];
   const profilePath = writeSandboxProfile({ writableRoots, profileDir: opts.profileDir, id: opts.id });
   const argv = guardedArgv(bin, args, profilePath);
   // env 语义：调用方自建 env 原样使用（claude 注入凭据后传入——清洗是调用方责任）；
@@ -112,15 +123,21 @@ export function guardedSpawn(bin: string, args: string[], opts: GuardedSpawnOpti
     env,
     stdio: opts.stdio ?? ['pipe', 'pipe', 'pipe'],
     detached: true, // 进程组隔离：pid===pgid，急停组信号一锅端
-    ...(opts.timeoutMs ? { timeout: opts.timeoutMs } : {}),
   }) as ChildProcessWithoutNullStreams;
   const killGroup = (sig: NodeJS.Signals): void => {
     try { process.kill(-(child.pid ?? 0), sig); } catch {
       try { child.kill(sig); } catch { /* 已退出 */ }
     }
   };
-  if (profilePath) {
-    child.once('close', () => { try { unlinkSync(profilePath); } catch { /* best effort */ } });
+  // 复审 F4：超时自管（组信号 SIGKILL）——不用 Node 原生 timeout（只杀直接子进程，孙进程漏杀）。
+  let timeoutTimer: NodeJS.Timeout | null = null;
+  if ((opts.timeoutMs ?? 0) > 0) {
+    timeoutTimer = setTimeout(() => killGroup('SIGKILL'), opts.timeoutMs);
+    timeoutTimer.unref();
   }
+  child.once('close', () => {
+    if (timeoutTimer) clearTimeout(timeoutTimer);
+    if (profilePath) { try { unlinkSync(profilePath); } catch { /* best effort */ } }
+  });
   return { child, profilePath, killGroup };
 }
