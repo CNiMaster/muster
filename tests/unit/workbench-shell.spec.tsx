@@ -1,9 +1,17 @@
+import type React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { WorkbenchShell } from '../../src/client/components/workbench/WorkbenchShell';
+import { useToasts } from '../../src/client/components/Button';
+
+/** toast 是发布订阅制，测试里挂一个宿主承接提示文本。 */
+function ToastHost(): React.ReactElement {
+  const { toasts } = useToasts();
+  return <div>{toasts.map((t) => <span key={t.id}>{t.message}</span>)}</div>;
+}
 
 /** 治理批次5：Shell 内 useUiMode 需要 QueryClient；命令面板断言专业项时预置 pro。 */
 function qcShell(uiMode: 'simple' | 'pro' = 'pro'): QueryClient {
@@ -114,5 +122,46 @@ describe('calm workbench shell', () => {
     await waitFor(() => {
       expect(screen.queryByRole('separator', { name: '调整右侧信息栏宽度' })).not.toBeInTheDocument();
     });
+  });
+});
+
+describe('⌘K 面板升级（批次 G.7）', () => {
+  beforeEach(() => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 1440 });
+    localStorage.clear();
+    localStorage.setItem('muster:workbench-guide:v1', 'done');
+  });
+  afterEach(cleanup);
+
+  it('简单模式：专业项可见但灰态锁定 +「专业」小标，点击提示而非跳转', async () => {
+    const user = userEvent.setup();
+    render(<QueryClientProvider client={qcShell('simple')}><MemoryRouter><WorkbenchShell scopeKey="g7:simple" breadcrumb="工作台" navigationLabel="工作列表" inspectorLabel="现场" navigation={<p>导航</p>} inspector={<p>现场</p>}><p>内容</p></WorkbenchShell><ToastHost /></MemoryRouter></QueryClientProvider>);
+    await user.click(screen.getByRole('button', { name: '搜索或跳转' }));
+    const dialog = screen.getByRole('dialog', { name: '搜索或跳转' });
+    // 专业项渲染为锁定 button（非 link），带「专业」小标
+    const locked = within(dialog).getByRole('button', { name: /蓝图库/ });
+    expect(locked).toBeVisible();
+    expect(within(locked).getByText('专业')).toBeInTheDocument();
+    expect(within(dialog).queryByRole('link', { name: '蓝图库' })).not.toBeInTheDocument();
+    // 点击出提示不导航
+    await user.click(locked);
+    expect(await screen.findByText(/专业模式功能/)).toBeInTheDocument();
+  });
+
+  it('commandOptions 注入任务/文件组：文件条目带 ?preview= 直开右栏预览', async () => {
+    const user = userEvent.setup();
+    render(<QueryClientProvider client={qcShell('pro')}><MemoryRouter><WorkbenchShell
+      scopeKey="g7:inject"
+      breadcrumb="工作台" navigationLabel="工作列表" inspectorLabel="现场"
+      navigation={<p>导航</p>} inspector={<p>现场</p>}
+      commandOptions={[
+        { label: '#3 修复登录', href: '/projects/p1?view=task&projectTask=pt_3', group: '项目任务' },
+        { label: '文件：docs/报告.md', href: '/projects/p1?preview=docs%2F%E6%8A%A5%E5%91%8A.md', group: '项目文件' },
+      ]}
+    ><p>内容</p></WorkbenchShell></MemoryRouter></QueryClientProvider>);
+    await user.click(screen.getByRole('button', { name: '搜索或跳转' }));
+    const dialog = screen.getByRole('dialog', { name: '搜索或跳转' });
+    expect(within(dialog).getByRole('link', { name: '#3 修复登录' })).toHaveAttribute('href', '/projects/p1?view=task&projectTask=pt_3');
+    expect(within(dialog).getByRole('link', { name: '文件：docs/报告.md' })).toHaveAttribute('href', '/projects/p1?preview=docs%2F%E6%8A%A5%E5%91%8A.md');
   });
 });

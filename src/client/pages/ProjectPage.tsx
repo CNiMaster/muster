@@ -23,6 +23,7 @@ import {
   useProjectEvents,
   useTasks,
   useProjectTasks,
+  useArtifacts,
   useProjectTask,
   useCreateProjectTask,
   useProjectTaskAction,
@@ -397,6 +398,8 @@ export function ProjectDetail({ projectId }: { projectId: string }): React.React
   const { data: projectEvents } = useProjectEvents(projectId);
   const { data: tasks } = useTasks(projectId);
   const { data: projectTasks } = useProjectTasks(projectId);
+  // 批次 G.7：⌘K 面板增「项目文件」组（点击直开右栏预览 ?preview=，F.3 已有 URL 驱动）
+  const { data: paletteArtifacts } = useArtifacts(projectId);
   const createProjectTask = useCreateProjectTask();
   const projectTaskAction = useProjectTaskAction();
   const discoverProjectLaunch = useDiscoverProjectLaunch();
@@ -606,8 +609,9 @@ export function ProjectDetail({ projectId }: { projectId: string }): React.React
       navigation={<ProjectWorkNavigation projectId={projectId} projectTasks={projectTasks ?? []} tasks={tasks ?? []} agents={agents ?? []} departments={departments ?? []} firstAgentId={project.firstAgentId ?? company?.firstAgentId} selectedProjectTaskId={selectedProjectTaskId} selectedAgentId={selectedAgentId} view={projectView} attentionCount={attentionCount} novel={company?.kind === 'novel'} onNewTask={openNewTaskCard} />}
       inspector={<ProjectContextInspector projectId={projectId} selectedTask={selectedProjectTask} selectedAgentId={projectView === 'employee' ? selectedAgentId : undefined} agents={agents ?? []} tasks={tasks ?? []} cockpit={cockpit} />}
       commandOptions={[
-        ...(projectTasks ?? []).slice(0, 5).map((item) => ({ label: `任务：${item.title}`, href: `/projects/${projectId}?view=task&projectTask=${item.id}`, group: '项目任务' })),
+        ...(projectTasks ?? []).slice(0, 8).map((item) => ({ label: `#${item.seq} ${item.title}`, href: `/projects/${projectId}?view=task&projectTask=${item.id}`, group: '项目任务' })),
         ...(agents ?? []).slice(0, 5).map((agent) => ({ label: `智能体：${agent.name}`, href: `/projects/${projectId}?view=employee&agent=${agent.id}`, group: '团队成员' })),
+        ...(paletteArtifacts ?? []).slice(0, 8).map((art) => ({ label: `文件：${art.path}`, href: `/projects/${projectId}?preview=${encodeURIComponent(art.path)}`, group: '项目文件' })),
         { label: '任务领取清单', href: `/projects/${projectId}/tasks`, group: '项目工具' },
         { label: '运行概览', href: `/projects/${projectId}/dashboard`, group: '项目工具' },
         { label: '成果与文件', href: `/projects/${projectId}/artifacts`, group: '项目工具' },

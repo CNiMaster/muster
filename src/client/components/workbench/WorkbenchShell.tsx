@@ -3,6 +3,7 @@ import type React from 'react';
 import { Link } from 'react-router-dom';
 import { WorkbenchGuide } from './WorkbenchGuide';
 import { useUiMode } from '../../hooks/queries';
+import { toast } from '../Button';
 import { DEFAULT_WORKBENCH_PREFERENCES, MIN_WORKBENCH_SURFACE_WIDTH, PANE_WIDTH_BOUNDS, useWorkbenchPreferences } from './useWorkbenchPreferences';
 
 /**
@@ -98,7 +99,7 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
   inspector: React.ReactNode;
   primaryAction?: React.ReactNode;
   attentionCount?: number;
-  commandOptions?: Array<{ label: string; href: string; group?: string }>;
+  commandOptions?: Array<{ label: string; href: string; group?: string; proOnly?: boolean }>;
   children: React.ReactNode;
 }): React.ReactElement {
   const preferences = useWorkbenchPreferences(scopeKey);
@@ -109,20 +110,21 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
   const commandOpenRef = useRef(false);
   commandOpenRef.current = commandOpen;
 
-  const globalOptions = [
+  // 批次 G.7：简单模式下专业项不再隐藏——灰态 +「专业」小标可见，点击提示切换（原来直接 filter 掉）
+  const globalOptions: Array<{ label: string; href: string; group: string; proOnly?: boolean }> = [
     { label: '首页', href: '/', group: '全局' },
     { label: '新建项目', href: '/projects/new', group: '全局' },
     { label: '归档', href: '/archive', group: '全局' },
     { label: '存储管理', href: '/storage', group: '全局' },
     { label: '设置', href: '/settings', group: '全局' },
-    // 专业模式专属入口（治理批次5：简单模式隐藏）
-    { label: '蓝图库', href: '/blueprints', group: ui.isSimple ? undefined : '全局', proOnly: true },
-    { label: '自动化', href: '/automations', group: ui.isSimple ? undefined : '全局', proOnly: true },
+    // 专业模式专属入口（治理批次5语义；G.7 起简单模式可见但锁定）
+    { label: '蓝图库', href: '/blueprints', group: '全局', proOnly: true },
+    { label: '自动化', href: '/automations', group: '全局', proOnly: true },
     { label: '智能体库', href: '/agents', group: '全局', proOnly: true },
     { label: '执行器', href: '/executors', group: '全局', proOnly: true },
     { label: '权限', href: '/permissions', group: '全局', proOnly: true },
     { label: '审批', href: '/reviews', group: '全局', proOnly: true },
-  ].filter((o) => !('proOnly' in o && o.proOnly && ui.isSimple) && o.group !== undefined);
+  ];
   const options = [...(commandOptions ?? []), ...globalOptions];
   const query = commandQuery.trim().toLowerCase();
   const visible = query ? options.filter((option) => `${option.group ?? ''}${option.label}`.toLowerCase().includes(query)) : options;
@@ -180,7 +182,19 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
       <div className="command-links">
         {groups.map((group) => <div key={group} className="command-group">
           <div className="command-group-label">{group}</div>
-          {visible.filter((option) => (option.group ?? '当前') === group).map((option) => <Link key={option.href} to={option.href} onClick={() => { setCommandOpen(false); setCommandQuery(''); }}>{option.label}</Link>)}
+          {visible.filter((option) => (option.group ?? '当前') === group).map((option) => option.proOnly && ui.isSimple ? (
+            <button
+              key={option.href}
+              type="button"
+              className="command-item-locked"
+              title="专业模式功能——右上角切换到专业模式后可用"
+              onClick={() => toast('info', `「${option.label}」是专业模式功能：右上角切到专业模式即可使用`)}
+            >
+              <span>{option.label}</span><em>专业</em>
+            </button>
+          ) : (
+            <Link key={option.href} to={option.href} onClick={() => { setCommandOpen(false); setCommandQuery(''); }}>{option.label}</Link>
+          ))}
         </div>)}
         {visible.length === 0 && <p className="muted command-empty">没有匹配项</p>}
       </div>
