@@ -1,6 +1,6 @@
 # 批次 H「过程可见性 + 会话交互」
 
-状态：第一段 implemented（H0-H4+H9，2026-08-22）；第二段 pending
+状态：implemented（两段全部交付，2026-08-22）
 来源：zcode 体验对标（用户逐件给 UI 形态）+ 多 agent 可观测性侦察（两轮代码核查）+ 用工模型定调讨论。
 
 ## 轮子边界（build vs reuse，长期原则）
@@ -57,3 +57,11 @@ worktree 纪律沿 F/G：spec 先行（本文件，开工时补 UI 验收截图/
 - **H9 token 设计**：refs 新字段带类型前缀（agent:/file:/task:），不动旧 mentions 语义；mention 候选 display→token 映射存组件 ref Map，发送时反查；服务端 file→路径注入、task→#seq/标题/状态/摘要注入、agent→recipients 并集扇出（每收件人一任务）。
 - **H2 面板挂点**：?panel=live URL 驱动（与 ?preview= 同模式）挂 inspector 顶部；胶囊 fixed 右上（workbench-guide 先例 z-70）不可拖动，有事才出现；二级看板复用 ExecutionTraceCard（useTaskOnce 取 Task）。
 - 测试口径：健康/派遣树等纯读聚合用 SQL 直置状态（状态机仪式无关）；realtime.spec 精确清单断言两处补新键（project-health/dispatch-tree）。
+
+## 第二段实施记录（H5-H7，2026-08-22）
+
+- **H5 interruptTask 安全组合**：先 UPDATE state='queued' 再 engine.abortTask——裸 abort 会被 runTask catch 按 AbortError 判 permanent 失败；置 queued 后 abort 走"让位重跑"分支。engine 经 app.locals 注入 REST（API 层此前无引擎引用）。flush（↑立即）打断用同语义（SQL 直置+abort，单任务失败不阻断送出）。
+- **H5 drain 挂点**：coordinator tick auto-continue 之后独立 try/catch；项目判定 running/claimed 为忙；单条送出失败自动 cancel 防死循环重试。排队表 position 全列重写实现拖动调序；partial index 只索引 pending。
+- **H6 启用范围**：onSelectQuote 可选 prop——仅任务工作台传入启用；群聊/员工页旧面板不动。引用随发送以 "> 引用：…" 前缀进 content（服务端零改动）；仅引用无输入也可发送（disabled 条件含 quotedContext）。
+- **H7 终端折条**：不加新 trace kind，按工具名（Bash/bash/terminal/shell/zsh）前端判别覆盖样式（icon ▶_+等宽+左缘线）；isTerminalItem 导出供测试。
+- **测试口径**：clockIn 后不能建员工——worker 预建于 beforeEach；queued INSERT 占位符与列数对齐是初版 bug（11/10）。
