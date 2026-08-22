@@ -53,4 +53,8 @@ muster 的三种对话载体（项目任务对话/群聊/探讨）**全部创建
 
 ## 实施记录
 
-（待实施）
+- **数据+域+API**：迁移 20260823130000（conversation_message 重建扩 scope 'side'）；side-chat.ts（答复者=负责人/懒确保固定员工；近 12 轮转录进 prompt；两条独立事务包插消息——callLlm 网络调用不进 sqlite 事务；失败降级=指引文案不 500）；api/side.ts 三端点（POST safeParse 显式 400——评审轮发现 zod 抛错在裸 express 错误中间件下变 500）。
+- **UI**：/side 路由页（lazyRetry；单行自增高输入 Enter/Shift+Enter；清空两段式确认；assistant 气泡标负责人名义）；右栏第二租户组（面板插件之后；**有历史才渲染**——空会话零打扰；折叠=最近 3 条+快捷输入+展开全部链接）；左栏全局链接区 💬 入口（蓝图库之前，简单/专业模式都可见）。
+- **复审轮**：R1 listMessages agentId 分支 side 会拿 workbenchId 当 projectId 查炸→显式归类；R2 postUserMessage 显式拒 'side'（防未来调用方误用通用通道造任务语义——HTTP 层现状只传 workbench/project 字面量，纯防御）；R3 组序对齐 spec（面板插件之后）。镜头5：转录有界（12 条+8000 字截断）不炸 prompt。
+- **I-a 门假绿更正（I-b 轮抓出）**：I-a 全量 vitest 用 `| tail -3` 截尾，失败明细被吞、门被误判绿——project-context-inspector.spec 的 queries vi.mock 缺 usePanelPlugins（I-a 起 inspector 消费）导致 main 上 11 例挂。本批修复：mock 补 usePanelPlugins/useSideMessages 空态。**流程修正入档：全量门必须核对 `Tests  N passed` 总数或裸退出码，禁止 tail 截尾判读**（镜头8 同族教训）。
+- **测试**：集成 7（域往返/负责人 author/兜底员工/limit/清空不误伤他 scope/空 content/API 三端点+400）；组件 4（空态引导/Enter 与 Shift+Enter 与 pending 拦重复/思考中/气泡+清空弹窗）；e2e 1（/side 发送→气泡+降级文案确定性断言——无凭据环境）。

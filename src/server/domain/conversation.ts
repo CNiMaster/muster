@@ -18,7 +18,7 @@ import { getMaterial } from './material';
 import { ensureWorkspaceStaff } from './workspace-staff';
 import { realtime } from '../realtime';
 
-export type ScopeKind = 'workbench' | 'project';
+export type ScopeKind = 'workbench' | 'project' | 'side';
 export type MessageRole = 'user' | 'assistant' | 'system' | 'event';
 
 /**
@@ -137,7 +137,7 @@ function fromRow(r: ConvRow): ConversationMessage {
 }
 
 function assertScope(db: DB, kind: ScopeKind, id: string): void {
-  if (kind === 'workbench') getWorkbench(db);
+  if (kind === 'workbench' || kind === 'side') getWorkbench(db);
   else getProject(db, id);
 }
 
@@ -146,7 +146,7 @@ export function listMessages(db: DB, kind: ScopeKind, scopeId: string, agentId?:
   assertScope(db, kind, scopeId);
   if (agentId) {
     const agent = getAgent(db, agentId);
-    const companyId = kind === 'workbench' ? scopeId : getProject(db, scopeId).companyId;
+    const companyId = kind === 'workbench' || kind === 'side' ? scopeId : getProject(db, scopeId).companyId;
     if (agent.companyId !== companyId) {
       throw new AppError(ErrorCode.UNAUTHORIZED, `员工 ${agentId} 不属于当前公司`);
     }
@@ -228,6 +228,7 @@ export function postUserMessage(db: DB, input: PostUserMessageInput): {
   tasks: Array<ReturnType<typeof createTask>>;
 } {
   if (!input.content.trim()) throw new AppError(ErrorCode.VALIDATION, '消息内容不能为空');
+  if (input.scopeKind === 'side') throw new AppError(ErrorCode.VALIDATION, '侧边对话走专用通道 /api/side/messages（免任务直答）');
   assertScope(db, input.scopeKind, input.scopeId);
   const result = db.transaction(() => {
 

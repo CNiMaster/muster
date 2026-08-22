@@ -4,7 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import type { Agent, Task } from '../../api/types';
 import type { ProjectTaskDTO } from '../../hooks/queries';
 import { useArtifacts, useBlueprintMatches, useProjectSpecialists, useProjectTaskAction, useTaskSwarm,
-  useProjectHealth, useUiMode, usePanelPlugins } from '../../hooks/queries';
+  useProjectHealth, useUiMode, usePanelPlugins, useSideMessages } from '../../hooks/queries';
 import type { CompanyCockpitDTO } from '../../../shared/types';
 import { Badge, StateBadge, taskStateTone } from '../Badge';
 import { Button, toast } from '../Button';
@@ -12,6 +12,7 @@ import { DiscussionPanel } from './DiscussionPanel';
 import { InspectorPreviewHost } from './InspectorPreviewHost';
 import { WorkLivePanel } from './WorkLivePanel';
 import { PanelPluginHost } from './PanelPluginHost';
+import { SideChatPanel } from './SideChatPanel';
 
 const OPEN_STATES = new Set(['queued', 'claimed', 'running', 'waiting_input', 'waiting_dependency', 'waiting_approval', 'paused', 'blocked']);
 const ATTENTION_STATES = new Set(['waiting_input', 'waiting_approval', 'blocked', 'waiting_dependency']);
@@ -469,6 +470,17 @@ export function ProjectContextInspector({
           badge={<Badge tone="info">{panelPlugins.length}</Badge>}
         >
           <PanelPluginHost projectId={projectId} taskId={matchedTask?.id} panels={panelPlugins} />
+        </InspectorGroup>
+      )}
+
+      {/* 侧边对话（批次 I-b）：右栏第二租户——有历史才渲染组，空会话零打扰 */}
+      {(useSideMessages().data ?? []).length > 0 && (
+        <InspectorGroup
+          groupId="side-chat"
+          title="侧边对话"
+          defaultOpen={false}
+        >
+          <SideChatPanel />
         </InspectorGroup>
       )}
 

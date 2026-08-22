@@ -3237,3 +3237,41 @@ export function useUiMode(): { uiMode: 'simple' | 'pro'; isSimple: boolean; setU
     saving: mutation.isPending,
   };
 }
+
+/** ─── 侧边辅助对话（批次 I-b：免任务快速问答） ─── */
+
+export interface SideChatMessageDTO {
+  id: string;
+  role: 'user' | 'assistant';
+  author: string;
+  content: string;
+  createdAt: string;
+}
+
+export function useSideMessages() {
+  return useQuery({
+    queryKey: ['side-messages'],
+    queryFn: () => api.get<SideChatMessageDTO[]>('/api/side/messages'),
+    staleTime: 10_000,
+  });
+}
+
+export function useSendSideMessage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (content: string) => api.post<{ user: SideChatMessageDTO; assistant: SideChatMessageDTO }>('/api/side/messages', { content }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['side-messages'] });
+    },
+  });
+}
+
+export function useClearSideChat() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.delete(`/api/side/messages`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['side-messages'] });
+    },
+  });
+}

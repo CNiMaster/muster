@@ -536,6 +536,10 @@ export function ProjectWorkNavigation({
 )}
             </>
           )}
+          <Link className="work-nav-item" to="/side">
+            <span className="work-nav-icon">💬</span>
+            <span className="work-nav-label">侧边对话</span>
+          </Link>
           {!ui.isSimple && (
 <Link className="work-nav-item" to="/blueprints">
             <span className="work-nav-icon">🧭</span>
