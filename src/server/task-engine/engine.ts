@@ -1247,7 +1247,8 @@ export class TaskEngine {
         }
       }
       // 员工评级：任务完成时重算 assignee 的 profile 评级（异步感——非阻塞，失败不回滚任务）
-      if (result.outcome === 'completed' && agent.profileId) {
+      // 批次 H.0：蜂共享常驻档案，评级会污染它——蜂跳过（蜂无档案级质量语义）
+      if (result.outcome === 'completed' && agent.profileId && agent.role !== 'swarm-worker') {
         try {
           applyRating(this.db, agent.profileId);
         } catch (e) {

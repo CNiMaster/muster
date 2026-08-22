@@ -21,7 +21,9 @@ import { acquireSpecialistForPersona } from './specialist-pool';
 import { appendTrace } from './execution-trace';
 import { addDependency, cancelTask, createTask, getTask, type Task } from './task';
 import { promoteProjectStagingIfAny } from './staging';
-import { createTempEmployment, dismissTempWorker, markTempGreyed } from './temp-worker';
+import { markTempGreyed } from './temp-worker';
+import { createAgent } from './agent';
+import { bindDefaultDenyPolicy } from './permission-templates';
 import { ensurePrimaryThread } from './thread';
 import { getPersona } from './persona-library';
 import { getWorkbenchOrNull } from './workbench';
@@ -443,7 +445,8 @@ export function releaseSwarmBees(db: DB, swarmId: string): void {
       continue;
     }
     try {
-      dismissTempWorker(db, bee.id, { confirm: true });
+      // 批次 H.0：蜂走轻量回收（只删 agent 行，共享档案/Home 不动）；dismissTempWorker 留给临时专家/B2B
+      dismissWorkerBee(db, bee.id);
     } catch {
       // 竞态或已删时降级为灰色保留
       try {
@@ -586,23 +589,60 @@ const BEE_PROMPT = `你是蜂群工蜂：一次性任务执行者，为"养蜂�
 - 如子题仍太大确需细分，可通过 done 的 outboundTasks 下派子任务（recipientAgentId 填新工蜂不可行——你没有创建权；填同事或留空交回调度），
   保持最小拆分：系统有深度/数量/预算上限，超限会被拦截并留 swarm_limit_blocked 事件。`;
 
+/** 共享蜂档案固定 id：全部工蜂指向同一常驻档案（批次 H.0 轻量化——不再 per-bee 建/删档案与 Agent Home）。 */
+const BEE_PROFILE_ID = 'ap_worker_bee_shared';
+
+/** 幂等确保共享蜂档案存在（is_temp_only=0 常驻——绝不能标 temp-only，dismiss 不得误删它）。 */
+function ensureBeeProfile(db: DB): string {
+  const existing = db.prepare('SELECT id FROM agent_profile WHERE id=?').get(BEE_PROFILE_ID) as { id: string } | undefined;
+  if (existing) return BEE_PROFILE_ID;
+  const now = nowIso();
+  db.prepare(
+    `INSERT INTO agent_profile (id, display_name, soul, capabilities_json, created_at, updated_at)
+     VALUES (?, '工蜂', ?, '{}', ?, ?)
+     ON CONFLICT(id) DO NOTHING`,
+  ).run(BEE_PROFILE_ID, BEE_PROMPT, now, now);
+  return BEE_PROFILE_ID;
+}
+
 /**
- * 创建一次性工蜂（临时工基建 + hidden + 独立 primary 线程）。
- * 干净上下文、跑完即焚（群关闭统一 dismiss）、不进花名册、不写员工记忆。
+ * 创建一次性工蜂（批次 H.0 轻量化：最小 agent 行 + 共享档案 + hidden + 独立 primary 线程）。
+ * 干净上下文、跑完即焚（群关闭统一轻量 dismiss）、不进花名册、不写员工记忆。
+ * 不再走 createTempEmployment——临时工基建专属临时专家/B2B 外包（2026-08-22 用工定调）。
  */
 export function createWorkerBee(
   db: DB,
   input: { companyId?: string; projectId: string; requesterAgentId: string; index: number },
 ): string {
-  const { agentId } = createTempEmployment(db, {
+  const profileId = ensureBeeProfile(db);
+  const agent = createAgent(db, {
+    profileId,
     role: SWARM_WORKER_ROLE,
-    requesterAgentId: input.requesterAgentId,
     name: `工蜂-${input.index + 1}`,
     systemPrompt: BEE_PROMPT,
+    contactAllow: input.requesterAgentId ? [input.requesterAgentId] : [],
+    tempRecruit: true, // 豁免 org lock 与 contactAllow 校验（工作关系仅限发起者）
   });
-  db.prepare('UPDATE company_employee SET hidden=1 WHERE legacy_agent_id=?').run(agentId);
-  ensurePrimaryThread(db, input.projectId, agentId);
-  return agentId;
+  const now = nowIso();
+  db.prepare(
+    `UPDATE company_employee SET employment_type='temp', temp_status='active', hidden=1, contracted_at=? WHERE legacy_agent_id=?`,
+  ).run(now, agent.id);
+  bindDefaultDenyPolicy(db, agent.id);
+  ensurePrimaryThread(db, input.projectId, agent.id);
+  return agent.id;
+}
+
+/**
+ * 轻量回收工蜂（批次 H.0）：只删 agent 行（级联清 company_employee/线程，task.assignee 置空）——
+ * 共享档案与 Agent Home 常驻不动。审计保留在 task 行/task_event/汇报消息/usage_record。
+ * 仅接受 swarm-worker 角色，防误删正式成员。
+ */
+export function dismissWorkerBee(db: DB, agentId: string): void {
+  const bee = db
+    .prepare('SELECT id FROM agent_definition WHERE id=? AND role=? AND is_system=0')
+    .get(agentId, SWARM_WORKER_ROLE) as { id: string } | undefined;
+  if (!bee) throw new AppError(ErrorCode.NOT_FOUND, `工蜂不存在或非工蜂：${agentId}`);
+  db.prepare('DELETE FROM agent_definition WHERE id=?').run(agentId);
 }
 
 export interface MaterializedSwarm {
