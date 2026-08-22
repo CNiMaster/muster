@@ -297,6 +297,15 @@ export function taskStagingWorktreePath(projectTaskId: string): string {
   return path.join(worktreeRoot(), `pt-${projectTaskId}`);
 }
 
+/** 只读窥探（评审 I3）：staging 分支存在且 worktree 已检出才返回路径，否则 null——绝不创建。 */
+export function peekTaskStagingWorktree(rootDir: string, projectId: string, projectTaskId: string): TaskStagingInfo | null {
+  const branch = taskStagingBranch(projectId, projectTaskId);
+  const wtPath = taskStagingWorktreePath(projectTaskId);
+  const branchExists = git(rootDir, ['branch', '--list', branch], { allowFail: true }).stdout.trim().length > 0;
+  if (!branchExists || !existsSync(wtPath)) return null;
+  return { projectId, projectTaskId, branch, path: wtPath };
+}
+
 /**
  * 确保项目任务的任务级集成分支与持久 worktree 存在（幂等，照 ensureStagingWorktree 模式）。
  * 该分支是其下所有 runtime task（含蜂群蜂/验收/返工）的发布目标与审查现场；

@@ -162,7 +162,7 @@ export function ProjectTaskWorkspace({
         });
       } else {
         queueAction.enqueue.mutate(
-          { projectTaskId: selectedTask?.id, content, options: messageOptions as Record<string, unknown> },
+          { projectTaskId: selectedTask?.id, content, options: messageOptions as Record<string, unknown>, refs: options?.refs, attachments: messageAttachments.length ? messageAttachments : undefined },
           { onSuccess: () => toast('success', '已排队——本轮结束后自动送出'), onError: (e) => toast('error', (e as Error).message) },
         );
       }

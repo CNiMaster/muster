@@ -400,6 +400,12 @@ export class TaskEngine {
     // 批次 H.4：运行中媒体文件自动预览（codex/Bash 写入无路径回调，周期扫描兜底；收尾 finally 再扫一次）
     // runId 在 executionRun 创建后回填（其声明在 try 块内，外层闭包用可变绑定承接）
     const emittedMedia = new Set<string>();
+    // 评审 I1：基线扫描——吸收 checkout 自带的既有媒体，只报本次运行新生成的
+    if (worktreeInfo) {
+      try {
+        scanWorktreeMediaPreviews(this.db, task.id, null, worktreeInfo.path, emittedMedia, { baselineOnly: true });
+      } catch { /* 基线失败不影响执行 */ }
+    }
     let mediaRunId: string | null = null;
     const mediaTimer = setInterval(() => {
       if (worktreeInfo) scanWorktreeMediaPreviews(this.db, task.id, mediaRunId, worktreeInfo.path, emittedMedia);

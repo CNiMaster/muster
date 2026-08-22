@@ -177,8 +177,13 @@ export function ConversationPanel({ scope, scopeId, title, recipientAgentId, pro
         onScroll={handleStreamScroll}
         onMouseUp={() => {
           if (!onSelectQuote) return;
-          const sel = window.getSelection?.()?.toString().trim() ?? '';
-          setQuoteSelection(sel.length >= 2 ? sel : null);
+          const selection = window.getSelection?.();
+          const sel = selection?.toString().trim() ?? '';
+          // 评审修：选区必须起于消息流内（否则会把面板外选中的文字当引用）
+          const anchorInside = scrollRef.current
+            ? selection?.anchorNode && scrollRef.current.contains(selection.anchorNode)
+            : true;
+          setQuoteSelection(sel.length >= 2 && anchorInside ? sel : null);
         }}
       >
         {isLoading && <div className="muted" style={{ padding: 16 }}>加载中…</div>}
@@ -199,9 +204,13 @@ export function ConversationPanel({ scope, scopeId, title, recipientAgentId, pro
             </div>
           </div>
         )}
-        {messages?.map((m) => (
-          <MessageBubble key={m.id} message={m} agents={agents ?? []} projectId={scope === 'project' ? scopeId : undefined} />
-        ))}
+        {messages?.map((m, index) => {
+          // 评审 I4：轮末变更卡只挂最新一条 assistant 消息（历史轮的发布状态不变，减少 N 倍查询）
+          const isLatestAssistant = m.role === 'assistant' && !messages?.slice(index + 1).some((x) => x.role === 'assistant');
+          return (
+            <MessageBubble key={m.id} message={m} agents={agents ?? []} projectId={scope === 'project' ? scopeId : undefined} isLatestAssistant={isLatestAssistant} />
+          );
+        })}
         {/* 批次 H.6：划选浮钮 */}
         {quoteSelection && onSelectQuote && (
           <div style={{ position: 'sticky', bottom: 8, display: 'flex', justifyContent: 'center', zIndex: 5 }}>
@@ -284,7 +293,7 @@ export function ConversationPanel({ scope, scopeId, title, recipientAgentId, pro
   );
 }
 
-function MessageBubble({ message, agents, projectId }: { message: ConversationMessage; agents: { id: string; name: string; role: string }[]; projectId?: string }): React.ReactElement {
+function MessageBubble({ message, agents, projectId, isLatestAssistant }: { message: ConversationMessage; agents: { id: string; name: string; role: string }[]; projectId?: string; isLatestAssistant?: boolean }): React.ReactElement {
   const copyMessage = (): void => {
     void navigator.clipboard?.writeText(message.content);
   };
@@ -335,7 +344,7 @@ function MessageBubble({ message, agents, projectId }: { message: ConversationMe
           </div>
         )}
         {!isUser && <WaitingQuestionReply refTaskId={message.refTaskId} />}
-        {!isUser && message.role === 'assistant' && message.refTaskId && projectId && (
+        {!isUser && message.role === 'assistant' && message.refTaskId && projectId && isLatestAssistant && (
           <RoundChangesCard projectId={projectId} taskId={message.refTaskId} />
         )}
       </div>

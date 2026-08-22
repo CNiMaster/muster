@@ -243,6 +243,8 @@ export function ensurePersonaArchiveProfile(db: DB): string {
 export function listAgentProfiles(db: DB, opts?: { includeTempOnly?: boolean; source?: 'user' | 'system' | 'crystallized' }): AgentProfile[] {
   let sql = 'SELECT * FROM agent_profile WHERE 1=1';
   const params: unknown[] = [];
+  // 批次 H.0 评审修：共享蜂档案是系统内部件（N 蜂共用），不进人才库/档案列表
+  sql += ` AND id != 'ap_worker_bee_shared'`;
   if (!opts?.includeTempOnly) {
     sql += ' AND is_temp_only = 0';
   }

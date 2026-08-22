@@ -314,6 +314,11 @@ export function PromptComposer({
     setSlashIndex(0);
   }, [slashToken]);
 
+  // 评审修：mention 候选集变化时重置选中项（Escape 关闭后继续输入能重新选中第一项）
+  useEffect(() => {
+    setMentionIndex(0);
+  }, [mentionToken]);
+
   const runSlashCommand = (command: SlashCommand): void => {
     command.apply();
     setText('');
