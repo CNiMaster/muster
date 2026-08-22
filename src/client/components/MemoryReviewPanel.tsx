@@ -1,13 +1,14 @@
 import type React from 'react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   useMemoryCandidates,
   useMemoryEntries,
   useMemoryEntryAction,
   useCorrectMemoryEntry,
+  useProjects,
   useReviewMemoryCandidate,
 } from '../hooks/queries';
-import type { MemoryCandidate } from '../api/types';
+import type { MemoryCandidate, MemoryEntry } from '../api/types';
 import { Badge } from './Badge';
 import { Button, toast } from './Button';
 import { Card } from './Card';
@@ -18,15 +19,44 @@ function causeLabel(cause: string): string {
   return cause === 'model' ? '归因·模型' : cause === 'method' ? '归因·方法' : cause === 'context' ? '归因·上下文' : '归因·工具';
 }
 
+type CauseFilter = 'all' | 'model' | 'method' | 'context' | 'tool';
+
+/** 批次 G.3：已批准记忆的多维过滤（cause/tag/项目维度）——沿用面板既有的客户端过滤模式。 */
+function filterEntries(
+  entries: MemoryEntry[],
+  opts: { scope: 'all' | MemoryCandidate['scope']; cause: CauseFilter; tags: string[]; projectId: 'all' | string },
+): MemoryEntry[] {
+  return entries.filter((item) => {
+    if (opts.scope !== 'all' && item.scope !== opts.scope) return false;
+    if (opts.cause !== 'all' && item.cause !== opts.cause) return false;
+    if (opts.projectId !== 'all' && item.projectId !== opts.projectId) return false;
+    if (opts.tags.length > 0 && !opts.tags.some((t) => (item.tags ?? []).includes(t))) return false;
+    return true;
+  });
+}
+
 export function MemoryReviewPanel({ profileId }: { profileId: string }): React.ReactElement {
   const { data: candidates } = useMemoryCandidates(profileId);
   const { data: entries } = useMemoryEntries(profileId);
+  const { data: projects } = useProjects();
   const review = useReviewMemoryCandidate();
   const entryAction = useMemoryEntryAction();
   const correctEntry = useCorrectMemoryEntry();
   const [scope, setScope] = useState<'all' | MemoryCandidate['scope']>('all');
+  const [cause, setCause] = useState<CauseFilter>('all');
+  const [tagFilter, setTagFilter] = useState<string[]>([]);
+  const [projectFilter, setProjectFilter] = useState<'all' | string>('all');
   const pending = (candidates ?? []).filter((item) => item.status === 'pending' && (scope === 'all' || item.scope === scope));
-  const approved = (entries ?? []).filter((item) => scope === 'all' || item.scope === scope);
+  const approved = useMemo(
+    () => filterEntries(entries ?? [], { scope, cause, tags: tagFilter, projectId: projectFilter }),
+    [entries, scope, cause, tagFilter, projectFilter],
+  );
+
+  // 项目 id→名映射（项目维度浏览，G.3）；标签全集取自当前数据
+  const projectNameById = useMemo(() => new Map((projects ?? []).map((p) => [p.id, p.name])), [projects]);
+  const distinctTags = useMemo(() => [...new Set((entries ?? []).flatMap((e) => e.tags ?? []))].sort(), [entries]);
+  const projectIds = useMemo(() => [...new Set((entries ?? []).map((e) => e.projectId).filter((id): id is string => !!id))], [entries]);
+  const hasDetailFilter = cause !== 'all' || tagFilter.length > 0 || projectFilter !== 'all';
 
   return (
     <Card title="记忆中心" className="section">
@@ -43,6 +73,55 @@ export function MemoryReviewPanel({ profileId }: { profileId: string }): React.R
           <option value="skill">Skill</option>
         </Select>
       </div>
+
+      <div className="memory-review-head" style={{ marginTop: 8 }}>
+        <Select value={cause} onChange={(event) => setCause(event.target.value as CauseFilter)} aria-label="归因过滤">
+          <option value="all">全部归因</option>
+          <option value="model">归因·模型</option>
+          <option value="method">归因·方法</option>
+          <option value="context">归因·上下文</option>
+          <option value="tool">归因·工具</option>
+        </Select>
+        {projectIds.length > 0 && (
+          <Select value={projectFilter} onChange={(event) => setProjectFilter(event.target.value)} aria-label="项目过滤">
+            <option value="all">全部项目</option>
+            {projectIds.map((id) => (
+              <option key={id} value={id}>{projectNameById.get(id) ?? id}</option>
+            ))}
+          </Select>
+        )}
+      </div>
+
+      {distinctTags.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 8 }} aria-label="标签过滤">
+          {distinctTags.map((t) => {
+            const active = tagFilter.includes(t);
+            return (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setTagFilter((prev) => (active ? prev.filter((x) => x !== t) : [...prev, t]))}
+                style={{
+                  fontSize: 10, padding: '1px 6px', borderRadius: 4, cursor: 'pointer',
+                  background: active ? 'var(--accent)' : 'var(--bg-soft)',
+                  color: active ? '#fff' : 'var(--fg-muted)', border: '1px solid var(--border-subtle)',
+                }}
+              >
+                #{t}
+              </button>
+            );
+          })}
+          {hasDetailFilter && (
+            <button
+              type="button"
+              onClick={() => { setCause('all'); setTagFilter([]); setProjectFilter('all'); }}
+              style={{ fontSize: 10, padding: '1px 6px', border: 0, background: 'none', color: 'var(--accent)', cursor: 'pointer' }}
+            >
+              清除过滤
+            </button>
+          )}
+        </div>
+      )}
 
       {pending.length > 0 && <h3 className="memory-section-title">等待你的确认</h3>}
       <div className="memory-list">
@@ -90,6 +169,9 @@ export function MemoryReviewPanel({ profileId }: { profileId: string }): React.R
               <div>
                 <Badge tone={entry.state === 'locked' ? 'warn' : 'ok'}>{scopeLabel(entry.scope)} · v{entry.version}</Badge>
                 {entry.cause && <Badge tone="info">{causeLabel(entry.cause)}</Badge>}
+                {entry.projectId && (
+                  <Badge tone="neutral" title={entry.projectId}>{projectNameById.get(entry.projectId) ?? '未知项目'}</Badge>
+                )}
                 {(entry.tags ?? []).map((t) => (
                   <span key={t} style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: 'var(--bg-soft)', color: 'var(--fg-muted)', marginLeft: 4 }}>#{t}</span>
                 ))}
