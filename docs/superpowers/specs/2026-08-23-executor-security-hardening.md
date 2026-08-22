@@ -74,6 +74,8 @@ L3 人工审批（升级兜底）：审查员拿不准/超策略/用户选全审
 - **H9b 实施**：①四模式收敛（ComposerMode 新四档药丸+MessageMode 扩枚举+engine modeToStrategy 归一：confirm-edits→ask-always、auto-edit/full-access→ask-by-rule、plan/deny→deny；旧五值全兼容）②guard 抽取 buildPermissionGuard（可直测）+auto-edit 分支：文件编辑直放（用户三次定稿）+命令恒审（审批卡附审查员风险分析，AI 无放行权）③安全审查员岗（隐形中央岗）+evaluateWithAi prompt 身份注入④permission_audit 迁移+guard 包装留档+查询端点⑤security_mode 全局默认档（缺省 ''=跟随策略——存量零变化防审批风暴；设置页一键切换，postUserMessage 未显式选档时注入）⑥风险说明卡=现有审批卡载体（approvalBroker.wait+用户点按钮，无回车路径天然满足禁回车）。测试：security-mode.spec 5 例（归一/恒审全链 broker resolve/编辑直放/full-access AI 兜底转人工/留档+设置链+默认档注入）。
 - **实现偏差记录**：①默认档缺省 '' 而非直接 auto-edit——防存量消息全部进审批卡（翻转由用户在设置页显式选择）②guard 整词替换抽取时曾污染字符串字面量（delete-outside-project）已修——教训入盲区清单候选。
 
+- **H9c 实施**：bridge 新动作 `elevated-command`（POST，BRIDGE_ACTIONS 注册即入 CLI 能力清单 prompt）——申请（command+targetDirs≤4 绝对路径+reason）→ 红线黑名单 403 前置 → 审批卡（幂等 ensure，policyId=员工策略→ensureRolePermissionTemplates 员工模板→直插卡三级兜底；ai_reason 附申请理由+目标目录）→ broker 等待 → 批准后受托执行（guardedSpawn 临时 profile=任务 worktree+批准目录，逐命令授权≠全开后门；组信号+120s 超时同壳）→ stdout/stderr 随 HTTP 响应回 CLI；拒绝/超时返回明确指引。测试 4 例（批准全链含未批准目录 OS 拒+留档断言/拒绝路径/黑名单 403/参数校验）。
+
 ## 分期
 
 - **H9a 统一执行壳**（纯工程）：四件套+探针单测+custom/opencode 补洞（env 清洗/进程组）。先行。

@@ -129,10 +129,10 @@ describe('listPlugins 合并三源', () => {
     expect(bridge?.manifest.kind).toBe('bridge-action');
   });
 
-  it('bridge 含全部 4 个 action', () => {
+  it('bridge 含全部 5 个 action（H9c 增 elevated-command 受托越界申请口）', () => {
     const plugins = listPlugins(db, { skillsRoot, kind: 'bridge-action' });
     const ids = plugins.map((p) => p.id).sort();
-    expect(ids).toEqual(['bridge:notify', 'bridge:preview', 'bridge:progress', 'bridge:submit-review']);
+    expect(ids).toEqual(['bridge:elevated-command', 'bridge:notify', 'bridge:preview', 'bridge:progress', 'bridge:submit-review']);
   });
 
   it('bridge promptSection 含 curl 命令和参数说明', () => {
