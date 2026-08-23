@@ -80,6 +80,19 @@ export const BRIDGE_ACTIONS: BridgeAction[] = [
     ],
   },
   {
+    name: 'borrow-specialist',
+    summary: 'Borrow a resident (staff) specialist from another project into this task\'s project.',
+    description:
+      'One of your options when you need a capability: finish with other specialists, spawn sub-agents, ask your superior, start a group discussion, or borrow an established staff specialist. Borrow when the right expert already exists elsewhere — it is recorded (specialist_borrow) and the borrowed agent keeps its own memory; you then dispatch the work to it. If no candidate matches, consider staffing via HR instead of improvising.',
+    method: 'POST',
+    params: [
+      { name: 'taskId', description: 'Current task ID', required: true },
+      { name: 'specialistId', description: 'Specialist pool entry ID (omit to auto-match)' },
+      { name: 'specialty', description: 'Specialty keyword for auto-match (e.g. 翻译)' },
+      { name: 'personaId', description: 'Persona ID for exact match' },
+    ],
+  },
+  {
     name: 'submit-review',
     summary: 'Submit a business deliverable for human approval.',
     description:
@@ -213,6 +226,38 @@ bridgeRouter.get('/:action', (req, res) => {
   processBridgeAction(getDb(), { action, taskId, text, filePath });
 
   res.json({ ok: true, action });
+});
+
+/**
+ * POST /bridge/borrow-specialist（批次 J1，用户定调：借调=按需选择的工具之一，非池空兜底）：
+ * 任务中缺能力时 agent 主动借调全局 staff 专家——留痕到任务项目；返回借来 agent 供派遣。
+ */
+bridgeRouter.post('/borrow-specialist', async (req, res) => {
+  try {
+    const taskId = String(req.body?.taskId ?? '');
+    const specialistId = typeof req.body?.specialistId === 'string' ? req.body.specialistId : '';
+    const specialty = typeof req.body?.specialty === 'string' ? req.body.specialty : '';
+    const personaId = typeof req.body?.personaId === 'string' ? req.body.personaId : null;
+    if (!/^[a-z]{2,4}_[a-zA-Z0-9]+$/.test(taskId)) { res.status(400).json({ ok: false, error: 'Invalid taskId format' }); return; }
+    if (!specialistId && !specialty && !personaId) { res.status(400).json({ ok: false, error: 'specialistId / specialty / personaId 至少给一个' }); return; }
+    const db = getDb();
+    const taskRow = db.prepare('SELECT id, project_id FROM task WHERE id=?').get(taskId) as { id: string; project_id: string } | undefined;
+    if (!taskRow) { res.status(404).json({ ok: false, error: `Task not found: ${taskId}` }); return; }
+    const { borrowStaffSpecialist, findStaffBorrowCandidate, getSpecialistEntry } = await import('./domain/specialist-pool');
+    const targetId = specialistId || findStaffBorrowCandidate(db, taskRow.project_id, personaId, specialty)?.id;
+    if (!targetId) {
+      res.status(404).json({ ok: false, error: '没有可借的常驻专家——可建议人事 staffingPlan 生成，或联系上级/发起群聊讨论替代方案' });
+      return;
+    }
+    const entry = getSpecialistEntry(db, targetId);
+    const borrowed = borrowStaffSpecialist(db, { specialistId: targetId, toProjectId: taskRow.project_id, taskId });
+    const { getAgent } = await import('./domain/agent');
+    const agent = getAgent(db, borrowed.agentId);
+    realtime.publish({ id: shortId('ev_'), type: 'specialist.borrowed', taskId, occurredAt: nowIso(), payload: { agentId: agent.id, agentName: agent.name, specialty: entry.specialty, fromProjectId: entry.projectId } });
+    res.json({ ok: true, agentId: agent.id, agentName: agent.name, specialty: entry.specialty, fromProjectId: entry.projectId, note: '已借入本项目（留痕）——请把相关工作派遣给该专家' });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e instanceof Error ? e.message : String(e) });
+  }
 });
 
 /**

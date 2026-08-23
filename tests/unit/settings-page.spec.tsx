@@ -111,7 +111,7 @@ describe('SettingsPage 两层导航与常规项（批次 G.5/G.6）', () => {
     expect(within(nav).getByText('高级')).toBeInTheDocument();
     const labels = within(nav).getAllByRole('button').map((b) => b.textContent);
     // 常用：常规、外观、备份；高级：模型、蜂群、网络、凭据、工具
-    expect(labels).toEqual(['⚙️ 常规与执行器', '🎨 外观与主题', '💾 数据库与备份', '🧠 模型与分级', '🐝 蜂群调度与反思', '🌐 网络与出站代理', '🔑 凭据金库', '🔧 工具与 MCP 注册']);
+    expect(labels).toEqual(['⚙️ 常规与执行器', '🎨 外观与主题', '💾 数据库与备份', '🧠 模型与分级', '🐝 蜂群调度与反思', '🌐 网络与出站代理', '🔑 凭据金库', '🔧 工具与 MCP 注册', '🧑‍🔬 专家盘点']);
   });
 
   it('常规 Tab 含防休眠三态下拉（G.5）', () => {

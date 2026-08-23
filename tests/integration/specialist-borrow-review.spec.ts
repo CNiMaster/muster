@@ -28,6 +28,7 @@ import {
 } from '../../src/server/domain/specialist-review';
 import { projectById } from '../../src/server/api/projects';
 import { specialistReviewsRouter } from '../../src/server/api/specialist-reviews';
+import { bridgeRouter } from '../../src/server/bridge';
 import type { DB } from '../../src/server/db/client';
 
 let tdb: ReturnType<typeof makeTestDb>;
@@ -45,6 +46,7 @@ beforeEach(async () => {
   app.use(express.json());
   app.use('/api/projects/:id', projectById);
   app.use('/api/specialist-reviews', specialistReviewsRouter);
+  app.use('/bridge', bridgeRouter);
   app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     const status = (err as { status?: number }).status ?? 500;
     res.status(status).json({ error: { code: 'test', message: (err as Error).message } });
@@ -89,23 +91,56 @@ describe('J1 借调流', () => {
     expect(() => borrowStaffSpecialist(db, { specialistId: projectTier.id, toProjectId: a })).toThrow(/staff/);
   });
 
-  it('蜂群 acquire：本项目池无可执行专家 → 全局 staff 借调（persona 优先），不建本项目计数行；本项目有自己的专家则不借', () => {
+  it('用户定调：acquire 不隐式借调——本项目池空时全局 staff 存在也不借（借调=按需显式选择，本地计数行为不变）', () => {
     const a = mkProject('pool');
     const b = mkProject('borrower');
     mkStaff(a, '前端翻译', 'persona_tr');
 
-    // b 池为空 → 借调命中（persona 匹配）
     const got = acquireSpecialistForPersona(db, b, 'persona_tr', '前端翻译');
-    expect(got?.borrowed).toBe(true);
-    expect(got?.agentId).toBeTruthy();
+    expect(got).toBeNull(); // 只记本项目第一条需求计数（原有行为）
     const bCount = db.prepare("SELECT COUNT(*) n FROM specialist_pool WHERE project_id=?").get(b) as { n: number };
-    expect(bCount.n).toBe(0); // 借调不虚增本项目需求计数
+    expect(bCount.n).toBe(1);
+    const borrows = db.prepare('SELECT COUNT(*) n FROM specialist_borrow').get() as { n: number };
+    expect(borrows.n).toBe(0); // 无隐式借调留痕
+  });
 
-    // b 自己的池有了同 persona 可执行专家 → 本项目池优先直接用（不再借）
-    const own = createProjectSpecialist(db, { projectId: b, specialty: '本地翻译专家', personaId: 'persona_tr', via: 'manual' });
-    const got2 = acquireSpecialistForPersona(db, b, 'persona_tr', '前端翻译');
-    expect(got2?.agentId).toBe(own.agentId);
-    expect(got2?.borrowed).toBeUndefined();
+  it('bridge 动作 borrow-specialist（agent 按需选择工具）：specialty 匹配借入任务项目+事件；无候选 404 带替代指引', async () => {
+    const a = mkProject('lender');
+    const b = mkProject('needer');
+    const staffId = mkStaff(a, '同声传译');
+    const taskRow = db.prepare('SELECT id FROM task LIMIT 1').get() as { id: string } | undefined;
+    // 造任务（bridge 需要 taskId）：直接建
+    const { createTask } = await import('../../src/server/domain/task');
+    const task = createTask(db, { projectId: b, title: '需要传译' });
+
+    const res = await fetch(`${base}/bridge/borrow-specialist`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ taskId: task.id, specialty: '传译' }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; agentId: string; specialty: string };
+    expect(body.ok).toBe(true);
+    expect(body.specialty).toBe('同声传译');
+    const row = db.prepare('SELECT * FROM specialist_borrow WHERE specialist_id=?').get(staffId) as { to_project_id: string; task_id: string };
+    expect(row.to_project_id).toBe(b);
+    expect(row.task_id).toBe(task.id);
+
+    const none = await fetch(`${base}/bridge/borrow-specialist`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ taskId: task.id, specialty: '不存在的冷门专长' }),
+    });
+    expect(none.status).toBe(404);
+    expect(((await none.json()) as { error: string }).error).toContain('群聊');
+
+    const bad = await fetch(`${base}/bridge/borrow-specialist`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ taskId: 'bad' }),
+    });
+    expect(bad.status).toBe(400);
+    void taskRow;
   });
 
   it('手动借调 API：POST /api/projects/:id/specialists/:sid/borrow → 201', async () => {

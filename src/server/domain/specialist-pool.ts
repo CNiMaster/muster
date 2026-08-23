@@ -180,7 +180,7 @@ export function findStaffBorrowCandidate(db: DB, toProjectId: string, personaId:
  * - 只有需求计数行（agent_id 空）→ 计数 +1；达 PROMOTE_TO_AGENT_AT_USE 时落成常驻专家并返回。
  * - 无行 → 记第一条需求计数，返回 null（调用方本次仍走一次性临时蜂）。
  */
-export function acquireSpecialistForPersona(db: DB, projectId: string, personaId: string, specialty: string, taskId?: string): { agentId: string; created: boolean; borrowed?: boolean } | null {
+export function acquireSpecialistForPersona(db: DB, projectId: string, personaId: string, specialty: string): { agentId: string; created: boolean } | null {
   getProject(db, projectId);
   const row = db.prepare(
     "SELECT * FROM specialist_pool WHERE project_id=? AND persona_id=? AND status='active' ORDER BY created_at LIMIT 1",
@@ -190,13 +190,6 @@ export function acquireSpecialistForPersona(db: DB, projectId: string, personaId
     db.prepare('UPDATE specialist_pool SET use_count=use_count+1, updated_at=? WHERE id=?').run(now, row.id);
     maybePromoteToStaff(db, getEntry(db, row.id));
     return { agentId: row.agent_id, created: false };
-  }
-  // 批次 J1 借调兜底：本项目池无可执行专家（无计数行或计数行未落 agent）→ 先向全局 staff 借调
-  // （蜂群不私自造专家；借调不虚增本项目需求计数——本项目真实需求的沉淀仍由计数行负责）。
-  const borrowCandidate = findStaffBorrowCandidate(db, projectId, personaId, specialty);
-  if (borrowCandidate && (!row || !row.agent_id)) {
-    const borrowed = borrowStaffSpecialist(db, { specialistId: borrowCandidate.id, toProjectId: projectId, taskId });
-    return { agentId: borrowed.agentId, created: false, borrowed: true };
   }
   if (row) {
     const nextUse = row.use_count + 1;
