@@ -32,15 +32,41 @@ export function MessageNavStrip({ containerRef }: { containerRef: React.RefObjec
     return () => ro.disconnect();
   }, [containerRef]);
 
+  // 2026-08-23 用户定案：当前视口所在发言区间的刻度标黑（视口上 30% 处落在哪次发言之后）
+  const [activeIdx, setActiveIdx] = useState(0);
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onScroll = (): void => {
+      const probe = el.scrollTop + el.clientHeight * 0.3;
+      let idx = 0;
+      marks.forEach((m, i) => { if (m.top <= probe) idx = i; });
+      setActiveIdx(idx);
+    };
+    onScroll();
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [containerRef, marks]);
+
   if (marks.length === 0) return null;
 
-  // 2026-08-23 用户定案：刻度=居中一列、连续相邻、等长（不按内容位置分散）；点击仍定位到对应发言
+  // hover 波纹放大：自己 2 倍，上下各影响 2 根递减（±1≈1.7×、±2≈1.4×），最多 5 根
+  const influenceWidth = (i: number): number | null => {
+    if (hovered === null) return null;
+    const d = Math.abs(i - hovered);
+    if (d === 0) return 24;
+    if (d === 1) return 20;
+    if (d === 2) return 17;
+    return null;
+  };
+
   return (
     <div className="mu-msg-navstrip" role="navigation" aria-label="用户发言导航">
       {marks.map((m, i) => (
         <div
           key={i}
-          className={`mu-msg-navtick ${hovered === i ? 'is-hover' : ''}`}
+          className={`mu-msg-navtick ${hovered === i ? 'is-hover' : ''} ${i === activeIdx ? 'is-active' : ''}`}
+          style={{ width: influenceWidth(i) ?? undefined }}
           onClick={() => {
             const c = containerRef.current;
             if (c) c.scrollTo({ top: Math.max(0, m.top - 72), behavior: 'smooth' });

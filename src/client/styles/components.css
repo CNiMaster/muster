@@ -1331,7 +1331,8 @@
 
 /* ── 中栏对话横条导航（2026-08-23 用户定案）：左侧中部用户发言刻度，hover 放大+内容气泡 ── */
 .mu-conv-stream{position:relative}
-.mu-msg-navstrip{position:absolute;z-index:5;left:2px;top:0;bottom:0;display:flex;flex-direction:column;justify-content:center;gap:4px;pointer-events:none}
+.mu-msg-navstrip{position:absolute;z-index:5;left:-10px;top:0;bottom:0;display:flex;flex-direction:column;justify-content:center;gap:4px;pointer-events:none}
 .mu-msg-navtick{position:relative;width:12px;height:2px;min-height:2px;border-radius:1px;background:var(--border-strong);opacity:.7;cursor:pointer;pointer-events:auto;transition:width var(--duration-fast) var(--ease-out),opacity var(--duration-fast) var(--ease-out),background var(--duration-fast) var(--ease-out)}
-.mu-msg-navtick:hover,.mu-msg-navtick.is-hover{width:18px;opacity:1;background:var(--fg-subtle)}
+.mu-msg-navtick:hover,.mu-msg-navtick.is-hover{opacity:1;background:var(--fg-subtle)}
+.mu-msg-navtick.is-active{background:var(--fg);opacity:1}
 .mu-msg-navbubble{position:absolute;left:calc(100% + 10px);top:50%;transform:translateY(-50%);min-width:248px;max-width:320px;padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--fg-muted);font-size:var(--text-xs);line-height:1.5;white-space:normal;box-shadow:var(--shadow-1);pointer-events:none}
