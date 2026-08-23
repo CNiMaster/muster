@@ -9,8 +9,9 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { ToolRegistryPanel } from '../components/settings/ToolRegistryPanel';
 import { CredentialStorePanel } from '../components/settings/CredentialStorePanel';
 import { BackupCenterPanel } from '../components/settings/BackupCenterPanel';
+import { SpecialistReviewPanel } from '../components/settings/SpecialistReviewPanel';
 
-type SettingsTab = 'general' | 'models' | 'swarm' | 'network' | 'appearance' | 'credentials' | 'tools' | 'backup';
+type SettingsTab = 'general' | 'models' | 'swarm' | 'network' | 'appearance' | 'credentials' | 'tools' | 'backup' | 'specialists';
 
 export function SettingsPage(): React.ReactElement {
   const { data: settings, isLoading } = useSystemSettings();
@@ -184,6 +185,9 @@ export function SettingsPage(): React.ReactElement {
           </button>
           <button type="button" className={`settings-nav-item ${activeTab === 'tools' ? 'is-active' : ''}`} onClick={() => setTab('tools')}>
             <span>🔧 工具与 MCP 注册</span>
+          </button>
+          <button type="button" className={`settings-nav-item ${activeTab === 'specialists' ? 'is-active' : ''}`} onClick={() => setTab('specialists')}>
+            <span>🧑‍🔬 专家盘点</span>
           </button>
         </nav>
 
@@ -401,6 +405,12 @@ export function SettingsPage(): React.ReactElement {
 
           {activeTab === 'tools' && (
             <ToolRegistryPanel />
+          )}
+
+          {activeTab === 'specialists' && (
+            <Card title="专家盘点（人事待处置清单）">
+              <SpecialistReviewPanel />
+            </Card>
           )}
 
           {activeTab === 'backup' && (

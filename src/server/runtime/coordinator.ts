@@ -13,6 +13,7 @@ import { updateProject, getProject } from '../domain/project';
 import { settleDrainingAgents } from '../domain/agent';
 import { drainReflectionQueue, recoverStuckReflections, enqueueIdleReflections } from '../domain/reflection';
 import { sweepStaleStaging, sweepStaleTaskStaging } from '../domain/staging';
+import { sweepIdleStaffSpecialists } from '../domain/specialist-review';
 import { listDueAutomations, markAutomationRun } from '../domain/automation';
 import { syncGithubIssues } from '../domain/github-issues';
 import { settleMemoryVotes } from '../domain/memory';
@@ -288,7 +289,12 @@ export class ProjectRuntimeCoordinator {
 
     // staging/任务级合并看门狗（每 10 分钟）：独立于 tick——promote 含 premium LLM 审查（单次最长 60s），
     // 放 tick 内会持 ticking 互斥冻结整个调度循环（租约恢复/泵送/镜像释放停摆数分钟）。
+    // 批次 J2：定期盘点长期未借调的常驻专家（30 天；按 specialist+kind 去重）——盘点制非过期制
     this.stagingWatchdogTimer = setInterval(() => {
+      try {
+        const idle = sweepIdleStaffSpecialists(this.db);
+        if (idle.created > 0) log.info?.('idle staff inventory created', { created: idle.created });
+      } catch { /* 盘点失败不影响主 sweep */ }
       try {
         const swept = sweepStaleStaging(this.db, { recheckMs: this.stagingWatchdogIntervalMs });
         if (swept.promoted + swept.blocked > 0) log.info('staging watchdog swept', swept);

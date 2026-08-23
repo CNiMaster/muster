@@ -3275,3 +3275,39 @@ export function useClearSideChat() {
     },
   });
 }
+
+/** ─── 专家盘点（批次 J2：盘点制非过期制） ─── */
+
+export interface SpecialistReviewDTO {
+  id: string;
+  kind: 'archive-disposition' | 'idle-inventory';
+  projectId: string | null;
+  specialistId: string;
+  agentId: string | null;
+  status: 'pending' | 'resolved';
+  suggestion: string;
+  resolution: string | null;
+  createdAt: string;
+  specialty: string;
+  tier: string;
+  projectName: string | null;
+}
+
+export function useSpecialistReviews(status?: 'pending' | 'resolved') {
+  return useQuery({
+    queryKey: ['specialist-reviews', status ?? 'all'],
+    queryFn: () => api.get<SpecialistReviewDTO[]>(`/api/specialist-reviews${status ? `?status=${status}` : ''}`),
+    staleTime: 30_000,
+  });
+}
+
+export function useResolveSpecialistReview() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { id: string; action: 'promote' | 'archive' | 'keep' | 'dismiss' }) =>
+      api.post(`/api/specialist-reviews/${input.id}/resolve`, { action: input.action }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['specialist-reviews'] });
+    },
+  });
+}
