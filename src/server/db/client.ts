@@ -93,11 +93,22 @@ export function snapshotDbBeforeMigration(db: DB): string {
     migrationsAppliedAtSnapshot: last?.name ?? null,
     restore: '停止服务 → 把本目录内数据库三件套拷回原位（覆盖）→ 重启',
   }, null, 2));
+  // 滚动保留：份数上限 + 字节预算（总量超过 max(库当前 2 倍, 50MB) 即删最旧，至少留最新 1 份——
+  // 用户追问「五份不会太大吧」：库大时份数让位于空间预算）
   const root = path.dirname(dest);
-  const dirs = readdirSync(root).filter((d) => { try { return statSync(path.join(root, d)).isDirectory(); } catch { return false; } }).sort();
-  while (dirs.length > PRE_MIGRATION_BACKUP_KEEP) {
-    rmSync(path.join(root, dirs.shift()!), { recursive: true, force: true });
-  }
+  const dirs = readdirSync(root).filter((d) => { try { return statSync(path.join(root, d)).isDirectory(); } catch { return false; } }).sort().reverse();
+  const dirBytes = (d: string): number => {
+    try { return readdirSync(path.join(root, d)).reduce((acc, f) => { try { return acc + statSync(path.join(root, d, f)).size; } catch { return acc; } }, 0); } catch { return 0; }
+  };
+  const dbBytes = (() => { try { return statSync(dbPath).size; } catch { return 0; } })();
+  const budget = Math.max(dbBytes * 2, 50 * 1024 * 1024);
+  let used = 0;
+  const doomed: string[] = [];
+  dirs.forEach((d, i) => {
+    used += dirBytes(d);
+    if (i >= PRE_MIGRATION_BACKUP_KEEP || (i > 0 && used > budget)) doomed.push(d);
+  });
+  for (const d of doomed) rmSync(path.join(root, d), { recursive: true, force: true });
   log.info('pre-migration snapshot created', { dest, keep: PRE_MIGRATION_BACKUP_KEEP });
   return dest;
 }

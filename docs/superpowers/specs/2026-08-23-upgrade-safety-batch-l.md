@@ -66,4 +66,5 @@ L1 快照触发/失败拒启/滚动保留；L2 行数校验失败不 DROP；L3 �
 - **L8**：docs/RELEASE-CHECKLIST.md 六条+scripts/upgrade-drill.mjs（隔离 home 起服务→健康+快照断言，已真跑通过）。
 - **L7 上下文治理**：tool-loop contextGovernance（默认 48 条阈值→确定性摘要保留系统+近 8 条，内存内延续不换线程；null 关闭）。**偏差**：v1 用确定性摘要（assistant 结论/工具名/输入首行截 4000 字）而非 callLlm 摘要——不引入 LLM 新失败面+确定性可测，LLM 摘要留 v2。
 - **留 v2（偏差记录）**：L3 bootSelfCheck 完整性扩展、L4(b) 执行器版本变化主动提醒、清理 StoragePage UI 节、L7 设置项 context_budget、retention boot sweep 挂 coordinator。
+- **追加轮（用户两问）**：①快照空间预算——滚动不止看份数（5 份），总量超 max(库 2 倍, 50MB) 即删最旧至少留最新 1 份（库大时份数让位于空间）；②**旧数据兼容回归**（用户点破真缺口：测试库全是新造的，从未验证旧数据跑新代码）——upgrade-compat.spec：只用前 N-3 迁移建库（模拟旧版本）+种旧数据（含旧形态 JSON）→跑完剩余迁移→断言行数不丢+pre-migration 快照生成+域函数可读+旧 JSON 容忍。RELEASE-CHECKLIST 增补第 7 条。
 - **测试**：migration-safety 4（快照触发/滚动/幂等/分级+历史标注防漏）+tool-loop-context 3（摘要内容/压缩生效近尾部保留/null 关闭）+retention 2（预览+归档读回+VACUUM+滚动）；upgrade-drill 真跑通过。
