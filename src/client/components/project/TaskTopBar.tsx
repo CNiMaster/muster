@@ -136,6 +136,7 @@ export function TaskTopBar({ projectId, task, runtimeTaskId, rightExtra }: {
       {/* 分支（worktree）下拉——治理批次5：简单模式收起（治理照常自动跑，只不亮术语） */}
       {(
       <div style={{ position: 'relative', flexShrink: 0 }}>
+        {(branch || worktreePath) && (
         <button
           type="button"
           className="mu-composer-pill mu-composer-branch"
@@ -147,6 +148,7 @@ export function TaskTopBar({ projectId, task, runtimeTaskId, rightExtra }: {
         >
           ⑂ {branch ?? (worktreePath ? '（未知）' : '无工作区')}
         </button>
+        )}
         {branchMenuOpen && (
           <>
             <div style={{ position: 'fixed', inset: 0, zIndex: 60 }} onClick={() => setBranchMenuOpen(false)} />
