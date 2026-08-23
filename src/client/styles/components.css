@@ -491,11 +491,11 @@
   display: flex;
   flex-direction: column;
   height: 520px;
-  /* 2026-08-23 用户定案：无框——中栏整体就是一个对话框 */
+  /* 2026-08-23 用户定案：无框——中栏整体就是一个对话框；overflow 放开（发言指示条负偏移进 padding 区，滚动由内层 stream 承担） */
   background: transparent;
   border: none;
   border-radius: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 /* 批次 F.5：读历史时离底悬浮「回到最新」 */
 .mu-conv-jump {
