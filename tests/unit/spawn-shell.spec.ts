@@ -18,8 +18,11 @@ import {
   guardedSpawn,
 } from '../../src/server/executors/spawn-shell';
 
+// 真实路径归一依赖 macOS 系统级符号链接（/tmp→/private/tmp），Linux CI 上该语义不存在
+const itDarwin = platform() === 'darwin' ? it : it.skip;
+
 describe('seatbelt profile 生成（H9a）', () => {
-  it('真实路径归一（/tmp→/private/tmp）+ 去重 + deny 前置 allow 覆盖顺序', () => {
+  itDarwin('真实路径归一（/tmp→/private/tmp）+ 去重 + deny 前置 allow 覆盖顺序', () => {
     const profile = buildSandboxProfile(['/tmp/x', '/private/tmp/x', '/Users/me/worktree']);
     expect(profile).toContain('(deny file-write*)');
     const allows = profile.split('\n').filter((l) => l.startsWith('(allow file-write*'));

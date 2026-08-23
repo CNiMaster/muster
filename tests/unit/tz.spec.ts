@@ -32,6 +32,7 @@ describe('tz 时区工具（指挥系统批次1：每天 N 点语义）', () => 
   });
 
   it('localTimezone 返回非空 IANA 名', () => {
-    expect(localTimezone()).toMatch(/^[A-Za-z_]+\/[A-Za-z_+0-9-]+$/);
+    // CI（Ubuntu）TZ 未设时 resolvedOptions 返回裸 "UTC"——ECMA-402 合法形态，与 区域/城市 并列接受
+    expect(localTimezone()).toMatch(/^([A-Za-z_]+\/[A-Za-z_+0-9-]+|UTC)$/);
   });
 });

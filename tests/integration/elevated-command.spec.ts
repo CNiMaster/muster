@@ -6,7 +6,7 @@ import express from 'express';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { mkdtempSync, readFileSync, existsSync, rmSync } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
+import { homedir, tmpdir, platform } from 'node:os';
 import { join } from 'node:path';
 import type { DB } from '../../src/server/db/client';
 import { createAgent } from '../../src/server/domain/agent';
@@ -60,7 +60,10 @@ async function resolveWhenPending(value: 'allow' | 'deny'): Promise<void> {
 }
 
 describe('bridge /elevated-command（H9c 受托越界）', () => {
-  it('批准 → 受托执行：目标目录可写、目录外仍被 OS 拒（逐命令授权≠全开后门）', async () => {
+  // 「目录外仍被 OS 拒」靠 seatbelt（darwin 专属）实现；Linux 上无 OS 级围栏，该语义用例跳过
+  const itDarwin = platform() === 'darwin' ? it : it.skip;
+
+  itDarwin('批准 → 受托执行：目标目录可写、目录外仍被 OS 拒（逐命令授权≠全开后门）', async () => {
     const approvedDir = mkdtempSync(join(homedir(), '.muster-h9c-approved-')); // 家目录下=壳默认白名单外
     const otherDir = mkdtempSync(join(homedir(), '.muster-h9c-other-'));
     try {
