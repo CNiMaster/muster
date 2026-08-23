@@ -6,3 +6,4 @@
 4. **CLI 兼容**：manifests limitations 更新了吗？五个 CLI 适配器失败文案带升级诊断提示（L4）验证一次。
 5. **四门**：`npm run gate`（全量，不用 --fast）真退出码 0。
 6. **升级安全专项回归**：migration-safety.spec / retention.spec / tool-loop-context.spec 全绿。
+7. **旧数据兼容**：`tests/integration/upgrade-compat.spec.ts` 绿（旧库跑新迁移不丢行、旧 JSON 形态容忍）；新代码读 JSON 列一律缺字段容忍（不假设新键必在）。
