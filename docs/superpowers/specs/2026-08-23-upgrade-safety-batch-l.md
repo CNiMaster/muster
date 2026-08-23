@@ -1,57 +1,62 @@
-# 批次 L：升级安全（用户数据零损失防线）——修软件不能伤用户
+# 批次 L：升级安全 + 数据治理 + 上下文治理（用户 2026-08-23 定调六项全补）
 
-状态：proposed（2026-08-23；用户关切：软件发布后用户本地有任务/项目/产物，修复与更新可能导致数据损失、连接不上、找不回来、错误删除；外部 CLI 升级也可能让功能失效。**桌面版+自动更新（git 发布）上线前这是前置必修**——见 muster-desktop-lan-p2p-direction。）
+状态：proposed（用户：CLI 对齐、数据迁移、数据清理（用户想清过期信息）、数据压缩、对话内容压缩（谁控制？连续工作断不断？）、升级缺口——都需要补。**桌面版+自动更新（git 发布）上线前前置必修**——见 muster-desktop-lan-p2p-direction。本版合并原「升级安全」spec 并扩展。）
 
-## 现状盘点（2026-08-23 调研）
+## 现状结论（2026-08-23 调研）
 
-| 面 | 现状 | 风险 |
-|---|---|---|
-| DB 迁移 | 按文件名顺序幂等应用（db/client.ts runMigrations）；破坏性重建（DROP+RENAME 表）已有先例（plugin/scope/conversation 三次） | **迁移前无自动备份**——重建类迁移中途失败=库损坏且无退路 |
-| 备份 | 设置页备份中心：结构化配置 JSON 导出/导入 + 目录指引（哪些目录要用户自行备份） | 手动、易忘；JSON 只含结构化配置不含产物文件 |
-| 文件布局 | 项目在 `MUSTER_HOME/MusterWorkspace/projects/`；任务 worktree/集成分支散布；改名有同卷 mv 迁移（migrateProjectRootDir） | 布局变更无统一登记与回退；worktree 断链后"连接不上/找不回来" |
-| 语义变更 | 停止语义/模式收敛等行为变更靠 spec 记录 | 旧状态任务在新版下的行为无自检（H8 做过 stop_requested 遗留兜底=好先例，未成规则） |
-| CLI 兼容 | manifests 有 detection/minVersion/limitations；执行器健康记账 | 无版本变化提醒；适配器解析失败报错笼统（"执行失败: ..."不带「CLI 可能已升级」诊断） |
-| 回收安全 | 项目软删+回收站（project_trash）；用户目录清理走 mv 隔离区（约定） | 无升级路径上的"误删"防线要求 |
+- 迁移无前置备份（重建类迁移中途失败=库损坏无退路）；备份中心=手动 JSON 导出；DB=WAL 模式三件套。
+- runs/ 隔离目录有 14 天 TTL 自动清扫（run-housekeeping）；StoragePage 存储管理页已有；项目软删+回收站、清理走 mv 隔离区约定已有。
+- **API 型执行器（openai-adapter/tool-loop）消息数组无限增长**——零截断零压缩，长任务必然顶到模型上下文上限。
+- **CLI 型会话由 CLI 自管**：claude 上下文满时自动压缩为摘要，**session id 不变** → 我们 `--resume` 的连续性**不断**（压缩发生在会话内，不换会话文件）。结论：CLI 型「他们自己管=可以，我们连续工作不受影响」——本 spec 落观测锚点而非接管。
+- 无 DB VACUUM/归档；trace/事件/审计表随使用线性增长；适配器失败报错笼统不带 CLI 升级诊断。
 
-## 模型（五道防线）
+## 分段
 
-### L1 迁移前自动快照（核心底线）
+### L1 迁移前自动快照（fail-closed 底线）
 
-- `runMigrations` 应用前：若有**待应用迁移**，先做 DB 文件快照（`muster.db` + WAL/SHM 三件套 copy 到 `MUSTER_HOME/backups/pre-migration/<时间戳>/`，保留最近 5 份自动滚动）。
-- 快照失败 → **拒绝启动**（fail-closed：宁可不起也不能带伤迁移）。
-- 快照成功后正常迁移；迁移完成写一行 boot 日志（备份位置），设置页备份中心展示自动快照清单（可手动恢复=复制回 + 重启）。
+- `runMigrations`：有待应用迁移 → 先快照 `muster.db`+`-wal`+`-shm` 到 `MUSTER_HOME/backups/pre-migration/<ISO 时间戳>/`，自动滚动保留 5 份；**快照失败→拒绝启动**（宁可不起也不能带伤迁移）。
+- 备份中心（设置页）展示自动快照清单+恢复指引（复制回+重启）。
 
-### L2 破坏性迁移分级标记 + 事务
+### L2 破坏性迁移分级
 
-- 迁移文件头注释约定等级：`-- safety: additive | rebuild | destructive`（无标记默认 additive）。`rebuild/destructive` 必须：①L1 快照已在 ②单文件内自洽（SQLite 无真跨文件事务，rebuild 模式=新表建好→INSERT SELECT→验行数一致→才 DROP——已有先例的做法固化）。
-- `runMigrations` 解析标记：rebuild/destructive 且快照失败→拒绝（双保险）。
+- 迁移头注释 `-- safety: additive | rebuild | destructive`（缺省 additive）；rebuild/destructive 要求快照成功才执行；rebuild 固化「新表→INSERT SELECT→**行数一致校验**→才 DROP」。
 
 ### L3 升级后完整性自检（bootSelfCheck 扩展）
 
-- 已有 bootSelfCheck（G8）扩「数据完整性」节：启动后核对——项目数>0 时抽样项目 rootDir 存在性、活跃任务 worktree 可达性、schema_migrations 与迁移文件数一致、上版→新版结构 diff 关键表行数（存 `upgrade_check` 表一行记录）。
-- 异常分级：warn（照常起+设置页亮红点）/ fail（拒绝起+指引：恢复路径=备份中心自动快照）。
+- 项目 rootDir 存在性抽样/活跃任务 worktree 可达/schema_migrations 与迁移文件数一致/关键表行数记录（upgrade_check 表）。异常分级 warn（照常起+设置页红点）/fail（拒起+恢复指引）。
 
-### L4 CLI 升级防线
+### L4 CLI 对齐
 
-- 版本变化探测：执行器 detection 结果与上次记录（新 `executor_version_log` 表或复用健康表）不一致 → UI 提醒「pi 已从 0.73 → 0.80，如遇执行失败可能需要重新认证/查看兼容说明」。
-- 适配器失败诊断升级：解析失败/非零退出的错误文案统一附「可能原因：CLI 版本升级导致输出格式变化——到设置→执行器重新探测」+ limitations 链接。
+- 执行器版本变化探测：detection 结果 vs 上次记录（复用健康记账）不一致 → UI 提醒+manifests limitations 链接。
+- 适配器失败诊断文案统一附「CLI 版本可能已升级——设置→执行器重新探测」。
 
-### L5 发布清单（流程，非代码）
+### L5 数据清理（用户想清过期信息——手动可控+预览+可恢复）
 
-- `docs/RELEASE-CHECKLIST.md`：每次发版过一遍——迁移是否标注等级/自动快照是否生效（本地真测一次升级路径）/路径布局变更是否登记+旧路径 fallback/语义变更是否给存量状态留兜底/CLI 兼容矩阵（manifests limitations）是否更新。
-- **升级路径真测**：用旧版数据目录跑新版（脚本 `scripts/upgrade-drill.mjs`：造一份带历史数据的老库→跑迁移→自检→报告），进 gate 可选步。
+- 存储管理扩「过期信息清理」：分类列出（旧 trace 事件/审计日志/已终态任务 staging 残留/自动快照超额份/隔离区）+ 数量与体积 + 单类/全选（预览明细→确认→**mv 进隔离区不直接删**）。
+- TTL 规则集中域单源 `retention.ts`：runs 14d（已有）/trace 事件 90d/审计 180d/快照 5 份；boot sweep 挂 coordinator。
 
-## 测试
+### L6 数据压缩
 
-- L1/L2：集成——待迁移库触发快照（文件存在+内容一致）；快照失败拒启；rebuild 迁移行数校验失败不 DROP。
-- L3：自检各分支（正常/项目目录被手动移走 warn/库不一致 fail）。
-- L4：版本变化→提醒事件；适配器失败文案含诊断。
-- upgrade-drill：脚本跑通一个「旧版库→新版」全流程。
+- 清理动作完成后触发 `PRAGMA wal_checkpoint(TRUNCATE)` + `VACUUM`（低频：清理时触发而非每次 boot）；归档优先：清理的 trace/事件先导出压缩 JSONL 到 `backups/archive/`（保留 TTL 两倍时长）可找回。
+
+### L7 对话内容压缩（分层控制权，保连续）
+
+- **API 型（我们控制）**：tool-loop 加上下文治理——消息数/估算 token 超阈值（设置项 `context_budget`，默认保守值）时，把最早 N 轮工具循环压缩为一条 checkpoint 摘要消息（economy 档 callLlm 生成「已完成步骤与结论」），后续消息接续——**内存内延续不换线程，连续工作不断**。
+- **CLI 型（CLI 控制，我们观测）**：不接管 claude/codex/pi 自动压缩；每次 run 记录会话长度与用量进 trace；vendor_session_id 跨 run 断言已有，spec 记「压缩后 session 仍可 resume」结论锚点。
+- 侧边对话 12 轮窗口（I-b）不动。
+
+### L8 发布清单+升级演练
+
+- `docs/RELEASE-CHECKLIST.md`；`scripts/upgrade-drill.mjs`（造旧库→跑迁移→自检→报告），可挂 gate 可选步。
+
+## 测试（每段随实现补）
+
+L1 快照触发/失败拒启/滚动保留；L2 行数校验失败不 DROP；L3 分级；L4 提醒与文案；L5 预览+隔离区+TTL；L6 checkpoint+VACUUM 触发；L7 阈值触发摘要压缩+后续工具循环可用+结果不丢；L8 drill 跑通。
 
 ## 边界与不做
 
-- 不做自动回滚（自动快照+手动恢复指引足够，自动回滚在 WAL/文件布局上复杂度不成比例）；不做产物文件的自动云备份；不做 CLI 自动安装/锁定版本（只提醒不接管）。
+不做自动回滚/云备份/CLI 版本锁定；不压缩产物文件本体；CLI 型不接管压缩（观测+提醒）。
 
 ## 实施记录
 
-（待实施——等用户拍板排期）
+（分段实施中）
