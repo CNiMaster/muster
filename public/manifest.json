@@ -1,11 +1,11 @@
 {
-  "name": "Muster Agent 公司工作台",
+  "name": "Muster 本地多智能体工作台",
   "short_name": "Muster",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#1f1d1b",
   "theme_color": "#1f1d1b",
-  "description": "本地单用户多 Agent 公司工作台 · 长篇小说协作生产",
+  "description": "本地单用户多智能体工作台：项目任务、智能体协作与蓝图组织",
   "icons": [
     {
       "src": "/favicon.svg",

@@ -21,6 +21,16 @@ settingsRouter.post(
   }),
 );
 
+/** 工作台快速指引完成标记（轻量专用端点——同 ui-mode 先例：主端点必填全量，单键提交会被 422 拒掉）。 */
+settingsRouter.post(
+  '/workbench-guide',
+  asyncHandler(async (req, res) => {
+    const input = z.object({ done: z.boolean() }).parse(req.body);
+    saveSystemSettings(getDb(), { workbenchGuideDone: input.done });
+    res.json({ ok: true });
+  }),
+);
+
 /** 保存系统设置的 zod schema（导出供测试——六步链断点历史上就出在这里：zod 默认剥未知键）。 */
 export const settingsUpdateSchema = z.object({
   claudeBin: z.string().min(1),
@@ -77,6 +87,8 @@ export const settingsUpdateSchema = z.object({
   stopGraceMs: z.number().int().min(5000).max(600000).optional(),
   // H9b 全局默认权限档（''跟随策略）
   securityMode: z.enum(['', 'confirm-edits', 'auto-edit', 'plan', 'full-access']).optional(),
+  // 工作台快速指引完成标记（服务端记录，多端共享）
+  workbenchGuideDone: z.boolean().optional(),
 });
 
 // 获取当前系统设置

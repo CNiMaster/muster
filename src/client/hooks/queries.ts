@@ -2593,6 +2593,7 @@ export function useSaveSystemSettings() {
       swarmRepairMax?: number;
       breadthDefaultTier?: 'light' | 'standard' | 'heavy';
       debateMinConfidence?: number;
+      workbenchGuideDone?: boolean;
       modelTierEconomy?: string;
       modelTierPremium?: string;
       imageGenModel?: string;

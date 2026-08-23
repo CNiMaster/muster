@@ -82,6 +82,8 @@ export interface SystemSettings {
   stopGraceMs: number;
   /** H9b 全局默认权限档：''跟随任务/员工策略（存量零变化）| confirm-edits | auto-edit | plan | full-access。 */
   securityMode: '' | 'confirm-edits' | 'auto-edit' | 'plan' | 'full-access';
+  /** 工作台快速指引是否已完成（服务端记录——多浏览器/多设备共享，不再按浏览器 localStorage 识别首次）。 */
+  workbenchGuideDone: boolean;
 }
 
 export function getSetting(db: DB, key: string, defaultValue: string): string {
@@ -149,6 +151,7 @@ export function getSystemSettings(db: DB): SystemSettings {
     preventSleep: (['active', 'always', 'off'] as const).includes(getSetting(db, 'prevent_sleep', 'active') as 'active')
       ? (getSetting(db, 'prevent_sleep', 'active') as 'active' | 'always' | 'off')
       : 'active',
+    workbenchGuideDone: getSetting(db, 'workbench_guide_done', 'false') === 'true',
   };
 }
 
@@ -262,5 +265,8 @@ export function saveSystemSettings(db: DB, settings: Partial<SystemSettings>): v
   }
   if (settings.securityMode !== undefined) {
     setSetting(db, 'security_mode', ['', 'confirm-edits', 'auto-edit', 'plan', 'full-access'].includes(settings.securityMode) ? settings.securityMode : '');
+  }
+  if (settings.workbenchGuideDone !== undefined) {
+    setSetting(db, 'workbench_guide_done', settings.workbenchGuideDone ? 'true' : 'false');
   }
 }

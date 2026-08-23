@@ -50,14 +50,17 @@ if (!process.env.MUSTER_API) {
   if (!process.env.MUSTER_ALLOWED_ROOTS) {
     process.env.MUSTER_ALLOWED_ROOTS = `${tmpHome}:${process.env.HOME ?? ''}:/tmp`;
   }
+  // detached 进程组：kill(-pid) 整组击杀——tsx CLI 是包装进程，真正的 server 是它 fork 的子进程，
+  // 单杀 spawned 会把 server 留成孤儿（2026-08-23 实证：smoke 跑完残留 node server.ts 占内存不退）
   spawned = spawn(process.execPath, ['--import', 'tsx', resolve(__dirname, '../../src/server/server.ts')], {
     stdio: 'inherit',
     env: process.env,
+    detached: true,
   });
   process.env.MUSTER_API = `http://127.0.0.1:${port}`;
   if (!(await waitHealth(port))) {
     console.error('冒烟服务器启动超时');
-    spawned.kill();
+    try { process.kill(-spawned.pid, 'SIGKILL'); } catch { spawned.kill(); }
     fs.rmSync(tmpHome, { recursive: true, force: true });
     process.exit(1);
   }
@@ -83,7 +86,7 @@ try {
   }
 } finally {
   if (spawned) {
-    spawned.kill();
+    try { process.kill(-spawned.pid, 'SIGKILL'); } catch { /* 组已退出则忽略，兜底单杀 */ try { spawned.kill(); } catch { /* noop */ } }
     fs.rmSync(tmpHome, { recursive: true, force: true });
   }
 }

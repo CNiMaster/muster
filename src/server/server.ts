@@ -268,6 +268,9 @@ async function createApp(): Promise<AppHandle> {
       res.sendFile(path.join(clientDist, 'index.html'));
     });
   } else {
+    // 开发模式：public/（favicon/manifest/截图）显式挂静态——Vite 内联 root 下 publicDir 不生效，
+    // 实测 dev 中 /manifest.json 被 SPA fallback 吞成 HTML（浏览器 console 报 Manifest 语法错）。
+    app.use(express.static(path.resolve(__dirname, '../../public')));
     // 开发模式：挂载 Vite middleware
     const { createServer: createVite } = await import('vite');
     const vite = await createVite({
