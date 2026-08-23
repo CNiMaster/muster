@@ -244,6 +244,7 @@ export function ProjectWorkNavigation({
               items={[
                 { key: 'new', label: '🆕 新建项目', onSelect: () => navigate('/projects/new') },
                 { key: 'open', label: '📂 打开本地目录…', onSelect: () => navigate('/projects/new?mode=open') },
+                { key: 'manage', label: '🗂 管理项目（分组/拖动/文件树）', onSelect: () => navigate('/projects/manage') },
               ]}
             >
               <span style={{ cursor: 'pointer', fontSize: 12, color: 'var(--accent)', padding: '0 4px' }} title="添加或接管项目">＋</span>
@@ -302,6 +303,7 @@ export function ProjectWorkNavigation({
               items={[
                 { key: 'new', label: '🆕 新建项目', onSelect: () => navigate('/projects/new') },
                 { key: 'open', label: '📂 打开本地目录…', onSelect: () => navigate('/projects/new?mode=open') },
+                { key: 'manage', label: '🗂 管理项目（分组/拖动/文件树）', onSelect: () => navigate('/projects/manage') },
               ]}
             >
               <span style={{ cursor: 'pointer', fontSize: 12, color: 'var(--accent)', padding: '0 4px' }} title="添加或接管项目">＋</span>

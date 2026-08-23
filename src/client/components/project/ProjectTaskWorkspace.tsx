@@ -295,11 +295,7 @@ export function ProjectTaskWorkspace({
             </button>
           </div>
         </div>
-      ) : (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'var(--bg-elev)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)', minWidth: 0 }}>
-          <span style={{ fontSize: '13px', color: 'var(--fg-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>当前处于全局协作对话 · 发送指令即可开工</span>
-        </div>
-      )}
+      ) : null}
 
       {/* 新建任务轻量卡片（弹开态） */}
       {/* 项目任务清单（批次三第二片）：逐项执行，验收 PASS 自动解锁下一条 */}

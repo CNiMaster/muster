@@ -105,6 +105,7 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <ProjectPage /> },
       { path: 'projects/new', element: <ProjectPage /> },
+      { path: 'projects/manage', element: <HomePage /> },
       { path: 'archive', element: <ArchivePage /> },
       { path: 'automations', element: <ModeGate><AutomationPage /></ModeGate> },
       { path: 'blueprints', element: <ModeGate><BlueprintLibraryPage /></ModeGate> },
