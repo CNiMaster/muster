@@ -59,6 +59,9 @@ export function MessageNavStrip({ containerRef }: { containerRef: React.RefObjec
     if (d === 2) return 17;
     return null;
   };
+  // 波纹扩散感：离触发点越远动得越晚（距离 × 45ms 延迟）
+  const influenceDelay = (i: number): string | undefined =>
+    hovered === null || i === hovered ? undefined : `${Math.min(Math.abs(i - hovered), 3) * 45}ms`;
 
   return (
     <div className="mu-msg-navstrip" role="navigation" aria-label="用户发言导航">
@@ -66,7 +69,7 @@ export function MessageNavStrip({ containerRef }: { containerRef: React.RefObjec
         <div
           key={i}
           className={`mu-msg-navtick ${hovered === i ? 'is-hover' : ''} ${i === activeIdx ? 'is-active' : ''}`}
-          style={{ width: influenceWidth(i) ?? undefined }}
+          style={{ width: influenceWidth(i) ?? undefined, transitionDelay: influenceDelay(i) }}
           onClick={() => {
             const c = containerRef.current;
             if (c) c.scrollTo({ top: Math.max(0, m.top - 72), behavior: 'smooth' });
