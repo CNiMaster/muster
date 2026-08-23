@@ -2,18 +2,35 @@
  * 进程环境相关的路径校验。从旧 utils.js 迁移，server 专用。
  */
 import { realpathSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 
 const ALLOWED_ROOTS = process.env.MUSTER_ALLOWED_ROOTS
   ? process.env.MUSTER_ALLOWED_ROOTS.split(':')
   : [process.env.HOME ?? '/tmp', '/tmp'];
 
-/** realpath 归一：不存在（尚未创建的目标路径）时退回词法 resolve，保证调用两侧口径一致。 */
+/**
+ * realpath 归一：目标不存在时**不再**退回词法 resolve——而是归一最近已存在祖先再拼回
+ * 剩余段。否则 macOS /var→/private/var、/tmp→/private/tmp 一类系统链接下，词法回退路径
+ * 会对已 realpath 的白名单根"假逃逸"（smoke-2 产物 403 环境漂移根因：隔离家在
+ * /var/folders 下，未建项目目录的词法路径永不以 /private/var/... 开头）。
+ */
 function realpathSafe(p: string): string {
+  const resolved = resolve(p);
   try {
-    return realpathSync(p);
+    return realpathSync(resolved);
   } catch {
-    return resolve(p);
+    let dir = dirname(resolved);
+    for (;;) {
+      try {
+        const realDir = realpathSync(dir);
+        const rest = relative(dir, resolved);
+        return rest ? join(realDir, rest) : realDir;
+      } catch {
+        const parent = dirname(dir);
+        if (parent === dir) return resolved; // 走到 / 都不存在——保持词法（与收紧前行为一致）
+        dir = parent;
+      }
+    }
   }
 }
 

@@ -104,6 +104,10 @@ export function writeArtifactContent(
 ): void {
   const base = artifactBaseDir(db, projectId, relPath);
   const abs = resolveArtifactPath(base, relPath);
+  // 与 readArtifactContent 同口径白名单（读写对称：读侧有写侧无=可向任意挂载项目根写内容）
+  if (!isPathAllowed(abs)) {
+    throw new AppError(ErrorCode.UNAUTHORIZED, '路径不在允许的根目录内');
+  }
   // 必须是已注册的可编辑 artifact
   const art = getArtifactByPath(db, projectId, relPath);
   if (!art) {
