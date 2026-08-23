@@ -15,18 +15,18 @@
 
 :root {
   /* ===== 色板（warm paper command desk） ===== */
-  --bg: #f8f6f0;
+  --bg: #f5f5f4;
   --bg-elev: #ffffff;
-  --bg-soft: #f0ece1;
-  --bg-hover: #e7e2d5;
-  --bg-input: #fbf9f4;
+  --bg-soft: #ebebeb;
+  --bg-hover: #e0e0e0;
+  --bg-input: #fafafa;
 
-  --fg: #1a2228;
-  --fg-muted: #53616a;
-  --fg-subtle: #7a868f;
+  --fg: #1d1d1f;
+  --fg-muted: #55575b;
+  --fg-subtle: #7d7f84;
 
-  --accent: #d34f2f;
-  --accent-hover: #ba3f22;
+  --accent: #3a3b3f;
+  --accent-hover: #26272a;
   --accent-fg: #ffffff;
 
   --ok: #236e4f;
@@ -38,9 +38,9 @@
   --info: #2a6382;
   --info-bg: rgba(42, 99, 130, 0.11);
 
-  --border: #dfd8cc;
-  --border-subtle: #ece6dc;
-  --border-strong: #bcb4a4;
+  --border: #d9d9d8;
+  --border-subtle: #e7e7e6;
+  --border-strong: #b3b3b2;
 
   /* ===== 间距 scale ===== */
   --space-1: 4px;
@@ -84,7 +84,7 @@
   --shadow-3: 0 24px 64px rgba(36, 43, 47, 0.14), 0 4px 12px rgba(36, 43, 47, 0.07);
 
   /* ===== focus ring ===== */
-  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+  --focus-ring: 0 0 0 1.5px var(--bg), 0 0 0 2.5px var(--accent);
 
   /* ===== z-index scale ===== */
   --z-dropdown: 10;
@@ -120,20 +120,23 @@
  * 字号由 useAppearance 覆写 --app-font-size——整条字号刻度（含标题）随设置缩放，见上方 type scale 注释。
  */
 :root[data-theme='dark'] {
-  /* warm-gray 深色调板（对比度 ≥4.5:1） */
-  --bg: #191c20;
-  --bg-elev: #21262c;
-  --bg-soft: #24292f;
-  --bg-hover: #2c323a;
-  --bg-input: #1d2126;
+  /* warm-gray 深色调板（与浅色同族暖灰——原冷蓝灰底与暖字/暖 accent 三色温打架）；
+     层次：bg 缝隙最深 < soft 左右栏 < elev 中栏最亮（中栏是主角，左右沉一档衬它） */
+  --bg: #171718;
+  --bg-elev: #262628;
+  --bg-soft: #1e1e20;
+  --bg-hover: #19191a;
+  --bg-input: #303033;
+  /* 调板最深档：发送按钮专属（比缝隙底更深，全页唯一） */
+  --bg-deepest: #101011;
 
-  --fg: #e9e6e0;
-  --fg-muted: #a4adb6;
-  --fg-subtle: #838d97;
+  --fg: #e8e8e7;
+  --fg-muted: #a3a5aa;
+  --fg-subtle: #808288;
 
-  --accent: #e06a4b;
-  --accent-hover: #ef7f5f;
-  --accent-fg: #ffffff;
+  --accent: #c9cad0;
+  --accent-hover: #dcdde2;
+  --accent-fg: #1d1d1f;
 
   --ok: #6fbf9a;
   --ok-bg: rgba(111, 191, 154, 0.14);
@@ -144,12 +147,12 @@
   --info: #6fa8cc;
   --info-bg: rgba(111, 168, 204, 0.14);
 
-  --border: #3a4047;
-  --border-subtle: #2e343b;
-  --border-strong: #4a525b;
+  --border: #3a3a3d;
+  --border-subtle: #2c2c2f;
+  --border-strong: #4b4b4f;
 
-  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.3);
-  --shadow-2: 0 10px 30px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.4);
-  --shadow-3: 0 24px 64px rgba(0, 0, 0, 0.6), 0 4px 12px rgba(0, 0, 0, 0.45);
-  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+  --shadow-1: 0 1px 2px rgba(20, 15, 10, 0.4), 0 8px 24px rgba(20, 15, 10, 0.3);
+  --shadow-2: 0 10px 30px rgba(20, 15, 10, 0.5), 0 2px 6px rgba(20, 15, 10, 0.4);
+  --shadow-3: 0 24px 64px rgba(20, 15, 10, 0.6), 0 4px 12px rgba(20, 15, 10, 0.45);
+  --focus-ring: 0 0 0 1.5px var(--bg), 0 0 0 2.5px var(--accent);
 }

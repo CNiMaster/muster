@@ -592,13 +592,7 @@ export function ProjectDetail({ projectId }: { projectId: string }): React.React
       inspectorLabel="项目任务与运行"
       attentionCount={attentionCount + (cockpit?.approvals.pending ?? 0) + (mergeAttention?.total ?? 0)}
       primaryAction={<>
-        {company && (
-          company.state === 'off'
-            ? <button type="button" className="mu-btn mu-btn-ghost mu-btn-sm workbench-publish-action" title="让智能体上线工作（下班状态不领取任务）" onClick={() => companyAction.mutate({ action: 'clock-in' }, { onSuccess: () => toast('success', '工作台已上线，智能体开始领取任务'), onError: (e) => toast('error', `${(e as Error).message}（可在执行器中心完成接入后再上线）`) })}>🌙 已下班 · 点亮</button>
-            : company.state === 'online'
-              ? <button type="button" className="mu-btn mu-btn-ghost mu-btn-sm workbench-publish-action" title="优雅下班：在跑任务收尾后停止" onClick={() => companyAction.mutate({ action: 'clock-out' }, { onSuccess: () => toast('success', '工作台已下班'), onError: (e) => toast('error', (e as Error).message) })}>☀️ 工作中</button>
-              : null
-        )}
+        {/* 2026-08-23 用户定案：全局上下班按钮退役——默认常上班（workbench 默认 online），CLI/人员维护走局部下班（后续模块化挂起） */}
         {projectView === 'task'
         ? <button type="button" className="mu-btn mu-btn-primary mu-btn-sm workbench-publish-action" onClick={openNewTaskCard}>＋ 新建任务</button>
         : projectView === 'employee'
@@ -673,6 +667,7 @@ export function ProjectDetail({ projectId }: { projectId: string }): React.React
           scope="project"
           scopeId={projectId}
           projectTaskId={selectedProjectTaskId}
+          showIdentity
           title="项目群 · 可 @ 指定智能体"
           onConvertToTask={selectedProjectTaskId
             ? (extract) => createWorkOrder.mutate(

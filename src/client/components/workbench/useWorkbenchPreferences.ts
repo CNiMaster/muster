@@ -14,14 +14,23 @@ export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = {
   rightWidth: 304,
 };
 
-// The stage is where people read, compare and act.  Do not squeeze it below a
-// usable reading width merely to keep both context panes visible.
-export const MIN_WORKBENCH_SURFACE_WIDTH = 520;
+/**
+ * 布局重构（2026-08-23 用户定案）：三栏共存优先，抽屉只留给手机/平板竖屏。
+ * - 桌面阈值 740px ≈ 左(176) + 中(360) + 右(200) 三栏各自压到下限的总和；
+ *   高于它一律真三栏（可拖拽），低于它左右栏退化为互斥抽屉浮层（带遮罩）。
+ * - 中栏最小宽随视口走：max(360, 25vw)——1/4 屏为基准，360 绝对下限防极端窄窗。
+ * - 侧栏下限 ≈ 1/8 屏（1512 屏上 189px）：left 176 / right 200（右栏按钮多略宽）。
+ */
+export const WORKBENCH_DESKTOP_MIN = 740;
 
-/** 批次 F.2：栏宽合法范围（拖拽 clamp 与读取校验共用一份口径）。 */
+export function surfaceMinWidthFor(width: number): number {
+  return Math.max(360, Math.round(width * 0.25));
+}
+
+/** 栏宽合法范围（拖拽 clamp 与读取校验共用一份口径）。 */
 export const PANE_WIDTH_BOUNDS: Record<'left' | 'right', { min: number; max: number }> = {
-  left: { min: 200, max: 360 },
-  right: { min: 240, max: 420 },
+  left: { min: 176, max: 360 },
+  right: { min: 200, max: 420 },
 };
 
 export function clampPaneWidth(pane: 'left' | 'right', px: number): number {
@@ -39,6 +48,7 @@ export function readWorkbenchPreferences(storage: Pick<Storage, 'getItem'>, scop
     return {
       leftOpen: typeof value.leftOpen === 'boolean' ? value.leftOpen : true,
       rightOpen: typeof value.rightOpen === 'boolean' ? value.rightOpen : true,
+      // 旧存量里可能存有低于新下限的宽度（曾为 200/240）——越界回落默认值
       leftWidth: validWidth(value.leftWidth, PANE_WIDTH_BOUNDS.left.min, PANE_WIDTH_BOUNDS.left.max) ? value.leftWidth : DEFAULT_WORKBENCH_PREFERENCES.leftWidth,
       rightWidth: validWidth(value.rightWidth, PANE_WIDTH_BOUNDS.right.min, PANE_WIDTH_BOUNDS.right.max) ? value.rightWidth : DEFAULT_WORKBENCH_PREFERENCES.rightWidth,
     };
@@ -48,17 +58,18 @@ export function readWorkbenchPreferences(storage: Pick<Storage, 'getItem'>, scop
 }
 
 /**
- * On the desktop (>= 1180px) panes share the row with the work surface, so auto-collapse a
+ * On the desktop (>= 740px) panes share the row with the work surface, so auto-collapse a
  * pane when the surface would be squeezed below its reading width. Below the desktop
  * breakpoint panes become overlays/drawers; their visibility is the user's drawer toggle and
  * must not be force-closed here, otherwise a drawer open is immediately undone.
  */
 export function normalizeWorkbenchPreferencesForWidth(value: WorkbenchPreferences, width: number): WorkbenchPreferences {
-  if (width >= 1180) {
-    if (width < value.leftWidth + MIN_WORKBENCH_SURFACE_WIDTH) {
+  if (width >= WORKBENCH_DESKTOP_MIN) {
+    const surfaceMin = surfaceMinWidthFor(width);
+    if (width < value.leftWidth + surfaceMin) {
       return { ...value, leftOpen: false, rightOpen: false };
     }
-    if (width < value.leftWidth + value.rightWidth + MIN_WORKBENCH_SURFACE_WIDTH) {
+    if (width < value.leftWidth + value.rightWidth + surfaceMin) {
       return { ...value, rightOpen: false };
     }
   }
@@ -72,7 +83,7 @@ export function toggleWorkbenchPane(value: WorkbenchPreferences, pane: 'left' | 
   return {
     ...value,
     [openKey]: nextOpen,
-    ...(width <= 1179 && nextOpen ? { [otherKey]: false } : {}),
+    ...(width < WORKBENCH_DESKTOP_MIN && nextOpen ? { [otherKey]: false } : {}),
   };
 }
 
@@ -94,9 +105,9 @@ export function useWorkbenchPreferences(scopeKey: string): WorkbenchPreferences 
   // demand; this state is ephemeral and never persisted, so it cannot overwrite the desktop
   // preference when the user returns to a wide viewport.
   const [drawers, setDrawers] = useState<{ left: boolean; right: boolean }>({ left: false, right: false });
-  // 批次 F.2：拖拽中的实时宽度（不落盘），松手 commit 后清除；避免 pointermove 高频写 localStorage。
+  // 拖拽中的实时宽度（不落盘），松手 commit 后清除；避免 pointermove 高频写 localStorage。
   const [liveWidths, setLiveWidths] = useState<{ left?: number; right?: number }>({});
-  const isOverlay = viewportWidth < 1180;
+  const isOverlay = viewportWidth < WORKBENCH_DESKTOP_MIN;
 
   useEffect(() => {
     if (typeof localStorage !== 'undefined') localStorage.setItem(`muster:workbench:${scopeKey}`, JSON.stringify(savedPreferences));
@@ -124,7 +135,7 @@ export function useWorkbenchPreferences(scopeKey: string): WorkbenchPreferences 
 
   const togglePane = (pane: 'left' | 'right'): void => {
     const width = typeof window === 'undefined' ? Infinity : window.innerWidth;
-    if (width < 1180) {
+    if (width < WORKBENCH_DESKTOP_MIN) {
       // Overlay mode: toggle the ephemeral drawer without touching the persisted desktop
       // preference. Only one drawer may overlay the surface at a time.
       setDrawers((current) => {

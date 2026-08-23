@@ -16,7 +16,7 @@ function ToastHost(): React.ReactElement {
 /** 治理批次5：Shell 内 useUiMode 需要 QueryClient；命令面板断言专业项时预置 pro。 */
 function qcShell(uiMode: 'simple' | 'pro' = 'pro'): QueryClient {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  qc.setQueryData(['systemSettings'], { uiMode });
+  qc.setQueryData(['systemSettings'], { uiMode, workbenchGuideDone: true });
   return qc;
 }
 
@@ -36,7 +36,6 @@ describe('calm workbench shell', () => {
   beforeEach(() => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 1440 });
     localStorage.clear();
-    localStorage.setItem('muster:workbench-guide:v1', 'done');
   });
   afterEach(cleanup);
 
@@ -114,13 +113,19 @@ describe('calm workbench shell', () => {
     expect(JSON.parse(localStorage.getItem('muster:workbench:project:reset') ?? '{}').rightWidth).toBe(304);
   });
 
-  it('批次F.2：窄视口（抽屉态）不渲染拖拽手柄', async () => {
+  it('批次F.2：抽屉态（<740）不渲染拖拽手柄；1000px 窄桌面仍三栏可拖', async () => {
     renderShell('project:narrow');
     expect(screen.getByRole('separator', { name: '调整右侧信息栏宽度' })).toBeInTheDocument();
-    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 1000 });
+    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 700 });
     window.dispatchEvent(new Event('resize'));
     await waitFor(() => {
       expect(screen.queryByRole('separator', { name: '调整右侧信息栏宽度' })).not.toBeInTheDocument();
+    });
+    // 回到 1000px 窄桌面：三栏共存，手柄重新可用（新断点 740 的核心语义）
+    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 1000 });
+    window.dispatchEvent(new Event('resize'));
+    await waitFor(() => {
+      expect(screen.getByRole('separator', { name: '调整右侧信息栏宽度' })).toBeInTheDocument();
     });
   });
 });
@@ -129,7 +134,6 @@ describe('⌘K 面板升级（批次 G.7）', () => {
   beforeEach(() => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 1440 });
     localStorage.clear();
-    localStorage.setItem('muster:workbench-guide:v1', 'done');
   });
   afterEach(cleanup);
 

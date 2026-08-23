@@ -18,6 +18,7 @@ import { Button } from './Button';
 import { toast } from './Button';
 import { EmptyState, Icons } from './EmptyState';
 import { AutoContinueCountdown } from './project/AutoContinueCountdown';
+import { MessageNavStrip } from './workbench/MessageNavStrip';
 import { RoundChangesCard } from './workbench/RoundChangesCard';
 import { MarkdownPreview } from './MarkdownPreview';
 
@@ -35,11 +36,13 @@ export interface ConversationPanelProps {
   onSelectQuote?: (text: string) => void;
   /** 撑满 flex 列父容器（默认固定 520px 高兜底块级父容器） */
   fill?: boolean;
+  /** 群聊显式开启：显示发言人头像与姓名（单聊默认第一负责人名义，不显示——2026-08-23 用户定案） */
+  showIdentity?: boolean;
   /** 批次三：随行讨论收口——把结论转成正式工作单（讨论本身不建任务不打断；由调用方决定建单方式）。 */
   onConvertToTask?: (extract: string) => void;
 }
 
-export function ConversationPanel({ scope, scopeId, title, recipientAgentId, projectTaskId, hideInput = false, fill = false, onConvertToTask, onSelectQuote }: ConversationPanelProps): React.ReactElement {
+export function ConversationPanel({ scope, scopeId, title, recipientAgentId, projectTaskId, hideInput = false, fill = false, showIdentity = false, onConvertToTask, onSelectQuote }: ConversationPanelProps): React.ReactElement {
   // 批次 H.6：划选上下文——消息区选中文字浮出"添加到当前对话"
   const [quoteSelection, setQuoteSelection] = useState<string | null>(null);
   const { data: messages, isLoading } = useMessages(scope, scopeId, recipientAgentId);
@@ -186,6 +189,7 @@ export function ConversationPanel({ scope, scopeId, title, recipientAgentId, pro
           setQuoteSelection(sel.length >= 2 && anchorInside ? sel : null);
         }}
       >
+        <MessageNavStrip containerRef={scrollRef} />
         {isLoading && <div className="muted" style={{ padding: 16 }}>加载中…</div>}
         {messages && messages.length === 0 && (
           <div style={{ padding: '32px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', gap: '12px', minHeight: '240px' }}>
@@ -208,7 +212,7 @@ export function ConversationPanel({ scope, scopeId, title, recipientAgentId, pro
           // 评审 I4：轮末变更卡只挂最新一条 assistant 消息（历史轮的发布状态不变，减少 N 倍查询）
           const isLatestAssistant = m.role === 'assistant' && !messages?.slice(index + 1).some((x) => x.role === 'assistant');
           return (
-            <MessageBubble key={m.id} message={m} agents={agents ?? []} projectId={scope === 'project' ? scopeId : undefined} isLatestAssistant={isLatestAssistant} />
+            <MessageBubble key={m.id} message={m} showIdentity={showIdentity} agents={agents ?? []} projectId={scope === 'project' ? scopeId : undefined} isLatestAssistant={isLatestAssistant} />
           );
         })}
         {/* 批次 H.6：划选浮钮 */}
@@ -293,7 +297,7 @@ export function ConversationPanel({ scope, scopeId, title, recipientAgentId, pro
   );
 }
 
-function MessageBubble({ message, agents, projectId, isLatestAssistant }: { message: ConversationMessage; agents: { id: string; name: string; role: string }[]; projectId?: string; isLatestAssistant?: boolean }): React.ReactElement {
+function MessageBubble({ message, agents, projectId, isLatestAssistant, showIdentity = false }: { message: ConversationMessage; agents: { id: string; name: string; role: string }[]; projectId?: string; isLatestAssistant?: boolean; showIdentity?: boolean }): React.ReactElement {
   const copyMessage = (): void => {
     void navigator.clipboard?.writeText(message.content);
   };
@@ -313,10 +317,10 @@ function MessageBubble({ message, agents, projectId, isLatestAssistant }: { mess
   const authorName = isUser ? '我' : agents.find((a) => a.id === message.author)?.name ?? message.author;
   return (
     <div className={`mu-msg ${isUser ? 'mu-msg-user' : 'mu-msg-other'}`}>
-      <div className="mu-msg-avatar" aria-hidden="true">{authorName.slice(0, 1)}</div>
+      {showIdentity && <div className="mu-msg-avatar" aria-hidden="true">{authorName.slice(0, 1)}</div>}
       <div className="mu-msg-bubble">
         <div className="mu-msg-author">
-          {authorName}
+          {showIdentity && authorName}
           {isUser && message.options?.mode && (
             <span className="mu-msg-mode-chip">{
               { plan: '🗺 计划模式', 'ask-always': '🛡 每步审批', 'ask-by-rule': '📋 按规则审批', 'no-approval': '⚡ 自动执行', deny: '🔒 只读' }[message.options.mode] ?? message.options.mode

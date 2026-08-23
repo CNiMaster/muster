@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { WorkbenchGuide } from './WorkbenchGuide';
 import { useUiMode } from '../../hooks/queries';
 import { toast } from '../Button';
-import { DEFAULT_WORKBENCH_PREFERENCES, MIN_WORKBENCH_SURFACE_WIDTH, PANE_WIDTH_BOUNDS, useWorkbenchPreferences } from './useWorkbenchPreferences';
+import { DEFAULT_WORKBENCH_PREFERENCES, PANE_WIDTH_BOUNDS, WORKBENCH_DESKTOP_MIN, surfaceMinWidthFor, useWorkbenchPreferences } from './useWorkbenchPreferences';
 
 /**
  * 面板开关下放：中栏内容（如任务顶栏的「右侧面板」按钮）可经此 context
@@ -15,7 +15,7 @@ export function useWorkbenchUI(): { toggleRight: () => void; toggleLeft: () => v
   return useContext(WorkbenchUIContext);
 }
 
-/** 批次 F.2：栏宽拖拽手柄——拖动实时预览（不落盘），松手才持久化；双击重置默认宽度；方向键微调。 */
+/** 栏宽拖拽手柄——拖动实时预览（不落盘），松手才持久化；双击重置默认宽度；方向键微调。 */
 function WorkbenchResizer({ side, width, onResize, onActiveChange }: {
   side: 'left' | 'right';
   width: number;
@@ -23,7 +23,7 @@ function WorkbenchResizer({ side, width, onResize, onActiveChange }: {
   onActiveChange: (active: boolean) => void;
 }): React.ReactElement {
   const dragRef = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null);
-  // 评审修复：视口跨过 1180 或面板被关时手柄会带着进行中的拖拽卸载——unmount 时提交在途宽度并复位状态，
+  // 评审修复：视口跨过桌面阈值或面板被关时手柄会带着进行中的拖拽卸载——unmount 时提交在途宽度并复位状态，
   // 否则 liveWidths 内存覆盖残留、is-resizing（禁 transition/user-select）卡死整个会话。
   const lastWidthRef = useRef(width);
   lastWidthRef.current = width;
@@ -90,6 +90,11 @@ function WorkbenchResizer({ side, width, onResize, onActiveChange }: {
   );
 }
 
+/**
+ * 布局重构（2026-08-23 用户定案）：左栏=全局导航 rail（到顶全高：品牌/⌘K/模式切换+导航树）；
+ * 右区=工作区（顶栏 breadcrumb/下班/主操作 + 中栏现场 + 右栏检视器——右栏附属中栏）。
+ * ≥740px 真三栏共存（可拖拽）；<740px 左右栏退化为互斥抽屉（手机/平板竖屏）。
+ */
 export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspectorLabel, navigation, inspector, primaryAction, attentionCount = 0, commandOptions, children }: {
   scopeKey: string;
   breadcrumb: React.ReactNode;
@@ -110,7 +115,7 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
   const commandOpenRef = useRef(false);
   commandOpenRef.current = commandOpen;
 
-  // 批次 G.7：简单模式下专业项不再隐藏——灰态 +「专业」小标可见，点击提示切换（原来直接 filter 掉）
+  // 简单模式下专业项不再隐藏——灰态 +「专业」小标可见，点击提示切换（原来直接 filter 掉）
   const globalOptions: Array<{ label: string; href: string; group: string; proOnly?: boolean }> = [
     { label: '首页', href: '/', group: '全局' },
     { label: '新建项目', href: '/projects/new', group: '全局' },
@@ -129,6 +134,7 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
   const query = commandQuery.trim().toLowerCase();
   const visible = query ? options.filter((option) => `${option.group ?? ''}${option.label}`.toLowerCase().includes(query)) : options;
   const groups = Array.from(new Set(visible.map((option) => option.group ?? '当前')));
+  const isDesktop = preferences.viewportWidth >= WORKBENCH_DESKTOP_MIN;
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -137,7 +143,7 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
       if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'b') { event.preventDefault(); preferences.toggleRight(); }
       if (event.key === 'Escape') {
         if (commandOpenRef.current) { setCommandOpen(false); return; }
-        if (typeof window !== 'undefined' && window.innerWidth <= 1179 && (preferences.leftOpen || preferences.rightOpen)) preferences.closeDrawers();
+        if (typeof window !== 'undefined' && window.innerWidth < WORKBENCH_DESKTOP_MIN && (preferences.leftOpen || preferences.rightOpen)) preferences.closeDrawers();
       }
     };
     window.addEventListener('keydown', onKeyDown);
@@ -147,34 +153,47 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
   const style = {
     '--work-left': `${preferences.leftWidth}px`,
     '--work-right': `${preferences.rightWidth}px`,
-    '--work-surface-min': `${MIN_WORKBENCH_SURFACE_WIDTH}px`,
+    '--work-surface-min': `${surfaceMinWidthFor(preferences.viewportWidth)}px`,
   } as React.CSSProperties;
   return <WorkbenchUIContext.Provider value={{ toggleRight: preferences.toggleRight, toggleLeft: preferences.toggleLeft }}>
   <section className={`workbench ${preferences.leftOpen ? 'has-left' : ''} ${preferences.rightOpen ? 'has-right' : ''} ${resizingPane ? 'is-resizing' : ''}`} style={style}>
-    <header className="workbench-header">
-      <Link to="/" className="workbench-brand" aria-label="Muster 首页" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '28px', height: '28px', borderRadius: '7px', background: 'var(--accent)', color: '#fff', textDecoration: 'none', fontWeight: 850, fontSize: '13px' }}>
-        <span>M</span>
-      </Link>
-      <button type="button" className="workbench-icon-button" title={preferences.leftOpen ? '收起左侧工作列表' : '展开左侧工作列表'} aria-label={preferences.leftOpen ? '收起工作列表' : '展开工作列表'} aria-expanded={preferences.leftOpen} aria-controls="work-navigation" onClick={preferences.toggleLeft}><span className="pane-toggle-glyph is-left" aria-hidden="true" /></button>
-      <div className="workbench-breadcrumb">{breadcrumb}</div>
-      <button type="button" className="workbench-command" aria-label="搜索或跳转" onClick={() => setCommandOpen(true)}><kbd>⌘ K</kbd><span>搜索或跳转</span></button>
-      <button type="button" className="workbench-icon-button inspector-toggle" title={preferences.rightOpen ? '收起右侧现场信息' : '展开右侧现场信息'} aria-label={preferences.rightOpen ? '收起现场信息' : '展开现场信息'} aria-expanded={preferences.rightOpen} aria-controls="work-inspector" onClick={preferences.toggleRight}><span className="pane-toggle-glyph is-right" aria-hidden="true" />{attentionCount > 0 && <i>{attentionCount}</i>}</button>
-      <button type="button" className="workbench-icon-button" title={ui.isSimple ? '当前是简单模式：专注任务对话。点击切换到专业模式。' : '当前是专业模式：全量功能。点击切换回简单模式。'} aria-label={ui.isSimple ? '切换到专业模式' : '切换到简单模式'} onClick={ui.toggle} disabled={ui.saving} style={{ fontSize: 12, width: 'auto', padding: '0 8px' }}>{ui.isSimple ? '简单' : '专业'}</button>
-      {primaryAction && <div className="workbench-primary-action">{primaryAction}</div>}
-    </header>
-    <div className="workbench-grid">
-      <nav id="work-navigation" className="workbench-navigation" aria-label={navigationLabel}>{preferences.leftOpen ? navigation : null}</nav>
-      <main className="workbench-surface">{children}</main>
-      <aside id="work-inspector" className="workbench-inspector" aria-label={inspectorLabel}>{preferences.rightOpen ? inspector : null}</aside>
-      {/* 批次 F.2：桌面态栏宽拖拽（≤1179 抽屉态不渲染） */}
-      {preferences.viewportWidth >= 1180 && preferences.leftOpen && (
-        <WorkbenchResizer side="left" width={preferences.leftWidth} onResize={(px, commit) => preferences.setWidth('left', px, commit)} onActiveChange={(active) => setResizingPane(active ? 'left' : null)} />
-      )}
-      {preferences.viewportWidth >= 1180 && preferences.rightOpen && (
-        <WorkbenchResizer side="right" width={preferences.rightWidth} onResize={(px, commit) => preferences.setWidth('right', px, commit)} onActiveChange={(active) => setResizingPane(active ? 'right' : null)} />
-      )}
+    <nav id="work-navigation" className="workbench-navigation" aria-label={navigationLabel}>
+      <div className="workbench-rail-top">
+        <Link to="/" className="workbench-brand" aria-label="Muster 首页"><span>M</span></Link>
+        <button type="button" className="workbench-command" aria-label="搜索或跳转" onClick={() => setCommandOpen(true)}><kbd>⌘ K</kbd><span>搜索或跳转</span></button>
+        <button type="button" className="workbench-icon-button" title={preferences.leftOpen ? '收起左侧工作列表' : '展开左侧工作列表'} aria-label={preferences.leftOpen ? '收起工作列表' : '展开工作列表'} aria-expanded={preferences.leftOpen} aria-controls="work-navigation" onClick={preferences.toggleLeft}><span className="pane-toggle-glyph is-left" aria-hidden="true" /></button>
+      </div>
+      <div className="workbench-rail-body">{preferences.leftOpen ? navigation : null}</div>
+      <div className="workbench-rail-foot">
+        <button type="button" className="workbench-icon-button" title={ui.isSimple ? '当前是简单模式：专注任务对话。点击切换到专业模式。' : '当前是专业模式：全量功能。点击切换回简单模式。'} aria-label={ui.isSimple ? '切换到专业模式' : '切换到简单模式'} onClick={ui.toggle} disabled={ui.saving} style={{ fontSize: 12, width: 'auto', padding: '0 8px' }}>{ui.isSimple ? '简单' : '专业'}</button>
+      </div>
+    </nav>
+    <div className="workbench-main">
+      <header className="workbench-header">
+        {/* 左栏收起（桌面态 rail 整体隐藏）或抽屉态（<740）时，rail 里的开关/模式切换失去入口——这里补条件渲染 */}
+        {(!isDesktop || !preferences.leftOpen) && (
+          <>
+            <button type="button" className="workbench-icon-button" title={preferences.leftOpen ? '收起左侧工作列表' : '展开左侧工作列表'} aria-label={preferences.leftOpen ? '收起工作列表' : '展开工作列表'} aria-expanded={preferences.leftOpen} aria-controls="work-navigation" onClick={preferences.toggleLeft}><span className="pane-toggle-glyph is-left" aria-hidden="true" /></button>
+            <button type="button" className="workbench-icon-button" title={ui.isSimple ? '当前是简单模式：专注任务对话。点击切换到专业模式。' : '当前是专业模式：全量功能。点击切换回简单模式。'} aria-label={ui.isSimple ? '切换到专业模式' : '切换到简单模式'} onClick={ui.toggle} disabled={ui.saving} style={{ fontSize: 12, width: 'auto', padding: '0 8px' }}>{ui.isSimple ? '简单' : '专业'}</button>
+          </>
+        )}
+        <div className="workbench-breadcrumb">{breadcrumb}</div>
+        {primaryAction && <div className="workbench-primary-action">{primaryAction}</div>}
+        <button type="button" className="workbench-icon-button inspector-toggle" title={preferences.rightOpen ? '收起右侧现场信息' : '展开右侧现场信息'} aria-label={preferences.rightOpen ? '收起现场信息' : '展开现场信息'} aria-expanded={preferences.rightOpen} aria-controls="work-inspector" onClick={preferences.toggleRight}><span className="pane-toggle-glyph is-right" aria-hidden="true" />{attentionCount > 0 && <i>{attentionCount}</i>}</button>
+      </header>
+      <div className="workbench-grid">
+        <main className="workbench-surface">{children}</main>
+        <aside id="work-inspector" className="workbench-inspector" aria-label={inspectorLabel}>{preferences.rightOpen ? inspector : null}</aside>
+        {/* 桌面态（≥740）栏宽拖拽；抽屉态不渲染 */}
+        {isDesktop && preferences.leftOpen && (
+          <WorkbenchResizer side="left" width={preferences.leftWidth} onResize={(px, commit) => preferences.setWidth('left', px, commit)} onActiveChange={(active) => setResizingPane(active ? 'left' : null)} />
+        )}
+        {isDesktop && preferences.rightOpen && (
+          <WorkbenchResizer side="right" width={preferences.rightWidth} onResize={(px, commit) => preferences.setWidth('right', px, commit)} onActiveChange={(active) => setResizingPane(active ? 'right' : null)} />
+        )}
+      </div>
     </div>
-    {(preferences.viewportWidth <= 1179 && (preferences.leftOpen || preferences.rightOpen)) && <div className="workbench-drawer-backdrop" onMouseDown={preferences.closeDrawers} aria-hidden="true" />}
+    {(!isDesktop && (preferences.leftOpen || preferences.rightOpen)) && <div className="workbench-drawer-backdrop" onMouseDown={preferences.closeDrawers} aria-hidden="true" />}
     <WorkbenchGuide />
     {commandOpen && <div className="command-backdrop" onMouseDown={() => { setCommandOpen(false); setCommandQuery(''); }}><div className="command-dialog" role="dialog" aria-modal="true" aria-label="搜索或跳转" onMouseDown={(event) => event.stopPropagation()}>
       <div className="command-title"><strong>去哪里？</strong><button type="button" aria-label="关闭搜索" onClick={() => { setCommandOpen(false); setCommandQuery(''); }}>×</button></div>
@@ -187,8 +206,8 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
               key={option.href}
               type="button"
               className="command-item-locked"
-              title="专业模式功能——右上角切换到专业模式后可用"
-              onClick={() => toast('info', `「${option.label}」是专业模式功能：右上角切到专业模式即可使用`)}
+              title="专业模式功能——左下角切换到专业模式后可用"
+              onClick={() => toast('info', `「${option.label}」是专业模式功能：左下角切到专业模式即可使用`)}
             >
               <span>{option.label}</span><em>专业</em>
             </button>
