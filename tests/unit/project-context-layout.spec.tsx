@@ -35,7 +35,9 @@ describe('project task workspace layout', () => {
         </MemoryRouter>
       </QueryClientProvider>,
     );
-    expect(screen.getByText('审批恢复闭环')).toBeInTheDocument();
+    // 2026-08-23 用户定案：任务标题条已搬到 WorkbenchShell 顶栏（ProjectPage 层渲染）——
+    // 中栏组件不再含任务标题，聚焦对话流
+    expect(screen.queryByText('审批恢复闭环')).not.toBeInTheDocument();
     // 批次 H.5：任务 running 中占位文案切为排队提示（原"在任务 #21 下达指令"是非运行态文案）
     expect(screen.getByPlaceholderText(/继续输入以排队后续修改…/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '发送' })).toBeInTheDocument();

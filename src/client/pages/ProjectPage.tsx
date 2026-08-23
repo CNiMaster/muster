@@ -49,6 +49,7 @@ import { ProjectWorkNavigation } from '../components/workbench/ProjectWorkNaviga
 import { ProjectContextInspector } from '../components/workbench/ProjectContextInspector';
 import { WorkCapsule } from '../components/workbench/WorkCapsule';
 import { ProjectTaskWorkspace } from '../components/project/ProjectTaskWorkspace';
+import { TaskTopBar } from '../components/project/TaskTopBar';
 import { ProjectEmployeeWorkspace } from '../components/project/ProjectEmployeeWorkspace';
 import { WorkbenchContextSwitcher } from '../components/workbench/WorkbenchContextSwitcher';
 import { usePlaybooksForTemplate } from '../hooks/queries';
@@ -587,7 +588,9 @@ export function ProjectDetail({ projectId }: { projectId: string }): React.React
   return (
     <WorkbenchShell
       scopeKey={`project:${projectId}`}
-      breadcrumb={<WorkbenchContextSwitcher projectId={project.id} projectName={project.name} projectTaskId={selectedProjectTaskId} sectionKey={projectView} sectionLabel={{ task: '项目任务', employee: selectedAgent?.name ?? '智能体', group: '项目群聊', activity: '协作活动' }[projectView]} novel={company?.kind === 'novel'} />}
+      breadcrumb={projectView === 'task' && selectedProjectTask
+        ? <TaskTopBar projectId={projectId} task={selectedProjectTask} runtimeTaskId={(tasks ?? []).find((t) => t.projectTaskId === selectedProjectTask.id)?.id ?? null} />
+        : <WorkbenchContextSwitcher projectId={project.id} projectName={project.name} projectTaskId={selectedProjectTaskId} sectionKey={projectView} sectionLabel={{ task: '项目任务', employee: selectedAgent?.name ?? '智能体', group: '项目群聊', activity: '协作活动' }[projectView]} novel={company?.kind === 'novel'} />}
       navigationLabel="项目组织与联系人"
       inspectorLabel="项目任务与运行"
       attentionCount={attentionCount + (cockpit?.approvals.pending ?? 0) + (mergeAttention?.total ?? 0)}

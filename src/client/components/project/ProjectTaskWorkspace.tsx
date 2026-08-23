@@ -219,40 +219,8 @@ export function ProjectTaskWorkspace({
       {/* 顶部极简 Task 标题条 */}
       {selectedTask ? (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 12px', background: 'var(--bg-elev)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)', minWidth: 0, gap: '12px' }}>
-          <TaskTopBar
-            projectId={projectId}
-            task={selectedTask}
-            runtimeTaskId={activeRuntimeTask?.id ?? null}
-            rightExtra={(
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-                {(() => {
-                  const meta = (activeRuntimeTask?.inputProtocol ?? {}) as { blueprintLabel?: string; blueprintVersion?: number } | undefined;
-                  if (!meta?.blueprintLabel) return null;
-                  return (
-                    <span className="mu-trace-blueprint-chip" title={`本任务派遣打法：${meta.blueprintLabel}${meta.blueprintVersion ? ` · v${meta.blueprintVersion}` : ''}`}>
-                      🎭 {meta.blueprintLabel} {meta.blueprintVersion ? <small>v{meta.blueprintVersion}</small> : null}
-                    </span>
-                  );
-                })()}
-                {(() => {
-                  const meta = (activeRuntimeTask?.inputProtocol ?? {}) as { resolvedSkillIds?: string[] } | undefined;
-                  const skills = (meta?.resolvedSkillIds ?? []).slice(0, 2);
-                  if (skills.length === 0) return null;
-                  return (
-                    <span className="mu-trace-blueprint-chip" title={`本次按需加载的 skills：${(meta?.resolvedSkillIds ?? []).join('、')}`}>
-                      🧩 {skills.join('、')}
-                    </span>
-                  );
-                })()}
-                <StateBadge domain="project-task" state={selectedTask.state} />
-                {activeRuntimeTask?.state === 'running' && (<Badge tone="ok" dot>运行中</Badge>)}
-                {activeRuntimeTask?.state === 'waiting_input' && (<Badge tone="warn" dot>等待答复</Badge>)}
-                {activeRuntimeTask?.state === 'waiting_input' && activeRuntimeTask && <AutoContinueCountdown task={activeRuntimeTask} />}
-                {activeRuntimeTask?.state === 'paused' && (<Badge tone="warn">已暂停</Badge>)}
-                {activeRuntimeTask?.state === 'blocked' && (<Badge tone="err" dot>阻塞</Badge>)}
-              </div>
-            )}
-          />
+{/* TaskTopBar 已搬到 WorkbenchShell 顶栏（2026-08-23 用户定案：任务名+项目名+分支显示在 muster 面包屑处） */}
+
           <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexShrink: 0 }}>
             {/* 如果处于暂停或等待态，顶部直接常驻【▶ 继续执行】按钮 */}
             {isTaskWaitingOrPaused && (
