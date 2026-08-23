@@ -1,3 +1,4 @@
+-- safety: rebuild
 -- spec 2026-08-12-subagent-observability B3：允许 outsourcing_contract.state = 'auto_accept_disabled'。
 -- 自动接受连续失败达上限后转入此终态，停止空转（详见 outsourcing-contract.ts revertAcceptToPending）。
 -- SQLite 不支持就地修改列的 CHECK 约束，需按标准模式重建表（建新表→复制→删旧→改名→重建索引）。

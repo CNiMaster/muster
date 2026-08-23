@@ -41,6 +41,25 @@ backupRouter.post('/import', asyncHandler(async (req, res) => {
 }));
 
 // 文件系统目录指引
+/** 批次 L1：迁移前自动快照清单（备份中心展示+恢复指引）。 */
+backupRouter.get('/pre-migration-snapshots', asyncHandler(async (_req, res) => {
+  const { listPreMigrationSnapshots } = await import('../db/client');
+  res.json(listPreMigrationSnapshots());
+}));
+
+/** 批次 L5：过期信息清理——预览（分类数量+样本，用户确认前所见即所得）。 */
+backupRouter.get('/cleanup-preview', asyncHandler(async (_req, res) => {
+  const { previewCleanup } = await import('../domain/retention');
+  res.json(previewCleanup(getDb()));
+}));
+
+/** 批次 L5+L6：执行清理（归档 JSONL.gz 可找回→删除→checkpoint+VACUUM）。 */
+backupRouter.post('/cleanup-run', asyncHandler(async (req, res) => {
+  const { executeCleanup } = await import('../domain/retention');
+  const body = (req.body ?? {}) as { traceEvents?: boolean; audits?: boolean };
+  res.json(executeCleanup(getDb(), { traceEvents: body.traceEvents !== false, audits: body.audits !== false }));
+}));
+
 backupRouter.get('/directories', asyncHandler(async (_req, res) => {
   res.json(getMusterDirectories(getDb()));
 }));

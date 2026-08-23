@@ -34,3 +34,6 @@ export function spawnErrorHint(message: string): string | null {
     '2) 或在终端执行：xattr -dr com.apple.quarantine <node_modules 目录> 去掉隔离属性后重试。',
   ].join('\n');
 }
+
+/** 批次 L4：CLI 失败统一升级诊断提示（CLI 版本变化常致输出格式/认证失效）。 */
+export const CLI_UPGRADE_HINT = '（可能原因：CLI 版本已升级导致输出格式或认证变化——到 设置→执行器 重新探测，并查看该执行器的兼容说明）';

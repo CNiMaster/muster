@@ -1,3 +1,4 @@
+-- safety: rebuild
 -- 修复 connection_probe.kind 的 CHECK 约束（阶段二任务 2.3）：
 -- 原 0024 迁移约束只允许 ('connectivity','model')，而能力探针（kind='capability'）
 -- 插入时会违反约束导致失败。SQLite 不支持修改列级 CHECK，需重建表。

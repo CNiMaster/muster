@@ -10,6 +10,7 @@
  * 可复现：--no-extensions --no-skills 关发现；--session-dir 指到引擎 runSessionDir 隔离会话存储。
  */
 import { execFile } from 'node:child_process';
+import { CLI_UPGRADE_HINT } from './spawn-errors';
 import { promisify } from 'node:util';
 import { commonCliWritableRoots, guardedArgv, sanitizeChildEnv, writeSandboxProfile } from './spawn-shell';
 import type { ExecutionAdapter, ExecutionContext, ExecutionEvents, ExecutionRunResult } from '../task-engine/executor';
@@ -95,7 +96,7 @@ export class PiCliAdapter implements ExecutionAdapter {
       events?.onOutput?.(result.stdout);
       const parsed = parsePiJsonEvents(result.stdout);
       if (result.exitCode !== 0 && !parsed.lastAssistantText) {
-        throw new AppError(ErrorCode.INTERNAL, `pi CLI 执行失败: ${(result.stderr || result.stdout).slice(0, 2000)}`);
+        throw new AppError(ErrorCode.INTERNAL, `pi CLI 执行失败: ${(result.stderr || result.stdout).slice(0, 2000)}${CLI_UPGRADE_HINT}`);
       }
       // 结果解析：末条 assistant 文本 → AgentRunResult JSON；坏 JSON 降级包装（不炸任务）
       let runResult: ExecutionRunResult;

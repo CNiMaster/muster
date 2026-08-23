@@ -1,3 +1,4 @@
+-- safety: rebuild
 -- 公司退役批次 D Task3：任务与知识资产表去 company_id 列（重建模式与裸列 DROP COLUMN）。
 
 -- 1. workflow_node

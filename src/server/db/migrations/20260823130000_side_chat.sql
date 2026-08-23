@@ -1,3 +1,4 @@
+-- safety: rebuild
 -- 批次 I-b：侧边辅助对话——conversation_message 重建扩 scope_kind 'side'
 -- （每工作台一条免任务会话；沿用 20260819000000 同款重建模式）
 CREATE TABLE conversation_message_new (

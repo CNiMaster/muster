@@ -1,3 +1,4 @@
+-- safety: rebuild
 -- 指挥系统批次1：定时自动化补齐。
 -- 1) 每天 N 点时刻语义：schedule_kind('interval'|'daily') + time_of_day('HH:mm') + timezone
 --    （daily 行的 interval_ms 固定 86400000，既满足原 CHECK 又作为兜底推进步长）

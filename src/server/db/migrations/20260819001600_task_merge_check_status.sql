@@ -1,3 +1,4 @@
+-- safety: rebuild
 -- 整改批次 2：promote 前确定性检查——task_merge_record 增 check_failed 状态（检查未过，本轮跳过）
 CREATE TABLE _task_merge_record_new (
   id TEXT PRIMARY KEY,

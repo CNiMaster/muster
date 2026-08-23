@@ -6,7 +6,7 @@
  * - 提供事务包装 transaction() 和 prepare() 缓存。
  */
 import Database from 'better-sqlite3';
-import { readdirSync, readFileSync, mkdirSync, existsSync } from 'node:fs';
+import { readdirSync, readFileSync, mkdirSync, existsSync, copyFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SERVER_CONFIG } from '../env';
@@ -61,6 +61,70 @@ export function setDbForTest(db: DB): void {
   dbInstance = db;
 }
 
+/** 迁移安全等级（批次 L2）：文件头 `-- safety: rebuild` / `-- safety: destructive` 声明；缺省 additive。 */
+export type MigrationSafety = 'additive' | 'rebuild' | 'destructive';
+export function migrationSafety(sql: string): MigrationSafety {
+  const m = sql.match(/^\s*--\s*safety:\s*(additive|rebuild|destructive)\b/im);
+  return m ? (m[1]!.toLowerCase() as MigrationSafety) : 'additive';
+}
+
+const PRE_MIGRATION_BACKUP_KEEP = 5;
+
+/**
+ * 迁移前自动快照（批次 L1，fail-closed 底线）：db 三件套（.db/-wal/-shm）拷贝到
+ * MUSTER_HOME/backups/pre-migration/<ISO 时间戳>/，滚动保留最近 5 份；manifest 记恢复指引。
+ * 快照失败抛错 → getDb→server 启动直接失败：宁可不起，不能带伤迁移。
+ */
+export function snapshotDbBeforeMigration(db: DB): string {
+  const dbPath = db.name;
+  if (!dbPath || dbPath === ':memory:') return ''; // 内存库（测试）无需快照
+  const home = process.env.MUSTER_HOME ?? SERVER_CONFIG.musterDir;
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const dest = path.join(home, 'backups', 'pre-migration', stamp);
+  mkdirSync(dest, { recursive: true });
+  for (const p of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) {
+    if (!existsSync(p)) continue;
+    copyFileSync(p, path.join(dest, path.basename(p)));
+  }
+  const last = db.prepare('SELECT name FROM schema_migrations ORDER BY name DESC LIMIT 1').get() as { name: string } | undefined;
+  writeFileSync(path.join(dest, 'manifest.json'), JSON.stringify({
+    createdAt: new Date().toISOString(),
+    dbFile: path.basename(dbPath),
+    migrationsAppliedAtSnapshot: last?.name ?? null,
+    restore: '停止服务 → 把本目录内数据库三件套拷回原位（覆盖）→ 重启',
+  }, null, 2));
+  const root = path.dirname(dest);
+  const dirs = readdirSync(root).filter((d) => { try { return statSync(path.join(root, d)).isDirectory(); } catch { return false; } }).sort();
+  while (dirs.length > PRE_MIGRATION_BACKUP_KEEP) {
+    rmSync(path.join(root, dirs.shift()!), { recursive: true, force: true });
+  }
+  log.info('pre-migration snapshot created', { dest, keep: PRE_MIGRATION_BACKUP_KEEP });
+  return dest;
+}
+
+/** 列出自动快照（备份中心展示用）。 */
+export function listPreMigrationSnapshots(): Array<{ dir: string; createdAt: string; dbFile: string | null; lastMigration: string | null; bytes: number }> {
+  const home = process.env.MUSTER_HOME ?? SERVER_CONFIG.musterDir;
+  const root = path.join(home, 'backups', 'pre-migration');
+  if (!existsSync(root)) return [];
+  const out: Array<{ dir: string; createdAt: string; dbFile: string | null; lastMigration: string | null; bytes: number }> = [];
+  for (const d of readdirSync(root).sort().reverse()) {
+    const dir = path.join(root, d);
+    try {
+      if (!statSync(dir).isDirectory()) continue;
+      let dbFile: string | null = null; let createdAt = d; let lastMigration: string | null = null; let bytes = 0;
+      for (const f of readdirSync(dir)) bytes += statSync(path.join(dir, f)).size;
+      const mf = path.join(dir, 'manifest.json');
+      if (existsSync(mf)) {
+        const m = JSON.parse(readFileSync(mf, 'utf8')) as { createdAt?: string; dbFile?: string; migrationsAppliedAtSnapshot?: string | null };
+        createdAt = m.createdAt ?? d; dbFile = m.dbFile ?? null; lastMigration = m.migrationsAppliedAtSnapshot ?? null;
+      }
+      out.push({ dir, createdAt, dbFile, lastMigration, bytes });
+    } catch { /* 单个快照目录损坏跳过 */ }
+  }
+  return out;
+}
+
 /** 加载并执行所有未应用的 migration，按文件名排序。 */
 export function runMigrations(db: DB, migrationsDir?: string): string[] {
   const dir = migrationsDir ?? path.join(__dirname, 'migrations');
@@ -74,6 +138,15 @@ export function runMigrations(db: DB, migrationsDir?: string): string[] {
   const files = existsSync(dir)
     ? readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()
     : [];
+
+  // L1：有待应用迁移 → 先快照（失败抛错=拒绝启动）；L2：记录最高安全等级（rebuild/destructive 由快照兜底）
+  const pending = files.filter((f) => !db.prepare('SELECT name FROM schema_migrations WHERE name = ?').get(f));
+  if (pending.length > 0) {
+    const snapshotDir = snapshotDbBeforeMigration(db);
+    const levels = pending.map((f) => migrationSafety(readFileSync(path.join(dir!, f), 'utf8')));
+    const highest = levels.includes('destructive') ? 'destructive' : levels.includes('rebuild') ? 'rebuild' : 'additive';
+    log.info('pending migrations', { count: pending.length, snapshotDir, highest });
+  }
 
   const applied: string[] = [];
   const insertApplied = db.prepare('INSERT OR IGNORE INTO schema_migrations (name, applied_at) VALUES (?, ?)');
