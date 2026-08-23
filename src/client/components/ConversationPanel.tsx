@@ -174,6 +174,7 @@ export function ConversationPanel({ scope, scopeId, title, recipientAgentId, pro
   return (
     <div className={`mu-conv${fill ? ' is-fill' : ''}`}>
       {title && <div className="mu-conv-head">{title}</div>}
+      <MessageNavStrip containerRef={scrollRef} />
       <div
         className="mu-conv-stream"
         ref={scrollRef}
@@ -189,7 +190,6 @@ export function ConversationPanel({ scope, scopeId, title, recipientAgentId, pro
           setQuoteSelection(sel.length >= 2 && anchorInside ? sel : null);
         }}
       >
-        <MessageNavStrip containerRef={scrollRef} />
         {isLoading && <div className="muted" style={{ padding: 16 }}>加载中…</div>}
         {messages && messages.length === 0 && (
           <div style={{ padding: '32px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', gap: '12px', minHeight: '240px' }}>
