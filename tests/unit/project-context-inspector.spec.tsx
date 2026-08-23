@@ -20,7 +20,9 @@ const mockUseProjectSpecialists = vi.fn(() => ({ data: [] }));
 const mockUseTaskSwarm = vi.fn(() => ({ data: undefined }));
 const mockUseArtifactContent = vi.fn(() => ({ data: undefined, isLoading: false }));
 
-vi.mock('../../src/client/hooks/queries', () => ({
+vi.mock('../../src/client/hooks/queries', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  const explicit: Record<string, unknown> = {
   useUiMode: () => mockUseUiMode(),
   // 批次 I-a/I-b：右栏新租户 hook（无插件/无历史 → 组不渲染，mock 返回空态）
   usePanelPlugins: () => ({ data: [] }),
@@ -36,7 +38,18 @@ vi.mock('../../src/client/hooks/queries', () => ({
   useCloseDiscussion: () => ({ mutate: vi.fn(), isPending: false }),
   useStartUserDiscussion: () => ({ mutate: vi.fn(), isPending: false }),
   useDiscussionDetail: () => ({ data: undefined }),
-}));
+
+  };
+  // 安全默认全覆盖（防 mock 与真实消费方脱节）：未显式 mock 的 use* hook 一律空态——
+  // 新增 hook 不再因工厂漏导出而炸组件（I-a 假绿同族）
+  const safe: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(actual)) {
+    if (typeof v === 'function' && k.startsWith('use') && !(k in explicit)) {
+      safe[k] = () => ({ data: undefined, isLoading: false, isPending: false, isFetching: false, error: null, mutate: () => {}, mutateAsync: async () => {} });
+    }
+  }
+  return { ...actual, ...safe, ...explicit };
+});
 
 import { ProjectContextInspector as Inspector } from '../../src/client/components/workbench/ProjectContextInspector';
 

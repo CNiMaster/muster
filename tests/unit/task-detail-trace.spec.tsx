@@ -14,7 +14,9 @@ const task = {
   createdAt: '2026-08-15T00:00:00Z', updatedAt: '2026-08-15T00:00:00Z', projectTaskId: '',
 } as Task;
 
-vi.mock('../../src/client/hooks/queries', () => ({
+vi.mock('../../src/client/hooks/queries', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  const explicit: Record<string, unknown> = {
   useTask: () => ({ data: task }),
   useProject: () => ({ data: { id: 'prj_1', companyId: 'co_1', name: 'novel' } }),
   useAgents: () => ({ data: [] }),
@@ -28,7 +30,18 @@ vi.mock('../../src/client/hooks/queries', () => ({
   useTaskTrace: () => ({ data: [] }),
   useTaskCloseout: () => ({ data: undefined, isLoading: false }),
   useGenerateTaskCloseout: () => ({ mutate: vi.fn(), isPending: false }),
-}));
+
+  };
+  // 安全默认全覆盖（防 mock 与真实消费方脱节）：未显式 mock 的 use* hook 一律空态——
+  // 新增 hook 不再因工厂漏导出而炸组件（I-a 假绿同族）
+  const safe: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(actual)) {
+    if (typeof v === 'function' && k.startsWith('use') && !(k in explicit)) {
+      safe[k] = () => ({ data: undefined, isLoading: false, isPending: false, isFetching: false, error: null, mutate: () => {}, mutateAsync: async () => {} });
+    }
+  }
+  return { ...actual, ...safe, ...explicit };
+});
 
 import { TaskDetailPage } from '../../src/client/pages/TaskDetailPage';
 
