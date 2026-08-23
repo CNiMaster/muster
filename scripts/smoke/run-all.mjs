@@ -45,6 +45,11 @@ if (!process.env.MUSTER_API) {
   const port = 20000 + Math.floor(Math.random() * 15000);
   process.env.MUSTER_HOME = tmpHome;
   process.env.MUSTER_PORT = String(port);
+  // 隔离家在 macOS tmpdir（/var/folders→/private/var）不在生产默认白名单 [HOME,/tmp] 内——
+  // 不显式放行则产物读写类冒烟全 403（smoke-2 环境漂移根因；语义对齐 tests/setup-env.ts）
+  if (!process.env.MUSTER_ALLOWED_ROOTS) {
+    process.env.MUSTER_ALLOWED_ROOTS = `${tmpHome}:${process.env.HOME ?? ''}:/tmp`;
+  }
   spawned = spawn(process.execPath, ['--import', 'tsx', resolve(__dirname, '../../src/server/server.ts')], {
     stdio: 'inherit',
     env: process.env,
