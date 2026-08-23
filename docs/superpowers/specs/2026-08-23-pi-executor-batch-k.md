@@ -45,4 +45,6 @@ pi 写 `~/.pi/agent/sessions/`——commonPaths 白名单缺它会被 OS 围栏�
 
 ## 实施记录
 
-（待实施）
+- 已落地：cliHomeDirs 补 `~/.pi`（F3 同族：pi 写 ~/.pi/agent/sessions）；manifests 新档 pi-cli v1（experimental；limitations 三条=L0 围栏兜底边界/JSON 事件流 ≥0.73/provider 走 pi 自身配置）；PiCliAdapter（--mode json 事件流解析：session uuid→_sessionIdHint 续跑、末条 assistant→AgentRunResult JSON、坏 JSON/纯文本降级包装 completed+summary 不炸任务、非零退出无文本才抛；--session-dir 指 runSessionDir 隔离会话存储；--no-extensions --no-skills 关发现保可复现；--api-key 透传 ctx.apiKeyEnv 三层解析；guardedArgv+writeSandboxProfile(worktree+commonCliWritableRoots)+sanitizeChildEnv 同壳）；server.ts 注册。
+- 测试：pi-cli-adapter.spec 6 例（事件解析双载荷/argv 形态含沙箱包装与续跑/api-key 注入/降级包装/非零退出抛错/cliHomeDirs .pi 白名单口径）。
+- 已知环境限制：本机 pi 无 provider 凭据，真跑报 No API key——不做真跑 e2e（spec 定案）；执行器健康探测（detection pi --version）随既有 discovery 机制自然生效。

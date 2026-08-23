@@ -20,7 +20,7 @@ const SANDBOX_EXEC = '/usr/bin/sandbox-exec';
 /** 常见 CLI 自身配置目录（seatbelt 白名单默认组成——CLI 要写自己的 session/配置）。 */
 export function cliHomeDirs(): string[] {
   const home = homedir();
-  return [join(home, '.claude'), join(home, '.codex'), join(home, '.opencode'), join(home, '.gemini')]
+  return [join(home, '.claude'), join(home, '.codex'), join(home, '.opencode'), join(home, '.gemini'), join(home, '.pi')]
     .filter((p) => {
       try { realpathSync(p); return true; } catch { return false; }
     });

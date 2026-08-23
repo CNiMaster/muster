@@ -58,6 +58,7 @@ import { discussionsRouter } from './api/discussions';
 import { executorsRouter } from './api/executors';
 import { CodexCliAdapter } from './executors/codex-cli-adapter';
 import { AntigravityCliAdapter } from './executors/antigravity-cli-adapter';
+import { PiCliAdapter } from './executors/pi-cli-adapter';
 import { OpenCodeCliAdapter } from './executors/opencode-cli-adapter';
 import { CustomCliAdapter } from './executors/custom-cli-adapter';
 import { bridgeRouter } from './bridge';
@@ -158,6 +159,7 @@ async function createApp(): Promise<AppHandle> {
     adapterRegistry.set('gemini', new GeminiAdapter());
     adapterRegistry.set('codex-cli', new CodexCliAdapter());
     adapterRegistry.set('antigravity-cli', new AntigravityCliAdapter());
+    adapterRegistry.set('pi-cli', new PiCliAdapter());
     adapterRegistry.set('opencode-cli', new OpenCodeCliAdapter());
     adapterRegistry.set('custom-cli', new CustomCliAdapter());
   }
