@@ -144,7 +144,11 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult
   const messages = [...opts.messages];
   const gov = opts.contextGovernance !== null;
   const maxMessages = opts.contextGovernance?.maxMessages ?? CONTEXT_MAX_MESSAGES_DEFAULT;
-  const keepRecent = opts.contextGovernance?.keepRecent ?? CONTEXT_KEEP_RECENT_DEFAULT;
+  // 复审 R3：夹紧 keepRecent——≥maxMessages 时 slice(1,-keepRecent) 产生空摘要且消息数不降反涨
+  const keepRecent = Math.min(
+    opts.contextGovernance?.keepRecent ?? CONTEXT_KEEP_RECENT_DEFAULT,
+    Math.max(2, maxMessages - 4),
+  );
   const toolRegistry = opts.toolRegistry ?? createBuiltinToolRegistry();
   const tools = toolRegistry.definitions();
   let rounds = 0;

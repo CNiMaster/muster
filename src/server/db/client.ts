@@ -6,7 +6,7 @@
  * - 提供事务包装 transaction() 和 prepare() 缓存。
  */
 import Database from 'better-sqlite3';
-import { readdirSync, readFileSync, mkdirSync, existsSync, copyFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, mkdirSync, existsSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SERVER_CONFIG } from '../env';
@@ -82,16 +82,16 @@ export function snapshotDbBeforeMigration(db: DB): string {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const dest = path.join(home, 'backups', 'pre-migration', stamp);
   mkdirSync(dest, { recursive: true });
-  for (const p of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) {
-    if (!existsSync(p)) continue;
-    copyFileSync(p, path.join(dest, path.basename(p)));
-  }
+  // 复审 R1：VACUUM INTO 出单文件自洽快照（SQLite ≥3.27 官方在线备份原语）——
+  // 替代三件套裸拷贝（wal/shm 配对脆性：恢复复杂且拷贝窗口依赖无并发写假设）。
+  const destFile = path.join(dest, path.basename(dbPath));
+  db.prepare('VACUUM INTO ?').run(destFile);
   const last = db.prepare('SELECT name FROM schema_migrations ORDER BY name DESC LIMIT 1').get() as { name: string } | undefined;
   writeFileSync(path.join(dest, 'manifest.json'), JSON.stringify({
     createdAt: new Date().toISOString(),
     dbFile: path.basename(dbPath),
     migrationsAppliedAtSnapshot: last?.name ?? null,
-    restore: '停止服务 → 把本目录内数据库三件套拷回原位（覆盖）→ 重启',
+    restore: '停止服务 → 把本目录内的数据库文件拷回原位（覆盖），并删除原位残留的 -wal/-shm 同名文件 → 重启',
   }, null, 2));
   // 滚动保留：份数上限 + 字节预算（总量超过 max(库当前 2 倍, 50MB) 即删最旧，至少留最新 1 份——
   // 用户追问「五份不会太大吧」：库大时份数让位于空间预算）
@@ -102,12 +102,15 @@ export function snapshotDbBeforeMigration(db: DB): string {
   };
   const dbBytes = (() => { try { return statSync(dbPath).size; } catch { return 0; } })();
   const budget = Math.max(dbBytes * 2, 50 * 1024 * 1024);
-  let used = 0;
+  // 复审 R2：字节只累计「保留集」——已判删的不再计入（原实现会多删旧快照）；最新一份永远保留
+  let keptBytes = 0; let keptCount = 0;
   const doomed: string[] = [];
-  dirs.forEach((d, i) => {
-    used += dirBytes(d);
-    if (i >= PRE_MIGRATION_BACKUP_KEEP || (i > 0 && used > budget)) doomed.push(d);
-  });
+  for (const d of dirs) {
+    const b = dirBytes(d);
+    const withinCount = keptCount < PRE_MIGRATION_BACKUP_KEEP;
+    const withinBudget = keptCount === 0 || keptBytes + b <= budget;
+    if (withinCount && withinBudget) { keptBytes += b; keptCount += 1; } else doomed.push(d);
+  }
   for (const d of doomed) rmSync(path.join(root, d), { recursive: true, force: true });
   log.info('pre-migration snapshot created', { dest, keep: PRE_MIGRATION_BACKUP_KEEP });
   return dest;
