@@ -54,9 +54,10 @@ export function MessageNavStrip({ containerRef }: { containerRef: React.RefObjec
   const influenceWidth = (i: number): number | null => {
     if (hovered === null) return null;
     const d = Math.abs(i - hovered);
+    // 波纹比例=等比衰减 2×0.75^d（用户实测校准：2 / 1.5 / 1.125）
     if (d === 0) return 24;
-    if (d === 1) return 20;
-    if (d === 2) return 17;
+    if (d === 1) return 18;
+    if (d === 2) return 14;
     return null;
   };
   // 波纹扩散感：离触发点越远动得越晚（距离 × 45ms 延迟）
