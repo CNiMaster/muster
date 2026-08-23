@@ -8,7 +8,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
   <a href="PRIVACY.md"><img src="https://img.shields.io/badge/Privacy-100%25%20Local-green.svg" alt="100% Local"></a>
   <a href="TERMS.md"><img src="https://img.shields.io/badge/Terms-Fair%20Use-orange.svg" alt="Terms"></a>
-  <a href="https://github.com/your-org/muster/actions"><img src="https://img.shields.io/github/actions/workflow/status/your-org/muster/ci.yml?branch=main&label=CI" alt="CI"></a>
+  <a href="https://github.com/CNiMaster/muster/actions"><img src="https://img.shields.io/github/actions/workflow/status/CNiMaster/muster/ci.yml?branch=main&label=CI" alt="CI"></a>
   <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/Contributions-Welcome-brightgreen.svg" alt="Contributions Welcome"></a>
 </p>
 
@@ -26,7 +26,7 @@
 | :---: | :---: |
 | <img src="public/screenshots/03-project.png" width="420" alt="项目工作台：Task 发布与智能体协作"> | <img src="public/screenshots/07-wizard.png" width="420" alt="首次启动引导：程序目录/CLI/API 配置"> |
 
-| 人才市场 | 执行器中心 | 系统设置与备份 |
+| 智能体库 | 执行器中心 | 系统设置与备份 |
 | :---: | :---: | :---: |
 | <img src="public/screenshots/04-agents.png" width="270" alt="智能体库：可复用的智能体档案"> | <img src="public/screenshots/05-executors.png" width="270" alt="执行器中心：一键检测/安装 CLI 与 API"> | <img src="public/screenshots/06-settings.png" width="270" alt="系统设置：备份迁移与目录指引"> |
 
@@ -43,13 +43,13 @@
 - **项目优先开工**：从「我有件事要办」自然语言直接开工（零组织决策），或表单新建项目；组织形状存在蓝图里，靠自动复盘进化，不再要求你先设计组织。
 - **智能体与人设**：工作台默认就位第一负责人与验收员；200+ 嵌入式 AI 专家人设按任务穿戴，智能体拥有独立 Agent Home、个人空间与分层记忆。
 - **项目与 Task 隔离沙盒**：每个任务独占隐藏 Git Worktree 沙盒，分支隔离开发，自动进行并发控制与三方代码落盘合并。
-- **执行器多端兼容**：无缝支持 Claude Code CLI、Codex CLI、Antigravity CLI、OpenAI 兼容 API 及 Gemini API。
+- **执行器多端兼容**：无缝支持 Claude Code / Codex / OpenCode / Antigravity / pi 五款 CLI 与 OpenAI 兼容 API、Gemini API。
 
 ---
 
 ## ✨ 核心功能
 
-### 🏢 项目与组织
+### 📋 项目与组织
 - **项目主导**：所有实际工作归属于项目；小说题材域保留题材预设与章节流程（分类公司模板平台已随 2026-08-16 退场退役）。
 - **蓝图组织**：任务类型 × 人设 × 战绩自动进化出组织形状（自动复盘，用户零手动固化）；项目页头部「上线/下班」胶囊管理运行状态。
 - **智能体档案**：200+ 专家人设，独立 Agent Home、个人空间与分层记忆；支持临时工选拔、转正、复用与离职交接。
@@ -58,10 +58,10 @@
 - **项目工作台**：以项目为中心，智能体围绕 Task 协作；Task 有需求确认门（launch gate）与验收门。
 - **任务隔离沙盒**：每个 Task 在独立 git worktree 中运行，自动并发控制与产物合并。
 - **业务审批**：素材/成品/人物/剧情等产物提交审批流，支持批准/打回/返工。
-- **交接与外包**：任务交接（offboard）；B2B 外包决策树与外包中心已退役（蓝图组织批次5）——能力缺口统一走临时工选拔（复用候选 → 人才库 → 新建），契约状态机与跨公司交付管线保留，待改造为跨项目交付协议。
+- **交接与流转**：任务交接（offboard）与离职留痕；能力缺口统一走临时工选拔（复用候选 → 人才库 → 新建）。
 
 ### ⚙️ 执行器平台
-- **一键检测**：自动扫描系统已安装的 Claude Code / Codex / Antigravity / OpenCode CLI。
+- **一键检测**：自动扫描系统已安装的 Claude Code / Codex / OpenCode / Antigravity / pi CLI。
 - **一键安装**：平台智能选择官方安装方式（brew / curl / npm），SSE 流式日志，失败自动 AI 诊断。
 - **API 凭据执行器**：OpenAI 兼容 / Gemini API，密钥只存环境变量引用，明文不入库。
 - **连通探针**：绑定后自动测试版本、认证与模型可用性，智能体复用同一结果。
@@ -87,7 +87,7 @@
 确保已安装 **Node.js >= 22** 与 **Git**：
 
 ```bash
-git clone https://github.com/your-org/muster.git
+git clone https://github.com/CNiMaster/muster.git
 cd muster
 npm install
 ```
@@ -102,7 +102,7 @@ npm run dev
 
 ### 3. 创建你的第一个项目
 
-1. 首页直接用一句话开工（如「帮我做一份产品调研」），或点「新建项目」走表单（题材/目标/目录）。
+1. 打开即进入工作台：左栏 ⚡ 独立任务一行输入直接开工（如「帮我做一份产品调研」），或经 📁 项目列表「新建项目 / 打开本地项目」（目标/目录表单，已有仓库就在原址工作）。
 2. 工作台自动就位第一负责人与验收员；可去「执行器中心」完成 CLI 绑定或 API 凭据（引导中也可直接完成）。
 3. 在项目工作台发布第一个 Task，观察智能体协作执行。
 

@@ -16,10 +16,10 @@
 
 - **Node.js >= 22.12**（推荐使用 [nvm](https://github.com/nvm-sh/nvm) 或 [fnm](https://github.com/Schniz/fnm) 管理）
 - **Git**
-- 一个可用的 AI CLI（可选，运行真实任务时需要）：[Claude Code](https://code.claude.com) / [Codex CLI](https://github.com/openai/codex) / [Antigravity CLI](https://antigravity.google) / [OpenCode](https://opencode.ai)
+- 一个可用的 AI CLI（可选，运行真实任务时需要）：[Claude Code](https://code.claude.com) / [Codex CLI](https://github.com/openai/codex) / [Antigravity CLI](https://antigravity.google) / [OpenCode](https://opencode.ai) / [pi](https://github.com/mariozechner/pi-coding-agent)
 
 ```bash
-git clone https://github.com/your-org/muster.git
+git clone https://github.com/CNiMaster/muster.git
 cd muster
 npm install
 ```
@@ -31,7 +31,7 @@ src/
   client/        # React 前端（Vite + React Router + TanStack Query）
   server/        # Node 后端（Express + better-sqlite3）
     api/         # REST 路由
-    domain/      # 领域逻辑（公司/员工/项目/Task/执行器/备份…）
+    domain/      # 领域逻辑（项目/Task/智能体/执行器/备份…）
     executors/   # CLI/API 执行器适配器与工具装配
     db/          # SQLite 迁移（migrations/*.sql）
     task-engine/ # Task 执行引擎（watchdog/调度/工作树）
