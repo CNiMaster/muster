@@ -93,6 +93,12 @@ export interface ToolLoopOptions {
   usageTracking?: { db: DB; taskId: string };
   /** 执行过程 trace 记录（区别于 usageTracking 的聚合埋点；失败必须吞掉不影响主流程）。 */
   traceTracking?: { db: DB; taskId: string; runId?: string };
+  /**
+   * L7 上下文治理：消息数超阈值（缺省 48）时把早期消息压缩为确定性摘要（保留首条系统装配
+   * 与最近 keepRecent 条）——内存内延续不换线程，连续工作不断。传 null 显式关闭。
+   * v1 为确定性摘要（ assistant 文本首行+工具名与结果首行，截 4000 字）；LLM 摘要留 v2。
+   */
+  contextGovernance?: { maxMessages?: number; keepRecent?: number } | null;
 }
 
 export interface ToolLoopResult {
@@ -106,8 +112,39 @@ export interface ToolLoopResult {
  - 成功：模型调用 done 工具，返回 AgentRunResult。
  - 失败：超时/maxToolCalls/模型错误，返回 null（调用方决定如何降级）。
  */
+const CONTEXT_MAX_MESSAGES_DEFAULT = 48;
+const CONTEXT_KEEP_RECENT_DEFAULT = 8;
+const CONTEXT_DIGEST_MAX_CHARS = 4000;
+
+function firstLineOf(text: string | undefined, max = 160): string {
+  if (!text) return '';
+  return text.trim().replace(/\s+/g, ' ').slice(0, max);
+}
+
+/** L7：把早期消息压成一条确定性摘要消息（步骤/工具/结论首行级，总量截断）。 */
+export function compactMessagesToDigest(old: ChatMessage[]): ChatMessage {
+  const lines: string[] = [];
+  for (const m of old) {
+    if (m.role === 'system') continue;
+    if (m.role === 'assistant') {
+      const t = firstLineOf(m.content);
+      if (t) lines.push(`- 结论：${t}`);
+      for (const tc of m.tool_calls ?? []) lines.push(`- 调用工具 ${tc.function.name}`);
+    } else if (m.role === 'user') {
+      const t = firstLineOf(m.content, 80);
+      if (t && !t.startsWith('【上下文压缩')) lines.push(`- 输入：${t}`);
+    }
+  }
+  let digest = lines.join('\n');
+  if (digest.length > CONTEXT_DIGEST_MAX_CHARS) digest = `${digest.slice(0, CONTEXT_DIGEST_MAX_CHARS)}\n…（更早步骤截断）`;
+  return { role: 'user', content: `【上下文压缩】以下为此前已完成步骤与结论的摘要（原消息已压缩，任务继续）：\n${digest || '（无文本性步骤）'}` };
+}
+
 export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult> {
   const messages = [...opts.messages];
+  const gov = opts.contextGovernance !== null;
+  const maxMessages = opts.contextGovernance?.maxMessages ?? CONTEXT_MAX_MESSAGES_DEFAULT;
+  const keepRecent = opts.contextGovernance?.keepRecent ?? CONTEXT_KEEP_RECENT_DEFAULT;
   const toolRegistry = opts.toolRegistry ?? createBuiltinToolRegistry();
   const tools = toolRegistry.definitions();
   let rounds = 0;
@@ -135,6 +172,14 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult
   try {
     while (rounds < opts.maxToolCalls) {
       if (controller.signal.aborted || stopRequested) break;
+      // L7 上下文治理：超阈值压缩（保留首条系统装配 + 确定性摘要 + 最近 keepRecent 条）——内存内延续不换线程
+      if (gov && messages.length > maxMessages) {
+        const system = messages.slice(0, 1);
+        const recent = messages.slice(-keepRecent);
+        const digest = compactMessagesToDigest(messages.slice(1, -keepRecent));
+        messages.length = 0;
+        messages.push(...system, digest, ...recent);
+      }
       rounds++;
       inModelCall = true;
       let modelResult;

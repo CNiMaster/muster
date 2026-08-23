@@ -1,4 +1,5 @@
 import { type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { CLI_UPGRADE_HINT } from './spawn-errors';
 import { createInterface } from 'node:readline';
 import type { ExecutionAdapter, ExecutionContext, ExecutionEvents, ExecutionRunResult } from '../task-engine/executor';
 import { AGENT_RESULT_JSON_SCHEMA, agentRunResultSchema } from './result-schema';
@@ -84,7 +85,7 @@ class StdioCodexAppServer implements CodexAppServer{
     if(message.method==='item/completed'&&message.params?.item?.type==='agentMessage')waiter.text=String(message.params.item.text??waiter.text);
     if(message.method==='turn/completed'){
       if(message.params?.turn?.status==='failed'){
-        const detail=String(message.params?.turn?.error?.message??'未知错误');this.turnWaiter=undefined;waiter.reject(new AppError(ErrorCode.INTERNAL,`Codex CLI 执行失败: ${detail}`));return;
+        const detail=String(message.params?.turn?.error?.message??'未知错误');this.turnWaiter=undefined;waiter.reject(new AppError(ErrorCode.INTERNAL,`Codex CLI 执行失败: ${detail}${CLI_UPGRADE_HINT}`));return;
       }
       const items=message.params?.turn?.items??[];const text=[...items].reverse().find((item:any)=>item.type==='agentMessage')?.text??'';
       this.turnWaiter=undefined;waiter.resolve({threadId:waiter.threadId,text:text||waiter.text,approvalDeniedMessage:waiter.approvalDeniedMessage});

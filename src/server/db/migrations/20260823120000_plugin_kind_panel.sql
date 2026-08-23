@@ -1,3 +1,4 @@
+-- safety: rebuild
 -- 批次 I-a：plugin 重建扩 kind CHECK 加 'panel'（面板插件协议 v1）
 -- 沿用 20260819000400 同款重建模式（SQLite CHECK 不可原位修改）。
 CREATE TABLE plugin_new (

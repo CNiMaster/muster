@@ -1,3 +1,4 @@
+-- safety: rebuild
 -- 公司退役批次 D 收尾：终审发现的漏网列与 plugin 契约残留。
 -- ① plugin 表 CHECK 含 'company' 档（scope_level/source_kind），库内已有存量值；
 --    重建换 CHECK 为 'workbench'，存量 company 值同步映射，scope_id 清空。

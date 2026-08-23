@@ -1,3 +1,4 @@
+-- safety: rebuild
 -- 公司退役批次 D Task6：company 瘦身并 RENAME 为 workbench 单例表。
 CREATE TABLE workbench_new (
   id           TEXT PRIMARY KEY,

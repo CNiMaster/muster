@@ -1,3 +1,4 @@
+-- safety: rebuild
 -- B2 项目准备流程：扩展 project.state 状态机。
 -- 新增 drafting/researching/equipping/staffing/ready 五个准备阶段，
 -- 废弃 idle（保留为合法值以兼容历史数据，不再用于新项目）。

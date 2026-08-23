@@ -1,3 +1,4 @@
+-- safety: rebuild
 -- 批次三：定时计划 once（一次性：倒计时/指定时刻）模式——CHECK 约束放宽为三值。
 -- SQLite 无法 ALTER CHECK，走标准重建（与 20260815010000/20260819000100 同法）。
 CREATE TABLE trigger_new (

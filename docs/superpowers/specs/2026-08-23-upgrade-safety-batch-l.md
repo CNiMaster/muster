@@ -59,4 +59,11 @@ L1 快照触发/失败拒启/滚动保留；L2 行数校验失败不 DROP；L3 �
 
 ## 实施记录
 
-（分段实施中）
+- **L1 迁移前快照**：snapshotDbBeforeMigration（三件套+manifest 恢复指引，滚动 5 份；失败抛错=拒启）挂 runMigrations pending>0 分支；备份中心新端点 GET /api/backup/pre-migration-snapshots。
+- **L2 分级**：migrationSafety 解析头注释；历史 15 个表/列重建迁移全部补标 `-- safety: rebuild`（含测试断言防漏标）。**偏差**：SQL 内行数校验不可通用化（纯 SQL 无控制流）——落为 rebuild 模板规则+upgrade-drill 全链验证，spec 原案调整记录。
+- **L4(a) 失败诊断**：五 CLI 适配器（antigravity/custom/codex/opencode/pi）失败文案统一拼 CLI_UPGRADE_HINT（「CLI 版本可能已升级→设置→执行器重新探测」）。
+- **L5+L6 清理与压缩**：retention.ts TTL 单源（trace 90d/审计 180d）+previewCleanup 所见即所得+executeCleanup（**归档 JSONL.gz 可找回→删除→wal_checkpoint(TRUNCATE)+VACUUM**，归档滚动 20 份）；备份 API 两端点。
+- **L8**：docs/RELEASE-CHECKLIST.md 六条+scripts/upgrade-drill.mjs（隔离 home 起服务→健康+快照断言，已真跑通过）。
+- **L7 上下文治理**：tool-loop contextGovernance（默认 48 条阈值→确定性摘要保留系统+近 8 条，内存内延续不换线程；null 关闭）。**偏差**：v1 用确定性摘要（assistant 结论/工具名/输入首行截 4000 字）而非 callLlm 摘要——不引入 LLM 新失败面+确定性可测，LLM 摘要留 v2。
+- **留 v2（偏差记录）**：L3 bootSelfCheck 完整性扩展、L4(b) 执行器版本变化主动提醒、清理 StoragePage UI 节、L7 设置项 context_budget、retention boot sweep 挂 coordinator。
+- **测试**：migration-safety 4（快照触发/滚动/幂等/分级+历史标注防漏）+tool-loop-context 3（摘要内容/压缩生效近尾部保留/null 关闭）+retention 2（预览+归档读回+VACUUM+滚动）；upgrade-drill 真跑通过。

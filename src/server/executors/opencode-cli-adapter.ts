@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { CLI_UPGRADE_HINT } from './spawn-errors';
 import { unlinkSync } from 'node:fs';
 import { commonCliWritableRoots, guardedArgv, sanitizeChildEnv, writeSandboxProfile } from './spawn-shell';
 import { promisify } from 'node:util';
@@ -218,7 +219,7 @@ export class OpenCodeCliAdapter implements ExecutionAdapter {
         timeout: ctx.agentExecutor?.timeoutMs ?? 600_000,
       });
       events?.onOutput?.(result.stdout);
-      if (result.exitCode !== 0) throw new AppError(ErrorCode.INTERNAL, `OpenCode CLI 执行失败: ${(result.stderr || result.stdout).slice(0, 2000)}`);
+      if (result.exitCode !== 0) throw new AppError(ErrorCode.INTERNAL, `OpenCode CLI 执行失败: ${(result.stderr || result.stdout).slice(0, 2000)}${CLI_UPGRADE_HINT}`);
       let session: string | undefined;
       let content = '';
       let sawEvent = false;

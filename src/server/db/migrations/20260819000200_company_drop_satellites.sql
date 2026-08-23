@@ -1,3 +1,4 @@
+-- safety: rebuild
 -- 公司退役批次 D Task 4：死表 DROP、能力卫星表改名去列、B2B 契约死流退役。
 
 -- 1. 重建 company_employee（解除对 outsourcing_contract 的外键引用）

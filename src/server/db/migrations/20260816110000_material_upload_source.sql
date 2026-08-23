@@ -1,3 +1,4 @@
+-- safety: rebuild
 -- 批次 D1：素材来源增加 upload（对话附件上传入库）。
 -- SQLite 不支持直接改 CHECK：重建表并迁移数据（未上线，无需保序）。
 CREATE TABLE project_material_new (

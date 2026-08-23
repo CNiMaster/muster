@@ -1,3 +1,4 @@
+-- safety: rebuild
 -- 公司退役批次 D Task2：组织人员表去 company_id 列。
 -- 结构型+数据型：FK 表一律「建新表(无 company_id)→INSERT SELECT→DROP 旧→RENAME」重建。
 -- 列清单以 2026-08-18 权威库 sqlite_master.sql 为准（含各 ALTER 后加列），仅删 company_id。
