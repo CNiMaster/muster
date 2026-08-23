@@ -298,7 +298,6 @@ export function ProjectTaskWorkspace({
       ) : (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'var(--bg-elev)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)', minWidth: 0 }}>
           <span style={{ fontSize: '13px', color: 'var(--fg-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>当前处于全局协作对话 · 发送指令即可开工</span>
-          <Button size="sm" variant="primary" style={{ flexShrink: 0 }} onClick={() => setCreating(true)}>＋ 新建任务</Button>
         </div>
       )}
 

@@ -902,7 +902,7 @@ p { margin: 0 0 var(--space-3) 0; }
 .ptws-hero-badge{align-self:center;padding:3px 10px;border-radius:var(--radius-full,999px);background:var(--accent-subtle,rgba(211,79,47,.12));color:var(--accent);font-size:var(--text-xs);font-weight:700}
 .project-task-workspace-stream.is-empty .mu-prompt-composer{width:100%;max-width:760px;margin:0 auto}
 .project-task-workspace-stream.is-started .ptws-trace{flex-shrink:0}
-.project-task-workspace-stream.is-started .ptws-conv{flex:1;min-height:0;display:flex;flex-direction:column;background:var(--bg-elev);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);overflow:hidden}
+.project-task-workspace-stream.is-started .ptws-conv{flex:1;min-height:0;display:flex;flex-direction:column;background:transparent;border:none;border-radius:0;overflow:visible}
 .project-task-workspace-stream.is-started .mu-prompt-composer{flex-shrink:0}
 @keyframes ptws-fade-in{from{opacity:0;transform:translateY(6px)}}
 .task-stage-kicker{display:inline-block;color:var(--accent);font-size: 12px;font-weight:800;letter-spacing:.08em}.project-advanced-tools{margin-top:0;border-color:transparent;background:transparent}.project-advanced-tools>summary{display:flex;align-items:center;gap:8px;color:var(--fg-subtle);font-size: 12px}.project-advanced-tools>summary small{font-size: 12px}.project-tool-surface .page-header{padding-bottom:var(--space-3);border-bottom:1px solid var(--border-subtle)}

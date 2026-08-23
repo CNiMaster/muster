@@ -1331,7 +1331,7 @@
 
 /* ── 中栏对话横条导航（2026-08-23 用户定案）：左侧中部用户发言刻度，hover 放大+内容气泡 ── */
 .mu-conv-stream{position:relative}
-.mu-msg-navstrip{position:absolute;z-index:5;left:4px;top:50%;transform:translateY(-50%);height:72%;width:20px;pointer-events:none}
+.mu-msg-navstrip{position:absolute;z-index:5;left:-14px;top:50%;transform:translateY(-50%);height:72%;width:20px;pointer-events:none}
 .mu-msg-navtick{position:absolute;left:0;width:14px;height:3px;min-height:3px;border-radius:2px;background:var(--border-strong);opacity:.55;cursor:pointer;pointer-events:auto;transition:width var(--duration-fast) var(--ease-out),opacity var(--duration-fast) var(--ease-out),background var(--duration-fast) var(--ease-out)}
 .mu-msg-navtick:hover,.mu-msg-navtick.is-hover{width:22px;opacity:1;background:var(--fg-muted)}
 .mu-msg-navbubble{position:absolute;left:calc(100% + 8px);top:50%;transform:translateY(-50%);max-width:220px;padding:5px 9px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--fg-muted);font-size:var(--text-xs);line-height:1.45;white-space:normal;box-shadow:var(--shadow-1);pointer-events:none}

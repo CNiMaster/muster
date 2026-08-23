@@ -164,21 +164,16 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
         <button type="button" className="workbench-icon-button" title={preferences.leftOpen ? '收起左侧工作列表' : '展开左侧工作列表'} aria-label={preferences.leftOpen ? '收起工作列表' : '展开工作列表'} aria-expanded={preferences.leftOpen} aria-controls="work-navigation" onClick={preferences.toggleLeft}><span className="pane-toggle-glyph is-left" aria-hidden="true" /></button>
       </div>
       <div className="workbench-rail-body">{preferences.leftOpen ? navigation : null}</div>
-      <div className="workbench-rail-foot">
-        <button type="button" className="workbench-icon-button" title={ui.isSimple ? '当前是简单模式：专注任务对话。点击切换到专业模式。' : '当前是专业模式：全量功能。点击切换回简单模式。'} aria-label={ui.isSimple ? '切换到专业模式' : '切换到简单模式'} onClick={ui.toggle} disabled={ui.saving} style={{ fontSize: 12, width: 'auto', padding: '0 8px' }}>{ui.isSimple ? '简单' : '专业'}</button>
-      </div>
     </nav>
     <div className="workbench-main">
       <header className="workbench-header">
-        {/* 左栏收起（桌面态 rail 整体隐藏）或抽屉态（<740）时，rail 里的开关/模式切换失去入口——这里补条件渲染 */}
+        {/* 左栏收起（rail 整体隐藏）或抽屉态时，rail 里的开关失去入口——条件补位 */}
         {(!isDesktop || !preferences.leftOpen) && (
-          <>
-            <button type="button" className="workbench-icon-button" title={preferences.leftOpen ? '收起左侧工作列表' : '展开左侧工作列表'} aria-label={preferences.leftOpen ? '收起工作列表' : '展开工作列表'} aria-expanded={preferences.leftOpen} aria-controls="work-navigation" onClick={preferences.toggleLeft}><span className="pane-toggle-glyph is-left" aria-hidden="true" /></button>
-            <button type="button" className="workbench-icon-button" title={ui.isSimple ? '当前是简单模式：专注任务对话。点击切换到专业模式。' : '当前是专业模式：全量功能。点击切换回简单模式。'} aria-label={ui.isSimple ? '切换到专业模式' : '切换到简单模式'} onClick={ui.toggle} disabled={ui.saving} style={{ fontSize: 12, width: 'auto', padding: '0 8px' }}>{ui.isSimple ? '简单' : '专业'}</button>
-          </>
+          <button type="button" className="workbench-icon-button" title={preferences.leftOpen ? '收起左侧工作列表' : '展开左侧工作列表'} aria-label={preferences.leftOpen ? '收起工作列表' : '展开工作列表'} aria-expanded={preferences.leftOpen} aria-controls="work-navigation" onClick={preferences.toggleLeft}><span className="pane-toggle-glyph is-left" aria-hidden="true" /></button>
         )}
         <div className="workbench-breadcrumb">{breadcrumb}</div>
         {primaryAction && <div className="workbench-primary-action">{primaryAction}</div>}
+        <button type="button" className="workbench-icon-button" title={ui.isSimple ? '当前是简单模式：专注任务对话。点击切换到专业模式。' : '当前是专业模式：全量功能。点击切换回简单模式。'} aria-label={ui.isSimple ? '切换到专业模式' : '切换到简单模式'} onClick={ui.toggle} disabled={ui.saving} style={{ fontSize: 12, width: 'auto', padding: '0 8px' }}>{ui.isSimple ? '简单' : '专业'}</button>
         <button type="button" className="workbench-icon-button inspector-toggle" title={preferences.rightOpen ? '收起右侧现场信息' : '展开右侧现场信息'} aria-label={preferences.rightOpen ? '收起现场信息' : '展开现场信息'} aria-expanded={preferences.rightOpen} aria-controls="work-inspector" onClick={preferences.toggleRight}><span className="pane-toggle-glyph is-right" aria-hidden="true" />{attentionCount > 0 && <i>{attentionCount}</i>}</button>
       </header>
       <div className="workbench-grid">

@@ -593,9 +593,8 @@ export function ProjectDetail({ projectId }: { projectId: string }): React.React
       attentionCount={attentionCount + (cockpit?.approvals.pending ?? 0) + (mergeAttention?.total ?? 0)}
       primaryAction={<>
         {/* 2026-08-23 用户定案：全局上下班按钮退役——默认常上班（workbench 默认 online），CLI/人员维护走局部下班（后续模块化挂起） */}
-        {projectView === 'task'
-        ? <button type="button" className="mu-btn mu-btn-primary mu-btn-sm workbench-publish-action" onClick={openNewTaskCard}>＋ 新建任务</button>
-        : projectView === 'employee'
+        {/* 2026-08-23 用户定案：顶栏新建任务退役（入口收口到左栏＋/new 命令）；模式切换按钮常驻顶栏（WorkbenchShell） */}
+        {projectView === 'employee'
           ? <a className="mu-btn mu-btn-primary mu-btn-sm workbench-publish-action" href="#employee-dispatch">＋ 派发工作</a>
           : selectedAgentId
             ? <Link className="mu-btn mu-btn-primary mu-btn-sm workbench-publish-action" to={`/projects/${projectId}?view=employee&agent=${selectedAgentId}${selectedProjectTaskId ? `&projectTask=${selectedProjectTaskId}` : ''}`}>联系负责人</Link>
