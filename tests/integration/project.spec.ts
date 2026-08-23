@@ -14,7 +14,7 @@ import { createProject, addProjectReference, assertCanReadSource } from '../../s
 import { defaultWorkspaceRoot } from '../../src/server/domain/workspace-layout';
 import { ensurePrimaryThread, updateThreadState, createMirror } from '../../src/server/domain/thread';
 import { addRelationship, deleteRelationship, validateCommunication } from '../../src/server/domain/graph';
-import { createTask } from '../../src/server/domain/task';
+import { createTask, claimNextTask, markRunning } from '../../src/server/domain/task';
 import { AppError, ErrorCode } from '../../src/shared/errors';
 
 let tdb: ReturnType<typeof makeTestDb>;
@@ -143,11 +143,16 @@ describe('graph validation', () => {
     expect(validateCommunication(db, c.id)).toEqual([]);
   });
 
-  it('上班后禁止改关系图', () => {
+  it('任务执行中禁止改关系图（2026-08-23 上下班退役→执行期锁）', () => {
     const c = restoreWorkbench(db, { id: 'wb_fix_10', name: 'co' });
     const a1 = createAgent(db, { companyId: c.id, name: 'a1', role: 'r' });
     const a2 = createAgent(db, { companyId: c.id, name: 'a2', role: 'r' });
-    clockIn(db);
+    const runner = createAgent(db, { companyId: c.id, name: 'runner', role: 'writer' });
+    const project = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/exec-lock' });
+    const thread = ensurePrimaryThread(db, project.id, runner.id);
+    const task = createTask(db, { projectId: project.id, assigneeAgentId: runner.id, title: '执行中' });
+    claimNextTask(db, thread.id, runner.id);
+    markRunning(db, task.id);
     expect(() =>
       addRelationship(db, { companyId: c.id, kind: 'org', sourceId: a1.id, targetId: a2.id }),
     ).toThrow();

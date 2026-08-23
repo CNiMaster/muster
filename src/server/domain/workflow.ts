@@ -1,7 +1,7 @@
 import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
-import { getWorkbench, getWorkbenchOrNull } from './workbench';
+import { getWorkbench, getWorkbenchOrNull, isOrgLocked } from './workbench';
 import { getAgent, listAgents } from './agent';
 import { getProject } from './project';
 import { createTask, type Task } from './task';
@@ -144,8 +144,8 @@ export function saveWorkflow(
     edges: Array<{ sourceId: string; targetId: string; label?: string; condition?: EdgeCondition; maxTraversals?: number }>;
   },
 ): void {
-  if (getWorkbench(db).state !== 'off') {
-    throw new AppError(ErrorCode.COMPANY_LOCKED, '上班期间不能修改工作流图');
+  if (isOrgLocked(db)) {
+    throw new AppError(ErrorCode.COMPANY_LOCKED, '有任务执行中，暂不能修改工作流图');
   }
 
   const now = nowIso();

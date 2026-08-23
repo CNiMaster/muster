@@ -45,13 +45,13 @@ describe('workbench 单例路由', () => {
     });
   }
 
-  it('空库 GET /api/workbench：自动建默认工作台（general/下班态）并返回', async () => {
+  it('空库 GET /api/workbench：自动建默认工作台（general/默认上班）并返回', async () => {
     const res = await fetch(`${base}/api/workbench`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { id: string; name: string; kind: string; state: string };
     expect(body.name).toBe(DEFAULT_WORKBENCH_NAME);
     expect(body.kind).toBe('general');
-    expect(body.state).toBe('off');
+    expect(body.state).toBe('online'); // 2026-08-23 默认常上班
   });
 
   it('幂等：重复 GET 返回同一工作台，不新建', async () => {

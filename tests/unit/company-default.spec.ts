@@ -13,12 +13,12 @@ beforeEach(() => {
 });
 
 describe('ensureWorkbench 单例原语', () => {
-  it('空库：创建「默认工作台」，general 类型、下班态', () => {
+  it('空库：创建「默认工作台」，general 类型、默认上班（2026-08-23）', () => {
     const { workbench, created } = ensureWorkbench(db);
     expect(created).toBe(true);
     expect(workbench.name).toBe(DEFAULT_WORKBENCH_NAME);
     expect(workbench.kind).toBe('general');
-    expect(workbench.state).toBe('off');
+    expect(workbench.state).toBe('online');
   });
 
   it('幂等：二次调用返回同一工作台，不再新建', () => {

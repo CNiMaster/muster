@@ -7,7 +7,7 @@
 import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
-import { getWorkbench } from './workbench';
+import { getWorkbench, isOrgLocked } from './workbench';
 import { assertDepartmentInCompany } from './department';
 import {
   createAgentProfile,
@@ -141,8 +141,9 @@ function assertUnlocked(db: DB, opts?: { tempRecruit?: boolean; isSystem?: boole
   // 系统隐形岗豁免：养蜂人/裁决法庭由 coordinator 在线幂等创建
   // R2 内部岗豁免：验收员等可见固定岗懒确保（任务完成时工作台通常 online，不豁免则永远建不出来）
   if (opts?.tempRecruit || opts?.isSystem || opts?.internalRecruit) return;
-  if (getWorkbench(db).state !== 'off') {
-    throw new AppError(ErrorCode.COMPANY_LOCKED, '上班期间不能修改员工配置');
+  // 2026-08-23 用户定案：上下班退役——员工配置锁只在有任务执行中时生效（防执行期竞态）
+  if (isOrgLocked(db)) {
+    throw new AppError(ErrorCode.COMPANY_LOCKED, '有任务执行中，暂不能修改员工配置');
   }
 }
 

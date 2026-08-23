@@ -10,7 +10,7 @@
 import type { DB } from '../db/client';
 import { shortId, nowIso } from '../../shared/utils';
 import { AppError, ErrorCode } from '../../shared/errors';
-import { getWorkbench } from './workbench';
+import { getWorkbench, isOrgLocked } from './workbench';
 
 export interface TemplateNode {
   kind: 'step' | 'decision' | 'start' | 'end';
@@ -117,8 +117,8 @@ export function listWorkflowTemplates(db: DB, category?: string): WorkflowTempla
  * 与 saveWorkflow 一致，要求公司处于下班态（结构变更需 company off）。
  */
 export function instantiateWorkflowFromTemplate(db: DB, companyId: string, templateId: string, workflowId: string): { nodeCount: number; edgeCount: number } {
-  if (getWorkbench(db).state !== 'off') {
-    throw new AppError(ErrorCode.COMPANY_LOCKED, '上班期间不能实例化工作流模板');
+  if (isOrgLocked(db)) {
+    throw new AppError(ErrorCode.COMPANY_LOCKED, '有任务执行中，暂不能实例化工作流模板');
   }
   const tpl = getWorkflowTemplate(db, templateId);
   if (!tpl) throw new AppError(ErrorCode.NOT_FOUND, `工作流模板 ${templateId} 不存在`);

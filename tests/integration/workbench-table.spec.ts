@@ -46,17 +46,17 @@ describe('Workbench table and domain operations', () => {
     const { workbench, created } = ensureWorkbench(db);
     expect(created).toBe(true);
     expect(workbench.name).toBe('默认工作台');
-    expect(workbench.state).toBe('off');
+    expect(workbench.state).toBe('online'); // 2026-08-23 默认常上班
     expect(isOrgLocked(db)).toBe(false);
 
     const updated = updateWorkbench(db, { name: '新工作台', charter: '打造卓越产品' });
     expect(updated.name).toBe('新工作台');
     expect(updated.charter).toBe('打造卓越产品');
 
-    // 状态流转
+    // 状态流转（2026-08-23 上下班退役：isOrgLocked=执行期锁，clockIn 无任务不锁）
     const online = clockIn(db);
     expect(online.state).toBe('online');
-    expect(isOrgLocked(db)).toBe(true);
+    expect(isOrgLocked(db)).toBe(false);
 
     const draining = transitionWorkbench(db, 'draining');
     expect(draining.state).toBe('draining');

@@ -27,9 +27,9 @@ beforeEach(() => {
 });
 
 describe('company state machine', () => {
-  it('新建公司默认 off', () => {
+  it('新建工作台默认 online（2026-08-23 上下班退役：默认常上班）', () => {
     const c = restoreWorkbench(db, { id: 'wb_fix_1', name: '小说公司', kind: 'novel' });
-    expect(c.state).toBe('off');
+    expect(c.state).toBe('online');
   });
 
   it('off → online → draining → review_paused → online → off', () => {
@@ -89,10 +89,14 @@ describe('org config lock', () => {
     expect(() => getAgent(db, a.id)).toThrow();
   });
 
-  it('online 状态禁止改员工', () => {
+  it('任务执行中禁止改员工（isOrgLocked 新语义：空闲可改，2026-08-23 上下班退役）', () => {
     const c = restoreWorkbench(db, { id: 'wb_fix_8', name: 'co' });
     const a = createAgent(db, { companyId: c.id, name: '张三', role: 'writer' });
-    clockIn(db);
+    const project = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/lock-running' });
+    const thread = ensurePrimaryThread(db, project.id, a.id);
+    const task = createTask(db, { projectId: project.id, assigneeAgentId: a.id, title: '执行中' });
+    claimNextTask(db, thread.id, a.id);
+    markRunning(db, task.id);
     expect(() => updateAgent(db, a.id, { name: '李四' })).toThrowError(AppError);
     try {
       updateAgent(db, a.id, { name: 'x' });
@@ -101,13 +105,18 @@ describe('org config lock', () => {
     }
   });
 
-  it('online 状态禁止新增员工', () => {
+  it('任务执行中禁止新增员工（isOrgLocked）', () => {
     const c = restoreWorkbench(db, { id: 'wb_fix_9', name: 'co' });
-    clockIn(db);
+    const a = createAgent(db, { companyId: c.id, name: '工兵', role: 'writer' });
+    const project = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/lock-create' });
+    const thread = ensurePrimaryThread(db, project.id, a.id);
+    const task = createTask(db, { projectId: project.id, assigneeAgentId: a.id, title: '执行中' });
+    claimNextTask(db, thread.id, a.id);
+    markRunning(db, task.id);
     expect(() => createAgent(db, { companyId: c.id, name: '新', role: 'writer' })).toThrow();
   });
 
-  it('部门仅可在下班状态管理；单例工作台下不再校验部门归属公司', () => {
+  it('部门归属坍缩 + 空闲可管理（原下班锁 2026-08-23 退役为执行期锁）', () => {
     const company = restoreWorkbench(db, { id: 'wb_fix_10', name: 'co' });
     const other = restoreWorkbench(db, { id: 'wb_fix_11', name: 'other' });
     const editorial = createDepartment(db, { companyId: company.id, name: '编辑部' });
@@ -120,9 +129,8 @@ describe('org config lock', () => {
       createAgent(db, { companyId: company.id, departmentId: foreign.id, name: '错配', role: 'writer' }),
     ).not.toThrow();
 
-    clockIn(db);
-    expect(() => createDepartment(db, { companyId: company.id, name: '上班新增' })).toThrowError(AppError);
-    expect(() => deleteDepartment(db, editorial.id)).toThrowError(AppError);
+    // 2026-08-23 上下班退役：部门锁只在任务执行中生效——空闲（默认 online）可管理
+    expect(() => createDepartment(db, { companyId: company.id, name: '空闲新增' })).not.toThrow();
   });
 
   it('监察员工是运行稳定性岗位，不能删除', () => {

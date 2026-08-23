@@ -15,6 +15,10 @@ import { setDbForTest, closeDb } from '../../src/server/db/client';
 ;
 import { pluginsRouter } from '../../src/server/api/plugins';
 import { errorMiddleware } from '../../src/server/api/middleware';
+import { createTask, claimNextTask, markRunning } from '../../src/server/domain/task';
+import { ensurePrimaryThread } from '../../src/server/domain/thread';
+import { createProject } from '../../src/server/domain/project';
+import { createAgent } from '../../src/server/domain/agent';
 
 let tdb: ReturnType<typeof makeTestDb>;
 let server: http.Server;
@@ -59,9 +63,15 @@ describe('marketplace install-preset 路由', () => {
     expect(orphan.n).toBe(0);
   });
 
-  it('scope=company 且公司上班 → 409（org 配置锁，不允许上班期间改能力配置）', async () => {
+  it('scope=company 任务执行中 → 409（org 配置锁=执行期，2026-08-23 上下班退役）', async () => {
     const company = restoreWorkbench(tdb.db, { id: 'wb_fix_1', name: 'C' });
-    transitionWorkbench(tdb.db, 'online');
+    // 造执行态：领任务置 running（isOrgLocked 只看执行中任务）
+    const runner = createAgent(tdb.db, { companyId: company.id, name: 'runner', role: 'writer' });
+    const project = createProject(tdb.db, { companyId: company.id, name: 'p', rootDir: '/tmp/mp-lock' });
+    const thread = ensurePrimaryThread(tdb.db, project.id, runner.id);
+    const task = createTask(tdb.db, { projectId: project.id, assigneeAgentId: runner.id, title: '执行中' });
+    claimNextTask(tdb.db, thread.id, runner.id);
+    markRunning(tdb.db, task.id);
     const res = await fetch(`${base}/api/plugins/marketplace/install-preset`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -80,9 +90,14 @@ describe('marketplace install-preset 路由', () => {
     expect(res.status).toBe(404);
   });
 
-  it('install-claude-plugin：公司上班 → 409（在发起任何网络拉取之前被锁拒绝）', async () => {
+  it('install-claude-plugin：任务执行中 → 409（执行期锁在网络拉取前拒绝）', async () => {
     const company = restoreWorkbench(tdb.db, { id: 'wb_fix_2', name: 'C' });
-    transitionWorkbench(tdb.db, 'online');
+    const runner = createAgent(tdb.db, { companyId: company.id, name: 'runner', role: 'writer' });
+    const project = createProject(tdb.db, { companyId: company.id, name: 'p', rootDir: '/tmp/mp2-lock' });
+    const thread = ensurePrimaryThread(tdb.db, project.id, runner.id);
+    const task = createTask(tdb.db, { projectId: project.id, assigneeAgentId: runner.id, title: '执行中' });
+    claimNextTask(tdb.db, thread.id, runner.id);
+    markRunning(tdb.db, task.id);
     const res = await fetch(`${base}/api/plugins/marketplace/install-claude-plugin`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

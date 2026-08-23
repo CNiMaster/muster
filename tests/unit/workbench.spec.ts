@@ -34,11 +34,11 @@ describe('workbench 单例原语', () => {
     expect(b.workbench.name).toBe(DEFAULT_WORKBENCH_NAME);
   });
 
-  it('状态机：off→draining 非法；off→online→off 合法', () => {
-    ensureWorkbench(db); // 初始 off
-    expect(() => transitionWorkbench(db, 'draining')).toThrow(); // off 只能 → online
-    expect(transitionWorkbench(db, 'online').state).toBe('online');
+  it('状态机：默认 online；online→off→online 合法（2026-08-23 上下班退役）', () => {
+    const wb = ensureWorkbench(db);
+    expect(wb.workbench.state).toBe('online'); // 默认常上班
     expect(transitionWorkbench(db, 'off').state).toBe('off');
+    expect(transitionWorkbench(db, 'online').state).toBe('online');
   });
 
   it('charter/firstAgentId/reviewMode 更新往返', () => {

@@ -27,6 +27,8 @@ import {
 } from '../../src/server/domain/graph';
 import { generateInspectorSuggestions } from '../../src/server/domain/inspector';
 import { AppError } from '../../src/shared/errors';
+import { createTask, claimNextTask, markRunning } from '../../src/server/domain/task';
+import { ensurePrimaryThread } from '../../src/server/domain/thread';
 
 let tdb: ReturnType<typeof makeTestDb>;
 let db: DB;
@@ -239,13 +241,17 @@ describe('B1.8 关系归档与恢复', () => {
     expect(listRelationships(db, 'org', { includeArchived: true }).find((r) => r.id === edge.id)).toBeTruthy();
   });
 
-  it('上班期间禁止归档', () => {
+  it('任务执行中禁止归档（原上班锁→2026-08-23 执行期锁）', () => {
     const c = restoreWorkbench(db, { id: 'wb_fix_13', name: 'co' });
     const a = createAgent(db, { companyId: c.id, name: 'a', role: 'lead' });
     const b = createAgent(db, { companyId: c.id, name: 'b', role: 'writer' });
     const edge = addRelationship(db, { companyId: c.id, kind: 'org', sourceId: a.id, targetId: b.id });
-    // 切到 online（绕过 assertWorkbenchHealthy 直接改 state）
-    db.prepare("UPDATE workbench SET state='online' WHERE id=?").run(c.id);
+    // 执行期造态：领任务置 running（isOrgLocked 只看执行中任务）
+    const project = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/gap-lock' });
+    const thread = ensurePrimaryThread(db, project.id, a.id);
+    const task = createTask(db, { projectId: project.id, assigneeAgentId: a.id, title: '执行中' });
+    claimNextTask(db, thread.id, a.id);
+    markRunning(db, task.id);
     expect(() => archiveRelationship(db, edge.id)).toThrow(AppError);
   });
 });

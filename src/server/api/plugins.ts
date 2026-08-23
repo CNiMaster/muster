@@ -42,7 +42,7 @@ import { searchMarketplaceCatalog } from '../domain/marketplace-search';
 import { listMarketplaceSources, addMarketplaceSource } from '../domain/marketplace-sources';
 import { installClaudeCodePlugin } from '../domain/marketplace-claude-plugins';
 import { authorSkill } from '../domain/skill-author';
-import { getWorkbench } from '../domain/workbench';
+import { getWorkbench, isOrgLocked} from '../domain/workbench';
 import { realtime } from '../realtime';
 import { makeLifecycleEvent } from '../../shared/lifecycle-events';
 import { AppError, ErrorCode } from '../../shared/errors';
@@ -50,7 +50,7 @@ import { AppError, ErrorCode } from '../../shared/errors';
 /** 组织配置锁：启停 plugin 需工作台下班。 */
 function assertWorkbenchOff(db: ReturnType<typeof getDb>): void {
   const wb = getWorkbench(db);
-  if (wb.state !== 'off') {
+  if (isOrgLocked(db)) { /* 2026-08-23 上下班退役：插件启停只在任务执行中锁 */
     throw new AppError(ErrorCode.COMPANY_LOCKED, '工作台上班期间不能修改能力配置，请先让工作台下班');
   }
 }

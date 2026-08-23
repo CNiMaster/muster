@@ -1,4 +1,4 @@
-import { transitionWorkbench, restoreWorkbench } from '../../src/server/domain/workbench';
+import { transitionWorkbench, restoreWorkbench, clockOut } from '../../src/server/domain/workbench';
 /**
  * E4.3 空闲自主反思（默认关闭）集成测试。
  *
@@ -145,8 +145,9 @@ describe('runIdleReflectionPass（coordinator 护栏）', () => {
     expect(reflectionCount()).toBe(0);
   });
 
-  it('公司离线 → 不入队', () => {
+  it('离线 → 不入队（默认常上班——显式下班造态）', () => {
     const { c, worker, p } = fixture();
+    clockOut(db);
     const t = createTask(db, { projectId: p.id, assigneeAgentId: worker.id, title: 'A' });
     done(p.id, worker.id, t.id);
     enableIdleReflection(1);

@@ -16,6 +16,8 @@ import { createAgent } from '../../src/server/domain/agent';
 import { createProject } from '../../src/server/domain/project';
 import { claimNextTask, completeTask, getTask, listTasks, markRunning } from '../../src/server/domain/task';
 import { ensurePrimaryThread } from '../../src/server/domain/thread';
+import { createTask, claimNextTask, markRunning } from '../../src/server/domain/task';
+import { ensurePrimaryThread } from '../../src/server/domain/thread';
 
 let tdb: ReturnType<typeof makeTestDb>;
 let db: DB;
@@ -54,9 +56,14 @@ describe('Workflow Graph domain logic', () => {
     expect(loaded.edges.find((e) => e.sourceId === 'start_1')?.label).toBe('到步骤1');
   });
 
-  it('公司上班时（LOCK）禁止修改工作流图', () => {
+  it('任务执行中（LOCK）禁止修改工作流图（2026-08-23 上下班退役→执行期锁）', () => {
     const c = restoreWorkbench(db, { id: 'wb_fix_2', name: 'co' });
-    transitionWorkbench(db, 'online'); // 上班锁组织
+    const runner = createAgent(db, { companyId: c.id, name: 'runner', role: 'writer' });
+    const project = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/wf-lock' });
+    const thread = ensurePrimaryThread(db, project.id, runner.id);
+    const task = createTask(db, { projectId: project.id, assigneeAgentId: runner.id, title: '执行中' });
+    claimNextTask(db, thread.id, runner.id);
+    markRunning(db, task.id);
 
     const nodes = [
       { id: 'start_1', kind: 'start' as const, label: '开始', position: { x: 100, y: 100 } },
@@ -66,7 +73,7 @@ describe('Workflow Graph domain logic', () => {
 
     expect(() => {
       saveWorkflow(db, c.id, 'main', { nodes, edges });
-    }).toThrowError(/上班期间不能修改工作流图/);
+    }).toThrowError(/有任务执行中，暂不能修改工作流图/);
   });
 
   it('校验规则 1：缺失 start/end 节点报错', () => {

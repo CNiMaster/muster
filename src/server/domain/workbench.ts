@@ -101,7 +101,8 @@ export function restoreWorkbench(db: DB, input: { id: string; name: string; kind
     id,
     input.name,
     input.kind ?? 'novel',
-    input.state ?? 'off',
+    // 2026-08-23 用户定案：默认常上班（off 语义保留给 draining/review_paused 等局部挂起链路）
+    input.state ?? 'online',
     input.charter ?? '',
     JSON.stringify(input.contractJson ?? {}),
     input.firstAgentId ?? null,
@@ -117,7 +118,7 @@ function createWorkbenchRow(db: DB, input: { name: string; kind?: string; charte
   const now = nowIso();
   db.prepare(
     `INSERT INTO workbench (id, name, kind, state, charter, contract_json, first_agent_id, created_at, updated_at, review_mode)
-     VALUES (?, ?, ?, 'off', ?, ?, NULL, ?, ?, 'blocking')`,
+     VALUES (?, ?, ?, 'online', ?, ?, NULL, ?, ?, 'blocking')`,
   ).run(id, input.name, input.kind ?? 'novel', input.charter ?? '', JSON.stringify(input.contractJson ?? {}), now, now);
   return fromRow(db.prepare('SELECT * FROM workbench WHERE id=?').get(id) as WorkbenchRow);
 }
@@ -130,9 +131,9 @@ export function updateWorkbench(
   const definedPatch = Object.fromEntries(
     Object.entries(patch).filter(([, value]) => value !== undefined),
   ) as Partial<Pick<Workbench, 'name' | 'charter' | 'contractJson' | 'firstAgentId' | 'reviewMode' | 'kind'>>;
-  // 上班期间锁定正式组织配置（first_agent_id 视为组织配置）
-  if (cur.state !== 'off' && (definedPatch.firstAgentId !== undefined || definedPatch.name !== undefined)) {
-    throw new AppError(ErrorCode.COMPANY_LOCKED, '上班期间不能修改组织配置');
+  // 组织配置锁：2026-08-23 用户定案（上下班退役）——只在有任务执行中时锁 first_agent_id/name（防执行期竞态）
+  if (isOrgLocked(db) && (definedPatch.firstAgentId !== undefined || definedPatch.name !== undefined)) {
+    throw new AppError(ErrorCode.COMPANY_LOCKED, '有任务执行中，暂不能修改组织配置');
   }
   const next: Workbench = {
     ...cur,
@@ -224,16 +225,17 @@ export function clockOut(db: DB): Workbench {
   return transitionWorkbench(db, 'off');
 }
 
-function hasRunningTasks(db: DB, workbenchId: string): boolean {
+export function hasRunningTasks(db: DB, workbenchId: string): boolean {
   return Boolean(db.prepare(
     `SELECT 1 FROM task t
      WHERE t.state IN ('claimed','running') LIMIT 1`,
   ).get());
 }
 
-/** 当前是否锁定组织配置。 */
+/** 当前是否锁定组织配置——2026-08-23 用户定案：全局上下班退役，锁只在有任务执行中时生效（防执行期竞态改组织）。 */
 export function isOrgLocked(db: DB): boolean {
-  return getWorkbench(db).state !== 'off';
+  const wb = getWorkbench(db);
+  return hasRunningTasks(db, wb.id);
 }
 
 /** 工作台健康：必须有第一负责人（蜂群放蜂请示/审批升级依赖）。 */

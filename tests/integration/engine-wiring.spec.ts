@@ -18,7 +18,7 @@ import { createProject } from '../../src/server/domain/project';
 import { ensurePrimaryThread } from '../../src/server/domain/thread';
 import {getThread} from '../../src/server/domain/thread';
 import { answerClarification, cancelTask, createTask, getTask, listTasks, resumeTask } from '../../src/server/domain/task';
-import { clockIn } from '../../src/server/domain/workbench';
+import { clockIn, clockOut } from '../../src/server/domain/workbench';
 import { TaskEngine } from '../../src/server/task-engine/engine';
 import { FakeExecutor } from '../../src/server/task-engine/fake-executor';
 import { getProjectTaskThread } from '../../src/server/domain/project-task-thread';
@@ -664,9 +664,9 @@ describe('engine → worktree → publish wiring', () => {
     expect(readFileSync(path.join(taskStageDir(project.id), 'chapters/01.md'), 'utf8')).toBe('# 第一章\n');
   });
 
-  it('公司不上班时 pumpThread 不领取', async () => {
+  it('下班态 pumpThread 不领取（2026-08-23 默认常上班——显式下班造态）', async () => {
     const r = createNovelCompany(db, { name: 'co' });
-    // 不 clockIn
+    clockOut(db);
     const project = createProject(db, {
       companyId: r.company.id,
       name: 'novel',

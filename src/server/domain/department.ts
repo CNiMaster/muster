@@ -1,7 +1,7 @@
 import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { nowIso, shortId } from '../../shared/utils';
-import { getWorkbench } from './workbench';
+import { getWorkbench, isOrgLocked } from './workbench';
 
 export interface Department {
   id: string;
@@ -32,8 +32,8 @@ function fromRow(db: DB, row: DepartmentRow): Department {
 }
 
 function assertUnlocked(db: DB): void {
-  if (getWorkbench(db).state !== 'off') {
-    throw new AppError(ErrorCode.COMPANY_LOCKED, '上班期间不能修改部门配置');
+  if (isOrgLocked(db)) {
+    throw new AppError(ErrorCode.COMPANY_LOCKED, '有任务执行中，暂不能修改部门配置');
   }
 }
 

@@ -15,6 +15,9 @@ import {
   type GraphChangeProposal,
 } from '../../src/server/domain/graph-proposal';
 import type { SetupGenerator } from '../../src/server/domain/setup-assistant';
+import { createTask, claimNextTask, markRunning } from '../../src/server/domain/task';
+import { ensurePrimaryThread } from '../../src/server/domain/thread';
+import { createProject } from '../../src/server/domain/project';
 
 let tdb: ReturnType<typeof makeTestDb>;
 let db: DB;
@@ -84,17 +87,22 @@ describe('B3.1 自然语言图变更提案', () => {
     expect(listRelationships(db, 'org', { includeArchived: true }).length).toBe(1);
   });
 
-  it('上班期间 propose 被拒绝', async () => {
+  it('任务执行中 propose 被拒绝（2026-08-23 上下班退役→执行期锁）', async () => {
     const c = restoreWorkbench(db, { id: 'wb_fix_4', name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
-    db.prepare("UPDATE workbench SET state='online' WHERE id=?").run(c.id);
+    const runner = createAgent(db, { companyId: c.id, name: 'runner', role: 'writer' });
+    const project = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/gp-lock' });
+    const thread = ensurePrimaryThread(db, project.id, runner.id);
+    const task = createTask(db, { projectId: project.id, assigneeAgentId: runner.id, title: '执行中' });
+    claimNextTask(db, thread.id, runner.id);
+    markRunning(db, task.id);
     await expect(
       proposeGraphChange(
         db,
         { companyId: c.id, kind: 'org', naturalLanguage: 'x' },
         makeFakeGenerator({ changes: [] }),
       ),
-    ).rejects.toThrow(/上班期间|locked/i);
+    ).rejects.toThrow(/执行中|locked/i);
   });
 
   it('sourceId 缺失时用 sourceHint 模糊匹配', async () => {

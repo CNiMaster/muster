@@ -16,6 +16,9 @@ import { executeFileTool } from '../../src/server/executors/tools/file-tools';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { createProject } from '../../src/server/domain/project';
+import { ensurePrimaryThread } from '../../src/server/domain/thread';
+import { createTask, claimNextTask, markRunning } from '../../src/server/domain/task';
 
 describe('permission policy = approval strategy × allowed scope', () => {
   it('keeps Turbo bounded by scope and never auto-allows high-risk actions', () => {
@@ -87,18 +90,23 @@ describe('permission policy = approval strategy × allowed scope', () => {
     } finally { close(); }
   });
 
-  it('bindEmployeePermissionPolicy 锁仍按工作台下班态（D4-3）', () => {
+  it('bindEmployeePermissionPolicy 锁=执行期（2026-08-23 上下班退役：空闲可改，任务执行中锁）', () => {
     const { db, close } = makeTestDb();
     try {
       const company = restoreWorkbench(db, { id: 'wb_fix_1', name: '默认工作台', kind: 'general' });
       const lead = createAgent(db, { companyId: company.id, name: '负责人', role: 'lead' });
       const policy = createPermissionPolicy(db, { name: 'P', approvalStrategy: 'ask-always', scope: 'task' });
+      const project = createProject(db, { companyId: company.id, name: 'p', rootDir: '/tmp/pp-lock' });
+      const thread = ensurePrimaryThread(db, project.id, lead.id);
+      const task = createTask(db, { projectId: project.id, assigneeAgentId: lead.id, title: '执行中' });
 
-      db.prepare("UPDATE workbench SET state='off' WHERE id=?").run(company.id);
+      // 默认 online 但空闲 → 可改
       expect(() => bindEmployeePermissionPolicy(db, lead.id, policy.id)).not.toThrow();
 
-      db.prepare("UPDATE workbench SET state='online' WHERE id=?").run(company.id);
-      expect(() => bindEmployeePermissionPolicy(db, lead.id, policy.id)).toThrowError(/下班/);
+      // 任务执行中 → 锁
+      claimNextTask(db, thread.id, lead.id);
+      markRunning(db, task.id);
+      expect(() => bindEmployeePermissionPolicy(db, lead.id, policy.id)).toThrowError(/执行中/);
     } finally { close(); }
   });
 });

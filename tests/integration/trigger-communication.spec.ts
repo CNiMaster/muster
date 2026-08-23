@@ -1,4 +1,4 @@
-import { clockIn, restoreWorkbench, updateWorkbench } from '../../src/server/domain/workbench';
+import { clockIn, restoreWorkbench, updateWorkbench, clockOut } from '../../src/server/domain/workbench';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { DB } from '../../src/server/db/client';
 ;
@@ -51,8 +51,9 @@ describe('schedule trigger dispatch', () => {
     expect(listTasks(db, project.id)).toHaveLength(1);
   });
 
-  it('公司下班时不派发，到期项在上班后补派发', () => {
+  it('下班时不派发，上班后补派发（默认常上班——显式下班造态）', () => {
     const company = restoreWorkbench(db, { id: 'wb_fix_2', name: 'co' });
+    clockOut(db);
     const lead = createAgent(db, { companyId: company.id, name: 'lead', role: 'lead' });
     const project = createProject(db, {
       companyId: company.id,

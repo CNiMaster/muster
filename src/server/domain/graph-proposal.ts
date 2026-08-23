@@ -66,7 +66,7 @@ export async function proposeGraphChange(
   generator: SetupGenerator,
 ): Promise<GraphProposalResult> {
   if (isOrgLocked(db)) {
-    throw new AppError(ErrorCode.COMPANY_LOCKED, '上班期间不能修改关系图');
+    throw new AppError(ErrorCode.COMPANY_LOCKED, '有任务执行中，暂不能修改关系图');
   }
   const agents = listAgents(db);
   const edges = listRelationships(db, input.kind, { includeArchived: false });
@@ -116,7 +116,7 @@ export async function proposeGraphChange(
 /** 应用已确认的提案。幂等：已存在的边不重复创建；已不存在的边跳过。 */
 export function applyGraphProposal(db: DB, input: GraphProposalInput, proposal: GraphChangeProposal): GraphDiff {
   if (isOrgLocked(db)) {
-    throw new AppError(ErrorCode.COMPANY_LOCKED, '上班期间不能修改关系图');
+    throw new AppError(ErrorCode.COMPANY_LOCKED, '有任务执行中，暂不能修改关系图');
   }
   const agents = listAgents(db);
   resolveHints(proposal, agents);

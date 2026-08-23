@@ -67,8 +67,9 @@ describe('L1 优雅关机与一键恢复', () => {
     expect(resumeShutdownPaused(db)).toBe(0);
   });
 
-  it('无 online 公司时优雅关机为空操作', () => {
+  it('无 online 公司时优雅关机为空操作（默认常上班——显式下班造态）', () => {
     restoreWorkbench(db, { id: 'wb_fix_6', name: 'A' });
+    clockOut(db);
     expect(beginGracefulShutdown(db)).toHaveLength(0);
   });
 });

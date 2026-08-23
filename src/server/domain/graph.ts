@@ -8,7 +8,7 @@
 import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
-import { getWorkbench } from './workbench';
+import { getWorkbench, isOrgLocked } from './workbench';
 import type { GraphKind } from '../../shared/types';
 import { getAgent } from './agent';
 
@@ -48,8 +48,8 @@ function fromRow(_db: DB, r: RelationshipRow): Relationship {
 }
 
 function assertUnlocked(db: DB): void {
-  if (getWorkbench(db).state !== 'off') {
-    throw new AppError(ErrorCode.COMPANY_LOCKED, '上班期间不能修改关系图');
+  if (isOrgLocked(db)) {
+    throw new AppError(ErrorCode.COMPANY_LOCKED, '有任务执行中，暂不能修改关系图');
   }
 }
 
