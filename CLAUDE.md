@@ -14,7 +14,7 @@
 
 - **简单/专业双模式**：`uiMode simple|pro`（默认 simple），壳切换 `→ useUiMode()`；`/api/settings/ui-mode`。
 - **存储管理** `/storage`：回收站 `GET /api/projects/trash` + 磁盘对账 `GET /api/workspaces/audit`，详见 `docs/superpowers/plans/2026-08-20-workspace-governance.md`。
-- **迁移口径**：`projects/<纯名>`（撞名 `-YYYYMMDD/-HHmm/-2`）；`$MUSTER_HOME/MusterWorkspace`（`src/server/domain/workspace-layout.ts`）。历史见 `docs/superpowers/plans/CHANGELOG.md`。
+- **磁盘口径**：`projects/<纯名>`（撞名 `-YYYYMMDD/-HHmm/-2`）；工作区根默认 `~/MusterWorkspace`（设 `MUSTER_HOME` 时跟随 `$MUSTER_HOME/MusterWorkspace`，仅测试隔离），active workspace 可另配根位置、支持迁移（`src/server/domain/workspace-layout.ts` + `/api/workspaces`）。历史见 `docs/superpowers/plans/CHANGELOG.md`。
 
 ## Product Direction（约束摘要）
 
