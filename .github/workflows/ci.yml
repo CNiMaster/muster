@@ -1,10 +1,20 @@
 name: CI
 
+# 公开仓库 Actions 免费（不限分钟）；这两条只省时间不省钱：
+# - paths-ignore：纯文档/计划类改动不触发（不影响构建产物与测试）
+# - concurrency：同分支连续推送自动取消旧 run，只跑最新一次
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
   pull_request:
     branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   check-and-unit:
