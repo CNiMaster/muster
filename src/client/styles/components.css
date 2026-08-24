@@ -1354,3 +1354,104 @@
 /* 任务顶栏 ⋯ 触发器：无底色（2026-08-23 用户定案「三个点不需要背景」）——静止透明，hover 轻微浮层 */
 .mu-topbar-more{border:none;background:transparent;cursor:pointer;font-size:14px;line-height:1;padding:4px 7px;border-radius:6px;color:var(--fg-muted);font-weight:700;letter-spacing:.08em;transition:background var(--duration-fast) var(--ease-out),color var(--duration-fast) var(--ease-out)}
 .mu-topbar-more:hover{background:var(--bg-hover);color:var(--fg)}
+
+/* ===== 设置行（2026-08-24 新手友好定调）：一行标题+一行说明在左、控件在右 ===== */
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-subtle, rgba(128, 128, 128, 0.15));
+}
+.settings-row:last-child { border-bottom: none; }
+.settings-row-main { flex: 1; min-width: 0; display: block; }
+.settings-row-title { display: flex; }
+.settings-row-hint { display: block; }
+.settings-row-title {
+  font-size: var(--text-sm, 13px);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.settings-row-hint {
+  font-size: 12px;
+  color: var(--fg-muted, #888);
+  margin-top: 3px;
+  line-height: 1.5;
+}
+.settings-row-control {
+  flex-shrink: 0;
+  width: 220px;
+  display: flex;
+  justify-content: flex-end;
+}
+.settings-row-control > * { width: 100%; }
+.settings-row-control > .toggle-switch { width: 38px; } /* 开关不拉伸 */
+
+/* 分区小标题（必须配置 / 建议配置 分组名） */
+.settings-section-label {
+  font-size: 12px;
+  color: var(--fg-muted, #888);
+  margin: 16px 0 2px;
+  letter-spacing: 0.05em;
+}
+.settings-section-label:first-child { margin-top: 0; }
+
+/* 折叠区（默认收起的高级项） */
+.settings-fold { margin-top: 8px; }
+.settings-fold > summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--fg-muted, #888);
+  padding: 6px 0;
+  user-select: none;
+  list-style: none;
+}
+.settings-fold > summary::-webkit-details-marker { display: none; }
+.settings-fold > summary::before { content: '▸ '; }
+.settings-fold[open] > summary::before { content: '▾ '; }
+
+/* 开关 */
+.toggle-switch {
+  position: relative;
+  width: 38px;
+  height: 21px;
+  border-radius: 11px;
+  background: var(--bg-soft, #444);
+  border: 1px solid var(--border-color, #555);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  padding: 0;
+  flex-shrink: 0;
+}
+.toggle-switch.is-on {
+  background: var(--accent, #4a7dff);
+  border-color: var(--accent, #4a7dff);
+}
+.toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: #fff;
+  transition: left 0.15s;
+}
+.toggle-switch.is-on .toggle-knob { left: 19px; }
+
+/* 高级组折叠入口（simple 模式） */
+.settings-nav-advanced-toggle {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--fg-muted, #888);
+  font-size: 13px;
+  padding: 6px 10px;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.settings-nav-advanced-toggle:hover { background: var(--bg-soft, rgba(128, 128, 128, 0.1)); }

@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import type React from 'react';
-import { useHealthStatus, useSaveSystemSettings, useSystemSettings, useTestConnection, useExecutorProfiles } from '../hooks/queries';
-import { Badge } from '../components/Badge';
+import { useHealthStatus, useSaveSystemSettings, useSystemSettings, useTestConnection, useExecutorProfiles, useUiMode } from '../hooks/queries';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
-import { Field, Input, Select } from '../components/Form';
+import { Input, Select } from '../components/Form';
 import { Link, useSearchParams } from 'react-router-dom';
+import { SettingsRow, SettingsSectionLabel, SettingsFold, Toggle } from '../components/SettingsRow';
 import { ToolRegistryPanel } from '../components/settings/ToolRegistryPanel';
 import { CredentialStorePanel } from '../components/settings/CredentialStorePanel';
 import { BackupCenterPanel } from '../components/settings/BackupCenterPanel';
@@ -13,12 +13,16 @@ import { SpecialistReviewPanel } from '../components/settings/SpecialistReviewPa
 
 type SettingsTab = 'general' | 'models' | 'swarm' | 'network' | 'appearance' | 'credentials' | 'tools' | 'backup' | 'specialists';
 
+/** 高级组标签（simple 模式默认折叠为一行入口；pro 全展开）。 */
+const ADVANCED_TABS: SettingsTab[] = ['models', 'swarm', 'network', 'credentials', 'tools', 'specialists'];
+
 export function SettingsPage(): React.ReactElement {
   const { data: settings, isLoading } = useSystemSettings();
   const saveSettings = useSaveSystemSettings();
   const testConnection = useTestConnection();
   const { data: executorProfiles = [] } = useExecutorProfiles();
   const health = useHealthStatus();
+  const { isSimple } = useUiMode();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const activeTab = (searchParams.get('tab') as SettingsTab) || 'general';
@@ -27,19 +31,21 @@ export function SettingsPage(): React.ReactElement {
     next.set('tab', t);
     setSearchParams(next);
   };
+  // simple 模式高级组默认收起；URL 直达高级 tab 或点开入口后保持展开
+  const [advancedOpened, setAdvancedOpened] = useState(false);
+  const advancedVisible = !isSimple || advancedOpened || ADVANCED_TABS.includes(activeTab);
 
   const [claudeBin, setClaudeBin] = useState('');
   const [model, setModel] = useState('');
   const [skipPermissions, setSkipPermissions] = useState(false);
-  const [timeoutMs, setTimeoutMs] = useState(600000);
-  const [maxToolCalls, setMaxToolCalls] = useState(30);
+  // 后端 schema 必填的兼容键（超时/工具上限的日常配置已由执行器档案接管）：
+  // 不渲染 UI，仅随全量保存回传服务端加载值，避免 PUT 校验失败。
+  const [, setTimeoutMs] = useState(600000);
+  const [, setMaxToolCalls] = useState(30);
   const [defaultProvider, setDefaultProvider] = useState('claude-cli');
   const [openaiBaseURL, setOpenaiBaseURL] = useState('https://api.openai.com/v1');
   const [openaiModel, setOpenaiModel] = useState('gpt-4o');
   const [geminiModel, setGeminiModel] = useState('gemini-2.0-flash');
-  const [tierPrimary, setTierPrimary] = useState('');
-  const [tierSecondary, setTierSecondary] = useState('');
-  const [tierTertiary, setTierTertiary] = useState('');
   // 执行器池统一（2026-08-17）：档位 = 执行器档案 id（高/标准/低，CLI+API 一个选择框）
   const [tierHigh, setTierHigh] = useState('');
   const [tierStandard, setTierStandard] = useState('');
@@ -48,25 +54,21 @@ export function SettingsPage(): React.ReactElement {
   const [proxyUrl, setProxyUrl] = useState('');
   const [proxyBypass, setProxyBypass] = useState('');
   const [caCertPath, setCaCertPath] = useState('');
-  const [egressTimeoutMs, setEgressTimeoutMs] = useState(30000);
+  const [egressTimeoutSec, setEgressTimeoutSec] = useState(30);
   const [theme, setTheme] = useState<'dark' | 'light' | 'system'>('system');
   const [fontFamily, setFontFamily] = useState('');
   const [fontSize, setFontSize] = useState(14);
   const [locale, setLocale] = useState<'zh' | 'en'>('zh');
   const [codeTheme, setCodeTheme] = useState('default');
   const [autonomousReflectionEnabled, setAutonomousReflectionEnabled] = useState(false);
-  const [autonomousReflectionBudgetUSD, setAutonomousReflectionBudgetUSD] = useState(0);
+  const [autonomousReflectionBudgetUSD, setAutonomousReflectionBudgetUSD] = useState(5);
   const [swarmMaxDepth, setSwarmMaxDepth] = useState(3);
   const [swarmMaxWidth, setSwarmMaxWidth] = useState(5);
   const [swarmMaxNodes, setSwarmMaxNodes] = useState(30);
   const [swarmBudgetUSD, setSwarmBudgetUSD] = useState(5);
-  const [swarmRepairMax, setSwarmRepairMax] = useState(10);
   const [breadthDefaultTier, setBreadthDefaultTier] = useState<'light' | 'standard' | 'heavy'>('standard');
-  // 批次 F.4：waiting_input 超时自动继续分钟数（0=一直等，默认）
-  const [waitingAutoContinue, setWaitingAutoContinue] = useState(0);
-  // 批次 G.5：防休眠三态（active=有活跃任务时保活，默认；always=常驻；off）
+  const [waitingAutoContinueMin, setWaitingAutoContinueMin] = useState(0);
   const [preventSleep, setPreventSleep] = useState<'active' | 'always' | 'off'>('active');
-  // 批次 H.5：运行中发送行为（queue=排队等本轮结束，默认；interrupt=打断插话）
   const [interruptMode, setInterruptMode] = useState<'queue' | 'interrupt'>('queue');
   const [stopGraceSec, setStopGraceSec] = useState(60);
   const [securityMode, setSecurityMode] = useState<'' | 'confirm-edits' | 'auto-edit' | 'plan' | 'full-access'>('');
@@ -75,7 +77,6 @@ export function SettingsPage(): React.ReactElement {
   const [msgGroupExplore, setMsgGroupExplore] = useState(true);
   const [msgGroupTerminal, setMsgGroupTerminal] = useState(true);
   const [msgGroupChanges, setMsgGroupChanges] = useState(true);
-  const [testResult, setTestResult] = useState<any | null>(null);
 
   useEffect(() => {
     if (!settings) return;
@@ -88,9 +89,6 @@ export function SettingsPage(): React.ReactElement {
     setOpenaiBaseURL(settings.openaiBaseURL ?? 'https://api.openai.com/v1');
     setOpenaiModel(settings.openaiModel ?? 'gpt-4o');
     setGeminiModel(settings.geminiModel ?? 'gemini-2.0-flash');
-    setTierPrimary(settings.executorTierPrimaryId ?? '');
-    setTierSecondary(settings.executorTierSecondaryId ?? '');
-    setTierTertiary(settings.executorTierTertiaryId ?? '');
     setTierHigh(settings.executorTierHighId ?? (settings.executorTierPrimaryId ?? ''));
     setTierStandard(settings.executorTierStandardId ?? (settings.executorTierSecondaryId ?? ''));
     setTierLow(settings.executorTierLowId ?? (settings.executorTierTertiaryId ?? ''));
@@ -98,21 +96,20 @@ export function SettingsPage(): React.ReactElement {
     setProxyUrl(settings.proxyUrl ?? '');
     setProxyBypass(settings.proxyBypass ?? '');
     setCaCertPath(settings.caCertPath ?? '');
-    setEgressTimeoutMs(settings.egressTimeoutMs ?? 30000);
+    setEgressTimeoutSec(Math.round((settings.egressTimeoutMs ?? 30000) / 1000));
     setTheme(settings.theme ?? 'system');
     setFontFamily(settings.fontFamily ?? '');
     setFontSize(settings.fontSize ?? 14);
     setLocale(settings.locale ?? 'zh');
     setCodeTheme(settings.codeTheme ?? 'default');
     setAutonomousReflectionEnabled(settings.autonomousReflectionEnabled ?? false);
-    setAutonomousReflectionBudgetUSD(settings.autonomousReflectionBudgetUSD ?? 0);
+    setAutonomousReflectionBudgetUSD(settings.autonomousReflectionBudgetUSD || 5);
     setSwarmMaxDepth(settings.swarmMaxDepth ?? 3);
     setSwarmMaxWidth(settings.swarmMaxWidth ?? 5);
     setSwarmMaxNodes(settings.swarmMaxNodes ?? 30);
     setSwarmBudgetUSD(settings.swarmBudgetUSD ?? 5);
-    setSwarmRepairMax(settings.swarmRepairMax ?? 10);
     setBreadthDefaultTier(settings.breadthDefaultTier ?? 'standard');
-    setWaitingAutoContinue(settings.waitingAutoContinueMinutes ?? 0);
+    setWaitingAutoContinueMin(settings.waitingAutoContinueMinutes ?? 0);
     setPreventSleep(settings.preventSleep ?? 'active');
     setInterruptMode(settings.interruptMode ?? 'queue');
     setStopGraceSec(Math.round((settings.stopGraceMs ?? 60000) / 1000));
@@ -126,13 +123,14 @@ export function SettingsPage(): React.ReactElement {
 
   const handleSave = (): void => {
     if (!claudeBin.trim()) {
-      toast('error', 'Claude 可执行文件路径不能为空');
+      toast('error', '执行工具路径不能为空');
       return;
     }
     saveSettings.mutate(
-      { claudeBin, model, skipPermissions, timeoutMs, maxToolCalls, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierPrimaryId: tierPrimary, executorTierSecondaryId: tierSecondary, executorTierTertiaryId: tierTertiary, executorTierHighId: tierHigh, executorTierStandardId: tierStandard, executorTierLowId: tierLow, imageGenModel, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs, theme, fontFamily, fontSize, locale, codeTheme, autonomousReflectionEnabled, autonomousReflectionBudgetUSD, swarmMaxDepth, swarmMaxWidth, swarmMaxNodes, swarmBudgetUSD, swarmRepairMax, breadthDefaultTier, waitingAutoContinueMinutes: waitingAutoContinue, preventSleep, interruptMode, stopGraceMs: stopGraceSec * 1000, securityMode, messageShowThinking: msgShowThinking, messageShowTodo: msgShowTodo, messageGroupExplore: msgGroupExplore, messageGroupTerminal: msgGroupTerminal, messageGroupChanges: msgGroupChanges },
+      // timeoutMs/maxToolCalls 回传服务端加载值（schema 必填、UI 已由执行器档案接管）
+      { claudeBin, model, skipPermissions, timeoutMs: settings?.timeoutMs ?? 600000, maxToolCalls: settings?.maxToolCalls ?? 30, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierHighId: tierHigh, executorTierStandardId: tierStandard, executorTierLowId: tierLow, imageGenModel, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs: egressTimeoutSec * 1000, theme, fontFamily, fontSize, locale, codeTheme, autonomousReflectionEnabled, autonomousReflectionBudgetUSD, swarmMaxDepth, swarmMaxWidth, swarmMaxNodes, swarmBudgetUSD, breadthDefaultTier, waitingAutoContinueMinutes: waitingAutoContinueMin, preventSleep, interruptMode, stopGraceMs: stopGraceSec * 1000, securityMode, messageShowThinking: msgShowThinking, messageShowTodo: msgShowTodo, messageGroupExplore: msgGroupExplore, messageGroupTerminal: msgGroupTerminal, messageGroupChanges: msgGroupChanges },
       {
-        onSuccess: () => toast('success', '系统设置已保存并实时生效'),
+        onSuccess: () => toast('success', '设置已保存并实时生效'),
         onError: (error: any) => toast('error', error.message ?? '保存设置失败'),
       },
     );
@@ -142,10 +140,7 @@ export function SettingsPage(): React.ReactElement {
     testConnection.mutate(
       { claudeBin, model },
       {
-        onSuccess: (result) => {
-          setTestResult(result);
-          toast(result.overallSuccess ? 'success' : 'error', result.overallSuccess ? '连接测试通过' : '连接测试未通过');
-        },
+        onSuccess: (result) => toast(result.overallSuccess ? 'success' : 'error', result.overallSuccess ? '连接测试通过' : '连接测试未通过'),
         onError: (error: any) => toast('error', error.message ?? '测试执行失败'),
       },
     );
@@ -167,273 +162,292 @@ export function SettingsPage(): React.ReactElement {
       </header>
 
       <div className="settings-split">
-        {/* 左侧分类导航 */}
+        {/* 左侧分类导航：常用三项日常高频；高级组 simple 模式默认折叠为一行入口 */}
         <nav className="settings-nav" aria-label="设置分组导航">
-          {/* 批次 G.6：两层导航——常用三卡日常高频；高级五卡低频专业 */}
           <div className="settings-nav-group-label">常用</div>
           <button type="button" className={`settings-nav-item ${activeTab === 'general' ? 'is-active' : ''}`} onClick={() => setTab('general')}>
-            <span>⚙️ 常规与执行器</span>
+            <span>⚙️ 基础与行为</span>
           </button>
           <button type="button" className={`settings-nav-item ${activeTab === 'appearance' ? 'is-active' : ''}`} onClick={() => setTab('appearance')}>
-            <span>🎨 外观与主题</span>
+            <span>🎨 外观与消息流</span>
           </button>
           <button type="button" className={`settings-nav-item ${activeTab === 'backup' ? 'is-active' : ''}`} onClick={() => setTab('backup')}>
             <span>💾 数据库与备份</span>
           </button>
-          <div className="settings-nav-group-label">高级</div>
-          <button type="button" className={`settings-nav-item ${activeTab === 'models' ? 'is-active' : ''}`} onClick={() => setTab('models')}>
-            <span>🧠 模型与分级</span>
-          </button>
-          <button type="button" className={`settings-nav-item ${activeTab === 'swarm' ? 'is-active' : ''}`} onClick={() => setTab('swarm')}>
-            <span>🐝 蜂群调度与反思</span>
-          </button>
-          <button type="button" className={`settings-nav-item ${activeTab === 'network' ? 'is-active' : ''}`} onClick={() => setTab('network')}>
-            <span>🌐 网络与出站代理</span>
-          </button>
-          <button type="button" className={`settings-nav-item ${activeTab === 'credentials' ? 'is-active' : ''}`} onClick={() => setTab('credentials')}>
-            <span>🔑 凭据金库</span>
-          </button>
-          <button type="button" className={`settings-nav-item ${activeTab === 'tools' ? 'is-active' : ''}`} onClick={() => setTab('tools')}>
-            <span>🔧 工具与 MCP 注册</span>
-          </button>
-          <button type="button" className={`settings-nav-item ${activeTab === 'specialists' ? 'is-active' : ''}`} onClick={() => setTab('specialists')}>
-            <span>🧑‍🔬 专家盘点</span>
-          </button>
+          {advancedVisible && (
+            <>
+              <div className="settings-nav-group-label">高级</div>
+              <button type="button" className={`settings-nav-item ${activeTab === 'models' ? 'is-active' : ''}`} onClick={() => setTab('models')}>
+                <span>🧠 模型与档位</span>
+              </button>
+              <button type="button" className={`settings-nav-item ${activeTab === 'swarm' ? 'is-active' : ''}`} onClick={() => setTab('swarm')}>
+                <span>🐝 蜂群调度</span>
+              </button>
+              <button type="button" className={`settings-nav-item ${activeTab === 'network' ? 'is-active' : ''}`} onClick={() => setTab('network')}>
+                <span>🌐 网络代理</span>
+              </button>
+              <button type="button" className={`settings-nav-item ${activeTab === 'credentials' ? 'is-active' : ''}`} onClick={() => setTab('credentials')}>
+                <span>🔑 凭据金库</span>
+              </button>
+              <button type="button" className={`settings-nav-item ${activeTab === 'tools' ? 'is-active' : ''}`} onClick={() => setTab('tools')}>
+                <span>🔧 工具与 MCP</span>
+              </button>
+              <button type="button" className={`settings-nav-item ${activeTab === 'specialists' ? 'is-active' : ''}`} onClick={() => setTab('specialists')}>
+                <span>🧑‍🔬 专家盘点</span>
+              </button>
+            </>
+          )}
+          {isSimple && !advancedVisible && (
+            <button type="button" className="settings-nav-advanced-toggle" onClick={() => setAdvancedOpened(true)}>
+              ▸ 高级设置（模型 · 蜂群 · 网络 · 凭据 · 工具 · 盘点）
+            </button>
+          )}
         </nav>
 
         {/* 右侧配置面板 */}
         <div className="settings-content-panel">
           {activeTab === 'general' && (
-            <Card title="常规执行环境">
-              <div className="form-stack">
-                <Field label="默认执行引擎">
-                  <Select value={defaultProvider} onChange={(e) => setDefaultProvider(e.target.value)}>
-                    <option value="claude-cli">Claude Code CLI</option>
-                    <option value="codex-cli">Codex CLI</option>
-                    <option value="antigravity-cli">Antigravity CLI</option>
-                    <option value="openai">OpenAI 兼容 API</option>
-                    <option value="gemini">Gemini API</option>
-                  </Select>
-                </Field>
-                <Field label="Claude CLI 可执行路径" hint="系统检测或本地绝对路径">
-                  <Input value={claudeBin} onChange={(e) => setClaudeBin(e.target.value)} />
-                </Field>
-                <Field label="显式模型标识 (留空使用默认)">
-                  <Input value={model} onChange={(e) => setModel(e.target.value)} placeholder="留空使用执行器默认模型" />
-                </Field>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px' }}>
-                    <input type="checkbox" checked={skipPermissions} onChange={(e) => setSkipPermissions(e.target.checked)} />
-                    <span>允许跳过 CLI 权限拦截 (--dangerously-skip-permissions)</span>
-                  </label>
-                </div>
-                <Field label="运行中发送" hint="任务执行中你继续输入时的行为：排队等本轮结束自动送出（默认），或立即打断插话（安全停下当前任务后送出）">
-                  <Select value={interruptMode} onChange={(e) => setInterruptMode(e.target.value as 'queue' | 'interrupt')}>
-                    <option value="queue">排队（本轮结束后送出）</option>
-                    <option value="interrupt">插话（安全停后立即送出）</option>
-                  </Select>
-                </Field>
-                <Field label="默认权限档" hint="消息未显式选档时生效的全局权限档（H9b 四模式）。文件编辑自动放=git 可逆兜底；命令审批由安全审查员附风险分析；完全访问=AI 判定放行但红线必弹卡">
-                  <Select value={securityMode} onChange={(e) => setSecurityMode(e.target.value as typeof securityMode)}>
-                    <option value="">跟随任务/员工策略（默认）</option>
-                    <option value="auto-edit">自动编辑（命令全审批）</option>
-                    <option value="confirm-edits">变更前确认</option>
-                    <option value="plan">计划模式（只读规划）</option>
-                    <option value="full-access">完全访问（AI 判定）</option>
-                  </Select>
-                </Field>
-                                <Field label="停止等待上限（秒）" hint="点击停止后等待当前动作（写文件/命令）到达安全边界的最长时间，到点自动强停并保留现场；默认 60 秒">
-                  <Input
-                    type="number"
-                    min={5}
-                    max={600}
-                    value={stopGraceSec}
-                    onChange={(e) => setStopGraceSec(Number(e.target.value) || 60)}
-                  />
-                </Field>
-                <Field label="防休眠" hint="系统睡眠会让任务停摆、局域网连接断开。仅 macOS 生效（内建 caffeinate），其他平台随桌面版支持">
+            <Card title="基础与行为">
+              <SettingsSectionLabel>首次使用 · 必须配置</SettingsSectionLabel>
+              <SettingsRow badge="required" title="默认执行引擎" hint="装了哪个 AI 编码工具就选哪个；选 API 需到「模型与档位」配接口参数">
+                <Select value={defaultProvider} onChange={(e) => setDefaultProvider(e.target.value)}>
+                  <option value="claude-cli">Claude Code CLI</option>
+                  <option value="codex-cli">Codex CLI</option>
+                  <option value="antigravity-cli">Antigravity CLI</option>
+                  <option value="openai">OpenAI 兼容 API</option>
+                  <option value="gemini">Gemini API</option>
+                </Select>
+              </SettingsRow>
+              <SettingsRow badge="required" title="执行工具路径" hint="系统自动检测到的命令位置，一般不用改；连接测试失败时再调整">
+                <Input value={claudeBin} onChange={(e) => setClaudeBin(e.target.value)} />
+              </SettingsRow>
+
+              <SettingsSectionLabel>日常习惯 · 建议看一眼</SettingsSectionLabel>
+              <SettingsRow badge="recommended" title="动手前先问我" hint="AI 改文件、跑命令前要不要先征求你的同意；不设置则跟随每个任务自己的安全策略">
+                <Select value={securityMode} onChange={(e) => setSecurityMode(e.target.value as typeof securityMode)}>
+                  <option value="">跟随任务策略（推荐）</option>
+                  <option value="plan">只读规划（什么都不改）</option>
+                  <option value="confirm-edits">改文件前确认</option>
+                  <option value="auto-edit">自动改文件，命令仍确认</option>
+                  <option value="full-access">全自动（AI 自行判断）</option>
+                </Select>
+              </SettingsRow>
+              <SettingsRow badge="recommended" title="执行中插话" hint="任务运行时你继续打字：排队等这轮结束自动送出，还是立即打断当前动作">
+                <Select value={interruptMode} onChange={(e) => setInterruptMode(e.target.value as 'queue' | 'interrupt')}>
+                  <option value="queue">排队等本轮结束（推荐）</option>
+                  <option value="interrupt">立即打断插话</option>
+                </Select>
+              </SettingsRow>
+
+              <SettingsFold summary="更多行为（防休眠 · 超时 · 权限跳过）">
+                <SettingsRow title="防休眠" hint="电脑睡眠会中断任务和手机连接；有任务运行时自动保持唤醒（仅 macOS）">
                   <Select value={preventSleep} onChange={(e) => setPreventSleep(e.target.value as 'active' | 'always' | 'off')}>
-                    <option value="active">有任务在跑时保活（默认）</option>
+                    <option value="active">有任务时保活（推荐）</option>
                     <option value="always">常驻保活</option>
                     <option value="off">关闭</option>
                   </Select>
-                </Field>
-                <Field label="提问超时自动继续（分钟）" hint="任务提问后倒计时，到期未答复自动以「确认，请继续执行」续跑；0 = 一直等（默认）。等待卡上可按任务临时调整（重要 10 分钟 / 普通 5 分钟）">
-                  <Input
-                    type="number"
-                    min={0}
-                    max={1440}
-                    value={waitingAutoContinue}
-                    onChange={(e) => setWaitingAutoContinue(Math.max(0, Math.min(1440, Number(e.target.value) || 0)))}
-                  />
-                </Field>
-              </div>
+                </SettingsRow>
+                <SettingsRow title="提问超时自动继续" hint="AI 向你提问后一直没回复，到时间自动按「请继续」往下走；也可在每张等待卡上单独调">
+                  <Select value={String(waitingAutoContinueMin)} onChange={(e) => setWaitingAutoContinueMin(Number(e.target.value))}>
+                    <option value="0">一直等（默认）</option>
+                    <option value="10">10 分钟</option>
+                    <option value="30">30 分钟</option>
+                    <option value="60">1 小时</option>
+                  </Select>
+                </SettingsRow>
+                <SettingsRow title="停止等待时间" hint="点「停止」后给当前动作留出安全收尾的时间，到点强制停并保留进度">
+                  <Select value={String(stopGraceSec)} onChange={(e) => setStopGraceSec(Number(e.target.value))}>
+                    <option value="30">30 秒</option>
+                    <option value="60">60 秒（推荐）</option>
+                    <option value="120">2 分钟</option>
+                    <option value="300">5 分钟</option>
+                  </Select>
+                </SettingsRow>
+                <SettingsRow title="跳过权限确认" hint="打开后 AI 完全不再弹权限确认，直接改文件、跑命令——仅在你完全信任的场景使用">
+                  <Toggle checked={skipPermissions} onChange={setSkipPermissions} label="跳过权限确认" />
+                </SettingsRow>
+              </SettingsFold>
             </Card>
           )}
 
           {activeTab === 'models' && (
-            <Card title="模型参数与执行器分级">
-              <div className="form-stack">
-                <Field label="OpenAI API Base URL">
-                  <Input value={openaiBaseURL} onChange={(e) => setOpenaiBaseURL(e.target.value)} />
-                </Field>
-                <Field label="OpenAI 模型名">
-                  <Input value={openaiModel} onChange={(e) => setOpenaiModel(e.target.value)} />
-                </Field>
-                <Field label="Gemini 模型名">
-                  <Input value={geminiModel} onChange={(e) => setGeminiModel(e.target.value)} />
-                </Field>
-              </div>
-            </Card>
-          )}
+            <Card title="模型与档位">
+              <p className="muted" style={{ fontSize: '12px', margin: '0 0 8px' }}>
+                三档告诉系统「什么活派给哪个执行器」；都不设置就全部跟随系统默认。
+              </p>
+              <SettingsRow badge="recommended" title="高级档" hint="计划、验收、裁决这类重要环节用的执行器">
+                <Select value={tierHigh} onChange={(e) => setTierHigh(e.target.value)}>
+                  <option value="">跟随系统默认</option>
+                  {executorProfiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </Select>
+              </SettingsRow>
+              <SettingsRow title="标准档" hint="普通任务的默认执行器">
+                <Select value={tierStandard} onChange={(e) => setTierStandard(e.target.value)}>
+                  <option value="">跟随系统默认</option>
+                  {executorProfiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </Select>
+              </SettingsRow>
+              <SettingsRow title="低档" hint="蜂群工蜂、快速咨询这类轻活用的执行器">
+                <Select value={tierLow} onChange={(e) => setTierLow(e.target.value)}>
+                  <option value="">跟随系统默认</option>
+                  {executorProfiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </Select>
+              </SettingsRow>
 
-          {activeTab === 'models' && (
-            <Card title="执行器档位（成本-能力匹配，一个选择框选 CLI/API）">
-              <div className="form-stack">
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
-                  <Field label="高级档（计划/验收/裁决/蜂群请示）">
-                    <Select value={tierHigh} onChange={(e) => setTierHigh(e.target.value)}>
-                      <option value="">跟随系统默认</option>
-                      {executorProfiles.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.manifestId})</option>)}
-                    </Select>
-                  </Field>
-                  <Field label="标准档（普通任务）">
-                    <Select value={tierStandard} onChange={(e) => setTierStandard(e.target.value)}>
-                      <option value="">跟随系统默认</option>
-                      {executorProfiles.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.manifestId})</option>)}
-                    </Select>
-                  </Field>
-                  <Field label="低档（蜂群工蜂/辩手/咨询）">
-                    <Select value={tierLow} onChange={(e) => setTierLow(e.target.value)}>
-                      <option value="">跟随系统默认</option>
-                      {executorProfiles.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.manifestId})</option>)}
-                    </Select>
-                  </Field>
-                </div>
-                <p style={{ margin: 0, fontSize: '12px', color: 'var(--fg-muted, #888)' }}>
-                  档位 = 执行器档案（CLI agent 产品或 LLM API 均可）；任务按档位自动选档案，故障自动换健康备选。
-                  员工绑定优先于档位；消息/工作单显式选模型为单次例外。API 档案自带 model，CLI 档案走该 CLI。
+              {/* 无关不显示：只在选了对应 API 引擎时才露出接口参数 */}
+              {defaultProvider === 'openai' && (
+                <>
+                  <SettingsSectionLabel>OpenAI 兼容接口</SettingsSectionLabel>
+                  <SettingsRow title="接口地址" hint="OpenAI 兼容服务的基础地址">
+                    <Input value={openaiBaseURL} onChange={(e) => setOpenaiBaseURL(e.target.value)} />
+                  </SettingsRow>
+                  <SettingsRow title="模型名" hint="该接口下使用的模型标识">
+                    <Input value={openaiModel} onChange={(e) => setOpenaiModel(e.target.value)} />
+                  </SettingsRow>
+                </>
+              )}
+              {defaultProvider === 'gemini' && (
+                <>
+                  <SettingsSectionLabel>Gemini 接口</SettingsSectionLabel>
+                  <SettingsRow title="模型名" hint="Gemini API 使用的模型标识">
+                    <Input value={geminiModel} onChange={(e) => setGeminiModel(e.target.value)} />
+                  </SettingsRow>
+                </>
+              )}
+              {defaultProvider !== 'openai' && defaultProvider !== 'gemini' && (
+                <p className="muted" style={{ fontSize: '12px', margin: '10px 0 0' }}>
+                  当前使用命令行引擎，无需配置 API 接口参数。
                 </p>
-                <Field label="图像生成模型（image_generate 工具）">
-                  <Input value={imageGenModel} placeholder="如 gpt-image-1 / 兼容端点的生图模型，留空默认 gpt-image-1" onChange={(e) => setImageGenModel(e.target.value)} />
-                </Field>
-              </div>
+              )}
+
+              <SettingsFold summary="更多模型（图像生成）">
+                <SettingsRow title="图像生成模型" hint="画图工具用的模型，留空用内置默认 gpt-image-1">
+                  <Input value={imageGenModel} placeholder="留空默认 gpt-image-1" onChange={(e) => setImageGenModel(e.target.value)} />
+                </SettingsRow>
+              </SettingsFold>
             </Card>
           )}
 
           {activeTab === 'swarm' && (
-            <Card title="蜂群并发与自动反思">
-              <div className="form-stack">
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                  <Field label="蜂群最大下探深度 (Max Depth)">
-                    <Input type="number" value={swarmMaxDepth} onChange={(e) => setSwarmMaxDepth(Number(e.target.value))} />
-                  </Field>
-                  <Field label="单层最大并发工蜂 (Max Width)">
-                    <Input type="number" value={swarmMaxWidth} onChange={(e) => setSwarmMaxWidth(Number(e.target.value))} />
-                  </Field>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                  <Field label="单次任务最大节点数 (Max Nodes)">
-                    <Input type="number" value={swarmMaxNodes} onChange={(e) => setSwarmMaxNodes(Number(e.target.value))} />
-                  </Field>
-                  <Field label="单群预算硬上限 ($ USD)">
-                    <Input type="number" value={swarmBudgetUSD} onChange={(e) => setSwarmBudgetUSD(Number(e.target.value))} />
-                  </Field>
-                </div>
-                <Field label="默认广深档位（新任务；任务级可覆盖）">
-                  <select
-                    value={breadthDefaultTier}
-                    onChange={(e) => setBreadthDefaultTier(e.target.value as 'light' | 'standard' | 'heavy')}
-                    style={{ width: '100%', padding: '8px', borderRadius: 6, background: 'var(--bg-secondary, #1a1a2e)', color: 'inherit', border: '1px solid var(--border-color, #333)' }}
-                  >
-                    <option value="light">轻 · 快探/小修（1 专家 / 小蜂群 / 验收 1 轮）</option>
-                    <option value="standard">中 · 常规迭代（默认）</option>
-                    <option value="heavy">重 · 攻坚/高可靠（满配班组 / 大蜂群 / 验收 3 轮）</option>
-                  </select>
-                </Field>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px' }}>
-                  <input type="checkbox" checked={autonomousReflectionEnabled} onChange={(e) => setAutonomousReflectionEnabled(e.target.checked)} />
-                  <span>白日梦：空闲时自动反思近期任务（沉淀记忆 + 进化蓝图，默认关）</span>
-                </label>
-                {autonomousReflectionEnabled && (
-                  <Field label="白日梦当日预算上限 ($ USD，0 = 不限)">
-                    <Input type="number" step="0.5" value={autonomousReflectionBudgetUSD} onChange={(e) => setAutonomousReflectionBudgetUSD(Number(e.target.value))} />
-                  </Field>
-                )}
-              </div>
+            <Card title="蜂群调度">
+              <p className="muted" style={{ fontSize: '12px', margin: '0 0 8px' }}>
+                日常不用动这里——蜂群的规模和花费由下方「广深档」自动控制；想手动收紧上限再展开专家微调。
+              </p>
+              <SettingsRow badge="recommended" title="默认广深档" hint="新任务的规模档位（单个任务可临时切换）：轻=快探小修；中=常规迭代；重=攻坚、班组满配、验收更严">
+                <Select value={breadthDefaultTier} onChange={(e) => setBreadthDefaultTier(e.target.value as 'light' | 'standard' | 'heavy')}>
+                  <option value="light">轻 · 快探/小修</option>
+                  <option value="standard">中 · 常规迭代（推荐）</option>
+                  <option value="heavy">重 · 攻坚/高可靠</option>
+                </Select>
+              </SettingsRow>
+              <SettingsRow title="白日梦" hint="空闲时自动复盘近期任务，沉淀记忆、进化打法；默认关">
+                <Toggle checked={autonomousReflectionEnabled} onChange={setAutonomousReflectionEnabled} label="白日梦" />
+              </SettingsRow>
+              {autonomousReflectionEnabled && (
+                <SettingsRow title="白日梦每日花费上限" hint="自动复盘每天最多花多少钱，防止空闲时段悄悄烧预算">
+                  <Select value={String(autonomousReflectionBudgetUSD)} onChange={(e) => setAutonomousReflectionBudgetUSD(Number(e.target.value))}>
+                    <option value="1">$1 / 天</option>
+                    <option value="2">$2 / 天</option>
+                    <option value="5">$5 / 天（推荐）</option>
+                    <option value="0">不限</option>
+                  </Select>
+                </SettingsRow>
+              )}
+              <SettingsFold summary="专家微调 · 并发与预算上限（默认值已足够）">
+                <SettingsRow title="最大下探深度" hint="子任务最多嵌套几层">
+                  <Input type="number" min={1} max={5} value={swarmMaxDepth} onChange={(e) => setSwarmMaxDepth(Number(e.target.value))} />
+                </SettingsRow>
+                <SettingsRow title="单层并发工蜂" hint="一层最多同时派几只工蜂">
+                  <Input type="number" min={1} max={20} value={swarmMaxWidth} onChange={(e) => setSwarmMaxWidth(Number(e.target.value))} />
+                </SettingsRow>
+                <SettingsRow title="单次节点上限" hint="一次蜂群最多拆多少个节点">
+                  <Input type="number" min={1} max={300} value={swarmMaxNodes} onChange={(e) => setSwarmMaxNodes(Number(e.target.value))} />
+                </SettingsRow>
+                <SettingsRow title="单群预算上限" hint="一次蜂群最多花多少美元">
+                  <Input type="number" min={0} step="0.5" value={swarmBudgetUSD} onChange={(e) => setSwarmBudgetUSD(Number(e.target.value))} />
+                </SettingsRow>
+              </SettingsFold>
             </Card>
           )}
 
           {activeTab === 'network' && (
-            <Card title="网络与出站代理配置">
-              <div className="form-stack">
-                <Field label="HTTP/HTTPS 代理地址 (Proxy URL)" hint="例如: http://127.0.0.1:7890">
-                  <Input value={proxyUrl} onChange={(e) => setProxyUrl(e.target.value)} placeholder="http://127.0.0.1:7890" />
-                </Field>
-                <Field label="代理白名单 (Bypass List)" hint="逗号分隔">
-                  <Input value={proxyBypass} onChange={(e) => setProxyBypass(e.target.value)} placeholder="localhost, 127.0.0.1" />
-                </Field>
-                <Field label="出站超时时间 (毫秒)">
-                  <Input type="number" value={egressTimeoutMs} onChange={(e) => setEgressTimeoutMs(Number(e.target.value))} />
-                </Field>
-              </div>
+            <Card title="网络代理">
+              <p className="muted" style={{ fontSize: '12px', margin: '0 0 8px' }}>
+                仅在使用网络代理或公司内网证书的环境才需要配置；平时保持默认即可。
+              </p>
+              <SettingsRow title="HTTP 代理地址" hint="例如 http://127.0.0.1:7890，不用代理就留空">
+                <Input value={proxyUrl} placeholder="http://127.0.0.1:7890" onChange={(e) => setProxyUrl(e.target.value)} />
+              </SettingsRow>
+              <SettingsRow title="代理例外名单" hint="这些地址不走代理，逗号分隔">
+                <Input value={proxyBypass} placeholder="localhost, 127.0.0.1" onChange={(e) => setProxyBypass(e.target.value)} />
+              </SettingsRow>
+              <SettingsFold summary="高级网络（证书 · 超时）">
+                <SettingsRow title="自签名证书路径" hint="公司内网自签 HTTPS 证书的文件位置，不用则留空">
+                  <Input value={caCertPath} placeholder="留空 = 不启用" onChange={(e) => setCaCertPath(e.target.value)} />
+                </SettingsRow>
+                <SettingsRow title="出站超时" hint="访问外部服务的最长等待时间">
+                  <Select value={String(egressTimeoutSec)} onChange={(e) => setEgressTimeoutSec(Number(e.target.value))}>
+                    <option value="10">10 秒</option>
+                    <option value="30">30 秒（推荐）</option>
+                    <option value="60">60 秒</option>
+                  </Select>
+                </SettingsRow>
+              </SettingsFold>
             </Card>
           )}
 
           {activeTab === 'appearance' && (
-            <>
-            <Card title="界面外观与显示">
-              <div className="form-stack">
-                <Field label="主题偏好">
-                  <Select value={theme} onChange={(e) => setTheme(e.target.value as any)}>
-                    <option value="system">跟随系统 (System)</option>
-                    <option value="light">温暖纸质浅色 (Warm Paper Light)</option>
-                    <option value="dark">沉浸深灰深色 (Slate Dark)</option>
-                  </Select>
-                </Field>
-                <Field label="界面主字体大小 (px)">
-                  <Input type="number" value={fontSize} onChange={(e) => setFontSize(Number(e.target.value))} />
-                </Field>
-                <Field label="界面语言">
-                  <Select value={locale} onChange={(e) => setLocale(e.target.value as any)}>
-                    <option value="zh">简体中文 (Chinese)</option>
-                    <option value="en">English</option>
-                  </Select>
-                </Field>
-                <Field label="界面字体" hint="CSS font-family 值，留空使用默认字体栈">
-                  <Input value={fontFamily} onChange={(e) => setFontFamily(e.target.value)} placeholder="如 'PingFang SC', 'Microsoft YaHei', sans-serif" />
-                </Field>
-                <Field label="代码块主题" hint="编辑器与代码高亮主题名，默认 default">
-                  <Input value={codeTheme} onChange={(e) => setCodeTheme(e.target.value)} placeholder="default" />
-                </Field>
-              </div>
+            <Card title="外观">
+              <SettingsRow badge="recommended" title="主题" hint="跟随系统自动切换明暗，或固定一种">
+                <Select value={theme} onChange={(e) => setTheme(e.target.value as any)}>
+                  <option value="system">跟随系统（推荐）</option>
+                  <option value="light">浅色 · 温暖纸质</option>
+                  <option value="dark">深色 · 沉浸深灰</option>
+                </Select>
+              </SettingsRow>
+              <SettingsRow title="界面字号" hint="正文文字大小（像素）">
+                <Select value={String(fontSize)} onChange={(e) => setFontSize(Number(e.target.value))}>
+                  {[12, 13, 14, 15, 16, 17, 18].map((size) => (
+                    <option key={size} value={size}>{size === 14 ? '14（推荐）' : String(size)}</option>
+                  ))}
+                </Select>
+              </SettingsRow>
+              <SettingsRow title="界面语言">
+                <Select value={locale} onChange={(e) => setLocale(e.target.value as any)}>
+                  <option value="zh">简体中文</option>
+                  <option value="en">English</option>
+                </Select>
+              </SettingsRow>
+              <SettingsFold summary="更多外观（字体 · 代码主题）">
+                <SettingsRow title="界面字体" hint="懂 CSS 再填字体族，留空用默认字体栈">
+                  <Input value={fontFamily} placeholder="如 'PingFang SC', sans-serif" onChange={(e) => setFontFamily(e.target.value)} />
+                </SettingsRow>
+                <SettingsRow title="代码块主题" hint="代码高亮主题名，留空用默认">
+                  <Input value={codeTheme} placeholder="default" onChange={(e) => setCodeTheme(e.target.value)} />
+                </SettingsRow>
+              </SettingsFold>
             </Card>
+          )}
+
+          {activeTab === 'appearance' && (
             <Card title="消息流展示">
-              <div className="form-stack">
-                <p className="muted" style={{ fontSize: 'var(--text-sm)', margin: 0 }}>控制 AI 回复工作块（已工作时长 / 思考过程 / 工具分组）的显示方式。</p>
-                <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', fontSize: 13 }}>
-                  <input type="checkbox" checked={msgShowThinking} onChange={(e) => setMsgShowThinking(e.target.checked)} />
-                  <span><strong>显示思考过程</strong><br /><span className="muted">在消息流中展示完整的模型思考内容；关闭时每轮仍展示第一次思考。</span></span>
-                </label>
-                <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', fontSize: 13 }}>
-                  <input type="checkbox" checked={msgShowTodo} onChange={(e) => setMsgShowTodo(e.target.checked)} />
-                  <span><strong>显示待办</strong><br /><span className="muted">在消息流中展示 Todo 工具卡片。</span></span>
-                </label>
-                <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', fontSize: 13 }}>
-                  <input type="checkbox" checked={msgGroupExplore} onChange={(e) => setMsgGroupExplore(e.target.checked)} />
-                  <span><strong>分组探索工具</strong><br /><span className="muted">将连续的读取和搜索工具聚合为 Explore 分组。</span></span>
-                </label>
-                <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', fontSize: 13 }}>
-                  <input type="checkbox" checked={msgGroupTerminal} onChange={(e) => setMsgGroupTerminal(e.target.checked)} />
-                  <span><strong>分组终端命令</strong><br /><span className="muted">将连续的非只读 Shell 命令聚合为 Terminal 分组。</span></span>
-                </label>
-                <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', fontSize: 13 }}>
-                  <input type="checkbox" checked={msgGroupChanges} onChange={(e) => setMsgGroupChanges(e.target.checked)} />
-                  <span><strong>分组文件更改</strong><br /><span className="muted">将连续的 Write、Edit 和 ApplyPatch 调用聚合为 Changes 分组。</span></span>
-                </label>
-              </div>
+              <p className="muted" style={{ fontSize: '12px', margin: '0 0 4px' }}>控制 AI 回复里各类工作块的显示方式，全部默认开启。</p>
+              <SettingsRow title="显示思考过程" hint="展示模型的思考内容；关闭时每轮仍显示第一条思考">
+                <Toggle checked={msgShowThinking} onChange={setMsgShowThinking} label="显示思考过程" />
+              </SettingsRow>
+              <SettingsRow title="显示待办卡片" hint="展示 AI 的待办清单卡片">
+                <Toggle checked={msgShowTodo} onChange={setMsgShowTodo} label="显示待办卡片" />
+              </SettingsRow>
+              <SettingsRow title="合并探索记录" hint="连续的读取和搜索聚成一组，减少刷屏">
+                <Toggle checked={msgGroupExplore} onChange={setMsgGroupExplore} label="合并探索记录" />
+              </SettingsRow>
+              <SettingsRow title="合并终端命令" hint="连续的终端命令聚成一组">
+                <Toggle checked={msgGroupTerminal} onChange={setMsgGroupTerminal} label="合并终端命令" />
+              </SettingsRow>
+              <SettingsRow title="合并文件改动" hint="连续的写入和编辑聚成一组">
+                <Toggle checked={msgGroupChanges} onChange={setMsgGroupChanges} label="合并文件改动" />
+              </SettingsRow>
             </Card>
-            </>
           )}
 
           {activeTab === 'credentials' && (
@@ -445,9 +459,7 @@ export function SettingsPage(): React.ReactElement {
           )}
 
           {activeTab === 'specialists' && (
-            <Card title="专家盘点（人事待处置清单）">
-              <SpecialistReviewPanel />
-            </Card>
+            <SpecialistReviewPanel />
           )}
 
           {activeTab === 'backup' && (
