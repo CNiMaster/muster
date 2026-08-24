@@ -1277,9 +1277,27 @@
   flex-shrink: 0;
   min-height: 46px;
   z-index: 25;
+  container-type: inline-size;
 }
 .workbench-bottom-tabs-bar::-webkit-scrollbar {
   display: none;
+}
+/* 主管括号摘要（2026-08-24 定案）：人事（专家身份图标）/ 养蜂人（🐝N·👷N 蜂群编制）；
+   放不下整体隐藏——完整名单在人事/养蜂人页内查看 */
+.staff-sub {
+  font-size: 11px;
+  opacity: 0.7;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+.staff-sub-icon {
+  margin: 0 1px;
+  font-size: 10px;
+}
+@container (max-width: 640px) {
+  .staff-sub {
+    display: none;
+  }
 }
 .workbench-tab-pill {
   display: inline-flex;

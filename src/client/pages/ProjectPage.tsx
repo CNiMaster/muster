@@ -43,7 +43,7 @@ import { ProjectContextInspector } from '../components/workbench/ProjectContextI
 import { WorkCapsule } from '../components/workbench/WorkCapsule';
 import { ProjectTaskWorkspace } from '../components/project/ProjectTaskWorkspace';
 import { TaskTopBar } from '../components/project/TaskTopBar';
-import { FIXED_AGENT_ROLES, agentMatchesFixedRole, isFixedRoleAgent } from '../components/workbench/PromptComposer';
+import { WorkbenchBottomStaffTabs } from '../components/workbench/WorkbenchBottomStaffTabs';
 import { ProjectEmployeeWorkspace } from '../components/project/ProjectEmployeeWorkspace';
 import { WorkbenchContextSwitcher } from '../components/workbench/WorkbenchContextSwitcher';
 import { usePlaybooksForTemplate } from '../hooks/queries';
@@ -596,87 +596,8 @@ export function ProjectDetail({ projectId }: { projectId: string }): React.React
 
 </div>
 
-      {/* 底部固定岗标签栏（2026-08-24 定案）：四固定岗常设全显示——在岗点击进专员页面并显示上班状态，未上岗置灰；
-          自定义员工随后。治理批次5：简单模式隐藏。 */}
-      {!uiSimple && (
-      <div className="workbench-bottom-tabs-bar">
-        {FIXED_AGENT_ROLES.map((fr) => {
-          const ag = allTeamAgents.find((a) => agentMatchesFixedRole(a, fr.role));
-          if (!ag) {
-            return (
-              <button key={fr.role} type="button" className="workbench-tab-pill is-vacant" disabled title="该固定岗暂未上岗">
-                <span>{fr.icon} {fr.label}</span>
-                <small style={{ fontSize: 11, opacity: 0.6 }}>未上岗</small>
-              </button>
-            );
-          }
-          const isSelected = projectView === 'employee' && selectedAgentId === ag.id;
-          const agentTasks = (tasks ?? []).filter((t) => t.assigneeAgentId === ag.id && (t.state === 'running' || t.state === 'claimed' || t.state === 'waiting_input'));
-          const isRunning = agentTasks.length > 0;
-          return (
-            <button
-              key={fr.role}
-              type="button"
-              className={`workbench-tab-pill ${isSelected ? 'is-active' : ''}`}
-              onClick={() => {
-                // 2026-08-24 定案：开关语义——已在该岗页面时再点切回任务现场
-                const next = new URLSearchParams(searchParams);
-                if (isSelected) {
-                  next.set('view', 'task');
-                  next.delete('agent');
-                } else {
-                  next.set('view', 'employee');
-                  next.set('agent', ag.id);
-                }
-                setSearchParams(next, { replace: true });
-              }}
-              title={`${ag.name}（${fr.label}）· 点击查看状态与对话`}
-            >
-              <span>{fr.icon} {fr.label}</span>
-              {ag.name !== fr.label && <span style={{ fontSize: 11, opacity: isSelected ? 0.9 : 0.65 }}>· {ag.name}</span>}
-              {isRunning ? (
-                <span style={{ display: 'inline-flex', width: 6, height: 6, borderRadius: 999, background: 'var(--ok)' }} title="工作中" />
-              ) : (
-                <span className={`org-presence is-${ag.availabilityState}`} style={{ width: 6, height: 6, display: 'inline-block' }} />
-              )}
-            </button>
-          );
-        })}
-        {allTeamAgents.filter((a) => !isFixedRoleAgent(a)).map((agent) => {
-          const isSelected = projectView === 'employee' && selectedAgentId === agent.id;
-          const agentTasks = (tasks ?? []).filter((t) => t.assigneeAgentId === agent.id && (t.state === 'running' || t.state === 'claimed' || t.state === 'waiting_input'));
-          const isRunning = agentTasks.length > 0;
-          const info = getRoleInfo(agent);
-          return (
-            <button
-              key={agent.id}
-              type="button"
-              className={`workbench-tab-pill ${isSelected ? 'is-active' : ''}`}
-              onClick={() => {
-                const next = new URLSearchParams(searchParams);
-                if (isSelected) {
-                  next.set('view', 'task');
-                  next.delete('agent');
-                } else {
-                  next.set('view', 'employee');
-                  next.set('agent', agent.id);
-                }
-                setSearchParams(next, { replace: true });
-              }}
-              title={`${agent.name}（${info.label}）· 点击查看状态与对话`}
-            >
-              <span>{info.icon} {info.label}</span>
-              {agent.name !== info.label && <span style={{ fontSize: 11, opacity: isSelected ? 0.9 : 0.65 }}>· {agent.name}</span>}
-              {isRunning ? (
-                <span style={{ display: 'inline-flex', width: 6, height: 6, borderRadius: 999, background: 'var(--ok)' }} title="工作中" />
-              ) : (
-                <span className={`org-presence is-${agent.availabilityState}`} style={{ width: 6, height: 6, display: 'inline-block' }} />
-              )}
-            </button>
-          );
-        })}
-      </div>
-      )}
+      {/* 底部固定岗标签栏（2026-08-24 定案）：抽成 WorkbenchBottomStaffTabs——右栏类工具页的中栏任务现场同样挂载（打开工具时人员卡不消失） */}
+      <WorkbenchBottomStaffTabs projectId={projectId} selectedAgentId={selectedAgentId} />
     </div>
     </WorkbenchShell>
   );

@@ -6,6 +6,7 @@ import { ProjectWorkNavigation, type ProjectToolKey } from './ProjectWorkNavigat
 import { WorkbenchShell, useWorkbenchUI } from './WorkbenchShell';
 import { WorkbenchContextSwitcher } from './WorkbenchContextSwitcher';
 import { ProjectTaskWorkspace } from '../project/ProjectTaskWorkspace';
+import { WorkbenchBottomStaffTabs } from './WorkbenchBottomStaffTabs';
 
 const TOOL_LABELS: Record<ProjectToolKey, string> = {
   tasks: '任务领取清单',
@@ -71,6 +72,8 @@ function ProjectTaskSurface({ projectId }: { projectId: string }): React.ReactEl
           publishingWorkOrder={createWorkOrder.isPending}
         />
       </div>
+      {/* 打开工具时中栏仍是任务现场——底部固定岗条不消失（2026-08-24 用户反馈收口） */}
+      <WorkbenchBottomStaffTabs projectId={projectId} />
     </div>
   );
 }
