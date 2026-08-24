@@ -23,7 +23,8 @@
     "clean": "rm -rf dist tsconfig.tsbuildtime *.tsbuildtime",
     "smoke": "node scripts/smoke/run-all.mjs",
     "prepare": "lefthook install",
-    "gate": "node scripts/gate.mjs"
+    "gate": "node scripts/gate.mjs",
+    "gate:ci": "npm run typecheck && npx vitest run --exclude 'tests/e2e/**' && npm run build && npm run test:e2e && echo 'gate:ci all green'"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
