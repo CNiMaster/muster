@@ -130,6 +130,8 @@ export interface MemoryCandidate {
   status: 'pending' | 'approved' | 'rejected';
   quarantineReason: string | null;
   createdAt: string;
+  /** 记忆更新闭环：批准时将替代的旧记忆 id（旧条目转 superseded、本条继承战绩）。 */
+  supersedesEntryId?: string | null;
 }
 
 export interface MemoryEntry {

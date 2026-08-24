@@ -20,7 +20,7 @@ import { assertCanReadSource, listProjectReferences } from '../domain/project';
 import { buildBridgePromptSection } from '../bridge';
 import { getWorkflow, type EdgeCondition } from '../domain/workflow';
 import { getAgentProfile } from '../domain/agent-profile';
-import { loadContextMemories } from '../domain/memory';
+import { loadContextMemories, expandMatchTokens } from '../domain/memory';
 import { resolveTaskSkills } from '../domain/capability-binding';
 import { resolveToolRecommendations, buildCapabilityCenterSection } from '../domain/tool-recommendation';
 import { buildToolChainSection } from '../domain/tool-chain';
@@ -84,6 +84,8 @@ export function assembleContext(
     executorVision?: boolean;
     /** 轻量模式（咨询/讨论发言）：只注入身份/议题/职责/契约，跳过素材/技能/记忆/验收等大段上下文。 */
     lightweight?: boolean;
+    /** P1-② 全局软预算：执行器档案的上下文窗口（tokens）。systemPrompt 超预算时按段优先级压缩低优先段。 */
+    contextWindowTokens?: number;
   } = {},
 ): AssembledContext {
   const project = getProject(db, task.projectId);
@@ -444,10 +446,18 @@ export function assembleContext(
   if (agent?.isSystem && (agent.role === DISPATCHER_ROLE || agent.role === HR_ROLE)) {
     const personaIndex = listPersonaIndex();
     if (personaIndex.length > 0) {
+      const totalPersonas = personaIndex.reduce((n, d) => n + d.items.length, 0);
+      // P1-② 上下文成本治理：库大时只注入与任务相关的 top-k（词法计分），并给"另有 N 位"计数提示；
+      // 库小（≤15）保留全量（旧行为）。此前整库逐条注入，随人设沉淀线性膨胀挤占窗口。
+      const prunedIndex = totalPersonas > 15 ? selectRelevantPersonaDomains(personaIndex, task.title, 8) : personaIndex;
+      const shownCount = prunedIndex.reduce((n, d) => n + d.items.length, 0);
       sp.push(
         '# 人设库索引（选人设用）',
         '为工蜂/新专家挑选 personaId 时从以下目录取（id 必须与目录逐字一致）；没有合适的就省略 personaId（匿名蜂/通用专家），不要编造目录外的 id：',
-        ...personaIndex.flatMap((d) => [
+        ...(totalPersonas > shownCount
+          ? [`（按任务相关性显示 ${shownCount}/${totalPersonas} 位——若都不合适，可在 summary 里说明所需专长特征，系统下次补充）`]
+          : []),
+        ...prunedIndex.flatMap((d) => [
           `## ${d.domain}（${d.items.length} 位）`,
           ...d.items.map((i) => `- ${i.id} — ${i.name}${i.description ? `：${i.description}` : ''}`),
         ]),
@@ -503,16 +513,33 @@ export function assembleContext(
   if (agent?.isSystem && agent.role === HR_ROLE) {
     const projectSpecialists = listProjectSpecialists(db, project.id);
     const staffSpecialists = listStaffSpecialists(db, project.id);
+    // P1-② 上下文成本治理：池大时只注入与任务相关的 top-k（词法计分 specialty 命中），
+    // 池小（合计 ≤15）保留全量（旧行为）。
+    const specialistTotal = projectSpecialists.length + staffSpecialists.length;
+    const pickTop = <T>(list: T[], keyOf: (item: T) => string, k: number): T[] => {
+      if (specialistTotal <= 15 || list.length <= k) return list;
+      const tokens = expandMatchTokens(task.title);
+      return [...list]
+        .map((item, index) => ({ item, index, score: tokens.reduce((n, t) => n + (keyOf(item).toLowerCase().includes(t) ? 1 : 0), 0) }))
+        .sort((a, b) => b.score - a.score || a.index - b.index)
+        .slice(0, k)
+        .map((x) => x.item);
+    };
+    const shownProject = pickTop(projectSpecialists, (s) => `${s.specialty} ${specialistLabel(db, s)}`, 10);
+    const shownStaff = pickTop(staffSpecialists, (s) => `${s.specialty} ${specialistLabel(db, s)}`, 10);
     sp.push(
       '# 专家池清单（你能供给的专家）',
-      ...(projectSpecialists.length > 0
+      ...(specialistTotal > shownProject.length + shownStaff.length
+        ? [`（按任务相关性显示 ${shownProject.length + shownStaff.length}/${specialistTotal} 位专家——不合适时按契约新建）`]
+        : []),
+      ...(shownProject.length > 0
         ? [
           '项目已有专家（优先建议复用，不要重复建）：',
-          ...projectSpecialists.map((s) => `- ${specialistLabel(db, s)} — ${s.specialty}（已用 ${s.useCount} 次${s.tier === 'staff' ? '，常驻专家' : ''}）`),
+          ...shownProject.map((s) => `- ${specialistLabel(db, s)} — ${s.specialty}（已用 ${s.useCount} 次${s.tier === 'staff' ? '，常驻专家' : ''}）`),
         ]
         : ['（本项目暂无专家，需要时按契约新建）']),
-      ...(staffSpecialists.length > 0
-        ? ['全局常驻专家（跨项目可借，建议复用）：', ...staffSpecialists.map((s) => `- ${specialistLabel(db, s)} — ${s.specialty}（他项目）`)]
+      ...(shownStaff.length > 0
+        ? ['全局常驻专家（跨项目可借，建议复用）：', ...shownStaff.map((s) => `- ${specialistLabel(db, s)} — ${s.specialty}（他项目）`)]
         : []),
       '',
       '# 专家供给契约（你是人事，独有）',
@@ -534,7 +561,11 @@ export function assembleContext(
       '',
     );
   }
-  const systemPrompt = sp.join('\n');
+  // P1-② 全局软预算（最后防线）：各段独立 cap 之外，整体超预算时按优先级压缩低优先段——
+  // 身份/人设/职责/验收/契约永不动；先压旧档/素材/目录类长尾段。
+  const softCharBudget = clampSoftPromptBudget(options.contextWindowTokens);
+  const trimmedSp = trimPromptSections(sp, softCharBudget);
+  const systemPrompt = trimmedSp.join('\n');
 
   // ===== Input Packet =====
   // 蜂群汇总：每只蜂完成时把 [蜂成员汇报] 逐条写进汇总任务消息（reportBeeCompletion）。
@@ -670,4 +701,53 @@ function loadReferencedArtifacts(db: DB, task: Task): Record<string, string> {
     totalBytes += Buffer.byteLength(selected);
   }
   return loaded;
+}
+
+// ===== P1-② 上下文成本治理辅助 =====
+
+/** 人设库词法 top-k：按任务标题在人设 id/name/description 上的词元命中数排序，保留分组结构。 */
+function selectRelevantPersonaDomains(
+  index: Array<{ domain: string; items: Array<{ id: string; name: string; description?: string | null }> }>,
+  taskTitle: string,
+  topK: number,
+): Array<{ domain: string; items: Array<{ id: string; name: string; description?: string | null }> }> {
+  const tokens = expandMatchTokens(taskTitle);
+  const flat = index.flatMap((d) => d.items.map((i) => ({ id: i.id, name: i.name, description: i.description, domain: d.domain })));
+  const ranked = flat
+    .map((item, order) => {
+      const haystack = `${item.id} ${item.name} ${item.description ?? ''}`.toLowerCase();
+      return { id: item.id, order, score: tokens.reduce((n, t) => n + (haystack.includes(t) ? 1 : 0), 0) };
+    })
+    .sort((a, b) => b.score - a.score || a.order - b.order);
+  const keep = new Set(ranked.slice(0, topK).map((r) => r.id));
+  return index
+    .map((d) => ({ domain: d.domain, items: d.items.filter((i) => keep.has(i.id)) }))
+    .filter((d) => d.items.length > 0);
+}
+
+/** 软预算折算：窗口 tokens 的 25% 作字符预算（中文 1 字≈1-2 token 的保守折算），夹在 [16k, 48k]。 */
+function clampSoftPromptBudget(contextWindowTokens?: number): number {
+  if (!contextWindowTokens || contextWindowTokens <= 0) return 32_000;
+  return Math.min(48_000, Math.max(16_000, Math.floor(contextWindowTokens / 4)));
+}
+
+/** 低优先段（超预算时按序压缩为"段头+省略提示"）；身份/人设/职责/验收/契约段永不动。 */
+const LOW_PRIORITY_SECTIONS = ['# 相关旧档', '# 项目素材', '# 人设库索引（选人设用）', '# 专家池清单（你能供给的专家）'];
+
+/** 全局守门（最后防线）：整体超预算时按 LOW_PRIORITY_SECTIONS 顺序逐段压缩，直到达标或压完。 */
+export function trimPromptSections(sp: string[], charBudget: number): string[] {
+  if (sp.join('\n').length <= charBudget) return sp;
+  const working = [...sp];
+  for (const header of LOW_PRIORITY_SECTIONS) {
+    if (working.join('\n').length <= charBudget) break;
+    const idx = working.indexOf(header);
+    if (idx === -1) continue;
+    let end = working.length;
+    for (let i = idx + 1; i < working.length; i++) {
+      if (working[i]!.startsWith('# ')) { end = i; break; }
+    }
+    if (end - idx <= 2) continue; // 段本来就小，压了没收益
+    working.splice(idx, end - idx, header, '（本段内容超预算已压缩省略——需要完整清单时请说明，系统会在下轮补充）', '');
+  }
+  return working;
 }

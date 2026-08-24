@@ -14,6 +14,7 @@ import { listAgents } from './agent';
 import { listAgentProfiles } from './agent-profile';
 import { getEmployeeExecutorProfile } from './executor-profile';
 import { getExecutorManifest } from '../executors/manifests';
+import { normalizeTerm } from './matching/lexicon';
 
 export interface AssigneeCandidate {
   agentId: string;
@@ -23,9 +24,9 @@ export interface AssigneeCandidate {
   matchedCapabilities: string[];
 }
 
-/** 归一化能力标识：trim + 小写。 */
+/** 归一化能力标识：trim + 小写 + 别名组 canonical（词法增强：'测试'/'test'/'qa' 归一为同一能力）。 */
 function normalizeCapability(value: string): string {
-  return value.trim().toLowerCase();
+  return normalizeTerm(value);
 }
 
 /**

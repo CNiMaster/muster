@@ -24,6 +24,7 @@ import { createMirror, removeMirror, listMirrorsOfRoot, ensurePrimaryThread } fr
 import { getWorkbench } from './workbench';
 import { BREADTH_LIMITS, taskBreadthTier } from './breadth-tier';
 import { CENTRAL_STAFF_ROLES } from './system-agents';
+import { createMemoryCandidate } from './memory';
 
 export type DiscussionState = 'open' | 'concluding' | 'concluded' | 'closed';
 export type ParticipantRole = 'member' | 'moderator';
@@ -489,7 +490,7 @@ export function concludeDiscussion(db: DB, discussionId: string, input: {
   concludedByAgentId?: string;
   /** 无结果或需人工参与时为 true：写项目对话提示用户 + 不派实施 task，参与者分身释放回岗位。 */
   needsHuman?: boolean;
-}): { discussion: Discussion; dispatchedTaskIds: string[] } {
+}): { discussion: Discussion; dispatchedTaskIds: string[]; memoryCandidateIds: string[] } {
   const disc = getDiscussion(db, discussionId);
   if (disc.state === 'concluded' || disc.state === 'closed') throw new AppError(ErrorCode.CONFLICT, '讨论已结束');
   const tx = db.transaction(() => {
@@ -510,17 +511,39 @@ export function concludeDiscussion(db: DB, discussionId: string, input: {
         dispatchedTaskIds.push(task.id);
       }
     }
+    // P0-① 讨论记忆断链修复：memoryNotes 此前只落 conclusion_json（不可检索、不参与注入、无治理），
+    // 现逐条转成 project 记忆候选——[讨论] 前缀溯源；confidence 0.8 与 LESSON 同权自动批准（project scope 门）。
+    const memoryCandidateIds: string[] = [];
+    const moderatorProfileId = input.concludedByAgentId
+      ? (db.prepare('SELECT profile_id FROM agent_definition WHERE id=?').get(input.concludedByAgentId) as { profile_id: string } | undefined)?.profile_id
+      : undefined;
+    if (moderatorProfileId) {
+      for (const note of input.conclusion.memoryNotes) {
+        const candidate = createMemoryCandidate(db, {
+          profileId: moderatorProfileId,
+          scope: 'project',
+          projectId: disc.projectId,
+          content: `[讨论] ${disc.topic}：${note}`,
+          author: 'agent',
+          confidence: 0.8,
+          canInfluence: true,
+          allowAutoApprove: true,
+        });
+        memoryCandidateIds.push(candidate.id);
+      }
+    }
     // 写项目对话窗口（用户可见纪要）
     const humanNote = input.needsHuman ? '\n⚠️ 本讨论未能达成结论，需人工确认。参与者已回到各自岗位继续工作。' : '';
+    const memoryNote = memoryCandidateIds.length ? `\n已沉淀 ${memoryCandidateIds.length} 条项目记忆` : '';
     postSystemMessage(db, {
       scopeKind: 'project',
       scopeId: disc.projectId,
       role: 'system',
       author: input.concludedByAgentId ?? 'system',
-      content: `[讨论纪要] ${disc.topic}\n${input.minutes}\n结论要点：${input.conclusion.keyPoints.join('；')}${dispatchedTaskIds.length ? `\n已派发 ${dispatchedTaskIds.length} 个实施任务` : ''}${humanNote}`,
+      content: `[讨论纪要] ${disc.topic}\n${input.minutes}\n结论要点：${input.conclusion.keyPoints.join('；')}${dispatchedTaskIds.length ? `\n已派发 ${dispatchedTaskIds.length} 个实施任务` : ''}${memoryNote}${humanNote}`,
     });
     void input.concludedByAgentId;
-    return { discussion: getDiscussion(db, discussionId), dispatchedTaskIds };
+    return { discussion: getDiscussion(db, discussionId), dispatchedTaskIds, memoryCandidateIds };
   });
   const result = tx();
   // 讨论结束：释放参与者分身（非事务内，因 removeMirror 有活跃 task 检查）

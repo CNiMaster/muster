@@ -69,7 +69,8 @@ export function exportCapabilityPackage(profile: AgentProfile): Record<string, u
 
 export function syncAgentMemoryFiles(db: DB, profileId: string, musterHome = SERVER_CONFIG.musterDir): void {
   const home = getAgentHomePath(profileId, musterHome);
-  const entries = listMemoryEntries(db, { profileId });
+  // superseded（已被替代）与注入路径同步退场——文件镜像只映现行记忆，历史在 memory_version。
+  const entries = listMemoryEntries(db, { profileId }).filter((entry) => entry.state !== 'superseded');
   atomicWrite(
     join(home, 'memory/USER.md'),
     renderMemorySnapshot('用户与个人记忆', entries.filter((entry) => entry.scope === 'personal')),

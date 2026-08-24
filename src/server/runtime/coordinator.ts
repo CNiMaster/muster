@@ -16,7 +16,8 @@ import { sweepStaleStaging, sweepStaleTaskStaging } from '../domain/staging';
 import { sweepIdleStaffSpecialists } from '../domain/specialist-review';
 import { listDueAutomations, markAutomationRun } from '../domain/automation';
 import { syncGithubIssues } from '../domain/github-issues';
-import { settleMemoryVotes } from '../domain/memory';
+import { settleMemoryVotes, sweepMemoryBacklogNotice, purgeStaleMemory } from '../domain/memory';
+import { postSystemMessage } from '../domain/conversation';
 import { generateInspectorSuggestions } from '../domain/inspector';
 import type { SetupGenerator } from '../domain/setup-assistant';
 import { getSystemSettings } from '../domain/setting';
@@ -94,7 +95,9 @@ export class ProjectRuntimeCoordinator {
   private lastIdleReflectionRun = 0;
   private stagingWatchdogTimer: NodeJS.Timeout | null = null;
   private automationTimer: NodeJS.Timeout | null = null;
+  private memoryHygieneTimer: NodeJS.Timeout | null = null;
   private readonly stagingWatchdogIntervalMs = 10 * 60_000;
+  private readonly memoryHygieneIntervalMs = 30 * 60_000;
   private readonly idleReflectionIntervalMs = 60_000;
 
   constructor(
@@ -329,6 +332,29 @@ export class ProjectRuntimeCoordinator {
       })();
     }, 60_000);
     this.automationTimer.unref?.();
+
+    // 记忆库卫生（P0-④，每 30 分钟）：候选积压提醒（发工作台系统消息，24h 节流）+
+    // 软删/过期条目物理清理（防表无限膨胀）。纯 DB 操作，失败不轰炸。
+    this.memoryHygieneTimer = setInterval(() => {
+      try {
+        const notice = sweepMemoryBacklogNotice(this.db);
+        if (notice) {
+          const workbench = this.db.prepare('SELECT id FROM workbench ORDER BY created_at LIMIT 1').get() as { id: string } | undefined;
+          // 节流：24h 内已发过积压提醒就不重复发
+          const recent = workbench && this.db.prepare(
+            "SELECT 1 FROM conversation_message WHERE scope_kind='workbench' AND role='system' AND content LIKE '%记忆候选积压%' AND created_at > ? LIMIT 1",
+          ).get(new Date(Date.now() - 86_400_000).toISOString());
+          if (workbench && !recent) {
+            postSystemMessage(this.db, { scopeKind: 'workbench', scopeId: workbench.id, role: 'system', author: 'system', content: notice });
+          }
+        }
+        const purged = purgeStaleMemory(this.db);
+        if (purged.purgedDeleted + purged.purgedExpired > 0) log.info('memory hygiene purged', purged);
+      } catch (error) {
+        log.warn('memory hygiene failed', { error: error instanceof Error ? error.message : String(error) });
+      }
+    }, this.memoryHygieneIntervalMs);
+    this.memoryHygieneTimer.unref?.();
   }
 
   stop(): void {
@@ -340,6 +366,8 @@ export class ProjectRuntimeCoordinator {
     this.stagingWatchdogTimer = null;
     if (this.automationTimer) clearInterval(this.automationTimer);
     this.automationTimer = null;
+    if (this.memoryHygieneTimer) clearInterval(this.memoryHygieneTimer);
+    this.memoryHygieneTimer = null;
   }
 
   /**

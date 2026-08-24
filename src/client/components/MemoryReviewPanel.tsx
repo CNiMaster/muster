@@ -128,7 +128,12 @@ export function MemoryReviewPanel({ profileId }: { profileId: string }): React.R
         {pending.map((candidate) => (
           <article key={candidate.id} className="memory-item">
             <div className="memory-item-main">
-              <div><Badge tone={candidate.quarantineReason ? 'err' : 'info'}>{scopeLabel(candidate.scope)}</Badge></div>
+              <div>
+                <Badge tone={candidate.quarantineReason ? 'err' : 'info'}>{scopeLabel(candidate.scope)}</Badge>
+                {candidate.supersedesEntryId && (
+                  <Badge tone="warn" title={candidate.supersedesEntryId}>将替代 #{candidate.supersedesEntryId.slice(0, 10)}</Badge>
+                )}
+              </div>
               <p>{candidate.content}</p>
               {candidate.quarantineReason && <p className="error">{candidate.quarantineReason}</p>}
               <details>
@@ -167,7 +172,9 @@ export function MemoryReviewPanel({ profileId }: { profileId: string }): React.R
           <article key={entry.id} className="memory-item">
             <div className="memory-item-main">
               <div>
-                <Badge tone={entry.state === 'locked' ? 'warn' : 'ok'}>{scopeLabel(entry.scope)} · v{entry.version}</Badge>
+                <Badge tone={entry.state === 'locked' ? 'warn' : entry.state === 'superseded' ? 'neutral' : 'ok'}>
+                  {scopeLabel(entry.scope)} · v{entry.version}{entry.state === 'superseded' ? ' · 已被替代' : ''}
+                </Badge>
                 {entry.cause && <Badge tone="info">{causeLabel(entry.cause)}</Badge>}
                 {entry.projectId && (
                   <Badge tone="neutral" title={entry.projectId}>{projectNameById.get(entry.projectId) ?? '未知项目'}</Badge>

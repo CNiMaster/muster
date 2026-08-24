@@ -1098,7 +1098,7 @@ const BUILTIN_TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'conclude_discussion',
-      description: '总结讨论室（设计二-方案B）。写纪要 + 结论要点 + 落地动作。结论可派发实施任务（actions）、写项目记忆（memoryNotes）。调用后讨论室关闭，纪要写入项目对话窗口供用户审阅。',
+      description: '总结讨论室（设计二-方案B）。写纪要 + 结论要点 + 落地动作。结论可派发实施任务（actions）、写项目记忆（memory_notes：逐条自动写入项目记忆并立即生效，会被后续任务检索注入，只写真正值得长期记住的协作结论）。调用后讨论室关闭，纪要写入项目对话窗口供用户审阅。',
       parameters: {
         type: 'object',
         properties: {

@@ -103,9 +103,12 @@ describe('createTask 自动路由（阶段七任务 7.2）', () => {
       requiredCapabilityIds: ['magic-capability'],
     });
     expect(task.assigneeAgentId).toBe(lead.id);
-    // 无 routedByCapability 标记（未路由成功）
+    // 词法增强信号层：miss 不再静默——审计标记 false + routingMiss，且任务事件流落 routing_miss
     const proto = task.inputProtocol as Record<string, unknown>;
-    expect(proto.routedByCapability).toBeUndefined();
+    expect(proto.routedByCapability).toBe(false);
+    expect(proto.routingMiss).toBe(true);
+    const miss = db.prepare("SELECT 1 FROM task_event WHERE task_id=? AND kind='routing_miss'").get(task.id);
+    expect(miss).toBeTruthy();
   });
 
   it('显式 assignee 优先于自动路由', () => {

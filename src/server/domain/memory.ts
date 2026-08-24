@@ -3,10 +3,22 @@ import { AppError, ErrorCode } from '../../shared/errors';
 import { nowIso, shortId } from '../../shared/utils';
 import { getAgentProfile, ensurePersonaArchiveProfile } from './agent-profile';
 import { getWorkbenchOrNull } from './workbench';
+import { expandTermAliases } from './matching/lexicon';
 
 export type MemoryScope = 'personal' | 'workspace' | 'project' | 'skill';
 export type MemoryCandidateStatus = 'pending' | 'approved' | 'rejected';
 export type MemoryEntryState = 'active' | 'locked' | 'superseded' | 'deleted';
+
+/** 记忆正文硬上限（字符）：候选写入侧统一截断——单条超长记忆（API 手写/压缩摘要）不应独占注入配额。 */
+export const MEMORY_CONTENT_MAX_CHARS = 2000;
+const MEMORY_CONTENT_TRUNCATE_MARK = '…（已截断）';
+
+/** 注入字符预算：personal 段与其余段各自限额，按既有排序截断——配额从"条数"升级为"条数+字符"双控。 */
+export const MEMORY_INJECT_PERSONAL_CHAR_BUDGET = 2000;
+export const MEMORY_INJECT_REST_CHAR_BUDGET = 4000;
+
+/** personal 注入条数上限：personal 永远全量参与排序，但条数失控会挤占整个注入配额（收敛治理第一道闸）。 */
+export const MEMORY_INJECT_PERSONAL_MAX_ENTRIES = 12;
 
 /** 经验归因受控词表（spec 2026-08-22-experience-library）：模型能力/方法/上下文/工具——四路由下游各取所需。 */
 export const MEMORY_CAUSES = ['model', 'method', 'context', 'tool'] as const;
@@ -45,8 +57,10 @@ export interface MemoryCandidate {
   personaKey: string | null;
   /** 经验归因（受控四值；null=未归因，旧数据兼容）。 */
   cause: MemoryCause | null;
-  /** 自由标签（小写归一化 cap 5；pull 检索用）。 */
+  /** 自由标签（小写归一化 cap 5）。 */
   tags: string[];
+  /** 记忆更新闭环：本候选替代的旧 entry id；审批通过时旧条目转 superseded、新条目继承战绩。 */
+  supersedesEntryId: string | null;
 }
 
 export interface MemoryEntry {
@@ -84,7 +98,7 @@ type CandidateRow = {
   confidence: number; can_influence: number; status: MemoryCandidateStatus; quarantine_reason: string | null;
   expires_at: string | null; reviewed_by: string | null; reviewed_at: string | null; created_at: string;
   fingerprint: string | null; persona_key: string | null;
-  cause: string | null; tags_json: string;
+  cause: string | null; tags_json: string; supersedes_entry_id: string | null;
 };
 type EntryRow = {
   id: string; profile_id: string; scope: MemoryScope; project_id: string | null;
@@ -105,6 +119,7 @@ function candidateFromRow(_db: DB, row: CandidateRow): MemoryCandidate {
     personaKey: row.persona_key ?? null,
     cause: isMemoryCause(row.cause) ? row.cause : null,
     tags: normalizeMemoryTags(JSON.parse(row.tags_json ?? '[]')),
+    supersedesEntryId: row.supersedes_entry_id ?? null,
   };
 }
 
@@ -133,15 +148,22 @@ export function createMemoryCandidate(db: DB, input: {
   cause?: MemoryCause | string | null;
   /** 自由标签（归一化 cap 5）。 */
   tags?: string[];
+  /** 记忆更新闭环：替代的旧 entry id。目标不合法（不存在/跨 profile/scope 不符/已终态）时静默降级为普通候选——
+   * 主要生产方是反思 LLM（可能幻觉 id），不因引用错误阻断沉淀。 */
+  supersedesEntryId?: string | null;
 }): MemoryCandidate {
   getAgentProfile(db, input.profileId);
   validateScope(input.scope, input.projectId);
   if (input.personaKey && input.scope !== 'skill') {
     throw new AppError(ErrorCode.VALIDATION, '人设键只允许用于 skill 记忆（方法论挂在人设上）');
   }
-  const content = input.content.trim();
+  let content = input.content.trim();
   if (!content) throw new AppError(ErrorCode.VALIDATION, '记忆内容不能为空');
   if (input.confidence < 0 || input.confidence > 1) throw new AppError(ErrorCode.VALIDATION, '记忆可信度必须在 0 到 1 之间');
+  if (content.length > MEMORY_CONTENT_MAX_CHARS) {
+    content = `${content.slice(0, MEMORY_CONTENT_MAX_CHARS)}${MEMORY_CONTENT_TRUNCATE_MARK}`;
+  }
+  const supersedesEntryId = validateSupersedesTarget(db, input.supersedesEntryId ?? null, input.profileId, input.scope, input.personaKey);
   const quarantineReason = scanMemoryContent(content);
   const id = shortId('mc_');
   const now = nowIso();
@@ -150,13 +172,13 @@ export function createMemoryCandidate(db: DB, input: {
   db.prepare(
     `INSERT INTO memory_candidate (
       id, profile_id, scope, project_id, content, source_task_id, source_message_id,
-      author, confidence, can_influence, status, quarantine_reason, expires_at, created_at, fingerprint, persona_key, cause, tags_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)`,
+      author, confidence, can_influence, status, quarantine_reason, expires_at, created_at, fingerprint, persona_key, cause, tags_json, supersedes_entry_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id, input.profileId, input.scope, input.projectId ?? null, content,
     input.sourceTaskId ?? null, input.sourceMessageId ?? null, input.author, input.confidence,
     input.canInfluence ? 1 : 0, quarantineReason, input.expiresAt ?? null, now, input.fingerprint ?? null,
-    input.personaKey ?? null, cause, JSON.stringify(tags),
+    input.personaKey ?? null, cause, JSON.stringify(tags), supersedesEntryId,
   );
   const canAutoApprove = !quarantineReason && input.allowAutoApprove === true && (
     input.scope === 'project'
@@ -202,8 +224,64 @@ export function approveMemoryCandidate(db: DB, id: string, reviewer: string): Me
     );
     insertMemoryVersion(db, entryId, 1, candidate.content, reviewer, candidate.id, now);
     indexMemory(db, entryId, candidate.profileId, candidate.content);
+    // 记忆更新闭环：候选声明替代旧条目时，旧条目退场（superseded + 清 FTS）、新条目继承战绩。
+    if (candidate.supersedesEntryId) {
+      applySupersede(db, [candidate.supersedesEntryId], entryId, reviewer);
+    }
     return getMemoryEntry(db, entryId);
   })();
+}
+
+/**
+ * 记忆更新闭环的执行体：把 oldEntryIds 批量转为 superseded，把合计战绩（hit/vote/adv）继承给 newEntryId。
+ * 只处理仍处 active/locked 的旧条目（已删除/已被替代的跳过，幂等）；skill 记忆需 persona_key 一致才可替代。
+ * 个人偏好合并提案（多对一）与单条替代（一对一）共用此处。
+ */
+export function applySupersede(db: DB, oldEntryIds: string[], newEntryId: string, changedBy: string): number {
+  const now = nowIso();
+  const newEntry = db.prepare('SELECT profile_id, scope, persona_key FROM memory_entry WHERE id=?')
+    .get(newEntryId) as { profile_id: string; scope: MemoryScope; persona_key: string | null } | undefined;
+  if (!newEntry) throw new AppError(ErrorCode.NOT_FOUND, `memory entry ${newEntryId} not found`);
+  let superseded = 0;
+  db.transaction(() => {
+    for (const oldId of oldEntryIds) {
+      const old = db.prepare('SELECT * FROM memory_entry WHERE id=?').get(oldId) as EntryRow | undefined;
+      if (!old) continue;
+      if (old.state !== 'active' && old.state !== 'locked') continue;
+      // skill 记忆按 persona_key 全局召回（方法论属于人设不属于执行者），替代只校验人设一致；
+      // 其余 scope 仍要求同 profile（防跨员工误替代）。
+      if (old.scope !== 'skill' && old.profile_id !== newEntry.profile_id) continue;
+      if (old.scope !== newEntry.scope) continue;
+      if (old.scope === 'skill' && (old.persona_key ?? null) !== newEntry.persona_key) continue;
+      db.prepare("UPDATE memory_entry SET state='superseded', updated_at=? WHERE id=?").run(now, oldId);
+      db.prepare('DELETE FROM memory_fts WHERE entry_id=?').run(oldId);
+      insertMemoryVersion(db, oldId, old.version + 1, old.content, `${changedBy}:superseded-by:${newEntryId}`, null, now);
+      db.prepare(
+        'UPDATE memory_entry SET hit_count = hit_count + ?, vote_count = vote_count + ?, adv_sum = adv_sum + ? WHERE id=?',
+      ).run(old.hit_count, old.vote_count, old.adv_sum, newEntryId);
+      superseded++;
+    }
+  })();
+  return superseded;
+}
+
+/** 替代目标合法性校验：同 scope（skill 需 persona_key 一致、放宽 profile 归属——人设方法论全局召回）、
+ * 仍处 active/locked。不合法返回 null（降级为普通候选）。 */
+function validateSupersedesTarget(
+  db: DB, targetId: string | null, profileId: string, scope: MemoryScope, personaKey?: string,
+): string | null {
+  if (!targetId) return null;
+  const row = db.prepare('SELECT profile_id, scope, persona_key, state FROM memory_entry WHERE id=?')
+    .get(targetId) as { profile_id: string; scope: MemoryScope; persona_key: string | null; state: MemoryEntryState } | undefined;
+  if (!row) return null;
+  if (row.scope !== scope) return null;
+  if (row.state !== 'active' && row.state !== 'locked') return null;
+  if (scope === 'skill') {
+    if ((row.persona_key ?? null) !== (personaKey ?? null)) return null;
+  } else if (row.profile_id !== profileId) {
+    return null;
+  }
+  return targetId;
 }
 
 export function rejectMemoryCandidate(db: DB, id: string, reviewer: string): MemoryCandidate {
@@ -350,7 +428,14 @@ export function expandMatchTokens(query: string): string[] {
       }
     }
   }
-  return tokens;
+  // 词法增强（拍板：只词法不向量）：整词 token 追加同义别名——'测试' 任务也能命中写 'test' 的记忆。
+  // 双向互补：FTS/LIKE 的 OR 集同时含两种写法。cap 40 防长查询的 bigram+别名膨胀拖垮 SQL。
+  const withAliases = new Set<string>();
+  for (const token of tokens) {
+    for (const alias of expandTermAliases(token)) withAliases.add(alias);
+    if (withAliases.size >= 40) break;
+  }
+  return [...withAliases];
 }
 
 // ===== 记忆优势分（注入战绩）=====
@@ -414,7 +499,7 @@ export function loadContextMemories(db: DB, input: {
          )
        ORDER BY ${orderClause} LIMIT ?`,
     ).all(...fullValues) as EntryRow[];
-    return recordInjected(db, input.taskId, rows.map((row) => entryFromRow(db, row)));
+    return recordInjected(db, input.taskId, applyInjectBudget(rows.map((row) => entryFromRow(db, row))));
   }
   // query 非空 → personal/skill 仍全量（skill 按人设过滤）；workspace/project 仅注入相关记忆。
   // 每个词元独立 OR 命中（英文整词、中文整段 + 二元组），既渐进又不丢用户的稳定偏好。
@@ -442,7 +527,30 @@ export function loadContextMemories(db: DB, input: {
        )
      ORDER BY ${orderClause} LIMIT ?`,
   ).all(...values) as EntryRow[];
-  return recordInjected(db, input.taskId, rows.map((row) => entryFromRow(db, row)));
+  return recordInjected(db, input.taskId, applyInjectBudget(rows.map((row) => entryFromRow(db, row))));
+}
+
+/**
+ * 注入预算（P0-②）：条数 limit 之外再加字符双控——personal 段 ≤2000 字符且 ≤12 条（personal 排序第一优先，
+ * 无上限时会挤占整个注入配额），其余段合计 ≤4000 字符。按既有排序保序截断，预算尽的条目直接出列
+ * （不出场即不记账，优势分不被无辜稀释）。
+ */
+function applyInjectBudget(entries: MemoryEntry[]): MemoryEntry[] {
+  let personalChars = 0;
+  let restChars = 0;
+  let personalCount = 0;
+  return entries.filter((entry) => {
+    if (entry.scope === 'personal') {
+      if (personalCount >= MEMORY_INJECT_PERSONAL_MAX_ENTRIES) return false;
+      if (personalChars + entry.content.length > MEMORY_INJECT_PERSONAL_CHAR_BUDGET) return false;
+      personalChars += entry.content.length;
+      personalCount += 1;
+      return true;
+    }
+    if (restChars + entry.content.length > MEMORY_INJECT_REST_CHAR_BUDGET) return false;
+    restChars += entry.content.length;
+    return true;
+  });
 }
 
 /**
@@ -644,4 +752,52 @@ export function resetPersonalMemory(db: DB, profileId: string, changedBy: string
     }
   })();
   return entries.length;
+}
+
+// ===== P0-④ 记忆库卫生（候选积压提醒 + 过期物理清理）=====
+
+/** 积压提醒门槛：待审候选超过该条数、或最老的等待超过该天数，提醒用户处理。 */
+export const MEMORY_BACKLOG_COUNT_THRESHOLD = 20;
+export const MEMORY_BACKLOG_AGE_DAYS = 7;
+
+/**
+ * 候选积压巡检（纯查询）：pending 过量或过老时返回提醒文案（调用方负责发系统消息+自行节流），
+ * 无积压返回 null。此前低置信候选静默进 pending 无任何提醒，容易长期无人处理。
+ */
+export function sweepMemoryBacklogNotice(db: DB): string | null {
+  const stats = db.prepare(
+    "SELECT COUNT(*) AS c, MIN(created_at) AS oldest FROM memory_candidate WHERE status='pending'",
+  ).get() as { c: number; oldest: string | null };
+  if (stats.c === 0 || !stats.oldest) return null;
+  const oldestAgeDays = (Date.now() - Date.parse(stats.oldest)) / 86_400_000;
+  if (stats.c <= MEMORY_BACKLOG_COUNT_THRESHOLD && oldestAgeDays <= MEMORY_BACKLOG_AGE_DAYS) return null;
+  const reason = stats.c > MEMORY_BACKLOG_COUNT_THRESHOLD
+    ? `待确认 ${stats.c} 条（超过 ${MEMORY_BACKLOG_COUNT_THRESHOLD} 条）`
+    : `最老一条已等待 ${Math.floor(oldestAgeDays)} 天`;
+  return `⚠️ 记忆候选积压：${reason}。请到员工档案页·记忆中心处理——长期未审的候选不会注入也不会淘汰，只占着队列。`;
+}
+
+/**
+ * 过期物理清理：软删超 90 天、expires_at 过期超 30 天的条目收尸（读路径早已过滤它们，
+ * 这里只是防表无限膨胀）。连带清 version/fts/injection 子表；审计痕随主行删除——
+ * 物理删除前该条的历史版本已在保留期内可查。返回清理计数。
+ */
+export function purgeStaleMemory(db: DB, options: { deletedOlderThanDays?: number; expiredGraceDays?: number } = {}): { purgedDeleted: number; purgedExpired: number } {
+  const deletedCutoff = new Date(Date.now() - (options.deletedOlderThanDays ?? 90) * 86_400_000).toISOString();
+  const expiredCutoff = new Date(Date.now() - (options.expiredGraceDays ?? 30) * 86_400_000).toISOString();
+  const collect = (sql: string, ...values: unknown[]): string[] =>
+    (db.prepare(sql).all(...values) as Array<{ id: string }>).map((r) => r.id);
+  const deletedIds = collect("SELECT id FROM memory_entry WHERE state='deleted' AND updated_at < ?", deletedCutoff);
+  const expiredIds = collect("SELECT id FROM memory_entry WHERE expires_at IS NOT NULL AND expires_at < ?", expiredCutoff);
+  const all = [...new Set([...deletedIds, ...expiredIds])];
+  if (all.length === 0) return { purgedDeleted: 0, purgedExpired: 0 };
+  db.transaction(() => {
+    for (const id of all) {
+      db.prepare('DELETE FROM memory_injection WHERE entry_id=?').run(id);
+      db.prepare('DELETE FROM memory_version WHERE entry_id=?').run(id);
+      db.prepare('DELETE FROM memory_fts WHERE entry_id=?').run(id);
+      db.prepare('DELETE FROM memory_entry WHERE id=?').run(id);
+    }
+  })();
+  return { purgedDeleted: deletedIds.length, purgedExpired: expiredIds.length };
 }

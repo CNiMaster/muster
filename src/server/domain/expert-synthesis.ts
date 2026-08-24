@@ -10,6 +10,8 @@
  * - persona_miss：养蜂人指定的 personaId 在库中不存在（同 id 重复 ≥2 次）——库覆盖缺口。
  * - bee_record：匿名蜂按同一 swarm goal 完成 ≥3 只且零失败——该类活值得沉淀专属专家。
  * - generalist_record：无专家人设的普通任务按任务类型聚类胜绩 ≥3——普通员工打法可专家化。
+ * - routing_miss（词法增强信号层）：任务声明的能力词在花名册中无人具备（同能力词 ≥2 次）——
+ *   能力路由反复 miss 静默 fallback 负责人的缺口显性化，miss 即专家供给需求。
  *
  * 起草：LLM（轻量档，失败降级规则引擎模板——无凭据环境/测试也能走通管道）。
  * expert_candidate 表在此版语义=「沉淀历史」（status 恒 adopted，persona_id 溯源）。
@@ -27,7 +29,7 @@ import { log } from '../logger';
 
 export interface ExpertCandidate {
   id: string;
-  source: 'persona_miss' | 'bee_record' | 'generalist_record';
+  source: 'persona_miss' | 'bee_record' | 'generalist_record' | 'routing_miss';
   sourceTaskId: string | null;
   name: string;
   domain: string;
@@ -158,6 +160,28 @@ function collectSignals(db: DB, companyId?: string): DraftSignal[] {
       sourceTaskId: null,
       sampleTitles: titles.slice(0, 3),
       focus: `普通员工（无专家人设）连续完成 ${titles.length} 个「${type}」类任务且零返工——打法可专家化`,
+    });
+  }
+
+  // d) routing_miss（词法增强信号层）：同能力词路由 miss ≥2 次——花名册能力缺口显性化
+  const routingRows = db.prepare(`
+    SELECT je.value AS cap, COUNT(*) AS n
+    FROM task_event e, json_each(e.payload_json, '$.requiredCapabilities') je
+    WHERE e.kind='routing_miss' AND je.value IS NOT NULL AND je.value != ''
+    GROUP BY je.value HAVING n >= 2 ORDER BY n DESC LIMIT 5
+  `).all() as Array<{ cap: string; n: number }>;
+  for (const row of routingRows) {
+    const samples = db.prepare(`
+      SELECT t.title FROM task_event e JOIN task t ON t.id = e.task_id
+      WHERE e.kind='routing_miss' AND json_extract(e.payload_json, '$.requiredCapabilities') LIKE ?
+      ORDER BY e.occurred_at DESC LIMIT 2
+    `).all(`%"${row.cap}"%`) as Array<{ title: string }>;
+    signals.push({
+      source: 'routing_miss',
+      signalKey: `rmiss:${row.cap}`,
+      sourceTaskId: null,
+      sampleTitles: samples.map((s) => s.title),
+      focus: `任务 ${row.n} 次需要「${row.cap}」能力但花名册无人具备（路由 fallback 负责人），相关任务：${samples.map((s) => s.title).join('、') || '（无样本）'}——值得供给该领域专家`,
     });
   }
   return signals;

@@ -21,7 +21,7 @@ import { log } from '../logger';
 import { callLlm } from './llm-call';
 import { getTask, type Task } from './task';
 import { getAgent } from './agent';
-import { createMemoryCandidate, searchMemory, expandMatchTokens } from './memory';
+import { createMemoryCandidate, searchMemory, expandMatchTokens, applySupersede, approveMemoryCandidate } from './memory';
 import { ensurePersonaArchiveProfile } from './agent-profile';
 import { getPersona } from './persona-library';
 import { evolveBlueprint } from './blueprint';
@@ -256,6 +256,12 @@ export async function drainReflectionQueue(
   } catch (err) {
     log.warn('cross-project lesson promotion failed', { error: err instanceof Error ? err.message : String(err) });
   }
+  // P0-③ 个人偏好收敛：同 domain 偏好堆积时合并提案（每 tick 最多一组，限频 7 天）。
+  try {
+    await maybeConsolidatePreferences(db);
+  } catch (err) {
+    log.warn('preference consolidation failed', { error: err instanceof Error ? err.message : String(err) });
+  }
   return { processed: rows.length, lessons };
 }
 
@@ -366,7 +372,7 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
       })
     : [];
   const existingLine = existing.length
-    ? existing.map((m) => `- ${m.content.slice(0, 120)}`).join('\n')
+    ? existing.map((m) => `- (id:${m.id}) ${m.content.slice(0, 120)}`).join('\n')
     : '（无）';
 
   // 蓝图组织批次1：任务穿戴了人设时，追加 CRAFT 输出段（方法论挂到人设键上跨任务复用）。
@@ -386,6 +392,8 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
       : '') +
     'E2.1 每条沉淀附带一个 fingerprint 标签（形如 "domain:topic"，例如 design:color、workflow:handoff、style:business、tone:formal），紧跟置信度行后单独一行，用于后续识别跨任务的重复模式；无明确归类时该行可省略。' +
     '只产出具体、可操作、能影响下次执行的内容，不要空泛总结，不要复述任务本身。' +
+    '记忆更新闭环：LESSON/RULE/CRAFT 若本质是对"已有相关经验"中某条的修正或替代（旧说法过时/有误/被本次执行推翻），' +
+    '在该段追加一行 <supersedes: 旧记忆id>（从上方列表 (id:…) 原样引用）；属全新经验则省略该行，不要为了替代而替代。' +
     '如果某一类没有值得沉淀的新内容（与已有记忆重复或纯属偶发，或用户反馈中无明显偏好信号），那一类写 SKIPPED。';
   // E1.2 收集用户反馈原文；无反馈时不强求 PREFERENCE（prompt 要求 LLM 写 SKIPPED）。
   const feedbackText = collectUserFeedback(db, reflection.taskId);
@@ -407,17 +415,19 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
     '<persona_key: 人设id（如前端类方法论给 product/front-end-engineer 或按内容定 domain/slug）——scope 行存在时必写>',
     '<cause: model|method|context|tool——归因：教训源于模型能力不够/做法方法不对/上下文信息缺失/工具装备问题；判断不了就省略>',
     '<tags: 逗号分隔的领域/任务类型标签（如"前端,部署"），便于日后按标签检索；可省略>',
+    '<supersedes: 旧记忆id——仅当本条是对已有相关经验的修正/替代时写（id 从列表原样引用），否则省略>',
     '<经验正文 50-150 字>',
     '[RULE]',
     '<置信度 0-1 的小数>',
     '<fingerprint：domain:topic，可省略>',
+    '<supersedes: 旧记忆id，规则被修正时写；可省略>',
     '<协作规则正文 50-150 字>',
     '[PREFERENCE]',
     '<置信度 0-1 的小数>',
     '<fingerprint：domain:topic，如 style:business>',
     '<【domain】偏好正文 30-100 字，domain ∈ 风格/语气/格式/内容/流程>',
     ...(task.personaId
-      ? ['[CRAFT]', '<置信度 0-1 的小数>', '<fingerprint：domain:topic，可省略>', `<以「${personaName}」人设做同类任务的方法论正文 50-150 字（无则写 SKIPPED）>`]
+      ? ['[CRAFT]', '<置信度 0-1 的小数>', '<fingerprint：domain:topic，可省略>', '<supersedes: 旧记忆id，方法论被修正时写；可省略>', `<以「${personaName}」人设做同类任务的方法论正文 50-150 字（无则写 SKIPPED）>`]
       : []),
   ].filter(Boolean).join('\n');
 
@@ -435,10 +445,10 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
   const lesson = parseSection(text, 'LESSON');
   const rule = parseSection(text, 'RULE');
   // E1.2 PREFERENCE 仅在存在用户反馈时解析（无反馈时 LLM 应已 SKIPPED，这里兜底忽略）。
-  const preference = feedbackText ? parseSection(text, 'PREFERENCE') : { confidence: 0, body: '', fingerprint: null as string | null };
+  const preference = feedbackText ? parseSection(text, 'PREFERENCE') : { confidence: 0, body: '', fingerprint: null as string | null, supersedesEntryId: null };
   const preferenceValid = Boolean(preference.body) && preference.confidence >= 0.7;
   // 蓝图组织批次1：CRAFT 仅在任务穿戴了人设时解析（无人设任务 prompt 不含该段，返回也会被忽略）。
-  const craft = task.personaId ? parseSection(text, 'CRAFT') : { confidence: 0, body: '', fingerprint: null as string | null };
+  const craft = task.personaId ? parseSection(text, 'CRAFT') : { confidence: 0, body: '', fingerprint: null as string | null, supersedesEntryId: null };
 
   // 蜂群工蜂的沉淀边界：一次性工蜂（role=swarm-worker）的 profile 随群收口被删（memory 的
   // ON DELETE CASCADE 连记忆行一起删）。通用经验不单独沉淀——蜂王汇总任务与根任务的反思已覆盖
@@ -491,6 +501,7 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
       fingerprint: lesson.fingerprint,
       cause: lesson.cause,
       tags: lesson.tags,
+      supersedesEntryId: lesson.supersedesEntryId,
     });
     lessonCandidateId = candidate.id;
   } else if (!isEphemeralBee && lesson.body) {
@@ -507,6 +518,7 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
       fingerprint: lesson.fingerprint,
       cause: lesson.cause,
       tags: lesson.tags,
+      supersedesEntryId: lesson.supersedesEntryId,
     });
     lessonCandidateId = candidate.id;
   }
@@ -526,6 +538,7 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
       canInfluence: true,
       allowAutoApprove: rule.confidence >= 0.8,
       fingerprint: rule.fingerprint,
+      supersedesEntryId: rule.supersedesEntryId,
     });
   }
 
@@ -565,6 +578,7 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
       canInfluence: true,
       allowAutoApprove: craft.confidence >= 0.8,
       fingerprint: craft.fingerprint,
+      supersedesEntryId: craft.supersedesEntryId,
     });
     craftBody = craft.body;
   }
@@ -589,14 +603,14 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
  * 格式：[SECTION] 头 → 置信度行 → 正文行。置信度缺省 0.7，正文截断 500 字。
  * 找不到段头或正文为 SKIPPED/空 → 返回空 body（表示该类无沉淀）。
  */
-function parseSection(text: string, section: 'LESSON' | 'RULE' | 'PREFERENCE' | 'CRAFT'): { confidence: number; fingerprint: string | null; body: string; scopeSuggestion: 'project' | 'persona' | null; scopePersonaKey: string | null; cause: import('./memory').MemoryCause | null; tags: string[] } {
+function parseSection(text: string, section: 'LESSON' | 'RULE' | 'PREFERENCE' | 'CRAFT'): { confidence: number; fingerprint: string | null; body: string; scopeSuggestion: 'project' | 'persona' | null; scopePersonaKey: string | null; cause: import('./memory').MemoryCause | null; tags: string[]; supersedesEntryId: string | null } {
   const re = new RegExp(`\\[${section}\\]\\s*([\\s\\S]*?)(?=\\[(?:LESSON|RULE|PREFERENCE|CRAFT)\\]|$)`, 'i');
   const match = re.exec(text);
-  if (!match) return { confidence: 0.7, fingerprint: null, body: '', scopeSuggestion: null, scopePersonaKey: null, cause: null, tags: [] };
+  if (!match) return { confidence: 0.7, fingerprint: null, body: '', scopeSuggestion: null, scopePersonaKey: null, cause: null, tags: [], supersedesEntryId: null };
   const block = match[1]!.trim();
-  if (!block || /^SKIPPED/i.test(block)) return { confidence: 0.7, fingerprint: null, body: '', scopeSuggestion: null, scopePersonaKey: null, cause: null, tags: [] };
+  if (!block || /^SKIPPED/i.test(block)) return { confidence: 0.7, fingerprint: null, body: '', scopeSuggestion: null, scopePersonaKey: null, cause: null, tags: [], supersedesEntryId: null };
   const lines = block.split('\n').filter((l) => l.trim());
-  if (lines.length === 0) return { confidence: 0.7, fingerprint: null, body: '', scopeSuggestion: null, scopePersonaKey: null, cause: null, tags: [] };
+  if (lines.length === 0) return { confidence: 0.7, fingerprint: null, body: '', scopeSuggestion: null, scopePersonaKey: null, cause: null, tags: [], supersedesEntryId: null };
   let confidence = 0.7;
   let body = block;
   const firstNum = parseFloat(lines[0]!);
@@ -642,10 +656,19 @@ function parseSection(text: string, section: 'LESSON' | 'RULE' | 'PREFERENCE' | 
       bodyLines = bodyLines.slice(1);
     }
   }
+  // 记忆更新闭环：<supersedes: 旧记忆id> 可选行（紧跟 tags 行后）；id 原样透传，合法性由 memory 侧校验兜底
+  let supersedesEntryId: string | null = null;
+  if (bodyLines.length > 0) {
+    const sm = /^<\s*supersedes\s*:\s*(me_[a-z0-9]+)\s*>$/i.exec(bodyLines[0]!.trim());
+    if (sm) {
+      supersedesEntryId = sm[1]!;
+      bodyLines = bodyLines.slice(1);
+    }
+  }
   body = bodyLines.join('\n').trim();
   body = body.slice(0, 500);
-  if (!body || /^SKIPPED/i.test(body)) return { confidence: 0.7, fingerprint: null, body: '', scopeSuggestion: null, scopePersonaKey: null, cause: null, tags: [] };
-  return { confidence, fingerprint, body, scopeSuggestion, scopePersonaKey, cause, tags };
+  if (!body || /^SKIPPED/i.test(body)) return { confidence: 0.7, fingerprint: null, body: '', scopeSuggestion: null, scopePersonaKey: null, cause: null, tags: [], supersedesEntryId: null };
+  return { confidence, fingerprint, body, scopeSuggestion, scopePersonaKey, cause, tags, supersedesEntryId };
 }
 
 /**
@@ -687,5 +710,123 @@ function describeSignal(signal: ReflectionSignal): string {
     case 'rework': return '验收未过，被打回返工';
     case 'circuit-break-rollback': return '连续失败触发熔断，项目回流到准备阶段';
     default: return signal;
+  }
+}
+
+// ===== P0-③ 个人偏好收敛（对标记忆"衰减"环节的 muster 变体：合并替代衰减）=====
+
+/** PREFERENCE 正文受控 domain（与 reflectOnTask 的 prompt 契约一致）。 */
+const PREFERENCE_DOMAINS = ['风格', '语气', '格式', '内容', '流程'] as const;
+type PreferenceDomain = (typeof PREFERENCE_DOMAINS)[number];
+
+/** 触发合并的同 domain 条数门槛、限频窗口。 */
+const PREFERENCE_MERGE_THRESHOLD = 3;
+const PREFERENCE_MERGE_COOLDOWN_DAYS = 7;
+
+function extractPreferenceDomain(content: string): PreferenceDomain | null {
+  const m = /^【(风格|语气|格式|内容|流程)】/.exec(content.trim());
+  return m ? (m[1] as PreferenceDomain) : null;
+}
+
+/**
+ * 同 profile 同 domain 的 active personal 条目 ≥3 时，economy 档 LLM 生成合并版：
+ * - 可合并 → author=user 自动批准 → applySupersede 批量替代旧条目（战绩继承，注入不再重复）；
+ * - 有矛盾 → 产 pending 候选（⚠️ 前缀、不带替代），用户裁决——系统不擅自替用户选偏好；
+ * - 限频：fingerprint `pref-merge:<domain>:<profileId>` 7 天幂等；每 tick 最多处理一组。
+ * 由 drainReflectionQueue 每 tick 末尾调用（try/catch 外包，失败不影响反思主流程）。
+ */
+export async function maybeConsolidatePreferences(db: DB): Promise<number> {
+  interface EntryLite { id: string; profile_id: string; content: string; hit_count: number; vote_count: number; adv_sum: number }
+  const rows = db.prepare(
+    `SELECT id, profile_id, content, hit_count, vote_count, adv_sum FROM memory_entry
+     WHERE scope='personal' AND state IN ('active','locked') ORDER BY updated_at DESC`,
+  ).all() as EntryLite[];
+  // 按 (profile, domain) 分组，只挑过门槛且未在限频期的第一组
+  const groups = new Map<string, EntryLite[]>();
+  for (const row of rows) {
+    const domain = extractPreferenceDomain(row.content);
+    if (!domain) continue;
+    const key = `${row.profile_id}::${domain}`;
+    const list = groups.get(key) ?? [];
+    list.push(row);
+    groups.set(key, list);
+  }
+  const weekAgo = Date.now() - PREFERENCE_MERGE_COOLDOWN_DAYS * 24 * 3600 * 1000;
+  for (const [key, list] of groups) {
+    if (list.length < PREFERENCE_MERGE_THRESHOLD) continue;
+    const [profileId, domain] = key.split('::');
+    const recentMerge = db.prepare(
+      `SELECT 1 FROM memory_candidate WHERE fingerprint=? AND created_at > ? LIMIT 1`,
+    ).get(`pref-merge:${domain}:${profileId}`, new Date(weekAgo).toISOString());
+    if (recentMerge) continue;
+
+    const llm = await callLlm(db, {
+      system:
+        '你是用户偏好整理助手。把同一 domain 的多条用户偏好合并成一条：保留全部仍然有效的信息、去掉重复、' +
+        '保持【' + domain + '】前缀、正文 50-150 字。若条目之间存在直接矛盾（互斥不能共存），不要强行合并。' +
+        '只输出 JSON：可合并输出 {"merged":"【' + domain + '】…"}；有矛盾输出 {"conflict":"矛盾双方与差异的一句话说明"}。',
+      user: list.map((e) => `- (id:${e.id}) ${e.content}`).join('\n'),
+      timeoutMs: 30_000,
+      tier: 'economy',
+    });
+    const parsed = extractJsonish(llm.content.trim());
+    const merged: string | null = typeof parsed?.merged === 'string' && parsed.merged.trim() ? parsed.merged.trim().slice(0, 500) : null;
+    const conflict: string | null = typeof parsed?.conflict === 'string' && parsed.conflict.trim() ? parsed.conflict.trim().slice(0, 300) : null;
+
+    if (merged) {
+      // author=user → personal 自动批准门；批准后批量替代，旧条目战绩由 applySupersede 继承。
+      const candidate = createMemoryCandidate(db, {
+        profileId,
+        scope: 'personal',
+        content: merged,
+        author: 'user',
+        confidence: 1,
+        canInfluence: true,
+        allowAutoApprove: true,
+        fingerprint: `pref-merge:${domain}:${profileId}`,
+      });
+      const newEntry = db.prepare('SELECT id FROM memory_entry WHERE source_candidate_id=?').get(candidate.id) as { id: string } | undefined;
+      if (newEntry) applySupersede(db, list.map((e) => e.id), newEntry.id, 'preference-merge');
+      return 1;
+    }
+    if (conflict) {
+      // 矛盾偏好不自动替代——pending 候选留给用户裁决（approve/reject 都不替代旧条目）。
+      createMemoryCandidate(db, {
+        profileId,
+        scope: 'personal',
+        content: `⚠️ 偏好矛盾待裁决（${domain}）：${conflict}。请在记忆中心确认保留哪一条，可手动删除过时的一条。`,
+        author: 'user',
+        confidence: 0.5,
+        canInfluence: false,
+        fingerprint: `pref-merge:${domain}:${profileId}`,
+      });
+      return 1;
+    }
+    // LLM 输出不可解析：落一条 pending 占位（也占住限频位，防每 tick 重打 LLM）
+    createMemoryCandidate(db, {
+      profileId,
+      scope: 'personal',
+      content: `⚠️ ${domain} 域偏好有 ${list.length} 条堆积，自动合并暂未完成，可手动整理。`,
+      author: 'user',
+      confidence: 0.3,
+      canInfluence: false,
+      fingerprint: `pref-merge:${domain}:${profileId}`,
+    });
+    return 1;
+  }
+  return 0;
+}
+
+/** 从 LLM 输出里宽松提取首个 JSON 对象（容忍 markdown 围栏与前后噪声）。 */
+function extractJsonish(text: string): { merged?: unknown; conflict?: unknown } | null {
+  const fence = /```(?:json)?\s*([\s\S]*?)```/.exec(text);
+  const body = fence ? fence[1]! : text;
+  const start = body.indexOf('{');
+  const end = body.lastIndexOf('}');
+  if (start < 0 || end <= start) return null;
+  try {
+    return JSON.parse(body.slice(start, end + 1)) as { merged?: unknown; conflict?: unknown };
+  } catch {
+    return null;
   }
 }

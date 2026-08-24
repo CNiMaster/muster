@@ -40,6 +40,7 @@ memoryRouter.post('/candidates', asyncHandler(async (req, res) => {
     canInfluence: z.boolean().default(true),
     expiresAt: z.string().optional(),
     allowAutoApprove: z.boolean().optional(),
+    supersedesEntryId: z.string().optional(),
   }).parse(req.body);
   res.status(201).json(createMemoryCandidate(getDb(), { profileId: param(req, 'profileId'), ...input }));
 }));

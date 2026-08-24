@@ -333,6 +333,7 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
   // 无匹配候选时 fallback 到负责人（路由结果记录进 inputProtocol，可审计）。
   let routedAssigneeId = input.assigneeAgentId ?? null;
   let routedMeta: Record<string, unknown> = {};
+  let routingMiss = false;
   if (!routedAssigneeId && Array.isArray(input.requiredCapabilityIds) && input.requiredCapabilityIds.length > 0) {
     const candidate = findBestAssignee(db, project.companyId, input.requiredCapabilityIds, {
       // WP10 复活 requires_executor_kind：绑定声明执行器类型时过滤绑错类型的候选
@@ -341,6 +342,11 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
     routedAssigneeId = candidate?.agentId ?? project.firstAgentId;
     if (candidate) {
       routedMeta = { routedByCapability: true, routedCandidate: candidate.name, routedScore: candidate.score };
+    } else {
+      // 词法增强配套信号层：路由 miss 不再静默——留 routing_miss 事件供专家合成（expert-synthesis）
+      // 与人事反思消费，反复 miss 的能力就是专家供给缺口（INSERT 后落事件，此处只记标志）。
+      routingMiss = true;
+      routedMeta = { routedByCapability: false, routingMiss: true, fallbackAgentId: project.firstAgentId };
     }
   }
   // 蓝图组织批次3：任务未显式指定人设/技能/能力且非讨论任务时，按蓝图匹配自动穿戴
@@ -576,6 +582,12 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
     db.prepare('UPDATE task SET root_task_id = ? WHERE id = ?').run(id, id);
   }
   appendTaskEvent(db, id, 'created', { seq, title: input.title });
+  if (routingMiss) {
+    appendTaskEvent(db, id, 'routing_miss', {
+      requiredCapabilities: input.requiredCapabilityIds ?? [],
+      fallbackAgentId: project.firstAgentId,
+    });
+  }
   // Review 修复 B2：任务指派给系统隐形岗（养蜂人/裁决法庭）时自举线程——
   // 隐岗不在 ensureProjectThreads（按可见花名册）覆盖内，否则首个派给它的任务永远无人领取
   if (routedAssigneeId && assignee?.isSystem) {

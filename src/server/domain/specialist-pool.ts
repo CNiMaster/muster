@@ -13,6 +13,7 @@
 import type { DB } from '../db/client';
 import { nowIso, shortId } from '../../shared/utils';
 import { AppError, ErrorCode } from '../../shared/errors';
+import { expandTermAliases } from './matching/lexicon';
 import { createAgent, getAgent } from './agent';
 import { getProject } from './project';
 import { getPersona } from './persona-library';
@@ -170,7 +171,11 @@ export function findStaffBorrowCandidate(db: DB, toProjectId: string, personaId:
   const entries = rows.map(fromRow).filter((e) => e.projectId !== toProjectId);
   const byPersona = personaId ? entries.find((e) => e.personaId === personaId) : undefined;
   if (byPersona) return byPersona;
-  const tokens = specialty.split(/[\s/·、,，]+/).filter((t) => t.length >= 2);
+  // 词法增强：specialty 词元过别名组扩展——'test 需求' 也能借到 specialty='测试' 的常驻专家。
+  const tokens = specialty
+    .split(/[\s/·、,，]+/)
+    .filter((t) => t.length >= 2)
+    .flatMap((t) => expandTermAliases(t));
   return entries.find((e) => tokens.some((t) => e.specialty.includes(t))) ?? null;
 }
 

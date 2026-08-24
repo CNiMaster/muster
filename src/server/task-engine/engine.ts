@@ -10,6 +10,7 @@
  - 文件冲突时把 Task 标 blocked（PRD：同段冲突保留双方并阻塞发布）
  */
 import path from 'node:path';
+const { join } = path;
 import type { DB } from '../db/client';
 import type { AgentExecutorConfig, ExecutionAdapter, ExecutionContext } from './executor';
 import { DEFAULT_PROVIDER, isProvider, PROVIDER_DEFAULT_API_KEY_ENV, type Provider } from '../executors/provider';
@@ -55,6 +56,7 @@ import { getWorkbench } from '../domain/workbench';
 import { resolveTaskRepoRoot } from '../domain/task-repo';
 import { attachedPaths } from '../domain/project-dirs';
 import { createWorktree, removeWorktree, ensureStagingWorktree, ensureTaskStagingWorktree, listTaskBranchChanges, listTaskBranchChangeStatus } from '../worktree/manager';
+import { materializeContextFiles, isMusterManagedContextFile } from '../domain/context-file';
 /** 自动化节奏的人话标签（播报/摘要用）。 */
 function scheduleLabel(schedule: { kind: string; intervalMinutes?: number; timeOfDay?: string }): string {
   if (schedule.kind === 'daily') return `每天 ${schedule.timeOfDay ?? ''} `;
@@ -402,6 +404,13 @@ export class TaskEngine {
         saveTaskRuntime(this.db, worktreeInfo);
       }
       workingDir = worktreeInfo.path;
+      // P1-③ 上下文文件物化：章程/项目说明/协作规则 → worktree 根 AGENTS.md/CLAUDE.md 标记段，
+      // CLI 的文件工具与人工都能读到规则（systemPrompt 仍是权威，此处是投影）；失败不阻断执行。
+      try {
+        materializeContextFiles(this.db, project.id, worktreeInfo.path);
+      } catch (err) {
+        log.warn('context file materialization failed', { taskId: task.id, err: String(err) });
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       log.error('worktree creation failed; task blocked', { taskId: task.id, err: msg });
@@ -633,6 +642,8 @@ export class TaskEngine {
         sessionIdHint: ctx.sessionIdHint,
         loopback: ctx.loopback,
         executorKind,
+        // P1-② 全局软预算：档案上下文窗口传入，systemPrompt 超预算时压缩低优先段
+        contextWindowTokens: executorProfile?.contextWindowTokens ?? undefined,
         // 阶段二任务 2.3：API 型按能力探针真实结果判定命令能力，不再一刀切禁用
         executorHasCommandCapability: executorProfile
           ? hasCommandCapability(this.db, executorProfile.id, executorKind)
@@ -994,6 +1005,9 @@ export class TaskEngine {
         let deletes = 0;
         for (const change of listTaskBranchChangeStatus(repoRoot, worktreeInfo)) {
           if (declared.has(change.path)) continue;
+          // P1-③：muster 物化的上下文文件（AGENTS.md/CLAUDE.md 标记段）不进产物——
+          // 它是 worktree 本地投影，不该合回主干（用户自己的同名文件无标记段，照常处理）。
+          if (isMusterManagedContextFile(join(worktreeInfo.path, change.path))) continue;
           if (change.status === 'D') deletes += 1;
           result.artifacts.push({
             path: change.path,
@@ -1528,7 +1542,9 @@ export class TaskEngine {
           );
           const changes = listTaskBranchChanges(worktreeSourceRoot, worktreeInfo);
           const unpublished = [...new Set([...changes.committed, ...changes.uncommitted])]
-            .filter((p) => !p.startsWith('.muster-conflicts/') && !published.has(p));
+            .filter((p) => !p.startsWith('.muster-conflicts/') && !published.has(p))
+            // P1-③：物化上下文文件的未提交改动是系统写入的投影，非 agent 遗漏产物——不触发保留分支
+            .filter((p) => !isMusterManagedContextFile(join(worktreeInfo!.path, p)));
           const keepBranch = unpublished.length > 0;
           removeWorktree(worktreeSourceRoot, worktreeInfo, { keepBranch });
           if (keepBranch) {
@@ -1771,7 +1787,9 @@ export class TaskEngine {
       try {
         const changes = listTaskBranchChanges(worktreeSourceRoot, worktreeInfo);
         files = [...new Set([...changes.committed, ...changes.uncommitted])].filter(
-          (p) => !p.startsWith('.muster-conflicts/'),
+          (p) => !p.startsWith('.muster-conflicts/')
+            // P1-③：物化上下文文件是系统投影非 agent 产出，不进打断记录的文件清单
+            && !isMusterManagedContextFile(join(worktreeInfo!.path, p)),
         );
       } catch (e) {
         log.warn('safe stop file listing failed', { taskId: task.id, err: String(e) });

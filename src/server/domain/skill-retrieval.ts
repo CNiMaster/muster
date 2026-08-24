@@ -11,6 +11,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import type { Task } from './task';
+import { expandTermAliases } from './matching/lexicon';
 
 export interface SkillCatalogEntry {
   skillId: string;
@@ -47,7 +48,13 @@ export function matchSkillsByContent(catalog: SkillCatalogEntry[], taskText: str
     for (const tok of tokens) {
       // 英文词需 >=3 字符避免噪声（is/the/or）；CJK 双字 token（含汉字）长度 2 即可命中。
       const significant = tok.length >= 3 || /[\u4e00-\u9fff]/.test(tok);
-      if (significant && text.includes(tok)) score += 1;
+      if (!significant) continue;
+      // 词法增强：token 连同同义别名一起在任务文本中找命中——中文任务能命中英文描述的技能（反之亦然）。
+      if (expandTermAliases(tok).some((alias) => alias !== tok && text.includes(alias))) {
+        score += 1;
+      } else if (text.includes(tok)) {
+        score += 1;
+      }
     }
     if (score > 0) scored.push({ skillId: entry.skillId, score });
   }

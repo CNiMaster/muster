@@ -403,3 +403,50 @@ describe('系统自动触发讨论场景验证', () => {
     }
   });
 });
+
+describe('P0-① 讨论记忆断链修复：memoryNotes → 项目记忆候选', () => {
+  it('conclude 带 memoryNotes：逐条落 project 记忆（自动批准）且可检索注入', () => {
+    const { lead, writer, project } = fixture();
+    const disc = createDiscussion(db, {
+      projectId: project.id,
+      topic: '接口错误码规范',
+      participantAgentIds: [lead.id, writer.id],
+      initiatorAgentId: lead.id,
+    });
+    const result = concludeDiscussion(db, disc.id, {
+      minutes: '讨论确定错误码分层',
+      conclusion: {
+        keyPoints: ['错误码按域分段'],
+        actions: [],
+        memoryNotes: ['接口错误码统一按域分段（4xx 客户端 / 5xx 服务端），新增域先登记再使用'],
+      },
+      concludedByAgentId: lead.id,
+    });
+    expect(result.memoryCandidateIds).toHaveLength(1);
+    // project scope + allowAutoApprove → 已自动批准为 entry
+    const entries = db.prepare(
+      "SELECT content FROM memory_entry WHERE scope='project' AND project_id=? AND state='active'",
+    ).all(project.id) as Array<{ content: string }>;
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.content).toContain('[讨论] 接口错误码规范');
+    expect(entries[0]!.content).toContain('按域分段');
+  });
+
+  it('conclude 不带 memoryNotes：零行为变化（无记忆候选产生）', () => {
+    const { lead, writer, project } = fixture();
+    const disc = createDiscussion(db, {
+      projectId: project.id,
+      topic: '日常同步',
+      participantAgentIds: [lead.id, writer.id],
+      initiatorAgentId: lead.id,
+    });
+    const result = concludeDiscussion(db, disc.id, {
+      minutes: '无沉淀的例会',
+      conclusion: { keyPoints: ['下次再议'], actions: [], memoryNotes: [] },
+      concludedByAgentId: lead.id,
+    });
+    expect(result.memoryCandidateIds).toHaveLength(0);
+    const count = (db.prepare("SELECT COUNT(*) AS c FROM memory_candidate").get() as { c: number }).c;
+    expect(count).toBe(0);
+  });
+});
