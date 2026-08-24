@@ -54,7 +54,20 @@ export function ExecutorCenterPage(): React.ReactElement {
   const [apiBaseURL, setApiBaseURL] = useState('https://api.openai.com/v1');
   const [apiModel, setApiModel] = useState('gpt-4o');
   const [apiKeyEnv, setApiKeyEnv] = useState('OPENAI_API_KEY');
+  /** 用户直接粘贴的 Key（muster 存本机数据目录 env 文件，不上传）；空=沿用已有环境变量。 */
+  const [apiKeyValue, setApiKeyValue] = useState('');
+  const [keyConfigured, setKeyConfigured] = useState<boolean | null>(null);
   const { data: credentialDefs } = useCredentialDefinitions({ category: 'llm' });
+  // 变量名变化/初载时查询是否已在环境变量或本机密钥文件中设置过
+  useEffect(() => {
+    const name = apiKeyEnv.trim();
+    if (!/^[A-Z_][A-Z0-9_]*$/.test(name)) { setKeyConfigured(null); return; }
+    let alive = true;
+    api.get<{ configured: boolean }>(`/api/executors/credentials/status?name=${encodeURIComponent(name)}`)
+      .then((r) => { if (alive) setKeyConfigured(r.configured); })
+      .catch(() => { if (alive) setKeyConfigured(null); });
+    return () => { alive = false; };
+  }, [apiKeyEnv]);
   const [apiConcurrency, setApiConcurrency] = useState<'parallel' | 'profile-serial' | 'global-serial'>('parallel');
   const [apiMaxConcurrency, setApiMaxConcurrency] = useState(4);
   const [apiConcurrencyLocked, setApiConcurrencyLocked] = useState(false);
@@ -235,7 +248,11 @@ export function ExecutorCenterPage(): React.ReactElement {
     onError: (e: unknown) => toast('error', (e as Error).message ?? '测试失败'),
   });
   const createApi = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
+      // 用户粘贴了 Key：先落本机密钥文件并热注入进程 env（创建后自动测试立即生效）
+      if (apiKeyValue.trim()) {
+        await api.post('/api/executors/credentials/save', { name: apiKeyEnv.trim(), value: apiKeyValue.trim() });
+      }
       const credentialRef: CredentialReference = { kind: 'env', reference: apiKeyEnv.trim() };
       const config: Record<string, unknown> = apiKind === 'openai-compatible-api'
         ? { provider: 'openai', baseURL: apiBaseURL.trim(), model: apiModel.trim() }
@@ -256,6 +273,8 @@ export function ExecutorCenterPage(): React.ReactElement {
     onSuccess: (profile) => {
       void qc.invalidateQueries({ queryKey: ['executor-profiles'] });
       setEditingProfileId(null);
+      setApiKeyValue('');
+      setKeyConfigured(true);
       // 向导第 3 步自动化：创建成功立即自动测通，结果直接展示在表单下方
       setNewlyCreatedId(profile.id);
       testConnection.mutate({ id: profile.id, kind: 'connectivity' });
@@ -449,27 +468,23 @@ export function ExecutorCenterPage(): React.ReactElement {
             : ['gemini-2.0-flash', 'gemini-2.5-pro']
           ).map((m) => <option key={m} value={m} />)}
         </datalist>
-        <SettingsRow badge="required" title="API Key 变量名" hint="muster 出于安全不保存密钥明文，只记录变量名；真正的 Key 放在电脑环境变量里——照下面三步做即可">
-          <Input value={apiKeyEnv} list="credential-key-suggestions" onChange={(e) => setApiKeyEnv(e.target.value)} placeholder="如 OPENAI_API_KEY" />
+        <SettingsRow badge="required" title="API Key" hint={'直接粘贴即可：muster 只存本机数据目录（~/.muster/env，不上传、不进数据库）。' + (keyConfigured ? ' 当前已设置过，可留空不改动。' : '')}>
+          <Input
+            type="password"
+            value={apiKeyValue}
+            onChange={(e) => setApiKeyValue(e.target.value)}
+            placeholder={keyConfigured === false ? '尚未设置，粘贴你的 Key' : keyConfigured ? '已设置（粘贴新值可更换）' : '粘贴你的 API Key'}
+            autoComplete="off"
+          />
         </SettingsRow>
-        <datalist id="credential-key-suggestions">
-          {(credentialDefs ?? []).map((def) => <option key={def.id} value={def.credentialKey}>{def.name}</option>)}
-        </datalist>
-
-        <div className="key-guide">
-          <strong>把 Key 给 muster（两分钟）：</strong>
-          <ol style={{ margin: '6px 0 0', paddingLeft: 20 }}>
-            <li>
-              打开终端执行（把 <code>sk-你的key</code> 换成真实值）：
-              <div className="install-command" style={{ marginTop: 4 }}>
-                <code>export {apiKeyEnv || 'OPENAI_API_KEY'}=sk-你的key</code>
-                <Button size="sm" variant="ghost" onClick={() => void copy(`export ${apiKeyEnv || 'OPENAI_API_KEY'}=sk-你的key`)}>复制</Button>
-              </div>
-            </li>
-            <li>想长期生效：把这行追加到 <code>~/.zshrc</code>（macOS/Linux），Windows 写入系统环境变量；</li>
-            <li>重启 muster，回这里点「创建并测试」——测试通过就能用了。</li>
-          </ol>
-        </div>
+        <SettingsRow title="Key 变量名" hint="高级选项：如果你习惯自己管理环境变量，改这里后留空上面的粘贴框即可">
+          <Input value={apiKeyEnv} onChange={(e) => setApiKeyEnv(e.target.value)} placeholder="如 OPENAI_API_KEY" />
+        </SettingsRow>
+        {apiKeyValue.trim() && (
+          <p className="muted" style={{ fontSize: 12, margin: '4px 0 0', textAlign: 'right' }}>
+            粘贴的 Key 会随「创建并测试」保存到本机并立即生效。
+          </p>
+        )}
 
         <div className="settings-primary-actions">
           {editingProfileId ? (

@@ -9,8 +9,24 @@ import{getConnectionProbe,startConnectionProbe}from'../domain/connection-probe';
 import { ClaudeSetupGenerator } from '../domain/setup-assistant';
 import { generateCliProposal } from '../domain/cli-assistant';
 import { diagnoseInstallError, runInstallStream, type InstallEvent } from '../domain/executor-install';
+import { assertEnvName, hasLocalSecret, saveLocalSecret } from '../domain/local-env';
 
 export const executorsRouter = Router();
+
+// 本机密钥托管（2026-08-25）：粘贴 Key → 写 $MUSTER_HOME/env（600）+ 热注入进程 env。
+// 明文不进数据库不回传；查询接口只回答"设没设置过"。
+executorsRouter.post('/credentials/save', asyncHandler(async (req, res) => {
+  const input = z.object({ name: z.string().min(1), value: z.string() }).parse(req.body);
+  const name = assertEnvName(input.name);
+  saveLocalSecret(name, input.value);
+  res.json({ ok: true, name });
+}));
+
+executorsRouter.get('/credentials/status', asyncHandler(async (req, res) => {
+  const name = assertEnvName(String(req.query.name ?? ''));
+  res.json({ name, configured: hasLocalSecret(name) });
+}));
+
 
 // AI 引导自定义 CLI 接入：描述 CLI → 生成检测命令/参数模板/安装说明（内置模板或 Claude 生成）
 executorsRouter.post('/assistant/cli-proposal', asyncHandler(async (req, res) => {

@@ -80,6 +80,7 @@ import { materializeAgentHome, syncAgentMemoryFiles } from './domain/agent-home'
 import { autoDiscoverCertifiedExecutors } from './domain/executor-discovery';
 import { syncToolRegistry } from './domain/tool-registry';
 import { seedDefaultCredentialDefinitions } from './domain/credential-store';
+import { loadLocalEnvFile } from './domain/local-env';
 import { toolsRouter } from './api/tools';
 import { credentialsRouter } from './api/credentials';
 import { materialsRouter } from './api/materials';
@@ -100,6 +101,8 @@ export interface AppHandle {
 async function createApp(): Promise<AppHandle> {
   // 确保 ~/.muster 存在
   mkdirSync(SERVER_CONFIG.musterDir, { recursive: true });
+  // 本机密钥托管：启动时回灌 ~/.muster/env 到进程 env（真实环境变量优先，不被覆盖）
+  loadLocalEnvFile();
 
   const app = express();
   app.use(express.json({ limit: '8mb' }));

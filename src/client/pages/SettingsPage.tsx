@@ -239,7 +239,7 @@ export function SettingsPage(): React.ReactElement {
                 </Select>
               </SettingsRow>
 
-              <SettingsFold summary="更多行为（防休眠 · 超时 · 权限跳过）">
+              <SettingsFold summary="更多行为（防休眠 · 自动复盘 · 超时 · 权限跳过）">
                 <SettingsRow title="防休眠" hint="电脑睡眠会中断任务和手机连接；有任务运行时自动保持唤醒（仅 macOS）">
                   <Select value={preventSleep} onChange={(e) => setPreventSleep(e.target.value as 'active' | 'always' | 'off')}>
                     <option value="active">有任务时保活（推荐）</option>
@@ -247,6 +247,19 @@ export function SettingsPage(): React.ReactElement {
                     <option value="off">关闭</option>
                   </Select>
                 </SettingsRow>
+                <SettingsRow title="空闲自动复盘（白日梦）" hint="没事干的时候自动回顾近期任务：沉淀记忆、改进打法；默认关">
+                  <Toggle checked={autonomousReflectionEnabled} onChange={setAutonomousReflectionEnabled} label="空闲自动复盘" />
+                </SettingsRow>
+                {autonomousReflectionEnabled && (
+                  <SettingsRow title="复盘每日花费上限" hint="自动复盘每天最多花多少钱，防止空闲时段悄悄烧预算">
+                    <Select value={String(autonomousReflectionBudgetUSD)} onChange={(e) => setAutonomousReflectionBudgetUSD(Number(e.target.value))}>
+                      <option value="1">$1 / 天</option>
+                      <option value="2">$2 / 天</option>
+                      <option value="5">$5 / 天（推荐）</option>
+                      <option value="0">不限</option>
+                    </Select>
+                  </SettingsRow>
+                )}
                 <SettingsRow title="提问超时自动继续" hint="AI 向你提问后一直没回复，到时间自动按「请继续」往下走；也可在每张等待卡上单独调">
                   <Select value={String(waitingAutoContinueMin)} onChange={(e) => setWaitingAutoContinueMin(Number(e.target.value))}>
                     <option value="0">一直等（默认）</option>
@@ -331,7 +344,7 @@ export function SettingsPage(): React.ReactElement {
           {activeTab === 'swarm' && (
             <Card title="蜂群调度">
               <p className="muted" style={{ fontSize: '12px', margin: '0 0 8px' }}>
-                日常不用动这里——蜂群的规模和花费由下方「广深档」自动控制；想手动收紧上限再展开专家微调。
+                蜂群的规模和花费由「广深档」自动控制；想手动收紧上限再展开专家微调。
               </p>
               <SettingsRow badge="recommended" title="默认广深档" hint="新任务的规模档位（单个任务可临时切换）：轻=快探小修；中=常规迭代；重=攻坚、班组满配、验收更严">
                 <Select value={breadthDefaultTier} onChange={(e) => setBreadthDefaultTier(e.target.value as 'light' | 'standard' | 'heavy')}>
@@ -340,19 +353,6 @@ export function SettingsPage(): React.ReactElement {
                   <option value="heavy">重 · 攻坚/高可靠</option>
                 </Select>
               </SettingsRow>
-              <SettingsRow title="白日梦" hint="空闲时自动复盘近期任务，沉淀记忆、进化打法；默认关">
-                <Toggle checked={autonomousReflectionEnabled} onChange={setAutonomousReflectionEnabled} label="白日梦" />
-              </SettingsRow>
-              {autonomousReflectionEnabled && (
-                <SettingsRow title="白日梦每日花费上限" hint="自动复盘每天最多花多少钱，防止空闲时段悄悄烧预算">
-                  <Select value={String(autonomousReflectionBudgetUSD)} onChange={(e) => setAutonomousReflectionBudgetUSD(Number(e.target.value))}>
-                    <option value="1">$1 / 天</option>
-                    <option value="2">$2 / 天</option>
-                    <option value="5">$5 / 天（推荐）</option>
-                    <option value="0">不限</option>
-                  </Select>
-                </SettingsRow>
-              )}
               <SettingsFold summary="专家微调 · 并发与预算上限（默认值已足够）">
                 <SettingsRow title="最大下探深度" hint="子任务最多嵌套几层">
                   <Input type="number" min={1} max={5} value={swarmMaxDepth} onChange={(e) => setSwarmMaxDepth(Number(e.target.value))} />
