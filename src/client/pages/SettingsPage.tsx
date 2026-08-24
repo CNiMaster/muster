@@ -1,4 +1,7 @@
 import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '../api/client';
+import { desktopNotificationsEnabled, setDesktopNotificationsEnabled } from '../hooks/useTaskNotifications';
 import type React from 'react';
 import { useHealthStatus, useSaveSystemSettings, useSystemSettings, useTestConnection, useExecutorProfiles, useUiMode } from '../hooks/queries';
 import { Button, toast } from '../components/Button';
@@ -11,7 +14,7 @@ import { CredentialStorePanel } from '../components/settings/CredentialStorePane
 import { BackupCenterPanel } from '../components/settings/BackupCenterPanel';
 import { SpecialistReviewPanel } from '../components/settings/SpecialistReviewPanel';
 
-type SettingsTab = 'general' | 'models' | 'swarm' | 'network' | 'appearance' | 'credentials' | 'tools' | 'backup' | 'specialists';
+type SettingsTab = 'general' | 'usage' | 'models' | 'swarm' | 'network' | 'appearance' | 'credentials' | 'tools' | 'backup' | 'specialists';
 
 /** 高级组标签（simple 模式默认折叠为一行入口；pro 全展开）。 */
 const ADVANCED_TABS: SettingsTab[] = ['models', 'swarm', 'network', 'credentials', 'tools', 'specialists'];
@@ -77,6 +80,7 @@ export function SettingsPage(): React.ReactElement {
   const [msgGroupExplore, setMsgGroupExplore] = useState(true);
   const [msgGroupTerminal, setMsgGroupTerminal] = useState(true);
   const [msgGroupChanges, setMsgGroupChanges] = useState(true);
+  const [desktopNotify, setDesktopNotify] = useState(desktopNotificationsEnabled());
 
   useEffect(() => {
     if (!settings) return;
@@ -174,6 +178,9 @@ export function SettingsPage(): React.ReactElement {
           <button type="button" className={`settings-nav-item ${activeTab === 'backup' ? 'is-active' : ''}`} onClick={() => setTab('backup')}>
             <span>💾 数据库与备份</span>
           </button>
+          <button type="button" className={`settings-nav-item ${activeTab === 'usage' ? 'is-active' : ''}`} onClick={() => setTab('usage')}>
+            <span>📊 用量与花费</span>
+          </button>
           {advancedVisible && (
             <>
               <div className="settings-nav-group-label">高级</div>
@@ -246,6 +253,15 @@ export function SettingsPage(): React.ReactElement {
                     <option value="always">常驻保活</option>
                     <option value="off">关闭</option>
                   </Select>
+                </SettingsRow>
+                <SettingsRow title="任务桌面通知" hint="任务完成、失败或等你确认时弹系统通知；首次开启浏览器会请求通知权限">
+                  <Toggle
+                    checked={desktopNotify}
+                    onChange={(next) => {
+                      void setDesktopNotificationsEnabled(next).then(() => setDesktopNotify(next));
+                    }}
+                    label="任务桌面通知"
+                  />
                 </SettingsRow>
                 <SettingsRow title="空闲自动复盘（白日梦）" hint="没事干的时候自动回顾近期任务：沉淀记忆、改进打法；默认关">
                   <Toggle checked={autonomousReflectionEnabled} onChange={setAutonomousReflectionEnabled} label="空闲自动复盘" />
@@ -450,6 +466,8 @@ export function SettingsPage(): React.ReactElement {
             </Card>
           )}
 
+          {activeTab === 'usage' && <UsageCard />}
+
           {activeTab === 'credentials' && (
             <CredentialStorePanel />
           )}
@@ -471,5 +489,65 @@ export function SettingsPage(): React.ReactElement {
         {health.data ? `muster v${health.data.version}` : 'muster'}
       </footer>
     </div>
+  );
+}
+
+
+/** 用量与花费（数据源 GET /api/workbench/usage，工作台级聚合）。 */
+function UsageCard(): React.ReactElement {
+  const usage = useQuery({ queryKey: ['workbench-usage'], queryFn: () => api.get<{
+    totalInputTokens: number; totalOutputTokens: number; totalCacheReadTokens: number;
+    totalCostUSD: number; totalToolCalls: number; totalDurationMs: number;
+    byModel: Record<string, { tokens: number; costUSD: number }>;
+  }>('/api/workbench/usage') });
+  if (usage.isLoading) return <Card title="用量与花费"><p className="muted">加载中…</p></Card>;
+  const d = usage.data;
+  if (!d) return <Card title="用量与花费"><p className="muted">暂无数据。</p></Card>;
+  const models = Object.entries(d.byModel ?? {}).sort((a, b) => b[1].costUSD - a[1].costUSD);
+  const maxCost = Math.max(0.0001, ...models.map(([, v]) => v.costUSD));
+  const fmtTokens = (n: number): string => n >= 1e8 ? `${(n / 1e8).toFixed(1)} 亿` : n >= 1e4 ? `${(n / 1e4).toFixed(1)} 万` : String(n);
+  return (
+    <>
+      <Card title="累计花费与 Token">
+        <div className="settings-row">
+          <span className="settings-row-main">
+            <span className="settings-row-title">总花费</span>
+            <span className="settings-row-hint">所有任务、所有智能体的模型调用费用合计</span>
+          </span>
+          <span className="settings-row-control" style={{ justifyContent: 'flex-end', fontSize: 18, fontWeight: 600 }}>${d.totalCostUSD.toFixed(2)}</span>
+        </div>
+        <div className="settings-row">
+          <span className="settings-row-main">
+            <span className="settings-row-title">输入 / 输出 Token</span>
+            <span className="settings-row-hint">缓存读取另计 {fmtTokens(d.totalCacheReadTokens)}（缓存成本远低于直读）</span>
+          </span>
+          <span className="settings-row-control" style={{ justifyContent: 'flex-end', fontSize: 13 }}>{fmtTokens(d.totalInputTokens)} / {fmtTokens(d.totalOutputTokens)}</span>
+        </div>
+        <div className="settings-row">
+          <span className="settings-row-main">
+            <span className="settings-row-title">工具调用次数</span>
+            <span className="settings-row-hint">AI 执行动作（读写文件、跑命令等）的总次数</span>
+          </span>
+          <span className="settings-row-control" style={{ justifyContent: 'flex-end', fontSize: 13 }}>{d.totalToolCalls}</span>
+        </div>
+      </Card>
+      <Card title="按模型的花费分布">
+        {models.length === 0 ? (
+          <p className="muted">还没有模型调用量。跑几个任务后这里会出现分布。</p>
+        ) : (
+          models.map(([name, v]) => (
+            <div key={name} style={{ marginBottom: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                <span>{name}</span>
+                <span className="muted">${v.costUSD.toFixed(2)} · {fmtTokens(v.tokens)} tokens</span>
+              </div>
+              <div style={{ height: 6, borderRadius: 3, background: 'var(--bg-soft, rgba(128,128,128,.15))', marginTop: 4 }}>
+                <div style={{ width: `${Math.max(2, (v.costUSD / maxCost) * 100)}%`, height: '100%', borderRadius: 3, background: 'var(--accent, #4a7dff)' }} />
+              </div>
+            </div>
+          ))
+        )}
+      </Card>
+    </>
   );
 }

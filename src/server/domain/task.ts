@@ -611,6 +611,15 @@ export function markTaskWaitingApproval(db:DB,taskId:string,approvalId:string,mo
 export function clearTaskApprovalWait(db:DB,taskId:string):Task{db.prepare("UPDATE task SET wait_state=NULL,updated_at=? WHERE id=? AND wait_state='waiting_approval'").run(nowIso(),taskId);resolveSuspensionByTask(db,taskId,{resolution:'resumed'});return getTask(db,taskId);}
 export function resumeTaskAfterApproval(db:DB,taskId:string):Task|null{const result=db.prepare("UPDATE task SET state='queued',wait_state=NULL,updated_at=? WHERE id=? AND wait_state='waiting_approval'").run(nowIso(),taskId);if(result.changes)resolveSuspensionByTask(db,taskId,{resolution:'resumed'});return result.changes?getTask(db,taskId):null;}
 
+/** 桌面通知轮询源：since 之后进入终态（完成/失败/等待输入）的任务精简清单（跨项目，按更新时间倒序）。 */
+export function listRecentlyFinalizedTasks(db: DB, sinceIso: string, limit = 20): Array<{ id: string; title: string; state: TaskState; updatedAt: string }> {
+  return db.prepare(
+    `SELECT id, title, state, updated_at AS updatedAt FROM task
+     WHERE state IN ('completed','failed','waiting_input') AND updated_at > ?
+     ORDER BY updated_at DESC LIMIT ?`,
+  ).all(sinceIso, limit) as Array<{ id: string; title: string; state: TaskState; updatedAt: string }>;
+}
+
 export function listTasks(db: DB, projectId: string, state?: TaskState): Task[] {
   const sql = state
     ? 'SELECT * FROM task WHERE project_id = ? AND state = ? ORDER BY seq'

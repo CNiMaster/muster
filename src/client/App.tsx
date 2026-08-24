@@ -2,11 +2,13 @@ import type React from 'react';
 import { Outlet } from 'react-router-dom';
 import { useSystemSettings } from './hooks/queries';
 import { useAppearance } from './hooks/useAppearance';
+import { useTaskNotifications } from './hooks/useTaskNotifications';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 export function App(): React.ReactElement {
   const { data: systemSettings } = useSystemSettings();
   useAppearance(systemSettings);
+  useTaskNotifications();
   return (
     <ErrorBoundary label="App">
       <div className="app-shell">

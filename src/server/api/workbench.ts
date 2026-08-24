@@ -8,6 +8,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { asyncHandler, companyIdOf, param } from './middleware';
+import { listRecentlyFinalizedTasks } from '../domain/task';
 import { getDb } from '../db/client';
 import {
   ensureWorkbench,
@@ -125,6 +126,16 @@ workbenchRouter.post(
   '/shutdown/resume',
   asyncHandler(async (_req, res) => {
     res.json({ resumed: resumeShutdownPaused(getDb()) });
+  }),
+);
+
+/** 桌面通知轮询：since 之后进入终态的任务精简清单（跨项目）。 */
+workbenchRouter.get(
+  '/recent-finalized',
+  asyncHandler(async (req, res) => {
+    const since = typeof req.query.since === 'string' && req.query.since ? req.query.since : new Date(0).toISOString();
+    const limitRaw = Number(req.query.limit ?? 20);
+    res.json(listRecentlyFinalizedTasks(getDb(), since, Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 50) : 20));
   }),
 );
 
