@@ -176,10 +176,9 @@ function SwarmSection({ tasks }: { tasks: Task[] }): React.ReactElement {
 
 function SwarmRow({ taskId, title, seq }: { taskId: string; title: string; seq: number }): React.ReactElement {
   const { data: swarm } = useTaskSwarm(taskId);
-  const { data: agents = [] } = useAgents();
   const s = swarm?.swarm;
-  // 编制摘要与底部养蜂人括号同口径：🐝N 纯工蜂 / 👷N 纯借调专家 / 🐝👷N 混合
-  const composition = swarm ? swarmCompositionLabel(swarm.tasks, agents, s?.nodesTotal ?? 0) : null;
+  // 编制摘要与底部养蜂人括号同口径：🐝N 纯工蜂 / 👷N 纯专家 / 🐝👷N 混合（按任务 personaId 判专家）
+  const composition = swarm ? swarmCompositionLabel(swarm.tasks, s?.nodesTotal ?? 0) : null;
   return (
     <Link to={`/tasks/${taskId}`} className="employee-role-item">
       <span><strong>{title}</strong><small>#{seq}{composition ? ` · ${composition}` : ''}{s ? ` · 进度 ${s.nodesDone}/${s.nodesTotal} 节点${s.nodesFailed ? ` · 失败 ${s.nodesFailed}` : ''}` : ''}</small></span>

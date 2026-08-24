@@ -25,16 +25,13 @@ export function expertIcon(name: string): string {
   return EXPERT_ICONS[h % EXPERT_ICONS.length]!;
 }
 
-/** 蜂群节点成员归类：有档案且非固定岗=借调专家（👷），其余匿名工蜂（🐝）。 */
-function isBorrowedExpert(assignee: Agent | undefined): boolean {
-  return !!assignee && !!assignee.profileId && !isFixedRoleAgent(assignee) && assignee.role !== 'worker';
-}
-
 /** 蜂群括号摘要：纯工蜂 🐝N / 纯专家 👷N / 混合 🐝👷N（N=节点总数，失败节点也计入编制）。 */
-export function swarmCompositionLabel(nodes: Task[], agents: Agent[], nodesTotal: number): string | null {
+export function swarmCompositionLabel(nodes: Task[], nodesTotal: number): string | null {
   const total = Math.max(nodesTotal, nodes.length);
   if (total <= 0) return null;
-  const experts = nodes.filter((t) => isBorrowedExpert(agents.find((a) => a.id === t.assigneeAgentId))).length;
+  // personaId 是「这只蜂按专家人设执行」的权威标记（swarm.ts 落地时只有指定人设的蜂任务才写它）：
+  // 命中常驻专家或建临时专家蜂都算 👷；匿名工蜂无 personaId 算 🐝（工蜂 role='swarm-worker' 且共用档案，按 assignee 推导不可靠）
+  const experts = nodes.filter((t) => !!t.personaId).length;
   if (experts === 0) return `🐝${total}`;
   if (experts >= total) return `👷${total}`;
   return `🐝👷${total}`;
@@ -52,7 +49,7 @@ export function WorkbenchBottomStaffTabs({ projectId, selectedAgentId }: { proje
   const activeSwarmTask = tasks.find((t) => t.swarmId && (t.state === 'running' || t.state === 'claimed'));
   const { data: swarmView } = useTaskSwarm(activeSwarmTask?.id);
   const swarmLabel = activeSwarmTask && swarmView
-    ? swarmCompositionLabel(swarmView.tasks, agents, swarmView.swarm?.nodesTotal ?? 0)
+    ? swarmCompositionLabel(swarmView.tasks, swarmView.swarm?.nodesTotal ?? 0)
     : null;
 
   const allTeamAgents = [...agents].sort((a, b) => {

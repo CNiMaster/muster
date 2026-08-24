@@ -11,23 +11,18 @@ import { WorkbenchBottomStaffTabs, expertIcon, swarmCompositionLabel } from '../
 
 const mkAgent = (id: string, role: string, name: string, profileId?: string): Agent =>
   ({ id, profileId: profileId ?? null, name, role, availabilityState: 'online' } as Agent);
-const mkNode = (assignee: string): Task => ({ assigneeAgentId: assignee } as Task);
+// personaId 是「按专家人设执行」的权威标记：命中常驻专家/临时专家蜂都带；匿名工蜂无
+const mkNode = (personaId?: string): Task => ({ personaId: personaId ?? null } as Task);
 
 describe('swarmCompositionLabel（蜂群编制摘要）', () => {
   it('纯匿名工蜂 → 🐝N（失败节点也计入编制）', () => {
-    expect(swarmCompositionLabel([mkNode('b1'), mkNode('b2')], [], 0)).toBe('🐝2');
-    expect(swarmCompositionLabel([], [], 30)).toBe('🐝30');
+    expect(swarmCompositionLabel([mkNode(), mkNode()], 0)).toBe('🐝2');
+    expect(swarmCompositionLabel([], 30)).toBe('🐝30');
   });
 
-  it('纯借调专家 → 👷N；混合 → 🐝👷N', () => {
-    const agents = [mkAgent('e1', 'engineer', '工程师甲', 'ap_1'), mkAgent('e2', 'data-analyst', '分析师乙', 'ap_2')];
-    expect(swarmCompositionLabel([mkNode('e1'), mkNode('e2')], agents, 0)).toBe('👷2');
-    expect(swarmCompositionLabel([mkNode('e1'), mkNode('anon')], agents, 4)).toBe('🐝👷4');
-  });
-
-  it('固定岗与 worker 角色不算借调专家', () => {
-    const agents = [mkAgent('w1', 'worker', '工蜂'), mkAgent('lead2', 'lead', '另一负责人', 'ap_9')];
-    expect(swarmCompositionLabel([mkNode('w1'), mkNode('lead2')], agents, 0)).toBe('🐝2');
+  it('纯专家 → 👷N；混合（专家+普通蜂同群） → 🐝👷N', () => {
+    expect(swarmCompositionLabel([mkNode('ap_1'), mkNode('ap_2')], 0)).toBe('👷2');
+    expect(swarmCompositionLabel([mkNode('ap_1'), mkNode()], 4)).toBe('🐝👷4');
   });
 });
 
