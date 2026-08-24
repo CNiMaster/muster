@@ -20,18 +20,45 @@ export interface ComposerTaskOption {
 }
 
 /**
- * H9b 四模式（ZCode 命名，六轮收敛）：变更前确认/自动编辑(默认)/计划模式/完全访问。
- * 旧五值保留类型兼容（服务端归一），药丸只展示新四档+跟随默认。
+ * 执行模式四档（2026-08-23 定案）：计划模式为默认档；用户手动切换后被记住（localStorage），
+ * 下次自动恢复到上次选择，直到再次手动切换。「跟随默认档」已退役。
+ * 旧值保留类型兼容（服务端归一）。
  */
 export type ComposerMode = '' | 'confirm-edits' | 'auto-edit' | 'plan' | 'full-access' | 'ask-always' | 'ask-by-rule' | 'no-approval' | 'deny';
 
-export const COMPOSER_MODES: Array<{ id: ComposerMode; label: string; icon: string; hint: string }> = [
-  { id: '', label: '跟随默认档', icon: '🛡', hint: '沿用全局默认权限档（设置页可改，默认=自动编辑）' },
-  { id: 'auto-edit', label: '自动编辑', icon: '📝', hint: '文件编辑自动放（git 可逆兜底）；命令全部需要审批——安全审查员只做风险分析' },
-  { id: 'confirm-edits', label: '变更前确认', icon: '🛡', hint: '文件和命令的每个变更动作都要你批准' },
-  { id: 'plan', label: '计划模式', icon: '🗺', hint: '只调研规划不动手（只读可建新文件），产出待确认方案' },
-  { id: 'full-access', label: '完全访问', icon: '⚡', hint: 'AI 判定：项目内影响小自动放；超项目目录/可能外溢/红线必弹审批卡' },
+export const COMPOSER_MODES: Array<{ id: ComposerMode; label: string; short: string; icon: string; hint: string }> = [
+  { id: 'plan', label: '计划模式', short: '计划', icon: '🗺', hint: '只规划不动手' },
+  { id: 'auto-edit', label: '自动编辑', short: '自动', icon: '📝', hint: '改文件自动放，命令要审批' },
+  { id: 'confirm-edits', label: '变更前确认', short: '确认', icon: '🛡', hint: '每个变更先问你' },
+  { id: 'full-access', label: '完全访问', short: '完全', icon: '⚡', hint: '低风险自动放，越线必审' },
 ];
+
+/** 固定岗编制（2026-08-24 定案）：常设四岗——负责人/人事/养蜂人/验收员；不管项目是否实例化，底部 tab 与对话人菜单都默认显示，未上岗的置灰不可选。 */
+export const FIXED_AGENT_ROLES: Array<{ role: string; label: string; icon: string }> = [
+  { role: 'lead', label: '负责人', icon: '🎯' },
+  { role: 'hr', label: '人事', icon: '📋' },
+  { role: 'swarm-dispatcher', label: '养蜂人', icon: '🐝' },
+  { role: 'reviewer', label: '验收员', icon: '🔍' },
+];
+
+export function agentMatchesFixedRole(ag: Agent, role: string): boolean {
+  if (role === 'reviewer') return ag.role === 'reviewer' || ag.role === 'acceptance-officer' || !!ag.isInspector;
+  return ag.role === role;
+}
+
+export function isFixedRoleAgent(ag: Agent): boolean {
+  return FIXED_AGENT_ROLES.some((fr) => agentMatchesFixedRole(ag, fr.role));
+}
+
+/** 固定岗中文名（对话人菜单显示；与 ProjectPage 员工标签同一套口径）。 */
+export function agentRoleInfo(ag: Agent): { label: string; icon: string; order: number } {
+  if (ag.role === 'lead') return { label: '负责人', icon: '🎯', order: 1 };
+  if (ag.role === 'hr') return { label: '人事', icon: '📋', order: 2 };
+  if (ag.role === 'swarm-dispatcher') return { label: '养蜂人', icon: '🐝', order: 3 };
+  if (ag.role === 'reviewer' || ag.role === 'acceptance-officer' || ag.isInspector) return { label: '验收员', icon: '🔍', order: 4 };
+  if (ag.role === 'automation-steward') return { label: '自动化管家', icon: '🤖', order: 5 };
+  return { label: ag.name || '智能体', icon: '👤', order: 10 };
+}
 
 interface SlashCommand {
   token: string;
@@ -44,9 +71,12 @@ export interface PromptComposerProps {
   placeholder?: string;
   disabled?: boolean;
   loading?: boolean;
+  /** 对话人药丸：默认负责人；切换后消息直发该人，对话区顶部显示其工作状态 */
   agents?: Agent[];
   selectedAgentId?: string;
   onSelectAgent?: (agentId: string) => void;
+  /** 默认对话人（负责人）：未显式选择时药丸显示它、消息发给它 */
+  defaultAgentId?: string;
   currentModel?: string;
   onSelectModel?: (model: string) => void;
   modelOptions?: Array<{ id: string; label: string }>;
@@ -86,6 +116,10 @@ export interface PromptComposerProps {
   /** 批次 H.6：划选引用（消息区选中文字→随下轮输入附上）。 */
   quotedContext?: string;
   onClearQuoted?: () => void;
+  /** 2026-08-24 定案：对话人菜单顶部入口——项目群聊作为对话目标（中栏内嵌、输入框直发；再点切回单聊）。 */
+  onToggleGroupChat?: () => void;
+  /** 群聊激活态：菜单项高亮、药丸显示群聊。 */
+  groupChatActive?: boolean;
   onSend: (content: string, options?: { agentId?: string; model?: string; thinking?: string; attachments?: MessageAttachment[]; mode?: ComposerMode; refs?: string[] }) => void;
 }
 
@@ -96,6 +130,7 @@ export function PromptComposer({
   agents = [],
   selectedAgentId,
   onSelectAgent,
+  defaultAgentId,
   currentModel = '',
   onSelectModel,
   modelOptions,
@@ -122,12 +157,14 @@ export function PromptComposer({
   onStopImmediate,
   quotedContext,
   onClearQuoted,
+  onToggleGroupChat,
+  groupChatActive = false,
   onSend,
 }: PromptComposerProps): React.ReactElement {
   // 批次 G.1：草稿按 draftKey 隔离持久化（muster:*:vN 约定）；无 key 保持纯内存行为
   const draftStorageKey = draftKey ? `muster:composer-draft:v1:${draftKey}` : null;
   const [text, setText] = useState(() => (draftStorageKey ? window.localStorage.getItem(draftStorageKey) ?? '' : ''));
-  const [openMenu, setOpenMenu] = useState<'model' | 'persona' | 'task' | 'plus' | 'mode' | 'stop' | null>(null);
+  const [openMenu, setOpenMenu] = useState<'model' | 'persona' | 'task' | 'plus' | 'mode' | 'think' | 'send' | null>(null);
   const [dragOver, setDragOver] = useState(false);
   // 批次 I-a2：面板插件「引用到对话」事件通道（与父控 quotedContext 合流；父控优先）
   const [panelQuote, setPanelQuote] = useState<string | undefined>();
@@ -141,7 +178,7 @@ export function PromptComposer({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const models = modelOptions ?? [];
-  const currentModelLabel = models.find((m) => m.id === currentModel)?.label ?? (currentModel || '默认模型');
+  const currentModelLabel = models.find((m) => m.id === currentModel)?.label ?? (currentModel || '选择模型');
 
   // 自适应高度调整
   const adjustHeight = (): void => {
@@ -203,12 +240,12 @@ export function PromptComposer({
     if (key && last) window.localStorage.setItem(key, last);
   }, []);
 
-  // 点击外部关闭全部下拉
+  // 点击收起（2026-08-23 修正）：除触发按钮与菜单本体（popover-wrap）外，点任何地方都收起——
+  // 含输入框内部（原逻辑只收组件外部，点 textarea 等组件内区域菜单不收）
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent): void => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
-        setOpenMenu(null);
-      }
+      const el = e.target as HTMLElement | null;
+      if (!el?.closest('.mu-composer-popover-wrap')) setOpenMenu(null);
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -258,7 +295,7 @@ export function PromptComposer({
     const effQuote = quotedContext ?? panelQuote;
     const finalText = effQuote ? `> 引用：${effQuote.replace(/\n+/g, ' ').slice(0, 200)}\n\n${text.trim()}` : text.trim();
     onSend(finalText, {
-      agentId: selectedAgentId,
+      agentId: selectedAgentId || defaultAgentId,
       model: currentModel || undefined,
       thinking: thinkingDepth,
       attachments: attachments.length > 0 ? attachments : undefined,
@@ -273,7 +310,9 @@ export function PromptComposer({
     }
   };
 
-  const selectedAgent = agents.find((a) => a.id === selectedAgentId);
+  // 对话人：显式选择优先，否则默认负责人（2026-08-23 定案：取消「自动匹配」，对话始终有人接）
+  const activeAgentId = selectedAgentId || defaultAgentId;
+  const activeAgent = agents.find((a) => a.id === activeAgentId);
   const selectedTask = taskOptions?.find((t) => t.id === selectedTaskId);
 
   const cycleThinking = (): void => {
@@ -296,7 +335,6 @@ export function PromptComposer({
     { token: 'rules', label: '/rules 按规则审批', hint: '规则放行，越界审批', apply: () => onSelectMode?.('ask-by-rule') },
     { token: 'auto', label: '/auto 自动执行', hint: '不弹审批直接执行', apply: () => onSelectMode?.('no-approval') },
     { token: 'readonly', label: '/readonly 只读', hint: '拒绝一切变更', apply: () => onSelectMode?.('deny') },
-    { token: 'default', label: '/default 跟随默认策略', hint: '回到任务默认权限', apply: () => onSelectMode?.('') },
     { token: 'model', label: '/model 切换模型', hint: '打开模型选择', apply: () => setOpenMenu('model') },
     { token: 'think', label: '/think 思考深度', hint: '切换思考档位', apply: () => cycleThinking() },
     { token: 'task', label: '/task 切换任务', hint: '打开任务选择', apply: () => setOpenMenu('task') },
@@ -352,18 +390,19 @@ export function PromptComposer({
   };
 
   const thinkingLabel = {
-    off: '思考: 关',
-    low: '思考: 快速',
-    med: '思考: 中等',
-    high: '思考: 深度',
+    off: '关',
+    low: '快',
+    med: '中',
+    high: '深',
   }[thinkingDepth];
 
-  const menuButton = (menu: 'model' | 'persona' | 'task' | 'plus' | 'mode', label: React.ReactNode, title: string, extraClass = ''): React.ReactElement => (
+  const menuButton = (menu: 'model' | 'persona' | 'task' | 'plus' | 'mode' | 'think', label: React.ReactNode, title: string, extraClass = '', ariaLabel?: string): React.ReactElement => (
     <button
       type="button"
       className={`mu-composer-pill ${extraClass} ${openMenu === menu ? 'is-open' : ''}`}
       onClick={() => setOpenMenu(openMenu === menu ? null : menu)}
       title={title}
+      aria-label={ariaLabel}
     >
       {label}
     </button>
@@ -453,153 +492,7 @@ export function PromptComposer({
 
       <div className="mu-prompt-toolbar">
         <div className="mu-prompt-controls">
-          {/* 模式药丸：计划+三档审批+只读 */}
-          {onSelectMode && (
-            <div className="mu-composer-popover-wrap">
-              {menuButton('mode', (
-                <>
-                  <span className="mu-pill-icon">{COMPOSER_MODES.find((m) => m.id === mode)?.icon ?? '🛡'}</span>
-                  <span className="mu-pill-label">{COMPOSER_MODES.find((m) => m.id === mode)?.label ?? '模式'}</span>
-                  <span className="mu-pill-arrow">▾</span>
-                </>
-              ), '计划模式与审批策略')}
-              {openMenu === 'mode' && (
-                <div className="mu-composer-dropdown">
-                  <div className="mu-dropdown-header">执行模式</div>
-                  {COMPOSER_MODES.map((m) => (
-                    <button
-                      key={m.id || 'default'}
-                      type="button"
-                      className={`mu-dropdown-item ${m.id === mode ? 'is-active' : ''}`}
-                      onClick={() => { onSelectMode(m.id); setOpenMenu(null); }}
-                    >
-                      <span>{m.icon} {m.label} <small className="muted">{m.hint}</small></span>
-                      {m.id === mode && <span className="mu-item-check">✓</span>}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* 任务药丸 */}
-          {taskOptions && taskOptions.length > 0 && onSelectTask && (
-            <div className="mu-composer-popover-wrap">
-              {menuButton('task', (
-                <>
-                  <span className="mu-pill-icon">📋</span>
-                  <span className="mu-pill-label">{selectedTask ? selectedTask.label : '全局对话'}</span>
-                  <span className="mu-pill-arrow">▾</span>
-                </>
-              ), '切换对话归属的项目任务')}
-              {openMenu === 'task' && (
-                <div className="mu-composer-dropdown mu-composer-dropdown-tasks">
-                  <div className="mu-dropdown-header">切换任务</div>
-                  {!selectedTaskId && <span className="mu-dropdown-item is-static is-active">全局对话（不归属任务）</span>}
-                  {taskOptions.map((t) => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      className={`mu-dropdown-item ${t.id === selectedTaskId ? 'is-active' : ''}`}
-                      onClick={() => { onSelectTask(t.id); setOpenMenu(null); }}
-                    >
-                      <span>{t.label}</span>
-                      {t.id === selectedTaskId && <span className="mu-item-check">✓</span>}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* 分支药丸（只读：任务分支自动管理） */}
-          {branch && (
-            <span className="mu-composer-pill mu-composer-branch" title={`本任务在独立 Git 分支上执行：${branch}。新建任务会自动创建各自的分支。`}>
-              <span className="mu-pill-icon">🌿</span>
-              <span className="mu-pill-label">{branch}</span>
-            </span>
-          )}
-
-          {/* 模型切换下拉 */}
-          {models.length > 0 && (
-            <div className="mu-composer-popover-wrap">
-              {menuButton('model', (
-                <>
-                  <span className="mu-pill-icon">🧠</span>
-                  <span className="mu-pill-label">{currentModelLabel}</span>
-                  <span className="mu-pill-arrow">▾</span>
-                </>
-              ), '切换使用的语言模型')}
-              {openMenu === 'model' && (
-                <div className="mu-composer-dropdown">
-                  <div className="mu-dropdown-header">选择语言模型</div>
-                  {models.map((m) => (
-                    <button
-                      key={m.id}
-                      type="button"
-                      className={`mu-dropdown-item ${m.id === currentModel ? 'is-active' : ''}`}
-                      onClick={() => { onSelectModel?.(m.id); setOpenMenu(null); }}
-                    >
-                      <span>{m.label}</span>
-                      {m.id === currentModel && <span className="mu-item-check">✓</span>}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* 人设选择药丸 */}
-          {agents.length > 0 && (
-            <div className="mu-composer-popover-wrap">
-              {menuButton('persona', (
-                <>
-                  <span className="mu-pill-icon">🎭</span>
-                  <span className="mu-pill-label">{selectedAgent ? selectedAgent.name : '智能体: 自动'}</span>
-                  <span className="mu-pill-arrow">▾</span>
-                </>
-              ), '指定由哪位智能体处理（或自动匹配）')}
-              {openMenu === 'persona' && (
-                <div className="mu-composer-dropdown">
-                  <div className="mu-dropdown-header">指定处理智能体</div>
-                  <button
-                    type="button"
-                    className={`mu-dropdown-item ${!selectedAgentId ? 'is-active' : ''}`}
-                    onClick={() => { onSelectAgent?.(''); setOpenMenu(null); }}
-                  >
-                    <span>🎯 自动匹配合适智能体</span>
-                    {!selectedAgentId && <span className="mu-item-check">✓</span>}
-                  </button>
-                  {agents.map((a) => (
-                    <button
-                      key={a.id}
-                      type="button"
-                      className={`mu-dropdown-item ${a.id === selectedAgentId ? 'is-active' : ''}`}
-                      onClick={() => { onSelectAgent?.(a.id); setOpenMenu(null); }}
-                    >
-                      <span>{a.name} · <small className="muted">{a.role}</small></span>
-                      {a.id === selectedAgentId && <span className="mu-item-check">✓</span>}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* 思考深度切换（验收修复：简单模式 onToggleThinking 不传时隐藏——避免"点了没反应"的死药丸） */}
-          {onToggleThinking && (
-            <button
-              type="button"
-              className={`mu-composer-pill ${thinkingDepth !== 'off' ? 'is-highlight' : ''}`}
-              onClick={cycleThinking}
-              title="切换思考深度模式"
-            >
-              <span className="mu-pill-icon">💭</span>
-              <span className="mu-pill-label">{thinkingLabel}</span>
-            </button>
-          )}
-
-          {/* + 菜单：添加图片 / 添加文件 */}
+          {/* + 菜单：添加图片 / 添加文件（2026-08-23 定案：居左首位） */}
           {onAddFiles && (
             <div className="mu-composer-popover-wrap">
               {menuButton('plus', <span className="mu-composer-icon-btn">＋</span>, '添加图片或文件附件')}
@@ -619,70 +512,231 @@ export function PromptComposer({
           )}
           <input ref={imageInputRef} type="file" accept="image/*" multiple hidden onChange={(e) => { const files = Array.from(e.target.files ?? []); if (files.length) onAddFiles?.(files); e.target.value = ''; }} />
           <input ref={fileInputRef} type="file" multiple hidden onChange={(e) => { const files = Array.from(e.target.files ?? []); if (files.length) onAddFiles?.(files); e.target.value = ''; }} />
-        </div>
 
-        <div className="mu-prompt-actions">
-          <span className="mu-composer-hint">Shift+Enter 换行</span>
-          {/* H8（第五轮定稿）：主按钮=全局暂停；⌄=全局立即停止（急救）；等待窗口=暂停中…禁用。
-              单 agent 停止不做——出错的执行者停后在执行者目录里点名（撤销/审查）。 */}
-          {isRunning && stopRequested && (
-            <Button
-              size="sm"
-              variant="danger"
-              disabled
-              title="已请求暂停，正在等各执行中的任务到达安全边界（写文件等写完/命令等跑完/等模型直接停）；超时自动强停并保留现场"
-            >
-              ⏸ 暂停中…
-            </Button>
-          )}
-          {isRunning && !stopRequested && onStop && !(text.trim() || attachments.length > 0 || quotedContext || panelQuote) && (
+          {/* 模式药丸：变更前确认那四档+跟随默认 */}
+          {onSelectMode && (
             <div className="mu-composer-popover-wrap">
-              <Button
-                size="sm"
-                variant="danger"
-                onClick={onStop}
-                title="暂停本项目全部执行中的任务（各自等安全边界停下；排队/等待中的不动），停下后出打断记录，可在执行者目录点名处理"
-                aria-label="暂停本项目全部任务"
-              >
-                ⏸ 暂停
-              </Button>
-              {onStopImmediate && (
-                <Button
-                  size="sm"
-                  variant="danger"
-                  onClick={() => setOpenMenu(openMenu === 'stop' ? null : 'stop')}
-                  aria-label="更多停止选项"
-                  title="立即停止全部（急救）"
-                >
-                  ⌄
-                </Button>
-              )}
-              {openMenu === 'stop' && onStopImmediate && (
-                <div className="mu-composer-dropdown" style={{ right: 0, bottom: '100%', marginBottom: 4, minWidth: 280 }}>
-                  <div className="mu-dropdown-header">停止选项</div>
-                  <button
-                    type="button"
-                    className="mu-dropdown-item"
-                    onClick={() => { setOpenMenu(null); onStopImmediate(); }}
-                    title="不等边界立刻终止本项目全部执行——半成品保留在各自打断记录里。急救用，如误跑破坏性命令"
-                  >
-                    <span>⚠ 立即停止本项目全部任务{runningCount > 0 ? `（${runningCount} 个执行中）` : ''}</span>
-                  </button>
+              {menuButton('mode', (
+                <>
+                  <span className="mu-pill-icon">{COMPOSER_MODES.find((m) => m.id === mode)?.icon ?? '🛡'}</span>
+                  <span className="mu-pill-label">{COMPOSER_MODES.find((m) => m.id === mode)?.label ?? '模式'}</span>
+                  <span className="mu-pill-arrow">▾</span>
+                </>
+              ), '执行模式与审批策略')}
+              {openMenu === 'mode' && (
+                <div className="mu-composer-dropdown">
+                  <div className="mu-dropdown-header">执行模式</div>
+                  {COMPOSER_MODES.map((m) => (
+                    <button
+                      key={m.id || 'default'}
+                      type="button"
+                      className={`mu-dropdown-item ${m.id === mode ? 'is-active' : ''}`}
+                      onClick={() => { onSelectMode(m.id); setOpenMenu(null); }}
+                    >
+                      <span className="mu-mode-item">
+                        <span className="mu-mode-item-row"><span className="mu-send-menu-glyph">{m.icon}</span>{m.label}</span>
+                        <small className="muted mu-mode-item-hint">{m.hint}</small>
+                      </span>
+                      {m.id === mode && <span className="mu-item-check">✓</span>}
+                    </button>
+                  ))}
                 </div>
               )}
             </div>
           )}
-          <Button
-            size="sm"
-            variant="primary"
-            loading={loading}
-            disabled={(!text.trim() && attachments.length === 0 && !quotedContext && !panelQuote) || disabled}
-            onClick={handleSend}
-            className="mu-composer-send-btn"
-          >
-            <span>发送</span>
-            <span aria-hidden="true">↑</span>
-          </Button>
+
+          {/* 对话人药丸：默认负责人、其余固定岗；选中即直发该人并显示其工作状态 */}
+          {agents.length > 0 && (
+            <div className="mu-composer-popover-wrap">
+              {menuButton('persona', (
+                <>
+                  <span className="mu-pill-icon">{groupChatActive ? '💬' : '👤'}</span>
+                  <span className="mu-pill-label">{groupChatActive ? '任务群聊' : activeAgent ? activeAgent.name : '对话人'}</span>
+                  <span className="mu-pill-arrow">▾</span>
+                </>
+              ), '切换对话人（默认负责人）', '', '切换对话人')}
+              {openMenu === 'persona' && (
+                <div className="mu-composer-dropdown">
+                  <div className="mu-dropdown-header">对话人</div>
+                  {onToggleGroupChat && (
+                    <>
+                      <button
+                        type="button"
+                        className={`mu-dropdown-item ${groupChatActive ? 'is-active' : ''}`}
+                        onClick={() => { onToggleGroupChat(); setOpenMenu(null); }}
+                        title="与全部固定岗群聊（可 @ 指定智能体）；再点切回当前对话人"
+                      >
+                        <span className="mu-mode-item-row"><span className="mu-send-menu-glyph">💬</span>任务群聊</span>
+                        {groupChatActive && <span className="mu-item-check">✓</span>}
+                      </button>
+                      <div style={{ height: 1, background: 'var(--border-subtle)', margin: '4px 6px' }} />
+                    </>
+                  )}
+                  {/* 固定岗全列（2026-08-24 定案）：在岗可选，未上岗置灰 */}
+                  {FIXED_AGENT_ROLES.map((fr) => {
+                    const ag = agents.find((a) => agentMatchesFixedRole(a, fr.role));
+                    if (ag) {
+                      return (
+                        <button
+                          key={fr.role}
+                          type="button"
+                          className={`mu-dropdown-item ${!groupChatActive && ag.id === activeAgentId ? 'is-active' : ''}`}
+                          onClick={() => { onSelectAgent?.(ag.id); setOpenMenu(null); }}
+                        >
+                          <span className="mu-mode-item-row"><span className="mu-send-menu-glyph">{fr.icon}</span>{ag.name !== fr.label ? `${ag.name} · ${fr.label}` : fr.label}</span>
+                          {ag.id === activeAgentId && <span className="mu-item-check">✓</span>}
+                        </button>
+                      );
+                    }
+                    return (
+                      <button key={fr.role} type="button" className="mu-dropdown-item" disabled title="该固定岗暂未上岗">
+                        <span className="mu-mode-item-row"><span className="mu-send-menu-glyph">{fr.icon}</span>{fr.label} · <small className="muted">未上岗</small></span>
+                      </button>
+                    );
+                  })}
+                  {/* 自定义员工（非固定岗） */}
+                  {agents.filter((a) => !isFixedRoleAgent(a)).map((a) => (
+                    <button
+                      key={a.id}
+                      type="button"
+                      className={`mu-dropdown-item ${!groupChatActive && a.id === activeAgentId ? 'is-active' : ''}`}
+                      onClick={() => { onSelectAgent?.(a.id); setOpenMenu(null); }}
+                    >
+                      <span className="mu-mode-item-row"><span className="mu-send-menu-glyph">👤</span>{a.name}</span>
+                      {a.id === activeAgentId && <span className="mu-item-check">✓</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="mu-prompt-actions">
+          {/* 模型选择（2026-08-23 定案：右侧；无清单也显示「选择模型」占位——自动识别清单是下一专项） */}
+          {modelOptions && onSelectModel && (
+            <div className="mu-composer-popover-wrap">
+              {menuButton('model', (
+                <>
+                  <span className="mu-pill-icon">🧠</span>
+                  <span className="mu-pill-label">{currentModelLabel}</span>
+                  <span className="mu-pill-arrow">▾</span>
+                </>
+              ), '切换模型')}
+              {openMenu === 'model' && (
+                <div className="mu-composer-dropdown" style={{ left: 'auto', right: 0 }}>
+                  <div className="mu-dropdown-header">选择模型</div>
+                  {models.length === 0 && <span className="mu-dropdown-item is-static">未发现模型——在执行器中心配置</span>}
+                  {models.map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      className={`mu-dropdown-item ${m.id === currentModel ? 'is-active' : ''}`}
+                      onClick={() => { onSelectModel?.(m.id); setOpenMenu(null); }}
+                    >
+                      <span>{m.label}</span>
+                      {m.id === currentModel && <span className="mu-item-check">✓</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 思考深度（2026-08-23 定案：展开菜单选择，不再是点击循环切换） */}
+          {onToggleThinking && (
+            <div className="mu-composer-popover-wrap">
+              {menuButton('think', (
+                <>
+                  <span className="mu-pill-icon">💭</span>
+                  <span className="mu-pill-label">{thinkingLabel}</span>
+                  <span className="mu-pill-arrow">▾</span>
+                </>
+              ), '思考深度')}
+              {openMenu === 'think' && (
+                <div className="mu-composer-dropdown" style={{ left: 'auto', right: 0 }}>
+                  <div className="mu-dropdown-header">思考深度</div>
+                  {([
+                    { id: 'off', label: '关', hint: '不启用思考' },
+                    { id: 'low', label: '快', hint: '轻量思考，速度优先' },
+                    { id: 'med', label: '中', hint: '平衡思考与耗时' },
+                    { id: 'high', label: '深', hint: '充分思考，质量优先' },
+                  ] as const).map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      className={`mu-dropdown-item ${t.id === thinkingDepth ? 'is-active' : ''}`}
+                      onClick={() => { onToggleThinking(t.id); setOpenMenu(null); }}
+                    >
+                      <span>{t.label} <small className="muted">{t.hint}</small></span>
+                      {t.id === thinkingDepth && <span className="mu-item-check">✓</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          {/* 2026-08-24 定案：⇧↵ 换行提示悬浮发送钮上方居中；⌄ 菜单=全局暂停/全局停止——只针对当前任务：
+              在跑才可选，没跑置灰（后台其他 agent 的任务不在此管，各有自己的停止入口）。 */}
+          {stopRequested && (
+            <span
+              className="mu-stop-waiting"
+              title="已请求暂停，正在等任务到达安全边界（写文件等写完/命令等跑完/等模型直接停）；超时自动强停并保留现场"
+            >
+              ⏸ 暂停中…
+            </span>
+          )}
+          <div className="mu-send-group">
+            <div className="mu-send-anchor">
+              <span className="mu-composer-hint mu-send-hint" title="Shift+Enter 换行">⇧↵ 换行</span>
+              <Button
+                size="sm"
+                variant="primary"
+                loading={loading}
+                disabled={(!text.trim() && attachments.length === 0 && !quotedContext && !panelQuote) || disabled}
+                onClick={handleSend}
+                className="mu-composer-send-btn"
+                aria-label="发送"
+              >
+                <span aria-hidden="true">↑</span>
+              </Button>
+            </div>
+            {onStop && (
+              <div className="mu-composer-popover-wrap">
+                <button
+                  type="button"
+                  className="mu-composer-pill"
+                  aria-label="当前任务暂停或停止"
+                  title={isRunning ? '当前任务：全局暂停 / 全局停止' : '当前任务未在执行'}
+                  onClick={() => setOpenMenu(openMenu === 'send' ? null : 'send')}
+                >
+                  <span className="mu-pill-arrow">⌄</span>
+                </button>
+                {openMenu === 'send' && (
+                  <div className="mu-composer-dropdown mu-send-menu" style={{ left: 'auto', right: 0, bottom: '100%', marginBottom: 4, minWidth: 0, width: 'max-content' }}>
+                    <button
+                      type="button"
+                      className="mu-dropdown-item"
+                      disabled={!isRunning || stopRequested}
+                      onClick={() => { setOpenMenu(null); onStop(); }}
+                      title="暂停当前任务的执行（等安全边界停下，保留现场可恢复）"
+                    >
+                      <span className="mu-send-menu-row"><span className="mu-send-menu-glyph">⏸️</span>全局暂停</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="mu-dropdown-item"
+                      disabled={!isRunning || stopRequested}
+                      onClick={() => { setOpenMenu(null); onStopImmediate?.(); }}
+                      title="立刻终止当前任务执行——不等边界，现场保留在打断记录里。急救用，如误跑破坏性命令"
+                    >
+                      <span className="mu-send-menu-row"><span className="mu-send-menu-glyph">⛔️</span>全局停止</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

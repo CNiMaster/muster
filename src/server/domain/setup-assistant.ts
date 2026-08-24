@@ -134,7 +134,7 @@ export async function generateProjectProposal(
     outline: input.prompt,
     pov: '第三人称限知视角',
     style: '清晰、连贯',
-    sampleText: '请在创建项目后与第一负责人继续确认文风样例。',
+    sampleText: '请在创建项目后与负责人继续确认文风样例。',
     initialTaskTitle: '根据用户初始设想整理项目简报与第一阶段大纲',
   };
   return generateWithFallback(

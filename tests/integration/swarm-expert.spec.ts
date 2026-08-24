@@ -2,7 +2,7 @@
  * 蜂群专家团 + 派遣分级（批次5）：
  * - swarmPlan worker 指定 personaId → 工蜂任务穿戴人设（显式优先于蓝图自动匹配）
  * - 专家自主小额：建群快照限额 = 3 蜂/单层/$1，requester 落库
- * - 超限/已有活跃群 → 升级第一负责人（[蜂群请示] 任务，不建群）
+ * - 超限/已有活跃群 → 升级负责人（[蜂群请示] 任务，不建群）
  * - 匿名蜂不受影响
  */
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -83,7 +83,7 @@ describe('swarm expert team', () => {
     expect(countActiveSwarmsByRequester(db, expert.id)).toBe(1);
   });
 
-  it('超限升级：超过 3 只不建群，改派 [蜂群请示] 给第一负责人', () => {
+  it('超限升级：超过 3 只不建群，改派 [蜂群请示] 给负责人', () => {
     const expert = db.prepare("SELECT id FROM agent_definition WHERE role='writer'").get() as { id: string };
     const lead = db.prepare("SELECT id FROM agent_definition WHERE role='lead'").get() as { id: string };
     const source = makeTask(expert.id);

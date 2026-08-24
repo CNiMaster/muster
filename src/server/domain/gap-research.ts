@@ -40,12 +40,12 @@ export function dispatchGapResearch(db: DB, task: Task, gaps: CapabilityGap[]): 
   const already = listTaskEvents(db, task.id).some((e) => e.kind === 'capability_gap_research_dispatched');
   if (already) return { dispatched: false, reason: '本任务已派过能力缺口调研' };
 
-  // 选研究员：在线 + research 技能；否则第一负责人；都没有则放弃。
+  // 选研究员：在线 + research 技能；否则负责人；都没有则放弃。
   const online = listAgents(db).filter((a) => a.availabilityState === 'online');
   const researcher = online.find((a) => (a.skills ?? []).includes('research'))
     ?? online.find((a) => company.firstAgentId && a.id === company.firstAgentId)
     ?? null;
-  if (!researcher) return { dispatched: false, reason: '无在线研究员或第一负责人可派' };
+  if (!researcher) return { dispatched: false, reason: '无在线研究员或负责人可派' };
 
   // 注册表候选（缺口 → 现成方案）作为研究员的起点。
   const candidates = findRegistryCandidatesForGaps(

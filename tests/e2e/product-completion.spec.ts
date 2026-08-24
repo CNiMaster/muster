@@ -19,7 +19,7 @@ test('项目工作台三层视图形成完整入口', async ({ page }) => {
   await expect(page.getByRole('complementary', { name: '项目任务与运行' })).toBeVisible();
   await expect(page.getByPlaceholder(/给智能体下达指令|直接输入需求/)).toBeVisible();
 
-  // 左栏协作区进入第一负责人视图（2026-08-20 UI 重构：员工入口=底部药丸按钮）
+  // 左栏协作区进入负责人视图（2026-08-20 UI 重构：员工入口=底部药丸按钮）
   await page.getByRole('button', { name: new RegExp(`成品智能体-${suffix}`) }).click();
   await expect(page).toHaveURL(new RegExp(`/projects/${project.id}\\?view=employee&agent=${agent.id}`));
 });

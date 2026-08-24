@@ -1,5 +1,5 @@
 -- 0002: 公司/项目对话窗口消息
--- PRD: 类群聊的公司/项目窗口，用户与第一负责人对话，展示关键事件摘要。
+-- PRD: 类群聊的公司/项目窗口，用户与负责人对话，展示关键事件摘要。
 -- conversation_message 存公司/项目层级的对话（区别于 task_message 的 Task 内讨论）。
 
 CREATE TABLE conversation_message (

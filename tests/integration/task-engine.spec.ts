@@ -87,9 +87,9 @@ describe('task state machine', () => {
 });
 
 describe('atomic claim (concurrent)', () => {
-  it('第一负责人领取任务池中的未分配工作后会成为持久负责人', () => {
+  it('负责人领取任务池中的未分配工作后会成为持久负责人', () => {
     const { project, lead } = fixture();
-    const pooledTask = createTask(db, { projectId: project.id, title: '由第一负责人领取并派发' });
+    const pooledTask = createTask(db, { projectId: project.id, title: '由负责人领取并派发' });
     const leadThread = ensurePrimaryThread(db, project.id, lead.id);
 
     const claimed = claimNextTask(db, leadThread.id, lead.id);
@@ -209,7 +209,7 @@ describe('dependencies', () => {
 });
 
 describe('clarification rounds', () => {
-  it('waiting_input 三轮后上报第一负责人', () => {
+  it('waiting_input 三轮后上报负责人', () => {
     const { project, writer, lead } = fixture();
     const t = createTask(db, { projectId: project.id, assigneeAgentId: writer.id, title: 't' });
     const thread = ensurePrimaryThread(db, project.id, writer.id);
@@ -263,7 +263,7 @@ describe('fake executor end-to-end', () => {
     expect(t.summary).toBe('完成了');
   });
 
-  it('无 Task 时自动给第一负责人派规划 Task', () => {
+  it('无 Task 时自动给负责人派规划 Task', () => {
     const { project, lead } = fixture();
     const projectTask = createProjectTask(db, { projectId: project.id, title: '当前迭代' });
     expect(listTasks(db, project.id)).toHaveLength(0);

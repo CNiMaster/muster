@@ -93,12 +93,18 @@ export function ProjectMergesPage(): React.ReactElement {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div style={{ display: 'flex', gap: '4px' }}>
-        <button type="button" className={`mu-composer-pill ${activeTab === 'merges' ? 'is-highlight' : ''}`} onClick={() => setActiveTab('merges')}>
-          <span>🔀 待合并</span>
+      <header className="page-header" style={{ marginBottom: 0 }}>
+        <div>
+          <h1>待合并成果</h1>
+          <p className="subtitle">任务集成区攒下的成果在这里审批合并；搁置超过 5 小时的会标红提醒。</p>
+        </div>
+      </header>
+      <div className="mu-tabs" style={{ display: 'flex', gap: 4 }}>
+        <button type="button" className={`mu-tab ${activeTab === 'merges' ? 'mu-tab-active' : ''}`} onClick={() => setActiveTab('merges')}>
+          🔀 待合并
         </button>
-        <button type="button" className={`mu-composer-pill ${activeTab === 'issues' ? 'is-highlight' : ''}`} onClick={() => setActiveTab('issues')}>
-          <span>🐙 Issue 处理</span>
+        <button type="button" className={`mu-tab ${activeTab === 'issues' ? 'mu-tab-active' : ''}`} onClick={() => setActiveTab('issues')}>
+          🐙 Issue 处理
         </button>
       </div>
       {activeTab === 'issues' ? (

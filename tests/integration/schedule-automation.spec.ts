@@ -121,7 +121,7 @@ describe('防叠跑护栏', () => {
 });
 
 describe('once（一次性：倒计时/指定时刻）触发器（批次三）', () => {
-  it('到点执行一次即停（enabled=0），未指定执行人默认派第一负责人', () => {
+  it('到点执行一次即停（enabled=0），未指定执行人默认派负责人', () => {
     const { project, lead } = makeCompanyFixture();
     const projectTask = createProjectTask(db, { projectId: project.id, title: '提醒' });
     registerScheduleTrigger(db, {
@@ -139,7 +139,7 @@ describe('once（一次性：倒计时/指定时刻）触发器（批次三）',
     // 未到点不派发
     expect(dispatchDueScheduleTriggers(db, new Date('2026-01-01T08:29:00.000Z'))).toEqual([]);
 
-    // 到点：派发一次 + 执行即停 + 默认派第一负责人
+    // 到点：派发一次 + 执行即停 + 默认派负责人
     const dispatched = dispatchDueScheduleTriggers(db, new Date('2026-01-01T08:31:00.000Z'));
     expect(dispatched).toHaveLength(1);
     const task = getTask(db, dispatched[0]);
@@ -193,7 +193,7 @@ describe('once（一次性：倒计时/指定时刻）触发器（批次三）',
 });
 
 describe('公司级触发器', () => {
-  it('公司还没有项目时不派发且不推进 next_run_at；有项目后派发给第一负责人', () => {
+  it('公司还没有项目时不派发且不推进 next_run_at；有项目后派发给负责人', () => {
     const company = restoreWorkbench(db, { id: 'wb_fix_2', name: 'co' });
     const lead = createAgent(db, { companyId: company.id, name: 'lead', role: 'lead' });
     updateCompanyFirstAgent(company.id, lead.id);
@@ -272,7 +272,7 @@ function setTaskState(db: DB, id: string, state: string): void {
   db.prepare('UPDATE task SET state=? WHERE id=?').run(state, id);
 }
 
-/** 测试助手：设置公司第一负责人（createCompany 不支持直接传）。 */
+/** 测试助手：设置公司负责人（createCompany 不支持直接传）。 */
 function updateCompanyFirstAgent(companyId: string, agentId: string): void {
   db.prepare('UPDATE workbench SET first_agent_id=? WHERE id=?').run(agentId, companyId);
 }

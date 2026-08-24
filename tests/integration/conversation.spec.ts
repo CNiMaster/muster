@@ -1,6 +1,6 @@
 /**
  * 阶段 B 测试：对话窗口 domain
- - 用户消息派给第一负责人 Task（project scope）
+ - 用户消息派给负责人 Task（project scope）
  - company scope 落收件箱项目（蓝图组织批次4d：随手问载体，自动创建、不借用业务项目）
  - 消息按时间排序
  - @提及解析
@@ -23,7 +23,7 @@ beforeEach(() => {
 });
 
 describe('conversation messages', () => {
-  it('project scope 用户消息派给项目第一负责人 Task', () => {
+  it('project scope 用户消息派给项目负责人 Task', () => {
     const r = createNovelCompany(db, { name: 'co' });
     const project = createProject(db, {
       companyId: r.company.id,
@@ -53,7 +53,7 @@ describe('conversation messages', () => {
       content: '你好',
     });
     expect(userMessage.role).toBe('user');
-    // 新语义：收件箱项目自动创建，消息派给公司第一负责人
+    // 新语义：收件箱项目自动创建，消息派给公司负责人
     expect(task).not.toBeNull();
     expect(task!.assigneeAgentId).toBe(r.agents.lead.id);
     const inbox = db.prepare('SELECT * FROM project').all()
@@ -88,7 +88,7 @@ describe('conversation messages', () => {
     expect(second.task!.projectId).toBe(task!.projectId);
   });
 
-  it('@员工时直接派给被提及者，未提及时仍默认第一负责人', () => {
+  it('@员工时直接派给被提及者，未提及时仍默认负责人', () => {
     const r = createNovelCompany(db, { name: 'co' });
     const project = createProject(db, {
       companyId: r.company.id,

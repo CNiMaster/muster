@@ -125,7 +125,7 @@ export class ProjectRuntimeCoordinator {
       } catch (error) {
         log.warn('queued message drain failed', { error: error instanceof Error ? error.message : String(error) });
       }
-      // 阶段一任务 1.2：扫描 waiting_input/waiting_dependency 超时任务并上报第一负责人。
+      // 阶段一任务 1.2：扫描 waiting_input/waiting_dependency 超时任务并上报负责人。
       // 独立 try/catch：超时上报失败不影响租约恢复与任务泵送。
       try {
         this.reportStaleWaitingTasks();
@@ -344,7 +344,7 @@ export class ProjectRuntimeCoordinator {
 
   /**
    * 阶段一任务 1.2：扫描等待超时的 task（waiting_input / waiting_dependency），
-   * 超阈值则给第一负责人派 [超时] 上报 Task。
+   * 超阈值则给负责人派 [超时] 上报 Task。
    * 冷却期（STALE_WAITING_REPORT_COOLDOWN_MS）内同一 task 不重复上报。
    */
   private reportStaleWaitingTasks(): number {
@@ -404,7 +404,7 @@ export class ProjectRuntimeCoordinator {
    * 阶段一任务 1.3：Inspector 定时自动运行。
    * 对 online 公司 active 项目生成监察建议：
    * - 非 ok 建议持久化到 inspector_alert（5 分钟同 kind+project 去重）。
-   * - 高严重度（stuck/absence）同时给第一负责人派 [告警] 上报 Task。
+   * - 高严重度（stuck/absence）同时给负责人派 [告警] 上报 Task。
    */
   private runInspectorAlerts(): number {
     let alerts = 0;
@@ -438,7 +438,7 @@ export class ProjectRuntimeCoordinator {
                 suggestion.createdAt,
               );
             alerts++;
-            // 高严重度：上报第一负责人处理。
+            // 高严重度：上报负责人处理。
             // Review 修复：近 30 分钟同 project+kind 已有未完成 [告警] Task 则不重复上报，
             // 避免持续 stuck/absence 时负责人每 5 分钟收到一个新任务。
             if (suggestion.severity === 'high' && project.firstAgentId) {

@@ -198,7 +198,7 @@ describe('P1 开始段有界对齐', () => {
     expect(answered.acceptanceCriteria.filter((a) => a.id === 'ac_1')).toHaveLength(1);
   });
 
-  it(`达 MAX_ALIGNMENT_ROUNDS(${MAX_ALIGNMENT_ROUNDS}) 上报第一负责人`, () => {
+  it(`达 MAX_ALIGNMENT_ROUNDS(${MAX_ALIGNMENT_ROUNDS}) 上报负责人`, () => {
     const c = restoreWorkbench(db, { id: 'wb_fix_2', name: '上报公司' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/p', firstAgentId: lead.id, initialState: 'active' });

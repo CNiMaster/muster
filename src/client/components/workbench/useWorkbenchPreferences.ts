@@ -11,26 +11,27 @@ export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = {
   leftOpen: true,
   rightOpen: true,
   leftWidth: 248,
-  rightWidth: 304,
+  rightWidth: 360,
 };
 
 /**
  * 布局重构（2026-08-23 用户定案）：三栏共存优先，抽屉只留给手机/平板竖屏。
- * - 桌面阈值 740px ≈ 左(176) + 中(360) + 右(200) 三栏各自压到下限的总和；
+ * - 桌面阈值 740px ≈ 左(240) + 中(240) + 右(240) 三栏各自压到下限再加余量；
  *   高于它一律真三栏（可拖拽），低于它左右栏退化为互斥抽屉浮层（带遮罩）。
- * - 中栏最小宽随视口走：max(360, 25vw)——1/4 屏为基准，360 绝对下限防极端窄窗。
- * - 侧栏下限 ≈ 1/8 屏（1512 屏上 189px）：left 176 / right 200（右栏按钮多略宽）。
+ * - 2026-08-24 定案：左栏 240–720；右栏 240–960；中栏最小 240、无上限（原 max(360,25vw) 退役）。
  */
 export const WORKBENCH_DESKTOP_MIN = 740;
 
+/** 2026-08-24 用户定案：中栏最小 240、无上限（原 max(360,25vw) 动态基准退役）。 */
 export function surfaceMinWidthFor(width: number): number {
-  return Math.max(360, Math.round(width * 0.25));
+  void width;
+  return 240;
 }
 
-/** 栏宽合法范围（拖拽 clamp 与读取校验共用一份口径）。 */
+/** 栏宽合法范围（拖拽 clamp 与读取校验共用一份口径）。2026-08-24 定案：左栏 240–720；右栏 240–960（承载工具页可拉更宽）。 */
 export const PANE_WIDTH_BOUNDS: Record<'left' | 'right', { min: number; max: number }> = {
-  left: { min: 176, max: 360 },
-  right: { min: 200, max: 420 },
+  left: { min: 240, max: 720 },
+  right: { min: 240, max: 960 },
 };
 
 export function clampPaneWidth(pane: 'left' | 'right', px: number): number {
@@ -91,6 +92,7 @@ export function useWorkbenchPreferences(scopeKey: string): WorkbenchPreferences 
   viewportWidth: number;
   toggleLeft: () => void;
   toggleRight: () => void;
+  setRightOpen: (open: boolean) => void;
   closeDrawers: () => void;
   setWidth: (pane: 'left' | 'right', px: number, commit: boolean) => void;
 } {
@@ -156,6 +158,15 @@ export function useWorkbenchPreferences(scopeKey: string): WorkbenchPreferences 
     viewportWidth,
     toggleLeft: () => togglePane('left'),
     toggleRight: () => togglePane('right'),
+    // 幂等设置（区别于 toggle 的翻转语义）：工具页 mount 同步右栏开合用——StrictMode 双跑下 toggle 两次会抵消
+    setRightOpen: (open: boolean) => {
+      const width = typeof window === 'undefined' ? Infinity : window.innerWidth;
+      if (width < WORKBENCH_DESKTOP_MIN) {
+        setDrawers(open ? { left: false, right: true } : { left: false, right: false });
+        return;
+      }
+      setSavedPreferences((value) => (value.rightOpen === open ? value : { ...value, rightOpen: open }));
+    },
     closeDrawers: () => {
       setDrawers({ left: false, right: false });
       if (isOverlay) return;

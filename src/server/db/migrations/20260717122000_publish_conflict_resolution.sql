@@ -1,4 +1,4 @@
--- 发布冲突闭环：保留原始发布请求，并关联第一负责人的裁决 Task。
+-- 发布冲突闭环：保留原始发布请求，并关联负责人的裁决 Task。
 -- 先创建旧表形状，保证全新数据库和已有数据库都能安全执行后续 ALTER。
 CREATE TABLE IF NOT EXISTS publish_record (
   id TEXT PRIMARY KEY,

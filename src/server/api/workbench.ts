@@ -144,7 +144,7 @@ workbenchRouter.get(
   }),
 );
 
-/** 指挥系统批次1：工作台级定时自动化（不绑定项目任务，派发给第一负责人；任务载体=最早项目）。 */
+/** 指挥系统批次1：工作台级定时自动化（不绑定项目任务，派发给负责人；任务载体=最早项目）。 */
 workbenchRouter.get(
   '/automation',
   asyncHandler(async (req, res) => {

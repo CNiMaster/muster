@@ -7,7 +7,7 @@
  * 失败可观测（用户核心关切）：单一记账咽喉——蜂任务终态统一过
  * recordSwarmNodeOutcome（completeTask/failTask/cancelTask 调用），
  * 更新整群计数；失败率过线 → 去重「蜂群告警」给养蜂人；失败过半 → 自动熔断。
- * 蜂群内失败不走 [兜底]（那会打扰第一负责人），改道养蜂人处置。
+ * 蜂群内失败不走 [兜底]（那会打扰负责人），改道养蜂人处置。
  *
  * 注：与 task.ts / temp-worker.ts 存在循环导入——ESM 函数级调用安全（不在模块加载期互相求值）。
  */
@@ -28,6 +28,7 @@ import { ensurePrimaryThread } from './thread';
 import { getPersona } from './persona-library';
 import { getWorkbenchOrNull } from './workbench';
 import { clampSwarmLimits, isBreadthTier, taskBreadthTier } from './breadth-tier';
+import { clampTaskTitle } from './task-title';
 import type { SwarmPlan } from '../../shared/types';
 
 export const SWARM_WORKER_ROLE = 'swarm-worker';
@@ -126,7 +127,7 @@ export function createSwarmRun(db: DB, input: {
   return getSwarmRun(db, id);
 }
 
-/** 专家自主额度（派遣分级批次5）：非第一负责人/养蜂人的智能体可自主放的小蜂群。 */
+/** 专家自主额度（派遣分级批次5）：非负责人/养蜂人的智能体可自主放的小蜂群。 */
 export const EXPERT_SWARM_LIMITS = { maxDepth: 1, maxWidth: 3, maxNodes: 4, budgetUsd: 1 };
 
 /** 该智能体是否已有活跃蜂群（专家自主并发控制：同时最多 1 群）。 */
@@ -137,7 +138,7 @@ export function countActiveSwarmsByRequester(db: DB, agentId: string): number {
   return row.c;
 }
 
-/** 请示第一负责人：超限/并发冲突时把完整计划派给负责人把关（负责人可自行决定转派养蜂人或拒绝）。 */
+/** 请示负责人：超限/并发冲突时把完整计划派给负责人把关（负责人可自行决定转派养蜂人或拒绝）。 */
 export function escalateSwarmRequest(db: DB, input: {
   companyId?: string; projectId: string; leadAgentId: string; requesterAgentId: string; requesterName: string; plan: SwarmPlan;
   /** 发起者任务 id：请示任务挂为其子任务，负责人完成请示即走既有父恢复链唤醒发起者。 */
@@ -506,7 +507,7 @@ export function resumeSwarmDependentsAfterFailure(db: DB, failedTaskId: string):
 }
 
 /**
- * 蜂群失败处置（failTask 对 swarm 任务的替代传播——不走 [兜底]/第一负责人）：
+ * 蜂群失败处置（failTask 对 swarm 任务的替代传播——不走 [兜底]/负责人）：
  * 1. 给根任务写失败通知（养蜂人下次执行/告警处置可见）。
  * 2. 失败视为已收口，恢复被阻塞的等待方（汇总任务/父蜂继续走）。
  * 3. 记账（计数 + 告警评估 + 熔断评估）。
@@ -752,7 +753,7 @@ export function materializeSwarm(
       rootTaskId,
       dispatcherAgentId: rootDispatcherId,
       assigneeAgentId: beeAgentId,
-      title: worker.title,
+      title: clampTaskTitle(worker.title),
       swarmManaged: true,
       ...(beePersonaId ? { personaId: beePersonaId } : {}),
       inputProtocol: {
@@ -787,7 +788,7 @@ export function materializeSwarm(
       rootTaskId,
       dispatcherAgentId: rootDispatcherId,
       assigneeAgentId: rootDispatcherId,
-      title: `[蜂群汇总] ${plan.goal.slice(0, 40)}`,
+      title: clampTaskTitle(`[蜂群汇总] ${plan.goal}`),
       inputProtocol: {
         trigger: 'swarm_synthesis',
         swarm: { swarmId, goal: swarm.goal, beeCount: beeTaskIds.length },

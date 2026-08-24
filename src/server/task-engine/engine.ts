@@ -793,8 +793,8 @@ export class TaskEngine {
       }
 
       // 指挥系统 W3 + 派遣分级（批次5）：任何非控制面智能体返回 swarmPlan 均可落地蜂群。
-      // 控制面（工蜂/辩手）永不自主；第一负责人与养蜂人 = 全额四项限额；其他专家 = 小额自主，
-      // 超出额度或已有活跃蜂群 → 请示第一负责人（完整计划派发，负责人把关后自行转派养蜂人或拒绝）。
+      // 控制面（工蜂/辩手）永不自主；负责人与养蜂人 = 全额四项限额；其他专家 = 小额自主，
+      // 超出额度或已有活跃蜂群 → 请示负责人（完整计划派发，负责人把关后自行转派养蜂人或拒绝）。
       if (result.swarmPlan && agent.role !== 'swarm-worker' && agent.role !== 'debater' && agent.role !== 'debate-judge') {
         const plan = result.swarmPlan;
         result.swarmPlan = undefined;
@@ -810,7 +810,7 @@ export class TaskEngine {
           } else {
             const activeSwarms = countActiveSwarmsByRequester(this.db, agent.id);
             if (plan.workers.length > EXPERT_SWARM_LIMITS.maxWidth || activeSwarms > 0) {
-              if (!workbench.firstAgentId) throw new Error('工作台缺少第一负责人，无法请示放蜂');
+              if (!workbench.firstAgentId) throw new Error('工作台缺少负责人，无法请示放蜂');
               const escalated = escalateSwarmRequest(this.db, {
                 companyId: workbench.id,
                 projectId: project.id,
@@ -822,8 +822,8 @@ export class TaskEngine {
               });
               result.outcome = 'waiting_dependency';
               result.summary = activeSwarms > 0
-                ? `已向第一负责人请示放蜂：你已有活跃蜂群（并发上限 1 群），需负责人批准后才可并行放蜂。`
-                : `已向第一负责人请示放蜂：${plan.workers.length} 只超出专家自主额度 ${EXPERT_SWARM_LIMITS.maxWidth} 只，负责人确认后按全额执行。`;
+                ? `已向负责人请示放蜂：你已有活跃蜂群（并发上限 1 群），需负责人批准后才可并行放蜂。`
+                : `已向负责人请示放蜂：${plan.workers.length} 只超出专家自主额度 ${EXPERT_SWARM_LIMITS.maxWidth} 只，负责人确认后按全额执行。`;
               realtime.publish(makeLifecycleEvent('swarm.request-escalated', { escalationTaskId: escalated.taskId, goal: plan.goal.slice(0, 80), requesterAgentId: agent.id }, { projectId: project.id, taskId: task.id }));
             } else {
               const materialized = materializeSwarm(this.db, task, plan, { requesterAgentId: agent.id, limitsOverride: EXPERT_SWARM_LIMITS });
@@ -1068,7 +1068,7 @@ export class TaskEngine {
               sourceTaskId: task.id,
               conflicts: pub.conflicts,
               attempt: nextAttempt,
-              reason: project.firstAgentId ? '裁决后再次冲突，已达到自动裁决上限' : '项目未设置第一负责人',
+              reason: project.firstAgentId ? '裁决后再次冲突，已达到自动裁决上限' : '项目未设置负责人',
             }, { projectId: project.id, taskId: task.id }));
           }
           return true;
@@ -1858,7 +1858,7 @@ export class TaskEngine {
 
   /**
    * 自动触发1：验收不达标 → quality-review 讨论。
-   * 产出者 + 第一负责人（评审者）参与，讨论如何改进。
+   * 产出者 + 负责人（评审者）参与，讨论如何改进。
    */
   private triggerQualityReviewDiscussion(task: ReturnType<typeof getTask>, acceptanceMet: Array<{ id: string; met: boolean }>, agent: ReturnType<typeof getAgent>, project: ReturnType<typeof getProject>): void {
     const failedCriteria = acceptanceMet.filter((m) => m.met === false).map((m) => m.id);
@@ -1881,7 +1881,7 @@ export class TaskEngine {
 
   /**
    * 自动触发2：发布冲突 → conflict-resolution 讨论。
-   * 冲突方（sourceTaskIds 的 assignee）+ 裁决者（第一负责人）协商。
+   * 冲突方（sourceTaskIds 的 assignee）+ 裁决者（负责人）协商。
    */
   private triggerConflictResolutionDiscussion(task: ReturnType<typeof getTask>, project: ReturnType<typeof getProject>, conflicts: string[], sourceTaskIds: string[]): void {
     const participants: string[] = [];
@@ -2056,7 +2056,7 @@ export class TaskEngine {
             projectId: project.id,
             failureCount: failed.failureCount,
           });
-          // 系统自动触发：失败 3 次 → 自动发起 help-request 讨论（执行者+第一负责人+相关同事）
+          // 系统自动触发：失败 3 次 → 自动发起 help-request 讨论（执行者+负责人+相关同事）
           try {
             const assigneeId = failed.assigneeAgentId;
             const participants: string[] = [];

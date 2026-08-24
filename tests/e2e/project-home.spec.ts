@@ -17,16 +17,14 @@ test('工作台左栏：独立任务一行即建，当前项目任务>5 折叠�
   await page.goto(`/projects/${project.id}`);
   await expect(page.getByRole('navigation', { name: '项目组织与联系人' })).toBeVisible({ timeout: 15000 });
 
-  // 独立任务：左栏 ⚡ 区一行输入即建
-  const input = page.getByPlaceholder(/随手记小任务/);
-  await input.fill('e2e 独立小任务');
-  await page.keyboard.press('Enter');
+  // 独立任务（2026-08-24 定案：一行即建退役）——「＋ 新建独立任务」→ 中栏创建卡 → 创建并进入
+  await page.getByRole('button', { name: '新建独立任务' }).click();
+  await page.getByPlaceholder(/重构前端三栏工作台布局/).fill('e2e 独立小任务');
+  await page.getByRole('button', { name: '创建并进入' }).click();
   await expect(page.getByRole('link', { name: 'e2e 独立小任务' })).toBeVisible({ timeout: 8000 });
 
-  // 当前项目任务折叠：显示前 5（seq 倒序 = 任务7..3），折叠的是任务2/1
+  // 项目行任务列表（2026-08-24 定案：任务挂在项目行下，默认展开）：全部可见，无「显示更多」折叠
   await expect(page.getByRole('link', { name: /待办任务7/ }).first()).toBeVisible();
-  await expect(page.getByRole('link', { name: /待办任务1/ })).toHaveCount(0);
-  await page.getByRole('button', { name: /显示更多 2/ }).click();
   await expect(page.getByRole('link', { name: /待办任务1/ }).first()).toBeVisible();
 });
 

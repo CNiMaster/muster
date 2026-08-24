@@ -146,7 +146,7 @@ describe('org config lock', () => {
 });
 
 describe('company first agent', () => {
-  it('健康校验：缺少第一负责人抛错', () => {
+  it('健康校验：缺少负责人抛错', () => {
     const c = restoreWorkbench(db, { id: 'wb_fix_13', name: 'co' });
     expect(() => {
       const co = getWorkbench(db);

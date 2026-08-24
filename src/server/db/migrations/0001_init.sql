@@ -21,7 +21,7 @@ CREATE TABLE company (
                   CHECK (state IN ('off','online','draining','review_paused')),
   charter         TEXT NOT NULL DEFAULT '',         -- 公司章程，所有员工始终加载
   contract_json   TEXT NOT NULL DEFAULT '{}',       -- 结构化运行契约
-  first_agent_id  TEXT,                              -- 公司第一负责人
+  first_agent_id  TEXT,                              -- 公司负责人
   created_at      TEXT NOT NULL,
   updated_at      TEXT NOT NULL,
   FOREIGN KEY (first_agent_id) REFERENCES agent_definition(id) DEFERRABLE INITIALLY DEFERRED
@@ -120,7 +120,7 @@ CREATE TABLE project (
   name            TEXT NOT NULL,
   description     TEXT NOT NULL DEFAULT '',
   root_dir        TEXT NOT NULL,                -- 用户项目目录绝对路径
-  first_agent_id  TEXT,                          -- 项目第一负责人（默认继承公司）
+  first_agent_id  TEXT,                          -- 负责人（默认继承公司）
   state           TEXT NOT NULL DEFAULT 'idle'
                     CHECK (state IN ('idle','active','paused','completed','archived')),
   settings_json   TEXT NOT NULL DEFAULT '{}',

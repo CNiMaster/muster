@@ -354,7 +354,7 @@ describe('W3 引擎接线', () => {
     expect(beeRows).toHaveLength(2);
     expect(listTaskEvents(db, dispTask.id).some((e) => e.kind === 'swarm_created')).toBe(true);
 
-    // 派遣分级（批次5）：第一负责人返回 swarmPlan → 全额落地（不再忽略）
+    // 派遣分级（批次5）：负责人返回 swarmPlan → 全额落地（不再忽略）
     fake.script([
       {
         result: {

@@ -563,15 +563,15 @@
 }
 .mu-msg-user .mu-msg-avatar { background: var(--accent); color: var(--accent-fg); }
 .mu-msg-bubble {
-  /* AI 消息：无框纯文本流（第一负责人名义，不显示身份） */
+  /* AI 消息：无框纯文本流（负责人名义，不显示身份） */
   background: transparent;
   border: none;
   border-radius: var(--radius-md);
   padding: var(--space-1) var(--space-2);
 }
 .mu-msg-user .mu-msg-bubble {
-  /* 用户消息：与左栏选中态同色（bg-elev 亮一档焦点块）——2026-08-23 用户定案三统一：用户气泡=左栏选中=工具卡 */
-  background: var(--bg-elev);
+  /* 用户消息：与左栏选中态同色（sunken 加深一档焦点块）——2026-08-23 用户定案三统一：用户气泡=左栏选中=工具卡 */
+  background: var(--bg-sunken);
   color: var(--fg);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
@@ -855,12 +855,8 @@
   gap: 6px;
   flex: 1;
   min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
-  flex-wrap: nowrap;
-}
-.mu-prompt-controls::-webkit-scrollbar {
-  display: none;
+  /* 2026-08-23 修复：原 overflow-x:auto 会把 overflow-y 强制为 auto，向上弹出的菜单被裁剪到工具栏高度内（点开看不见）——改允许换行 */
+  flex-wrap: wrap;
 }
 .mu-composer-popover-wrap {
   position: relative;
@@ -905,22 +901,12 @@
   font-size: 12px;
   opacity: 0.6;
 }
+/* 2026-08-23 定案：＋ 按钮去底色去边框（纯字符，浮层交给外层药丸 hover） */
 .mu-composer-icon-btn {
   display: grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 50%;
-  background: var(--bg-soft);
+  font-size: 14px;
   color: var(--fg-muted);
-  cursor: pointer;
-  font-size: 13px;
-  transition: all var(--duration-fast) var(--ease-out);
-}
-.mu-composer-icon-btn:hover {
-  background: var(--bg-hover);
-  color: var(--fg);
 }
 .mu-composer-dropdown {
   position: absolute;
@@ -1318,6 +1304,16 @@
   color: var(--fg);
   border-color: var(--border-strong);
 }
+/* 2026-08-24 固定岗编制：未上岗的岗位标签置灰不可点 */
+.workbench-tab-pill.is-vacant {
+  opacity: 0.45;
+  cursor: default;
+}
+.workbench-tab-pill.is-vacant:hover {
+  background: var(--bg-soft);
+  color: var(--fg-muted);
+  border-color: var(--border-subtle);
+}
 .workbench-tab-pill.is-active {
   background: var(--bg-elev);
   color: var(--accent);
@@ -1336,3 +1332,7 @@
 .mu-msg-navtick:hover,.mu-msg-navtick.is-hover{opacity:1;background:var(--fg-subtle)}
 .mu-msg-navtick.is-active{background:var(--fg);opacity:1}
 .mu-msg-navbubble{position:absolute;left:calc(100% + 10px);top:50%;transform:translateY(-50%);min-width:248px;max-width:320px;padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--fg-muted);font-size:var(--text-xs);line-height:1.5;white-space:normal;box-shadow:var(--shadow-1);pointer-events:none}
+
+/* 任务顶栏 ⋯ 触发器：无底色（2026-08-23 用户定案「三个点不需要背景」）——静止透明，hover 轻微浮层 */
+.mu-topbar-more{border:none;background:transparent;cursor:pointer;font-size:14px;line-height:1;padding:4px 7px;border-radius:6px;color:var(--fg-muted);font-weight:700;letter-spacing:.08em;transition:background var(--duration-fast) var(--ease-out),color var(--duration-fast) var(--ease-out)}
+.mu-topbar-more:hover{background:var(--bg-hover);color:var(--fg)}

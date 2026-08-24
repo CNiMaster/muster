@@ -3,7 +3,7 @@
  *
  * 定位（用户定案）：自动化是平台基础功能（定时/循环/心跳，自动触发非人触发），与正常项目工作不同层；
  * 配置经两个入口落同一张表——自动化页表单（form）与自动化管家对话（chat，经 automationPlan done 契约）；
- * 执行链（批次 6 起）由 coordinator 独立 timer 扫描本表，派发给绑定项目的第一负责人按时领取。
+ * 执行链（批次 6 起）由 coordinator 独立 timer 扫描本表，派发给绑定项目的负责人按时领取。
  */
 import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';

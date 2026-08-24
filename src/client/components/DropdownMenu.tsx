@@ -14,6 +14,8 @@ export interface MenuItem {
   danger?: boolean;
   /** 只渲染分割线，忽略 label/onSelect。 */
   divider?: boolean;
+  /** 分组标题（不可点的小字标题，忽略 onSelect）。 */
+  header?: boolean;
 }
 
 export interface DropdownMenuProps {
@@ -76,6 +78,10 @@ export function DropdownMenu({ label, children, items, align = 'right', classNam
           {items.map((item) => (
             item.divider ? (
               <hr key={item.key} style={{ border: 'none', borderTop: '1px solid var(--border-subtle, #eee)', margin: '4px 2px' }} />
+            ) : item.header ? (
+              <div key={item.key} style={{ padding: '6px 10px 2px', fontSize: 11, fontWeight: 700, color: 'var(--fg-subtle, #999)', letterSpacing: '.04em' }}>
+                {item.label}
+              </div>
             ) : (
             <button
               key={item.key}

@@ -90,7 +90,7 @@ export function TasksPage(): React.ReactElement {
       inputProtocol: buildTaskInputProtocol({ goal, background, references, acceptance, deliverables }),
     }, {
       onSuccess: () => {
-        toast('success', assignee ? '智能体工作单已派发' : '工作单已发布到任务池，由第一负责人领取');
+        toast('success', assignee ? '智能体工作单已派发' : '工作单已发布到任务池，由负责人领取');
         setTitle(''); setGoal(''); setBackground(''); setReferences(''); setAcceptance(''); setDeliverables('');
       },
       onError: (error) => toast('error', (error as Error).message),
@@ -114,11 +114,11 @@ export function TasksPage(): React.ReactElement {
     </div>
 
     <Card title="发布标准工作单" className="section compact-dispatch-card">
-      <p className="muted">不必先与负责人对话。填写完整交接信息后，可直接指定智能体，或发布到任务池由第一负责人领取并继续派发。</p>
+      <p className="muted">不必先与负责人对话。填写完整交接信息后，可直接指定智能体，或发布到任务池由负责人领取并继续派发。</p>
       <div className="task-dispatch-grid task-work-order-grid">
         <Field label="任务标题" required><Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="一句话概括这项工作" /></Field>
         <Field label="项目任务"><Select value={projectTaskId} onChange={(event) => setProjectTaskId(event.target.value)}><option value="">选择上下文</option>{projectTasks.filter((item) => item.state === 'active').map((item) => <option key={item.id} value={item.id}>#{item.seq} {item.title}</option>)}</Select></Field>
-        <Field label="领取方式"><Select value={assignee} onChange={(event) => setAssignee(event.target.value)}><option value="">任务池 · 第一负责人领取后分配</option>{agents.map((agent) => <option key={agent.id} value={agent.id}>直接派给 · {agent.name}</option>)}</Select></Field>
+        <Field label="领取方式"><Select value={assignee} onChange={(event) => setAssignee(event.target.value)}><option value="">任务池 · 负责人领取后分配</option>{agents.map((agent) => <option key={agent.id} value={agent.id}>直接派给 · {agent.name}</option>)}</Select></Field>
         <Field label="优先级"><Select value={priority} onChange={(event) => setPriority(event.target.value)}>{[1, 3, 5, 7, 9].map((value) => <option key={value} value={value}>P{value}</option>)}</Select></Field>
         <Field label="工作目标" required><Textarea value={goal} onChange={(event) => setGoal(event.target.value)} placeholder="完成后应改变什么、解决什么问题？" /></Field>
         <Field label="背景与现状" required><Textarea value={background} onChange={(event) => setBackground(event.target.value)} placeholder="为什么现在要做？已有结论和限制是什么？" /></Field>

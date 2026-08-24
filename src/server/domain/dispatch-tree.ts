@@ -10,7 +10,7 @@ export interface DispatchActor {
   id: string;
   name: string;
   kind: 'employee' | 'specialist' | 'bee';
-  /** H8 纠错：第一负责人与用户直接沟通，不进纠错链（前端据此隐藏纠错按钮）。 */
+  /** H8 纠错：负责人与用户直接沟通，不进纠错链（前端据此隐藏纠错按钮）。 */
   isLead?: boolean;
 }
 

@@ -172,7 +172,7 @@ describe('ProjectRuntimeCoordinator', () => {
     expect(interrupted.summary).not.toContain('迟到结论');
   });
 
-  it('waiting 状态超时任务自动上报第一负责人（阶段一任务 1.2）', async () => {
+  it('waiting 状态超时任务自动上报负责人（阶段一任务 1.2）', async () => {
     const novel = createNovelCompany(db, { name: 'co' });
     const project = createProject(db, {
       companyId: novel.company.id,
@@ -204,7 +204,7 @@ describe('ProjectRuntimeCoordinator', () => {
     expect(timeouts).toHaveLength(2);
     const seqs = timeouts.map((task) => (task.inputProtocol as { sourceTaskId?: string }).sourceTaskId).sort();
     expect(seqs).toEqual([staleDep.id, staleInput.id].sort());
-    // 上报给第一负责人
+    // 上报给负责人
     const lead = getAgent(db, novel.agents.lead.id);
     for (const t of timeouts) {
       expect(t.assigneeAgentId).toBe(lead.id);
@@ -235,7 +235,7 @@ describe('ProjectRuntimeCoordinator', () => {
     expect(timeouts).toHaveLength(1); // 冷却期去重，不重复派发
   });
 
-  it('Inspector 定时运行：心跳停滞告警持久化并上报第一负责人（阶段一任务 1.3）', async () => {
+  it('Inspector 定时运行：心跳停滞告警持久化并上报负责人（阶段一任务 1.3）', async () => {
     const novel = createNovelCompany(db, { name: 'co' });
     const project = createProject(db, {
       companyId: novel.company.id,
@@ -267,7 +267,7 @@ describe('ProjectRuntimeCoordinator', () => {
     }>;
     expect(alerts.length).toBeGreaterThan(0);
     expect(alerts.some((a) => a.kind === 'stuck' && a.severity === 'high')).toBe(true);
-    // 第一负责人收到 [告警] Task
+    // 负责人收到 [告警] Task
     const alertTasks = listTasks(db, project.id).filter((task) => task.title.startsWith('[告警]'));
     expect(alertTasks.length).toBeGreaterThan(0);
     expect(alertTasks[0].assigneeAgentId).toBe(novel.agents.lead.id);

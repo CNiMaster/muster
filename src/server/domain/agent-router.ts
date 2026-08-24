@@ -45,7 +45,7 @@ export function shouldReplaceBest(
 /**
  * 按 requiredCapabilities 自动选专家。
  * - 只考虑本公司员工，在线优先。
- * - 无任何匹配时返回 null（调用方 fallback 第一负责人）。
+ * - 无任何匹配时返回 null（调用方 fallback 负责人）。
  * - requiresExecutorKind（WP10 复活死字段）：能力绑定声明了执行器类型时，过滤掉绑错类型的候选
  *   （如 CLI-only 能力不会路由到纯 API 执行器员工）。
  */

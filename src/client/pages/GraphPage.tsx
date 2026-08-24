@@ -36,7 +36,7 @@ const KIND_LABEL: Record<string, string> = {
   communication: '智能体引用关系',
 };
 const KIND_HELP: Record<string, string> = {
-  org: '从负责人连向下属，表示直接负责与汇报方向；实际拆单由第一负责人或智能体协作流程触发。',
+  org: '从负责人连向下属，表示直接负责与汇报方向；实际拆单由负责人或智能体协作流程触发。',
   communication: '从发起者连向可联系智能体，表示谁可以找谁补充信息或协商问题；具体交接顺序由智能体协作流程决定。',
 };
 

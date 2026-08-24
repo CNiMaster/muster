@@ -2,7 +2,7 @@
  * GitHub Issues 自动化执行链（整改计划 Part2 批次 6）。
  *
  * 到点 → gh 拉取开放 issues → 幂等记账（repo+number 只派发一次）→ 新 issue 建「[Issue]」任务
- * 派给**绑定项目第一负责人**（用户定案：自动化工作由负责人按时领取；负责人分诊——真 bug/功能/
+ * 派给**绑定负责人**（用户定案：自动化工作由负责人按时领取；负责人分诊——真 bug/功能/
  * 疑问/无法复现自由分类，先验证复现再开工）→ 修复子任务产物落任务级集成区，**等用户审批 promote，
  * 绝不自动合并**（用户明令）。
  */
@@ -92,7 +92,7 @@ export interface SyncResult {
 }
 
 /**
- * 同步一个 github-issues 自动化：拉取开放 issues，未记账的建分诊任务派项目负责人。
+ * 同步一个 github-issues 自动化：拉取开放 issues，未记账的建分诊任务派负责人。
  * fetcher 可注入（测试）；gh 失败抛错由调用方记 health（跳过本轮不轰炸）。
  */
 export async function syncGithubIssues(
@@ -107,7 +107,7 @@ export async function syncGithubIssues(
 
   const project = getProject(db, automation.projectId);
   const leadAgentId = project.firstAgentId;
-  if (!leadAgentId) throw new AppError(ErrorCode.VALIDATION, `项目「${project.name}」缺少第一负责人，无法派发 issue 分诊`);
+  if (!leadAgentId) throw new AppError(ErrorCode.VALIDATION, `项目「${project.name}」缺少负责人，无法派发 issue 分诊`);
   ensurePrimaryThread(db, project.id, leadAgentId);
 
   let newCount = 0;

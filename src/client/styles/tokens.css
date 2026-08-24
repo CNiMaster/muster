@@ -18,6 +18,7 @@
   --bg: #f5f5f4;
   --bg-elev: #ffffff;
   --bg-soft: #ebebeb;
+  --bg-sunken: #dedede;
   --bg-hover: #e0e0e0;
   --bg-input: #fafafa;
 
@@ -125,6 +126,7 @@
   --bg: #171718;
   --bg-elev: #262628;
   --bg-soft: #1e1e20;
+  --bg-sunken: #17171a;
   --bg-hover: #19191a;
   --bg-input: #303033;
   /* 调板最深档：发送按钮专属（比缝隙底更深，全页唯一） */

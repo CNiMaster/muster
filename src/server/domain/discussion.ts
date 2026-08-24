@@ -55,7 +55,7 @@ export interface DiscussionScenarioConfig {
 export const DISCUSSION_SCENARIOS: Record<DiscussionScenario, DiscussionScenarioConfig> = {
   'help-request': {
     allowedInitiatorRoles: ['*'],
-    participantGuidance: '相关领域专家 + 可选领导（第一负责人）',
+    participantGuidance: '相关领域专家 + 可选领导（负责人）',
     conclusionAction: '集思广益，派发实施 task 给求助者',
     description: '遇到难题求助：执行者卡住，需要多方意见突破',
   },
@@ -85,7 +85,7 @@ export const DISCUSSION_SCENARIOS: Record<DiscussionScenario, DiscussionScenario
   },
   'conflict-resolution': {
     allowedInitiatorRoles: ['lead', 'manager', 'moderator', '*'], // * 允许引擎自动触发
-    participantGuidance: '冲突方 + 裁决者（第一负责人）',
+    participantGuidance: '冲突方 + 裁决者（负责人）',
     conclusionAction: '裁决方案，选定版本或派发合并 task',
     description: '发布冲突或产物冲突，需要协调解决',
   },

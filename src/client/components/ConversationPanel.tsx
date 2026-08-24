@@ -1,7 +1,7 @@
 /**
  * ConversationPanel · 类群聊对话窗口
  *
- PRD：与第一负责人对话、@智能体、关键事件摘要、Task 卡片可点开详情。
+ PRD：与负责人对话、@智能体、关键事件摘要、Task 卡片可点开详情。
  - 消息流（user/assistant/system/event）
  - 输入框（Enter 发送，Shift+Enter 换行）
  - @提及候选（来自 contactAllow，简化为前缀过滤）
@@ -11,7 +11,9 @@
 import type React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import type { Agent } from '../api/types';
 import { useMessages, usePostMessage, useAgents, useCentralAgents, useTaskOnce, useTaskAction, materialRawUrl, type ConversationMessage } from '../hooks/queries';
+import { WorkTraceBlock } from './workbench/WorkTraceBlock';
 import { onStreamDelta } from '../realtime';
 import { Badge } from './Badge';
 import { Button } from './Button';
@@ -36,7 +38,7 @@ export interface ConversationPanelProps {
   onSelectQuote?: (text: string) => void;
   /** 撑满 flex 列父容器（默认固定 520px 高兜底块级父容器） */
   fill?: boolean;
-  /** 群聊显式开启：显示发言人头像与姓名（单聊默认第一负责人名义，不显示——2026-08-23 用户定案） */
+  /** 群聊显式开启：显示发言人头像与姓名（单聊默认负责人名义，不显示——2026-08-23 用户定案） */
   showIdentity?: boolean;
   /** 批次三：随行讨论收口——把结论转成正式工作单（讨论本身不建任务不打断；由调用方决定建单方式）。 */
   onConvertToTask?: (extract: string) => void;
@@ -161,11 +163,20 @@ export function ConversationPanel({ scope, scopeId, title, recipientAgentId, pro
 
   const recipient = (agents ?? []).find((agent) => agent.id === recipientAgentId);
   // B5：可见花名册 + 中央六岗（去重；中央岗带角色标签便于识别）
+  // 2026-08-24 定案：@ 候选排序——负责人 → 人事 → 养蜂人 → 验收员 → 裁决庭，其余随后
+  const mentionOrder = (a: Agent): number => {
+    if (a.role === 'lead') return 1;
+    if (a.role === 'hr') return 2;
+    if (a.role === 'swarm-dispatcher') return 3;
+    if (a.role === 'reviewer' || a.role === 'acceptance-officer' || a.isInspector) return 4;
+    if (a.role === 'debate-judge') return 5;
+    return 10;
+  };
   const rosterPlus = (() => {
     const base = agents ?? [];
     const seen = new Set(base.map((a) => a.id));
     const extra = (centralAgents ?? []).filter((a) => !seen.has(a.id));
-    return [...base, ...extra];
+    return [...base, ...extra].sort((a, b) => mentionOrder(a) - mentionOrder(b) || a.name.localeCompare(b.name, 'zh-CN'));
   })();
   const mentionCandidates = recipientAgentId
     ? []
@@ -198,7 +209,7 @@ export function ConversationPanel({ scope, scopeId, title, recipientAgentId, pro
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxWidth: '480px' }}>
               <strong style={{ fontSize: '15px', color: 'var(--fg)', letterSpacing: '-0.01em' }}>
-                {recipient ? `正在与 ${recipient.name} (${recipient.role}) 对话` : '与项目第一负责人协作'}
+                {recipient ? `正在与 ${recipient.name} (${recipient.role}) 对话` : '与负责人协作'}
               </strong>
               <p className="muted" style={{ fontSize: '13px', margin: 0, lineHeight: 1.5 }}>
                 {recipient
@@ -263,7 +274,7 @@ export function ConversationPanel({ scope, scopeId, title, recipientAgentId, pro
               className="mu-input mu-textarea"
               value={text}
               onChange={(e) => onChange(e.target.value)}
-              placeholder={recipient ? `发消息给 ${recipient.name}…  Enter 发送，Shift+Enter 换行` : '发消息给第一负责人…  Enter 发送，Shift+Enter 换行，@ 提及智能体'}
+              placeholder={recipient ? `发消息给 ${recipient.name}…  Enter 发送，Shift+Enter 换行` : '发消息给负责人…  Enter 发送，Shift+Enter 换行，@ 提及智能体'}
               rows={2}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
@@ -329,6 +340,9 @@ function MessageBubble({ message, agents, projectId, isLatestAssistant, showIden
           {/* 批次 H.7：复制角标（hover 显示，替代已砍的编辑重发） */}
           <button type="button" className="mu-msg-copy-btn" aria-label="复制消息内容" title="复制消息内容" onClick={copyMessage}>📋</button>
         </div>
+        {!isUser && message.role === 'assistant' && message.refTaskId && (
+          <WorkTraceBlock taskId={message.refTaskId} projectId={projectId} finalText={message.content} />
+        )}
         <div className={isUser ? 'mu-msg-text' : 'mu-msg-text is-md'}>
           {isUser ? message.content : <MarkdownPreview source={message.content} />}
         </div>

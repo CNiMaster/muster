@@ -10,6 +10,8 @@ import { test, expect } from '@playwright/test';
 test('存储管理页可达：回收站空态与磁盘对账渲染', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('navigation', { name: '项目组织与联系人' })).toBeVisible({ timeout: 15000 });
+  // 2026-08-24：存储管理收进「资产库」类目（默认收起）——先展开再点
+  await page.getByRole('button', { name: /资产库/ }).click();
   await page.getByRole('link', { name: '存储管理' }).click();
   await expect(page).toHaveURL(/\/storage/);
   await expect(page.getByRole('heading', { name: '存储管理' })).toBeVisible();
@@ -40,11 +42,13 @@ test('回收站全链路：设置页移入 → 存储页恢复', async ({ page }
   await expect(page.getByText('已移入回收站')).toBeVisible({ timeout: 8000 });
 
   // 存储页：回收站清单出现该项目；恢复后消失
+  // （2026-08-24 全局工具页壳带左栏项目列表——按条目复选框 aria-label 定位，恢复后项目回左栏不算残留）
   await page.goto('/storage');
-  await expect(page.getByText(project.name).first()).toBeVisible({ timeout: 8000 });
+  const trashItem = page.getByLabel(`选择 ${project.name}`);
+  await expect(trashItem).toBeVisible({ timeout: 8000 });
   await page.getByRole('button', { name: '恢复', exact: true }).first().click();
   await expect(page.getByText('已恢复').first()).toBeVisible({ timeout: 8000 });
-  await expect(page.getByText(project.name)).toHaveCount(0, { timeout: 8000 });
+  await expect(trashItem).toHaveCount(0, { timeout: 8000 });
 });
 
 test('彻底删除手打确认：错字拒绝，输入目录名后放行', async ({ page }) => {

@@ -53,7 +53,7 @@ describe('权限委托链：findDirectManager', () => {
     expect(findDirectManager(db, employeeId)).toBe(managerId);
   });
 
-  it('无 org 边时 fallback 到公司第一负责人', () => {
+  it('无 org 边时 fallback 到公司负责人', () => {
     db.prepare("UPDATE workbench SET state='off' WHERE id=?").run(companyId);
     const loner = createAgent(db, {
       companyId, name: '孤员', role: 'temp', systemPrompt: '', skills: [], tools: [], permissions: {}, executor: {},
@@ -124,7 +124,7 @@ describe('权限委托链：申请→审批', () => {
   });
 
   it('M-4：审批人未解析时（approverEmployeeId 为 null）不能批准/拒绝', () => {
-    // 无 org 边 + 工作台无第一负责人 → resolveApprover 返回 null
+    // 无 org 边 + 工作台无负责人 → resolveApprover 返回 null
     db.prepare("UPDATE workbench SET state='off', first_agent_id=NULL WHERE id=?").run(companyId);
     const loner = createAgent(db, {
       companyId, name: '无负责人员工', role: 'temp', systemPrompt: '', skills: [], tools: [], permissions: {}, executor: {},

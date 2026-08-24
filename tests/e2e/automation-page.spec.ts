@@ -15,7 +15,7 @@ test('自动化页：管家对话面板 + 新建表单（表单创建经 API 全
   await expect(page.getByText('自动化管家', { exact: false }).first()).toBeVisible({ timeout: 10_000 });
 
   // 快速配置表单 → 创建
-  await page.getByRole('button', { name: '＋ 新建' }).click();
+  await page.getByRole('button', { name: '＋ 新建', exact: true }).click();
   await page.getByPlaceholder(/owner\/repo/).fill('CNiMaster/muster');
   await page.locator('select').first().selectOption(project.id);
   await page.getByRole('button', { name: '创建', exact: true }).click();

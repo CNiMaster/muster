@@ -15,6 +15,6 @@ test('核心功能端到端完整回归流：表单建项目 → 任务工作台
   await expect(page.getByRole('navigation', { name: '项目组织与联系人' })).toBeVisible();
   await expect(page.getByPlaceholder(/给智能体下达指令/)).toBeVisible();
 
-  // 左栏：项目任务列表出现初始任务；协作与沟通区有第一负责人
+  // 左栏：项目任务列表出现初始任务；协作与沟通区有负责人
   await expect(page.getByText(/明确目标并制定执行方案|编写第一章/).first()).toBeVisible({ timeout: 8000 });
 });

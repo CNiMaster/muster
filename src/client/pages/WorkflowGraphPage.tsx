@@ -468,7 +468,7 @@ export function WorkflowGraphPage(): React.ReactElement {
                         assigneeRole: undefined,
                       })}
                     >
-                      <option value="">项目第一负责人</option>
+                      <option value="">负责人</option>
                       {agents?.map((agent) => (
                         <option key={agent.id} value={agent.id}>{agent.name} [{agent.role}]</option>
                       ))}

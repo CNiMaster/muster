@@ -1,7 +1,7 @@
 /**
  * 公司/项目对话窗口 domain。
  *
- PRD：用户与第一负责人对话；用户消息派给第一负责人的 Task；
+ PRD：用户与负责人对话；用户消息派给负责人的 Task；
  主窗口展示关键事件摘要（领取/派发/等待/阻塞/完成/成果/告警）。
  */
 import type { DB } from '../db/client';
@@ -219,8 +219,8 @@ function collectImageDataUris(
 /**
  * 用户在公司/项目窗口发消息：
  * 1. 写入用户消息
- * 2. 派发一个 Task 给第一负责人（scope 是 company 时用公司第一负责人；project 用项目第一负责人）
- *    第一负责人通过执行器处理后回复（assistant 消息由引擎写入）
+ * 2. 派发一个 Task 给负责人（scope 是 company 时用公司负责人；project 用负责人）
+ *    负责人通过执行器处理后回复（assistant 消息由引擎写入）
  */
 export function postUserMessage(db: DB, input: PostUserMessageInput): {
   userMessage: ConversationMessage;
@@ -291,7 +291,7 @@ export function postUserMessage(db: DB, input: PostUserMessageInput): {
      VALUES (?, ?, ?, 'user', 'user', ?, NULL, ?, ?, ?)`,
   ).run(id, input.scopeKind, input.scopeId, input.content, now, JSON.stringify(userMessage.attachments), JSON.stringify(options));
 
-  // 派发给第一负责人：company scope 必须存在至少一个项目才能派发；
+  // 派发给负责人：company scope 必须存在至少一个项目才能派发；
   // 否则只记录用户消息（不派 Task），由系统在合适时回应。
   let firstAgentId: string | null = null;
   let projectId: string | null = null;
@@ -311,7 +311,7 @@ export function postUserMessage(db: DB, input: PostUserMessageInput): {
     firstAgentId = p.firstAgentId ?? getWorkbench(db).firstAgentId;
     projectId = p.id;
   }
-  // 批次 E：零组织工作台对话即开工——没有第一负责人时懒确保固定员工再派发
+  // 批次 E：零组织工作台对话即开工——没有负责人时懒确保固定员工再派发
   if (!firstAgentId) {
     firstAgentId = ensureWorkspaceStaff(db).leadAgentId;
   }

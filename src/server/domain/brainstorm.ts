@@ -168,7 +168,7 @@ export function interruptActiveBrainstorms(db: DB, projectId: string): string[] 
  讨论结论→建议 Task（PRD Phase 8.4）。
  - 在 brainstorm Task 完成时调用，从其 outputProtocol.suggestions 派生若干建议 Task。
  - 建议 Task 标记 is_suggestion=1，priority 极低（1），等待用户在 UI 显式采纳后才进入正式队列。
- - 派发给项目第一负责人；若不存在则不创建（避免无主建议）。
+ - 派发给负责人；若不存在则不创建（避免无主建议）。
  - 返回新创建的 Task id 列表。
  */
 export interface BrainstormSuggestion {

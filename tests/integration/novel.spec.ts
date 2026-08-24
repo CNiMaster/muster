@@ -1,7 +1,7 @@
 /**
  * Phase 6 测试：
  - 小说模板生成 5 个基础岗位
- - 第一负责人与主写手分离校验
+ - 负责人与主写手分离校验
  - 章节完成事件触发 character + plot 维护 Task
  - 定时检查派发 Task
  - 用户纠正派发修正 Task
@@ -51,7 +51,7 @@ describe('novel template', () => {
     }
   });
 
-  it('生成 5 个基础岗位 + 第一负责人配置', () => {
+  it('生成 5 个基础岗位 + 负责人配置', () => {
     const r = createNovelCompany(db, { name: '小说公司' });
     expect(r.departments).toHaveLength(2);
     expect(r.agents.writer.departmentId).toBe(r.departments[0]!.id);
@@ -65,7 +65,7 @@ describe('novel template', () => {
     expect(r.company.firstAgentId).toBe(r.agents.lead.id);
   });
 
-  it('主写手禁止由第一负责人兼任', () => {
+  it('主写手禁止由负责人兼任', () => {
     const r = createNovelCompany(db, { name: 'co' });
     expect(() => assertLeadWriterSeparate(r.agents.lead.id, r.agents.lead.id)).toThrow();
     expect(() => assertLeadWriterSeparate(r.agents.lead.id, r.agents.writer.id)).not.toThrow();
@@ -128,7 +128,7 @@ describe('consistency check', () => {
 });
 
 describe('user correction', () => {
-  it('派发修正 Task 给第一负责人', () => {
+  it('派发修正 Task 给负责人', () => {
     const r = createNovelCompany(db, { name: 'co' });
     const project = createProject(db, {
       companyId: r.company.id,

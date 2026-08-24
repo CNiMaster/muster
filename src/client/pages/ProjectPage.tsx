@@ -6,20 +6,13 @@ import {
   useProjects,
   useProject,
   useAgents,
-  useThreads,
   useCreateProject,
   usePickFolder,
   useUiMode,
   useEnsureDefaultProject,
   useWorkbench,
   useCreateTask,
-  useCreateMirror,
-  useDeleteMirror,
-  useStartBrainstorm,
-  useBrainstormBudget,
   useGenerateProjectProposal,
-  useCompactThread,
-  useContextSize,
   useProjectEvents,
   useTasks,
   useProjectTasks,
@@ -50,6 +43,7 @@ import { ProjectContextInspector } from '../components/workbench/ProjectContextI
 import { WorkCapsule } from '../components/workbench/WorkCapsule';
 import { ProjectTaskWorkspace } from '../components/project/ProjectTaskWorkspace';
 import { TaskTopBar } from '../components/project/TaskTopBar';
+import { FIXED_AGENT_ROLES, agentMatchesFixedRole, isFixedRoleAgent } from '../components/workbench/PromptComposer';
 import { ProjectEmployeeWorkspace } from '../components/project/ProjectEmployeeWorkspace';
 import { WorkbenchContextSwitcher } from '../components/workbench/WorkbenchContextSwitcher';
 import { usePlaybooksForTemplate } from '../hooks/queries';
@@ -396,7 +390,6 @@ export function ProjectDetail({ projectId }: { projectId: string }): React.React
   const { data: cockpit } = useWorkbenchCockpit();
   const { data: agents } = useAgents();
   const { data: departments } = useDepartments();
-  const { data: threads } = useThreads(projectId);
   const { data: projectEvents } = useProjectEvents(projectId);
   const { data: tasks } = useTasks(projectId);
   const { data: projectTasks } = useProjectTasks(projectId);
@@ -431,23 +424,6 @@ export function ProjectDetail({ projectId }: { projectId: string }): React.React
     setSearchParams(next,{replace:true});
     setNewTaskSignal((n)=>n+1);
   };
-
-  const createMirror = useCreateMirror();
-  const deleteMirror = useDeleteMirror();
-  const startBrainstorm = useStartBrainstorm();
-
-  // 头脑风暴表单状态
-  const [topic, setTopic] = useState('');
-  const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
-  const [maxRounds, setMaxRounds] = useState(3);
-  const brainstormBudget = useBrainstormBudget(projectId);
-
-  // 初始化时默认全选所有智能体作为脑暴参与者
-  useEffect(() => {
-    if (agents && agents.length > 0 && selectedAgents.length === 0) {
-      setSelectedAgents(agents.map(a => a.id));
-    }
-  }, [agents]);
 
   // URL 携带 projectTask=new 时视为「打开新建任务卡」信号：消费掉参数并触发创建卡
   useEffect(() => {
@@ -501,71 +477,6 @@ export function ProjectDetail({ projectId }: { projectId: string }): React.React
     setSearchParams(next, { replace: true });
   };
 
-  const handleAutoBrainstorm = () => {
-    if (!topic.trim()) {
-      toast('error', '请输入讨论主题');
-      return;
-    }
-    startBrainstorm.mutate(
-      {
-        projectId,
-        topic,
-        maxRounds,
-        autoSelectParticipants: { count: 2 },
-      },
-      {
-        onSuccess: (res) => {
-          if (res.state === 'skipped') {
-            toast('info', `跳过：${res.reason}`);
-          } else {
-            toast('success', '已随机召集 2 名闲置智能体开始讨论');
-            setTopic('');
-          }
-        },
-        onError: (err) => toast('error', (err as any).message ?? '脑暴启动失败'),
-      },
-    );
-  };
-
-  const handleToggleAgent = (agentId: string) => {
-    setSelectedAgents(prev =>
-      prev.includes(agentId) ? prev.filter(id => id !== agentId) : [...prev, agentId]
-    );
-  };
-
-  const handleStartBrainstorm = () => {
-    if (!topic.trim()) {
-      toast('error', '请输入讨论主题');
-      return;
-    }
-    if (selectedAgents.length === 0) {
-      toast('error', '请至少选择 1 名参与智能体');
-      return;
-    }
-
-    startBrainstorm.mutate(
-      {
-        projectId,
-        topic,
-        participantAgentIds: selectedAgents,
-        maxRounds,
-      },
-      {
-        onSuccess: (res) => {
-          if (res.state === 'skipped') {
-            toast('info', `跳过：${res.reason}`);
-          } else {
-            toast('success', '头脑风暴讨论任务已发起！可以在 Task 列表中查看讨论。');
-            setTopic('');
-          }
-        },
-        onError: (err) => {
-          toast('error', (err as any).message ?? '脑暴启动失败');
-        },
-      }
-    );
-  };
-
   const getRoleInfo = (ag: Agent) => {
     if (ag.id === (project.firstAgentId ?? company?.firstAgentId) || ag.role === 'lead') {
       return { label: '负责人', icon: '🎯', order: 1 };
@@ -596,12 +507,11 @@ export function ProjectDetail({ projectId }: { projectId: string }): React.React
       attentionCount={attentionCount + (cockpit?.approvals.pending ?? 0) + (mergeAttention?.total ?? 0)}
       primaryAction={<>
         {/* 2026-08-23 用户定案：全局上下班按钮退役——默认常上班（workbench 默认 online），CLI/人员维护走局部下班（后续模块化挂起） */}
-        {/* 2026-08-23 用户定案：顶栏新建任务退役（入口收口到左栏＋/new 命令）；模式切换按钮常驻顶栏（WorkbenchShell） */}
+        {/* 2026-08-23 用户定案：顶栏新建任务退役（入口收口到左栏＋/new 命令）；模式切换按钮常驻顶栏（WorkbenchShell）； */}
+        {/* 2026-08-23 用户定案：「联系负责人」顶栏按钮退役（任务视图直达负责人对话的入口没有价值）——仅员工视图保留「＋ 派发工作」 */}
         {projectView === 'employee'
           ? <a className="mu-btn mu-btn-primary mu-btn-sm workbench-publish-action" href="#employee-dispatch">＋ 派发工作</a>
-          : selectedAgentId
-            ? <Link className="mu-btn mu-btn-primary mu-btn-sm workbench-publish-action" to={`/projects/${projectId}?view=employee&agent=${selectedAgentId}${selectedProjectTaskId ? `&projectTask=${selectedProjectTaskId}` : ''}`}>联系负责人</Link>
-            : null}
+          : null}
       </>}
       navigation={<ProjectWorkNavigation projectId={projectId} projectTasks={projectTasks ?? []} tasks={tasks ?? []} agents={agents ?? []} departments={departments ?? []} firstAgentId={project.firstAgentId ?? company?.firstAgentId} selectedProjectTaskId={selectedProjectTaskId} selectedAgentId={selectedAgentId} view={projectView} attentionCount={attentionCount} novel={company?.kind === 'novel'} onNewTask={openNewTaskCard} />}
       inspector={<ProjectContextInspector projectId={projectId} selectedTask={selectedProjectTask} selectedAgentId={projectView === 'employee' ? selectedAgentId : undefined} agents={agents ?? []} tasks={tasks ?? []} cockpit={cockpit} />}
@@ -684,177 +594,55 @@ export function ProjectDetail({ projectId }: { projectId: string }): React.React
         <ActivityPanel events={projectEvents ?? []} agents={agents} scope="project" scopeId={projectId} />
       </Card>}
 
-      {/* 低频：线程扩容 + 脑暴 + 复盘配置折叠收起 */}
-      {projectView === 'task' && <details id="advanced-collaboration" className="details-collapse project-advanced-tools">
-        <summary><span>高级协作</span><small>镜像、线程与脑暴</small></summary>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', paddingTop: 'var(--space-3)' }}>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)', alignItems: 'start' }}>
-            {/* 项目智能体线程与镜像管理 */}
-            <Card title="项目智能体线程与扩容" actions={<Badge>{threads?.length ?? 0}</Badge>}>
-          {threads && threads.length === 0 && (
-            <EmptyState icon={Icons.empty} title="还没有智能体进入项目" hint="工作台上班后，智能体会自动进入项目开始领取 Task。" />
-          )}
-          <ul className="entity-list">
-            {threads?.map((t) => {
-              const a = agents?.find((x) => x.id === t.agentId);
-              const isMirror = t.kind === 'mirror';
-              return (
-                <li key={t.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 'var(--space-3)' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                      <strong>{a?.name ?? t.agentId}</strong>
-                      <span className="muted" style={{ fontSize: 'var(--text-xs)' }}>[{a?.role}]</span>
-                    </div>
-                    <div style={{ display: 'flex', gap: '6px', marginTop: '2px' }}>
-                      <Badge tone={isMirror ? 'warn' : 'info'}>
-                        {isMirror ? '镜像' : '主线程'}
-                      </Badge>
-                      <StateBadge domain="thread" state={t.state} />
-                    </div>
-                    {!isMirror && (
-                      <ContextSizeBadge projectId={projectId} threadId={t.id} />
-                    )}
-                  </div>
-                  
-                  {/* 镜像增删控制 */}
-                  <div>
-                    {isMirror ? (
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        loading={deleteMirror.isPending}
-                        onClick={() => {
-                          deleteMirror.mutate({ projectId, threadId: t.id }, {
-                            onSuccess: () => toast('success', '镜像已成功释放并安全注销'),
-                            onError: (err) => toast('error', (err as any).message ?? '注销失败'),
-                          });
-                        }}
-                      >
-                        注销镜像
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        loading={createMirror.isPending}
-                        onClick={() => {
-                          createMirror.mutate({ projectId, threadId: t.id }, {
-                            onSuccess: () => toast('success', '已为该岗位克隆并行执行镜像！'),
-                            onError: (err) => toast('error', (err as any).message ?? '克隆失败'),
-                          });
-                        }}
-                      >
-                        + 增设镜像
-                      </Button>
-                    )}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        </Card>
-
-        {/* 头脑风暴讨论区 */}
-        <Card title="创意讨论 · 头脑风暴" actions={<Badge tone="info">闲置触发</Badge>}>
-          <div className="form-stack">
-            <p className="muted" style={{ fontSize: 'var(--text-sm)', margin: 0 }}>
-              当项目没有积压任务时，可主动召集闲置智能体进行特定主题的头脑风暴，产出决策建议。
-            </p>
-            {brainstormBudget.data && (
-              <p className="muted" style={{ fontSize: 'var(--text-sm)', margin: 0 }}>
-                今日讨论预算：已用 ${brainstormBudget.data.spent.toFixed(2)} / ${brainstormBudget.data.budget.toFixed(2)}（剩余 ${brainstormBudget.data.remaining.toFixed(2)}）
-              </p>
-            )}
-            <Field label="讨论主题" required>
-              <Input
-                value={topic}
-                onChange={(e) => setTopic(e.target.value)}
-                placeholder="例如: 探讨后续第三章的爽点与剧情转折..."
-              />
-            </Field>
-            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '12px' }}>
-              <Field label="参会智能体 (多选)">
-                <div style={{
-                  maxHeight: '120px',
-                  overflowY: 'auto',
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: 'var(--radius-md)',
-                  padding: '8px',
-                  background: 'var(--bg-input)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '6px'
-                }}>
-                  {agents?.map(a => (
-                    <label key={a.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--text-sm)', cursor: 'pointer' }}>
-                      <input
-                        type="checkbox"
-                        checked={selectedAgents.includes(a.id)}
-                        onChange={() => handleToggleAgent(a.id)}
-                      />
-                      <span>{a.name} ({a.role})</span>
-                    </label>
-                  ))}
-                </div>
-              </Field>
-              <Field label="最大讨论轮次">
-                <Select value={maxRounds} onChange={(e) => setMaxRounds(Number(e.target.value))}>
-                  <option value="2">2 轮讨论</option>
-                  <option value="3">3 轮讨论 (默认)</option>
-                  <option value="4">4 轮讨论</option>
-                  <option value="5">5 轮讨论</option>
-                </Select>
-              </Field>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 'var(--space-2)' }}>
-              <Button variant="ghost" onClick={handleAutoBrainstorm} loading={startBrainstorm.isPending} title="随机选 2 名闲置智能体参与">
-                随机选闲置智能体
-              </Button>
-              <Button onClick={handleStartBrainstorm} loading={startBrainstorm.isPending}>
-                召集脑暴会议
-              </Button>
-            </div>
-          </div>
-        </Card>
-      </div>
-    </div>
-  </details>}
 </div>
 
-      {/* 底部团队成员与任务标签栏（每个人一个标签）。治理批次5：简单模式隐藏——对话舞台即全部 */}
+      {/* 底部固定岗标签栏（2026-08-24 定案）：四固定岗常设全显示——在岗点击进专员页面并显示上班状态，未上岗置灰；
+          自定义员工随后。治理批次5：简单模式隐藏。 */}
       {!uiSimple && (
       <div className="workbench-bottom-tabs-bar">
-        <button
-          type="button"
-          className={`workbench-tab-pill ${projectView === 'task' ? 'is-active' : ''}`}
-          onClick={() => {
-            const next = new URLSearchParams(searchParams);
-            next.set('view', 'task');
-            setSearchParams(next, { replace: true });
-          }}
-          title="任务协作视图"
-        >
-          <span>📌 任务协作</span>
-          {selectedProjectTask && <small style={{ opacity: 0.85, fontSize: 11 }}>#{selectedProjectTask.seq}</small>}
-        </button>
-
-        <button
-          type="button"
-          className={`workbench-tab-pill ${projectView === 'group' ? 'is-active' : ''}`}
-          onClick={() => {
-            const next = new URLSearchParams(searchParams);
-            next.set('view', 'group');
-            setSearchParams(next, { replace: true });
-          }}
-          title="项目群聊"
-        >
-          <span>💬 项目群聊</span>
-        </button>
-
-        <div style={{ width: 1, height: 16, background: 'var(--border-subtle)', margin: '0 2px', flexShrink: 0 }} />
-
-        {allTeamAgents.map((agent) => {
+        {FIXED_AGENT_ROLES.map((fr) => {
+          const ag = allTeamAgents.find((a) => agentMatchesFixedRole(a, fr.role));
+          if (!ag) {
+            return (
+              <button key={fr.role} type="button" className="workbench-tab-pill is-vacant" disabled title="该固定岗暂未上岗">
+                <span>{fr.icon} {fr.label}</span>
+                <small style={{ fontSize: 11, opacity: 0.6 }}>未上岗</small>
+              </button>
+            );
+          }
+          const isSelected = projectView === 'employee' && selectedAgentId === ag.id;
+          const agentTasks = (tasks ?? []).filter((t) => t.assigneeAgentId === ag.id && (t.state === 'running' || t.state === 'claimed' || t.state === 'waiting_input'));
+          const isRunning = agentTasks.length > 0;
+          return (
+            <button
+              key={fr.role}
+              type="button"
+              className={`workbench-tab-pill ${isSelected ? 'is-active' : ''}`}
+              onClick={() => {
+                // 2026-08-24 定案：开关语义——已在该岗页面时再点切回任务现场
+                const next = new URLSearchParams(searchParams);
+                if (isSelected) {
+                  next.set('view', 'task');
+                  next.delete('agent');
+                } else {
+                  next.set('view', 'employee');
+                  next.set('agent', ag.id);
+                }
+                setSearchParams(next, { replace: true });
+              }}
+              title={`${ag.name}（${fr.label}）· 点击查看状态与对话`}
+            >
+              <span>{fr.icon} {fr.label}</span>
+              {ag.name !== fr.label && <span style={{ fontSize: 11, opacity: isSelected ? 0.9 : 0.65 }}>· {ag.name}</span>}
+              {isRunning ? (
+                <span style={{ display: 'inline-flex', width: 6, height: 6, borderRadius: 999, background: 'var(--ok)' }} title="工作中" />
+              ) : (
+                <span className={`org-presence is-${ag.availabilityState}`} style={{ width: 6, height: 6, display: 'inline-block' }} />
+              )}
+            </button>
+          );
+        })}
+        {allTeamAgents.filter((a) => !isFixedRoleAgent(a)).map((agent) => {
           const isSelected = projectView === 'employee' && selectedAgentId === agent.id;
           const agentTasks = (tasks ?? []).filter((t) => t.assigneeAgentId === agent.id && (t.state === 'running' || t.state === 'claimed' || t.state === 'waiting_input'));
           const isRunning = agentTasks.length > 0;
@@ -866,8 +654,13 @@ export function ProjectDetail({ projectId }: { projectId: string }): React.React
               className={`workbench-tab-pill ${isSelected ? 'is-active' : ''}`}
               onClick={() => {
                 const next = new URLSearchParams(searchParams);
-                next.set('view', 'employee');
-                next.set('agent', agent.id);
+                if (isSelected) {
+                  next.set('view', 'task');
+                  next.delete('agent');
+                } else {
+                  next.set('view', 'employee');
+                  next.set('agent', agent.id);
+                }
                 setSearchParams(next, { replace: true });
               }}
               title={`${agent.name}（${info.label}）· 点击查看状态与对话`}
@@ -890,34 +683,3 @@ export function ProjectDetail({ projectId }: { projectId: string }): React.React
 }
 
 /** 上下文大小徽章 + 手动压缩按钮（Batch 14）。 */
-function ContextSizeBadge({ projectId, threadId }: { projectId: string; threadId: string }): React.ReactNode {
-  const { data } = useContextSize(projectId, threadId);
-  const compact = useCompactThread(projectId);
-  if (!data) return null;
-  const tone = data.estimatedTokens > 50000 ? 'err' : data.estimatedTokens > 20000 ? 'warn' : 'neutral';
-  return (
-    <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '4px' }}>
-      <Badge tone={tone as any}>
-        上下文 ~{data.estimatedTokens.toLocaleString()} tokens · {data.execCount} 次执行
-      </Badge>
-      <Button
-        variant="ghost"
-        size="sm"
-        loading={compact.isPending}
-        onClick={() => {
-          const summary = window.prompt('输入压缩摘要（留空则自动生成）：', '');
-          if (summary === null) return;
-          compact.mutate(
-            { threadId, summary: summary || undefined },
-            {
-              onSuccess: () => toast('success', '上下文已手动压缩'),
-              onError: (e) => toast('error', (e as Error).message),
-            },
-          );
-        }}
-      >
-        手动压缩
-      </Button>
-    </div>
-  );
-}

@@ -345,8 +345,8 @@ export function dispatchDueScheduleTriggers(db: DB, now = new Date()): string[] 
           db.prepare('UPDATE trigger SET enabled=0, updated_at=? WHERE id=?').run(firedAt, current.id);
           return null;
         }
-        // 批次三：定时单显式指定执行人语义——未指定时默认第一负责人（项目第一负责人，
-        // 缺省回退工作台第一负责人），"谁接单由流程决定"改为"负责人先接手再派"。
+        // 批次三：定时单显式指定执行人语义——未指定时默认负责人（负责人，
+        // 缺省回退工作台负责人），"谁接单由流程决定"改为"负责人先接手再派"。
         const projectFirstAgent = (db.prepare('SELECT first_agent_id AS a FROM project WHERE id=?').get(current.project_id) as { a: string | null }).a;
         createdTaskId = createTask(db, {
           projectId: current.project_id,
@@ -475,7 +475,7 @@ export function dispatchConsistencyCheck(db: DB, projectId: string, checkKind: C
   return task.id;
 }
 
-/** 派发用户纠正 → 修正 Task（给第一负责人）。 */
+/** 派发用户纠正 → 修正 Task（给负责人）。 */
 export function dispatchCorrectionTask(
   db: DB,
   projectId: string,

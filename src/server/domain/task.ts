@@ -14,7 +14,7 @@
  *
  原子领取：BEGIN IMMEDIATE + UPDATE ... WHERE state='queued' ... RETURNING。
  租约：claimed/running 必须有 lease_expires_at；过期由 recoverExpiredLeases 复位为 queued。
- 追问：waiting_input 时 clarification_rounds++；超过 MAX_CLARIFY_ROUNDS 上报第一负责人。
+ 追问：waiting_input 时 clarification_rounds++；超过 MAX_CLARIFY_ROUNDS 上报负责人。
  */
 import type { DB } from '../db/client';
 import { immediateTransaction } from '../db/client';
@@ -31,6 +31,7 @@ import { addTaskMessage } from './task-message';
 import { isDispatchLoop } from './speech-queue';
 import { findBestAssignee } from './agent-router';
 import {assertProjectTaskActive,createProjectTask} from './project-task';
+import {clampTaskTitle} from './task-title';
 import {assertProjectLaunchConfirmed} from './project-launch';
 import {assertProjectActive} from './project-readiness';
 import { getWorkbench } from './workbench';
@@ -307,7 +308,7 @@ const ALLOWED_TRANSITIONS: Record<TaskState, TaskState[]> = {
   paused: ['claimed', 'queued', 'cancelled'],
   blocked: ['queued', 'cancelled'],
   completed: [],
-  // failed → cancelled：第一负责人处理子任务失败时可选择「放弃」（cancel_child_task），
+  // failed → cancelled：负责人处理子任务失败时可选择「放弃」（cancel_child_task），
   // 而非只能重试；取消失败子任务后其依赖视为已处理（见 areDependenciesMet）。
   failed: ['queued', 'cancelled'],
   cancelled: [],
@@ -329,7 +330,7 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
   const company = getWorkbench(db);
   const taskProtocol = (company.contractJson.taskProtocol ?? {}) as { inputFields?: unknown; outputFields?: unknown };
   // 阶段七任务 7.2：未指定 assignee 但声明了 requiredCapabilityIds 时，自动按能力路由选专家；
-  // 无匹配候选时 fallback 到项目第一负责人（路由结果记录进 inputProtocol，可审计）。
+  // 无匹配候选时 fallback 到负责人（路由结果记录进 inputProtocol，可审计）。
   let routedAssigneeId = input.assigneeAgentId ?? null;
   let routedMeta: Record<string, unknown> = {};
   if (!routedAssigneeId && Array.isArray(input.requiredCapabilityIds) && input.requiredCapabilityIds.length > 0) {
@@ -688,7 +689,7 @@ export function addDependency(db: DB, taskId: string, dependsOnId: string): void
 }
 
 export function areDependenciesMet(db: DB, taskId: string): boolean {
-  // cancelled 视为已处理（不阻塞）：第一负责人取消失败/多余的子任务后，父任务依赖解除。
+  // cancelled 视为已处理（不阻塞）：负责人取消失败/多余的子任务后，父任务依赖解除。
   const row = db
     .prepare(
       `SELECT EXISTS(
@@ -972,7 +973,7 @@ export function completeTask(db: DB, taskId: string, result: AgentRunResult): Ta
           rootTaskId: cur.rootTaskId ?? cur.id,
           dispatcherAgentId: dispatcherId ?? undefined,
           assigneeAgentId: out.recipientAgentId,
-          title: out.title,
+          title: clampTaskTitle(out.title),
           inputProtocol: childPayload,
           priority: out.priority,
           ...(cur.swarmId ? { swarmId: cur.swarmId, swarmDepth: cur.swarmDepth + 1 } : {}),
@@ -1199,7 +1200,7 @@ export function approvePlanTask(db: DB, taskId: string): Task {
 
 /**
  * 查找等待超时的 task（阶段一任务 1.2）：coordinator 定时扫描 waiting_input /
- * waiting_dependency 状态且 updated_at 早于各自阈值的 task，供上报第一负责人。
+ * waiting_dependency 状态且 updated_at 早于各自阈值的 task，供上报负责人。
  */
 export function findStaleWaitingTasks(
   db: DB,
@@ -1251,7 +1252,7 @@ export function escalateToFirstResponder(
 /**
  * 发起开始段对齐：agent 领取后、正式执行前，判定验收标准不充分时调用。
  * - 主状态 → waiting_input，alignment_state='awaiting_alignment'，interruption_count +1。
- * - alignment_rounds +1，超 MAX_ALIGNMENT_ROUNDS 上报第一负责人（沿用 escalateToFirstResponder）。
+ * - alignment_rounds +1，超 MAX_ALIGNMENT_ROUNDS 上报负责人（沿用 escalateToFirstResponder）。
  * - question 聚焦"补全 acceptance checklist"，由 assembleContext 注入的引导约束一次性结构化提问。
  */
 export function requestAlignment(db: DB, taskId: string, question: string): Task {
@@ -1425,7 +1426,7 @@ export function failTask(db: DB, taskId: string, message: string): Task {
 
   // 阶段一任务 1.4：非永久性失败自动重试（有限次数），避免 watchdog 停下来的任务无人重领。
   // 可重试（超时/网络/会话崩溃）且未超过上限 → 自动回 queued 等待再次领取；
-  // 不可重试（权限拒绝/安全阻断/逻辑错误）或次数用尽 → 保持 failed，走失败传播上报第一负责人。
+  // 不可重试（权限拒绝/安全阻断/逻辑错误）或次数用尽 → 保持 failed，走失败传播上报负责人。
   const retryable = isRecoverableSessionError(message);
   const nextRetry = cur.autoRetryCount + 1;
   if (retryable && nextRetry <= MAX_AUTO_RETRY) {
@@ -1446,7 +1447,7 @@ export function failTask(db: DB, taskId: string, message: string): Task {
 
   const failed = getTask(db, taskId);
   // 指挥系统：蜂群任务失败 → 改道养蜂人处置（记账/告警/熔断/依赖解除），
-  // 不走 [兜底]（那会打扰第一负责人——蜂群的失败责任人是养蜂人）
+  // 不走 [兜底]（那会打扰负责人——蜂群的失败责任人是养蜂人）
   if (failed.swarmId) {
     // 执行过程展示批次4：先自动修复（替补蜂入依赖图），再走记账/告警/熔断/依赖释放——
     // 顺序很重要：resumeSwarmDependentsAfterFailure 会把失败蜂的等待方视为已收口放行，
@@ -1473,7 +1474,7 @@ export function failTask(db: DB, taskId: string, message: string): Task {
     }
     return failed;
   }
-  // 阶段一任务 1.1：子任务失败时通知父任务并上报第一负责人，
+  // 阶段一任务 1.1：子任务失败时通知父任务并上报负责人，
   // 避免父任务永久卡在 waiting_dependency 无人发现。
   try {
     propagateChildFailure(db, failed, message);
@@ -1487,7 +1488,7 @@ export function failTask(db: DB, taskId: string, message: string): Task {
 /**
  * 子任务失败传播（阶段一任务 1.1）：
  * 1. 向所有因依赖本 task 而处于 waiting_dependency 的父任务写失败通知（task_message role='dispatch'）。
- * 2. 给项目第一负责人派一个 [兜底] 子任务失败 上报 Task（priority=8），由负责人决定：恢复重试 / 换人重做 / 取消。
+ * 2. 给负责人派一个 [兜底] 子任务失败 上报 Task（priority=8），由负责人决定：恢复重试 / 换人重做 / 取消。
  * 去重：同一父任务已存在未完成的 [兜底] Task 时只更新消息、不重复派发。
  */
 function propagateChildFailure(db: DB, failedTask: Task, message: string): void {
@@ -1764,7 +1765,7 @@ export function resumeTask(db: DB, taskId: string): Task {
   return getTask(db, taskId);
 }
 
-// ===== 自动规划：活跃项目无 Task 时给第一负责人派发规划 Task =====
+// ===== 自动规划：活跃项目无 Task 时给负责人派发规划 Task =====
 export function ensurePlanningTask(db: DB, projectId: string): Task | null {
   const project = getProject(db, projectId);
   if (!project.firstAgentId) return null;

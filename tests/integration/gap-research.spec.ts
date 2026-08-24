@@ -70,7 +70,7 @@ describe('dispatchGapResearch（B2 缺口自愈，opt-in）', () => {
     expect(r2.reason).toMatch(/已派过/);
   });
 
-  it('opt-in 开启但无在线研究员/第一负责人 → 不派发', () => {
+  it('opt-in 开启但无在线研究员/负责人 → 不派发', () => {
     const c = restoreWorkbench(db, { id: 'wb_fix_4', name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
     updateWorkbench(db, { contractJson: { autoGapResearch: true } });

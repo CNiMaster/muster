@@ -9,7 +9,7 @@ import { useUiMode } from './hooks/queries';
 import { useToasts, ToastHost } from './components/Button';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { RealtimeSync } from './realtime';
-import { ProjectToolPageShell, TaskDetailProjectShell } from './components/workbench/ProjectToolPageShell';
+import { ProjectToolPageShell, TaskDetailProjectShell, GlobalToolPageShell } from './components/workbench/ProjectToolPageShell';
 
 /**
  * 包裹 React.lazy 的动态 import，失败时自动重试一次。
@@ -106,12 +106,12 @@ const router = createBrowserRouter([
       { index: true, element: <ProjectPage /> },
       { path: 'projects/new', element: <ProjectPage /> },
       { path: 'projects/manage', element: <HomePage /> },
-      { path: 'archive', element: <ArchivePage /> },
-      { path: 'automations', element: <ModeGate><AutomationPage /></ModeGate> },
-      { path: 'blueprints', element: <ModeGate><BlueprintLibraryPage /></ModeGate> },
-      { path: 'blueprints/:blueprintId', element: <ModeGate><BlueprintDetailPage /></ModeGate> },
-      { path: 'blueprints/:blueprintId/canvas', element: <ModeGate><BlueprintCanvasPage /></ModeGate> },
-      { path: 'blueprints/:blueprintId/optimize', element: <ModeGate><BlueprintOptimizePage /></ModeGate> },
+      { path: 'archive', element: <GlobalToolPageShell label="归档" pane="inspector"><ArchivePage /></GlobalToolPageShell> },
+      { path: 'automations', element: <GlobalToolPageShell label="自动化中心"><ModeGate><AutomationPage /></ModeGate></GlobalToolPageShell> },
+      { path: 'blueprints', element: <GlobalToolPageShell label="蓝图库"><ModeGate><BlueprintLibraryPage /></ModeGate></GlobalToolPageShell> },
+      { path: 'blueprints/:blueprintId', element: <GlobalToolPageShell label="蓝图详情"><ModeGate><BlueprintDetailPage /></ModeGate></GlobalToolPageShell> },
+      { path: 'blueprints/:blueprintId/canvas', element: <GlobalToolPageShell label="蓝图画布" fullHeight><ModeGate><BlueprintCanvasPage /></ModeGate></GlobalToolPageShell> },
+      { path: 'blueprints/:blueprintId/optimize', element: <GlobalToolPageShell label="蓝图优化"><ModeGate><BlueprintOptimizePage /></ModeGate></GlobalToolPageShell> },
       { path: 'graphs/:kind', element: <ModeGate><GraphPage /></ModeGate> },
       { path: 'workflows/:workflowId', element: <ModeGate><WorkflowGraphPage /></ModeGate> },
       { path: 'projects/:projectId', element: <ProjectPage /> },
@@ -126,11 +126,11 @@ const router = createBrowserRouter([
       { path: 'projects/:projectId/dashboard', element: <ProjectToolPageShell tool="dashboard"><ModeGate><DashboardPage /></ModeGate></ProjectToolPageShell> },
       { path: 'projects/:projectId/settings', element: <ProjectToolPageShell tool="settings"><ProjectSettingsPage /></ProjectToolPageShell> },
       { path: 'tasks/:taskId', element: <TaskDetailProjectShell><TaskDetailPage /></TaskDetailProjectShell> },
-      { path: 'side', element: <SideChatPage /> },
+      { path: 'side', element: <GlobalToolPageShell label="侧边对话" pane="inspector" fullHeight><SideChatPage /></GlobalToolPageShell> },
       { path: 'settings', element: <SettingsPage /> },
-      { path: 'storage', element: <StoragePage /> },
-      { path: 'agents', element: <ModeGate><AgentLibraryPage /></ModeGate> },
-      { path: 'agents/:profileId', element: <ModeGate><AgentProfilePage /></ModeGate> },
+      { path: 'storage', element: <GlobalToolPageShell label="存储管理"><StoragePage /></GlobalToolPageShell> },
+      { path: 'agents', element: <GlobalToolPageShell label="智能体人才库"><ModeGate><AgentLibraryPage /></ModeGate></GlobalToolPageShell> },
+      { path: 'agents/:profileId', element: <GlobalToolPageShell label="智能体档案"><ModeGate><AgentProfilePage /></ModeGate></GlobalToolPageShell> },
       { path: 'executors', element: <ModeGate><ExecutorCenterPage /></ModeGate> },
       { path: 'permissions', element: <ModeGate><PermissionCenterPage /></ModeGate> },
       { path: 'capabilities', element: <ModeGate><CapabilityCenterPage /></ModeGate> },

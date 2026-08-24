@@ -561,12 +561,12 @@ async function notifyColleagueHandler(call: ToolCall, ctx: ToolContext): Promise
 /**
  * cancel_child_task handler（阶段一任务 1.1）：取消一个失败/卡住/不再需要的子任务。
  *
- * 用途：第一负责人处理 [兜底] 子任务失败 / [上报] 上报任务时，决定「放弃」某个子任务。
+ * 用途：负责人处理 [兜底] 子任务失败 / [上报] 上报任务时，决定「放弃」某个子任务。
  * 取消后：
  * - 子任务进入 cancelled（failed → cancelled 状态机已放开）。
  * - areDependenciesMet 已把 cancelled 视为已处理；若父任务其余依赖也满足，
  *   cancelTask 内部 resumeDependents 会把父任务从 waiting_dependency 恢复为 queued。
- * 权限：仅第一负责人或子任务派发者可取消，且子任务必须在当前项目内。
+ * 权限：仅负责人或子任务派发者可取消，且子任务必须在当前项目内。
  */
 async function cancelChildTaskHandler(call: ToolCall, ctx: ToolContext): Promise<ToolResult> {
   const childTaskId = String(call.args.child_task_id ?? '').trim();
@@ -583,13 +583,13 @@ async function cancelChildTaskHandler(call: ToolCall, ctx: ToolContext): Promise
     if (child.projectId !== askerProjectId) {
       return { toolCallId: call.id, name: call.name, content: `错误：子任务 ${childTaskId} 不属于当前项目` };
     }
-    // 权限：第一负责人 或 子任务派发者
+    // 权限：负责人 或 子任务派发者
     const asker = getAgent(db, askerAgentId);
     const project = getProject(db, askerProjectId);
     const isFirstResponder = project.firstAgentId === asker.id;
     const isDispatcher = child.dispatcherAgentId === asker.id;
     if (!isFirstResponder && !isDispatcher) {
-      return { toolCallId: call.id, name: call.name, content: '错误：只有第一负责人或子任务派发者可以取消该子任务' };
+      return { toolCallId: call.id, name: call.name, content: '错误：只有负责人或子任务派发者可以取消该子任务' };
     }
     if (child.state === 'completed' || child.state === 'cancelled') {
       return { toolCallId: call.id, name: call.name, content: `子任务已是 ${child.state} 状态，无需取消` };

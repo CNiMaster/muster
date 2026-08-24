@@ -88,29 +88,29 @@ describe('calm workbench shell', () => {
   it('批次F.2：拖拽右栏实时变宽、拖拽中不落盘、松手才持久化', () => {
     renderShell('project:resize');
     const handle = screen.getByRole('separator', { name: '调整右侧信息栏宽度' });
-    // 右栏默认 304：向左拖 40px 变宽到 344
+    // 右栏默认 360（2026-08-24 起右栏承载工具页加宽默认）：向左拖 40px 变宽到 400
     fireEvent.pointerDown(handle, { pointerId: 7, clientX: 1000 });
     fireEvent.pointerMove(handle, { pointerId: 7, clientX: 960 });
-    // 拖拽中仍是旧值（304），实时宽度只在内存里
-    expect(JSON.parse(localStorage.getItem('muster:workbench:project:resize') ?? '{}').rightWidth).toBe(304);
+    // 拖拽中仍是旧值（360），实时宽度只在内存里
+    expect(JSON.parse(localStorage.getItem('muster:workbench:project:resize') ?? '{}').rightWidth).toBe(360);
     fireEvent.pointerUp(handle, { pointerId: 7, clientX: 960 });
-    expect(JSON.parse(localStorage.getItem('muster:workbench:project:resize') ?? '{}').rightWidth).toBe(344);
+    expect(JSON.parse(localStorage.getItem('muster:workbench:project:resize') ?? '{}').rightWidth).toBe(400);
   });
 
-  it('批次F.2：拖拽越界钳制在合法范围（右栏 ≤420）', () => {
+  it('批次F.2：拖拽越界钳制在合法范围（右栏 ≤960）', () => {
     renderShell('project:clamp');
     const handle = screen.getByRole('separator', { name: '调整右侧信息栏宽度' });
     fireEvent.pointerDown(handle, { pointerId: 7, clientX: 1000 });
     fireEvent.pointerMove(handle, { pointerId: 7, clientX: 400 });
     fireEvent.pointerUp(handle, { pointerId: 7, clientX: 400 });
-    expect(JSON.parse(localStorage.getItem('muster:workbench:project:clamp') ?? '{}').rightWidth).toBe(420);
+    expect(JSON.parse(localStorage.getItem('muster:workbench:project:clamp') ?? '{}').rightWidth).toBe(960);
   });
 
   it('批次F.2：双击手柄重置默认宽度', () => {
     localStorage.setItem('muster:workbench:project:reset', JSON.stringify({ leftOpen: true, rightOpen: true, leftWidth: 300, rightWidth: 400 }));
     renderShell('project:reset');
     fireEvent.dblClick(screen.getByRole('separator', { name: '调整右侧信息栏宽度' }));
-    expect(JSON.parse(localStorage.getItem('muster:workbench:project:reset') ?? '{}').rightWidth).toBe(304);
+    expect(JSON.parse(localStorage.getItem('muster:workbench:project:reset') ?? '{}').rightWidth).toBe(360);
   });
 
   it('批次F.2：抽屉态（<740）不渲染拖拽手柄；1000px 窄桌面仍三栏可拖', async () => {

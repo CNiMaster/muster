@@ -3,9 +3,9 @@
  *
  PRD：
  - 触发：时间 / 完成 Task 数 / 里程碑
- - 流程：停止领取 → 当前 Task 完成或安全保存 → review_paused → 第一负责人生成看板
+ - 流程：停止领取 → 当前 Task 完成或安全保存 → review_paused → 负责人生成看板
  - 看板按根员工聚合若干结果，不逐条列 Task
- - 用户按摘要序号备注 → 第一负责人转修正 Task
+ - 用户按摘要序号备注 → 负责人转修正 Task
  - 必须点"继续工作"才能恢复（review_paused → online）
  */
 import type { DB } from '../db/client';
@@ -60,7 +60,7 @@ function fromRow(r: ReportRow): ReportSummary {
 /**
  * 开启一个复盘周期：
  * 1. 把公司状态切到 review_paused（停止领取）。
- * 2. 第一负责人生成按根员工聚合的看板。
+ * 2. 负责人生成按根员工聚合的看板。
  * 3. 当前正在执行的 Task 完成或安全保存（此处仅停止领取，运行中的 Task 由引擎自然完成）。
  */
 export function openReportCycle(
@@ -155,7 +155,7 @@ export function addReportNote(db: DB, reportId: string, note: string): ReportSum
   return getReport(db, reportId);
 }
 
-/** 关闭复盘：把每条用户备注转成修正 Task 给第一负责人。 */
+/** 关闭复盘：把每条用户备注转成修正 Task 给负责人。 */
 export function closeReport(db: DB, reportId: string, dispatchCorrection: (note: string, seq: number) => void): ReportSummary {
   const cur = getReport(db, reportId);
   // 把每条备注派发为修正 Task

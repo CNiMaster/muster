@@ -84,6 +84,16 @@ export interface SystemSettings {
   securityMode: '' | 'confirm-edits' | 'auto-edit' | 'plan' | 'full-access';
   /** 工作台快速指引是否已完成（服务端记录——多浏览器/多设备共享，不再按浏览器 localStorage 识别首次）。 */
   workbenchGuideDone: boolean;
+  /** 消息流工作块（2026-08-23 定案）：思考过程展示（关闭时每轮仍展示第一次思考）。 */
+  messageShowThinking: boolean;
+  /** 消息流工作块：展示 Todo 工具卡片。 */
+  messageShowTodo: boolean;
+  /** 消息流工作块：连续读取/搜索工具聚合为 Explore 分组。 */
+  messageGroupExplore: boolean;
+  /** 消息流工作块：连续非只读 Shell 命令聚合为 Terminal 分组。 */
+  messageGroupTerminal: boolean;
+  /** 消息流工作块：连续 Write/Edit/ApplyPatch 聚合为 Changes 分组。 */
+  messageGroupChanges: boolean;
 }
 
 export function getSetting(db: DB, key: string, defaultValue: string): string {
@@ -152,6 +162,11 @@ export function getSystemSettings(db: DB): SystemSettings {
       ? (getSetting(db, 'prevent_sleep', 'active') as 'active' | 'always' | 'off')
       : 'active',
     workbenchGuideDone: getSetting(db, 'workbench_guide_done', 'false') === 'true',
+    messageShowThinking: getSetting(db, 'message_show_thinking', 'true') === 'true',
+    messageShowTodo: getSetting(db, 'message_show_todo', 'true') === 'true',
+    messageGroupExplore: getSetting(db, 'message_group_explore', 'true') === 'true',
+    messageGroupTerminal: getSetting(db, 'message_group_terminal', 'true') === 'true',
+    messageGroupChanges: getSetting(db, 'message_group_changes', 'true') === 'true',
   };
 }
 
@@ -268,5 +283,16 @@ export function saveSystemSettings(db: DB, settings: Partial<SystemSettings>): v
   }
   if (settings.workbenchGuideDone !== undefined) {
     setSetting(db, 'workbench_guide_done', settings.workbenchGuideDone ? 'true' : 'false');
+  }
+  const MESSAGE_BOOL_KEYS: Array<[keyof SystemSettings, string]> = [
+    ['messageShowThinking', 'message_show_thinking'],
+    ['messageShowTodo', 'message_show_todo'],
+    ['messageGroupExplore', 'message_group_explore'],
+    ['messageGroupTerminal', 'message_group_terminal'],
+    ['messageGroupChanges', 'message_group_changes'],
+  ];
+  for (const [field, key] of MESSAGE_BOOL_KEYS) {
+    const v = (settings as Record<string, unknown>)[field];
+    if (typeof v === 'boolean') setSetting(db, key, v ? 'true' : 'false');
   }
 }

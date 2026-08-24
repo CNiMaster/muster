@@ -95,7 +95,7 @@ function WorkbenchResizer({ side, width, onResize, onActiveChange }: {
  * 右区=工作区（顶栏 breadcrumb/下班/主操作 + 中栏现场 + 右栏检视器——右栏附属中栏）。
  * ≥740px 真三栏共存（可拖拽）；<740px 左右栏退化为互斥抽屉（手机/平板竖屏）。
  */
-export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspectorLabel, navigation, inspector, primaryAction, attentionCount = 0, commandOptions, children }: {
+export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspectorLabel, navigation, inspector, primaryAction, attentionCount = 0, commandOptions, mountRightOpen, children }: {
   scopeKey: string;
   breadcrumb: React.ReactNode;
   navigationLabel: string;
@@ -105,6 +105,8 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
   primaryAction?: React.ReactNode;
   attentionCount?: number;
   commandOptions?: Array<{ label: string; href: string; group?: string; proOnly?: boolean }>;
+  /** 2026-08-24 定案：右栏类工具页 mount 时确保右栏开（页面在右栏）；中栏类工具页自动收右栏（让位中栏）——落盘本 scope 偏好 */
+  mountRightOpen?: boolean;
   children: React.ReactNode;
 }): React.ReactElement {
   const preferences = useWorkbenchPreferences(scopeKey);
@@ -135,6 +137,12 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
   const visible = query ? options.filter((option) => `${option.group ?? ''}${option.label}`.toLowerCase().includes(query)) : options;
   const groups = Array.from(new Set(visible.map((option) => option.group ?? '当前')));
   const isDesktop = preferences.viewportWidth >= WORKBENCH_DESKTOP_MIN;
+
+  // 2026-08-24：右栏类/中栏类工具页 mount 时同步一次右栏开合（幂等设置，StrictMode 双跑无害）
+  useEffect(() => {
+    if (mountRightOpen !== undefined && preferences.rightOpen !== mountRightOpen) preferences.setRightOpen(mountRightOpen);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {

@@ -191,6 +191,8 @@ export interface Project {
     | 'completed'
     | 'archived';
   settings: Record<string, unknown>;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface Relationship {
@@ -200,6 +202,8 @@ export interface Relationship {
   targetId: string;
   label: string;
   archivedAt: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface TaskArtifact {

@@ -89,6 +89,12 @@ export const settingsUpdateSchema = z.object({
   securityMode: z.enum(['', 'confirm-edits', 'auto-edit', 'plan', 'full-access']).optional(),
   // 工作台快速指引完成标记（服务端记录，多端共享）
   workbenchGuideDone: z.boolean().optional(),
+  // 消息流工作块（2026-08-23）：思考过程/待办卡片/三分组显示开关
+  messageShowThinking: z.boolean().optional(),
+  messageShowTodo: z.boolean().optional(),
+  messageGroupExplore: z.boolean().optional(),
+  messageGroupTerminal: z.boolean().optional(),
+  messageGroupChanges: z.boolean().optional(),
 });
 
 // 获取当前系统设置

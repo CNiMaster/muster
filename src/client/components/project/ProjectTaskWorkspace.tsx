@@ -2,9 +2,12 @@ import { useEffect, useState } from 'react';
 import type React from 'react';
 import type { Agent, Task } from '../../api/types';
 import type { ProjectTaskDTO } from '../../hooks/queries';
-import { useQueuedMessages, useQueuedMessageAction, useUiMode, useTask, useProjectTaskAction, useTaskAction, usePostMessage, useMessages, useUploadMaterial, materialRawUrl, useExecutorProfiles, useSystemSettings, useBlueprintMatches, useTaskChecklist, useCreateChecklist, useAdvanceChecklist, useArtifacts, useStopAllProjectTasks, type MessageAttachment } from '../../hooks/queries';
+import { useQueuedMessages, useQueuedMessageAction, useTask, useProjectTaskAction, useTaskAction, usePostMessage, useMessages, useUploadMaterial, materialRawUrl, useExecutorProfiles, useSystemSettings, useBlueprintMatches, useTaskChecklist, useCreateChecklist, useAdvanceChecklist, useArtifacts, useStopAllProjectTasks, useStopTask, type MessageAttachment } from '../../hooks/queries';
 import { PromptComposer, type ComposerMode } from '../workbench/PromptComposer';
 import { Button, toast } from '../Button';
+import { useNavigate } from 'react-router-dom';
+import { useProjects } from '../../hooks/queries';
+import { DropdownMenu } from '../DropdownMenu';
 import { StateBadge, Badge } from '../Badge';
 import { ConversationPanel } from '../ConversationPanel';
 import { ExecutionTraceCard } from '../workbench/ExecutionTraceCard';
@@ -12,7 +15,6 @@ import { LiveProcessBar } from '../workbench/LiveProcessBar';
 import { InterruptRecordCard } from '../workbench/InterruptRecordCard';
 import { QueueStrip } from './QueueStrip';
 import { Input, Textarea, Field } from '../Form';
-import { TaskTopBar } from './TaskTopBar';
 import { AutoContinueCountdown } from './AutoContinueCountdown';
 
 export function ProjectTaskWorkspace({
@@ -42,7 +44,8 @@ export function ProjectTaskWorkspace({
 
   // 批次 H.9：@文件 引用候选（组件自取，免去 ProjectPage 透传）
   const { data: composerArtifacts } = useArtifacts(projectId);
-  const ui = useUiMode();
+  const navigate = useNavigate();
+  const { data: projects } = useProjects();
   const [newTitle, setNewTitle] = useState('');
   const [newBrief, setNewBrief] = useState('');
   const [creating, setCreating] = useState(false);
@@ -52,16 +55,32 @@ export function ProjectTaskWorkspace({
   const createChecklist = useCreateChecklist();
   const advanceChecklist = useAdvanceChecklist();
   const [selectedAgentId, setSelectedAgentId] = useState<string>('');
+  // 对话人（2026-08-23 定案）：显式选择优先，默认负责人——取消「自动匹配」，对话始终有人接；
+  // 选中谁就在对话区底部显示谁正在进行的工作（类似右栏员工状态）
+  const defaultAgentId = agents.find((a) => a.role === 'lead')?.id ?? agents[0]?.id;
+  const activeAgentId = selectedAgentId || defaultAgentId;
+  const activeAgent = agents.find((a) => a.id === activeAgentId);
+  const activeAgentTasks = tasks.filter((t) => t.assigneeAgentId === activeAgentId && (t.state === 'running' || t.state === 'claimed'));
   const [currentModel, setCurrentModel] = useState<string>('');
   const [thinkingDepth, setThinkingDepth] = useState<'off' | 'low' | 'med' | 'high'>('high');
-  const [mode, setMode] = useState<ComposerMode>('');
+  // 执行模式（2026-08-23 定案）：默认计划模式；用户手动切换后记住偏好（localStorage），
+  // 下次自动恢复到上次选择，直到再次手动切换。「跟随默认档」退役。
+  const [mode, setMode] = useState<ComposerMode>(() => {
+    const saved = window.localStorage.getItem('muster:composer-mode:v1');
+    return saved === 'auto-edit' || saved === 'confirm-edits' || saved === 'plan' || saved === 'full-access' ? saved : 'plan';
+  });
+  const selectMode = (m: ComposerMode): void => {
+    setMode(m);
+    window.localStorage.setItem('muster:composer-mode:v1', m);
+  };
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
   const uploadMaterial = useUploadMaterial(projectId);
   // 打法包：创建任务时预览将派遣的蓝图与相关打法
   const blueprintPreview = useBlueprintMatches(newTitle);
-  // 模型清单来自真实执行器档案/系统设置（替换原硬编码假模型）
   const { data: executorProfiles } = useExecutorProfiles();
   const { data: systemSettings } = useSystemSettings();
+  // 模型清单（2026-08-23 定案）：来自真实执行器档案——每个 CLI 档案一个模型项（label=CLI 名 · 模型名）；
+  // 「系统默认模型」概念退役：未选择时按钮显示「选择模型」，不传模型=该执行器档案自己的默认。
   const modelOptions = (() => {
     const options: Array<{ id: string; label: string }> = [];
     const seen = new Set<string>();
@@ -69,14 +88,9 @@ export function ProjectTaskWorkspace({
       const model = typeof profile.config?.model === 'string' ? profile.config.model.trim() : '';
       if (model && !seen.has(model)) {
         seen.add(model);
-        options.push({ id: model, label: `${profile.name} · ${model}` });
+        options.push({ id: model, label: `${profile.name}：${model}` });
       }
     }
-    const systemModel = systemSettings?.model?.trim();
-    if (systemModel && !seen.has(systemModel)) {
-      options.push({ id: systemModel, label: `系统默认 · ${systemModel}` });
-    }
-    options.push({ id: '', label: '系统默认模型' });
     return options;
   })();
 
@@ -86,9 +100,12 @@ export function ProjectTaskWorkspace({
 
   const projectTaskAction = useProjectTaskAction();
   const directTaskAction = useTaskAction();
-  const postMessage = usePostMessage('project', selectedAgentId || undefined);
+  // 2026-08-24 定案：群聊=对话目标之一——中栏对话区切群聊流、输入框直发群聊（不再跳独立群聊页）
+  const [chatWithGroup, setChatWithGroup] = useState(false);
+  const chatRecipient = chatWithGroup ? undefined : selectedAgentId || undefined;
+  const postMessage = usePostMessage('project', chatRecipient);
   // 与 ConversationPanel 同参共享缓存：用于判断会话是否已有内容（空态居中 → 开始后落底）
-  const { data: conversationMessages } = useMessages('project', projectId, selectedAgentId || undefined);
+  const { data: conversationMessages } = useMessages('project', projectId, chatRecipient);
 
   // 获取当前正在运行、等待或暂停的 Task 执行记录
   const activeRuntimeTask = tasks.find((t) => t.state === 'running' || t.state === 'claimed' || t.state === 'waiting_input' || t.state === 'paused') ?? tasks[0];
@@ -96,6 +113,7 @@ export function ProjectTaskWorkspace({
   const { data: queuedMessages = [] } = useQueuedMessages(projectId);
   const queueAction = useQueuedMessageAction(projectId);
   const stopAll = useStopAllProjectTasks(projectId);
+  const stopTask = useStopTask(projectId);
   const runtimeBusy = activeRuntimeTask?.state === 'running' || activeRuntimeTask?.state === 'claimed';
   // 批次 H.6：划选引用（消息区选中→composer 引用条→随下轮输入附上）
   const [quotedContext, setQuotedContext] = useState<string | undefined>();
@@ -137,6 +155,19 @@ export function ProjectTaskWorkspace({
       model: options?.model || undefined,
       thinking: options?.thinking === 'med' ? 'medium' as const : options?.thinking as 'off' | 'low' | 'medium' | 'high' | undefined,
     };
+
+    // 群聊态（2026-08-24 定案）：输入框直发项目群聊——不走任务工作单/单聊 DM
+    if (chatWithGroup) {
+      postMessage.mutate(
+        { scopeId: projectId, content, refs: options?.refs, projectTaskId: selectedTask?.id, attachments: messageAttachments.length ? messageAttachments : undefined, options: messageOptions },
+        {
+          onSuccess: () => toast('success', '已发送到项目群聊'),
+          onError: (e) => toast('error', (e as Error).message),
+        },
+      );
+      setAttachments([]);
+      return;
+    }
 
     // 如果当前有正在等待补充输入（waiting_input）的任务，输入任何文字均视为答复并自动接续执行
     if (activeRuntimeTask?.state === 'waiting_input') {
@@ -224,6 +255,7 @@ export function ProjectTaskWorkspace({
           <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexShrink: 0 }}>
             {/* 如果处于暂停或等待态，顶部直接常驻【▶ 继续执行】按钮 */}
             {isTaskWaitingOrPaused && (
+              <>
               <button
                 type="button"
                 className="mu-composer-pill is-highlight"
@@ -233,6 +265,9 @@ export function ProjectTaskWorkspace({
               >
                 <span>▶ 继续执行</span>
               </button>
+              {/* F.4 等待输入倒计时（aa2f322 顶栏搬迁时误删，e2e task-auto-continue 回归补回） */}
+              {activeRuntimeTask && <AutoContinueCountdown task={activeRuntimeTask} />}
+              </>
             )}
             {selectedTask.state === 'active' && (
               <Button
@@ -373,13 +408,31 @@ export function ProjectTaskWorkspace({
       <div className="ptws-body">
         {!startedLayout && (
           <div className="ptws-hero">
-            <span className="ptws-hero-badge">✨ 第一负责人在线</span>
+            <div className="ptws-hero-project-switch">
+              <DropdownMenu
+                label="切换项目"
+                align="left"
+                buttonClassName="mu-nav-plain-btn"
+                items={(projects ?? []).map((pr) => ({ key: pr.id, label: pr.name, onSelect: () => navigate(`/projects/${pr.id}?view=task`) }))}
+              >
+                <span style={{ fontSize: 12 }}>{(projects ?? []).find((pr) => pr.id === projectId)?.name ?? '项目'} ▾</span>
+              </DropdownMenu>
+            </div>
+            <span className="ptws-hero-badge">✨ 负责人在线</span>
             <h2>{selectedTask ? `在任务 #${selectedTask.seq} 里开始工作` : '直接交代你的目标'}</h2>
             <p className="muted">
               {selectedTask
                 ? '描述这步要完成什么、验收标准或约束，负责人会拆解并调度合适的智能体专家推进。'
-                : '无需建任务也能开工——发送即起草任务；也可以点右上角「＋ 新建任务」先立一个目标。'}
+                : '无需建任务也能开工——发送即起草任务；也可以点左栏「＋」先立一个目标。'}
             </p>
+            <div className="ptws-hero-suggestions">
+              <span className="ptws-hero-sug-label">快捷任务</span>
+              {['整理一份竞品对比矩阵', '写一段产品介绍文案', '复盘本周工作并给出下周计划'].map((t) => (
+                <button key={t} type="button" className="ptws-sug-chip" onClick={() => onCreateTask?.(t, '')}> {t} </button>
+              ))}
+              <span className="ptws-hero-sug-label">定时任务</span>
+              <button type="button" className="ptws-sug-chip" onClick={() => navigate('/automations')}>每天早上汇总待办与进展 →</button>
+            </div>
           </div>
         )}
 
@@ -397,8 +450,11 @@ export function ProjectTaskWorkspace({
                 scopeId={projectId}
                 projectTaskId={selectedTask?.id}
                 onSelectQuote={setQuotedContext}
-                title={selectedTask ? `项目任务 #${selectedTask.seq} 对话现场` : '项目协作对话现场'}
-                recipientAgentId={selectedAgentId || undefined}
+                title={chatWithGroup
+                  ? '任务群聊 · 可 @ 指定智能体'
+                  : selectedTask ? `项目任务 #${selectedTask.seq} 对话现场` : '项目协作对话现场'}
+                recipientAgentId={chatRecipient}
+                showIdentity={chatWithGroup}
                 hideInput
                 fill
               />
@@ -414,18 +470,42 @@ export function ProjectTaskWorkspace({
           />
         )}
         {<QueueStrip projectId={projectId} messages={queuedMessages} />}
+
+        {/* 对话人工作状态条：输入框选谁就显示谁正在进行的工作，可直接对话 */}
+        {activeAgent && activeAgentTasks.length > 0 && (
+          <div className="pt-agent-strip">
+            <span className="org-avatar pt-agent-strip-avatar">{activeAgent.name.slice(0, 1)}</span>
+            <div className="pt-agent-strip-info">
+              <span className="pt-agent-strip-name">
+                {activeAgent.name}
+                <span className={`org-presence is-${activeAgent.availabilityState}`} />
+                <small>{activeAgent.role}</small>
+              </span>
+              <span className="pt-agent-strip-work" title={activeAgentTasks.map((t) => `#${t.seq} ${t.title}`).join('\n') || undefined}>
+                {activeAgentTasks.length > 0
+                  ? activeAgentTasks.map((t) => `#${t.seq} ${t.title}`).join(' · ')
+                  : '当前就绪，暂无进行中任务'}
+              </span>
+            </div>
+          </div>
+        )}
         <PromptComposer
           isRunning={runtimeBusy}
-          onStop={() => stopAll.mutate({ projectId }, {
-            onSuccess: (d) => toast('success', d.stopped > 0 ? `已请求暂停 ${d.stopped} 个任务——各自在安全边界停下` : '当前没有执行中的任务'),
-            onError: (e) => toast('error', (e as Error).message),
-          })}
-          onStopImmediate={() => stopAll.mutate({ projectId, immediate: true }, {
-            onSuccess: (d) => toast('success', d.stopped > 0 ? `已立即停止 ${d.stopped} 个任务——现场保留在各任务的打断记录里` : '当前没有执行中的任务'),
-            onError: (e) => toast('error', (e as Error).message),
-          })}
-          stopRequested={tasks.some((t) => (t.state === 'running' || t.state === 'claimed') && t.stopRequested)}
-          runningCount={tasks.filter((t) => t.state === 'running' || t.state === 'claimed').length}
+          onStop={() => {
+            if (!activeRuntimeTask) return;
+            stopTask.mutate({ taskId: activeRuntimeTask.id }, {
+              onSuccess: () => toast('success', '已请求暂停——当前任务将在安全边界停下'),
+              onError: (e) => toast('error', (e as Error).message),
+            });
+          }}
+          onStopImmediate={() => {
+            if (!activeRuntimeTask) return;
+            stopTask.mutate({ taskId: activeRuntimeTask.id, immediate: true }, {
+              onSuccess: () => toast('success', '已停止当前任务——现场保留在打断记录里'),
+              onError: (e) => toast('error', (e as Error).message),
+            });
+          }}
+          stopRequested={activeRuntimeTask?.stopRequested ?? false}
           quotedContext={quotedContext}
           onClearQuoted={() => setQuotedContext(undefined)}
           placeholder={
@@ -439,25 +519,24 @@ export function ProjectTaskWorkspace({
                   ? `在任务 #${selectedTask.seq} 中给智能体下达指令…`
                   : '直接输入需求，或向智能体分配任务…'
           }
-          agents={ui.isSimple ? [] : agents}
-          selectedAgentId={ui.isSimple ? undefined : selectedAgentId}
-          onSelectAgent={ui.isSimple ? undefined : setSelectedAgentId}
-          currentModel={ui.isSimple ? '' : currentModel}
-          onSelectModel={ui.isSimple ? undefined : setCurrentModel}
-          modelOptions={ui.isSimple ? [] : modelOptions}
-          thinkingDepth={ui.isSimple ? 'off' : thinkingDepth}
-          onToggleThinking={ui.isSimple ? undefined : setThinkingDepth}
+          agents={agents}
+          selectedAgentId={selectedAgentId || undefined}
+          onSelectAgent={(id) => { setSelectedAgentId(id); setChatWithGroup(false); }}
+          onToggleGroupChat={() => setChatWithGroup((v) => !v)}
+          groupChatActive={chatWithGroup}
+          defaultAgentId={defaultAgentId}
+          currentModel={currentModel}
+          onSelectModel={setCurrentModel}
+          modelOptions={modelOptions}
+          thinkingDepth={thinkingDepth}
+          onToggleThinking={setThinkingDepth}
           attachments={attachments}
           onAddFiles={handleAddFiles}
           onRemoveAttachment={(materialId) => setAttachments((prev) => prev.filter((a) => a.materialId !== materialId))}
           uploading={uploadMaterial.isPending}
           attachmentUrl={(materialId) => materialRawUrl(projectId, materialId)}
-          taskOptions={ui.isSimple ? [] : projectTasks.map((t) => ({ id: t.id, label: `#${t.seq} ${t.title}` }))}
-          selectedTaskId={ui.isSimple ? undefined : selectedTask?.id}
-          onSelectTask={ui.isSimple ? undefined : onSelect}
-          branch={ui.isSimple ? null : selectedTask ? `muster/${projectId}/${selectedTask.id}` : null}
-          mode={ui.isSimple ? undefined : mode}
-          onSelectMode={ui.isSimple ? undefined : setMode}
+          mode={mode}
+          onSelectMode={selectMode}
           onNewTask={() => setCreating(true)}
           draftKey={selectedTask ? `task:${selectedTask.id}` : `project:${projectId}`}
           fileOptions={(composerArtifacts ?? []).map((a) => ({ path: a.path }))}

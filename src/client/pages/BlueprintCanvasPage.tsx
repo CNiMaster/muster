@@ -315,7 +315,7 @@ export function BlueprintCanvasPage(): React.ReactElement {
   if (isBpLoading || !bp) return <CardSkeleton />;
 
   return (
-    <div className="blueprint-canvas-page" style={{ height: 'calc(100vh - 80px)', display: 'flex', flexDirection: 'column' }}>
+    <div className="blueprint-canvas-page" style={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       {/* 顶部控制栏 */}
       <header style={{
         padding: '12px 20px',

@@ -34,7 +34,7 @@ afterEach(async () => {
 });
 
 describe('workbench 单例路由', () => {
-  /** 确保默认工作台存在并配好第一负责人（clock-in 健康检查要求）。 */
+  /** 确保默认工作台存在并配好负责人（clock-in 健康检查要求）。 */
   async function seedWorkbenchWithLead(): Promise<void> {
     const companyId = ensureWorkbench(tdb.db).workbench.id;
     const lead = createAgent(tdb.db, { companyId, name: '负责人', role: 'lead' });

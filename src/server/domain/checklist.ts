@@ -41,7 +41,7 @@ export function getChecklist(db: DB, projectTaskId: string): TaskChecklist | nul
   return row ? fromRow(row) : null;
 }
 
-/** 条目任务默认执行人：项目第一负责人，缺省回退工作台第一负责人（与定时单同语义）。 */
+/** 条目任务默认执行人：负责人，缺省回退工作台负责人（与定时单同语义）。 */
 function defaultAssignee(db: DB, projectId: string): string | undefined {
   const firstAgentId = (db.prepare('SELECT first_agent_id AS a FROM project WHERE id=?').get(projectId) as { a: string | null }).a;
   return firstAgentId ?? getWorkbench(db).firstAgentId ?? undefined;

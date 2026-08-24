@@ -518,8 +518,8 @@ export function assertCanReadSource(db: DB, projectId: string, sourceProjectId: 
 /**
  项目健康校验（PRD:359，与公司级 assertCompanyHealthy 互补）。
  触发点：项目创建后、新增镜像、公司上班。
- - 第一负责人必须存在且归属同公司。
- - 公司必须有第一负责人（项目继承）。
+ - 负责人必须存在且归属同公司。
+ - 公司必须有负责人（项目继承）。
  - 引用项目必须可读（project_reference 行存在且 read_only=1）。
  返回错误数组（空数组表示健康）；assertProjectHealthy 在错误非空时抛出。
  */
@@ -535,10 +535,10 @@ export function checkProjectHealth(db: DB, projectId: string): ProjectHealthIssu
   const workbench = getWorkbench(db);
 
   if (!workbench.firstAgentId) {
-    issues.push({ code: 'company_no_first_agent', message: `工作台「${workbench.name}」未设置第一负责人` });
+    issues.push({ code: 'company_no_first_agent', message: `工作台「${workbench.name}」未设置负责人` });
   }
   if (!project.firstAgentId) {
-    issues.push({ code: 'project_no_first_agent', message: `项目「${project.name}」未设置第一负责人` });
+    issues.push({ code: 'project_no_first_agent', message: `项目「${project.name}」未设置负责人` });
   } else {
     getAgent(db, project.firstAgentId);
   }

@@ -47,7 +47,7 @@ export function makeTempGitRepo(): string {
 
 /**
  * 测试夹具：长篇小说工作台（原领域函数已随固定岗位模板退场，仅测试保留同构形状）。
- * 生产路径的默认员工 = 第一负责人 + 验收员（ensureWorkspaceStaff），专家角色由任务穿戴人设生成。
+ * 生产路径的默认员工 = 负责人 + 验收员（ensureWorkspaceStaff），专家角色由任务穿戴人设生成。
  */
 import type { DB } from '../../src/server/db/client';
 import { restoreWorkbench, updateWorkbench, type Workbench } from '../../src/server/domain/workbench';
@@ -75,7 +75,7 @@ export function createNovelCompany(db: DB, input: { name: string; charter?: stri
   const departments = (input.departments?.length ? input.departments : [{ name: '创作部', purpose: '正文、人物与情节协作' }, { name: '运营监察', purpose: '一致性检查' }]).map((d) => createDepartment(db, { companyId: company.id, name: d.name, rules: { purpose: d.purpose ?? '' } }));
   const mk = (name: string, role: string, responsibilities: string, extra: Partial<CreateAgentInput> = {}): AgentDefinition =>
     createAgent(db, { companyId: company.id, departmentId: departments[0]?.id, name, role, responsibilities, contactAllow: [], ...extra });
-  const lead = mk('项目第一负责人', 'lead', '拆解并派发', { canDispatch: true });
+  const lead = mk('项目负责人', 'lead', '拆解并派发', { canDispatch: true });
   const writer = mk('主写手', 'writer', '撰写正文');
   const character = mk('人物设计', 'character', '维护人物档案');
   const plot = mk('情节架构', 'plot', '维护大纲与伏笔');
@@ -116,5 +116,5 @@ export function createNovelCompany(db: DB, input: { name: string; charter?: stri
 }
 
 export function assertLeadWriterSeparate(leadId: string, writerId: string): void {
-  if (leadId === writerId) throw new Error('项目第一负责人与主写手必须由不同员工担任');
+  if (leadId === writerId) throw new Error('项目负责人与主写手必须由不同员工担任');
 }

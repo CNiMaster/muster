@@ -61,7 +61,7 @@ export function getProjectConflictTimeline(db: DB, projectId: string): ConflictT
         id: `res_${r.id}`,
         timestamp: r.published_at,
         kind: 'judge_assigned',
-        title: '已指派第一负责人裁决与辩论',
+        title: '已指派负责人裁决与辩论',
         description: '系统已为冲突自动立案并指派裁决任务。',
         files: conflicts,
         taskId: r.resolution_task_id,

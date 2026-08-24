@@ -412,6 +412,7 @@ export function assembleContext(
       'outcome ∈ completed | waiting_input | waiting_dependency | blocked',
       '信息不足时用 waiting_input + question 追问，不要编造。',
       '本任务为轻量任务（咨询/发言），不支持产出 artifacts（系统会剥离）；需要产出请用 done 的 outboundTasks 派发正式任务。',
+      'outboundTasks[].title 用动宾短语：中文 ≤ 14 字、英文 ≤ 28 字符，不加句号（标题要能在一行列表里显示完整）。',
       '',
     );
   } else {
@@ -423,6 +424,7 @@ export function assembleContext(
       '信息不足时用 waiting_input + question 在原 Task 中追问，不要编造。',
       '两难/需要用户拍板的选择题：用 questionOptions 给 2~4 个候选（id 稳定、label 简短、pros/cons 各一句），用户可一键选择；小问题自己定，不要什么都问。',
       'completed 时请在 acceptanceMet 里逐条自评验收标准（对照 # 验收标准 的 id，met=true/false）。',
+      'outboundTasks[].title 用动宾短语：中文 ≤ 14 字、英文 ≤ 28 字符，不加句号（标题要能在一行列表里显示完整）；swarmPlan.workers[].title 同此约定。',
       '',
     );
   }
@@ -476,7 +478,7 @@ export function assembleContext(
       'automationPlan: { "kind": "github-issues", "config": { "repo": "owner/repo", "labelFilter": "可选" },',
       '  "schedule": { "kind": "interval", "intervalMinutes": 60 } 或 { "kind": "daily", "timeOfDay": "09:00" },',
       '  "projectId": "从下方项目清单选" }',
-      '一期仅支持 github-issues（定时拉取仓库的开放 Issues，分派给绑定项目负责人处理）。信息不全时 outcome="waiting_input" 向用户提问。',
+      '一期仅支持 github-issues（定时拉取仓库的开放 Issues，分派给绑定负责人处理）。信息不全时 outcome="waiting_input" 向用户提问。',
       '',
       '# 可绑定项目',
       ...(bindableProjects.length > 0

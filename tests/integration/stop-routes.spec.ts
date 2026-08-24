@@ -132,7 +132,7 @@ describe('H8 /discard-stop（打断记录「回退」）', () => {
 });
 
 describe('H8 /correct（纠错上级路由）', () => {
-  it('普通执行者无派遣 → 第一负责人收令', async () => {
+  it('普通执行者无派遣 → 负责人收令', async () => {
     const writer = createAgent(db, { companyId: 'wb_h8route', name: 'writer', role: 'writer' });
     insertTask('tk_c1', 'running', writer.id, null);
     const r = await post('/api/tasks/tk_c1/correct', { problem: '他改错了文件' });
@@ -153,7 +153,7 @@ describe('H8 /correct（纠错上级路由）', () => {
     expect(((await r.json()) as { recipientId: string }).recipientId).toBe(senior.id);
   });
 
-  it('第一负责人本人 → 拒绝纠错（与用户直接沟通）', async () => {
+  it('负责人本人 → 拒绝纠错（与用户直接沟通）', async () => {
     insertTask('tk_c3', 'running', leadId, null);
     const r = await post('/api/tasks/tk_c3/correct', { problem: 'x' });
     expect(r.status).toBeGreaterThanOrEqual(400);

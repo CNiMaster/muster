@@ -4,7 +4,7 @@
  * 复用现有组织架构（relationship 表 org 边：负责人→员工）。
  * 员工操作超出权限时，系统自动找其直接负责人审批，不让人逐个批。
  *
- * 委托链路由：员工超权 → 直接负责人（org 边上溯）→ 公司第一负责人 → 用户
+ * 委托链路由：员工超权 → 直接负责人（org 边上溯）→ 公司负责人 → 用户
  *
  * 权限变更申请：下级申请（临时/项目/永久 + 原因），上级批，变更记录留资料内。
  *
@@ -92,13 +92,13 @@ export function findDirectManager(db: DB, employeeId: string): string | null {
     )
     .get(employeeId) as { source_id: string } | undefined;
   if (row?.source_id) return row.source_id;
-  // 无 org 边 → 工作台第一负责人
+  // 无 org 边 → 工作台负责人
   return getWorkbench(db).firstAgentId ?? null;
 }
 
 /**
  * 权限委托链路由：员工超权时找审批人。
- * 直接负责人 → 公司第一负责人 → null（需用户处理）。
+ * 直接负责人 → 公司负责人 → null（需用户处理）。
  */
 export function resolveApprover(db: DB, employeeId: string): string | null {
   return findDirectManager(db, employeeId);
@@ -115,7 +115,7 @@ export interface CreateChangeRequestInput {
 
 /**
  * 下级申请权限变更。
- * 自动路由审批人（直接负责人 / 工作台第一负责人）。
+ * 自动路由审批人（直接负责人 / 工作台负责人）。
  */
 export function createPermissionChangeRequest(db: DB, input: CreateChangeRequestInput): PermissionChangeRequest {
   // 校验申请人存在（同工作台语义下无需再比对公司归属）
@@ -183,7 +183,7 @@ export function approveChangeRequest(db: DB, requestId: string, approverId: stri
     throw new AppError(ErrorCode.VALIDATION, `申请 ${requestId} 状态 ${req.state}，不可审批`);
   }
   // 校验审批人
-  // Review 修复（M-4）：审批人未解析（approverEmployeeId 为 null，如公司无第一负责人且无 org 边）时
+  // Review 修复（M-4）：审批人未解析（approverEmployeeId 为 null，如公司无负责人且无 org 边）时
   // 拒绝自动批准——原守卫用 `req.approverEmployeeId &&` 短路，null 时任何 approverId 都能批准（越权）。
   if (!req.approverEmployeeId) {
     throw new AppError(ErrorCode.UNAUTHORIZED, '该申请未解析到审批人，需用户人工处理');

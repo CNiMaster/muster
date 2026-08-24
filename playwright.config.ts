@@ -1,5 +1,9 @@
 import { defineConfig } from '@playwright/test';
 
+// 端口可覆盖（默认 3456）：本机 dev server 常驻时，用 E2E_PORT=3466 npx playwright test 避开占用
+const E2E_PORT = process.env.E2E_PORT ?? '3456';
+const E2E_BASE = `http://127.0.0.1:${E2E_PORT}`;
+
 export default defineConfig({
   testDir: './tests/e2e',
   fullyParallel: false,
@@ -10,7 +14,7 @@ export default defineConfig({
   workers: 1,
   reporter: 'list',
   use: {
-    baseURL: 'http://127.0.0.1:3456',
+    baseURL: E2E_BASE,
     trace: 'on-first-retry',
     launchOptions: process.env.PLAYWRIGHT_EXECUTABLE_PATH
       ? { executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH }
@@ -32,12 +36,13 @@ export default defineConfig({
     command: 'npm run preflight && rm -rf /tmp/muster-e2e-run && npm run dev',
     // 公司退役批次C：探针打到 /api/workbench——不仅判 HTTP 就绪，还触发首次
     // 建库/seed/默认工作台创建的完整冷启动初始化，避免首用例撞上未就绪窗口。
-    url: 'http://127.0.0.1:3456/api/workbench',
+    url: `${E2E_BASE}/api/workbench`,
     reuseExistingServer: false,
     timeout: 90_000,
     env: {
       ...process.env,
       MUSTER_HOME: `/tmp/muster-e2e-run`,
+      MUSTER_PORT: E2E_PORT,
       MUSTER_KEEPAWAKE: 'off',
       CLAUDE_BIN: '/definitely/missing/claude',
       MUSTER_EXECUTOR: 'fake',

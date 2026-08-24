@@ -259,8 +259,8 @@ taskByIdRouter.post(
 /**
  * H8 纠错（第六/七轮收敛）：点名出错的执行者——在跑先安全停他（流程内单点停），
  * 用户描述问题后发给**纠错执行人的上级**（自动路由，不都给人事）：
- * 中央岗（人事/养蜂人等系统岗）→ 第一负责人；有派遣人 → 派遣他的领导；
- * 负责人本人被纠错 → 人事（重新安排）；兜底 → 第一负责人。
+ * 中央岗（人事/养蜂人等系统岗）→ 负责人；有派遣人 → 派遣他的领导；
+ * 负责人本人被纠错 → 人事（重新安排）；兜底 → 负责人。
  * 处置（重做/重排/修改工作/撤否）由收令上级判断，不交用户直发。
  */
 taskByIdRouter.post(
@@ -287,7 +287,7 @@ taskByIdRouter.post(
     const dispatcher = task.dispatcherAgentId ? getAgent(db, task.dispatcherAgentId) : null;
 
     // ③ 上级路由（第七/八轮定稿）：中央岗→负责人；有派遣人→派遣领导；兜底→负责人。
-    // 第一负责人本人不进纠错链——他与用户直接沟通，有问题用户直说（用户定稿）。
+    // 负责人本人不进纠错链——他与用户直接沟通，有问题用户直说（用户定稿）。
     const leadId = project.firstAgentId ?? null;
     let recipientId: string;
     let recipientWhy: string;
@@ -295,20 +295,20 @@ taskByIdRouter.post(
       recipientId = leadId ?? hrId;
       recipientWhy = '任务无执行者，交负责人处置';
     } else if (assignee.id === leadId || assignee.role === 'lead') {
-      throw new AppError(ErrorCode.VALIDATION, '第一负责人与您直接沟通——请直接在对话中指出问题，无需走纠错流程');
+      throw new AppError(ErrorCode.VALIDATION, '负责人与您直接沟通——请直接在对话中指出问题，无需走纠错流程');
     } else if (assignee.isSystem) {
       recipientId = leadId ?? hrId;
-      recipientWhy = `被纠错的是中央岗（${assignee.name}），其上级为第一负责人`;
+      recipientWhy = `被纠错的是中央岗（${assignee.name}），其上级为负责人`;
     } else if (dispatcher) {
       recipientId = dispatcher.id;
       recipientWhy = `由派遣他的上级（${dispatcher.name}）处置`;
     } else {
       recipientId = leadId ?? hrId;
-      recipientWhy = '无派遣记录，交第一负责人处置';
+      recipientWhy = '无派遣记录，交负责人处置';
     }
     if ((getAgent(db, recipientId).permissions as { userDirectContact?: boolean } | undefined)?.userDirectContact === false) {
       recipientId = leadId ?? hrId; // 收令人不开放直联（如隐形中央岗缺分区口子）→ 回落负责人
-      recipientWhy = '原收令人不开放用户直联，回落第一负责人';
+      recipientWhy = '原收令人不开放用户直联，回落负责人';
     }
 
     const content = [

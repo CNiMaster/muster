@@ -4,7 +4,7 @@ import { restoreWorkbench } from '../../src/server/domain/workbench';
  *
  * 验证：
  * 1. 子任务 failTask 后，父任务（waiting_dependency）收到失败通知消息
- * 2. 第一负责人收到 [兜底] 子任务失败 上报 Task
+ * 2. 负责人收到 [兜底] 子任务失败 上报 Task
  * 3. 去重：同一父任务多次子任务失败不重复派发 [兜底]
  * 4. 取消失败子任务（cancelTask）后父任务恢复 queued（cancelled 依赖视为已处理）
  * 5. cancel_child_task 工具：权限校验、跨项目拒绝、取消后唤醒
@@ -61,7 +61,7 @@ function makeParentWaitingOnChild(parentId: string, childId: string): void {
 }
 
 describe('子任务失败兜底（阶段一任务 1.1）', () => {
-  it('子任务失败后父任务收到失败通知，第一负责人收到 [兜底] Task', () => {
+  it('子任务失败后父任务收到失败通知，负责人收到 [兜底] Task', () => {
     const { lead, worker, project } = fixture();
     const parent = createTask(db, { projectId: project.id, assigneeAgentId: worker.id, title: '父任务：写一章' });
     const child = createTask(db, {
@@ -81,7 +81,7 @@ describe('子任务失败兜底（阶段一任务 1.1）', () => {
     const failMsg = msgs.find((m) => m.role === 'dispatch' && m.content.includes('子任务失败'));
     expect(failMsg).toBeDefined();
     expect(failMsg!.content).toContain('网络超时');
-    // 3. 第一负责人收到 [兜底] Task
+    // 3. 负责人收到 [兜底] Task
     const bailouts = db
       .prepare(`SELECT * FROM task WHERE assignee_agent_id=? AND title LIKE '[兜底]%'`)
       .all(lead.id) as Array<{ state: string; input_protocol_json: string; priority: number }>;
@@ -180,7 +180,7 @@ describe('cancel_child_task 工具', () => {
     };
   }
 
-  it('第一负责人可取消失败子任务，父任务恢复排队', async () => {
+  it('负责人可取消失败子任务，父任务恢复排队', async () => {
     const { lead, worker, project } = fixture();
     const parent = createTask(db, { projectId: project.id, assigneeAgentId: worker.id, title: '父任务' });
     const child = createTask(db, { projectId: project.id, parentTaskId: parent.id, assigneeAgentId: worker.id, title: '子任务' });
@@ -205,7 +205,7 @@ describe('cancel_child_task 工具', () => {
     expect(msgs.some((m) => m.content.includes('子任务取消') && m.content.includes('资料找不到'))).toBe(true);
   });
 
-  it('普通员工（非第一负责人、非派发者）不能取消他人子任务', async () => {
+  it('普通员工（非负责人、非派发者）不能取消他人子任务', async () => {
     const { lead, worker, project } = fixture();
     const other = createAgent(db, { companyId: project.companyId, name: 'other', role: 'worker' });
     const parent = createTask(db, { projectId: project.id, assigneeAgentId: worker.id, title: '父任务' });
@@ -214,7 +214,7 @@ describe('cancel_child_task 工具', () => {
     const call: ToolCall = { id: 'tc', name: 'cancel_child_task', args: { child_task_id: child.id } };
     const ctx = makeContext(otherTask.id, project.id, otherTask.projectTaskId, other.id);
     const result = await executeTool(call, ctx);
-    expect(result.content).toContain('只有第一负责人或子任务派发者');
+    expect(result.content).toContain('只有负责人或子任务派发者');
     expect(getTask(db, child.id).state).toBe('queued');
     void lead;
   });

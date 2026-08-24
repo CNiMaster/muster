@@ -76,7 +76,7 @@ export function ReportsPage(): React.ReactElement {
   const handleCloseReport = (reportId: string): void => {
     closeReport.mutate(reportId, {
       onSuccess: () => {
-        toast('success', '复盘已关闭，已向第一负责人派发修正任务');
+        toast('success', '复盘已关闭，已向负责人派发修正任务');
         qc.invalidateQueries({ queryKey: ['workbench'] });
         refetch();
       },
@@ -307,7 +307,7 @@ export function ReportsPage(): React.ReactElement {
                         variant="danger" 
                         onClick={() => handleCloseReport(activeReport.id)}
                         loading={closeReport.isPending}
-                        title="关闭复盘，同时派发修正任务给第一负责人"
+                        title="关闭复盘，同时派发修正任务给负责人"
                       >
                         关闭复盘并派发修正任务
                       </Button>

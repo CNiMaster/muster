@@ -9,7 +9,7 @@ import type { Agent, Task } from '../../src/client/api/types';
 import { TasksPage } from '../../src/client/pages/TasksPage';
 
 const AGENTS: Agent[] = [
-  { id: 'ag_1', name: '林晚晴', role: '第一负责人' } as Agent,
+  { id: 'ag_1', name: '林晚晴', role: '负责人' } as Agent,
   { id: 'ag_2', name: '沈逸', role: '专家' } as Agent,
 ];
 

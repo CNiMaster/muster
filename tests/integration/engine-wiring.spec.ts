@@ -130,7 +130,7 @@ describe('engine → worktree → publish wiring', () => {
     expect(followups.some((task) => task.title.includes('剧情进度'))).toBe(true);
   });
 
-  it('第一负责人完成用户消息 Task 后把摘要回复到项目对话', async () => {
+  it('负责人完成用户消息 Task 后把摘要回复到项目对话', async () => {
     const r = createNovelCompany(db, { name: 'co' });
     clockIn(db);
     const project = createProject(db, {
@@ -222,7 +222,7 @@ describe('engine → worktree → publish wiring', () => {
     expect(db.prepare('SELECT 1 FROM task_runtime WHERE task_id=?').get(task.id)).toBeUndefined();
   });
 
-  it('发布冲突保留现场并派第一负责人，AI 裁决后关闭原 Task 与冲突记录', async () => {
+  it('发布冲突保留现场并派负责人，AI 裁决后关闭原 Task 与冲突记录', async () => {
     const r = createNovelCompany(db, { name: 'co' });
     clockIn(db);
     const project = createProject(db, {
@@ -261,7 +261,7 @@ describe('engine → worktree → publish wiring', () => {
         expect(readFileSync(path.join(ctx.workingDir, '.muster-conflicts', publishId, 'base', 'doc.md'), 'utf8')).toBe('基线\n');
         expect(readFileSync(path.join(ctx.workingDir, '.muster-conflicts', publishId, 'ours', 'doc.md'), 'utf8')).toBe('并行发布版本\n');
         expect(readFileSync(path.join(ctx.workingDir, '.muster-conflicts', publishId, 'theirs', 'doc.md'), 'utf8')).toBe('原任务版本\n');
-        writeFileSync(path.join(ctx.workingDir, 'doc.md'), '第一负责人裁决版\n');
+        writeFileSync(path.join(ctx.workingDir, 'doc.md'), '负责人裁决版\n');
         return {
           outcome: 'completed', summary: '裁决完成', outboundTasks: [],
           artifacts: [{ path: 'doc.md', kind: 'markdown', operation: 'update' }],
@@ -288,7 +288,7 @@ describe('engine → worktree → publish wiring', () => {
 
     await engine.pumpThread(leadThread.id);
 
-    expect(readFileSync(path.join(taskStageDir(project.id), 'doc.md'), 'utf8')).toBe('第一负责人裁决版\n');
+    expect(readFileSync(path.join(taskStageDir(project.id), 'doc.md'), 'utf8')).toBe('负责人裁决版\n');
     expect(getTask(db, sourceTask.id).state).toBe('completed');
     expect(getTask(db, resolutionTask!.id).state).toBe('completed');
     expect(db.prepare('SELECT 1 FROM task_runtime WHERE task_id=?').get(sourceTask.id)).toBeUndefined();

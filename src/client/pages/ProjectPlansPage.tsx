@@ -106,7 +106,7 @@ export function ProjectPlansPage(): React.ReactElement {
             {activeProjectTasks.map((item) => <option key={item.id} value={item.id}>#{item.seq} {item.title}</option>)}
           </Select></Field>
           <Field label="执行智能体"><Select value={assigneeId} onChange={(event) => setAssigneeId(event.target.value)}>
-            <option value="">交给第一负责人分配</option>
+            <option value="">交给负责人分配</option>
             {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name} · {agent.role}</option>)}
           </Select></Field>
           <Field label="执行周期"><Select value={intervalMinutes} onChange={(event) => setIntervalMinutes(event.target.value)}>
@@ -117,7 +117,7 @@ export function ProjectPlansPage(): React.ReactElement {
           {intervalMinutes === DAILY_MODE && <Field label="时刻（HH:mm，服务器时区）" hint="例如 09:00 = 每天早上 9 点"><Input type="time" value={timeOfDay} onChange={(event) => setTimeOfDay(event.target.value)} /></Field>}
           {intervalMinutes === ONCE_MODE && <Field label="执行时刻" hint="到点执行一次即停；选近未来=倒计时，选远未来=定时"><Input type="datetime-local" value={runAtLocal} onChange={(event) => setRunAtLocal(event.target.value)} /></Field>}
         </div>
-        <div className="schedule-composer-action"><span>项目任务归档后，对应计划会自动停用；上一次没跑完时本轮自动跳过。不指定执行人时默认交给第一负责人。</span><Button onClick={submit} loading={createSchedule.isPending} disabled={!title.trim() || !projectTaskId || (intervalMinutes === DAILY_MODE && !timeOfDay) || (intervalMinutes === ONCE_MODE && !runAtLocal)}>创建计划</Button></div>
+        <div className="schedule-composer-action"><span>项目任务归档后，对应计划会自动停用；上一次没跑完时本轮自动跳过。不指定执行人时默认交给负责人。</span><Button onClick={submit} loading={createSchedule.isPending} disabled={!title.trim() || !projectTaskId || (intervalMinutes === DAILY_MODE && !timeOfDay) || (intervalMinutes === ONCE_MODE && !runAtLocal)}>创建计划</Button></div>
       </div>
     </Card>
 
@@ -127,7 +127,7 @@ export function ProjectPlansPage(): React.ReactElement {
           const titleText = typeof automation.template.title === 'string' ? automation.template.title : automation.eventName ?? '系统事件';
           const agent = agents.find((item) => item.id === automation.template.assigneeAgentId);
           return <article key={automation.id} className={`automation-item ${automation.enabled ? '' : 'is-disabled'}`}>
-            <div><strong>{titleText}</strong><span>{intervalLabel(automation)} · {agent?.name ?? '第一负责人分配'}</span><small>{automation.nextRunAt && automation.enabled ? `下次：${new Date(automation.nextRunAt).toLocaleString()}` : '当前已停用'}</small></div>
+            <div><strong>{titleText}</strong><span>{intervalLabel(automation)} · {agent?.name ?? '负责人分配'}</span><small>{automation.nextRunAt && automation.enabled ? `下次：${new Date(automation.nextRunAt).toLocaleString()}` : '当前已停用'}</small></div>
             <div className="automation-actions">
               <Button size="sm" variant="ghost" onClick={() => updateAutomation.mutate({ projectId, triggerId: automation.id, enabled: !automation.enabled })}>{automation.enabled ? '暂停' : '启用'}</Button>
               <Button size="sm" variant="ghost" onClick={() => deleteAutomation.mutate({ projectId, triggerId: automation.id })}>删除</Button>

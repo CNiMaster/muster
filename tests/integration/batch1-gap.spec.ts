@@ -39,7 +39,7 @@ beforeEach(() => {
 });
 
 describe('B1.3 项目健康校验', () => {
-  it('缺少第一负责人时 checkProjectHealth 返回问题清单', () => {
+  it('缺少负责人时 checkProjectHealth 返回问题清单', () => {
     const c = restoreWorkbench(db, { id: 'wb_fix_1', name: 'co' });
     const p = createProject(db, { companyId: c.id, name: 'p', rootDir: '/tmp/p1' });
     const issues = checkProjectHealth(db, p.id);
@@ -48,7 +48,7 @@ describe('B1.3 项目健康校验', () => {
     expect(issues.some((i) => i.code === 'project_no_first_agent')).toBe(true);
   });
 
-  it('设置第一负责人后 assertProjectHealthy 不抛错', () => {
+  it('设置负责人后 assertProjectHealthy 不抛错', () => {
     const c = restoreWorkbench(db, { id: 'wb_fix_2', name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
     updateWorkbench(db, { firstAgentId: lead.id });

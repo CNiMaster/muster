@@ -1409,7 +1409,7 @@ export interface DispatchActor {
   id: string;
   name: string;
   kind: 'employee' | 'specialist' | 'bee';
-  /** H8 纠错：第一负责人与用户直接沟通，不进纠错链。 */
+  /** H8 纠错：负责人与用户直接沟通，不进纠错链。 */
   isLead?: boolean;
 }
 
@@ -2312,7 +2312,7 @@ export interface InspectorSuggestion {
   id: string;
   projectId: string;
   kind: 'congestion' | 'absence' | 'loop' | 'suggest_mirror' | 'stuck' | 'ok';
-  /** 阶段一任务 1.3：告警严重度（high=上报第一负责人 / medium=仅展示）。 */
+  /** 阶段一任务 1.3：告警严重度（high=上报负责人 / medium=仅展示）。 */
   severity?: 'high' | 'medium';
   message: string;
   targetAgentId: string | null;
@@ -2602,6 +2602,11 @@ export function useSaveSystemSettings() {
       interruptMode?: 'queue' | 'interrupt';
       stopGraceMs?: number;
       securityMode?: '' | 'confirm-edits' | 'auto-edit' | 'plan' | 'full-access';
+      messageShowThinking?: boolean;
+      messageShowTodo?: boolean;
+      messageGroupExplore?: boolean;
+      messageGroupTerminal?: boolean;
+      messageGroupChanges?: boolean;
     }) => api.post<any>('/api/settings', settings),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['systemSettings'] });

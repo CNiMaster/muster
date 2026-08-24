@@ -454,7 +454,7 @@ function HistoryList({
               ) : h.status === 'escalated' ? (
                 <Badge tone="err">待人工介入</Badge>
               ) : h.status === 'open' ? (
-                <Badge tone="warn">第一负责人裁决中</Badge>
+                <Badge tone="warn">负责人裁决中</Badge>
               ) : (
                 <Badge tone="ok">已合并发布</Badge>
               )}
@@ -473,7 +473,7 @@ function HistoryList({
           )}
           {h.status === 'open' && h.resolutionTaskId && (
             <div style={{ fontSize: 'var(--text-xs)' }}>
-              已派给第一负责人：{' '}
+              已派给负责人：{' '}
               <a href={`#/tasks/${h.resolutionTaskId}`} style={{ color: 'var(--accent)' }}>
                 进入裁决 Task
               </a>

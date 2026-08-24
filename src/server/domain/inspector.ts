@@ -15,7 +15,7 @@ import { listAgents } from './agent';
 
 export type SuggestionKind = 'congestion' | 'absence' | 'loop' | 'suggest_mirror' | 'stuck' | 'ok';
 
-/** 告警严重度：high（stuck/absence → 上报第一负责人）/ medium（其余 → 仅持久化展示）。 */
+/** 告警严重度：high（stuck/absence → 上报负责人）/ medium（其余 → 仅持久化展示）。 */
 export type SuggestionSeverity = 'high' | 'medium';
 
 export interface InspectorSuggestion {

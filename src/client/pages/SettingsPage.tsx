@@ -70,6 +70,11 @@ export function SettingsPage(): React.ReactElement {
   const [interruptMode, setInterruptMode] = useState<'queue' | 'interrupt'>('queue');
   const [stopGraceSec, setStopGraceSec] = useState(60);
   const [securityMode, setSecurityMode] = useState<'' | 'confirm-edits' | 'auto-edit' | 'plan' | 'full-access'>('');
+  const [msgShowThinking, setMsgShowThinking] = useState(true);
+  const [msgShowTodo, setMsgShowTodo] = useState(true);
+  const [msgGroupExplore, setMsgGroupExplore] = useState(true);
+  const [msgGroupTerminal, setMsgGroupTerminal] = useState(true);
+  const [msgGroupChanges, setMsgGroupChanges] = useState(true);
   const [testResult, setTestResult] = useState<any | null>(null);
 
   useEffect(() => {
@@ -112,6 +117,11 @@ export function SettingsPage(): React.ReactElement {
     setInterruptMode(settings.interruptMode ?? 'queue');
     setStopGraceSec(Math.round((settings.stopGraceMs ?? 60000) / 1000));
     setSecurityMode(settings.securityMode ?? '');
+    setMsgShowThinking(settings.messageShowThinking !== false);
+    setMsgShowTodo(settings.messageShowTodo !== false);
+    setMsgGroupExplore(settings.messageGroupExplore !== false);
+    setMsgGroupTerminal(settings.messageGroupTerminal !== false);
+    setMsgGroupChanges(settings.messageGroupChanges !== false);
   }, [settings]);
 
   const handleSave = (): void => {
@@ -120,7 +130,7 @@ export function SettingsPage(): React.ReactElement {
       return;
     }
     saveSettings.mutate(
-      { claudeBin, model, skipPermissions, timeoutMs, maxToolCalls, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierPrimaryId: tierPrimary, executorTierSecondaryId: tierSecondary, executorTierTertiaryId: tierTertiary, executorTierHighId: tierHigh, executorTierStandardId: tierStandard, executorTierLowId: tierLow, imageGenModel, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs, theme, fontFamily, fontSize, locale, codeTheme, autonomousReflectionEnabled, autonomousReflectionBudgetUSD, swarmMaxDepth, swarmMaxWidth, swarmMaxNodes, swarmBudgetUSD, swarmRepairMax, breadthDefaultTier, waitingAutoContinueMinutes: waitingAutoContinue, preventSleep, interruptMode, stopGraceMs: stopGraceSec * 1000, securityMode },
+      { claudeBin, model, skipPermissions, timeoutMs, maxToolCalls, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierPrimaryId: tierPrimary, executorTierSecondaryId: tierSecondary, executorTierTertiaryId: tierTertiary, executorTierHighId: tierHigh, executorTierStandardId: tierStandard, executorTierLowId: tierLow, imageGenModel, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs, theme, fontFamily, fontSize, locale, codeTheme, autonomousReflectionEnabled, autonomousReflectionBudgetUSD, swarmMaxDepth, swarmMaxWidth, swarmMaxNodes, swarmBudgetUSD, swarmRepairMax, breadthDefaultTier, waitingAutoContinueMinutes: waitingAutoContinue, preventSleep, interruptMode, stopGraceMs: stopGraceSec * 1000, securityMode, messageShowThinking: msgShowThinking, messageShowTodo: msgShowTodo, messageGroupExplore: msgGroupExplore, messageGroupTerminal: msgGroupTerminal, messageGroupChanges: msgGroupChanges },
       {
         onSuccess: () => toast('success', '系统设置已保存并实时生效'),
         onError: (error: any) => toast('error', error.message ?? '保存设置失败'),
@@ -371,6 +381,7 @@ export function SettingsPage(): React.ReactElement {
           )}
 
           {activeTab === 'appearance' && (
+            <>
             <Card title="界面外观与显示">
               <div className="form-stack">
                 <Field label="主题偏好">
@@ -397,6 +408,32 @@ export function SettingsPage(): React.ReactElement {
                 </Field>
               </div>
             </Card>
+            <Card title="消息流展示">
+              <div className="form-stack">
+                <p className="muted" style={{ fontSize: 'var(--text-sm)', margin: 0 }}>控制 AI 回复工作块（已工作时长 / 思考过程 / 工具分组）的显示方式。</p>
+                <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', fontSize: 13 }}>
+                  <input type="checkbox" checked={msgShowThinking} onChange={(e) => setMsgShowThinking(e.target.checked)} />
+                  <span><strong>显示思考过程</strong><br /><span className="muted">在消息流中展示完整的模型思考内容；关闭时每轮仍展示第一次思考。</span></span>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', fontSize: 13 }}>
+                  <input type="checkbox" checked={msgShowTodo} onChange={(e) => setMsgShowTodo(e.target.checked)} />
+                  <span><strong>显示待办</strong><br /><span className="muted">在消息流中展示 Todo 工具卡片。</span></span>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', fontSize: 13 }}>
+                  <input type="checkbox" checked={msgGroupExplore} onChange={(e) => setMsgGroupExplore(e.target.checked)} />
+                  <span><strong>分组探索工具</strong><br /><span className="muted">将连续的读取和搜索工具聚合为 Explore 分组。</span></span>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', fontSize: 13 }}>
+                  <input type="checkbox" checked={msgGroupTerminal} onChange={(e) => setMsgGroupTerminal(e.target.checked)} />
+                  <span><strong>分组终端命令</strong><br /><span className="muted">将连续的非只读 Shell 命令聚合为 Terminal 分组。</span></span>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', fontSize: 13 }}>
+                  <input type="checkbox" checked={msgGroupChanges} onChange={(e) => setMsgGroupChanges(e.target.checked)} />
+                  <span><strong>分组文件更改</strong><br /><span className="muted">将连续的 Write、Edit 和 ApplyPatch 调用聚合为 Changes 分组。</span></span>
+                </label>
+              </div>
+            </Card>
+            </>
           )}
 
           {activeTab === 'credentials' && (

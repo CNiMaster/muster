@@ -238,11 +238,11 @@ export function isOrgLocked(db: DB): boolean {
   return hasRunningTasks(db, wb.id);
 }
 
-/** 工作台健康：必须有第一负责人（蜂群放蜂请示/审批升级依赖）。 */
+/** 工作台健康：必须有负责人（蜂群放蜂请示/审批升级依赖）。 */
 export function assertWorkbenchHealthy(db: DB): void {
   const wb = getWorkbench(db);
   if (!wb.firstAgentId) {
-    throw new AppError(ErrorCode.VALIDATION, `工作台 ${wb.name} 缺少第一负责人`);
+    throw new AppError(ErrorCode.VALIDATION, `工作台 ${wb.name} 缺少负责人`);
   }
 }
 

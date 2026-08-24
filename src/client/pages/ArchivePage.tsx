@@ -93,7 +93,7 @@ export function ArchivePage(): React.ReactElement {
                     key={`${hit.kind}-${hit.projectId}-${i}`}
                     style={{ border: '1px solid var(--mu-border)', borderRadius: 8, padding: '10px 12px' }}
                   >
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4, flexWrap: 'wrap' }}>
                       <Badge tone="info">{KIND_LABELS[hit.kind] ?? hit.kind}</Badge>
                       <Link to={`/projects/${hit.projectId}`} style={{ fontWeight: 600 }}>
                         {hit.projectName}
@@ -115,7 +115,7 @@ export function ArchivePage(): React.ReactElement {
         <Card className="section">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
             <span style={{ fontWeight: 600 }}>跨项目成果</span>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <select
                 className="mu-input"
                 value={kindFilter}
@@ -155,9 +155,9 @@ export function ArchivePage(): React.ReactElement {
                   </div>
                   <ul style={{ display: 'grid', gap: 6 }}>
                     {filtered.map((art) => (
-                      <li key={art.id} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>
-                        <Badge tone="neutral">{art.kind}</Badge>
-                        <span style={{ fontFamily: 'var(--mu-mono)' }}>{art.path}</span>
+                    <li key={art.id} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, flexWrap: 'wrap' }}>
+                      <Badge tone="neutral">{art.kind}</Badge>
+                      <span style={{ fontFamily: 'var(--mu-mono)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{art.path}</span>
                         {/* R3：来源任务维度 */}
                         {art.createdTaskId && (
                           <Link to={`/tasks/${art.createdTaskId}`} style={{ fontSize: 12 }}>来源任务</Link>
@@ -187,7 +187,7 @@ function ArchivedProjectsSection(): React.ReactElement {
   const removeProject = useRemoveProject();
 
   const row = (p: Project, kind: 'archived' | 'removed'): React.ReactElement => (
-    <li key={p.id} style={{ border: '1px solid var(--mu-border)', borderRadius: 8, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
+    <li key={p.id} style={{ border: '1px solid var(--mu-border)', borderRadius: 8, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
       <span style={{ fontWeight: 650, fontSize: 13, flex: 1 }}>{p.name}</span>
       <span className="muted" style={{ fontSize: 12 }}>{kind === 'archived' ? '已归档' : '已移除（记录保留）'}</span>
       {kind === 'archived' ? (
@@ -258,7 +258,7 @@ function ArchivedProjectTasks({ project }: { project: Project }): React.ReactEle
       ) : (
         <ul style={{ display: 'grid', gap: 6 }}>
           {archivedTasks.map((t: ProjectTaskDTO) => (
-            <li key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, border: '1px solid var(--mu-border)', borderRadius: 8, padding: '6px 10px' }}>
+            <li key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', border: '1px solid var(--mu-border)', borderRadius: 8, padding: '6px 10px' }}>
               <span style={{ fontSize: 13, flex: 1 }}>#{t.seq} {t.title}</span>
               <button type="button" className="mu-btn mu-btn-sm" onClick={() => restore.mutate({ projectId: project.id, id: t.id }, { onSuccess: () => toast('success', '任务已还原为进行中') })}>
                 ↩ 还原

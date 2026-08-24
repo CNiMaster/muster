@@ -1,7 +1,7 @@
 /**
  * 长篇小说题材预设：题材扩展包 + 维护岗位白名单 + 渐进式基础成果。
  *
- * 蓝图组织重构批次 E：固定岗位模板已退场——工作台默认员工只有第一负责人+验收员（ensureWorkspaceStaff），
+ * 蓝图组织重构批次 E：固定岗位模板已退场——工作台默认员工只有负责人+验收员（ensureWorkspaceStaff），
  * 主写手/人物/情节等专家角色由任务按蓝图自动穿戴人设生成；本文件只保留题材功能逻辑。
  */
 import type { DB } from '../db/client';
@@ -174,7 +174,7 @@ export function initializeNovelProject(db: DB, projectId: string): Artifact[] {
     ownerRole: string;
     content: string;
   }> = [
-    { path: 'project/brief.md', kind: 'project_brief', ownerRole: 'lead', content: `# ${project.name}\n\n${project.description || '等待第一负责人根据初始任务逐步完善。'}\n` },
+    { path: 'project/brief.md', kind: 'project_brief', ownerRole: 'lead', content: `# ${project.name}\n\n${project.description || '等待负责人根据初始任务逐步完善。'}\n` },
     { path: 'planning/synopsis.md', kind: 'synopsis', ownerRole: 'lead', content: '# 故事梗概\n\n等待项目规划。\n' },
     { path: 'planning/style-profile.md', kind: 'style_profile', ownerRole: styleOwner, content: '# 文风档案\n\n等待用户与主写手共同确认。\n' },
     { path: 'planning/outline.md', kind: 'outline', ownerRole: 'plot', content: '# 计划大纲\n\n按创作进度滚动展开。\n' },
@@ -204,7 +204,7 @@ function defaultCharter(name: string): string {
     '## 协作规则',
     '- 所有实际工作归属于项目，通过 Task 派发。',
     '- 主写手完成章节时必须提交章节变更摘要。',
-    '- 派生视图（人物关系、时间线、剧情进度）只读，调整必须通过第一负责人派发关联修正 Task。',
+    '- 派生视图（人物关系、时间线、剧情进度）只读，调整必须通过负责人派发关联修正 Task。',
     '- 监察员只能建议，不能自行扩容或改项目方向。',
     '',
     '## 复盘',

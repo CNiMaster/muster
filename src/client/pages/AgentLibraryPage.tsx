@@ -183,7 +183,7 @@ export function AgentLibraryPage(): React.ReactElement {
           hint={q.trim() ? '试试调整搜索关键词。' : '可以从系统专区「一键复制」，或点击上方「＋ 新建自有人才」。'}
         />
       ) : (
-        <div className="employee-library-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 14 }}>
+        <div className="employee-library-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(320px, 100%), 1fr))', gap: 14 }}>
           {filteredUserTalents.map((talent) => {
             const isAuto = (talent.isAutoDispatch ?? 1) === 1;
             const skills = (talent.capabilities as { skills?: string[] })?.skills ?? [];
@@ -262,7 +262,7 @@ export function AgentLibraryPage(): React.ReactElement {
       {/* 沉淀专家（若有） */}
       {crystallizedTalents.length > 0 && (
         <Card title={`系统沉淀专家（${crystallizedTalents.length}）`} className="section">
-          <div className="employee-library-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 }}>
+          <div className="employee-library-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(300px, 100%), 1fr))', gap: 12 }}>
             {crystallizedTalents.map((cr) => (
               <article key={cr.id} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 12, background: 'var(--bg-elev)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
@@ -291,7 +291,7 @@ export function AgentLibraryPage(): React.ReactElement {
           <Input placeholder="搜索专家人设…" value={personaQ} onChange={(e) => setPersonaQ((e.target as HTMLInputElement).value)} style={{ maxWidth: 260 }} />
         </div>
 
-        <div className="persona-library-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+        <div className="persona-library-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(280px, 100%), 1fr))', gap: 12 }}>
           {personas.slice(0, 80).map((persona) => (
             <article key={persona.id} className="persona-library-card" style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px', background: 'var(--bg-elev)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

@@ -1,6 +1,6 @@
 /**
  * 侧边对话页（批次 I-b）：/side——免任务的快速问答。
- * 不建任务/不调工具/不进记忆；答复=第一负责人名义（平台 callLlm 直答）。
+ * 不建任务/不调工具/不进记忆；答复=负责人名义（平台 callLlm 直答）。
  * 刻意轻：单行自增高输入（Enter 发送/Shift+Enter 换行），不复用全功能 composer。
  */
 import { useEffect, useRef, useState } from 'react';
@@ -38,14 +38,13 @@ export function SideChatPage(): React.ReactElement {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      <header style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 4px' }}>
-        <h2 style={{ margin: 0, fontSize: 16 }}>💬 侧边对话</h2>
-        <span className="muted" style={{ fontSize: 12 }}>免任务快速问答 · 不进记忆 · 负责人名义值答</span>
-        <span style={{ flex: 1 }} />
-        <Button size="sm" variant="ghost" onClick={() => setConfirmClear(true)}>清空会话</Button>
+      <header style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 4px 8px', flexWrap: 'wrap' }}>
+        <h2 style={{ margin: 0, fontSize: 15, flexShrink: 0 }}>💬 侧边对话</h2>
+        <span className="muted" style={{ fontSize: 12, flex: '1 1 120px', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>免任务快速问答 · 不进记忆 · 负责人名义值答</span>
+        <Button size="sm" variant="ghost" style={{ flexShrink: 0 }} onClick={() => setConfirmClear(true)}>清空会话</Button>
       </header>
 
-      <div ref={listRef} style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8, padding: '8px 2px' }}>
+      <div ref={listRef} style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 2px' }}>
         {isLoading && <p className="muted" style={{ fontSize: 12 }}>加载中…</p>}
         {!isLoading && messages.length === 0 && (
           <p className="muted" style={{ fontSize: 12 }}>随手问一句，比如「这个报错什么意思」「先给我个思路」。要正式动工请到项目任务里发起。</p>

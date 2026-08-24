@@ -5,7 +5,7 @@ import { restoreWorkbench } from '../../src/server/domain/workbench';
  * 验证：
  * 1. findBestAssignee：按 skills 匹配 + 在线优先 + rating 加分 + 负载惩罚
  * 2. createTask 未指定 assignee 但声明 requiredCapabilityIds 时自动分配
- * 3. 无匹配候选时 fallback 到项目第一负责人
+ * 3. 无匹配候选时 fallback 到项目负责人
  * 4. spawn_tasks 支持 required_capabilities 自动路由
  */
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -95,7 +95,7 @@ describe('createTask 自动路由（阶段七任务 7.2）', () => {
     expect(proto.routedCandidate).toBe('explorer');
   });
 
-  it('无匹配候选时 fallback 到项目第一负责人', () => {
+  it('无匹配候选时 fallback 到项目负责人', () => {
     const { lead, project } = fixture();
     const task = createTask(db, {
       projectId: project.id,

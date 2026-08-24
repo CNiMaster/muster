@@ -4,7 +4,7 @@
  PRD：
  - 不同文件或不重叠文本自动三方合并。
  - 同一段内容冲突时保留双方修改并阻塞发布。
- - 冲突记录关联第一负责人的裁决 Task；裁决成功后关闭原记录，失败最多再派一轮。
+ - 冲突记录关联负责人的裁决 Task；裁决成功后关闭原记录，失败最多再派一轮。
  - 不采用后完成覆盖先完成。
  - 二进制成果使用独占锁。
  - 用户编辑器保存正文时同样创建可追踪提交；与 Agent 修改冲突时展示差异。
@@ -241,7 +241,7 @@ export class PublishQueue {
         // 二进制：独占锁（PRD:400）+ 基线漂移检测。
         // 1) 锁被其他 task 持有 → conflict（排队等待）
         // 2) 锁拿到但 base 与当前正式版本不一致 → conflict（无法三方合并二进制，
-        //    必须等用户/第一负责人裁决；同 task 连续写时 base 一致才能覆盖）
+        //    必须等用户/负责人裁决；同 task 连续写时 base 一致才能覆盖）
         if (!this.acquireLock(targetRoot, art.path, req.taskId)) {
           conflicts.push(art.path);
           continue;

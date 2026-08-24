@@ -41,7 +41,7 @@ describe('createQuickProject 项目优先入口', () => {
     void createAgent; // 保持 import 语义（工作台无员工也可建项目）
   });
 
-  it('既有工作台带员工时项目第一负责人沿用工作台默认（不强制新员工）', () => {
+  it('既有工作台带员工时项目负责人沿用工作台默认（不强制新员工）', () => {
     const existing = restoreWorkbench(db, { id: 'wb_fix_2', name: '团队' });
     const lead = createAgent(db, { companyId: existing.id, name: '领班', role: 'lead' });
     db.prepare('UPDATE workbench SET first_agent_id=? WHERE id=?').run(lead.id, existing.id);

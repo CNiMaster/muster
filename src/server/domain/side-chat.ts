@@ -2,7 +2,7 @@
  * 侧边辅助对话（批次 I-b）：免任务的快速问答——最后一块对话载体。
  * 项目任务对话/群聊/探讨全部创建任务；侧边对话不建 task、不进引擎、不进反思记忆。
  *
- * 答复者=第一负责人名义（无则懒确保固定员工），但平台级 callLlm 直答（economy 档省成本）。
+ * 答复者=负责人名义（无则懒确保固定员工），但平台级 callLlm 直答（economy 档省成本）。
  * callLlm 网络调用不得进 better-sqlite3 事务——两条独立事务分别包 user/assistant 插入。
  */
 import type { DB } from '../db/client';
@@ -18,7 +18,7 @@ import { log } from '../logger';
 const HISTORY_WINDOW = 12;
 
 const SIDE_SYSTEM_PROMPT = [
-  '你是 Muster 工作台的侧边对话助手（第一负责人名义值班的快速问答窗口）。',
+  '你是 Muster 工作台的侧边对话助手（负责人名义值班的快速问答窗口）。',
   '边界：这是免任务的辅助通道——只做答疑、解释、出主意；不创建任务、不调用工具、不改文件。',
   '如果用户的诉求需要真正动工（写代码/改文件/长流程），先给出简短建议，并提示「这件事建议到项目任务里正式发起」。',
   '回答风格：直接、简短、中文；不确定就说不确定。',
@@ -42,7 +42,7 @@ function workbenchId(db: DB): string {
   return getWorkbench(db).id;
 }
 
-/** 侧边对话答复者：第一负责人（无组织时懒确保固定员工——与 postUserMessage 同口径）。 */
+/** 侧边对话答复者：负责人（无组织时懒确保固定员工——与 postUserMessage 同口径）。 */
 export function sideChatAnswerer(db: DB): { agentId: string; name: string } {
   const wb = getWorkbench(db);
   let leadAgentId = wb.firstAgentId ?? null;

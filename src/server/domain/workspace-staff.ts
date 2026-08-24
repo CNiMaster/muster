@@ -2,7 +2,7 @@
  * 工作台固定员工（蓝图组织重构批次 E）。
  *
  * 组织 = f(活)：工作台不再预物化岗位模板名单。默认固定员工只有两个可见岗——
- * 第一负责人（理解目标、拆解派发、对结果负责）+ 验收员（R2 收尾环节）；
+ * 负责人（理解目标、拆解派发、对结果负责）+ 验收员（R2 收尾环节）；
  * 养蜂人/裁决法庭为系统隐形岗，首次使用时懒确保（system-agents.ts）。
  * 其余专家角色由任务按蓝图自动穿戴人设生成（task.ts matchBlueprint），不产生任职。
  *
@@ -17,9 +17,9 @@ import { bindEmployeePermissionPolicy } from './permission';
 import { ensureAcceptanceOfficer } from './acceptance-officer';
 import { ensureDispatcherAgentId, ensureHrAgentId } from './system-agents';
 
-export const WORKSPACE_LEAD_NAME = '项目第一负责人';
+export const WORKSPACE_LEAD_NAME = '负责人';
 
-/** 确保工作台四固定员工就位：第一负责人 + 养蜂人 + 人事 + 验收员（全部可见）。幂等。 */
+/** 确保工作台四固定员工就位：负责人 + 养蜂人 + 人事 + 验收员（全部可见）。幂等。 */
 export function ensureWorkspaceStaff(db: DB): { leadAgentId: string; acceptanceAgentId: string; dispatcherAgentId: string; hrAgentId: string } {
   const company = getWorkbench(db);
   const visibleAgents = listAgents(db);

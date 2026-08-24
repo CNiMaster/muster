@@ -1,5 +1,5 @@
 /**
- * 批次三第二片：项目任务清单——创建即派第 1 条（默认第一负责人+验收标准），
+ * 批次三第二片：项目任务清单——创建即派第 1 条（默认负责人+验收标准），
  * advance 幂等推进（只认当前 cursor 条目），全部完成收口播报；验收 FAIL 不推进。
  */
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -33,7 +33,7 @@ function fixture() {
 }
 
 describe('项目任务清单', () => {
-  it('创建即派第 1 条（默认第一负责人 + 带验收标准）；PASS 推进派第 2 条；末条 PASS 收口播报', () => {
+  it('创建即派第 1 条（默认负责人 + 带验收标准）；PASS 推进派第 2 条；末条 PASS 收口播报', () => {
     const { project, projectTask, lead } = fixture();
     createChecklist(db, {
       projectId: project.id,

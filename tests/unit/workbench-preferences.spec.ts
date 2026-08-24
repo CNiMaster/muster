@@ -24,17 +24,17 @@ describe('workbench preferences', () => {
     expect(readWorkbenchPreferences({ getItem: () => '{broken' }, 'company:1')).toEqual(DEFAULT_WORKBENCH_PREFERENCES);
   });
 
-  it('surface 最小宽 = max(360, 25vw)：1/4 屏为基准、360 绝对下限', () => {
-    expect(surfaceMinWidthFor(1512)).toBe(378);
-    expect(surfaceMinWidthFor(1440)).toBe(360);
-    expect(surfaceMinWidthFor(800)).toBe(360);
-    expect(surfaceMinWidthFor(600)).toBe(360);
+  it('surface 最小宽固定 240（2026-08-24 定案：中栏 240 无上限，25vw 动态基准退役）', () => {
+    expect(surfaceMinWidthFor(1512)).toBe(240);
+    expect(surfaceMinWidthFor(1440)).toBe(240);
+    expect(surfaceMinWidthFor(800)).toBe(240);
+    expect(surfaceMinWidthFor(600)).toBe(240);
   });
 
   it('三栏共存优先：桌面态只在空间不足时收右栏，最窄桌面仍保左栏', () => {
     const saved = { ...DEFAULT_WORKBENCH_PREFERENCES };
     expect(normalizeWorkbenchPreferencesForWidth(saved, 1440)).toEqual(saved);
-    // 1000px 窄桌面：默认栏宽 248+304+360=912 < 1000 → 三栏共存不收
+    // 1000px 窄桌面：默认栏宽 248+360+240=848 < 1000 → 三栏共存不收
     expect(normalizeWorkbenchPreferencesForWidth(saved, 1000)).toEqual(saved);
     // 极窄桌面 750：双栏拖到最宽 360+420 时 360+360=720<750 保左，但 360+420+360=1140>750 → 收右
     const widePanes = { ...DEFAULT_WORKBENCH_PREFERENCES, leftWidth: 360, rightWidth: 420 };

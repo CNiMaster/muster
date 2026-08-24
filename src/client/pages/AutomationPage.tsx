@@ -75,10 +75,10 @@ export function AutomationPage(): React.ReactElement {
 
   return (
     <>
-    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 1fr)', gap: 14, alignItems: 'start' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(320px, 100%), 1fr))', gap: 14, alignItems: 'start' }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <Card>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
             <h2 style={{ margin: 0, fontSize: 15 }}>⚙️ 自动化中心</h2>
             <span style={{ fontSize: 12, color: 'var(--fg-subtle)' }}>定时/循环自动触发——与项目内工作分层的平台基础功能</span>
           </div>

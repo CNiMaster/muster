@@ -11,7 +11,7 @@ beforeEach(() => {
 });
 
 describe('project runtime lifecycle', () => {
-  it('项目默认继承公司第一负责人，并建立全部公司员工线程', () => {
+  it('项目默认继承公司负责人，并建立全部公司员工线程', () => {
     const novel = createNovelCompany(db, { name: '小说公司' });
     const project = createProject(db, {
       companyId: novel.company.id,

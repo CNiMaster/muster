@@ -15,7 +15,7 @@ export function projectSectionOptions(projectId: string, projectTaskId?: string,
   return [
     { key: 'task', label: '项目任务', href: `/projects/${projectId}${taskQuery}` },
     { key: 'group', label: '项目群聊', href: `/projects/${projectId}${viewQuery('group')}` },
-    { key: 'employee', label: '第一负责人', href: `/projects/${projectId}${viewQuery('employee')}` },
+    { key: 'employee', label: '负责人', href: `/projects/${projectId}${viewQuery('employee')}` },
     { key: 'tasks', label: '任务清单', href: `/projects/${projectId}/tasks` },
     { key: 'dashboard', label: '运行概览', href: `/projects/${projectId}/dashboard` },
     { key: 'artifacts', label: '成果文件', href: `/projects/${projectId}/artifacts` },
