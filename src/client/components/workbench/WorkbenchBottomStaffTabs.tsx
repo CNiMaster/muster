@@ -25,16 +25,22 @@ export function expertIcon(name: string): string {
   return EXPERT_ICONS[h % EXPERT_ICONS.length]!;
 }
 
-/** 蜂群括号摘要：纯工蜂 🐝N / 纯专家 👷N / 混合 🐝👷N（N=节点总数，失败节点也计入编制）。 */
+/** 蜂群括号摘要（四种形态，2026-08-24 与用户对齐）：
+ * 普通工蜂群 🐝N ｜ 同种专家群 👷N（同一人设的分身，视角差异来自上下文）
+ * 异种专家团 👷👩‍🔬N（不同专长各管一段）｜ 混编 🐝👷N（专家节点+普通蜂支撑）。
+ * N=节点总数（失败节点也计入编制）。 */
 export function swarmCompositionLabel(nodes: Task[], nodesTotal: number): string | null {
   const total = Math.max(nodesTotal, nodes.length);
   if (total <= 0) return null;
-  // personaId 是「这只蜂按专家人设执行」的权威标记（swarm.ts 落地时只有指定人设的蜂任务才写它）：
-  // 命中常驻专家或建临时专家蜂都算 👷；匿名工蜂无 personaId 算 🐝（工蜂 role='swarm-worker' 且共用档案，按 assignee 推导不可靠）
-  const experts = nodes.filter((t) => !!t.personaId).length;
-  if (experts === 0) return `🐝${total}`;
-  if (experts >= total) return `👷${total}`;
-  return `🐝👷${total}`;
+  // personaId 是「按专家人设执行」的权威标记（swarm.ts 落地时只有指定人设的蜂任务才写它）：
+  // 命中常驻专家或建临时专家蜂都算；匿名工蜂无 personaId 算 🐝（工蜂 role='swarm-worker' 且共用档案，按 assignee 推导不可靠）
+  const personas = [...new Set(nodes.filter((t) => !!t.personaId).map((t) => t.personaId!))];
+  if (personas.length === 0) return `🐝${total}`;
+  // 群内按 persona 序分配图标池——不同人设必不同图标（跨群不稳定无妨，群内区分才是语义）
+  const expertIcons = personas.slice(0, 3).map((_, i) => EXPERT_ICONS[i % EXPERT_ICONS.length]!).join('');
+  const mixedHint = personas.length > 3 ? '…' : '';
+  const hasBee = nodes.some((t) => !t.personaId);
+  return hasBee ? `🐝${expertIcons}${mixedHint}${total}` : `${expertIcons}${mixedHint}${total}`;
 }
 
 export function WorkbenchBottomStaffTabs({ projectId, selectedAgentId }: { projectId: string; selectedAgentId?: string }): React.ReactElement | null {

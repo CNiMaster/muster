@@ -14,15 +14,28 @@ const mkAgent = (id: string, role: string, name: string, profileId?: string): Ag
 // personaId 是「按专家人设执行」的权威标记：命中常驻专家/临时专家蜂都带；匿名工蜂无
 const mkNode = (personaId?: string): Task => ({ personaId: personaId ?? null } as Task);
 
-describe('swarmCompositionLabel（蜂群编制摘要）', () => {
-  it('纯匿名工蜂 → 🐝N（失败节点也计入编制）', () => {
+describe('swarmCompositionLabel（蜂群编制四形态）', () => {
+  it('①普通工蜂群 → 🐝N（失败节点也计入编制）', () => {
     expect(swarmCompositionLabel([mkNode(), mkNode()], 0)).toBe('🐝2');
     expect(swarmCompositionLabel([], 30)).toBe('🐝30');
   });
 
-  it('纯专家 → 👷N；混合（专家+普通蜂同群） → 🐝👷N', () => {
-    expect(swarmCompositionLabel([mkNode('ap_1'), mkNode('ap_2')], 0)).toBe('👷2');
-    expect(swarmCompositionLabel([mkNode('ap_1'), mkNode()], 4)).toBe('🐝👷4');
+  it('②同种专家群（同一人设的分身） → 单图标+N', () => {
+    expect(swarmCompositionLabel([mkNode('ap_design'), mkNode('ap_design'), mkNode('ap_design')], 0)).toBe('👷3');
+  });
+
+  it('③异种专家团 → 多图标+N（超 3 种人设省略号）', () => {
+    const two = swarmCompositionLabel([mkNode('ap_a'), mkNode('ap_b')], 0);
+    expect(two).toMatch(/2$/); // 以总数收尾
+    expect(Array.from(two!).length).toBeGreaterThan(3); // 两个不同图标（ZWJ 组合 emoji 多码点）+ 数字
+    const five = swarmCompositionLabel(['ap_a', 'ap_b', 'ap_c', 'ap_d', 'ap_e'].map(mkNode), 0);
+    expect(five).toMatch(/…5$/);
+  });
+
+  it('④混编（专家节点+普通蜂支撑） → 🐝前缀+人设图标+总数', () => {
+    const mixed = swarmCompositionLabel([mkNode('ap_design'), mkNode()], 4);
+    expect(mixed!.startsWith('🐝')).toBe(true);
+    expect(mixed!.endsWith('4')).toBe(true);
   });
 });
 
