@@ -1455,3 +1455,14 @@
   border-radius: 6px;
 }
 .settings-nav-advanced-toggle:hover { background: var(--bg-soft, rgba(128, 128, 128, 0.1)); }
+
+/* 执行器向导：Key 设置手把手指引块 */
+.key-guide {
+  margin: 10px 0;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--accent-subtle, rgba(74, 125, 255, 0.08));
+  border: 1px solid var(--border-subtle, rgba(128, 128, 128, 0.2));
+  font-size: 12px;
+  line-height: 1.6;
+}

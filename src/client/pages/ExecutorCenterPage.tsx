@@ -5,7 +5,8 @@ import { api } from '../api/client';
 import { Badge, StateBadge } from '../components/Badge';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
-import { Field, Input, Select } from '../components/Form';
+import { Input, Select } from '../components/Form';
+import { SettingsRow, SettingsFold } from '../components/SettingsRow';
 import { useGenerateCliProposal, useCredentialDefinitions, useSystemSettings, type CliProposal, type ProposalResult } from '../hooks/queries';
 import {
   concurrencyLabel,
@@ -21,11 +22,10 @@ import {
 } from '../../shared/executor';
 
 /**
- * 执行器接入中心。
- * 两块视图：
- *  1. 执行器库（CLI 类 + API 类）：检测/连通测试/如何连接说明。
- *  2. 已绑定执行器：测试结果，智能体绑定在工作台组织架构页做（不在此重复）。
- * 执行器连通测试只测一次，智能体复用其结果，不再各自测试。
+ * 执行器接入中心（2026-08-25 向导化重做）。
+ * 新手旅程三步：① 选工具（CLI 自动扫描/自动安装；API 走第二步）→ ② 给钥匙（API 表单 5 个基础字段，
+ * Key 经环境变量提供并给手把手指引）→ ③ 创建即自动测通。高级参数全部折叠；概念白话化：
+ * 档案→接入配置、绑定→启用、探针→测试。全部原有 mutation/handler 保留，仅重排呈现。
  */
 export function ExecutorCenterPage(): React.ReactElement {
   const qc = useQueryClient();
@@ -48,33 +48,27 @@ export function ExecutorCenterPage(): React.ReactElement {
   const generateCli = useGenerateCliProposal();
   const [assistantPrompt, setAssistantPrompt] = useState('');
 
-  // API 凭据执行器
+  // API 接入表单
   const [apiKind, setApiKind] = useState<'openai-compatible-api' | 'gemini-api'>('openai-compatible-api');
-  const [apiName, setApiName] = useState('OpenAI 兼容 API');
+  const [apiName, setApiName] = useState('');
   const [apiBaseURL, setApiBaseURL] = useState('https://api.openai.com/v1');
   const [apiModel, setApiModel] = useState('gpt-4o');
   const [apiKeyEnv, setApiKeyEnv] = useState('OPENAI_API_KEY');
-  // 阶段二任务 2.2：凭据引用支持从 credential_definition 下拉选择 + 并发模式选择 + 编辑模式
   const { data: credentialDefs } = useCredentialDefinitions({ category: 'llm' });
   const [apiConcurrency, setApiConcurrency] = useState<'parallel' | 'profile-serial' | 'global-serial'>('parallel');
-  // settings-overhaul B4：并发硬上限 + 锁定（如 coding 套餐=1 就设 1 并锁定，杜绝高并发卡死）
   const [apiMaxConcurrency, setApiMaxConcurrency] = useState(4);
   const [apiConcurrencyLocked, setApiConcurrencyLocked] = useState(false);
-  // settings-overhaul B3：思考深度（归一化档位，仅支持的模型生效）+ 上下文缓存模式
   const [apiThinkingDepth, setApiThinkingDepth] = useState<'off' | 'low' | 'medium' | 'high'>('off');
-  // WP10 执行器能力矩阵：主模型直读能力声明（多模态生成走工具层，不在此声明）
   const [apiCapabilities, setApiCapabilities] = useState<string[]>([]);
-  // B2 池化统一：manifest 默认 + 模型名启发式自动预填能力标签（用户可勾选纠偏；编辑回填保留既有标签，仅并集补默认）
   useEffect(() => {
     setApiCapabilities((old) => {
       const merged = new Set(old);
       for (const s of suggestDefaultCapabilities(apiKind, apiModel)) merged.add(s);
       return [...merged];
     });
-    // apiKind/apiModel 变化时刷新默认建议
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiKind, apiModel]);
-  // B3 池化统一：能力筛选 chips + 按档位分组排序（健康度>能力数>名称）
+  // B2 池化统一：能力筛选 chips + 按档位分组排序（健康度>能力数>名称）
   const [capFilter, setCapFilter] = useState<string[]>([]);
   const { data: systemSettings } = useSystemSettings();
   const groupedList = useMemo(() => {
@@ -85,10 +79,10 @@ export function ExecutorCenterPage(): React.ReactElement {
       return null;
     };
     const order: Array<{ key: 'high' | 'standard' | 'low' | 'unassigned'; label: string }> = [
-      { key: 'high', label: '▲ 高级档' },
-      { key: 'standard', label: '● 标准档' },
-      { key: 'low', label: '▼ 低档' },
-      { key: 'unassigned', label: '— 未分配档位' },
+      { key: 'high', label: 'high' },
+      { key: 'standard', label: 'standard' },
+      { key: 'low', label: 'low' },
+      { key: 'unassigned', label: 'unassigned' },
     ];
     const buckets = new Map<string, ExecutorProfile[]>();
     order.forEach((g) => buckets.set(g.key, []));
@@ -107,7 +101,7 @@ export function ExecutorCenterPage(): React.ReactElement {
         return a.name.localeCompare(b.name);
       });
       if (group.length > 0) {
-        out.push({ kind: 'header', tier: g.key, headerLabel: g.label });
+        out.push({ kind: 'header', tier: g.key, headerLabel: TIER_LABELS[g.key] ?? g.label });
         for (const p of group) out.push({ kind: 'profile', tier: g.key, profile: p });
       }
     }
@@ -117,6 +111,8 @@ export function ExecutorCenterPage(): React.ReactElement {
   const [apiContextCache, setApiContextCache] = useState<'auto' | 'on' | 'off'>('auto');
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  /** 刚创建的 API 配置 id：创建成功自动触发连通测试并把结果展示在表单下方。 */
+  const [newlyCreatedId, setNewlyCreatedId] = useState<string | null>(null);
 
   const detect = useMutation({
     mutationFn: (id: string) => api.post<ExecutorDetection>(`/api/executors/${id}/detect`),
@@ -125,10 +121,9 @@ export function ExecutorCenterPage(): React.ReactElement {
   });
   const bind = useMutation({
     mutationFn: (id: string) => api.post<ExecutorProfile>(`/api/executors/${id}/bind-system`),
-    onSuccess: (profile) => { void qc.invalidateQueries({ queryKey: ['executor-profiles'] }); toast('success', `已绑定 ${profile.name}`); },
-    onError: (e: unknown) => toast('error', (e as Error).message ?? '绑定失败'),
+    onSuccess: (profile) => { void qc.invalidateQueries({ queryKey: ['executor-profiles'] }); toast('success', `已启用 ${profile.name}，任务可以直接使用了`); },
+    onError: (e: unknown) => toast('error', (e as Error).message ?? '启用失败'),
   });
-  // 一键检测全部：并行检测所有可检测 CLI，合并进 detections
   const detectAll = useMutation({
     mutationFn: () => api.post<Array<ExecutorDetection & { manifestId: string }>>('/api/executors/detect-all'),
     onSuccess: (results) => {
@@ -141,15 +136,14 @@ export function ExecutorCenterPage(): React.ReactElement {
         return next;
       });
       const found = results.filter((r) => r.found).length;
-      toast('success', `检测完成：${results.length} 个 CLI，检测到 ${found} 个已安装`);
+      toast('success', found > 0 ? `检测到 ${found} 个已装工具，点「立即启用」即可使用` : '本机没扫到已装工具；未安装的可点「自动安装」');
     },
-    onError: (e: unknown) => toast('error', (e as Error).message ?? '检测失败'),
+    onError: (e: unknown) => toast('error', (e as Error).message ?? '扫描失败'),
   });
 
   /** 一键安装 CLI：fetch POST 后手动解析 SSE 事件流，逐行更新日志。 */
   const installCli = async (manifestId: string): Promise<void> => {
     setInstallStates((old) => ({ ...old, [manifestId]: { status: 'running', logs: ['正在连接安装通道…'], diagnosis: null } }));
-    // 提升到 try 外：正常流与 catch 分支共用（避免日志重复拼装）
     const appendLog = (line: string): void => setInstallStates((old) => ({
       ...old,
       [manifestId]: { ...old[manifestId], logs: [...(old[manifestId]?.logs ?? []), line] },
@@ -180,6 +174,7 @@ export function ExecutorCenterPage(): React.ReactElement {
               setInstallStates((old) => ({ ...old, [manifestId]: { ...old[manifestId], status: 'done' } }));
               finished = true;
               void qc.invalidateQueries({ queryKey: ['executor-profiles'] });
+              void detect.mutate(manifestId);
             } else if (event.type === 'error' && event.message) {
               appendLog(`✗ ${event.message}`);
               setInstallStates((old) => ({ ...old, [manifestId]: { ...old[manifestId], status: 'error' } }));
@@ -224,8 +219,20 @@ export function ExecutorCenterPage(): React.ReactElement {
       config: { binaryPath: customPath, provider: 'custom-cli', customArgs: customArgs.split('\n').map((v) => v.trim()).filter(Boolean) },
       concurrencyMode: 'profile-serial',
     }),
-    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['executor-profiles'] }); toast('success', '自定义 CLI 档案已创建'); },
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['executor-profiles'] }); toast('success', '自定义工具已创建'); },
     onError: (e: unknown) => toast('error', (e as Error).message ?? '创建失败'),
+  });
+  const testConnection = useMutation({
+    mutationFn: ({ id, kind }: { id: string; kind: 'connectivity' | 'model' | 'capability' }) =>
+      api.post<ExecutorProbe>(`/api/executors/profiles/${id}/probes`, { force: true, kind }),
+    onSuccess: (probe, input) => {
+      setProbeIds((old) => ({ ...old, [`${input.id}:${input.kind}`]: probe.id }));
+      if (input.kind === 'connectivity') {
+        if (probe.status === 'connected') toast('success', '测试通过！这个接口可以用了');
+        else if (probe.status === 'failed') toast('error', '测试未通过——多半是 Key 没设好，照上方「把 Key 给 muster」三步再来一次');
+      }
+    },
+    onError: (e: unknown) => toast('error', (e as Error).message ?? '测试失败'),
   });
   const createApi = useMutation({
     mutationFn: () => {
@@ -246,10 +253,16 @@ export function ExecutorCenterPage(): React.ReactElement {
         concurrencyLocked: apiConcurrencyLocked,
       });
     },
-    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['executor-profiles'] }); toast('success', 'API 执行器已创建，可在工作台组织架构绑定给智能体'); },
+    onSuccess: (profile) => {
+      void qc.invalidateQueries({ queryKey: ['executor-profiles'] });
+      setEditingProfileId(null);
+      // 向导第 3 步自动化：创建成功立即自动测通，结果直接展示在表单下方
+      setNewlyCreatedId(profile.id);
+      testConnection.mutate({ id: profile.id, kind: 'connectivity' });
+      toast('success', '已保存，正在自动测试连通性…');
+    },
     onError: (e: unknown) => toast('error', (e as Error).message ?? '创建失败'),
   });
-  // 阶段二任务 2.2：编辑 API profile
   const updateApi = useMutation({
     mutationFn: (profileId: string) => {
       const credentialRef: CredentialReference = { kind: 'env', reference: apiKeyEnv.trim() };
@@ -271,26 +284,19 @@ export function ExecutorCenterPage(): React.ReactElement {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['executor-profiles'] });
       setEditingProfileId(null);
-      toast('success', '执行器档案已更新');
+      toast('success', '接入配置已更新');
     },
     onError: (e: unknown) => toast('error', (e as Error).message ?? '更新失败'),
   });
-  // 阶段二任务 2.2：删除 profile（解除智能体绑定 + 清理探针）
   const deleteProfile = useMutation({
     mutationFn: (profileId: string) => api.delete<{ ok: boolean }>(`/api/executors/profiles/${profileId}`),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['executor-profiles'] });
       setDeleteConfirmId(null);
       setEditingProfileId(null);
-      toast('success', '执行器档案已删除');
+      toast('success', '已删除');
     },
     onError: (e: unknown) => toast('error', (e as Error).message ?? '删除失败'),
-  });
-  const testConnection = useMutation({
-    mutationFn: ({ id, kind }: { id: string; kind: 'connectivity' | 'model' | 'capability' }) =>
-      api.post<ExecutorProbe>(`/api/executors/profiles/${id}/probes`, { force: true, kind }),
-    onSuccess: (probe, input) => setProbeIds((old) => ({ ...old, [`${input.id}:${input.kind}`]: probe.id })),
-    onError: (e: unknown) => toast('error', (e as Error).message ?? '联通测试失败'),
   });
   const copy = async (command: string): Promise<void> => {
     await navigator.clipboard.writeText(command);
@@ -308,19 +314,19 @@ export function ExecutorCenterPage(): React.ReactElement {
       <header className="page-header">
         <div>
           <h1>执行器接入中心</h1>
-          <p className="subtitle">在此统一检测执行器连通性、配置 API 凭据。智能体在工作台组织架构页绑定执行器，复用这里的测试结果，无需逐个测试。</p>
+          <p className="subtitle">接好一个工具只要三步：选它 → 给钥匙 → 测试通过即可使用。</p>
         </div>
       </header>
 
       <Card
-        title="执行器库（CLI）"
+        title="第 1 步 · 用哪个工具（命令行类）"
         actions={
           <Button variant="ghost" size="sm" onClick={() => detectAll.mutate()} loading={detectAll.isPending}>
-            {detectAll.isPending ? '正在检测全部…' : '一键检测全部'}
+            {detectAll.isPending ? '正在扫描…' : '扫描本机已装工具'}
           </Button>
         }
       >
-        <p className="muted">点击「一键检测全部」自动扫描系统里的 CLI；未安装的可用「一键安装」用官方方式自动安装，无需手动复制命令。</p>
+        <p className="muted">点上方按钮自动扫描电脑里装好的工具；扫到就点「立即启用」，没装的点「自动安装」（官方方式，不用手动敲命令）。</p>
         <div className="executor-grid">
           {(manifests.data ?? []).filter((m) => m.kind === 'cli').map((manifest) => {
             const detection = detections[manifest.id];
@@ -334,29 +340,30 @@ export function ExecutorCenterPage(): React.ReactElement {
                   <span className="executor-mark" aria-hidden="true">{manifest.displayName.slice(0, 1)}</span>
                   <div className="executor-card-title">
                     <strong>{manifest.displayName}</strong>
-                    <div className="muted">官方系统安装 · {concurrencyLabel(manifest.concurrency)}</div>
+                    <div className="muted">{concurrencyLabel(manifest.concurrency)}</div>
                   </div>
-                  <Badge tone={bound ? 'ok' : detection?.found ? 'info' : 'neutral'}>{bound ? '已绑定' : detection?.found ? '已安装' : '待检测'}</Badge>
+                  <Badge tone={bound ? 'ok' : detection?.found ? 'info' : 'neutral'}>{bound ? '✓ 可用' : detection?.found ? '已安装' : '未扫描'}</Badge>
                 </div>
                 <div className="executor-card-body">
                   {detection?.found ? (
                     <>
                       <p className="diagnostic-text">{detection.version}<br /><span className="muted">{detection.path}</span></p>
-                      {install?.loginCommand && (
+                      {install?.loginCommand && !bound && (
                         <div className="install-command">
                           <code>{install.loginCommand}</code>
                           <Button size="sm" variant="ghost" onClick={() => void copy(install.loginCommand)}>复制登录命令</Button>
                         </div>
                       )}
+                      {bound && <p className="muted" style={{ margin: 0 }}>登录状态由工具自己管理，muster 不干预。</p>}
                     </>
                   ) : (
                     <>
                       {!installState?.status || installState.status === 'idle' ? (
                         <>
-                          <p className="muted">未检测到安装。可一键自动安装（官方方式），或展开手动复制命令。</p>
+                          <p className="muted">还没装。可以点「自动安装」，或展开看官方命令手动装。</p>
                           {install && (
                             <details className="install-collapse">
-                              <summary>官方安装方式（{install.commands.length} 种）</summary>
+                              <summary>官方安装命令</summary>
                               <div className="official-install-guide">
                                 {install.commands.map((command: string) => (
                                   <div className="install-command" key={command}>
@@ -393,13 +400,13 @@ export function ExecutorCenterPage(): React.ReactElement {
                   )}
                 </div>
                 <div className="executor-card-foot">
-                  <a href={install?.guideUrl ?? manifest.officialSource} target="_blank" rel="noreferrer">打开官方安装说明</a>
+                  <a href={install?.guideUrl ?? manifest.officialSource} target="_blank" rel="noreferrer">官方说明</a>
                   <div className="settings-primary-actions">
-                    <Button variant="ghost" onClick={() => detect.mutate(manifest.id)} loading={detect.isPending}>检测系统安装</Button>
-                    {detection?.found && !bound && <Button onClick={() => bind.mutate(manifest.id)} loading={bind.isPending}>绑定此安装</Button>}
+                    {!detection?.found && <Button variant="ghost" onClick={() => detect.mutate(manifest.id)} loading={detect.isPending}>重新扫描</Button>}
+                    {detection?.found && !bound && <Button onClick={() => bind.mutate(manifest.id)} loading={bind.isPending}>立即启用</Button>}
                     {!detection?.found && install && (
                       <Button onClick={() => void installCli(manifest.id)} loading={installing} disabled={installing}>
-                        {installing ? '安装中…' : installState?.status === 'error' ? '重试安装' : '一键安装'}
+                        {installing ? '安装中…' : installState?.status === 'error' ? '重试安装' : '自动安装'}
                       </Button>
                     )}
                   </div>
@@ -408,57 +415,110 @@ export function ExecutorCenterPage(): React.ReactElement {
             );
           })}
         </div>
+        <p className="muted" style={{ margin: '10px 0 0' }}>
+          启用后就完成了——任务会按「模型与档位」自动选用工具，无需再配置。
+        </p>
       </Card>
 
-      <Card title="API 凭据执行器" className="section">
-        <p className="muted">OpenAI 兼容 / Gemini API 执行器。Muster 只存环境变量名（不存明文），实际密钥由系统环境变量提供。可创建多个档案（不同供应商/模型/用途），绑定到智能体后即可使用；删除档案会自动解除智能体绑定。</p>
-        <div className="form-stack">
-          <div className="form-row">
-            <Field label="执行器类型">
-              <Select value={apiKind} onChange={(e) => {
-                const v = (e.target as HTMLSelectElement).value as typeof apiKind;
-                setApiKind(v);
-                if (v === 'openai-compatible-api') { setApiName('OpenAI 兼容 API'); setApiBaseURL('https://api.openai.com/v1'); setApiModel('gpt-4o'); setApiKeyEnv('OPENAI_API_KEY'); }
-                else { setApiName('Gemini API'); setApiModel('gemini-2.0-flash'); setApiKeyEnv('GEMINI_API_KEY'); }
-              }}>
-                <option value="openai-compatible-api">OpenAI 兼容 API</option>
-                <option value="gemini-api">Gemini API</option>
-              </Select>
-            </Field>
-            <Field label="档案名称"><Input value={apiName} onChange={(e) => setApiName(e.target.value)} placeholder="如 DeepSeek / 通义 / 智谱 / Kimi" /></Field>
-          </div>
-          {apiKind === 'openai-compatible-api' && (
-            <Field label="Base URL"><Input value={apiBaseURL} onChange={(e) => setApiBaseURL(e.target.value)} placeholder="https://api.openai.com/v1" /></Field>
+      <Card title="第 2 步 · 连接 AI 接口（可选，想用 API 时才填）" className="section">
+        <SettingsRow badge="required" title="接口类型">
+          <Select value={apiKind} onChange={(e) => {
+            const v = (e.target as HTMLSelectElement).value as typeof apiKind;
+            setApiKind(v);
+            if (v === 'openai-compatible-api') { setApiBaseURL('https://api.openai.com/v1'); setApiModel('gpt-4o'); setApiKeyEnv('OPENAI_API_KEY'); }
+            else { setApiModel('gemini-2.0-flash'); setApiKeyEnv('GEMINI_API_KEY'); }
+          }}>
+            <option value="openai-compatible-api">OpenAI 兼容</option>
+            <option value="gemini-api">Gemini</option>
+          </Select>
+        </SettingsRow>
+        <SettingsRow badge="required" title="起个名字" hint="随便取，方便自己认，如 DeepSeek / 通义 / Kimi">
+          <Input value={apiName} onChange={(e) => setApiName(e.target.value)} placeholder="如 DeepSeek" />
+        </SettingsRow>
+        {apiKind === 'openai-compatible-api' && (
+          <SettingsRow badge="required" title="接口地址" hint="服务商接入文档里有；用 OpenAI 官方就保持默认">
+            <Input value={apiBaseURL} onChange={(e) => setApiBaseURL(e.target.value)} placeholder="https://api.openai.com/v1" />
+          </SettingsRow>
+        )}
+        <SettingsRow badge="required" title="模型名" hint="填该服务的模型标识，如 gpt-4o / deepseek-chat / gemini-2.0-flash">
+          <Input value={apiModel} list="executor-model-suggestions" onChange={(e) => setApiModel(e.target.value)} />
+        </SettingsRow>
+        <datalist id="executor-model-suggestions">
+          {(apiKind === 'openai-compatible-api'
+            ? ['gpt-4o', 'gpt-4o-mini', 'o3', 'deepseek-chat', 'qwen-max', 'glm-4.7']
+            : ['gemini-2.0-flash', 'gemini-2.5-pro']
+          ).map((m) => <option key={m} value={m} />)}
+        </datalist>
+        <SettingsRow badge="required" title="API Key 变量名" hint="muster 出于安全不保存密钥明文，只记录变量名；真正的 Key 放在电脑环境变量里——照下面三步做即可">
+          <Input value={apiKeyEnv} list="credential-key-suggestions" onChange={(e) => setApiKeyEnv(e.target.value)} placeholder="如 OPENAI_API_KEY" />
+        </SettingsRow>
+        <datalist id="credential-key-suggestions">
+          {(credentialDefs ?? []).map((def) => <option key={def.id} value={def.credentialKey}>{def.name}</option>)}
+        </datalist>
+
+        <div className="key-guide">
+          <strong>把 Key 给 muster（两分钟）：</strong>
+          <ol style={{ margin: '6px 0 0', paddingLeft: 20 }}>
+            <li>
+              打开终端执行（把 <code>sk-你的key</code> 换成真实值）：
+              <div className="install-command" style={{ marginTop: 4 }}>
+                <code>export {apiKeyEnv || 'OPENAI_API_KEY'}=sk-你的key</code>
+                <Button size="sm" variant="ghost" onClick={() => void copy(`export ${apiKeyEnv || 'OPENAI_API_KEY'}=sk-你的key`)}>复制</Button>
+              </div>
+            </li>
+            <li>想长期生效：把这行追加到 <code>~/.zshrc</code>（macOS/Linux），Windows 写入系统环境变量；</li>
+            <li>重启 muster，回这里点「创建并测试」——测试通过就能用了。</li>
+          </ol>
+        </div>
+
+        <div className="settings-primary-actions">
+          {editingProfileId ? (
+            <>
+              <Button variant="ghost" onClick={() => setEditingProfileId(null)}>取消编辑</Button>
+              <Button onClick={() => updateApi.mutate(editingProfileId)} loading={updateApi.isPending} disabled={!apiName.trim() || !apiKeyEnv.trim()}>保存修改</Button>
+            </>
+          ) : (
+            <Button onClick={() => createApi.mutate()} loading={createApi.isPending} disabled={!apiName.trim() || !apiKeyEnv.trim()}>
+              {editingProfileId ? '保存修改' : '第 3 步 · 创建并测试'}
+            </Button>
           )}
-          <div className="form-row">
-            <Field label="默认模型"><Input value={apiModel} onChange={(e) => setApiModel(e.target.value)} /></Field>
-            <Field label="并发模式">
-              <Select value={apiConcurrency} onChange={(e) => setApiConcurrency((e.target as HTMLSelectElement).value as typeof apiConcurrency)}>
-                <option value="parallel">支持智能体并行</option>
-                <option value="profile-serial">同一配置串行</option>
-                <option value="global-serial">全局串行</option>
-              </Select>
-            </Field>
-          </div>
-          <div className="form-row">
-            <Field label="思考深度" hint="仅支持的模型生效（o 系列 / thinking 模型自动识别，不支持的模型自动忽略）">
-              <Select value={apiThinkingDepth} onChange={(e) => setApiThinkingDepth((e.target as HTMLSelectElement).value as typeof apiThinkingDepth)}>
-                <option value="off">关闭</option>
-                <option value="low">低</option>
-                <option value="medium">中</option>
-                <option value="high">高</option>
-              </Select>
-            </Field>
-            <Field label="上下文缓存" hint="auto/on 保持 provider 默认缓存（节省成本），off 关闭">
-              <Select value={apiContextCache} onChange={(e) => setApiContextCache((e.target as HTMLSelectElement).value as typeof apiContextCache)}>
-                <option value="auto">自动</option>
-                <option value="on">开启</option>
-                <option value="off">关闭</option>
-              </Select>
-            </Field>
-          </div>
-          <Field label="能力声明" hint="勾选模型直读能力：vision 让带图任务走原生多模态；画图/语音等生成能力走工具层（能力中心），不在此声明。脑池按能力自动选档，故请真实勾选">
-            <div className="form-row" style={{ flexWrap: 'wrap', gap: 8 }}>
+        </div>
+        {newlyCreatedId && <ProbeResult probeId={probeIds[`${newlyCreatedId}:connectivity`]} />}
+
+        <SettingsFold summary="高级选项（并发 · 思考深度 · 能力声明——默认值即可，不用动）">
+          <SettingsRow title="并发模式" hint="多个任务能不能同时用这个接口：一般保持默认">
+            <Select value={apiConcurrency} onChange={(e) => setApiConcurrency((e.target as HTMLSelectElement).value as typeof apiConcurrency)}>
+              <option value="parallel">允许同时跑（推荐）</option>
+              <option value="profile-serial">同一配置排队</option>
+              <option value="global-serial">全局排队</option>
+            </Select>
+          </SettingsRow>
+          <SettingsRow title="最大并发" hint="同时最多跑几个任务；套餐只许 1 个并发就填 1">
+            <Input type="number" min={1} max={64} value={apiMaxConcurrency} onChange={(e) => setApiMaxConcurrency(Number(e.target.value))} />
+          </SettingsRow>
+          <SettingsRow title="锁定并发" hint="打开后始终用满最大并发数，不会被系统自动调低（防高并发卡死）">
+            <Select value={apiConcurrencyLocked ? 'locked' : 'unlocked'} onChange={(e) => setApiConcurrencyLocked((e.target as HTMLSelectElement).value === 'locked')}>
+              <option value="unlocked">不锁定（推荐）</option>
+              <option value="locked">锁定</option>
+            </Select>
+          </SettingsRow>
+          <SettingsRow title="思考深度" hint="仅支持的模型生效（o 系列/thinking 模型），其他模型自动忽略">
+            <Select value={apiThinkingDepth} onChange={(e) => setApiThinkingDepth((e.target as HTMLSelectElement).value as typeof apiThinkingDepth)}>
+              <option value="off">关闭</option>
+              <option value="low">低</option>
+              <option value="medium">中</option>
+              <option value="high">高</option>
+            </Select>
+          </SettingsRow>
+          <SettingsRow title="上下文缓存" hint="保持默认可节省成本">
+            <Select value={apiContextCache} onChange={(e) => setApiContextCache((e.target as HTMLSelectElement).value as typeof apiContextCache)}>
+              <option value="auto">自动（推荐）</option>
+              <option value="on">开启</option>
+              <option value="off">关闭</option>
+            </Select>
+          </SettingsRow>
+          <SettingsRow title="能力声明" hint="按模型名已自动预填，一般不用改；带图任务走 vision，画图/语音等走工具层不在此声明">
+            <div className="form-row" style={{ flexWrap: 'wrap', gap: 8, justifyContent: 'flex-end' }}>
               {EXECUTOR_CAPABILITIES.map((cap) => (
                 <label key={cap.id} className="checkbox-row" style={{ marginRight: 12 }}>
                   <input
@@ -470,63 +530,37 @@ export function ExecutorCenterPage(): React.ReactElement {
                 </label>
               ))}
             </div>
-          </Field>
-          <div className="form-row">
-            <Field label="最大并发" hint="该执行器同时运行的任务数上限（如套餐只允许 1 个并发就填 1）">
-              <Input type="number" min={1} max={64} value={apiMaxConcurrency} onChange={(e) => setApiMaxConcurrency(Number(e.target.value))} />
-            </Field>
-            <Field label="锁定并发" hint="锁定后始终用满「最大并发」，不会被自适应降低或自动上调（防高并发卡死）">
-              <label className="checkbox-row"><input type="checkbox" checked={apiConcurrencyLocked} onChange={(e) => setApiConcurrencyLocked(e.target.checked)} /> 锁定</label>
-            </Field>
-          </div>
-          <Field label="API Key 环境变量名（不存明文）" hint="可从左侧凭据库选择，或手填自定义环境变量名">
-            <div className="form-row">
-              <Select value={apiKeyEnv} onChange={(e) => setApiKeyEnv((e.target as HTMLSelectElement).value)}>
-                <option value={apiKeyEnv}>自定义：{apiKeyEnv || '（填写下方输入框）'}</option>
-                {(credentialDefs ?? []).map((def) => (
-                  <option key={def.id} value={def.credentialKey}>{def.name}（{def.credentialKey}）</option>
-                ))}
-              </Select>
-              <Input value={apiKeyEnv} onChange={(e) => setApiKeyEnv(e.target.value)} placeholder="如 OPENAI_API_KEY" />
-            </div>
-          </Field>
-          <div className="settings-primary-actions">
-            {editingProfileId ? (
-              <>
-                <Button variant="ghost" onClick={() => setEditingProfileId(null)}>取消编辑</Button>
-                <Button onClick={() => updateApi.mutate(editingProfileId)} loading={updateApi.isPending} disabled={!apiName.trim() || !apiKeyEnv.trim()}>保存修改</Button>
-              </>
-            ) : (
-              <Button onClick={() => createApi.mutate()} loading={createApi.isPending} disabled={!apiName.trim() || !apiKeyEnv.trim()}>创建 API 执行器</Button>
-            )}
-          </div>
-        </div>
+          </SettingsRow>
+        </SettingsFold>
       </Card>
 
-      <Card title="已绑定执行器" className="section">
-        <p className="muted">按档位分组（▲ 高 / ● 标准 / ▼ 低 / —未分配），组内先健康后故障、再按能力数排序；能力 chips 作筛选。绑定在智能体「工作台任职」卡操作。</p>
+      <Card title="已就绪的工具" className="section">
+        <p className="muted">按用途分了三档（重要环节 / 普通任务 / 轻活）；不分配档位也能正常被任务选用。指派给具体智能体在工作台组织架构页操作。</p>
 
-        <div className="form-row" style={{ flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
-          {EXECUTOR_CAPABILITIES.map((cap) => {
-            const active = capFilter.includes(cap.id);
-            return (
-              <label
-                key={cap.id}
-                style={{ cursor: 'pointer', fontSize: 12, border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`, background: active ? 'var(--accent-subtle, var(--bg-elev))' : 'transparent', borderRadius: 999, padding: '2px 10px' }}
-              >
-                <input type="checkbox" checked={active} style={{ display: 'none' }}
-                  onChange={() => setCapFilter((old) => (old.includes(cap.id) ? old.filter((c) => c !== cap.id) : [...old, cap.id]))} />
-                {cap.label}
-              </label>
-            );
-          })}
-        </div>
+        <details className="details-collapse" style={{ marginBottom: 8 }}>
+          <summary className="muted">按能力筛选</summary>
+          <div className="form-row" style={{ flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+            {EXECUTOR_CAPABILITIES.map((cap) => {
+              const active = capFilter.includes(cap.id);
+              return (
+                <label
+                  key={cap.id}
+                  style={{ cursor: 'pointer', fontSize: 12, border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`, background: active ? 'var(--accent-subtle, var(--bg-elev))' : 'transparent', borderRadius: 999, padding: '2px 10px' }}
+                >
+                  <input type="checkbox" checked={active} style={{ display: 'none' }}
+                    onChange={() => setCapFilter((old) => (old.includes(cap.id) ? old.filter((c) => c !== cap.id) : [...old, cap.id]))} />
+                  {cap.label}
+                </label>
+              );
+            })}
+          </div>
+        </details>
         <ul className="entity-list">
           {groupedList.map((entry) => {
             if (entry.kind === 'header') {
               return (
                 <li key={`hdr-${entry.tier}`} className="muted" style={{ padding: '6px 2px 2px', fontSize: 11, letterSpacing: 0.5 }}>
-                  {(entry as any).headerLabel ?? entry.tier}
+                  {(entry as any).headerLabel}
                 </li>
               );
             }
@@ -544,15 +578,14 @@ export function ExecutorCenterPage(): React.ReactElement {
                         style={{ marginLeft: 8, fontSize: 11, color: 'var(--warn, orange)' }}
                         title={profile.healthNote ?? '连续失败/认证失效，任务已自动换用备选执行器'}
                       >
-                        ⚠️ 不健康（已切备选）
+                        ⚠️ 异常（已自动切备选）
                       </span>
                     )}
                     <div className="muted">{String(profile.config.binaryPath ?? profile.manifestId)}</div>
                   </div>
-                  <Button size="sm" variant="ghost" onClick={() => testConnection.mutate({ id: profile.id, kind: 'connectivity' })} loading={testConnection.isPending}>联通测试</Button>
-                  {hasModel && <Button size="sm" variant="ghost" onClick={() => testConnection.mutate({ id: profile.id, kind: 'model' })} loading={testConnection.isPending}>测试模型</Button>}
-                  {isApi && <Button size="sm" variant="ghost" onClick={() => testConnection.mutate({ id: profile.id, kind: 'capability' })} loading={testConnection.isPending}>测试能力</Button>}
-                  {/* 阶段二任务 2.2：编辑（回填到 API 表单）/ 删除（二次确认） */}
+                  <Button size="sm" variant="ghost" onClick={() => testConnection.mutate({ id: profile.id, kind: 'connectivity' })} loading={testConnection.isPending}>测试</Button>
+                  {hasModel && <Button size="sm" variant="ghost" onClick={() => testConnection.mutate({ id: profile.id, kind: 'model' })} loading={testConnection.isPending}>测模型</Button>}
+                  {isApi && <Button size="sm" variant="ghost" onClick={() => testConnection.mutate({ id: profile.id, kind: 'capability' })} loading={testConnection.isPending}>测能力</Button>}
                   {isApi && (
                     <Button size="sm" variant="ghost" onClick={() => {
                       setEditingProfileId(profile.id);
@@ -562,7 +595,6 @@ export function ExecutorCenterPage(): React.ReactElement {
                       setApiModel(String(profile.config.model ?? ''));
                       setApiKeyEnv(String(profile.credentialRef?.reference ?? ''));
                       setApiConcurrency(profile.concurrencyMode ?? 'parallel');
-                      // settings-overhaul B3/B4：回填新字段，避免编辑保存时被默认值覆盖（数据丢失修复）。
                       setApiMaxConcurrency(profile.maxConcurrency ?? 4);
                       setApiConcurrencyLocked(profile.concurrencyLocked ?? false);
                       setApiThinkingDepth(
@@ -595,63 +627,68 @@ export function ExecutorCenterPage(): React.ReactElement {
               </li>
             );
           })}
-          {profiles.data?.length === 0 && <li className="muted">还没有绑定的执行器。上方检测 CLI 或创建 API 执行器后，会出现在这里。</li>}
+          {profiles.data?.length === 0 && <li className="muted">还没有可用工具。完成上面第 1 或第 2 步就会出现在这里。</li>}
         </ul>
       </Card>
 
-      <Card title="接入其他 CLI" className="section">
-        <p className="muted">
-          面向内置清单未收录的第三方 CLI（如 <code>aider</code>、<code>qwen-code</code>）。配置后 Muster 会以参数数组启动它，不经过 shell。
-          <strong>限制：</strong>非交互运行、退出码须为 0、且 stdout 必须是结构化 <code>AgentRunResult</code> JSON；不接管原生审批。不确定怎么填时，用下方「AI 引导接入」自动生成。
-        </p>
-        <details className="details-collapse">
-          <summary>AI 引导接入：描述你的 CLI，自动生成配置</summary>
-          <div className="form-stack">
-            <Field label="CLI 描述" hint="例如：opencode / aider / 我团队用的 qwen-code">
-              <textarea value={assistantPrompt} onChange={(e) => setAssistantPrompt(e.target.value)} placeholder="例如：opencode，模型无关的开源 agent" />
-            </Field>
-            <div className="settings-primary-actions">
-              <Button variant="ghost" onClick={() => generateCli.mutate({ prompt: assistantPrompt })} loading={generateCli.isPending} disabled={!assistantPrompt.trim()}>生成接入方案</Button>
-            </div>
-            {generateCli.data && <CliProposalView result={generateCli.data} onFill={fillCustomForm} onCopy={copy} />}
-          </div>
-        </details>
-        <div className="form-stack">
-          <div className="settings-field-grid">
-            <Field label="档案名称"><Input value={customName} onChange={(e) => setCustomName(e.target.value)} /></Field>
-            <Field label="可执行文件绝对路径或命令名"><Input value={customPath} onChange={(e) => setCustomPath(e.target.value)} placeholder="/usr/local/bin/my-agent 或命令名（如 opencode）" /></Field>
-          </div>
-          <Field label="参数模板（每行一项）" hint="只支持整项占位符：{prompt}、{cwd}、{taskId}、{sessionId}">
-            <textarea value={customArgs} onChange={(e) => setCustomArgs(e.target.value)} placeholder={'--print\n{prompt}\n--cwd\n{cwd}'} />
-          </Field>
+      <SettingsFold summary="进阶 · 接入清单之外的新工具与详细原理">
+        <Card title="AI 引导接入">
+          <p className="muted">
+            内置清单没收录的工具（如 aider、qwen-code）：描述一下它，AI 自动生成接入参数。
+            要求：非交互运行、退出码为 0、输出结构化 JSON；不接管原生审批。
+          </p>
+          <SettingsRow badge="required" title="工具描述" hint="例如：opencode / 我团队自研的 qwen-code">
+            <textarea value={assistantPrompt} onChange={(e) => setAssistantPrompt(e.target.value)} placeholder="例如：opencode，模型无关的开源 agent" style={{ width: '100%' }} />
+          </SettingsRow>
           <div className="settings-primary-actions">
-            <Button onClick={() => createCustom.mutate()} disabled={!customPath.trim()} loading={createCustom.isPending}>创建自定义执行器</Button>
+            <Button variant="ghost" onClick={() => generateCli.mutate({ prompt: assistantPrompt })} loading={generateCli.isPending} disabled={!assistantPrompt.trim()}>生成接入方案</Button>
           </div>
-        </div>
-      </Card>
-
-      <Card title="如何连接（接入流程）" className="section">
-        <div style={{ marginBottom: '16px', borderRadius: '10px', overflow: 'hidden', border: '1px solid var(--border-subtle, #eee)', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
-          <img
-            src="/images/executor_flow.jpg"
-            alt="执行器接入四步流程：1.检测系统安装 2.API凭据配置 3.连通测试 4.绑定到智能体"
-            style={{ width: '100%', height: 'auto', display: 'block', maxHeight: '220px', objectFit: 'cover' }}
-          />
-        </div>
-        <ol>
-          <li><strong>CLI 类</strong>：点击「检测系统安装」。若未检测到，按卡片内官方命令安装并登录，完成后回到这里点「检测」→「绑定此安装」。</li>
-          <li><strong>API 类</strong>：在「API 凭据执行器」填写 Base URL / 模型 / 环境变量名（如 <code>OPENAI_API_KEY</code>），创建档案。实际密钥需设置在系统环境变量中，Muster 不保存明文。</li>
-          <li><strong>连通测试</strong>：在「已绑定执行器」点「联通测试」（验证 CLI 可执行 / API 可达）或「测试模型」（验证模型可用）。</li>
-          <li><strong>绑定到智能体</strong>：进入工作台「组织架构」页，展开智能体配置，在「固定执行器」下拉选择。智能体复用执行器的测试结果，无需各自测试。</li>
-        </ol>
-        <ul className="muted">
-          <li>CLI 登录、签名和自动更新沿用官方机制；Muster 只记录路径和版本。</li>
-          <li>智能体可共用同一执行器，但会话、工作目录、日志、记忆和中止状态仍按智能体与 Task 隔离。</li>
-        </ul>
-      </Card>
+          {generateCli.data && <CliProposalView result={generateCli.data} onFill={fillCustomForm} onCopy={copy} />}
+        </Card>
+        <Card title="手动填写接入参数">
+          <SettingsRow badge="required" title="名称">
+            <Input value={customName} onChange={(e) => setCustomName(e.target.value)} />
+          </SettingsRow>
+          <SettingsRow badge="required" title="命令位置" hint="绝对路径或命令名，如 /usr/local/bin/my-agent 或 opencode">
+            <Input value={customPath} onChange={(e) => setCustomPath(e.target.value)} placeholder="/usr/local/bin/my-agent" />
+          </SettingsRow>
+          <SettingsRow badge="required" title="参数模板（每行一项）" hint={'支持占位符：{prompt} {cwd} {taskId} {sessionId}'}>
+            <textarea value={customArgs} onChange={(e) => setCustomArgs(e.target.value)} placeholder={'--print\n{prompt}\n--cwd\n{cwd}'} style={{ width: '100%' }} />
+          </SettingsRow>
+          <div className="settings-primary-actions">
+            <Button onClick={() => createCustom.mutate()} disabled={!customPath.trim()} loading={createCustom.isPending}>创建</Button>
+          </div>
+        </Card>
+        <Card title="接入原理（四步详解）">
+          <div style={{ marginBottom: '16px', borderRadius: '10px', overflow: 'hidden', border: '1px solid var(--border-subtle, #eee)', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
+            <img
+              src="/images/executor_flow.jpg"
+              alt="执行器接入四步流程：1.检测系统安装 2.API凭据配置 3.连通测试 4.绑定到智能体"
+              style={{ width: '100%', height: 'auto', display: 'block', maxHeight: '220px', objectFit: 'cover' }}
+            />
+          </div>
+          <ol>
+            <li><strong>CLI 类</strong>：扫描本机 → 未装则自动安装并登录 → 「立即启用」。</li>
+            <li><strong>API 类</strong>：第 2 步填基础信息 + 按指引设置环境变量 Key。</li>
+            <li><strong>测试</strong>：创建时自动测连通；也可在「已就绪的工具」里随时手动「测试 / 测模型 / 测能力」。</li>
+            <li><strong>指派给智能体</strong>：工作台组织架构页展开智能体，在「固定执行器」下拉选择；不指派则由档位自动选。</li>
+          </ol>
+          <ul className="muted">
+            <li>CLI 的登录、签名和自动更新沿用官方机制；muster 只记录路径和版本。</li>
+            <li>多个智能体可共用同一工具；会话、工作目录、日志、记忆仍按智能体与任务隔离。</li>
+          </ul>
+        </Card>
+      </SettingsFold>
     </div>
   );
 }
+
+const TIER_LABELS: Record<string, string> = {
+  high: '▲ 高级档 · 重要环节用（计划/验收/裁决）',
+  standard: '● 标准档 · 普通任务',
+  low: '▼ 低档 · 轻活（蜂群工蜂/咨询）',
+  unassigned: '— 未分配档位（同样可用）',
+};
 
 function CliProposalView({ result, onFill, onCopy }: {
   result: ProposalResult<CliProposal>;
@@ -685,7 +722,7 @@ function CliProposalView({ result, onFill, onCopy }: {
       {proposal.notes && <p className="muted">{proposal.notes}</p>}
       <div className="settings-primary-actions">
         <Button variant="ghost" onClick={() => void onCopy(proposal.argTemplate.join('\n'))}>复制参数模板</Button>
-        <Button onClick={() => onFill(proposal)}>填入下方表单</Button>
+        <Button onClick={() => onFill(proposal)}>填入手动表单</Button>
       </div>
     </div>
   );
@@ -700,8 +737,8 @@ function ProbeResult({ probeId }: { probeId?: string }): React.ReactElement | nu
   });
   if (!probeId) return null;
   const value = probe.data;
-  if (!value) return <div className="diagnostic-text" aria-live="polite">正在启动测试…</div>;
-  const kindLabel = value.kind === 'model' ? '指定模型' : value.kind === 'capability' ? '能力探针' : '基础联通';
+  if (!value) return <div className="diagnostic-text" aria-live="polite">正在测试…</div>;
+  const kindLabel = value.kind === 'model' ? '指定模型' : value.kind === 'capability' ? '能力探针' : '连通测试';
   return (
     <div className="diagnostic-text" aria-live="polite">
       <span>{kindLabel}：</span>
@@ -715,7 +752,7 @@ function ProbeResult({ probeId }: { probeId?: string }): React.ReactElement | nu
 }
 
 /**
- * 能力徽章：展示 API 执行器的能力矩阵（function calling / 工具循环 / 结构化输出 / 指令遵循），
+ * 能力徽章：展示 API 执行器的能力矩阵（函数调用 / 工具循环 / 结构化输出 / 指令遵循），
  * 并明确标注能力边界（不能执行命令/构建/部署等需连接 CLI）。
  */
 function CapabilityBadges({ capability }: { capability: CapabilityProbeResult | null }): React.ReactElement | null {
