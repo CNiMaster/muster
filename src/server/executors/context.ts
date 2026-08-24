@@ -178,6 +178,17 @@ export function assembleContext(
       sp.push('# 人设工具', `本任务按「${persona.name}」人设推荐以下工具（CLI 执行器为原生工具集，API 执行器经工具循环调用）：`, persona.tools.join('、'), '');
     }
   }
+  // 分身记忆快照（2026-08-24 蜂群分身专项）：蜂任务派发时注入的常驻专家只读薄手册——
+  // 先穿身份、再领手册、再干活。快照不更新不回写；分身产出走汇总任务收口，不写入原专家的任何记忆。
+  const memorySnapshot = (task.inputProtocol as { memorySnapshot?: unknown }).memorySnapshot;
+  if (typeof memorySnapshot === 'string' && memorySnapshot.trim()) {
+    sp.push(
+      '# 常驻专家记忆快照（只读）',
+      '你是上述专家的分身：以下是派群时刻的只读记忆快照（工作手册），用于延续其经验与判断风格。快照不会更新、也不会被回写——你的产出经汇总任务收口，不写入原专家的任何记忆。',
+      memorySnapshot.trim(),
+      '',
+    );
+  }
   // 打法包一期：协作班底（蓝图 2-4 槽）——不另起执行体，以协作成员提示注入
   const staffingNotes = (task.inputProtocol.staffingNotes ?? []) as Array<{ name: string; summary: string }>;
   if (staffingNotes.length > 0) {
@@ -453,7 +464,8 @@ export function assembleContext(
       '系统会为每只蜂创建一次性工蜂并行执行，全部完成后你收到 [蜂群汇总] 任务做收口报告。收口报告必须包含「结论」「分歧」「风险」三段标题（无分歧须显式写明"无分歧"）。',
       'workers 排序按「由简入繁」：简单子题排前面先跑，为复杂子题铺平上下文与依赖事实。',
       '工蜂数量按需（够用就好）；超出系统上限会被截断。不适合并行的目标不要用 swarmPlan。',
-      '三种蜂型：匿名（不写 personaId）/ 同种专家（全部 worker 同 personaId）/ 混合专家（不同 worker 不同 personaId）。',
+      '四种蜂型（按目标特征选）：① 匿名蜂群（全部省 personaId）——机械并行、抓取粗筛；② 同种专家群（全部 worker 同一 personaId）——同专长领不同任务切片，上下文差异产生不同见解，适合方案探索/多角度评审；③ 异种专家团（不同 personaId 各管一段）——专业互补的流水协作；④ 混编（部分带部分不带）——专家做关键节点、匿名蜂做支撑。',
+      '专家蜂不占用常驻真人：命中项目专家也会以其分身入群（穿戴人设+只读记忆快照，并行无排队），可放心按需同 persona 多蜂。',
       '',
     );
   }
