@@ -111,6 +111,16 @@ describe('createTask 自动路由（阶段七任务 7.2）', () => {
     expect(miss).toBeTruthy();
   });
 
+  it('B2 轻版：职责文本词法命中加分（skills 交集同分时，职责里写着该能力的胜出）', () => {
+    const { project } = fixture();
+    const a = createAgent(db, { companyId: project.companyId, name: 'qa-a', role: 'specialist', skills: ['test'], responsibilities: '负责测试与质量保障' });
+    const b = createAgent(db, { companyId: project.companyId, name: 'qa-b', role: 'specialist', skills: ['test'], responsibilities: '打杂' });
+    void a; void b;
+    const hit = findBestAssignee(db, project.companyId, ['test']);
+    expect(hit).not.toBeNull();
+    expect(hit!.name).toBe('qa-a');
+  });
+
   it('显式 assignee 优先于自动路由', () => {
     const { writer, explorer, project } = fixture();
     const task = createTask(db, {

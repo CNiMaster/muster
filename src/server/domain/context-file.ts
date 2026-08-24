@@ -88,6 +88,19 @@ function renderContextSection(db: DB, projectId: string): string {
   return lines.join('\n');
 }
 
+/**
+ * 剥离标记段（Review P1-2 修复用）：发布前对声明为产物的上下文文件剥掉 muster 投影段，
+ * 保留 agent 对用户自有内容的修改——投影不合回集成分支/主干。剥后为空说明是纯投影文件。
+ */
+export function stripContextSection(content: string): string {
+  const start = content.indexOf(CONTEXT_START_MARK);
+  const end = content.indexOf(CONTEXT_END_MARK);
+  if (start === -1 || end === -1 || end < start) return content;
+  const before = content.slice(0, start);
+  const after = content.slice(end + CONTEXT_END_MARK.length);
+  return `${before}${after}`.replace(/\n{3,}/g, '\n\n').trim();
+}
+
 /** 标记段幂等写：已有标记段则原位替换；无标记段的已有文件追加到末尾；不存在则新建。 */
 function upsertMarkedSection(filePath: string, section: string): void {
   let original = '';

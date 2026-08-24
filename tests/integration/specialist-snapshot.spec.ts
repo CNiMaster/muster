@@ -10,6 +10,8 @@ import { createProject } from '../../src/server/domain/project';
 import { createTask } from '../../src/server/domain/task';
 import { ensurePrimaryThread } from '../../src/server/domain/thread';
 import { buildSpecialistSnapshot, SNAPSHOT_MAX_CHARS } from '../../src/server/domain/specialist-snapshot';
+import { ensurePersonaArchiveProfile } from '../../src/server/domain/agent-profile';
+import { createMemoryCandidate } from '../../src/server/domain/memory';
 import { clockIn, restoreWorkbench } from '../../src/server/domain/workbench';
 import { makeTestDb, makeTempGitRepo } from './setup';
 
@@ -73,5 +75,32 @@ describe('buildSpecialistSnapshot', () => {
     const r = buildSpecialistSnapshot(db, lead.id);
     expect(r.snapshot).toBeNull();
     expect(r.sourceThreadId).toBe(thread.id);
+  });
+});
+
+describe('A7：快照补人设方法论段', () => {
+  it('personaId 命中的 skill/CRAFT 记忆进快照（方法论段最优先，不传 personaId 则不注入）', () => {
+    const { lead, project } = fixture();
+    const thread = ensurePrimaryThread(db, project.id, lead.id);
+    db.prepare('UPDATE project_agent_thread SET compaction_summary=? WHERE id=?').run('经验摘要正文', thread.id);
+    // 人设方法论：挂人设档案宿主 + persona_key（与蜂群分身穿戴链路同构）
+    const archive = ensurePersonaArchiveProfile(db);
+    const personaId = 'product/front-end-engineer';
+    for (const text of ['写 PRD 先核对数据口径', '组件改动先跑视觉回归']) {
+      createMemoryCandidate(db, {
+        profileId: archive, scope: 'skill', personaKey: personaId, content: text,
+        author: 'agent', confidence: 0.9, canInfluence: true, allowAutoApprove: true,
+      });
+    }
+
+    const r = buildSpecialistSnapshot(db, lead.id, personaId);
+    expect(r.snapshot).toContain('【人设方法论】');
+    expect(r.snapshot).toContain('写 PRD 先核对数据口径');
+    // 方法论段在经验摘要之前（截断时保方法论）
+    expect(r.snapshot!.indexOf('【人设方法论】')).toBeLessThan(r.snapshot!.indexOf('【经验摘要】'));
+
+    // 不传 personaId：不注入方法论段（向后兼容）
+    const plain = buildSpecialistSnapshot(db, lead.id);
+    expect(plain.snapshot).not.toContain('【人设方法论】');
   });
 });

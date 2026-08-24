@@ -14,7 +14,7 @@ import { listAgents } from './agent';
 import { listAgentProfiles } from './agent-profile';
 import { getEmployeeExecutorProfile } from './executor-profile';
 import { getExecutorManifest } from '../executors/manifests';
-import { normalizeTerm } from './matching/lexicon';
+import { normalizeTerm, expandTermAliases } from './matching/lexicon';
 
 export interface AssigneeCandidate {
   agentId: string;
@@ -106,9 +106,16 @@ export function findBestAssignee(
     if (capabilities.length > 0 && matched.length === 0) continue;
     const rating = ratings.get(agent.profileId) ?? 1;
     const load = Math.min(loadByAgent.get(agent.id) ?? 0, 10);
+    // B2 轻版（对标 description 驱动委派）：职责文本词法命中作加分（+2）——skills 交集仍是硬门槛，
+    // 职责描述里写着该能力的候选在同分时胜出（此前 responsibilities 自由文本完全不参与路由）。
+    const responsibilitiesHit = capabilities.some((cap) =>
+      (agent.responsibilities ?? '').toLowerCase().includes(cap)
+      || expandTermAliases(cap).some((alias) => (agent.responsibilities ?? '').toLowerCase().includes(alias)),
+    ) ? 2 : 0;
     const score = matched.length * 10
       + (agent.availabilityState === 'online' ? 5 : 0)
       + Math.min(rating, 5)
+      + responsibilitiesHit
       - load;
     // Review 修复（L-5）：同分时按 agent.id 字典序取小——批量建司的员工 created_at 可能同毫秒，
     // SQLite 行序未定义，不加 tiebreak 会导致路由决策跨重启翻转。

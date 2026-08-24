@@ -171,7 +171,25 @@ export function enqueueIdleReflections(db: DB, limit = 2): number {
  * 用 UPDATE...RETURNING 做原子领取（pending→running），避免 select-then-update 竞态；
  * 单条失败标记 error，不无限重试（避免坏数据反复占用 LLM 配额）。
  */
+/** drain 重入锁：coordinator 10s 定时器不等待上一次 drain 完成（单次含多轮 LLM 调用，轻松超 10s），
+ * 并发 drain 虽有 UPDATE...RETURNING 原子领取防重复反思，但 maybeConsolidatePreferences 等
+ * 依赖"先查后写"的软幂等步骤会被竞态击穿（Review P1-1）——进程内互斥兜底。 */
+let drainInFlight = false;
+
 export async function drainReflectionQueue(
+  db: DB,
+  options: { maxPerTick?: number } = {},
+): Promise<{ processed: number; lessons: number }> {
+  if (drainInFlight) return { processed: 0, lessons: 0 };
+  drainInFlight = true;
+  try {
+    return await drainReflectionQueueInner(db, options);
+  } finally {
+    drainInFlight = false;
+  }
+}
+
+async function drainReflectionQueueInner(
   db: DB,
   options: { maxPerTick?: number } = {},
 ): Promise<{ processed: number; lessons: number }> {
@@ -728,11 +746,16 @@ function extractPreferenceDomain(content: string): PreferenceDomain | null {
   return m ? (m[1] as PreferenceDomain) : null;
 }
 
+/** 组级 in-flight 锁（Review P1-1）：限频检查在 LLM 之前，纯 DB 查重有竞态窗口——
+ * 进程内互斥保证同 (profile, domain) 同时只有一个合并提案在途。 */
+const preferenceConsolidating = new Set<string>();
+
 /**
  * 同 profile 同 domain 的 active personal 条目 ≥3 时，economy 档 LLM 生成合并版：
  * - 可合并 → author=user 自动批准 → applySupersede 批量替代旧条目（战绩继承，注入不再重复）；
  * - 有矛盾 → 产 pending 候选（⚠️ 前缀、不带替代），用户裁决——系统不擅自替用户选偏好；
- * - 限频：fingerprint `pref-merge:<domain>:<profileId>` 7 天幂等；每 tick 最多处理一组。
+ * - 限频：fingerprint `pref-merge:<domain>:<profileId>` 7 天幂等；每 tick 最多处理一组；
+ *   LLM 异常也落占位候选占住限频位（否则持续失败会每 tick 重打 LLM，Review P1-1）。
  * 由 drainReflectionQueue 每 tick 末尾调用（try/catch 外包，失败不影响反思主流程）。
  */
 export async function maybeConsolidatePreferences(db: DB): Promise<number> {
@@ -755,64 +778,86 @@ export async function maybeConsolidatePreferences(db: DB): Promise<number> {
   for (const [key, list] of groups) {
     if (list.length < PREFERENCE_MERGE_THRESHOLD) continue;
     const [profileId, domain] = key.split('::');
+    const fingerprint = `pref-merge:${domain}:${profileId}`;
     const recentMerge = db.prepare(
       `SELECT 1 FROM memory_candidate WHERE fingerprint=? AND created_at > ? LIMIT 1`,
-    ).get(`pref-merge:${domain}:${profileId}`, new Date(weekAgo).toISOString());
+    ).get(fingerprint, new Date(weekAgo).toISOString());
     if (recentMerge) continue;
+    if (preferenceConsolidating.has(key)) continue;
+    preferenceConsolidating.add(key);
+    try {
+      let parsed: { merged?: unknown; conflict?: unknown } | null = null;
+      try {
+        const llm = await callLlm(db, {
+          system:
+            '你是用户偏好整理助手。把同一 domain 的多条用户偏好合并成一条：保留全部仍然有效的信息、去掉重复、' +
+            '保持【' + domain + '】前缀、正文 50-150 字。若条目之间存在直接矛盾（互斥不能共存），不要强行合并。' +
+            '只输出 JSON：可合并输出 {"merged":"【' + domain + '】…"}；有矛盾输出 {"conflict":"矛盾双方与差异的一句话说明"}。',
+          user: list.map((e) => `- (id:${e.id}) ${e.content}`).join('\n'),
+          timeoutMs: 30_000,
+          tier: 'economy',
+        });
+        parsed = extractJsonish(llm.content.trim());
+      } catch (err) {
+        // LLM 异常（超时/网络）：占住限频位退避 7 天，不重打
+        log.warn('preference merge LLM failed; backing off', { fingerprint, error: err instanceof Error ? err.message : String(err) });
+        createMemoryCandidate(db, {
+          profileId,
+          scope: 'personal',
+          content: `⚠️ ${domain} 域偏好有 ${list.length} 条堆积，自动合并暂未完成（LLM 调用失败），可手动整理。`,
+          author: 'user',
+          confidence: 0.3,
+          canInfluence: false,
+          fingerprint,
+        });
+        return 1;
+      }
+      const merged: string | null = typeof parsed?.merged === 'string' && parsed.merged.trim() ? parsed.merged.trim().slice(0, 500) : null;
+      const conflict: string | null = typeof parsed?.conflict === 'string' && parsed.conflict.trim() ? parsed.conflict.trim().slice(0, 300) : null;
 
-    const llm = await callLlm(db, {
-      system:
-        '你是用户偏好整理助手。把同一 domain 的多条用户偏好合并成一条：保留全部仍然有效的信息、去掉重复、' +
-        '保持【' + domain + '】前缀、正文 50-150 字。若条目之间存在直接矛盾（互斥不能共存），不要强行合并。' +
-        '只输出 JSON：可合并输出 {"merged":"【' + domain + '】…"}；有矛盾输出 {"conflict":"矛盾双方与差异的一句话说明"}。',
-      user: list.map((e) => `- (id:${e.id}) ${e.content}`).join('\n'),
-      timeoutMs: 30_000,
-      tier: 'economy',
-    });
-    const parsed = extractJsonish(llm.content.trim());
-    const merged: string | null = typeof parsed?.merged === 'string' && parsed.merged.trim() ? parsed.merged.trim().slice(0, 500) : null;
-    const conflict: string | null = typeof parsed?.conflict === 'string' && parsed.conflict.trim() ? parsed.conflict.trim().slice(0, 300) : null;
-
-    if (merged) {
-      // author=user → personal 自动批准门；批准后批量替代，旧条目战绩由 applySupersede 继承。
-      const candidate = createMemoryCandidate(db, {
-        profileId,
-        scope: 'personal',
-        content: merged,
-        author: 'user',
-        confidence: 1,
-        canInfluence: true,
-        allowAutoApprove: true,
-        fingerprint: `pref-merge:${domain}:${profileId}`,
-      });
-      const newEntry = db.prepare('SELECT id FROM memory_entry WHERE source_candidate_id=?').get(candidate.id) as { id: string } | undefined;
-      if (newEntry) applySupersede(db, list.map((e) => e.id), newEntry.id, 'preference-merge');
-      return 1;
-    }
-    if (conflict) {
-      // 矛盾偏好不自动替代——pending 候选留给用户裁决（approve/reject 都不替代旧条目）。
+      if (merged) {
+        // author=user → personal 自动批准门；批准后批量替代，旧条目战绩由 applySupersede 继承。
+        const candidate = createMemoryCandidate(db, {
+          profileId,
+          scope: 'personal',
+          content: merged,
+          author: 'user',
+          confidence: 1,
+          canInfluence: true,
+          allowAutoApprove: true,
+          fingerprint,
+        });
+        const newEntry = db.prepare('SELECT id FROM memory_entry WHERE source_candidate_id=?').get(candidate.id) as { id: string } | undefined;
+        if (newEntry) applySupersede(db, list.map((e) => e.id), newEntry.id, 'preference-merge');
+        return 1;
+      }
+      if (conflict) {
+        // 矛盾偏好不自动替代——pending 候选留给用户裁决（approve/reject 都不替代旧条目）。
+        createMemoryCandidate(db, {
+          profileId,
+          scope: 'personal',
+          content: `⚠️ 偏好矛盾待裁决（${domain}）：${conflict}。请在记忆中心确认保留哪一条，可手动删除过时的一条。`,
+          author: 'user',
+          confidence: 0.5,
+          canInfluence: false,
+          fingerprint,
+        });
+        return 1;
+      }
+      // LLM 输出不可解析：落一条 pending 占位（也占住限频位，防每 tick 重打 LLM）
       createMemoryCandidate(db, {
         profileId,
         scope: 'personal',
-        content: `⚠️ 偏好矛盾待裁决（${domain}）：${conflict}。请在记忆中心确认保留哪一条，可手动删除过时的一条。`,
+        content: `⚠️ ${domain} 域偏好有 ${list.length} 条堆积，自动合并暂未完成，可手动整理。`,
         author: 'user',
-        confidence: 0.5,
+        confidence: 0.3,
         canInfluence: false,
-        fingerprint: `pref-merge:${domain}:${profileId}`,
+        fingerprint,
       });
       return 1;
+    } finally {
+      preferenceConsolidating.delete(key);
     }
-    // LLM 输出不可解析：落一条 pending 占位（也占住限频位，防每 tick 重打 LLM）
-    createMemoryCandidate(db, {
-      profileId,
-      scope: 'personal',
-      content: `⚠️ ${domain} 域偏好有 ${list.length} 条堆积，自动合并暂未完成，可手动整理。`,
-      author: 'user',
-      confidence: 0.3,
-      canInfluence: false,
-      fingerprint: `pref-merge:${domain}:${profileId}`,
-    });
-    return 1;
   }
   return 0;
 }

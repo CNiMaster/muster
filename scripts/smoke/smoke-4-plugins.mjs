@@ -42,9 +42,9 @@ const r2 = await runSuite('opt-out 治理：三态', async (check) => {
     assert(['default', 'enabled'].includes(found.companyDecision), `decision 应 default/enabled，实际 ${found.companyDecision}`);
   });
 
-  await check('上班期间 disable 被拒（org-lock）', async () => {
+  await check('空闲时 disable 成功（2026-08-23 定调：org-lock 只在任务执行中生效）', async () => {
     const r = await api.post(`/api/plugins/${pluginId}/disable`);
-    assert(r.status === 423 || r.status === 409, `上班 disable 应锁，实际 ${r.status}`);
+    assertStatus(r, 200, '空闲 disable（无 running 任务不锁）');
   });
 
   // 下班后操作

@@ -129,7 +129,7 @@ describe('写入与注入配额（P0-②/P0-③）', () => {
     const candidate = createMemoryCandidate(db, {
       profileId: profile.id, scope: 'personal', content: long, author: 'user', confidence: 1, canInfluence: true,
     });
-    expect(candidate.content.length).toBe(MEMORY_CONTENT_MAX_CHARS + '…（已截断）'.length);
+    expect(candidate.content.length).toBe(MEMORY_CONTENT_MAX_CHARS); // Review P2-5：截断后严格 ≤ cap（含标记）
     expect(candidate.content.endsWith('…（已截断）')).toBe(true);
   });
 

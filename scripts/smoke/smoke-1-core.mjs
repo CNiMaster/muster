@@ -18,11 +18,12 @@ let totalPass = 0, totalFail = 0;
 // ── 工作台单例 + 生命周期 ──────────────────────────────────────────────────
 const r1 = await runSuite('工作台单例 + 生命周期', async (check) => {
   let co;
-  await check('GET /api/workbench 幂等创建默认工作台：general/off/blocking', async () => {
+  await check('GET /api/workbench 幂等创建默认工作台：general/online/blocking', async () => {
     const r = await api.get('/api/workbench');
     assertStatus(r, 200, '取默认工作台');
     co = r.body;
-    assertEq(co.state, 'off', '默认 state');
+    // 2026-08-23 定调：上下班退役、默认上班——幂等创建的默认工作台 state=online
+    assertEq(co.state, 'online', '默认 state');
     assertEq(co.reviewMode, 'blocking', '默认 reviewMode');
     // archivedAt 断言已删：company-drop 批次 D 删除了 workbench 死列（archived_at），响应无此字段
     const r2 = await api.get('/api/workbench');
@@ -59,14 +60,13 @@ const r2 = await runSuite('员工 CRUD + org-lock', async (check) => {
     assertStatus(r, 200, 'agent 详情');
     assert(!!r.body.profileId, '有 profileId');
   });
-  await check('上班期间删员工被拒（org-lock）', async () => {
+  await check('空闲时删员工成功（2026-08-23 定调：org-lock 只在任务执行中生效）', async () => {
     const r = await api.del(`/api/agents/${agentId}`);
-    assert(r.status === 423 || r.status === 409, `上班删员工应锁，实际 ${r.status}`);
+    assertStatus(r, 204, '空闲删员工（无 running 任务不锁）');
   });
-  await check('下班后删员工成功', async () => {
-    await api.post(`/api/workbench/clock-out`, {});
-    const r = await api.del(`/api/agents/${agentId}`);
-    assertStatus(r, 204, '下班删员工');
+  await check('删除后取该员工 404（删除生效）', async () => {
+    const r = await api.get(`/api/agents/${agentId}`);
+    assert(r.status === 404, `已删员工应 404，实际 ${r.status}`);
   });
   await check('人才市场列表过滤临时工（is_temp_only）', async () => {
     const r = await api.get('/api/agent-profiles');

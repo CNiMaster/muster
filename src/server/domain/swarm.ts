@@ -744,7 +744,7 @@ export function materializeSwarm(
       ? acquireSpecialistForPersona(db, swarm.projectId, beePersonaId, worker.title)
       : null;
     const avatarSnapshot = specialistHit?.agentId
-      ? buildSpecialistSnapshot(db, specialistHit.agentId)
+      ? buildSpecialistSnapshot(db, specialistHit.agentId, beePersonaId)
       : null;
     const beeAgentId = createWorkerBee(db, {
       projectId: swarm.projectId,

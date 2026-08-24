@@ -56,7 +56,8 @@ import { getWorkbench } from '../domain/workbench';
 import { resolveTaskRepoRoot } from '../domain/task-repo';
 import { attachedPaths } from '../domain/project-dirs';
 import { createWorktree, removeWorktree, ensureStagingWorktree, ensureTaskStagingWorktree, listTaskBranchChanges, listTaskBranchChangeStatus } from '../worktree/manager';
-import { materializeContextFiles, isMusterManagedContextFile } from '../domain/context-file';
+import { materializeContextFiles, isMusterManagedContextFile, stripContextSection, CONTEXT_FILE_NAMES, CONTEXT_START_MARK } from '../domain/context-file';
+import { basename } from 'node:path';
 /** 自动化节奏的人话标签（播报/摘要用）。 */
 function scheduleLabel(schedule: { kind: string; intervalMinutes?: number; timeOfDay?: string }): string {
   if (schedule.kind === 'daily') return `每天 ${schedule.timeOfDay ?? ''} `;
@@ -117,6 +118,7 @@ import { createDiscussion, startDiscussion as startDiscussionRoom } from '../dom
 import { enqueueReflection } from '../domain/reflection';
 import { deleteTaskRuntime, getTaskRuntime, saveTaskRuntime } from '../domain/task-runtime';
 import { existsSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { mkdirSync } from 'node:fs';
 import { SERVER_CONFIG } from '../env';
 import { createExecutionRun, failExecutionRun, getEmployeeExecutorProfile, updateExecutionRunStatus } from '../domain/executor-profile';
@@ -1021,6 +1023,30 @@ export class TaskEngine {
       }
 
       if (result.outcome === 'completed' && result.artifacts.length > 0 && worktreeInfo) {
+        // Review P1-2 修复：声明产物含 muster 管理的上下文文件（AGENTS.md/CLAUDE.md 标记段）时，
+        // 发布前剥离标记段——保留 agent 对用户自有内容的修改、投影段不合回集成分支/主干；
+        // 纯投影文件（剥后为空，如物化新建的）整条移出产物清单。物化变更困死在任务分支内
+        // （任务分支不被 merge，cleanup 守护已排除），此剥段是声明产物旁路的唯一堵口。
+        try {
+          const kept: typeof result.artifacts = [];
+          for (const art of result.artifacts) {
+            if (typeof art.path === 'string' && CONTEXT_FILE_NAMES.includes(basename(art.path))) {
+              const abs = join(worktreeInfo.path, art.path);
+              try {
+                const content = readFileSync(abs, 'utf-8');
+                if (content.includes(CONTEXT_START_MARK)) {
+                  const stripped = stripContextSection(content);
+                  if (stripped.length === 0) continue; // 纯投影文件：不发布
+                  writeFileSync(abs, stripped, 'utf-8'); // 剥段写回，发布拷贝源即干净
+                }
+              } catch { /* 文件不存在（delete 产物）：照常透传 */ }
+            }
+            kept.push(art);
+          }
+          result.artifacts = kept;
+        } catch (err) {
+          log.warn('context file strip before publish failed', { taskId: task.id, err: String(err) });
+        }
         {
           const publishTargetRoot = repoRoot;
           // 修复轮批次 G：任务=合并确认单位——所有 runtime task 产物发布进其 project_task 的

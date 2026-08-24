@@ -161,7 +161,8 @@ export function createMemoryCandidate(db: DB, input: {
   if (!content) throw new AppError(ErrorCode.VALIDATION, '记忆内容不能为空');
   if (input.confidence < 0 || input.confidence > 1) throw new AppError(ErrorCode.VALIDATION, '记忆可信度必须在 0 到 1 之间');
   if (content.length > MEMORY_CONTENT_MAX_CHARS) {
-    content = `${content.slice(0, MEMORY_CONTENT_MAX_CHARS)}${MEMORY_CONTENT_TRUNCATE_MARK}`;
+    // Review P2-5：截断后总长严格 ≤ cap（含截断标记），与常量声明一致。
+    content = `${content.slice(0, MEMORY_CONTENT_MAX_CHARS - MEMORY_CONTENT_TRUNCATE_MARK.length)}${MEMORY_CONTENT_TRUNCATE_MARK}`;
   }
   const supersedesEntryId = validateSupersedesTarget(db, input.supersedesEntryId ?? null, input.profileId, input.scope, input.personaKey);
   const quarantineReason = scanMemoryContent(content);
@@ -781,23 +782,30 @@ export function sweepMemoryBacklogNotice(db: DB): string | null {
  * 过期物理清理：软删超 90 天、expires_at 过期超 30 天的条目收尸（读路径早已过滤它们，
  * 这里只是防表无限膨胀）。连带清 version/fts/injection 子表；审计痕随主行删除——
  * 物理删除前该条的历史版本已在保留期内可查。返回清理计数。
+ * Review P2-3：每批 500 条分批事务——长期运行后首次清理可能数万行，单个同步大事务会阻塞事件循环。
  */
-export function purgeStaleMemory(db: DB, options: { deletedOlderThanDays?: number; expiredGraceDays?: number } = {}): { purgedDeleted: number; purgedExpired: number } {
+export const MEMORY_PURGE_BATCH = 500;
+export function purgeStaleMemory(db: DB, options: { deletedOlderThanDays?: number; expiredGraceDays?: number; maxRows?: number } = {}): { purgedDeleted: number; purgedExpired: number } {
   const deletedCutoff = new Date(Date.now() - (options.deletedOlderThanDays ?? 90) * 86_400_000).toISOString();
   const expiredCutoff = new Date(Date.now() - (options.expiredGraceDays ?? 30) * 86_400_000).toISOString();
-  const collect = (sql: string, ...values: unknown[]): string[] =>
-    (db.prepare(sql).all(...values) as Array<{ id: string }>).map((r) => r.id);
-  const deletedIds = collect("SELECT id FROM memory_entry WHERE state='deleted' AND updated_at < ?", deletedCutoff);
-  const expiredIds = collect("SELECT id FROM memory_entry WHERE expires_at IS NOT NULL AND expires_at < ?", expiredCutoff);
+  const cap = options.maxRows ?? 5000; // 单次调用总量上限（防一次清太久），余量下轮卫生定时器继续
+  const deletedIds = (db.prepare("SELECT id FROM memory_entry WHERE state='deleted' AND updated_at < ? LIMIT ?").all(deletedCutoff, cap) as Array<{ id: string }>).map((r) => r.id);
+  const remaining = cap - deletedIds.length;
+  const expiredIds = remaining > 0
+    ? (db.prepare('SELECT id FROM memory_entry WHERE expires_at IS NOT NULL AND expires_at < ? LIMIT ?').all(expiredCutoff, remaining) as Array<{ id: string }>).map((r) => r.id)
+    : [];
   const all = [...new Set([...deletedIds, ...expiredIds])];
   if (all.length === 0) return { purgedDeleted: 0, purgedExpired: 0 };
-  db.transaction(() => {
-    for (const id of all) {
-      db.prepare('DELETE FROM memory_injection WHERE entry_id=?').run(id);
-      db.prepare('DELETE FROM memory_version WHERE entry_id=?').run(id);
-      db.prepare('DELETE FROM memory_fts WHERE entry_id=?').run(id);
-      db.prepare('DELETE FROM memory_entry WHERE id=?').run(id);
-    }
-  })();
+  for (let i = 0; i < all.length; i += MEMORY_PURGE_BATCH) {
+    const batch = all.slice(i, i + MEMORY_PURGE_BATCH);
+    db.transaction(() => {
+      for (const id of batch) {
+        db.prepare('DELETE FROM memory_injection WHERE entry_id=?').run(id);
+        db.prepare('DELETE FROM memory_version WHERE entry_id=?').run(id);
+        db.prepare('DELETE FROM memory_fts WHERE entry_id=?').run(id);
+        db.prepare('DELETE FROM memory_entry WHERE id=?').run(id);
+      }
+    })();
+  }
   return { purgedDeleted: deletedIds.length, purgedExpired: expiredIds.length };
 }

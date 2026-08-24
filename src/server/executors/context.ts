@@ -271,7 +271,13 @@ export function assembleContext(
   if (loadedSkills.length > 0) {
     sp.push('# 本 Task 按需加载的 Skill');
     for (const skill of loadedSkills) {
-      sp.push(`## ${skill.skillId}`, `来源：${skill.reason}`, skill.content ?? '', '');
+      // B3 Reference/Action 分流：frontmatter kind: reference 的技能在 CLI 执行器下不注入正文——
+      // 只给一行路径提示（需要时用文件工具自读，上下文成本归零）；API 执行器无文件工具，仍注入正文保底。
+      if (skill.kind === 'reference' && options.executorKind === 'cli') {
+        sp.push(`## ${skill.skillId}`, `来源：${skill.reason}`, `参考技能（正文未注入）：需要详情时用文件工具读取 skills/${skill.skillId}/SKILL.md`, '');
+      } else {
+        sp.push(`## ${skill.skillId}`, `来源：${skill.reason}`, skill.content ?? '', '');
+      }
     }
   }
   if (skillDiagnostics.length > 0) {
@@ -382,7 +388,13 @@ export function assembleContext(
       taskId: task.id,
     });
     if (memories.length > 0) {
-      sp.push('# 已批准的相关记忆', ...memories.map((memory) => `- [${memory.scope}] ${memory.content}`), '');
+      // 指令型/学习型二分（对标文档记忆机制的显式化）：【协作规则】=必须遵守的规则（指令型），
+      // 其余=经验参考（学习型）——让 agent 对两类记忆的执行力度有明确预期。
+      sp.push(
+        '# 已批准的相关记忆',
+        ...memories.map((memory) => `- [${memory.scope}${memory.content.startsWith('【协作规则】') ? '·规则-必须遵守' : '·经验-参考'}] ${memory.content}`),
+        '',
+      );
     }
   }
   // 项目素材清单:让员工知道项目有哪些素材可用(只注入摘要,不注入内容)
@@ -519,8 +531,10 @@ export function assembleContext(
     const pickTop = <T>(list: T[], keyOf: (item: T) => string, k: number): T[] => {
       if (specialistTotal <= 15 || list.length <= k) return list;
       const tokens = expandMatchTokens(task.title);
-      return [...list]
-        .map((item, index) => ({ item, index, score: tokens.reduce((n, t) => n + (keyOf(item).toLowerCase().includes(t) ? 1 : 0), 0) }))
+      // Review P2-2：keyOf 先物化——specialistLabel 含 DB 查询，写进 reduce 会对每专家×每 token 重复查库。
+      const keyed = list.map((item, index) => ({ item, index, hay: keyOf(item).toLowerCase() }));
+      return keyed
+        .map((x) => ({ ...x, score: tokens.reduce((n, t) => n + (x.hay.includes(t) ? 1 : 0), 0) }))
         .sort((a, b) => b.score - a.score || a.index - b.index)
         .slice(0, k)
         .map((x) => x.item);

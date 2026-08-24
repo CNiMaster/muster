@@ -114,14 +114,28 @@
 | B1 | **清单 top-k + 全局软预算**：人设库索引/专家池清单 >15 条时词法 top-k（8/10）+计数提示；systemPrompt 超软预算（窗口 tokens/4，夹 [16k,48k]）按低优先段序压缩（旧档→素材→目录段），身份/人设/职责/验收/契约永不动 | 上下文成本治理 | context.ts `selectRelevantPersonaDomains`/`trimPromptSections`/`clampSoftPromptBudget`；engine.ts 传 contextWindowTokens | trim-prompt-sections.spec.ts 4 用例 |
 | B2' | **worktree 上下文文件物化**：章程+项目说明+协作规则记忆+发布规则 → worktree 根 AGENTS.md（codex/pi/opencode）与 CLAUDE.md（claude）标记段（`<!-- muster:context:start/end -->`）；用户已有文件追加不覆盖；含标记段者在 no-approval 全量发布与 cleanup 守护中排除（不合回主干） | 项目级配置文件生态惯例 | domain/context-file.ts；engine.ts 挂点×3 | context-file-materialization.spec.ts 4 用例 |
 
-### 待拍板排期（proposed）
+### 第二轮落地（2026-08-24 review 后，均已实施）
+
+复审 44c2c31 结论：checkpoint→promote 主链路无泄漏（发布是文件级拷贝非 merge）；抓到 2 个 P1 与 5 个 P2，全部修复。
+
+| 项 | 内容 | 落点 |
+|---|---|---|
+| R-P1-1 | 偏好合并竞态：drain 重入锁（drainInFlight）+ 组级 in-flight 锁 + LLM 异常落占位退避 7 天 | reflection.ts |
+| R-P1-2 | 声明产物旁路：agent 把 CLAUDE.md 声明为 artifact 时，发布前剥离标记段（保留 agent 对用户内容的修改；纯投影文件移出清单）——物化变更困死任务分支（不被 merge），此为唯一堵口 | engine.ts + context-file.ts `stripContextSection` |
+| R-P2 | pickTop 先物化 keyOf（防 N×M 重复查库）；purgeStaleMemory 分批 500+单次 cap 5000；借调匹配 specialty toLowerCase；截断后总长严格 ≤ cap | context.ts / memory.ts / specialist-pool.ts |
+| smoke 4 项 | 非本专项 bug：`isOrgLocked` 已按 2026-08-23"锁只在任务执行中生效"定调改造，smoke 断言停留在"上班即锁"旧语义——断言对齐定调后 77/77 全绿 | scripts/smoke/smoke-1-core.mjs、smoke-4-plugins.mjs |
+| A7 | 分身快照补【人设方法论】段：persona_key 命中的 skill/CRAFT top3（按优势分排序，每条 100 字，方法论段最优先、截断保底） | specialist-snapshot.ts（签名加 personaId）+ swarm.ts 传参 |
+| B2 轻版 | 路由评分加职责文本词法命中 +2（skills 交集仍是硬门槛；responsibilities 此前完全不参与路由） | agent-router.ts |
+| B3 铺机制 | SKILL.md frontmatter `kind: reference|action` 解析 + 注入分流：reference 且 CLI 执行器 → 只注入一行路径提示（正文零成本，需要时自读文件）；API 执行器保底注入正文；缺省 action 零变化 | capability-binding.ts / shared/types.ts / context.ts |
+| B5 | spawn_tasks 工具描述加四要素教学（目标/上下文/约束/验收标准） | registry.ts |
+| 指令/学习二分 | 记忆注入行显式区分：`【协作规则】`→`·规则-必须遵守`，其余→`·经验-参考` | context.ts |
+
+### 待拍板排期（proposed，剩余）
 
 - **A5-E 向量检索**：拍板**不排期**。理由：保持 memory.ts "不引入 embedding"的零向量依赖定调（本地单用户、无外部服务依赖、词法增强已覆盖高频 miss 场景）。若未来词法增强实测命中率不足，再评估本地 ONNX（bge-small-zh + sqlite-vec）方案。
-- **A7 分身快照补 CRAFT**：快照（specialist-snapshot.ts）目前只取 compaction_summary+5 任务摘要，persona_key 命中的人设方法论走 loadContextMemories skill 分支注入；分身收口回写已有专项定案（502e010 注释），与之合并处理。
-- **B2 描述字段匹配**：agent_profile 加"何时用我"字段参与路由打分（词法增强已缓解精确 miss，此为增量优化）。
-- **B3 Reference/Action 技能二分**：SKILL.md frontmatter 加 kind，reference 类只注入"何时读我"一行+路径（对齐文档渐进加载与 disable-model-invocation 成本思想）。
-- **B5 派活四要素模板**：任务模板按目标/上下文/约束/验收做必填提示（现有 acceptanceCriteria+意图锚点已接近）。
-- **指令型/学习型二分**：现有 locked+can_influence+【协作规则】前缀事实构成此二分，可在注入渲染时显式区分"规则（必须遵守）/经验（参考）"措辞。
+- **B2 完整版**：agent_profile 加独立"何时用我"（whenToUse）字段参与路由（轻版已用 responsibilities 兜住，独立字段供人事匹配与养蜂人选人设复用）。
+- **分身收口回写**：已有专项定案（502e010 注释），A7 快照增强与其衔接。
+- **B5 完整版**：任务模板/PRD 模板按四要素做必填校验（当前为工具描述教学级）。
 
 ## 七、词汇表对齐（muster ↔ 文档五类）
 
@@ -137,8 +151,9 @@
 
 ## 八、验证记录
 
-- 新增测试 7 个文件 28 用例全绿（memory-supersede 3+3、preference-consolidation 3、memory-hygiene 4、lexicon-matching 6、discussion +2、trim-prompt-sections 4、context-file-materialization 4）。
-- 全量门：`vitest run` **1665/1665 全绿**（注意：不能带 `MUSTER_KEEPAWAKE=off` 跑——keepawake.spec 读该变量会 4 项假失败）；`tsc -b --force` 0 错。
-- smoke：73/77 通过；**4 项失败为 main 既有问题**（main 基线复现同样 4 项：默认工作台 state 期望 off 实际 online ×1 + org-lock 上班删员工/disable 锁定 ×3）——源于 2026-08-23"上下班退役默认上班"定调后 smoke 断言未同步，与本专项无关，留给后续批次拍板（默认上班后 org-lock 语义如何自洽）。
+- 第一轮新增测试 7 个文件 28 用例；第二轮新增 A7/B2 用例 2 个并修 1 处断言（截断严格 ≤ cap）。
+- 第二轮全量门：`vitest run` **1667/1667 全绿**（273 文件）；`tsc -b --force` 0 错；**smoke 77/77**（断言对齐 org-lock 定调后）。
+- 第一轮全量门：vitest 1665/1665、tsc 0 错、smoke 73/77（4 项失败为 main 既有 org-lock 断言过时，第二轮对齐定调修复）。
+- 跑 vitest 注意：不能带 `MUSTER_KEEPAWAKE=off`——keepawake.spec 读该变量会 4 项假失败（off 只用于 e2e/长跑/smoke）。
 - 实施中发现并修复的连带问题：物化文件混入安全停 interrupted 事件的文件清单（fileCount 期望 1 实际 3）——`finalizeSafeStop` 文件收集排除 `isMusterManagedContextFile`。
 - 迁移 2 个：`20260824100000_memory_candidate_supersedes.sql`、`20260824110000_expert_candidate_routing_miss.sql`（后者为 CHECK 词表重建表，已按 20260819000100 DROP company_id 后的真实结构对齐）。

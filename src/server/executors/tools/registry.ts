@@ -1043,7 +1043,7 @@ const BUILTIN_TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'spawn_tasks',
-      description: '一次并行派发多个子任务给不同专家（fan-out），并按 join 策略等待汇总（fan-in）。join_policy=all 全部完成才恢复父任务；any 任一完成即恢复（其余自动取消）；quorum 多数完成即恢复（其余自动取消）；best-effort 不等待、子任务异步执行。用于将大任务拆成可并行的研究/分析/制作子任务。',
+      description: '一次并行派发多个子任务给不同专家（fan-out），并按 join 策略等待汇总（fan-in）。join_policy=all 全部完成才恢复父任务；any 任一完成即恢复（其余自动取消）；quorum 多数完成即恢复（其余自动取消）；best-effort 不等待、子任务异步执行。用于将大任务拆成可并行的研究/分析/制作子任务。每个子任务的 payload 建议按四要素给足上下文：目标（要什么结果）/相关上下文（背景与输入）/约束（边界与禁区）/验收标准（什么算好结果）——上下文给得足，子任务少返工。',
       parameters: {
         type: 'object',
         properties: {

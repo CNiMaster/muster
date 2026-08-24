@@ -172,11 +172,12 @@ export function findStaffBorrowCandidate(db: DB, toProjectId: string, personaId:
   const byPersona = personaId ? entries.find((e) => e.personaId === personaId) : undefined;
   if (byPersona) return byPersona;
   // 词法增强：specialty 词元过别名组扩展——'test 需求' 也能借到 specialty='测试' 的常驻专家。
+  // Review P2-4：别名 token 均为小写，specialty 一并 toLowerCase 对齐（英文混写 'Testing' 也能命中）。
   const tokens = specialty
     .split(/[\s/·、,，]+/)
     .filter((t) => t.length >= 2)
     .flatMap((t) => expandTermAliases(t));
-  return entries.find((e) => tokens.some((t) => e.specialty.includes(t))) ?? null;
+  return entries.find((e) => tokens.some((t) => e.specialty.toLowerCase().includes(t))) ?? null;
 }
 
 /**

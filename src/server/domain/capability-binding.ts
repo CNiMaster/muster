@@ -223,9 +223,11 @@ export function resolveTaskSkills(
     if (disabled.has(candidate.skillId)) return { ...candidate, status: 'disabled' as const };
     const content = pluginSkills.get(candidate.skillId.trim().toLowerCase())
       ?? readBundledSkill(candidate.skillId, skillsRoot);
-    return content
-      ? { ...candidate, status: 'loaded' as const, content }
-      : { ...candidate, status: 'missing' as const };
+    if (!content) return { ...candidate, status: 'missing' as const };
+    // B3：frontmatter 声明 kind: reference 的技能携带标记（注入侧按执行器分流；缺省 action）
+    const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---/.exec(content)?.[1] ?? '';
+    const kindMatch = /^kind:\s*(reference|action)\s*$/m.exec(frontmatter);
+    return { ...candidate, status: 'loaded' as const, content, ...(kindMatch ? { kind: kindMatch[1] as 'reference' | 'action' } : {}) };
   });
 }
 
