@@ -415,14 +415,38 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
     '如果某一类没有值得沉淀的新内容（与已有记忆重复或纯属偶发，或用户反馈中无明显偏好信号），那一类写 SKIPPED。';
   // E1.2 收集用户反馈原文；无反馈时不强求 PREFERENCE（prompt 要求 LLM 写 SKIPPED）。
   const feedbackText = collectUserFeedback(db, reflection.taskId);
+  // 分身回写轻版（502e010 留的收口回写口子）：汇总任务反思喂入蜂汇报原文——分身仍零写入，
+  // 洞察经汇总任务（正经任务）反思提案沉淀；蜂汇报中的方法论走 LESSON+<scope:persona> 升级通道
+  // 落 CRAFT（挂人设方法论库，A7 快照已会带走）。信息链原断点：蜂汇报→汇总浓缩三段→反思只见摘要。
+  const taskProto = (task.inputProtocol ?? {}) as Record<string, unknown>;
+  const beeReportLines: string[] = [];
+  let beePersonaHint = '';
+  if (taskProto.swarmSynthesis === true) {
+    const reports = db.prepare(
+      "SELECT content FROM task_message WHERE task_id=? AND content LIKE '[蜂成员汇报]%' ORDER BY created_at DESC LIMIT 8",
+    ).all(task.id) as Array<{ content: string }>;
+    beeReportLines.push(...reports.map((m) => m.content.slice(0, 300)));
+    if (!task.personaId && task.swarmId) {
+      const personas = db.prepare(
+        'SELECT DISTINCT persona_id AS pid FROM task WHERE swarm_id=? AND persona_id IS NOT NULL LIMIT 5',
+      ).all(task.swarmId) as Array<{ pid: string }>;
+      if (personas.length > 0) {
+        beePersonaHint = `本任务是蜂群汇总（无人设）；群内蜂穿戴的人设：${personas.map((p) => p.pid).join('、')}——蜂汇报中若含"以这些人设做这类活"的可复用方法论，LESSON 加 <scope: persona> 与对应 <persona_key> 升级为方法论沉淀（这是分身洞察回写人设方法论库的唯一通道）。`;
+      }
+    }
+  }
   const user = [
     `任务：#${task.seq} ${task.title}`,
     task.personaId ? `执行人设：${personaName}（${task.personaId}）` : '',
+    beePersonaHint,
     `结果信号：${signalHint}`,
     `执行摘要：${task.summary || '（无）'}`,
     `失败次数：${task.failureCount}；中间打断次数：${task.interruptionCount}；开始段对齐轮次：${task.alignmentRounds}`,
     `验收标准：\n${acceptanceLine}`,
     feedbackText ? `用户反馈（可用于提炼偏好）：\n${feedbackText}` : '用户反馈：（无显式反馈）',
+    ...(beeReportLines.length > 0
+      ? ['蜂成员汇报（分身执行原文——提炼可复用经验/方法论时以此为据，分身本身不写记忆）：', ...beeReportLines]
+      : []),
     `已有相关经验：\n${existingLine}`,
     '',
     '请按以下格式输出（各类都可省略，没有价值的写 SKIPPED；无用户反馈时 PREFERENCE 必须 SKIPPED）：',

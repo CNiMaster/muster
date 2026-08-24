@@ -127,15 +127,20 @@
 | A7 | 分身快照补【人设方法论】段：persona_key 命中的 skill/CRAFT top3（按优势分排序，每条 100 字，方法论段最优先、截断保底） | specialist-snapshot.ts（签名加 personaId）+ swarm.ts 传参 |
 | B2 轻版 | 路由评分加职责文本词法命中 +2（skills 交集仍是硬门槛；responsibilities 此前完全不参与路由） | agent-router.ts |
 | B3 铺机制 | SKILL.md frontmatter `kind: reference|action` 解析 + 注入分流：reference 且 CLI 执行器 → 只注入一行路径提示（正文零成本，需要时自读文件）；API 执行器保底注入正文；缺省 action 零变化 | capability-binding.ts / shared/types.ts / context.ts |
-| B5 | spawn_tasks 工具描述加四要素教学（目标/上下文/约束/验收标准） | registry.ts |
+| B5 | spawn_tasks 工具描述加四要素提示（目标/上下文/约束/验收标准——读者是派活的 agent，非用户文档） | registry.ts |
 | 指令/学习二分 | 记忆注入行显式区分：`【协作规则】`→`·规则-必须遵守`，其余→`·经验-参考` | context.ts |
+
+### 第三轮处置（2026-08-24，用户质询"剩下为什么不做什么需要决策"后收口）
+
+| 项 | 处置 | 理由 |
+|---|---|---|
+| 分身收口回写（502e010 留的专项口子） | **轻版已实施**：蜂群汇总任务的反思 prompt 喂入蜂汇报原文（最近 8 条×300 字）+ 群人设清单提示——分身仍零写入，写的是汇总任务这个正经载体；蜂汇报中的方法论经 LESSON+`<scope:persona>` 升级通道落 CRAFT 挂人设方法论库（A7 快照已会带走，读/写闭环合拢）。信息链原断点：蜂汇报→汇总浓缩三段→反思只见摘要，洞察丢在浓缩步 | reflection.ts；swarm-synthesis-reflection.spec.ts 2 用例 |
+| B2 完整版（whenToUse 独立字段） | **砍**：轻版已把三个现成描述文本全部打通进匹配面（responsibilities 进路由加分、specialty 进借调匹配、persona.description 在养蜂人/人事人设库索引），独立字段是同一信息的第四份拷贝，还需配套 UI 编辑与消费链，纯增量成本无信息增量 | — |
+| B5 完整版（模板四要素必填校验） | **砍**（用户定）：四要素在 muster 已有对应机制（意图锚点 goal/constraints + acceptanceCriteria + inputProtocol），必填校验只增加派活摩擦，与"平台管确定性、不抢语义决策"产品约束相悖；工具描述级提示（给 agent 的）保留 | — |
 
 ### 待拍板排期（proposed，剩余）
 
 - **A5-E 向量检索**：拍板**不排期**。理由：保持 memory.ts "不引入 embedding"的零向量依赖定调（本地单用户、无外部服务依赖、词法增强已覆盖高频 miss 场景）。若未来词法增强实测命中率不足，再评估本地 ONNX（bge-small-zh + sqlite-vec）方案。
-- **B2 完整版**：agent_profile 加独立"何时用我"（whenToUse）字段参与路由（轻版已用 responsibilities 兜住，独立字段供人事匹配与养蜂人选人设复用）。
-- **分身收口回写**：已有专项定案（502e010 注释），A7 快照增强与其衔接。
-- **B5 完整版**：任务模板/PRD 模板按四要素做必填校验（当前为工具描述教学级）。
 
 ## 七、词汇表对齐（muster ↔ 文档五类）
 
