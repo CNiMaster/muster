@@ -47,6 +47,7 @@ import { WEB_TOOL_DEFINITIONS, webFetchHandler, webSearchHandler } from './web-t
 import { IMAGE_TOOL_DEFINITIONS, imageGenerateHandler } from './image-tools';
 import { SEARCH_TOOL_DEFINITIONS, searchFilesHandler, globFilesHandler } from './search-tools';
 import { TODO_TOOL_DEFINITIONS, todoReadHandler, todoWriteHandler } from './todo-tools';
+import { hostBridgeTools } from './bridge-tools';
 
 // 复用 file-tools.ts 的类型定义（稳定，多处引用）
 export type { ToolDefinition, ToolCall, ToolResult, ReviewContext } from './file-tools';
@@ -1447,6 +1448,15 @@ export function createBuiltinToolRegistry(): RuntimeToolRegistry {
     handler: todoWriteHandler,
     source: { pluginId: BUILTIN_PLUGIN_ID, toolName: 'todo_write' },
   });
+  // capability parity 批次 B2：自控桥 builtin——管理域桥动作包装为 API 型原生工具
+  // （CLI 型继续 curl；审批在桥侧事事确认；无 permissionAction，同 notify_host 类）。
+  for (const t of hostBridgeTools()) {
+    registry.register({
+      definition: t.definition,
+      handler: t.handler,
+      source: { pluginId: BUILTIN_PLUGIN_ID, toolName: t.toolName },
+    });
+  }
   return registry;
 }
 

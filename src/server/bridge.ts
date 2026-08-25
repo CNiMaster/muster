@@ -107,6 +107,53 @@ export const BRIDGE_ACTIONS: BridgeAction[] = [
       { name: 'snapshot', description: '产物快照 JSON（结构随 review_kind 变化）' },
     ],
   },
+  // ===== 管理域动作族（capability parity 批次 B1：自控桥——负责人可帮用户改程序）=====
+  // 安全边界（2026-08-26 拍板）：改设置/动插件 = 事事确认（走审批卡阻塞等待）；读操作免审批。
+  // knowledge-query/append 随批次 C 知识库一起注册；switch-mode 随批次 G 计划流评估。
+  {
+    name: 'settings-get',
+    summary: 'Read host settings by keys (read-only).',
+    description: '读取宿主设置（按 key 列表批量取值，只读不审批）。用于确认当前配置再决定是否建议修改。',
+    method: 'POST',
+    params: [
+      { name: 'taskId', description: 'Current task ID', required: true },
+      { name: 'keys', description: '要读取的设置键名数组（≤20 个）', required: true },
+    ],
+  },
+  {
+    name: 'settings-set',
+    summary: 'Write a host setting (requires user approval).',
+    description: '修改宿主设置（单键写入）。需要用户审批——审批卡会展示 key/value/reason，批准后才生效。密钥类键（含 key/token/secret/credential/password）禁止走桥，提示用户手动修改。',
+    method: 'POST',
+    params: [
+      { name: 'taskId', description: 'Current task ID', required: true },
+      { name: 'key', description: '设置键名', required: true },
+      { name: 'value', description: '新值', required: true },
+      { name: 'reason', description: '为什么改（展示给用户审批）', required: true },
+    ],
+  },
+  {
+    name: 'plugin-list',
+    summary: 'List installed capability plugins (read-only).',
+    description: '列出已安装的能力插件（id/名称/类型/启停状态），只读不审批。用于回答「装了什么」与排查能力问题。',
+    method: 'POST',
+    params: [
+      { name: 'taskId', description: 'Current task ID', required: true },
+      { name: 'kind', description: '可选过滤：skill|mcp-server|tool|bridge-action|ai-generated|panel' },
+    ],
+  },
+  {
+    name: 'plugin-toggle',
+    summary: 'Enable/disable a plugin (requires user approval).',
+    description: '启用或停用一个已安装插件。需要用户审批（审批卡展示插件与新状态），批准后生效。',
+    method: 'POST',
+    params: [
+      { name: 'taskId', description: 'Current task ID', required: true },
+      { name: 'pluginId', description: '插件 id', required: true },
+      { name: 'enabled', description: 'true=启用 false=停用', required: true },
+      { name: 'reason', description: '为什么（展示给用户审批）', required: true },
+    ],
+  },
 ];
 
 export function isKnownBridgeAction(action: string): boolean {
@@ -441,3 +488,150 @@ function enrichReviewSnapshot(
   }
   return snapshot;
 }
+
+// ===== 管理域动作 handlers（capability parity 批次 B1）=====
+// 安全边界（2026-08-26 拍板）：写操作事事确认——审批卡阻塞等待（复用 elevated-command 的
+// 员工策略绑定 → ensureApprovalRequest → markTaskWaitingApproval → approvalBroker.wait 链路）。
+
+/** 管理域写操作的审批等待：返回 'allow' | 'deny' | 'timeout'。 */
+async function awaitManagementApproval(
+  db: ReturnType<typeof getDb>,
+  taskId: string,
+  action: string,
+  summary: string,
+  reason: string,
+): Promise<'allow' | 'deny' | 'timeout'> {
+  const taskRow = db.prepare('SELECT id, project_id, assignee_agent_id FROM task WHERE id=?').get(taskId) as { id: string; project_id: string; assignee_agent_id: string | null } | undefined;
+  if (!taskRow) throw new Error(`Task not found: ${taskId}`);
+  const { approvalBroker } = await import('./domain/approval-broker');
+  const { markTaskWaitingApproval } = await import('./domain/task');
+  const { ensureApprovalRequest } = await import('./domain/permission');
+  // 审批卡挂 assignee 员工策略；无策略回落员工模板（同 elevated-command）
+  let policyId: string | null = null;
+  try {
+    const bind = db.prepare('SELECT permission_policy_id FROM company_employee WHERE id=?').get(taskRow.assignee_agent_id ?? '') as { permission_policy_id: string | null } | undefined;
+    policyId = bind?.permission_policy_id ?? null;
+    if (!policyId) {
+      const { ensureRolePermissionTemplates } = await import('./domain/permission-templates');
+      policyId = ensureRolePermissionTemplates(db).employee;
+    }
+  } catch { /* 模板确保失败则直接插卡 */ }
+  const approval = ensureApprovalRequest(db, {
+    policyId: policyId ?? 'pol_none',
+    employeeId: taskRow.assignee_agent_id ?? 'unknown',
+    taskId,
+    action,
+    command: summary.slice(0, 500),
+    risk: 'high',
+  });
+  db.prepare('UPDATE permission_approval SET ai_reason=? WHERE id=?').run(`【自控桥管理操作】${reason}`.slice(0, 1000), approval.id);
+  markTaskWaitingApproval(db, taskId, approval.id, 'online');
+  realtime.publish({ id: shortId('ev_'), type: 'approval.requested', taskId, occurredAt: nowIso(), payload: { approvalId: approval.id, action, command: summary.slice(0, 200), reason: reason.slice(0, 300) } });
+  const resolution = await approvalBroker.wait(approval.id, 600_000);
+  if (resolution === 'allow' || resolution === 'deny') {
+    try { (await import('./domain/task')).clearTaskApprovalWait(db, taskId); } catch { /* 清等待失败不影响响应 */ }
+  }
+  return resolution === 'allow' ? 'allow' : resolution === 'deny' ? 'deny' : 'timeout';
+}
+
+function bridgeTaskId(req: { body?: unknown }): { ok: true; taskId: string } | { ok: false; error: string } {
+  const taskId = String((req.body as { taskId?: unknown } | undefined)?.taskId ?? '');
+  if (!/^[a-z]{2,4}_[a-zA-Z0-9]+$/.test(taskId)) return { ok: false, error: 'Invalid taskId format' };
+  return { ok: true, taskId };
+}
+
+/** POST /bridge/settings-get：批量读设置（只读免审批；密钥类键值打码）。 */
+bridgeRouter.post('/settings-get', async (req, res) => {
+  try {
+    const tid = bridgeTaskId(req);
+    if (!tid.ok) { res.status(400).json({ ok: false, error: tid.error }); return; }
+    const keys = Array.isArray((req.body as { keys?: unknown }).keys) ? ((req.body as { keys: unknown[] }).keys.map((k) => String(k)).slice(0, 20)) : [];
+    if (keys.length === 0) { res.status(400).json({ ok: false, error: 'keys 必须是非空数组（≤20）' }); return; }
+    const { getSetting } = await import('./domain/setting');
+    const db = getDb();
+    const result: Record<string, string> = {};
+    for (const key of keys) {
+      const value = getSetting(db, key, '');
+      result[key] = /key|token|secret|credential|password/i.test(key) ? (value ? '(已设置，打码)' : '(未设置)') : value;
+    }
+    res.json({ ok: true, settings: result });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e instanceof Error ? e.message : String(e) });
+  }
+});
+
+/** POST /bridge/settings-set：单键写入（事事确认；密钥类键拒绝走桥）。 */
+bridgeRouter.post('/settings-set', async (req, res) => {
+  try {
+    const tid = bridgeTaskId(req);
+    if (!tid.ok) { res.status(400).json({ ok: false, error: tid.error }); return; }
+    const body = req.body as { key?: unknown; value?: unknown; reason?: unknown };
+    const key = String(body.key ?? '');
+    const value = String(body.value ?? '');
+    const reason = String(body.reason ?? '');
+    if (!key.trim() || !reason.trim()) { res.status(400).json({ ok: false, error: 'key 和 reason 必填' }); return; }
+    if (/key|token|secret|credential|password/i.test(key)) {
+      res.status(403).json({ ok: false, error: '密钥类设置禁止走桥修改——请提示用户在设置页手动修改' });
+      return;
+    }
+    const db = getDb();
+    const resolution = await awaitManagementApproval(db, tid.taskId, 'bridge-settings-set', `settings-set ${key} = ${value.slice(0, 120)}`, reason);
+    if (resolution !== 'allow') {
+      res.json({ ok: false, error: `设置修改${resolution === 'deny' ? '已被用户拒绝' : '等待审批超时'}（key=${key} 未变更）` });
+      return;
+    }
+    const { setSetting } = await import('./domain/setting');
+    setSetting(db, key, value);
+    res.json({ ok: true, key, value });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e instanceof Error ? e.message : String(e) });
+  }
+});
+
+/** POST /bridge/plugin-list：列已装插件（只读免审批）。 */
+bridgeRouter.post('/plugin-list', async (req, res) => {
+  try {
+    const tid = bridgeTaskId(req);
+    if (!tid.ok) { res.status(400).json({ ok: false, error: tid.error }); return; }
+    const kind = String((req.body as { kind?: unknown }).kind ?? '').trim();
+    const db = getDb();
+    const adapter = await import('./domain/plugin-adapter');
+    const installer = await import('./domain/plugin-install');
+    const disabled = installer.listDisabledCompanyPlugins(db);
+    const plugins = adapter.listPlugins(db)
+      .filter((p) => !kind || p.kind === kind)
+      .slice(0, 100)
+      .map((p) => ({ id: p.id, name: p.name, kind: p.kind, enabled: !disabled.has(p.id) }));
+    res.json({ ok: true, count: plugins.length, plugins });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e instanceof Error ? e.message : String(e) });
+  }
+});
+
+/** POST /bridge/plugin-toggle：启停插件（事事确认）。 */
+bridgeRouter.post('/plugin-toggle', async (req, res) => {
+  try {
+    const tid = bridgeTaskId(req);
+    if (!tid.ok) { res.status(400).json({ ok: false, error: tid.error }); return; }
+    const body = req.body as { pluginId?: unknown; enabled?: unknown; reason?: unknown };
+    const pluginId = String(body.pluginId ?? '');
+    const enabled = body.enabled === true || body.enabled === 'true';
+    const reason = String(body.reason ?? '');
+    if (!pluginId.trim() || !reason.trim()) { res.status(400).json({ ok: false, error: 'pluginId 和 reason 必填' }); return; }
+    if (body.enabled === undefined) { res.status(400).json({ ok: false, error: 'enabled 必填（true/false）' }); return; }
+    const db = getDb();
+    const { getPlugin } = await import('./domain/plugin-adapter');
+    const plugin = getPlugin(db, pluginId);
+    if (!plugin) { res.status(404).json({ ok: false, error: `插件不存在: ${pluginId}` }); return; }
+    const resolution = await awaitManagementApproval(db, tid.taskId, 'bridge-plugin-toggle', `plugin-toggle ${plugin.name}(${pluginId}) → ${enabled ? '启用' : '停用'}`, reason);
+    if (resolution !== 'allow') {
+      res.json({ ok: false, error: `插件启停${resolution === 'deny' ? '已被用户拒绝' : '等待审批超时'}（未变更）` });
+      return;
+    }
+    const { setCompanyPluginDecision } = await import('./domain/plugin-install');
+    setCompanyPluginDecision(db, pluginId, enabled ? 'enabled' : 'disabled', `bridge:${tid.taskId}`);
+    res.json({ ok: true, pluginId, enabled });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e instanceof Error ? e.message : String(e) });
+  }
+});

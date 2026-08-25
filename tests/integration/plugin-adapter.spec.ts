@@ -129,10 +129,10 @@ describe('listPlugins 合并三源', () => {
     expect(bridge?.manifest.kind).toBe('bridge-action');
   });
 
-  it('bridge 含全部 6 个 action（H9c 增 elevated-command；批次 J 增 borrow-specialist 借调工具）', () => {
+  it('bridge 含全部 10 个 action（H9c/J1 增受托越界与借调；B1 增管理域四件）', () => {
     const plugins = listPlugins(db, { skillsRoot, kind: 'bridge-action' });
     const ids = plugins.map((p) => p.id).sort();
-    expect(ids).toEqual(['bridge:borrow-specialist', 'bridge:elevated-command', 'bridge:notify', 'bridge:preview', 'bridge:progress', 'bridge:submit-review']);
+    expect(ids).toEqual(['bridge:borrow-specialist', 'bridge:elevated-command', 'bridge:notify', 'bridge:plugin-list', 'bridge:plugin-toggle', 'bridge:preview', 'bridge:progress', 'bridge:settings-get', 'bridge:settings-set', 'bridge:submit-review']);
   });
 
   it('bridge promptSection 含 curl 命令和参数说明', () => {
