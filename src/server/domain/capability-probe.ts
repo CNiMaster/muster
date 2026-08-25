@@ -69,6 +69,8 @@ export interface ApiCapabilityProbeOptions {
   /** API key 明文值（来自 env 解析，不落库）。 */
   apiKey?: string;
   timeoutMs?: number;
+  /** R2a：openai-compatible 请求形状（缺省 chat-completions；gemini 不参与）。 */
+  apiFormat?: 'chat-completions' | 'responses';
 }
 
 const OK = 'MUSTER_CAPABILITY_OK';
@@ -85,6 +87,28 @@ const ECHO_TOOL = {
     },
   },
 };
+
+/** R2a：Responses API 的 echo 工具（扁平形状，无 function 包层）。 */
+const ECHO_TOOL_RESPONSES = {
+  type: 'function',
+  name: 'echo',
+  description: '返回传入的 payload 内容。',
+  parameters: ECHO_TOOL.function.parameters,
+};
+
+/** R2a：Responses API 整包 → 文本（message.output_text 拼接）。 */
+function responsesText(data: any): string {
+  return (data?.output ?? [])
+    .filter((item: any) => item?.type === 'message')
+    .flatMap((item: any) => item?.content ?? [])
+    .map((part: any) => (typeof part?.text === 'string' ? part.text : ''))
+    .join('');
+}
+
+/** R2a：Responses API 整包 → function_call 项列表。 */
+function responsesFunctionCalls(data: any): Array<{ call_id?: string; name?: string; arguments?: string }> {
+  return (data?.output ?? []).filter((item: any) => item?.type === 'function_call');
+}
 
 /** 探针过程中的分类错误（由调用方转 ProbeClassification）。 */
 export class ApiProbeError extends Error {
@@ -126,6 +150,7 @@ async function postJson(url: string, headers: Record<string, string>, body: unkn
 export async function runApiCapabilityProbe(opts: ApiCapabilityProbeOptions): Promise<CapabilityProbeResult> {
   const { provider } = opts;
   const baseURL = (opts.baseURL ?? PROVIDER_DEFAULT_BASE_URL[provider] ?? '').replace(/\/+$/, '');
+  const apiFormat = provider === 'openai' && opts.apiFormat === 'responses' ? 'responses' : 'chat-completions';
   const model = opts.model ?? PROVIDER_DEFAULT_MODEL[provider] ?? '';
   const apiKey = opts.apiKey ?? '';
   const timeoutMs = opts.timeoutMs ?? 60_000;
@@ -138,13 +163,29 @@ export async function runApiCapabilityProbe(opts: ApiCapabilityProbeOptions): Pr
     : { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` };
   const url = provider === 'gemini'
     ? `${baseURL}/models/${encodeURIComponent(model)}:generateContent${apiKey ? `?key=${encodeURIComponent(apiKey)}` : ''}`
-    : `${baseURL}/chat/completions`;
+    : apiFormat === 'responses'
+      ? `${baseURL}/responses`
+      : `${baseURL}/chat/completions`;
 
   // ===== 1+2. function calling + 工具循环（一次往返） =====
   let functionCalling = false;
   let toolLoop = false;
   try {
-    if (provider === 'openai') {
+    if (provider === 'openai' && apiFormat === 'responses') {
+      // R2a：Responses API 形状——function_call / function_call_output 项
+      const input: any[] = [
+        { role: 'user', content: `请调用 echo 工具，payload 传 "hello"，然后把工具返回的 payload 原样回复给我。不要解释，不要调用其他工具。` },
+      ];
+      const first = await postJson(url, headers, { model, input, tools: [ECHO_TOOL_RESPONSES], tool_choice: 'auto', stream: false }, signal);
+      const fc = responsesFunctionCalls(first.data).find((item) => item.name === 'echo');
+      functionCalling = Boolean(fc);
+      if (functionCalling) {
+        input.push({ type: 'function_call', call_id: fc!.call_id, name: fc!.name, arguments: fc!.arguments });
+        input.push({ type: 'function_call_output', call_id: fc!.call_id, output: '"hello"' });
+        const second = await postJson(url, headers, { model, input, tools: [ECHO_TOOL_RESPONSES], tool_choice: 'auto', stream: false }, signal);
+        toolLoop = responsesText(second.data).trim().length > 0;
+      }
+    } else if (provider === 'openai') {
       const messages: any[] = [
         { role: 'user', content: `请调用 echo 工具，payload 传 "hello"，然后把工具返回的 payload 原样回复给我。不要解释，不要调用其他工具。` },
       ];
@@ -191,7 +232,17 @@ export async function runApiCapabilityProbe(opts: ApiCapabilityProbeOptions): Pr
   // ===== 3. 结构化输出 =====
   let structuredOutput = false;
   try {
-    if (provider === 'openai') {
+    if (provider === 'openai' && apiFormat === 'responses') {
+      // R2a：Responses API 用 text.format 约束 JSON（不支持时 catch 降级为不支持）
+      const res = await postJson(url, headers, {
+        model,
+        input: [{ role: 'user', content: '只返回 JSON 对象：{"ok":true}，不要其他任何内容。' }],
+        text: { format: { type: 'json_object' } },
+        stream: false,
+      }, signal);
+      const content = responsesText(res.data);
+      structuredOutput = (() => { try { const v = JSON.parse(content); return v !== null && typeof v === 'object'; } catch { return false; } })();
+    } else if (provider === 'openai') {
       const res = await postJson(url, headers, {
         model,
         messages: [{ role: 'user', content: '只返回 JSON 对象：{"ok":true}，不要其他任何内容。' }],
@@ -215,7 +266,14 @@ export async function runApiCapabilityProbe(opts: ApiCapabilityProbeOptions): Pr
   let instructionLevel: 'low' | 'medium' | 'high' = 'low';
   try {
     let content = '';
-    if (provider === 'openai') {
+    if (provider === 'openai' && apiFormat === 'responses') {
+      const res = await postJson(url, headers, {
+        model,
+        input: [{ role: 'user', content: `只回复 ${OK}，不要调用工具，不要读取或修改文件。` }],
+        stream: false,
+      }, signal);
+      content = responsesText(res.data);
+    } else if (provider === 'openai') {
       const res = await postJson(url, headers, {
         model,
         messages: [{ role: 'user', content: `只回复 ${OK}，不要调用工具，不要读取或修改文件。` }],

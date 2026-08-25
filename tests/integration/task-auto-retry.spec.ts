@@ -49,7 +49,8 @@ describe('任务级自动重试（阶段一任务 1.4）', () => {
     const task = createTask(db, { projectId: project.id, assigneeAgentId: worker.id, title: '会失败的任务' });
     db.prepare("UPDATE task SET state='running', updated_at=? WHERE id=?").run(new Date().toISOString(), task.id);
 
-    const after = failTask(db, task.id, '执行异常：network timeout');
+    // A2 后网络类首次即 30s 延迟——本用例测通用 transient 机制（首次立即），改用非网络瞬时错
+    const after = failTask(db, task.id, '执行异常：session crashed process exit');
 
     expect(after.state).toBe('queued');
     expect(after.autoRetryCount).toBe(1);
@@ -63,9 +64,9 @@ describe('任务级自动重试（阶段一任务 1.4）', () => {
     const task = createTask(db, { projectId: project.id, assigneeAgentId: worker.id, title: '会失败的任务' });
     db.prepare("UPDATE task SET state='running', updated_at=? WHERE id=?").run(new Date().toISOString(), task.id);
 
-    const first = failTask(db, task.id, '执行异常：timeout');
+    const first = failTask(db, task.id, '执行异常：no output from executor');
     db.prepare("UPDATE task SET state='running', updated_at=? WHERE id=?").run(new Date().toISOString(), first.id);
-    const second = failTask(db, first.id, '执行异常：timeout');
+    const second = failTask(db, first.id, '执行异常：no output from executor');
 
     expect(second.state).toBe('queued');
     expect(second.autoRetryCount).toBe(2);
@@ -82,14 +83,14 @@ describe('任务级自动重试（阶段一任务 1.4）', () => {
     db.prepare("UPDATE task SET state='waiting_dependency', updated_at=? WHERE id=?").run(new Date().toISOString(), parent.id);
     db.prepare("UPDATE task SET state='running', updated_at=? WHERE id=?").run(new Date().toISOString(), child.id);
 
-    // 3 次可重试失败：前 2 次自动重试，第 3 次保持 failed
-    const first = failTask(db, child.id, '执行异常：timeout');
+    // 3 次可重试失败：前 2 次自动重试，第 3 次保持 failed（非网络 transient 维持 ×2 上限；网络类梯度见 loop-progress-resume.spec）
+    const first = failTask(db, child.id, '执行异常：no output from executor');
     expect(first.state).toBe('queued');
     db.prepare("UPDATE task SET state='running', updated_at=? WHERE id=?").run(new Date().toISOString(), first.id);
-    const second = failTask(db, first.id, '执行异常：timeout');
+    const second = failTask(db, first.id, '执行异常：no output from executor');
     expect(second.state).toBe('queued');
     db.prepare("UPDATE task SET state='running', updated_at=? WHERE id=?").run(new Date().toISOString(), second.id);
-    const third = failTask(db, second.id, '执行异常：timeout');
+    const third = failTask(db, second.id, '执行异常：no output from executor');
 
     expect(third.state).toBe('failed');
     expect(third.autoRetryCount).toBe(2);

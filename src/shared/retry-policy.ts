@@ -18,6 +18,14 @@ export const MAX_AUTO_RETRY = 2;
 /** 第二次重试前的等待间隔（首次立即重试，第二次延迟 30 秒，避免快速重复失败）。 */
 export const AUTO_RETRY_DELAY_MS = 30_000;
 
+/**
+ * A2 任务级网络退避：纯网络类 transient（isNetworkFailure 口径）的重试上限与梯度。
+ * 网络中断比一般瞬时错更值得耐心等（R1 就地重试已先挡过一层），给到 3 次、
+ * 30s→3m→10m 指数退避；其他 transient 维持 MAX_AUTO_RETRY/AUTO_RETRY_DELAY_MS 现状。
+ */
+export const MAX_NETWORK_AUTO_RETRY = 3;
+export const NETWORK_AUTO_RETRY_DELAYS_MS: readonly number[] = [30_000, 180_000, 600_000];
+
 /** 失败的恢复策略类别（与具体症状正交）。 */
 export type FailureCategory = 'transient' | 'capability_gap' | 'config_error' | 'permanent';
 
@@ -66,4 +74,25 @@ export function classifyFailureCategory(error: unknown): FailureCategory {
 /** 判定是否为可恢复的临时性执行错误（仅 transient 可重试）。签名与旧实现兼容。 */
 export function isRecoverableSessionError(error: unknown): boolean {
   return classifyFailureCategory(error) === 'transient';
+}
+
+// 网络层失败信号（就地重试判定用）。比 TRANSIENT_RE 更窄：只挑网络层症状，
+// 不把上下文溢出等瞬时但非网络的失败卷进就地重试白烧退避时间。
+// 注意不含 aborted——用户停止（H8）与超时中止必须立即放弃，不得就地重试。
+const NETWORK_SIGNAL_RE =
+  /(fetch failed|network|econnreset|econnrefused|etimedout|timed out|timeout|enotfound|ehostunreach|epipe|socket hang up|connection (?:reset|refused|closed)|model request timed out)/i;
+// HTTP 层网络症状：openai/gemini adapter 抛「<Provider> API <status>: …」形状，5xx 与 429（限流）可就地重试。
+const HTTP_RETRYABLE_STATUS_RE = /\bapi[ :]*(?:429|5\d{2})\b/i;
+
+/**
+ * R1 网络就地重试判定：网络层失败（fetch TypeError / 连接类 errno / 超时）或 HTTP 5xx/429。
+ * 与 classifyFailureCategory 的 transient 是包含关系的一段子集：就地重试只在 tool-loop 的
+ * callModel 包装里用，任务级退避梯度（R3）也按此口径识别「纯网络类」。
+ */
+export function isNetworkFailure(error: unknown): boolean {
+  if (!error) return false;
+  const message = error instanceof Error ? error.message : String(error);
+  const cause = error instanceof Error && error.cause instanceof Error ? error.cause.message : '';
+  const text = `${message}\n${cause}`;
+  return NETWORK_SIGNAL_RE.test(text) || HTTP_RETRYABLE_STATUS_RE.test(text);
 }

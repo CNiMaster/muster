@@ -89,6 +89,20 @@ export function loadSkillCatalog(skillsRoot: string): SkillCatalogEntry[] {
   return catalog;
 }
 
+/**
+ * R6a 双根目录：roots 数组顺序=优先级（用户根在前），同名 skillId 先入者胜——
+ * 用户根覆盖仓库 bundled 同名技能（用户改动优先于内置版本）。
+ */
+export function loadSkillCatalogMultiRoot(roots: string[]): SkillCatalogEntry[] {
+  const merged = new Map<string, SkillCatalogEntry>();
+  for (const root of roots) {
+    for (const entry of loadSkillCatalog(root)) {
+      if (!merged.has(entry.skillId)) merged.set(entry.skillId, entry);
+    }
+  }
+  return [...merged.values()];
+}
+
 /** 极简 frontmatter 解析：只取首个 --- 块里的 name/description 行。description 缺省为空串。 */
 function parseFrontmatter(content: string): { name?: string; description: string } | null {
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);

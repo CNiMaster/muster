@@ -685,7 +685,8 @@ function validateScope(scope: MemoryScope, projectId?: string): void {
   }
 }
 
-function scanMemoryContent(content: string): string | null {
+/** 注入扫描（正则系）：命中返回拒绝理由，null=安全。R6a 技能导入等内容入口复用。 */
+export function scanMemoryContent(content: string): string | null {
   const patterns = [
     /ignore (all |any )?(previous|prior) instructions?/i,
     /忽略.{0,8}(之前|先前|以上).{0,8}(指令|提示)/i,

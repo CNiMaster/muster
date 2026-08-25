@@ -1,6 +1,7 @@
 import type {DB} from '../db/client';
 import {AppError,ErrorCode} from '../../shared/errors';
 import {nowIso,shortId} from '../../shared/utils';
+import {log} from '../logger';
 import {getProject} from './project';
 import { emptyProjectLaunchBrief, type ProjectLaunchBrief, type ProjectLaunchDiscovery } from '../../shared/project-launch';
 import { readProjectLaunchSnapshot, type ProjectLaunchState } from './project-launch';
@@ -19,7 +20,30 @@ export function createProjectTask(db:DB,input:{projectId:string;title:string;bri
 }
 export function getProjectTask(db:DB,id:string):ProjectTask{const row=db.prepare('SELECT * FROM project_task WHERE id=?').get(id) as Row|undefined;if(!row)throw new AppError(ErrorCode.NOT_FOUND,`项目任务不存在: ${id}`);return fromRow(row);}
 export function getProjectTaskInProject(db:DB,id:string,projectId:string):ProjectTask{const task=getProjectTask(db,id);if(task.projectId!==projectId)throw new AppError(ErrorCode.VALIDATION,'项目任务不属于当前项目');return task;}
-export function listProjectTasks(db:DB,projectId:string):ProjectTask[]{return(db.prepare('SELECT * FROM project_task WHERE project_id=? ORDER BY pinned DESC, sort_order ASC, seq DESC').all(projectId) as Row[]).map(fromRow);}
+export function listProjectTasks(db:DB,projectId:string,opts?:{includeArchived?:boolean}):ProjectTask[]{
+  // R2b：默认排除已归档（工作台列表干净）；归档区与「显示已归档」传 includeArchived 取全量
+  const archivedFilter=opts?.includeArchived?'':" AND state!='archived'";
+  return(db.prepare(`SELECT * FROM project_task WHERE project_id=?${archivedFilter} ORDER BY pinned DESC, sort_order ASC, seq DESC`).all(projectId) as Row[]).map(fromRow);
+}
+
+/**
+ * R2b 任务自动归档扫描：completed 且 completed_at 早于 N 天者调 archiveProjectTask 级联归档
+ * （取消运行中任务+线程归档+载体标记，复用既有事务语义）。由 coordinator 卫生定时器（30 分钟档）
+ * 驱动；单次上限 50 防长事务；days<=0 关闭直接返回。返回本次归档的 project_task id 列表。
+ */
+export function archiveStaleCompletedTasks(db:DB,days:number,now:Date=new Date(),maxBatch=50):string[]{
+  if(days<=0)return[];
+  const cutoff=new Date(now.getTime()-days*86_400_000).toISOString();
+  const rows=db.prepare(
+    "SELECT id FROM project_task WHERE state='completed' AND completed_at IS NOT NULL AND completed_at<? ORDER BY completed_at ASC LIMIT ?",
+  ).all(cutoff,maxBatch) as Array<{id:string}>;
+  const archived:string[]=[];
+  for(const r of rows){
+    try{archiveProjectTask(db,r.id);archived.push(r.id);}
+    catch(error){log.warn('auto archive single task failed',{id:r.id,err:error instanceof Error?error.message:String(error)});}
+  }
+  return archived;
+}
 /** 任务顶栏：重命名任务。 */
 export function renameProjectTask(db:DB,id:string,title:string,projectId?:string):ProjectTask{const task=projectId?getProjectTaskInProject(db,id,projectId):getProjectTask(db,id);const t=title.trim();if(!t)throw new AppError(ErrorCode.VALIDATION,'任务标题不能为空');db.prepare('UPDATE project_task SET title=?,updated_at=? WHERE id=?').run(t,nowIso(),task.id);return getProjectTask(db,task.id);}
 /** 任务顶栏：标记已读/未读（打开任务详情即读）。 */

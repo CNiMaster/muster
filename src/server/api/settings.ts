@@ -84,6 +84,8 @@ export const settingsUpdateSchema = z.object({
   imageGenModel: z.string().max(200).optional(),
   // 批次 F.4：waiting_input 超时自动继续分钟数（0=一直等，默认；任务级可覆盖）
   waitingAutoContinueMinutes: z.number().int().min(0).max(1440).optional(),
+  // R2b 任务自动归档保留天数（completed 超 N 天自动归档；0=关闭，默认 30）
+  archiveTaskAfterDays: z.number().int().min(0).max(3650).optional(),
   preventSleep: z.enum(['active', 'always', 'off']).optional(),
   interruptMode: z.enum(['queue', 'interrupt']).optional(),
   // H8 安全停：请求停止后等执行边界的超时毫秒数（5s-10min，默认 60s）

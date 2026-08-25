@@ -12,6 +12,7 @@ import {
   useCreateProjectTask,
   useProjects,
   useProjectTasks,
+  useRestoreProjectTask,
 } from '../../hooks/queries';
 import { DropdownMenu } from '../DropdownMenu';
 import { ContextMenu, CLOSED_CONTEXT_MENU, type ContextMenuState } from '../ContextMenu';
@@ -651,9 +652,15 @@ function ProjectNavRow({ p, isCur, selectedProjectTaskId, onCtx, runtimeTasks, o
   timeline?: boolean;
 }): React.ReactElement {
   const { data: tasks } = useProjectTasks(p.id);
+  // R2b：显示已归档——列表接口默认排除 archived，开启时单独取全量（不污染常用列表）
+  const [showArchived, setShowArchived] = useState(false);
+  const { data: allTasks } = useProjectTasks(p.id, { includeArchived: true });
+  const restoreTask = useRestoreProjectTask();
   const pinTask = usePinProjectTask();
   const archiveTask = useProjectTaskAction();
   const active = (tasks ?? []).filter((t) => t.state === 'active').slice(0, 8);
+  const archivedCount = (allTasks ?? []).filter((t) => t.state === 'archived').length;
+  const archived = showArchived ? (allTasks ?? []).filter((t) => t.state === 'archived') : [];
   return (
     <div>
       <div className="work-nav-item" style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px 4px 6px', fontWeight: isCur ? 600 : 400 }}>
@@ -695,6 +702,39 @@ function ProjectNavRow({ p, isCur, selectedProjectTaskId, onCtx, runtimeTasks, o
               </Link>
               <span className="mu-nav-time">{taskTimeAgo(t.updatedAt)}</span>
               <TaskArchiveBtn onArchive={() => archiveTask.mutate({ projectId: p.id, id: t.id, action: 'archive' })} />
+            </div>
+          ))}
+          {archivedCount > 0 && (
+            <button
+              type="button"
+              className="mu-nav-plain-btn"
+              aria-expanded={showArchived}
+              style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 6px', fontSize: 11, width: '100%', color: 'var(--fg-subtle, inherit)' }}
+              onClick={() => setShowArchived((v) => !v)}
+            >
+              <span style={{ width: 12, display: 'inline-block' }}>{showArchived ? '▾' : '▸'}</span>
+              已归档（{archivedCount}）
+            </button>
+          )}
+          {archived.map((t) => (
+            <div key={t.id} className="work-nav-item task-nav-item" style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 6px', borderRadius: 6, opacity: 0.75 }}>
+              <span style={{ width: 16, fontSize: 11, display: 'grid', placeItems: 'center', flex: '0 0 16px' }}>🗄️</span>
+              <Link
+                to={`/projects/${p.id}?view=task&projectTask=${t.id}`}
+                title={t.title}
+                style={{ flex: 1, minWidth: 0, textDecoration: 'none', color: 'inherit', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+              >
+                {t.title}
+              </Link>
+              <button
+                type="button"
+                className="mu-nav-plain-btn"
+                title="取消归档（回到进行中）"
+                style={{ fontSize: 11, padding: '0 2px' }}
+                onClick={() => restoreTask.mutate({ projectId: p.id, id: t.id })}
+              >
+                ↩
+              </button>
             </div>
           ))}
         </div>

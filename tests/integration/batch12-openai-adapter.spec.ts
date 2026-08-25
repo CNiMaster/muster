@@ -146,13 +146,36 @@ describe('Batch 12 OpenAI 兼容 Adapter', () => {
 
   it('API 错误返回 blocked', async () => {
     process.env.OPENAI_API_KEY = 'sk-test';
-    const adapter = new OpenAICompatibleAdapter({ apiKey: 'sk-test' });
-    globalThis.fetch = vi.fn(async () =>
-      new Response(JSON.stringify({ error: { message: 'rate limited' } }), { status: 429 }),
-    ) as any;
-    const result = await adapter.run(makeCtx());
-    expect(result.outcome).toBe('blocked');
-    expect(result.summary).toMatch(/OpenAI 执行失败/);
+    // R1：429 属网络类会就地退避重试——本用例验证「重试关闭时」错误直达 blocked 的旧语义
+    process.env.MUSTER_NETWORK_RETRY_DELAYS = 'off';
+    try {
+      const adapter = new OpenAICompatibleAdapter({ apiKey: 'sk-test' });
+      globalThis.fetch = vi.fn(async () =>
+        new Response(JSON.stringify({ error: { message: 'rate limited' } }), { status: 429 }),
+      ) as any;
+      const result = await adapter.run(makeCtx());
+      expect(result.outcome).toBe('blocked');
+      expect(result.summary).toMatch(/OpenAI 执行失败/);
+    } finally {
+      delete process.env.MUSTER_NETWORK_RETRY_DELAYS;
+    }
+  });
+
+  it('R1 网络类错误（429）就地退避重试耗尽后才 blocked', async () => {
+    process.env.OPENAI_API_KEY = 'sk-test';
+    process.env.MUSTER_NETWORK_RETRY_DELAYS = '5,5'; // 10ms 梯度共 2 次重试
+    try {
+      const adapter = new OpenAICompatibleAdapter({ apiKey: 'sk-test' });
+      const fetchMock = vi.fn(async () =>
+        new Response(JSON.stringify({ error: { message: 'rate limited' } }), { status: 429 }),
+      );
+      globalThis.fetch = fetchMock as any;
+      const result = await adapter.run(makeCtx());
+      expect(result.outcome).toBe('blocked');
+      expect(fetchMock).toHaveBeenCalledTimes(3); // 首次 + 2 次就地重试
+    } finally {
+      delete process.env.MUSTER_NETWORK_RETRY_DELAYS;
+    }
   });
 
   it('agent executor baseURL 覆盖生效（DeepSeek）', async () => {

@@ -15,6 +15,7 @@
 import { createBuiltinToolRegistry, type RuntimeToolRegistry } from './tools/registry';
 import { McpClientPool, type McpServerConfig } from './tools/mcp/client-pool';
 import { registerMcpServerTools } from './tools/mcp/adapter';
+import { BEE_TOOL_ALLOWLIST } from '../domain/tool-tier';
 import type { Plugin } from '../../shared/plugin';
 import type { DB } from '../db/client';
 import { getEffectivePluginsForCompany, markPluginHealth } from '../domain/plugin-install';
@@ -29,10 +30,18 @@ export interface AssembledTools {
  * 为一次 task 执行装配工具集。
  * 生效集合是单例工作台的 opt-out 决策（平台默认 - 显式禁用 + 工作台独占）。
  * 无生效 plugin 时返回纯内置 registry（向后兼容 B1/B2）。
+ * 能力分级（2026-08-25）：tier='bee' 时按蜂档白名单收紧内置工具且跳过 MCP（只读执行体
+ * 不接外部工具，省连接开销）；缺省/其他档维持现状全量。
  */
-export async function assembleTools(db: DB): Promise<AssembledTools> {
+export async function assembleTools(db: DB, opts?: { tier?: 'bee' | 'staff' }): Promise<AssembledTools> {
+  const tier = opts?.tier ?? 'staff';
   const registry = createBuiltinToolRegistry();
   const pool = new McpClientPool();
+
+  if (tier === 'bee') {
+    registry.restrictTo(BEE_TOOL_ALLOWLIST);
+    return { registry, pool };
+  }
 
   // 查实际生效的 plugin（opt-out 计算：平台默认全开 - 显式禁用 + 公司独占）
   const effectivePlugins = getEffectivePluginsForCompany(db);

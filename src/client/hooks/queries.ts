@@ -1239,6 +1239,31 @@ export function useTaskSwarm(taskId: string | undefined) {
   });
 }
 
+// ===== R3/B3：任务进度摘要 + 失败续跑 =====
+export function useTaskProgress(taskId: string | undefined) {
+  return useQuery({
+    queryKey: ['task-progress', taskId],
+    queryFn: () => api.get<import('../api/types').TaskProgressSummary>(`/api/tasks/${taskId}/progress`),
+    enabled: !!taskId,
+    refetchInterval: 6000,
+  });
+}
+
+export function useResumeTaskFromCheckpoint() {
+  const qc = useQueryClient();
+  return useMutation({
+    // restart=true：弃 checkpoint 整个重跑；false=从断点续跑（adapter 侧 input_hash 匹配自动接续）
+    mutationFn: ({ taskId, restart }: { taskId: string; restart?: boolean }) =>
+      api.post<Task>(`/api/tasks/${taskId}/resume${restart ? '?restart=1' : ''}`, {}),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['task', data.id] });
+      qc.invalidateQueries({ queryKey: ['tasks'] });
+      qc.invalidateQueries({ queryKey: ['task-progress', data.id] });
+      qc.invalidateQueries({ queryKey: ['task-trace', data.id] });
+    },
+  });
+}
+
 export function useAbortSwarm() {
   const qc = useQueryClient();
   return useMutation({
@@ -1286,7 +1311,7 @@ export function useCreateTask() {
   });
 }
 
-export function useProjectTasks(projectId:string|undefined){return useQuery({queryKey:['project-tasks',projectId],queryFn:()=>api.get<ProjectTaskDTO[]>(`/api/projects/${projectId}/project-tasks`),enabled:!!projectId});}
+export function useProjectTasks(projectId:string|undefined,opts?:{includeArchived?:boolean}){const includeArchived=opts?.includeArchived??false;return useQuery({queryKey:['project-tasks',projectId,includeArchived],queryFn:()=>api.get<ProjectTaskDTO[]>(`/api/projects/${projectId}/project-tasks${includeArchived?'?includeArchived=1':''}`),enabled:!!projectId});}
 // ===== 批次 H.5：会话排队条 =====
 export interface QueuedMessage {
   id: string;
@@ -2600,6 +2625,7 @@ export function useSaveSystemSettings() {
       modelTierPremium?: string;
       imageGenModel?: string;
       waitingAutoContinueMinutes?: number;
+      archiveTaskAfterDays?: number;
       preventSleep?: 'active' | 'always' | 'off';
       interruptMode?: 'queue' | 'interrupt';
       stopGraceMs?: number;
@@ -2642,6 +2668,55 @@ export function useSyncTools() {
   return useMutation({
     mutationFn: () => api.get<{ added: number; updated: number; removed: number }>('/api/tools/sync'),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['tools'] }),
+  });
+}
+
+// ===== R6a 技能库（双根：用户根 $MUSTER_HOME/skills + 仓库 bundled） =====
+export interface SkillLibraryDTO {
+  skillId: string;
+  name: string;
+  description: string;
+  storage: 'user' | 'synthesized' | 'bundled';
+  enabled: 'default' | boolean;
+  updatedAt: string | null;
+}
+
+export function useSkills() {
+  return useQuery({ queryKey: ['skills'], queryFn: () => api.get<SkillLibraryDTO[]>('/api/skills') });
+}
+
+export function useCreateSkill() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { skillId: string; description?: string; body: string }) =>
+      api.post<{ skillId: string }>('/api/skills', input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['skills'] }),
+  });
+}
+
+export function useImportSkill() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { url: string; skillId: string; license: string; sourceName?: string }) =>
+      api.post<{ skillId: string }>('/api/skills/import', input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['skills'] }),
+  });
+}
+
+export function useDeleteSkill() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (skillId: string) => api.delete<{ ok: boolean }>(`/api/skills/${encodeURIComponent(skillId)}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['skills'] }),
+  });
+}
+
+export function useToggleSkill() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ skillId, enable }: { skillId: string; enable: boolean }) =>
+      api.post<{ ok: boolean }>(`/api/skills/${encodeURIComponent(skillId)}/${enable ? 'enable' : 'disable'}`, {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['skills'] }),
   });
 }
 

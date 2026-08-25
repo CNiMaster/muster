@@ -168,6 +168,18 @@ export function PromptComposer({
   const [dragOver, setDragOver] = useState(false);
   // 批次 I-a2：面板插件「引用到对话」事件通道（与父控 quotedContext 合流；父控优先）
   const [panelQuote, setPanelQuote] = useState<string | undefined>();
+  // B3 失败卡「切计划模式重新规划」：外部（FailureResumeCard 等）预填输入框 + 切模式，用户确认发送
+  useEffect(() => {
+    const onPrefill = (e: Event): void => {
+      const detail = (e as CustomEvent<{ text?: string; mode?: ComposerMode }>).detail;
+      if (!detail) return;
+      if (typeof detail.text === 'string' && detail.text) setText(detail.text);
+      if (detail.mode) onSelectMode?.(detail.mode);
+      textareaRef.current?.focus();
+    };
+    window.addEventListener('muster:composer-prefill', onPrefill);
+    return () => window.removeEventListener('muster:composer-prefill', onPrefill);
+  }, [onSelectMode]);
   const [slashIndex, setSlashIndex] = useState(0);
   // 批次 H.9：@ 引用（员工/文件/任务三类候选；refs 上送带类型前缀 token，不动旧 mentions 语义）
   const [mentionIndex, setMentionIndex] = useState(0);
@@ -331,6 +343,7 @@ export function PromptComposer({
 
   const slashCommands: SlashCommand[] = [
     { token: 'plan', label: '/plan 计划模式', hint: '只调研规划不动手', apply: () => onSelectMode?.('plan') },
+    { token: 'exec', label: '/exec 转执行', hint: '计划确认后切到自动编辑档', apply: () => onSelectMode?.('auto-edit') },
     { token: 'ask', label: '/ask 每步审批', hint: '每个动作都要批准', apply: () => onSelectMode?.('ask-always') },
     { token: 'rules', label: '/rules 按规则审批', hint: '规则放行，越界审批', apply: () => onSelectMode?.('ask-by-rule') },
     { token: 'auto', label: '/auto 自动执行', hint: '不弹审批直接执行', apply: () => onSelectMode?.('no-approval') },

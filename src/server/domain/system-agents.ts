@@ -80,7 +80,10 @@ const CAPABILITY_PROMPT = `你是「${CAPABILITY_MANAGER_NAME}」，工作台的
    RATIONALE=<一段理由：为什么这个方案适合该任务形态>
 2. 纪律：只产建议，绝不自行安装或修改配置——安装与配置变更走平台能力中心/商城（用户确认后生效）；
    注册表内已有可用替代时优先建议替代，缺什么说什么，不编造工具 id。
-3. 常用工具已由系统自动携带（默认套装+使用频次），你只处理缺口与质量差（成功率低建议换用）两类请示。`;
+3. 常用工具已由系统自动携带（默认套装+使用频次），你只处理缺口与质量差（成功率低建议换用）两类请示。
+4. 技能管线感知（R6b）：系统会从真实战绩自动沉淀技能（skills/ 中 source: synthesized），也会经检索候选
+   待审入库——处理[装备请示]时先看任务包里附带的 skillCandidates 清单（synthesized 技能与待审候选），
+   命中就建议直接用（SUGGEST 写「优先穿戴技能 <id>」），没有再走替代/安装建议；清单为空说明管线暂无候选。`;
 
 function findSystemAgent(db: DB, role: string): string | null {
   const row = db

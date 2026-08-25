@@ -14,6 +14,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type React from 'react';
 import type { TraceItem } from '../../api/types';
 import { useTaskOnce, useTaskTrace, useTaskContext, useSystemSettings } from '../../hooks/queries';
+import { FailureResumeCard } from './FailureResumeCard';
 
 const ACTIVE_TASK_STATES = new Set(['running', 'claimed']);
 
@@ -243,7 +244,8 @@ export function WorkTraceBlock({ taskId, projectId, finalText }: { taskId: strin
   const startMs = new Date(first.occurredAt).getTime();
   const endMs = active ? now : new Date(last.occurredAt).getTime();
   const workedLabel = formatDuration(endMs - startMs);
-  const isCollapsed = collapsed ?? !active;
+  // B3：失败态默认展开（失败行动卡要可见）；其余非活跃态默认折叠
+  const isCollapsed = collapsed ?? (!active && task?.state !== 'failed');
 
   const copy = (): void => { void navigator.clipboard?.writeText(finalText); };
 
@@ -269,6 +271,7 @@ export function WorkTraceBlock({ taskId, projectId, finalText }: { taskId: strin
                   </div>
                 ),
           )}
+          {task?.state === 'failed' && <FailureResumeCard taskId={taskId} />}
           <i>{''}</i>
         </div>
       )}

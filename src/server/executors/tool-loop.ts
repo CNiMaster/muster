@@ -21,6 +21,9 @@ import {
 import { FILE_TOOLS } from './tools/file-tools';
 import { recordCapabilityUsage } from '../domain/capability-quality';
 import { appendTrace } from '../domain/execution-trace';
+import { saveLoopProgress, clearLoopProgress } from '../domain/loop-progress';
+import { isNetworkFailure } from '../../shared/retry-policy';
+import { log } from '../logger';
 import type { DB } from '../db/client';
 import type { AgentRunResult } from '../../shared/types';
 import type { ExecutionUsage } from '../task-engine/executor';
@@ -99,6 +102,17 @@ export interface ToolLoopOptions {
    * v1 为确定性摘要（ assistant 文本首行+工具名与结果首行，截 4000 字）；LLM 摘要留 v2。
    */
   contextGovernance?: { maxMessages?: number; keepRecent?: number } | null;
+  /**
+   * R1 网络就地重试：callModel 网络类失败的退避梯度（默认 1s/5s/25s 共 3 次）。
+   * 传 null 显式关闭（直接抛给任务级重试）；测试可注入短梯度。
+   */
+  networkRetryDelays?: readonly number[] | null;
+  /**
+   * R3 轮次进度快照（checkpoint）：每轮完成写单行快照，done 成功清除，中途异常保留
+   * 最后完整轮——失败续跑（adapter 侧 input_hash 匹配）以快照 messages 为底续跑。
+   * 快照失败绝不影响执行。
+   */
+  progressTracking?: { db: DB; taskId: string; runId?: string; inputHash: string };
 }
 
 export interface ToolLoopResult {
@@ -140,8 +154,73 @@ export function compactMessagesToDigest(old: ChatMessage[]): ChatMessage {
   return { role: 'user', content: `【上下文压缩】以下为此前已完成步骤与结论的摘要（原消息已压缩，任务继续）：\n${digest || '（无文本性步骤）'}` };
 }
 
+/** R1 网络就地重试默认梯度：指数退避 1s/5s/25s 共 3 次。 */
+export const NETWORK_RETRY_DELAYS_MS: readonly number[] = [1_000, 5_000, 25_000];
+
+/** 退避等待：可被 signal 中途打断（H8 停止/超时中止=立即放弃，不硬等完退避）。 */
+function sleepAbortable(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(new DOMException('Aborted', 'AbortError'));
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    function onAbort() {
+      clearTimeout(timer);
+      reject(new DOMException('Aborted', 'AbortError'));
+    }
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+/**
+ * R1 网络就地重试：callModel 网络类失败按梯度退避重试，messages 原地保留、重试成功继续
+ * 当前轮——不重启 run、不烧任务级自动重试预算。停止（H8）/超时中止/非网络类错误不重试。
+ */
+export async function callModelWithNetworkRetry(
+  attempt: () => Promise<ModelCallResult>,
+  opts: {
+    signal: AbortSignal;
+    isStopped: () => boolean;
+    delays?: readonly number[];
+    onRetry?: (attempt: number, maxAttempts: number, error: unknown) => void;
+  },
+): Promise<ModelCallResult> {
+  const delays = opts.delays ?? NETWORK_RETRY_DELAYS_MS;
+  for (let i = 0; ; i++) {
+    try {
+      return await attempt();
+    } catch (error) {
+      if (i >= delays.length) throw error; // 重试耗尽：抛给上层（任务级重试接手）
+      if (opts.signal.aborted || opts.isStopped() || !isNetworkFailure(error)) throw error;
+      opts.onRetry?.(i + 1, delays.length, error);
+      await sleepAbortable(delays[i]!, opts.signal);
+    }
+  }
+}
+
 export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult> {
   const messages = [...opts.messages];
+  // R3 快照体积控制：序列化超限时存压缩版（system + 确定性摘要 + 最近 8 条），复用 L7 压缩器
+  const snapshotMessages = (): ChatMessage[] => {
+    if (JSON.stringify(messages).length <= 200_000) return messages;
+    const system = messages.slice(0, 1);
+    const recent = messages.slice(-8);
+    return [...system, compactMessagesToDigest(messages.slice(1, -8)), ...recent];
+  };
+  const writeSnapshot = (): void => {
+    if (!opts.progressTracking) return;
+    const pt = opts.progressTracking;
+    try {
+      saveLoopProgress(pt.db, { taskId: pt.taskId, runId: pt.runId, rounds, messages: snapshotMessages(), inputHash: pt.inputHash });
+    } catch (error) {
+      // review Important：吞错但必须可观测——快照失败=续跑能力退化，静默会让 R3 在真实故障中悄悄失效
+      log.warn('loop progress snapshot failed', { taskId: pt.taskId, round: rounds, err: error instanceof Error ? error.message : String(error) });
+    }
+  };
   const gov = opts.contextGovernance !== null;
   const maxMessages = opts.contextGovernance?.maxMessages ?? CONTEXT_MAX_MESSAGES_DEFAULT;
   // 复审 R3：夹紧 keepRecent——≥maxMessages 时 slice(1,-keepRecent) 产生空摘要且消息数不降反涨
@@ -150,6 +229,9 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult
     Math.max(2, maxMessages - 4),
   );
   const toolRegistry = opts.toolRegistry ?? createBuiltinToolRegistry();
+  // P0 先读后写：每次运行一份已读文件状态表（read_file 登记，write/edit_file 校验）。
+  // 跨轮次存活于整个 runToolLoop 生命周期；不放进 opts——由本循环恒创建，调用方无需感知。
+  const fileReadState = new Map<string, { mtimeMs: number; size: number }>();
   const tools = toolRegistry.definitions();
   let rounds = 0;
   let totalInput = 0;
@@ -188,7 +270,29 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult
       inModelCall = true;
       let modelResult;
       try {
-        modelResult = await opts.callModel(messages, controller.signal, tools);
+        // R1 网络就地重试：网络类失败退避重试，成功则继续当前轮（messages 原地保留）；传 null 显式关闭
+        modelResult = opts.networkRetryDelays === null
+          ? await opts.callModel(messages, controller.signal, tools)
+          : await callModelWithNetworkRetry(
+              () => opts.callModel(messages, controller.signal, tools),
+              {
+                signal: controller.signal,
+                isStopped: () => stopRequested,
+                delays: opts.networkRetryDelays,
+                onRetry: opts.traceTracking
+                  ? (n, max, error) => {
+                      const tt = opts.traceTracking!;
+                      try {
+                        appendTrace(tt.db, {
+                          taskId: tt.taskId, runId: tt.runId,
+                          kind: 'notice', name: 'network_retry',
+                          summary: `网络中断重试中 ${n}/${max}：${(error instanceof Error ? error.message : String(error)).slice(0, 120)}`,
+                        });
+                      } catch { /* trace 失败不影响执行 */ }
+                    }
+                  : undefined,
+              },
+            );
       } finally {
         inModelCall = false;
       }
@@ -214,6 +318,7 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult
       const toolCalls = modelResult.message.tool_calls ?? [];
       if (toolCalls.length === 0) {
         // 无 tool_call：模型直接返回文本。尝试解析为 AgentRunResult，否则视为失败。
+        writeSnapshot(); // R3：本轮 messages 已完整（assistant 文本），落快照再跳出（未收敛保留续跑底）
         break;
       }
 
@@ -247,6 +352,7 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult
           consultationContext: opts.consultationContext,
           toolRegistry: opts.toolRegistry ?? createBuiltinToolRegistry(),
           permissionGuard: opts.permissionGuard,
+          fileReadState,
         };
         const startedAt = Date.now();
         let outcome: 'success' | 'fail' = 'success';
@@ -312,7 +418,15 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult
         if (stopRequested) break;
       }
 
+      writeSnapshot(); // R3：本轮 assistant+tool results 已完整推进 messages，落快照
+
       if (doneResult) {
+        // R3：成功收口清快照（不留垃圾；失败/未收敛路径才保留供续跑）
+        if (opts.progressTracking) {
+          try { clearLoopProgress(opts.progressTracking.db, opts.progressTracking.taskId); } catch (error) {
+            log.warn('loop progress clear failed', { taskId: opts.progressTracking.taskId, err: error instanceof Error ? error.message : String(error) });
+          }
+        }
         return {
           result: doneResult,
           usage: {

@@ -17,6 +17,7 @@ import { sweepIdleStaffSpecialists } from '../domain/specialist-review';
 import { listDueAutomations, markAutomationRun } from '../domain/automation';
 import { syncGithubIssues } from '../domain/github-issues';
 import { settleMemoryVotes, sweepMemoryBacklogNotice, purgeStaleMemory } from '../domain/memory';
+import { archiveStaleCompletedTasks } from '../domain/project-task';
 import { postSystemMessage } from '../domain/conversation';
 import { generateInspectorSuggestions } from '../domain/inspector';
 import type { SetupGenerator } from '../domain/setup-assistant';
@@ -334,7 +335,7 @@ export class ProjectRuntimeCoordinator {
     this.automationTimer.unref?.();
 
     // 记忆库卫生（P0-④，每 30 分钟）：候选积压提醒（发工作台系统消息，24h 节流）+
-    // 软删/过期条目物理清理（防表无限膨胀）。纯 DB 操作，失败不轰炸。
+    // 软删/过期条目物理清理（防表无限膨胀）+ R2b 任务自动归档扫描。纯 DB 操作，失败不轰炸。
     this.memoryHygieneTimer = setInterval(() => {
       try {
         const notice = sweepMemoryBacklogNotice(this.db);
@@ -350,6 +351,12 @@ export class ProjectRuntimeCoordinator {
         }
         const purged = purgeStaleMemory(this.db);
         if (purged.purgedDeleted + purged.purgedExpired > 0) log.info('memory hygiene purged', purged);
+        // R2b：任务自动归档——archiveTaskAfterDays>0 时归档超期 completed 项目任务（单次上限 50 防长事务）
+        const archiveDays = getSystemSettings(this.db).archiveTaskAfterDays;
+        if (archiveDays > 0) {
+          const archived = archiveStaleCompletedTasks(this.db, archiveDays);
+          if (archived.length > 0) log.info('auto archived stale project tasks', { days: archiveDays, count: archived.length });
+        }
       } catch (error) {
         log.warn('memory hygiene failed', { error: error instanceof Error ? error.message : String(error) });
       }

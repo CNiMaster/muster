@@ -44,6 +44,8 @@ export interface ResolvedTaskSkill {
   /** B3（对标 Reference/Action 二分）：SKILL.md frontmatter 声明 kind: reference 时，
    * CLI 执行器只注入一行路径提示（需要时自读文件），API 执行器仍注入正文保底；缺省 action 全文注入。 */
   kind?: 'reference' | 'action';
+  /** R6a 存储位置标注：内容实际读自哪个根（plugin 命中优先于文件根；用户根优先于仓库 bundled）。 */
+  storage?: 'bundled' | 'user' | 'synthesized' | 'plugin';
 }
 
 export interface TemplateRuntimeHealthFinding {

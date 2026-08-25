@@ -241,6 +241,9 @@ export function ProjectContextInspector({
                     }}
                   >
                     <Badge tone={taskStateTone(t.state)}>{t.state}</Badge>
+                    {(t.state === 'running' || t.state === 'claimed') && typeof t.loopRounds === 'number' && t.loopRounds > 0 && (
+                      <span title="当前执行轮次（API 型轮次进度）" style={{ fontSize: 10, color: 'var(--fg-subtle)', flexShrink: 0 }}>第 {t.loopRounds} 轮</span>
+                    )}
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       #{t.seq} {t.title}
                     </span>
@@ -342,7 +345,7 @@ export function ProjectContextInspector({
           {swarmView?.swarm && (
             <div style={{ padding: '10px', background: 'var(--bg-elev)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
               <div className="auxiliary-section-title" style={{ padding: 0, marginBottom: '6px' }}>
-                <span>🐝 蜂群拓扑 ({swarmView.tasks.length} 工蜂)</span>
+                <span>🐝 蜂群拓扑 ({swarmView.tasks.length} 工蜂){swarmView.requesterName ? ` · 发起：${swarmView.requesterName}` : ''}</span>
                 <StateBadge domain="thread" state={swarmView.swarm.status} />
               </div>
               <p className="muted" style={{ margin: 0, fontSize: '12px' }}>

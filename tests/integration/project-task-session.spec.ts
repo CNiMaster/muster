@@ -36,7 +36,9 @@ describe('project task context boundary',()=>{
       archiveProjectTask(db,projectTask.id);
       expect(()=>createTask(db,{projectId:project.id,projectTaskId:projectTask.id,title:'不允许'})).toThrow(/归档/);
       expect(()=>ensureProjectTaskThread(db,{projectTaskId:projectTask.id,employeeId:employee.id,executorProfileId:null})).toThrow(/归档/);
-      expect(listProjectTasks(db,project.id)[0]?.state).toBe('archived');
+      // R2b：归档默认从列表隐藏（工作台干净），includeArchived 取全量验终态
+      expect(listProjectTasks(db,project.id)).toHaveLength(0);
+      expect(listProjectTasks(db,project.id,{includeArchived:true})[0]?.state).toBe('archived');
     }finally{close();}
   });
 

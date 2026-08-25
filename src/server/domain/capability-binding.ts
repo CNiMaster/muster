@@ -126,8 +126,9 @@ export function requiredExecutorKindForCapabilities(
 import { getAgent } from './agent';
 import { getProject } from './project';
 import type { Task } from './task';
-import { retrieveSkillsByContent } from './skill-retrieval';
+import { matchSkillsByContent, loadSkillCatalogMultiRoot } from './skill-retrieval';
 import { collectEffectivePluginSkills } from './plugin-install';
+import { USER_SKILLS_ROOT, readUserSkill, parseSkillFrontmatter, listDisabledSkills } from './user-skills';
 
 const SOURCE_PRIORITY: Record<ResolvedTaskSkill['source'], number> = {
   task: 5,
@@ -153,7 +154,11 @@ export function resolveTaskSkills(
   const agent = task.assigneeAgentId ? getAgent(db, task.assigneeAgentId) : null;
   const metadata = readRequirements(task.inputProtocol);
   const disabled = new Set(metadata.disabledSkillIds ?? []);
+  // R6a：全局启停（技能库面板，system_setting 禁用清单）——停用的技能不注入
+  for (const id of listDisabledSkills(db)) disabled.add(id);
   const skillsRoot = options.skillsRoot ?? path.join(process.cwd(), 'skills');
+  // R6a 双根：用户根（$MUSTER_HOME/skills）优先于仓库 bundled（同名覆盖；plugin 表安装版仍最高优先）
+  const skillRoots = [USER_SKILLS_ROOT, skillsRoot];
   const candidates: SkillCandidate[] = [];
 
   for (const skillId of metadata.requiredSkillIds ?? []) {
@@ -202,9 +207,10 @@ export function resolveTaskSkills(
     }
   }
 
-  // spec 2026-08-12 B1：按任务内容从 skills/ 库检索相关 skill，作为低优先级 retrieved 来源补进上下文。
+  // spec 2026-08-12 B1 + R6a：按任务内容从双根技能库检索相关 skill，作为低优先级 retrieved 来源补进上下文。
   // 显式声明（task/field/employee）优先级更高会覆盖；retrieved 仅在未命中声明时补位，避免噪声。
-  for (const skillId of retrieveSkillsByContent(task, skillsRoot)) {
+  const retrievalText = [task.title ?? '', (task as Task & { summary?: string }).summary ?? ''].join('\n');
+  for (const skillId of matchSkillsByContent(loadSkillCatalogMultiRoot(skillRoots), retrievalText)) {
     candidates.push({ skillId, source: 'retrieved', required: false, reason: '按任务内容检索匹配' });
   }
 
@@ -216,18 +222,25 @@ export function resolveTaskSkills(
     }
   }
 
-  // 注入链（spec M1）：plugin 表（商城安装/公司生效）**优先于**仓库 bundled 目录——
-  // 安装的新版本必须盖过内置旧版（反之商城同名校准永远进不了上下文）。
+  // 注入链（spec M1 + R6a）：plugin 表（商城安装/公司生效）**优先于**文件根——安装的新版本必须盖过
+  // 内置旧版；文件根内部用户根优先于仓库 bundled（用户改动优先）。
   const pluginSkills = collectEffectivePluginSkills(db);
   return [...selected.values()].map((candidate) => {
     if (disabled.has(candidate.skillId)) return { ...candidate, status: 'disabled' as const };
-    const content = pluginSkills.get(candidate.skillId.trim().toLowerCase())
-      ?? readBundledSkill(candidate.skillId, skillsRoot);
+    const pluginContent = pluginSkills.get(candidate.skillId.trim().toLowerCase());
+    const userContent = readUserSkill(candidate.skillId);
+    const bundledContent = pluginContent ? undefined : readBundledSkill(candidate.skillId, skillsRoot);
+    const content = pluginContent ?? userContent ?? bundledContent;
     if (!content) return { ...candidate, status: 'missing' as const };
+    const storage: ResolvedTaskSkill['storage'] = pluginContent
+      ? 'plugin'
+      : userContent
+        ? (parseSkillFrontmatter(userContent).source === 'synthesized' ? 'synthesized' : 'user')
+        : 'bundled';
     // B3：frontmatter 声明 kind: reference 的技能携带标记（注入侧按执行器分流；缺省 action）
     const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---/.exec(content)?.[1] ?? '';
     const kindMatch = /^kind:\s*(reference|action)\s*$/m.exec(frontmatter);
-    return { ...candidate, status: 'loaded' as const, content, ...(kindMatch ? { kind: kindMatch[1] as 'reference' | 'action' } : {}) };
+    return { ...candidate, status: 'loaded' as const, content, storage, ...(kindMatch ? { kind: kindMatch[1] as 'reference' | 'action' } : {}) };
   });
 }
 
@@ -245,7 +258,8 @@ function stringArray(value: unknown): string[] | undefined {
   return [...new Set(value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0).map((item) => item.trim()))];
 }
 
-function readBundledSkill(skillId: string, skillsRoot: string): string | undefined {
+/** 读取仓库 bundled 技能（review Critical 修复后为唯一入口：SLUG+resolve+startsWith+realpath 四层防护）。 */
+export function readBundledSkill(skillId: string, skillsRoot: string): string | undefined {
   if (!/^[a-z0-9][a-z0-9-]*$/.test(skillId)) return undefined;
   const root = path.resolve(skillsRoot);
   const skillPath = path.resolve(root, skillId, 'SKILL.md');

@@ -74,6 +74,8 @@ export interface SystemSettings {
   imageGenModel: string;
   /** 批次 F.4：waiting_input 超时自动继续分钟数（0=一直等，默认；任务级 auto_continue_minutes 可覆盖）。 */
   waitingAutoContinueMinutes: number;
+  /** R2b 任务自动归档保留天数：completed 超过 N 天自动归档；0=关闭，默认 30。 */
+  archiveTaskAfterDays: number;
   /** 防休眠（批次 G.5）：active=有活跃任务/临近触发时保活（默认）；always=常驻；off。 */
   preventSleep: 'active' | 'always' | 'off';
   /** 运行中发送（批次 H.5）：queue=入队等本轮结束（默认）；interrupt=打断插话。 */
@@ -155,6 +157,7 @@ export function getSystemSettings(db: DB): SystemSettings {
     executorTierLowId: getSetting(db, 'executor_tier_low_id', '') || getSetting(db, 'executor_tier_tertiary_id', ''),
     imageGenModel: getSetting(db, 'image_gen_model', ''),
     waitingAutoContinueMinutes: Number(getSetting(db, 'waiting_auto_continue_minutes', '0')) || 0,
+    archiveTaskAfterDays: Math.max(0, Math.round(Number(getSetting(db, 'archive_task_after_days', '30')) || 0)),
     interruptMode: getSetting(db, 'interrupt_mode', 'queue') === 'interrupt' ? 'interrupt' : 'queue',
     stopGraceMs: Math.max(5_000, Math.min(600_000, Number(getSetting(db, 'stop_grace_ms', '60000')) || 60_000)),
     securityMode: (['confirm-edits', 'auto-edit', 'plan', 'full-access'] as const).includes(getSetting(db, 'security_mode', '') as 'auto-edit') ? (getSetting(db, 'security_mode', '') as 'auto-edit') : '',
@@ -268,6 +271,9 @@ export function saveSystemSettings(db: DB, settings: Partial<SystemSettings>): v
   }
   if (settings.waitingAutoContinueMinutes !== undefined) {
     setSetting(db, 'waiting_auto_continue_minutes', String(Math.max(0, Math.min(1440, Math.round(settings.waitingAutoContinueMinutes)))));
+  }
+  if (settings.archiveTaskAfterDays !== undefined) {
+    setSetting(db, 'archive_task_after_days', String(Math.max(0, Math.min(3650, Math.round(settings.archiveTaskAfterDays)))));
   }
   if (settings.preventSleep !== undefined) {
     setSetting(db, 'prevent_sleep', ['active', 'always', 'off'].includes(settings.preventSleep) ? settings.preventSleep : 'active');

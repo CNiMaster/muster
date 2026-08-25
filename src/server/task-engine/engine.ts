@@ -51,6 +51,7 @@ import { applyAdaptiveAdjustment, canRunMore } from '../domain/executor-concurre
 import { markExecutorFailure, markExecutorSuccess } from '../domain/executor-failover';
 import { isSwarmLinkedTask } from '../domain/staging';
 import { resolveContextWindow } from '../domain/executor-profile';
+import { profilePrimaryModel, findModelContextWindow } from '../../shared/executor';
 import { generateCompactionSummary } from '../domain/compaction-summary';
 import { getWorkbench } from '../domain/workbench';
 import { resolveTaskRepoRoot } from '../domain/task-repo';
@@ -89,6 +90,10 @@ function readMessageOptions(input: Record<string, unknown>): { mode?: typeof KNO
 }
 
 /** H9b：任意旧/新模式 → 审批策略（DB 枚举兼容层）。full-access 落 ask-by-rule——由 guard 的 AI 递进实现「safe 自动放/危险弹卡」。 */
+// P0 安全默认值反转（2026-08-25）：无策略无模式时的基线守卫 + 高危动作名单（与基线同源）。
+// no-approval 档对这八类动作先过 AI 审查员语义判定，普通 run-command 不受影响（零额外延迟）。
+import { createBaselinePermissionGuard, BASELINE_DENIED_ACTIONS } from '../domain/permission-baseline';
+
 export function modeToStrategy(mode: string | undefined): 'ask-always' | 'ask-by-rule' | 'no-approval' | 'deny' | undefined {
   switch (mode) {
     case 'confirm-edits': case 'ask-always': return 'ask-always';
@@ -495,18 +500,23 @@ export class TaskEngine {
       const legacyExecutor = normalizeAgentExecutor(agent.executor);
       // 批次 D2：消息级选项（模式/模型/思考）与自有人才专属配置覆盖员工执行器配置
       const messageOptions = readMessageOptions(task.inputProtocol);
-      // 池化后模型链简化：消息显式 > 自有人才 customModel > 执行器档案 config.model（档位已选档案，不再覆盖模型）
+      // 池化后模型链简化：消息显式 > 自有人才 customModel > 执行器档案主模型（R5：models[0]，兼容旧 model 单键）
       const userTalentOverride = task.inputProtocol.userTalentOverride as {
         customModel?: string | null;
         customThinkingDepth?: string | null;
       } | undefined;
-      const effectiveModel = messageOptions.model ?? userTalentOverride?.customModel ?? undefined;
+      const profilePrimary = profilePrimaryModel(profileExecutor) ?? profilePrimaryModel(legacyExecutor);
+      const effectiveModel = messageOptions.model ?? userTalentOverride?.customModel ?? profilePrimary;
       const effectiveExecutor: AgentExecutorConfig = {
         ...(profileExecutor ?? legacyExecutor),
         ...(effectiveModel ? { model: effectiveModel } : {}),
         ...(userTalentOverride?.customThinkingDepth ? { thinkingDepth: userTalentOverride.customThinkingDepth as AgentExecutorConfig['thinkingDepth'] } : {}),
         ...(messageOptions.thinking ? { thinkingDepth: messageOptions.thinking } : {}),
       };
+      // R5 行级上下文窗口：当前生效模型在 config.models 里的行级值（无则 undefined=档案级兜底）
+      const effectiveModelContextWindow = executorProfile
+        ? findModelContextWindow(executorProfile.config, effectiveModel ?? null)
+        : undefined;
       // 模式 → 审批策略映射（H9b 四模式经 modeToStrategy 归一；旧五值兼容）
       const modeStrategy = modeToStrategy(messageOptions.mode);
       let employeePermissionPolicy = getEmployeePermissionPolicy(this.db, agent.id);
@@ -593,9 +603,13 @@ export class TaskEngine {
           : undefined,
       };
       // B3a：装配工具集（内置 + 已启用 MCP），失败不阻塞（降级为纯内置）
+      let toolTier: 'bee' | 'staff' = 'staff';
       try {
         const { assembleTools } = await import('../executors/tool-assembly');
-        const assembled = await assembleTools(this.db);
+        const { resolveToolTier } = await import('../domain/tool-tier');
+        // 能力分级：蜂档（工蜂/咨询分身）收紧为只读工具集且不接 MCP
+        toolTier = resolveToolTier(agent, task);
+        const assembled = await assembleTools(this.db, { tier: toolTier });
         ctx.toolRegistry = assembled.registry;
         ctx.mcpPool = assembled.pool;
         mcpPool = assembled.pool; // 提升引用，供 finally 清理
@@ -644,8 +658,10 @@ export class TaskEngine {
         sessionIdHint: ctx.sessionIdHint,
         loopback: ctx.loopback,
         executorKind,
-        // P1-② 全局软预算：档案上下文窗口传入，systemPrompt 超预算时压缩低优先段
-        contextWindowTokens: executorProfile?.contextWindowTokens ?? undefined,
+        // P1-② 全局软预算：上下文窗口传入（R5：行级优先、档案级兜底），systemPrompt 超预算时压缩低优先段
+        contextWindowTokens: executorProfile
+          ? resolveContextWindow(executorProfile, effectiveModelContextWindow)
+          : undefined,
         // 阶段二任务 2.3：API 型按能力探针真实结果判定命令能力，不再一刀切禁用
         executorHasCommandCapability: executorProfile
           ? hasCommandCapability(this.db, executorProfile.id, executorKind)
@@ -656,6 +672,15 @@ export class TaskEngine {
         lightweight: (task.inputProtocol as Record<string, unknown>)?.lightweight === true,
       });
       ctx.systemPrompt = assembled.systemPrompt;
+      // 能力分级：蜂档注入只读声明——模型明确自己没有写/命令工具，产出走汇报通道，防幻觉尝试
+      if (toolTier === 'bee') {
+        ctx.systemPrompt += [
+          '',
+          '# 执行能力声明（只读）',
+          '你是只读调研执行体：没有写文件、编辑、执行命令、生成图片的工具，也不要尝试或声称已修改任何文件。',
+          '产出方式：结论与发现通过 done 汇报；需要补充资料用 web_fetch/web_search/ask_colleague；业务产物走 submit_review 提交人工审批。',
+        ].join('\n');
+      }
       // 注入去黑盒：本次实际加载的 skills 持久化进 inputProtocol（任务条显示 chips；内容变化才写）。
       // 写前重读最新 input_protocol_json 再合并——claim 快照到此处隔着 MCP 装配等秒级窗口，
       // 并发写者（[兜底]/[蜂群告警] 追加 failedChildren/failures）的字段不能被整体覆写吞掉。
@@ -918,7 +943,7 @@ export class TaskEngine {
           transcriptBytes: Buffer.byteLength(JSON.stringify(ctx.inputPacket)) + Buffer.byteLength(result.summary),
           inputTokens: result._usage?.inputTokens,
           outputTokens: result._usage?.outputTokens,
-          contextWindow: resolveContextWindow(executorProfile),
+          contextWindow: resolveContextWindow(executorProfile, effectiveModelContextWindow),
           toolOutputBytes:Buffer.byteLength(JSON.stringify(result.artifacts)),
           durationMs:Date.now()-runStartedAt,
           handoff,
@@ -1611,7 +1636,10 @@ export class TaskEngine {
     executorProfile?: { id: string } | null;
     approvalFailure: { current: unknown };  // RunFailure|null 的 holder（结构松声明防循环类型依赖）
   }): ((request: { action: string; path?: string; command?: string }) => Promise<{ allowed: boolean; message?: string }>) | undefined {
-    if (!(env.permissionPolicy || env.effectiveStrategy)) return undefined;
+    // P0 安全默认值反转（2026-08-25）：无策略且无模式不再返回 undefined（那会让 executeTool
+    // 守卫块整体短路、全部工具零审批执行）。改挂基线守卫：读/worktree 内写/联网/普通命令放行，
+    // 八类高危直接拒绝并提示补配置。只拒不排队——基线场景没有策略 id 建不了审批单，阻塞等审批会拖死任务。
+    if (!(env.permissionPolicy || env.effectiveStrategy)) return createBaselinePermissionGuard();
     return async (request) => {
       // 只读（plan/deny）：拒绝一切变更动作，但放行读取（复审 F1：计划模式=项目内只读——
       // read_file/list_files/联网查资料是制定计划的前提，全拒等于把计划模式做成瞎子）。
@@ -1637,9 +1665,42 @@ export class TaskEngine {
       if (env.effectiveStrategy === 'ask-always' && decision.decision === 'allow') {
         decision = { decision: 'approval-required', reason: '消息设置为每步审批' };
       }
-      // 自动执行：待审批结论降级为放行（显式 deny 规则不受影响）
+      // 自动执行：待审批结论降级为放行（显式 deny 规则不受影响）。
+      // P1（2026-08-25）：完全访问档不再对高危动作无条件裸放——八类高危先过 AI 审查员
+      // 语义判定（凭据读变体/递归删除等正则漏网语义兜底）：unsafe 拒绝；safe/uncertain
+      // 仍放行（保留自动执行档语义）；AI 异常也放行但由外层 permission_audit 留档。
+      // 全程不进审批队列、不阻塞任务。普通 run-command 不走此门（零额外延迟）。
       if (env.effectiveStrategy === 'no-approval' && decision.decision === 'approval-required') {
-        return { allowed: true };
+        if (!BASELINE_DENIED_ACTIONS.has(request.action)) return { allowed: true };
+        try {
+          const { evaluateWithAi, recordRejectionForLearning } = await import('../domain/ai-approval');
+          const ai = await evaluateWithAi(this.db, {
+            action: request.action, command: request.command, path: request.path,
+            workingDir: env.workingDir, employeeRole: env.agent.role, taskTitle: env.task.title,
+            companyId: env.workbench.id, projectId: env.project.id,
+            policyId: env.permissionPolicy?.id ?? '',
+            // 硬高危类在此门不做短路（短路=裸放）：让 AI 按 SAFETY_SPEC 实判
+            semanticHighRiskReview: true,
+          });
+          if (ai.verdict === 'unsafe') {
+            // 审查修复 P2：与 ask-by-rule 分支对齐——拒绝留痕供学习（policyId 可能为空：守卫
+            // 存在但策略对象是 strategy 兜底构造时无 id，跳过留痕不影响判定）
+            try {
+              if (env.permissionPolicy?.id) {
+                recordRejectionForLearning(this.db, { policyId: env.permissionPolicy.id, action: request.action, command: request.command, reason: ai.reason });
+              }
+            } catch { /* 留痕失败不影响判定 */ }
+            realtime.publish(makeLifecycleEvent('approval.ai-denied', {
+              approvalId: null, taskId: env.task.id, action: request.action,
+              command: request.command?.slice(0, 100), reason: ai.reason,
+            }, { projectId: env.project.id, taskId: env.task.id }));
+            return { allowed: false, message: `自动执行档被安全审查员拦截：${ai.reason}` };
+          }
+          return { allowed: true };
+        } catch {
+          // AI 判定异常：用户显式选了自动执行档，放行不阻塞；外层包装会落 permission_audit
+          return { allowed: true };
+        }
       }
       if (!env.permissionPolicy) return { allowed: true };
       if (decision.decision === 'allow') return { allowed: true };
@@ -1650,6 +1711,30 @@ export class TaskEngine {
         // H9b 自动编辑·前半（用户三次定稿）：文件编辑自动放——worktree 内编辑直放不走审批
         // （git 可逆兜底 + isWithinWorkspace 硬围栏；越界写另有 OS 围栏拒）。只有命令走恒审。
         if (env.mode === 'auto-edit' && ['write-file', 'edit-file', 'read-file'].includes(request.action)) {
+          return { allowed: true };
+        }
+        // 审查修复 P1-1（2026-08-25）：对外通知不进人工审批队列——接收方自己的守卫才是
+        // 执行门（通知只影响上下文，真动手仍要过接收方权限链），且 notify_colleague 是
+        // 高频轻量动作，弹卡会把任务拖进 600s 等待后 approval_timeout。高危八类里唯一
+        // 非破坏性动作：deny 档与基线守卫仍硬拦；ask-always 尊重「事事确认」契约不变；
+        // 其余档按消息内容过 AI 一票否决——unsafe 拒，其余放行，不阻塞。
+        if (request.action === 'external-message' && env.effectiveStrategy !== 'ask-always') {
+          try {
+            const { evaluateWithAi, recordRejectionForLearning } = await import('../domain/ai-approval');
+            const ai = await evaluateWithAi(this.db, {
+              action: request.action, command: request.command, path: request.path,
+              workingDir: env.workingDir, employeeRole: env.agent.role, taskTitle: env.task.title,
+              companyId: env.workbench.id, projectId: env.project.id, policyId: env.permissionPolicy?.id ?? '',
+            });
+            if (ai.verdict === 'unsafe') {
+              try { env.permissionPolicy?.id && recordRejectionForLearning(this.db, { policyId: env.permissionPolicy.id, action: request.action, command: request.command, reason: ai.reason }); } catch { /* 留痕失败不影响判定 */ }
+              realtime.publish(makeLifecycleEvent('approval.ai-denied', {
+                approvalId: null, taskId: env.task.id, action: request.action,
+                command: request.command?.slice(0, 100), reason: ai.reason,
+              }, { projectId: env.project.id, taskId: env.task.id }));
+              return { allowed: false, message: `AI 审批拒绝：${ai.reason}` };
+            }
+          } catch { /* AI 异常放行：通知不阻塞 */ }
           return { allowed: true };
         }
         const SECURITY_COMMAND_ACTIONS = new Set(['run-command', 'git-push', 'system-install', 'deploy', 'credential-access', 'delete-outside-project']);

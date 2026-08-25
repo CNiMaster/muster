@@ -11,11 +11,13 @@
  * 安装走平台 marketplace API，对齐"平台管确定性"）；建议经 B1 的 [子任务完成] 回写源任务。
  */
 import type { DB } from '../db/client';
+import path from 'node:path';
 import type { Task } from './task';
 import { createTask } from './task';
 import { appendTaskEvent } from './task-event';
 import { listTools, type ToolRegistryEntry } from './tool-registry';
 import { getAllCapabilityQuality } from './capability-quality';
+import { listSkillLibrary } from './user-skills';
 import type { CapabilityGap } from './tool-recommendation';
 import { ensureCapabilityManagerAgentId } from './system-agents';
 import { ensurePrimaryThread } from './thread';
@@ -247,6 +249,16 @@ function collectFrequentToolIds(db: DB, task: Task): string[] {
           reason: gap.reason,
           sourceTaskId: task.id,
           sourceAssigneeAgentId: task.assigneeAgentId,
+          // R6b：[装备请示] 先查技能管线候选——synthesized 技能清单随任务包带给能力管理岗
+          skillCandidates: (() => {
+            try {
+              return listSkillLibrary(path.join(process.cwd(), 'skills'))
+                .filter((s) => s.storage === 'synthesized')
+                .map((s) => ({ id: s.skillId, description: s.description }));
+            } catch {
+              return [];
+            }
+          })(),
         },
       },
       priority: 4,

@@ -35,7 +35,14 @@ export interface ExecutorProfile {
 
 export const DEFAULT_CONTEXT_WINDOW_TOKENS = 128_000;
 
-export function resolveContextWindow(profile?: ExecutorProfile | null): number {
+/**
+ * 解析生效上下文窗口（R5：行级优先、档案级兜底、缺省 128k）。
+ * modelContextWindowTokens=当前生效模型的行级窗口（config.models 对应项；无行级传 undefined）。
+ */
+export function resolveContextWindow(profile?: ExecutorProfile | null, modelContextWindowTokens?: number | null): number {
+  if (modelContextWindowTokens && modelContextWindowTokens > 0) {
+    return modelContextWindowTokens;
+  }
   if (profile?.contextWindowTokens && profile.contextWindowTokens > 0) {
     return profile.contextWindowTokens;
   }

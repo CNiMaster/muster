@@ -10,6 +10,7 @@ import { Input, Select } from '../components/Form';
 import { Link, useSearchParams } from 'react-router-dom';
 import { SettingsRow, SettingsSectionLabel, SettingsFold, Toggle } from '../components/SettingsRow';
 import { ToolRegistryPanel } from '../components/settings/ToolRegistryPanel';
+import { SkillLibraryPanel } from '../components/settings/SkillLibraryPanel';
 import { CredentialStorePanel } from '../components/settings/CredentialStorePanel';
 import { BackupCenterPanel } from '../components/settings/BackupCenterPanel';
 import { SpecialistReviewPanel } from '../components/settings/SpecialistReviewPanel';
@@ -83,6 +84,7 @@ export function SettingsPage(): React.ReactElement {
   const [swarmBudgetUSD, setSwarmBudgetUSD] = useState(5);
   const [breadthDefaultTier, setBreadthDefaultTier] = useState<'light' | 'standard' | 'heavy'>('standard');
   const [waitingAutoContinueMin, setWaitingAutoContinueMin] = useState(0);
+  const [archiveTaskAfterDays, setArchiveTaskAfterDays] = useState(30);
   const [preventSleep, setPreventSleep] = useState<'active' | 'always' | 'off'>('active');
   const [interruptMode, setInterruptMode] = useState<'queue' | 'interrupt'>('queue');
   const [stopGraceSec, setStopGraceSec] = useState(60);
@@ -128,6 +130,7 @@ export function SettingsPage(): React.ReactElement {
     setSwarmBudgetUSD(settings.swarmBudgetUSD ?? 5);
     setBreadthDefaultTier(settings.breadthDefaultTier ?? 'standard');
     setWaitingAutoContinueMin(settings.waitingAutoContinueMinutes ?? 0);
+    setArchiveTaskAfterDays(settings.archiveTaskAfterDays ?? 30);
     setPreventSleep(settings.preventSleep ?? 'active');
     setInterruptMode(settings.interruptMode ?? 'queue');
     setStopGraceSec(Math.round((settings.stopGraceMs ?? 60000) / 1000));
@@ -146,7 +149,7 @@ export function SettingsPage(): React.ReactElement {
     }
     saveSettings.mutate(
       // timeoutMs/maxToolCalls 回传服务端加载值（schema 必填、UI 已由执行器档案接管）
-      { claudeBin, model, skipPermissions, timeoutMs: settings?.timeoutMs ?? 600000, maxToolCalls: settings?.maxToolCalls ?? 30, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierHighId: tierHigh, executorTierStandardId: tierStandard, executorTierLowId: tierLow, imageGenModel, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs: egressTimeoutSec * 1000, theme, fontFamily, fontSize, locale, codeTheme, autonomousReflectionEnabled, autonomousReflectionBudgetUSD, swarmMaxDepth, swarmMaxWidth, swarmMaxNodes, swarmBudgetUSD, breadthDefaultTier, codeFontSize, wrapCode, waitingAutoContinueMinutes: waitingAutoContinueMin, preventSleep, interruptMode, stopGraceMs: stopGraceSec * 1000, securityMode, messageShowThinking: msgShowThinking, messageShowTodo: msgShowTodo, messageGroupExplore: msgGroupExplore, messageGroupTerminal: msgGroupTerminal, messageGroupChanges: msgGroupChanges },
+      { claudeBin, model, skipPermissions, timeoutMs: settings?.timeoutMs ?? 600000, maxToolCalls: settings?.maxToolCalls ?? 30, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierHighId: tierHigh, executorTierStandardId: tierStandard, executorTierLowId: tierLow, imageGenModel, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs: egressTimeoutSec * 1000, theme, fontFamily, fontSize, locale, codeTheme, autonomousReflectionEnabled, autonomousReflectionBudgetUSD, swarmMaxDepth, swarmMaxWidth, swarmMaxNodes, swarmBudgetUSD, breadthDefaultTier, codeFontSize, wrapCode, waitingAutoContinueMinutes: waitingAutoContinueMin, archiveTaskAfterDays, preventSleep, interruptMode, stopGraceMs: stopGraceSec * 1000, securityMode, messageShowThinking: msgShowThinking, messageShowTodo: msgShowTodo, messageGroupExplore: msgGroupExplore, messageGroupTerminal: msgGroupTerminal, messageGroupChanges: msgGroupChanges },
       {
         onSuccess: () => toast('success', '设置已保存并实时生效'),
         onError: (error: any) => toast('error', error.message ?? '保存设置失败'),
@@ -296,6 +299,14 @@ export function SettingsPage(): React.ReactElement {
                     <option value="10">10 分钟</option>
                     <option value="30">30 分钟</option>
                     <option value="60">1 小时</option>
+                  </Select>
+                </SettingsRow>
+                <SettingsRow title="任务自动归档" hint="已完成的任务放满 N 天后自动收进归档区（左栏不再显示，归档页可还原）">
+                  <Select value={String(archiveTaskAfterDays)} onChange={(e) => setArchiveTaskAfterDays(Number(e.target.value))}>
+                    <option value="0">不自动归档</option>
+                    <option value="7">7 天</option>
+                    <option value="30">30 天（推荐）</option>
+                    <option value="90">90 天</option>
                   </Select>
                 </SettingsRow>
                 <SettingsRow title="停止等待时间" hint="点「停止」后给当前动作留出安全收尾的时间，到点强制停并保留进度">
@@ -508,7 +519,10 @@ export function SettingsPage(): React.ReactElement {
           )}
 
           {activeTab === 'tools' && (
-            <ToolRegistryPanel />
+            <>
+              <ToolRegistryPanel />
+              <SkillLibraryPanel />
+            </>
           )}
 
           {activeTab === 'specialists' && (

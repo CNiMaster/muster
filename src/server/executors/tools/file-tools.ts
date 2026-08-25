@@ -135,7 +135,7 @@ export const FILE_TOOLS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'write_file',
-      description: '写入文件（覆盖已有或新建）。path 相对于工作目录。',
+      description: '写入文件（覆盖已有或新建）。path 相对于工作目录。覆盖已存在文件前必须先 read_file（未读过或读后被外部修改会被拒绝）。',
       parameters: {
         type: 'object',
         properties: {
@@ -150,7 +150,7 @@ export const FILE_TOOLS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'edit_file',
-      description: '精确替换文件中的文本片段。old_text 必须唯一匹配。',
+      description: '精确替换文件中的文本片段。old_text 必须唯一匹配。编辑前必须先 read_file 该文件（未读过或读后被外部修改会被拒绝）。',
       parameters: {
         type: 'object',
         properties: {

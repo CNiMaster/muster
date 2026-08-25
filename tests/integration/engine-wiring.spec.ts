@@ -597,28 +597,29 @@ describe('engine → worktree → publish wiring', () => {
     const thread = ensurePrimaryThread(db, project.id, r.agents.writer.id);
     createTask(db, { projectId: project.id, assigneeAgentId: r.agents.writer.id, title: 't' });
 
-    const fake = new FakeExecutor().script([{ throw: 'claude timed out after 600s' }]);
+    // A2 后 timeout 属网络类（首次即 30s 退避）——本用例测通用 transient 机制，改用非网络瞬时错
+    const fake = new FakeExecutor().script([{ throw: 'executor session crashed: process exit' }]);
     const engine = new TaskEngine(db, fake);
-    // 第一次 timeout：自动重试，task 回 queued
+    // 第一次崩溃：自动重试，task 回 queued（首次立即）
     await engine.pumpThread(thread.id);
     let t = listTasks(db, project.id)[0];
     expect(t.state).toBe('queued');
     expect(t.autoRetryCount).toBe(1);
     // Review 修复：自动重试中的失败不触发熔断回滚（项目保持 active）
     expect(db.prepare('SELECT state FROM project WHERE id=?').get(project.id)).toMatchObject({ state: 'active' });
-    // 第二次 timeout：自动重试（延迟 30 秒后领取）
+    // 第二次崩溃：自动重试（延迟 30 秒后领取）
     await engine.pumpThread(thread.id);
     t = getTask(db, t.id);
     expect(t.state).toBe('queued');
     expect(t.autoRetryCount).toBe(2);
     expect(t.retryAfterAt).not.toBeNull();
     expect(db.prepare('SELECT state FROM project WHERE id=?').get(project.id)).toMatchObject({ state: 'active' });
-    // 延迟已过，第三次 timeout：超过自动重试上限 → failed
+    // 延迟已过，第三次崩溃：超过自动重试上限 → failed
     db.prepare('UPDATE task SET retry_after_at=? WHERE id=?').run(new Date(Date.now() - 1000).toISOString(), t.id);
     await engine.pumpThread(thread.id);
     t = getTask(db, t.id);
     expect(t.state).toBe('failed');
-    expect(t.summary).toMatch(/timed out|超时/);
+    expect(t.summary).toMatch(/crashed|process exit/);
     expect(getThread(db, thread.id).state).toBe('failed');
   });
 

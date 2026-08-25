@@ -25,7 +25,9 @@ describe('project task-first workbench navigation', () => {
     qc.setQueryData(['systemSettings'], { uiMode: 'pro' });
     // 2026-08-24 结构：任务挂在项目行下——项目行来自 useProjects、行内任务来自 useProjectTasks，均需预置
     qc.setQueryData(['projects'], [{ id: 'pr_1', name: '示例项目', companyId: 'co_1', firstAgentId: 'ag_1', createdAt: '', updatedAt: '' }]);
-    qc.setQueryData(['project-tasks', 'pr_1'], [pt2]);
+    // R2b：useProjectTasks queryKey 含 includeArchived 第三元（默认 false；项目行「已归档」计数走 true 档）
+    qc.setQueryData(['project-tasks', 'pr_1', false], [pt2]);
+    qc.setQueryData(['project-tasks', 'pr_1', true], [pt2]);
     const pt = {
       id: 'pt_1', projectId: 'pr_1', seq: 3, title: '实现审批恢复', brief: '', state: 'active',
       pinned: false, unread: true, launchState: 'confirmed', launchBrief: {} as never,

@@ -22,6 +22,7 @@ import { callLlm } from './llm-call';
 import { getTask, type Task } from './task';
 import { getAgent } from './agent';
 import { createMemoryCandidate, searchMemory, expandMatchTokens, applySupersede, approveMemoryCandidate } from './memory';
+import { maybeSynthesizeSkillCandidates } from './skill-synthesis';
 import { ensurePersonaArchiveProfile } from './agent-profile';
 import { getPersona } from './persona-library';
 import { evolveBlueprint } from './blueprint';
@@ -267,6 +268,14 @@ async function drainReflectionQueueInner(
   // WP3 系统自建专家：反思排水的同一 tick 顺带检查专家沉淀信号（≤2 张候选；
   // 全程 try/catch 不抛——沉淀是增值不是主流程；失败下次 tick 再来）。
   await maybeSynthesizeExpertCandidates(db);
+  // R6b Skill 管线：同一 tick 顺带检查技能沉淀信号（三信号；≤2 候选；Jaccard 去重；
+  // LLM 起草失败降级模板——与专家合成同节奏同纪律）。
+  try {
+    const created = await maybeSynthesizeSkillCandidates(db);
+    if (created.length > 0) log.info('skill synthesis created', { skills: created });
+  } catch (error) {
+    log.warn('skill synthesis tick failed', { error: error instanceof Error ? error.message : String(error) });
+  }
   // 经验库（X2）：跨项目晋升——project LESSON 在 ≥2 项目独立出现且高重叠 → workspace 晋升候选
   //（pending 走既有审核，不自动入库——守 postmortem 自辩悖论边界：系统只建议，人拍板）。
   try {

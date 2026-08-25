@@ -13,6 +13,8 @@ import {
   probeClassificationLabel,
   EXECUTOR_CAPABILITIES,
   suggestDefaultCapabilities,
+  profileModels,
+  profilePrimaryModel,
   type CapabilityProbeResult,
   type ExecutorDetection,
   type ExecutorManifest,
@@ -52,7 +54,12 @@ export function ExecutorCenterPage(): React.ReactElement {
   const [apiKind, setApiKind] = useState<'openai-compatible-api' | 'gemini-api'>('openai-compatible-api');
   const [apiName, setApiName] = useState('');
   const [apiBaseURL, setApiBaseURL] = useState('https://api.openai.com/v1');
-  const [apiModel, setApiModel] = useState('gpt-4o');
+  /** R5 模型清单（一档多模型）：首行=主模型；行级上下文窗口可选（留空继承档案级）。 */
+  const [apiModels, setApiModels] = useState<Array<{ model: string; contextWindowTokens?: number }>>([{ model: 'gpt-4o' }]);
+  /** R5 档案级上下文窗口（所有模型兜底；历史上从未有 UI）。空=默认 128k。 */
+  const [apiContextWindow, setApiContextWindow] = useState<number | ''>('');
+  /** 主模型（首行）——能力建议/探测等单模型消费方用。 */
+  const apiModel = apiModels[0]?.model ?? '';
   const [apiKeyEnv, setApiKeyEnv] = useState('OPENAI_API_KEY');
   /** 用户直接粘贴的 Key（muster 存本机数据目录 env 文件，不上传）；空=沿用已有环境变量。 */
   const [apiKeyValue, setApiKeyValue] = useState('');
@@ -72,6 +79,8 @@ export function ExecutorCenterPage(): React.ReactElement {
   const [apiMaxConcurrency, setApiMaxConcurrency] = useState(4);
   const [apiConcurrencyLocked, setApiConcurrencyLocked] = useState(false);
   const [apiThinkingDepth, setApiThinkingDepth] = useState<'off' | 'low' | 'medium' | 'high'>('off');
+  /** R2a API 格式：openai-compatible 的请求形状（Chat Completions=默认 / Responses=OpenAI Responses API）。 */
+  const [apiFormat, setApiFormat] = useState<'chat-completions' | 'responses'>('chat-completions');
   const [apiCapabilities, setApiCapabilities] = useState<string[]>([]);
   useEffect(() => {
     setApiCapabilities((old) => {
@@ -236,10 +245,10 @@ export function ExecutorCenterPage(): React.ReactElement {
     onError: (e: unknown) => toast('error', (e as Error).message ?? '创建失败'),
   });
   const testConnection = useMutation({
-    mutationFn: ({ id, kind }: { id: string; kind: 'connectivity' | 'model' | 'capability' }) =>
-      api.post<ExecutorProbe>(`/api/executors/profiles/${id}/probes`, { force: true, kind }),
+    mutationFn: ({ id, kind, model }: { id: string; kind: 'connectivity' | 'model' | 'capability'; model?: string }) =>
+      api.post<ExecutorProbe>(`/api/executors/profiles/${id}/probes`, { force: true, kind, ...(model ? { model } : {}) }),
     onSuccess: (probe, input) => {
-      setProbeIds((old) => ({ ...old, [`${input.id}:${input.kind}`]: probe.id }));
+      setProbeIds((old) => ({ ...old, [`${input.id}:${input.kind}${input.model ? `:${input.model}` : ''}`]: probe.id }));
       if (input.kind === 'connectivity') {
         if (probe.status === 'connected') toast('success', '测试通过！这个接口可以用了');
         else if (probe.status === 'failed') toast('error', '测试未通过——多半是 Key 没设好，照上方「把 Key 给 muster」三步再来一次');
@@ -254,11 +263,15 @@ export function ExecutorCenterPage(): React.ReactElement {
         await api.post('/api/executors/credentials/save', { name: apiKeyEnv.trim(), value: apiKeyValue.trim() });
       }
       const credentialRef: CredentialReference = { kind: 'env', reference: apiKeyEnv.trim() };
+      // R5：models 全清单 + model 双写主模型（旧消费方兼容）；档案级窗口随行提交
+      const models = apiModels.map((m) => ({ model: m.model.trim(), ...(m.contextWindowTokens && m.contextWindowTokens > 0 ? { contextWindowTokens: m.contextWindowTokens } : {}) })).filter((m) => m.model);
+      const primaryModel = models[0]?.model ?? '';
       const config: Record<string, unknown> = apiKind === 'openai-compatible-api'
-        ? { provider: 'openai', baseURL: apiBaseURL.trim(), model: apiModel.trim() }
-        : { provider: 'gemini', model: apiModel.trim() };
+        ? { provider: 'openai', baseURL: apiBaseURL.trim(), model: primaryModel, models }
+        : { provider: 'gemini', model: primaryModel, models };
       config.thinkingDepth = apiThinkingDepth;
       config.contextCache = apiContextCache;
+      if (apiKind === 'openai-compatible-api') config.apiFormat = apiFormat;
       if (apiCapabilities.length > 0) config.capabilities = apiCapabilities;
       return api.post<ExecutorProfile>('/api/executors/profiles', {
         name: apiName.trim(),
@@ -268,6 +281,7 @@ export function ExecutorCenterPage(): React.ReactElement {
         concurrencyMode: apiConcurrency,
         maxConcurrency: apiMaxConcurrency,
         concurrencyLocked: apiConcurrencyLocked,
+        ...(apiContextWindow !== '' ? { contextWindowTokens: apiContextWindow } : {}),
       });
     },
     onSuccess: (profile) => {
@@ -285,11 +299,15 @@ export function ExecutorCenterPage(): React.ReactElement {
   const updateApi = useMutation({
     mutationFn: (profileId: string) => {
       const credentialRef: CredentialReference = { kind: 'env', reference: apiKeyEnv.trim() };
+      // R5：models 全清单 + model 双写主模型；档案级窗口随行提交
+      const models = apiModels.map((m) => ({ model: m.model.trim(), ...(m.contextWindowTokens && m.contextWindowTokens > 0 ? { contextWindowTokens: m.contextWindowTokens } : {}) })).filter((m) => m.model);
+      const primaryModel = models[0]?.model ?? '';
       const config: Record<string, unknown> = apiKind === 'openai-compatible-api'
-        ? { provider: 'openai', baseURL: apiBaseURL.trim(), model: apiModel.trim() }
-        : { provider: 'gemini', model: apiModel.trim() };
+        ? { provider: 'openai', baseURL: apiBaseURL.trim(), model: primaryModel, models }
+        : { provider: 'gemini', model: primaryModel, models };
       config.thinkingDepth = apiThinkingDepth;
       config.contextCache = apiContextCache;
+      if (apiKind === 'openai-compatible-api') config.apiFormat = apiFormat;
       if (apiCapabilities.length > 0) config.capabilities = apiCapabilities;
       return api.put<ExecutorProfile>(`/api/executors/profiles/${profileId}`, {
         name: apiName.trim(),
@@ -298,6 +316,7 @@ export function ExecutorCenterPage(): React.ReactElement {
         concurrencyMode: apiConcurrency,
         maxConcurrency: apiMaxConcurrency,
         concurrencyLocked: apiConcurrencyLocked,
+        ...(apiContextWindow !== '' ? { contextWindowTokens: apiContextWindow } : {}),
       });
     },
     onSuccess: () => {
@@ -444,8 +463,9 @@ export function ExecutorCenterPage(): React.ReactElement {
           <Select value={apiKind} onChange={(e) => {
             const v = (e.target as HTMLSelectElement).value as typeof apiKind;
             setApiKind(v);
-            if (v === 'openai-compatible-api') { setApiBaseURL('https://api.openai.com/v1'); setApiModel('gpt-4o'); setApiKeyEnv('OPENAI_API_KEY'); }
-            else { setApiModel('gemini-2.0-flash'); setApiKeyEnv('GEMINI_API_KEY'); }
+            if (v === 'openai-compatible-api') { setApiBaseURL('https://api.openai.com/v1'); setApiModels([{ model: 'gpt-4o' }]); setApiKeyEnv('OPENAI_API_KEY'); }
+            else { setApiModels([{ model: 'gemini-2.0-flash' }]); setApiKeyEnv('GEMINI_API_KEY'); }
+            setApiFormat('chat-completions');
           }}>
             <option value="openai-compatible-api">OpenAI 兼容</option>
             <option value="gemini-api">Gemini</option>
@@ -459,8 +479,32 @@ export function ExecutorCenterPage(): React.ReactElement {
             <Input value={apiBaseURL} onChange={(e) => setApiBaseURL(e.target.value)} placeholder="https://api.openai.com/v1" />
           </SettingsRow>
         )}
-        <SettingsRow badge="required" title="模型名" hint="填该服务的模型标识，如 gpt-4o / deepseek-chat / gemini-2.0-flash">
-          <Input value={apiModel} list="executor-model-suggestions" onChange={(e) => setApiModel(e.target.value)} />
+        <SettingsRow badge="required" title="模型清单" hint="第一行是主模型；可加多个（工作台下拉按模型逐个可选）。每行窗口留空=继承档案级">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, width: '100%' }}>
+            {apiModels.map((row, idx) => (
+              <div key={idx} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <Input
+                  value={row.model}
+                  list="executor-model-suggestions"
+                  placeholder={idx === 0 ? '主模型，如 gpt-4o / deepseek-chat / gemini-2.0-flash' : '再加一个模型'}
+                  onChange={(e) => setApiModels((old) => old.map((r, i) => (i === idx ? { ...r, model: e.target.value } : r)))}
+                />
+                <Input
+                  type="number"
+                  min={1000}
+                  value={row.contextWindowTokens ?? ''}
+                  placeholder="窗口(可选)"
+                  title="该模型的上下文窗口（token）；留空继承档案级"
+                  onChange={(e) => setApiModels((old) => old.map((r, i) => (i === idx ? { ...r, contextWindowTokens: e.target.value === '' ? undefined : Number(e.target.value) } : r)))}
+                  style={{ width: 140, flex: '0 0 140px' }}
+                />
+                {apiModels.length > 1 && (
+                  <Button variant="ghost" onClick={() => setApiModels((old) => old.filter((_, i) => i !== idx))} title="移除该模型">✕</Button>
+                )}
+              </div>
+            ))}
+            <Button variant="ghost" onClick={() => setApiModels((old) => [...old, { model: '' }])}>＋ 添加模型</Button>
+          </div>
         </SettingsRow>
         <datalist id="executor-model-suggestions">
           {(apiKind === 'openai-compatible-api'
@@ -516,6 +560,23 @@ export function ExecutorCenterPage(): React.ReactElement {
               <option value="unlocked">不锁定（推荐）</option>
               <option value="locked">锁定</option>
             </Select>
+          </SettingsRow>
+          {apiKind === 'openai-compatible-api' && (
+            <SettingsRow title="API 格式" hint="服务商两种接口都支持时保持默认；只有 OpenAI 官方新接口（/responses）才选 Responses">
+              <Select value={apiFormat} onChange={(e) => setApiFormat((e.target as HTMLSelectElement).value as typeof apiFormat)}>
+                <option value="chat-completions">Chat Completions（推荐）</option>
+                <option value="responses">Responses</option>
+              </Select>
+            </SettingsRow>
+          )}
+          <SettingsRow title="档案级上下文窗口" hint="该档案所有模型的兜底窗口（token）；单模型不同窗口用模型清单行级窗口覆盖。留空=默认 128k">
+            <Input
+              type="number"
+              min={1000}
+              value={apiContextWindow}
+              placeholder="默认 128000"
+              onChange={(e) => setApiContextWindow(e.target.value === '' ? '' : Number(e.target.value))}
+            />
           </SettingsRow>
           <SettingsRow title="思考深度" hint="仅支持的模型生效（o 系列/thinking 模型），其他模型自动忽略">
             <Select value={apiThinkingDepth} onChange={(e) => setApiThinkingDepth((e.target as HTMLSelectElement).value as typeof apiThinkingDepth)}>
@@ -580,7 +641,8 @@ export function ExecutorCenterPage(): React.ReactElement {
               );
             }
             const profile = (entry as any).profile as ExecutorProfile;
-            const hasModel = typeof profile.config.model === 'string' && Boolean(String(profile.config.model).trim());
+            const profileModelList = profileModels(profile.config);
+            const hasModel = profileModelList.length > 0;
             const manifestKind = manifests.data?.find((m) => m.id === profile.manifestId)?.kind;
             const isApi = manifestKind === 'api';
             return (
@@ -596,7 +658,29 @@ export function ExecutorCenterPage(): React.ReactElement {
                         ⚠️ 异常（已自动切备选）
                       </span>
                     )}
-                    <div className="muted">{String(profile.config.binaryPath ?? profile.manifestId)}</div>
+                      <div className="muted">{String(profile.config.binaryPath ?? profile.manifestId)}</div>
+                      {isApi && profileModelList.length > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                          {profileModelList.map((m) => (
+                            <span
+                              key={m.model}
+                              title={m.contextWindowTokens ? `上下文窗口 ${m.contextWindowTokens.toLocaleString()} token` : '窗口继承档案级/默认'}
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '1px 6px', borderRadius: 999, background: 'var(--bg-soft)', color: 'var(--fg-muted)' }}
+                            >
+                              {m.model}{m.contextWindowTokens ? ` · ${(m.contextWindowTokens / 1000).toFixed(0)}k` : ''}
+                              <button
+                                type="button"
+                                className="mu-btn-plain-btn" // 无此样式类也无碍——原生 button 样式兜底
+                                title={`单独测试 ${m.model}`}
+                                style={{ border: 'none', background: 'none', padding: 0, cursor: 'pointer', color: 'var(--accent)', fontSize: 11 }}
+                                onClick={() => testConnection.mutate({ id: profile.id, kind: 'model', model: m.model })}
+                              >
+                                测
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
                   </div>
                   <Button size="sm" variant="ghost" onClick={() => testConnection.mutate({ id: profile.id, kind: 'connectivity' })} loading={testConnection.isPending}>测试</Button>
                   {hasModel && <Button size="sm" variant="ghost" onClick={() => testConnection.mutate({ id: profile.id, kind: 'model' })} loading={testConnection.isPending}>测模型</Button>}
@@ -607,7 +691,11 @@ export function ExecutorCenterPage(): React.ReactElement {
                       setApiKind(profile.manifestId as 'openai-compatible-api' | 'gemini-api');
                       setApiName(profile.name);
                       setApiBaseURL(String(profile.config.baseURL ?? 'https://api.openai.com/v1'));
-                      setApiModel(String(profile.config.model ?? ''));
+                      setApiModels(() => {
+                        const list = profileModels(profile.config).map((m) => ({ model: m.model, ...(m.contextWindowTokens ? { contextWindowTokens: m.contextWindowTokens } : {}) }));
+                        return list.length > 0 ? list : [{ model: '' }];
+                      });
+                      setApiContextWindow(profile.contextWindowTokens ?? '');
                       setApiKeyEnv(String(profile.credentialRef?.reference ?? ''));
                       setApiConcurrency(profile.concurrencyMode ?? 'parallel');
                       setApiMaxConcurrency(profile.maxConcurrency ?? 4);
@@ -622,6 +710,7 @@ export function ExecutorCenterPage(): React.ReactElement {
                           ? (profile.config.contextCache as 'auto' | 'on' | 'off')
                           : 'auto',
                       );
+                      setApiFormat(profile.config.apiFormat === 'responses' ? 'responses' : 'chat-completions');
                       setApiCapabilities(Array.isArray(profile.config.capabilities) ? profile.config.capabilities.filter((c): c is string => typeof c === 'string') : []);
                       window.scrollTo({ top: 0, behavior: 'smooth' });
                     }}>编辑</Button>

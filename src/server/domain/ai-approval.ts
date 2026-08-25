@@ -39,6 +39,13 @@ export interface AiApprovalRequest {
   companyId?: string;
   projectId?: string;
   policyId?: string;
+  /**
+   * 完全访问档（no-approval）专用：允许对硬高危动作做语义复审而非直接短路。
+   * 仅 no-approval 守卫门置 true——那里没有人工审批队列可转，硬短路等于无条件放行；
+   * 打开后 AI 按 SAFETY_SPEC 判定（credential/system/deploy 类 → unsafe 拒绝），
+   * 其余调用方（审批辅助）保持硬短路不变：那些场景 unsafe 之外还有人工兜底。
+   */
+  semanticHighRiskReview?: boolean;
 }
 
 export interface AiLevelAssessment {
@@ -149,8 +156,9 @@ function queryRejectionHistory(db: DB, req: AiApprovalRequest): string[] {
  * 用 AI 判断一个待审批操作的安全性（四级递进）。
  */
 export async function evaluateWithAi(db: DB, req: AiApprovalRequest): Promise<AiApprovalResult> {
-  // 硬高危：AI 不介入
-  if (HARD_HIGH_RISK_ACTIONS.has(req.action)) {
+  // 硬高危：AI 不介入，转人工。例外：no-approval 档的语义复审（无人工队列可转，
+  // 短路=裸放；此时让 AI 按 SAFETY_SPEC 判，credential/system/deploy 类会被判 unsafe）。
+  if (HARD_HIGH_RISK_ACTIONS.has(req.action) && !req.semanticHighRiskReview) {
     return {
       verdict: 'uncertain', reason: '硬高危操作，转人工审批', confidence: 'low',
       safetyCategory: 'unknown', highestSafeLevel: 'execute_once',

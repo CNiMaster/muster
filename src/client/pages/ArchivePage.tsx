@@ -247,7 +247,8 @@ function ArchivedTasksSection(): React.ReactElement {
 }
 
 function ArchivedProjectTasks({ project }: { project: Project }): React.ReactElement {
-  const { data: tasks } = useProjectTasks(project.id);
+  // R2b：列表默认排除 archived，归档区显式取全量再客户端筛
+  const { data: tasks } = useProjectTasks(project.id, { includeArchived: true });
   const restore = useRestoreProjectTask();
   const del = useDeleteProjectTaskRecord();
   const archivedTasks = (tasks ?? []).filter((t) => t.state === 'archived');

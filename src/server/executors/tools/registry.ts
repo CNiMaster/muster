@@ -24,7 +24,7 @@ import { guardedSpawn } from '../spawn-shell';
 import { classifyCommand } from '../cli-permission-bridge';
 import { agentRunResultSchema } from '../result-schema';
 import { submitBusinessReview, type BusinessReviewKind } from '../../domain/business-review';
-import { createTask, addDependency, getTask, cancelTask, areDependenciesMet, resumeDependents } from '../../domain/task';
+import { createTask, addDependency, getTask, cancelTask, areDependenciesMet, resumeDependents, sanitizeChildInputProtocol } from '../../domain/task';
 import { checkSwarmLimits } from '../../domain/swarm';
 import { isDispatchLoop } from '../../domain/speech-queue';
 import { addTaskMessage } from '../../domain/task-message';
@@ -57,7 +57,7 @@ export type PermissionGuard = (request: {
 }) => { allowed: boolean; message?: string } | Promise<{ allowed: boolean; message?: string }>;
 
 /** 权限动作枚举：决定 handler 走不走 permissionGuard。 */
-export type PermissionAction = 'read-file' | 'write-file' | 'execute-command' | 'network';
+export type PermissionAction = 'read-file' | 'write-file' | 'execute-command' | 'network' | 'external-message';
 
 /** 工具执行上下文：把原 executeFileTool 的散参收敛成一个对象。 */
 export interface ToolContext {
@@ -77,6 +77,13 @@ export interface ToolContext {
   };
   /** 权限守卫。 */
   permissionGuard?: PermissionGuard;
+  /**
+   * P0 先读后写（2026-08-25，对齐 Claude Code 工具层）：本次运行的已读文件状态表
+   * （绝对路径 → 读取/写入时的 mtime+size）。write_file/edit_file 覆盖已存在文件前校验：
+   * 没读过拒绝（防盲写）、读后被外部改过拒绝（防踩掉别人的修改）。
+   * 缺省=不跟踪（executeFileTool 等内部直调兼容；模型工具循环由 tool-loop 恒创建）。
+   */
+  fileReadState?: Map<string, { mtimeMs: number; size: number }>;
   /** 注册表自引用，允许 handler 互相调用（如未来工具组合）。 */
   toolRegistry: RuntimeToolRegistry;
 }
@@ -116,6 +123,17 @@ export class RuntimeToolRegistry {
     return Array.from(this.tools.values()).map((t) => t.definition);
   }
 
+  /**
+   * 能力分级（2026-08-25）：按白名单收紧注册表——不在名单内的工具从 Map 删除，
+   * definitions()/resolve() 等全部消费口天然同步（模型看不到也调不到，
+   * executeTool 对未注册名返回「未知工具」）。用于蜂档等只读执行体。
+   */
+  restrictTo(allowed: Set<string>): void {
+    for (const name of Array.from(this.tools.keys())) {
+      if (!allowed.has(name)) this.tools.delete(name);
+    }
+  }
+
   /** 已注册工具数量（测试与诊断用）。 */
   size(): number {
     return this.tools.size;
@@ -143,6 +161,40 @@ function assertWritable(workingDir: string, readonlyDirs: string[], target: stri
   }
 }
 
+/** 记录/刷新一个文件的已读状态（read_file 成功后、write/edit 成功后调用）。 */
+function noteFileRead(ctx: ToolContext, target: string): void {
+  if (!ctx.fileReadState) return;
+  try {
+    const st = statSync(target);
+    ctx.fileReadState.set(target, { mtimeMs: st.mtimeMs, size: st.size });
+  } catch { /* 写后 stat 失败极罕见；留旧记录，下不为例由写入侧 existsSync 兜底 */ }
+}
+
+/**
+ * P0 先读后写校验（对齐 Claude Code「File has not been read yet」机制）：
+ * 覆盖/编辑已存在文件前必须先读过，且读之后未被外部改动。
+ * 返回 null=放行；字符串=给模型的错误文本（模型可自愈：先 read_file 再重试）——
+ * 与其他防线一致，绝不抛异常（异常会打断整个工具循环）。
+ */
+function assertReadBeforeWrite(ctx: ToolContext, target: string, rel: string): string | null {
+  if (!existsSync(target)) return null; // 新建文件无需先读
+  if (!ctx.fileReadState) return null; // 内部直调（非模型工具循环）不跟踪
+  const rec = ctx.fileReadState.get(target);
+  if (!rec) {
+    return `错误：文件 ${rel} 已存在但本次运行尚未读取过。为防止盲写覆盖已有内容，请先调用 read_file 阅读后再写入`;
+  }
+  let cur;
+  try {
+    cur = statSync(target);
+  } catch {
+    return `错误：文件 ${rel} 当前状态无法确认，请重新 read_file 后再写入`;
+  }
+  if (cur.mtimeMs !== rec.mtimeMs || cur.size !== rec.size) {
+    return `错误：文件 ${rel} 在读取后被外部修改过。请重新 read_file 获取最新内容后再写入，避免覆盖他人改动`;
+  }
+  return null;
+}
+
 /** read_file handler。 */
 async function readFileHandler(call: ToolCall, ctx: ToolContext): Promise<ToolResult> {
   const rel = String(call.args.path ?? '');
@@ -155,6 +207,7 @@ async function readFileHandler(call: ToolCall, ctx: ToolContext): Promise<ToolRe
   }
   const buf = readFileSync(target);
   const slice = buf.subarray(0, MAX_READ_BYTES).toString('utf8');
+  noteFileRead(ctx, target); // P0 先读后写：登记已读状态，write/edit 的前置校验消费
   return {
     toolCallId: call.id,
     name: call.name,
@@ -169,8 +222,12 @@ async function writeFileHandler(call: ToolCall, ctx: ToolContext): Promise<ToolR
   const target = absPath(ctx.workingDir, rel);
   try {
     assertWritable(ctx.workingDir, ctx.readonlyDirs, target);
+    // P0 先读后写：覆盖已有文件前必须读过且未过期（新建文件放行）
+    const staleErr = assertReadBeforeWrite(ctx, target, rel);
+    if (staleErr) return { toolCallId: call.id, name: call.name, content: staleErr };
     mkdirSync(path.dirname(target), { recursive: true });
     writeFileSync(target, content);
+    noteFileRead(ctx, target); // 写后刷新状态：同运行内后续 edit 不误报「被外部修改」
     return { toolCallId: call.id, name: call.name, content: `已写入 ${rel}（${content.length} 字符）` };
   } catch (e) {
     return { toolCallId: call.id, name: call.name, content: `错误：${(e as Error).message}` };
@@ -188,6 +245,9 @@ async function editFileHandler(call: ToolCall, ctx: ToolContext): Promise<ToolRe
     if (!existsSync(target)) {
       return { toolCallId: call.id, name: call.name, content: `错误：文件不存在 ${rel}` };
     }
+    // P0 先读后写：编辑已有文件前必须读过且未过期
+    const staleErr = assertReadBeforeWrite(ctx, target, rel);
+    if (staleErr) return { toolCallId: call.id, name: call.name, content: staleErr };
     const original = readFileSync(target, 'utf8');
     const occurrences = original.split(oldText).length - 1;
     if (occurrences === 0) {
@@ -202,6 +262,7 @@ async function editFileHandler(call: ToolCall, ctx: ToolContext): Promise<ToolRe
     }
     const updated = original.replace(oldText, newText);
     writeFileSync(target, updated);
+    noteFileRead(ctx, target);
     return { toolCallId: call.id, name: call.name, content: `已编辑 ${rel}` };
   } catch (e) {
     return { toolCallId: call.id, name: call.name, content: `错误：${(e as Error).message}` };
@@ -708,7 +769,12 @@ async function spawnTasksHandler(call: ToolCall, ctx: ToolContext): Promise<Tool
         assigneeAgentId: taskItem.recipientId,
         title: taskItem.title,
         requiredCapabilityIds: taskItem.requiredCaps.length > 0 ? taskItem.requiredCaps : undefined,
-        inputProtocol: taskItem.inputProtocol ? { ...taskItem.inputProtocol, spawned: true } : { spawned: true },
+        // P2b：安全模式防提权——剥离子载荷 mode（模型不得给分身自选执行档），
+        // 只读父任务强制继承只读
+        inputProtocol: sanitizeChildInputProtocol(
+          askerTask.inputProtocol,
+          { ...(taskItem.inputProtocol ?? {}), spawned: true },
+        ),
         priority: taskItem.priority ?? 5,
         ...(askerTask.swarmId ? { swarmId: askerTask.swarmId, swarmDepth: askerTask.swarmDepth + 1 } : {}),
       });
@@ -934,7 +1000,7 @@ const BUILTIN_TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'write_file',
-      description: '写入文件（覆盖已有或新建）。path 相对于工作目录。',
+      description: '写入文件（覆盖已有或新建）。path 相对于工作目录。覆盖已存在文件前必须先 read_file（未读过或读后被外部修改会被拒绝）。',
       parameters: {
         type: 'object',
         properties: {
@@ -949,7 +1015,7 @@ const BUILTIN_TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'edit_file',
-      description: '精确替换文件中的文本片段。old_text 必须唯一匹配。',
+      description: '精确替换文件中的文本片段。old_text 必须唯一匹配。编辑前必须先 read_file 该文件（未读过或读后被外部修改会被拒绝）。',
       parameters: {
         type: 'object',
         properties: {
@@ -1302,6 +1368,10 @@ export function createBuiltinToolRegistry(): RuntimeToolRegistry {
   registry.register({
     definition: defByName('notify_colleague'),
     handler: notifyColleagueHandler,
+    // P2a（2026-08-25）：通知会以 dispatch 指令写入同事进行中的任务，诱导他人执行——
+    // 属「对外发消息」类动作。计划/只读档（deny）与基线守卫据此拦截，
+    // 堵住「计划模式借同事的手绕过只读门」的通道。
+    permissionAction: 'external-message',
     source: { pluginId: BUILTIN_PLUGIN_ID, toolName: 'notify_colleague' },
   });
   registry.register({
@@ -1392,6 +1462,18 @@ export async function executeTool(call: ToolCall, ctx: ToolContext): Promise<Too
           toolCallId: call.id,
           name: call.name,
           content: `需要用户审批：${decision.message ?? '权限策略未允许联网操作'}`,
+        };
+      }
+    } else if (tool.permissionAction === 'external-message') {
+      // 审查修复 P1-1：通知类工具无 path——消息摘要作为 command 透传，
+      // 让审批卡/AI 判定至少能看到待发内容（否则只看到动作类型+工作目录，判定必 uncertain）
+      const command = String(call.args.message ?? '').slice(0, 200);
+      const decision = await ctx.permissionGuard({ action: 'external-message', command: command || undefined, path: ctx.workingDir });
+      if (!decision.allowed) {
+        return {
+          toolCallId: call.id,
+          name: call.name,
+          content: `需要用户审批：${decision.message ?? '权限策略未允许发送该通知'}`,
         };
       }
     } else {

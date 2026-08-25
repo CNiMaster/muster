@@ -229,6 +229,8 @@ export interface Task {
   outcome: string | null;
   summary: string;
   question: string | null;
+  /** R3/B4：API 型轮次进度（loop_progress join；null=无快照）。 */
+  loopRounds?: number | null;
   inputProtocol: Record<string, unknown>;
   outputProtocol: Record<string, unknown>;
   contextRefs: string[];
@@ -292,7 +294,19 @@ export interface SwarmView {
     createdAt: string;
     finishedAt: string | null;
   } | null;
+  /** C 蜂群可见性：发起者名（requester_agent_id 解析；null=系统/未知）。 */
+  requesterName?: string | null;
   tasks: Task[];
+}
+
+/** R3/B3 任务进度摘要（失败卡与任务行消费）。 */
+export interface TaskProgressSummary {
+  taskId: string;
+  rounds: number;
+  hasCheckpoint: boolean;
+  lastAction: string | null;
+  artifactCount: number;
+  networkRetryExhausted: boolean;
 }
 
 export interface UsageSummary {

@@ -20,6 +20,8 @@ import { estimateCostUSD } from './model-pricing';
 import { PROVIDER_DEFAULT_API_KEY_ENV, PROVIDER_DEFAULT_BASE_URL, PROVIDER_DEFAULT_MODEL } from './provider';
 import { getDb } from '../db/client';
 import { getSystemSettings } from '../domain/setting';
+import { getLoopProgress, computeLoopInputHash } from '../domain/loop-progress';
+import { appendTrace } from '../domain/execution-trace';
 import { buildThinkingParams, normalizeThinkingDepth, normalizeContextCache, thinkingSupportedByModel } from '../domain/thinking-params';
 import { log } from '../logger';
 import { agentRunResultSchema } from './result-schema';
@@ -30,6 +32,98 @@ export interface OpenAIAdapterOptions {
   defaultModel?: string;
   /** 请求超时 ms。 */
   timeoutMs?: number;
+}
+
+/**
+ * R2a：chat messages → Responses API input 项。
+ * system/user 原位；assistant 文本→output_text、tool_calls→function_call 项；tool 结果→function_call_output。
+ * （thinking 是内部字段，不回传 API。）
+ */
+export function chatMessagesToResponsesInput(msgs: ChatMessage[]): Array<Record<string, unknown>> {
+  const input: Array<Record<string, unknown>> = [];
+  for (const m of msgs) {
+    if (m.role === 'system') {
+      input.push({ role: 'system', content: m.content });
+    } else if (m.role === 'user') {
+      // WP10 识图直读：user 消息带图片 → input_text + input_image parts
+      if (m.images && m.images.length > 0) {
+        input.push({
+          role: 'user',
+          content: [
+            { type: 'input_text', text: m.content },
+            ...m.images.map((url) => ({ type: 'input_image', image_url: url })),
+          ],
+        });
+      } else {
+        input.push({ role: 'user', content: m.content });
+      }
+    } else if (m.role === 'assistant') {
+      if (m.content) input.push({ role: 'assistant', content: [{ type: 'output_text', text: m.content }] });
+      for (const tc of m.tool_calls ?? []) {
+        input.push({ type: 'function_call', call_id: tc.id, name: tc.function.name, arguments: tc.function.arguments });
+      }
+    } else {
+      input.push({ type: 'function_call_output', call_id: m.tool_call_id ?? '', output: m.content });
+    }
+  }
+  return input;
+}
+
+/**
+ * R2a：Responses API 整包 → ModelCallResult（output[] 转回 chat 消息形状，转换收敛在 adapter 内、
+ * runToolLoop 零改动）。reasoning 摘要→thinking；message.output_text→content；function_call→tool_calls；
+ * usage 取 input_tokens/output_tokens（cached 取 input_tokens_details.cached_tokens）。
+ */
+export function responsesOutputToModelCallResult(data: any, events?: ExecutionEvents): ModelCallResult {
+  let content = '';
+  let thinkingText = '';
+  const toolCalls: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }> = [];
+  for (const item of data?.output ?? []) {
+    if (item?.type === 'reasoning') {
+      const summary = Array.isArray(item.summary)
+        ? item.summary.map((s: any) => s?.text ?? '').join('')
+        : '';
+      thinkingText += summary;
+    } else if (item?.type === 'message') {
+      for (const part of item.content ?? []) {
+        if (part?.type === 'output_text' && typeof part.text === 'string') content += part.text;
+      }
+    } else if (item?.type === 'function_call') {
+      toolCalls.push({
+        id: item.call_id ?? item.id ?? '',
+        type: 'function',
+        function: { name: item.name ?? '', arguments: item.arguments ?? '{}' },
+      });
+    }
+  }
+  if (content) events?.onTextDelta?.(content);
+  if (content) events?.onOutput?.(content);
+  for (const tc of toolCalls) events?.onToolCall?.(tc.function.name, tc.function.arguments, tc.id);
+  return {
+    message: {
+      role: 'assistant',
+      content,
+      thinking: thinkingText || undefined,
+      tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
+    },
+    usage: {
+      promptTokens: data?.usage?.input_tokens ?? 0,
+      completionTokens: data?.usage?.output_tokens ?? 0,
+      cachedTokens: data?.usage?.input_tokens_details?.cached_tokens ?? 0,
+    },
+  };
+}
+
+/**
+ * R1 网络就地重试的环境覆盖（测试/特殊环境用）：
+ * MUSTER_NETWORK_RETRY_DELAYS='off' 关闭；'1000,5000' 自定义梯度（毫秒逗号分隔）；缺省=默认梯度 1s/5s/25s。
+ */
+export function parseNetworkRetryDelaysFromEnv(): readonly number[] | null | undefined {
+  const raw = process.env.MUSTER_NETWORK_RETRY_DELAYS;
+  if (raw === undefined) return undefined;
+  if (raw === 'off') return null;
+  const delays = raw.split(',').map((v) => Number(v.trim())).filter((n) => Number.isFinite(n) && n >= 0);
+  return delays.length > 0 ? delays : undefined;
 }
 
 export class OpenAICompatibleAdapter implements ExecutionAdapter {
@@ -62,16 +156,54 @@ export class OpenAICompatibleAdapter implements ExecutionAdapter {
     if (!apiKey) {
       return this.blocked(`OpenAI API key 未配置：环境变量 ${apiKeyEnv} 未设置`, start);
     }
+    // R2a：API 格式分派（档案级 apiFormat；缺省 chat-completions）
+    const apiFormat: 'chat-completions' | 'responses' = agentEx?.apiFormat === 'responses' ? 'responses' : 'chat-completions';
     // spec 2026-08-12-settings-overhaul B3：思考深度归一化 → reasoning_effort。
     // 仅模型支持时生效（自动识别），否则强制 off，避免把 reasoning_effort 发给不支持的模型导致 400。
     const thinkingDepth = thinkingSupportedByModel('openai', model) ? normalizeThinkingDepth(agentEx?.thinkingDepth) : 'off';
     const thinking = buildThinkingParams('openai', thinkingDepth, normalizeContextCache(agentEx?.contextCache));
 
-    // 组装 messages
-    const messages = this.buildMessages(ctx);
+    // R3 断点续跑：存在 input_hash 匹配的轮次快照（任务输入没变）→ 以快照 messages 为底续跑
+    // （API 型获得与 CLI vendor session 保真等价物）；输入已变/无快照 → 弃快照从头。
+    const inputHash = computeLoopInputHash(ctx.inputPacket);
+    const snapshot = (() => {
+      try { return getLoopProgress(getDb(), ctx.task.id); } catch { return null; }
+    })();
+    const resumedFromRound = snapshot && snapshot.inputHash === inputHash ? snapshot.rounds : null;
+    const messages = resumedFromRound !== null ? snapshot!.messages : this.buildMessages(ctx);
+
+    // 组装 messages 完成（上方 R3 续跑分支）
 
     // callModel：发 POST /chat/completions（WP5 默认流式；provider 不支持流式参数时回退非流式）
     const callModel: CallModelFn = async (msgs, signal, tools: ToolDefinition[]) => {
+      // R2a：Responses API 分支（v1 非流式整包——SSE 事件形状与 chat chunk 完全不同，流式留后续批次）
+      if (apiFormat === 'responses') {
+        const effort = thinking.applied && thinking.extraBody?.reasoning_effort
+          ? { reasoning: { effort: thinking.extraBody.reasoning_effort } }
+          : {};
+        const res = await fetch(`${baseURL}/responses`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model,
+            input: chatMessagesToResponsesInput(msgs),
+            // tools 扁平化：chat 的 {type:'function',function:{...}} → responses 的 {type:'function',name,...}
+            tools: tools.map((t) => ({ type: 'function', name: t.function.name, description: t.function.description, parameters: t.function.parameters })),
+            tool_choice: 'auto',
+            stream: false,
+            ...effort,
+          }),
+          signal,
+        });
+        if (!res.ok) {
+          const text = await res.text().catch(() => '');
+          throw new Error(`OpenAI API ${res.status}: ${text.slice(0, 200)}`);
+        }
+        return responsesOutputToModelCallResult(await res.json(), events);
+      }
       const buildBody = (stream: boolean) => ({
         model,
         // thinking 是内部字段（trace 用），不回传给 API——严格兼容的 provider 会因未知字段 400（review M4）
@@ -124,6 +256,12 @@ export class OpenAICompatibleAdapter implements ExecutionAdapter {
     };
 
     try {
+      if (resumedFromRound !== null) {
+        // R3：续跑可见——失败卡/trace 时间线上能看到「不是从零重跑」
+        try {
+          appendTrace(getDb(), { taskId: ctx.task.id, runId: ctx.executionRunId, kind: 'notice', name: 'checkpoint_resume', summary: `从断点续跑：已复用此前 ${resumedFromRound} 轮进度` });
+        } catch { /* trace 失败不影响执行 */ }
+      }
       const loop = await runToolLoop({
         messages,
         callModel,
@@ -138,6 +276,8 @@ export class OpenAICompatibleAdapter implements ExecutionAdapter {
         permissionGuard: ctx.permissionGuard,
         usageTracking: { db: getDb(), taskId: ctx.task.id },
         traceTracking: { db: getDb(), taskId: ctx.task.id },
+        networkRetryDelays: parseNetworkRetryDelaysFromEnv(),
+        progressTracking: { db: getDb(), taskId: ctx.task.id, runId: ctx.executionRunId, inputHash },
         reviewContext: { db: getDb(), taskId: ctx.task.id },
         consultationContext: {
           db: getDb(),

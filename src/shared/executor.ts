@@ -7,6 +7,53 @@ export type ExecutorKind = 'cli' | 'api';
 
 export type ExecutorConcurrency = 'parallel' | 'profile-serial' | 'global-serial';
 
+/** R5 模型清单条目（config.models 数组元素）：一档多模型，行级窗口可选。 */
+export interface ProfileModelEntry {
+  model: string;
+  /** 行级上下文窗口（可选；缺省继承档案级 contextWindowTokens）。 */
+  contextWindowTokens?: number;
+  note?: string;
+}
+
+/**
+ * R5 兼容规范入口：读档案模型清单。
+ * 旧档案只有 config.model → 包装单元素数组；新档案 config.models 优先（双写时两者一致）；
+ * 形状不合规（非数组/空 model 项）回退 config.model 单键。所有消费方统一经此函数取清单。
+ */
+export function profileModels(config: { model?: unknown; models?: unknown } | null | undefined): ProfileModelEntry[] {
+  const raw = config?.models;
+  if (Array.isArray(raw)) {
+    const list: ProfileModelEntry[] = [];
+    for (const m of raw) {
+      if (m && typeof m === 'object' && typeof (m as ProfileModelEntry).model === 'string' && (m as ProfileModelEntry).model.trim() !== '') {
+        list.push({
+          model: (m as ProfileModelEntry).model.trim(),
+          ...(typeof (m as ProfileModelEntry).contextWindowTokens === 'number' && (m as ProfileModelEntry).contextWindowTokens! > 0
+            ? { contextWindowTokens: (m as ProfileModelEntry).contextWindowTokens }
+            : {}),
+          ...(typeof (m as ProfileModelEntry).note === 'string' && (m as ProfileModelEntry).note ? { note: (m as ProfileModelEntry).note } : {}),
+        });
+      }
+    }
+    if (list.length > 0) return list;
+  }
+  const single = config?.model;
+  if (typeof single === 'string' && single.trim() !== '') return [{ model: single.trim() }];
+  return [];
+}
+
+/** R5 主模型：清单首项（引擎/探针/适配器缺省链统一走这里；旧档案等价 config.model）。 */
+export function profilePrimaryModel(config: { model?: unknown; models?: unknown } | null | undefined): string | undefined {
+  return profileModels(config)[0]?.model;
+}
+
+/** R5 行级上下文窗口：按模型名取行级值；模型不在清单或无行级值 → undefined（调用方落档案级兜底）。 */
+export function findModelContextWindow(config: { model?: unknown; models?: unknown } | null | undefined, model: string | null | undefined): number | undefined {
+  if (!model) return undefined;
+  const hit = profileModels(config).find((m) => m.model === model);
+  return hit?.contextWindowTokens && hit.contextWindowTokens > 0 ? hit.contextWindowTokens : undefined;
+}
+
 export interface ExecutorOfficialInstall {
   guideUrl: string;
   commands: string[];

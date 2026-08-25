@@ -39,6 +39,7 @@ import { promoteProjectStagingIfAny } from '../domain/staging';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { listTaskEvents } from '../domain/task-event';
 import { listTrace, type TraceKind } from '../domain/execution-trace';
+import { clearLoopProgress, getTaskProgressSummary } from '../domain/loop-progress';
 import { listTaskMessages, addTaskMessage } from '../domain/task-message';
 import { getTaskRuntime, deleteTaskRuntime } from '../domain/task-runtime';
 import { resolveTaskRepoRoot } from '../domain/task-repo';
@@ -440,6 +441,18 @@ taskByIdRouter.post(
 taskByIdRouter.post(
   '/resume',
   asyncHandler(async (req, res) => {
+    // R3 断点续跑：默认从 checkpoint 续（adapter 侧按 input_hash 匹配自动接续）；
+    // ?restart=1 先弃快照=整个重跑（失败卡第二动作）。
+    // review Important：先校验可恢复状态再清快照——避免误触把续跑底座删掉后才发现状态不对（副作用不先于校验）。
+    if (req.query.restart === '1') {
+      const cur = getTask(getDb(), param(req, 'id'));
+      const recoverable = ['paused', 'blocked', 'failed'].includes(cur.state)
+        || (cur.state === 'cancelled' && (cur.inputProtocol as { reason?: string }).reason === 'publish_conflict');
+      if (!recoverable) {
+        throw new AppError(ErrorCode.TASK_INVALID_TRANSITION, `task ${cur.id} 不可恢复（${cur.state}）`);
+      }
+      try { clearLoopProgress(getDb(), cur.id); } catch { /* 无快照时忽略 */ }
+    }
     const task = resumeTask(getDb(), param(req, 'id'));
     // resume 后状态可能是 claimed 或 queued，用实际状态发事件
     publishTaskStateEvent(task.id, task.state);
@@ -466,12 +479,28 @@ taskByIdRouter.get(
 taskByIdRouter.get(
   '/swarm',
   asyncHandler(async (req, res) => {
-    const task = getTask(getDb(), param(req, 'id'));
+    const db = getDb();
+    const task = getTask(db, param(req, 'id'));
     if (!task.swarmId) {
-      res.json({ swarm: null, tasks: [] });
+      res.json({ swarm: null, requesterName: null, tasks: [] });
       return;
     }
-    res.json({ swarm: getSwarmRun(getDb(), task.swarmId), tasks: listTasksBySwarm(getDb(), task.swarmId) });
+    // C 蜂群可见性：requester_agent_id 已存库但界面上不可见——补发起者名
+    const swarm = getSwarmRun(db, task.swarmId);
+    const requesterName = swarm.requesterAgentId
+      ? (db.prepare('SELECT name FROM agent_definition WHERE id=?').get(swarm.requesterAgentId) as { name: string } | undefined)?.name ?? null
+      : null;
+    res.json({ swarm, requesterName, tasks: listTasksBySwarm(db, task.swarmId) });
+  }),
+);
+
+/** R3/B3：任务进度摘要（已完成轮次/最近动作/产出项/网络重试耗尽标志）——失败卡与任务行消费。 */
+taskByIdRouter.get(
+  '/progress',
+  asyncHandler(async (req, res) => {
+    const taskId = param(req, 'id');
+    getTask(getDb(), taskId); // 404 校验
+    res.json(getTaskProgressSummary(getDb(), taskId));
   }),
 );
 

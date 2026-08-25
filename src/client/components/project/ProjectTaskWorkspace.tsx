@@ -16,6 +16,7 @@ import { InterruptRecordCard } from '../workbench/InterruptRecordCard';
 import { QueueStrip } from './QueueStrip';
 import { Input, Textarea, Field } from '../Form';
 import { AutoContinueCountdown } from './AutoContinueCountdown';
+import { profileModels } from '../../../shared/executor';
 
 export function ProjectTaskWorkspace({
   projectId,
@@ -79,16 +80,18 @@ export function ProjectTaskWorkspace({
   const blueprintPreview = useBlueprintMatches(newTitle);
   const { data: executorProfiles } = useExecutorProfiles();
   const { data: systemSettings } = useSystemSettings();
-  // 模型清单（2026-08-23 定案）：来自真实执行器档案——每个 CLI 档案一个模型项（label=CLI 名 · 模型名）；
+  // 模型清单（2026-08-23 定案 + R5 升级）：来自真实执行器档案——config.models 每模型一项
+  // （旧档案单 model 键自动包装）；label=档案名：模型名；同名模型跨档案去重（先到先得）。
   // 「系统默认模型」概念退役：未选择时按钮显示「选择模型」，不传模型=该执行器档案自己的默认。
   const modelOptions = (() => {
     const options: Array<{ id: string; label: string }> = [];
     const seen = new Set<string>();
     for (const profile of executorProfiles ?? []) {
-      const model = typeof profile.config?.model === 'string' ? profile.config.model.trim() : '';
-      if (model && !seen.has(model)) {
-        seen.add(model);
-        options.push({ id: model, label: `${profile.name}：${model}` });
+      for (const entry of profileModels(profile.config)) {
+        if (!seen.has(entry.model)) {
+          seen.add(entry.model);
+          options.push({ id: entry.model, label: `${profile.name}：${entry.model}` });
+        }
       }
     }
     return options;

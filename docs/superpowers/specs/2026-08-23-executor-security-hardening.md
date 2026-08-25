@@ -94,6 +94,31 @@ L3 人工审批（升级兜底）：审查员拿不准/超策略/用户选全审
 - **H9c 受托越界通道**：loopback 申请+临时 profile 受托执行。
 - 顺带小修（随 H9a）：custom-cli env 直通、②worktree 外删除分级降级为日志提醒（不做拦截）、③claude Bash 审批收紧不做。
 
+## 落地批次：工具层与守卫链加固（2026-08-25，P0/P1/P2 一次收口）
+
+来源：用户发现 API 自研工具层缺「先读后写」类机制 → 全链盘点出五个缺口，用户拍板「补齐，但不因安全引入卡死或更大风险」。全部改动遵循：拦截=返回工具结果错误文本（模型可自愈重试），不抛异常打断循环、不加无超时阻塞。
+
+| 级 | 缺口 | 修复 | 落点 |
+|---|---|---|---|
+| P0-1 | 守卫可整体缺位：无策略且无模式时 buildPermissionGuard 返回 undefined → executeTool 守卫块短路，14 内置工具零审批（fail-open） | 安全默认值反转：改挂基线守卫——读/worktree 内写/联网/普通命令放行，八类高危拒绝并引导补配置；只拒不排队（基线场景无策略 id 建不了审批单） | domain/permission-baseline.ts（新）+ engine 接线 |
+| P0-2 | write_file 无状态跟踪可盲写覆盖；无「读后被外部改动」检测（Claude Code 工具层同款机制缺失） | ToolContext.fileReadState（path→mtime+size）per-run 跟踪：read 登记 / write·edit 校验未读+过期 / 写后刷新；两处工具描述同步告知模型；遗留 executeFileTool 无 tracker 直调保持兼容 | registry.ts 三 handler + tool-loop.ts |
+| P1 | no-approval 完全访问档对 approval-required 一律裸放；硬高危类在 evaluateWithAi 里短路成 uncertain（该档无人工队列=短路即放行），凭据读变体无语义兜底 | 八类高危先过 AI 审查员实判（AiApprovalRequest.semanticHighRiskReview 绕过硬短路）：unsafe 拒、safe/uncertain 放、AI 异常放行由 permission_audit 留档；普通命令零额外延迟 | engine no-approval 分支 + ai-approval.ts |
+| P2a | notify_colleague 往同事进行中任务写 dispatch 指令——计划/只读模式可借同事的手绕过只读门 | 打 permissionAction='external-message'（deny 档白名单外自动拦；基线守卫同拦）；composer 加 /exec 斜杠命令衔接「计划确认→转执行」（转执行保持人工显式动作，不做自动晋升——这正是门禁本意） | registry 注册处 + PromptComposer.tsx |
+| P2b | 子任务 inputProtocol 透传模型载荷——模型可给分身塞 mode=no-approval/full-access 提权 | sanitizeChildInputProtocol：spawn_tasks 与 completeTask outboundTasks 双路径统一剥 mode；plan/deny 父任务强制向子任务继承只读。系统侧其余 createTask 调用方（引擎冲突/协调器/咨询等）入参均为系统字面量，审计无恙 | domain/task.ts + registry spawnTasksHandler |
+
+行为变更注记：基线化后「未配置任何策略/模式」的 CLI 运行从权限桥 deny-all（"执行器没有可用的 Muster 权限策略"）变为基线放行+高危拦——与产品哲学（worktree 内自由、git 可逆兜底、OS 围栏拒越界写）一致。
+
+已知取舍：mtime+size 过期检测在纳秒精度文件系统上理论存在「同长同刻写入」漏检窗口（fail-open 方向，罕见竞态）；macOS 大小写不敏感盘换大小写路径会触发一次可自愈的「尚未读取」；read_file 64KB 截断读仍登记全量文件状态（工具物理上无法交付全量内容，强制「完整读」会封死大文件的合法写入——与 Claude Code 同语义，接受为纵深弱化）。
+
+### Review 轮修复（code-reviewer 审查，2026-08-25）
+
+- **P1-1 external-message 守卫缺载荷 + 高频通知可能拖死任务**：executeTool 对通知类单列分支，消息摘要透传进 command（审批/AI 可见待发内容）；engine 守卫链加快速通道——非 ask-always 档的对外通知按内容过 AI 一票否决（unsafe 拒、其余放行、AI 异常放行），绝不进人工审批队列。理由：接收方自己的守卫才是执行门（通知只影响上下文，真动手仍过接收方权限链），而 notify_colleague 是高频轻量动作，弹卡 = 600s 等待后 approval_timeout，违反「不卡死」约束。deny 档/基线守卫的硬拦截不受影响；ask-always 尊重「事事确认」契约。
+- **P2 学习闭环**：no-approval 门 unsafe 分支补 recordRejectionForLearning（policyId 为空的兜底构造对象时跳过）。
+- **P2 端到端测试补齐**：基线守卫在 executeTool 链路拦 notify_colleague / 拦 run_command git push（双重守卫链）、通知内容透传断言、自动编辑档通知零审批单——新增 4 例，套件 18 例全绿。
+- 审查确认无回归的维度：基线化对 CLI 权限桥（原 guard 缺失=全拒）是修复而非破坏；createTask 其余调用方均系统字面量无第三条模型可控 mode 通道；P1 测试真实触达 AI 门。
+
+验证：新增 tests/integration/executor-tool-safety.spec.ts 14 例；tsc -b --force 干净；vitest 全量 276 文件/1687 例全绿（含既有 security-mode/ai-approval/batch11 套件零回归）。
+
 ## 边界与不做
 
 - 不做每家 CLI 的专属安全适配（正解是壳统一设防）；不限制网络（第一版）；Linux/Windows 沙箱后置；CLI 内部防线（各家 hook 质量）不审计不依赖。

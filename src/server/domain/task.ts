@@ -21,7 +21,7 @@ import { immediateTransaction } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
 import { LEASE_TTL_MS, MAX_CLARIFY_ROUNDS, MAX_ALIGNMENT_ROUNDS } from '../../shared/constants';
-import { classifyFailureCategory, isRecoverableSessionError, MAX_AUTO_RETRY, AUTO_RETRY_DELAY_MS } from '../../shared/retry-policy';
+import { classifyFailureCategory, isRecoverableSessionError, isNetworkFailure, MAX_AUTO_RETRY, MAX_NETWORK_AUTO_RETRY, AUTO_RETRY_DELAY_MS, NETWORK_AUTO_RETRY_DELAYS_MS } from '../../shared/retry-policy';
 import type { AgentRunResult, ArtifactChange, ChainHop, TaskOutcome, TaskState } from '../../shared/types';
 import { CHAIN_HISTORY_CAP } from '../../shared/types';
 import { getProject } from './project';
@@ -136,6 +136,8 @@ export interface Task {
   waitingSince?: string | null;
   /** H8 安全停：true=已请求停止（引擎在工具边界检查后安全停下，收尾在 finalizeSafeStop）。 */
   stopRequested: boolean;
+  /** R3/B4：API 型轮次进度（LEFT JOIN loop_progress；null=无快照——CLI 型或未开始）。列表行「第 N 轮」用。 */
+  loopRounds?: number | null;
 }
 
 interface TaskRow {
@@ -246,6 +248,7 @@ function fromRow(r: TaskRow): Task {
     autoContinueMinutes: r.auto_continue_minutes ?? null,
     autoContinueStopped: (r.auto_continue_stopped ?? 0) === 1,
     stopRequested: (r.stop_requested ?? 0) === 1,
+    loopRounds: (r as { loop_rounds?: number | null }).loop_rounds ?? null,
   };
 }
 
@@ -323,6 +326,26 @@ function assertTransition(from: TaskState, to: TaskState): void {
 function nextSeq(db: DB, projectId: string): number {
   const row = db.prepare('SELECT MAX(seq) AS m FROM task WHERE project_id = ?').get(projectId) as { m: number | null } | undefined;
   return (row?.m ?? 0) + 1;
+}
+
+/**
+ * P2b 子任务安全模式防提权（2026-08-25）：子任务的安全模式不允许由执行中的模型经
+ * input_protocol/payload 自选——否则模型可以给分身塞 no-approval/full-access 绕过整条审批链。
+ * 规则：剥离子任务载荷中的 mode；仅当父任务本身处于只读（plan/deny）时向子任务
+ * 强制继承只读（计划未获批前任何分身都不得动手）。spawn_tasks 与 completeTask
+ * 的 outboundTasks 两条派生路径都必须走这里。
+ */
+export function sanitizeChildInputProtocol(
+  parentInputProtocol: unknown,
+  childPayload: Record<string, unknown>,
+): Record<string, unknown> {
+  const proto: Record<string, unknown> = { ...childPayload };
+  delete proto.mode;
+  const parentMode = (parentInputProtocol as Record<string, unknown> | null)?.mode;
+  if (parentMode === 'plan' || parentMode === 'deny') {
+    proto.mode = parentMode;
+  }
+  return proto;
 }
 
 export function createTask(db: DB, input: CreateTaskInput): Task {
@@ -621,9 +644,10 @@ export function listRecentlyFinalizedTasks(db: DB, sinceIso: string, limit = 20)
 }
 
 export function listTasks(db: DB, projectId: string, state?: TaskState): Task[] {
+  // R3/B4：LEFT JOIN loop_progress 带出轮次进度（单行表主键 join，列表行「第 N 轮」用）
   const sql = state
-    ? 'SELECT * FROM task WHERE project_id = ? AND state = ? ORDER BY seq'
-    : 'SELECT * FROM task WHERE project_id = ? ORDER BY seq';
+    ? 'SELECT t.*, lp.rounds AS loop_rounds FROM task t LEFT JOIN loop_progress lp ON lp.task_id = t.id WHERE t.project_id = ? AND t.state = ? ORDER BY t.seq'
+    : 'SELECT t.*, lp.rounds AS loop_rounds FROM task t LEFT JOIN loop_progress lp ON lp.task_id = t.id WHERE t.project_id = ? ORDER BY t.seq';
   const rows = (state ? db.prepare(sql).all(projectId, state) : db.prepare(sql).all(projectId)) as TaskRow[];
   return rows.map(fromRow);
 }
@@ -983,11 +1007,12 @@ export function completeTask(db: DB, taskId: string, result: AgentRunResult): Ta
 
         // 链路双指向（B1）：转派原因/分工透传子任务（chainReason/chainDivision——
         // 不占 reason 键：inputProtocol.reason 是系统约定如 publish_conflict/child_task_failed）
-        const childPayload: Record<string, unknown> = {
+        // P2b：安全模式防提权——剥离子载荷 mode，只读父任务强制继承只读
+        const childPayload = sanitizeChildInputProtocol(cur.inputProtocol, {
           ...(out.payload as Record<string, unknown>),
           ...(out.reason?.trim() ? { chainReason: out.reason } : {}),
           ...(out.division?.trim() ? { chainDivision: out.division } : {}),
-        };
+        });
         const child = createTask(db, {
           projectId: cur.projectId,
           parentTaskId: cur.id,
@@ -1443,17 +1468,29 @@ export function failTask(db: DB, taskId: string, message: string): Task {
     `UPDATE task SET state='failed', outcome=NULL, summary=?, lease_owner_thread_id=NULL, lease_expires_at=NULL,
      failure_count=failure_count+1, last_failed_at=?, updated_at=? WHERE id=?`,
   ).run(message.slice(0, 2000), now, now, taskId);
-  appendTaskEvent(db, taskId, 'failed', { message, failureCount: cur.failureCount + 1, failureCategory: classifyFailureCategory(message) });
+  // A2：网络类判定提前——failed 事件与重试分支都要用（耗尽时事件带标志供失败卡区分文案）。
+  // 注意 isNetworkFailure（429/5xx/连接类）独立于 retryable 判定：HTTP 限流/服务端故障的消息
+  // 不一定命中 TRANSIENT_RE 正则，但显然值得任务级重试（R1 就地重试已先挡过一层）。
+  const retryable = isRecoverableSessionError(message);
+  const networkFailure = isNetworkFailure(message);
+  const maxRetry = networkFailure ? MAX_NETWORK_AUTO_RETRY : MAX_AUTO_RETRY;
+  appendTaskEvent(db, taskId, 'failed', {
+    message,
+    failureCount: cur.failureCount + 1,
+    failureCategory: classifyFailureCategory(message),
+    ...(networkFailure ? { networkFailure: true } : {}),
+  });
 
-  // 阶段一任务 1.4：非永久性失败自动重试（有限次数），避免 watchdog 停下来的任务无人重领。
+  // 阶段一任务 1.4 + A2：非永久性失败自动重试（有限次数），避免 watchdog 停下来的任务无人重领。
   // 可重试（超时/网络/会话崩溃）且未超过上限 → 自动回 queued 等待再次领取；
   // 不可重试（权限拒绝/安全阻断/逻辑错误）或次数用尽 → 保持 failed，走失败传播上报负责人。
-  const retryable = isRecoverableSessionError(message);
+  // A2：纯网络类退避指数化（30s→3m→10m 共 3 次，R1 就地重试已先挡过一层）；其他 transient 维持 ×2（首次立即、第二次 30s）。
   const nextRetry = cur.autoRetryCount + 1;
-  if (retryable && nextRetry <= MAX_AUTO_RETRY) {
-    const retryAfterAt = nextRetry >= MAX_AUTO_RETRY
-      ? new Date(Date.now() + AUTO_RETRY_DELAY_MS).toISOString() // 最后一次自动重试延迟 30 秒
-      : null;
+  if ((retryable || networkFailure) && nextRetry <= maxRetry) {
+    const delayMs = networkFailure
+      ? NETWORK_AUTO_RETRY_DELAYS_MS[Math.min(nextRetry, NETWORK_AUTO_RETRY_DELAYS_MS.length) - 1]!
+      : (nextRetry >= MAX_AUTO_RETRY ? AUTO_RETRY_DELAY_MS : 0);
+    const retryAfterAt = delayMs > 0 ? new Date(Date.now() + delayMs).toISOString() : null;
     db.prepare(
       `UPDATE task SET state='queued', outcome=NULL, auto_retry_count=?, retry_after_at=?,
         lease_owner_thread_id=NULL, lease_expires_at=NULL, heartbeat_at=NULL, updated_at=? WHERE id=?`,
@@ -1461,6 +1498,9 @@ export function failTask(db: DB, taskId: string, message: string): Task {
     appendTaskEvent(db, taskId, 'auto_retry_scheduled', {
       retryCount: nextRetry,
       retryAfterAt,
+      // A2：事件带 category 与下次延迟（B3 失败卡/观测消费）
+      category: networkFailure ? 'network' : 'transient',
+      delayMs,
       reason: message.slice(0, 300),
     });
     return getTask(db, taskId);

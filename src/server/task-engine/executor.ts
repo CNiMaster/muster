@@ -84,6 +84,10 @@ export interface AgentExecutorConfig {
   skipPermissions?: boolean;
   /** OpenAI 兼容 API 的 baseURL（provider=openai 时生效，可切 DeepSeek/通义/智谱等）。 */
   baseURL?: string;
+  /** R2a API 格式：openai-compatible 的请求形状（chat-completions=默认 / responses=OpenAI Responses API）；gemini 不参与。 */
+  apiFormat?: 'chat-completions' | 'responses';
+  /** R5 模型清单（一档多模型）：所有消费方经 shared/executor.ts profileModels 取用；config.model 双写主模型兼容旧读方。 */
+  models?: Array<{ model: string; contextWindowTokens?: number; note?: string }>;
   /** 思考深度归一化档位（settings-overhaul B3；仅支持的模型生效，off=不传思考参数）。 */
   thinkingDepth?: 'off' | 'low' | 'medium' | 'high';
   /** 上下文缓存模式（settings-overhaul B3；auto/on 保持 provider 默认缓存，off 文档化 no-op）。 */
