@@ -97,11 +97,13 @@ export interface ToolLoopOptions {
   /** 执行过程 trace 记录（区别于 usageTracking 的聚合埋点；失败必须吞掉不影响主流程）。 */
   traceTracking?: { db: DB; taskId: string; runId?: string };
   /**
-   * L7 上下文治理：消息数超阈值（缺省 48）时把早期消息压缩为确定性摘要（保留首条系统装配
+   * L7 上下文治理：消息数超阈值（缺省 48）时把早期消息压缩（保留首条系统装配
    * 与最近 keepRecent 条）——内存内延续不换线程，连续工作不断。传 null 显式关闭。
-   * v1 为确定性摘要（ assistant 文本首行+工具名与结果首行，截 4000 字）；LLM 摘要留 v2。
+   * v1 为确定性摘要（assistant 文本首行+工具名与结果首行，截 4000 字）；
+   * v2（本批，capability parity A2）semantic 缺省 true：先用模型做语义摘要（保留决策
+   * 理由/结论/未竟事项），失败降级 v1 机械摘要。摘要复用主 callModel。
    */
-  contextGovernance?: { maxMessages?: number; keepRecent?: number } | null;
+  contextGovernance?: { maxMessages?: number; keepRecent?: number; semantic?: boolean } | null;
   /**
    * R1 网络就地重试：callModel 网络类失败的退避梯度（默认 1s/5s/25s 共 3 次）。
    * 传 null 显式关闭（直接抛给任务级重试）；测试可注入短梯度。
@@ -152,6 +154,76 @@ export function compactMessagesToDigest(old: ChatMessage[]): ChatMessage {
   let digest = lines.join('\n');
   if (digest.length > CONTEXT_DIGEST_MAX_CHARS) digest = `${digest.slice(0, CONTEXT_DIGEST_MAX_CHARS)}\n…（更早步骤截断）`;
   return { role: 'user', content: `【上下文压缩】以下为此前已完成步骤与结论的摘要（原消息已压缩，任务继续）：\n${digest || '（无文本性步骤）'}` };
+}
+
+/** 语义压缩序列化上限：单条消息与总量（防摘要请求本身爆上下文）。 */
+const SEMANTIC_PER_MSG_CHARS = 2_000;
+const SEMANTIC_TOTAL_CHARS = 80_000;
+
+/** L7v2：把旧消息序列化为摘要请求的 user 文本（跳过 system 与既有摘要，避免摘要套摘要）。 */
+export function serializeForSemantic(old: ChatMessage[]): string {
+  const parts: string[] = [];
+  let total = 0;
+  for (let i = 0; i < old.length; i += 1) {
+    const m = old[i]!;
+    if (m.role === 'system') continue;
+    if (m.role === 'user' && m.content.startsWith('【上下文压缩')) continue;
+    let body = m.content;
+    if (m.role === 'assistant' && m.tool_calls?.length) {
+      body = `${body}\n[工具调用] ${m.tool_calls.map((tc) => `${tc.function.name}(${tc.function.arguments.slice(0, 200)})`).join('; ')}`;
+    }
+    if (m.role === 'tool') body = `[${m.name ?? 'tool'} 结果] ${body}`;
+    if (body.length > SEMANTIC_PER_MSG_CHARS) body = `${body.slice(0, SEMANTIC_PER_MSG_CHARS)}…(截断)`;
+    if (total + body.length > SEMANTIC_TOTAL_CHARS) {
+      parts.push(`…（更早消息超出序列化上限，已省略 ${old.length - i} 条）`);
+      break;
+    }
+    total += body.length;
+    parts.push(`# 消息${i + 1} [${m.role}]\n${body}`);
+  }
+  return parts.join('\n\n');
+}
+
+const SEMANTIC_COMPACT_SYSTEM = [
+  '你是对话历史压缩器。把以下智能体执行历史压缩成一份摘要，供后续工作参考。必须保留：',
+  '1) 已做出的决策及其理由（为什么这么做）',
+  '2) 已完成的结论与结果（关键文件改动、验证/测试结果）',
+  '3) 未竟事项与下一步计划',
+  '4) 关键约束（用户要求、路径、约定）',
+  '用紧凑条目式输出，不超过 600 字。不要客套与复述任务背景。',
+].join('\n');
+
+/**
+ * L7v2 语义压缩：用模型把旧历史总结为保留决策理由/结论/未竟事项的摘要。
+ * 任何失败（网络/解析/空内容）返回 null——调用方降级 compactMessagesToDigest（v1 兜底）。
+ * 复用主 callModel（同凭证同格式，responses API 天然兼容）；低档模型优化留接线点
+ * （model-tier resolveProfileForTier(db,'low') 可用时替换，不阻塞本批）。
+ */
+export async function compactMessagesSemantic(
+  old: ChatMessage[],
+  callModel: CallModelFn,
+  signal?: AbortSignal,
+): Promise<ChatMessage | null> {
+  const transcript = serializeForSemantic(old);
+  if (!transcript.trim()) return null;
+  try {
+    const result = await callModel(
+      [
+        { role: 'system', content: SEMANTIC_COMPACT_SYSTEM },
+        { role: 'user', content: transcript },
+      ],
+      signal ?? new AbortController().signal,
+      [],
+    );
+    const summary = result.message?.content?.trim();
+    if (!summary) return null;
+    return {
+      role: 'user',
+      content: `【上下文压缩】以下为此前执行历史的语义摘要（决策理由/结论/未竟事项已保留，任务继续）：\n${summary}`,
+    };
+  } catch {
+    return null; // 摘要失败不影响主流程——降级 v1
+  }
 }
 
 /** R1 网络就地重试默认梯度：指数退避 1s/5s/25s 共 3 次。 */
@@ -258,11 +330,17 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult
   try {
     while (rounds < opts.maxToolCalls) {
       if (controller.signal.aborted || stopRequested) break;
-      // L7 上下文治理：超阈值压缩（保留首条系统装配 + 确定性摘要 + 最近 keepRecent 条）——内存内延续不换线程
+      // L7 上下文治理：超阈值压缩（保留首条系统装配 + 语义/确定性摘要 + 最近 keepRecent 条）——内存内延续不换线程
       if (gov && messages.length > maxMessages) {
         const system = messages.slice(0, 1);
         const recent = messages.slice(-keepRecent);
-        const digest = compactMessagesToDigest(messages.slice(1, -keepRecent));
+        const oldOnes = messages.slice(1, -keepRecent);
+        // v2 语义压缩优先（模型总结，保留决策理由/未竟事项）；失败/关闭降级 v1 确定性摘要
+        let digest: ChatMessage | null = null;
+        if (opts.contextGovernance?.semantic !== false && oldOnes.length > 0) {
+          digest = await compactMessagesSemantic(oldOnes, opts.callModel, controller.signal);
+        }
+        if (!digest) digest = compactMessagesToDigest(oldOnes);
         messages.length = 0;
         messages.push(...system, digest, ...recent);
       }
@@ -353,6 +431,8 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult
           toolRegistry: opts.toolRegistry ?? createBuiltinToolRegistry(),
           permissionGuard: opts.permissionGuard,
           fileReadState,
+          // capability parity A3：todo 草稿纸等 per-task 工具的任务锚（各 tracking 来源取一）
+          taskId: opts.usageTracking?.taskId ?? opts.traceTracking?.taskId ?? opts.progressTracking?.taskId ?? opts.loopback?.taskId,
         };
         const startedAt = Date.now();
         let outcome: 'success' | 'fail' = 'success';

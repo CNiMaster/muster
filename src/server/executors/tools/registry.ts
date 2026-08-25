@@ -45,6 +45,8 @@ import type {
 } from './file-tools';
 import { WEB_TOOL_DEFINITIONS, webFetchHandler, webSearchHandler } from './web-tools';
 import { IMAGE_TOOL_DEFINITIONS, imageGenerateHandler } from './image-tools';
+import { SEARCH_TOOL_DEFINITIONS, searchFilesHandler, globFilesHandler } from './search-tools';
+import { TODO_TOOL_DEFINITIONS, todoReadHandler, todoWriteHandler } from './todo-tools';
 
 // 复用 file-tools.ts 的类型定义（稳定，多处引用）
 export type { ToolDefinition, ToolCall, ToolResult, ReviewContext } from './file-tools';
@@ -86,6 +88,8 @@ export interface ToolContext {
   fileReadState?: Map<string, { mtimeMs: number; size: number }>;
   /** 注册表自引用，允许 handler 互相调用（如未来工具组合）。 */
   toolRegistry: RuntimeToolRegistry;
+  /** 任务锚（capability parity A3）：per-task 工具（todo 草稿纸等）的隔离键。 */
+  taskId?: string;
 }
 
 /** 注册表中的一个运行时工具：定义 + handler + 权限动作 + 来源。 */
@@ -1416,6 +1420,32 @@ export function createBuiltinToolRegistry(): RuntimeToolRegistry {
     handler: imageGenerateHandler,
     permissionAction: 'network',
     source: { pluginId: BUILTIN_PLUGIN_ID, toolName: 'image_generate' },
+  });
+  // capability parity 批次 A1：原生代码检索 builtin（API 执行器用，对齐 Grep/Glob 分工）。
+  // read-file 守卫以 args.path 为锚（缺省 '.'=工作目录），与 read_file 同一审批流。
+  registry.register({
+    definition: SEARCH_TOOL_DEFINITIONS[0]!,
+    handler: searchFilesHandler,
+    permissionAction: 'read-file',
+    source: { pluginId: BUILTIN_PLUGIN_ID, toolName: 'search_files' },
+  });
+  registry.register({
+    definition: SEARCH_TOOL_DEFINITIONS[1]!,
+    handler: globFilesHandler,
+    permissionAction: 'read-file',
+    source: { pluginId: BUILTIN_PLUGIN_ID, toolName: 'glob_files' },
+  });
+  // capability parity 批次 A3：循环内 todo 草稿纸（模型自锚，与业务任务树解耦）。
+  // 无 permissionAction——写 MUSTER_HOME/todo 自有草稿区，不触碰工作区文件（与 done/notify 同类）。
+  registry.register({
+    definition: TODO_TOOL_DEFINITIONS[0]!,
+    handler: todoReadHandler,
+    source: { pluginId: BUILTIN_PLUGIN_ID, toolName: 'todo_read' },
+  });
+  registry.register({
+    definition: TODO_TOOL_DEFINITIONS[1]!,
+    handler: todoWriteHandler,
+    source: { pluginId: BUILTIN_PLUGIN_ID, toolName: 'todo_write' },
   });
   return registry;
 }
