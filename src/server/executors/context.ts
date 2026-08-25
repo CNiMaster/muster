@@ -28,6 +28,7 @@ import { listMaterials } from '../domain/material';
 import { getPersona, listPersonaIndex } from '../domain/persona-library';
 import { appendTaskEvent } from '../domain/task-event';
 import { searchArchive } from '../domain/archive';
+import { searchKnowledge, ensureProjectBase, ensurePlatformBase } from '../domain/knowledge';
 import { listProjectSpecialists, listStaffSpecialists, specialistLabel } from '../domain/specialist-pool';
 import { localTimezone } from '../domain/tz';
 import { getExecutorProfile } from '../domain/executor-profile';
@@ -426,6 +427,20 @@ export function assembleContext(
       sp.push('');
     }
   }
+    // capability parity 批次 C2：知识库段——用户喂的文档资料按任务相关性渐进注入
+    //（项目库+平台通用库，词法命中；详情用 search_knowledge 工具按需深查，不整篇塞入）。
+    const knowledgeHits = searchKnowledge(db, {
+      query: archiveQuery,
+      baseIds: [ensureProjectBase(db, project.id).id, ensurePlatformBase(db).id],
+      limit: 5,
+    });
+    if (knowledgeHits.length > 0) {
+      sp.push('# 知识库', '以下项目/通用知识库文档与当前任务相关（工具 search_knowledge 可查全文片段）：');
+      for (const hit of knowledgeHits) {
+        sp.push(`- ${hit.title}${hit.tags.length ? ` [${hit.tags.join(',')}]` : ''} — ${hit.snippet.slice(0, 120)}`);
+      }
+      sp.push('');
+    }
   } // else 闭合（非 lightweight 的完整上下文段）
 
   // 轻量任务（咨询/发言）用精简契约：无验收标准、无产物（产物会被系统剥离，必须走派活）

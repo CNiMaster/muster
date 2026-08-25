@@ -48,6 +48,7 @@ import { IMAGE_TOOL_DEFINITIONS, imageGenerateHandler } from './image-tools';
 import { SEARCH_TOOL_DEFINITIONS, searchFilesHandler, globFilesHandler } from './search-tools';
 import { TODO_TOOL_DEFINITIONS, todoReadHandler, todoWriteHandler } from './todo-tools';
 import { hostBridgeTools } from './bridge-tools';
+import { KNOWLEDGE_TOOL_DEFINITIONS, searchKnowledgeHandler } from './knowledge-tools';
 
 // 复用 file-tools.ts 的类型定义（稳定，多处引用）
 export type { ToolDefinition, ToolCall, ToolResult, ReviewContext } from './file-tools';
@@ -1457,6 +1458,13 @@ export function createBuiltinToolRegistry(): RuntimeToolRegistry {
       source: { pluginId: BUILTIN_PLUGIN_ID, toolName: t.toolName },
     });
   }
+  // capability parity 批次 C2：知识库检索 builtin（词法；与记忆系统分野——资料正文 vs 经验教训）。
+  registry.register({
+    definition: KNOWLEDGE_TOOL_DEFINITIONS[0]!,
+    handler: searchKnowledgeHandler,
+    permissionAction: 'read-file',
+    source: { pluginId: BUILTIN_PLUGIN_ID, toolName: 'search_knowledge' },
+  });
   return registry;
 }
 

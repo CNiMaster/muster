@@ -3394,3 +3394,68 @@ export function useResolveSpecialistReview() {
     },
   });
 }
+
+// ===== Knowledge（capability parity 批次 C3）=====
+export interface KnowledgeBaseView {
+  id: string; scopeLevel: 'platform' | 'project'; projectId: string | null;
+  name: string; description: string | null; createdAt: string; updatedAt: string; docCount: number;
+}
+export interface KnowledgeDocView {
+  id: string; baseId: string; title: string; format: string; charCount: number;
+  tags: string[]; sourceUrl: string | null; createdAt: string; updatedAt: string;
+  extractedText?: string;
+}
+interface KnowledgeOverview { ok: boolean; projectBase: KnowledgeBaseView; platformBase: KnowledgeBaseView; docs: KnowledgeDocView[] }
+
+export function useKnowledgeOverview(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ['knowledge', projectId],
+    queryFn: () => api.get<KnowledgeOverview>(`/api/projects/${projectId}/knowledge`),
+    enabled: !!projectId,
+  });
+}
+
+export function useKnowledgeSearch(projectId: string | undefined, query: string) {
+  return useQuery({
+    queryKey: ['knowledge-search', projectId, query],
+    queryFn: () => api.get<{ ok: boolean; hits: Array<{ docId: string; title: string; snippet: string; tags: string[]; score: number }> }>(`/api/projects/${projectId}/knowledge/search?q=${encodeURIComponent(query)}`),
+    enabled: !!projectId && query.trim().length > 0,
+  });
+}
+
+export function useKnowledgeImportText(projectId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ title, text, tags, scope }: { title: string; text: string; tags?: string[]; scope?: 'project' | 'platform' }) =>
+      api.post(`/api/projects/${projectId}/knowledge/docs`, { title, text, tags, scope }),
+    onSuccess: () => { if (projectId) qc.invalidateQueries({ queryKey: ['knowledge', projectId] }); },
+  });
+}
+
+export function useKnowledgeImportFile(projectId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ file }: { file: File }) => {
+      if (!projectId) throw new Error('缺少项目上下文');
+      const response = await fetch(`/api/projects/${projectId}/knowledge/import-file`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream', 'x-file-name': encodeURIComponent(file.name) },
+        body: file,
+      });
+      if (!response.ok) {
+        const text = await response.text().catch(() => '');
+        throw new Error(text || `导入失败 (HTTP ${response.status})`);
+      }
+      return response.json() as Promise<{ ok: boolean; doc: KnowledgeDocView }>;
+    },
+    onSuccess: () => { if (projectId) qc.invalidateQueries({ queryKey: ['knowledge', projectId] }); },
+  });
+}
+
+export function useKnowledgeDeleteDoc(projectId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (docId: string) => api.delete(`/api/projects/${projectId}/knowledge/docs/${docId}`),
+    onSuccess: () => { if (projectId) qc.invalidateQueries({ queryKey: ['knowledge', projectId] }); },
+  });
+}

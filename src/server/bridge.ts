@@ -154,6 +154,31 @@ export const BRIDGE_ACTIONS: BridgeAction[] = [
       { name: 'reason', description: '为什么（展示给用户审批）', required: true },
     ],
   },
+  // 知识库动作（批次 C2）：query 只读免审批；append 编辑自动（拍板）+ trace 留痕。
+  {
+    name: 'knowledge-query',
+    summary: 'Search the knowledge base (read-only).',
+    description: '检索知识库（用户导入的文档资料）。默认搜当前任务的项目库+平台通用库，返回标题+片段+标签。',
+    method: 'POST',
+    params: [
+      { name: 'taskId', description: 'Current task ID', required: true },
+      { name: 'query', description: '关键词组合（空格分词）', required: true },
+      { name: 'limit', description: '返回条数上限（默认 8，≤20）' },
+    ],
+  },
+  {
+    name: 'knowledge-append',
+    summary: 'Append a doc to the knowledge base (auto, trace-logged).',
+    description: '把一份资料写入知识库（新建文档）。默认进当前任务的项目库；scope=platform 进通用库。编辑自动档（不弹审批），执行留痕于 trace。',
+    method: 'POST',
+    params: [
+      { name: 'taskId', description: 'Current task ID', required: true },
+      { name: 'title', description: '文档标题', required: true },
+      { name: 'text', description: '文档正文（纯文本）', required: true },
+      { name: 'tags', description: '标签数组（可选）' },
+      { name: 'scope', description: 'project（默认）|platform' },
+    ],
+  },
 ];
 
 export function isKnownBridgeAction(action: string): boolean {
@@ -631,6 +656,61 @@ bridgeRouter.post('/plugin-toggle', async (req, res) => {
     const { setCompanyPluginDecision } = await import('./domain/plugin-install');
     setCompanyPluginDecision(db, pluginId, enabled ? 'enabled' : 'disabled', `bridge:${tid.taskId}`);
     res.json({ ok: true, pluginId, enabled });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e instanceof Error ? e.message : String(e) });
+  }
+});
+
+/** POST /bridge/knowledge-query：知识库检索（只读免审批）。 */
+bridgeRouter.post('/knowledge-query', async (req, res) => {
+  try {
+    const tid = bridgeTaskId(req);
+    if (!tid.ok) { res.status(400).json({ ok: false, error: tid.error }); return; }
+    const query = String((req.body as { query?: unknown }).query ?? '').trim();
+    const limit = Number((req.body as { limit?: unknown }).limit ?? 8);
+    if (!query) { res.status(400).json({ ok: false, error: 'query 必填' }); return; }
+    const db = getDb();
+    const { searchKnowledge, ensurePlatformBase } = await import('./domain/knowledge');
+    const taskRow = db.prepare('SELECT project_id FROM task WHERE id=?').get(tid.taskId) as { project_id: string | null } | undefined;
+    let baseIds: string[] = [ensurePlatformBase(db).id];
+    if (taskRow?.project_id) {
+      const { ensureProjectBase } = await import('./domain/knowledge');
+      baseIds = [ensureProjectBase(db, taskRow.project_id).id, ...baseIds];
+    }
+    const hits = searchKnowledge(db, { query, baseIds, limit: Number.isFinite(limit) ? limit : 8 });
+    res.json({ ok: true, count: hits.length, hits });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e instanceof Error ? e.message : String(e) });
+  }
+});
+
+/** POST /bridge/knowledge-append：写入知识库（编辑自动+trace 留痕；拍板不弹审批）。 */
+bridgeRouter.post('/knowledge-append', async (req, res) => {
+  try {
+    const tid = bridgeTaskId(req);
+    if (!tid.ok) { res.status(400).json({ ok: false, error: tid.error }); return; }
+    const body = req.body as { title?: unknown; text?: unknown; tags?: unknown; scope?: unknown };
+    const title = String(body.title ?? '').trim();
+    const text = String(body.text ?? '').trim();
+    const scope = String(body.scope ?? 'project');
+    const tags = Array.isArray(body.tags) ? (body.tags as unknown[]).map((t) => String(t)) : [];
+    if (!title || !text) { res.status(400).json({ ok: false, error: 'title 和 text 必填' }); return; }
+    if (scope !== 'project' && scope !== 'platform') { res.status(400).json({ ok: false, error: 'scope 只支持 project|platform' }); return; }
+    const db = getDb();
+    const { importDoc, ensurePlatformBase } = await import('./domain/knowledge');
+    let baseId: string;
+    if (scope === 'platform') {
+      baseId = ensurePlatformBase(db).id;
+    } else {
+      const taskRow = db.prepare('SELECT project_id FROM task WHERE id=?').get(tid.taskId) as { project_id: string | null } | undefined;
+      if (!taskRow?.project_id) { res.status(400).json({ ok: false, error: '任务无项目归属：project 作用域不可用（可显式 scope=platform）' }); return; }
+      const { ensureProjectBase } = await import('./domain/knowledge');
+      baseId = ensureProjectBase(db, taskRow.project_id).id;
+    }
+    const doc = importDoc(db, { baseId, title, format: 'md', text, tags, createdBy: `bridge:${tid.taskId}` });
+    // 编辑自动档留痕：trace 可见谁在何时写入了什么
+    appendTrace(db, { taskId: tid.taskId, kind: 'notice', name: 'knowledge_append', summary: `知识库写入：${title}（${doc.charCount} 字，${scope} 库）`, payload: { docId: doc.id, baseId } });
+    res.json({ ok: true, docId: doc.id, baseId, title, charCount: doc.charCount });
   } catch (e) {
     res.status(500).json({ ok: false, error: e instanceof Error ? e.message : String(e) });
   }

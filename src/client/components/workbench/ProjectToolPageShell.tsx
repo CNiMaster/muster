@@ -15,6 +15,7 @@ const TOOL_LABELS: Record<ProjectToolKey, string> = {
   dashboard: '运行概览',
   artifacts: '成果与文件',
   materials: '素材库',
+  knowledge: '知识库',
   reports: '复盘',
   usage: '用量',
   character: '人物关系',

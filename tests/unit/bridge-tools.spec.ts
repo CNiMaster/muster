@@ -12,7 +12,7 @@ afterEach(() => { vi.unstubAllGlobals(); });
 describe('定义生成', () => {
   it('4 个 host_ 工具；settings-set 必填三参；plugin-toggle 含 boolean', () => {
     expect(HOST_BRIDGE_TOOL_DEFINITIONS.map((d) => d.function.name).sort()).toEqual([
-      'host_plugin_list', 'host_plugin_toggle', 'host_settings_get', 'host_settings_set',
+      'host_knowledge_append', 'host_knowledge_query', 'host_plugin_list', 'host_plugin_toggle', 'host_settings_get', 'host_settings_set',
     ]);
     const setDef = HOST_BRIDGE_TOOL_DEFINITIONS.find((d) => d.function.name === 'host_settings_set')!.function;
     expect(setDef.parameters.required).toEqual(['key', 'value', 'reason']);
@@ -22,7 +22,7 @@ describe('定义生成', () => {
 
   it('hostBridgeTools 提供注册三元组（definition+handler+toolName 对齐）', () => {
     const tools = hostBridgeTools();
-    expect(tools).toHaveLength(4);
+    expect(tools).toHaveLength(6);
     for (const t of tools) expect(t.definition.function.name).toBe(t.toolName);
   });
 });

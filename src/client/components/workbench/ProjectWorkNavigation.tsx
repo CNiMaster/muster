@@ -20,7 +20,7 @@ import { FilesTreeModal } from '../project/FilesTreeModal';
 import { useTaskActionMenu } from '../project/TaskTopBar';
 import { toast } from '../Button';
 
-export type ProjectToolKey = 'tasks' | 'merges' | 'plans' | 'dashboard' | 'artifacts' | 'materials' | 'reports' | 'usage' | 'character' | 'settings';
+export type ProjectToolKey = 'tasks' | 'merges' | 'plans' | 'dashboard' | 'artifacts' | 'materials' | 'knowledge' | 'reports' | 'usage' | 'character' | 'settings';
 export type ProjectSurfaceView = 'task' | 'employee' | 'group' | 'activity' | 'tool';
 
 const UNGROUPED = Symbol('ungrouped');

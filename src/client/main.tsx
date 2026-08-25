@@ -41,6 +41,7 @@ const UsagePage = lazyRetry(() => import('./pages/UsagePage').then((m) => ({ def
 const TaskDetailPage = lazyRetry(() => import('./pages/TaskDetailPage').then((m) => ({ default: m.TaskDetailPage })));
 const ArtifactsPage = lazyRetry(() => import('./pages/ArtifactsPage').then((m) => ({ default: m.ArtifactsPage })));
 const MaterialsPage = lazyRetry(() => import('./pages/MaterialsPage').then((m) => ({ default: m.MaterialsPage })));
+const KnowledgeBasePage = lazyRetry(() => import('./pages/KnowledgeBasePage').then((m) => ({ default: m.KnowledgeBasePage })));
 const ReportsPage = lazyRetry(() => import('./pages/ReportsPage').then((m) => ({ default: m.ReportsPage })));
 const DashboardPage = lazyRetry(() => import('./pages/DashboardPage').then((m) => ({ default: m.DashboardPage })));
 const WorkflowGraphPage = lazyRetry(() => import('./pages/WorkflowGraphPage').then((m) => ({ default: m.WorkflowGraphPage })));
@@ -122,6 +123,7 @@ const router = createBrowserRouter([
       { path: 'projects/:projectId/usage', element: <ProjectToolPageShell tool="usage"><ModeGate><UsagePage /></ModeGate></ProjectToolPageShell> },
       { path: 'projects/:projectId/artifacts', element: <ProjectToolPageShell tool="artifacts"><ArtifactsPage /></ProjectToolPageShell> },
       { path: 'projects/:projectId/materials', element: <ProjectToolPageShell tool="materials"><MaterialsPage /></ProjectToolPageShell> },
+      { path: 'projects/:projectId/knowledge', element: <ProjectToolPageShell tool="knowledge"><KnowledgeBasePage /></ProjectToolPageShell> },
       { path: 'projects/:projectId/reports', element: <ProjectToolPageShell tool="reports"><ModeGate><ReportsPage /></ModeGate></ProjectToolPageShell> },
       { path: 'projects/:projectId/dashboard', element: <ProjectToolPageShell tool="dashboard"><ModeGate><DashboardPage /></ModeGate></ProjectToolPageShell> },
       { path: 'projects/:projectId/settings', element: <ProjectToolPageShell tool="settings"><ProjectSettingsPage /></ProjectToolPageShell> },

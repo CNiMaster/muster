@@ -61,6 +61,25 @@ const HOST_BRIDGE_ACTIONS: BridgeActionSpec[] = [
       { name: 'reason', type: 'string', description: '为什么（展示给用户审批）', required: true },
     ],
   },
+  {
+    toolName: 'host_knowledge_query',
+    action: 'knowledge-query',
+    summary: '检索知识库（只读）',
+    description: '检索用户导入的文档资料（知识库）。默认搜当前项目库+通用库，返回标题+片段+标签。查询用关键词组合。',
+    params: [{ name: 'query', type: 'string', description: '关键词组合（空格分词）', required: true }],
+  },
+  {
+    toolName: 'host_knowledge_append',
+    action: 'knowledge-append',
+    summary: '写入知识库（自动，留痕）',
+    description: '把一份资料写入知识库（新建文档）。默认进当前项目库；scope=platform 进通用库。自动执行（不弹审批），trace 留痕。',
+    params: [
+      { name: 'title', type: 'string', description: '文档标题', required: true },
+      { name: 'text', type: 'string', description: '正文（纯文本）', required: true },
+      { name: 'tags', type: 'string', description: '标签数组 JSON（可选）' },
+      { name: 'scope', type: 'string', description: 'project（默认）|platform' },
+    ],
+  },
 ];
 
 /** 由动作描述生成 OpenAI function 定义。 */

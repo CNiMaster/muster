@@ -139,3 +139,38 @@ describe('bridge /plugin-toggle（事事确认）', () => {
     expect(still?.decision).toBe('disabled');
   });
 });
+
+describe('bridge /knowledge-query 与 /knowledge-append（批次 C2）', () => {
+  it('append 编辑自动（无审批卡）写入项目库并留痕；query 检索命中', async () => {
+    const projectId = (db.prepare('SELECT project_id FROM task WHERE id=?').get(taskId) as { project_id: string }).project_id;
+    const appendRes = await post('knowledge-append', { taskId, title: '桥写入的部署手册', text: '灰度发布流程：先扩容再切流。支付通道注意对账。' });
+    const appendBody = (await appendRes.json()) as { ok: boolean; docId: string };
+    expect(appendBody.ok).toBe(true);
+    // 编辑自动：不应产生审批卡
+    const pending = db.prepare("SELECT COUNT(*) AS c FROM permission_approval WHERE status='pending'").get() as { c: number };
+    expect(pending.c).toBe(0);
+    // 项目库归属正确
+    const row = db.prepare('SELECT b.project_id FROM knowledge_doc d JOIN knowledge_base b ON b.id=d.base_id WHERE d.id=?').get(appendBody.docId) as { project_id: string };
+    expect(row.project_id).toBe(projectId);
+    // trace 留痕
+    const trace = db.prepare("SELECT COUNT(*) AS c FROM execution_trace WHERE task_id=? AND name='knowledge_append'").get(taskId) as { c: number };
+    expect(trace.c).toBe(1);
+    // 检索命中
+    const qRes = await post('knowledge-query', { taskId, query: '灰度 发布' });
+    const qBody = (await qRes.json()) as { ok: boolean; count: number; hits: Array<{ title: string }> };
+    expect(qBody.ok).toBe(true);
+    expect(qBody.count).toBeGreaterThanOrEqual(1);
+    expect(qBody.hits[0]!.title).toBe('桥写入的部署手册');
+  });
+
+  it('append 显式 scope=platform 进通用库；非法 scope 400', async () => {
+    const p = post('knowledge-append', { taskId, title: '通用资料', text: '全平台都该知道的常识。', scope: 'platform' });
+    const res = await p;
+    const body = (await res.json()) as { ok: boolean; baseId: string };
+    expect(body.ok).toBe(true);
+    const base = db.prepare('SELECT scope_level FROM knowledge_base WHERE id=?').get(body.baseId) as { scope_level: string };
+    expect(base.scope_level).toBe('platform');
+    const bad = await post('knowledge-append', { taskId, title: 'x', text: 'y', scope: 'nowhere' });
+    expect(bad.status).toBe(400);
+  });
+});

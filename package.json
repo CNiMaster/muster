@@ -35,6 +35,8 @@
     "@xyflow/react": "^12.3.5",
     "better-sqlite3": "^13.0.3",
     "express": "^5.2.1",
+    "mammoth": "^1.12.1",
+    "pdf-parse": "^2.4.5",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0",

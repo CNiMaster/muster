@@ -17,5 +17,7 @@
 
 | dnd-kit (@dnd-kit/core, @dnd-kit/sortable, @dnd-kit/utilities) | https://github.com/clauderic/dnd-kit | MIT | 项目主页/侧栏列表拖拽排序（项目分组拖动与组内排序，批2） | 2026-08-18 | 依赖 |
 | lefthook | https://github.com/evilmartians/lefthook | MIT | git hooks 管理（pre-push typecheck 门禁，工程地基批次 E） | 2026-08-19 | 依赖 |
+| pdf-parse | https://github.com/runet1m/pdf-parse | MIT | 知识库 PDF 文本抽取（capability parity 批次 C） | 2026-08-26 | 依赖 |
+| mammoth | https://github.com/mwilliamson/mammoth.js | BSD-2-Clause | 知识库 docx 文本抽取（capability parity 批次 C） | 2026-08-26 | 依赖 |
 
 > 历史既有依赖（express/react/better-sqlite3 等）以 `package.json` 与其各自 LICENSE 为准；本表登记「新增引用/借鉴」与内容级导入。
