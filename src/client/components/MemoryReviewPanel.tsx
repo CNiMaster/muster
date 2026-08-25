@@ -226,7 +226,7 @@ export function MemoryReviewPanel({ profileId }: { profileId: string }): React.R
 }
 
 function scopeLabel(scope: MemoryCandidate['scope']): string {
-  return ({ personal: '个人', workspace: '工作台', project: '项目', skill: 'Skill' } as const)[scope];
+  return ({ personal: '个人', workspace: '工作台', project: '项目', craft: '手艺' } as const)[scope];
 }
 
 /** 记忆优势分展示：正数带 + 号（好于项目平均消耗），保留两位；±0.005 内四舍五入为 0.00（吞掉 -0.00）。 */

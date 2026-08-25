@@ -5,7 +5,7 @@ import { getAgentProfile, ensurePersonaArchiveProfile } from './agent-profile';
 import { getWorkbenchOrNull } from './workbench';
 import { expandTermAliases } from './matching/lexicon';
 
-export type MemoryScope = 'personal' | 'workspace' | 'project' | 'skill';
+export type MemoryScope = 'personal' | 'workspace' | 'project' | 'craft';
 export type MemoryCandidateStatus = 'pending' | 'approved' | 'rejected';
 export type MemoryEntryState = 'active' | 'locked' | 'superseded' | 'deleted';
 
@@ -53,7 +53,7 @@ export interface MemoryCandidate {
   createdAt: string;
   /** E2.1 结构化 category 标签（形如 "design:color"），供晋升流聚类；旧数据/null 无标签。 */
   fingerprint: string | null;
-  /** 蓝图组织批次1：人设键（skill scope 的方法论归属，如 'product/product-manager'）；仅 skill scope 允许非空。 */
+  /** 蓝图组织批次1：人设键（craft scope 的方法论归属，如 'product/product-manager'）；仅 craft scope 允许非空。 */
   personaKey: string | null;
   /** 经验归因（受控四值；null=未归因，旧数据兼容）。 */
   cause: MemoryCause | null;
@@ -78,7 +78,7 @@ export interface MemoryEntry {
   updatedAt: string;
   /** E2.1 结构化 category 标签，供晋升流聚类。 */
   fingerprint: string | null;
-  /** 蓝图组织批次1：人设键（skill scope 专属）；null = 通用技能记忆。 */
+  /** 蓝图组织批次1：人设键（craft scope 专属）；null = 通用技能记忆。 */
   personaKey: string | null;
   /** 记忆优势分：注入次数（记录在案的任务上下文出场）。 */
   hitCount: number;
@@ -142,7 +142,7 @@ export function createMemoryCandidate(db: DB, input: {
   canInfluence: boolean; expiresAt?: string; allowAutoApprove?: boolean;
   /** E2.1 结构化 category 标签（形如 "design:color"），供晋升流聚类；省略则无标签。 */
   fingerprint?: string | null;
-  /** 蓝图组织批次1：人设键——skill scope 的方法论归属（如 'product/product-manager'）。仅 skill scope 允许。 */
+  /** 蓝图组织批次1：人设键——craft scope 的方法论归属（如 'product/product-manager'）。仅 craft scope 允许。 */
   personaKey?: string;
   /** 经验归因（受控四值；非法值视为未归因，不阻断写入）。 */
   cause?: MemoryCause | string | null;
@@ -154,8 +154,8 @@ export function createMemoryCandidate(db: DB, input: {
 }): MemoryCandidate {
   getAgentProfile(db, input.profileId);
   validateScope(input.scope, input.projectId);
-  if (input.personaKey && input.scope !== 'skill') {
-    throw new AppError(ErrorCode.VALIDATION, '人设键只允许用于 skill 记忆（方法论挂在人设上）');
+  if (input.personaKey && input.scope !== 'craft') {
+    throw new AppError(ErrorCode.VALIDATION, '人设键只允许用于 craft 记忆（方法论挂在人设上）');
   }
   let content = input.content.trim();
   if (!content) throw new AppError(ErrorCode.VALIDATION, '记忆内容不能为空');
@@ -185,7 +185,7 @@ export function createMemoryCandidate(db: DB, input: {
     input.scope === 'project'
     || input.author === 'user'
     // 蓝图组织批次1：人设键方法论是自包含的领域经验（不绑定公司/项目事实），高置信允许自动生效。
-    || (input.scope === 'skill' && !!input.personaKey)
+    || (input.scope === 'craft' && !!input.personaKey)
   );
   if (canAutoApprove) approveMemoryCandidate(db, id, input.author);
   return getMemoryCandidate(db, id);
@@ -235,7 +235,7 @@ export function approveMemoryCandidate(db: DB, id: string, reviewer: string): Me
 
 /**
  * 记忆更新闭环的执行体：把 oldEntryIds 批量转为 superseded，把合计战绩（hit/vote/adv）继承给 newEntryId。
- * 只处理仍处 active/locked 的旧条目（已删除/已被替代的跳过，幂等）；skill 记忆需 persona_key 一致才可替代。
+ * 只处理仍处 active/locked 的旧条目（已删除/已被替代的跳过，幂等）；craft 记忆需 persona_key 一致才可替代。
  * 个人偏好合并提案（多对一）与单条替代（一对一）共用此处。
  */
 export function applySupersede(db: DB, oldEntryIds: string[], newEntryId: string, changedBy: string): number {
@@ -249,11 +249,11 @@ export function applySupersede(db: DB, oldEntryIds: string[], newEntryId: string
       const old = db.prepare('SELECT * FROM memory_entry WHERE id=?').get(oldId) as EntryRow | undefined;
       if (!old) continue;
       if (old.state !== 'active' && old.state !== 'locked') continue;
-      // skill 记忆按 persona_key 全局召回（方法论属于人设不属于执行者），替代只校验人设一致；
+      // craft 记忆按 persona_key 全局召回（方法论属于人设不属于执行者），替代只校验人设一致；
       // 其余 scope 仍要求同 profile（防跨员工误替代）。
-      if (old.scope !== 'skill' && old.profile_id !== newEntry.profile_id) continue;
+      if (old.scope !== 'craft' && old.profile_id !== newEntry.profile_id) continue;
       if (old.scope !== newEntry.scope) continue;
-      if (old.scope === 'skill' && (old.persona_key ?? null) !== newEntry.persona_key) continue;
+      if (old.scope === 'craft' && (old.persona_key ?? null) !== newEntry.persona_key) continue;
       db.prepare("UPDATE memory_entry SET state='superseded', updated_at=? WHERE id=?").run(now, oldId);
       db.prepare('DELETE FROM memory_fts WHERE entry_id=?').run(oldId);
       insertMemoryVersion(db, oldId, old.version + 1, old.content, `${changedBy}:superseded-by:${newEntryId}`, null, now);
@@ -266,7 +266,7 @@ export function applySupersede(db: DB, oldEntryIds: string[], newEntryId: string
   return superseded;
 }
 
-/** 替代目标合法性校验：同 scope（skill 需 persona_key 一致、放宽 profile 归属——人设方法论全局召回）、
+/** 替代目标合法性校验：同 scope（craft 需 persona_key 一致、放宽 profile 归属——人设方法论全局召回）、
  * 仍处 active/locked。不合法返回 null（降级为普通候选）。 */
 function validateSupersedesTarget(
   db: DB, targetId: string | null, profileId: string, scope: MemoryScope, personaKey?: string,
@@ -277,7 +277,7 @@ function validateSupersedesTarget(
   if (!row) return null;
   if (row.scope !== scope) return null;
   if (row.state !== 'active' && row.state !== 'locked') return null;
-  if (scope === 'skill') {
+  if (scope === 'craft') {
     if ((row.persona_key ?? null) !== (personaKey ?? null)) return null;
   } else if (row.profile_id !== profileId) {
     return null;
@@ -356,15 +356,15 @@ export function deleteMemoryEntry(db: DB, id: string, changedBy: string): Memory
  * 把一次性执行体（蜂群工蜂等）profile 名下的人设方法论记忆改挂到「人设方法论档案」宿主。
  * 必须在删除该 profile 前调用——memory_entry.profile_id 是 ON DELETE CASCADE，
  * 不迁移的话专家蜂沉淀的 CRAFT 会随 profile 物理删除。
- * 只迁移 skill+persona_key 行（含候选）；personal/project 记忆与临时执行体绑定，随删。
+ * 只迁移 craft+persona_key 行（含候选）；personal/project 记忆与临时执行体绑定，随删。
  */
 export function preservePersonaCraftMemories(db: DB, fromProfileId: string): number {
   const to = ensurePersonaArchiveProfile(db);
   const entries = db
-    .prepare(`UPDATE memory_entry SET profile_id=? WHERE profile_id=? AND scope='skill' AND persona_key IS NOT NULL`)
+    .prepare(`UPDATE memory_entry SET profile_id=? WHERE profile_id=? AND scope='craft' AND persona_key IS NOT NULL`)
     .run(to, fromProfileId).changes;
   const candidates = db
-    .prepare(`UPDATE memory_candidate SET profile_id=? WHERE profile_id=? AND scope='skill' AND persona_key IS NOT NULL`)
+    .prepare(`UPDATE memory_candidate SET profile_id=? WHERE profile_id=? AND scope='craft' AND persona_key IS NOT NULL`)
     .run(to, fromProfileId).changes;
   return entries + candidates;
 }
@@ -389,7 +389,7 @@ export function searchMemory(db: DB, input: {
        AND (
          -- 修复轮（批次 F 定案 #8）：personal 是用户偏好，属于用户不属于员工——检索全局可见，不按 profile 过滤
          (m.scope='personal')
-         OR (m.scope='skill' AND m.profile_id=?)
+         OR (m.scope='craft' AND m.profile_id=?)
          OR (m.scope='workspace' AND m.profile_id=?)
          OR (m.scope='project' AND m.profile_id=? AND m.project_id=?)
        )
@@ -456,7 +456,7 @@ export function loadContextMemories(db: DB, input: {
    * 避免把全量记忆塞进 system prompt 淹没上下文；为空则回退全量（按 scope 优先级）。
    * 注意：personal 是用户的稳定偏好与核心身份，**永远全量注入**，不受 query 筛选——
    * 否则 agent 会因任务不相关而忘记用户的固定偏好（如"用中文回复"）。
- * 蓝图组织批次1：skill 记忆按人设过滤——任务穿戴人设时注入「该人设的方法论 + 通用技能记忆」，
+ * 蓝图组织批次1：craft 记忆按人设过滤——任务穿戴人设时注入「该人设的方法论 + 通用技能记忆」，
  * 不穿戴时只注入通用技能记忆（persona_key IS NULL）。人设方法论不污染无人设任务。
  * 人设方法论（persona_key 非空）按 persona_key 全局召回（不分 profile 归属）——
  * 方法论属于人设：蜂群专家蜂沉淀的 CRAFT 与固定员工沉淀的同池复用。
@@ -475,12 +475,12 @@ export function loadContextMemories(db: DB, input: {
   // 新记忆靠 updated_at 时间序保底出场（探索通道），老而准的记忆靠战绩稳压新而平庸的；
   // id 兜底保证同毫秒创建的记忆排序确定。
   const orderClause = `CASE scope WHEN 'personal' THEN 1 WHEN 'workspace' THEN 2 WHEN 'project' THEN 3 ELSE 4 END, adv_sum * 1.0 / (vote_count + ${SHRINK_K}) DESC, updated_at DESC, id`;
-  // skill 分支：人设方法论（persona_key 非空）按 persona_key 全局召回——方法论属于人设不属于执行者，
+  // craft 分支：人设方法论（persona_key 非空）按 persona_key 全局召回——方法论属于人设不属于执行者，
   // 蜂群专家蜂沉淀的 CRAFT 挂在人设档案宿主上，任何穿戴同款人设的执行体都能读到；
   // 通用技能记忆（persona_key IS NULL）仍按 profile 隔离（个人手艺不外泄）。
-  const skillClause = input.personaKey
-    ? "(scope='skill' AND ((persona_key IS NULL AND profile_id=?) OR persona_key=?))"
-    : "(scope='skill' AND persona_key IS NULL AND profile_id=?)";
+  const craftClause = input.personaKey
+    ? "(scope='craft' AND ((persona_key IS NULL AND profile_id=?) OR persona_key=?))"
+    : "(scope='craft' AND persona_key IS NULL AND profile_id=?)";
   // query 为空 → 原全量逻辑（向后兼容，零破坏）。
   if (!trimmedQuery) {
     const fullValues: unknown[] = [now, input.profileId];
@@ -495,14 +495,14 @@ export function loadContextMemories(db: DB, input: {
            -- 修复轮（批次 F 定案 #8）：personal=用户偏好，去掉 profile/project 过滤——乙能读到甲沉淀的用户偏好
            (scope='personal')
            OR (scope='workspace' AND profile_id=?)
-           OR ${skillClause}
+           OR ${craftClause}
            OR (scope='project' AND profile_id=? AND project_id=?)
          )
        ORDER BY ${orderClause} LIMIT ?`,
     ).all(...fullValues) as EntryRow[];
     return recordInjected(db, input.taskId, applyInjectBudget(rows.map((row) => entryFromRow(db, row))));
   }
-  // query 非空 → personal/skill 仍全量（skill 按人设过滤）；workspace/project 仅注入相关记忆。
+  // query 非空 → personal/craft 仍全量（craft 按人设过滤）；workspace/project 仅注入相关记忆。
   // 每个词元独立 OR 命中（英文整词、中文整段 + 二元组），既渐进又不丢用户的稳定偏好。
   const tokens = expandMatchTokens(trimmedQuery);
   const matchOrs = tokens
@@ -522,7 +522,7 @@ export function loadContextMemories(db: DB, input: {
        AND can_influence=1 AND (expires_at IS NULL OR expires_at > ?)
        AND (
          (scope='personal')
-         OR ${skillClause}
+         OR ${craftClause}
          OR ((scope='workspace' AND profile_id=?) OR (scope='project' AND profile_id=? AND project_id=?))
              AND (${matchOrs})
        )
@@ -680,7 +680,7 @@ export function flushThreadMemory(db: DB, input: {
 
 function validateScope(scope: MemoryScope, projectId?: string): void {
   if (scope === 'project' && !projectId) throw new AppError(ErrorCode.VALIDATION, '项目记忆必须指定项目');
-  if ((scope === 'personal' || scope === 'skill') && projectId) {
+  if ((scope === 'personal' || scope === 'craft') && projectId) {
     throw new AppError(ErrorCode.VALIDATION, '个人或 Skill 记忆不能绑定项目');
   }
 }

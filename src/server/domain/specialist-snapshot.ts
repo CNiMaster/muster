@@ -3,8 +3,8 @@
  * 改为「分身穿戴」——建匿名蜂穿戴人设 + 注入本快照（只读薄手册：经验延续、不回写）。
  *
  * 数据源全为既有薄摘要（纯 DB 读、零 LLM 调用）：
- * - 人设方法论 top3（A7：persona_key 命中的 skill/CRAFT 记忆，按优势分排序——穿戴人设的
- *   分身最该带走的是"以这个人设怎么干活"，此前快照缺失此段只能靠注入链 skill 分支间接补）
+ * - 人设方法论 top3（A7：persona_key 命中的 craft（CRAFT）记忆，按优势分排序——穿戴人设的
+ *   分身最该带走的是"以这个人设怎么干活"，此前快照缺失此段只能靠注入链 craft 分支间接补）
  * - project_agent_thread.compaction_summary（上下文治理已维护的压缩摘要）
  * - 该专家最近 5 个已完成任务的一句话摘要
  * 硬预算 SNAPSHOT_MAX_CHARS：超出截断（方法论/经验摘要保底、任务列表次之）——
@@ -36,7 +36,7 @@ export function buildSpecialistSnapshot(db: DB, agentId: string, personaId?: str
   if (personaId) {
     const crafts = db.prepare(
       `SELECT content FROM memory_entry
-       WHERE scope='skill' AND persona_key=? AND state IN ('active','locked') AND can_influence=1
+       WHERE scope='craft' AND persona_key=? AND state IN ('active','locked') AND can_influence=1
        ORDER BY adv_sum * 1.0 / (vote_count + 5) DESC, updated_at DESC LIMIT ?`,
     ).all(personaId, CRAFT_TOP_N) as Array<{ content: string }>;
     if (crafts.length > 0) {

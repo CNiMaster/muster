@@ -1,6 +1,6 @@
 /**
  * 整改批次 3a：反思教训层级升级——LESSON 被判定为跨项目方法论（<scope: persona> + <persona_key>）且高置信时，
- * 单写为 CRAFT（scope='skill' + persona_key，挂人设方法论档案宿主），不再重复写项目 LESSON。
+ * 单写为 CRAFT（scope='craft' + persona_key，挂人设方法论档案宿主），不再重复写项目 LESSON。
  */
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import type { DB } from '../../src/server/db/client';
@@ -55,7 +55,7 @@ describe('LESSON 层级升级（单写平台级）', () => {
     }>;
     expect(rows).toHaveLength(1);
     const entry = rows[0]!;
-    expect(entry.scope).toBe('skill');
+    expect(entry.scope).toBe('craft');
     expect(entry.persona_key).toBe('product/front-end-engineer');
     expect(entry.profile_id).toBe(ensurePersonaArchiveProfile(db)); // 人设方法论档案宿主
     expect(entry.project_id).toBeNull(); // 平台级：不带项目

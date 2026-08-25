@@ -531,7 +531,7 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
   // 断电安全：四类记忆候选 + done 标记同事务——崩溃时整体回滚，recoverStuckReflections 复位后重做不产生重复候选。
   db.transaction(() => {
   // 整改批次3（用户定案：单写平台级）——反思判定 LESSON 属跨项目方法论（scope: persona）且高置信时，
-  // 升级写为 CRAFT（scope='skill'+persona_key，挂人设方法论档案宿主——任何项目穿戴/具备该技能者都召回），
+  // 升级写为 CRAFT（scope='craft'+persona_key，挂人设方法论档案宿主——任何项目穿戴/具备该技能者都召回），
   // 不再重复写项目 LESSON：方法论属于平台，项目事实才进项目记忆。
   const upgradedToCraft = !isEphemeralBee
     && lesson.body
@@ -541,7 +541,7 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
   if (upgradedToCraft) {
     const candidate = createMemoryCandidate(db, {
       profileId: ensurePersonaArchiveProfile(db),
-      scope: 'skill',
+      scope: 'craft',
       personaKey: lesson.scopePersonaKey!,
       content: lesson.body,
       sourceTaskId: reflection.taskId,
@@ -600,7 +600,7 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
     createMemoryCandidate(db, {
       profileId,
       scope: 'personal',
-      // 不传 companyId/projectId：personal/skill 记忆是跨组织的用户画像（validateScope 禁止绑定公司/项目）。
+      // 不传 companyId/projectId：personal/craft 记忆是跨组织的用户画像（validateScope 禁止绑定公司/项目）。
       content: preference.body,
       sourceTaskId: reflection.taskId,
       author: 'user',
@@ -620,7 +620,7 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
     createMemoryCandidate(db, {
       // 蜂群工蜂的临时 profile 随群收口即删——CRAFT 挂人设档案宿主，方法论随人设长存
       profileId: isEphemeralBee ? ensurePersonaArchiveProfile(db) : profileId,
-      scope: 'skill',
+      scope: 'craft',
       personaKey: task.personaId,
       content: craft.body,
       sourceTaskId: reflection.taskId,

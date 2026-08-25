@@ -77,7 +77,7 @@ export function syncAgentMemoryFiles(db: DB, profileId: string, musterHome = SER
   );
   atomicWrite(
     join(home, 'memory/CORE.md'),
-    renderMemorySnapshot('核心经验与 Skill', entries.filter((entry) => entry.scope === 'skill')),
+    renderMemorySnapshot('核心手艺（craft）', entries.filter((entry) => entry.scope === 'craft')),
   );
   const workspaceScoped = entries.filter((entry) => entry.scope === 'workspace');
   if (workspaceScoped.length > 0) {

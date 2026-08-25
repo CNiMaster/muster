@@ -69,12 +69,12 @@ describe('人设方法论（skill+persona_key）全局召回与蜂群沉淀边�
     const carrier = ensurePersonaArchiveProfile(db);
     // 专家蜂沉淀的 CRAFT：挂在人设档案宿主（迁移后的形态）
     createMemoryCandidate(db, {
-      profileId: carrier, scope: 'skill', personaKey: 'qa/performance',
+      profileId: carrier, scope: 'craft', personaKey: 'qa/performance',
       content: '压测前先确认基线机器规格', author: 'agent', confidence: 1, canInfluence: true, allowAutoApprove: true,
     });
     // 乙的通用技能手艺（persona_key 为空）——不随人设外泄
     createMemoryCandidate(db, {
-      profileId: other.profileId, scope: 'skill',
+      profileId: other.profileId, scope: 'craft',
       content: '乙的私藏手艺：用 awk 批量改配置', author: 'agent', confidence: 1, canInfluence: true, allowAutoApprove: true,
     });
 
@@ -94,7 +94,7 @@ describe('人设方法论（skill+persona_key）全局召回与蜂群沉淀边�
     const survivor = createAgent(db, { companyId: company.id, name: '继任者', role: 'engineer' });
     const project = createProject(db, { companyId: company.id, name: '项目' });
     createMemoryCandidate(db, {
-      profileId: bee.profileId, scope: 'skill', personaKey: 'product/pm',
+      profileId: bee.profileId, scope: 'craft', personaKey: 'product/pm',
       content: '写 PRD 先核对数据口径', author: 'agent', confidence: 1, canInfluence: true, allowAutoApprove: true,
     });
     createMemoryCandidate(db, {
@@ -110,7 +110,7 @@ describe('人设方法论（skill+persona_key）全局召回与蜂群沉淀边�
     expect(recalled.some((m) => m.content.includes('写 PRD 先核对数据口径'))).toBe(true);
     expect(recalled.some((m) => m.content.includes('接口风格用 REST'))).toBe(false);
     const carrierOwned = db.prepare(
-      `SELECT COUNT(*) AS c FROM memory_entry WHERE profile_id=? AND scope='skill' AND persona_key='product/pm'`,
+      `SELECT COUNT(*) AS c FROM memory_entry WHERE profile_id=? AND scope='craft' AND persona_key='product/pm'`,
     ).get(ensurePersonaArchiveProfile(db)) as { c: number };
     expect(carrierOwned.c).toBeGreaterThanOrEqual(1);
   });

@@ -88,7 +88,7 @@ describe('A7：快照补人设方法论段', () => {
     const personaId = 'product/front-end-engineer';
     for (const text of ['写 PRD 先核对数据口径', '组件改动先跑视觉回归']) {
       createMemoryCandidate(db, {
-        profileId: archive, scope: 'skill', personaKey: personaId, content: text,
+        profileId: archive, scope: 'craft', personaKey: personaId, content: text,
         author: 'agent', confidence: 0.9, canInfluence: true, allowAutoApprove: true,
       });
     }

@@ -126,12 +126,12 @@ describe('人设键记忆隔离（loadContextMemories skill 分支）', () => {
     const { agent } = ctx;
     // 三条记忆：PM 人设方法论 / 通用技能记忆 / personal 偏好
     const pm = createMemoryCandidate(db, {
-      profileId: agent.profileId, scope: 'skill', personaKey: PERSONA_ID,
+      profileId: agent.profileId, scope: 'craft', personaKey: PERSONA_ID,
       content: '写 PRD 前先核对数据口径与目标用户', author: 'agent', confidence: 0.9, canInfluence: true,
     });
     approveMemoryCandidate(db, pm.id, 'user');
     const generic = createMemoryCandidate(db, {
-      profileId: agent.profileId, scope: 'skill',
+      profileId: agent.profileId, scope: 'craft',
       content: '输出结构化结论先写答案再写依据', author: 'user', confidence: 1, canInfluence: true,
     });
     approveMemoryCandidate(db, generic.id, 'user');
@@ -195,7 +195,7 @@ describe('反思 CRAFT 归域（方法论 → 人设键）', () => {
 
     const candidate = listMemoryCandidates(db, { profileId: agent.profileId })
       .find((c) => c.sourceTaskId === task.id)!;
-    expect(candidate.scope).toBe('skill');
+    expect(candidate.scope).toBe('craft');
     expect(candidate.personaKey).toBe(PERSONA_ID);
     expect(candidate.status).toBe('approved'); // 0.85 >= 0.8 自动批准
   });
@@ -230,7 +230,7 @@ describe('反思 CRAFT 归域（方法论 → 人设键）', () => {
     const userPrompt = spy.mock.calls[0]![1] as { user: string };
     expect(userPrompt.user).not.toContain('[CRAFT]');
     const candidates = listMemoryCandidates(db, { profileId: agent.profileId });
-    expect(candidates.filter((c) => c.scope === 'skill')).toHaveLength(0);
+    expect(candidates.filter((c) => c.scope === 'craft')).toHaveLength(0);
   });
 });
 
