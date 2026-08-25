@@ -17,6 +17,10 @@ export interface AppearanceInput {
   fontSize?: number;
   locale?: 'zh' | 'en';
   codeTheme?: string;
+  /** 代码块字号 px（0/缺省=默认 13）。 */
+  codeFontSize?: number;
+  /** 长行自动换行；缺省 false（横向滚动）。 */
+  wrapCode?: boolean;
 }
 
 export interface ResolvedAppearance {
@@ -25,6 +29,8 @@ export interface ResolvedAppearance {
   fontFamily: string;
   fontSize: number;
   codeTheme: string;
+  codeFontSize: number;
+  wrapCode: boolean;
 }
 
 /** 纯函数：把外观设置解析为最终值（system → 跟随 prefers-color-scheme）。 */
@@ -38,6 +44,8 @@ export function resolveAppearance(settings: AppearanceInput | undefined, prefers
     fontFamily: (settings?.fontFamily ?? '').trim(),
     fontSize: settings?.fontSize ?? 0,
     codeTheme: (settings?.codeTheme ?? '').trim() || 'default',
+    codeFontSize: settings?.codeFontSize ?? 0,
+    wrapCode: settings?.wrapCode === true,
   };
 }
 
@@ -52,6 +60,9 @@ export function applyAppearance(settings: AppearanceInput | undefined, prefersDa
   else root.style.removeProperty('--font-sans');
   if (resolved.fontSize > 0) root.style.setProperty('--app-font-size', `${resolved.fontSize}px`);
   else root.style.removeProperty('--app-font-size');
+  if (resolved.codeFontSize > 0) root.style.setProperty('--code-font-size', `${resolved.codeFontSize}px`);
+  else root.style.removeProperty('--code-font-size');
+  root.style.setProperty('--code-wrap', resolved.wrapCode ? 'pre-wrap' : 'pre');
   return resolved;
 }
 

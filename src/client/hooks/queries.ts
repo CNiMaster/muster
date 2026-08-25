@@ -2584,6 +2584,8 @@ export function useSaveSystemSettings() {
       fontSize?: number;
       locale?: 'zh' | 'en';
       codeTheme?: string;
+      codeFontSize?: number;
+      wrapCode?: boolean;
       autonomousReflectionEnabled?: boolean;
       autonomousReflectionBudgetUSD?: number;
       swarmMaxDepth?: number;

@@ -714,6 +714,8 @@
   font-size: var(--text-xs);
   border: 1px solid var(--border-subtle);
   margin-bottom: var(--space-3);
+  font-size: var(--code-font-size, 13px);
+  white-space: var(--code-wrap, pre);
 }
 
 .mu-md-icode {

@@ -16,6 +16,16 @@ import { SpecialistReviewPanel } from '../components/settings/SpecialistReviewPa
 
 type SettingsTab = 'general' | 'usage' | 'models' | 'swarm' | 'network' | 'appearance' | 'credentials' | 'tools' | 'backup' | 'specialists';
 
+/** 界面字体预设：value=CSS font-family；__custom__=用户自填。 */
+const FONT_PRESETS: Array<{ value: string; label: string }> = [
+  { value: '', label: '系统默认（推荐）' },
+  { value: "system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif", label: '系统界面同款' },
+  { value: "'PingFang SC', sans-serif", label: '苹方（macOS）' },
+  { value: "'Microsoft YaHei', sans-serif", label: '微软雅黑（Windows）' },
+  { value: "'Noto Sans SC', sans-serif", label: '思源黑体' },
+];
+const FONT_CUSTOM = '__custom__';
+
 /** 高级组标签（simple 模式默认折叠为一行入口；pro 全展开）。 */
 const ADVANCED_TABS: SettingsTab[] = ['models', 'swarm', 'network', 'credentials', 'tools', 'specialists'];
 
@@ -63,6 +73,8 @@ export function SettingsPage(): React.ReactElement {
   const [fontSize, setFontSize] = useState(14);
   const [locale, setLocale] = useState<'zh' | 'en'>('zh');
   const [codeTheme, setCodeTheme] = useState('default');
+  const [codeFontSize, setCodeFontSize] = useState(0);
+  const [wrapCode, setWrapCode] = useState(false);
   const [autonomousReflectionEnabled, setAutonomousReflectionEnabled] = useState(false);
   const [autonomousReflectionBudgetUSD, setAutonomousReflectionBudgetUSD] = useState(5);
   const [swarmMaxDepth, setSwarmMaxDepth] = useState(3);
@@ -106,6 +118,8 @@ export function SettingsPage(): React.ReactElement {
     setFontSize(settings.fontSize ?? 14);
     setLocale(settings.locale ?? 'zh');
     setCodeTheme(settings.codeTheme ?? 'default');
+    setCodeFontSize(settings.codeFontSize ?? 0);
+    setWrapCode(settings.wrapCode === true);
     setAutonomousReflectionEnabled(settings.autonomousReflectionEnabled ?? false);
     setAutonomousReflectionBudgetUSD(settings.autonomousReflectionBudgetUSD || 5);
     setSwarmMaxDepth(settings.swarmMaxDepth ?? 3);
@@ -132,7 +146,7 @@ export function SettingsPage(): React.ReactElement {
     }
     saveSettings.mutate(
       // timeoutMs/maxToolCalls 回传服务端加载值（schema 必填、UI 已由执行器档案接管）
-      { claudeBin, model, skipPermissions, timeoutMs: settings?.timeoutMs ?? 600000, maxToolCalls: settings?.maxToolCalls ?? 30, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierHighId: tierHigh, executorTierStandardId: tierStandard, executorTierLowId: tierLow, imageGenModel, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs: egressTimeoutSec * 1000, theme, fontFamily, fontSize, locale, codeTheme, autonomousReflectionEnabled, autonomousReflectionBudgetUSD, swarmMaxDepth, swarmMaxWidth, swarmMaxNodes, swarmBudgetUSD, breadthDefaultTier, waitingAutoContinueMinutes: waitingAutoContinueMin, preventSleep, interruptMode, stopGraceMs: stopGraceSec * 1000, securityMode, messageShowThinking: msgShowThinking, messageShowTodo: msgShowTodo, messageGroupExplore: msgGroupExplore, messageGroupTerminal: msgGroupTerminal, messageGroupChanges: msgGroupChanges },
+      { claudeBin, model, skipPermissions, timeoutMs: settings?.timeoutMs ?? 600000, maxToolCalls: settings?.maxToolCalls ?? 30, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierHighId: tierHigh, executorTierStandardId: tierStandard, executorTierLowId: tierLow, imageGenModel, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs: egressTimeoutSec * 1000, theme, fontFamily, fontSize, locale, codeTheme, autonomousReflectionEnabled, autonomousReflectionBudgetUSD, swarmMaxDepth, swarmMaxWidth, swarmMaxNodes, swarmBudgetUSD, breadthDefaultTier, codeFontSize, wrapCode, waitingAutoContinueMinutes: waitingAutoContinueMin, preventSleep, interruptMode, stopGraceMs: stopGraceSec * 1000, securityMode, messageShowThinking: msgShowThinking, messageShowTodo: msgShowTodo, messageGroupExplore: msgGroupExplore, messageGroupTerminal: msgGroupTerminal, messageGroupChanges: msgGroupChanges },
       {
         onSuccess: () => toast('success', '设置已保存并实时生效'),
         onError: (error: any) => toast('error', error.message ?? '保存设置失败'),
@@ -434,10 +448,31 @@ export function SettingsPage(): React.ReactElement {
                   <option value="en">English</option>
                 </Select>
               </SettingsRow>
+              <SettingsSectionLabel>代码显示</SettingsSectionLabel>
+              <SettingsRow title="代码字号" hint="代码块、文件预览里的文字大小；与界面字号互不影响">
+                <Select value={String(codeFontSize)} onChange={(e) => setCodeFontSize(Number(e.target.value))}>
+                  <option value="0">默认 13</option>
+                  {[12, 14, 15, 16].map((px) => <option key={px} value={px}>{String(px)}</option>)}
+                </Select>
+              </SettingsRow>
+              <SettingsRow title="长行自动换行" hint="过长的代码自动折行显示；关闭则横向滚动">
+                <Toggle checked={wrapCode} onChange={setWrapCode} label="长行自动换行" />
+              </SettingsRow>
               <SettingsFold summary="更多外观（字体 · 代码主题）">
-                <SettingsRow title="界面字体" hint="懂 CSS 再填字体族，留空用默认字体栈">
-                  <Input value={fontFamily} placeholder="如 'PingFang SC', sans-serif" onChange={(e) => setFontFamily(e.target.value)} />
+                <SettingsRow title="界面字体" hint="预设选一个即可；都不满意再选「自定义」填写 CSS 字体族">
+                  <Select
+                    value={FONT_PRESETS.some((f) => f.value === fontFamily) ? fontFamily : FONT_CUSTOM}
+                    onChange={(e) => setFontFamily(e.target.value === FONT_CUSTOM ? "'PingFang SC', sans-serif" : e.target.value)}
+                  >
+                    {FONT_PRESETS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+                    <option value={FONT_CUSTOM}>自定义…</option>
+                  </Select>
                 </SettingsRow>
+                {fontFamily === FONT_CUSTOM || (!FONT_PRESETS.some((f) => f.value === fontFamily) && fontFamily !== '') && (
+                  <SettingsRow title="自定义字体族" hint="CSS font-family 值">
+                    <Input value={fontFamily} placeholder="如 'HarmonyOS Sans SC', sans-serif" onChange={(e) => setFontFamily(e.target.value)} />
+                  </SettingsRow>
+                )}
                 <SettingsRow title="代码块主题" hint="代码高亮主题名，留空用默认">
                   <Input value={codeTheme} placeholder="default" onChange={(e) => setCodeTheme(e.target.value)} />
                 </SettingsRow>

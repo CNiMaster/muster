@@ -103,8 +103,11 @@
   --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
 
   /* ===== 字体 ===== */
-  --font-sans: 'Avenir Next', 'Noto Sans SC', 'PingFang SC', 'Hiragino Sans GB', sans-serif;
-  --font-mono: 'SF Mono', 'JetBrains Mono', 'Menlo', monospace;
+  --font-sans: system-ui, -apple-system, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans SC', 'Segoe UI', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Cascadia Code', Menlo, Consolas, monospace;
+  /* 代码显示设置（外观页注入）：字号与长行换行 */
+  --code-font-size: 13px;
+  --code-wrap: pre;
 }
 
 @media (prefers-reduced-motion: reduce) {

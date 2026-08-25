@@ -61,6 +61,9 @@ export const settingsUpdateSchema = z.object({
   fontSize: z.number().min(8).max(32).optional(),
   locale: z.enum(['zh', 'en']).optional(),
   codeTheme: z.string().max(100).optional(),
+  // 2026-08-25 代码显示：字号与长行换行（CSS 变量注入，消费点 mu-md-code）
+  codeFontSize: z.number().int().min(10).max(24).optional(),
+  wrapCode: z.boolean().optional(),
   // E4.3 空闲自主反思（默认关）
   autonomousReflectionEnabled: z.boolean().optional(),
   autonomousReflectionBudgetUSD: z.number().min(0).optional(),
