@@ -2,7 +2,8 @@ import type React from 'react';
 import { Link } from 'react-router-dom';
 import type { Agent, Task } from '../../api/types';
 import type { ProjectTaskDTO } from '../../hooks/queries';
-import { useAgents, useAgentProfiles, useTaskAction, usePostMessage, useTaskSwarm } from '../../hooks/queries';
+import { useAgents, useAgentProfiles, useTaskAction, usePostMessage, useTaskSwarm, useExecutorProfiles, useBindEmployeeExecutor, useUpdateAgent } from '../../hooks/queries';
+import type { AgentExecutorJson } from '../../api/types';
 import { swarmCompositionLabel, expertIcon } from '../workbench/WorkbenchBottomStaffTabs';
 import { Badge, StateBadge, stateLabel, taskStateTone } from '../Badge';
 import { Button, toast } from '../Button';
@@ -12,6 +13,83 @@ import { Field, Select, Textarea } from '../Form';
  * 任务按 待完成/进行中/已完成 分组；用户可直接添加任务（下一步验收、结果回传负责人）、删除任务（通知负责人检查影响）。 */
 const TODO_STATES = new Set(['queued', 'waiting_dependency', 'waiting_approval', 'blocked']);
 const DOING_STATES = new Set(['claimed', 'running', 'waiting_input', 'paused']);
+
+
+/** 执行配置卡（批次 K）：绑定执行器/模型/思考/上下文窗口/最大输出——选项全部来自设置预配置（档案），不可自由填。 */
+function ExecutorConfigCard({ agent }: { agent: Agent }): React.ReactElement {
+  const { data: profiles = [] } = useExecutorProfiles();
+  const bindExecutor = useBindEmployeeExecutor();
+  const updateAgent = useUpdateAgent();
+  const exec: AgentExecutorJson = agent.executor ?? {};
+  const boundProfile = profiles.find((p) => p.id === agent.executorProfileId);
+  // 模型选项=绑定档案的 config.models（换档案选项联动；未绑定则不可选模型）
+  let modelOptions: string[] = [];
+  try {
+    const cfg = (boundProfile?.config ?? {}) as { models?: unknown; model?: unknown };
+    if (Array.isArray(cfg.models)) modelOptions = cfg.models.map((m) => (typeof m === 'string' ? m : (m as { id?: string })?.id ?? '')).filter(Boolean);
+    else if (typeof cfg.model === 'string' && cfg.model) modelOptions = [cfg.model];
+  } catch { /* 坏配置忽略 */ }
+  const save = (patch: Partial<AgentExecutorJson>): void => {
+    updateAgent.mutate(
+      { id: agent.id, executor: { ...exec, ...patch } },
+      { onSuccess: () => toast('success', '执行配置已保存（员工默认值；消息级临时覆盖仍优先）'), onError: (e) => toast('error', (e as Error).message) },
+    );
+  };
+  const CTX_OPTIONS = [32_000, 64_000, 128_000, 200_000];
+  const OUT_OPTIONS = [4_096, 8_192, 16_384, 32_768];
+  return (
+    <section className="employee-exec-card" aria-label="执行配置">
+      <div className="employee-section-heading">
+        <h2>执行配置</h2>
+        <Link to="/executors">执行器中心</Link>
+      </div>
+      <div className="employee-exec-grid">
+        <Field label="绑定执行器">
+          <Select value={agent.executorProfileId ?? ''} onChange={(e) => bindExecutor.mutate(
+            { employeeId: agent.id, executorProfileId: e.target.value },
+            { onSuccess: () => toast('success', '执行器已绑定'), onError: (err) => toast('error', (err as Error).message) },
+          )}>
+            <option value="">未绑定（默认）</option>
+            {profiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </Select>
+        </Field>
+        <Field label="模型（来自绑定档案）">
+          <Select value={exec.model ?? ''} disabled={modelOptions.length === 0} onChange={(e) => save({ model: e.target.value || undefined })}>
+            <option value="">{modelOptions.length === 0 ? '先绑定执行器' : '未指定（用档案默认）'}</option>
+            {modelOptions.map((m) => <option key={m} value={m}>{m}</option>)}
+          </Select>
+        </Field>
+        <Field label="思考等级（默认）">
+          <Select value={exec.thinking ?? ''} onChange={(e) => save({ thinking: e.target.value || undefined })}>
+            <option value="">未指定（用默认）</option>
+            <option value="off">off</option>
+            <option value="low">low</option>
+            <option value="medium">medium</option>
+            <option value="high">high</option>
+          </Select>
+        </Field>
+        <Field label="上下文窗口（tokens）">
+          <Select value={String(exec.contextWindowTokens ?? '')} onChange={(e) => save({ contextWindowTokens: e.target.value ? Number(e.target.value) : undefined })}>
+            <option value="">未指定（用档案声明）</option>
+            {CTX_OPTIONS.map((c) => <option key={c} value={c}>{c >= 1000 ? `${Math.round(c / 1000)}k` : c}</option>)}
+          </Select>
+        </Field>
+        <Field label="最大输出（tokens）">
+          <Select value={String(exec.maxOutputTokens ?? '')} onChange={(e) => save({ maxOutputTokens: e.target.value ? Number(e.target.value) : undefined })}>
+            <option value="">未指定（用默认）</option>
+            {OUT_OPTIONS.map((o) => <option key={o} value={o}>{o >= 1000 ? `${Math.round(o / 1000)}k` : o}</option>)}
+          </Select>
+        </Field>
+      </div>
+      <div className="employee-exec-links">
+        <Link to="/memory-board">记忆看板</Link>
+        <Link to="/capabilities">能力中心（工具档/技能）</Link>
+        <Link to={`/agents/${agent.profileId}`}>人设与完整档案</Link>
+        <Link to="/settings?tab=tools">权限策略（设置）</Link>
+      </div>
+    </section>
+  );
+}
 
 export function ProjectEmployeeWorkspace({
   projectId,
@@ -89,6 +167,8 @@ export function ProjectEmployeeWorkspace({
         <Link to={`/agents/${agent.profileId}`}>完整档案</Link>
       </div>
     </header>
+
+    <ExecutorConfigCard agent={agent} />
 
     <section className="employee-work-summary" aria-label={`${agent.name}的项目工作`}>
       <div><strong>{doingTasks.length}</strong><span>进行中</span></div>

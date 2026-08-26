@@ -105,6 +105,11 @@ export interface ToolLoopOptions {
    */
   contextGovernance?: { maxMessages?: number; keepRecent?: number; semantic?: boolean } | null;
   /**
+   * 宿主命令 /compact 的手动压缩信号（共享可变 flag，engine 持有并置位）：
+   * 每轮循环开头检查——requested 则立即压缩（同治理压缩器）并复位。与自动治理互补。
+   */
+  compactRequest?: { requested: boolean };
+  /**
    * R1 网络就地重试：callModel 网络类失败的退避梯度（默认 1s/5s/25s 共 3 次）。
    * 传 null 显式关闭（直接抛给任务级重试）；测试可注入短梯度。
    */
@@ -336,6 +341,20 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult
         const recent = messages.slice(-keepRecent);
         const oldOnes = messages.slice(1, -keepRecent);
         // v2 语义压缩优先（模型总结，保留决策理由/未竟事项）；失败/关闭降级 v1 确定性摘要
+        let digest: ChatMessage | null = null;
+        if (opts.contextGovernance?.semantic !== false && oldOnes.length > 0) {
+          digest = await compactMessagesSemantic(oldOnes, opts.callModel, controller.signal);
+        }
+        if (!digest) digest = compactMessagesToDigest(oldOnes);
+        messages.length = 0;
+        messages.push(...system, digest, ...recent);
+      }
+      // 宿主命令 /compact：手动压缩请求（API 型；engine 经共享 flag 注入）——立即压缩不限阈值
+      if (opts.compactRequest?.requested && messages.length > 3) {
+        opts.compactRequest.requested = false;
+        const system = messages.slice(0, 1);
+        const recent = messages.slice(-keepRecent);
+        const oldOnes = messages.slice(1, -keepRecent);
         let digest: ChatMessage | null = null;
         if (opts.contextGovernance?.semantic !== false && oldOnes.length > 0) {
           digest = await compactMessagesSemantic(oldOnes, opts.callModel, controller.signal);

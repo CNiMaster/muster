@@ -61,6 +61,8 @@ export interface ExecutionContext {
     baseUrl: string;
     taskId: string;
   };
+  /** 宿主命令 /compact 手动压缩信号（engine 持有，API 型 adapter 透传 runToolLoop）。 */
+  compactRequest?: { requested: boolean };
   /** API 工具调用前由 Muster 权限引擎同步判定。 */
   permissionGuard?: (request: { action: string; path?: string; command?: string }) => { allowed: boolean; message?: string }|Promise<{ allowed: boolean; message?: string }>;
   permissionPolicy?: { approvalStrategy: 'ask-always'|'ask-by-rule'|'no-approval'|'deny'; scope: 'task'|'project'|'workspace'|'selected-directories'|'device'; allowedRoots: string[] };
@@ -90,6 +92,10 @@ export interface AgentExecutorConfig {
   models?: Array<{ model: string; contextWindowTokens?: number; note?: string }>;
   /** 思考深度归一化档位（settings-overhaul B3；仅支持的模型生效，off=不传思考参数）。 */
   thinkingDepth?: 'off' | 'low' | 'medium' | 'high';
+  /** 员工级最大输出 tokens（批次 K；adapter 按支持透传 max_tokens）。 */
+  maxOutputTokens?: number;
+  /** 员工级上下文窗口覆盖（批次 K；resolveContextWindow 兜底之后生效）。 */
+  contextWindowTokens?: number;
   /** 上下文缓存模式（settings-overhaul B3；auto/on 保持 provider 默认缓存，off 文档化 no-op）。 */
   contextCache?: 'auto' | 'on' | 'off';
   /** WP10 执行器能力矩阵：模型自身能力声明（多模态走工具层，此处只声明主模型直读能力）。 */

@@ -3543,3 +3543,10 @@ export function useActivatePlanVersion(projectId: string | undefined) {
     onSuccess: () => { if (projectId) qc.invalidateQueries({ queryKey: ['plan-versions', projectId] }); },
   });
 }
+
+// ===== Host command /compact（批次 I）=====
+export function useCompactTask() {
+  return useMutation({
+    mutationFn: (taskId: string) => api.post<{ ok: boolean; mode?: string; note?: string; error?: string }>(`/api/tasks/${taskId}/compact`),
+  });
+}

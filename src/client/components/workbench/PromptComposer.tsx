@@ -104,6 +104,8 @@ export interface PromptComposerProps {
   draftKey?: string;
   /** 自定义斜杠命令（capability parity D3）：上层注入；缺省=无自定义命令。 */
   userCommands?: Array<{ token: string; description: string; mode?: string; template: string }>;
+  /** 在项目专家（批次 J）：agentId 非空的活跃专家进对话菜单；蜂群匿名工蜂不进。 */
+  specialists?: Array<{ agentId: string | null; specialty: string; personaId: string | null; status: string }>;
   /** 批次 H.9：@文件 引用候选（产物/仓库相对路径，挂载方从 useArtifacts 传入） */
   fileOptions?: Array<{ path: string }>;
   /** H8（第五轮定稿）：主按钮=全局暂停（本项目全部执行中任务各自等安全边界）。 */
@@ -152,6 +154,7 @@ export function PromptComposer({
   onNewTask,
   draftKey,
   userCommands,
+  specialists,
   fileOptions = [],
   isRunning = false,
   onStop,
@@ -377,7 +380,10 @@ export function PromptComposer({
     { token: 'think', label: '/think 思考深度', hint: '切换思考档位', apply: () => cycleThinking() },
     { token: 'task', label: '/task 切换任务', hint: '打开任务选择', apply: () => setOpenMenu('task') },
     { token: 'new', label: '/new 新建任务', hint: '展开新建任务卡', apply: () => onNewTask?.() },
+    // 宿主命令组（批次 I）：发给宿主的指令而非模型 prompt——/compact 支持 @人员 与 --all
+    { token: 'compact', label: '/compact 压缩上下文', hint: '宿主命令：压缩运行中任务的上下文（@某人 / --all）', apply: () => { setText('/compact '); setOpenMenu(null); } },
   ].filter((command) => onSelectMode
+    || command.token === 'compact'
     || (command.token === 'model' && modelOptions && modelOptions.length > 0)
     || (command.token === 'think' && onToggleThinking)
     || (command.token === 'task' && taskOptions && taskOptions.length > 0 && onSelectTask)
@@ -618,6 +624,24 @@ export function PromptComposer({
                         {groupChatActive && <span className="mu-item-check">✓</span>}
                       </button>
                       <div style={{ height: 1, background: 'var(--border-subtle)', margin: '4px 6px' }} />
+                    </>
+                  )}
+                  {/* 在项目专家（批次 J）：常驻/借调专家直达对话——免建任务直接问；匿名工蜂不进 */}
+                  {(specialists ?? []).filter((sp) => sp.agentId && sp.status === 'active' && !groupChatActive && sp.agentId !== activeAgentId).length > 0 && (
+                    <>
+                      <div className="mu-dropdown-header" style={{ marginTop: 4 }}>在项目专家</div>
+                      {(specialists ?? []).filter((sp) => sp.agentId && sp.status === 'active').map((sp) => (
+                        <button
+                          key={sp.agentId}
+                          type="button"
+                          className={`mu-dropdown-item ${sp.agentId === activeAgentId ? 'is-active' : ''}`}
+                          onClick={() => { onSelectAgent?.(sp.agentId!); setOpenMenu(null); }}
+                          title={`直接与${sp.specialty}专家对话（发送即创建其工作单）`}
+                        >
+                          <span className="mu-mode-item-row"><span className="mu-send-menu-glyph">👷</span>{agents.find((a) => a.id === sp.agentId)?.name ?? `${sp.specialty}专家`}</span>
+                          {sp.agentId === activeAgentId && <span className="mu-item-check">✓</span>}
+                        </button>
+                      ))}
                     </>
                   )}
                   {/* 固定岗全列（2026-08-24 定案）：在岗可选，未上岗置灰 */}

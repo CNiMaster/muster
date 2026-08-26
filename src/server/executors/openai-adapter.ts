@@ -206,6 +206,8 @@ export class OpenAICompatibleAdapter implements ExecutionAdapter {
       }
       const buildBody = (stream: boolean) => ({
         model,
+        // 员工级最大输出（批次 K）：有配置才带（严格 provider 不认多余字段）
+        ...(agentEx?.maxOutputTokens ? { max_tokens: agentEx.maxOutputTokens } : {}),
         // thinking 是内部字段（trace 用），不回传给 API——严格兼容的 provider 会因未知字段 400（review M4）
         messages: msgs.map((m) => {
           const { thinking: _thinking, images, ...rest } = m;
@@ -273,6 +275,7 @@ export class OpenAICompatibleAdapter implements ExecutionAdapter {
         signal: ctx.signal,
         model,
         loopback: ctx.loopback,
+        compactRequest: ctx.compactRequest,
         permissionGuard: ctx.permissionGuard,
         usageTracking: { db: getDb(), taskId: ctx.task.id },
         traceTracking: { db: getDb(), taskId: ctx.task.id },

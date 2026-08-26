@@ -3,7 +3,7 @@ import type React from 'react';
 import type { Agent, Task } from '../../api/types';
 import type { ProjectTaskDTO } from '../../hooks/queries';
 import { useQueuedMessages, useQueuedMessageAction, useTask, useProjectTaskAction, useTaskAction, usePostMessage, useMessages, useUploadMaterial, materialRawUrl, useExecutorProfiles, useSystemSettings, useBlueprintMatches, useTaskChecklist, useCreateChecklist, useAdvanceChecklist, useArtifacts, useStopAllProjectTasks, useStopTask, type MessageAttachment } from '../../hooks/queries';
-import { useUserCommands } from '../../hooks/queries';
+import { useUserCommands, useCompactTask, useProjectSpecialists } from '../../hooks/queries';
 import { PromptComposer, type ComposerMode } from '../workbench/PromptComposer';
 import { Button, toast } from '../Button';
 import { useNavigate } from 'react-router-dom';
@@ -44,6 +44,8 @@ export function ProjectTaskWorkspace({
   newTaskSignal?: number;
 }): React.ReactElement {
   const { data: userCmdsData } = useUserCommands();
+  const { data: projectSpecialists } = useProjectSpecialists(projectId);
+  const compactTask = useCompactTask();
   const userCmds = userCmdsData?.commands;
 
   // 批次 H.9：@文件 引用候选（组件自取，免去 ProjectPage 透传）
@@ -154,6 +156,36 @@ export function ProjectTaskWorkspace({
 
   const handleSendPrompt = (content: string, options?: { agentId?: string; model?: string; thinking?: string; attachments?: MessageAttachment[]; mode?: ComposerMode; refs?: string[] }): void => {
     if (!content.trim() && (options?.attachments?.length ?? 0) === 0) return;
+    // 宿主命令 /compact（批次 I）：@某人 → 该员工活跃任务；--all → 全部运行中；默认 → 当前对话对象
+    const compactMatch = content.trim().match(/^\/compact(?:\s+@(.+?))?(?:\s+--all)?\s*$/);
+    if (compactMatch) {
+      const runnings = tasks.filter((t) => t.state === 'running' || t.state === 'claimed');
+      let targets: string[] = [];
+      if (content.trim().endsWith('--all') || content.trim().endsWith('--all ')) {
+        targets = runnings.map((t) => t.id);
+        if (targets.length === 0) { toast('info', '当前没有运行中的任务可压缩'); return; }
+      } else if (compactMatch[1]) {
+        const nameFrag = compactMatch[1].trim().toLowerCase();
+        const hit = agents.find((a) => a.name.toLowerCase().includes(nameFrag) || nameFrag.includes(a.name.toLowerCase()));
+        if (!hit) { toast('error', `没找到人员 @${compactMatch[1]}（重名/改名请从对话人菜单选择）`); return; }
+        targets = runnings.filter((t) => t.assigneeAgentId === hit.id).map((t) => t.id);
+        if (targets.length === 0) { toast('info', `${hit.name} 当前没有运行中的任务`); return; }
+      } else {
+        const me = activeRuntimeTask?.state === 'running' || activeRuntimeTask?.state === 'claimed'
+          ? [activeRuntimeTask.id]
+          : runnings.filter((t) => t.assigneeAgentId === (selectedAgentId || defaultAgentId)).map((t) => t.id);
+        targets = me;
+        if (targets.length === 0) { toast('info', '当前没有可压缩的运行中任务（对话对象空闲）'); return; }
+      }
+      let done = 0;
+      for (const tid of targets) {
+        compactTask.mutate(tid, {
+          onSuccess: (r) => { done += 1; toast(r.ok ? 'success' : 'error', r.ok ? (r.note ?? '已注入压缩信号') : (r.error ?? '压缩失败')); },
+          onError: (e) => { done += 1; toast('error', (e as Error).message); },
+        });
+      }
+      return;
+    }
     // capability parity 批次 G：意图进计划模式——「做计划/出方案」类输入且未显式选模式时
     // 自动切 plan（只读调研），toast 告知可撤销（显式选过模式=用户意图优先，不抢）。
     const PLAN_INTENT_RE = /(做个?|写个?|出[一]?份?|帮我|先)?(计划|规划|方案|施工顺序|拆解步骤)/;
@@ -504,6 +536,7 @@ export function ProjectTaskWorkspace({
         )}
         <PromptComposer
         userCommands={userCmds}
+        specialists={projectSpecialists ?? undefined}
           isRunning={runtimeBusy}
           onStop={() => {
             if (!activeRuntimeTask) return;

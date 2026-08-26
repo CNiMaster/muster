@@ -185,6 +185,23 @@ export class TaskEngine {
   private activeRuns = new Map<string, AbortController>();
   /** H8 安全停：每 run 一个停止信号（边界等待）+ 超时强停定时器。 */
   private activeStops = new Map<string, { controller: AbortController; hardTimer: NodeJS.Timeout | null }>();
+  /** 宿主命令 /compact 的手动压缩信号注册表（taskId → 共享 flag；API 型循环消费）。 */
+  private activeCompactFlags = new Map<string, { requested: boolean }>();
+
+  /** 注册（幂等）并返回压缩信号 flag。 */
+  private registerCompactFlag(taskId: string): { requested: boolean } {
+    let flag = this.activeCompactFlags.get(taskId);
+    if (!flag) { flag = { requested: false }; this.activeCompactFlags.set(taskId, flag); }
+    return flag;
+  }
+
+  /** 宿主命令入口：请求压缩（running 任务下轮边界生效）。 */
+  requestCompact(taskId: string): boolean {
+    const flag = this.activeCompactFlags.get(taskId);
+    if (!flag) return false;
+    flag.requested = true;
+    return true;
+  }
   /** 服务端端口（用于 Agent Bridge loopback URL 构造） */
   serverPort: number = 3456;
 
@@ -512,8 +529,14 @@ export class TaskEngine {
       const effectiveExecutor: AgentExecutorConfig = {
         ...(profileExecutor ?? legacyExecutor),
         ...(effectiveModel ? { model: effectiveModel } : {}),
+        // 思考档优先级（批次 K 补员工级默认）：消息级 > 自有人才 > 员工 executor.thinking > 档案
+        //（'med' 归一 'medium'；白名单外的值忽略——executor json 是宽松存储）
+        ...(() => { const t = (legacyExecutor as { thinking?: string } | undefined)?.thinking; if (!t) return {}; const n = t === 'med' ? 'medium' : t; return ['off','low','medium','high'].includes(n) ? { thinkingDepth: n as AgentExecutorConfig['thinkingDepth'] } : {}; })(),
         ...(userTalentOverride?.customThinkingDepth ? { thinkingDepth: userTalentOverride.customThinkingDepth as AgentExecutorConfig['thinkingDepth'] } : {}),
         ...(messageOptions.thinking ? { thinkingDepth: messageOptions.thinking } : {}),
+        // 员工级执行覆盖（批次 K）：最大输出/上下文窗口（executor json 是宽松 Record，收窄类型）
+        ...((agent.executor as { maxOutputTokens?: number })?.maxOutputTokens ? { maxOutputTokens: (agent.executor as { maxOutputTokens: number }).maxOutputTokens } : {}),
+        ...((agent.executor as { contextWindowTokens?: number })?.contextWindowTokens ? { contextWindowTokens: (agent.executor as { contextWindowTokens: number }).contextWindowTokens } : {}),
       };
       // R5 行级上下文窗口：当前生效模型在 config.models 里的行级值（无则 undefined=档案级兜底）
       const effectiveModelContextWindow = executorProfile
@@ -577,6 +600,8 @@ export class TaskEngine {
           baseUrl: `http://127.0.0.1:${this.serverPort}`,
           taskId: task.id,
         },
+        // 宿主命令 /compact：手动压缩信号 flag（API 型循环每轮开头检查；终态清理见 pumpThread finally）
+        compactRequest: this.activeCompactFlags.get(task.id) ?? this.registerCompactFlag(task.id),
         permissionGuard: rawPermissionGuard ? async (request: { action: string; path?: string; command?: string }) => {
           const result = await rawPermissionGuard(request);
           // H9b 安全审查留档：每次判定落 permission_audit（复盘可追责；失败不影响判定）
@@ -662,7 +687,7 @@ export class TaskEngine {
         executorKind,
         // P1-② 全局软预算：上下文窗口传入（R5：行级优先、档案级兜底），systemPrompt 超预算时压缩低优先段
         contextWindowTokens: executorProfile
-          ? resolveContextWindow(executorProfile, effectiveModelContextWindow)
+          ? (resolveContextWindow(executorProfile, effectiveModelContextWindow) ?? (agent.executor as { contextWindowTokens?: number })?.contextWindowTokens ?? undefined)
           : undefined,
         // 阶段二任务 2.3：API 型按能力探针真实结果判定命令能力，不再一刀切禁用
         executorHasCommandCapability: executorProfile
@@ -945,7 +970,7 @@ export class TaskEngine {
           transcriptBytes: Buffer.byteLength(JSON.stringify(ctx.inputPacket)) + Buffer.byteLength(result.summary),
           inputTokens: result._usage?.inputTokens,
           outputTokens: result._usage?.outputTokens,
-          contextWindow: resolveContextWindow(executorProfile, effectiveModelContextWindow),
+          contextWindow: (resolveContextWindow(executorProfile, effectiveModelContextWindow) ?? (agent.executor as { contextWindowTokens?: number })?.contextWindowTokens ?? undefined),
           toolOutputBytes:Buffer.byteLength(JSON.stringify(result.artifacts)),
           durationMs:Date.now()-runStartedAt,
           handoff,

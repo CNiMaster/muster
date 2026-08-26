@@ -64,6 +64,12 @@ export interface AgentExecutorJson {
   skipPermissions?: boolean;
   apiKeyEnv?: string;
   baseURL?: string;
+  /** 员工级默认思考档（批次 K；消息级覆盖仍优先）：off|low|medium|high。 */
+  thinking?: string;
+  /** 员工级上下文窗口覆盖（tokens；缺省回落档案 resolveContextWindow）。 */
+  contextWindowTokens?: number;
+  /** 员工级最大输出（tokens；adapter 侧按支持透传）。 */
+  maxOutputTokens?: number;
 }
 
 interface AgentRow {

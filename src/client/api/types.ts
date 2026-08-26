@@ -165,6 +165,10 @@ export interface AgentExecutorJson {
   skipPermissions?: boolean;
   apiKeyEnv?: string;
   baseURL?: string;
+  /** 员工级默认思考档（批次 K）：off|low|medium|high。 */
+  thinking?: string;
+  contextWindowTokens?: number;
+  maxOutputTokens?: number;
 }
 
 export interface Department {

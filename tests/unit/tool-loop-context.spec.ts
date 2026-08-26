@@ -171,3 +171,54 @@ describe('runToolLoop 语义压缩接线（L7v2）', () => {
     expect(summarizeCalls).toBe(0);
   });
 });
+
+describe('runToolLoop 手动压缩信号（批次 I：/compact 宿主命令）', () => {
+  it('compactRequest.requested=true → 下轮循环前压缩（摘要消息替换旧历史）并复位 flag', async () => {
+    const manyTools = Array.from({ length: 30 }, (_, i) => ({ id: `t${i}`, type: 'function' as const, function: { name: 'run_command', arguments: '{"command":"echo"}' } }));
+    const flag = { requested: false };
+    const seen: ChatMessage[][] = [];
+    let mainCalls = 0;
+    const cm = async (messages: ChatMessage[]) => {
+      if (messages[0]?.content?.includes('对话历史压缩器')) {
+        seen.push([...messages]);
+        return { message: { role: 'assistant' as const, content: '语义摘要：决策X结论Y未竟Z。' }, usage: { promptTokens: 1, completionTokens: 1 } };
+      }
+      mainCalls += 1;
+      seen.push([...messages]);
+      if (mainCalls === 1) {
+        // 首轮返回工具批后，模拟用户此时触发 /compact
+        flag.requested = true;
+        return { message: { role: 'assistant' as const, content: '批量执行', tool_calls: manyTools }, usage: { promptTokens: 10, completionTokens: 5 } };
+      }
+      // 第二次主调用：应看到【上下文压缩】摘要（30+ 消息被压掉）
+      const hasDigest = messages.some((m) => m.content.startsWith('【上下文压缩】'));
+      if (hasDigest) {
+        return { message: { role: 'assistant' as const, content: '完成', tool_calls: [{ id: 'd1', type: 'function' as const, function: { name: 'done', arguments: JSON.stringify({ outcome: 'completed', summary: '压缩后完成' }) } }] }, usage: { promptTokens: 5, completionTokens: 3 } };
+      }
+      return { message: { role: 'assistant' as const, content: '再执行一批', tool_calls: manyTools }, usage: { promptTokens: 10, completionTokens: 5 } };
+    };
+    const result = await runToolLoop({
+      messages: [
+        { role: 'system', content: '系统装配' },
+        { role: 'user', content: '任务' },
+      ], callModel: cm, workingDir: '/wt', maxToolCalls: 10, timeoutMs: 5000, model: 'test',
+      compactRequest: flag,
+      contextGovernance: { maxMessages: 10_000, keepRecent: 4 }, // 自动治理阈值调高，隔离出手动路径
+    });
+    expect(result.result?.summary).toBe('压缩后完成');
+    expect(flag.requested).toBe(false); // 消费后复位
+  });
+
+  it('flag 未置位不压缩（回归：无信号时消息原样）', async () => {
+    const done = [{ content: '直接完成', tool_calls: [{ id: 'd1', type: 'function' as const, function: { name: 'done', arguments: JSON.stringify({ outcome: 'completed', summary: 'ok' }) } }] }];
+    const { callModel } = fakeCallModel(done);
+    const flag = { requested: false };
+    const result = await runToolLoop({
+      messages: [{ role: 'system', content: 's' }, { role: 'user', content: 'u' }],
+      callModel, workingDir: '/wt', maxToolCalls: 3, timeoutMs: 5000, model: 'test',
+      compactRequest: flag,
+    });
+    expect(result.result?.summary).toBe('ok');
+    expect(flag.requested).toBe(false);
+  });
+});

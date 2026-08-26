@@ -571,3 +571,39 @@ taskByIdRouter.post(
     res.json(summary);
   }),
 );
+
+/** POST /api/tasks/:taskId/compact —— 宿主命令 /compact（批次 I）：按执行器能力分流。 */
+taskByIdRouter.post('/:taskId/compact', asyncHandler(async (req, res) => {
+  const taskId = param(req, 'taskId');
+  const db = getDb();
+  const task = db.prepare('SELECT id, state, assignee_agent_id FROM task WHERE id=?').get(taskId) as { id: string; state: string; assignee_agent_id: string | null } | undefined;
+  if (!task) { res.status(404).json({ ok: false, error: `任务不存在: ${taskId}` }); return; }
+  if (task.state !== 'running' && task.state !== 'claimed') {
+    res.status(409).json({ ok: false, error: `任务不在运行中（当前 ${task.state}）——空闲线程的持久历史压缩暂不支持，跑起来后再压。` });
+    return;
+  }
+  let manifestId = '';
+  try {
+    const bind = db.prepare('SELECT executor_profile_id FROM company_employee WHERE id=?').get(task.assignee_agent_id ?? '') as { executor_profile_id: string | null } | undefined;
+    if (bind?.executor_profile_id) {
+      const profile = db.prepare('SELECT manifest_id FROM executor_profile WHERE id=?').get(bind.executor_profile_id) as { manifest_id: string } | undefined;
+      manifestId = profile?.manifest_id ?? '';
+    }
+  } catch { /* 无绑定走默认 */ }
+  const engine = (req.app.locals as { engine?: { requestCompact: (id: string) => boolean } }).engine;
+  // API 型（自研循环）：注入信号，下轮边界压缩（无档案绑定的默认也走这里）
+  if (manifestId === 'openai-compatible-api' || manifestId === 'gemini-api' || manifestId === '') {
+    if (engine?.requestCompact(taskId)) {
+      res.json({ ok: true, mode: 'signal', note: '已注入压缩信号——任务在下轮循环边界压缩上下文（语义摘要）' });
+      return;
+    }
+    res.status(409).json({ ok: false, error: '任务循环未注册压缩通道（可能刚结束）' });
+    return;
+  }
+  if (manifestId === 'codex-cli') {
+    res.status(501).json({ ok: false, error: 'codex CLI 原生压缩经 engine 会话通道触发——本端点 v1 未接 adapter 实例（记后续）' });
+    return;
+  }
+  res.status(409).json({ ok: false, error: `该执行器（${manifestId}）无可靠压缩接口——上下文治理由执行器自管` });
+}));
+
