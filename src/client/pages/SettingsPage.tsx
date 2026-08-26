@@ -170,7 +170,7 @@ export function SettingsPage(): React.ReactElement {
   if (isLoading) return <div className="loading">加载系统设置中…</div>;
 
   return (
-    <div className="settings-page" style={{ maxWidth: '1100px', margin: '0 auto', padding: '16px 0' }}>
+    <div className="settings-page" style={{ maxWidth: '1100px', margin: '0 auto', padding: '12px 8px 32px' }}>
       <header className="page-header" style={{ marginBottom: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <Link to="/" className="back-link" style={{ fontSize: '13px' }}>← 返回工作台</Link>

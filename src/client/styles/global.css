@@ -863,7 +863,7 @@ p { margin: 0 0 var(--space-3) 0; }
 .workbench-rail-foot .workbench-command{width:auto;flex:1;min-width:0}
 .workbench-inspector{min-width:0;min-height:0;overflow:auto;background:var(--bg-elev);border-left:1px solid var(--border)}
 .workbench:not(.has-right) .workbench-inspector{display:none}
-.workbench-surface{min-width:0;min-height:0;overflow:auto;padding:var(--space-4);background:var(--bg-elev)}
+.workbench-surface{min-width:0;min-height:0;overflow:auto;padding:var(--space-5);background:var(--bg-elev)}
 /* 栏宽拖拽手柄——绝对定位在栏边界上，桌面态（≥740）可用 */
 .workbench-resizer{position:absolute;top:0;bottom:0;z-index:8;width:8px;cursor:col-resize;touch-action:none;outline:none}
 .workbench-resizer.is-left{left:-4px}
@@ -888,13 +888,15 @@ p { margin: 0 0 var(--space-3) 0; }
 @media(max-width:739px){.workbench{grid-template-columns:minmax(0,1fr)}.workbench-grid,.workbench.has-right .workbench-grid{grid-template-columns:minmax(0,1fr)}.workbench-navigation{position:fixed;z-index:46;inset:0 auto 0 0;width:min(var(--work-left),88vw);box-shadow:var(--shadow-3)}.workbench:not(.has-left) .workbench-navigation{display:none}.workbench-inspector{position:fixed;z-index:45;inset:0 0 0 auto;width:min(var(--work-right),92vw);box-shadow:var(--shadow-3)}.workbench:not(.has-right) .workbench-inspector{display:none}.workbench-surface{padding:var(--space-3)}.workbench-resizer{display:none}.workbench-breadcrumb{max-width:60vw;overflow:hidden}.workbench-rail-top .workbench-command span{display:none}}
 @media(prefers-reduced-motion:reduce){.workbench-grid,.workbench-guide{transition:none;animation:none}}
 .work-surface-page,.project-tool-surface{width:100%;max-width:1050px;margin:0 auto}
+/* 页面留白统一标准（2026-08-26 用户反馈）：自管内边距的页面（project-page/home-page 内联、--full 画布）排除在外 */
+.work-surface-page:not(.work-surface-page--full):not(.project-page):not(.home-page),.project-tool-surface{padding:var(--space-4) var(--space-4) var(--space-5)}
 /* 全局工具页进工作台（2026-08-24）：聊天/画布类页面占满中栏高度（内部自己滚动）；独立壳残留页兜底留边，不再贴视口边 */
 .work-surface-page--full{display:flex;flex-direction:column;max-width:none;min-height:100%}
-.app-shell>main:not(:has(>section.workbench)){padding:var(--space-4)}
+.app-shell>main:not(:has(>section.workbench)){padding:var(--space-5) var(--space-5) var(--space-6)}
 /* 右栏工具容器（2026-08-24 定案：成果/侧聊/归档/任务清单/待合并放右栏）：标题条 + 内容区滚动，窄栏内表格横向滚 */
 .work-inspector-tool{display:flex;flex-direction:column;height:100%}
 .work-inspector-tool-head{position:sticky;top:0;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border-bottom:1px solid var(--border-subtle);background:var(--bg-elev);font-size:12px;font-weight:800;letter-spacing:.04em}
-.work-inspector-tool-body{flex:1;min-width:0;min-height:0;padding:10px;overflow-x:auto;display:flex;flex-direction:column}
+.work-inspector-tool-body{flex:1;min-width:0;min-height:0;padding:var(--space-3);overflow-x:auto;display:flex;flex-direction:column}
 .work-inspector-tool-body>*{width:100%}
 /* ===== 右栏工具页排版适配（2026-08-24）：窄栏不溢出——控件限宽、标题收口、行允许换行、表格横滚 ===== */
 .work-inspector-tool-body select,.work-inspector-tool-body input,.work-inspector-tool-body textarea{max-width:100%}
