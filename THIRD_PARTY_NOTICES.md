@@ -19,5 +19,8 @@
 | lefthook | https://github.com/evilmartians/lefthook | MIT | git hooks 管理（pre-push typecheck 门禁，工程地基批次 E） | 2026-08-19 | 依赖 |
 | pdf-parse | https://github.com/runet1m/pdf-parse | MIT | 知识库 PDF 文本抽取（capability parity 批次 C） | 2026-08-26 | 依赖 |
 | mammoth | https://github.com/mwilliamson/mammoth.js | BSD-2-Clause | 知识库 docx 文本抽取（capability parity 批次 C） | 2026-08-26 | 依赖 |
+| docx | https://github.com/dolanmiu/docx | MIT | 文档生产 docx 生成（capability parity 批次 E） | 2026-08-26 | 依赖 |
+| exceljs | https://github.com/exceljs/exceljs | MIT | 文档生产 xlsx 生成（capability parity 批次 E） | 2026-08-26 | 依赖 |
+| pdf-lib | https://github.com/Hopding/pdf-lib | MIT | 文档生产 pdf 生成（capability parity 批次 E） | 2026-08-26 | 依赖 |
 
 > 历史既有依赖（express/react/better-sqlite3 等）以 `package.json` 与其各自 LICENSE 为准；本表登记「新增引用/借鉴」与内容级导入。

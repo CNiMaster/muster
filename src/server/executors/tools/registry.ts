@@ -49,6 +49,7 @@ import { SEARCH_TOOL_DEFINITIONS, searchFilesHandler, globFilesHandler } from '.
 import { TODO_TOOL_DEFINITIONS, todoReadHandler, todoWriteHandler } from './todo-tools';
 import { hostBridgeTools } from './bridge-tools';
 import { KNOWLEDGE_TOOL_DEFINITIONS, searchKnowledgeHandler } from './knowledge-tools';
+import { DOCUMENT_TOOL_DEFINITIONS, documentCreateHandler, documentAppendHandler } from './document-tools';
 
 // 复用 file-tools.ts 的类型定义（稳定，多处引用）
 export type { ToolDefinition, ToolCall, ToolResult, ReviewContext } from './file-tools';
@@ -1464,6 +1465,19 @@ export function createBuiltinToolRegistry(): RuntimeToolRegistry {
     handler: searchKnowledgeHandler,
     permissionAction: 'read-file',
     source: { pluginId: BUILTIN_PLUGIN_ID, toolName: 'search_knowledge' },
+  });
+  // capability parity 批次 E：文档生产 builtin（write-file 守卫锚=args.path，先读后写校验沿用）。
+  registry.register({
+    definition: DOCUMENT_TOOL_DEFINITIONS[0]!,
+    handler: documentCreateHandler,
+    permissionAction: 'write-file',
+    source: { pluginId: BUILTIN_PLUGIN_ID, toolName: 'document_create' },
+  });
+  registry.register({
+    definition: DOCUMENT_TOOL_DEFINITIONS[1]!,
+    handler: documentAppendHandler,
+    permissionAction: 'write-file',
+    source: { pluginId: BUILTIN_PLUGIN_ID, toolName: 'document_append' },
   });
   return registry;
 }
