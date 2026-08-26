@@ -25,6 +25,7 @@
 | Skill | 触发场景 |
 |-------|---------|
 | code-review-and-quality | 合并前代码审查 |
+| verification-before-completion | 宣称完成前先跑验证拿证据（证据先行，断言在后） |
 | security-and-hardening | 处理用户输入、认证、外部集成 |
 | debugging-and-error-recovery | 测试失败、构建出错 |
 | performance-optimization | 性能瓶颈、Core Web Vitals |

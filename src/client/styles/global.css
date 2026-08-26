@@ -1221,3 +1221,10 @@ p { margin: 0 0 var(--space-3) 0; }
 
 /* 分组头箭头（2026-08-24）：无杠箭头字符紧跟文字右侧 */
 .mu-nav-head-arrow{margin-left:2px}
+
+/* capability parity 批次 H：右栏工具标签条——[‹ 上下文] [当前工具] [快捷入口] */
+.work-inspector-tool-head { gap: 6px; align-items: center; }
+.work-inspector-tool-tab-active { font-weight: 600; padding: 2px 8px; border-radius: 6px; background: var(--accent-subtle, rgba(59, 130, 246, .12)); white-space: nowrap; }
+.work-inspector-tab-shortcuts { display: flex; gap: 2px; margin-left: auto; }
+.work-inspector-tab-shortcuts .mu-nav-plain-btn { font-size: 11px; opacity: .75; }
+.work-inspector-tab-shortcuts .mu-nav-plain-btn:hover { opacity: 1; }

@@ -23,16 +23,39 @@ const TOOL_LABELS: Record<ProjectToolKey, string> = {
 };
 
 /** 2026-08-24 用户定案：这些工具页放右栏（中栏保持任务现场不被打断），其余工具页占中栏并自动收右栏。 */
-const INSPECTOR_TOOLS = new Set<ProjectToolKey>(['tasks', 'merges', 'artifacts']);
+const INSPECTOR_TOOLS = new Set<ProjectToolKey>(['tasks', 'merges', 'artifacts', 'knowledge']);
 
-/** 右栏工具容器：顶部标题条 + 关闭钮（收右栏回现场），内容区内部滚动。 */
-function InspectorToolPane({ title, children }: { title: string; children: React.ReactNode }): React.ReactElement {
-  const ui = useWorkbenchUI();
+/** 快捷标签目标（批次 H）：右栏工具标签条的常驻入口。 */
+const TAB_SHORTCUTS: Array<{ tool: ProjectToolKey; label: string }> = [
+  { tool: 'knowledge', label: '知识库' },
+  { tool: 'artifacts', label: '成果' },
+  { tool: 'tasks', label: '任务' },
+];
+
+/**
+ * 右栏工具容器（批次 H 标签化）：顶部标签条——[上下文] [当前工具 ✕] [快捷入口…]。
+ * 关闭工具=回到上下文现场（收工具不收栏）；快捷入口一键切换工具标签。
+ */
+function InspectorToolPane({ title, tool, projectId, children }: { title: string; tool?: ProjectToolKey; projectId?: string; children: React.ReactNode }): React.ReactElement {
+  const navigate = useNavigate();
+  const backHref = tool && projectId ? `/projects/${projectId}?view=task` : undefined;
   return (
     <div className="work-inspector-tool">
       <div className="work-inspector-tool-head">
-        <span>{title}</span>
-        <button type="button" className="mu-nav-plain-btn" title="收起此工具" aria-label="收起此工具" onClick={() => ui?.toggleRight()}>✕</button>
+        {backHref
+          ? <button type="button" className="mu-nav-plain-btn" title="回到上下文现场" onClick={() => navigate(backHref)}>‹ 上下文</button>
+          : null}
+        <span className="work-inspector-tool-tab-active">{title}</span>
+        {tool && projectId
+          ? <span className="work-inspector-tab-shortcuts">
+              {TAB_SHORTCUTS.filter((sc) => sc.tool !== tool).map((sc) => (
+                <button key={sc.tool} type="button" className="mu-nav-plain-btn" title={`打开${sc.label}`} onClick={() => navigate(`/projects/${projectId}/${sc.tool}`)}>{sc.label}</button>
+              ))}
+            </span>
+          : null}
+        {backHref
+          ? <button type="button" className="mu-nav-plain-btn" title="收起此工具" aria-label="收起此工具" onClick={() => navigate(backHref)}>✕</button>
+          : null}
       </div>
       <div className="work-inspector-tool-body">{children}</div>
     </div>
@@ -106,7 +129,7 @@ export function ProjectToolPageShell({ tool, children, projectIdOverride, select
     primaryAction={<Link className="mu-btn mu-btn-primary mu-btn-sm" to={`/projects/${projectId}${selectedId ? `?projectTask=${selectedId}` : ''}`}>返回智能体中心</Link>}
     navigation={<ProjectWorkNavigation projectId={projectId} projectTasks={projectTasks ?? []} tasks={tasks ?? []} agents={agents ?? []} departments={departments ?? []} firstAgentId={project?.firstAgentId ?? company?.firstAgentId} selectedProjectTaskId={selectedId} view="tool" activeTool={tool} attentionCount={attentionCount} novel={company?.kind === 'novel'} onNewTask={() => navigate(`/projects/${projectId}?view=task&projectTask=new`)} />}
     inspector={effectivePane === 'inspector'
-      ? <InspectorToolPane title={TOOL_LABELS[tool]}>{children}</InspectorToolPane>
+      ? <InspectorToolPane title={TOOL_LABELS[tool]} tool={tool} projectId={projectId ?? ''}>{children}</InspectorToolPane>
       : <ProjectContextInspector projectId={projectId} selectedTask={selectedTask} agents={agents ?? []} tasks={tasks ?? []} cockpit={cockpit} />}
     mountRightOpen={effectivePane === 'inspector' ? true : false}
     commandOptions={[
@@ -115,6 +138,7 @@ export function ProjectToolPageShell({ tool, children, projectIdOverride, select
       { label: '任务领取清单', href: `/projects/${projectId}/tasks`, group: '项目工具' },
       { label: '运行概览', href: `/projects/${projectId}/dashboard`, group: '项目工具' },
       { label: '成果与文件', href: `/projects/${projectId}/artifacts`, group: '项目工具' },
+      { label: '知识库', href: `/projects/${projectId}/knowledge`, group: '项目工具' },
       { label: '计划与自动化', href: `/projects/${projectId}/plans`, group: '项目工具' },
       { label: '项目设置', href: `/projects/${projectId}/settings`, group: '项目工具' },
     ]}

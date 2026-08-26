@@ -522,6 +522,7 @@ export function ProjectDetail({ projectId }: { projectId: string }): React.React
         { label: '任务领取清单', href: `/projects/${projectId}/tasks`, group: '项目工具' },
         { label: '运行概览', href: `/projects/${projectId}/dashboard`, group: '项目工具' },
         { label: '成果与文件', href: `/projects/${projectId}/artifacts`, group: '项目工具' },
+        { label: '知识库', href: `/projects/${projectId}/knowledge`, group: '项目工具' },
         { label: '计划与自动化', href: `/projects/${projectId}/plans`, group: '项目工具' },
         { label: '项目设置', href: `/projects/${projectId}/settings`, group: '项目工具' },
       ]}
