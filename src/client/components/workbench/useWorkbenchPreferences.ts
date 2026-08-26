@@ -59,22 +59,30 @@ export function readWorkbenchPreferences(storage: Pick<Storage, 'getItem'>, scop
 }
 
 /**
- * On the desktop (>= 740px) panes share the row with the work surface, so auto-collapse a
- * pane when the surface would be squeezed below its reading width. Below the desktop
- * breakpoint panes become overlays/drawers; their visibility is the user's drawer toggle and
- * must not be force-closed here, otherwise a drawer open is immediately undone.
+ * On the desktop (>= 740px) panes share the row with the work surface, so auto-collapse the
+ * left pane when the surface would be squeezed below its reading width. The right pane is
+ * never force-closed any more (2026-08-27): when the three columns don't fit, WorkbenchShell
+ * renders it as a fixed overlay (is-right-overlay) instead of stealing surface width——
+ * 窄带下打开右栏工具页必须可见，静默消失/打不开是不可接受的。Below the desktop breakpoint
+ * panes become overlays/drawers; their visibility is the user's drawer toggle and must not be
+ * force-closed here, otherwise a drawer open is immediately undone.
  */
 export function normalizeWorkbenchPreferencesForWidth(value: WorkbenchPreferences, width: number): WorkbenchPreferences {
   if (width >= WORKBENCH_DESKTOP_MIN) {
     const surfaceMin = surfaceMinWidthFor(width);
     if (width < value.leftWidth + surfaceMin) {
-      return { ...value, leftOpen: false, rightOpen: false };
-    }
-    if (width < value.leftWidth + value.rightWidth + surfaceMin) {
-      return { ...value, rightOpen: false };
+      return { ...value, leftOpen: false };
     }
   }
   return value;
+}
+
+/** 桌面窄带（2026-08-27）：三栏装不下时右栏以浮层呈现——不占中栏宽度，工具页可见可关。 */
+export function rightPaneOverlayFor(value: WorkbenchPreferences, width: number): boolean {
+  if (width < WORKBENCH_DESKTOP_MIN) return false;
+  const surfaceMin = surfaceMinWidthFor(width);
+  const leftWidth = value.leftOpen ? value.leftWidth : 0;
+  return value.rightOpen && width < leftWidth + value.rightWidth + surfaceMin;
 }
 
 export function toggleWorkbenchPane(value: WorkbenchPreferences, pane: 'left' | 'right', width: number): WorkbenchPreferences {

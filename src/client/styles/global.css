@@ -907,6 +907,20 @@ p { margin: 0 0 var(--space-3) 0; }
 .work-inspector-tool .mu-card-head{padding:12px 12px 0}
 .work-inspector-tool .mu-card-body{padding:12px}
 .work-inspector-tool .mu-card-body:has(>.task-table){overflow-x:auto}
+
+/* ===== 桌面窄带右栏浮层化（2026-08-27）：三栏装不下时右栏 fixed 浮层——中栏不被挤死，工具页可见可关 ===== */
+/* display:block 覆盖 .workbench:not(.has-right) 的隐藏——浮层态不带 has-right（否则网格又会挤压中栏） */
+.workbench.is-right-overlay .workbench-inspector{display:block;position:fixed;z-index:45;inset:0 0 0 auto;width:min(var(--work-right),92vw);box-shadow:var(--shadow-3);border-left:1px solid var(--border)}
+.workbench.is-right-overlay .workbench-resizer.is-right{display:none}
+
+/* 右栏工具体容器查询：按栏宽（而非窗口宽）自适应排版——栏可拖拽，media query 不可用 */
+.work-inspector-tool{container-type:inline-size}
+@container (max-width:380px){
+  .work-inspector-tool-head{padding:6px 8px;gap:6px}
+  .work-inspector-tool-body{padding:10px}
+  .work-inspector-tool .mu-card-head{padding:10px 10px 0}
+  .work-inspector-tool .mu-card-body{padding:10px}
+}
 .mu-tabs{flex-wrap:wrap}.project-tool-surface>.tasks-page,.project-tool-surface>.dashboard-page,.project-tool-surface>.artifacts-page,.project-tool-surface>.reports-page,.project-tool-surface>.usage-page,.project-tool-surface>.character-graph-page{width:100%;max-width:none;margin:0}.work-surface-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--space-4);margin-bottom:var(--space-4)}.work-surface-heading h1{margin:0}.work-surface-heading .subtitle{margin:6px 0 0}.work-nav-empty{padding:4px 10px;font-size:12px}.inspector-attention{border-color:color-mix(in srgb,var(--warn) 45%,var(--border));background:var(--warn-bg)}
 .project-tool-surface .mu-card-body:has(>.task-table){overflow-x:auto}.project-tool-surface .task-table{min-width:680px}
 .work-nav-more{margin-top:4px}.work-nav-more>summary{display:flex;align-items:center;gap:9px;width:100%;padding:8px 10px;color:var(--fg-subtle);font-size:13px;cursor:pointer;list-style:none;border-radius:8px}.work-nav-more>summary::-webkit-details-marker{display:none}.work-nav-more>summary:hover{color:var(--fg);background:color-mix(in srgb,var(--bg-elev) 65%,transparent)}.work-nav-more[open]>summary{color:var(--fg);background:var(--bg-elev)}.work-nav-more-list{display:grid;gap:2px;padding:4px 0 4px 14px;border-left:1px solid var(--border-subtle);margin:4px 8px 0 10px}.work-nav-more-list .work-nav-item{font-size:12px;padding:7px 10px}.work-nav-more-list .work-nav-icon{width:20px;height:20px;font-size: 12px}.team-sub-heading{margin-top:10px}.work-nav-icon[data-state]{background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn);font-weight:850}.workbench-drawer-backdrop{position:fixed;inset:0;z-index:44;background:rgba(31,35,35,.26);backdrop-filter:blur(2px)}

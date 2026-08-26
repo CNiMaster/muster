@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { WorkbenchGuide } from './WorkbenchGuide';
 import { useUiMode } from '../../hooks/queries';
 import { toast } from '../Button';
-import { DEFAULT_WORKBENCH_PREFERENCES, PANE_WIDTH_BOUNDS, WORKBENCH_DESKTOP_MIN, surfaceMinWidthFor, useWorkbenchPreferences } from './useWorkbenchPreferences';
+import { DEFAULT_WORKBENCH_PREFERENCES, PANE_WIDTH_BOUNDS, WORKBENCH_DESKTOP_MIN, rightPaneOverlayFor, surfaceMinWidthFor, useWorkbenchPreferences } from './useWorkbenchPreferences';
 
 /**
  * 面板开关下放：中栏内容（如任务顶栏的「右侧面板」按钮）可经此 context
@@ -137,6 +137,8 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
   const visible = query ? options.filter((option) => `${option.group ?? ''}${option.label}`.toLowerCase().includes(query)) : options;
   const groups = Array.from(new Set(visible.map((option) => option.group ?? '当前')));
   const isDesktop = preferences.viewportWidth >= WORKBENCH_DESKTOP_MIN;
+  // 桌面窄带（2026-08-27）：三栏装不下时右栏浮层化——中栏不被挤死，右栏工具页可见可关
+  const rightOverlay = isDesktop && rightPaneOverlayFor(preferences, preferences.viewportWidth);
 
   // 2026-08-24：右栏类/中栏类工具页 mount 时同步一次右栏开合（幂等设置，StrictMode 双跑无害）
   useEffect(() => {
@@ -151,12 +153,13 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
       if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'b') { event.preventDefault(); preferences.toggleRight(); }
       if (event.key === 'Escape') {
         if (commandOpenRef.current) { setCommandOpen(false); return; }
+        if (rightOverlay) { preferences.setRightOpen(false); return; }
         if (typeof window !== 'undefined' && window.innerWidth < WORKBENCH_DESKTOP_MIN && (preferences.leftOpen || preferences.rightOpen)) preferences.closeDrawers();
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [preferences.toggleLeft, preferences.toggleRight, preferences.closeDrawers, preferences.leftOpen, preferences.rightOpen]);
+  }, [preferences.toggleLeft, preferences.toggleRight, preferences.setRightOpen, preferences.closeDrawers, preferences.leftOpen, preferences.rightOpen, rightOverlay]);
 
   const style = {
     '--work-left': `${preferences.leftWidth}px`,
@@ -164,7 +167,7 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
     '--work-surface-min': `${surfaceMinWidthFor(preferences.viewportWidth)}px`,
   } as React.CSSProperties;
   return <WorkbenchUIContext.Provider value={{ toggleRight: preferences.toggleRight, toggleLeft: preferences.toggleLeft }}>
-  <section className={`workbench ${preferences.leftOpen ? 'has-left' : ''} ${preferences.rightOpen ? 'has-right' : ''} ${resizingPane ? 'is-resizing' : ''}`} style={style}>
+  <section className={`workbench ${preferences.leftOpen ? 'has-left' : ''} ${preferences.rightOpen && !rightOverlay ? 'has-right' : ''} ${rightOverlay ? 'is-right-overlay' : ''} ${resizingPane ? 'is-resizing' : ''}`} style={style}>
     <nav id="work-navigation" className="workbench-navigation" aria-label={navigationLabel}>
       <div className="workbench-rail-top">
         <Link to="/" className="workbench-brand" aria-label="Muster 首页"><span>M</span></Link>
@@ -196,7 +199,9 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
         )}
       </div>
     </div>
-    {(!isDesktop && (preferences.leftOpen || preferences.rightOpen)) && <div className="workbench-drawer-backdrop" onMouseDown={preferences.closeDrawers} aria-hidden="true" />}
+    {((!isDesktop && (preferences.leftOpen || preferences.rightOpen)) || rightOverlay) && (
+      <div className="workbench-drawer-backdrop" onMouseDown={() => { if (rightOverlay) preferences.setRightOpen(false); else preferences.closeDrawers(); }} aria-hidden="true" />
+    )}
     <WorkbenchGuide />
     {commandOpen && <div className="command-backdrop" onMouseDown={() => { setCommandOpen(false); setCommandQuery(''); }}><div className="command-dialog" role="dialog" aria-modal="true" aria-label="搜索或跳转" onMouseDown={(event) => event.stopPropagation()}>
       <div className="command-title"><strong>去哪里？</strong><button type="button" aria-label="关闭搜索" onClick={() => { setCommandOpen(false); setCommandQuery(''); }}>×</button></div>
