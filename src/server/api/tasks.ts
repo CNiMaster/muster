@@ -579,7 +579,23 @@ taskByIdRouter.post('/:taskId/compact', asyncHandler(async (req, res) => {
   const task = db.prepare('SELECT id, state, assignee_agent_id FROM task WHERE id=?').get(taskId) as { id: string; state: string; assignee_agent_id: string | null } | undefined;
   if (!task) { res.status(404).json({ ok: false, error: `任务不存在: ${taskId}` }); return; }
   if (task.state !== 'running' && task.state !== 'claimed') {
-    res.status(409).json({ ok: false, error: `任务不在运行中（当前 ${task.state}）——空闲线程的持久历史压缩暂不支持，跑起来后再压。` });
+    // 批次 L3：空闲任务——压 R3 快照（loop_progress 是续跑底座；成功任务快照已清，无可压）
+    const { getLoopProgress, saveLoopProgress } = await import('../domain/loop-progress');
+    const { compactMessagesToDigest } = await import('../executors/tool-loop');
+    const progress = getLoopProgress(db, taskId);
+    if (progress && progress.messages.length > 12) {
+      const before = JSON.stringify(progress.messages).length;
+      const compressed = [
+        progress.messages[0]!,
+        compactMessagesToDigest(progress.messages.slice(1, -8)),
+        ...progress.messages.slice(-8),
+      ];
+      const after = JSON.stringify(compressed).length;
+      saveLoopProgress(db, { taskId, runId: progress.runId, rounds: progress.rounds, messages: compressed, inputHash: progress.inputHash });
+      res.json({ ok: true, mode: 'snapshot', note: `已压缩续跑快照：${progress.messages.length} → ${compressed.length} 条（体积 ${Math.round(before / 1024)}KB → ${Math.round(after / 1024)}KB），下次续跑以压缩后的历史为底` });
+      return;
+    }
+    res.status(409).json({ ok: false, error: '任务不在运行中，且无可压缩的续跑快照（成功任务快照已清）' });
     return;
   }
   let manifestId = '';
@@ -601,7 +617,20 @@ taskByIdRouter.post('/:taskId/compact', asyncHandler(async (req, res) => {
     return;
   }
   if (manifestId === 'codex-cli') {
-    res.status(501).json({ ok: false, error: 'codex CLI 原生压缩经 engine 会话通道触发——本端点 v1 未接 adapter 实例（记后续）' });
+    // 批次 L4：codex 原生压缩主动口（恢复链的 compact 是错误驱动，这里是 /compact 用户口）
+    const cliEngine = (req.app.locals as { engine?: { requestCliCompact: (id: string) => Promise<{ ok: boolean; note: string }> } }).engine;
+    if (cliEngine?.requestCliCompact) {
+      try {
+        const r = await cliEngine.requestCliCompact(taskId);
+        if (r.ok) { res.json({ ok: true, mode: 'cli-native', note: r.note }); return; }
+        res.status(409).json({ ok: false, error: r.note });
+        return;
+      } catch (e) {
+        res.status(500).json({ ok: false, error: `codex 压缩失败：${e instanceof Error ? e.message : String(e)}` });
+        return;
+      }
+    }
+    res.status(501).json({ ok: false, error: 'engine 未注册 CLI 压缩通道' });
     return;
   }
   res.status(409).json({ ok: false, error: `该执行器（${manifestId}）无可靠压缩接口——上下文治理由执行器自管` });

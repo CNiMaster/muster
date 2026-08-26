@@ -14,6 +14,8 @@ import type React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import type { Agent, Task } from '../../api/types';
 import { useAgentProfiles, useAgents, useTaskSwarm, useTasks, useUiMode } from '../../hooks/queries';
+import { useEffect, useState } from 'react';
+import { onContextUsage } from '../../realtime';
 import { FIXED_AGENT_ROLES, agentMatchesFixedRole, agentRoleInfo, isFixedRoleAgent } from './PromptComposer';
 
 /** 专家身份图标池（按名字稳定取用——无职业结构化字段，图标仅作个体区分，hover 才是身份） */
@@ -48,6 +50,11 @@ export function WorkbenchBottomStaffTabs({ projectId, selectedAgentId }: { proje
   const navigate = useNavigate();
   const location = useLocation();
   const { data: agents = [] } = useAgents();
+  // 批次 L2 上下文显示器：taskId→占比（85% 警示——与自动压缩阈值同口径）
+  const [ctxUsage, setCtxUsage] = useState<Record<string, number>>({});
+  useEffect(() => onContextUsage((info) => {
+    setCtxUsage((prev) => (prev[info.taskId] === info.ratio ? prev : { ...prev, [info.taskId]: info.ratio }));
+  }), []);
   const { data: tasks = [] } = useTasks(projectId);
   const { data: profiles = [] } = useAgentProfiles();
 
@@ -144,6 +151,14 @@ export function WorkbenchBottomStaffTabs({ projectId, selectedAgentId }: { proje
             title={`${agent.name}（${agentRoleInfo(agent).label}）· 点击查看状态与对话`}
           >
             <span>👤 {agent.name}</span>
+            {(() => {
+              // 批次 L2：该员工在跑任务的上下文占比（取最高；≥85% 警示色——自动压缩阈值同口径，可 /compact 手动介入）
+              const ratios = agentTasks.map((t) => ctxUsage[t.id]).filter((r): r is number => typeof r === 'number');
+              const top = ratios.length > 0 ? Math.max(...ratios) : null;
+              return top !== null && top >= 0.5
+                ? <span className={`staff-ctx-badge ${top >= 0.85 ? 'is-warn' : ''}`} title={`上下文 ${Math.round(top * 100)}%（${top >= 0.85 ? '已过自动压缩线，可 /compact 手动介入' : '健康'}）`}>{Math.round(top * 100)}%</span>
+                : null;
+            })()}
             {isRunning ? (
               <span style={{ display: 'inline-flex', width: 6, height: 6, borderRadius: 999, background: 'var(--ok)' }} title="工作中" />
             ) : (

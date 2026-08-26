@@ -222,3 +222,68 @@ describe('runToolLoop 手动压缩信号（批次 I：/compact 宿主命令）',
     expect(flag.requested).toBe(false);
   });
 });
+
+describe('token 级治理与超限自愈（批次 L1）', () => {
+  const doneCall = () => [{ content: 'ok', tool_calls: [{ id: 'd1', type: 'function' as const, function: { name: 'done', arguments: JSON.stringify({ outcome: 'completed', summary: 'done' }) } }] }];
+
+  it('窗口 85% 阈值触发压缩（条数未超也压）', async () => {
+    let call = 0;
+    const cm = async (messages: ChatMessage[]) => {
+      call += 1;
+      if (messages[0]?.content?.includes('压缩器')) {
+        return { message: { role: 'assistant' as const, content: '摘要' }, usage: { promptTokens: 1, completionTokens: 1 } };
+      }
+      // 首轮报告 180k/200k=90% → 下轮应已被压缩（消息含【上下文压缩】）
+      const sawCompact = messages.some((m) => m.content.startsWith('【上下文压缩】'));
+      if (sawCompact) return { message: { role: 'assistant' as const, content: 'ok', tool_calls: doneCall()[0]!.tool_calls }, usage: { promptTokens: 50, completionTokens: 5 } };
+      return { message: { role: 'assistant' as const, content: '干活', tool_calls: [{ id: 't1', type: 'function' as const, function: { name: 'run_command', arguments: '{}' } }] }, usage: { promptTokens: 180_000, completionTokens: 5 } };
+    };
+    const result = await runToolLoop({
+      // 垫足历史（>keepRecent+2，压缩才有实质内容并触发摘要调用）
+      messages: [{ role: 'system', content: 's' }, ...Array.from({ length: 12 }, (_, i) => ({ role: 'user' as const, content: `历史${i}` }))],
+      callModel: cm, workingDir: '/wt', maxToolCalls: 5, timeoutMs: 5000, model: 't',
+      contextWindowTokens: 200_000,
+      contextGovernance: { maxMessages: 10_000 }, // 条数维度调高隔离 token 路径
+    });
+    expect(result.result?.summary).toBe('done');
+    expect(call).toBeGreaterThanOrEqual(3); // 干活轮+摘要轮+完成轮
+  });
+
+  it('API 报上下文超限错误 → 就地压缩后重试成功（自愈，不再冒泡失败）', async () => {
+    let call = 0;
+    const cm = async (messages: ChatMessage[]) => {
+      call += 1;
+      if (messages[0]?.content?.includes('压缩器')) {
+        return { message: { role: 'assistant' as const, content: '摘要' }, usage: { promptTokens: 1, completionTokens: 1 } };
+      }
+      if (call === 1) {
+        const err = new Error('OpenAI API 400: This model maximum context length is 200000 tokens. However, you requested 210000 tokens. Please reduce the length of the messages.');
+        throw err;
+      }
+      return { message: { role: 'assistant' as const, content: 'ok', tool_calls: doneCall()[0]!.tool_calls }, usage: { promptTokens: 50, completionTokens: 5 } };
+    };
+    // 先垫长历史（>3 条才具备压缩空间）
+    const msgs: ChatMessage[] = [
+      { role: 'system', content: 's' },
+      ...Array.from({ length: 10 }, (_, i) => ({ role: 'user' as const, content: `历史消息${i}` })),
+    ];
+    const result = await runToolLoop({
+      messages: msgs, callModel: cm, workingDir: '/wt', maxToolCalls: 3, timeoutMs: 5000, model: 't',
+      networkRetryDelays: null, // 关网络重试隔离自愈路径
+    });
+    expect(result.result?.summary).toBe('done'); // 第一次调用抛超限 → 压缩（第2次=摘要）→ 重试（第3次）成功
+    expect(call).toBeGreaterThanOrEqual(3);
+  });
+
+  it('非超限错误不自愈（照常失败）', async () => {
+    let call = 0;
+    const cm = async () => { call += 1; throw new Error('OpenAI API 401: unauthorized'); };
+    // 401 等非超限错误照常冒泡（调用方任务级重试处理），不吞不压
+    await expect(runToolLoop({
+      messages: [{ role: 'system', content: 's' }, ...Array.from({ length: 5 }, (_, i) => ({ role: 'user' as const, content: `m${i}` }))],
+      callModel: cm, workingDir: '/wt', maxToolCalls: 3, timeoutMs: 5000, model: 't',
+      networkRetryDelays: null,
+    })).rejects.toThrow(/401/);
+    expect(call).toBe(1);
+  });
+});

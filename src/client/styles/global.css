@@ -1228,3 +1228,7 @@ p { margin: 0 0 var(--space-3) 0; }
 .work-inspector-tab-shortcuts { display: flex; gap: 2px; margin-left: auto; }
 .work-inspector-tab-shortcuts .mu-nav-plain-btn { font-size: 11px; opacity: .75; }
 .work-inspector-tab-shortcuts .mu-nav-plain-btn:hover { opacity: 1; }
+
+/* 批次 L2：底部人员条上下文占比徽章（≥85% 警示——与自动压缩阈值同口径） */
+.staff-ctx-badge { font-size: 10px; padding: 0 4px; border-radius: 4px; background: var(--accent-subtle, rgba(59,130,246,.12)); color: var(--fg-muted, inherit); font-variant-numeric: tabular-nums; }
+.staff-ctx-badge.is-warn { background: rgba(234,179,8,.18); color: var(--warn, #b45309); font-weight: 600; }

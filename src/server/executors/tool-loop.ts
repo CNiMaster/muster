@@ -24,6 +24,7 @@ import { appendTrace } from '../domain/execution-trace';
 import { saveLoopProgress, clearLoopProgress } from '../domain/loop-progress';
 import { isNetworkFailure } from '../../shared/retry-policy';
 import { log } from '../logger';
+import { realtime } from '../realtime';
 import type { DB } from '../db/client';
 import type { AgentRunResult } from '../../shared/types';
 import type { ExecutionUsage } from '../task-engine/executor';
@@ -109,6 +110,12 @@ export interface ToolLoopOptions {
    * 每轮循环开头检查——requested 则立即压缩（同治理压缩器）并复位。与自动治理互补。
    */
   compactRequest?: { requested: boolean };
+  /**
+   * token 级压缩治理（批次 L1）：上下文窗口 tokens——每轮以 API 返回的 usage.promptTokens
+   * 为权威值，超窗口 85% 即压缩（条数治理外的第二维度）；漏压时 API 报上下文超限错误
+   * 就地强制压缩并重试一次（自愈，防线程卡死）。顺带发 realtime 用量事件（批次 L2 显示器）。
+   */
+  contextWindowTokens?: number;
   /**
    * R1 网络就地重试：callModel 网络类失败的退避梯度（默认 1s/5s/25s 共 3 次）。
    * 传 null 显式关闭（直接抛给任务级重试）；测试可注入短梯度。
@@ -312,6 +319,8 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult
   const tools = toolRegistry.definitions();
   let rounds = 0;
   let totalInput = 0;
+  // 批次 L1：最近一轮 API 返回的 promptTokens（当前上下文大小权威值，条数之外的第二治理维度）
+  let lastPromptTokens = 0;
   let totalOutput = 0;
   let totalCached = 0;
 
@@ -336,7 +345,10 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult
     while (rounds < opts.maxToolCalls) {
       if (controller.signal.aborted || stopRequested) break;
       // L7 上下文治理：超阈值压缩（保留首条系统装配 + 语义/确定性摘要 + 最近 keepRecent 条）——内存内延续不换线程
-      if (gov && messages.length > maxMessages) {
+      // 批次 L1：条数 OR token 用量（85% 阈值）双维触发——工具结果大时条数少 token 也可能爆
+      const overTokenBudget = opts.contextWindowTokens !== undefined && opts.contextWindowTokens > 0
+        && lastPromptTokens > Math.floor(opts.contextWindowTokens * 0.85);
+      if ((gov && messages.length > maxMessages) || overTokenBudget) {
         const system = messages.slice(0, 1);
         const recent = messages.slice(-keepRecent);
         const oldOnes = messages.slice(1, -keepRecent);
@@ -366,36 +378,79 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult
       rounds++;
       inModelCall = true;
       let modelResult;
+      const isContextOverflowError = (e: unknown): boolean => {
+        const msg = (e instanceof Error ? e.message : String(e)).toLowerCase();
+        return /context length|context window|maximum context|too many tokens|prompt is too long|reduce the length|exceeds.*context|input length exceeded/.test(msg);
+      };
+      // 批次 L1 自愈：压缩一次的共享动作（保留系统+近段，语义优先机械兜底）
+      const emergencyCompact = async (): Promise<void> => {
+        if (messages.length <= 3) return;
+        const system = messages.slice(0, 1);
+        const recent = messages.slice(-keepRecent);
+        const oldOnes = messages.slice(1, -keepRecent);
+        let digest: ChatMessage | null = null;
+        if (opts.contextGovernance?.semantic !== false && oldOnes.length > 0) {
+          digest = await compactMessagesSemantic(oldOnes, opts.callModel, controller.signal).catch(() => null);
+        }
+        if (!digest) digest = compactMessagesToDigest(oldOnes);
+        messages.length = 0;
+        messages.push(...system, digest, ...recent);
+      };
       try {
         // R1 网络就地重试：网络类失败退避重试，成功则继续当前轮（messages 原地保留）；传 null 显式关闭
-        modelResult = opts.networkRetryDelays === null
-          ? await opts.callModel(messages, controller.signal, tools)
-          : await callModelWithNetworkRetry(
-              () => opts.callModel(messages, controller.signal, tools),
-              {
-                signal: controller.signal,
-                isStopped: () => stopRequested,
-                delays: opts.networkRetryDelays,
-                onRetry: opts.traceTracking
-                  ? (n, max, error) => {
-                      const tt = opts.traceTracking!;
-                      try {
-                        appendTrace(tt.db, {
-                          taskId: tt.taskId, runId: tt.runId,
-                          kind: 'notice', name: 'network_retry',
-                          summary: `网络中断重试中 ${n}/${max}：${(error instanceof Error ? error.message : String(error)).slice(0, 120)}`,
-                        });
-                      } catch { /* trace 失败不影响执行 */ }
-                    }
-                  : undefined,
-              },
-            );
+        try {
+          modelResult = opts.networkRetryDelays === null
+            ? await opts.callModel(messages, controller.signal, tools)
+            : await callModelWithNetworkRetry(
+                () => opts.callModel(messages, controller.signal, tools),
+                {
+                  signal: controller.signal,
+                  isStopped: () => stopRequested,
+                  delays: opts.networkRetryDelays,
+                  onRetry: opts.traceTracking
+                    ? (n, max, error) => {
+                        const tt = opts.traceTracking!;
+                        try {
+                          appendTrace(tt.db, {
+                            taskId: tt.taskId, runId: tt.runId,
+                            kind: 'notice', name: 'network_retry',
+                            summary: `网络中断重试中 ${n}/${max}：${(error instanceof Error ? error.message : String(error)).slice(0, 120)}`,
+                          });
+                        } catch { /* trace 失败不影响执行 */ }
+                      }
+                    : undefined,
+                },
+              );
+        } catch (err) {
+          // 批次 L1 超限自愈：上下文跑满 API 报错 → 就地压缩后重试一次（防线程永久卡死）
+          if (!isContextOverflowError(err) || messages.length <= 3) throw err;
+          try {
+            if (opts.traceTracking) {
+              appendTrace(opts.traceTracking.db, { taskId: opts.traceTracking.taskId, runId: opts.traceTracking.runId, kind: 'notice', name: 'context_overflow_compact', summary: '上下文超窗口报错——就地压缩后重试' });
+            }
+          } catch { /* trace 吞 */ }
+          await emergencyCompact();
+          modelResult = await opts.callModel(messages, controller.signal, tools);
+        }
       } finally {
         inModelCall = false;
       }
+      lastPromptTokens = modelResult.usage.promptTokens;
       totalInput += modelResult.usage.promptTokens;
       totalOutput += modelResult.usage.completionTokens;
       totalCached += modelResult.usage.cachedTokens ?? 0;
+      // 批次 L2 用量上报（显示器数据源）：promptTokens/窗口占比，前端任务状态展示
+      if (opts.traceTracking && opts.contextWindowTokens) {
+        try {
+          realtime.publish({
+            id: `ev_ctx_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            type: 'task.context_usage',
+            taskId: opts.traceTracking.taskId,
+            occurredAt: new Date().toISOString(),
+            payload: { promptTokens: lastPromptTokens, contextWindowTokens: opts.contextWindowTokens, ratio: Math.min(1, lastPromptTokens / opts.contextWindowTokens) },
+          });
+        } catch { /* 事件失败吞 */ }
+      }
 
       // 把 assistant 消息加回历史
       messages.push(modelResult.message);

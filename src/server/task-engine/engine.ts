@@ -202,6 +202,41 @@ export class TaskEngine {
     flag.requested = true;
     return true;
   }
+
+  /**
+   * 宿主命令 /compact 的 CLI 分支（批次 L4）：对 codex 等有原生 compact 能力的执行器，
+   * 重建最小会话上下文主动触发 compactSession（会话恢复链的 compact 是错误驱动，这是主动口）。
+   * 返回 { ok, note }；不支持/无会话给出原因。
+   */
+  async requestCliCompact(taskId: string): Promise<{ ok: boolean; note: string }> {
+    const task = this.db.prepare('SELECT id, project_task_id, assignee_agent_id FROM task WHERE id=?').get(taskId) as { id: string; project_task_id: string | null; assignee_agent_id: string | null } | undefined;
+    if (!task?.assignee_agent_id) return { ok: false, note: '任务无执行人，无法定位 CLI 会话' };
+    const bind = this.db.prepare('SELECT executor_profile_id FROM company_employee WHERE id=?').get(task.assignee_agent_id) as { executor_profile_id: string | null } | undefined;
+    const profile = bind?.executor_profile_id
+      ? this.db.prepare('SELECT manifest_id, config FROM executor_profile WHERE id=?').get(bind.executor_profile_id) as { manifest_id: string; config: Record<string, unknown> } | undefined
+      : undefined;
+    const manifestId = profile?.manifest_id ?? '';
+    if (manifestId !== 'codex-cli') return { ok: false, note: `执行器 ${manifestId || '未绑定'} 无可靠压缩接口` };
+    const adapter = this.adapters.get('codex-cli');
+    if (!adapter || typeof (adapter as { compactSession?: unknown }).compactSession !== 'function') {
+      return { ok: false, note: 'codex adapter 未注册或不支持压缩' };
+    }
+    const { ensureProjectTaskThread } = await import('../domain/project-task-thread');
+    const { getTaskRuntime } = await import('../domain/task-runtime');
+    const agent = this.db.prepare('SELECT id FROM agent WHERE id=?').get(task.assignee_agent_id) as { id: string } | undefined;
+    const thread = task.project_task_id && agent
+      ? ensureProjectTaskThread(this.db, { projectTaskId: task.project_task_id, employeeId: agent.id, executorProfileId: bind?.executor_profile_id ?? null })
+      : null;
+    if (!thread?.vendorSessionId) return { ok: false, note: '该任务无 codex 会话（尚未跑过或已轮转）' };
+    const runtime = getTaskRuntime(this.db, taskId);
+    const ctx = {
+      sessionIdHint: thread.vendorSessionId,
+      workingDir: runtime?.path ?? process.cwd(),
+      agentExecutor: { binaryPath: (profile!.config as { binaryPath?: string }).binaryPath ?? 'codex' },
+    } as never;
+    await (adapter as { compactSession: (c: never) => Promise<void> }).compactSession(ctx);
+    return { ok: true, note: 'codex 原生压缩已触发' };
+  }
   /** 服务端端口（用于 Agent Bridge loopback URL 构造） */
   serverPort: number = 3456;
 
@@ -602,6 +637,10 @@ export class TaskEngine {
         },
         // 宿主命令 /compact：手动压缩信号 flag（API 型循环每轮开头检查；终态清理见 pumpThread finally）
         compactRequest: this.activeCompactFlags.get(task.id) ?? this.registerCompactFlag(task.id),
+        // 批次 L1：token 级压缩治理窗口（与 assembleContext 同口径合成）
+        contextWindowTokens: executorProfile
+          ? (resolveContextWindow(executorProfile, effectiveModelContextWindow) ?? (agent.executor as { contextWindowTokens?: number })?.contextWindowTokens ?? undefined)
+          : undefined,
         permissionGuard: rawPermissionGuard ? async (request: { action: string; path?: string; command?: string }) => {
           const result = await rawPermissionGuard(request);
           // H9b 安全审查留档：每次判定落 permission_audit（复盘可追责；失败不影响判定）

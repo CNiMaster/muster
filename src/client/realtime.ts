@@ -18,6 +18,21 @@ type StreamDeltaHandler = (info: StreamDeltaInfo) => void;
 const streamHandlers = new Set<StreamDeltaHandler>();
 
 /** 订阅流式增量（返回取消函数）。ConversationPanel 等即时渲染方使用。 */
+export interface ContextUsageInfo {
+  taskId: string;
+  promptTokens: number;
+  contextWindowTokens: number;
+  ratio: number;
+}
+type ContextUsageHandler = (info: ContextUsageInfo) => void;
+const contextUsageHandlers = new Set<ContextUsageHandler>();
+
+/** 批次 L2：订阅任务上下文用量（显示器数据源；底部人员条按 agent↔task 映射渲染占比徽章）。 */
+export function onContextUsage(handler: ContextUsageHandler): () => void {
+  contextUsageHandlers.add(handler);
+  return () => contextUsageHandlers.delete(handler);
+}
+
 export function onStreamDelta(handler: StreamDeltaHandler): () => void {
   streamHandlers.add(handler);
   return () => {
@@ -117,6 +132,16 @@ export function RealtimeSync(): null {
       socket.onmessage = (message) => {
         try {
           const event = JSON.parse(String(message.data)) as RealtimeEvent;
+          // 批次 L2：上下文用量 → 分发给订阅者（不做缓存失效）
+          if (event.type === 'task.context_usage') {
+            const payload = (event.payload ?? {}) as { promptTokens?: number; contextWindowTokens?: number; ratio?: number };
+            if (event.taskId && payload.contextWindowTokens) {
+              for (const handler of contextUsageHandlers) {
+                handler({ taskId: event.taskId, promptTokens: payload.promptTokens ?? 0, contextWindowTokens: payload.contextWindowTokens, ratio: payload.ratio ?? 0 });
+              }
+            }
+            return;
+          }
           // WP5 流式增量：分发给订阅者（打字机），不做缓存失效
           if (event.type === 'message.delta' || event.type === 'message.delta.end') {
             const payload = (event.payload ?? {}) as { delta?: string; agentId?: string; projectTaskId?: string | null };

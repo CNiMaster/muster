@@ -63,6 +63,8 @@ export interface ExecutionContext {
   };
   /** 宿主命令 /compact 手动压缩信号（engine 持有，API 型 adapter 透传 runToolLoop）。 */
   compactRequest?: { requested: boolean };
+  /** 生效上下文窗口 tokens（批次 L1：行级>档案>员工覆盖的合成值；adapter 传 runToolLoop 作 token 级压缩治理）。 */
+  contextWindowTokens?: number;
   /** API 工具调用前由 Muster 权限引擎同步判定。 */
   permissionGuard?: (request: { action: string; path?: string; command?: string }) => { allowed: boolean; message?: string }|Promise<{ allowed: boolean; message?: string }>;
   permissionPolicy?: { approvalStrategy: 'ask-always'|'ask-by-rule'|'no-approval'|'deny'; scope: 'task'|'project'|'workspace'|'selected-directories'|'device'; allowedRoots: string[] };
