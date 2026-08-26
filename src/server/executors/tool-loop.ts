@@ -321,6 +321,9 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult
   let totalInput = 0;
   // 批次 L1：最近一轮 API 返回的 promptTokens（当前上下文大小权威值，条数之外的第二治理维度）
   let lastPromptTokens = 0;
+  // review 修复：上次压缩后的消息数——长度未变（system 本身占大头压不动/无新消息）时跳过再压，
+  // 防「窗口小+装配大」场景每轮空转白调一次摘要模型
+  let lastCompactMsgCount = -1;
   let totalOutput = 0;
   let totalCached = 0;
 
@@ -348,7 +351,9 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult
       // 批次 L1：条数 OR token 用量（85% 阈值）双维触发——工具结果大时条数少 token 也可能爆
       const overTokenBudget = opts.contextWindowTokens !== undefined && opts.contextWindowTokens > 0
         && lastPromptTokens > Math.floor(opts.contextWindowTokens * 0.85);
-      if ((gov && messages.length > maxMessages) || overTokenBudget) {
+      const compactWouldRepeat = messages.length === lastCompactMsgCount;
+      if (((gov && messages.length > maxMessages) || overTokenBudget) && !compactWouldRepeat) {
+        lastCompactMsgCount = -1; // 进压缩段（压缩后长度重记）
         const system = messages.slice(0, 1);
         const recent = messages.slice(-keepRecent);
         const oldOnes = messages.slice(1, -keepRecent);
@@ -360,6 +365,7 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult
         if (!digest) digest = compactMessagesToDigest(oldOnes);
         messages.length = 0;
         messages.push(...system, digest, ...recent);
+        lastCompactMsgCount = messages.length;
       }
       // 宿主命令 /compact：手动压缩请求（API 型；engine 经共享 flag 注入）——立即压缩不限阈值
       if (opts.compactRequest?.requested && messages.length > 3) {

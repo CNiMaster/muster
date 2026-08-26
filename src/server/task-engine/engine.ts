@@ -1640,6 +1640,7 @@ export class TaskEngine {
         }
       }
       this.activeRuns.delete(task.id);
+      this.activeCompactFlags.delete(task.id); // review 修复：压缩信号 flag 随 run 收尾清理（防 Map 泄漏）
       // H8 安全停：清停止定时器（run 已收尾，强停兜底不再有意义）
       const stopEntry = this.activeStops.get(task.id);
       if (stopEntry?.hardTimer) clearTimeout(stopEntry.hardTimer);

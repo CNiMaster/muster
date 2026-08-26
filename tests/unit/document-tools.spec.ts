@@ -72,3 +72,15 @@ describe('handler 层', () => {
     expect(r3.content).toContain('不存在');
   });
 });
+
+describe('review 修复：路径越界守卫', () => {
+  it('document_create/append 的 ../ 逃逸 worktree 被拒', async () => {
+    const dir = tmpDir();
+    const ctx = mkCtx(dir);
+    const r1 = await documentCreateHandler({ id: 's1', name: 'document_create', args: { format: 'md', path: '../../escape.md', content: 'x' } }, ctx);
+    expect(r1.content).toContain('路径越界');
+    const r2 = await documentAppendHandler({ id: 's2', name: 'document_append', args: { path: '../out.md', content: 'x' } }, ctx);
+    expect(r2.content).toContain('路径越界');
+    expect(require('node:fs').existsSync(require('node:path').join(dir, '../../escape.md'))).toBe(false);
+  });
+});

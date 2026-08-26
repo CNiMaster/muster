@@ -11,6 +11,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { ToolCall, ToolDefinition, ToolResult } from './file-tools';
+import { isWithinWorkspace } from '../../sandbox';
 import type { ToolContext } from './registry';
 
 export const DOCUMENT_TOOL_DEFINITIONS: ToolDefinition[] = [
@@ -53,8 +54,18 @@ export const DOCUMENT_TOOL_DEFINITIONS: ToolDefinition[] = [
   },
 ];
 
+/** 已存在性预检（不抛越界——真正写前 resolveTarget 会拦）。 */
+function resolveTargetNoThrow(ctx: ToolContext, rel: string): string {
+  try { return resolveTarget(ctx, rel); } catch { return path.resolve(ctx.workingDir, rel); }
+}
+
 function resolveTarget(ctx: ToolContext, rel: string): string {
-  return path.resolve(ctx.workingDir, rel);
+  const target = path.resolve(ctx.workingDir, rel);
+  // review 修复（P0）：与 write_file 同款越界校验——`../` 逃逸 worktree 拒绝
+  if (!isWithinWorkspace(ctx.workingDir, target)) {
+    throw new Error(`路径越界：${rel} 不在工作目录 ${ctx.workingDir} 内`);
+  }
+  return target;
 }
 
 /** 生成文档核心（可单测）。 */
@@ -122,11 +133,11 @@ export async function documentCreateHandler(call: ToolCall, ctx: ToolContext): P
   if (format === 'xlsx' && !Array.isArray(call.args.rows)) {
     return { toolCallId: call.id, name: call.name, content: '错误：xlsx 需要 rows 二维数组（首行表头）' };
   }
-  const target = resolveTarget(ctx, rel);
-  if (fs.existsSync(target) && call.args.overwrite !== true) {
+  if (fs.existsSync(resolveTargetNoThrow(ctx, rel)) && call.args.overwrite !== true) {
     return { toolCallId: call.id, name: call.name, content: `文件已存在：${rel}。已读过且确认覆盖请传 overwrite=true。` };
   }
   try {
+    const target = resolveTarget(ctx, rel);
     fs.mkdirSync(path.dirname(target), { recursive: true });
     const { bytes, note } = await generateDocument({
       format,
@@ -149,10 +160,11 @@ export async function documentAppendHandler(call: ToolCall, ctx: ToolContext): P
   if (!/\.(md|txt)$/i.test(rel)) {
     return { toolCallId: call.id, name: call.name, content: '仅支持 md/txt 追加；docx/xlsx/pdf 请用 document_create 重新生成。' };
   }
-  const target = resolveTarget(ctx, rel);
-  if (!fs.existsSync(target)) return { toolCallId: call.id, name: call.name, content: `文件不存在：${rel}（追加前先 document_create）` };
+  let appendTarget: string | null = null;
   try {
-    fs.appendFileSync(target, `\n\n${content.trim()}`);
+    appendTarget = resolveTarget(ctx, rel);
+    if (!fs.existsSync(appendTarget)) return { toolCallId: call.id, name: call.name, content: `文件不存在：${rel}（追加前先 document_create）` };
+    fs.appendFileSync(appendTarget, `\n\n${content.trim()}`);
     return { toolCallId: call.id, name: call.name, content: `已追加到 ${rel}（${content.trim().length} 字）。` };
   } catch (e) {
     return { toolCallId: call.id, name: call.name, content: `追加失败：${e instanceof Error ? e.message : String(e)}` };
