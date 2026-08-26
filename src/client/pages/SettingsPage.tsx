@@ -7,7 +7,7 @@ import { useHealthStatus, useSaveSystemSettings, useSystemSettings, useTestConne
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
 import { Input, Select } from '../components/Form';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { SettingsRow, SettingsSectionLabel, SettingsFold, Toggle } from '../components/SettingsRow';
 import { ToolRegistryPanel } from '../components/settings/ToolRegistryPanel';
 import { SkillLibraryPanel } from '../components/settings/SkillLibraryPanel';
@@ -170,10 +170,9 @@ export function SettingsPage(): React.ReactElement {
   if (isLoading) return <div className="loading">加载系统设置中…</div>;
 
   return (
-    <div className="settings-page" style={{ maxWidth: '1100px', margin: '0 auto', padding: '12px 8px 32px' }}>
+    <div className="settings-page">
       <header className="page-header" style={{ marginBottom: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <Link to="/" className="back-link" style={{ fontSize: '13px' }}>← 返回工作台</Link>
           <h1 style={{ margin: 0, fontSize: '22px' }}>系统设置</h1>
         </div>
         <div className="page-actions">

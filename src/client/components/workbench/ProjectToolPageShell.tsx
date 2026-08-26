@@ -193,6 +193,11 @@ export function GlobalToolPageShell({ label, children, fullHeight = false, pane 
       { label: '蓝图库', href: '/blueprints', group: '工具与资产', proOnly: true },
       { label: '智能体库', href: '/agents', group: '工具与资产', proOnly: true },
       { label: '存储管理', href: '/storage', group: '工具与资产' },
+      { label: '能力中心', href: '/capabilities', group: '系统治理', proOnly: true },
+      { label: '能力市场', href: '/marketplace', group: '系统治理', proOnly: true },
+      { label: '执行器中心', href: '/executors', group: '系统治理', proOnly: true },
+      { label: '权限中心', href: '/permissions', group: '系统治理', proOnly: true },
+      { label: '系统设置', href: '/settings', group: '系统治理' },
     ]}
   >
     {pane === 'inspector'
