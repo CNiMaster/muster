@@ -1480,6 +1480,12 @@ export function createBuiltinToolRegistry(): RuntimeToolRegistry {
  * - 未注册工具返回「未知工具」（对齐原 default 分支）
  */
 export async function executeTool(call: ToolCall, ctx: ToolContext): Promise<ToolResult> {
+  // capability parity D4：工具调用前后钩子（观测旁路，失败吞掉；hook 域自带静默）
+  try {
+    const { getDb } = await import('../../db/client');
+    const { emitHookEvent } = await import('../../domain/hook');
+    emitHookEvent(getDb(), 'pre_tool', { taskId: ctx.taskId ?? ctx.loopback?.taskId, summary: `工具 ${call.name}`, data: { tool: call.name } });
+  } catch { /* 钩子失败不影响工具执行 */ }
   const tool = ctx.toolRegistry.resolve(call.name);
   if (!tool) {
     return { toolCallId: call.id, name: call.name, content: `错误：未知工具 ${call.name}` };
@@ -1538,5 +1544,11 @@ export async function executeTool(call: ToolCall, ctx: ToolContext): Promise<Too
     }
   }
 
-  return tool.handler(call, ctx);
+  const __hookResult = await tool.handler(call, ctx);
+  try {
+    const { getDb } = await import('../../db/client');
+    const { emitHookEvent } = await import('../../domain/hook');
+    emitHookEvent(getDb(), 'post_tool', { taskId: ctx.taskId ?? ctx.loopback?.taskId, summary: `工具 ${call.name} 完成`, data: { tool: call.name } });
+  } catch { /* 钩子失败不影响工具执行 */ }
+  return __hookResult;
 }

@@ -300,14 +300,16 @@ export function getMemoryEntry(db: DB, id: string): MemoryEntry {
 }
 
 export function listMemoryEntries(db: DB, filter: {
-  profileId: string; scope?: MemoryScope; projectId?: string; includeDeleted?: boolean;
+  profileId?: string; scope?: MemoryScope; projectId?: string; includeDeleted?: boolean;
 }): MemoryEntry[] {
-  const clauses = ['profile_id=?'];
-  const values: unknown[] = [filter.profileId];
+  // profileId 缺省=记忆看板全局视角（capability parity 批次 D2：跨档案 4 维筛选）
+  const clauses: string[] = [];
+  const values: unknown[] = [];
+  if (filter.profileId) { clauses.push('profile_id=?'); values.push(filter.profileId); }
   if (filter.scope) { clauses.push('scope=?'); values.push(filter.scope); }
   if (filter.projectId) { clauses.push('project_id=?'); values.push(filter.projectId); }
   if (!filter.includeDeleted) clauses.push("state!='deleted'");
-  return (db.prepare(`SELECT * FROM memory_entry WHERE ${clauses.join(' AND ')} ORDER BY updated_at DESC, id`).all(...values) as EntryRow[])
+  return (db.prepare(`SELECT * FROM memory_entry WHERE ${clauses.join(' AND ') || '1=1'} ORDER BY updated_at DESC, id LIMIT 500`).all(...values) as EntryRow[])
     .map((row) => entryFromRow(db, row));
 }
 

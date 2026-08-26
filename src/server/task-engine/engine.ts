@@ -453,6 +453,8 @@ export class TaskEngine {
 
     try {
       markRunning(this.db, task.id);
+      // capability parity D4：task_start 钩子（观测旁路）
+      try { const { emitHookEvent } = await import('../domain/hook'); emitHookEvent(this.db, 'task_start', { taskId: task.id, summary: `任务开始：${task.title}` }); } catch { /* 吞 */ }
       // 补发 task.running：让工位墙/状态看板在 claimed→running 的瞬间秒级刷新
       // （markRunning 只写 DB 事件，不走 realtime，否则前端只能等 5s 轮询）
       realtime.publish({
@@ -1200,6 +1202,8 @@ export class TaskEngine {
       const approvalMatch=result.outcome==='blocked'?/审批请求\s+(approval_[A-Za-z0-9_-]+)/.exec(result.summary):null;
       if(approvalMatch){commitAll(worktreeInfo.path,`muster: approval checkpoint ${task.id}`,{excludePaths:resolutionContext?['.muster-conflicts']:[]});preserveWorktree=true;markTaskWaitingApproval(this.db,task.id,approvalMatch[1]!);updateThreadState(this.db,thread.id,'paused');return true;}
       completeTask(this.db, task.id, result);
+      // capability parity D4：task_end 钩子（观测旁路）
+      try { const { emitHookEvent } = await import('../domain/hook'); emitHookEvent(this.db, 'task_end', { taskId: task.id, summary: `任务完成：${(result as { summary?: string })?.summary ?? task.title}` }); } catch { /* 吞 */ }
       // Review 修复 C1（终审）：completeTask 把 summary/artifacts/自评写回 DB 但返回新对象被丢弃——
       // 后续验收类钩子必须用重新读取的新行，否则读到领取时快照（summary 恒为空 → 判定全部误升级）。
       const completedTask = getTask(this.db, task.id);

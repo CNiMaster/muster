@@ -40,6 +40,7 @@ const KIND_LABEL: Record<Plugin['kind'], string> = {
   'mcp-server': 'MCP Server',
   tool: '工具',
   'bridge-action': 'Bridge',
+  hook: '钩子',
   'ai-generated': 'AI 生成',
   panel: '面板',
 };
@@ -73,7 +74,7 @@ export function CapabilityCenterPage(): React.ReactElement {
   }, [plugins]);
 
   const tabItems = useMemo(() => {
-    const order: Plugin['kind'][] = ['skill', 'mcp-server', 'tool', 'bridge-action', 'ai-generated'];
+    const order: Plugin['kind'][] = ['skill', 'mcp-server', 'tool', 'bridge-action', 'ai-generated', 'hook'];
     const items = order
       .filter((k) => (grouped.get(k)?.length ?? 0) > 0)
       .map((k) => ({

@@ -3,6 +3,7 @@ import type React from 'react';
 import type { Agent, Task } from '../../api/types';
 import type { ProjectTaskDTO } from '../../hooks/queries';
 import { useQueuedMessages, useQueuedMessageAction, useTask, useProjectTaskAction, useTaskAction, usePostMessage, useMessages, useUploadMaterial, materialRawUrl, useExecutorProfiles, useSystemSettings, useBlueprintMatches, useTaskChecklist, useCreateChecklist, useAdvanceChecklist, useArtifacts, useStopAllProjectTasks, useStopTask, type MessageAttachment } from '../../hooks/queries';
+import { useUserCommands } from '../../hooks/queries';
 import { PromptComposer, type ComposerMode } from '../workbench/PromptComposer';
 import { Button, toast } from '../Button';
 import { useNavigate } from 'react-router-dom';
@@ -42,6 +43,8 @@ export function ProjectTaskWorkspace({
   /** 外部「＋ 新建任务」触发信号（自增计数），驱动创建卡展开 */
   newTaskSignal?: number;
 }): React.ReactElement {
+  const { data: userCmdsData } = useUserCommands();
+  const userCmds = userCmdsData?.commands;
 
   // 批次 H.9：@文件 引用候选（组件自取，免去 ProjectPage 透传）
   const { data: composerArtifacts } = useArtifacts(projectId);
@@ -493,6 +496,7 @@ export function ProjectTaskWorkspace({
           </div>
         )}
         <PromptComposer
+        userCommands={userCmds}
           isRunning={runtimeBusy}
           onStop={() => {
             if (!activeRuntimeTask) return;

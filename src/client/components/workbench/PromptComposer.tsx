@@ -102,6 +102,8 @@ export interface PromptComposerProps {
   onNewTask?: () => void;
   /** 草稿持久化键（批次 G.1）：按会话隔离存 localStorage，切任务不丢未发送文本；缺省不持久化 */
   draftKey?: string;
+  /** 自定义斜杠命令（capability parity D3）：上层注入；缺省=无自定义命令。 */
+  userCommands?: Array<{ token: string; description: string; mode?: string; template: string }>;
   /** 批次 H.9：@文件 引用候选（产物/仓库相对路径，挂载方从 useArtifacts 传入） */
   fileOptions?: Array<{ path: string }>;
   /** H8（第五轮定稿）：主按钮=全局暂停（本项目全部执行中任务各自等安全边界）。 */
@@ -149,6 +151,7 @@ export function PromptComposer({
   onSelectMode,
   onNewTask,
   draftKey,
+  userCommands,
   fileOptions = [],
   isRunning = false,
   onStop,
@@ -304,6 +307,25 @@ export function PromptComposer({
   const handleSend = (): void => {
     if ((!text.trim() && attachments.length === 0 && !quotedContext && !panelQuote) || disabled || loading) return;
     // 批次 H.6：划选引用作为前缀随消息附上（"> 引用：…"）
+    // capability parity D3：自定义命令拦截（/=<token> <args> → 模板展开；apply 候选填入此前缀）
+    const cmdMatch = text.trim().match(/^\/=([a-z][a-z0-9-]*)\s*([\s\S]*)$/);
+    if (cmdMatch) {
+      const cmd = userCommandMap.get(cmdMatch[1]!);
+      if (cmd) {
+        let expanded = cmd.template;
+        if (expanded.includes('$ARGUMENTS')) expanded = expanded.split('$ARGUMENTS').join(cmdMatch[2]!.trim());
+        else if (cmdMatch[2]!.trim()) expanded = `${expanded}\n\n${cmdMatch[2]!.trim()}`;
+        onSend(expanded, {
+          agentId: selectedAgentId || defaultAgentId,
+          model: currentModel || undefined,
+          thinking: thinkingDepth,
+          mode: (cmd.mode as ComposerMode | undefined) || mode || undefined,
+        });
+        setText('');
+        if (draftStorageKey) window.localStorage.removeItem(draftStorageKey);
+        return;
+      }
+    }
     const effQuote = quotedContext ?? panelQuote;
     const finalText = effQuote ? `> 引用：${effQuote.replace(/\n+/g, ' ').slice(0, 200)}\n\n${text.trim()}` : text.trim();
     onSend(finalText, {
@@ -341,6 +363,9 @@ export function PromptComposer({
   const slashMatch = text.match(/^\/([a-z]*)$/i);
   const slashToken = slashMatch?.[1]?.toLowerCase() ?? null;
 
+  // capability parity D3：自定义斜杠命令（$MUSTER_HOME/commands，$ARGUMENTS 模板）。
+  // 命令数据经 props 注入（上层 QueryClient 环境拉取；直构测试不传=空）。
+  const userCommandMap = useMemo(() => new Map((userCommands ?? []).map((c) => [c.token, c])), [userCommands]);
   const slashCommands: SlashCommand[] = [
     { token: 'plan', label: '/plan 计划模式', hint: '只调研规划不动手', apply: () => onSelectMode?.('plan') },
     { token: 'exec', label: '/exec 转执行', hint: '计划确认后切到自动编辑档', apply: () => onSelectMode?.('auto-edit') },
@@ -357,7 +382,17 @@ export function PromptComposer({
     || (command.token === 'think' && onToggleThinking)
     || (command.token === 'task' && taskOptions && taskOptions.length > 0 && onSelectTask)
     || (command.token === 'new' && onNewTask));
-  const visibleSlashCommands = slashToken === null ? [] : slashCommands.filter((c) => c.token.startsWith(slashToken));
+  // 合并候选：内置命令 + 自定义命令（去重：内置 token 优先）
+  const builtinTokens = new Set(slashCommands.map((c) => c.token));
+  const visibleUserCommands = slashToken === null ? [] : (userCommands ?? [])
+    .filter((c) => c.token.startsWith(slashToken) && !builtinTokens.has(c.token))
+    .map((c) => ({
+      token: c.token,
+      label: `/${c.token}${c.description ? ` ${c.description}` : ''}`,
+      hint: '自定义命令（/= 前缀执行，可带参数）',
+      apply: (): void => { setText(`/=${c.token} `); setOpenMenu(null); },
+    }));
+  const visibleSlashCommands = slashToken === null ? [] : [...slashCommands.filter((c) => c.token.startsWith(slashToken)), ...visibleUserCommands];
 
   const mentionMatch = text.match(/(?:^|\s)@([^\s@]*)$/);
   const mentionToken = mentionMatch?.[1] ?? null;

@@ -42,6 +42,8 @@ const TaskDetailPage = lazyRetry(() => import('./pages/TaskDetailPage').then((m)
 const ArtifactsPage = lazyRetry(() => import('./pages/ArtifactsPage').then((m) => ({ default: m.ArtifactsPage })));
 const MaterialsPage = lazyRetry(() => import('./pages/MaterialsPage').then((m) => ({ default: m.MaterialsPage })));
 const KnowledgeBasePage = lazyRetry(() => import('./pages/KnowledgeBasePage').then((m) => ({ default: m.KnowledgeBasePage })));
+const MemoryBoardPage = lazyRetry(() => import('./pages/MemoryBoardPage').then((m) => ({ default: m.MemoryBoardPage })));
+const CommandsPage = lazyRetry(() => import('./pages/CommandsPage').then((m) => ({ default: m.CommandsPage })));
 const ReportsPage = lazyRetry(() => import('./pages/ReportsPage').then((m) => ({ default: m.ReportsPage })));
 const DashboardPage = lazyRetry(() => import('./pages/DashboardPage').then((m) => ({ default: m.DashboardPage })));
 const WorkflowGraphPage = lazyRetry(() => import('./pages/WorkflowGraphPage').then((m) => ({ default: m.WorkflowGraphPage })));
@@ -108,6 +110,8 @@ const router = createBrowserRouter([
       { path: 'projects/new', element: <ProjectPage /> },
       { path: 'projects/manage', element: <HomePage /> },
       { path: 'archive', element: <GlobalToolPageShell label="归档" pane="inspector"><ArchivePage /></GlobalToolPageShell> },
+      { path: 'memory-board', element: <GlobalToolPageShell label="记忆看板"><ModeGate><MemoryBoardPage /></ModeGate></GlobalToolPageShell> },
+      { path: 'commands', element: <GlobalToolPageShell label="命令库"><ModeGate><CommandsPage /></ModeGate></GlobalToolPageShell> },
       { path: 'automations', element: <GlobalToolPageShell label="自动化中心"><ModeGate><AutomationPage /></ModeGate></GlobalToolPageShell> },
       { path: 'blueprints', element: <GlobalToolPageShell label="蓝图库"><ModeGate><BlueprintLibraryPage /></ModeGate></GlobalToolPageShell> },
       { path: 'blueprints/:blueprintId', element: <GlobalToolPageShell label="蓝图详情"><ModeGate><BlueprintDetailPage /></ModeGate></GlobalToolPageShell> },

@@ -119,7 +119,7 @@ pluginsRouter.get('/company-scoped', companyScopedHandler);
 const exclusiveInstallSchema = z.object({
   id: z.string().optional(),
   name: z.string().min(1),
-  kind: z.enum(['skill', 'mcp-server', 'tool', 'bridge-action', 'ai-generated', 'panel']),
+  kind: z.enum(['skill', 'mcp-server', 'tool', 'bridge-action', 'ai-generated', 'panel', 'hook']),
   source: z.unknown(),
   manifest: z.record(z.unknown()),
   permissions: z.array(z.string()).optional(),
@@ -161,7 +161,7 @@ pluginsRouter.get(
 const installSchema = z.object({
   id: z.string().optional(),
   name: z.string().min(1),
-  kind: z.enum(['skill', 'mcp-server', 'tool', 'bridge-action', 'ai-generated', 'panel']),
+  kind: z.enum(['skill', 'mcp-server', 'tool', 'bridge-action', 'ai-generated', 'panel', 'hook']),
   // source/scope 用 passthrough 接收任意结构，运行时由 installPlugin 的 toSourceKind/Ref 容错；
   // 此处用 unknown 转换避免 zod 判别联合与 TS PluginSource 的窄化冲突。
   source: z.unknown(),

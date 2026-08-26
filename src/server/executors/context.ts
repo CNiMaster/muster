@@ -29,6 +29,7 @@ import { getPersona, listPersonaIndex } from '../domain/persona-library';
 import { appendTaskEvent } from '../domain/task-event';
 import { searchArchive } from '../domain/archive';
 import { searchKnowledge, ensureProjectBase, ensurePlatformBase } from '../domain/knowledge';
+import { emitHookEvent } from '../domain/hook';
 import { listProjectSpecialists, listStaffSpecialists, specialistLabel } from '../domain/specialist-pool';
 import { localTimezone } from '../domain/tz';
 import { getExecutorProfile } from '../domain/executor-profile';
@@ -679,6 +680,8 @@ export function assembleContext(
     }
   }
 
+  // capability parity D4：context_assemble 钩子（观测旁路；同步函数走静态 import）
+  try { emitHookEvent(db, 'context_assemble', { taskId: task.id, summary: `上下文装配：${task.title}` }); } catch { /* 吞 */ }
   return {
     systemPrompt,
     inputPacket,

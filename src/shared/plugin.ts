@@ -14,7 +14,7 @@
  */
 
 /** 插件形态。每种对应一种 manifest 结构。 */
-export type PluginKind = 'skill' | 'mcp-server' | 'tool' | 'bridge-action' | 'ai-generated' | 'panel';
+export type PluginKind = 'skill' | 'mcp-server' | 'tool' | 'bridge-action' | 'ai-generated' | 'panel' | 'hook';
 
 /** 能力来源。 */
 export type PluginSource =

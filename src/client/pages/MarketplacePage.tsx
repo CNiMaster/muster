@@ -11,7 +11,7 @@
 import { useMemo, useState } from 'react';
 import type React from 'react';
 import { Link } from 'react-router-dom';
-import { useMarketplacePresets, useInstallPreset, useMarketplaceCatalog, useInstallClaudePlugin } from '../hooks/queries';
+import { useMarketplacePresets, useInstallPreset, useMarketplaceCatalog, useInstallClaudePlugin, useCompanyScopedPlugins, useToggleCompanyPlugin, useUninstallPlugin } from '../hooks/queries';
 import type { MarketplacePresetView, MarketplaceSearchEntry, PresetInstallState } from '../api/types';
 import { PRESET_CATEGORIES, type PresetCategory } from '../../shared/marketplace-presets';
 import { Badge } from '../components/Badge';
@@ -229,7 +229,10 @@ function CatalogResults({ catalog, presets }: { catalog: { presets: MarketplaceS
 
 export function MarketplacePage(): React.ReactElement {
   const { data: presets, isLoading } = useMarketplacePresets();
-  const [activeKind, setActiveKind] = useState<'skill' | 'mcp-server'>('skill');
+  const [activeKind, setActiveKind] = useState<'skill' | 'mcp-server' | 'installed'>('skill');
+  const installed = useCompanyScopedPlugins();
+  const togglePlugin = useToggleCompanyPlugin();
+  const uninstall = useUninstallPlugin();
   const [query, setQuery] = useState('');
   const catalog = useMarketplaceCatalog(query);
 
@@ -292,12 +295,42 @@ export function MarketplacePage(): React.ReactElement {
             items={[
               { key: 'skill', label: `${KIND_LABEL.skill} (${counts.skill})`, content: <></> },
               { key: 'mcp-server', label: `${KIND_LABEL['mcp-server']} (${counts['mcp-server']})`, content: <></> },
+              { key: 'installed', label: `已安装 (${(installed.data ?? []).length})`, content: <></> },
             ]}
           />
 
+          {activeKind === 'installed' ? (
+            <div className="kb-list">
+              {(installed.data ?? []).map((p) => (
+                <div key={p.id} className="mu-list-row">
+                  <span className="kb-doc-title">{p.name}<Badge tone="neutral">{p.kind}</Badge></span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => togglePlugin.mutate(
+                      { pluginId: p.id, enabled: p.companyDecision === 'disabled' },
+                      { onSuccess: () => toast('success', p.companyDecision === 'disabled' ? '已启用' : '已停用'), onError: (e: Error) => toast('error', e.message) },
+                    )}
+                  >
+                    {p.companyDecision === 'disabled' ? '启用' : '停用'}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    onClick={() => uninstall.mutate(p.id, { onSuccess: () => toast('success', '已卸载'), onError: (e: Error) => toast('error', e.message) })}
+                  >
+                    卸载
+                  </Button>
+                </div>
+              ))}
+              {(installed.data ?? []).length === 0 && <EmptyState title="还没有已安装的插件" hint="从上方目录一键安装后，这里管理启停与卸载。" />}
+            </div>
+          ) : (
+          <>
           {categoryOrder.map((cat) => (
             <CategoryGroup key={cat} category={cat} presets={grouped.get(cat) ?? []} />
           ))}
+          </>)}
 
           {(presets ?? []).length === 0 && (
             <EmptyState type="general" title="暂无策展条目" hint="预置目录为空。" />

@@ -2877,7 +2877,7 @@ export function useEffectiveCompanyPlugins() {
 export function useCompanyScopedPlugins() {
   return useQuery({
     queryKey: ['company-scoped-plugins'],
-    queryFn: () => api.get<Plugin[]>(`/api/plugins/company-scoped`),
+    queryFn: () => api.get<EffectivePlugin[]>(`/api/plugins/company-scoped`),
   });
 }
 
@@ -2891,6 +2891,18 @@ export function useToggleCompanyPlugin() {
       qc.invalidateQueries({ queryKey: ['enabled-plugins'] });
       qc.invalidateQueries({ queryKey: ['effective-plugins'] });
       qc.invalidateQueries({ queryKey: ['plugins'] });
+    },
+  });
+}
+
+/** 卸载插件（市场「已安装」区，capability parity D1）。 */
+export function useUninstallPlugin() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (pluginId: string) => api.delete(`/api/plugins/${pluginId}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['plugins'] });
+      qc.invalidateQueries({ queryKey: ['effective-plugins'] });
     },
   });
 }
@@ -3457,5 +3469,55 @@ export function useKnowledgeDeleteDoc(projectId: string | undefined) {
   return useMutation({
     mutationFn: (docId: string) => api.delete(`/api/projects/${projectId}/knowledge/docs/${docId}`),
     onSuccess: () => { if (projectId) qc.invalidateQueries({ queryKey: ['knowledge', projectId] }); },
+  });
+}
+
+// ===== Memory Board（capability parity 批次 D2）=====
+export interface MemoryBoardEntry {
+  id: string; profileId: string; scope: 'personal' | 'workspace' | 'project' | 'craft';
+  projectId: string | null; content: string; state: string; personaKey: string | null;
+  hitCount: number; voteCount: number; cause: string | null; tags: string[];
+  createdAt: string; updatedAt: string;
+  injectPolicy: { label: string; hint: string };
+}
+export function useMemoryBoard(params: { scope?: string; projectId?: string; profileId?: string; personaKey?: string; q?: string }) {
+  const search = new URLSearchParams(Object.entries(params).filter(([, v]) => v).map(([k, v]) => [k, String(v)])).toString();
+  return useQuery({
+    queryKey: ['memory-board', search],
+    queryFn: () => api.get<{ ok: boolean; entries: MemoryBoardEntry[]; counts: Record<string, number> }>(`/api/memory-board/entries${search ? `?${search}` : ''}`),
+  });
+}
+export function useMemoryBoardAction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, action, content }: { id: string; action: 'lock' | 'unlock' | 'delete' | 'correct'; content?: string }) =>
+      action === 'correct'
+        ? api.patch(`/api/memory-board/entries/${id}`, { content })
+        : api.post(`/api/memory-board/entries/${id}/${action}`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['memory-board'] }); },
+  });
+}
+
+// ===== User Commands（capability parity 批次 D3）=====
+export function useUserCommands() {
+  return useQuery({
+    queryKey: ['user-commands'],
+    queryFn: () => api.get<{ ok: boolean; commands: Array<{ token: string; description: string; mode?: string; template: string }> }>('/api/commands'),
+    staleTime: 30_000,
+  });
+}
+export function useSaveUserCommand() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { token: string; description?: string; mode?: string; thinking?: string; model?: string; template: string }) =>
+      api.post('/api/commands', body),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['user-commands'] }); },
+  });
+}
+export function useDeleteUserCommand() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (token: string) => api.delete(`/api/commands/${token}`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['user-commands'] }); },
   });
 }

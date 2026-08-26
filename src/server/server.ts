@@ -86,6 +86,8 @@ import { toolsRouter } from './api/tools';
 import { credentialsRouter } from './api/credentials';
 import { materialsRouter } from './api/materials';
 import { knowledgeRouter, knowledgePlatformRouter } from './api/knowledge';
+import { memoryBoardRouter } from './api/memory-board';
+import { commandsRouter } from './api/commands';
 import { businessReviewsRouter } from './api/business-reviews';
 import { backupRouter } from './api/backup';
 import { setupRouter } from './api/setup';
@@ -133,6 +135,8 @@ async function createApp(): Promise<AppHandle> {
   projectById.use('/materials', materialsRouter);
   projectById.use('/knowledge', knowledgeRouter);
   app.use('/api/knowledge', knowledgePlatformRouter);
+  app.use('/api/memory-board', memoryBoardRouter);
+  app.use('/api/commands', commandsRouter);
   projectById.use('/', projectScopedNovel);   // chapter-completed / correction / check
   projectById.use('/', projectPhase7);         // reports / inspector / brainstorm
 
