@@ -58,6 +58,20 @@ worktree：`git worktree add ../muster-h9 -b feat-security-h9` + 软链接 node_
 - 文件编辑联动：变更前确认档→CLI 权限桥对 Edit/Write 也 escalate（现有 approval 流）；自动编辑及以上→worktree 内自动（现状）。
 - 测试：判定域单测（三档分流/契约解析/超时兜底/L1 短路）；接线集成（run_command 各档行为/权限桥升级）；UI（四档药丸渲染/风险卡禁回车）；HTTP（audit 查询）。四门 → 合并。
 
+### S7b 用户控制面聚合（2026-08-26 补充，Alice 拆解借鉴）
+
+口径来源：Alice 陪伴型桌面 Agent 拆解（`docs/references/intel/2026-08-26-intel-alice.md`）——用户视角要在
+一个面看全「它什么时候会主动动、怎么拦」。四件套到既有零件的映射（全部已有，本节只定聚合呈现口径，不新增排期）：
+
+- **事前允许** → 四模式档位（S7：confirm-edits / auto-edit / plan / full-access）+ 审批档（permission_policy）。
+- **提醒** → 用量通知 + 记忆候选积压巡检提醒（sweepMemoryBacklogNotice）；不新增提醒通道，聚合入口统一可达。
+- **事后汇报** → permission_audit 查询端点（S5 留档）+ 执行过程 trace 留痕；自动化触发执行落为任务，
+  任务列表/报告页可回看（走查结论见 Alice 卡）。
+- **全局暂停** → H8 停止语义（stopRequested 边界停）+ 工作台上下班 + killGroup 进程组止损。
+
+UI 聚合入口：权限中心（PermissionCenterPage）加「主动行为」分区——四档模式默认值 + 自动化开关 +
+通知偏好一屏可见。实施时机=随 H9b（与 S7 四模式收敛同批交付），避免控制项散装在四个页面。
+
 ## H9c 受托越界通道（后置）
 
 ### S8

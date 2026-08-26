@@ -225,6 +225,7 @@ export function parsePluginRow(row: PluginRow): Plugin {
     healthCheckedAt: row.health_checked_at ?? undefined,
     healthError: row.health_error ?? undefined,
     maturity: row.maturity,
+    installedAt: row.created_at,
   };
 }
 

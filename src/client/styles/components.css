@@ -1468,3 +1468,55 @@
   font-size: 12px;
   line-height: 1.6;
 }
+
+/* ── 记忆看板：最近变更横条（2026-08-26 Alice 拆解借鉴——记忆成长可见）── */
+.memory-recent-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 4px;
+}
+.memory-recent-label {
+  font-size: var(--text-xs, 12px);
+  color: var(--fg-muted, #888);
+  white-space: nowrap;
+}
+.memory-recent-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 300px;
+  padding: 3px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full, 999px);
+  background: var(--bg-soft);
+  color: var(--fg);
+  font-family: inherit;
+  font-size: var(--text-xs, 12px);
+  cursor: pointer;
+  transition: border-color var(--duration-fast, 0.15s) var(--ease-out);
+}
+.memory-recent-chip:hover { border-color: var(--accent); }
+.memory-recent-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.memory-entry-card.is-flash { outline: 2px solid var(--accent); }
+
+/* ── 能力中心：置顶星标（2026-08-26 Alice 拆解借鉴——常用入口置顶）── */
+.plugin-pin-star {
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--fg-muted, #888);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color var(--duration-fast, 0.15s) var(--ease-out);
+}
+.plugin-pin-star:hover { color: var(--accent); }
+.plugin-pin-star.is-on { color: #e8a33d; }
+

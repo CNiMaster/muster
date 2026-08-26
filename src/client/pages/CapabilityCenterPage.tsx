@@ -45,6 +45,44 @@ const KIND_LABEL: Record<Plugin['kind'], string> = {
   panel: '面板',
 };
 
+/** 本地置顶（localStorage）：能力中心行级星标——星标项排最前（Alice 拆解借鉴：常用入口置顶）。 */
+const PINS_KEY = 'muster.capability.pins';
+
+function readPinnedIds(): Set<string> {
+  try {
+    const raw: unknown = JSON.parse(localStorage.getItem(PINS_KEY) ?? '[]');
+    return new Set(Array.isArray(raw) ? raw.filter((v): v is string => typeof v === 'string') : []);
+  } catch {
+    return new Set();
+  }
+}
+
+/** 距今：<1min=刚刚；<24h=N 分钟/小时前；≥1 天=N 天前（与 DashboardPage 口径一致）。 */
+function formatRelativeTime(iso: string): string {
+  const diff = Date.now() - Date.parse(iso);
+  if (Number.isNaN(diff)) return '';
+  if (diff < 60_000) return '刚刚';
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`;
+  return `${Math.floor(diff / 86_400_000)} 天前`;
+}
+
+/** tab 内排序：星标置顶 → 连接异常警示 → 其余按安装时间倒序（bundled 无时间退回名称序）。 */
+function sortPlugins(list: Plugin[], pins: ReadonlySet<string>): Plugin[] {
+  return [...list].sort((a, b) => {
+    const pa = pins.has(a.id) ? 0 : 1;
+    const pb = pins.has(b.id) ? 0 : 1;
+    if (pa !== pb) return pa - pb;
+    const ha = a.healthError ? 0 : 1;
+    const hb = b.healthError ? 0 : 1;
+    if (ha !== hb) return ha - hb;
+    const ta = a.installedAt ? Date.parse(a.installedAt) : 0;
+    const tb = b.installedAt ? Date.parse(b.installedAt) : 0;
+    if (ta !== tb) return tb - ta;
+    return a.name.localeCompare(b.name);
+  });
+}
+
 /** 提取 plugin 描述。 */
 function describePlugin(p: Plugin): string {
   if (p.manifest.kind === 'skill') {
@@ -110,10 +148,21 @@ export function CapabilityCenterPage(): React.ReactElement {
 
 /** 单个分类下的插件列表，每行带工作台开关矩阵。 */
 function PluginList({ plugins, companies }: { plugins: Plugin[]; companies: { id: string; name: string; state: string }[] }): React.ReactElement {
+  const [pins, setPins] = useState<Set<string>>(() => readPinnedIds());
+  const togglePin = (id: string): void => {
+    setPins((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      localStorage.setItem(PINS_KEY, JSON.stringify([...next]));
+      return next;
+    });
+  };
+  const sorted = useMemo(() => sortPlugins(plugins, pins), [plugins, pins]);
   return (
     <ul className="plugin-govern-list">
-      {plugins.map((p) => (
-        <PluginGovernRow key={p.id} plugin={p} companies={companies} />
+      {sorted.map((p) => (
+        <PluginGovernRow key={p.id} plugin={p} pinned={pins.has(p.id)} onTogglePin={() => togglePin(p.id)} companies={companies} />
       ))}
     </ul>
   );
@@ -126,7 +175,7 @@ interface CompanyLite {
 }
 
 /** 单个插件行：展示 + 工作台开关矩阵。 */
-function PluginGovernRow({ plugin, companies }: { plugin: Plugin; companies: CompanyLite[] }): React.ReactElement {
+function PluginGovernRow({ plugin, pinned, onTogglePin, companies }: { plugin: Plugin; pinned?: boolean; onTogglePin: () => void; companies: CompanyLite[] }): React.ReactElement {
   const [expanded, setExpanded] = useState(false);
   const activeCompanies = companies.filter((c) => c.state !== 'archived');
   const isExclusive = plugin.scope.level === 'workbench';
@@ -141,6 +190,15 @@ function PluginGovernRow({ plugin, companies }: { plugin: Plugin; companies: Com
         >
           <span className={`caret ${expanded ? 'is-open' : ''}`}>▸</span>
         </button>
+        <button
+          type="button"
+          className={`plugin-pin-star${pinned ? ' is-on' : ''}`}
+          onClick={onTogglePin}
+          aria-label={pinned ? `取消置顶 ${plugin.name}` : `置顶 ${plugin.name}`}
+          title={pinned ? '取消置顶' : '置顶'}
+        >
+          {pinned ? '★' : '☆'}
+        </button>
         <div className="plugin-govern-main">
           <div className="plugin-govern-title">
             <span className="plugin-govern-name">{plugin.name}</span>
@@ -153,6 +211,7 @@ function PluginGovernRow({ plugin, companies }: { plugin: Plugin; companies: Com
               <Badge tone="neutral">平台通用</Badge>
             )}
             {plugin.healthError && <Badge tone="err" title={plugin.healthError}>连接异常</Badge>}
+            {plugin.installedAt && <Badge tone="neutral">装于 {formatRelativeTime(plugin.installedAt)}</Badge>}
           </div>
           <p className="plugin-govern-desc muted">{describePlugin(plugin)}</p>
         </div>

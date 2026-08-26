@@ -150,6 +150,8 @@ export interface Plugin {
   healthError?: string;
   /** 成熟度。 */
   maturity: PluginMaturity;
+  /** 安装/入库时间（plugin 表 created_at；bundled/内置来源无此值）。 */
+  installedAt?: string;
 }
 
 /** Plugin 数据库行的类型（plugin 表的字段映射，B3 批次写入侧使用）。 */

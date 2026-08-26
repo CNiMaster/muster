@@ -21,11 +21,25 @@ const SCOPE_TABS: Array<{ key: string; label: string }> = [
   { key: 'craft', label: '人设手艺' },
 ];
 
-function EntryCard({ entry, onAction }: { entry: MemoryBoardEntry; onAction: (a: 'lock' | 'unlock' | 'delete' | 'correct', content?: string) => void }): React.ReactElement {
+const SCOPE_LABEL: Record<string, string> = Object.fromEntries(
+  SCOPE_TABS.filter((t) => t.key).map((t) => [t.key, t.label]),
+);
+
+/** 距今：<1min=刚刚；<24h=N 分钟/小时前；≥1 天=N 天前（与 DashboardPage 口径一致）。 */
+function formatRelativeTime(iso: string): string {
+  const diff = Date.now() - Date.parse(iso);
+  if (Number.isNaN(diff)) return '';
+  if (diff < 60_000) return '刚刚';
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`;
+  return `${Math.floor(diff / 86_400_000)} 天前`;
+}
+
+function EntryCard({ entry, flash, onAction }: { entry: MemoryBoardEntry; flash?: boolean; onAction: (a: 'lock' | 'unlock' | 'delete' | 'correct', content?: string) => void }): React.ReactElement {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(entry.content);
   return (
-    <Card className={`memory-entry-card state-${entry.state}`}>
+    <Card id={`memory-entry-${entry.id}`} className={`memory-entry-card state-${entry.state}${flash ? ' is-flash' : ''}`}>
       <div className="memory-entry-head">
         <Badge tone={entry.scope === 'personal' ? 'ok' : entry.scope === 'craft' ? 'info' : 'neutral'}>{entry.scope}</Badge>
         <span className="mu-tooltip" title={entry.injectPolicy.hint}>注入：{entry.injectPolicy.label}</span>
@@ -59,8 +73,11 @@ function EntryCard({ entry, onAction }: { entry: MemoryBoardEntry; onAction: (a:
 export function MemoryBoardPage(): React.ReactElement {
   const [scope, setScope] = useState('');
   const [q, setQ] = useState('');
+  const [flashId, setFlashId] = useState<string | null>(null);
   const { data, isLoading } = useMemoryBoard({ scope: scope || undefined, q: q || undefined });
   const action = useMemoryBoardAction();
+  // 列表本身已按 updatedAt 倒序（listMemoryEntries），最近变更条直接切片——筛选视图下显示筛选内的最近，口径自洽。
+  const recent = data?.entries.slice(0, 6) ?? [];
 
   const onAction = (a: 'lock' | 'unlock' | 'delete' | 'correct', content?: string, id?: string): void => {
     if (!id) return;
@@ -89,13 +106,35 @@ export function MemoryBoardPage(): React.ReactElement {
         </div>
         <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="按内容过滤…" />
       </div>
+      {recent.length > 0 && (
+        <div className="memory-recent-strip" aria-label="最近变更">
+          <span className="memory-recent-label">最近变更</span>
+          {recent.map((e) => (
+            <button
+              key={e.id}
+              type="button"
+              className="memory-recent-chip"
+              title={e.content}
+              onClick={() => {
+                setFlashId(e.id);
+                document.getElementById(`memory-entry-${e.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                window.setTimeout(() => setFlashId((cur) => (cur === e.id ? null : cur)), 1600);
+              }}
+            >
+              <Badge tone={e.scope === 'personal' ? 'ok' : e.scope === 'craft' ? 'info' : 'neutral'}>{SCOPE_LABEL[e.scope] ?? e.scope}</Badge>
+              <span className="memory-recent-text">{e.content.length > 24 ? `${e.content.slice(0, 24)}…` : e.content}</span>
+              <span className="mu-muted">{formatRelativeTime(e.updatedAt)}</span>
+            </button>
+          ))}
+        </div>
+      )}
       {isLoading ? (
         <p className="mu-muted">加载中…</p>
       ) : !data || data.entries.length === 0 ? (
         <EmptyState title="暂无记忆" hint="任务完成后反思管道会自动沉淀经验；执行越多，这里越丰富。" />
       ) : (
         <div className="memory-board-list">
-          {data.entries.map((e) => <EntryCard key={e.id} entry={e} onAction={(a, c) => onAction(a, c, e.id)} />)}
+          {data.entries.map((e) => <EntryCard key={e.id} entry={e} flash={flashId === e.id} onAction={(a, c) => onAction(a, c, e.id)} />)}
         </div>
       )}
     </div>
