@@ -99,9 +99,16 @@ export function createBase(db: DB, input: {
   }
   const now = nowIso();
   const id = shortId('kb_');
-  db.prepare('INSERT INTO knowledge_base (id, scope_level, project_id, name, description, created_by, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)')
+  // review 修复：并发竞态防护——OR IGNORE 吞掉唯一索引冲突（部分唯一索引见 20260826130000），
+  // 冲突=并行任务已建库，重读返回现存行（幂等）。
+  db.prepare('INSERT OR IGNORE INTO knowledge_base (id, scope_level, project_id, name, description, created_by, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)')
     .run(id, input.scopeLevel, input.projectId ?? null, name, input.description?.trim() || null, input.createdBy ?? null, now, now);
-  return baseFromRow(db.prepare('SELECT * FROM knowledge_base WHERE id=?').get(id) as BaseRow);
+  const row = (db.prepare("SELECT * FROM knowledge_base WHERE id=?").get(id) ?? db.prepare(
+    input.scopeLevel === 'project'
+      ? "SELECT * FROM knowledge_base WHERE scope_level='project' AND project_id=?"
+      : "SELECT * FROM knowledge_base WHERE scope_level='platform'",
+  ).get(input.projectId ?? null)) as BaseRow;
+  return baseFromRow(row);
 }
 
 /** 项目库幂等 get-or-create（拍板：每项目一库，导入时自动确保）。 */

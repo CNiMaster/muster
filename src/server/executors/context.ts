@@ -436,9 +436,11 @@ export function assembleContext(
       limit: 5,
     });
     if (knowledgeHits.length > 0) {
-      sp.push('# 知识库', '以下项目/通用知识库文档与当前任务相关（工具 search_knowledge 可查全文片段）：');
+      // review 定案：装配只注「标题存在性提示」——词法命中仅作线索，是否采用/取全文由执行 agent
+      // 用 search_knowledge 工具按任务语义自行决定（正则/词法不做语义结论）；不直接注入正文片段。
+      sp.push('# 知识库线索', '知识库中可能有与当前任务相关的文档（按任务标题词法初筛，相关性请自行判断）——需要全文用 search_knowledge 工具检索：');
       for (const hit of knowledgeHits) {
-        sp.push(`- ${hit.title}${hit.tags.length ? ` [${hit.tags.join(',')}]` : ''} — ${hit.snippet.slice(0, 120)}`);
+        sp.push(`- ${hit.title}${hit.tags.length ? ` [${hit.tags.join(',')}]` : ''}`);
       }
       sp.push('');
     }

@@ -186,17 +186,12 @@ export function ProjectTaskWorkspace({
       }
       return;
     }
-    // capability parity 批次 G：意图进计划模式——「做计划/出方案」类输入且未显式选模式时
-    // 自动切 plan（只读调研），toast 告知可撤销（显式选过模式=用户意图优先，不抢）。
-    const PLAN_INTENT_RE = /(做个?|写个?|出[一]?份?|帮我|先)?(计划|规划|方案|施工顺序|拆解步骤)/;
-    const effectiveMode = options?.mode ?? (PLAN_INTENT_RE.test(content.trim()) && mode !== 'plan' ? (() => {
-      toast('info', '检测到计划类请求，已切计划模式（只读调研）——可手动改回');
-      return 'plan' as ComposerMode;
-    })() : undefined);
     const messageAttachments = options?.attachments ?? [];
     // 后端归一化前的前端映射：med → medium；模式/模型/思考随消息下发
+    // （review 定案：意图切模式撤掉——正则做语义判断误伤率不可接受（"这个方案不行"即中招），
+    //  语义判断交给模型侧；用户显式入口=内置命令 /plan。）
     const messageOptions = {
-      mode: effectiveMode || undefined,
+      mode: options?.mode || undefined,
       model: options?.model || undefined,
       thinking: options?.thinking === 'med' ? 'medium' as const : options?.thinking as 'off' | 'low' | 'medium' | 'high' | undefined,
     };
