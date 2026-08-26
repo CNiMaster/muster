@@ -94,11 +94,13 @@ CLI 型继续 curl HTTP 零适配。
   审批流；skills/ 增 document-authoring 正文。
 - 验收：API 型各生成一例 docx/xlsx/pdf。
 
-## 批次 F：执行器引导安装
+## 批次 F：执行器引导安装（2026-08-26 实施时确认：已存在，收口不重复实施）
 
-- ExecutorCenterPage「一键安装」：manifests.officialInstall.commands 逐条执行 +
-  安装后 detection 探测注册 + loginCommand 引导。
-- 首启无 CLI → setup-assistant 可跳过引导页（已拍板）；安装命令属高风险走审批。
+- 核查结论：一键安装链路历史批次已交付——domain/executor-install.ts runInstallStream（官方
+  命令流式安装+diagnoseInstallError）、ExecutorCenterPage「自动安装/重试/手动命令展开」、
+  setup-assistant 新手旅程第一步即「选工具（自动扫描/自动安装）」且自然可跳过（API 走第二步）。
+- spec 探索阶段的缺口判断基于盲区，实际无缺口。switch-mode 桥动作评估：composer/意图检测
+  已覆盖模式切换，桥侧弱场景不开管理域写洞——留后续真实需求再启。
 
 ## 批次 G：计划流闭环
 

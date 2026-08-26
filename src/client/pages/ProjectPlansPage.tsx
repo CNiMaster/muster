@@ -6,8 +6,10 @@ import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
 import { Field, Input, Select } from '../components/Form';
 import {
+  useActivatePlanVersion,
   useAgents,
   useCreateProjectSchedule,
+  usePlanVersions,
   useDeleteProjectAutomation,
   useProject,
   useProjectAutomations,
@@ -48,6 +50,9 @@ function intervalLabel(automation: { intervalMs: number | null; scheduleKind: 'i
 export function ProjectPlansPage(): React.ReactElement {
   const { projectId = '' } = useParams();
   const { data: project } = useProject(projectId);
+  // capability parity 批次 G：计划版本域（plan 模式完成自动落草稿，这里确认激活/转工单）
+  const { data: planData } = usePlanVersions(projectId);
+  const activatePlan = useActivatePlanVersion(projectId);
   const { data: agents = [] } = useAgents();
   const { data: projectTasks = [] } = useProjectTasks(projectId);
   const { data: tasks = [] } = useTasks(projectId);
@@ -121,7 +126,26 @@ export function ProjectPlansPage(): React.ReactElement {
       </div>
     </Card>
 
-    <div className="plans-layout">
+          {(planData?.versions ?? []).length > 0 && (
+        <Card title="计划版本（plan 模式产物）" className="plan-versions-card">
+          <div className="kb-list">
+            {(planData?.versions ?? []).map((v) => (
+              <div key={v.id} className="mu-list-row">
+                <span className="kb-doc-title">v{v.version}{v.planDocRef ? ` · ${v.planDocRef}` : ''}</span>
+                <Badge tone={v.status === 'active' ? 'ok' : v.status === 'draft' ? 'warn' : 'neutral'}>{v.status === 'active' ? '生效中' : v.status === 'draft' ? '草稿' : '已替代'}</Badge>
+                <span className="muted">{new Date(v.createdAt).toLocaleString()}</span>
+                {v.status === 'draft' && (
+                  <Button size="sm" onClick={() => activatePlan.mutate(v.id, { onSuccess: () => toast('success', '计划已激活（旧版本自动替代）'), onError: (e: Error) => toast('error', e.message) })}>
+                    确认激活
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+          <p className="muted">计划模式任务完成会自动存一版草稿；激活后作为当前执行基准（历史版本转已替代）。</p>
+        </Card>
+      )}
+      <div className="plans-layout">
       <Card title="自动化计划" actions={<Badge>{automations.length}</Badge>}>
         {automations.length ? <div className="automation-list">{automations.map((automation) => {
           const titleText = typeof automation.template.title === 'string' ? automation.template.title : automation.eventName ?? '系统事件';

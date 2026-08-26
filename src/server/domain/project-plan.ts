@@ -73,24 +73,42 @@ export function createPlanVersion(
     planDocRef?: string;
     createdBy?: string;
     createdReason?: PlanCreatedReason;
+    /** 缺省 active（原语义：建即生效）；'draft'=计划流（批次 G：plan 模式产物待用户确认激活）。 */
+    status?: 'active' | 'draft';
   } = {},
 ): ProjectPlan {
-  const current = getActivePlanVersion(db, projectId);
+  const asDraft = input.status === 'draft';
+  const current = asDraft ? null : getActivePlanVersion(db, projectId);
   const now = nowIso();
   const id = shortId('pln_');
-  const version = (current?.version ?? 0) + 1;
-  // 旧 active 转 superseded
+  // 版本号按项目内最大版本递进（draft 不占 active 位，靠 MAX 而非 active 版本推号）
+  const maxRow = db.prepare('SELECT MAX(version) AS v FROM project_plan WHERE project_id=?').get(projectId) as { v: number | null };
+  const version = (maxRow.v ?? 0) + 1;
+  // 旧 active 转 superseded（draft 模式不顶替当前基准——确认激活时才替代）
   if (current) {
     db.prepare('UPDATE project_plan SET status=?, updated_at=? WHERE id=?').run('superseded', now, current.id);
   }
   db.prepare(
     `INSERT INTO project_plan (id, project_id, version, parent_version, spec_ref, plan_doc_ref, created_by, created_reason, status, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
-  ).run(id, projectId, version, current?.version ?? null, input.specRef ?? null, input.planDocRef ?? null, input.createdBy ?? null, input.createdReason ?? null, now, now);
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(id, projectId, version, current?.version ?? null, input.specRef ?? null, input.planDocRef ?? null, input.createdBy ?? null, input.createdReason ?? null, asDraft ? 'draft' : 'active', now, now);
   return planFromRow(db.prepare('SELECT * FROM project_plan WHERE id=?').get(id) as PlanRow);
 }
 
 /** 当前 active 计划版本（无返回 null）。 */
+/** 激活计划版本（capability parity 批次 G）：旧 active → superseded，目标 → active。 */
+export function activatePlanVersion(db: DB, projectId: string, versionId: string): ProjectPlan {
+  const row = db.prepare('SELECT * FROM project_plan WHERE id=? AND project_id=?').get(versionId, projectId) as PlanRow | undefined;
+  if (!row) throw new AppError(ErrorCode.NOT_FOUND, `计划版本不存在: ${versionId}`);
+  const now = new Date().toISOString();
+  const tx = db.transaction(() => {
+    db.prepare("UPDATE project_plan SET status='superseded', updated_at=? WHERE project_id=? AND status='active'").run(now, projectId);
+    db.prepare("UPDATE project_plan SET status='active', updated_at=? WHERE id=?").run(now, versionId);
+  });
+  tx();
+  return planFromRow(db.prepare('SELECT * FROM project_plan WHERE id=?').get(versionId) as PlanRow);
+}
+
 export function getActivePlanVersion(db: DB, projectId: string): ProjectPlan | null {
   const row = db
     .prepare("SELECT * FROM project_plan WHERE project_id=? AND status='active'")

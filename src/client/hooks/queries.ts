@@ -3521,3 +3521,25 @@ export function useDeleteUserCommand() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['user-commands'] }); },
   });
 }
+
+// ===== Plan Versions（capability parity 批次 G）=====
+export interface PlanVersionView {
+  id: string; projectId: string; version: number; parentVersion: number | null;
+  specRef: string | null; planDocRef: string | null; createdBy: string | null;
+  createdReason: string | null; status: 'draft' | 'active' | 'superseded';
+  createdAt: string; updatedAt: string;
+}
+export function usePlanVersions(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ['plan-versions', projectId],
+    queryFn: () => api.get<{ ok: boolean; versions: PlanVersionView[]; active: PlanVersionView | null }>(`/api/projects/${projectId}/plan-versions`),
+    enabled: !!projectId,
+  });
+}
+export function useActivatePlanVersion(projectId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (versionId: string) => api.post(`/api/projects/${projectId}/plan-versions/${versionId}/activate`),
+    onSuccess: () => { if (projectId) qc.invalidateQueries({ queryKey: ['plan-versions', projectId] }); },
+  });
+}

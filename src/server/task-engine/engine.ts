@@ -1204,6 +1204,15 @@ export class TaskEngine {
       completeTask(this.db, task.id, result);
       // capability parity D4：task_end 钩子（观测旁路）
       try { const { emitHookEvent } = await import('../domain/hook'); emitHookEvent(this.db, 'task_end', { taskId: task.id, summary: `任务完成：${(result as { summary?: string })?.summary ?? task.title}` }); } catch { /* 吞 */ }
+      // capability parity 批次 G：plan 模式任务完成 → 落一版计划（draft；用户确认后 active）
+      if (messageOptions?.mode === 'plan') {
+        try {
+          const { createPlanVersion } = await import('../domain/project-plan');
+          const planDocRef = (result as { artifacts?: Array<{ path?: string }> })?.artifacts?.find((a) => a.path)?.path ?? null;
+          createPlanVersion(this.db, project.id, { planDocRef: planDocRef ?? undefined, createdBy: task.assigneeAgentId ?? undefined, createdReason: 'manual', status: 'draft' });
+          realtime.publish({ id: `ev_${Date.now()}_plan`, type: 'task.completed', projectId: project.id, taskId: task.id, occurredAt: new Date().toISOString(), payload: { planCreated: true, note: '计划已存为草稿版本——到「计划与自动化」页确认激活' } });
+        } catch (e) { log.warn('plan version capture failed', { taskId: task.id, err: e instanceof Error ? e.message : String(e) }); }
+      }
       // Review 修复 C1（终审）：completeTask 把 summary/artifacts/自评写回 DB 但返回新对象被丢弃——
       // 后续验收类钩子必须用重新读取的新行，否则读到领取时快照（summary 恒为空 → 判定全部误升级）。
       const completedTask = getTask(this.db, task.id);
