@@ -1,6 +1,8 @@
 ---
 name: idea-refine
 description: Refines ideas iteratively. Refine ideas through structured divergent and convergent thinking. Use "idea-refine" or "ideate" to trigger.
+name-zh: 创意打磨
+description-zh: 创意发散后的结构化打磨——把模糊想法收敛成可执行方案
 ---
 
 # Idea Refine

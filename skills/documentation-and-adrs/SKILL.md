@@ -1,6 +1,8 @@
 ---
 name: documentation-and-adrs
 description: Records decisions and documentation. Use when making architectural decisions, changing public APIs, shipping features, or when you need to record context that future engineers and agents will need to understand the codebase.
+name-zh: 文档与 ADR
+description-zh: 写文档与架构决策记录——何时记 ADR、记什么、怎么维护
 ---
 
 # Documentation and ADRs

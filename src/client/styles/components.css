@@ -1518,5 +1518,16 @@
   transition: color var(--duration-fast, 0.15s) var(--ease-out);
 }
 .plugin-pin-star:hover { color: var(--accent); }
-.plugin-pin-star.is-on { color: #e8a33d; }
+.plugin-pin-star.is-on { color: var(--warn, #e8a33d); }
+
+/* ── 能力中心：留白与中文名后缀（2026-08-26 用户反馈）── */
+.capability-center .page-head { margin-bottom: 22px; }
+.capability-entry-links { margin: 10px 0 18px; font-size: 12px; }
+.plugin-govern-list { gap: 10px; }
+.plugin-govern-summary { padding: 14px 16px; }
+.plugin-govern-main { gap: 5px; }
+.plugin-govern-name { font-size: 13.5px; }
+.plugin-govern-name .plugin-name-zh { color: var(--fg-muted, #888); font-weight: 500; }
+.plugin-govern-desc { margin: 2px 0 0; line-height: 1.6; }
+
 

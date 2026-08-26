@@ -12,7 +12,7 @@
  * opt-out 语义：平台插件默认对所有工作台启用；工作台可显式禁用。
  * 组织配置锁：启停需工作台下班（后端校验，前端 toast 提示）。
  */
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import type React from 'react';
 import { Link } from 'react-router-dom';
 import { usePlugins, useToggleCompanyPlugin, useWorkbench, useEffectiveCompanyPlugins } from '../hooks/queries';
@@ -76,18 +76,34 @@ function sortPlugins(list: Plugin[], pins: ReadonlySet<string>): Plugin[] {
     const ha = a.healthError ? 0 : 1;
     const hb = b.healthError ? 0 : 1;
     if (ha !== hb) return ha - hb;
-    const ta = a.installedAt ? Date.parse(a.installedAt) : 0;
-    const tb = b.installedAt ? Date.parse(b.installedAt) : 0;
+    const ta = (a.installedAt ? Date.parse(a.installedAt) : 0) || 0;
+    const tb = (b.installedAt ? Date.parse(b.installedAt) : 0) || 0;
     if (ta !== tb) return tb - ta;
     return a.name.localeCompare(b.name);
   });
 }
 
-/** 提取 plugin 描述。 */
+/** 中文系统判定（2026-08-26 定案）：名称永远英文原版优先，中文名只做后缀；中文备注只在中文系统展示。 */
+const isZhUi = typeof navigator !== 'undefined' && (navigator.language ?? '').toLowerCase().startsWith('zh');
+
+/** skill frontmatter 里的中文第二名称/中文备注（name-zh / description-zh；无则 undefined）。 */
+function skillZhMeta(plugin: Plugin): { nameZh?: string; descZh?: string } {
+  if (plugin.manifest.kind !== 'skill') return {};
+  const fm = plugin.manifest.skill.frontmatter as Record<string, string | undefined> | undefined;
+  return { nameZh: fm?.['name-zh'], descZh: fm?.['description-zh'] };
+}
+
+/** 提取 plugin 描述：中文系统优先中文备注，英文系统用原版描述（缺失时互换兜底）。 */
 function describePlugin(p: Plugin): string {
   if (p.manifest.kind === 'skill') {
-    const fm = p.manifest.skill.frontmatter as { description?: string } | undefined;
-    return fm?.description ?? p.manifest.skill.body.slice(0, 120);
+    const fm = p.manifest.skill.frontmatter as Record<string, string | undefined> | undefined;
+    if (!fm?.description && !fm?.['description-zh']) {
+      // 无任何元数据的占位技能（历史机生成行）——明说并给出去留指引，不让用户猜。
+      return '机生成的占位技能（无名称与描述）——若不认识它，建议在市场·已安装里卸载清理';
+    }
+    const zh = fm?.['description-zh'];
+    const en = fm?.description;
+    return (isZhUi ? zh ?? en : en ?? zh) ?? p.manifest.skill.body.slice(0, 120);
   }
   if (p.manifest.kind === 'mcp-server') {
     const tools = p.manifest.mcp.tools ?? [];
@@ -100,6 +116,17 @@ export function CapabilityCenterPage(): React.ReactElement {
   const { data: plugins, isLoading } = usePlugins();
   const { data: company } = useWorkbench();
   const companies = company ? [company] : [];
+  // 置顶状态放页面级：若由各 tab 的 PluginList 自持，A tab 加星不会同步到已挂载的其他 tab。
+  const [pins, setPins] = useState<Set<string>>(() => readPinnedIds());
+  const togglePin = useCallback((id: string): void => {
+    setPins((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      localStorage.setItem(PINS_KEY, JSON.stringify([...next]));
+      return next;
+    });
+  }, []);
 
   const grouped = useMemo(() => {
     const byKind = new Map<string, Plugin[]>();
@@ -118,13 +145,13 @@ export function CapabilityCenterPage(): React.ReactElement {
       .map((k) => ({
         key: k,
         label: `${KIND_LABEL[k]} (${grouped.get(k)!.length})`,
-        content: <PluginList plugins={grouped.get(k)!} companies={companies ?? []} />,
+        content: <PluginList plugins={grouped.get(k)!} pins={pins} onTogglePin={togglePin} companies={companies ?? []} />,
       }));
     if (items.length === 0) {
       return [{ key: 'empty', label: '暂无', content: <EmptyState icon={Icons.empty} title="暂无能力" hint="安装 MCP server 或在设置页同步工具档案。" /> }];
     }
     return items;
-  }, [grouped, companies]);
+  }, [grouped, companies, pins, togglePin]);
 
   return (
     <div className="page capability-center">
@@ -147,22 +174,12 @@ export function CapabilityCenterPage(): React.ReactElement {
 }
 
 /** 单个分类下的插件列表，每行带工作台开关矩阵。 */
-function PluginList({ plugins, companies }: { plugins: Plugin[]; companies: { id: string; name: string; state: string }[] }): React.ReactElement {
-  const [pins, setPins] = useState<Set<string>>(() => readPinnedIds());
-  const togglePin = (id: string): void => {
-    setPins((cur) => {
-      const next = new Set(cur);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      localStorage.setItem(PINS_KEY, JSON.stringify([...next]));
-      return next;
-    });
-  };
+function PluginList({ plugins, pins, onTogglePin, companies }: { plugins: Plugin[]; pins: ReadonlySet<string>; onTogglePin: (id: string) => void; companies: { id: string; name: string; state: string }[] }): React.ReactElement {
   const sorted = useMemo(() => sortPlugins(plugins, pins), [plugins, pins]);
   return (
     <ul className="plugin-govern-list">
       {sorted.map((p) => (
-        <PluginGovernRow key={p.id} plugin={p} pinned={pins.has(p.id)} onTogglePin={() => togglePin(p.id)} companies={companies} />
+        <PluginGovernRow key={p.id} plugin={p} pinned={pins.has(p.id)} onTogglePin={() => onTogglePin(p.id)} companies={companies} />
       ))}
     </ul>
   );
@@ -201,7 +218,10 @@ function PluginGovernRow({ plugin, pinned, onTogglePin, companies }: { plugin: P
         </button>
         <div className="plugin-govern-main">
           <div className="plugin-govern-title">
-            <span className="plugin-govern-name">{plugin.name}</span>
+            <span className="plugin-govern-name">
+              {plugin.name}
+              {isZhUi && skillZhMeta(plugin).nameZh && <span className="plugin-name-zh"> · {skillZhMeta(plugin).nameZh}</span>}
+            </span>
             {plugin.maturity !== 'stable' && (
               <Badge tone={MATURITY_TONE[plugin.maturity]}>{MATURITY_LABEL[plugin.maturity]}</Badge>
             )}

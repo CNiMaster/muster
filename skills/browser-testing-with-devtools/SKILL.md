@@ -1,6 +1,8 @@
 ---
 name: browser-testing-with-devtools
 description: Tests in real browsers. Use when building or debugging anything that runs in a browser. Use when you need to inspect the DOM, capture console errors, analyze network requests, profile performance, or verify visual output with real runtime data via Chrome DevTools MCP.
+name-zh: 浏览器调试与测试
+description-zh: 用 DevTools 做浏览器端调试与自动化测试——页面检查、网络分析、端到端验证
 ---
 
 # Browser Testing with DevTools

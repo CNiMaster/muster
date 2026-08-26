@@ -1,6 +1,8 @@
 ---
 name: frontend-ui-engineering
 description: Builds production-quality UIs. Use when building or modifying user-facing interfaces. Use when creating components, implementing layouts, managing state, or when the output needs to look and feel production-quality rather than AI-generated.
+name-zh: 前端界面工程
+description-zh: 构建用户界面——组件化实现、界面还原、可访问性
 ---
 
 # Frontend UI Engineering

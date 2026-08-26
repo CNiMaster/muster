@@ -1,8 +1,8 @@
 ---
-id: verification-before-completion
-name: 完工前验证
 category: verification
-description: 宣称"完成/修好/通过"前必须先跑验证拿证据——证据先行，断言在后
+description: Run verification and collect evidence before claiming any task is done — evidence first, assertions later.
+name-zh: 完工前验证
+description-zh: 宣称“完成/修好/通过”前必须先跑验证拿证据——证据先行，断言在后
 ---
 
 # 完工前验证（verification-before-completion）

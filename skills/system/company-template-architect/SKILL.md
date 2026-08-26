@@ -1,6 +1,8 @@
 ---
 name: company-template-architect
 description: 根据用户的行业、目标和限制生成可运行、可编辑、可验证的 Muster 公司蓝图草案。
+name-zh: 公司模板架构师
+description-zh: 根据用户的行业、目标和限制生成可运行、可编辑、可验证的 Muster 公司蓝图草案
 ---
 
 # 公司模板架构师
