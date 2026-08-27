@@ -14,7 +14,7 @@ export const RT_CONTEXT_ID = 'ctx';
 export const RT_MAX_TABS = 8;
 
 export type ProjectToolTabKey = 'tasks' | 'merges' | 'artifacts' | 'knowledge';
-export type GlobalToolKey = 'archive' | 'side' | 'approvals';
+export type GlobalToolKey = 'archive' | 'side' | 'approvals' | 'memory';
 
 export type RtEntry =
   | { kind: 'doc'; path: string }
@@ -23,7 +23,7 @@ export type RtEntry =
   | { kind: 'globalTool'; key: GlobalToolKey };
 
 const TOOL_KEYS: ReadonlySet<string> = new Set(['tasks', 'merges', 'artifacts', 'knowledge']);
-const GLOBAL_TOOL_KEYS: ReadonlySet<string> = new Set(['archive', 'side', 'approvals']);
+const GLOBAL_TOOL_KEYS: ReadonlySet<string> = new Set(['archive', 'side', 'approvals', 'memory']);
 
 export function rtId(entry: RtEntry): string {
   if (entry.kind === 'doc') return `doc:${encodeURIComponent(entry.path)}`;
@@ -42,6 +42,7 @@ export const GLOBAL_TOOL_LABELS: Record<GlobalToolKey, string> = {
   archive: '归档',
   side: '侧边对话',
   approvals: '审批',
+  memory: '记忆看板',
 };
 
 function parseSegment(segment: string): RtEntry | null {

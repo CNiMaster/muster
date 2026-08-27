@@ -20,13 +20,14 @@ import { ArtifactsPage } from '../../pages/ArtifactsPage';
 import { KnowledgeBasePage } from '../../pages/KnowledgeBasePage';
 import { ArchivePage } from '../../pages/ArchivePage';
 import { SideChatPage } from '../../pages/SideChatPage';
+import { MemoryBoardPage } from '../../pages/MemoryBoardPage';
 import { PreviewBody } from './InspectorPreviewHost';
 import { WorkLivePanel } from './WorkLivePanel';
 import { rtId, rtLabel, RT_CONTEXT_ID, type GlobalToolKey, type RtEntry } from './inspector-tabs';
 import { useInspectorTabsApi } from './useInspectorTabs';
 import { ApprovalsInbox } from './ApprovalsInbox';
 
-const GLOBAL_TAB_ICONS: Record<GlobalToolKey, string> = { archive: '🗂️', side: '💬', approvals: '🔔' };
+const GLOBAL_TAB_ICONS: Record<GlobalToolKey, string> = { archive: '🗂️', side: '💬', approvals: '🔔', memory: '🧠' };
 
 /** 标签条 + 活动体。ctxBody=「现场」内容节点（调用方传入，保持既有 props 装配）。 */
 export function InspectorTabsHost({ projectId, ctxBody }: { projectId?: string; ctxBody: React.ReactNode }): React.ReactElement {
@@ -176,6 +177,8 @@ export function InspectorTabsHost({ projectId, ctxBody }: { projectId?: string; 
               {activeEntry.key === 'side' && <SideChatPage />}
               {/* 专业页：与 /approvals 路由同款 ModeGate（简单模式下分享链接不走标签后门） */}
               {activeEntry.key === 'approvals' && <ModeGate><ApprovalsInbox /></ModeGate>}
+              {/* 看板族（2026-08-28 定案：右栏=看板）——记忆看板与审批同属右栏板式；专业页双裁同款 */}
+              {activeEntry.key === 'memory' && <ModeGate><MemoryBoardPage /></ModeGate>}
             </div>
           </div>
         )}

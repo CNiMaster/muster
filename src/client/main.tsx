@@ -88,7 +88,7 @@ const router = createBrowserRouter([
       { path: 'projects/new', element: <ProjectPage /> },
       { path: 'projects/manage', element: <HomePage /> },
       { path: 'archive', element: <GlobalToolPageShell label="归档" pane="inspector"><ArchivePage /></GlobalToolPageShell> },
-      { path: 'memory-board', element: <GlobalToolPageShell label="记忆看板"><ModeGate><MemoryBoardPage /></ModeGate></GlobalToolPageShell> },
+      { path: 'memory-board', element: <GlobalToolPageShell label="记忆看板" pane="inspector" fullHeight><ModeGate><MemoryBoardPage /></ModeGate></GlobalToolPageShell> },
       { path: 'commands', element: <GlobalToolPageShell label="命令库"><ModeGate><CommandsPage /></ModeGate></GlobalToolPageShell> },
       { path: 'automations', element: <GlobalToolPageShell label="自动化中心"><ModeGate><AutomationPage /></ModeGate></GlobalToolPageShell> },
       { path: 'blueprints', element: <GlobalToolPageShell label="蓝图库"><ModeGate><BlueprintLibraryPage /></ModeGate></GlobalToolPageShell> },

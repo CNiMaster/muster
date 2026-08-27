@@ -143,10 +143,10 @@ export function ProjectContextInspector({
               <span>#{t.seq}</span>
             </Link>
           ))}
-          {(cockpit?.approvals.pending ?? 0) > 0 && (
-            <Link to="/permissions" style={{ fontSize: '12px', display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
-              <span>处理权限审批</span>
-              <span>{cockpit!.approvals.pending}</span>
+          {(cockpit ? cockpit.approvals.pending + cockpit.approvals.businessPending : 0) > 0 && (
+            <Link to="/approvals" style={{ fontSize: '12px', display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+              <span>处理审批</span>
+              <span>{cockpit ? cockpit.approvals.pending + cockpit.approvals.businessPending : 0}</span>
             </Link>
           )}
           {(health?.failedCount ?? 0) > 0 && (
@@ -475,6 +475,31 @@ export function ProjectContextInspector({
           <SideChatPanel />
         </InspectorGroup>
       )}
+
+      {/* 看板族（2026-08-28 三栏分工定案：右栏=看板）：右栏面板自持看板入口——
+          记忆看板开右栏标签；审批只在有待办时出现（需要时显示），平时走左栏治理组 */}
+      <div style={{ display: 'flex', gap: 6, padding: '6px 2px 2px', borderTop: '1px solid var(--border-subtle)', marginTop: 6 }}>
+        <button
+          type="button"
+          className="mu-nav-plain-btn"
+          style={{ fontSize: 12, border: '1px solid var(--border-subtle)', borderRadius: 8, padding: '4px 10px', cursor: 'pointer', background: 'transparent' }}
+          onClick={() => tabApi.toggleGlobalTool('memory')}
+          title="组织的四维记忆看板（右栏标签）"
+        >
+          🧠 记忆看板
+        </button>
+        {(cockpit ? cockpit.approvals.pending + cockpit.approvals.businessPending : 0) > 0 && (
+          <button
+            type="button"
+            className="mu-nav-plain-btn"
+            style={{ fontSize: 12, border: '1px solid var(--border-subtle)', borderRadius: 8, padding: '4px 10px', cursor: 'pointer', background: 'transparent', color: 'var(--danger, #c0392b)' }}
+            onClick={() => tabApi.toggleGlobalTool('approvals')}
+            title="有审批等待处理（右栏标签）"
+          >
+            🔔 审批 {cockpit ? cockpit.approvals.pending + cockpit.approvals.businessPending : 0}
+          </button>
+        )}
+      </div>
 
       {/* 探讨面板（projectId 为空的新建项目壳不发请求） */}
       {projectId ? <DiscussionPanel projectId={projectId} agents={agents} /> : null}

@@ -642,7 +642,9 @@ export function ProjectWorkNavigation({
               <span className="work-nav-label">命令库</span>
             </Link>
           </ToolCategory>
-          {/* 治理（2026-08-27）：原 ⌘K 面板专属的系统治理页补可见入口——默认收起，专业模式可见 */}
+          {/* 治理（2026-08-27 补入口；2026-08-28 三栏分工定案瘦身）：左栏=常驻导航——只留配置台；
+              看板族（审批/记忆看板）=右栏标签（审批项留此只为角标可见性）；能力市场折入能力中心互链。
+              默认收起，专业模式可见 */}
           {!ui.isSimple && (
             <ToolCategory label="治理" collapsed={toolCats.governance ?? true} onToggle={() => toggleToolCat('governance')}>
               <Link className={`work-nav-item ${globalTabActive('approvals') ? 'is-active' : ''}`} {...globalToolLinkProps('approvals', '/approvals')}>
@@ -661,10 +663,6 @@ export function ProjectWorkNavigation({
                 <span className="work-nav-icon">🧰</span>
                 <span className="work-nav-label">能力中心</span>
               </Link>
-              <Link className="work-nav-item" {...toolLinkProps('/marketplace')}>
-                <span className="work-nav-icon">🏪</span>
-                <span className="work-nav-label">能力市场</span>
-              </Link>
               <Link className="work-nav-item" {...toolLinkProps('/executors')}>
                 <span className="work-nav-icon">🔌</span>
                 <span className="work-nav-label">执行器中心</span>
@@ -676,10 +674,6 @@ export function ProjectWorkNavigation({
               <Link className="work-nav-item" {...toolLinkProps('/automations')}>
                 <span className="work-nav-icon">⚙️</span>
                 <span className="work-nav-label">自动化中心</span>
-              </Link>
-              <Link className="work-nav-item" {...toolLinkProps('/memory-board')}>
-                <span className="work-nav-icon">🧠</span>
-                <span className="work-nav-label">记忆看板</span>
               </Link>
             </ToolCategory>
           )}

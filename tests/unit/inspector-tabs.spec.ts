@@ -72,10 +72,10 @@ describe('inspector-tabs 纯函数', () => {
     expect(rtLabel({ kind: 'tool', tool: 'merges' })).toBe('待合并成果');
   });
 
-  it('全局工具键：archive/side/approvals 三键可解析（2026-08-27 审批收件箱进右栏）', () => {
-    const entries = parseRtParam('g:archive|g:side|g:approvals');
-    expect(entries.map(rtId)).toEqual(['g:archive', 'g:side', 'g:approvals']);
-    expect(rtLabel(entries[2]!)).toBe('审批');
+  it('全局工具键：archive/side/approvals/memory 四键可解析（2026-08-28 记忆看板进右栏）', () => {
+    const entries = parseRtParam('g:archive|g:side|g:approvals|g:memory');
+    expect(entries.map(rtId)).toEqual(['g:archive', 'g:side', 'g:approvals', 'g:memory']);
+    expect(rtLabel(entries[3]!)).toBe('记忆看板');
     expect(parseRtParam('g:ghost')).toEqual([]); // 非法全局键丢弃
     expect(serializeRt([{ kind: 'globalTool', key: 'approvals' }])).toBe('g:approvals');
   });
