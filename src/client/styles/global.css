@@ -1275,3 +1275,21 @@ p { margin: 0 0 var(--space-3) 0; }
   .workbench-inspector .auxiliary-section .mu-card-body,.workbench-inspector .inspector-collapse>div{padding-inline:2px}
   .workbench-inspector .auxiliary-section-title{flex-wrap:wrap}
 }
+
+/* ===== 右栏统一标签系统（2026-08-27 P2）=====
+   吸附在 aside 单滚动器顶部的标签条：现场(隐式)+doc/plan/tool 显式签。
+   横向滚动不折行（多开不吃纵向空间）；窄容器压缩内距并收短可读文本。 */
+.inspector-tabs-bar{position:sticky;top:0;z-index:3;display:flex;align-items:center;gap:4px;padding:6px 8px;border-bottom:1px solid var(--border-subtle);background:var(--bg-elev);overflow-x:auto;scrollbar-width:none;overscroll-behavior-x:contain;flex-shrink:0}
+.inspector-tabs-bar::-webkit-scrollbar{display:none}
+.inspector-tab{display:inline-flex;align-items:center;flex:0 0 auto;border-radius:8px;font-size:12px;color:var(--fg-muted)}
+.inspector-tab>.inspector-tab-label{all:unset;display:inline-flex;align-items:center;gap:5px;padding:4px 2px 4px 8px;cursor:pointer;max-width:132px}
+.inspector-tab-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.inspector-tab-kind{font-size:11px;line-height:1}
+.inspector-tab-close{all:unset;display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;margin-right:3px;border-radius:6px;color:var(--fg-subtle);cursor:pointer;font-size:13px;line-height:1}
+.inspector-tab-close:hover{background:color-mix(in srgb,var(--fg) 12%,transparent);color:var(--fg)}
+.inspector-tab.is-active{background:var(--accent-subtle,rgba(59,130,246,.12));color:var(--accent);font-weight:650}
+.inspector-tab.is-context.is-active{background:transparent;color:var(--fg);font-weight:700}
+@container inspector (max-width:340px){
+  .inspector-tabs-bar{padding:5px 6px;gap:3px}
+  .inspector-tab>.inspector-tab-label{max-width:96px;padding-left:6px}
+}

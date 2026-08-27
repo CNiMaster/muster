@@ -17,6 +17,8 @@ import {
 import { DropdownMenu } from '../DropdownMenu';
 import { ContextMenu, CLOSED_CONTEXT_MENU, type ContextMenuState } from '../ContextMenu';
 import { FilesTreeModal } from '../project/FilesTreeModal';
+import type { ProjectToolTabKey } from './inspector-tabs';
+import { useInspectorTabsApi } from './useInspectorTabs';
 import { useTaskActionMenu } from '../project/TaskTopBar';
 import { toast } from '../Button';
 
@@ -187,6 +189,20 @@ export function ProjectWorkNavigation({
         e.preventDefault();
         navigate(projectId ? `/projects/${projectId}` : '/');
       }
+    },
+  });
+  // 2026-08-27 P2：右栏类工具（tasks/merges/artifacts/knowledge）改为开关「工具标签」——
+  // 不再切路由，中栏任务对话保持；修饰键点击仍走原生 <a> 深链（新窗口场景）
+  const tabsApi = useInspectorTabsApi();
+  const toolTabActive = (tool: ProjectToolTabKey): boolean =>
+    tabsApi.entries.some((entry) => entry.kind === 'tool' && entry.tool === tool)
+    && tabsApi.activeId === `tool:${tool}`;
+  const inspectorToolLinkProps = (tool: ProjectToolTabKey, href: string): { to: string; onClick: (e: React.MouseEvent) => void } => ({
+    to: href,
+    onClick: (e) => {
+      if (e.metaKey || e.ctrlKey || e.shiftKey) return;
+      e.preventDefault();
+      tabsApi.toggleTool(tool);
     },
   });
 
@@ -536,7 +552,7 @@ export function ProjectWorkNavigation({
           <ToolCategory label="常用" collapsed={toolCats.common ?? false} onToggle={() => toggleToolCat('common')}>
             {/* review 修复：新建项目外壳 projectId 为空——项目级工具链接跳过，避免 /projects//tasks 空段路由 */}
             {projectId && (
-              <Link className={`work-nav-item ${activeTool === 'artifacts' ? 'is-active' : ''}`} {...toolLinkProps(`/projects/${projectId}/artifacts`)}>
+              <Link className={`work-nav-item ${activeTool === 'artifacts' || toolTabActive('artifacts') ? 'is-active' : ''}`} {...inspectorToolLinkProps('artifacts', `/projects/${projectId}/artifacts`)}>
                 <span className="work-nav-icon">📦</span>
                 <span className="work-nav-label">成果与文件</span>
               </Link>
@@ -552,12 +568,12 @@ export function ProjectWorkNavigation({
           </ToolCategory>
           {projectId && !ui.isSimple && (
             <ToolCategory label="项目工具" collapsed={toolCats.project ?? true} onToggle={() => toggleToolCat('project')}>
-              <Link className={`work-nav-item ${activeTool === 'tasks' ? 'is-active' : ''}`} {...toolLinkProps(`/projects/${projectId}/tasks`)}>
+              <Link className={`work-nav-item ${activeTool === 'tasks' || toolTabActive('tasks') ? 'is-active' : ''}`} {...inspectorToolLinkProps('tasks', `/projects/${projectId}/tasks`)}>
                 <span className="work-nav-icon">📋</span>
                 <span className="work-nav-label">任务领取清单</span>
                 {attentionCount > 0 && <span className="work-nav-count">{attentionCount}</span>}
               </Link>
-              <Link className={`work-nav-item ${activeTool === 'merges' ? 'is-active' : ''}`} {...toolLinkProps(`/projects/${projectId}/merges`)}>
+              <Link className={`work-nav-item ${activeTool === 'merges' || toolTabActive('merges') ? 'is-active' : ''}`} {...inspectorToolLinkProps('merges', `/projects/${projectId}/merges`)}>
                 <span className="work-nav-icon">🔀</span>
                 <span className="work-nav-label">待合并成果</span>
                 {(mergeAttention?.staleMerges ?? 0) > 0 && (

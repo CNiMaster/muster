@@ -9,9 +9,10 @@ import { DEFAULT_WORKBENCH_PREFERENCES, PANE_WIDTH_BOUNDS, WORKBENCH_DESKTOP_MIN
 /**
  * 面板开关下放：中栏内容（如任务顶栏的「右侧面板」按钮）可经此 context
  * 复用 Shell 的左右面板开合状态，不重复建偏好存储。
+ * 2026-08-27 补 rightOpen 态读取——标签动作（开文档/工具）需要判断右栏是否可见。
  */
-export const WorkbenchUIContext = createContext<{ toggleRight: () => void; toggleLeft: () => void } | null>(null);
-export function useWorkbenchUI(): { toggleRight: () => void; toggleLeft: () => void } | null {
+export const WorkbenchUIContext = createContext<{ toggleRight: () => void; toggleLeft: () => void; rightOpen: boolean } | null>(null);
+export function useWorkbenchUI(): { toggleRight: () => void; toggleLeft: () => void; rightOpen: boolean } | null {
   return useContext(WorkbenchUIContext);
 }
 
@@ -166,7 +167,7 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
     '--work-right': `${preferences.rightWidth}px`,
     '--work-surface-min': `${surfaceMinWidthFor(preferences.viewportWidth)}px`,
   } as React.CSSProperties;
-  return <WorkbenchUIContext.Provider value={{ toggleRight: preferences.toggleRight, toggleLeft: preferences.toggleLeft }}>
+  return <WorkbenchUIContext.Provider value={{ toggleRight: preferences.toggleRight, toggleLeft: preferences.toggleLeft, rightOpen: preferences.rightOpen }}>
   <section className={`workbench ${preferences.leftOpen ? 'has-left' : ''} ${preferences.rightOpen && !rightOverlay ? 'has-right' : ''} ${rightOverlay ? 'is-right-overlay' : ''} ${resizingPane ? 'is-resizing' : ''}`} style={style}>
     <nav id="work-navigation" className="workbench-navigation" aria-label={navigationLabel}>
       <div className="workbench-rail-top">

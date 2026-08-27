@@ -1,17 +1,13 @@
 /**
- * 批次 F.3：右栏预览容器 v1。
+ * 右栏预览容器（批次 F.3 → 2026-08-27 P2 重构）。
  *
- * URL 驱动（?preview=<项目内相对路径>）——可返回/可分享；关闭即移除参数。
+ * 独立区块版 InspectorPreviewHost 已退役——预览改为右栏统一标签的一类（InspectorTabsHost 的
+ * DocTabBody）。本模块保留类型分派与安全端点加载：PreviewBody 供标签体与放大 Modal 复用。
  * 类型分派：图片/音视频/PDF/HTML 走 /artifacts/preview 安全端点（双校验 + HTML CSP），
  * Markdown/文本走 /artifacts/content 端点。HTML 加 sandbox 双保险（服务端 CSP 已禁脚本）。
- * 放大复用 Modal（size xl）；「画廊」跳 ArtifactsPage 走完整编辑流。
  */
-import { useState } from 'react';
 import type React from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
 import { useArtifactContent } from '../../hooks/queries';
-import { Button } from '../Button';
-import { Modal } from '../Modal';
 import { MarkdownPreview } from '../MarkdownPreview';
 
 const IMAGE_RE = /\.(png|jpe?g|gif|webp|bmp|svg)$/i;
@@ -27,7 +23,7 @@ export function artifactPreviewUrl(projectId: string, relPath: string): string {
   return `/api/projects/${projectId}/artifacts/preview/${encoded}`;
 }
 
-function PreviewBody({ projectId, relPath, tall }: { projectId: string; relPath: string; tall?: boolean }): React.ReactElement {
+export function PreviewBody({ projectId, relPath, tall }: { projectId: string; relPath: string; tall?: boolean }): React.ReactElement {
   const url = artifactPreviewUrl(projectId, relPath);
   const frameStyle: React.CSSProperties = {
     width: '100%',
@@ -70,39 +66,5 @@ function TextPreview({ projectId, relPath, tall }: { projectId: string; relPath:
   }
   return (
     <pre className="inspector-preview-plain" style={scrollStyle}>{content}</pre>
-  );
-}
-
-export function InspectorPreviewHost({ projectId }: { projectId: string }): React.ReactElement | null {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const relPath = searchParams.get('preview');
-  const [zoomed, setZoomed] = useState(false);
-  if (!projectId || !relPath) return null;
-
-  const close = (): void => {
-    const next = new URLSearchParams(searchParams);
-    next.delete('preview');
-    setSearchParams(next);
-    setZoomed(false);
-  };
-  const fileName = relPath.split('/').pop() ?? relPath;
-
-  return (
-    <section className="auxiliary-section inspector-preview" style={{ padding: '8px', border: '1px solid var(--accent)', borderRadius: 'var(--radius-md)', background: 'var(--bg-elev)' }}>
-      <div className="auxiliary-section-title" style={{ padding: 0, marginBottom: '6px' }}>
-        <span title={relPath} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>👁 {fileName}</span>
-        <span style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-          <Button size="sm" variant="ghost" onClick={() => setZoomed(true)}>放大</Button>
-          <Link className="mu-btn mu-btn-ghost mu-btn-sm" style={{ fontSize: 11, textDecoration: 'none' }} to={`/projects/${projectId}/artifacts?path=${encodeURIComponent(relPath)}`}>画廊</Link>
-          <Button size="sm" variant="ghost" onClick={close} aria-label="关闭预览">×</Button>
-        </span>
-      </div>
-      <PreviewBody projectId={projectId} relPath={relPath} />
-      {zoomed && (
-        <Modal open onClose={() => setZoomed(false)} title={fileName} size="xl">
-          <PreviewBody projectId={projectId} relPath={relPath} tall />
-        </Modal>
-      )}
-    </section>
   );
 }

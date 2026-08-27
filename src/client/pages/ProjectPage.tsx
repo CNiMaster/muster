@@ -40,6 +40,7 @@ import { useRecentProject } from '../hooks/useRecentProject';
 import { WorkbenchShell } from '../components/workbench/WorkbenchShell';
 import { ProjectWorkNavigation } from '../components/workbench/ProjectWorkNavigation';
 import { ProjectContextInspector } from '../components/workbench/ProjectContextInspector';
+import { InspectorTabsHost } from '../components/workbench/InspectorTabsHost';
 import { WorkCapsule } from '../components/workbench/WorkCapsule';
 import { ProjectTaskWorkspace } from '../components/project/ProjectTaskWorkspace';
 import { TaskTopBar } from '../components/project/TaskTopBar';
@@ -514,7 +515,7 @@ export function ProjectDetail({ projectId }: { projectId: string }): React.React
           : null}
       </>}
       navigation={<ProjectWorkNavigation projectId={projectId} projectTasks={projectTasks ?? []} tasks={tasks ?? []} agents={agents ?? []} departments={departments ?? []} firstAgentId={project.firstAgentId ?? company?.firstAgentId} selectedProjectTaskId={selectedProjectTaskId} selectedAgentId={selectedAgentId} view={projectView} attentionCount={attentionCount} novel={company?.kind === 'novel'} onNewTask={openNewTaskCard} />}
-      inspector={<ProjectContextInspector projectId={projectId} selectedTask={selectedProjectTask} selectedAgentId={projectView === 'employee' ? selectedAgentId : undefined} agents={agents ?? []} tasks={tasks ?? []} cockpit={cockpit} />}
+      inspector={<InspectorTabsHost projectId={projectId} ctxBody={<ProjectContextInspector projectId={projectId} selectedTask={selectedProjectTask} selectedAgentId={projectView === 'employee' ? selectedAgentId : undefined} agents={agents ?? []} tasks={tasks ?? []} cockpit={cockpit} />} />}
       commandOptions={[
         ...(projectTasks ?? []).slice(0, 8).map((item) => ({ label: `#${item.seq} ${item.title}`, href: `/projects/${projectId}?view=task&projectTask=${item.id}`, group: '项目任务' })),
         ...(agents ?? []).slice(0, 5).map((agent) => ({ label: `智能体：${agent.name}`, href: `/projects/${projectId}?view=employee&agent=${agent.id}`, group: '团队成员' })),

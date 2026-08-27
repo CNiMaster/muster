@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type React from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import type { Agent, Task } from '../../api/types';
 import type { ProjectTaskDTO } from '../../hooks/queries';
 import { useArtifacts, useBlueprintMatches, useProjectSpecialists, useProjectTaskAction, useTaskSwarm,
@@ -9,10 +9,9 @@ import type { CompanyCockpitDTO } from '../../../shared/types';
 import { Badge, StateBadge, taskStateTone } from '../Badge';
 import { Button, toast } from '../Button';
 import { DiscussionPanel } from './DiscussionPanel';
-import { InspectorPreviewHost } from './InspectorPreviewHost';
-import { WorkLivePanel } from './WorkLivePanel';
 import { PanelPluginHost } from './PanelPluginHost';
 import { SideChatPanel } from './SideChatPanel';
+import { useInspectorTabsApi } from './useInspectorTabs';
 
 const OPEN_STATES = new Set(['queued', 'claimed', 'running', 'waiting_input', 'waiting_dependency', 'waiting_approval', 'paused', 'blocked']);
 const ATTENTION_STATES = new Set(['waiting_input', 'waiting_approval', 'blocked', 'waiting_dependency']);
@@ -125,21 +124,11 @@ export function ProjectContextInspector({
     );
   };
 
-  const [searchParams, setSearchParams] = useSearchParams();
-  const openPreview = (relPath: string): void => {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.set('preview', relPath);
-      return next;
-    });
-  };
+  // 产物组点击 = 开「文档标签」（2026-08-27 P2：单槽 ?preview= 退役）
+  const tabApi = useInspectorTabsApi();
 
   return (
     <div className="auxiliary-panel">
-      {/* 批次 H.2：工作现场面板（?panel=live 驱动，胶囊展开；三段式：计划/进程/执行者目录） */}
-      {searchParams.get('panel') === 'live' && <WorkLivePanel projectId={projectId} selectedProjectTaskId={selectedTask?.id} />}
-      {/* 批次 F.3：右栏预览容器（?preview= 驱动；无参数时不占位） */}
-      <InspectorPreviewHost projectId={projectId} />
 
       {/* 瞬时层：需要你关注（有事才出现，事毕即隐） */}
       {attentionTotal > 0 && (
@@ -439,8 +428,8 @@ export function ProjectContextInspector({
               <button
                 key={art.id}
                 type="button"
-                title={`右栏预览 ${art.path}`}
-                onClick={() => openPreview(art.path)}
+                title={`开文档标签 ${art.path}`}
+                onClick={() => tabApi.openDoc(art.path)}
                 style={{
                   display: 'flex',
                   alignItems: 'center',

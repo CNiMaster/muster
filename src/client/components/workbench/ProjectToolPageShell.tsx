@@ -2,6 +2,7 @@ import type React from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAgents, useWorkbench, useWorkbenchCockpit, useDepartments, useProject, useProjectTask, useProjectTasks, useTask, useTasks, useMergeAttention, useCreateProjectTask, useCreateTask } from '../../hooks/queries';
 import { ProjectContextInspector } from './ProjectContextInspector';
+import { InspectorTabsHost } from './InspectorTabsHost';
 import { ProjectWorkNavigation, type ProjectToolKey } from './ProjectWorkNavigation';
 import { WorkbenchShell, useWorkbenchUI } from './WorkbenchShell';
 import { WorkbenchContextSwitcher } from './WorkbenchContextSwitcher';
@@ -128,9 +129,7 @@ export function ProjectToolPageShell({ tool, children, projectIdOverride, select
     attentionCount={attentionCount + (cockpit?.approvals.pending ?? 0) + (mergeAttention?.total ?? 0)}
     primaryAction={<Link className="mu-btn mu-btn-primary mu-btn-sm" to={`/projects/${projectId}${selectedId ? `?projectTask=${selectedId}` : ''}`}>返回智能体中心</Link>}
     navigation={<ProjectWorkNavigation projectId={projectId} projectTasks={projectTasks ?? []} tasks={tasks ?? []} agents={agents ?? []} departments={departments ?? []} firstAgentId={project?.firstAgentId ?? company?.firstAgentId} selectedProjectTaskId={selectedId} view="tool" activeTool={tool} attentionCount={attentionCount} novel={company?.kind === 'novel'} onNewTask={() => navigate(`/projects/${projectId}?view=task&projectTask=new`)} />}
-    inspector={effectivePane === 'inspector'
-      ? <InspectorToolPane title={TOOL_LABELS[tool]} tool={tool} projectId={projectId ?? ''}>{children}</InspectorToolPane>
-      : <ProjectContextInspector projectId={projectId} selectedTask={selectedTask} agents={agents ?? []} tasks={tasks ?? []} cockpit={cockpit} />}
+    inspector={<InspectorTabsHost projectId={projectId || undefined} ctxBody={<ProjectContextInspector projectId={projectId} selectedTask={selectedTask} agents={agents ?? []} tasks={tasks ?? []} cockpit={cockpit} />} />}
     mountRightOpen={effectivePane === 'inspector' ? true : false}
     commandOptions={[
       ...(projectTasks ?? []).slice(0, 5).map((item) => ({ label: `任务：${item.title}`, href: `/projects/${projectId}?view=task&projectTask=${item.id}`, group: '项目任务' })),

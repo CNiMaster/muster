@@ -1,20 +1,21 @@
 /**
  * 批次 H.2：工作胶囊——右上角悬浮（不可拖动），有事才出现（活跃任务或失败）。
- * 收缩态一句话摘要（正在干什么 · N 个子任务）；点击展开右侧「工作现场面板」（?panel=live）。
+ * 收缩态一句话摘要（正在干什么 · N 个子任务）；点击开右侧「工作现场」标签（2026-08-27 P2 标签化）。
  */
 import type React from 'react';
-import { useSearchParams } from 'react-router-dom';
 import { useProjectHealth } from '../../hooks/queries';
 import { useWorkbenchUI } from './WorkbenchShell';
+import { useInspectorTabsApi } from './useInspectorTabs';
 import type { Agent, Task } from '../../api/types';
 
 const ACTIVE_STATES = new Set(['queued', 'claimed', 'running', 'waiting_input', 'waiting_dependency', 'paused', 'blocked']);
 
 export function WorkCapsule({ projectId, tasks, agents }: { projectId: string; tasks: Task[]; agents: Agent[] }): React.ReactElement | null {
-  const [searchParams, setSearchParams] = useSearchParams();
+  const tabs = useInspectorTabsApi();
   const { data: health } = useProjectHealth(projectId);
   const ui = useWorkbenchUI();
-  const panelOpen = searchParams.get('panel') === 'live';
+  const planId = 'plan:live';
+  const panelOpen = tabs.activeId === planId;
 
   const active = tasks.filter((t) => ACTIVE_STATES.has(t.state) && t.isDiscussion === 0);
   if (active.length === 0 && (health?.failedCount ?? 0) === 0) return null;
@@ -27,13 +28,12 @@ export function WorkCapsule({ projectId, tasks, agents }: { projectId: string; t
     : `无进行中任务 · ${health?.failedCount ?? 0} 个失败待处理`;
 
   const toggle = (): void => {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      if (panelOpen) next.delete('panel');
-      else next.set('panel', 'live');
-      return next;
-    });
-    if (!panelOpen) ui?.toggleRight();
+    if (panelOpen) tabs.closeTab(planId);
+    else {
+      tabs.openPlan();
+      // 右栏收起时顺带拉开——开标签不可见等于没开
+      if (ui && !ui.rightOpen) ui.toggleRight();
+    }
   };
 
   return (
