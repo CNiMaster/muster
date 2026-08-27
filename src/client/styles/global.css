@@ -1114,8 +1114,10 @@ p { margin: 0 0 var(--space-3) 0; }
 /* 底栏永单行（2026-08-27 返工定版）：工具行容器 <560 时模型/思考度收成图标（点开菜单确认），永不折行；@container 锚在 toolbar 同时覆盖 controls+actions */
 .mu-prompt-toolbar{container-type:inline-size}
 @container (max-width: 560px){
-  .mu-composer-pill.mu-compact-target .mu-pill-label{max-width:0;opacity:0;overflow:hidden}
-  .mu-composer-pill.mu-compact-target .mu-pill-arrow{opacity:0.45}
+  /* 4 pill 统一收成图标：模式/对话人与模型/思考等级都不占宽，点开菜单确认全文 */
+  .mu-prompt-toolbar .mu-pill-label{display:none}
+  .mu-prompt-toolbar .mu-pill-arrow{opacity:0.35}
+  .mu-prompt-toolbar .mu-composer-pill{padding:3px 5px}
 }
 
 /* 发送区（2026-08-24 定案）：底部一行对齐——方形小发送钮 + ⌄ 菜单；⇧↵ 换行提示悬浮在发送钮正上方（不占行高） */

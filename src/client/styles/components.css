@@ -862,7 +862,6 @@
   padding: 6px 10px 8px;
   flex-wrap: nowrap;
   min-width: 0;
-  container-type: inline-size;
 }
 .mu-prompt-controls {
   display: flex;

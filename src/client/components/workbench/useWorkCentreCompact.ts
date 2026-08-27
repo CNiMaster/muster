@@ -10,8 +10,8 @@ import { useWorkbenchUI } from './WorkbenchShell';
 
 const AUTO_KEY = 'muster:workbench:autoCollapsed';
 const MANUAL_KEY = 'muster:workbench:manualLeftClosed';
-const COLLAPSE_AT = 520;
-const EXPAND_AT = 620;
+const COLLAPSE_AT = 540;
+const EXPAND_AT = 680;
 
 function isLeftVisible(): boolean {
   const nav = document.querySelector('.workbench-navigation');
