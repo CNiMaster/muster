@@ -223,7 +223,9 @@ p { margin: 0 0 var(--space-3) 0; }
   white-space: normal;
   color: var(--fg-muted);
 }
-.settings-page { max-width: 960px; margin: 0 auto; }
+/* width:100% 必需（2026-08-27）：父级 work-surface-page 在部分壳下为 flex，子项默认 fit-content
+   导致每个设置分组宽度不同、切换时整块左右漂移、分类导航无法固定 */
+.settings-page { width: 100%; max-width: 960px; margin: 0 auto; }
 .settings-basic-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
