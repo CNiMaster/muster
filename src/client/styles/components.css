@@ -322,6 +322,9 @@
 /* ===== Tabs ===== */
 .mu-tabs-bar {
   display: flex;
+  /* 标签装不下时整行折行（2026-08-27）：bar 才是按钮容器——wrap 曾误加在外层 .mu-tabs 上不生效，
+     窄右栏里按钮被硬裁（如成果页「修改历史」整个不可见） */
+  flex-wrap: wrap;
   gap: var(--space-1);
   border-bottom: 1px solid var(--border-subtle);
 }
@@ -337,6 +340,8 @@
   position: relative;
   transition: color var(--duration-base) var(--ease-out);
   min-height: 40px;
+  /* 按钮内文字不许内部竖排断字——放不下由 bar 折行成多行标签行 */
+  white-space: nowrap;
 }
 .mu-tab::after {
   content: '';
@@ -692,6 +697,13 @@
   line-height: var(--leading-normal);
   max-height: 500px;
   overflow-y: auto;
+  /* 长串可断（2026-08-27）：右栏预览里长 URL 无断行点曾把整栏撑爆任何宽度 */
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.mu-md-preview a {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .mu-md-h {

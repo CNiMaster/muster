@@ -100,10 +100,13 @@ export function TasksPage(): React.ReactElement {
   return <div className="tasks-page employee-task-board">
     <header className="page-header"><div><h1>任务领取清单</h1><p className="subtitle">按智能体查看项目工作；智能体领取、执行和下级派发都会回到这里。</p></div></header>
 
-    <div className="employee-filter-row" aria-label="按智能体筛选">
-      <button type="button" className={!selectedAgentId ? 'is-active' : ''} onClick={() => setSearchParams({})}>全部智能体</button>
-      {agents.map((agent) => <button type="button" key={agent.id} className={selectedAgentId === agent.id ? 'is-active' : ''} onClick={() => setSearchParams({ agent: agent.id })}>{agent.name}<span>{tasks.filter((task) => task.assigneeAgentId === agent.id && task.state !== 'completed' && task.state !== 'cancelled').length}</span></button>)}
-      <label className="muted" style={{ marginLeft: 'auto', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+    <div className="tasks-filter-head">
+      <div className="employee-filter-row" aria-label="按智能体筛选">
+        <button type="button" className={!selectedAgentId ? 'is-active' : ''} onClick={() => setSearchParams({})}>全部智能体</button>
+        {agents.map((agent) => <button type="button" key={agent.id} className={selectedAgentId === agent.id ? 'is-active' : ''} onClick={() => setSearchParams({ agent: agent.id })}>{agent.name}<span>{tasks.filter((task) => task.assigneeAgentId === agent.id && task.state !== 'completed' && task.state !== 'cancelled').length}</span></button>)}
+      </div>
+      {/* 排序独立于筛选 chips 滚动区（2026-08-27）：窄栏里曾藏进横向滚动尾部不可发现 */}
+      <label className="muted tasks-sort-control" style={{ fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
         排序
         <Select value={prefs.sort} aria-label="任务排序" onChange={(event) => savePrefs({ ...prefs, sort: event.target.value as TaskSort })} style={{ width: 'auto' }}>
           <option value="seq">#seq 倒序</option>

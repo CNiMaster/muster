@@ -1248,3 +1248,30 @@ p { margin: 0 0 var(--space-3) 0; }
 /* 批次 L2：底部人员条上下文占比徽章（≥85% 警示——与自动压缩阈值同口径） */
 .staff-ctx-badge { font-size: 10px; padding: 0 4px; border-radius: 4px; background: var(--accent-subtle, rgba(59,130,246,.12)); color: var(--fg-muted, inherit); font-variant-numeric: tabular-nums; }
 .staff-ctx-badge.is-warn { background: rgba(234,179,8,.18); color: var(--warn, #b45309); font-weight: 600; }
+
+/* ===== 右栏内容容器自适应（2026-08-27 研究轮，报告结论落地）=====
+   断点跟「栏宽」走而非浏览器窗口：右栏可拖拽、宽度与窗口无关，
+   media query 只服务中栏独立工具页（640/900 那套保留）。窗口缩放时
+   栏宽不变内容本就无需重排——重排错在内容没跟自己容器自适应。
+   档位定案：≥420 宽松（不动）/ 340–420 标准 / <340 紧凑。 */
+.workbench-inspector{container:inspector/inline-size}
+/* 排序控件独立行（TasksPage.tsx 结构调整配套）：筛选 chips 内部横滚、排序常驻可见 */
+.tasks-filter-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:12px}
+.tasks-filter-head .employee-filter-row{flex:1 1 auto;margin-bottom:0;min-width:0}
+.tasks-filter-head .tasks-sort-control{margin-left:auto;flex-shrink:0}
+@container inspector (max-width:560px){
+  /* 五列派发表单 min-content≈620px，进右栏即降单列 */
+  .workbench-inspector .task-dispatch-grid{grid-template-columns:1fr}
+}
+@container inspector (max-width:420px){
+  /* 发布工作单两列表单/双列看板：右栏内一律竖排 */
+  .workbench-inspector .task-work-order-grid{grid-template-columns:1fr}
+  .workbench-inspector .task-work-order-grid>.mu-btn{width:100%}
+  .workbench-inspector .employee-task-columns{grid-template-columns:1fr}
+}
+@container inspector (max-width:340px){
+  /* 紧凑档：预览头按钮收字保图标语义；正文卡留白降档；区块标题行允许折行（产物组长路径+画廊链接） */
+  .workbench-inspector .inspector-preview .mu-btn{padding-left:6px;padding-right:6px}
+  .workbench-inspector .auxiliary-section .mu-card-body,.workbench-inspector .inspector-collapse>div{padding-inline:2px}
+  .workbench-inspector .auxiliary-section-title{flex-wrap:wrap}
+}
