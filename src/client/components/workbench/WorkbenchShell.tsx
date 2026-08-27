@@ -6,14 +6,15 @@ import { useUiMode } from '../../hooks/queries';
 import { toast } from '../Button';
 import { DEFAULT_WORKBENCH_PREFERENCES, PANE_WIDTH_BOUNDS, WORKBENCH_DESKTOP_MIN, rightPaneOverlayFor, surfaceMinWidthFor, useWorkbenchPreferences } from './useWorkbenchPreferences';
 import { useWorkCentreCompact, markManualLeftClosed, clearManualLeftClosed } from './useWorkCentreCompact';
+// 2026-08-27 返工：compact hook 不能用 useWorkbenchUI（读不到自身 JSX 上的 Provider，恒 null）——动作直接传参
 
 /**
  * 面板开关下放：中栏内容（如任务顶栏的「右侧面板」按钮）可经此 context
  * 复用 Shell 的左右面板开合状态，不重复建偏好存储。
  * 2026-08-27 补 rightOpen 态读取——标签动作（开文档/工具）需要判断右栏是否可见。
  */
-export const WorkbenchUIContext = createContext<{ toggleRight: () => void; toggleLeft: () => void; rightOpen: boolean } | null>(null);
-export function useWorkbenchUI(): { toggleRight: () => void; toggleLeft: () => void; rightOpen: boolean } | null {
+export const WorkbenchUIContext = createContext<{ toggleRight: () => void; toggleLeft: () => void; setLeftOpen: (open: boolean) => void; rightOpen: boolean } | null>(null);
+export function useWorkbenchUI(): { toggleRight: () => void; toggleLeft: () => void; setLeftOpen: (open: boolean) => void; rightOpen: boolean } | null {
   return useContext(WorkbenchUIContext);
 }
 
@@ -112,6 +113,9 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
   children: React.ReactNode;
 }): React.ReactElement {
   const rawPrefs = useWorkbenchPreferences(scopeKey);
+  // 用户通道（按钮/快捷键）：关闭左栏记 manualLeftClosed 阻断程序自动回弹，展开清标记；
+  // 程序通道 setLeftOpen（中栏自适应 hook 用）不经过这里，不污染手动标记——
+  // 返工修复：此前包装在 toggleLeft 上，hook 自动收起也被记成"手动关"，自锁永不回弹
   const preferences = {
     ...rawPrefs,
     toggleLeft: () => { const wasOpen = rawPrefs.leftOpen; rawPrefs.toggleLeft(); if (wasOpen) markManualLeftClosed(); else clearManualLeftClosed(); },
@@ -143,8 +147,8 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
   const visible = query ? options.filter((option) => `${option.group ?? ''}${option.label}`.toLowerCase().includes(query)) : options;
   const groups = Array.from(new Set(visible.map((option) => option.group ?? '当前')));
   const isDesktop = preferences.viewportWidth >= WORKBENCH_DESKTOP_MIN;
-  // 2026-08-27 返工：按用户定版，桌面窄带不再用浮层遮罩——始终真三栏，窄带靠左栏自收让位
-  const rightOverlay = false as const;
+  // 2026-08-27 返工定版：桌面窄带不再有右栏浮层/遮罩——始终真三栏，窄带靠左栏自适应让位。
+  // rightPaneOverlayFor 仅保留为规格测试用的纯函数，不再驱动布局。
 
   // 2026-08-24：右栏类/中栏类工具页 mount 时同步一次右栏开合（幂等设置，StrictMode 双跑无害）
   useEffect(() => {
@@ -164,18 +168,18 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [preferences.toggleLeft, preferences.toggleRight, preferences.setRightOpen, preferences.closeDrawers, preferences.leftOpen, preferences.rightOpen, rightOverlay]);
+  }, [preferences.toggleLeft, preferences.toggleRight, preferences.setRightOpen, preferences.closeDrawers, preferences.leftOpen, preferences.rightOpen]);
 
   const surfaceRef = useRef<HTMLElement | null>(null);
-  useWorkCentreCompact(surfaceRef);
+  useWorkCentreCompact(surfaceRef, rawPrefs.setLeftOpen);
 
   const style = {
     '--work-left': `${preferences.leftWidth}px`,
     '--work-right': `${preferences.rightWidth}px`,
     '--work-surface-min': `${surfaceMinWidthFor(preferences.viewportWidth)}px`,
   } as React.CSSProperties;
-  return <WorkbenchUIContext.Provider value={{ toggleRight: preferences.toggleRight, toggleLeft: preferences.toggleLeft, rightOpen: preferences.rightOpen }}>
-  <section className={`workbench ${preferences.leftOpen ? 'has-left' : ''} ${preferences.rightOpen && !rightOverlay ? 'has-right' : ''} ${rightOverlay ? 'is-right-overlay' : ''} ${resizingPane ? 'is-resizing' : ''}`} style={style}>
+  return <WorkbenchUIContext.Provider value={{ toggleRight: preferences.toggleRight, toggleLeft: preferences.toggleLeft, setLeftOpen: rawPrefs.setLeftOpen, rightOpen: preferences.rightOpen }}>
+  <section className={`workbench ${preferences.leftOpen ? 'has-left' : ''} ${preferences.rightOpen ? 'has-right' : ''} ${resizingPane ? 'is-resizing' : ''}`} style={style}>
     <nav id="work-navigation" className="workbench-navigation" aria-label={navigationLabel}>
       <div className="workbench-rail-top">
         <Link to="/" className="workbench-brand" aria-label="Muster 首页"><span>M</span></Link>
@@ -207,8 +211,9 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
         )}
       </div>
     </div>
-    {((!isDesktop && (preferences.leftOpen || preferences.rightOpen)) || rightOverlay) && (
-      <div className="workbench-drawer-backdrop" onMouseDown={() => { if (rightOverlay) preferences.setRightOpen(false); else preferences.closeDrawers(); }} aria-hidden="true" />
+    {/* 遮罩只服务 <740 移动端抽屉（2026-08-27 定版：桌面右栏无遮罩） */}
+    {!isDesktop && (preferences.leftOpen || preferences.rightOpen) && (
+      <div className="workbench-drawer-backdrop" onMouseDown={() => preferences.closeDrawers()} aria-hidden="true" />
     )}
     <WorkbenchGuide />
     {commandOpen && <div className="command-backdrop" onMouseDown={() => { setCommandOpen(false); setCommandQuery(''); }}><div className="command-dialog" role="dialog" aria-modal="true" aria-label="搜索或跳转" onMouseDown={(event) => event.stopPropagation()}>

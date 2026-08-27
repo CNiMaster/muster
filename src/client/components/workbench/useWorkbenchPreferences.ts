@@ -100,6 +100,7 @@ export function useWorkbenchPreferences(scopeKey: string): WorkbenchPreferences 
   viewportWidth: number;
   toggleLeft: () => void;
   toggleRight: () => void;
+  setLeftOpen: (open: boolean) => void;
   setRightOpen: (open: boolean) => void;
   closeDrawers: () => void;
   setWidth: (pane: 'left' | 'right', px: number, commit: boolean) => void;
@@ -174,6 +175,13 @@ export function useWorkbenchPreferences(scopeKey: string): WorkbenchPreferences 
         return;
       }
       setSavedPreferences((value) => (value.rightOpen === open ? value : { ...value, rightOpen: open }));
+    },
+    // 幂等设置左栏（2026-08-27 返工）：给程序化调用用（中栏自适应收/展）——不经过用户 toggle，
+    // 不与"手动关闭"标记耦合；WorkbenchShell 的用户按钮才负责记 manualLeftClosed
+    setLeftOpen: (open: boolean) => {
+      const width = typeof window === 'undefined' ? Infinity : window.innerWidth;
+      if (width < WORKBENCH_DESKTOP_MIN) return; // 抽屉态左栏由抽屉逻辑管，程序化不改
+      setSavedPreferences((value) => (value.leftOpen === open ? value : { ...value, leftOpen: open }));
     },
     closeDrawers: () => {
       setDrawers({ left: false, right: false });

@@ -870,11 +870,14 @@
   flex: 1;
   min-width: 0;
   flex-wrap: nowrap;
-  overflow: hidden;
+  overflow: visible;
 }
 .mu-composer-popover-wrap {
   position: relative;
-  flex-shrink: 0;
+  /* 2026-08-27 返工（防横向遮盖根因）：允许收缩让文字先走，但保底一个图标宽——
+     min-width:0 曾让包体缩穿、相邻图标视觉重叠 */
+  flex: 0 1 auto;
+  min-width: 30px;
 }
 .mu-composer-pill {
   display: inline-flex;
@@ -904,16 +907,21 @@
 }
 .mu-pill-icon {
   font-size: 12px;
+  flex: 0 0 auto;
 }
 .mu-pill-label {
   max-width: 160px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* 文字是唯一收缩点（2026-08-27 返工）：空间变紧先平滑截断→归零成纯图标，永不溢出盒子 */
+  flex: 0 1 auto;
+  min-width: 0;
 }
 .mu-pill-arrow {
   font-size: 12px;
   opacity: 0.6;
+  flex: 0 0 auto;
 }
 /* 2026-08-23 定案：＋ 按钮去底色去边框（纯字符，浮层交给外层药丸 hover） */
 .mu-composer-icon-btn {
