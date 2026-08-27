@@ -202,12 +202,24 @@ export function ProjectWorkNavigation({
     onProjectRoute
     && tabsApi.entries.some((entry) => entry.kind === 'tool' && entry.tool === tool)
     && tabsApi.activeId === `tool:${tool}`;
+  const globalTabActive = (key: 'archive' | 'side'): boolean =>
+    onProjectRoute
+    && tabsApi.entries.some((entry) => entry.kind === 'globalTool' && entry.key === key)
+    && tabsApi.activeId === `g:${key}`;
   const inspectorToolLinkProps = (tool: ProjectToolTabKey, href: string): { to: string; onClick: (e: React.MouseEvent) => void } => ({
     to: href,
     onClick: (e) => {
       if (!onProjectRoute || e.metaKey || e.ctrlKey || e.shiftKey) return;
       e.preventDefault();
       tabsApi.toggleTool(tool);
+    },
+  });
+  const globalToolLinkProps = (key: 'archive' | 'side', href: string): { to: string; onClick: (e: React.MouseEvent) => void } => ({
+    to: href,
+    onClick: (e) => {
+      if (!onProjectRoute || e.metaKey || e.ctrlKey || e.shiftKey) return;
+      e.preventDefault();
+      tabsApi.toggleGlobalTool(key);
     },
   });
 
@@ -562,11 +574,11 @@ export function ProjectWorkNavigation({
                 <span className="work-nav-label">成果与文件</span>
               </Link>
             )}
-            <Link className="work-nav-item" {...toolLinkProps('/side')}>
+            <Link className={`work-nav-item ${globalTabActive('side') ? 'is-active' : ''}`} {...globalToolLinkProps('side', '/side')}>
               <span className="work-nav-icon">💬</span>
               <span className="work-nav-label">侧边对话</span>
             </Link>
-            <Link className="work-nav-item" {...toolLinkProps('/archive')}>
+            <Link className={`work-nav-item ${globalTabActive('archive') ? 'is-active' : ''}`} {...globalToolLinkProps('archive', '/archive')}>
               <span className="work-nav-icon">🗂️</span>
               <span className="work-nav-label">归档</span>
             </Link>

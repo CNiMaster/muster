@@ -14,16 +14,20 @@ export const RT_CONTEXT_ID = 'ctx';
 export const RT_MAX_TABS = 8;
 
 export type ProjectToolTabKey = 'tasks' | 'merges' | 'artifacts' | 'knowledge';
+export type GlobalToolKey = 'archive' | 'side';
 
 export type RtEntry =
   | { kind: 'doc'; path: string }
   | { kind: 'plan'; name: string }
-  | { kind: 'tool'; tool: ProjectToolTabKey };
+  | { kind: 'tool'; tool: ProjectToolTabKey }
+  | { kind: 'globalTool'; key: GlobalToolKey };
 
 const TOOL_KEYS: ReadonlySet<string> = new Set(['tasks', 'merges', 'artifacts', 'knowledge']);
+const GLOBAL_TOOL_KEYS: ReadonlySet<string> = new Set(['archive', 'side']);
 
 export function rtId(entry: RtEntry): string {
   if (entry.kind === 'doc') return `doc:${encodeURIComponent(entry.path)}`;
+  if (entry.kind === 'globalTool') return `g:${entry.key}`;
   return `${entry.kind}:${entry.kind === 'plan' ? entry.name : entry.tool}`;
 }
 
@@ -33,6 +37,10 @@ export const INSPECTOR_TOOL_LABELS: Record<ProjectToolTabKey, string> = {
   merges: '待合并成果',
   artifacts: '成果与文件',
   knowledge: '知识库',
+};
+export const GLOBAL_TOOL_LABELS: Record<GlobalToolKey, string> = {
+  archive: '归档',
+  side: '侧边对话',
 };
 
 function parseSegment(segment: string): RtEntry | null {
@@ -53,6 +61,9 @@ function parseSegment(segment: string): RtEntry | null {
   if (kind === 'tool') {
     // 容错：值先按原样比对（工具 key 都是安全标识符），非法工具丢弃
     return TOOL_KEYS.has(rawValue) ? { kind: 'tool', tool: rawValue as ProjectToolTabKey } : null;
+  }
+  if (kind === 'g') {
+    return GLOBAL_TOOL_KEYS.has(rawValue) ? { kind: 'globalTool', key: rawValue as GlobalToolKey } : null;
   }
   return null;
 }
@@ -105,6 +116,7 @@ export function activeAfterClose(entries: RtEntry[], closedId: string, activeId:
 
 /** 标签显示名：doc 取文件名（解码后末段）；plan 固定「工作现场」；tool 用共享中文表。 */
 export function rtLabel(entry: RtEntry): string {
+  if (entry.kind === 'globalTool') return GLOBAL_TOOL_LABELS[entry.key];
   if (entry.kind === 'doc') {
     try {
       const decoded = decodeURIComponent(entry.path);

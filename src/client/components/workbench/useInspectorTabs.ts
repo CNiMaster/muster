@@ -9,6 +9,7 @@ import {
   RT_ACTIVE_PARAM,
   RT_CONTEXT_ID,
   RT_PARAM,
+  type GlobalToolKey,
   type ProjectToolTabKey,
   type RtEntry,
   activeAfterClose,
@@ -19,27 +20,34 @@ import {
   serializeRt,
 } from './inspector-tabs';
 
-/** 工具页旧路由 → tab key。 */
-const ROUTE_TOOL_RE = /^\/projects\/([^/]+)\/(tasks|merges|artifacts|knowledge)$/;
+/** 工具页旧路由 → tab key（项目域4工具；全局 archive/side 走同系深链归一）。 */
+const ROUTE_TOOL_RE = /^\/projects\/[^\/]+\/(tasks|merges|artifacts|knowledge)$/;
+const ROUTE_GLOBAL_RE = /^\/(archive|side)$/;
 
 export function routeToolKey(pathname: string): ProjectToolTabKey | null {
   const match = ROUTE_TOOL_RE.exec(pathname);
-  const tool = match?.[2];
+  const tool = match?.[1];
   return tool === 'tasks' || tool === 'merges' || tool === 'artifacts' || tool === 'knowledge'
     ? tool
     : null;
+}
+
+export function routeGlobalKey(pathname: string): GlobalToolKey | null {
+  const match = ROUTE_GLOBAL_RE.exec(pathname);
+  const key = match?.[1];
+  return key === 'archive' || key === 'side' ? key : null;
 }
 
 export interface InspectorTabsApi {
   entries: RtEntry[];
   activeId: string | null;
   ids: Set<string>;
-  /** 当前地址停在某支工具的旧路由上时为该工具 key（旧深链直访场景，宿主负责归一注册）。 */
   pathnameTool: ProjectToolTabKey | null;
+  pathnameGlobalTool: GlobalToolKey | null;
   openDoc: (path: string) => void;
   openPlan: () => void;
-  /** 开工具：已开则仅激活；在旧路由上重复点击同款 = 关闭回现场（沿用左栏开关语义）。 */
   toggleTool: (tool: ProjectToolTabKey) => void;
+  toggleGlobalTool: (key: GlobalToolKey) => void;
   closeTab: (id: string) => void;
   activate: (id: string | null) => void;
 }
@@ -53,6 +61,7 @@ export function useInspectorTabsApi(): InspectorTabsApi {
   const entries = parseRtParam(searchParams.get(RT_PARAM));
   const activeId = normalizeRtActive(searchParams.get(RT_ACTIVE_PARAM), entries);
   const pathnameTool = routeToolKey(location.pathname);
+  const pathnameGlobalTool = routeGlobalKey(location.pathname);
 
   /** 回现场路由：保留 projectTask 深链，view 归位任务视图。 */
   const navigateContext = useCallback(() => {
@@ -60,6 +69,13 @@ export function useInspectorTabsApi(): InspectorTabsApi {
     const taskParam = searchParams.get('projectTask');
     navigate(`/projects/${projectId}?view=task${taskParam ? `&projectTask=${encodeURIComponent(taskParam)}` : ''}`);
   }, [navigate, projectId, searchParams]);
+
+  const navigateGlobalContext = useCallback(() => {
+    // 全局标签从项目壳跳出时回 anchors 上下文锚点上一最近项目（与 GlobalToolPageShell 一致）
+    const last = typeof window !== 'undefined' ? localStorage.getItem('muster:last-project-id') : null;
+    if (last) navigate(`/projects/${last}?view=task`);
+    else navigate('/');
+  }, [navigate]);
 
   const openDoc = useCallback((path: string) => {
     setSearchParams((prev) => {
@@ -98,6 +114,11 @@ export function useInspectorTabsApi(): InspectorTabsApi {
 
   const closeTab = useCallback((id: string) => {
     const closing = entries.find((e) => rtId(e) === id);
+    const leavesGlobalRoute = !!(
+      pathnameGlobalTool &&
+      closing?.kind === 'globalTool' &&
+      closing.key === pathnameGlobalTool
+    );
     // 关的是经由旧路由打开的工具签 → 地址也要离开旧路由，才能与标签态一致
     const leavesLegacyRoute = !!(
       pathnameTool &&
@@ -114,7 +135,27 @@ export function useInspectorTabsApi(): InspectorTabsApi {
       return next;
     });
     if (leavesLegacyRoute) navigateContext();
-  }, [entries, pathnameTool, navigateContext, setSearchParams]);
+    if (leavesGlobalRoute) navigateGlobalContext();
+  }, [entries, pathnameTool, pathnameGlobalTool, navigateContext, navigateGlobalContext, setSearchParams]);
+
+  const toggleGlobalTool = useCallback((key: GlobalToolKey) => {
+    const existing = entries.find((e) => e.kind === 'globalTool' && e.key === key);
+    const routeOnThisGlobal = pathnameGlobalTool === key;
+    if (existing && activeId === rtId(existing)) {
+      closeTab(rtId(existing));
+      return;
+    }
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      const current = parseRtParam(prev.get(RT_PARAM));
+      const entry: RtEntry = { kind: 'globalTool', key };
+      const id = rtId(entry);
+      next.set(RT_PARAM, serializeRt(appendRt(current, entry)));
+      next.set(RT_ACTIVE_PARAM, id);
+      return next;
+    });
+    if (pathnameGlobalTool && !routeOnThisGlobal) navigateGlobalContext();
+  }, [entries, activeId, pathnameGlobalTool, navigateGlobalContext, closeTab, setSearchParams]);
 
   const toggleTool = useCallback((tool: ProjectToolTabKey) => {
     const existing = entries.find((e) => e.kind === 'tool' && e.tool === tool);
@@ -136,5 +177,5 @@ export function useInspectorTabsApi(): InspectorTabsApi {
     if (pathnameTool && !routeOnThisTool) navigateContext();
   }, [entries, activeId, pathnameTool, navigateContext, closeTab, setSearchParams]);
 
-  return { entries, activeId, ids: new Set(entries.map(rtId)), pathnameTool, openDoc, openPlan, toggleTool, closeTab, activate };
+  return { entries, activeId, ids: new Set(entries.map(rtId)), pathnameTool, pathnameGlobalTool, openDoc, openPlan, toggleTool, toggleGlobalTool, closeTab, activate };
 }

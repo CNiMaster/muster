@@ -5,6 +5,7 @@ import { WorkbenchGuide } from './WorkbenchGuide';
 import { useUiMode } from '../../hooks/queries';
 import { toast } from '../Button';
 import { DEFAULT_WORKBENCH_PREFERENCES, PANE_WIDTH_BOUNDS, WORKBENCH_DESKTOP_MIN, rightPaneOverlayFor, surfaceMinWidthFor, useWorkbenchPreferences } from './useWorkbenchPreferences';
+import { useWorkCentreCompact, markManualLeftClosed, clearManualLeftClosed } from './useWorkCentreCompact';
 
 /**
  * 面板开关下放：中栏内容（如任务顶栏的「右侧面板」按钮）可经此 context
@@ -110,7 +111,11 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
   mountRightOpen?: boolean;
   children: React.ReactNode;
 }): React.ReactElement {
-  const preferences = useWorkbenchPreferences(scopeKey);
+  const rawPrefs = useWorkbenchPreferences(scopeKey);
+  const preferences = {
+    ...rawPrefs,
+    toggleLeft: () => { const wasOpen = rawPrefs.leftOpen; rawPrefs.toggleLeft(); if (wasOpen) markManualLeftClosed(); else clearManualLeftClosed(); },
+  } as typeof rawPrefs;
   const ui = useUiMode();
   const [commandOpen, setCommandOpen] = useState(false);
   const [commandQuery, setCommandQuery] = useState('');
@@ -162,6 +167,9 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [preferences.toggleLeft, preferences.toggleRight, preferences.setRightOpen, preferences.closeDrawers, preferences.leftOpen, preferences.rightOpen, rightOverlay]);
 
+  const surfaceRef = useRef<HTMLElement | null>(null);
+  useWorkCentreCompact(surfaceRef);
+
   const style = {
     '--work-left': `${preferences.leftWidth}px`,
     '--work-right': `${preferences.rightWidth}px`,
@@ -189,7 +197,7 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
         <button type="button" className="workbench-icon-button inspector-toggle" title={preferences.rightOpen ? '收起右侧现场信息' : '展开右侧现场信息'} aria-label={preferences.rightOpen ? '收起现场信息' : '展开现场信息'} aria-expanded={preferences.rightOpen} aria-controls="work-inspector" onClick={preferences.toggleRight}><span className="pane-toggle-glyph is-right" aria-hidden="true" />{attentionCount > 0 && <i>{attentionCount}</i>}</button>
       </header>
       <div className="workbench-grid">
-        <main className="workbench-surface">{children}</main>
+        <main ref={surfaceRef as any} className="workbench-surface">{children}</main>
         <aside id="work-inspector" className="workbench-inspector" aria-label={inspectorLabel}>{preferences.rightOpen ? inspector : null}</aside>
         {/* 桌面态（≥740）栏宽拖拽；抽屉态不渲染 */}
         {isDesktop && preferences.leftOpen && (

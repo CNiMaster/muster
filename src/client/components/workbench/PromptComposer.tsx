@@ -694,7 +694,7 @@ export function PromptComposer({
                   <span className="mu-pill-label">{currentModelLabel}</span>
                   <span className="mu-pill-arrow">▾</span>
                 </>
-              ), '切换模型')}
+              ), '切换模型', 'mu-compact-target')}
               {openMenu === 'model' && (
                 <div className="mu-composer-dropdown" style={{ left: 'auto', right: 0 }}>
                   <div className="mu-dropdown-header">选择模型</div>
@@ -724,7 +724,7 @@ export function PromptComposer({
                   <span className="mu-pill-label">{thinkingLabel}</span>
                   <span className="mu-pill-arrow">▾</span>
                 </>
-              ), '思考深度')}
+              ), '思考深度', 'mu-compact-target')}
               {openMenu === 'think' && (
                 <div className="mu-composer-dropdown" style={{ left: 'auto', right: 0 }}>
                   <div className="mu-dropdown-header">思考深度</div>

@@ -18,6 +18,8 @@ import { TasksPage } from '../../pages/TasksPage';
 import { ProjectMergesPage } from '../../pages/ProjectMergesPage';
 import { ArtifactsPage } from '../../pages/ArtifactsPage';
 import { KnowledgeBasePage } from '../../pages/KnowledgeBasePage';
+import { ArchivePage } from '../../pages/ArchivePage';
+import { SideChatPage } from '../../pages/SideChatPage';
 import { PreviewBody } from './InspectorPreviewHost';
 import { WorkLivePanel } from './WorkLivePanel';
 import { rtId, rtLabel, RT_CONTEXT_ID, type RtEntry } from './inspector-tabs';
@@ -46,10 +48,15 @@ export function InspectorTabsHost({ projectId, ctxBody }: { projectId?: string; 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [legacyPreview, legacyPanel]);
   useEffect(() => {
-    if (!api.pathnameTool || api.ids.has(`tool:${api.pathnameTool}`)) return;
-    api.toggleTool(api.pathnameTool);
+    if (api.pathnameTool && !api.ids.has(`tool:${api.pathnameTool}`)) {
+      api.toggleTool(api.pathnameTool);
+      return;
+    }
+    if (api.pathnameGlobalTool && !api.ids.has(`g:${api.pathnameGlobalTool}`)) {
+      api.toggleGlobalTool(api.pathnameGlobalTool);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [api.pathnameTool, api.ids]);
+  }, [api.pathnameTool, api.pathnameGlobalTool, api.ids]);
 
   // ── 滚动保活（scrollTop 级）────────────────────────────────────
   // 滚动容器是外层 .workbench-inspector（壳层网格定位，Host 不另建滚层）——
@@ -118,7 +125,7 @@ export function InspectorTabsHost({ projectId, ctxBody }: { projectId?: string; 
                   title={rtLabel(entry)}
                   onClick={() => { if (!isActive) api.activate(id); }}
                 >
-                  <span className="inspector-tab-kind" aria-hidden="true">{entry.kind === 'doc' ? '📄' : entry.kind === 'plan' ? '🛠' : '🧰'}</span>
+                  <span className="inspector-tab-kind" aria-hidden="true">{entry.kind === 'doc' ? '📄' : entry.kind === 'plan' ? '🛠' : entry.kind === 'globalTool' ? (entry.key === 'archive' ? '🗂️' : '💬') : '🧰'}</span>
                   <span className="inspector-tab-text">{rtLabel(entry)}</span>
                 </button>
                 <button
@@ -155,6 +162,14 @@ export function InspectorTabsHost({ projectId, ctxBody }: { projectId?: string; 
               {activeEntry.tool === 'merges' && <ModeGate><ProjectMergesPage /></ModeGate>}
               {activeEntry.tool === 'artifacts' && <ArtifactsPage />}
               {activeEntry.tool === 'knowledge' && <KnowledgeBasePage />}
+            </div>
+          </div>
+        )}
+        {activeEntry?.kind === 'globalTool' && (
+          <div className="work-inspector-tool">
+            <div className="work-inspector-tool-body">
+              {activeEntry.key === 'archive' && <ArchivePage />}
+              {activeEntry.key === 'side' && <SideChatPage />}
             </div>
           </div>
         )}

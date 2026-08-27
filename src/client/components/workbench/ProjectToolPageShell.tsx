@@ -123,7 +123,7 @@ export function ProjectToolPageShell({ tool, children, projectIdOverride, select
 
   return <WorkbenchShell
     scopeKey={`project:${projectId}`}
-    breadcrumb={<WorkbenchContextSwitcher projectId={projectId} projectName={project?.name ?? '项目'} projectTaskId={selectedId} sectionKey={tool} sectionLabel={TOOL_LABELS[tool]} novel={company?.kind === 'novel'} />}
+    breadcrumb={<WorkbenchContextSwitcher projectId={projectId} projectName={project?.name ?? '项目'} projectTaskId={selectedId} sectionKey="task" sectionLabel="项目任务" novel={company?.kind === 'novel'} />}
     navigationLabel="项目组织与联系人"
     inspectorLabel="项目任务与运行"
     attentionCount={attentionCount + (cockpit?.approvals.pending ?? 0) + (mergeAttention?.total ?? 0)}
