@@ -614,21 +614,20 @@ export function ProjectWorkNavigation({
               </Link>
             </ToolCategory>
           )}
-          <ToolCategory label="资产库" collapsed={toolCats.assets ?? true} onToggle={() => toggleToolCat('assets')}>
-            {!ui.isSimple && (
+          {/* 资产库整组专业门控（复审修复 2026-08-28）：组内条目全为专业项，简单模式若留组头=可展开的空分组 */}
+          {!ui.isSimple && (
+            <ToolCategory label="资产库" collapsed={toolCats.assets ?? true} onToggle={() => toggleToolCat('assets')}>
               <Link className="work-nav-item" {...toolLinkProps('/blueprints')}>
                 <span className="work-nav-icon">🧭</span>
                 <span className="work-nav-label">蓝图库</span>
               </Link>
-            )}
-            {!ui.isSimple && (
               <Link className="work-nav-item" {...toolLinkProps('/agents')}>
                 <span className="work-nav-icon">👥</span>
                 <span className="work-nav-label">智能体人才库</span>
               </Link>
-            )}
-            {/* 存储管理/命令库（2026-08-28 左栏瘦身）：低频维护——设置页「管理中心」与 ⌘K 可达 */}
-          </ToolCategory>
+              {/* 存储管理/命令库（2026-08-28 左栏瘦身）：低频维护——设置页「管理中心」与 ⌘K 可达 */}
+            </ToolCategory>
+          )}
           {/* 治理组（2026-08-28 撤销）：三栏分工二轮——配置台收进设置页「管理中心」tab；
               审批上顶栏铃铛（需要时显示，不常驻） */}
         </div>

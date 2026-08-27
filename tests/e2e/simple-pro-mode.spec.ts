@@ -23,8 +23,9 @@ test('双模式：默认简单 → 专业页提示 → 切专业生效持久 →
   await page.getByRole('button', { name: '搜索或跳转' }).click();
   await expect(page.getByRole('link', { name: '自动化', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: '关闭搜索' }).click();
-  // 2026-08-28 左栏瘦身：存储管理/命令库收进设置「管理中心」、归档走 ⌘K/右栏签——左栏不再有这些项
-  await page.getByRole('button', { name: /资产库/ }).click();
+  // 2026-08-28 左栏瘦身+复审：简单模式资产库整组隐藏（组内全专业项，防空分组）；
+  // 存储管理/命令库收进设置「管理中心」、归档走 ⌘K/右栏签——左栏不再有这些项
+  await expect(page.getByRole('button', { name: /资产库/ })).toHaveCount(0);
   await expect(page.getByRole('link', { name: /存储管理$/ })).toHaveCount(0);
   await expect(page.getByRole('link', { name: /归档$/ })).toHaveCount(0);
 
