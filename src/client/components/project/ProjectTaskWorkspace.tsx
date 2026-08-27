@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type React from 'react';
 import type { Agent, Task } from '../../api/types';
 import type { ProjectTaskDTO } from '../../hooks/queries';
-import { useQueuedMessages, useQueuedMessageAction, useTask, useProjectTaskAction, useTaskAction, usePostMessage, useMessages, useUploadMaterial, materialRawUrl, useExecutorProfiles, useSystemSettings, useBlueprintMatches, useTaskChecklist, useCreateChecklist, useAdvanceChecklist, useArtifacts, useStopAllProjectTasks, useStopTask, type MessageAttachment } from '../../hooks/queries';
+import { useQueuedMessages, useQueuedMessageAction, useTask, useTaskAction, usePostMessage, useMessages, useUploadMaterial, materialRawUrl, useExecutorProfiles, useSystemSettings, useBlueprintMatches, useTaskChecklist, useCreateChecklist, useAdvanceChecklist, useArtifacts, useStopAllProjectTasks, useStopTask, type MessageAttachment } from '../../hooks/queries';
 import { useUserCommands, useCompactTask, useProjectSpecialists } from '../../hooks/queries';
 import { PromptComposer, type ComposerMode } from '../workbench/PromptComposer';
 import { Button, toast } from '../Button';
@@ -11,7 +11,6 @@ import { useProjects } from '../../hooks/queries';
 import { DropdownMenu } from '../DropdownMenu';
 import { StateBadge, Badge } from '../Badge';
 import { ConversationPanel } from '../ConversationPanel';
-import { ExecutionTraceCard } from '../workbench/ExecutionTraceCard';
 import { LiveProcessBar } from '../workbench/LiveProcessBar';
 import { InterruptRecordCard } from '../workbench/InterruptRecordCard';
 import { QueueStrip } from './QueueStrip';
@@ -106,7 +105,6 @@ export function ProjectTaskWorkspace({
     if (newTaskSignal > 0) setCreating(true);
   }, [newTaskSignal]);
 
-  const projectTaskAction = useProjectTaskAction();
   const directTaskAction = useTaskAction();
   // 2026-08-24 定案：群聊=对话目标之一——中栏对话区切群聊流、输入框直发群聊（不再跳独立群聊页）
   const [chatWithGroup, setChatWithGroup] = useState(false);
@@ -309,15 +307,7 @@ export function ProjectTaskWorkspace({
               {activeRuntimeTask && <AutoContinueCountdown task={activeRuntimeTask} />}
               </>
             )}
-            {selectedTask.state === 'active' && (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => projectTaskAction.mutate({ projectId, id: selectedTask.id, action: 'complete' }, { onSuccess: () => toast('success', '已完成') })}
-              >
-                完成
-              </Button>
-            )}
+            {/* 手动「完成」按钮（2026-08-28 撤）：任务完成由执行收敛，无需人工标记；旧任务清理由自动归档接手 */}
             <button
               type="button"
               className="mu-composer-pill"
@@ -478,11 +468,8 @@ export function ProjectTaskWorkspace({
 
         {startedLayout && (
           <>
-            {latestTask && (
-              <div className="ptws-trace">
-                <ExecutionTraceCard task={latestTask} />
-              </div>
-            )}
+            {/* 执行过程卡（2026-08-28 撤）：对话流本身就是执行过程（WorkTraceBlock 时间线），
+                顶部再挂一份=重复；右栏「工作现场」面板保留只读版（那里没有对话流） */}
             <LiveProcessBar task={activeRuntimeTask} tasks={tasks} agents={agents} />
             <div className="ptws-conv">
               <ConversationPanel

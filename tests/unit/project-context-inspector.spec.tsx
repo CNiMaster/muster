@@ -110,11 +110,11 @@ describe('project context inspector（批次 F 三层信息架构）', () => {
     expect(screen.queryByText('🚨 需要你关注')).not.toBeInTheDocument();
   });
 
-  it('当前选中对象：默认渲染任务头卡（含标记完成）', () => {
+  it('当前选中对象：默认渲染任务头卡（2026-08-28 撤手动完成按钮，头卡只读）', () => {
     renderInspector();
     expect(screen.getByText('当前任务')).toBeInTheDocument();
     expect(screen.getByText('#21 审批恢复闭环')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '✓ 标记为完成' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '✓ 标记为完成' })).not.toBeInTheDocument();
   });
 
   it('员工视图：选中员工渲染员工卡（岗位职责+当前负责任务），任务头卡让位', () => {

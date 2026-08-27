@@ -27,16 +27,19 @@ export function listProjectTasks(db:DB,projectId:string,opts?:{includeArchived?:
 }
 
 /**
- * R2b 任务自动归档扫描：completed 且 completed_at 早于 N 天者调 archiveProjectTask 级联归档
- * （取消运行中任务+线程归档+载体标记，复用既有事务语义）。由 coordinator 卫生定时器（30 分钟档）
- * 驱动；单次上限 50 防长事务；days<=0 关闭直接返回。返回本次归档的 project_task id 列表。
+ * 任务自动归档扫描（2026-08-28 用户定案语义）：定时扫描最近打开过的工作区（项目 30 天内有活动），
+ * 候选=已完成 + 无未读 + 未置顶 + 任务最后更新时间早于保留期（updated_at 口径，不再只看完成时刻——
+ * 完成后的已读/排序等操作会刷新 updated_at，等价于"看过没动过才算旧"）。调 archiveProjectTask
+ * 级联归档（取消运行中任务+线程归档+载体标记）。由 coordinator 卫生定时器（30 分钟档）驱动；
+ * 单次上限 maxBatch 防长事务；days<=0 关闭直接返回。返回本次归档的 project_task id 列表。
  */
 export function archiveStaleCompletedTasks(db:DB,days:number,now:Date=new Date(),maxBatch=50):string[]{
   if(days<=0)return[];
   const cutoff=new Date(now.getTime()-days*86_400_000).toISOString();
+  const projectActiveCutoff=new Date(now.getTime()-30*86_400_000).toISOString();
   const rows=db.prepare(
-    "SELECT id FROM project_task WHERE state='completed' AND completed_at IS NOT NULL AND completed_at<? ORDER BY completed_at ASC LIMIT ?",
-  ).all(cutoff,maxBatch) as Array<{id:string}>;
+    "SELECT pt.id FROM project_task pt JOIN project p ON p.id=pt.project_id WHERE pt.state='completed' AND pt.unread=0 AND pt.pinned=0 AND pt.updated_at<? AND p.updated_at>? ORDER BY pt.updated_at ASC LIMIT ?",
+  ).all(cutoff,projectActiveCutoff,maxBatch) as Array<{id:string}>;
   const archived:string[]=[];
   for(const r of rows){
     try{archiveProjectTask(db,r.id);archived.push(r.id);}

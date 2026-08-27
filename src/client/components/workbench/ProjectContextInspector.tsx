@@ -113,17 +113,6 @@ export function ProjectContextInspector({
   const criteriaUnmet = criteria.filter((c) => c.met === false).length;
   const showBlueprintCard = !uiSimple && selectedTask !== undefined && blueprintMatches.length > 0;
 
-  const completeTask = (): void => {
-    if (!selectedTask) return;
-    taskAction.mutate(
-      { projectId, id: selectedTask.id, action: 'complete' },
-      {
-        onSuccess: () => toast('success', '项目任务已完成'),
-        onError: (error) => toast('error', (error as Error).message),
-      },
-    );
-  };
-
   // 产物组点击 = 开「文档标签」（2026-08-27 P2：单槽 ?preview= 退役）
   const tabApi = useInspectorTabsApi();
 
@@ -270,13 +259,7 @@ export function ProjectContextInspector({
           <div style={{ padding: '8px', background: 'var(--bg-elev)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
             <strong style={{ fontSize: '12px', display: 'block' }}>#{selectedTask.seq} {selectedTask.title}</strong>
             {selectedTask.brief && <p className="muted" style={{ margin: '4px 0 0', fontSize: '12px' }}>{selectedTask.brief}</p>}
-            {selectedTask.state === 'active' && (
-              <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
-                <Button size="sm" variant="ghost" loading={taskAction.isPending} onClick={completeTask}>
-                  ✓ 标记为完成
-                </Button>
-              </div>
-            )}
+            {/* 「标记为完成」按钮（2026-08-28 撤）：任务完成由执行收敛，无需人工标记；旧任务清理由自动归档接手 */}
           </div>
         </section>
       ) : (

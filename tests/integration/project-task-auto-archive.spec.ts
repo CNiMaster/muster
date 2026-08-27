@@ -40,13 +40,13 @@ describe('listProjectTasks 归档过滤（R2b）', () => {
   });
 });
 
-describe('archiveStaleCompletedTasks（R2b）', () => {
-  it('超期 completed 被归档；未到期与 active 不动；days=0 关闭', () => {
+describe('archiveStaleCompletedTasks（2026-08-28 定案语义）', () => {
+  it('超期（按最后更新时间）completed 被归档；未到期与 active 不动；days=0 关闭', () => {
     const { db, close, project } = setup();
     try {
       const old = createProjectTask(db, { projectId: project.id, title: '老任务' });
       completeProjectTask(db, old.id);
-      db.prepare('UPDATE project_task SET completed_at=? WHERE id=?').run(daysAgo(40).toISOString(), old.id);
+      db.prepare('UPDATE project_task SET updated_at=? WHERE id=?').run(daysAgo(40).toISOString(), old.id);
       const fresh = createProjectTask(db, { projectId: project.id, title: '新完成任务' });
       completeProjectTask(db, fresh.id);
       const running = createProjectTask(db, { projectId: project.id, title: '进行中很老' });
@@ -63,13 +63,39 @@ describe('archiveStaleCompletedTasks（R2b）', () => {
     } finally { close(); }
   });
 
+  it('保护语义（2026-08-28）：未读不归档、置顶不归档、冷工作区（项目 30 天无活动）不扫', () => {
+    const { db, close, project } = setup();
+    try {
+      const unread = createProjectTask(db, { projectId: project.id, title: '未读完成' });
+      completeProjectTask(db, unread.id);
+      db.prepare("UPDATE project_task SET updated_at=?, unread=1 WHERE id=?").run(daysAgo(60).toISOString(), unread.id);
+      const pinned = createProjectTask(db, { projectId: project.id, title: '置顶完成' });
+      completeProjectTask(db, pinned.id);
+      db.prepare("UPDATE project_task SET updated_at=?, pinned=1 WHERE id=?").run(daysAgo(60).toISOString(), pinned.id);
+      const plain = createProjectTask(db, { projectId: project.id, title: '无保护超期' });
+      completeProjectTask(db, plain.id);
+      db.prepare('UPDATE project_task SET updated_at=? WHERE id=?').run(daysAgo(60).toISOString(), plain.id);
+
+      expect(archiveStaleCompletedTasks(db, 30, new Date())).toEqual([plain.id]);
+      expect(db.prepare('SELECT state FROM project_task WHERE id=?').get(unread.id)).toEqual({ state: 'completed' });
+      expect(db.prepare('SELECT state FROM project_task WHERE id=?').get(pinned.id)).toEqual({ state: 'completed' });
+
+      // 冷工作区：项目本身 30 天无活动 → 里面的超期任务也不进候选
+      db.prepare('UPDATE project SET updated_at=? WHERE id=?').run(daysAgo(60).toISOString(), project.id);
+      const cold = createProjectTask(db, { projectId: project.id, title: '冷区超期' });
+      completeProjectTask(db, cold.id);
+      db.prepare('UPDATE project_task SET updated_at=? WHERE id=?').run(daysAgo(60).toISOString(), cold.id);
+      expect(archiveStaleCompletedTasks(db, 30, new Date())).toEqual([]);
+    } finally { close(); }
+  });
+
   it('单次上限 maxBatch 防长事务（分批消化）', () => {
     const { db, close, project } = setup();
     try {
       for (let i = 0; i < 5; i++) {
         const t = createProjectTask(db, { projectId: project.id, title: `超期${i}` });
         completeProjectTask(db, t.id);
-        db.prepare('UPDATE project_task SET completed_at=? WHERE id=?').run(daysAgo(60).toISOString(), t.id);
+        db.prepare('UPDATE project_task SET updated_at=? WHERE id=?').run(daysAgo(60).toISOString(), t.id);
       }
       const first = archiveStaleCompletedTasks(db, 30, new Date(), 2);
       expect(first).toHaveLength(2);

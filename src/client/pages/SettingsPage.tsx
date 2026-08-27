@@ -304,12 +304,12 @@ export function SettingsPage(): React.ReactElement {
                     <option value="60">1 小时</option>
                   </Select>
                 </SettingsRow>
-                <SettingsRow title="任务自动归档" hint="已完成的任务放满 N 天后自动收进归档区（左栏不再显示，归档页可还原）">
-                  <Select value={String(archiveTaskAfterDays)} onChange={(e) => setArchiveTaskAfterDays(Number(e.target.value))}>
+                <SettingsRow title="自动归档旧任务" hint="定时扫描最近打开过的工作区，将已完成、无未读、未置顶且超过保留期的任务自动归档。">
+                  <Select value={String(archiveTaskAfterDays)} onChange={(e) => setArchiveTaskAfterDays(Number(e.target.value))} aria-label="归档保留时长">
                     <option value="0">不自动归档</option>
+                    <option value="3">3 天</option>
                     <option value="7">7 天</option>
                     <option value="30">30 天（推荐）</option>
-                    <option value="90">90 天</option>
                   </Select>
                 </SettingsRow>
                 <SettingsRow title="停止等待时间" hint="点「停止」后给当前动作留出安全收尾的时间，到点强制停并保留进度">
