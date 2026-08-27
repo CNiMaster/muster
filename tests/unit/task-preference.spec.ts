@@ -149,10 +149,22 @@ describe('recordPreferenceAnswer（问→答→沉淀闭环）', () => {
     expect(events[0].alternatives).toEqual([{ id: 'skill-a' }]);
     expect(events[0].taskId).toBe(task.id);
 
+    // review m5 修复：「不用专业技能」也落哨兵事件 __none__（出口信号不丢弃）+ answeredRoute 写回
     const noSkill = options.find((o) => o.id === 'no_skill')!;
-    const before = listPreferenceEvents(db, { profileId }).length;
     recordPreferenceAnswer(db, after, noSkill);
-    expect(listPreferenceEvents(db, { profileId })).toHaveLength(before);
+    const optOut = listPreferenceEvents(db, { profileId, kind: 'route-choice' })[0];
+    expect(optOut.route).toBe('__none__');
+    expect(optOut.source).toBe('user');
+    const afterAnswer = getTask(db, task.id)!;
+    expect((afterAnswer.inputProtocol.preferenceClarify as { answeredRoute: string }).answeredRoute).toBe('__none__');
+  });
+
+  it('用户明确「不用技能」形成稳定偏好后 → user-opted-out 零打扰（不再推技能）', () => {
+    recordPreferenceEvent(db, { profileId, intentTag: 'presentation', route: '__none__', source: 'user' });
+    recordPreferenceEvent(db, { profileId, intentTag: 'presentation', route: '__none__', source: 'user' });
+    const g = decideRouteGuidance(db, { text: '帮我做一份 PPT', profileId });
+    expect(g.mode).toBe('none');
+    expect(g.reason).toBe('user-opted-out');
   });
 });
 

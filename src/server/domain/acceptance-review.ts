@@ -22,6 +22,7 @@ import { ensurePrimaryThread } from './thread';
 import { ensureAcceptanceOfficer, ACCEPTANCE_OFFICER_ROLE } from './acceptance-officer';
 import { advanceChecklist } from './checklist';
 import { BREADTH_LIMITS, taskBreadthTier } from './breadth-tier';
+import { settleTaskSafely } from './settlement';
 import { log } from '../logger';
 
 /** 验收判定置信阈值：低于则升级用户。 */
@@ -349,4 +350,9 @@ export function handleAcceptanceReviewTaskCompleted(db: DB, reviewTask: Task): v
       err: e instanceof Error ? e.message : String(e),
     });
   }
+  // 选择闭环 B1 配套：验收闭环（passed/rework/escalated 任一）后补结算源任务——
+  // 派验收期间 settleTask 被推迟（rework_count 未终值），此刻已终值（rework 分支已 +1）。
+  try {
+    settleTaskSafely(db, ctx.sourceTaskId);
+  } catch { /* 补结算失败不影响验收主流程；孤儿扫描（settlement drain）会兜底 */ }
 }

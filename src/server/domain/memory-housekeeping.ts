@@ -30,13 +30,16 @@ export interface DirtyMarkRow {
 
 /**
  * 读时打标（两路检索共用；纯 SQL，吞异常绝不影响注入主流程）。
- * 信号一：fingerprint 相同组 ≥2（确定冗余）；信号二：同分区命中 ≥3（宽松哨兵，压实再精查）。
+ * 信号一：fingerprint 相同组 ≥2（确定冗余，全 scope 适用）。
+ * 信号二：同分区命中 ≥3（宽松哨兵，压实再精查）——review M3 修复：排除 personal/craft——
+ * 这两段按设计就是全量注入（personal 永远全量、craft 按人设池全量召回），同分区 ≥3 是稳态
+ * 不是膨胀信号，打标会造成"读时打脏→压实复位→再打脏"的永久空转与 dirty 指标虚高。
  */
 export function markCompactionDirty(db: DB, rows: DirtyMarkRow[]): void {
   if (rows.length === 0) return;
   try {
     const dirty = new Set<string>();
-    // 信号一：fingerprint 扎堆
+    // 信号一：fingerprint 扎堆（全 scope——同指纹就是确定冗余）
     const byFp = new Map<string, number>();
     for (const r of rows) {
       if (!r.fingerprint) continue;
@@ -45,13 +48,15 @@ export function markCompactionDirty(db: DB, rows: DirtyMarkRow[]): void {
     for (const r of rows) {
       if (r.fingerprint && (byFp.get(r.fingerprint) ?? 0) >= 2) dirty.add(r.id);
     }
-    // 信号二：分区扎堆（scope+profile+persona+project）
+    // 信号二：分区扎堆（scope+profile+persona+project）——仅渐进命中段（workspace/project）
     const byPartition = new Map<string, number>();
     for (const r of rows) {
+      if (r.scope === 'personal' || r.scope === 'craft') continue;
       const key = `${r.scope}|${r.profile_id}|${r.persona_key ?? ''}|${r.project_id ?? ''}`;
       byPartition.set(key, (byPartition.get(key) ?? 0) + 1);
     }
     for (const r of rows) {
+      if (r.scope === 'personal' || r.scope === 'craft') continue;
       const key = `${r.scope}|${r.profile_id}|${r.persona_key ?? ''}|${r.project_id ?? ''}`;
       if ((byPartition.get(key) ?? 0) >= 3) dirty.add(r.id);
     }

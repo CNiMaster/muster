@@ -53,6 +53,9 @@ const SILENT_CONCENTRATION = 0.7;
 const SILENT_MIN_VOTES = 2;
 const MAX_CANDIDATES = 3;
 
+/** 用户明确"不用专业技能"时落的哨兵路线（review m5：出口信号不丢弃——召回端据此不再推技能）。 */
+export const NO_SKILL_ROUTE = '__none__';
+
 /** 三态判定（纯读 + 纯逻辑，无副作用，单测友好）。 */
 export function decideRouteGuidance(db: DB, input: DecideRouteInput): RouteGuidance {
   const intentTag = classifyIntentTag(input.text);
@@ -64,8 +67,10 @@ export function decideRouteGuidance(db: DB, input: DecideRouteInput): RouteGuida
 
   // 能力库画像匹配：本地已启用 skill 的 use-cases 含本意图槽位
   const profiled: RouteCandidate[] = [];
+  const pluginNames = new Map<string, string>();
   try {
     for (const plugin of listPlugins(db)) {
+      pluginNames.set(plugin.id, plugin.name);
       if (plugin.status !== 'enabled') continue;
       const profile = skillProfileFromPlugin(plugin);
       if (!profile || !profile.useCases.includes(intentTag)) continue;
@@ -79,6 +84,15 @@ export function decideRouteGuidance(db: DB, input: DecideRouteInput): RouteGuida
   // 偏好候选（抱怨已吞掉票数的路线撤下）
   const preferred = stats.routes.filter((r) => r.complaints < Math.max(r.weightedVotes, 1)).map((r) => r.route);
 
+  // review m5：用户在此槽位明确选过"不用专业技能"且形成稳定偏好 → 尊重（零打扰，不推技能）
+  if (
+    stats.totalWeightedVotes >= SILENT_MIN_VOTES &&
+    stats.concentration >= SILENT_CONCENTRATION &&
+    stats.routes[0]?.route === NO_SKILL_ROUTE
+  ) {
+    return { intentTag, mode: 'none', preferredRoute: null, candidates: [], defaultRoute: null, reason: 'user-opted-out' };
+  }
+
   if (stats.totalWeightedVotes >= SILENT_MIN_VOTES && stats.concentration >= SILENT_CONCENTRATION && preferred.length > 0) {
     return {
       intentTag,
@@ -90,13 +104,12 @@ export function decideRouteGuidance(db: DB, input: DecideRouteInput): RouteGuida
     };
   }
 
-  // 候选合并：偏好优先，画像补位（去重）
-  const seen = new Set<string>();
+  // 候选合并：偏好优先，画像补位（去重；__none__ 不是技能路线不进候选）
+  const seen = new Set<string>([NO_SKILL_ROUTE]);
   const candidates: RouteCandidate[] = [];
   for (const route of preferred) {
     if (seen.has(route)) continue;
-    const plugin = safeGetPluginName(db, route);
-    candidates.push({ id: route, label: plugin ?? route, fromPreference: true, profileMatched: profiled.some((p) => p.id === route) });
+    candidates.push({ id: route, label: pluginNames.get(route) ?? route, fromPreference: true, profileMatched: profiled.some((p) => p.id === route) });
     seen.add(route);
   }
   for (const p of profiled) {
@@ -115,14 +128,6 @@ export function decideRouteGuidance(db: DB, input: DecideRouteInput): RouteGuida
     defaultRoute: candidates[0]?.id ?? null,
     reason: `candidates=${candidates.length},conc=${stats.concentration.toFixed(2)},votes=${stats.totalWeightedVotes}`,
   };
-}
-
-function safeGetPluginName(db: DB, id: string): string | null {
-  try {
-    return listPlugins(db).find((p) => p.id === id)?.name ?? null;
-  } catch {
-    return null;
-  }
 }
 
 /** inputProtocol 里的问询标记（answerClarification 消费）。 */
@@ -179,7 +184,7 @@ export function maybeEnqueuePreferenceQuestion(db: DB, task: Task, fullText: str
     });
 
     db.transaction(() => {
-      db.prepare(
+      const updated = db.prepare(
         `UPDATE task SET state='waiting_input', question=?, question_options_json=?, clarification_rounds=clarification_rounds+1,
          alignment_state='awaiting_alignment', input_protocol_json=?, updated_at=datetime('now') WHERE id=? AND state='queued'`,
       ).run(
@@ -188,6 +193,8 @@ export function maybeEnqueuePreferenceQuestion(db: DB, task: Task, fullText: str
         JSON.stringify({ ...task.inputProtocol, preferenceClarify: { intentTag: guidance.intentTag, optionRoutes } }),
         task.id,
       );
+      // review n5：单进程同步事务内不可达（coordinator 无法插入），仅多进程/竞态时诊断用
+      if (updated.changes === 0) log.debug('preference question skipped (task not queued)', { taskId: task.id });
     })();
     return guidance;
   } catch (e) {
@@ -199,14 +206,22 @@ export function maybeEnqueuePreferenceQuestion(db: DB, task: Task, fullText: str
 /**
  * answerClarification 的偏好落库（option && source=user 时调）：
  * 落 user route-choice 事件（alternatives=当时候选），完成"问→答→沉淀"闭环。
+ * review m5 修复："不用专业技能"也落哨兵事件（route=__none__）并把 answeredRoute 写回
+ * inputProtocol——召回端据此不再推技能，settleTask 据此跳过 auto 采纳票（出口信号不丢弃）。
  */
 export function recordPreferenceAnswer(db: DB, task: Task, option: QuestionOption): void {
   try {
     const mark = readClarifyMark(task);
     if (!mark) return;
-    const route = mark.optionRoutes[option.id];
-    if (!route) return; // "不用专业技能"不落（不是路线选择）
+    const route = mark.optionRoutes[option.id] ?? NO_SKILL_ROUTE;
     const profileId = task.assigneeAgentId ? (getAgent(db, task.assigneeAgentId)?.profileId ?? null) : null;
+    // answeredRoute 写回 inputProtocol（settleTask 消费；与事件写入同 try，任一失败下次可重答路径极少）
+    if (profileId) {
+      db.prepare(`UPDATE task SET input_protocol_json = ? WHERE id = ?`).run(
+        JSON.stringify({ ...task.inputProtocol, preferenceClarify: { ...mark, answeredRoute: route } }),
+        task.id,
+      );
+    }
     if (!profileId) return;
     const alternatives = Object.values(mark.optionRoutes).map((r) => ({ id: r }));
     recordPreferenceEvent(db, {

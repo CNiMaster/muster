@@ -85,6 +85,22 @@ describe('markCompactionDirty（读时打标）', () => {
     expect(dirtyOf(c)).toBe(1);
   });
 
+  it('review M3：personal/craft 全量注入段不参与分区哨兵（≥3 是稳态不是膨胀）', () => {
+    const a = addEntry('偏好一', null, 'personal');
+    const b = addEntry('偏好二', null, 'personal');
+    const c = addEntry('偏好三', null, 'personal');
+    markCompactionDirty(db, [a, b, c].map((id) => ({ id, scope: 'personal', profile_id: profileId, persona_key: null, project_id: null, fingerprint: null })));
+    expect(dirtyOf(a)).toBe(0);
+    expect(dirtyOf(b)).toBe(0);
+    expect(dirtyOf(c)).toBe(0);
+    // 同指纹冗余在 personal 仍打标（信号一不受排除影响——确定冗余就是确定冗余）
+    const d = addEntry('重复偏好', 'fp-pers');
+    const e = addEntry('重复偏好乙', 'fp-pers');
+    markCompactionDirty(db, [d, e].map((id) => ({ id, scope: 'personal', profile_id: profileId, persona_key: null, project_id: null, fingerprint: 'fp-pers' })));
+    expect(dirtyOf(d)).toBe(1);
+    expect(dirtyOf(e)).toBe(1);
+  });
+
   it('两条不构成任何信号不打标（打标不误伤）', () => {
     const a = addEntry('唯一甲', 'fp-a');
     const b = addEntry('唯一乙', 'fp-b');

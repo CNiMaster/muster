@@ -62,6 +62,13 @@ describe('classifyIntentTag', () => {
     expect(classifyIntentTag('随便来一个')).toBe('other');
     expect(classifyIntentTag('')).toBe('other');
   });
+
+  it('review M2：跨槽子串遮蔽消除——最长命中定槽', () => {
+    // '说明文档'含 deliverable 的'文档'子串，旧实现恒被 deliverable 遮蔽
+    expect(classifyIntentTag('写一份说明文档')).toBe('documentation');
+    expect(classifyIntentTag('补一份接口文档')).toBe('documentation');
+    expect(classifyIntentTag('做个交付文档')).toBe('deliverable'); // '交付'(2字) 与 '文档'(2字)同长取先声明槽
+  });
 });
 
 describe('settleTask（结构化结算）', () => {
@@ -120,6 +127,77 @@ describe('settleTask（结构化结算）', () => {
   });
 });
 
+describe('review 修复轮（B1/M1/M4/m5 口径守卫）', () => {
+  function dispatchAcceptance(taskId: string, reviewTaskId: string, opts?: { close?: 'passed' | 'rework' }): void {
+    db.prepare(`INSERT INTO task_event (id, task_id, kind, payload_json, occurred_at) VALUES (?, ?, 'acceptance_dispatched', ?, ?)`)
+      .run(`ev_${Math.random().toString(36).slice(2, 8)}`, taskId, JSON.stringify({ reviewTaskId }), new Date().toISOString());
+    if (opts?.close) {
+      db.prepare(`INSERT INTO task_event (id, task_id, kind, payload_json, occurred_at) VALUES (?, ?, ?, '{}', ?)`)
+        .run(`ev_${Math.random().toString(36).slice(2, 8)}`, taskId, `acceptance_${opts.close}`, new Date().toISOString());
+    }
+  }
+  function makeReviewTask(state: string): string {
+    const ptId = createProjectTask(db, { projectId, title: '验收载体' }).id;
+    const id = `task_${Math.random().toString(36).slice(2, 8)}`;
+    db.prepare(`INSERT INTO task (id, project_id, project_task_id, seq, title, state, summary, created_at, updated_at) VALUES (?, ?, ?, 1, '验收', ?, '', ?, ?)`)
+      .run(id, projectId, ptId, state, new Date().toISOString(), new Date().toISOString());
+    return id;
+  }
+
+  it('B1：验收未闭环（dispatched 且验收任务活着）推迟结算——不写标记，闭环后补结算', () => {
+    const task = makeTaskRow({ inputProtocol: { resolvedSkillIds: ['skill-x'] } });
+    const reviewId = makeReviewTask('running');
+    dispatchAcceptance(task.id, reviewId);
+    expect(settleTask(db, task)).toBe(false); // 推迟：无标记
+    expect(db.prepare(`SELECT 1 FROM task_settlement WHERE task_id=?`).get(task.id)).toBeUndefined();
+    // 验收返工闭环：rework_count+1 → 此刻结算不记票（返工=中性）
+    dispatchAcceptance(task.id, reviewId, { close: 'rework' });
+    db.prepare(`UPDATE task SET rework_count=1 WHERE id=?`).run(task.id);
+    expect(settleTask(db, getTask(db, task.id)!)).toBe(true);
+    const usage = db.prepare(`SELECT COUNT(*) n FROM capability_usage_stat WHERE task_id=?`).get(task.id) as { n: number };
+    expect(usage.n).toBe(0); // 返工任务不记采纳票（票没有被提前落账）
+  });
+
+  it('B1：验收通过闭环 → 正常记票', () => {
+    const task = makeTaskRow({ inputProtocol: { resolvedSkillIds: ['skill-y'] } });
+    const reviewId = makeReviewTask('completed');
+    dispatchAcceptance(task.id, reviewId);
+    dispatchAcceptance(task.id, reviewId, { close: 'passed' });
+    expect(settleTask(db, task)).toBe(true);
+    const usage = db.prepare(`SELECT COUNT(*) n FROM capability_usage_stat WHERE task_id=?`).get(task.id) as { n: number };
+    expect(usage.n).toBe(1);
+  });
+
+  it('B1：验收任务死亡=放行语义（无需闭环事件）', () => {
+    const task = makeTaskRow({ inputProtocol: { resolvedSkillIds: ['skill-z'] } });
+    const reviewId = makeReviewTask('failed');
+    dispatchAcceptance(task.id, reviewId);
+    expect(settleTask(db, task)).toBe(true); // 验收任务死了，rework_count 已终值
+  });
+
+  it('M1：非终态（queued）拒结算——返工任务入队反思不写标记', () => {
+    const task = makeTaskRow({ state: 'queued', inputProtocol: { resolvedSkillIds: ['a'] } });
+    expect(settleTask(db, task)).toBe(false);
+    expect(db.prepare(`SELECT 1 FROM task_settlement WHERE task_id=?`).get(task.id)).toBeUndefined();
+  });
+
+  it('M4：epoch 之前的任务补结算只写标记不记票（防 idle 补历史稀释口碑）', () => {
+    const task = makeTaskRow({ inputProtocol: { resolvedSkillIds: ['old-skill'] } });
+    db.prepare(`UPDATE task SET updated_at='2026-08-01T00:00:00.000Z' WHERE id=?`).run(task.id);
+    expect(settleTask(db, getTask(db, task.id)!)).toBe(true);
+    const usage = db.prepare(`SELECT COUNT(*) n FROM capability_usage_stat WHERE task_id=?`).get(task.id) as { n: number };
+    expect(usage.n).toBe(0);
+    expect(db.prepare(`SELECT 1 FROM task_settlement WHERE task_id=?`).get(task.id)).toBeDefined();
+  });
+
+  it('m5：偏好问询答过「不用专业技能」→ 跳过 auto 采纳票', () => {
+    const task = makeTaskRow({ inputProtocol: { resolvedSkillIds: ['skill-q'], preferenceClarify: { intentTag: 'deliverable', optionRoutes: {}, answeredRoute: '__none__' } } });
+    settleTask(db, task);
+    const usage = db.prepare(`SELECT COUNT(*) n FROM capability_usage_stat WHERE task_id=?`).get(task.id) as { n: number };
+    expect(usage.n).toBe(0);
+  });
+});
+
 describe('parseSemanticComplaint', () => {
   it('合法 JSON（含包裹文本）正确解析', () => {
     expect(parseSemanticComplaint('结果如下：{"complaintKind":"route-complaint","route":"html-slides","note":"太花哨"} 完')).toEqual({
@@ -153,5 +231,30 @@ describe('drainSemanticSettlements（降级路径）', () => {
   it('无 pending 条目时零处理', async () => {
     const settled = await import('../../src/server/domain/settlement');
     expect(await settled.drainSemanticSettlements(db, 5)).toBe(0);
+  });
+
+  it('review m6：LLM 吐的 route 不在本任务 resolvedSkillIds 白名单内 → 事件丢弃（防任意字符串污染偏好统计）', async () => {
+    vi.resetModules();
+    const llmCallModule = await import('../../src/server/domain/llm-call');
+    const spy = vi.spyOn(llmCallModule, 'callLlm').mockResolvedValue({
+      content: '{"complaintKind":"route-complaint","route":"rogue-skill","note":"x"}',
+      model: 'test',
+      usage: { promptTokens: 1, completionTokens: 1 },
+    } as never);
+    try {
+      const { settleTask } = await import('../../src/server/domain/settlement');
+      const task = makeTaskRow({ inputProtocol: { resolvedSkillIds: ['legit-skill'] } });
+      db.prepare(`INSERT INTO task_message (id, task_id, author, role, content, created_at) VALUES ('m9', ?, 'user', 'user', '不好用', ?)`)
+        .run(task.id, new Date().toISOString());
+      settleTask(db, task);
+      const { drainSemanticSettlements } = await import('../../src/server/domain/settlement');
+      await drainSemanticSettlements(db, 5);
+      const row = db.prepare(`SELECT semantic_status FROM task_settlement WHERE task_id=?`).get(task.id) as { semantic_status: string };
+      expect(row.semantic_status).toBe('done');
+      const events = db.prepare(`SELECT COUNT(*) n FROM preference_event WHERE task_id=?`).get(task.id) as { n: number };
+      expect(events.n).toBe(0); // rogue route 被白名单拦截
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
