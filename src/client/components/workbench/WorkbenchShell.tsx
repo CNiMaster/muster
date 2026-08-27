@@ -143,8 +143,8 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
   const visible = query ? options.filter((option) => `${option.group ?? ''}${option.label}`.toLowerCase().includes(query)) : options;
   const groups = Array.from(new Set(visible.map((option) => option.group ?? '当前')));
   const isDesktop = preferences.viewportWidth >= WORKBENCH_DESKTOP_MIN;
-  // 桌面窄带（2026-08-27）：三栏装不下时右栏浮层化——中栏不被挤死，右栏工具页可见可关
-  const rightOverlay = isDesktop && rightPaneOverlayFor(preferences, preferences.viewportWidth);
+  // 2026-08-27 返工：按用户定版，桌面窄带不再用浮层遮罩——始终真三栏，窄带靠左栏自收让位
+  const rightOverlay = false as const;
 
   // 2026-08-24：右栏类/中栏类工具页 mount 时同步一次右栏开合（幂等设置，StrictMode 双跑无害）
   useEffect(() => {
@@ -159,7 +159,6 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
       if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'b') { event.preventDefault(); preferences.toggleRight(); }
       if (event.key === 'Escape') {
         if (commandOpenRef.current) { setCommandOpen(false); return; }
-        if (rightOverlay) { preferences.setRightOpen(false); return; }
         if (typeof window !== 'undefined' && window.innerWidth < WORKBENCH_DESKTOP_MIN && (preferences.leftOpen || preferences.rightOpen)) preferences.closeDrawers();
       }
     };

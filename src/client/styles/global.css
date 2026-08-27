@@ -909,10 +909,7 @@ p { margin: 0 0 var(--space-3) 0; }
 .work-inspector-tool .mu-card-body{padding:12px}
 .work-inspector-tool .mu-card-body:has(>.task-table){overflow-x:auto}
 
-/* ===== 桌面窄带右栏浮层化（2026-08-27）：三栏装不下时右栏 fixed 浮层——中栏不被挤死，工具页可见可关 ===== */
-/* display:block 覆盖 .workbench:not(.has-right) 的隐藏——浮层态不带 has-right（否则网格又会挤压中栏） */
-.workbench.is-right-overlay .workbench-inspector{display:block;position:fixed;z-index:45;inset:0 0 0 auto;width:min(var(--work-right),92vw);box-shadow:var(--shadow-3);border-left:1px solid var(--border)}
-.workbench.is-right-overlay .workbench-resizer.is-right{display:none}
+/* 2026-08-27 返工：桌面窄带不再用浮层遮罩（is-right-overlay 退役），保留抽屉仅给 <740 移动端 */
 
 /* 右栏工具体容器查询：按栏宽（而非窗口宽）自适应排版——栏可拖拽，media query 不可用 */
 .work-inspector-tool{container-type:inline-size}
@@ -1114,10 +1111,9 @@ p { margin: 0 0 var(--space-3) 0; }
 /* 2026-08-24 用户定案：窄页面放不下时，模式/对话人只显示图标不显示文字（容器查询纯 CSS，无 JS 状态反馈抖动） */
 .mu-prompt-controls{container-type:inline-size}
 @container (max-width: 208px){.mu-pill-label{display:none}}
-/* 底栏永单行（2026-08-27 用户定案）：中栏容器 <380 时模型/思考度收成图标（点开菜单确认），工具行不折行 */
-.mu-prompt-toolbar{flex-wrap:nowrap !important}
-.mu-prompt-controls{flex-wrap:nowrap !important;overflow:hidden}
-@container (max-width: 380px){
+/* 底栏永单行（2026-08-27 返工定版）：工具行容器 <560 时模型/思考度收成图标（点开菜单确认），永不折行；@container 锚在 toolbar 同时覆盖 controls+actions */
+.mu-prompt-toolbar{container-type:inline-size}
+@container (max-width: 560px){
   .mu-composer-pill.mu-compact-target .mu-pill-label{max-width:0;opacity:0;overflow:hidden}
   .mu-composer-pill.mu-compact-target .mu-pill-arrow{opacity:0.45}
 }

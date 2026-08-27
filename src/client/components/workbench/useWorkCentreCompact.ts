@@ -11,7 +11,7 @@ import { useWorkbenchUI } from './WorkbenchShell';
 const AUTO_KEY = 'muster:workbench:autoCollapsed';
 const MANUAL_KEY = 'muster:workbench:manualLeftClosed';
 const COLLAPSE_AT = 520;
-const EXPAND_AT = 740;
+const EXPAND_AT = 620;
 
 function isLeftVisible(): boolean {
   const nav = document.querySelector('.workbench-navigation');
@@ -35,8 +35,8 @@ export function useWorkCentreCompact(surfaceRef: React.RefObject<HTMLElement | n
       raf = requestAnimationFrame(() => {
         const autoCollapsed = localStorage.getItem(AUTO_KEY) === '1';
         const manualClosed = localStorage.getItem(MANUAL_KEY) === '1';
-        const rightOpen = ui?.rightOpen ?? true;
-        if (width < COLLAPSE_AT && rightOpen && isLeftVisible()) {
+        // 右栏遮罩去除后，width 是真实中栏宽；不再用 rightOpen 守门
+        if (width < COLLAPSE_AT && isLeftVisible()) {
           ui?.toggleLeft();
           try { localStorage.setItem(AUTO_KEY, '1'); } catch { /* ignore */ }
         } else if (width >= EXPAND_AT && autoCollapsed && !manualClosed && !isLeftVisible()) {

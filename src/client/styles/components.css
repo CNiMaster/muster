@@ -862,6 +862,7 @@
   padding: 6px 10px 8px;
   flex-wrap: nowrap;
   min-width: 0;
+  container-type: inline-size;
 }
 .mu-prompt-controls {
   display: flex;
@@ -869,8 +870,8 @@
   gap: 6px;
   flex: 1;
   min-width: 0;
-  /* 2026-08-23 修复：原 overflow-x:auto 会把 overflow-y 强制为 auto，向上弹出的菜单被裁剪到工具栏高度内（点开看不见）——改允许换行 */
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow: hidden;
 }
 .mu-composer-popover-wrap {
   position: relative;
