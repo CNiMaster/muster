@@ -174,7 +174,8 @@ export function InspectorTabsHost({ projectId, ctxBody }: { projectId?: string; 
             <div className="work-inspector-tool-body">
               {activeEntry.key === 'archive' && <ArchivePage />}
               {activeEntry.key === 'side' && <SideChatPage />}
-              {activeEntry.key === 'approvals' && <ApprovalsInbox />}
+              {/* 专业页：与 /approvals 路由同款 ModeGate（简单模式下分享链接不走标签后门） */}
+              {activeEntry.key === 'approvals' && <ModeGate><ApprovalsInbox /></ModeGate>}
             </div>
           </div>
         )}

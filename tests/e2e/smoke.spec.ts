@@ -102,13 +102,15 @@ test('执行器中心检测系统安装并提供官方安装引导', async ({ pa
   await expect(page.getByText('未检测到安装').first()).toBeVisible();
 });
 
-test('权限中心明确展示策略与范围并提供审批入口', async ({ page }) => {
-  // 治理批次5：该页为专业页（ModeGate）
+test('权限策略页明确展示策略与范围，审批入口指向右栏收件箱', async ({ page }) => {
+  // 治理批次5：该页为专业页（ModeGate）；2026-08-27 审批队列拆去右栏 /approvals，页面瘦身为权限策略
   await page.request.post('/api/settings/ui-mode', { data: { uiMode: 'pro' } });
   await page.goto('/permissions');
-  await expect(page.getByRole('heading', { name: '权限与审批中心' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '权限策略' })).toBeVisible();
   await expect(page.getByRole('button', { name: '创建项目 Turbo' })).toBeVisible();
   await expect(page.getByText('安装软件、凭据、推送、部署、外部消息、账号和付费操作仍单独审批。')).toBeVisible();
+  // 审批收件箱链接（g:approvals 右栏标签入口）
+  await expect(page.getByRole('link', { name: '审批收件箱' })).toHaveAttribute('href', '/approvals');
 });
 
 test('设置页窄屏不横向溢出', async ({ page }) => {

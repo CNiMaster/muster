@@ -20,6 +20,7 @@ import { ContextMenu, CLOSED_CONTEXT_MENU, type ContextMenuState } from '../Cont
 import { FilesTreeModal } from '../project/FilesTreeModal';
 import type { GlobalToolKey, ProjectToolTabKey } from './inspector-tabs';
 import { useInspectorTabsApi } from './useInspectorTabs';
+import { useWorkbenchUI } from './WorkbenchShell';
 import { useTaskActionMenu } from '../project/TaskTopBar';
 import { toast } from '../Button';
 
@@ -202,6 +203,14 @@ export function ProjectWorkNavigation({
   const tabsApi = useInspectorTabsApi();
   const { projectId: routeProjectId } = useParams();
   const onProjectRoute = Boolean(routeProjectId);
+  // 复审修复（2026-08-28）：开右栏标签必须连右栏一起拉开——开不可见的标签等于没开
+  // （WorkCapsule 同款教训）。开关语义：点的是"关"（该签已活动）则不动右栏。
+  const workbenchUi = useWorkbenchUI();
+  const ensurePaneForTab = (id: string): void => {
+    if (!workbenchUi || workbenchUi.rightOpen) return;
+    if (tabsApi.activeId === id) return;
+    workbenchUi.toggleRight();
+  };
   const toolTabActive = (tool: ProjectToolTabKey): boolean =>
     onProjectRoute
     && tabsApi.entries.some((entry) => entry.kind === 'tool' && entry.tool === tool)
@@ -215,6 +224,7 @@ export function ProjectWorkNavigation({
     onClick: (e) => {
       if (!onProjectRoute || e.metaKey || e.ctrlKey || e.shiftKey) return;
       e.preventDefault();
+      ensurePaneForTab(`tool:${tool}`);
       tabsApi.toggleTool(tool);
     },
   });
@@ -223,6 +233,7 @@ export function ProjectWorkNavigation({
     onClick: (e) => {
       if (!onProjectRoute || e.metaKey || e.ctrlKey || e.shiftKey) return;
       e.preventDefault();
+      ensurePaneForTab(`g:${key}`);
       tabsApi.toggleGlobalTool(key);
     },
   });
