@@ -11,7 +11,7 @@ import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
 import { EmptyState } from '../components/EmptyState';
 import { Input } from '../components/Form';
-import { useMemoryBoard, useMemoryBoardAction, type MemoryBoardEntry } from '../hooks/queries';
+import { useMemoryBoard, useMemoryBoardAction, useMemoryHealth, useMemoryHousekeepingAction, type MemoryBoardEntry } from '../hooks/queries';
 
 const SCOPE_TABS: Array<{ key: string; label: string }> = [
   { key: '', label: '全部' },
@@ -76,8 +76,11 @@ export function MemoryBoardPage(): React.ReactElement {
   const [flashId, setFlashId] = useState<string | null>(null);
   const { data, isLoading } = useMemoryBoard({ scope: scope || undefined, q: q || undefined });
   const action = useMemoryBoardAction();
+  const { data: healthData } = useMemoryHealth();
+  const housekeeping = useMemoryHousekeepingAction();
   // 列表本身已按 updatedAt 倒序（listMemoryEntries），最近变更条直接切片——筛选视图下显示筛选内的最近，口径自洽。
   const recent = data?.entries.slice(0, 6) ?? [];
+  const health = healthData?.health;
 
   const onAction = (a: 'lock' | 'unlock' | 'delete' | 'correct', content?: string, id?: string): void => {
     if (!id) return;
@@ -126,6 +129,41 @@ export function MemoryBoardPage(): React.ReactElement {
               <span className="mu-muted">{formatRelativeTime(e.updatedAt)}</span>
             </button>
           ))}
+        </div>
+      )}
+      {health && (
+        <div className="memory-health-strip" aria-label="记忆库健康度">
+          <span className="memory-recent-label">健康度</span>
+          <span className="mu-muted" title="active 记忆总数（含锁定）">{health.activeEntries} 条</span>
+          <span className="mu-muted" title="近 7 天新增">+{health.addedLast7d}/周</span>
+          <span
+            className="mu-muted"
+            title="同指纹重复的多余条目数（内务自动归并的原料）"
+            style={{ color: health.duplicatePairs > 0 ? 'var(--warn, #b8860b)' : undefined }}
+          >
+            重复 {health.duplicatePairs}
+          </span>
+          <span
+            className="mu-muted"
+            title="有出场战绩的 active 记忆占比（越低说明越多记忆从未被用过）"
+            style={{ color: health.hitRate !== null && health.hitRate < 0.3 ? 'var(--warn, #b8860b)' : undefined }}
+          >
+            命中率 {health.hitRate === null ? '—' : `${Math.round(health.hitRate * 100)}%`}
+          </span>
+          {health.lastCompactionAt && (
+            <span className="mu-muted" title="上次内务压实">整理于 {formatRelativeTime(health.lastCompactionAt)}（归并 {health.lastCompactionMerged}）</span>
+          )}
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={housekeeping.isPending}
+            onClick={() => housekeeping.mutate(undefined, {
+              onSuccess: (res) => toast('success', res.result.merged > 0 ? `已归并 ${res.result.merged} 条重复` : '没有需要归并的重复'),
+              onError: (e: Error) => toast('error', e.message),
+            })}
+          >
+            立即整理
+          </Button>
         </div>
       )}
       {isLoading ? (

@@ -3,6 +3,10 @@ category: implementation
 description: Produce deliverable documents (docx/xlsx/pdf/md) via document_create/document_append — format choice, structure, and approval flow.
 name-zh: 文档产出
 description-zh: 用 document_create/document_append 生成交付级文档（docx/xlsx/pdf/md）——何时用哪种格式、内容组织、审批流
+use-cases: deliverable, report
+output-format: file-docx
+editability: medium
+complexity: standard
 ---
 
 # 文档产出（document-authoring）

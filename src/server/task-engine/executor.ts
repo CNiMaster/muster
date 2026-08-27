@@ -110,8 +110,8 @@ export interface ExecutionEvents {
   onToolCall?: (name: string, input: unknown, toolUseId?: string) => void;
   /** 思考块（Claude stream-json thinking；其他执行器暂不产生）。 */
   onThinking?: (text: string) => void;
-  /** 工具结果（含 tool_use id 关联）。 */
-  onToolResult?: (toolUseId: string, name: string | undefined, content: string) => void;
+  /** 工具结果（含 tool_use id 关联）。isError：CLI stream 的 is_error 标记（S1 遥测口径），无信号时 undefined 视为成功。 */
+  onToolResult?: (toolUseId: string, name: string | undefined, content: string, isError?: boolean) => void;
   /** WP5 流式输出：API 执行器 token 级文本增量（引擎节流后广播 message.delta，不落库）。 */
   onTextDelta?: (delta: string) => void;
 }

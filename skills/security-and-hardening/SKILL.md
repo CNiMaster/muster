@@ -3,6 +3,10 @@ name: security-and-hardening
 description: Hardens code against vulnerabilities. Use when handling user input, authentication, data storage, or external integrations. Use when building any feature that accepts untrusted data, manages user sessions, or interacts with third-party services.
 name-zh: 安全与加固
 description-zh: 安全加固——用户输入校验、认证授权、外部集成的防御性处理
+use-cases: review, hardening
+output-format: code
+editability: high
+complexity: heavy
 ---
 
 # Security and Hardening

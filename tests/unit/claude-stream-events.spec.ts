@@ -18,17 +18,19 @@ describe('claude stream-json 解析', () => {
     expect(parts.toolCalls).toEqual([{ toolUseId: 'tu_1', name: 'Edit', input: { file_path: '/tmp/x/a.md', old_string: 'a', new_string: 'b' } }]);
   });
 
-  it('user 事件拆出 tool_result（字符串与内容数组两种格式）', () => {
+  it('user 事件拆出 tool_result（字符串与内容数组两种格式；is_error 透传，S1 遥测口径）', () => {
     const parts = parseClaudeStreamEvent({
       type: 'user',
       message: { content: [
         { type: 'tool_result', tool_use_id: 'tu_1', content: '已编辑' },
         { type: 'tool_result', tool_use_id: 'tu_2', content: [{ type: 'text', text: '读取到 3 行' }] },
+        { type: 'tool_result', tool_use_id: 'tu_3', content: '命令失败', is_error: true },
       ] },
     });
     expect(parts.toolResults).toEqual([
-      { toolUseId: 'tu_1', content: '已编辑' },
-      { toolUseId: 'tu_2', content: '读取到 3 行' },
+      { toolUseId: 'tu_1', content: '已编辑', isError: false },
+      { toolUseId: 'tu_2', content: '读取到 3 行', isError: false },
+      { toolUseId: 'tu_3', content: '命令失败', isError: true },
     ]);
   });
 

@@ -27,6 +27,7 @@ import { ensurePersonaArchiveProfile } from './agent-profile';
 import { getPersona } from './persona-library';
 import { evolveBlueprint } from './blueprint';
 import { maybeSynthesizeExpertCandidates } from './expert-synthesis';
+import { settleTaskSafely } from './settlement';
 
 /** 反思信号来源（兼作根因分类标签，喂给 prompt 与归因分析）。 */
 export type ReflectionSignal =
@@ -103,6 +104,9 @@ export interface EnqueueReflectionInput {
  */
 export function enqueueReflection(db: DB, input: EnqueueReflectionInput): void {
   const { task, outcome, signal, extraContext } = input;
+  // 选择闭环 S2：结算先行（纯 SQL 幂等，失败吞掉不影响反思）——挂在本函数收口全部终态调用方
+  // （engine 五路径 + business-review 返工 + idle 补历史）。
+  settleTaskSafely(db, task.id);
   const profileId = task.assigneeAgentId
     ? (getAgent(db, task.assigneeAgentId)?.profileId ?? null)
     : null;

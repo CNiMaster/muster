@@ -125,6 +125,8 @@ export interface QuestionOption {
   detail?: string;
   pros?: string;
   cons?: string;
+  /** 选择闭环 S3：三态消费"确认式默认值"的预填答案徽章（推荐路线），仅 UI 提示不改交互。 */
+  isDefault?: boolean;
 }
 
 export interface AgentRunResult {

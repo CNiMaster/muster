@@ -3,6 +3,10 @@ name: source-driven-development
 description: Grounds every implementation decision in official documentation. Use when you want authoritative, source-cited code free from outdated patterns. Use when building with any framework or library where correctness matters.
 name-zh: 源码驱动开发
 description-zh: 以官方文档与源码为一手依据开发——不凭记忆猜 API，先查证再写
+use-cases: research, implementation
+output-format: text
+editability: medium
+complexity: standard
 ---
 
 # Source-Driven Development

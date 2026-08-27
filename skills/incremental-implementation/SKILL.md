@@ -3,6 +3,10 @@ name: incremental-implementation
 description: Delivers changes incrementally. Use when implementing any feature or change that touches more than one file. Use when you're about to write a large amount of code at once, or when a task feels too big to land in one step.
 name-zh: 增量实施
 description-zh: 多文件变更的增量交付——小步走、每步可验证可合并
+use-cases: implementation
+output-format: code
+editability: high
+complexity: standard
 ---
 
 # Incremental Implementation

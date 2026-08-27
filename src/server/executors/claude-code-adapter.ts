@@ -367,7 +367,7 @@ export class ClaudeCodeAdapter implements ExecutionAdapter {
             }
             for (const tr of parts.toolResults) {
               const name = tr.toolUseId ? toolUseNames.get(tr.toolUseId) : undefined;
-              opts.events?.onToolResult?.(tr.toolUseId, name, tr.content);
+              opts.events?.onToolResult?.(tr.toolUseId, name, tr.content, tr.isError);
             }
           }
           if (ev.type === 'result') {

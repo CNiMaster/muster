@@ -4,6 +4,7 @@ import { nowIso, shortId } from '../../shared/utils';
 import { getAgentProfile, ensurePersonaArchiveProfile } from './agent-profile';
 import { getWorkbenchOrNull } from './workbench';
 import { expandTermAliases } from './matching/lexicon';
+import { markCompactionDirty } from './memory-housekeeping';
 
 export type MemoryScope = 'personal' | 'workspace' | 'project' | 'craft';
 export type MemoryCandidateStatus = 'pending' | 'approved' | 'rejected';
@@ -502,6 +503,7 @@ export function loadContextMemories(db: DB, input: {
          )
        ORDER BY ${orderClause} LIMIT ?`,
     ).all(...fullValues) as EntryRow[];
+    markCompactionDirty(db, rows);
     return recordInjected(db, input.taskId, applyInjectBudget(rows.map((row) => entryFromRow(db, row))));
   }
   // query 非空 → personal/craft 仍全量（craft 按人设过滤）；workspace/project 仅注入相关记忆。
@@ -530,6 +532,7 @@ export function loadContextMemories(db: DB, input: {
        )
      ORDER BY ${orderClause} LIMIT ?`,
   ).all(...values) as EntryRow[];
+  markCompactionDirty(db, rows);
   return recordInjected(db, input.taskId, applyInjectBudget(rows.map((row) => entryFromRow(db, row))));
 }
 

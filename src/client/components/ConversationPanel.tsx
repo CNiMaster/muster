@@ -411,6 +411,7 @@ function WaitingQuestionReply({ refTaskId }: { refTaskId: string | null }): Reac
           }}
         >
           {String.fromCharCode(65 + index)}. {option.label}{option.detail ? ` — ${option.detail}` : ''}
+          {option.isDefault ? <span className="mu-preference-default-badge">推荐</span> : null}
         </button>
       ))}
     </div>

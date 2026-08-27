@@ -3,6 +3,10 @@ name: performance-optimization
 description: Optimizes application performance. Use when performance requirements exist, when you suspect performance regressions, or when Core Web Vitals or load times need improvement. Use when profiling reveals bottlenecks that need fixing.
 name-zh: 性能优化
 description-zh: 性能瓶颈定位与优化——Profile 先行、Core Web Vitals 改善
+use-cases: optimization, debugging
+output-format: code
+editability: high
+complexity: heavy
 ---
 
 # Performance Optimization

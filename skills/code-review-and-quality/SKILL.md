@@ -3,6 +3,10 @@ name: code-review-and-quality
 description: Conducts multi-axis code review. Use before merging any change. Use when reviewing code written by yourself, another agent, or a human. Use when you need to assess code quality across multiple dimensions before it enters the main branch.
 name-zh: 代码评审与质量
 description-zh: 合并前的代码审查与质量把关——发现缺陷、坏味道与回归风险
+use-cases: review
+output-format: report
+editability: medium
+complexity: light
 ---
 
 # Code Review and Quality

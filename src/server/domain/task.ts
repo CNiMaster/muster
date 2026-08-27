@@ -40,6 +40,7 @@ import { getSetting } from './setting';
 import { log } from '../logger';
 import { checkSwarmLimits, greyBeeAfterTask, handleSwarmTaskFailure, maybeAutoRepairBee, recordSwarmNodeOutcome, reportBeeCompletion, validateSwarmSynthesisSummary } from './swarm';
 import { handleDebateTaskFailure, recordDecisionFromClarify } from './debate';
+import { recordPreferenceAnswer } from './task-preference';
 import { ensurePrimaryThread } from './thread';
 import { matchBlueprint, currentBlueprintVersion } from './blueprint';
 import { getPersona } from './persona-library';
@@ -1189,6 +1190,10 @@ export function answerClarification(db: DB, taskId: string, input: { answer?: st
     } catch (e) {
       console.warn('decision record failed', { taskId, err: e instanceof Error ? e.message : String(e) });
     }
+    // 选择闭环 S3：本机制的问询回答同步落条件偏好事件（问→答→沉淀闭环）
+    try {
+      recordPreferenceAnswer(db, cur, option);
+    } catch { /* 偏好落库失败不影响回答主流程 */ }
   }
   return getTask(db, taskId);
 }

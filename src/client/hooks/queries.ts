@@ -2613,6 +2613,7 @@ export function useSaveSystemSettings() {
       wrapCode?: boolean;
       autonomousReflectionEnabled?: boolean;
       autonomousReflectionBudgetUSD?: number;
+      memoryHousekeepingEnabled?: boolean;
       swarmMaxDepth?: number;
       swarmMaxWidth?: number;
       swarmMaxNodes?: number;
@@ -3495,6 +3496,32 @@ export function useMemoryBoardAction() {
         ? api.patch(`/api/memory-board/entries/${id}`, { content })
         : api.post(`/api/memory-board/entries/${id}/${action}`),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['memory-board'] }); },
+  });
+}
+
+/** 选择闭环 S4：记忆健康度（膨胀/重复/命中率）+ 手动压实。 */
+export interface MemoryHealthSnapshot {
+  activeEntries: number;
+  dirtyEntries: number;
+  duplicatePairs: number;
+  hitRate: number | null;
+  addedLast7d: number;
+  lastCompactionAt: string | null;
+  lastCompactionMerged: number;
+}
+
+export function useMemoryHealth() {
+  return useQuery({
+    queryKey: ['memory-health'],
+    queryFn: () => api.get<{ ok: boolean; health: MemoryHealthSnapshot }>('/api/memory-board/health'),
+  });
+}
+
+export function useMemoryHousekeepingAction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<{ ok: boolean; result: { merged: number; resetDirty: number } }>('/api/memory-board/housekeeping'),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['memory-health'] }); },
   });
 }
 

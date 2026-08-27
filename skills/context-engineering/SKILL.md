@@ -3,6 +3,10 @@ name: context-engineering
 description: Optimizes agent context setup. Use when starting a new session, when agent output quality degrades, when switching between tasks, or when you need to configure rules files and context for a project.
 name-zh: 上下文工程
 description-zh: 新会话与长任务的上下文装配——该带什么记忆知识技能、如何控制窗口预算
+use-cases: agent-tuning
+output-format: text
+editability: medium
+complexity: standard
 ---
 
 # Context Engineering

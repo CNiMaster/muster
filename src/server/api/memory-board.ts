@@ -14,12 +14,23 @@ import {
   type MemoryScope,
 } from '../domain/memory';
 import { syncAgentMemoryFiles } from '../domain/agent-home';
+import { getMemoryHealth, runMemoryHousekeeping } from '../domain/memory-housekeeping';
 import { asyncHandler, param } from './middleware';
 import { AppError, ErrorCode } from '../../shared/errors';
 
 export const memoryBoardRouter = Router();
 
 const scopeSchema = z.enum(['personal', 'workspace', 'project', 'craft']);
+
+/** 选择闭环 S4：记忆健康度（膨胀/重复/命中率）+ 手动压实入口（与 30 分钟自动内务同口径）。 */
+memoryBoardRouter.get('/health', asyncHandler(async (_req, res) => {
+  res.json({ ok: true, health: getMemoryHealth(getDb()) });
+}));
+
+memoryBoardRouter.post('/housekeeping', asyncHandler(async (_req, res) => {
+  const result = runMemoryHousekeeping(getDb(), { force: true });
+  res.json({ ok: true, result, health: getMemoryHealth(getDb()) });
+}));
 
 /** 注入策略说明（与 loadContextMemories 行为对齐）。 */
 function injectPolicyOf(scope: MemoryScope): { label: string; hint: string } {
