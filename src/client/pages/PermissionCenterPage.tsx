@@ -1,35 +1,28 @@
 import type React from 'react';
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
-import { Badge } from '../components/Badge';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
 import { Field, Input, Select } from '../components/Form';
 import {
   approvalStrategyLabel,
   permissionScopeLabel,
-  type PermissionApproval,
   type PermissionPolicy,
   type ApprovalStrategy,
   type PermissionScope,
 } from '../../shared/permission';
 
 /**
- * 权限与审批中心。
+ * 权限策略页（2026-08-27 瘦身：审批队列拆去右栏「审批」收件箱 /approvals）。
  * - 策略库：管理权限策略，预设安全/Turbo。
  * - 按工作台批量绑定：把某策略一次性绑到某工作台所有智能体。
- * - 待审批队列：CLI 命令审批（保留）。
- * 智能体的执行器/权限绑定在工作台组织架构页做，这里只管策略本身。
+ * 单个智能体的执行器/权限绑定在员工页「执行配置」卡操作。
  */
 export function PermissionCenterPage(): React.ReactElement {
   const qc = useQueryClient();
   const policies = useQuery({ queryKey: ['permission-policies'], queryFn: () => api.get<PermissionPolicy[]>('/api/permissions/policies') });
-  const approvals = useQuery({
-    queryKey: ['permission-approvals'],
-    queryFn: () => api.get<PermissionApproval[]>('/api/permissions/approvals'),
-    refetchInterval: 3000,
-  });
   const [name, setName] = useState('项目内询问');
   const [strategy, setStrategy] = useState<ApprovalStrategy>('ask-by-rule');
   const [scope, setScope] = useState<PermissionScope>('project');
@@ -43,11 +36,6 @@ export function PermissionCenterPage(): React.ReactElement {
       api.post<PermissionPolicy>('/api/permissions/policies', input),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['permission-policies'] }); toast('success', '权限策略已创建'); },
     onError: (e: unknown) => toast('error', (e as Error).message ?? '创建失败'),
-  });
-  const decide = useMutation({
-    mutationFn: ({ id, decision, rule }: { id: string; decision: string; rule?: unknown }) =>
-      api.post(`/api/permissions/approvals/${id}/decision`, { decision, rule }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['permission-approvals'] }),
   });
   const batchBind = useMutation({
     mutationFn: ({ policyId }: { policyId: string }) =>
@@ -77,8 +65,8 @@ export function PermissionCenterPage(): React.ReactElement {
     <div className="settings-page">
       <header className="page-header">
         <div>
-          <h1>权限与审批中心</h1>
-          <p className="subtitle">管理权限策略，按工作台批量绑定。智能体的执行器/权限绑定在工作台「组织架构」页统一操作。</p>
+          <h1>权限策略</h1>
+          <p className="subtitle">管理权限策略，按工作台批量绑定。单个智能体的执行器/权限绑定在员工页「执行配置」卡操作；高危命令与业务产物的待审批在 <Link to="/approvals">审批收件箱</Link> 处理。</p>
         </div>
       </header>
 
@@ -130,38 +118,6 @@ export function PermissionCenterPage(): React.ReactElement {
           )}
         </div>
         <Button onClick={() => create.mutate({ name, approvalStrategy: strategy, scope, selectedDirectories: dirs.split('\n').map((v) => v.trim()).filter(Boolean) })}>保存策略</Button>
-      </Card>
-
-      <Card title={`待审批（${approvals.data?.length ?? 0}）`} className="section">
-        {!approvals.data?.length ? (
-          <p className="muted">当前没有等待处理的权限请求。</p>
-        ) : (
-          <div className="approval-list">
-            {approvals.data.map((item) => (
-              <article className="memory-item" key={item.id}>
-                <div>
-                  <div>
-                    <Badge tone={item.risk === 'high' ? 'err' : 'warn'}>{item.risk === 'high' ? '高风险' : '需确认'}</Badge> <strong>{item.action}</strong>
-                  </div>
-                  <p>智能体 {item.employee_id} · Task {item.task_id}</p>
-                  <p><Badge tone={item.online ? 'warn' : 'neutral'}>{item.statusText}</Badge></p>
-                  {item.command && <code>{item.command}</code>}
-                  {item.path && <p className="diagnostic-text">{item.path}</p>}
-                </div>
-                <div className="memory-actions">
-                  <Button size="sm" variant="danger" onClick={() => decide.mutate({ id: item.id, decision: 'deny' })}>拒绝</Button>
-                  <Button size="sm" onClick={() => decide.mutate({ id: item.id, decision: 'allow-once' })}>单次允许</Button>
-                  {item.command && <Button size="sm" variant="ghost" onClick={() => decide.mutate({ id: item.id, decision: 'allow-command' })}>始终允许此命令</Button>}
-                  {item.path && <Button size="sm" variant="ghost" onClick={() => decide.mutate({ id: item.id, decision: 'allow-directory' })}>始终允许此目录</Button>}
-                  <Button size="sm" variant="ghost" onClick={() => {
-                    const pattern = window.prompt('输入允许的命令正则；留空则取消');
-                    if (pattern) decide.mutate({ id: item.id, decision: 'custom-rule', rule: { effect: 'allow', commandPattern: pattern } });
-                  }}>输入规则</Button>
-                </div>
-              </article>
-            ))}
-          </div>
-        )}
       </Card>
 
       <Card title="已有策略" className="section">

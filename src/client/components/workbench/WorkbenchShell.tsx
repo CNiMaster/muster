@@ -144,12 +144,16 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
     { label: '存储管理', href: '/storage', group: '全局' },
     { label: '设置', href: '/settings', group: '全局' },
     // 专业模式专属入口（治理批次5语义；G.7 起简单模式可见但锁定）
+    { label: '审批', href: '/approvals', group: '全局', proOnly: true },
+    { label: '能力中心', href: '/capabilities', group: '全局', proOnly: true },
+    { label: '能力市场', href: '/marketplace', group: '全局', proOnly: true },
     { label: '蓝图库', href: '/blueprints', group: '全局', proOnly: true },
     { label: '自动化', href: '/automations', group: '全局', proOnly: true },
     { label: '智能体库', href: '/agents', group: '全局', proOnly: true },
     { label: '执行器', href: '/executors', group: '全局', proOnly: true },
-    { label: '权限', href: '/permissions', group: '全局', proOnly: true },
-    { label: '审批', href: '/reviews', group: '全局', proOnly: true },
+    { label: '权限策略', href: '/permissions', group: '全局', proOnly: true },
+    { label: '记忆看板', href: '/memory-board', group: '全局', proOnly: true },
+    { label: '命令库', href: '/commands', group: '全局' },
   ];
   const options = [...(commandOptions ?? []), ...globalOptions];
   const query = commandQuery.trim().toLowerCase();

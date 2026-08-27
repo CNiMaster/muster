@@ -505,7 +505,7 @@ export function ProjectDetail({ projectId }: { projectId: string }): React.React
         : <WorkbenchContextSwitcher projectId={project.id} projectName={project.name} projectTaskId={selectedProjectTaskId} sectionKey={projectView} sectionLabel={{ task: '项目任务', employee: selectedAgent?.name ?? '智能体', group: '项目群聊', activity: '协作活动' }[projectView]} novel={company?.kind === 'novel'} />}
       navigationLabel="项目组织与联系人"
       inspectorLabel="项目任务与运行"
-      attentionCount={attentionCount + (cockpit?.approvals.pending ?? 0) + (mergeAttention?.total ?? 0)}
+      attentionCount={attentionCount + (cockpit ? cockpit.approvals.pending + cockpit.approvals.businessPending : 0) + (mergeAttention?.total ?? 0)}
       primaryAction={<>
         {/* 2026-08-23 用户定案：全局上下班按钮退役——默认常上班（workbench 默认 online），CLI/人员维护走局部下班（后续模块化挂起） */}
         {/* 2026-08-23 用户定案：顶栏新建任务退役（入口收口到左栏＋/new 命令）；模式切换按钮常驻顶栏（WorkbenchShell）； */}

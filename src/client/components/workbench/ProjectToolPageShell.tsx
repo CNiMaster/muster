@@ -8,6 +8,7 @@ import { WorkbenchShell, useWorkbenchUI } from './WorkbenchShell';
 import { WorkbenchContextSwitcher } from './WorkbenchContextSwitcher';
 import { ProjectTaskWorkspace } from '../project/ProjectTaskWorkspace';
 import { WorkbenchBottomStaffTabs } from './WorkbenchBottomStaffTabs';
+import { WorkCapsule } from './WorkCapsule';
 
 const TOOL_LABELS: Record<ProjectToolKey, string> = {
   tasks: '任务领取清单',
@@ -81,6 +82,8 @@ function ProjectTaskSurface({ projectId }: { projectId: string }): React.ReactEl
   const selected = projectTasks.find((t) => t.state === 'active') ?? projectTasks[0];
   return (
     <div className="project-page work-surface-page" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      {/* 工作胶囊（批次 H.2）：工具页壳的中栏同样可见——absolute 锚 .workbench-main 右上角 */}
+      <WorkCapsule projectId={projectId} tasks={tasks} agents={agents} />
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 20px' }}>
         <ProjectTaskWorkspace
           projectId={projectId}
@@ -126,7 +129,7 @@ export function ProjectToolPageShell({ tool, children, projectIdOverride, select
     breadcrumb={<WorkbenchContextSwitcher projectId={projectId} projectName={project?.name ?? '项目'} projectTaskId={selectedId} sectionKey="task" sectionLabel="项目任务" novel={company?.kind === 'novel'} />}
     navigationLabel="项目组织与联系人"
     inspectorLabel="项目任务与运行"
-    attentionCount={attentionCount + (cockpit?.approvals.pending ?? 0) + (mergeAttention?.total ?? 0)}
+    attentionCount={attentionCount + (cockpit ? cockpit.approvals.pending + cockpit.approvals.businessPending : 0) + (mergeAttention?.total ?? 0)}
     primaryAction={<Link className="mu-btn mu-btn-primary mu-btn-sm" to={`/projects/${projectId}${selectedId ? `?projectTask=${selectedId}` : ''}`}>返回智能体中心</Link>}
     navigation={<ProjectWorkNavigation projectId={projectId} projectTasks={projectTasks ?? []} tasks={tasks ?? []} agents={agents ?? []} departments={departments ?? []} firstAgentId={project?.firstAgentId ?? company?.firstAgentId} selectedProjectTaskId={selectedId} view="tool" activeTool={tool} attentionCount={attentionCount} novel={company?.kind === 'novel'} onNewTask={() => navigate(`/projects/${projectId}?view=task&projectTask=new`)} />}
     inspector={<InspectorTabsHost projectId={projectId || undefined} ctxBody={<ProjectContextInspector projectId={projectId} selectedTask={selectedTask} agents={agents ?? []} tasks={tasks ?? []} cockpit={cockpit} />} />}
@@ -192,10 +195,14 @@ export function GlobalToolPageShell({ label, children, fullHeight = false, pane 
       { label: '蓝图库', href: '/blueprints', group: '工具与资产', proOnly: true },
       { label: '智能体库', href: '/agents', group: '工具与资产', proOnly: true },
       { label: '存储管理', href: '/storage', group: '工具与资产' },
+      { label: '命令库', href: '/commands', group: '工具与资产' },
+      { label: '审批', href: '/approvals', group: '系统治理', proOnly: true },
       { label: '能力中心', href: '/capabilities', group: '系统治理', proOnly: true },
       { label: '能力市场', href: '/marketplace', group: '系统治理', proOnly: true },
       { label: '执行器中心', href: '/executors', group: '系统治理', proOnly: true },
-      { label: '权限中心', href: '/permissions', group: '系统治理', proOnly: true },
+      { label: '权限策略', href: '/permissions', group: '系统治理', proOnly: true },
+      { label: '自动化中心', href: '/automations', group: '系统治理', proOnly: true },
+      { label: '记忆看板', href: '/memory-board', group: '系统治理', proOnly: true },
       { label: '系统设置', href: '/settings', group: '系统治理' },
     ]}
   >

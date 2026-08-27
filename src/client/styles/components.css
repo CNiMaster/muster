@@ -1560,3 +1560,27 @@
 .plugin-govern-desc { margin: 2px 0 0; line-height: 1.6; }
 
 
+
+/* ===== 统一审批收件箱（2026-08-27，右栏 g:approvals 标签）=====
+   紧凑行默认折叠适配 240px 窄右栏；文字是唯一收缩点（width 溢出省略），徽章/箭头固定 */
+.approvals-inbox { display: flex; flex-direction: column; gap: 18px; }
+.approvals-section { display: flex; flex-direction: column; gap: 8px; }
+.approvals-section-head { margin: 0; font-size: 13px; font-weight: 700; color: var(--fg); }
+.approvals-empty-hint { margin: 0; font-size: 12px; line-height: 1.7; }
+.approval-row { border: 1px solid var(--border-subtle); border-radius: 10px; background: var(--bg-soft); min-width: 0; }
+.approval-row-summary {
+  display: flex; align-items: center; gap: 6px; width: 100%; min-width: 0;
+  padding: 7px 9px; border: 0; border-radius: 10px; background: transparent;
+  font: inherit; font-size: 12px; color: var(--fg); text-align: left; cursor: pointer;
+}
+.approval-row-summary:hover { background: var(--bg-hover); }
+.approval-row-title { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.approval-row-meta { margin-left: auto; flex: 0 0 auto; font-size: 11px; color: var(--fg-subtle); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.approval-caret { flex: 0 0 auto; color: var(--fg-subtle); font-size: 10px; }
+.approval-row-body { padding: 2px 10px 10px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.approval-row-body p { margin: 0; font-size: 12px; }
+.approval-code {
+  display: block; max-width: 100%; overflow-x: auto; padding: 6px 8px;
+  border-radius: 6px; background: var(--bg-sunken); font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.approval-actions { display: flex; flex-wrap: wrap; gap: 6px; }

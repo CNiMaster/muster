@@ -13,11 +13,12 @@ import {
   useProjects,
   useProjectTasks,
   useRestoreProjectTask,
+  useWorkbenchCockpit,
 } from '../../hooks/queries';
 import { DropdownMenu } from '../DropdownMenu';
 import { ContextMenu, CLOSED_CONTEXT_MENU, type ContextMenuState } from '../ContextMenu';
 import { FilesTreeModal } from '../project/FilesTreeModal';
-import type { ProjectToolTabKey } from './inspector-tabs';
+import type { GlobalToolKey, ProjectToolTabKey } from './inspector-tabs';
 import { useInspectorTabsApi } from './useInspectorTabs';
 import { useTaskActionMenu } from '../project/TaskTopBar';
 import { toast } from '../Button';
@@ -80,6 +81,9 @@ export function ProjectWorkNavigation({
 }): React.ReactElement {
   // 搁置提醒红点：搁置≥5h 的待合并任务数（React Query 缓存与页面级轮询共享，不重复请求）
   const { data: mergeAttention } = useMergeAttention(projectId);
+  // 审批角标：命令审批+业务审批 pending 总数（cockpit 已聚合两源；缓存全局共享不重复请求）
+  const { data: cockpit } = useWorkbenchCockpit();
+  const approvalsPending = cockpit ? cockpit.approvals.pending + cockpit.approvals.businessPending : 0;
   // 治理批次5：双模式——工具项按模式过滤；任务/项目区顺序=模式默认+手动偏好（localStorage 持久化）
   const ui = useUiMode();
   const [tasksFirst, setTasksFirst] = useState<boolean>(() => {
@@ -149,7 +153,7 @@ export function ProjectWorkNavigation({
   const [showAllActive, setShowAllActive] = useState(false);
   // 2026-08-24 定案：工具与资产分类收纳——常用默认展开，项目工具/资产库默认收起；手动切换 localStorage 持久化
   const [toolCats, setToolCats] = useState<Record<string, boolean>>(() => {
-    const def: Record<string, boolean> = { common: false, project: true, assets: true };
+    const def: Record<string, boolean> = { common: false, project: true, assets: true, governance: true };
     try {
       return { ...def, ...(JSON.parse(localStorage.getItem('muster:nav-tool-cats') ?? '{}') as Record<string, boolean>) };
     } catch {
@@ -202,7 +206,7 @@ export function ProjectWorkNavigation({
     onProjectRoute
     && tabsApi.entries.some((entry) => entry.kind === 'tool' && entry.tool === tool)
     && tabsApi.activeId === `tool:${tool}`;
-  const globalTabActive = (key: 'archive' | 'side'): boolean =>
+  const globalTabActive = (key: GlobalToolKey): boolean =>
     onProjectRoute
     && tabsApi.entries.some((entry) => entry.kind === 'globalTool' && entry.key === key)
     && tabsApi.activeId === `g:${key}`;
@@ -214,7 +218,7 @@ export function ProjectWorkNavigation({
       tabsApi.toggleTool(tool);
     },
   });
-  const globalToolLinkProps = (key: 'archive' | 'side', href: string): { to: string; onClick: (e: React.MouseEvent) => void } => ({
+  const globalToolLinkProps = (key: GlobalToolKey, href: string): { to: string; onClick: (e: React.MouseEvent) => void } => ({
     to: href,
     onClick: (e) => {
       if (!onProjectRoute || e.metaKey || e.ctrlKey || e.shiftKey) return;
@@ -622,7 +626,52 @@ export function ProjectWorkNavigation({
               <span className="work-nav-icon">💾</span>
               <span className="work-nav-label">存储管理</span>
             </Link>
+            <Link className="work-nav-item" {...toolLinkProps('/commands')}>
+              <span className="work-nav-icon">⌘</span>
+              <span className="work-nav-label">命令库</span>
+            </Link>
           </ToolCategory>
+          {/* 治理（2026-08-27）：原 ⌘K 面板专属的系统治理页补可见入口——默认收起，专业模式可见 */}
+          {!ui.isSimple && (
+            <ToolCategory label="治理" collapsed={toolCats.governance ?? true} onToggle={() => toggleToolCat('governance')}>
+              <Link className={`work-nav-item ${globalTabActive('approvals') ? 'is-active' : ''}`} {...globalToolLinkProps('approvals', '/approvals')}>
+                <span className="work-nav-icon">🔔</span>
+                <span className="work-nav-label">审批</span>
+                {approvalsPending > 0 && (
+                  <span
+                    title={`${approvalsPending} 项审批等待处理（命令/业务）`}
+                    style={{ marginLeft: 'auto', background: 'var(--err, #dc2626)', color: '#fff', borderRadius: 999, fontSize: 10, lineHeight: 1, padding: '2px 6px', flexShrink: 0 }}
+                  >
+                    {approvalsPending}
+                  </span>
+                )}
+              </Link>
+              <Link className="work-nav-item" {...toolLinkProps('/capabilities')}>
+                <span className="work-nav-icon">🧰</span>
+                <span className="work-nav-label">能力中心</span>
+              </Link>
+              <Link className="work-nav-item" {...toolLinkProps('/marketplace')}>
+                <span className="work-nav-icon">🏪</span>
+                <span className="work-nav-label">能力市场</span>
+              </Link>
+              <Link className="work-nav-item" {...toolLinkProps('/executors')}>
+                <span className="work-nav-icon">🔌</span>
+                <span className="work-nav-label">执行器中心</span>
+              </Link>
+              <Link className="work-nav-item" {...toolLinkProps('/permissions')}>
+                <span className="work-nav-icon">🛡️</span>
+                <span className="work-nav-label">权限策略</span>
+              </Link>
+              <Link className="work-nav-item" {...toolLinkProps('/automations')}>
+                <span className="work-nav-icon">⚙️</span>
+                <span className="work-nav-label">自动化中心</span>
+              </Link>
+              <Link className="work-nav-item" {...toolLinkProps('/memory-board')}>
+                <span className="work-nav-icon">🧠</span>
+                <span className="work-nav-label">记忆看板</span>
+              </Link>
+            </ToolCategory>
+          )}
         </div>
       </div>
 

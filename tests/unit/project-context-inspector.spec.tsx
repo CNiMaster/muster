@@ -7,10 +7,11 @@
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Agent, Task } from '../../src/client/api/types';
 import { ProjectContextInspector } from '../../src/client/components/workbench/ProjectContextInspector';
+import { InspectorTabsHost } from '../../src/client/components/workbench/InspectorTabsHost';
 import type { ProjectTaskDTO } from '../../src/client/hooks/queries';
 
 const mockUseUiMode = vi.fn(() => ({ uiMode: 'simple', isSimple: true, setUiMode: vi.fn(), toggle: vi.fn(), saving: false }));
@@ -177,26 +178,40 @@ describe('project context inspector（批次 F 三层信息架构）', () => {
     expect(summary.parentElement?.open).toBe(false);
   });
 
-  it('批次F.3：产物条目点击在右栏打开预览（?preview= 驱动，图片走安全端点），关闭即移除', () => {
+  it('P2 标签化：产物条目点击写入右栏 doc 标签（rt=doc:… & rtA=…），不再原地渲染预览', () => {
     mockUseArtifacts.mockReturnValue({
       data: [{ id: 'a1', kind: 'screenshot', path: 'shots/demo.png', ownerAgentId: null, mergeStrategy: 'staging', props: {}, createdTaskId: null }],
     });
-    renderInspector();
-    fireEvent.click(screen.getByTitle('右栏预览 shots/demo.png'));
-    const img = screen.getByAltText('shots/demo.png') as HTMLImageElement;
-    expect(img.src).toContain('/api/projects/pr_1/artifacts/preview/shots/demo.png');
-    expect(screen.getByText('👁 demo.png')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '关闭预览' }));
-    expect(screen.queryByAltText('shots/demo.png')).not.toBeInTheDocument();
+    let searchNow = '';
+    const SearchProbe = (): null => {
+      const { search } = useLocation();
+      searchNow = search;
+      return null;
+    };
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={['/projects/pr_1?view=task']}>
+          <SearchProbe />
+          <ProjectContextInspector projectId="pr_1" selectedTask={projectTask} agents={[agent]} tasks={[workOrder]} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    fireEvent.click(screen.getByText('产物').closest('summary')!);
+    fireEvent.click(screen.getByTitle('开文档标签 shots/demo.png'));
+    expect(searchNow).toContain('rt=doc%3A');
+    expect(searchNow).toContain('rtA=doc%3A');
+    // 预览体由 InspectorTabsHost 的 doc 标签渲染，现场不再内嵌
+    expect(screen.queryByText('👁 demo.png')).not.toBeInTheDocument();
   });
 
-  it('批次F.3：Markdown 预览走 content 端点渲染正文', () => {
+  it('P2 标签化：doc 标签（rt=doc:）走 content 端点在标签体渲染正文', () => {
     mockUseArtifactContent.mockReturnValue({ data: { path: 'docs/readme.md', content: '# 预览标题' }, isLoading: false });
     const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
     render(
       <QueryClientProvider client={client}>
-        <MemoryRouter initialEntries={['/?preview=docs/readme.md']}>
-          <ProjectContextInspector projectId="pr_1" agents={[agent]} tasks={[workOrder]} />
+        <MemoryRouter initialEntries={['/?rt=doc:docs/readme.md&rtA=doc%3Adocs%2Freadme.md']}>
+          <InspectorTabsHost projectId="pr_1" ctxBody={null} />
         </MemoryRouter>
       </QueryClientProvider>,
     );

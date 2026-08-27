@@ -63,7 +63,7 @@ describe('WorkCapsule（批次 H.2）', () => {
     expect(screen.getByText(/张三正在/)).toBeInTheDocument();
   });
 
-  it('点击展开写入 ?panel=live；再点收起移除', () => {
+  it('P2 标签化：点击展开写入右栏 plan 标签（rt=plan:live & rtA=）；再点收起移除', () => {
     // MemoryRouter 不动 window.location——用探针组件读路由状态
     let searchNow = '';
     function Probe(): null {
@@ -78,9 +78,10 @@ describe('WorkCapsule（批次 H.2）', () => {
       </MemoryRouter></QueryClientProvider>,
     );
     fireEvent.click(screen.getByRole('button'));
-    expect(searchNow).toContain('panel=live');
+    expect(searchNow).toContain('rt=plan%3Alive');
+    expect(searchNow).toContain('rtA=plan%3Alive');
     fireEvent.click(screen.getByRole('button'));
-    expect(searchNow).not.toContain('panel=live');
+    expect(searchNow).not.toContain('plan%3Alive');
   });
 });
 

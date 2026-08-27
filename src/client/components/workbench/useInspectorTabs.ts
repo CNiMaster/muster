@@ -20,9 +20,9 @@ import {
   serializeRt,
 } from './inspector-tabs';
 
-/** 工具页旧路由 → tab key（项目域4工具；全局 archive/side 走同系深链归一）。 */
+/** 工具页旧路由 → tab key（项目域4工具；全局 archive/side/approvals 走同系深链归一）。 */
 const ROUTE_TOOL_RE = /^\/projects\/[^\/]+\/(tasks|merges|artifacts|knowledge)$/;
-const ROUTE_GLOBAL_RE = /^\/(archive|side)$/;
+const ROUTE_GLOBAL_RE = /^\/(archive|side|approvals)$/;
 
 export function routeToolKey(pathname: string): ProjectToolTabKey | null {
   const match = ROUTE_TOOL_RE.exec(pathname);
@@ -35,7 +35,7 @@ export function routeToolKey(pathname: string): ProjectToolTabKey | null {
 export function routeGlobalKey(pathname: string): GlobalToolKey | null {
   const match = ROUTE_GLOBAL_RE.exec(pathname);
   const key = match?.[1];
-  return key === 'archive' || key === 'side' ? key : null;
+  return key === 'archive' || key === 'side' || key === 'approvals' ? key : null;
 }
 
 export interface InspectorTabsApi {

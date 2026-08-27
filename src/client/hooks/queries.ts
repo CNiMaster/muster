@@ -2838,7 +2838,9 @@ export function useDecideBusinessReview() {
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: ['business-reviews'] });
       qc.invalidateQueries({ queryKey: ['tasks'] });
-      qc.invalidateQueries({ queryKey: ['company-cockpit'] });
+      // 2026-08-27 修：此前失效的是不存在的 ['company-cockpit']——实际 key 是 ['workbench-cockpit']，
+      // 导致审批决定后左栏角标/驾驶舱计数永不刷新（只靠 realtime 事件碰巧兜底）
+      qc.invalidateQueries({ queryKey: ['workbench-cockpit'] });
       void vars;
     },
   });

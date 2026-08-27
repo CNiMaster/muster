@@ -22,8 +22,11 @@ import { ArchivePage } from '../../pages/ArchivePage';
 import { SideChatPage } from '../../pages/SideChatPage';
 import { PreviewBody } from './InspectorPreviewHost';
 import { WorkLivePanel } from './WorkLivePanel';
-import { rtId, rtLabel, RT_CONTEXT_ID, type RtEntry } from './inspector-tabs';
+import { rtId, rtLabel, RT_CONTEXT_ID, type GlobalToolKey, type RtEntry } from './inspector-tabs';
 import { useInspectorTabsApi } from './useInspectorTabs';
+import { ApprovalsInbox } from './ApprovalsInbox';
+
+const GLOBAL_TAB_ICONS: Record<GlobalToolKey, string> = { archive: '🗂️', side: '💬', approvals: '🔔' };
 
 /** 标签条 + 活动体。ctxBody=「现场」内容节点（调用方传入，保持既有 props 装配）。 */
 export function InspectorTabsHost({ projectId, ctxBody }: { projectId?: string; ctxBody: React.ReactNode }): React.ReactElement {
@@ -95,7 +98,8 @@ export function InspectorTabsHost({ projectId, ctxBody }: { projectId?: string; 
   useEffect(() => {
     if (!bodyActiveId || !hostRootRef.current) return;
     const el = hostRootRef.current.querySelector(`[data-tab-id="${CSS.escape(bodyActiveId)}"]`);
-    el?.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+    // 可选调用：jsdom 等无 scrollIntoView 的环境直接跳过
+    el?.scrollIntoView?.({ inline: 'nearest', block: 'nearest' });
   }, [bodyActiveId]);
 
   return (
@@ -125,7 +129,7 @@ export function InspectorTabsHost({ projectId, ctxBody }: { projectId?: string; 
                   title={rtLabel(entry)}
                   onClick={() => { if (!isActive) api.activate(id); }}
                 >
-                  <span className="inspector-tab-kind" aria-hidden="true">{entry.kind === 'doc' ? '📄' : entry.kind === 'plan' ? '🛠' : entry.kind === 'globalTool' ? (entry.key === 'archive' ? '🗂️' : '💬') : '🧰'}</span>
+                  <span className="inspector-tab-kind" aria-hidden="true">{entry.kind === 'doc' ? '📄' : entry.kind === 'plan' ? '🛠' : entry.kind === 'globalTool' ? GLOBAL_TAB_ICONS[entry.key] : '🧰'}</span>
                   <span className="inspector-tab-text">{rtLabel(entry)}</span>
                 </button>
                 <button
@@ -170,6 +174,7 @@ export function InspectorTabsHost({ projectId, ctxBody }: { projectId?: string; 
             <div className="work-inspector-tool-body">
               {activeEntry.key === 'archive' && <ArchivePage />}
               {activeEntry.key === 'side' && <SideChatPage />}
+              {activeEntry.key === 'approvals' && <ApprovalsInbox />}
             </div>
           </div>
         )}

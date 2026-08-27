@@ -57,7 +57,7 @@ const ExecutorCenterPage = lazyRetry(() => import('./pages/ExecutorCenterPage').
 const PermissionCenterPage = lazyRetry(() => import('./pages/PermissionCenterPage').then((m) => ({ default: m.PermissionCenterPage })));
 const CapabilityCenterPage = lazyRetry(() => import('./pages/CapabilityCenterPage').then((m) => ({ default: m.CapabilityCenterPage })));
 const MarketplacePage = lazyRetry(() => import('./pages/MarketplacePage').then((m) => ({ default: m.MarketplacePage })));
-const BusinessReviewPage = lazyRetry(() => import('./pages/BusinessReviewPage').then((m) => ({ default: m.BusinessReviewPage })));
+const ApprovalsInbox = lazyRetry(() => import('./components/workbench/ApprovalsInbox').then((m) => ({ default: m.ApprovalsInbox })));
 const ProjectSettingsPage = lazyRetry(() => import('./pages/ProjectSettingsPage').then((m) => ({ default: m.ProjectSettingsPage })));
 const ProjectPlansPage = lazyRetry(() => import('./pages/ProjectPlansPage').then((m) => ({ default: m.ProjectPlansPage })));
 const ArchivePage = lazyRetry(() => import('./pages/ArchivePage').then((m) => ({ default: m.ArchivePage })));
@@ -119,7 +119,7 @@ const router = createBrowserRouter([
       { path: 'permissions', element: <GlobalToolPageShell label="权限中心"><ModeGate><PermissionCenterPage /></ModeGate></GlobalToolPageShell> },
       { path: 'capabilities', element: <GlobalToolPageShell label="能力中心"><ModeGate><CapabilityCenterPage /></ModeGate></GlobalToolPageShell> },
       { path: 'marketplace', element: <GlobalToolPageShell label="能力市场"><ModeGate><MarketplacePage /></ModeGate></GlobalToolPageShell> },
-      { path: 'reviews', element: <GlobalToolPageShell label="业务评审"><ModeGate><BusinessReviewPage /></ModeGate></GlobalToolPageShell> },
+      { path: 'approvals', element: <GlobalToolPageShell label="审批" pane="inspector" fullHeight><ModeGate><ApprovalsInbox /></ModeGate></GlobalToolPageShell> },
       { path: '*', element: <NotFoundPage /> },
     ],
   },

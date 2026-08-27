@@ -1305,3 +1305,20 @@ p { margin: 0 0 var(--space-3) 0; }
   .inspector-tabs-bar{padding:5px 6px;gap:3px}
   .inspector-tab>.inspector-tab-label{max-width:96px;padding-left:6px}
 }
+
+/* ===== 工作胶囊（批次 H.2，2026-08-27 改锚中栏）=====
+   absolute 锚 .workbench-main（relative）：不再 fixed 悬浮视口；空闲不渲染（有事才出现）。
+   top 避开 header（按钮 28px+padding）；右栏开着时（.has-right）右偏移=右栏宽+14，
+   随 --work-right 拖拽实时跟随——胶囊始终贴中栏右上角，绝不盖到右栏内容上 */
+.workbench-main { position: relative; }
+.work-capsule {
+  position: absolute; top: 52px; right: 14px; z-index: 30;
+  display: inline-flex; align-items: center; gap: 6px;
+  max-width: min(40vw, 480px); padding: 5px 12px;
+  border: 1px solid var(--border); border-radius: 999px;
+  background: var(--bg-elev); color: var(--fg-muted);
+  font: inherit; font-size: 12px; cursor: pointer;
+  box-shadow: var(--shadow-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.workbench.has-right .work-capsule { right: calc(var(--work-right) + 14px); }
+.work-capsule-summary { overflow: hidden; text-overflow: ellipsis; }

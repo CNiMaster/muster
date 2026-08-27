@@ -72,6 +72,14 @@ describe('inspector-tabs 纯函数', () => {
     expect(rtLabel({ kind: 'tool', tool: 'merges' })).toBe('待合并成果');
   });
 
+  it('全局工具键：archive/side/approvals 三键可解析（2026-08-27 审批收件箱进右栏）', () => {
+    const entries = parseRtParam('g:archive|g:side|g:approvals');
+    expect(entries.map(rtId)).toEqual(['g:archive', 'g:side', 'g:approvals']);
+    expect(rtLabel(entries[2]!)).toBe('审批');
+    expect(parseRtParam('g:ghost')).toEqual([]); // 非法全局键丢弃
+    expect(serializeRt([{ kind: 'globalTool', key: 'approvals' }])).toBe('g:approvals');
+  });
+
   it('appendRt：追加去重并按上限截最旧（写入口共用）', () => {
     const full = Array.from({ length: RT_MAX_TABS }, (_, i) => ({ kind: 'doc' as const, path: `f${i}.md` }));
     const appended = appendRt(full, { kind: 'doc', path: 'new.md' });

@@ -43,18 +43,9 @@ export function WorkCapsule({ projectId, tasks, agents }: { projectId: string; t
       onClick={toggle}
       aria-expanded={panelOpen}
       title={panelOpen ? '收起工作现场面板' : '展开工作现场面板（计划 / 进程 / 执行者目录）'}
-      style={{
-        position: 'fixed', top: 56, right: 22, zIndex: 70,
-        display: 'inline-flex', alignItems: 'center', gap: 6,
-        maxWidth: '40vw', padding: '5px 12px',
-        border: '1px solid var(--border)', borderRadius: 999,
-        background: 'var(--bg-elev)', color: 'var(--fg-muted)',
-        font: 'inherit', fontSize: 12, cursor: 'pointer',
-        boxShadow: 'var(--shadow-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-      }}
     >
       <span aria-hidden="true">🛠</span>
-      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{summary}</span>
+      <span className="work-capsule-summary">{summary}</span>
       {(health?.failedCount ?? 0) > 0 && <span style={{ color: 'var(--danger, #c0392b)', flexShrink: 0 }}>· {health!.failedCount} 失败</span>}
       <span aria-hidden="true" style={{ flexShrink: 0 }}>{panelOpen ? '▾' : '▴'}</span>
     </button>

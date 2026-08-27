@@ -16,19 +16,26 @@ export function getWorkbenchCockpit(db: DB): CompanyCockpitDTO {
     JOIN company_employee ce ON ce.id=pa.employee_id
     WHERE pa.status='pending'
   `).get() as { count: number }).count;
+  // 业务审批（智能体产物确认）与命令审批同属"审批收件箱"，角标合并展示（2026-08-27）
+  const businessPending = (db.prepare(`
+    SELECT COUNT(*) AS count
+    FROM business_review
+    WHERE status='pending'
+  `).get() as { count: number }).count;
+  const approvalsTotal = pending + businessPending;
   // 组织 = f(活)：公司模板缺岗告警已随固定岗位模板移除，角色由任务穿戴人设动态生成。
   const roleGaps: CompanyCockpitDTO['roleGaps'] = [];
   const active = projects.filter((project) => project.state === 'active').length;
   const attention = projects.filter((project) => project.state === 'paused').length;
   const risks: CompanyCockpitDTO['risks'] = [];
   // 公司退役：公司页路由已下线，href 改指现存页面（/agents=人才管理、/=首页项目列表、/projects/new=建项目）。
-  if (pending > 0) risks.push({ kind: 'approval', label: `${pending} 项审批等待处理`, href: '/permissions' });
+  if (approvalsTotal > 0) risks.push({ kind: 'approval', label: `${approvalsTotal} 项审批等待处理`, href: '/approvals' });
   if (employees.blocked > 0) risks.push({ kind: 'executor', label: `${employees.blocked} 位员工尚不能运行`, href: '/agents' });
   if (attention > 0) risks.push({ kind: 'project', label: `${attention} 个项目需要处理`, href: '/' });
 
   let nextAction: CompanyCockpitDTO['nextAction'];
-  if (pending > 0) {
-    nextAction = { kind: 'handle-approval', label: `处理 ${pending} 项审批`, description: '审批中的工作单正在等待你的决定。', href: '/permissions' };
+  if (approvalsTotal > 0) {
+    nextAction = { kind: 'handle-approval', label: `处理 ${approvalsTotal} 项审批`, description: '审批中的工作单正在等待你的决定。', href: '/approvals' };
   } else if (employees.total === 0) {
     nextAction = { kind: 'recruit', label: '组建团队', description: '先招募负责人和执行岗位，才能开始分配工作。', href: '/agents' };
   } else if (employees.blocked > 0) {
@@ -48,7 +55,7 @@ export function getWorkbenchCockpit(db: DB): CompanyCockpitDTO {
     companyState: company.state,
     employees,
     projects: { total: projects.length, active, attention },
-    approvals: { pending },
+    approvals: { pending, businessPending },
     roleGaps,
     risks,
     nextAction,

@@ -235,7 +235,7 @@ export interface CompanyCockpitDTO {
   companyState: CompanyState;
   employees: { total: number; online: number; blocked: number };
   projects: { total: number; active: number; attention: number };
-  approvals: { pending: number };
+  approvals: { pending: number; businessPending: number };
   roleGaps: Array<{ role: string; reason: string }>;
   risks: Array<{ kind: string; label: string; href: string }>;
   nextAction: {
