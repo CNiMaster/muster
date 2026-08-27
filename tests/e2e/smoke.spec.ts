@@ -116,7 +116,8 @@ test('权限策略页明确展示策略与范围，审批入口指向右栏收�
 test('设置页窄屏不横向溢出', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/settings');
-  await expect(page.getByText(/常规执行环境/).first()).toBeVisible({ timeout: 8000 });
+  // 曾断言「常规执行环境」——该文案已随设置页重做改为「默认执行引擎」（stale 修复 2026-08-28）
+  await expect(page.getByText(/默认执行引擎/).first()).toBeVisible({ timeout: 8000 });
 
   const hasHorizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
   expect(hasHorizontalOverflow).toBe(false);

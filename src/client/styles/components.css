@@ -1584,3 +1584,16 @@
   border-radius: 6px; background: var(--bg-sunken); font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere;
 }
 .approval-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* ===== 设置页·管理中心入口卡（2026-08-28）===== */
+.settings-hub-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.settings-hub-card {
+  display: flex; flex-direction: column; gap: 4px; min-width: 0;
+  padding: 12px 14px; border: 1px solid var(--border-subtle); border-radius: 12px;
+  background: var(--bg-soft); text-decoration: none;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+.settings-hub-card:hover { background: var(--bg-elev); border-color: var(--border-strong); box-shadow: var(--shadow-1); }
+.settings-hub-icon { font-size: 18px; line-height: 1; }
+.settings-hub-title { font-size: 13px; font-weight: 650; color: var(--fg); }
+.settings-hub-desc { font-size: 12px; line-height: 1.6; color: var(--fg-muted); }

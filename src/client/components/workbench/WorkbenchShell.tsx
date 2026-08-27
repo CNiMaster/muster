@@ -1,8 +1,9 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import type React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { WorkbenchGuide } from './WorkbenchGuide';
-import { useUiMode } from '../../hooks/queries';
+import { useUiMode, useWorkbenchCockpit } from '../../hooks/queries';
+import { useInspectorTabsApi } from './useInspectorTabs';
 import { toast } from '../Button';
 import { DEFAULT_WORKBENCH_PREFERENCES, PANE_WIDTH_BOUNDS, WORKBENCH_DESKTOP_MIN, surfaceMinWidthFor, useWorkbenchPreferences } from './useWorkbenchPreferences';
 import { useWorkCentreCompact, markManualLeftClosed, clearManualLeftClosed } from './useWorkCentreCompact';
@@ -186,6 +187,29 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
   const surfaceRef = useRef<HTMLElement | null>(null);
   useWorkCentreCompact(surfaceRef, { setLeftOpen: rawPrefs.setLeftOpen, leftWidth: rawPrefs.leftWidth }, () => resizingRef.current);
 
+  // ── 顶栏审批铃铛（2026-08-28 三栏分工二轮）─────────────────────
+  // 「需要时显示」：有待办亮数字（命令+业务审批合计，cockpit 已聚合），无待办低调常驻。
+  // 点击：项目路由=开关右栏 g:approvals 签（关签语义不开栏）；全局壳路由=深链 /approvals。
+  const { data: cockpit } = useWorkbenchCockpit();
+  const approvalsPending = cockpit ? cockpit.approvals.pending + cockpit.approvals.businessPending : 0;
+  const shellNavigate = useNavigate();
+  const { projectId: shellRouteProjectId } = useParams();
+  const shellTabs = useInspectorTabsApi();
+  const approvalsActive = shellTabs.activeId === 'g:approvals';
+  const onBellClick = (): void => {
+    if (!shellRouteProjectId) {
+      shellNavigate('/approvals');
+      return;
+    }
+    // 已活动=点击即关签（栏保持）；否则开签且右栏关着时连栏一起拉（开不可见签=没开）
+    if (approvalsActive) {
+      shellTabs.closeTab('g:approvals');
+      return;
+    }
+    shellTabs.toggleGlobalTool('approvals');
+    if (!preferences.rightOpen) rawPrefs.toggleRight();
+  };
+
   const style = {
     '--work-left': `${preferences.leftWidth}px`,
     '--work-right': `${preferences.rightWidth}px`,
@@ -209,6 +233,15 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
         )}
         <div className="workbench-breadcrumb">{breadcrumb}</div>
         {primaryAction && <div className="workbench-primary-action">{primaryAction}</div>}
+        {/* 审批铃铛（2026-08-28）：数字=命令+业务待审批合计；项目路由开右栏签、全局路由深链 */}
+        <button
+          type="button"
+          className="workbench-icon-button"
+          title={approvalsPending > 0 ? `${approvalsPending} 项审批等待处理——点击处理` : '审批收件箱'}
+          aria-label="审批收件箱"
+          onClick={onBellClick}
+          style={approvalsPending > 0 ? { color: 'var(--danger, #c0392b)', borderColor: 'color-mix(in srgb, var(--danger, #c0392b) 45%, transparent)' } : undefined}
+        >🔔{approvalsPending > 0 && <i>{approvalsPending}</i>}</button>
         <button type="button" className="workbench-icon-button" title={ui.isSimple ? '当前是简单模式：专注任务对话。点击切换到专业模式。' : '当前是专业模式：全量功能。点击切换回简单模式。'} aria-label={ui.isSimple ? '切换到专业模式' : '切换到简单模式'} onClick={ui.toggle} disabled={ui.saving} style={{ fontSize: 12, width: 'auto', padding: '0 8px' }}>{ui.isSimple ? '简单' : '专业'}</button>
         <button type="button" className="workbench-icon-button inspector-toggle" title={preferences.rightOpen ? '收起右侧现场信息' : '展开右侧现场信息'} aria-label={preferences.rightOpen ? '收起现场信息' : '展开现场信息'} aria-expanded={preferences.rightOpen} aria-controls="work-inspector" onClick={preferences.toggleRight}><span className="pane-toggle-glyph is-right" aria-hidden="true" />{attentionCount > 0 && <i>{attentionCount}</i>}</button>
       </header>

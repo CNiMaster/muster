@@ -23,11 +23,10 @@ test('双模式：默认简单 → 专业页提示 → 切专业生效持久 →
   await page.getByRole('button', { name: '搜索或跳转' }).click();
   await expect(page.getByRole('link', { name: '自动化', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: '关闭搜索' }).click();
-  // 2026-08-24：存储管理收进「资产库」类目（默认收起）——先展开再断言
+  // 2026-08-28 左栏瘦身：存储管理/命令库收进设置「管理中心」、归档走 ⌘K/右栏签——左栏不再有这些项
   await page.getByRole('button', { name: /资产库/ }).click();
-  await expect(page.getByRole('link', { name: /存储管理$/ })).toHaveCount(1);
-  // 行尾锚定：避免「归档项目-xxx」这类项目名的子串误命中（全量序残留）
-  await expect(page.getByRole('link', { name: /归档$/ })).toHaveCount(1);
+  await expect(page.getByRole('link', { name: /存储管理$/ })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: /归档$/ })).toHaveCount(0);
 
   // 2) 专业页在简单模式下给提示页（不静默重定向），可一键切换
   await page.goto('/blueprints');

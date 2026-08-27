@@ -7,7 +7,7 @@ import { useHealthStatus, useSaveSystemSettings, useSystemSettings, useTestConne
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
 import { Input, Select } from '../components/Form';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { SettingsRow, SettingsSectionLabel, SettingsFold, Toggle } from '../components/SettingsRow';
 import { ToolRegistryPanel } from '../components/settings/ToolRegistryPanel';
 import { SkillLibraryPanel } from '../components/settings/SkillLibraryPanel';
@@ -15,7 +15,7 @@ import { CredentialStorePanel } from '../components/settings/CredentialStorePane
 import { BackupCenterPanel } from '../components/settings/BackupCenterPanel';
 import { SpecialistReviewPanel } from '../components/settings/SpecialistReviewPanel';
 
-type SettingsTab = 'general' | 'usage' | 'models' | 'swarm' | 'network' | 'appearance' | 'credentials' | 'tools' | 'backup' | 'specialists';
+type SettingsTab = 'general' | 'usage' | 'models' | 'swarm' | 'network' | 'appearance' | 'credentials' | 'tools' | 'backup' | 'specialists' | 'manage';
 
 /** 界面字体预设：value=CSS font-family；__custom__=用户自填。 */
 const FONT_PRESETS: Array<{ value: string; label: string }> = [
@@ -196,6 +196,10 @@ export function SettingsPage(): React.ReactElement {
           </button>
           <button type="button" className={`settings-nav-item ${activeTab === 'usage' ? 'is-active' : ''}`} onClick={() => setTab('usage')}>
             <span>📊 用量与花费</span>
+          </button>
+          {/* 管理中心（2026-08-28 三栏分工二轮）：配置台的家——原左栏治理组收纳于此 */}
+          <button type="button" className={`settings-nav-item ${activeTab === 'manage' ? 'is-active' : ''}`} onClick={() => setTab('manage')}>
+            <span>🗂️ 管理中心</span>
           </button>
           {advancedVisible && (
             <>
@@ -512,6 +516,46 @@ export function SettingsPage(): React.ReactElement {
           )}
 
           {activeTab === 'usage' && <UsageCard />}
+
+          {/* 管理中心（2026-08-28 三栏分工二轮）：配置台的固定家门——原左栏治理组收纳于此。
+              六卡=跳转链接（不搬组件），能力中心文案代管能力市场入口 */}
+          {activeTab === 'manage' && (
+            <Card title="管理中心">
+              <p className="muted" style={{ marginTop: 0 }}>系统的配置与治理入口。配置一次很少再动；日常操作在项目工作台完成。</p>
+              <div className="settings-hub-grid">
+                <Link className="settings-hub-card" to="/capabilities">
+                  <span className="settings-hub-icon">🧰</span>
+                  <span className="settings-hub-title">能力中心</span>
+                  <span className="settings-hub-desc">Skill / MCP / 工具的治理与启停；发现安装去「能力市场」（页内有入口）</span>
+                </Link>
+                <Link className="settings-hub-card" to="/executors">
+                  <span className="settings-hub-icon">🔌</span>
+                  <span className="settings-hub-title">执行器中心</span>
+                  <span className="settings-hub-desc">接入 CLI / API 执行器、配 Key、测连通</span>
+                </Link>
+                <Link className="settings-hub-card" to="/permissions">
+                  <span className="settings-hub-icon">🛡️</span>
+                  <span className="settings-hub-title">权限策略</span>
+                  <span className="settings-hub-desc">审批策略 × 允许范围；按工作台批量绑定（待审批在顶栏 🔔）</span>
+                </Link>
+                <Link className="settings-hub-card" to="/automations">
+                  <span className="settings-hub-icon">⚙️</span>
+                  <span className="settings-hub-title">自动化中心</span>
+                  <span className="settings-hub-desc">定时/循环自动触发的平台任务（与项目内工作分层）</span>
+                </Link>
+                <Link className="settings-hub-card" to="/storage">
+                  <span className="settings-hub-icon">💾</span>
+                  <span className="settings-hub-title">存储管理</span>
+                  <span className="settings-hub-desc">工作区/工作树的磁盘占用清理</span>
+                </Link>
+                <Link className="settings-hub-card" to="/commands">
+                  <span className="settings-hub-icon">⌘</span>
+                  <span className="settings-hub-title">命令库</span>
+                  <span className="settings-hub-desc">自定义斜杠命令——一次编写，输入框 /= 一键触发</span>
+                </Link>
+              </div>
+            </Card>
+          )}
 
           {activeTab === 'credentials' && (
             <CredentialStorePanel />

@@ -114,8 +114,17 @@ describe('SettingsPage 两层导航与常规项（批次 G.5/G.6）', () => {
     expect(within(nav).getByText('常用')).toBeInTheDocument();
     expect(within(nav).getByText('高级')).toBeInTheDocument();
     const labels = within(nav).getAllByRole('button').map((b) => b.textContent);
-    // 常用：常规、外观、备份；高级：模型、蜂群、网络、凭据、工具
-    expect(labels).toEqual(['⚙️ 基础与行为', '🎨 外观与消息流', '💾 数据库与备份', '📊 用量与花费', '🧠 模型与档位', '🐝 蜂群调度', '🌐 网络代理', '🔑 凭据金库', '🔧 工具与 MCP', '🧑‍🔬 专家盘点']);
+    // 常用：常规、外观、备份、用量、管理中心（2026-08-28）；高级：模型、蜂群、网络、凭据、工具
+    expect(labels).toEqual(['⚙️ 基础与行为', '🎨 外观与消息流', '💾 数据库与备份', '📊 用量与花费', '🗂️ 管理中心', '🧠 模型与档位', '🐝 蜂群调度', '🌐 网络代理', '🔑 凭据金库', '🔧 工具与 MCP', '🧑‍🔬 专家盘点']);
+  });
+
+  it('管理中心 Tab：六张配置台入口卡（2026-08-28 左栏治理组收纳于此）', () => {
+    renderPage('/settings?tab=manage');
+    for (const title of ['能力中心', '执行器中心', '权限策略', '自动化中心', '存储管理', '命令库']) {
+      expect(screen.getByText(title)).toBeInTheDocument();
+    }
+    expect(screen.getByText('能力中心').closest('a')).toHaveAttribute('href', '/capabilities');
+    expect(screen.getByText('存储管理').closest('a')).toHaveAttribute('href', '/storage');
   });
 
   it('常规 Tab 含防休眠三态下拉（G.5）', () => {

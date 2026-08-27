@@ -10,9 +10,10 @@ import { test, expect } from '@playwright/test';
 test('存储管理页可达：回收站空态与磁盘对账渲染', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('navigation', { name: '项目组织与联系人' })).toBeVisible({ timeout: 15000 });
-  // 2026-08-24：存储管理收进「资产库」类目（默认收起）——先展开再点
-  await page.getByRole('button', { name: /资产库/ }).click();
-  await page.getByRole('link', { name: '存储管理' }).click();
+  // 2026-08-28 左栏瘦身：存储管理入口在设置页「管理中心」——左栏底部设置 →管理中心 tab →入口卡
+  await page.getByRole('link', { name: '系统设置' }).click();
+  await page.getByRole('button', { name: '🗂️ 管理中心' }).click();
+  await page.getByRole('link', { name: /存储管理/ }).click();
   await expect(page).toHaveURL(/\/storage/);
   await expect(page.getByRole('heading', { name: '存储管理' })).toBeVisible();
   // 对账只读清单：工作区根 + 计数行
