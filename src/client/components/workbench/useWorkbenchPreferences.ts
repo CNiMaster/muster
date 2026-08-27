@@ -28,11 +28,17 @@ export function surfaceMinWidthFor(width: number): number {
   return 240;
 }
 
-/** 栏宽合法范围（拖拽 clamp 与读取校验共用一份口径）。2026-08-24 定案：左栏 240–720；右栏 240–960（承载工具页可拉更宽）。 */
+/** 栏宽合法范围（拖拽 clamp 与读取校验共用一份口径）。
+ * 宽度定版（2026-08-27 用户拍板）：基数=240 单倍；左栏上限 ×3=720；中栏与右栏同上限 ×4=960；
+ * 右栏默认开 360；中栏舒适线 360——低于它自动收左栏（中栏物理下限仍 240，自收让位后回归）。 */
 export const PANE_WIDTH_BOUNDS: Record<'left' | 'right', { min: number; max: number }> = {
   left: { min: 240, max: 720 },
   right: { min: 240, max: 960 },
 };
+/** 中栏宽度档（概念约束：页面内容自管 max-width，此档用于自适应阈值与文档口径）。 */
+export const SURFACE_WIDTH_BOUNDS = { min: 240, max: 960 } as const;
+/** 中栏自动收左栏触发线：surface < 360 → 收；回展条件 = 360 + 当前左宽 + 滞回。 */
+export const CENTER_COLLAPSE_AT = 360;
 
 export function clampPaneWidth(pane: 'left' | 'right', px: number): number {
   const { min, max } = PANE_WIDTH_BOUNDS[pane];

@@ -111,7 +111,8 @@ export function WorkbenchBottomStaffTabs({ projectId, selectedAgentId }: { proje
         if (!ag) {
           return (
             <button key={fr.role} type="button" className="workbench-tab-pill is-vacant" disabled title="该固定岗暂未上岗">
-              <span>{fr.icon} {fr.label}</span>
+              <span className="workbench-tab-icon">{fr.icon}</span>
+              <span className="workbench-tab-label">{fr.label}</span>
               <small style={{ fontSize: 11, opacity: 0.6 }}>未上岗</small>
             </button>
           );
@@ -127,8 +128,8 @@ export function WorkbenchBottomStaffTabs({ projectId, selectedAgentId }: { proje
             onClick={() => openAgent(ag.id)}
             title={`${ag.name}（${fr.label}）· 点击查看状态与对话`}
           >
-            <span>{fr.icon} {fr.label}</span>
-            {ag.name !== fr.label && <span style={{ fontSize: 11, opacity: isSelected ? 0.9 : 0.65 }}>· {ag.name}</span>}
+            <span className="workbench-tab-icon">{fr.icon}</span>
+            <span className="workbench-tab-label">{fr.label}{ag.name !== fr.label ? ` · ${ag.name}` : ''}</span>
             {staffSub(fr.role)}
             {isRunning ? (
               <span style={{ display: 'inline-flex', width: 6, height: 6, borderRadius: 999, background: 'var(--ok)' }} title="工作中" />
@@ -150,7 +151,8 @@ export function WorkbenchBottomStaffTabs({ projectId, selectedAgentId }: { proje
             onClick={() => openAgent(agent.id)}
             title={`${agent.name}（${agentRoleInfo(agent).label}）· 点击查看状态与对话`}
           >
-            <span>👤 {agent.name}</span>
+            <span className="workbench-tab-icon">👤</span>
+            <span className="workbench-tab-label">{agent.name}</span>
             {(() => {
               // 批次 L2：该员工在跑任务的上下文占比（取最高；≥85% 警示色——自动压缩阈值同口径，可 /compact 手动介入）
               const ratios = agentTasks.map((t) => ctxUsage[t.id]).filter((r): r is number => typeof r === 'number');

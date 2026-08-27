@@ -1116,10 +1116,12 @@ p { margin: 0 0 var(--space-3) 0; }
    本查询只做窄带整洁态——<560 直接呈现纯图标，避免半截省略号 */
 .mu-prompt-toolbar{container-type:inline-size}
 @container (max-width: 560px){
-  /* 4 pill 统一收成图标：模式/对话人与模型/思考等级都不占宽，点开菜单确认全文 */
+  /* 4 pill 统一收成图标：间距拉足、加号与发送钮独立可点（点开菜单确认全文） */
+  .mu-prompt-toolbar{gap:14px}
+  .mu-prompt-controls{gap:12px}
+  .mu-prompt-actions{gap:10px}
   .mu-prompt-toolbar .mu-pill-label{display:none}
-  .mu-prompt-toolbar .mu-pill-arrow{opacity:0.35}
-  .mu-prompt-toolbar .mu-composer-pill{padding:3px 5px}
+  .mu-prompt-toolbar .mu-composer-pill{padding:5px 8px}
 }
 
 /* 发送区（2026-08-24 定案）：底部一行对齐——方形小发送钮 + ⌄ 菜单；⇧↵ 换行提示悬浮在发送钮正上方（不占行高） */

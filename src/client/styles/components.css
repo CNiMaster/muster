@@ -1321,6 +1321,15 @@
     display: none;
   }
 }
+/* 窄中栏图标态（2026-08-27 用户定案）：固定岗只留头像图标——中栏可再收窄且信息完整（hover 有全名） */
+@container (max-width: 420px) {
+  .workbench-tab-label,
+  .workbench-tab-pill small,
+  .workbench-tab-pill > span:last-child[title] {
+    display: none;
+  }
+  .workbench-tab-pill { padding: 5px 8px; }
+}
 .workbench-tab-pill {
   display: inline-flex;
   align-items: center;

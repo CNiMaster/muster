@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { WorkbenchGuide } from './WorkbenchGuide';
 import { useUiMode } from '../../hooks/queries';
 import { toast } from '../Button';
-import { DEFAULT_WORKBENCH_PREFERENCES, PANE_WIDTH_BOUNDS, WORKBENCH_DESKTOP_MIN, rightPaneOverlayFor, surfaceMinWidthFor, useWorkbenchPreferences } from './useWorkbenchPreferences';
+import { DEFAULT_WORKBENCH_PREFERENCES, PANE_WIDTH_BOUNDS, WORKBENCH_DESKTOP_MIN, surfaceMinWidthFor, useWorkbenchPreferences } from './useWorkbenchPreferences';
 import { useWorkCentreCompact, markManualLeftClosed, clearManualLeftClosed } from './useWorkCentreCompact';
 // 2026-08-27 返工：compact hook 不能用 useWorkbenchUI（读不到自身 JSX 上的 Provider，恒 null）——动作直接传参
 
@@ -58,8 +58,9 @@ function WorkbenchResizer({ side, width, onResize, onActiveChange }: {
         event.preventDefault();
         event.currentTarget.focus();
         dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startWidth: width };
-        // 指针捕获保证移出手柄区域仍持续收到事件；不可用时退化为普通拖拽
-        event.currentTarget.setPointerCapture?.(event.pointerId);
+        // 指针捕获保证移出手柄区域仍持续收到事件；不可用时退化为普通拖拽。
+        // 返工修复：capture 失败曾抛错中断后续 onActiveChange → 拖拽挂起态失灵
+        try { event.currentTarget.setPointerCapture?.(event.pointerId); } catch { /* 合成事件等无活动指针场景 */ }
         onActiveChange(true);
       }}
       onPointerMove={(event) => {
@@ -123,7 +124,15 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
   const ui = useUiMode();
   const [commandOpen, setCommandOpen] = useState(false);
   const [commandQuery, setCommandQuery] = useState('');
-  const [resizingPane, setResizingPane] = useState<'left' | 'right' | null>(null);
+  const [resizingPane, setResizingPaneState] = useState<'left' | 'right' | null>(null);
+  // 拖拽期间挂起中栏自适应，且松手不补判定——拖栏=显式意图，不得牵动左栏弹回
+  // （2026-08-27 用户报障：左栏自动收起后拖右栏边界会"从左边改位置"，即松手 flush 所致）
+  // 自适应仅由窗口缩放驱动（RO 天然覆盖 surface 尺寸变化）。
+  const resizingRef = useRef(false);
+  const setResizingPane = (pane: 'left' | 'right' | null): void => {
+    resizingRef.current = pane !== null;
+    setResizingPaneState(pane);
+  };
   const commandOpenRef = useRef(false);
   commandOpenRef.current = commandOpen;
 
@@ -171,7 +180,7 @@ export function WorkbenchShell({ scopeKey, breadcrumb, navigationLabel, inspecto
   }, [preferences.toggleLeft, preferences.toggleRight, preferences.setRightOpen, preferences.closeDrawers, preferences.leftOpen, preferences.rightOpen]);
 
   const surfaceRef = useRef<HTMLElement | null>(null);
-  useWorkCentreCompact(surfaceRef, rawPrefs.setLeftOpen);
+  useWorkCentreCompact(surfaceRef, { setLeftOpen: rawPrefs.setLeftOpen, leftWidth: rawPrefs.leftWidth }, () => resizingRef.current);
 
   const style = {
     '--work-left': `${preferences.leftWidth}px`,
