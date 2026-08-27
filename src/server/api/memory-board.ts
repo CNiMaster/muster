@@ -15,6 +15,7 @@ import {
 } from '../domain/memory';
 import { syncAgentMemoryFiles } from '../domain/agent-home';
 import { getMemoryHealth, runMemoryHousekeeping } from '../domain/memory-housekeeping';
+import { exportProjectMemory, exportMemoryBundle, importMemoryBundle } from '../domain/memory-export';
 import { asyncHandler, param } from './middleware';
 import { AppError, ErrorCode } from '../../shared/errors';
 
@@ -30,6 +31,31 @@ memoryBoardRouter.get('/health', asyncHandler(async (_req, res) => {
 memoryBoardRouter.post('/housekeeping', asyncHandler(async (_req, res) => {
   const result = runMemoryHousekeeping(getDb(), { force: true });
   res.json({ ok: true, result, health: getMemoryHealth(getDb()) });
+}));
+
+/** 选择闭环 S5：按项目导出（Markdown/JSON 视图 + 迁移 bundle）。 */
+memoryBoardRouter.post('/export', asyncHandler(async (req, res) => {
+  const { projectId, kind, format } = z.object({
+    projectId: z.string().min(1),
+    kind: z.enum(['view', 'bundle']).default('view'),
+    format: z.enum(['markdown', 'json']).default('markdown'),
+  }).parse(req.body);
+  if (kind === 'bundle') {
+    const { filename, bundle, count } = exportMemoryBundle(getDb(), projectId);
+    res.json({ ok: true, filename, bundle, count });
+  } else {
+    const exported = exportProjectMemory(getDb(), projectId, format);
+    res.json({ ok: true, filename: exported.filename, content: exported.content, count: exported.count });
+  }
+}));
+
+memoryBoardRouter.post('/import-bundle', asyncHandler(async (req, res) => {
+  const { bundle, targetProjectId } = z.object({
+    bundle: z.unknown(),
+    targetProjectId: z.string().min(1),
+  }).parse(req.body);
+  const result = importMemoryBundle(getDb(), bundle, targetProjectId);
+  res.json({ ok: true, result });
 }));
 
 /** 注入策略说明（与 loadContextMemories 行为对齐）。 */

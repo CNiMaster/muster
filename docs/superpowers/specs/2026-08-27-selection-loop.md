@@ -126,3 +126,25 @@ CREATE TABLE preference_event (
 - "白日梦阶段维护工具库"被修正为拆两件事：结算（每次、趁热、便宜）vs 调研（低频、仅任务内）；并发现缓存经济学（免重建+缓存命中）只对 CLI 执行器成立。
 - "每任务后整理记忆"被否（O(N×T) 冗余）→ 三层节奏 + 摊销压实。
 - 后台联网调研、默认样张竞争被用户划为禁忌/越界 → 进不做清单。
+
+## 实施注记（2026-08-27 S1-S5 落定，与原设计的差异与确认）
+
+1. **S2 语义结算统一走 DB 重建，无需 CLI resume 特化**（原"执行器不对称"约束的绕开）：
+   实施时确认抱怨/纠偏信号的数据源是 `task_message` 对话记录（本就持久化于 DB），不是执行器会话——
+   从 DB 重建 + economy LLM 统一覆盖 CLI/API 全执行器（对称），且重建对象只是消息流（非全上下文），成本可控。
+   CLI resume 方案不再需要；原 spec"API 成功后消息即焚"的事实仍然正确，但不再构成约束。
+2. **S2 结算挂点收口**：settleTaskSafely 挂在 enqueueReflection 第一行（而非 engine 五个终态点各插）——
+   所有反思入队方（engine 五路径 + business-review 返工 + idle 补历史）自动覆盖结算，task_settlement 主键幂等。
+3. **S3 expand 态并入 confirm**：展开问=confirm 的多候选无默认徽章情形，UI 同一机制（questionOptions），
+   不单列状态——实现层 mode = none | silent | confirm 三态。
+4. **S3 偏好归属口径**：preference_event.profile_id = 执行员工档案（与记忆/reflection 同口径）；
+   静默注入仅记 inputProtocol.routeHint（零行为影响，供执行侧参考+审计），不硬改 resolvedSkillIds。
+5. **S4 压实第一版纯规则零 LLM**：强重复（同 fingerprint / 同内容）归并 + locked 永不 supersede 但参与判重
+   （锁定条目的指纹占位，同指纹的 active 重复条仍归并）+ 误报哨兵复位；LLM 语义合并复用既有
+   maybeConsolidatePreferences（reflection drain），不在内务模块重复。personal/craft 的语义级合并
+   仍走白日梦档（用户显式开启），内务默认开但只做 vacuum 性质的规则整理——两档分离的边界即在此。
+6. **S5 导入不自动建项目**：importMemoryBundle 必须显式 targetProjectId（导入方有自己的项目结构）；
+   走 createMemoryCandidate 真实管道（FTS/版本化自动），fingerprint 幂等去重，cap 500 条。
+7. **CLI 工具遥测的 capabilityId 口径**：CLI 原生工具（Bash/Read/Edit…）无 plugin 注册表可 resolve，
+   capabilityId=工具名（与 API 侧 resolvedTool?.source.pluginId ?? call.name 的兜底一致）；
+   skill 级采纳票（S2）与工具级成败票（S1）同表不同粒度，聚合消费时按需分组。
