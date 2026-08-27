@@ -1,7 +1,7 @@
 import type React from 'react';
 import { useUiMode } from '../../hooks/queries';
 import { useEffect, useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import type { Agent, Department, Project, Task } from '../../api/types';
 import type { ProjectTaskDTO } from '../../hooks/queries';
 import {
@@ -192,15 +192,20 @@ export function ProjectWorkNavigation({
     },
   });
   // 2026-08-27 P2：右栏类工具（tasks/merges/artifacts/knowledge）改为开关「工具标签」——
-  // 不再切路由，中栏任务对话保持；修饰键点击仍走原生 <a> 深链（新窗口场景）
+  // 不再切路由，中栏任务对话保持；修饰键点击仍走原生 <a> 深链（新窗口场景）。
+  // 复审修复：仅在项目路由上接管——全局壳路由（/archive 等，导航栏借 lastProjectId 渲染项目工具）
+  // 没挂标签宿主，接管等于开了个看不见的标签；此时回落原生深链，到达后由注册效应归一。
   const tabsApi = useInspectorTabsApi();
+  const { projectId: routeProjectId } = useParams();
+  const onProjectRoute = Boolean(routeProjectId);
   const toolTabActive = (tool: ProjectToolTabKey): boolean =>
-    tabsApi.entries.some((entry) => entry.kind === 'tool' && entry.tool === tool)
+    onProjectRoute
+    && tabsApi.entries.some((entry) => entry.kind === 'tool' && entry.tool === tool)
     && tabsApi.activeId === `tool:${tool}`;
   const inspectorToolLinkProps = (tool: ProjectToolTabKey, href: string): { to: string; onClick: (e: React.MouseEvent) => void } => ({
     to: href,
     onClick: (e) => {
-      if (e.metaKey || e.ctrlKey || e.shiftKey) return;
+      if (!onProjectRoute || e.metaKey || e.ctrlKey || e.shiftKey) return;
       e.preventDefault();
       tabsApi.toggleTool(tool);
     },

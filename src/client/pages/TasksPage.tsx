@@ -46,6 +46,16 @@ export function TasksPage(): React.ReactElement {
   const { data: agents = [] } = useAgents();
   const createTask = useCreateTask();
   const selectedAgentId = searchParams.get('agent') ?? '';
+  // 筛选只动 agent 一个键（2026-08-27 复审修复）：整串替换式 setSearchParams 会把
+  // 右栏标签参数（rt/rtA）连同 view/projectTask 一起抹掉——本页已可作为标签挂进右栏
+  const setAgentFilter = (agentId: string): void => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (agentId) next.set('agent', agentId);
+      else next.delete('agent');
+      return next;
+    });
+  };
   const [title, setTitle] = useState('');
   const [goal, setGoal] = useState('');
   const [background, setBackground] = useState('');
@@ -102,8 +112,8 @@ export function TasksPage(): React.ReactElement {
 
     <div className="tasks-filter-head">
       <div className="employee-filter-row" aria-label="按智能体筛选">
-        <button type="button" className={!selectedAgentId ? 'is-active' : ''} onClick={() => setSearchParams({})}>全部智能体</button>
-        {agents.map((agent) => <button type="button" key={agent.id} className={selectedAgentId === agent.id ? 'is-active' : ''} onClick={() => setSearchParams({ agent: agent.id })}>{agent.name}<span>{tasks.filter((task) => task.assigneeAgentId === agent.id && task.state !== 'completed' && task.state !== 'cancelled').length}</span></button>)}
+        <button type="button" className={!selectedAgentId ? 'is-active' : ''} onClick={() => setAgentFilter('')}>全部智能体</button>
+        {agents.map((agent) => <button type="button" key={agent.id} className={selectedAgentId === agent.id ? 'is-active' : ''} onClick={() => setAgentFilter(agent.id)}>{agent.name}<span>{tasks.filter((task) => task.assigneeAgentId === agent.id && task.state !== 'completed' && task.state !== 'cancelled').length}</span></button>)}
       </div>
       {/* 排序独立于筛选 chips 滚动区（2026-08-27）：窄栏里曾藏进横向滚动尾部不可发现 */}
       <label className="muted tasks-sort-control" style={{ fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 4 }}>

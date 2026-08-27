@@ -74,6 +74,13 @@ export function parseRtParam(raw: string | null | undefined): RtEntry[] {
   return entries;
 }
 
+/** 追加（去重后）并按上限截最旧——所有写入口共用，防 URL 中途超员。 */
+export function appendRt(entries: RtEntry[], entry: RtEntry): RtEntry[] {
+  const id = rtId(entry);
+  const next = [...entries.filter((e) => rtId(e) !== id), entry];
+  return next.length > RT_MAX_TABS ? next.slice(next.length - RT_MAX_TABS) : next;
+}
+
 export function serializeRt(entries: RtEntry[]): string {
   return entries.map((entry) => rtId(entry)).join('|');
 }

@@ -12,6 +12,7 @@ import {
   type ProjectToolTabKey,
   type RtEntry,
   activeAfterClose,
+  appendRt,
   normalizeRtActive,
   parseRtParam,
   rtId,
@@ -66,7 +67,7 @@ export function useInspectorTabsApi(): InspectorTabsApi {
       const current = parseRtParam(prev.get(RT_PARAM));
       const entry: RtEntry = { kind: 'doc', path };
       const id = rtId(entry);
-      next.set(RT_PARAM, serializeRt([...current.filter((e) => rtId(e) !== id), entry]));
+      next.set(RT_PARAM, serializeRt(appendRt(current, entry)));
       next.set(RT_ACTIVE_PARAM, id);
       next.delete('preview'); // 吸收旧单槽参数，防双源打架
       return next;
@@ -79,7 +80,7 @@ export function useInspectorTabsApi(): InspectorTabsApi {
       const current = parseRtParam(prev.get(RT_PARAM));
       const entry: RtEntry = { kind: 'plan', name: 'live' };
       const id = rtId(entry);
-      next.set(RT_PARAM, serializeRt([...current.filter((e) => rtId(e) !== id), entry]));
+      next.set(RT_PARAM, serializeRt(appendRt(current, entry)));
       next.set(RT_ACTIVE_PARAM, id);
       next.delete('panel');
       return next;
@@ -127,7 +128,7 @@ export function useInspectorTabsApi(): InspectorTabsApi {
       const current = parseRtParam(prev.get(RT_PARAM));
       const entry: RtEntry = { kind: 'tool', tool };
       const id = rtId(entry);
-      next.set(RT_PARAM, serializeRt([...current.filter((e) => rtId(e) !== id), entry]));
+      next.set(RT_PARAM, serializeRt(appendRt(current, entry)));
       next.set(RT_ACTIVE_PARAM, id);
       return next;
     });

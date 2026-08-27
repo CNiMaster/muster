@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   RT_MAX_TABS,
   activeAfterClose,
+  appendRt,
   normalizeRtActive,
   parseRtParam,
   rtId,
@@ -45,9 +46,10 @@ describe('inspector-tabs 纯函数', () => {
     expect(parseRtParam(serializeRt(entries))).toEqual(entries);
   });
 
-  it('活动指针归一化：指向不存在标签时回落现场(null)', () => {
+  it('活动指针归一化：ctx 哨兵直通；指向不存在标签时回落现场(null)', () => {
     const entries = parseRtParam('plan:live');
     expect(normalizeRtActive('plan:live', entries)).toBe('plan:live');
+    expect(normalizeRtActive('ctx', entries)).toBe('ctx');
     expect(normalizeRtActive('doc:ghost', entries)).toBeNull();
     expect(normalizeRtActive(null, entries)).toBeNull();
   });
@@ -68,5 +70,17 @@ describe('inspector-tabs 纯函数', () => {
     expect(rtLabel({ kind: 'doc', path: 'docs/深层/调研报告.md' })).toBe('调研报告.md');
     expect(rtLabel({ kind: 'plan', name: 'live' })).toBe('工作现场');
     expect(rtLabel({ kind: 'tool', tool: 'merges' })).toBe('待合并成果');
+  });
+
+  it('appendRt：追加去重并按上限截最旧（写入口共用）', () => {
+    const full = Array.from({ length: RT_MAX_TABS }, (_, i) => ({ kind: 'doc' as const, path: `f${i}.md` }));
+    const appended = appendRt(full, { kind: 'doc', path: 'new.md' });
+    expect(appended).toHaveLength(RT_MAX_TABS);
+    expect(appended[appended.length - 1]).toEqual({ kind: 'doc', path: 'new.md' });
+    expect(appended[0]).toEqual({ kind: 'doc', path: 'f1.md' }); // f0 被截
+    // 已存在的 id 追加 = 挪到末尾不增员
+    const moved = appendRt(full, { kind: 'doc', path: 'f0.md' });
+    expect(moved).toHaveLength(RT_MAX_TABS);
+    expect(moved[moved.length - 1]).toEqual({ kind: 'doc', path: 'f0.md' });
   });
 });
