@@ -34,3 +34,6 @@ Desktop.ini
 
 # 覆盖率
 coverage/
+
+# 浏览器验证工具产物（playwright-mcp 运行时快照与日志）
+.playwright-mcp/
