@@ -232,6 +232,9 @@ export class GeminiAdapter implements ExecutionAdapter {
         model,
         loopback: ctx.loopback,
         permissionGuard: ctx.permissionGuard,
+        // 复审 R3：/compact 宿主命令信号与 token 85% 治理此前漏接（Gemini 任务上是静默空操作）——与 openai-adapter 对齐
+        compactRequest: ctx.compactRequest,
+        contextWindowTokens: ctx.contextWindowTokens,
         usageTracking: { db: getDb(), taskId: ctx.task.id },
         traceTracking: { db: getDb(), taskId: ctx.task.id },
         progressTracking: { db: getDb(), taskId: ctx.task.id, runId: ctx.executionRunId, inputHash },

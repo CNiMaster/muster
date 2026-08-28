@@ -35,21 +35,25 @@ function saveGroupOpen(groupId: string, open: boolean): void {
   }
 }
 
-/** 右栏折叠分组：标题 + 计数徽章，展开状态按组持久化（计划活文档 S3 起工作现场面板同款复用）。 */
+/** 右栏折叠分组：标题 + 计数徽章，展开状态按组持久化（计划活文档 S3 起工作现场面板同款复用）。
+ * lazy=true 时收起不渲染 children——防 details 视觉隐藏但 hooks 照跑的请求风暴（复审 P3）。 */
 export function InspectorGroup({
   groupId,
   title,
   badge,
   defaultOpen,
+  lazy = false,
   children,
 }: {
   groupId: string;
   title: string;
   badge?: React.ReactNode;
   defaultOpen: boolean;
+  lazy?: boolean;
   children: React.ReactNode;
 }): React.ReactElement {
   const [open, setOpen] = useState(() => loadGroupOpen(groupId, defaultOpen));
+  const [everOpen, setEverOpen] = useState(() => loadGroupOpen(groupId, defaultOpen));
   return (
     <details
       className="inspector-collapse"
@@ -57,6 +61,7 @@ export function InspectorGroup({
       onToggle={(event) => {
         const next = event.currentTarget.open;
         setOpen(next);
+        if (next) setEverOpen(true);
         saveGroupOpen(groupId, next);
       }}
     >
@@ -64,7 +69,7 @@ export function InspectorGroup({
         <span>{title}</span>
         {badge}
       </summary>
-      <div>{children}</div>
+      <div>{(!lazy || open || everOpen) && children}</div>
     </details>
   );
 }

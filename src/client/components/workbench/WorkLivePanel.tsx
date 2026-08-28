@@ -8,7 +8,7 @@
  * ④ 智能体：谁在干什么汇总 + 执行者目录（派遣树/扁平双视角 + 纠错 + 二级看板）。
  * 聚焦：URL ?agent=（底部对话人 tabs 权威）联动 + 面板内聚焦 tab 条（全部/各执行者）。
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type React from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Badge } from '../Badge';
@@ -185,7 +185,6 @@ export function WorkLivePanel({ projectId, selectedProjectTaskId, onClose, width
   const tabs = useInspectorTabsApi();
   const [view, setView] = useState<'tree' | 'flat'>('tree');
   const [boardTaskId, setBoardTaskId] = useState<string | undefined>();
-  const [localFocus, setLocalFocus] = useState<string | null>(null);
   const [searchParams] = useSearchParams();
 
   const nodes = tree?.tasks ?? [];
@@ -193,9 +192,20 @@ export function WorkLivePanel({ projectId, selectedProjectTaskId, onClose, width
   const stopAll = useStopAllProjectTasks(projectId);
   const runningCount = nodes.filter((n) => n.state === 'running' || n.state === 'claimed').length;
 
-  // 计划活文档 S3 聚焦：URL ?agent=（底部对话人 tabs 权威）联动 + 面板内 tab 条（本地态优先）
+  // 计划活文档 S3 聚焦：URL ?agent=（底部对话人 tabs 权威）联动 + 面板内 tab 条。
+  // 复审 P4+R1：localFocus 三态——null=跟随 URL / 'all'=显式全部 / agentId=显式聚焦。
+  // （此前二态下「全部」按钮在 ?agent= 存在时点击后回落 urlAgent，是无法解除过滤的死按钮。）
+  // 对话人切换（URL 变化）时清空本地选择——面板重新跟随。
   const urlAgent = searchParams.get('agent');
-  const focusAgentId = localFocus ?? urlAgent;
+  const [localFocus, setLocalFocus] = useState<string | null>(null);
+  const prevUrlAgent = useRef<string | null>(urlAgent);
+  useEffect(() => {
+    if (prevUrlAgent.current !== urlAgent) {
+      prevUrlAgent.current = urlAgent;
+      setLocalFocus(null);
+    }
+  }, [urlAgent]);
+  const focusAgentId = localFocus === 'all' ? null : (localFocus ?? urlAgent);
   const filteredNodes = useMemo(
     () => (focusAgentId ? nodes.filter((n) => n.assignee?.id === focusAgentId) : nodes),
     [nodes, focusAgentId],
@@ -234,6 +244,12 @@ export function WorkLivePanel({ projectId, selectedProjectTaskId, onClose, width
   const planTaskId = focusActive[0]?.id
     ?? filteredNodes.find((n) => (n.todo?.total ?? 0) > 0)?.id
     ?? filteredNodes[0]?.id;
+  // 复审 P2：Git 分区只看活跃任务（已完结任务的变更属合并看板/画廊），cap 5 防 git 子进程风暴
+  const GIT_ROWS_CAP = 5;
+  const activeForGit = focusActive;
+  const gitRows = activeForGit.slice(0, GIT_ROWS_CAP);
+  // 复审 R2：TodoDetail 只挂活跃任务且 cap——老项目几百历史任务不可无界挂载发请求
+  const TODO_ROWS_CAP = 8;
 
   const close = (): void => {
     // 悬浮弹出层：回调关闭；右栏 plan 标签体：关标签（胶囊 2026-08-28 定案=原地弹出，不再拉右栏）
@@ -246,7 +262,7 @@ export function WorkLivePanel({ projectId, selectedProjectTaskId, onClose, width
       <span style={{ fontSize: 10, color: 'var(--fg-subtle)', flexShrink: 0 }}>聚焦</span>
       <button
         type="button"
-        onClick={() => setLocalFocus(null)}
+        onClick={() => setLocalFocus('all')}
         style={{ border: focusAgentId === null ? '1px solid var(--accent)' : '1px solid var(--border)', borderRadius: 999, background: 'none', cursor: 'pointer', fontSize: 10, padding: '0 8px', color: focusAgentId === null ? 'var(--accent)' : 'var(--fg-muted)', font: 'inherit' }}
       >
         全部
@@ -289,17 +305,21 @@ export function WorkLivePanel({ projectId, selectedProjectTaskId, onClose, width
         </div>
       ) : (
         <div style={{ padding: '4px 10px 8px', maxHeight: '52vh', overflow: 'auto' }}>
-          {/* ① Git 工具：聚焦范围轮末变更 + 待合并入口（详情沉右栏 merges 标签） */}
-          <InspectorGroup groupId="wlp-git" title="Git 工具" defaultOpen={false}>
-            {filteredNodes.map((n) => <GitChangeRow key={n.id} projectId={projectId} node={n} />)}
-            {filteredNodes.length === 0 && <p className="muted" style={{ fontSize: 11, margin: 0 }}>暂无执行中的任务变更</p>}
+          {/* ① Git 工具：聚焦范围活跃任务轮末变更 + 待合并入口（详情沉右栏 merges 标签）。
+              复审 P2：只列活跃任务且 cap 5——useRoundChanges 每个起 git 子进程，蜂群大时全量挂载=子进程风暴 */}
+          <InspectorGroup groupId="wlp-git" title="Git 工具" defaultOpen={false} lazy>
+            {gitRows.map((n) => <GitChangeRow key={n.id} projectId={projectId} node={n} />)}
+            {gitRows.length === 0 && <p className="muted" style={{ fontSize: 11, margin: 0 }}>暂无执行中的任务变更</p>}
+            {activeForGit.length > GIT_ROWS_CAP && (
+              <p className="muted" style={{ fontSize: 11, margin: '2px 0 0' }}>其余 {activeForGit.length - GIT_ROWS_CAP} 个执行中任务的变更见合并看板。</p>
+            )}
             <button type="button" onClick={() => tabs.toggleTool('merges')} style={{ border: 0, background: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 11, padding: '3px 0 0' }}>
               合并看板 ↗
             </button>
           </InspectorGroup>
 
           {/* ② 计划：plan 版本 + 任务计划文件（todo_write 双写的现场镜像） */}
-          <InspectorGroup groupId="wlp-plan" title="计划" badge={planVersions?.active ? <span style={{ fontSize: 10, color: 'var(--accent)' }}>v{planVersions.active.version}</span> : undefined} defaultOpen={false}>
+          <InspectorGroup groupId="wlp-plan" title="计划" badge={planVersions?.active ? <span style={{ fontSize: 10, color: 'var(--accent)' }}>v{planVersions.active.version}</span> : undefined} defaultOpen={false} lazy>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, fontSize: 11, padding: '2px 0' }}>
               {planVersions?.active
                 ? <span>激活计划 v{planVersions.active.version}{planVersions.active.planDocRef ? ' · 有文档' : ''}</span>
@@ -309,26 +329,34 @@ export function WorkLivePanel({ projectId, selectedProjectTaskId, onClose, width
             {planTaskId && <TaskPlanSection taskId={planTaskId} />}
           </InspectorGroup>
 
-          {/* ③ 进程：按执行者分组折叠组（组头 done/total），组内任务行 + todo 三态明细 */}
+          {/* ③ 进程：按执行者分组折叠组（组头 done/total），组内活跃任务 todo 三态明细（复审 R2：只看活跃且限量——历史任务清单无看板意义，防无界挂载） */}
           <InspectorGroup
             groupId="wlp-progress"
             title={`进程 ${progress.done}/${progress.total}`}
             defaultOpen
+            lazy
           >
             {agentGroups.map(([key, group]) => {
               const sum = group.nodes.reduce(
                 (acc, n) => ({ done: acc.done + (n.todo?.done ?? TODO_EMPTY.done), total: acc.total + (n.todo?.total ?? TODO_EMPTY.total) }),
                 { done: 0, total: 0 },
               );
+              const groupActive = group.nodes.filter((n) => ACTIVE_STATES.has(n.state));
+              const activeTodos = groupActive.slice(0, TODO_ROWS_CAP);
+              const hiddenTodos = groupActive.length - TODO_ROWS_CAP;
               return (
                 <InspectorGroup
                   key={key}
                   groupId={`wlp-exec-${key}`}
                   title={`${group.name}的执行清单 ${sum.done}/${sum.total}`}
                   defaultOpen={focusAgentId === key}
+                  lazy
                 >
                   {/* 进程组=纯清单视图（对齐参考图）；任务行/纠错/二级看板归智能体区执行者目录 */}
-                  {group.nodes.map((n) => <TodoDetail key={`todo_${n.id}`} taskId={n.id} />)}
+                  {activeTodos.map((n) => <TodoDetail key={`todo_${n.id}`} taskId={n.id} />)}
+                  {hiddenTodos > 0 && (
+                    <p className="muted" style={{ fontSize: 11, margin: 0 }}>其余 {hiddenTodos} 个并行任务的清单聚焦该执行者后可见。</p>
+                  )}
                   {group.nodes.length > 0 && sum.total === 0 && (
                     <p className="muted" style={{ fontSize: 11, margin: 0 }}>{group.name} 的任务尚无清单——执行中模型用 todo_write 列清单后，这里实时显示他的工作清单与进度。</p>
                   )}
@@ -343,6 +371,7 @@ export function WorkLivePanel({ projectId, selectedProjectTaskId, onClose, width
             groupId="wlp-agents"
             title={`智能体 ${runningCount > 0 ? `· ${runningCount} 进行中` : ''}`}
             defaultOpen={false}
+            lazy
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '4px 0' }}>
               <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--fg-subtle)' }}>执行者目录</span>
