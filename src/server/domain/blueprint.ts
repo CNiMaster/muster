@@ -194,23 +194,32 @@ export function matchBlueprints(db: DB, companyId?: string, taskTitle = '', limi
   const titleTokens = meaningfulTokens(taskTitle);
   if (titleTokens.length === 0) return [];
 
-  const scored: Array<{ row: BlueprintRow; score: number; bpTokens: string[] }> = [];
+  const scored: Array<{ row: BlueprintRow; score: number; bpTokens: string[]; focus: number }> = [];
   const rawTitle = taskTitle.trim();
   for (const row of rows) {
     const bpTokens = fromRow(db, row).taskType.split('|').filter(Boolean);
     let score = jaccard(titleTokens, bpTokens);
-    // 子串包含兜底：标题原文包含任一词元=强信号。长标题词元多会稀释 jaccard
+    // 子串包含兜底：标题原文包含词元=强信号。长标题词元多会稀释 jaccard
     // （「写一章小说」对词元「小说」jaccard 仅 0.167 漏配），取阈值上浮兜底不越位真实相似分。
-    if (score < BLUEPRINT_MATCH_THRESHOLD + 0.01 && bpTokens.some((t) => t.length >= 2 && rawTitle.includes(t))) {
-      score = BLUEPRINT_MATCH_THRESHOLD + 0.01;
+    let focus = 0;
+    if (score < BLUEPRINT_MATCH_THRESHOLD + 0.01) {
+      const matched = bpTokens.filter((t) => t.length >= 2 && rawTitle.includes(t)).length;
+      if (matched > 0) {
+        score = BLUEPRINT_MATCH_THRESHOLD + 0.01;
+        focus = matched / bpTokens.length;
+      }
     }
     if (score >= BLUEPRINT_MATCH_THRESHOLD) {
-      scored.push({ row, score, bpTokens });
+      scored.push({ row, score, bpTokens, focus });
     }
   }
 
   scored.sort((a, b) => {
     if (Math.abs(b.score - a.score) > 0.05) return b.score - a.score;
+    // 并列裁决（分差在容差内）：词元聚焦度高者优先——跨域标题同时蹭中两个域的泛词时
+    // （含「开发」也含「营销」），词元集更小、命中占比更高的蓝图胜出（3 词营销 1/3 > 4 词软件 1/4），
+    // 不靠插入顺序碰运气；无子串命中（纯 jaccard 并列）focus=0 落回胜率裁决。
+    if (Math.abs(b.focus - a.focus) > 0.001) return b.focus - a.focus;
     const totalA = a.row.wins + a.row.losses;
     const totalB = b.row.wins + b.row.losses;
     const rateA = totalA > 0 ? a.row.wins / totalA : 0;

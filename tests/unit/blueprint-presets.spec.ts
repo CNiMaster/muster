@@ -99,6 +99,15 @@ describe('预制蓝图匹配', () => {
     const vd = matchBlueprint(db, workbenchId, '剪辑一条产品介绍视频');
     expect(vd?.blueprint.label).toBe('视频制作');
   });
+
+  it('复审：跨域并列按词元聚焦度裁决——「开发一个新的营销渠道」选营销推广不选软件交付', () => {
+    const { workbenchId } = seed();
+    ensureBlueprintPresets(db);
+    // 标题同时蹭中软件交付（开发 1/4）与营销推广（营销 1/3）的泛词，floor 分数并列；
+    // 聚焦度（命中词元占蓝图词元集比例）更高的营销推广胜出，不靠插入顺序碰运气。
+    const match = matchBlueprint(db, workbenchId, '开发一个新的营销渠道');
+    expect(match?.blueprint.label).toBe('营销推广');
+  });
 });
 
 describe('预制蓝图进化与重置', () => {
