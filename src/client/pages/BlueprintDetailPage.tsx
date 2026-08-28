@@ -10,6 +10,7 @@ import {
   useBlueprintDetail,
   useBlueprintStatus,
   useRollbackBlueprint,
+  useResetBlueprint,
   useUpdateBlueprintDescription,
 } from '../hooks/queries';
 import { Badge } from '../components/Badge';
@@ -32,6 +33,7 @@ export function BlueprintDetailPage(): React.ReactElement {
   const { data: bp, isLoading } = useBlueprintDetail(blueprintId);
   const statusMutation = useBlueprintStatus();
   const rollbackMutation = useRollbackBlueprint();
+  const resetMutation = useResetBlueprint();
   const updateDescMutation = useUpdateBlueprintDescription();
 
   const [editingDesc, setEditingDesc] = useState(false);
@@ -211,6 +213,9 @@ export function BlueprintDetailPage(): React.ReactElement {
             <Badge tone={STATUS_META[bp.status]?.tone ?? 'neutral'}>
               {STATUS_META[bp.status]?.label ?? bp.status}
             </Badge>
+            {bp.source === 'preset' && (
+              <Badge tone="info" title="开箱即用的官方打法：原版存快照，进化发生在使用中，可随时重置">📦 预制</Badge>
+            )}
             <Badge tone="neutral">v{bp.versions.length || 1}</Badge>
           </div>
           <h1 style={{ margin: '4px 0 6px' }}>{bp.label}</h1>
@@ -244,6 +249,23 @@ export function BlueprintDetailPage(): React.ReactElement {
           ) : (
             <Button variant="ghost" size="sm" onClick={() => handleStatusChange('active')}>
               激活蓝图
+            </Button>
+          )}
+
+          {bp.source === 'preset' && bp.presetSnapshot && (
+            <Button
+              variant="ghost"
+              size="sm"
+              loading={resetMutation.isPending}
+              onClick={() => {
+                if (!window.confirm(`确认把「${bp.label}」重置为原版？打法恢复出厂、战绩清零；原版始终保留，可反复重置。`)) return;
+                resetMutation.mutate(bp.id, {
+                  onSuccess: () => toast('success', '已重置为原版（版本史留有记录）'),
+                  onError: (err) => toast('error', (err as Error).message),
+                });
+              }}
+            >
+              📦 重置为原版
             </Button>
           )}
         </div>

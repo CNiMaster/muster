@@ -15,6 +15,7 @@ import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
 import { getWorkbench, getWorkbenchOrNull, ensureWorkbench } from './workbench';
 import { ensureWorkspaceStaff } from './workspace-staff';
+import { ensureBlueprintPresets } from './blueprint-presets';
 import { getAgent } from './agent';
 import { ensureDefaultWorkspace, getActiveWorkspace } from './workspace';
 import { defaultWorkspaceRoot, infraDir, sanitizeSegment, uniqueProjectSegment } from './workspace-layout';
@@ -247,6 +248,7 @@ export function ensureDefaultProject(db: DB): { project: Project; created: boole
   });
   if (existing) return { project: existing, created: false };
   const staff = ensureWorkspaceStaff(db);
+  ensureBlueprintPresets(db);
   const project = createProject(db, {
     name: '默认项目',
     description: '工作台默认项目',
@@ -302,6 +304,7 @@ export function createQuickProject(db: DB, input: { name: string; description?: 
   const { workbench, created } = ensureWorkbench(db);
   // 组织 = f(活)：固定员工幂等确保（零组织决策，但对话可立即派发）
   const staff = ensureWorkspaceStaff(db);
+  ensureBlueprintPresets(db);
   return {
     project: createProject(db, { name: input.name, description: input.description, firstAgentId: staff.leadAgentId }),
     companyId: workbench.id,

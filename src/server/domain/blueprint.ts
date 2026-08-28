@@ -18,6 +18,16 @@ import { findUserTalentForPersona, type AgentProfile } from './agent-profile';
 import { getPersona } from './persona-library';
 
 export type BlueprintStatus = 'active' | 'locked' | 'retired';
+export type BlueprintSource = 'evolved' | 'preset';
+
+/** 预制蓝图的原版快照：进化/优化发生在行本身，原版存此可重置。 */
+export interface BlueprintPresetSnapshot {
+  taskType: string;
+  label: string;
+  description: string;
+  staffing: BlueprintStaffingSlot[];
+  stages: unknown[];
+}
 
 export interface BlueprintStaffingSlot {
   personaId: string;
@@ -54,6 +64,10 @@ export interface Blueprint {
   /** 阶段工作流（组合管线）。 */
   stages: unknown[];
   status: BlueprintStatus;
+  /** 来源：evolved=自动复盘进化；preset=预制播种（带原版快照可重置）。 */
+  source: BlueprintSource;
+  /** 仅 preset：播种时的原版定义（staffing/description/stages/taskType/label）。 */
+  presetSnapshot: BlueprintPresetSnapshot | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -84,6 +98,7 @@ interface BlueprintRow {
   staffing_json: string; tools_json: string; source_project_ids_json: string;
   wins: number; losses: number; rework_total: number; correction_total: number;
   stages_json: string | null; status: BlueprintStatus; created_at: string; updated_at: string;
+  source?: BlueprintSource; preset_snapshot_json?: string | null;
 }
 
 interface VersionRow {
@@ -106,6 +121,10 @@ function fromRow(_db: DB, row: BlueprintRow): Blueprint {
     correctionTotal: row.correction_total ?? 0,
     stages: row.stages_json ? JSON.parse(row.stages_json) as unknown[] : [],
     status: row.status,
+    source: row.source ?? 'evolved',
+    presetSnapshot: row.preset_snapshot_json
+      ? JSON.parse(row.preset_snapshot_json) as BlueprintPresetSnapshot
+      : null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -155,6 +174,8 @@ export function jaccard(a: string[], b: string[]): number {
 
 export const BLUEPRINT_MATCH_THRESHOLD = 0.2;
 export const BLUEPRINT_MERGE_THRESHOLD = 0.4;
+/** 预制蓝图合并临界推力下限：原始 jaccard 达此值+子串命中才推到合并线（防泛词吸入）。 */
+const PRESET_MERGE_NUDGE_FLOOR = 0.25;
 
 export interface BlueprintMatch {
   blueprint: Blueprint;
@@ -174,9 +195,15 @@ export function matchBlueprints(db: DB, companyId?: string, taskTitle = '', limi
   if (titleTokens.length === 0) return [];
 
   const scored: Array<{ row: BlueprintRow; score: number; bpTokens: string[] }> = [];
+  const rawTitle = taskTitle.trim();
   for (const row of rows) {
     const bpTokens = fromRow(db, row).taskType.split('|').filter(Boolean);
-    const score = jaccard(titleTokens, bpTokens);
+    let score = jaccard(titleTokens, bpTokens);
+    // 子串包含兜底：标题原文包含任一词元=强信号。长标题词元多会稀释 jaccard
+    // （「写一章小说」对词元「小说」jaccard 仅 0.167 漏配），取阈值上浮兜底不越位真实相似分。
+    if (score < BLUEPRINT_MATCH_THRESHOLD + 0.01 && bpTokens.some((t) => t.length >= 2 && rawTitle.includes(t))) {
+      score = BLUEPRINT_MATCH_THRESHOLD + 0.01;
+    }
     if (score >= BLUEPRINT_MATCH_THRESHOLD) {
       scored.push({ row, score, bpTokens });
     }
@@ -304,8 +331,22 @@ export function evolveBlueprint(db: DB, input: {
   ).all() as BlueprintRow[];
   let existing: BlueprintRow | undefined;
   let bestScore = 0;
+  const rawTitle = input.taskTitle.trim();
   for (const row of candidates) {
-    const score = jaccard(titleTokens, fromRow(db, row).taskType.split('|').filter(Boolean));
+    const bpTokens = fromRow(db, row).taskType.split('|').filter(Boolean);
+    let score = jaccard(titleTokens, bpTokens);
+    // 子串临界推一把（仅预制蓝图）：预制词元是精选高信号词、词元集小（2-4 词）对长标题
+    // jaccard 天然吃亏；且要求原始 jaccard ≥ 0.25（真有一半重叠只是被稀释）才推——
+    // 进化蓝图的 taskType 含别名扩展词集（research/情报/研报…），泛词子串命中过廉，
+    // 推了会把无关任务永久吸进簇，故进化蓝图保持纯 jaccard 语义不动。
+    if (
+      score < BLUEPRINT_MERGE_THRESHOLD + 0.01
+      && score >= PRESET_MERGE_NUDGE_FLOOR
+      && (row.source ?? 'evolved') === 'preset'
+      && bpTokens.some((t) => t.length >= 2 && rawTitle.includes(t))
+    ) {
+      score = BLUEPRINT_MERGE_THRESHOLD + 0.01;
+    }
     if (score >= BLUEPRINT_MERGE_THRESHOLD && score > bestScore) {
       existing = row;
       bestScore = score;
@@ -487,6 +528,33 @@ export function setBlueprintStatus(db: DB, id: string, status: BlueprintStatus):
 export function currentBlueprintVersion(db: DB, blueprintId: string): number {
   const row = db.prepare('SELECT MAX(version) AS v FROM blueprint_version WHERE blueprint_id=?').get(blueprintId) as { v: number | null };
   return row.v ?? 0;
+}
+
+/**
+ * 预制蓝图重置：从原版快照恢复打法（staffing/description/stages/taskType/label），
+ * 战绩（wins/losses/rework/correction）清零重新开始，版本链留「重置为原版」记录。
+ * 仅 source='preset' 可调（evolved 蓝图无原版概念，走版本回滚）。
+ */
+export function resetBlueprint(db: DB, id: string): Blueprint {
+  const current = getBlueprint(db, id);
+  if (current.source !== 'preset' || !current.presetSnapshot) {
+    throw new AppError(ErrorCode.VALIDATION, '仅预制蓝图支持重置为原版');
+  }
+  const snap = current.presetSnapshot;
+  const now = nowIso();
+  return db.transaction(() => {
+    db.prepare(
+      `UPDATE blueprint SET task_type=?, label=?, description=?, staffing_json=?, stages_json=?, tools_json='[]',
+         wins=0, losses=0, rework_total=0, correction_total=0, updated_at=? WHERE id=?`,
+    ).run(
+      snap.taskType, snap.label, snap.description,
+      JSON.stringify(snap.staffing),
+      snap.stages.length > 0 ? JSON.stringify(snap.stages) : null,
+      now, id,
+    );
+    commitBlueprintVersion(db, id, '重置为原版：恢复预制打法，战绩清零重新开始', ['preset_reset']);
+    return getBlueprint(db, id);
+  })();
 }
 
 export function updateBlueprintDescription(db: DB, id: string, description: string): Blueprint {

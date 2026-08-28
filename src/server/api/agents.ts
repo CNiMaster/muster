@@ -24,6 +24,7 @@ import { getAgentProfile } from '../domain/agent-profile';
 import { materializeAgentHome } from '../domain/agent-home';
 
 import { ensureWorkspaceStaff } from '../domain/workspace-staff';
+import { ensureBlueprintPresets } from '../domain/blueprint-presets';
 import { getWorkbenchOrNull } from '../domain/workbench';
 
 export const agentsRouter = Router({ mergeParams: true });
@@ -52,6 +53,7 @@ agentsRouter.get(
     const db = getDb();
     if (getWorkbenchOrNull(db)) {
       ensureWorkspaceStaff(db);
+      ensureBlueprintPresets(db);
     }
     // B5 中央岗口子：?visible_in=central 取六岗（hidden 不影响）——@ 下拉/群聊候选专用
     const visibleIn = typeof req.query.visible_in === 'string' && req.query.visible_in.trim() ? req.query.visible_in.trim() : undefined;

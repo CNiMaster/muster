@@ -1927,7 +1927,18 @@ export interface Blueprint {
   losses: number;
   reworkTotal: number;
   correctionTotal: number;
+  stages?: unknown[];
   status: 'active' | 'locked' | 'retired';
+  /** 来源：evolved=自动复盘进化；preset=预制播种（带原版快照可重置）。 */
+  source: 'evolved' | 'preset';
+  /** 仅 preset：播种时的原版定义（重置=恢复它+清战绩）。 */
+  presetSnapshot: {
+    taskType: string;
+    label: string;
+    description: string;
+    staffing: Array<{ personaId: string; personaName: string; role?: string }>;
+    stages: unknown[];
+  } | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -2002,6 +2013,19 @@ export function useRollbackBlueprint() {
       api.post<Blueprint>(`/api/blueprints/${blueprintId}/rollback`, { version }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['blueprints'] });
+      qc.invalidateQueries({ queryKey: ['blueprint-versions'] });
+    },
+  });
+}
+
+/** 预制蓝图重置为原版：恢复快照打法+清战绩（仅 source='preset'）。 */
+export function useResetBlueprint() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (blueprintId: string) => api.post<Blueprint>(`/api/blueprints/${blueprintId}/reset`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['blueprints'] });
+      qc.invalidateQueries({ queryKey: ['blueprint-detail'] });
       qc.invalidateQueries({ queryKey: ['blueprint-versions'] });
     },
   });

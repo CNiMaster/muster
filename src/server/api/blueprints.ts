@@ -3,6 +3,7 @@
  *
  * - GET    /api/blueprints                          蓝图库列表
  * - POST   /api/blueprints/:blueprintId/status      锁定/淘汰
+ * - POST   /api/blueprints/:blueprintId/reset       重置为原版（仅预制蓝图）
  * - GET    /api/blueprints/match-preview?title=     按任务标题预览将穿戴的蓝图
  * - GET    /api/blueprints/:blueprintId/versions    版本时间线
  * - POST   /api/blueprints/:blueprintId/rollback    回滚
@@ -19,6 +20,7 @@ import { getDb } from '../db/client';
 import {
   listBlueprints,
   setBlueprintStatus,
+  resetBlueprint,
   listBlueprintVersions,
   rollbackBlueprint,
   updateBlueprintDescription,
@@ -49,6 +51,14 @@ blueprintsRouter.post(
     assertBlueprintExists(param(req, 'blueprintId'));
     const { status } = z.object({ status: z.enum(['active', 'locked', 'retired']) }).parse(req.body);
     res.json(setBlueprintStatus(getDb(), param(req, 'blueprintId'), status));
+  }),
+);
+
+/** 预制蓝图重置：恢复原版打法+清战绩（仅 source='preset'，进化蓝图走版本回滚）。 */
+blueprintsRouter.post(
+  '/:blueprintId/reset',
+  asyncHandler(async (req, res) => {
+    res.json(resetBlueprint(getDb(), param(req, 'blueprintId')));
   }),
 );
 

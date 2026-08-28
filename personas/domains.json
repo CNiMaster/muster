@@ -271,5 +271,17 @@
       "social-viral-title-writer",
       "social-cover-designer"
     ]
+  },
+  "novel": {
+    "label": "长篇小说创作",
+    "count": 6,
+    "personas": [
+      "novel-chief-editor",
+      "novel-writer",
+      "novel-plot-architect",
+      "novel-character-designer",
+      "novel-worldbuilder",
+      "novel-continuity-reviewer"
+    ]
   }
 }

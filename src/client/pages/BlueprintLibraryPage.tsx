@@ -15,7 +15,7 @@ import { EmptyState } from '../components/EmptyState';
 import { CardSkeleton } from '../components/Skeleton';
 import {
   useBlueprints, useBlueprintStatus, useBlueprintVersions, useRollbackBlueprint,
-  useUpdateBlueprintDescription,
+  useUpdateBlueprintDescription, useResetBlueprint,
   type Blueprint,
 } from '../hooks/queries';
 
@@ -43,10 +43,24 @@ function scoreOf(bp: Blueprint): { score: number | null; parts: Array<{ label: s
   };
 }
 
+/** 预制蓝图是否已偏离原版：班底/描述/工具/战绩任一变化即算被调教过（重置可回原版）。 */
+function hasDiverged(bp: Blueprint): boolean {
+  const snap = bp.presetSnapshot;
+  if (!snap) return false;
+  const staffingSame = bp.staffing.length === snap.staffing.length
+    && bp.staffing.every((slot, i) => slot.personaId === snap.staffing[i]?.personaId);
+  return !staffingSame
+    || bp.description !== snap.description
+    || bp.tools.length > 0
+    || (bp.stages?.length ?? 0) > 0
+    || bp.wins + bp.losses > 0;
+}
+
 export function BlueprintLibraryPage(): React.ReactElement {
   const { data: blueprints = [], isLoading } = useBlueprints();
   const statusMutation = useBlueprintStatus();
   const rollback = useRollbackBlueprint();
+  const resetMutation = useResetBlueprint();
   const descriptionMutation = useUpdateBlueprintDescription();
   const [showRetired, setShowRetired] = useState(false);
   const [expandedVersions, setExpandedVersions] = useState<Set<string>>(new Set());
@@ -87,14 +101,22 @@ export function BlueprintLibraryPage(): React.ReactElement {
     });
   };
 
+  const resetPreset = (bp: Blueprint): void => {
+    if (!window.confirm(`确认把「${bp.label}」重置为原版？打法（班底/描述）恢复出厂，战绩清零重新开始；原版始终保留，可反复重置。`)) return;
+    resetMutation.mutate(bp.id, {
+      onSuccess: () => toast('success', '已重置为原版（版本史留有记录）'),
+      onError: (error) => toast('error', (error as Error).message),
+    });
+  };
+
   return (
     <div className="home">
       <header className="page-header">
         <div>
           <h1>蓝图库</h1>
           <p className="subtitle">
-            蓝图 = 打法包：什么类型的活 → 配什么人设班底 → 用什么工具 → 战绩如何。每次任务结束自动复盘进化；
-            新任务按蓝图自动派遣最合适的人设。你觉得好用的打法，锁定它就不会再被自动修改。
+            蓝图 = 打法包：什么类型的活 → 配什么人设班底 → 用什么工具 → 战绩如何。开箱自带 8 套预制打法（📦 预制，可重置回原版），
+            用起来之后自动复盘进化；新任务按蓝图自动派遣最合适的人设。你觉得好用的打法，锁定它就不会再被自动修改。
           </p>
         </div>
       </header>
@@ -124,6 +146,11 @@ export function BlueprintLibraryPage(): React.ReactElement {
                         {bp.label} ↗
                       </Link>
                       <Badge tone={meta.tone}>{meta.label}</Badge>
+                      {bp.source === 'preset' && (
+                        <Badge tone="info" title="开箱即用的官方打法：原版存快照，进化发生在使用中，可随时重置">
+                          📦 预制{hasDiverged(bp) ? ' · 已调教' : ''}
+                        </Badge>
+                      )}
                       {score === null
                         ? <span className="muted" style={{ fontSize: 12 }}>综合评分：观察中（样本 &lt;3）</span>
                         : <Badge tone={score >= 75 ? 'ok' : score >= 50 ? 'warn' : 'err'}>评分 {score}</Badge>}
@@ -207,6 +234,9 @@ export function BlueprintLibraryPage(): React.ReactElement {
 
                     {/* 治理 + 元信息 */}
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                      {bp.source === 'preset' && hasDiverged(bp) && (
+                        <Button size="sm" variant="ghost" onClick={() => resetPreset(bp)} loading={resetMutation.isPending}>重置为原版</Button>
+                      )}
                       {bp.status === 'active' && (
                         <>
                           <Button size="sm" onClick={() => setStatus(bp.id, 'locked')} loading={statusMutation.isPending}>锁定（冻结进化）</Button>
