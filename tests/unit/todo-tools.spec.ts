@@ -103,44 +103,79 @@ describe('handler 层', () => {
 });
 
 describe('计划活文档 S1：task_plan.md 现场镜像', () => {
+  /** 复审 P1：镜像白名单=只写 MUSTER_HOME/worktrees/ 之下的任务 worktree——测试目录须落在其内。 */
   function tmpWorktree(): string {
-    return fs.mkdtempSync(path.join(os.tmpdir(), 'muster-wt-'));
+    const home = process.env.MUSTER_HOME ?? `${process.env.HOME ?? '/tmp'}/.muster`;
+    const dir = path.join(home, 'worktrees', `wt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+    fs.mkdirSync(dir, { recursive: true });
+    return dir;
   }
 
-  it('mirrorTaskPlan：写入 workingDir/.muster/task_plan.md，含三态标记与进度', () => {
-    const wt = tmpWorktree();
-    const items = [
-      { content: '调研', status: 'done' as const },
-      { content: '写码', status: 'in_progress' as const },
-      { content: '测试', status: 'pending' as const },
-    ];
-    mirrorTaskPlan(wt, 'task-m', items);
-    const md = fs.readFileSync(path.join(wt, '.muster', 'task_plan.md'), 'utf8');
-    expect(md).toContain('# 任务计划');
-    expect(md).toContain('task-m');
-    expect(md).toContain('- [x] 调研');
-    expect(md).toContain('- [>] 写码');
-    expect(md).toContain('- [ ] 测试');
-    expect(md).toContain('1/3');
+  /** 独立临时目录（白名单外——模拟项目根/讨论目录，镜像必须拒绝写入）。 */
+  function tmpOutside(): string {
+    return fs.mkdtempSync(path.join(os.tmpdir(), 'muster-out-'));
+  }
+
+  function withHome<T>(fn: () => T): T {
+    const prev = process.env.MUSTER_HOME;
+    process.env.MUSTER_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'muster-mirror-'));
+    try {
+      return fn();
+    } finally {
+      if (prev === undefined) delete process.env.MUSTER_HOME;
+      else process.env.MUSTER_HOME = prev;
+    }
+  }
+
+  it('mirrorTaskPlan：写入 worktree/.muster/task_plan.md，含三态标记与进度', () => {
+    withHome(() => {
+      const wt = tmpWorktree();
+      const items = [
+        { content: '调研', status: 'done' as const },
+        { content: '写码', status: 'in_progress' as const },
+        { content: '测试', status: 'pending' as const },
+      ];
+      mirrorTaskPlan(wt, 'task-m', items);
+      const md = fs.readFileSync(path.join(wt, '.muster', 'task_plan.md'), 'utf8');
+      expect(md).toContain('# 任务计划');
+      expect(md).toContain('task-m');
+      expect(md).toContain('- [x] 调研');
+      expect(md).toContain('- [>] 写码');
+      expect(md).toContain('- [ ] 测试');
+      expect(md).toContain('1/3');
+    });
+  });
+
+  it('复审 P1 白名单：worktree 根之外的目录（项目根/讨论目录）绝不写入、不改 .gitignore', () => {
+    withHome(() => {
+      const outside = tmpOutside();
+      mirrorTaskPlan(outside, 'task-x', [{ content: 'a', status: 'pending' }]);
+      expect(fs.existsSync(path.join(outside, '.muster'))).toBe(false);
+      expect(fs.existsSync(path.join(outside, '.gitignore'))).toBe(false);
+    });
   });
 
   it('gitignore 防污染：首写追加 .muster/，二次写不重复', () => {
-    const wt = tmpWorktree();
-    mirrorTaskPlan(wt, 'task-g', [{ content: 'a', status: 'pending' }]);
-    mirrorTaskPlan(wt, 'task-g', [{ content: 'b', status: 'done' }]);
-    const gi = fs.readFileSync(path.join(wt, '.gitignore'), 'utf8');
-    expect(gi.split('\n').filter((l) => l.trim() === '.muster/').length).toBe(1);
+    withHome(() => {
+      const wt = tmpWorktree();
+      mirrorTaskPlan(wt, 'task-g', [{ content: 'a', status: 'pending' }]);
+      mirrorTaskPlan(wt, 'task-g', [{ content: 'b', status: 'done' }]);
+      const gi = fs.readFileSync(path.join(wt, '.gitignore'), 'utf8');
+      expect(gi.split('\n').filter((l) => l.trim() === '.muster/').length).toBe(1);
+    });
   });
 
   it('双写一致：writeTodoList 夹紧（cap 50）后镜像反映夹紧结果', () => {
-    const wt = tmpWorktree();
-    const many = Array.from({ length: 60 }, (_, i) => ({ content: `项${i}`, status: 'pending' as const }));
-    const saved = writeTodoList('task-cap', many);
-    mirrorTaskPlan(wt, 'task-cap', saved);
-    const md = fs.readFileSync(path.join(wt, '.muster', 'task_plan.md'), 'utf8');
-    expect(saved.length).toBe(50);
-    expect(md).toContain('0/50');
-    expect(md).not.toContain('项59');
+    withHome(() => {
+      const wt = tmpWorktree();
+      const many = Array.from({ length: 60 }, (_, i) => ({ content: `项${i}`, status: 'pending' as const }));
+      const saved = writeTodoList('task-cap', many, process.env.MUSTER_HOME!);
+      mirrorTaskPlan(wt, 'task-cap', saved);
+      const md = fs.readFileSync(path.join(wt, '.muster', 'task_plan.md'), 'utf8');
+      expect(saved.length).toBe(50);
+      expect(md).toContain('0/50');
+      expect(md).not.toContain('项59');
+    });
   });
 
   it('降级：workingDir 缺失/不存在时静默跳过不抛错', () => {
@@ -148,9 +183,11 @@ describe('计划活文档 S1：task_plan.md 现场镜像', () => {
     expect(() => mirrorTaskPlan('/nonexistent-wt-xyz', 'task-x', [{ content: 'a', status: 'pending' }])).not.toThrow();
   });
 
-  it('handler 集成：todo_write 后现场出现 task_plan.md', async () => {
-    process.env.MUSTER_HOME = tmpHome();
-    const wt = tmpWorktree();
+  it('handler 集成：todo_write 后现场出现 task_plan.md（worktree 白名单内）', async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'muster-hand-'));
+    process.env.MUSTER_HOME = home;
+    const wt = path.join(home, 'worktrees', 'wt-h');
+    fs.mkdirSync(wt, { recursive: true });
     try {
       const ctx = { ...makeCtx('task-h'), workingDir: wt } as ToolContext;
       await todoWriteHandler({ id: 't7', name: 'todo_write', args: { items: [{ content: '现场可见', status: 'in_progress' }] } }, ctx);

@@ -3,7 +3,7 @@ import type React from 'react';
 import { Link } from 'react-router-dom';
 import type { Agent, Task } from '../../api/types';
 import type { ProjectTaskDTO } from '../../hooks/queries';
-import { useArtifacts, useBlueprintMatches, useProjectSpecialists, useProjectTaskAction, useTaskSwarm,
+import { useArtifacts, useBlueprints, useProjectSpecialists, useProjectTaskAction, useTaskSwarm,
   useProjectHealth, useUiMode, usePanelPlugins, useSideMessages } from '../../hooks/queries';
 import type { CompanyCockpitDTO } from '../../../shared/types';
 import { Badge, StateBadge, taskStateTone } from '../Badge';
@@ -35,21 +35,25 @@ function saveGroupOpen(groupId: string, open: boolean): void {
   }
 }
 
-/** 右栏折叠分组：标题 + 计数徽章，展开状态按组持久化（计划活文档 S3 起工作现场面板同款复用）。 */
+/** 右栏折叠分组：标题 + 计数徽章，展开状态按组持久化（计划活文档 S3 起工作现场面板同款复用）。
+ * lazy=true 时收起不渲染 children——防 details 视觉隐藏但 hooks 照跑的请求风暴（复审 P3）。 */
 export function InspectorGroup({
   groupId,
   title,
   badge,
   defaultOpen,
+  lazy = false,
   children,
 }: {
   groupId: string;
   title: string;
   badge?: React.ReactNode;
   defaultOpen: boolean;
+  lazy?: boolean;
   children: React.ReactNode;
 }): React.ReactElement {
   const [open, setOpen] = useState(() => loadGroupOpen(groupId, defaultOpen));
+  const [everOpen, setEverOpen] = useState(() => loadGroupOpen(groupId, defaultOpen));
   return (
     <details
       className="inspector-collapse"
@@ -57,6 +61,7 @@ export function InspectorGroup({
       onToggle={(event) => {
         const next = event.currentTarget.open;
         setOpen(next);
+        if (next) setEverOpen(true);
         saveGroupOpen(groupId, next);
       }}
     >
@@ -64,7 +69,7 @@ export function InspectorGroup({
         <span>{title}</span>
         {badge}
       </summary>
-      <div>{children}</div>
+      <div>{(!lazy || open || everOpen) && children}</div>
     </details>
   );
 }
@@ -96,8 +101,12 @@ export function ProjectContextInspector({
   const { data: swarmView } = useTaskSwarm(activeTask?.id);
   // B5 右侧三卡（非人员源，中央岗隐形后"事"可见）：专家池/蜂群/验收进度
   const { data: specialists = [] } = useProjectSpecialists(projectId);
-  // 修复轮（批次 F.2）：任务 → 最优蓝图 top-N（命中时显示，无人设命中不显示）
-  const { data: blueprintMatches = [] } = useBlueprintMatches(selectedTask?.title);
+  // 修复轮（批次 F.2）：任务穿戴的蓝图——读运行时任务 inputProtocol 的实际穿戴记录（复审修正：
+  // 被动看板不做 AI 路由预览——每次选中任务打一次 8s economy LLM 既贵又慢；AI 预览只属于创建卡）。
+  const { data: blueprints = [] } = useBlueprints();
+  const wornProto = (matchedTask?.inputProtocol ?? {}) as Record<string, unknown>;
+  const wornBlueprintId = typeof wornProto.blueprintMatched === 'string' ? wornProto.blueprintMatched : null;
+  const wornBlueprint = wornBlueprintId ? blueprints.find((bp) => bp.id === wornBlueprintId) : undefined;
 
   const attentionTasks = tasks.filter((task) => ATTENTION_STATES.has(task.state));
   // 批次 H.3：健康聚合（失败任务与反复重试的卡点进关注区）
@@ -112,7 +121,7 @@ export function ProjectContextInspector({
   const criteria = matchedTask?.acceptanceCriteria ?? [];
   const criteriaMet = criteria.filter((c) => c.met === true).length;
   const criteriaUnmet = criteria.filter((c) => c.met === false).length;
-  const showBlueprintCard = !uiSimple && selectedTask !== undefined && blueprintMatches.length > 0;
+  const showBlueprintCard = !uiSimple && matchedTask !== undefined && !!wornBlueprint;
 
   // 产物组点击 = 开「文档标签」（2026-08-27 P2：单槽 ?preview= 退役）
   const tabApi = useInspectorTabsApi();
@@ -338,7 +347,7 @@ export function ProjectContextInspector({
           groupId="crew"
           title="班底与打法"
           defaultOpen={false}
-          badge={<Badge tone="neutral">{specialists.length + blueprintMatches.length}</Badge>}
+          badge={<Badge tone="neutral">{specialists.length + (showBlueprintCard ? 1 : 0)}</Badge>}
         >
           {/* B5 专家池卡（常驻非人员源）：项目常驻专家与使用次数——中央岗隐形后"事"可见 */}
           {specialists.length > 0 && (
@@ -360,37 +369,27 @@ export function ProjectContextInspector({
             </div>
           )}
 
-          {/* 修复轮（批次 F.2）：最优蓝图 top-N——按当前选中任务标题命中（简单模式收起） */}
-          {showBlueprintCard && (
+          {/* 穿戴蓝图（读运行时任务实际穿戴记录；未穿戴不显示；简单模式收起） */}
+          {showBlueprintCard && wornBlueprint && (
             <div style={{ padding: '10px', background: 'var(--bg-elev)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
               <div className="auxiliary-section-title" style={{ padding: 0, marginBottom: '6px' }}>
-                <span>🎭 已匹配最优蓝图 {blueprintMatches.length} 个</span>
+                <span>🎭 穿戴蓝图</span>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                {blueprintMatches.slice(0, 5).map((bp) => {
-                  const total = bp.wins + bp.losses;
-                  const winRate = total > 0 ? Math.round((bp.wins / total) * 100) : null;
-                  const crew = bp.staffing.map((s) => `${s.personaName || s.personaId}${s.role ? `（${s.role}）` : ''}`).slice(0, 4).join(' · ');
-                  return (
-                    <Link
-                      key={bp.id}
-                      to={`/blueprints/${bp.id}`}
-                      style={{
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px',
-                        padding: '4px 6px', borderRadius: 'var(--radius-sm)',
-                        background: 'var(--bg)', border: '1px solid var(--border-subtle)',
-                        fontSize: '12px', color: 'var(--fg)', textDecoration: 'none',
-                      }}
-                      title={crew || bp.description}
-                    >
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        🎭 {bp.label}
-                      </span>
-                      {winRate !== null && <Badge tone={winRate >= 60 ? 'ok' : 'neutral'}>{winRate}%</Badge>}
-                    </Link>
-                  );
-                })}
-              </div>
+              <Link
+                to={`/blueprints/${wornBlueprint.id}`}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px',
+                  padding: '4px 6px', borderRadius: 'var(--radius-sm)',
+                  background: 'var(--bg)', border: '1px solid var(--border-subtle)',
+                  fontSize: '12px', color: 'var(--fg)', textDecoration: 'none',
+                }}
+                title={typeof wornProto.blueprintRouteReason === 'string' ? wornProto.blueprintRouteReason : wornBlueprint.description}
+              >
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  🎭 {wornBlueprint.label}
+                </span>
+                <Badge tone="info">{wornProto.blueprintRoutedBy === 'ai' ? 'AI 路由' : '穿戴'}</Badge>
+              </Link>
             </div>
           )}
         </InspectorGroup>

@@ -145,16 +145,34 @@ describe('matchBlueprint 匹配', () => {
   });
 });
 
-describe('createTask 蓝图匹配钩子', () => {
-  it('无显式指定的任务自动穿戴蓝图首槽人设，匹配结果入 inputProtocol 审计', () => {
+describe('createTask 蓝图穿戴钩子（2026-08-28 定案：词法命中退役）', () => {
+  it('显式 blueprintId 穿戴首槽人设；无携带=无蓝图模式（unrouted 留痕，不再词法自动穿戴）', () => {
     const { c, lead, p } = seed();
-    evolveBlueprint(db, {
+    const bp = evolveBlueprint(db, {
       companyId: c.id, projectId: p.id, taskTitle: '优化落地页转化率',
       personaId: PERSONA_ID, personaName: '产品经理', win: true,
-    });
-    const task = createTask(db, { projectId: p.id, assigneeAgentId: lead.id, title: '优化落地页转化率' });
-    expect(task.personaId).toBe(PERSONA_ID);
-    expect(task.inputProtocol.blueprintMatched).toBeTruthy();
+    })!;
+    // 显式携带：穿戴 + 审计留痕
+    const explicit = createTask(db, { projectId: p.id, assigneeAgentId: lead.id, title: '换个说法的标题也会穿', blueprintId: bp.id });
+    expect(explicit.personaId).toBe(PERSONA_ID);
+    expect(explicit.inputProtocol.blueprintMatched).toBe(bp.id);
+    // 未携带：即使标题与蓝图完全同词也不穿——无蓝图模式是干净缺省
+    const unrouted = createTask(db, { projectId: p.id, assigneeAgentId: lead.id, title: '优化落地页转化率' });
+    expect(unrouted.personaId).toBeNull();
+    expect(unrouted.inputProtocol.staffingMode).toBe('unrouted');
+    expect(unrouted.inputProtocol.blueprintMatched).toBeUndefined();
+  });
+
+  it('显式携带不存在的 blueprintId 报 NOT_FOUND；非现役蓝图报 VALIDATION', () => {
+    const { lead, p, c } = seed();
+    expect(() => createTask(db, { projectId: p.id, assigneeAgentId: lead.id, title: 'x', blueprintId: 'bp_missing' })).toThrow();
+    const bp = evolveBlueprint(db, {
+      companyId: c.id, projectId: p.id, taskTitle: '某个独特活儿_unique',
+      personaId: PERSONA_ID, personaName: '产品经理', win: true,
+    })!;
+    setBlueprintStatus(db, bp.id, 'retired');
+    expect(() => createTask(db, { projectId: p.id, assigneeAgentId: lead.id, title: 'y', blueprintId: bp.id })).toThrow(/现役/);
+    void lead;
   });
 
   it('显式 personaId 不被蓝图覆盖', () => {

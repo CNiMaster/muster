@@ -7,15 +7,15 @@
  *
  * 存储：$MUSTER_HOME/todo/<taskId>.json（task 隔离；runToolLoop 的 usage/trace/progress
  * tracking 与 loopback 均携带 taskId，取首个可用来源）。无任务上下文（taskId 缺失）时
- * 返回提示而非报错。权限：无 permissionAction——写的是 MUSTER_HOME 自有草稿区，
- * 不经文件守卫；todo_write 时向执行现场（ctx.workingDir=任务 worktree）镜像一份人类可读的
- * .muster/task_plan.md（计划活文档 S1：压缩/清会话杀不死、随现场走；.gitignore 挡住不混入
- * checkpoint 提交），镜像失败绝不影响草稿纸主功能。
+ * 返回提示而非报错。权限：无 permissionAction——JSON 草稿区在 MUSTER_HOME 自有领地不经
+ * 文件守卫；S1 起附带向任务 worktree 镜像 .muster/task_plan.md（白名单只进 worktree，
+ * 见 mirrorTaskPlan），plan 只读模式下镜像亦只落在 worktree 内部（.gitignore 防混入提交）。
  */
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
 import * as path from 'node:path';
 import { realtime } from '../../realtime';
 import { getDb } from '../../db/client';
+import { worktreeRoot } from '../../worktree/manager';
 import type { ToolCall, ToolDefinition, ToolResult } from './file-tools';
 import type { ToolContext } from './registry';
 export interface TodoItem {
@@ -125,12 +125,19 @@ function ensureIgnored(workingDir: string): void {
 }
 
 /**
- * 计划活文档 S1：向执行现场镜像 task_plan.md（workingDir 即任务 worktree）。
- * 无 workingDir / 写失败一律静默跳过——镜像是对用户可见的增强，草稿纸本体在 MUSTER_HOME。
+ * 计划活文档 S1：向执行现场镜像 task_plan.md。
+ * 复审 P1 白名单：只写任务 worktree（worktreeRoot()=~/.muster/worktrees/ 之下，与 plan-file
+ * 端点同一来源）——讨论/直调/未来无 worktree 场景的 workingDir 可能是项目根或任意目录，
+ * 绝不能往用户项目里塞 .muster/ 或改 .gitignore。不在白名单内一律静默跳过（镜像失活，
+ * 草稿纸本体不受影响）。
  */
 export function mirrorTaskPlan(workingDir: string | null | undefined, taskId: string, items: TodoItem[]): void {
   if (!workingDir || !existsSync(workingDir)) return;
   try {
+    const root = worktreeRoot();
+    const dirAbs = realpathSync(workingDir);
+    const rootAbs = existsSync(root) ? realpathSync(root) : root;
+    if (dirAbs !== rootAbs && !dirAbs.startsWith(`${rootAbs}${path.sep}`)) return;
     const dir = path.join(workingDir, '.muster');
     mkdirSync(dir, { recursive: true });
     ensureIgnored(workingDir);

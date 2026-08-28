@@ -20,6 +20,9 @@ import {
   commitAll,
   currentHead,
   listTaskBranchChanges,
+  listTrunkUncommitted,
+  BASELINE_GITIGNORE,
+  CREDENTIAL_PATHSPECS,
 } from '../../src/server/worktree/manager';
 import { PublishQueue } from '../../src/server/worktree/publish-queue';
 
@@ -55,6 +58,46 @@ describe('git repo management', () => {
     ensureGitRepo(tmpRoot);
     ensureGitRepo(tmpRoot); // 幂等
     expect(currentHead(tmpRoot)).toMatch(/^[0-9a-f]+$/);
+  });
+
+  it('提交卫生（2026-08-28）：无 .gitignore 写基线；已有不覆盖；user-edits 提交硬排除凭据（文件原地保留）', () => {
+    ensureGitRepo(tmpRoot);
+    // 基线写入
+    expect(existsSync(path.join(tmpRoot, '.gitignore'))).toBe(true);
+    expect(readFileSync(path.join(tmpRoot, '.gitignore'), 'utf8')).toContain('.muster/');
+
+    // 已有 .gitignore 不覆盖
+    writeFileSync(path.join(tmpRoot, '.gitignore'), 'user-custom\n', 'utf8');
+    ensureGitRepo(tmpRoot);
+    expect(readFileSync(path.join(tmpRoot, '.gitignore'), 'utf8')).toBe('user-custom\n');
+    writeFileSync(path.join(tmpRoot, '.gitignore'), BASELINE_GITIGNORE, 'utf8'); // 还原基线继续
+
+    // user-edits 提交：正常文件进、.env/secrets 不进且原地保留
+    writeFileSync(path.join(tmpRoot, 'note.md'), '用户手改', 'utf8');
+    writeFileSync(path.join(tmpRoot, '.env.local'), 'TOP_SECRET=1', 'utf8');
+    mkdirSync(path.join(tmpRoot, 'secrets'), { recursive: true });
+    writeFileSync(path.join(tmpRoot, 'secrets', 'key.txt'), 'TOP_SECRET=2', 'utf8');
+    commitAll(tmpRoot, 'muster: user edits', { excludePaths: CREDENTIAL_PATHSPECS });
+    const tracked = spawnSync('git', ['ls-files'], { cwd: tmpRoot, encoding: 'utf8' }).stdout.split('\n');
+    expect(tracked).toContain('note.md');
+    expect(tracked).not.toContain('.env.local');
+    expect(tracked).not.toContain('secrets/key.txt');
+    // 排除文件原地保留（不删不丢）
+    expect(existsSync(path.join(tmpRoot, '.env.local'))).toBe(true);
+    expect(existsSync(path.join(tmpRoot, 'secrets', 'key.txt'))).toBe(true);
+    // 可见性扫描：.env 在基线 gitignore 内不出现；note.md 已提交也不再是未提交
+    const edits = listTrunkUncommitted(tmpRoot);
+    expect(edits).not.toContain('.env.local');
+    expect(edits).not.toContain('note.md');
+    // 复审修复：嵌套目录凭据同样硬排除（:(glob) 无 ** 前缀只匹配根目录）
+    mkdirSync(path.join(tmpRoot, 'sub'), { recursive: true });
+    writeFileSync(path.join(tmpRoot, 'sub', '.env'), 'NESTED=1', 'utf8');
+    writeFileSync(path.join(tmpRoot, 'sub', 'real.md'), '正常文件', 'utf8');
+    commitAll(tmpRoot, 'muster: user edits 2', { excludePaths: CREDENTIAL_PATHSPECS });
+    const tracked2 = spawnSync('git', ['ls-files'], { cwd: tmpRoot, encoding: 'utf8' }).stdout.split('\n');
+    expect(tracked2).toContain('sub/real.md');
+    expect(tracked2).not.toContain('sub/.env');
+    expect(existsSync(path.join(tmpRoot, 'sub', '.env'))).toBe(true);
   });
 });
 

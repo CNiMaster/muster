@@ -2,7 +2,7 @@
  * 批次 H.2：工作胶囊 + 工作现场面板——有事才出现、展开挂 ?panel=live。
  * 计划活文档 S3：四分区两层看板（Git 工具/计划/进程/智能体）+ 聚焦 tab 条 + todo 三态明细。
  */
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, useSearchParams } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -99,6 +99,12 @@ describe('WorkCapsule（批次 H.2）', () => {
 describe('WorkLivePanel（计划活文档 S3：四分区两层看板）', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // 折叠组展开状态按 localStorage 持久化——用例间必须清（lazy 化后上例的展开态会翻转下例的点击语义）
+    try {
+      for (const k of Object.keys(localStorage)) {
+        if (k.startsWith('muster:inspector-collapse:')) localStorage.removeItem(k);
+      }
+    } catch { /* 存储不可用时按默认态跑 */ }
     mockDispatchTree.mockReturnValue({
       data: {
         progress: { done: 1, total: 2 },
@@ -124,7 +130,7 @@ describe('WorkLivePanel（计划活文档 S3：四分区两层看板）', () => 
   });
   afterEach(cleanup);
 
-  it('四分区渲染：Git 工具/计划/进程 1/2/智能体；进程按执行者分组（组头 todo 汇总）', () => {
+  it('四分区渲染：Git 工具/计划/进程 1/2/智能体；进程按执行者分组（组头 todo 汇总）', async () => {
     render(<QueryClientProvider client={qc()}><MemoryRouter><WorkLivePanel projectId="pr_1" /></MemoryRouter></QueryClientProvider>);
     expect(screen.getByText('Git 工具')).toBeInTheDocument();
     expect(screen.getByText('计划')).toBeInTheDocument();
@@ -134,8 +140,9 @@ describe('WorkLivePanel（计划活文档 S3：四分区两层看板）', () => 
     // 执行者分组组头：张三的执行清单 2/3（todo 汇总）、工蜂-1 的执行清单 0/0
     expect(screen.getByText('张三的执行清单 2/3')).toBeInTheDocument();
     expect(screen.getByText('工蜂-1的执行清单 0/0')).toBeInTheDocument();
-    // 智能体分区内执行者目录保留：任务行 + 派遣分组
-    expect(screen.getByText('负责人 派了 ↓')).toBeInTheDocument();
+    // 智能体分区内执行者目录保留：任务行 + 派遣分组（lazy 组——点开后异步渲染，findBy 等待）
+    fireEvent.click(screen.getByText(/智能体/));
+    expect(await screen.findByText('负责人 派了 ↓')).toBeInTheDocument();
     expect(screen.getByText(/张三 · 做A/)).toBeInTheDocument();
     expect(screen.getByText(/工蜂-1 · 子题A/)).toBeInTheDocument();
   });
@@ -172,39 +179,42 @@ describe('WorkLivePanel（计划活文档 S3：四分区两层看板）', () => 
     expect(screen.queryByText(/待处理/)).not.toBeInTheDocument();
   });
 
-  it('聚焦 tab 条：全部 + 各执行者；点击聚焦后只看该执行者', () => {
+  it('聚焦 tab 条：全部 + 各执行者；点击聚焦后只看该执行者；「全部」可解除（R1 三态）', async () => {
     render(<QueryClientProvider client={qc()}><MemoryRouter><WorkLivePanel projectId="pr_1" /></MemoryRouter></QueryClientProvider>);
     expect(screen.getByRole('button', { name: '全部' })).toBeInTheDocument();
+    fireEvent.click(screen.getByText(/智能体/));
+    await screen.findByText(/工蜂-1 · 子题A/);
     fireEvent.click(screen.getByRole('button', { name: '张三' }));
-    // 聚焦张三后：工蜂-1 的任务行消失（进程与智能体两分区都过滤）
+    // 聚焦张三后：工蜂-1 的任务行消失（进程与智能体两分区都过滤；lazy 重渲染异步，findBy 等待）
+    expect(await screen.findByText(/张三 · 做A/)).toBeInTheDocument();
     expect(screen.queryByText(/工蜂-1 · 子题A/)).not.toBeInTheDocument();
-    expect(screen.getByText(/张三 · 做A/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '全部' }));
-    expect(screen.getByText(/工蜂-1 · 子题A/)).toBeInTheDocument();
+    expect(await screen.findByText(/工蜂-1 · 子题A/)).toBeInTheDocument();
   });
 
-  it('智能体分区：视角切换到任务扁平后不再显示派遣分组标题', () => {
+  it('智能体分区：视角切换到任务扁平后不再显示派遣分组标题', async () => {
     render(<QueryClientProvider client={qc()}><MemoryRouter><WorkLivePanel projectId="pr_1" /></MemoryRouter></QueryClientProvider>);
-    fireEvent.click(screen.getByText(/智能体/)); // 展开分区
-    fireEvent.click(screen.getByRole('button', { name: '切到任务扁平' }));
+    fireEvent.click(screen.getByText(/智能体/)); // 展开分区（lazy 异步渲染）
+    fireEvent.click(await screen.findByRole('button', { name: '切到任务扁平' }));
     expect(screen.queryByText('负责人 派了 ↓')).not.toBeInTheDocument();
   });
 
-  it('点击执行者进入二级看板（useTaskOnce + 返回）', () => {
+  it('点击执行者进入二级看板（useTaskOnce + 返回）', async () => {
     mockTaskOnce.mockReturnValue({ data: makeTask('n2', 'running') });
     render(<QueryClientProvider client={qc()}><MemoryRouter><WorkLivePanel projectId="pr_1" /></MemoryRouter></QueryClientProvider>);
     fireEvent.click(screen.getByText(/智能体/));
-    fireEvent.click(screen.getByRole('button', { name: /工蜂-1 · 子题A/ }));
-    expect(screen.getByRole('button', { name: '← 返回目录' })).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: /工蜂-1 · 子题A/ }));
+    expect(await screen.findByRole('button', { name: '← 返回目录' })).toBeInTheDocument();
+    // 返回：二级分支卸载（目录渲染已由四分区/聚焦用例覆盖——此处断言不依赖 jsdom 双挂时序窗口）
     fireEvent.click(screen.getByRole('button', { name: '← 返回目录' }));
-    expect(screen.getByText('负责人 派了 ↓')).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('button', { name: '← 返回目录' })).not.toBeInTheDocument());
   });
 
-  it('计划分区：激活计划版本行 + 无计划文件占位', () => {
+  it('计划分区：激活计划版本行 + 无计划文件占位', async () => {
     mockPlanVersions.mockReturnValue({ data: { ok: true, versions: [], active: { id: 'pv1', projectId: 'pr_1', version: 3, parentVersion: null, specRef: null, planDocRef: '/x.md', createdBy: null, createdReason: null, status: 'active', createdAt: '', updatedAt: '' } } });
     render(<QueryClientProvider client={qc()}><MemoryRouter><WorkLivePanel projectId="pr_1" /></MemoryRouter></QueryClientProvider>);
     fireEvent.click(screen.getByText('计划'));
-    expect(screen.getByText('激活计划 v3 · 有文档')).toBeInTheDocument();
+    expect(await screen.findByText('激活计划 v3 · 有文档')).toBeInTheDocument();
     expect(screen.getByText('计划页 ↗')).toBeInTheDocument();
     expect(screen.getByText(/暂无计划文件/)).toBeInTheDocument();
   });

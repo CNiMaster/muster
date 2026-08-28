@@ -3,6 +3,7 @@ import {AppError,ErrorCode} from '../../shared/errors';
 import {nowIso,shortId} from '../../shared/utils';
 import {log} from '../logger';
 import {getProject} from './project';
+import {getBlueprint} from './blueprint';
 import { emptyProjectLaunchBrief, type ProjectLaunchBrief, type ProjectLaunchDiscovery } from '../../shared/project-launch';
 import { readProjectLaunchSnapshot, type ProjectLaunchState } from './project-launch';
 
@@ -22,10 +23,16 @@ export function getProjectTask(db:DB,id:string):ProjectTask{const row=db.prepare
 export function getProjectTaskInProject(db:DB,id:string,projectId:string):ProjectTask{const task=getProjectTask(db,id);if(task.projectId!==projectId)throw new AppError(ErrorCode.VALIDATION,'项目任务不属于当前项目');return task;}
 /**
  * 载体绑定蓝图读取（2026-08-28 创建卡子类型点选）：launchBrief.blueprintId 非空 = 该载体
- * 已绑蓝图（消息派发与工作单派发都直通穿戴，跳过标题词元猜测）；载体不存在/未绑定返回 undefined。
+ * 已绑蓝图（消息派发与工作单派发都直通穿戴，跳过标题词元猜测）；仅现役（active）可绑——
+ * 蓝图被 retire/lock 后载体降级为无蓝图模式（后台 AI 路由接手），不让退役蓝图毒化载体内全部派发；
+ * 载体不存在/未绑定/非现役均返回 undefined。
  */
 export function carrierBoundBlueprintId(db:DB,projectTaskId:string):string|undefined{
-  try{return getProjectTask(db,projectTaskId).launchBrief.blueprintId||undefined;}catch{return undefined;}
+  try{
+    const id=getProjectTask(db,projectTaskId).launchBrief.blueprintId;
+    if(!id)return undefined;
+    return getBlueprint(db,id).status==='active'?id:undefined;
+  }catch{return undefined;}
 }
 export function listProjectTasks(db:DB,projectId:string,opts?:{includeArchived?:boolean}):ProjectTask[]{
   // R2b：默认排除已归档（工作台列表干净）；归档区与「显示已归档」传 includeArchived 取全量

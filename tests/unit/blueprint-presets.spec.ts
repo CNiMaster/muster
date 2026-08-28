@@ -177,7 +177,7 @@ describe('直接绑定（2026-08-28 创建卡子类型点选）', () => {
     }
   });
 
-  it('显式 blueprintId 直通穿戴：标题不沾词元也穿戴指定蓝图，meta 记 blueprintPinned', () => {
+  it('显式 blueprintId 直通穿戴：标题不沾词元也穿戴指定蓝图（词法命中已退役）', () => {
     const { projectId } = seed();
     ensureBlueprintPresets(db);
     const target = listBlueprints(db).find((bp) => bp.taskType === '插画|图标|IP形象')!;
@@ -186,21 +186,22 @@ describe('直接绑定（2026-08-28 创建卡子类型点选）', () => {
     expect(task.personaId).toBe(target.staffing[0]!.personaId);
     const proto = task.inputProtocol as Record<string, unknown>;
     expect(proto.blueprintMatched).toBe(target.id);
-    expect(proto.blueprintPinned).toBe(true);
   });
 
-  it('绑定蓝图退役时降级标题匹配：不阻塞建任务、不记 pinned', () => {
+  it('显式绑退役蓝图按词法退役定案抛错（不静默换蓝图）；载体侧 active 过滤降级不抛', () => {
     const { projectId } = seed();
     ensureBlueprintPresets(db);
     const video = listBlueprints(db).find((bp) => bp.taskType === '视频|剪辑|短片')!;
     setBlueprintStatus(db, video.id, 'retired');
-    // 显式绑退役蓝图 → 降级回词元路：软件标题命中软件交付
-    const task = createTask(db, { projectId, title: '修复登录页面的 bug', blueprintId: video.id });
-    const sw = listBlueprints(db).find((bp) => bp.label === '软件交付')!;
-    expect(task.personaId).toBe(sw.staffing[0]!.personaId);
-    const proto = task.inputProtocol as Record<string, unknown>;
-    expect(proto.blueprintMatched).toBe(sw.id);
-    expect(proto.blueprintPinned).toBeUndefined();
+    // 显式指定退役蓝图：创建即抛（用户显式选择要响亮失败，不静默换成别的蓝图）
+    expect(() => createTask(db, { projectId, title: '剪一条宣传片', blueprintId: video.id })).toThrow();
+    // 载体绑定侧：蓝图退役后载体降级无蓝图模式（undefined，后台 AI 路由接手），不毒化载体内派发
+    const carrier = createProjectTask(db, {
+      projectId,
+      title: '绑定过视频蓝图的载体',
+      launchBrief: projectLaunchBriefSchema.parse({ blueprintId: video.id }),
+    });
+    expect(carrierBoundBlueprintId(db, carrier.id)).toBeUndefined();
   });
 
   it('载体绑定读取：launchBrief.blueprintId 直读；未绑定/载体不存在返回 undefined', () => {

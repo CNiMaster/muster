@@ -1,7 +1,7 @@
 import type React from 'react';
 import { useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { useAgents, useCreateTask, useProject, useProjectTasks, useTasks } from '../hooks/queries';
+import { useAgents, useBlueprintMatches, useCreateTask, useProject, useProjectTasks, useTasks } from '../hooks/queries';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
 import { Badge, taskStateTone, stateLabel } from '../components/Badge';
@@ -68,6 +68,11 @@ export function TasksPage(): React.ReactElement {
   // 批次 G.4：列折叠与排序持久化（muster:*:vN 约定）；「显示全部」为会话态不持久化
   const [prefs, setPrefs] = useState<TasksPagePrefs>(loadPrefs);
   const [expanded, setExpanded] = useState<string[]>([]);
+  // AI 语义路由预览（2026-08-28 定案）：标题 ≥6 字即预览将穿戴的蓝图；命中时随工作单显式提交
+  // blueprintId（清除=不携带，走发布后的后台 AI 自动配/无蓝图模式）。
+  const blueprintRoute = useBlueprintMatches(title);
+  const [routeCleared, setRouteCleared] = useState(false);
+  const routedBlueprintId = !routeCleared ? blueprintRoute.data?.blueprint?.id : undefined;
   const visibleAgents = selectedAgentId ? agents.filter((agent) => agent.id === selectedAgentId) : agents;
   const canSubmit = Boolean(title.trim() && goal.trim() && background.trim() && references.trim() && acceptance.trim() && deliverables.trim() && projectTaskId);
 
@@ -97,11 +102,13 @@ export function TasksPage(): React.ReactElement {
       title: title.trim(),
       assigneeAgentId: assignee || undefined,
       priority: Number(priority),
+      blueprintId: routedBlueprintId,
       inputProtocol: buildTaskInputProtocol({ goal, background, references, acceptance, deliverables }),
     }, {
       onSuccess: () => {
         toast('success', assignee ? '智能体工作单已派发' : '工作单已发布到任务池，由负责人领取');
         setTitle(''); setGoal(''); setBackground(''); setReferences(''); setAcceptance(''); setDeliverables('');
+        setRouteCleared(false);
       },
       onError: (error) => toast('error', (error as Error).message),
     });
@@ -129,7 +136,7 @@ export function TasksPage(): React.ReactElement {
     <Card title="发布标准工作单" className="section compact-dispatch-card">
       <p className="muted">不必先与负责人对话。填写完整交接信息后，可直接指定智能体，或发布到任务池由负责人领取并继续派发。</p>
       <div className="task-dispatch-grid task-work-order-grid">
-        <Field label="任务标题" required><Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="一句话概括这项工作" /></Field>
+        <Field label="任务标题" required><Input value={title} onChange={(event) => { setTitle(event.target.value); setRouteCleared(false); }} placeholder="一句话概括这项工作" /></Field>
         <Field label="项目任务"><Select value={projectTaskId} onChange={(event) => setProjectTaskId(event.target.value)}><option value="">选择上下文</option>{projectTasks.filter((item) => item.state === 'active').map((item) => <option key={item.id} value={item.id}>#{item.seq} {item.title}</option>)}</Select></Field>
         <Field label="领取方式"><Select value={assignee} onChange={(event) => setAssignee(event.target.value)}><option value="">任务池 · 负责人领取后分配</option>{agents.map((agent) => <option key={agent.id} value={agent.id}>直接派给 · {agent.name}</option>)}</Select></Field>
         <Field label="优先级"><Select value={priority} onChange={(event) => setPriority(event.target.value)}>{[1, 3, 5, 7, 9].map((value) => <option key={value} value={value}>P{value}</option>)}</Select></Field>
@@ -138,6 +145,15 @@ export function TasksPage(): React.ReactElement {
         <Field label="参考资料（每行一项）" required><Textarea value={references} onChange={(event) => setReferences(event.target.value)} placeholder={'PRD、文件路径、链接或对话记录\n没有资料时填写“无”'} /></Field>
         <Field label="验收标准" required><Textarea value={acceptance} onChange={(event) => setAcceptance(event.target.value)} placeholder="哪些可检查的条件全部满足才算完成？" /></Field>
         <Field label="预期交付物" required><Textarea value={deliverables} onChange={(event) => setDeliverables(event.target.value)} placeholder="智能体应提交哪些文件、结论、测试或说明？" /></Field>
+        {title.trim().length >= 6 && blueprintRoute.data && (
+          <p className="muted" style={{ margin: 0, fontSize: 12, lineHeight: 1.6 }}>
+            {blueprintRoute.data.blueprint && routedBlueprintId
+              ? <>将穿戴 🎭 {blueprintRoute.data.blueprint.label}（主槽 {blueprintRoute.data.blueprint.mainPersonaName}，AI：{blueprintRoute.data.reason}）<button type="button" style={{ border: 0, background: 'none', color: 'var(--accent)', fontSize: 12, cursor: 'pointer', marginLeft: 6 }} onClick={() => setRouteCleared(true)}>不穿戴</button></>
+              : blueprintRoute.data.blueprint && routeCleared
+                ? <>已选择不穿戴（无蓝图模式）——<button type="button" style={{ border: 0, background: 'none', color: 'var(--accent)', fontSize: 12, cursor: 'pointer' }} onClick={() => setRouteCleared(false)}>恢复穿戴</button></>
+                : <>无蓝图模式（AI：{blueprintRoute.data.reason}）</>}
+          </p>
+        )}
         <Button onClick={submit} disabled={!canSubmit} loading={createTask.isPending}>{assignee ? '直接派发' : '发布到任务池'}</Button>
       </div>
     </Card>

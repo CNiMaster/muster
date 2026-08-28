@@ -7,7 +7,7 @@
  - worktree 路径：~/.muster/worktrees/<taskId>
  */
 import { execSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, rmSync, realpathSync, symlinkSync, lstatSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, realpathSync, symlinkSync, lstatSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { DB } from '../db/client';
 import { SERVER_CONFIG } from '../env';
@@ -36,11 +36,48 @@ function git(rootDir: string, args: string[], opts: { allowFail?: boolean } = {}
 }
 
 /** 确保项目根是 git 仓库；新项目自动 init + 写软件目录 marker（孤儿对账依据，幂等）。 */
+/** 凭据类硬排除 pathspec（promote 主干 user-edits 提交）：密钥永不进 git 历史。
+ * 双星前缀=任意深度（:(glob) 下无前缀只匹配根目录——子目录 .env 会漏防）。 */
+export const CREDENTIAL_PATHSPECS = [
+  ':(glob)**/.env', ':(glob)**/.env.*', ':(glob)**/*.pem', ':(glob)**/*.key', ':(glob)**/secrets/**',
+];
+
+/** 主干未提交改动扫描（待合并卡可见性）：只列会被 `git add -A` 捡走的文件（已忽略的不列）。 */
+export function listTrunkUncommitted(rootDir: string): string[] {
+  return git(rootDir, ['status', '--porcelain', '-unormal']).stdout
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length > 2)
+    .map((l) => l.slice(3).trim())
+    .filter(Boolean);
+}
+
+/** muster 基线 .gitignore（2026-08-28 提交卫生）：项目无 .gitignore 时写入——防 promote 时
+ * `git add -A` 把 OS 垃圾/日志/依赖/凭据扫进 git 历史。已有文件绝不覆盖（用户自主）。 */
+export const BASELINE_GITIGNORE = [
+  '# muster 基线（首次初始化写入；可自由修改）',
+  '.muster/',
+  '.DS_Store',
+  'Thumbs.db',
+  'Desktop.ini',
+  '*.log',
+  'node_modules/',
+  '.env',
+  '.env.*',
+  '*.pem',
+  '*.key',
+  'secrets/',
+  '',
+].join('\n');
+
 export function ensureGitRepo(rootDir: string): void {
   if (!existsSync(rootDir)) {
     mkdirSync(rootDir, { recursive: true });
   }
   writeDirMarker(rootDir, { kind: 'project' });
+  if (!existsSync(path.join(rootDir, '.gitignore'))) {
+    writeFileSync(path.join(rootDir, '.gitignore'), BASELINE_GITIGNORE, 'utf8');
+  }
   if (!existsSync(path.join(rootDir, '.git'))) {
     log.info('initializing git repo', { rootDir });
     git(rootDir, ['init', '-q']);
@@ -519,7 +556,9 @@ export function promoteTaskStagingMerge(
   git(rootDir, ['merge', '--abort'], { allowFail: true });
   const staging = ensureTaskStagingWorktree(rootDir, projectId, projectTaskId);
   commitAll(staging.path, 'muster: task staging pre-promote');
-  commitAll(rootDir, 'muster: user edits');
+  // 提交卫生（2026-08-28 定案）：用户手改单独成提交，但凭据类文件硬排除（暂存区 reset、
+  // 文件原地保留）——即使 .gitignore 被删也不让密钥进历史；单提交不拆分，其余改动全部留痕。
+  commitAll(rootDir, 'muster: user edits', { excludePaths: CREDENTIAL_PATHSPECS });
   const args = ['merge', '--no-edit'];
   if (options.strategy) args.push(`-X`, options.strategy);
   args.push(staging.branch);
