@@ -115,6 +115,13 @@ export function createWorktree(rootDir: string, projectId: string, taskId: strin
 }
 
 export function removeWorktree(rootDir: string, info: WorktreeInfo, options: { keepBranch?: boolean } = {}): void {
+  // 共享环境软链先摘（2026-08-28 防线纵深）：git worktree remove 自身是 lstat 语义不跟链，
+  // 但 Windows junction/异常实现下多一手显式 unlink 只删链接条目不碰目标，代价为零；
+  // 仅当 node_modules 确为软链时动作（真实目录=用户自己的依赖，交 git remove 原行为）。
+  try {
+    const envLink = path.join(info.path, 'node_modules');
+    if (lstatSync(envLink).isSymbolicLink()) rmSync(envLink, { force: true });
+  } catch { /* 无 node_modules/不可读——git remove 自会处理 */ }
   git(rootDir, ['worktree', 'remove', '--force', info.path], { allowFail: true });
   // keepBranch：分支上还有未随发布落盘的改动，删 worktree 但留分支（git 层可找回）
   if (options.keepBranch) return;

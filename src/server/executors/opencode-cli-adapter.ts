@@ -109,6 +109,14 @@ export const OPENCODE_DENY_PATTERNS: readonly string[] = [
   'Bash(printf *|bash*)',
   'Bash(curl * -o *&& sh *)',
   'Bash(curl * -o *&& bash *)',
+  // —— 软链穿链删除（与 classifyCommand delete-outside-project 对齐；此处只能镜像
+  //    上下文无关的两条 always-on 模式——node_modules 软链探测类须运行时 cwd，静态 deny 会误伤普通仓库）——
+  'Bash(find -L *-delete*)',
+  'Bash(find -L *-exec rm*)',
+  'Bash(find --follow *-delete*)',
+  'Bash(find --follow *-exec rm*)',
+  'Bash(rm *$(realpath*)',
+  'Bash(rm *$(readlink -f*)',
   // —— 代码注入/嵌套 shell ——
   'Bash(eval *)',
   'Bash(source /*)',

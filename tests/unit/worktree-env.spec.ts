@@ -11,7 +11,7 @@ import { mkdtempSync, writeFileSync, rmSync, existsSync, mkdirSync, lstatSync, r
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
-  ensureGitRepo, createWorktree, linkWorktreeEnv,
+  ensureGitRepo, createWorktree, linkWorktreeEnv, removeWorktree,
   listTaskBranchChanges, listTaskBranchChangeStatus, commitAll,
 } from '../../src/server/worktree/manager';
 
@@ -119,5 +119,29 @@ describe('worktree 共享环境：commitAll 发布防线', () => {
     const shaReal = commitAll(wtReal.path, 'feat: 自带依赖');
     const committedReal = git(wtReal.path, ['show', '--name-only', '--pretty=format:', shaReal]).split('\n').filter(Boolean);
     expect(committedReal.some((p) => p.startsWith('node_modules'))).toBe(true);
+  });
+});
+
+describe('worktree 共享环境：removeWorktree 摘链防线', () => {
+  it('删除前先摘软链：主仓 node_modules 分毫不动，worktree 目录移除', () => {
+    seedRepo();
+    const wt = createWorktree(root, 'prj_env', 'task_rm_link');
+    expect(linkWorktreeEnv(root, wt.path)).toBe(true);
+    writeFileSync(path.join(wt.path, 'draft.txt'), '草稿');
+    removeWorktree(root, wt);
+    // 主仓依赖完好（防线目标）；worktree 目录已随 git remove 消失
+    expect(readFileSync(path.join(root, 'node_modules', 'pkg.json'), 'utf8')).toContain('fixture');
+    expect(existsSync(wt.path)).toBe(false);
+    expect(lstatSync(path.join(root, 'node_modules')).isSymbolicLink()).toBe(false);
+  });
+
+  it('真实 node_modules 目录走原行为（不预摘），删除照常完成', () => {
+    seedRepo();
+    const wt = createWorktree(root, 'prj_env', 'task_rm_real');
+    mkdirSync(path.join(wt.path, 'node_modules'));
+    writeFileSync(path.join(wt.path, 'node_modules', 'own.txt'), 'own');
+    removeWorktree(root, wt);
+    expect(existsSync(wt.path)).toBe(false);
+    expect(readFileSync(path.join(root, 'node_modules', 'pkg.json'), 'utf8')).toContain('fixture');
   });
 });

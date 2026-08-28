@@ -328,9 +328,10 @@ async function runCommandHandler(call: ToolCall, ctx: ToolContext): Promise<Tool
   }
   // 安全第 2 道：风险分级审批。classifyCommand 把命令分为：
   //   run-command（普通）/ git-push / system-install / deploy / credential-access
-  // 后四类在 permission.ts 的 HIGH_RISK_ACTIONS 中，会自动进人工审批队列等用户确认。
+  //   / delete-outside-project（穿链删除：cwd 有共享环境软链时 rm/find/realpath/cd 解析型删除）
+  // 后五类在 permission.ts 的 HIGH_RISK_ACTIONS 中，会自动进人工审批队列等用户确认。
   if (ctx.permissionGuard) {
-    const action = classifyCommand(command);
+    const action = classifyCommand(command, { cwd: ctx.workingDir });
     const decision = await ctx.permissionGuard({ action, command, path: ctx.workingDir });
     if (!decision.allowed) {
       return {
