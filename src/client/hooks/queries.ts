@@ -1249,6 +1249,39 @@ export function useTaskProgress(taskId: string | undefined) {
   });
 }
 
+// ===== 计划活文档 S1/S3：todo 清单 + 任务计划文件 =====
+export interface TaskTodoDTO {
+  taskId: string;
+  items: Array<{ content: string; status: 'pending' | 'in_progress' | 'done' }>;
+  done: number;
+  total: number;
+  assignee: { id: string; name: string } | null;
+}
+
+/** todo 草稿纸明细（进程分区点开执行者组后渲染；realtime task.todo_update 精确失效）。 */
+export function useTaskTodo(taskId: string | undefined) {
+  return useQuery({
+    queryKey: ['task-todo', taskId],
+    queryFn: () => api.get<TaskTodoDTO>(`/api/tasks/${taskId}/todo`),
+    enabled: !!taskId,
+  });
+}
+
+export interface TaskPlanFileDTO {
+  taskId: string;
+  source: 'file' | 'todo' | 'empty';
+  content: string;
+}
+
+/** 任务计划文件（worktree 现场 .muster/task_plan.md，兜底 todo 渲染）。 */
+export function useTaskPlanFile(taskId: string | undefined) {
+  return useQuery({
+    queryKey: ['task-plan-file', taskId],
+    queryFn: () => api.get<TaskPlanFileDTO>(`/api/tasks/${taskId}/plan-file`),
+    enabled: !!taskId,
+  });
+}
+
 export function useResumeTaskFromCheckpoint() {
   const qc = useQueryClient();
   return useMutation({
@@ -1438,6 +1471,13 @@ export interface DispatchActor {
   isLead?: boolean;
 }
 
+/** 计划活文档 S3：节点 todo 草稿纸进度（进程分区组头「张三 2/3」）。 */
+export interface DispatchTodoProgressDTO {
+  done: number;
+  total: number;
+  current: string | null;
+}
+
 export interface DispatchTreeNodeDTO {
   id: string;
   seq: number;
@@ -1450,6 +1490,7 @@ export interface DispatchTreeNodeDTO {
   durationMs: number;
   assignee: DispatchActor | null;
   dispatcher: { id: string; name: string } | null;
+  todo: DispatchTodoProgressDTO;
 }
 
 export function useDispatchTree(projectId: string | undefined, projectTaskId: string | undefined) {

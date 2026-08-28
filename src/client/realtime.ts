@@ -73,6 +73,10 @@ export function queryKeysForRealtimeEvent(event: RealtimeEvent): QueryKey[] {
   if (event.type === 'trace.append') {
     if (event.taskId) keys.push(['task-trace', event.taskId]);
   }
+  // 计划活文档 S3：todo 草稿纸更新 → 精确失效该任务清单（进程分区明细；组头进度走下方 dispatch-tree 失效）
+  if (event.type === 'task.todo_update' && event.taskId) {
+    keys.push(['task-todo', event.taskId]);
+  }
   // B5：项目阶段事件刷 project query（驱动 wizard stepper 自动刷新）
   if (event.type.startsWith('project.')) keys.push(['projects']);
   // B4：plugin 启停事件刷 plugin 列表

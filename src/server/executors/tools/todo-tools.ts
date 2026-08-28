@@ -15,9 +15,9 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import * as path from 'node:path';
 import { realtime } from '../../realtime';
+import { getDb } from '../../db/client';
 import type { ToolCall, ToolDefinition, ToolResult } from './file-tools';
 import type { ToolContext } from './registry';
-
 export interface TodoItem {
   content: string;
   status: 'pending' | 'in_progress' | 'done';
@@ -43,6 +43,15 @@ function atomicWrite(file: string, content: string): void {
   const tmp = `${file}.tmp-${Date.now()}`;
   writeFileSync(tmp, content, 'utf8');
   renameSync(tmp, file);
+}
+
+/** 惰性查 task.project_id（todo_update 事件带 projectId，驱动派遣树缓存精确失效）。 */
+function taskProjectId(taskId: string): string | undefined {
+  try {
+    return (getDb().prepare('SELECT project_id AS p FROM task WHERE id = ?').get(taskId) as { p?: string } | undefined)?.p;
+  } catch {
+    return undefined;
+  }
 }
 
 /** 读清单（可单测）：文件缺失/损坏返回空清单（草稿纸丢了不致命）。 */
@@ -183,9 +192,12 @@ export async function todoWriteHandler(call: ToolCall, ctx: ToolContext): Promis
   // 计划活文档 S1：镜像到执行现场 + 实时事件（看板进程分区免轮询）；两者失败均不影响草稿纸
   mirrorTaskPlan(ctx.workingDir, taskId, saved);
   try {
+    // 补 projectId：task.todo_update 需要失效 ['dispatch-tree', projectId]（蜂群多任务组头进度秒级刷新）
+    const projectId = taskProjectId(taskId);
     realtime.publish({
       id: `ev_todo_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       type: 'task.todo_update',
+      projectId,
       taskId,
       occurredAt: new Date().toISOString(),
       payload: { items: saved, done: saved.filter((it) => it.status === 'done').length, total: saved.length },

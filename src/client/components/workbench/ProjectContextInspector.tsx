@@ -34,8 +34,8 @@ function saveGroupOpen(groupId: string, open: boolean): void {
   }
 }
 
-/** 右栏折叠分组：标题 + 计数徽章，展开状态按组持久化 */
-function InspectorGroup({
+/** 右栏折叠分组：标题 + 计数徽章，展开状态按组持久化（计划活文档 S3 起工作现场面板同款复用）。 */
+export function InspectorGroup({
   groupId,
   title,
   badge,

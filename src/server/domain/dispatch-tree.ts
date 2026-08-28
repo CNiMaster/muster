@@ -5,6 +5,7 @@
  */
 import type { DB } from '../db/client';
 import { listTasks, type Task } from './task';
+import { readTodoList } from '../executors/tools/todo-tools';
 
 export interface DispatchActor {
   id: string;
@@ -12,6 +13,14 @@ export interface DispatchActor {
   kind: 'employee' | 'specialist' | 'bee';
   /** H8 纠错：负责人与用户直接沟通，不进纠错链（前端据此隐藏纠错按钮）。 */
   isLead?: boolean;
+}
+
+/** 计划活文档 S1/S3：节点 todo 草稿纸进度（看板进程分区组头「张三 2/3」数据源）。 */
+export interface DispatchTodoProgress {
+  done: number;
+  total: number;
+  /** 当前进行中项首行（无则 null）。 */
+  current: string | null;
 }
 
 export interface DispatchTreeNode {
@@ -27,6 +36,7 @@ export interface DispatchTreeNode {
   durationMs: number;
   assignee: DispatchActor | null;
   dispatcher: { id: string; name: string } | null;
+  todo: DispatchTodoProgress;
 }
 
 export interface DispatchTree {
@@ -106,6 +116,16 @@ export function buildDispatchTree(db: DB, projectId: string, projectTaskId?: str
   const nodes: DispatchTreeNode[] = scope.map((t) => {
     const assignee = actorOf(t.assigneeAgentId, t);
     const dispatcherMeta = t.dispatcherAgentId ? agents.get(t.dispatcherAgentId) : undefined;
+    // 计划活文档 S3：节点 todo 进度（读不到/未写过 = 全零，看板组头显示 0/0）
+    const todoItems = (() => {
+      try { return readTodoList(t.id); } catch { return []; }
+    })();
+    const todoCurrent = todoItems.find((it) => it.status === 'in_progress') ?? null;
+    const todo: DispatchTodoProgress = {
+      done: todoItems.filter((it) => it.status === 'done').length,
+      total: todoItems.length,
+      current: todoCurrent ? todoCurrent.content.split('\n')[0]!.slice(0, 120) : null,
+    };
     return {
       id: t.id,
       seq: t.seq,
@@ -118,6 +138,7 @@ export function buildDispatchTree(db: DB, projectId: string, projectTaskId?: str
       durationMs: (t.completedAt ? new Date(t.completedAt).getTime() : now) - new Date(t.createdAt).getTime(),
       assignee,
       dispatcher: t.dispatcherAgentId && dispatcherMeta ? { id: t.dispatcherAgentId, name: dispatcherMeta.name } : null,
+      todo,
     };
   });
 
