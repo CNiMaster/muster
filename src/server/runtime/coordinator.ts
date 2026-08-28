@@ -16,7 +16,8 @@ import { drainSemanticSettlements } from '../domain/settlement';
 import { runMemoryHousekeeping } from '../domain/memory-housekeeping';
 import { sweepStaleStaging, sweepStaleTaskStaging } from '../domain/staging';
 import { sweepIdleStaffSpecialists } from '../domain/specialist-review';
-import { listDueAutomations, recordAndMark, setAutomationEnabled } from '../domain/automation';
+import { listDueAutomations, recordAndMark, setAutomationEnabled, createReminder, wakeSnoozedReminders } from '../domain/automation';
+import { realtime } from '../realtime';
 import { postSystemMessage } from '../domain/conversation';
 import { ensureAutomationStewardAgentId } from '../domain/system-agents';
 import { syncGithubIssues } from '../domain/github-issues';
@@ -93,6 +94,8 @@ export function runIdleReflectionPass(db: DB): Array<{ companyId: string; enqueu
  * 每次执行落 automation_run 历史；once 成功后自动归档。
  */
 export async function runAutomationSweep(db: DB): Promise<void> {
+  // snooze 到期的提醒回 pending（延迟循环服务端持久，关页不丢）
+  wakeSnoozedReminders(db);
   for (const automation of listDueAutomations(db)) {
     const startedAt = new Date().toISOString();
     try {
@@ -100,15 +103,23 @@ export async function runAutomationSweep(db: DB): Promise<void> {
         const r = await syncGithubIssues(db, automation);
         recordAndMark(db, automation.id, 'ok', startedAt, `新增 ${r.newCount} · 已知 ${r.skipped}`);
       } else if (automation.kind === 'notify') {
-        // 提醒：到点以自动化管家名义在工作台对话现场说一句（批次4 再补弹窗/红点交互）
+        // 提醒：到点以自动化管家名义在工作台对话现场说一句 + 落 pending 提醒（弹窗/红点/补弹数据源）
         const workbench = getWorkbench(db);
         const stewardId = ensureAutomationStewardAgentId(db);
+        const prompt = automation.config.prompt ?? '';
         postSystemMessage(db, {
           scopeKind: 'workbench',
           scopeId: workbench.id,
           role: 'assistant',
           author: stewardId,
-          content: `⏰ 自动化提醒：${automation.config.prompt ?? ''}`,
+          content: `⏰ 自动化提醒：${prompt}`,
+        });
+        const reminder = createReminder(db, automation.id, prompt);
+        realtime.publish({
+          id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          type: 'automation.reminder',
+          occurredAt: new Date().toISOString(),
+          payload: { reminderId: reminder.id, automationId: automation.id, message: reminder.message },
         });
         recordAndMark(db, automation.id, 'ok', startedAt, '已提醒');
       } else if (automation.kind === 'dispatch') {

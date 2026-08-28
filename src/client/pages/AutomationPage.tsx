@@ -8,7 +8,8 @@ import type React from 'react';
 import { useEffect, useReducer, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  useWorkbench, useAutomations, useAutomationSteward, useSetAutomationEnabled, useUpdateAutomation, useDeleteAutomation, useProjects, useCreateAutomationForm, useAutomationRuns, type AutomationDTO, type AutomationFormSchedule,
+  useWorkbench, useAutomations, useAutomationSteward, useSetAutomationEnabled, useUpdateAutomation, useDeleteAutomation, useProjects, useCreateAutomationForm, useAutomationRuns,
+  useReminders, useAckReminder, useSnoozeReminder, type AutomationDTO, type AutomationFormSchedule,
 } from '../hooks/queries';
 import { nextAutomationRun } from '../../shared/automation-schedule';
 import { Button, toast } from '../components/Button';
@@ -112,6 +113,9 @@ export function AutomationPage(): React.ReactElement {
   const [runAt, setRunAt] = useState('');
   const [days, setDays] = useState<string[]>([]);
   const [category, setCategory] = useState<AutoCategory>('all');
+  const { data: reminderData } = useReminders();
+  const ackReminder = useAckReminder();
+  const snoozeReminder = useSnoozeReminder();
   const [draftInjection, setDraftInjection] = useState<{ text: string; seq: number } | null>(null);
   // 下次触发是相对时间：30s 心跳驱动重算（纯展示，不查网络）
   const [, bumpNow] = useReducer((x: number) => x + 1, 0);
@@ -246,6 +250,23 @@ export function AutomationPage(): React.ReactElement {
           </div>
         </Card>
       </div>
+
+      {(reminderData?.reminders ?? []).length > 0 && (
+        <Card>
+          <h3 style={{ margin: '0 0 10px', fontSize: 14 }}>⏰ 待处理提醒（{reminderData!.reminders.length}）</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {reminderData!.reminders.map((r) => (
+              <div key={r.id} style={{ padding: '8px 10px', background: 'var(--bg-elev)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <span style={{ fontSize: 13 }}>{r.message}</span>
+                <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                  <Button size="sm" variant="ghost" disabled={snoozeReminder.isPending} onClick={() => snoozeReminder.mutate({ id: r.id, minutes: 30 }, { onSuccess: () => toast('info', '已延迟 30 分钟') })}>稍后 30 分钟</Button>
+                  <Button size="sm" disabled={ackReminder.isPending} onClick={() => ackReminder.mutate(r.id, { onSuccess: () => toast('success', '已完成') })}>✓ 完成</Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       <Card>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>

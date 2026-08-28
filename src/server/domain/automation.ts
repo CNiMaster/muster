@@ -388,3 +388,86 @@ export function isAutomationDue(a: AutomationRecord, now = new Date()): boolean 
 export function listDueAutomations(db: DB, now = new Date()): AutomationRecord[] {
   return listAutomations(db).filter((a) => !a.capabilityBlocked && isAutomationDue(a, now));
 }
+
+/** ── 批次4：提醒记录（notify 触发落 pending → 弹窗/红点/补弹的数据源） ── */
+
+export type ReminderStatus = 'pending' | 'acked' | 'snoozed';
+
+export interface ReminderRecord {
+  id: string;
+  automationId: string;
+  message: string;
+  status: ReminderStatus;
+  /** 应提醒时刻：pending=现在就该弹；snoozed=延迟后的未来时刻。 */
+  remindAt: string;
+  ackedAt: string | null;
+  createdAt: string;
+}
+
+interface ReminderRow {
+  id: string; automation_id: string; message: string; status: string; remind_at: string; acked_at: string | null; created_at: string;
+}
+
+function reminderFromRow(r: ReminderRow): ReminderRecord {
+  return {
+    id: r.id,
+    automationId: r.automation_id,
+    message: r.message,
+    status: r.status as ReminderStatus,
+    remindAt: r.remind_at,
+    ackedAt: r.acked_at,
+    createdAt: r.created_at,
+  };
+}
+
+/** notify 触发时调用：落一条待提醒（弹窗数据源；页面没开着时下次打开补弹）。 */
+export function createReminder(db: DB, automationId: string, message: string): ReminderRecord {
+  const rec: ReminderRecord = {
+    id: shortId('rem_'),
+    automationId,
+    message: message.slice(0, 500),
+    status: 'pending',
+    remindAt: nowIso(),
+    ackedAt: null,
+    createdAt: nowIso(),
+  };
+  db.prepare(
+    'INSERT INTO automation_reminder (id, automation_id, message, status, remind_at, acked_at, created_at) VALUES (?,?,?,?,?,?,?)',
+  ).run(rec.id, rec.automationId, rec.message, rec.status, rec.remindAt, rec.ackedAt, rec.createdAt);
+  return rec;
+}
+
+/** 待处理提醒（pending 且到点；含过期未确认——红点与补弹数据源）。 */
+export function listPendingReminders(db: DB, now = new Date()): ReminderRecord[] {
+  return (db.prepare("SELECT * FROM automation_reminder WHERE status='pending' ORDER BY remind_at ASC").all() as ReminderRow[])
+    .map(reminderFromRow);
+}
+
+/** snooze 到期的回弹 pending（coordinator 每轮扫：延迟循环服务端持久）。 */
+export function wakeSnoozedReminders(db: DB, now = new Date()): number {
+  const r = db.prepare("UPDATE automation_reminder SET status='pending' WHERE status='snoozed' AND remind_at<=?").run(now.toISOString());
+  return r.changes;
+}
+
+export function ackReminder(db: DB, id: string): ReminderRecord {
+  const row = db.prepare('SELECT * FROM automation_reminder WHERE id=?').get(id) as ReminderRow | undefined;
+  if (!row) throw new AppError(ErrorCode.NOT_FOUND, `reminder ${id} not found`);
+  db.prepare("UPDATE automation_reminder SET status='acked', acked_at=? WHERE id=?").run(nowIso(), id);
+  return reminderFromRow(db.prepare('SELECT * FROM automation_reminder WHERE id=?').get(id) as ReminderRow);
+}
+
+/** 延迟 minutes 分钟后再提醒（服务端持久——刷新/关页不丢，到点回 pending）。 */
+export function snoozeReminder(db: DB, id: string, minutes: number): ReminderRecord {
+  const row = db.prepare('SELECT * FROM automation_reminder WHERE id=?').get(id) as ReminderRow | undefined;
+  if (!row) throw new AppError(ErrorCode.NOT_FOUND, `reminder ${id} not found`);
+  if (!(minutes > 0)) throw new AppError(ErrorCode.VALIDATION, '延迟分钟数必须大于 0');
+  const remindAt = new Date(Date.now() + minutes * 60_000).toISOString();
+  db.prepare("UPDATE automation_reminder SET status='snoozed', remind_at=? WHERE id=?").run(remindAt, id);
+  return reminderFromRow(db.prepare('SELECT * FROM automation_reminder WHERE id=?').get(id) as ReminderRow);
+}
+
+/** 各自动化 pending 提醒计数（导航红点数据源）。 */
+export function countPendingReminders(db: DB): number {
+  const row = db.prepare("SELECT COUNT(*) AS n FROM automation_reminder WHERE status='pending'").get() as { n: number };
+  return row.n;
+}

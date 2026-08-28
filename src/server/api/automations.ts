@@ -16,6 +16,7 @@ import { AppError, ErrorCode } from '../../shared/errors';
 import {
   listAutomations, createAutomation, setAutomationEnabled, updateAutomation, deleteAutomation,
   listAutomationRuns, countAutomationRuns,
+  listPendingReminders, ackReminder, snoozeReminder, countPendingReminders,
 } from '../domain/automation';
 import { listIssueBoard } from '../domain/github-issues';
 import { ensureAutomationStewardAgentId } from '../domain/system-agents';
@@ -45,6 +46,22 @@ automationsRouter.get('/steward', asyncHandler(async (_req, res) => {
     role: agent.role,
     profileId: agent.profileId,
   });
+}));
+
+// ── 批次4：提醒（弹窗/红点数据源）──
+
+automationsRouter.get('/reminders/pending', asyncHandler(async (_req, res) => {
+  const db = getDb();
+  res.json({ reminders: listPendingReminders(db), count: countPendingReminders(db) });
+}));
+
+automationsRouter.post('/reminders/:id/ack', asyncHandler(async (req, res) => {
+  res.json(ackReminder(getDb(), param(req, 'id')));
+}));
+
+automationsRouter.post('/reminders/:id/snooze', asyncHandler(async (req, res) => {
+  const body = z.object({ minutes: z.number().int().min(1).max(60 * 24 * 7) }).parse(req.body ?? {});
+  res.json(snoozeReminder(getDb(), param(req, 'id'), body.minutes));
 }));
 
 /** 执行历史（批次1）：新→旧，默认 50 条。 */

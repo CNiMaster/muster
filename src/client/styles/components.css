@@ -1681,3 +1681,25 @@
   padding: 0 5px;
   vertical-align: 1px;
 }
+
+/* 全局模态（删除确认/自动化提醒弹窗共用 .modal-overlay > .modal 约定） */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgb(0 0 0 / 45%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.modal {
+  background: var(--bg-elev);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg, 14px);
+  box-shadow: var(--shadow-3, 0 12px 40px rgb(0 0 0 / 18%));
+  padding: 18px 20px;
+  width: 100%;
+  max-height: 80vh;
+  overflow-y: auto;
+}

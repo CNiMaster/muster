@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useUiMode } from '../../hooks/queries';
+import { useUiMode, useReminders } from '../../hooks/queries';
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import type { Agent, Department, Project, Task } from '../../api/types';
@@ -84,6 +84,7 @@ export function ProjectWorkNavigation({
   // 审批角标（2026-08-28）移交顶栏铃铛——左栏不再自取 cockpit
   // 治理批次5：双模式——工具项按模式过滤；任务/项目区顺序=模式默认+手动偏好（localStorage 持久化）
   const ui = useUiMode();
+  const { data: reminderData } = useReminders();
   const [tasksFirst, setTasksFirst] = useState<boolean>(() => {
     const saved = localStorage.getItem('muster:nav-tasks-first');
     return saved !== null ? saved === '1' : true; // 默认任务在上；专业模式默认项目在上（下方 useEffect 同步）
@@ -611,6 +612,11 @@ export function ProjectWorkNavigation({
               <Link className={`work-nav-item ${activeTool === 'plans' ? 'is-active' : ''}`} {...toolLinkProps(`/projects/${projectId}/plans`)}>
                 <span className="work-nav-icon">⚡</span>
                 <span className="work-nav-label">自动化</span>
+                {(reminderData?.count ?? 0) > 0 && (
+                  <span title={`${reminderData!.count} 条待处理提醒（有过期未完成）`} style={{ marginLeft: 'auto', background: 'var(--err, #dc2626)', color: '#fff', borderRadius: 999, fontSize: 10, lineHeight: 1, padding: '2px 6px', flexShrink: 0 }}>
+                    {reminderData!.count}
+                  </span>
+                )}
               </Link>
             </ToolCategory>
           )}

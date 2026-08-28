@@ -15,6 +15,7 @@ import { ensureAutomationStewardAgentId, AUTOMATION_ROLE } from '../../src/serve
 import {
   createAutomation, listAutomations, materializeAutomationPlan, setAutomationEnabled, deleteAutomation, updateAutomation, markAutomationRun, getAutomation,
   recordAutomationRun, listAutomationRuns, countAutomationRuns, isAutomationDue, recheckCapabilityBlocked, listDueAutomations,
+  createReminder, listPendingReminders, ackReminder, snoozeReminder, wakeSnoozedReminders, countPendingReminders,
 } from '../../src/server/domain/automation';
 import { TaskEngine } from '../../src/server/task-engine/engine';
 import { FakeExecutor } from '../../src/server/task-engine/fake-executor';
@@ -144,6 +145,27 @@ describe('automation 域', () => {
     expect(counts.get(a2.id)).toBe(1);
     // limit 参数生效
     expect(listAutomationRuns(db, a1.id, 5)).toHaveLength(5);
+  });
+
+  it('批次4：提醒——pending/ack/snooze 到期回弹；过期未 ack 即红点数据源', () => {
+    const projectId = seedProject('rem');
+    const a = createAutomation(db, { kind: 'notify', config: { prompt: '喝水' }, schedule: { kind: 'daily', timeOfDay: '10:00' }, projectId, createdVia: 'chat' });
+    expect(countPendingReminders(db)).toBe(0);
+    const r1 = createReminder(db, a.id, '喝水');
+    const r2 = createReminder(db, a.id, '散步');
+    expect(listPendingReminders(db)).toHaveLength(2);
+    // ack 完成即出列
+    ackReminder(db, r1.id);
+    expect(listPendingReminders(db).map((x) => x.id)).toEqual([r2.id]);
+    // snooze：snoozed 不在 pending；到点回弹 pending（服务端持久延迟循环）
+    snoozeReminder(db, r2.id, 30);
+    expect(listPendingReminders(db)).toHaveLength(0);
+    expect(wakeSnoozedReminders(db, new Date(Date.now() + 10 * 60_000))).toBe(0); // 未到期不弹
+    expect(wakeSnoozedReminders(db, new Date(Date.now() + 31 * 60_000))).toBe(1); // 到期回弹
+    const pending = listPendingReminders(db);
+    expect(pending).toHaveLength(1);
+    expect(pending[0]!.id).toBe(r2.id);
+    expect(countPendingReminders(db)).toBe(1);
   });
 
   it('批次3：notify/dispatch 创建（prompt 必填/项目可选）+ 缺能力挂起与双向对账恢复', () => {

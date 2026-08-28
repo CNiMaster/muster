@@ -1,3 +1,4 @@
+-- safety: rebuild
 -- 自动化中心批次2（分类与独立化）：重建 automation 表——
 -- kind CHECK 放宽（notify/dispatch 供批次3）、schedule_kind 加 once、project_id 改可空（独立任务不绑项目）、
 -- 新列 run_at（once 时刻）/ days_json（周几限定）/ capability_blocked（批次3 能力前置）。

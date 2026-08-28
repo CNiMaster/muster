@@ -718,6 +718,44 @@ export function useSetAutomationEnabled() {
   });
 }
 
+// ── 批次4：提醒（弹窗/红点数据源）──
+
+export interface ReminderDTO {
+  id: string;
+  automationId: string;
+  message: string;
+  status: 'pending' | 'acked' | 'snoozed';
+  remindAt: string;
+  ackedAt: string | null;
+  createdAt: string;
+}
+
+/** 待处理提醒：30s 轮询 + automation.reminder 事件实时失效（realtime.ts）。 */
+export function useReminders() {
+  return useQuery({
+    queryKey: ['automation-reminders'],
+    queryFn: () => api.get<{ reminders: ReminderDTO[]; count: number }>('/api/automations/reminders/pending'),
+    refetchInterval: 30_000,
+  });
+}
+
+export function useAckReminder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.post<ReminderDTO>(`/api/automations/reminders/${id}/ack`, {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['automation-reminders'] }),
+  });
+}
+
+export function useSnoozeReminder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, minutes }: { id: string; minutes: number }) =>
+      api.post<ReminderDTO>(`/api/automations/reminders/${id}/snooze`, { minutes }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['automation-reminders'] }),
+  });
+}
+
 /** 执行历史（批次1）：点开才拉。 */
 export function useAutomationRuns(automationId: string | null) {
   return useQuery({

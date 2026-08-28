@@ -8,6 +8,7 @@ import { App } from './App';
 import { useToasts, ToastHost } from './components/Button';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { RealtimeSync } from './realtime';
+import { AutomationReminderHost } from './components/AutomationReminderHost';
 import { ProjectToolPageShell, TaskDetailProjectShell, GlobalToolPageShell } from './components/workbench/ProjectToolPageShell';
 import { ModeGate } from './components/ModeGate';
 
@@ -138,6 +139,7 @@ createRoot(rootEl).render(
         </Suspense>
       </ErrorBoundary>
       <ToastLayer />
+      <AutomationReminderHost />
     </QueryClientProvider>
   </StrictMode>,
 );

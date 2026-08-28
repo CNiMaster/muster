@@ -48,6 +48,8 @@ export function queryKeysForRealtimeEvent(event: RealtimeEvent): QueryKey[] {
   if (event.type.startsWith('approval.')) keys.push(['permission-approvals']);
   // 改版 B4：对话消息实时刷新——message.created 失效所有消息线程（4 秒轮询降级为兜底）
   if (event.type === 'message.created') keys.push(['messages']);
+  // 自动化批次4：提醒到点 → 立即刷弹窗数据源
+  if (event.type === 'automation.reminder') keys.push(['automation-reminders']);
   // L1：工作台状态实时刷新（关机进度/胶囊状态；公司退役批次B 单例键）
   if (event.type === 'company.state' || event.type === 'workbench.state') {
     keys.push(['workbench']);
