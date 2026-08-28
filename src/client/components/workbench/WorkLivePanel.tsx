@@ -178,7 +178,7 @@ function GitChangeRow({ projectId, node }: { projectId: string; node: DispatchTr
 
 const TODO_EMPTY = { done: 0, total: 0, current: null as string | null };
 
-export function WorkLivePanel({ projectId, selectedProjectTaskId }: { projectId: string; selectedProjectTaskId?: string }): React.ReactElement {
+export function WorkLivePanel({ projectId, selectedProjectTaskId, onClose, width }: { projectId: string; selectedProjectTaskId?: string; onClose?: () => void; width?: number }): React.ReactElement {
   const projectTaskId = selectedProjectTaskId;
   const { data: tree } = useDispatchTree(projectId, projectTaskId);
   const { data: planVersions } = usePlanVersions(projectId);
@@ -187,7 +187,6 @@ export function WorkLivePanel({ projectId, selectedProjectTaskId }: { projectId:
   const [boardTaskId, setBoardTaskId] = useState<string | undefined>();
   const [localFocus, setLocalFocus] = useState<string | null>(null);
   const [searchParams] = useSearchParams();
-  const [, setSearchParams] = useSearchParams();
 
   const nodes = tree?.tasks ?? [];
   const progress = tree?.progress ?? { done: 0, total: 0 };
@@ -237,12 +236,9 @@ export function WorkLivePanel({ projectId, selectedProjectTaskId }: { projectId:
     ?? filteredNodes[0]?.id;
 
   const close = (): void => {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.delete('panel');
-      return next;
-    });
-    setBoardTaskId(undefined);
+    // 悬浮弹出层：回调关闭；右栏 plan 标签体：关标签（胶囊 2026-08-28 定案=原地弹出，不再拉右栏）
+    if (onClose) onClose();
+    else tabs.closeTab('plan:live');
   };
 
   const focusBar = (
@@ -269,7 +265,10 @@ export function WorkLivePanel({ projectId, selectedProjectTaskId }: { projectId:
   );
 
   return (
-    <div className="work-live-panel" style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', background: 'var(--bg-elev)', marginBottom: 10 }}>
+    <div
+      className="work-live-panel"
+      style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', background: 'var(--bg-elev)', marginBottom: 10, ...(width ? { width, maxWidth: '94vw' } : {}) }}
+    >
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderBottom: '1px solid var(--border-subtle)' }}>
         <strong style={{ fontSize: 12 }}>工作现场</strong>
         <span style={{ fontSize: 10, color: 'var(--fg-subtle)' }}>进程 {progress.done}/{progress.total}</span>
@@ -325,13 +324,13 @@ export function WorkLivePanel({ projectId, selectedProjectTaskId }: { projectId:
                 <InspectorGroup
                   key={key}
                   groupId={`wlp-exec-${key}`}
-                  title={`${group.name} ${sum.done}/${sum.total}`}
+                  title={`${group.name}的执行清单 ${sum.done}/${sum.total}`}
                   defaultOpen={focusAgentId === key}
                 >
                   {/* 进程组=纯清单视图（对齐参考图）；任务行/纠错/二级看板归智能体区执行者目录 */}
                   {group.nodes.map((n) => <TodoDetail key={`todo_${n.id}`} taskId={n.id} />)}
                   {group.nodes.length > 0 && sum.total === 0 && (
-                    <p className="muted" style={{ fontSize: 11, margin: 0 }}>{group.name} 的任务尚无清单（执行者 todo_write 后在此实时显示）。</p>
+                    <p className="muted" style={{ fontSize: 11, margin: 0 }}>{group.name} 的任务尚无清单——执行中模型用 todo_write 列清单后，这里实时显示他的工作清单与进度。</p>
                   )}
                 </InspectorGroup>
               );

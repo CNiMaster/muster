@@ -467,7 +467,7 @@ export function ProjectWorkNavigation({
                 { key: 'manage', label: '🗂 管理项目（分组/拖动/文件树）', onSelect: () => navigate('/projects/manage') },
               ]}
             >
-              <span style={{ cursor: 'pointer', fontSize: 12, lineHeight: 1.2, alignSelf: 'center', color: 'var(--accent)', padding: '2px 0' }} title="添加或接管项目">＋</span>
+              <span style={{ cursor: 'pointer', fontSize: 13, lineHeight: 1, alignSelf: 'center', color: 'var(--accent)', padding: '2px 4px', display: 'inline-grid', placeItems: 'center', width: 20, height: 20, borderRadius: 6 }} title="添加或接管项目">＋</span>
             </DropdownMenu>
           </div>
 
@@ -509,7 +509,7 @@ export function ProjectWorkNavigation({
                 { key: 'manage', label: '🗂 管理项目（分组/拖动/文件树）', onSelect: () => navigate('/projects/manage') },
               ]}
             >
-              <span style={{ cursor: 'pointer', fontSize: 12, lineHeight: 1.2, alignSelf: 'center', color: 'var(--accent)', padding: '2px 0' }} title="添加或接管项目">＋</span>
+              <span style={{ cursor: 'pointer', fontSize: 13, lineHeight: 1, alignSelf: 'center', color: 'var(--accent)', padding: '2px 4px', display: 'inline-grid', placeItems: 'center', width: 20, height: 20, borderRadius: 6 }} title="添加或接管项目">＋</span>
             </DropdownMenu>
           </div>
 
@@ -691,6 +691,7 @@ function ProjectNavRow({ p, isCur, selectedProjectTaskId, onCtx, runtimeTasks, o
   onToggleOpen: () => void;
   timeline?: boolean;
 }): React.ReactElement {
+  const navigate = useNavigate();
   const { data: tasks } = useProjectTasks(p.id);
   // R2b：显示已归档——列表接口默认排除 archived，开启时单独取全量（不污染常用列表）
   const [showArchived, setShowArchived] = useState(false);
@@ -724,6 +725,17 @@ function ProjectNavRow({ p, isCur, selectedProjectTaskId, onCtx, runtimeTasks, o
         >
           {p.name}
         </Link>
+        {/* 项目行「＋」=在该项目下新建任务（2026-08-28 用户口径回归：新建任务入口在项目行右侧加号，hover 浮现） */}
+        <button
+          type="button"
+          className="mu-nav-plain-btn nav-row-plus"
+          aria-label={`在 ${p.name} 中新建任务`}
+          title={`在「${p.name}」新建任务`}
+          onClick={() => navigate(`/projects/${p.id}?view=task&newTask=1`)}
+          style={{ fontSize: 12, lineHeight: 1, padding: '0 3px', flexShrink: 0 }}
+        >
+          ＋
+        </button>
       </div>
       {open && (
         <div style={{ paddingLeft: 0, paddingBottom: 2 }}>

@@ -1203,6 +1203,10 @@ p { margin: 0 0 var(--space-3) 0; }
 .mu-nav-pin.is-pinned{opacity:1;filter:none}
 .mu-nav-plain-btn{border:none;background:transparent;cursor:pointer;color:var(--fg-subtle);font-size:13px;padding:0 4px;border-radius:6px}
 .mu-nav-plain-btn:hover{background:var(--bg-hover);color:var(--fg)}
+/* 项目行「＋」新建任务（2026-08-28 用户口径回归）：hover 行浮现，同置顶针模式 */
+.work-nav-item .nav-row-plus{visibility:hidden;opacity:0;transition:opacity var(--duration-fast) var(--ease-out)}
+.work-nav-item:hover .nav-row-plus,.work-nav-item .nav-row-plus:focus-visible{visibility:visible;opacity:.75}
+.work-nav-item .nav-row-plus:hover{opacity:1}
 .task-nav-actions{display:flex;gap:2px;width:19px;justify-content:flex-end;flex-shrink:0}
 
 /* 空态中栏（2026-08-23）：对话框居中 + 左上角项目切换下拉 + 快捷/定时任务建议 */

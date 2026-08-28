@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react';
 import type React from 'react';
 import type { Agent, Task } from '../../api/types';
 import type { ProjectTaskDTO } from '../../hooks/queries';
-import { useQueuedMessages, useQueuedMessageAction, useTask, useTaskAction, usePostMessage, useMessages, useUploadMaterial, materialRawUrl, useExecutorProfiles, useSystemSettings, useBlueprintMatches, useTaskChecklist, useCreateChecklist, useAdvanceChecklist, useArtifacts, useStopAllProjectTasks, useStopTask, type MessageAttachment } from '../../hooks/queries';
+import { useQueuedMessages, useQueuedMessageAction, useTask, useTaskAction, usePostMessage, useMessages, useUploadMaterial, materialRawUrl, useExecutorProfiles, useSystemSettings, useBlueprintMatches, useArtifacts, useStopAllProjectTasks, useStopTask, type MessageAttachment } from '../../hooks/queries';
 import { useUserCommands, useCompactTask, useProjectSpecialists } from '../../hooks/queries';
 import { PromptComposer, type ComposerMode } from '../workbench/PromptComposer';
 import { Button, toast } from '../Button';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useProjects } from '../../hooks/queries';
 import { DropdownMenu } from '../DropdownMenu';
 import { StateBadge, Badge } from '../Badge';
@@ -54,11 +54,8 @@ export function ProjectTaskWorkspace({
   const [newTitle, setNewTitle] = useState('');
   const [newBrief, setNewBrief] = useState('');
   const [creating, setCreating] = useState(false);
-  const [checklistOpen, setChecklistOpen] = useState(false);
-  const [checklistDraft, setChecklistDraft] = useState('');
-  const checklist = useTaskChecklist(projectId, selectedTask?.id);
-  const createChecklist = useCreateChecklist();
-  const advanceChecklist = useAdvanceChecklist();
+  // ＋新任务 / ☰清单（2026-08-28 撤）：清单迁右栏「现场·任务现场」（TaskChecklistCard）；新建任务走左栏项目行加号
+  const [searchParams, setSearchParams] = useSearchParams();
   const [selectedAgentId, setSelectedAgentId] = useState<string>('');
   // 对话人（2026-08-23 定案）：显式选择优先，默认负责人——取消「自动匹配」，对话始终有人接；
   // 选中谁就在对话区底部显示谁正在进行的工作（类似右栏员工状态）
@@ -104,6 +101,18 @@ export function ProjectTaskWorkspace({
   useEffect(() => {
     if (newTaskSignal > 0) setCreating(true);
   }, [newTaskSignal]);
+
+  // 左栏项目行「＋」入口（2026-08-28）：?newTask=1 → 打开创建卡并清参（不残留刷新再弹）
+  useEffect(() => {
+    if (searchParams.get('newTask') === '1') {
+      setCreating(true);
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('newTask');
+        return next;
+      }, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   const directTaskAction = useTaskAction();
   // 2026-08-24 定案：群聊=对话目标之一——中栏对话区切群聊流、输入框直发群聊（不再跳独立群聊页）
@@ -308,97 +317,12 @@ export function ProjectTaskWorkspace({
               </>
             )}
             {/* 手动「完成」按钮（2026-08-28 撤）：任务完成由执行收敛，无需人工标记；旧任务清理由自动归档接手 */}
-            <button
-              type="button"
-              className="mu-composer-pill"
-              onClick={() => setCreating(true)}
-              style={{ fontSize: '12px', whiteSpace: 'nowrap' }}
-            >
-              ＋ 新任务
-            </button>
-            <button
-              type="button"
-              className="mu-composer-pill"
-              aria-label="任务清单"
-              onClick={() => setChecklistOpen((v) => !v)}
-              style={{ fontSize: '12px', whiteSpace: 'nowrap' }}
-              title="把工作写成逐项清单：一条一条执行，验收通过自动开始下一条"
-            >
-              ☰ 清单{checklist.data && checklist.data.state === 'active' ? ` ${Math.min(checklist.data.cursor + 1, checklist.data.items.length)}/${checklist.data.items.length}` : checklist.data ? ' ✓' : ''}
-            </button>
+            {/* ＋新任务 / ☰清单（2026-08-28 撤，用户口径）：新建任务走左栏项目行加号；清单迁右栏「现场·任务现场」（TaskChecklistCard） */}
           </div>
         </div>
       ) : null}
 
       {/* 新建任务轻量卡片（弹开态） */}
-      {/* 项目任务清单（批次三第二片）：逐项执行，验收 PASS 自动解锁下一条 */}
-      {checklistOpen && selectedTask && (
-        <div style={{ padding: '12px', background: 'var(--bg-elev)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-subtle)' }}>
-          {checklist.data ? (
-            <div className="form-stack">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                <strong style={{ fontSize: 13 }}>
-                  清单 {checklist.data.state === 'done' ? `全部完成（${checklist.data.items.length} 项）` : `${Math.min(checklist.data.cursor + 1, checklist.data.items.length)}/${checklist.data.items.length}`}
-                </strong>
-                {checklist.data.state === 'active' && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    loading={advanceChecklist.isPending}
-                    onClick={() => advanceChecklist.mutate(
-                      { projectId, projectTaskId: selectedTask.id },
-                      { onError: (e) => toast('error', (e as Error).message) },
-                    )}
-                  >
-                    手动放行下一条
-                  </Button>
-                )}
-              </div>
-              {checklist.data.items.map((item, i) => (
-                <div key={i} className="muted" style={{ fontSize: 12, display: 'flex', gap: 6 }}>
-                  <span style={{ width: 14, flexShrink: 0 }}>{i < checklist.data!.cursor || checklist.data!.state === 'done' ? '☑' : i === checklist.data!.cursor ? '▶' : '☐'}</span>
-                  <span style={{ textDecoration: i < checklist.data!.cursor || checklist.data!.state === 'done' ? 'line-through' : 'none' }}>{item}</span>
-                </div>
-              ))}
-              <span className="muted" style={{ fontSize: 11 }}>每条完成并通过验收后自动开始下一条；验收不通过走返工，不会跳条。</span>
-            </div>
-          ) : (
-            <div className="form-stack">
-              <Field label="把工作写成清单（每行一条，1-50 条）">
-                <Textarea
-                  rows={4}
-                  value={checklistDraft}
-                  onChange={(e) => setChecklistDraft(e.target.value)}
-                  placeholder={'例如：\n梳理现有接口清单\n补齐缺失的鉴权中间件\n跑通全量回归测试'}
-                />
-              </Field>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                <Button size="sm" variant="ghost" onClick={() => setChecklistOpen(false)}>收起</Button>
-                <Button
-                  size="sm"
-                  variant="primary"
-                  loading={createChecklist.isPending}
-                  disabled={!checklistDraft.trim()}
-                  onClick={() => {
-                    const items = checklistDraft.split('\n').map((s) => s.trim()).filter(Boolean);
-                    if (items.length === 0) return;
-                    createChecklist.mutate(
-                      { projectId, projectTaskId: selectedTask.id, items },
-                      {
-                        onSuccess: () => { setChecklistDraft(''); toast('success', `清单已创建（${items.length} 条），第 1 条已开始`); },
-                        onError: (e) => toast('error', (e as Error).message),
-                      },
-                    );
-                  }}
-                >
-                  创建清单
-                </Button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
       {creating && (
         <div style={{ padding: '12px', background: 'var(--bg-elev)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--accent)', boxShadow: 'var(--shadow-2)' }}>
           <div className="form-stack">

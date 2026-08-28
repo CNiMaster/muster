@@ -11,6 +11,7 @@ import { Button, toast } from '../Button';
 import { DiscussionPanel } from './DiscussionPanel';
 import { PanelPluginHost } from './PanelPluginHost';
 import { SideChatPanel } from './SideChatPanel';
+import { TaskChecklistCard } from './TaskChecklistCard';
 import { useInspectorTabsApi } from './useInspectorTabs';
 
 const OPEN_STATES = new Set(['queued', 'claimed', 'running', 'waiting_input', 'waiting_dependency', 'waiting_approval', 'paused', 'blocked']);
@@ -280,6 +281,8 @@ export function ProjectContextInspector({
             ) : undefined
           }
         >
+          {/* 执行清单（2026-08-28 自中栏任务区顶部迁入——清单属任务现场看板；人工逐项派工，验收通过自动下一条） */}
+          <TaskChecklistCard projectId={selectedTask.projectId} projectTaskId={selectedTask.id} />
           {deliverables.length > 0 ? (
             <ul className="task-checklist-list">
               {deliverables.map((item, index) => (

@@ -70,7 +70,7 @@ describe('WorkCapsule（批次 H.2）', () => {
     expect(screen.getByText(/张三正在/)).toBeInTheDocument();
   });
 
-  it('P2 标签化：点击展开写入右栏 plan 标签（rt=plan:live & rtA=）；再点收起移除', () => {
+  it('2026-08-28 定案：点击=原地弹出悬浮看板（不再写右栏 plan 标签）；再点收起', () => {
     // MemoryRouter 不动 window.location——用探针组件读路由状态
     let searchNow = '';
     function Probe(): null {
@@ -84,11 +84,15 @@ describe('WorkCapsule（批次 H.2）', () => {
         <WorkCapsule projectId="pr_1" tasks={[makeTask('t1', 'running')]} agents={[]} />
       </MemoryRouter></QueryClientProvider>,
     );
-    fireEvent.click(screen.getByRole('button'));
-    expect(searchNow).toContain('rt=plan%3Alive');
-    expect(searchNow).toContain('rtA=plan%3Alive');
-    fireEvent.click(screen.getByRole('button'));
+    const capsule = screen.getByRole('button', { name: /团队正在/ });
+    fireEvent.click(capsule);
+    // 悬浮看板原地出现（四分区），URL 不写 rt=plan:live
+    expect(screen.getAllByText(/Git 工具/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText(/进程/).length).toBeGreaterThanOrEqual(1);
     expect(searchNow).not.toContain('plan%3Alive');
+    // 再点胶囊收起
+    fireEvent.click(screen.getByRole('button', { name: /团队正在/ }));
+    expect(screen.queryByText(/Git 工具/)).not.toBeInTheDocument();
   });
 });
 
@@ -127,9 +131,9 @@ describe('WorkLivePanel（计划活文档 S3：四分区两层看板）', () => 
     // 头部徽标与进程分区标题都显示 done/total——按计数断言
     expect(screen.getAllByText(/进程 1\/2/).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/智能体/)).toBeInTheDocument();
-    // 执行者分组组头：张三 2/3（todo 汇总）、工蜂-1 0/0
-    expect(screen.getByText('张三 2/3')).toBeInTheDocument();
-    expect(screen.getByText('工蜂-1 0/0')).toBeInTheDocument();
+    // 执行者分组组头：张三的执行清单 2/3（todo 汇总）、工蜂-1 的执行清单 0/0
+    expect(screen.getByText('张三的执行清单 2/3')).toBeInTheDocument();
+    expect(screen.getByText('工蜂-1的执行清单 0/0')).toBeInTheDocument();
     // 智能体分区内执行者目录保留：任务行 + 派遣分组
     expect(screen.getByText('负责人 派了 ↓')).toBeInTheDocument();
     expect(screen.getByText(/张三 · 做A/)).toBeInTheDocument();
