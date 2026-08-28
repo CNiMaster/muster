@@ -128,10 +128,14 @@ export async function routeAndBackfill(db: DB, taskId: string): Promise<void> {
   try {
     const task = getTask(db, taskId);
     const proto = (task.inputProtocol ?? {}) as Record<string, unknown>;
-    // 幂等守卫：已穿戴人设/已有蓝图/已定真实班底模式的任务不再路由；
-    // staffingMode==='unrouted' 是「可穿戴但未路由」的待路由标记，不在此列。
+    // 幂等+资格守卫：已穿戴人设/已有蓝图/已定真实班底模式的任务不再路由
+    // （staffingMode==='unrouted' 是「可穿戴但未路由」的待路由标记，不在此列）；
+    // 显式注入技能/能力/知识的任务与 createTask 穿戴块同规则——显式指定抑制蓝图穿戴。
     const realMode = typeof proto.staffingMode === 'string' && proto.staffingMode !== 'unrouted';
-    if (task.personaId || proto.blueprintMatched || realMode) {
+    const hasExplicitInjection = ['requiredSkillIds', 'requiredCapabilityIds', 'knowledgeTargets'].some(
+      (key) => Array.isArray(proto[key]) && (proto[key] as unknown[]).length > 0,
+    );
+    if (task.personaId || proto.blueprintMatched || realMode || hasExplicitInjection) {
       return;
     }
     const route = await routeBlueprintByAI(db, {
@@ -159,8 +163,16 @@ export async function routeAndBackfill(db: DB, taskId: string): Promise<void> {
       name: s.personaName,
       summary: getPersona(s.personaId)?.description ?? '',
     }));
+    // LLM 调用窗口（≤8s）内 protocol 可能被改（gate 确认/用户编辑）——await 之后重读最新版再合并，
+    // 且重读到 UPDATE 之间无 await（Node 单线程同步段），无丢失更新窗口。
+    const fresh = getTask(db, taskId);
+    const freshProto = (fresh.inputProtocol ?? {}) as Record<string, unknown>;
+    if (fresh.personaId || freshProto.blueprintMatched) {
+      appendTaskEvent(db, taskId, 'blueprint_route_skipped', { reason: '任务已被穿戴，放弃回填' });
+      return;
+    }
     const nextProto = {
-      ...proto,
+      ...freshProto,
       blueprintMatched: row.id,
       blueprintLabel: row.label,
       blueprintVersion: currentBlueprintVersion(db, row.id),

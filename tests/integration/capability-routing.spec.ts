@@ -154,6 +154,45 @@ describe('routeAndBackfill（直达路径后台自动配）', () => {
     await routeAndBackfill(db, t.id);
     expect(spy).not.toHaveBeenCalled();
   });
+
+  it('复审修复：显式注入技能/能力/知识的任务不回填（与 createTask 穿戴块同规则）', async () => {
+    const { projectId } = seed();
+    ensureBlueprintPresets(db);
+    const spy = vi.spyOn(llmCallModule, 'callLlm');
+    const t1 = createTask(db, { projectId, title: '写小说正文章节', requiredSkillIds: ['source-driven-development'] });
+    await routeAndBackfill(db, t1.id);
+    const t2 = createTask(db, { projectId, title: '写小说正文章节', requiredCapabilityIds: ['cap_1'] });
+    await routeAndBackfill(db, t2.id);
+    const t3 = createTask(db, { projectId, title: '写小说正文章节', knowledgeTargets: ['kb_1'] });
+    await routeAndBackfill(db, t3.id);
+    expect(spy).not.toHaveBeenCalled();
+    expect(getTask(db, t1.id).personaId).toBeNull();
+    expect(getTask(db, t2.id).personaId).toBeNull();
+    expect(getTask(db, t3.id).personaId).toBeNull();
+  });
+
+  it('复审修复：LLM 窗口内 protocol 被改 → 回填合并到最新版不覆盖新键', async () => {
+    const { projectId } = seed();
+    ensureBlueprintPresets(db);
+    const novel = db.prepare("SELECT id FROM blueprint WHERE label='长篇小说创作'").get() as { id: string };
+    const t = createTask(db, { projectId, title: '写小说正文章节' });
+    // 模拟：创建后 gate 确认写入了新键，回填在 LLM 返回后必须基于最新 protocol 合并
+    db.prepare('UPDATE task SET input_protocol_json=? WHERE id=?').run(
+      JSON.stringify({ goal: '用户后补的目标', staffingMode: 'unrouted' }), t.id,
+    );
+    vi.spyOn(llmCallModule, 'callLlm').mockImplementation(async () => {
+      // LLM 在途时另一路径写入紧急标记
+      db.prepare('UPDATE task SET input_protocol_json=? WHERE id=?').run(
+        JSON.stringify({ goal: '用户后补的目标', staffingMode: 'unrouted', urgentNote: '在途写入' }), t.id,
+      );
+      return mockLlmResult(`{"blueprintId":"${novel.id}","confidence":0.9,"reason":"创作类"}`);
+    });
+    await routeAndBackfill(db, t.id);
+    const proto = getTask(db, t.id).inputProtocol as Record<string, unknown>;
+    expect(proto.blueprintMatched).toBe(novel.id);
+    expect(proto.urgentNote).toBe('在途写入'); // 窗口内写入的键不丢
+    expect(proto.goal).toBe('用户后补的目标');
+  });
 });
 
 describe('evolveBlueprintById（记账分叉）', () => {

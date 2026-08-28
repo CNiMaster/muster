@@ -136,7 +136,7 @@ export function TasksPage(): React.ReactElement {
     <Card title="发布标准工作单" className="section compact-dispatch-card">
       <p className="muted">不必先与负责人对话。填写完整交接信息后，可直接指定智能体，或发布到任务池由负责人领取并继续派发。</p>
       <div className="task-dispatch-grid task-work-order-grid">
-        <Field label="任务标题" required><Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="一句话概括这项工作" /></Field>
+        <Field label="任务标题" required><Input value={title} onChange={(event) => { setTitle(event.target.value); setRouteCleared(false); }} placeholder="一句话概括这项工作" /></Field>
         <Field label="项目任务"><Select value={projectTaskId} onChange={(event) => setProjectTaskId(event.target.value)}><option value="">选择上下文</option>{projectTasks.filter((item) => item.state === 'active').map((item) => <option key={item.id} value={item.id}>#{item.seq} {item.title}</option>)}</Select></Field>
         <Field label="领取方式"><Select value={assignee} onChange={(event) => setAssignee(event.target.value)}><option value="">任务池 · 负责人领取后分配</option>{agents.map((agent) => <option key={agent.id} value={agent.id}>直接派给 · {agent.name}</option>)}</Select></Field>
         <Field label="优先级"><Select value={priority} onChange={(event) => setPriority(event.target.value)}>{[1, 3, 5, 7, 9].map((value) => <option key={value} value={value}>P{value}</option>)}</Select></Field>
@@ -147,9 +147,11 @@ export function TasksPage(): React.ReactElement {
         <Field label="预期交付物" required><Textarea value={deliverables} onChange={(event) => setDeliverables(event.target.value)} placeholder="智能体应提交哪些文件、结论、测试或说明？" /></Field>
         {title.trim().length >= 6 && blueprintRoute.data && (
           <p className="muted" style={{ margin: 0, fontSize: 12, lineHeight: 1.6 }}>
-            {blueprintRoute.data.blueprint
-              ? <>将穿戴 🎭 {blueprintRoute.data.blueprint.label}（主槽 {blueprintRoute.data.blueprint.mainPersonaName}，AI：{blueprintRoute.data.reason}）{routedBlueprintId && <button type="button" style={{ border: 0, background: 'none', color: 'var(--accent)', fontSize: 12, cursor: 'pointer', marginLeft: 6 }} onClick={() => setRouteCleared(true)}>不穿戴</button>}</>
-              : <>无蓝图模式（AI：{blueprintRoute.data.reason}）</>}
+            {blueprintRoute.data.blueprint && routedBlueprintId
+              ? <>将穿戴 🎭 {blueprintRoute.data.blueprint.label}（主槽 {blueprintRoute.data.blueprint.mainPersonaName}，AI：{blueprintRoute.data.reason}）<button type="button" style={{ border: 0, background: 'none', color: 'var(--accent)', fontSize: 12, cursor: 'pointer', marginLeft: 6 }} onClick={() => setRouteCleared(true)}>不穿戴</button></>
+              : blueprintRoute.data.blueprint && routeCleared
+                ? <>已选择不穿戴（无蓝图模式）——<button type="button" style={{ border: 0, background: 'none', color: 'var(--accent)', fontSize: 12, cursor: 'pointer' }} onClick={() => setRouteCleared(false)}>恢复穿戴</button></>
+                : <>无蓝图模式（AI：{blueprintRoute.data.reason}）</>}
           </p>
         )}
         <Button onClick={submit} disabled={!canSubmit} loading={createTask.isPending}>{assignee ? '直接派发' : '发布到任务池'}</Button>

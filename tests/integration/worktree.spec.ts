@@ -89,6 +89,15 @@ describe('git repo management', () => {
     const edits = listTrunkUncommitted(tmpRoot);
     expect(edits).not.toContain('.env.local');
     expect(edits).not.toContain('note.md');
+    // 复审修复：嵌套目录凭据同样硬排除（:(glob) 无 ** 前缀只匹配根目录）
+    mkdirSync(path.join(tmpRoot, 'sub'), { recursive: true });
+    writeFileSync(path.join(tmpRoot, 'sub', '.env'), 'NESTED=1', 'utf8');
+    writeFileSync(path.join(tmpRoot, 'sub', 'real.md'), '正常文件', 'utf8');
+    commitAll(tmpRoot, 'muster: user edits 2', { excludePaths: CREDENTIAL_PATHSPECS });
+    const tracked2 = spawnSync('git', ['ls-files'], { cwd: tmpRoot, encoding: 'utf8' }).stdout.split('\n');
+    expect(tracked2).toContain('sub/real.md');
+    expect(tracked2).not.toContain('sub/.env');
+    expect(existsSync(path.join(tmpRoot, 'sub', '.env'))).toBe(true);
   });
 });
 

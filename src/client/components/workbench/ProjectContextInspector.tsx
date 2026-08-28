@@ -3,7 +3,7 @@ import type React from 'react';
 import { Link } from 'react-router-dom';
 import type { Agent, Task } from '../../api/types';
 import type { ProjectTaskDTO } from '../../hooks/queries';
-import { useArtifacts, useBlueprintMatches, useProjectSpecialists, useProjectTaskAction, useTaskSwarm,
+import { useArtifacts, useBlueprints, useProjectSpecialists, useProjectTaskAction, useTaskSwarm,
   useProjectHealth, useUiMode, usePanelPlugins, useSideMessages } from '../../hooks/queries';
 import type { CompanyCockpitDTO } from '../../../shared/types';
 import { Badge, StateBadge, taskStateTone } from '../Badge';
@@ -101,8 +101,12 @@ export function ProjectContextInspector({
   const { data: swarmView } = useTaskSwarm(activeTask?.id);
   // B5 右侧三卡（非人员源，中央岗隐形后"事"可见）：专家池/蜂群/验收进度
   const { data: specialists = [] } = useProjectSpecialists(projectId);
-  // 修复轮（批次 F.2）：任务 → 最优蓝图（2026-08-28 起=AI 语义路由单结果；无匹配=无蓝图模式不显示）
-  const { data: blueprintRoute } = useBlueprintMatches(selectedTask?.title);
+  // 修复轮（批次 F.2）：任务穿戴的蓝图——读运行时任务 inputProtocol 的实际穿戴记录（复审修正：
+  // 被动看板不做 AI 路由预览——每次选中任务打一次 8s economy LLM 既贵又慢；AI 预览只属于创建卡）。
+  const { data: blueprints = [] } = useBlueprints();
+  const wornProto = (matchedTask?.inputProtocol ?? {}) as Record<string, unknown>;
+  const wornBlueprintId = typeof wornProto.blueprintMatched === 'string' ? wornProto.blueprintMatched : null;
+  const wornBlueprint = wornBlueprintId ? blueprints.find((bp) => bp.id === wornBlueprintId) : undefined;
 
   const attentionTasks = tasks.filter((task) => ATTENTION_STATES.has(task.state));
   // 批次 H.3：健康聚合（失败任务与反复重试的卡点进关注区）
@@ -117,7 +121,7 @@ export function ProjectContextInspector({
   const criteria = matchedTask?.acceptanceCriteria ?? [];
   const criteriaMet = criteria.filter((c) => c.met === true).length;
   const criteriaUnmet = criteria.filter((c) => c.met === false).length;
-  const showBlueprintCard = !uiSimple && selectedTask !== undefined && !!blueprintRoute?.blueprint;
+  const showBlueprintCard = !uiSimple && matchedTask !== undefined && !!wornBlueprint;
 
   // 产物组点击 = 开「文档标签」（2026-08-27 P2：单槽 ?preview= 退役）
   const tabApi = useInspectorTabsApi();
@@ -365,26 +369,26 @@ export function ProjectContextInspector({
             </div>
           )}
 
-          {/* 最优蓝图（2026-08-28 起=AI 语义路由单结果，无匹配不显示；简单模式收起） */}
-          {showBlueprintCard && blueprintRoute?.blueprint && (
+          {/* 穿戴蓝图（读运行时任务实际穿戴记录；未穿戴不显示；简单模式收起） */}
+          {showBlueprintCard && wornBlueprint && (
             <div style={{ padding: '10px', background: 'var(--bg-elev)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
               <div className="auxiliary-section-title" style={{ padding: 0, marginBottom: '6px' }}>
-                <span>🎭 AI 路由蓝图</span>
+                <span>🎭 穿戴蓝图</span>
               </div>
               <Link
-                to={`/blueprints/${blueprintRoute.blueprint.id}`}
+                to={`/blueprints/${wornBlueprint.id}`}
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px',
                   padding: '4px 6px', borderRadius: 'var(--radius-sm)',
                   background: 'var(--bg)', border: '1px solid var(--border-subtle)',
                   fontSize: '12px', color: 'var(--fg)', textDecoration: 'none',
                 }}
-                title={blueprintRoute.reason}
+                title={typeof wornProto.blueprintRouteReason === 'string' ? wornProto.blueprintRouteReason : wornBlueprint.description}
               >
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  🎭 {blueprintRoute.blueprint.label}
+                  🎭 {wornBlueprint.label}
                 </span>
-                <Badge tone="info">置信 {Math.round((blueprintRoute.confidence || 0) * 100)}%</Badge>
+                <Badge tone="info">{wornProto.blueprintRoutedBy === 'ai' ? 'AI 路由' : '穿戴'}</Badge>
               </Link>
             </div>
           )}

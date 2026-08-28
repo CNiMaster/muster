@@ -36,8 +36,11 @@ function git(rootDir: string, args: string[], opts: { allowFail?: boolean } = {}
 }
 
 /** 确保项目根是 git 仓库；新项目自动 init + 写软件目录 marker（孤儿对账依据，幂等）。 */
-/** 凭据类硬排除 pathspec（promote 主干 user-edits 提交）：密钥永不进 git 历史。 */
-export const CREDENTIAL_PATHSPECS = [':(glob).env', ':(glob).env.*', ':(glob)*.pem', ':(glob)*.key', ':(glob)secrets/**'];
+/** 凭据类硬排除 pathspec（promote 主干 user-edits 提交）：密钥永不进 git 历史。
+ * 双星前缀=任意深度（:(glob) 下无前缀只匹配根目录——子目录 .env 会漏防）。 */
+export const CREDENTIAL_PATHSPECS = [
+  ':(glob)**/.env', ':(glob)**/.env.*', ':(glob)**/*.pem', ':(glob)**/*.key', ':(glob)**/secrets/**',
+];
 
 /** 主干未提交改动扫描（待合并卡可见性）：只列会被 `git add -A` 捡走的文件（已忽略的不列）。 */
 export function listTrunkUncommitted(rootDir: string): string[] {
