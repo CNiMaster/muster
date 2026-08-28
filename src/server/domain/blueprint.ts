@@ -317,6 +317,67 @@ export function rollbackBlueprint(db: DB, blueprintId: string, targetVersion: nu
 }
 
 /**
+ * 蓝图进化（按记录 id 直记，2026-08-28 定案）：执行穿的=记账的——跳过标题词法聚类，
+ * 切断「穿 A 蓝图、记账落 B 蓝图」的污染链。战绩/班底吸收/工具记账语义与 evolveBlueprint 一致；
+ * 蓝图已删除/退役仍记账（退役照记胜负供复活判定，对齐既有 revived 语义）。
+ */
+export function evolveBlueprintById(db: DB, input: {
+  blueprintId: string;
+  projectId: string;
+  personaId: string;
+  personaName: string;
+  win: boolean;
+  reworkCount?: number;
+  correctionCount?: number;
+  tools?: string[];
+  isUserOverride?: boolean;
+  userTalentName?: string;
+}): Blueprint | null {
+  const blueprint = getBlueprint(db, input.blueprintId);
+  const now = nowIso();
+  const structureFrozen = blueprint.status === 'locked';
+  const staffing = [...blueprint.staffing];
+  let staffingChanged = false;
+  if (!structureFrozen && !staffing.some((slot) => slot.personaId === input.personaId) && staffing.length < MAX_STAFFING_SLOTS) {
+    staffing.push({ personaId: input.personaId, personaName: input.personaName });
+    staffingChanged = true;
+  }
+  const sources = [...blueprint.sourceProjectIds];
+  if (!structureFrozen && !sources.includes(input.projectId) && sources.length < MAX_SOURCE_PROJECTS) {
+    sources.push(input.projectId);
+  }
+  const tools = structureFrozen ? blueprint.tools : mergeTools(blueprint.tools, input.tools ?? [], input.win);
+  const toolsChanged = tools.length !== blueprint.tools.length;
+  const revived = blueprint.status === 'retired';
+
+  return db.transaction(() => {
+    db.prepare(
+      `UPDATE blueprint SET staffing_json=?, tools_json=?, source_project_ids_json=?,
+         wins=?, losses=?, rework_total=?, correction_total=?, status=?, updated_at=? WHERE id=?`,
+    ).run(
+      JSON.stringify(staffing), JSON.stringify(tools), JSON.stringify(sources),
+      blueprint.wins + (input.win ? 1 : 0),
+      blueprint.losses + (input.win ? 0 : 1),
+      blueprint.reworkTotal + (input.reworkCount ?? 0),
+      blueprint.correctionTotal + (input.correctionCount ?? 0),
+      revived ? 'active' : blueprint.status,
+      now, blueprint.id,
+    );
+    if (revived) {
+      commitBlueprintVersion(db, blueprint.id, '复活：同类任务的新证据出现，蓝图恢复现役并继续积累战绩', [input.projectId]);
+    } else if (input.isUserOverride && input.win && (input.reworkCount ?? 0) === 0) {
+      commitBlueprintVersion(db, blueprint.id, `正向吸收：吸收自有人才「${input.userTalentName || input.personaName}」的优秀实践升级官方默认打法配置`, [input.projectId]);
+    } else if (staffingChanged) {
+      commitBlueprintVersion(db, blueprint.id, `班底扩充：新增协作成员「${input.personaName}」（第 ${staffing.length} 槽）`, [input.projectId]);
+    } else if (toolsChanged) {
+      const added = tools.filter((t) => !blueprint.tools.some((o) => o.kind === t.kind && o.id === t.id)).map((t) => t.id);
+      commitBlueprintVersion(db, blueprint.id, `工具集扩充：新增 ${added.join('、')}`, [input.projectId]);
+    }
+    return getBlueprint(db, blueprint.id);
+  })();
+}
+
+/**
  * 蓝图进化：支持正向吸收升级与负向隔离保护。
  */
 export function evolveBlueprint(db: DB, input: {

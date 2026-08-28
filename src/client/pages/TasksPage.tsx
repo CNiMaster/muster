@@ -1,7 +1,7 @@
 import type React from 'react';
 import { useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { useAgents, useCreateTask, useProject, useProjectTasks, useTasks } from '../hooks/queries';
+import { useAgents, useBlueprintMatches, useCreateTask, useProject, useProjectTasks, useTasks } from '../hooks/queries';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
 import { Badge, taskStateTone, stateLabel } from '../components/Badge';
@@ -68,6 +68,11 @@ export function TasksPage(): React.ReactElement {
   // 批次 G.4：列折叠与排序持久化（muster:*:vN 约定）；「显示全部」为会话态不持久化
   const [prefs, setPrefs] = useState<TasksPagePrefs>(loadPrefs);
   const [expanded, setExpanded] = useState<string[]>([]);
+  // AI 语义路由预览（2026-08-28 定案）：标题 ≥6 字即预览将穿戴的蓝图；命中时随工作单显式提交
+  // blueprintId（清除=不携带，走发布后的后台 AI 自动配/无蓝图模式）。
+  const blueprintRoute = useBlueprintMatches(title);
+  const [routeCleared, setRouteCleared] = useState(false);
+  const routedBlueprintId = !routeCleared ? blueprintRoute.data?.blueprint?.id : undefined;
   const visibleAgents = selectedAgentId ? agents.filter((agent) => agent.id === selectedAgentId) : agents;
   const canSubmit = Boolean(title.trim() && goal.trim() && background.trim() && references.trim() && acceptance.trim() && deliverables.trim() && projectTaskId);
 
@@ -97,11 +102,13 @@ export function TasksPage(): React.ReactElement {
       title: title.trim(),
       assigneeAgentId: assignee || undefined,
       priority: Number(priority),
+      blueprintId: routedBlueprintId,
       inputProtocol: buildTaskInputProtocol({ goal, background, references, acceptance, deliverables }),
     }, {
       onSuccess: () => {
         toast('success', assignee ? '智能体工作单已派发' : '工作单已发布到任务池，由负责人领取');
         setTitle(''); setGoal(''); setBackground(''); setReferences(''); setAcceptance(''); setDeliverables('');
+        setRouteCleared(false);
       },
       onError: (error) => toast('error', (error as Error).message),
     });
@@ -138,6 +145,13 @@ export function TasksPage(): React.ReactElement {
         <Field label="参考资料（每行一项）" required><Textarea value={references} onChange={(event) => setReferences(event.target.value)} placeholder={'PRD、文件路径、链接或对话记录\n没有资料时填写“无”'} /></Field>
         <Field label="验收标准" required><Textarea value={acceptance} onChange={(event) => setAcceptance(event.target.value)} placeholder="哪些可检查的条件全部满足才算完成？" /></Field>
         <Field label="预期交付物" required><Textarea value={deliverables} onChange={(event) => setDeliverables(event.target.value)} placeholder="智能体应提交哪些文件、结论、测试或说明？" /></Field>
+        {title.trim().length >= 6 && blueprintRoute.data && (
+          <p className="muted" style={{ margin: 0, fontSize: 12, lineHeight: 1.6 }}>
+            {blueprintRoute.data.blueprint
+              ? <>将穿戴 🎭 {blueprintRoute.data.blueprint.label}（主槽 {blueprintRoute.data.blueprint.mainPersonaName}，AI：{blueprintRoute.data.reason}）{routedBlueprintId && <button type="button" style={{ border: 0, background: 'none', color: 'var(--accent)', fontSize: 12, cursor: 'pointer', marginLeft: 6 }} onClick={() => setRouteCleared(true)}>不穿戴</button>}</>
+              : <>无蓝图模式（AI：{blueprintRoute.data.reason}）</>}
+          </p>
+        )}
         <Button onClick={submit} disabled={!canSubmit} loading={createTask.isPending}>{assignee ? '直接派发' : '发布到任务池'}</Button>
       </div>
     </Card>

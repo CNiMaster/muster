@@ -36,6 +36,7 @@ import {
 import { abortSwarm, getSwarmRun } from '../domain/swarm';
 import { generateTaskCloseoutSummary, getTaskCloseoutSummary } from '../domain/task-closeout';
 import { promoteProjectStagingIfAny } from '../domain/staging';
+import { routeAndBackfill } from '../domain/capability-routing';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { listTaskEvents } from '../domain/task-event';
 import { listTrace, type TraceKind } from '../domain/execution-trace';
@@ -100,6 +101,8 @@ const createTaskSchema = z.object({
   priority: z.number().optional(),
   /** 蓝图组织批次1：本次穿戴的人设（personas/ 相对路径）。 */
   personaId: z.string().min(1).optional(),
+  /** 显式穿戴蓝图（2026-08-28 定案：词法命中退役）——未携带=无蓝图模式起步（后台 AI 自动配接手）。 */
+  blueprintId: z.string().min(1).optional(),
   /** 双 Loop 地基 P0.1：验收标准 checklist（用户只填 criterion 文本，id 自动生成）。 */
   acceptanceCriteria: z.array(z.object({ id: z.string().optional(), criterion: z.string().min(1) })).optional(),
 });
@@ -122,7 +125,14 @@ taskByProjectRouter.post(
       id: c.id ?? `ac_${Date.now().toString(36)}_${i}`,
       criterion: c.criterion,
     }));
-    res.status(201).json(createTask(getDb(), { projectId: param(req, 'id'), ...input, acceptanceCriteria }));
+    const db = getDb();
+    const task = createTask(db, { projectId: param(req, 'id'), ...input, acceptanceCriteria });
+    // 直达路径后台自动配（2026-08-28 定案）：未显式穿戴蓝图的任务，AI 语义路由后在需求确认门
+    // 窗口内回填穿戴；fire-and-forget——失败/放弃只落事件，绝不阻塞创建响应，更不许影响任务本身。
+    if (!input.blueprintId && !input.personaId) {
+      void routeAndBackfill(db, task.id);
+    }
+    res.status(201).json(task);
   }),
 );
 

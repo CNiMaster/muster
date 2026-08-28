@@ -35,6 +35,7 @@ vi.mock('../../src/client/hooks/queries', async (importOriginal) => {
     useProjectTasks: () => ({ data: [] }),
     useAgents: () => ({ data: AGENTS }),
     useCreateTask: () => ({ mutate: vi.fn(), isPending: false }),
+    useBlueprintMatches: () => ({ data: undefined, isLoading: false }),
   };
 });
 
