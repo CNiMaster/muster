@@ -9,6 +9,7 @@ import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
 import { getProject } from './project';
+import { listPlugins } from './plugin-adapter';
 
 export type AutomationKind = 'github-issues' | 'notify' | 'dispatch';
 
@@ -122,33 +123,98 @@ function dayMatches(days: string[] | undefined, now: Date): boolean {
   return days.includes(labels[now.getDay()]!);
 }
 
+/**
+ * 能力前置检查（批次3）：requires 逐项对照已装能力（能力中心插件 + 技能，非 disabled/error）。
+ * 关键词匹配而非精确 id——执行器工具面表达不统一，宁可宽匹配（宽匹配漏报少，代价是无害的多放行）。
+ */
+export const CAPABILITY_MATCHERS: Record<string, RegExp> = {
+  'web-search': /(search|search|web|fetch|tavily|brave|scrape|crawl)/i,
+  'image-gen': /(image|img|draw|paint|dall|banana|image.gen|text.to.image)/i,
+  'repo-stats': /(github|git\b|repo|pull.request|\bpr\b|issue)/i,
+};
+
+/** 已装能力清单的一次性快照（名称+描述拼接），供 requires 匹配。 */
+export function installedCapabilityText(db: DB): string {
+  const plugins = listPlugins(db).filter((p) => p.status !== 'disabled' && p.status !== 'error');
+  return plugins
+    .map((p) => `${p.name} ${typeof p.manifest === 'object' && p.manifest && 'description' in (p.manifest as Record<string, unknown>) ? String((p.manifest as Record<string, unknown>).description ?? '') : ''}`)
+    .join('\n');
+}
+
+export function missingCapabilities(db: DB, requires?: string[]): string[] {
+  if (!requires || requires.length === 0) return [];
+  const text = installedCapabilityText(db);
+  return requires.filter((r) => {
+    const matcher = CAPABILITY_MATCHERS[r];
+    if (!matcher) return true; // 未知依赖视为缺失（保守）
+    return !matcher.test(text);
+  });
+}
+
 export function createAutomation(db: DB, input: {
   kind: AutomationKind; config: AutomationConfig; schedule: AutomationSchedule;
   projectId?: string; createdVia: 'chat' | 'form';
 }): AutomationRecord {
-  if (input.kind !== 'github-issues') {
-    throw new AppError(ErrorCode.VALIDATION, `一期仅支持 github-issues 自动化（收到：${input.kind}）`);
-  }
-  if (!input.projectId) {
-    throw new AppError(ErrorCode.VALIDATION, 'github-issues 自动化必须绑定项目');
-  }
-  if (!input.config.repo || !/^[\w.-]+\/[\w.-]+$/.test(input.config.repo)) {
-    throw new AppError(ErrorCode.VALIDATION, 'github-issues 自动化必须提供 owner/repo 形式的仓库');
+  if (input.kind === 'github-issues') {
+    if (!input.projectId) {
+      throw new AppError(ErrorCode.VALIDATION, 'github-issues 自动化必须绑定项目');
+    }
+    if (!input.config.repo || !/^[\w.-]+\/[\w.-]+$/.test(input.config.repo)) {
+      throw new AppError(ErrorCode.VALIDATION, 'github-issues 自动化必须提供 owner/repo 形式的仓库');
+    }
+    getProject(db, input.projectId); // 绑定项目存在性校验
+  } else {
+    // notify/dispatch：prompt 必填；项目可选（notify 不需要，dispatch 空=落隐藏执行队列）
+    if (!input.config.prompt || !input.config.prompt.trim()) {
+      throw new AppError(ErrorCode.VALIDATION, `${input.kind} 自动化必须提供 prompt（触发时要做什么）`);
+    }
+    if (input.projectId) getProject(db, input.projectId);
   }
   assertSchedule(input.schedule);
-  getProject(db, input.projectId); // 绑定项目存在性校验
+  // 能力前置：缺能力照样建但排程挂起（enabled=0 + capability_blocked=1），装齐后 recheck 自动恢复
+  const missing = missingCapabilities(db, input.config.requires);
   const id = shortId('auto_');
   const now = nowIso();
   db.prepare(
-    `INSERT INTO automation (id, kind, config_json, schedule_kind, schedule_interval_ms, time_of_day, run_at, days_json, project_id, enabled, created_via, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,1,?,?,?)`,
+    `INSERT INTO automation (id, kind, config_json, schedule_kind, schedule_interval_ms, time_of_day, run_at, days_json, project_id, enabled, capability_blocked, created_via, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
   ).run(
     id, input.kind, JSON.stringify(input.config), input.schedule.kind,
     input.schedule.intervalMs ?? null, input.schedule.timeOfDay ?? null, input.schedule.runAt ?? null,
     input.schedule.days ? JSON.stringify(input.schedule.days) : null,
-    input.projectId, input.createdVia, now, now,
+    input.projectId ?? null,
+    missing.length > 0 ? 0 : 1,
+    missing.length > 0 ? 1 : 0,
+    input.createdVia, now, now,
   );
-  return getAutomation(db, id);
+  const rec = getAutomation(db, id);
+  if (missing.length > 0) {
+    rec.lastResult = `缺能力未装：${missing.join('、')}——到能力中心安装后自动恢复排程`;
+  }
+  return rec;
+}
+
+/**
+ * 能力变化后的全量对账（双向）：声明了 requires 的自动化逐条重查——
+ * 缺能力 → 挂起（enabled=0+blocked=1，覆盖用户手动启用的情形，缺能力跑了也是空转）；
+ * 能力齐 → 恢复排程。插件安装/启用/禁用/卸载处都调本函数。
+ */
+export function recheckCapabilityBlocked(db: DB): { recovered: number; blocked: number } {
+  const affected = listAutomations(db).filter((a) => (a.config.requires ?? []).length > 0 || a.capabilityBlocked);
+  let recovered = 0;
+  let blockedCount = 0;
+  for (const a of affected) {
+    const missing = missingCapabilities(db, a.config.requires);
+    if (missing.length > 0 && !a.capabilityBlocked) {
+      db.prepare("UPDATE automation SET capability_blocked=1, enabled=0, updated_at=? WHERE id=?").run(nowIso(), a.id);
+      db.prepare("UPDATE automation SET last_result=? WHERE id=?").run(`缺能力未装：${missing.join('、')}——到能力中心安装后自动恢复排程`, a.id);
+      blockedCount += 1;
+    } else if (missing.length === 0 && a.capabilityBlocked) {
+      db.prepare("UPDATE automation SET capability_blocked=0, enabled=1, updated_at=? WHERE id=?").run(nowIso(), a.id);
+      recovered += 1;
+    }
+  }
+  return { recovered, blocked: blockedCount };
 }
 
 export function getAutomation(db: DB, id: string): AutomationRecord {
@@ -187,6 +253,8 @@ export function updateAutomation(db: DB, id: string, patch: {
     if (!config.repo || !/^[\w.-]+\/[\w.-]+$/.test(config.repo)) {
       throw new AppError(ErrorCode.VALIDATION, 'github-issues 自动化必须提供 owner/repo 形式的仓库');
     }
+  } else if (!config.prompt || !config.prompt.trim()) {
+    throw new AppError(ErrorCode.VALIDATION, `${current.kind} 自动化必须提供 prompt`);
   }
   if (projectId) getProject(db, projectId);
   assertSchedule(schedule);
@@ -286,7 +354,7 @@ export function recordAndMark(db: DB, id: string, status: AutomationRunStatus, s
 
 /** 引擎兑现入口（automationPlan done 契约 → 落库，chat 入口与表单共用本链路）。 */
 export function materializeAutomationPlan(db: DB, plan: {
-  kind: AutomationKind; config: AutomationConfig; schedule: AutomationSchedule; projectId: string;
+  kind: AutomationKind; config: AutomationConfig; schedule: AutomationSchedule; projectId?: string;
 }): AutomationRecord {
   return createAutomation(db, { ...plan, createdVia: 'chat' });
 }
@@ -316,7 +384,7 @@ export function isAutomationDue(a: AutomationRecord, now = new Date()): boolean 
   return false;
 }
 
-/** 到点的启用自动化（coordinator 扫描入口）。 */
+/** 到点的启用自动化（coordinator 扫描入口）；能力被阻断的跳过（排程挂起语义）。 */
 export function listDueAutomations(db: DB, now = new Date()): AutomationRecord[] {
-  return listAutomations(db).filter((a) => isAutomationDue(a, now));
+  return listAutomations(db).filter((a) => !a.capabilityBlocked && isAutomationDue(a, now));
 }

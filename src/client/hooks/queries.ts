@@ -666,7 +666,7 @@ export function useProjectPendingMerges(projectId: string | undefined) {
 
 export interface AutomationDTO {
   id: string;
-  kind: 'github-issues';
+  kind: 'github-issues' | 'notify' | 'dispatch';
   config: { repo: string; labelFilter?: string; prompt?: string; requires?: string[] };
   schedule:
     | { kind: 'interval'; intervalMs?: number; timeOfDay?: string; days?: string[] }

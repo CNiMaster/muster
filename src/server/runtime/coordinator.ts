@@ -1,7 +1,7 @@
 import type { DB } from '../db/client';
 import { getWorkbench, transitionWorkbench } from '../domain/workbench';
 import { listProjects } from '../domain/project';
-import { ensureProjectThreads, releaseProjectMirrors } from '../domain/thread';
+import { ensureProjectThreads, ensurePrimaryThread, releaseProjectMirrors } from '../domain/thread';
 import { ensurePlanningTask, listTasks, recoverExpiredLeases, findStaleWaitingTasks, escalateToFirstResponder, createTask, autoContinueDueWaitingTasks, bootSelfCheck } from '../domain/task';
 import { drainProjectQueues } from '../domain/queued-message';
 import type { TaskEngine } from '../task-engine/engine';
@@ -9,7 +9,7 @@ import { log } from '../logger';
 import { interruptActiveBrainstorms } from '../domain/brainstorm';
 import { openReportCycle, shouldTriggerReport } from '../domain/report';
 import { isSoftCapReached, type Budget } from '../domain/usage';
-import { updateProject, getProject } from '../domain/project';
+import { updateProject, getProject, ensureAutomationQueueProject } from '../domain/project';
 import { settleDrainingAgents } from '../domain/agent';
 import { drainReflectionQueue, recoverStuckReflections, enqueueIdleReflections } from '../domain/reflection';
 import { drainSemanticSettlements } from '../domain/settlement';
@@ -17,10 +17,11 @@ import { runMemoryHousekeeping } from '../domain/memory-housekeeping';
 import { sweepStaleStaging, sweepStaleTaskStaging } from '../domain/staging';
 import { sweepIdleStaffSpecialists } from '../domain/specialist-review';
 import { listDueAutomations, recordAndMark, setAutomationEnabled } from '../domain/automation';
+import { postSystemMessage } from '../domain/conversation';
+import { ensureAutomationStewardAgentId } from '../domain/system-agents';
 import { syncGithubIssues } from '../domain/github-issues';
 import { settleMemoryVotes, sweepMemoryBacklogNotice, purgeStaleMemory } from '../domain/memory';
 import { archiveStaleCompletedTasks } from '../domain/project-task';
-import { postSystemMessage } from '../domain/conversation';
 import { generateInspectorSuggestions } from '../domain/inspector';
 import type { SetupGenerator } from '../domain/setup-assistant';
 import { getSystemSettings } from '../domain/setting';
@@ -86,6 +87,59 @@ export function runIdleReflectionPass(db: DB): Array<{ companyId: string; enqueu
 }
 
 /** 统一驱动公司生命周期和项目任务执行。 */
+/**
+ * 自动化到点执行扫（60s timer 调用；导出供集成测试直调）：
+ * github-issues 拉取派分诊 / notify 管家名义发工作台消息 / dispatch 隐藏队列建单；
+ * 每次执行落 automation_run 历史；once 成功后自动归档。
+ */
+export async function runAutomationSweep(db: DB): Promise<void> {
+  for (const automation of listDueAutomations(db)) {
+    const startedAt = new Date().toISOString();
+    try {
+      if (automation.kind === 'github-issues') {
+        const r = await syncGithubIssues(db, automation);
+        recordAndMark(db, automation.id, 'ok', startedAt, `新增 ${r.newCount} · 已知 ${r.skipped}`);
+      } else if (automation.kind === 'notify') {
+        // 提醒：到点以自动化管家名义在工作台对话现场说一句（批次4 再补弹窗/红点交互）
+        const workbench = getWorkbench(db);
+        const stewardId = ensureAutomationStewardAgentId(db);
+        postSystemMessage(db, {
+          scopeKind: 'workbench',
+          scopeId: workbench.id,
+          role: 'assistant',
+          author: stewardId,
+          content: `⏰ 自动化提醒：${automation.config.prompt ?? ''}`,
+        });
+        recordAndMark(db, automation.id, 'ok', startedAt, '已提醒');
+      } else if (automation.kind === 'dispatch') {
+        // 派活：到点在隐藏执行队列建单（工作单不进用户项目），产出经对话现场回流
+        const workbench = getWorkbench(db);
+        if (!workbench.firstAgentId) throw new Error('工作台缺少负责人，无法派发自动化任务');
+        const queue = ensureAutomationQueueProject(db).project;
+        ensurePrimaryThread(db, queue.id, workbench.firstAgentId);
+        const prompt = automation.config.prompt ?? '';
+        const task = createTask(db, {
+          projectId: queue.id,
+          assigneeAgentId: workbench.firstAgentId,
+          title: `[自动化] ${prompt.slice(0, 60)}`,
+          priority: 5,
+          inputProtocol: { instruction: prompt },
+        });
+        recordAndMark(db, automation.id, 'ok', startedAt, `已派活 → ${task.id}`);
+      } else {
+        recordAndMark(db, automation.id, 'skipped', startedAt, `未知类型 ${automation.kind}，已跳过`);
+      }
+      // once 跑完即归档（一次性语义）：成功执行后停用，列表派生「已完成」
+      if (automation.schedule.kind === 'once') {
+        setAutomationEnabled(db, automation.id, false);
+      }
+    } catch (error) {
+      recordAndMark(db, automation.id, 'failed', startedAt, `失败：${String(error).slice(0, 200)}`);
+      log.warn('automation run failed', { automationId: automation.id, kind: automation.kind, err: String(error) });
+    }
+  }
+}
+
 export class ProjectRuntimeCoordinator {
   private timer: NodeJS.Timeout | null = null;
   /** 反思队列消化定时器——独立于 tick，避免 LLM 慢调用阻塞租约恢复/任务泵送。 */
@@ -322,26 +376,7 @@ export class ProjectRuntimeCoordinator {
     // 自动化中心（整改 Part2 批次6）：每 60s 扫到点的自动化并执行——独立 timer（gh 网络 IO +
     // 后续执行链绝不占 tick）；失败记 health 跳过本轮，不轰炸。批次1：每次执行落 automation_run 历史。
     this.automationTimer = setInterval(() => {
-      void (async () => {
-        for (const automation of listDueAutomations(this.db)) {
-          const startedAt = new Date().toISOString();
-          try {
-            if (automation.kind === 'github-issues') {
-              const r = await syncGithubIssues(this.db, automation);
-              recordAndMark(this.db, automation.id, 'ok', startedAt, `新增 ${r.newCount} · 已知 ${r.skipped}`);
-            } else {
-              recordAndMark(this.db, automation.id, 'skipped', startedAt, `未知类型 ${automation.kind}，已跳过`);
-            }
-            // once 跑完即归档（一次性语义）：成功执行后停用，列表派生「已完成」
-            if (automation.schedule.kind === 'once') {
-              setAutomationEnabled(this.db, automation.id, false);
-            }
-          } catch (error) {
-            recordAndMark(this.db, automation.id, 'failed', startedAt, `失败：${String(error).slice(0, 200)}`);
-            log.warn('automation run failed', { automationId: automation.id, kind: automation.kind, err: String(error) });
-          }
-        }
-      })();
+      void runAutomationSweep(this.db);
     }, 60_000);
     this.automationTimer.unref?.();
 

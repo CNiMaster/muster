@@ -238,6 +238,27 @@ export function ensureStandaloneProject(db: DB): { project: Project; created: bo
 }
 
 /**
+ * 自动化中心批次3：自动化执行队列——dispatch 类自动化到点派活的隐藏载体。
+ * （收件箱/独立任务同款模式：settings.automationQueue=true，项目列表/驾驶舱过滤隐藏；
+ * 自动化的产出经对话现场回流，不占用用户业务项目。）
+ */
+export function ensureAutomationQueueProject(db: DB): { project: Project; created: boolean } {
+  const rows = db.prepare('SELECT * FROM project').all() as ProjectRow[];
+  const existing = rows.map((r) => fromRow(db, r)).find((p) => (p.settings as Record<string, unknown>)?.automationQueue === true);
+  if (existing) return { project: existing, created: false };
+  const project = createProject(db, {
+    name: '自动化执行',
+    description: '自动化任务触发产生的执行载体：这里的活由自动化到点派发，产出回到自动化中心与对话现场。',
+    initialState: 'active',
+    rootDir: infraDir(ensureDefaultWorkspace(db, defaultWorkspaceRoot()).rootDir, 'automation-queue'),
+  });
+  const flagged = updateProject(db, project.id, {
+    settings: { ...(project.settings as Record<string, unknown>), automationQueue: true },
+  });
+  return { project: flagged, created: true };
+}
+
+/**
  * 确保工作台至少存在一个默认项目（防零项目导致工作台空态断层）。
  */
 export function ensureDefaultProject(db: DB): { project: Project; created: boolean } {

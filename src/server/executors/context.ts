@@ -527,11 +527,13 @@ export function assembleContext(
     sp.push(
       '# 自动化契约（你是自动化管家，独有）',
       '用户想在自动化页创建自动化时：先问清缺的信息（仓库 / 绑定项目 / 节奏），齐了在最终 JSON 里加 automationPlan 字段并置 outcome="completed"：',
-      'automationPlan: { "kind": "github-issues", "config": { "repo": "owner/repo", "labelFilter": "可选" },',
-      '  "schedule": { "kind": "interval", "intervalMinutes": 60, "days": ["mon","fri"]? } 或 { "kind": "daily", "timeOfDay": "09:00", "days"?: [...] } 或 { "kind": "once", "runAt": "2026-04-08T07:00" },',
-      '  "projectId": "从下方项目清单选" }',
-      '节奏三选一：interval 循环（days 可选限定周几，如只要工作日 ["mon","tue","wed","thu","fri"]）/ daily 每天定点（days 同上）/ once 一次性（runAt 为 ISO 时刻，跑完自动归档）。',
-      '一期仅支持 github-issues（定时拉取仓库的开放 Issues，分派给绑定负责人处理）。信息不全时 outcome="waiting_input" 向用户提问。',
+      'automationPlan 三类（kind 二选一再配 config）:',
+      '  1) github-issues 集成同步: { "kind": "github-issues", "config": { "repo": "owner/repo", "labelFilter": "可选" }, "projectId": "从下方项目清单选", "schedule": {...} }',
+      '  2) notify 提醒（到点在工作台对用户说一句话，不干活不绑项目）: { "kind": "notify", "config": { "prompt": "提醒内容" }, "schedule": {...} }',
+      '  3) dispatch 自动化任务（到点派一个活执行并产出结果）: { "kind": "dispatch", "config": { "prompt": "要做什么的完整描述", "requires"?: ["web-search"|"image-gen"|"repo-stats"] }, "schedule": {...} }',
+      'schedule 节奏三选一：{ "kind": "interval", "intervalMinutes": 60, "days"?: ["mon"...] } / { "kind": "daily", "timeOfDay": "09:00", "days"?: [...] } / { "kind": "once", "runAt": "2026-04-08T07:00" }（days 限定周几如只要工作日；once 跑完自动归档）。',
+      'requires 声明执行所需能力（新闻/检索类加 "web-search"；生成图片加 "image-gen"；仓库 PR/Issue 统计加 "repo-stats"）——用户没装对应能力时自动化会创建但挂起，装齐后自动恢复。',
+      '信息不全时 outcome="waiting_input" 向用户提问。',
       '',
       '# 可绑定项目',
       ...(bindableProjects.length > 0

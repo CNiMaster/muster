@@ -75,19 +75,20 @@ function nextRunText(a: AutomationDTO, now: Date): { text: string; title: string
 }
 
 /** 自动化任务模版（对话卡下方一行三个；点击把文案回填到管家对话输入框，可改再发）。 */
-const AUTOMATION_TEMPLATES: { icon: string; title: string; desc: string }[] = [
-  { icon: '📰', title: '每日 AI 新闻推送', desc: '关注当天 AI 领域的重要动态，侧重 AI coding 与具身智能进展，筛选 3-5 条值得关注的信息。' },
-  { icon: '🔤', title: '每日 5 个英语单词', desc: '每天推荐 5 个高频实用英语单词，包含词义、音标、例句与记忆提示。' },
-  { icon: '🌙', title: '每日儿童睡前故事', desc: '生成 3-5 分钟可读的温和睡前故事，情节完整并附简短寓意。' },
-  { icon: '📊', title: '每周工作周报', desc: '每周五汇总仓库 PR 与 Issue 进展，输出关键变更与待关注事项。' },
-  { icon: '🎬', title: '经典电影推荐', desc: '推荐一部高分经典电影，简要介绍剧情梗概、亮点与推荐理由，全程不剧透。' },
-  { icon: '🗓', title: '历史上的今天', desc: '从科技、电影、音乐等领域挑选一件"今天发生过"的有趣事件，200-300 字讲清来龙去脉。' },
-  { icon: '💡', title: '每日一个为什么', desc: '每天抛出一个有趣问题，先提问再解答，语气轻松、通俗易懂，答案控制在 200-300 字。' },
-  { icon: '📞', title: '父母联系提醒', desc: '每周日 10:00 提醒你给家人打电话或发消息，简单问候近况。' },
-  { icon: '🏥', title: '体检预约提醒', desc: '在 2026/04/08 07:00 提醒你确认体检时间、准备证件，并注意空腹与其他事项。' },
-  { icon: '💼', title: '面试准备提醒', desc: '工作日每 2 小时提醒你复习大模型面试内容，并生成 3 个模拟问题。' },
-  { icon: '📝', title: '会议前准备', desc: '在会议开始前提醒你整理议题、目标、待确认问题和关键结论。' },
-  { icon: '🐱', title: '可爱萌宠手机壁纸', desc: '随机从 7 种不同风格中挑选一种，为你生成一张 9:16 竖版高清萌宠手机壁纸。' },
+/** 自动化任务模版（对话卡下方一行三个；点击把文案回填到管家对话输入框，可改再发）。tag 为派生类型提示。 */
+const AUTOMATION_TEMPLATES: { icon: string; title: string; desc: string; tag: '提醒' | '内容' }[] = [
+  { icon: '📰', title: '每日 AI 新闻推送', desc: '关注当天 AI 领域的重要动态，侧重 AI coding 与具身智能进展，筛选 3-5 条值得关注的信息。', tag: '内容' },
+  { icon: '🔤', title: '每日 5 个英语单词', desc: '每天推荐 5 个高频实用英语单词，包含词义、音标、例句与记忆提示。', tag: '内容' },
+  { icon: '🌙', title: '每日儿童睡前故事', desc: '生成 3-5 分钟可读的温和睡前故事，情节完整并附简短寓意。', tag: '内容' },
+  { icon: '📊', title: '每周工作周报', desc: '每周五汇总仓库 PR 与 Issue 进展，输出关键变更与待关注事项。', tag: '内容' },
+  { icon: '🎬', title: '经典电影推荐', desc: '推荐一部高分经典电影，简要介绍剧情梗概、亮点与推荐理由，全程不剧透。', tag: '内容' },
+  { icon: '🗓', title: '历史上的今天', desc: '从科技、电影、音乐等领域挑选一件"今天发生过"的有趣事件，200-300 字讲清来龙去脉。', tag: '内容' },
+  { icon: '💡', title: '每日一个为什么', desc: '每天抛出一个有趣问题，先提问再解答，语气轻松、通俗易懂，答案控制在 200-300 字。', tag: '内容' },
+  { icon: '📞', title: '父母联系提醒', desc: '每周日 10:00 提醒你给家人打电话或发消息，简单问候近况。', tag: '提醒' },
+  { icon: '🏥', title: '体检预约提醒', desc: '在 2026/04/08 07:00 提醒你确认体检时间、准备证件，并注意空腹与其他事项。', tag: '提醒' },
+  { icon: '💼', title: '面试准备提醒', desc: '工作日每 2 小时提醒你复习大模型面试内容，并生成 3 个模拟问题。', tag: '提醒' },
+  { icon: '📝', title: '会议前准备', desc: '在会议开始前提醒你整理议题、目标、待确认问题和关键结论。', tag: '提醒' },
+  { icon: '🐱', title: '可爱萌宠手机壁纸', desc: '随机从 7 种不同风格中挑选一种，为你生成一张 9:16 竖版高清萌宠手机壁纸。', tag: '内容' },
 ];
 
 export function AutomationPage(): React.ReactElement {
@@ -237,7 +238,7 @@ export function AutomationPage(): React.ReactElement {
             <div className="mu-auto-tpl-grid">
               {AUTOMATION_TEMPLATES.map((t) => (
                 <button key={t.title} type="button" className="mu-auto-tpl-item" onClick={() => applyTemplate(t)} title={t.desc}>
-                  <span className="mu-auto-tpl-title">{t.icon} {t.title}</span>
+                  <span className="mu-auto-tpl-title">{t.icon} {t.title}<span className="mu-auto-tpl-tag">{t.tag}</span></span>
                   <span className="mu-auto-tpl-desc">{t.desc}</span>
                 </button>
               ))}
@@ -385,8 +386,11 @@ function AutomationRow({ a, projectLabel, onEdit, onToggle, onDelete }: {
   return (
     <div style={{ padding: '10px 4px', borderBottom: '1px solid var(--border-subtle)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ fontSize: 13, fontWeight: 600, flex: 1 }}>🔀 {a.config.repo}</span>
-        <Badge tone={a.enabled ? 'ok' : 'neutral'}>{a.enabled ? '运行中' : '已停用'}</Badge>
+        <span style={{ fontSize: 13, fontWeight: 600, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {a.kind === 'github-issues' ? `🔀 ${a.config.repo}` : a.kind === 'notify' ? `🔔 ${a.config.prompt ?? ''}` : `🧭 ${a.config.prompt ?? ''}`}
+        </span>
+        {a.capabilityBlocked && <Badge tone="warn">缺能力</Badge>}
+        <Badge tone={a.enabled ? 'ok' : 'neutral'}>{a.enabled ? '运行中' : a.schedule.kind === 'once' && a.lastRunAt ? '已完成' : '已停用'}</Badge>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, fontSize: 12, color: 'var(--fg-subtle)', flexWrap: 'wrap' }}>
         <span>{scheduleText(a)}</span>
@@ -406,7 +410,9 @@ function AutomationRow({ a, projectLabel, onEdit, onToggle, onDelete }: {
         <div style={{ marginTop: 4, fontSize: 12, color: 'var(--fg-subtle)' }}>最近运行：{new Date(a.lastRunAt).toLocaleString()}{a.lastResult ? ` · ${a.lastResult}` : ''}</div>
       )}
       <div style={{ display: 'flex', gap: 6, marginTop: 6, alignItems: 'center' }}>
-        <Button size="sm" variant="ghost" onClick={onEdit}>✎ 编辑</Button>
+        {a.kind === 'github-issues'
+          ? <Button size="sm" variant="ghost" onClick={onEdit}>✎ 编辑</Button>
+          : <Button size="sm" variant="ghost" onClick={onEdit} title="提醒/任务类在对话中让管家调整，或删除后重建" disabled>✎ 编辑</Button>}
         <Button size="sm" variant="ghost" onClick={onToggle}>
           {a.enabled ? '⏸ 停用' : '▶ 启用'}
         </Button>

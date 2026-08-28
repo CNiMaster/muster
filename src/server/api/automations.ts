@@ -63,15 +63,17 @@ const scheduleSchema = z.union([
 ]);
 
 const configSchema = z.object({
-  repo: z.string().regex(/^[\w.-]+\/[\w.-]+$/, 'owner/repo 形式'),
+  repo: z.string().regex(/^[\w.-]+\/[\w.-]+$/, 'owner/repo 形式').optional(),
   labelFilter: z.string().optional(),
+  prompt: z.string().min(1).optional(),
+  requires: z.array(z.string()).optional(),
 });
 
 const createSchema = z.object({
-  kind: z.literal('github-issues'),
+  kind: z.enum(['github-issues', 'notify', 'dispatch']),
   config: configSchema,
   schedule: scheduleSchema,
-  projectId: z.string().min(1),
+  projectId: z.string().min(1).optional(),
 });
 
 automationsRouter.post('/', asyncHandler(async (req, res) => {

@@ -120,7 +120,7 @@ projectsRouter.get(
     const visible = listProjects(db, companyIdOf(req)).filter(
       (p) => {
         const s = p.settings as Record<string, unknown>;
-        return s.inbox !== true && s.standalone !== true;
+        return s.inbox !== true && s.standalone !== true && s.automationQueue !== true;
       },
     );
     const view = (req.query.view as string) ?? 'active';

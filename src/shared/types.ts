@@ -160,10 +160,10 @@ export interface AgentRunResult {
   staffingPlan?: StaffingPlan;
   /** 整改计划 Part2 批次5：自动化管家契约——对话创建自动化（引擎按 assignee=管家兑现）。 */
   automationPlan?: {
-    kind: 'github-issues';
-    config: { repo: string; labelFilter?: string };
+    kind: 'github-issues' | 'notify' | 'dispatch';
+    config: { repo?: string; labelFilter?: string; prompt?: string; requires?: string[] };
     schedule: { kind: 'interval'; intervalMinutes: number; days?: string[] } | { kind: 'daily'; timeOfDay: string; days?: string[] } | { kind: 'once'; runAt: string };
-    projectId: string;
+    projectId?: string;
   };
 }
 

@@ -73,7 +73,7 @@ const ACTIVE_TASK_STATES = ['queued', 'claimed', 'running', 'waiting_input', 'wa
 export function precheckTrashProject(db: DB, project: Project): string[] {
   const blockers: string[] = [];
   const settings = project.settings as Record<string, unknown>;
-  if (settings.inbox === true || settings.standalone === true) {
+  if (settings.inbox === true || settings.standalone === true || settings.automationQueue === true) {
     blockers.push('基础设施项目（收件箱/独立任务）不可移入回收站');
   }
   if (project.state === 'active') {

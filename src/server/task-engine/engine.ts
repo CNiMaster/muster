@@ -993,12 +993,21 @@ export class TaskEngine {
                 ? { kind: 'daily', timeOfDay: plan.schedule.timeOfDay, ...(plan.schedule.days ? { days: plan.schedule.days } : {}) }
                 : { kind: 'once', runAt: plan.schedule.runAt },
           });
-          const project = getProject(this.db, plan.projectId);
-          result.summary = `已创建自动化（${created.id}）：${scheduleLabel(plan.schedule)}拉取 ${plan.config.repo} 的 GitHub Issues，派给「${project.name}」负责人处理。`;
+          // 批次3：摘要分 kind 播报；notify 不绑项目，getProject 仅对绑项目的类型调用
+          if (plan.kind === 'github-issues') {
+            if (!plan.projectId) throw new AppError(ErrorCode.VALIDATION, 'github-issues 自动化必须绑定项目');
+            const project = getProject(this.db, plan.projectId);
+            result.summary = `已创建自动化（${created.id}）：${scheduleLabel(plan.schedule)}拉取 ${plan.config.repo} 的 GitHub Issues，派给「${project.name}」负责人处理。`;
+          } else if (plan.kind === 'notify') {
+            result.summary = `已创建提醒（${created.id}）：${scheduleLabel(plan.schedule)}提醒你「${(plan.config.prompt ?? '').slice(0, 40)}」。`;
+          } else {
+            result.summary = `已创建自动化任务（${created.id}）：${scheduleLabel(plan.schedule)}执行「${(plan.config.prompt ?? '').slice(0, 40)}」。`;
+          }
+          if (created.capabilityBlocked && created.lastResult) result.summary += ` 注意：${created.lastResult}`;
           realtime.publish({
             id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
             type: 'automation.created',
-            projectId: plan.projectId,
+            projectId: task.projectId,
             taskId: task.id,
             occurredAt: new Date().toISOString(),
             payload: { automationId: created.id, kind: created.kind, repo: plan.config.repo },

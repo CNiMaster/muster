@@ -57,10 +57,14 @@ const staffingPlanSchema = z.object({
 const scheduleDaysSchema = z.array(z.enum(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'])).optional();
 
 const automationPlanSchema = z.object({
-  kind: z.literal('github-issues'),
+  kind: z.enum(['github-issues', 'notify', 'dispatch']),
   config: z.object({
-    repo: z.string().regex(/^[\w.-]+\/[\w.-]+$/, 'owner/repo'),
+    repo: z.string().regex(/^[\w.-]+\/[\w.-]+$/, 'owner/repo').optional(),
     labelFilter: z.string().optional(),
+    /** notify/dispatch：触发正文。 */
+    prompt: z.string().optional(),
+    /** 能力依赖（如 web-search/image-gen/repo-stats），缺能力时排程挂起。 */
+    requires: z.array(z.string()).optional(),
   }),
   schedule: z.union([
     z.object({ kind: z.literal('interval'), intervalMinutes: z.number().int().min(1).max(1440), days: scheduleDaysSchema }),
@@ -207,14 +211,15 @@ export const AGENT_RESULT_JSON_SCHEMA = {
     automationPlan: {
       type: 'object',
       properties: {
-        kind: { type: 'string', enum: ['github-issues'] },
+        kind: { type: 'string', enum: ['github-issues', 'notify', 'dispatch'] },
         config: {
           type: 'object',
           properties: {
             repo: { type: 'string' },
             labelFilter: { type: 'string' },
+            prompt: { type: 'string' },
+            requires: { type: 'array', items: { type: 'string' } },
           },
-          required: ['repo'],
         },
         schedule: {
           type: 'object',
@@ -229,7 +234,7 @@ export const AGENT_RESULT_JSON_SCHEMA = {
         },
         projectId: { type: 'string' },
       },
-      required: ['kind', 'config', 'schedule', 'projectId'],
+      required: ['kind', 'config', 'schedule'],
     },
   },
   required: ['outcome', 'summary'],

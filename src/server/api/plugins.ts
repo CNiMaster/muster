@@ -25,6 +25,7 @@ import { z } from 'zod';
 import { asyncHandler, param, companyIdOf } from './middleware';
 import { getDb } from '../db/client';
 import { listPlugins, getPlugin } from '../domain/plugin-adapter';
+import { recheckCapabilityBlocked } from '../domain/automation';
 import { panelManifestSchema } from '../domain/panel-plugin';
 import {
   installPlugin,
@@ -71,6 +72,7 @@ const companyEnableHandler = asyncHandler(async (req, res) => {
   // opt-out：enable = 撤销禁用，恢复平台默认全开
   setCompanyPluginDecision(getDb(), param(req, 'id'), 'enabled');
   realtime.publish(makeLifecycleEvent('plugin.enabled', { pluginId: param(req, 'id') }, {}));
+  recheckCapabilityBlocked(getDb()); // 能力齐了 → 自动恢复被挂起的自动化
   res.json({ ok: true });
 });
 pluginsRouter.post('/:id/enable', companyEnableHandler);
@@ -80,6 +82,7 @@ const companyDisableHandler = asyncHandler(async (req, res) => {
   // opt-out：disable = 显式禁用某平台插件
   setCompanyPluginDecision(getDb(), param(req, 'id'), 'disabled');
   realtime.publish(makeLifecycleEvent('plugin.disabled', { pluginId: param(req, 'id') }, {}));
+  recheckCapabilityBlocked(getDb()); // 禁用联动 → 依赖它的自动化重新对账挂起
   res.json({ ok: true });
 });
 pluginsRouter.post('/:id/disable', companyDisableHandler);

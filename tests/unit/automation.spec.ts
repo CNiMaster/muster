@@ -14,7 +14,7 @@ import { clockIn } from '../../src/server/domain/workbench';
 import { ensureAutomationStewardAgentId, AUTOMATION_ROLE } from '../../src/server/domain/system-agents';
 import {
   createAutomation, listAutomations, materializeAutomationPlan, setAutomationEnabled, deleteAutomation, updateAutomation, markAutomationRun, getAutomation,
-  recordAutomationRun, listAutomationRuns, countAutomationRuns, isAutomationDue,
+  recordAutomationRun, listAutomationRuns, countAutomationRuns, isAutomationDue, recheckCapabilityBlocked, listDueAutomations,
 } from '../../src/server/domain/automation';
 import { TaskEngine } from '../../src/server/task-engine/engine';
 import { FakeExecutor } from '../../src/server/task-engine/fake-executor';
@@ -144,6 +144,32 @@ describe('automation 域', () => {
     expect(counts.get(a2.id)).toBe(1);
     // limit 参数生效
     expect(listAutomationRuns(db, a1.id, 5)).toHaveLength(5);
+  });
+
+  it('批次3：notify/dispatch 创建（prompt 必填/项目可选）+ 缺能力挂起与双向对账恢复', () => {
+    const projectId = seedProject('kinds');
+    // notify：prompt 必填、不绑项目
+    expect(() => createAutomation(db, { kind: 'notify', config: {}, schedule: { kind: 'daily', timeOfDay: '10:00' }, createdVia: 'chat' })).toThrow();
+    const notify = createAutomation(db, { kind: 'notify', config: { prompt: '给家人打电话' }, schedule: { kind: 'daily', timeOfDay: '10:00', days: ['sun'] }, createdVia: 'chat' });
+    expect(notify.projectId).toBeNull();
+    expect(notify.capabilityBlocked).toBe(false);
+    // dispatch：空项目合法（落隐藏队列）
+    const dispatch = createAutomation(db, { kind: 'dispatch', config: { prompt: '写日报' }, schedule: { kind: 'interval', intervalMs: 3_600_000 }, createdVia: 'chat' });
+    expect(dispatch.projectId).toBeNull();
+    // requires 声明但环境无匹配能力 → 挂起（enabled=0+blocked=1），且不进 due 列表
+    const blocked = createAutomation(db, { kind: 'dispatch', config: { prompt: '搜新闻', requires: ['web-search'] }, schedule: { kind: 'daily', timeOfDay: '09:00' }, createdVia: 'chat' });
+    expect(blocked.capabilityBlocked).toBe(true);
+    expect(blocked.enabled).toBe(false);
+    expect(listDueAutomations(db, new Date('2026-08-28T10:00:00')).some((a) => a.id === blocked.id)).toBe(false);
+    // 双向对账：此刻仍缺 → 无变化；（恢复场景在单测环境难伪造已装插件，此处验证不误恢复）
+    const r1 = recheckCapabilityBlocked(db);
+    expect(r1.recovered).toBe(0);
+    // materializeAutomationPlan（对话入口）notify 分支
+    const chatNotify = materializeAutomationPlan(db, { kind: 'notify', config: { prompt: '开会了' }, schedule: { kind: 'once', runAt: '2026-08-29T09:00:00' } });
+    expect(chatNotify.kind).toBe('notify');
+    expect(chatNotify.projectId).toBeNull();
+    expect(notify.kind).toBe('notify');
+    expect(dispatch.kind).toBe('dispatch');
   });
 });
 
