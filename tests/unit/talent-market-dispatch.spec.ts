@@ -92,7 +92,7 @@ describe('Talent Market & Auto-Dispatch Routing (Phase 1)', () => {
     const agent = createAgent(db, { companyId: company.id, name: 'Lead Dev', role: 'lead' });
 
     // Seed a blueprint for react development
-    evolveBlueprint(db, {
+    const bp = evolveBlueprint(db, {
       companyId: company.id,
       taskTitle: 'Develop React navigation bar',
       personaId: 'frontend/engineering-frontend-developer',
@@ -100,7 +100,7 @@ describe('Talent Market & Auto-Dispatch Routing (Phase 1)', () => {
       win: true,
       tools: [],
       projectId: project.id,
-    });
+    })!;
 
     // Case A: With User Talent on Active Duty
     const userTalent = clonePersonaAsUser(db, 'frontend/engineering-frontend-developer', 'Elite React Dev');
@@ -114,6 +114,7 @@ describe('Talent Market & Auto-Dispatch Routing (Phase 1)', () => {
       projectId: project.id,
       title: 'Develop React navigation bar component',
       assigneeAgentId: agent.id,
+      blueprintId: bp.id,
     });
 
     expect(taskWithUser.inputProtocol.blueprintMatched).toBeTruthy();
@@ -128,6 +129,7 @@ describe('Talent Market & Auto-Dispatch Routing (Phase 1)', () => {
       projectId: project.id,
       title: 'Develop React navigation bar modal',
       assigneeAgentId: agent.id,
+      blueprintId: bp.id,
     });
 
     expect(taskWithOfficial.inputProtocol.blueprintMatched).toBeTruthy();
@@ -140,7 +142,7 @@ describe('Talent Market & Auto-Dispatch Routing (Phase 1)', () => {
     const company = restoreWorkbench(db, { id: 'wb_fix_2', name: `Pool Co ${Date.now()}` });
     const project = createProject(db, { companyId: company.id, name: 'Pool Project' });
     const lead = createAgent(db, { companyId: company.id, name: 'Lead', role: 'lead' });
-    evolveBlueprint(db, {
+    const bp2 = evolveBlueprint(db, {
       companyId: company.id,
       taskTitle: 'Develop React navigation bar',
       personaId: 'frontend/engineering-frontend-developer',
@@ -148,7 +150,7 @@ describe('Talent Market & Auto-Dispatch Routing (Phase 1)', () => {
       win: true,
       tools: [],
       projectId: project.id,
-    });
+    })!;
 
     // 项目专家池：该人设已落成常驻专家
     const specialist = createProjectSpecialist(db, {
@@ -159,7 +161,7 @@ describe('Talent Market & Auto-Dispatch Routing (Phase 1)', () => {
     });
 
     // 未指定执行者 + 蓝图命中 → 直接派给池内常驻专家（跨任务延续线程与记忆）
-    const pooled = createTask(db, { projectId: project.id, title: 'Develop React navigation bar modal' });
+    const pooled = createTask(db, { projectId: project.id, title: 'Develop React navigation bar modal', blueprintId: bp2.id });
     expect(pooled.inputProtocol.blueprintMatched).toBeTruthy();
     expect(pooled.inputProtocol.staffingMode).toBe('specialist-pool');
     expect(pooled.assigneeAgentId).toBe(specialist.agentId);
@@ -170,6 +172,7 @@ describe('Talent Market & Auto-Dispatch Routing (Phase 1)', () => {
       projectId: project.id,
       title: 'Develop React navigation bar drawer',
       assigneeAgentId: lead.id,
+      blueprintId: bp2.id,
     });
     expect(explicit.inputProtocol.staffingMode).not.toBe('specialist-pool');
     expect(explicit.assigneeAgentId).toBe(lead.id);

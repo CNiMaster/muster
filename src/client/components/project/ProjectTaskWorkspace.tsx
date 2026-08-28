@@ -418,12 +418,11 @@ export function ProjectTaskWorkspace({
                 placeholder="验收标准、约束条件等…"
               />
             </Field>
-            {(blueprintPreview.data ?? []).length > 0 && (
+            {blueprintPreview.data && (
               <p className="muted" style={{ margin: 0, fontSize: '12px', lineHeight: 1.6 }}>
-                将派遣 🎭 {blueprintPreview.data![0]!.label}
-                {blueprintPreview.data!.length > 1 && (
-                  <> · 相关打法：{blueprintPreview.data!.slice(1).map((bp) => bp.label).join('、')}</>
-                )}
+                {blueprintPreview.data.blueprint
+                  ? <>发布工作单时将穿戴 🎭 {blueprintPreview.data.blueprint.label}（主槽 {blueprintPreview.data.blueprint.mainPersonaName}，AI 路由：{blueprintPreview.data.reason}）</>
+                  : <>无蓝图模式（AI 路由：{blueprintPreview.data.reason}）——由负责人按需派发</>}
               </p>
             )}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>

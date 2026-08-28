@@ -25,7 +25,7 @@ import { createMemoryCandidate, searchMemory, expandMatchTokens, applySupersede,
 import { maybeSynthesizeSkillCandidates } from './skill-synthesis';
 import { ensurePersonaArchiveProfile } from './agent-profile';
 import { getPersona } from './persona-library';
-import { evolveBlueprint } from './blueprint';
+import { evolveBlueprint, evolveBlueprintById } from './blueprint';
 import { maybeSynthesizeExpertCandidates } from './expert-synthesis';
 import { settleTaskSafely } from './settlement';
 
@@ -250,18 +250,38 @@ async function drainReflectionQueueInner(
       const isUserOverride = task.inputProtocol.staffingMode === 'user_override';
       const userTalentName = (task.inputProtocol.userTalentOverride as any)?.displayName;
 
-      evolveBlueprint(db, {
-        projectId: task.projectId,
-        taskTitle: task.title,
-        personaId: task.personaId,
-        personaName: persona?.name ?? task.personaId,
-        win: row.outcome === 'completed',
-        reworkCount: task.reworkCount ?? 0,
-        correctionCount,
-        tools,
-        isUserOverride,
-        userTalentName,
-      });
+      // 记账分叉（2026-08-28 定案）：执行时穿戴过蓝图→按记录 id 直记（执行穿的=记账的，
+      // 标题换词也不聚类漂移）；无蓝图任务（含 unrouted）→保留标题聚类（新蓝图发现通道）。
+      const matchedBlueprintId = typeof task.inputProtocol.blueprintMatched === 'string'
+        ? task.inputProtocol.blueprintMatched
+        : null;
+      if (matchedBlueprintId) {
+        evolveBlueprintById(db, {
+          blueprintId: matchedBlueprintId,
+          projectId: task.projectId,
+          personaId: task.personaId,
+          personaName: persona?.name ?? task.personaId,
+          win: row.outcome === 'completed',
+          reworkCount: task.reworkCount ?? 0,
+          correctionCount,
+          tools,
+          isUserOverride,
+          userTalentName,
+        });
+      } else {
+        evolveBlueprint(db, {
+          projectId: task.projectId,
+          taskTitle: task.title,
+          personaId: task.personaId,
+          personaName: persona?.name ?? task.personaId,
+          win: row.outcome === 'completed',
+          reworkCount: task.reworkCount ?? 0,
+          correctionCount,
+          tools,
+          isUserOverride,
+          userTalentName,
+        });
+      }
     } catch (err) {
       log.warn('blueprint evolution failed', {
         taskId: row.task_id,

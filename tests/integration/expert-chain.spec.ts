@@ -50,20 +50,27 @@ function seed() {
 describe('WP1 豁免蓝图自动穿戴', () => {
   it('exemptBlueprintMatch=true：同标题不穿戴人设；默认路径正常穿戴并带 blueprintTools', () => {
     const { c, p, lead } = seed();
-    evolveBlueprint(db, {
+    const bp = evolveBlueprint(db, {
       companyId: c.id, projectId: p.id, taskTitle: '优化落地页转化率',
       personaId: 'product/product-manager', personaName: '产品经理', win: true,
-    });
+    })!;
 
+    // 2026-08-28 定案：默认（未携带 blueprintId）不再词法自动穿戴——无蓝图模式
     const plain = createTask(db, { projectId: p.id, assigneeAgentId: lead.id, title: '优化落地页转化率' });
-    expect(plain.personaId).toBe('product/product-manager');
-    expect((plain.inputProtocol as Record<string, unknown>).blueprintMatched).toBeDefined();
+    expect(plain.personaId).toBeNull();
+    expect((plain.inputProtocol as Record<string, unknown>).staffingMode).toBe('unrouted');
 
+    // 显式携带 + 豁免：豁免优先，仍不穿戴
     const exempt = createTask(db, {
-      projectId: p.id, assigneeAgentId: lead.id, title: '优化落地页转化率', exemptBlueprintMatch: true,
+      projectId: p.id, assigneeAgentId: lead.id, title: '优化落地页转化率', exemptBlueprintMatch: true, blueprintId: bp.id,
     });
     expect(exempt.personaId).toBeNull();
     expect((exempt.inputProtocol as Record<string, unknown>).blueprintMatched).toBeUndefined();
+
+    // 显式携带且无豁免：正常穿戴
+    const worn = createTask(db, { projectId: p.id, assigneeAgentId: lead.id, title: '同标题', blueprintId: bp.id });
+    expect(worn.personaId).toBe('product/product-manager');
+    expect((worn.inputProtocol as Record<string, unknown>).blueprintMatched).toBe(bp.id);
   });
 
   it('蓝图工具记账进入 inputProtocol.blueprintTools（读侧消费）', () => {
@@ -71,7 +78,7 @@ describe('WP1 豁免蓝图自动穿戴', () => {
     const bp = evolveBlueprint(db, {
       companyId: c.id, projectId: p.id, taskTitle: '优化落地页转化率',
       personaId: 'product/product-manager', personaName: '产品经理', win: true,
-    });
+    })!;
     // 直接写一条工具记账（模拟反思队列回填 tools_json）
     db.prepare('UPDATE blueprint SET tools_json=? WHERE id=?').run(
       JSON.stringify([
@@ -81,7 +88,7 @@ describe('WP1 豁免蓝图自动穿戴', () => {
       bp.id,
     );
 
-    const task = createTask(db, { projectId: p.id, assigneeAgentId: lead.id, title: '优化落地页转化率' });
+    const task = createTask(db, { projectId: p.id, assigneeAgentId: lead.id, title: '优化落地页转化率', blueprintId: bp.id });
     const proto = task.inputProtocol as Record<string, unknown>;
     expect(Array.isArray(proto.blueprintTools)).toBe(true);
     expect((proto.blueprintTools as string[])[0]).toBe('web_search'); // 按使用次数排序

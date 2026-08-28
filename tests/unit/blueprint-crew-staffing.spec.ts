@@ -12,7 +12,7 @@ import { restoreWorkbench } from '../../src/server/domain/workbench';
 import { createProject } from '../../src/server/domain/project';
 import { createAgent } from '../../src/server/domain/agent';
 import { createTask, listTasks } from '../../src/server/domain/task';
-import { evolveBlueprint, getBlueprint } from '../../src/server/domain/blueprint';
+import { evolveBlueprint, getBlueprint, listBlueprints } from '../../src/server/domain/blueprint';
 import { listPersonas } from '../../src/server/domain/persona-library';
 import { listTaskEvents } from '../../src/server/domain/task-event';
 
@@ -55,7 +55,7 @@ describe('蓝图专家组合（批次 J·修复轮）', () => {
     db.prepare("INSERT INTO specialist_pool (id, project_id, persona_id, agent_id, specialty, status, use_count, created_at, updated_at) VALUES (?,?,?,?,?,'active',1,?,?)")
       .run('sp_test_1', project.id, p1.id, specialist.id, p1.name, new Date().toISOString(), new Date().toISOString());
 
-    const primary = createTask(db, { projectId: project.id, title: '深度行业调研报告' });
+    const primary = createTask(db, { projectId: project.id, title: '深度行业调研报告', blueprintId: bp.id });
 
     const tasks = listTasks(db, project.id);
     expect(tasks).toHaveLength(3); // 主 + 2 组员
@@ -89,7 +89,7 @@ describe('蓝图专家组合（批次 J·修复轮）', () => {
       companyId: workbench.id, projectId: project.id,
       taskTitle: '产品需求梳理', personaId: personas[0]!.id, personaName: personas[0]!.name, win: true,
     });
-    createTask(db, { projectId: project.id, title: '产品需求梳理' });
+    createTask(db, { projectId: project.id, title: '产品需求梳理', blueprintId: getBlueprint(db, (listBlueprints(db)[0] as { id: string }).id).id });
     expect(listTasks(db, project.id)).toHaveLength(1);
   });
 
@@ -108,7 +108,7 @@ describe('蓝图专家组合（批次 J·修复轮）', () => {
       ]),
       bp.id,
     );
-    const t = createTask(db, { projectId: project.id, title: '品牌视觉设计', assigneeAgentId: assigned.id });
+    const t = createTask(db, { projectId: project.id, title: '品牌视觉设计', assigneeAgentId: assigned.id, blueprintId: bp.id });
     expect(t.assigneeAgentId).toBe(assigned.id);
     expect(t.personaId).toBe(personas[0]!.id); // 穿人设
     expect(listTasks(db, project.id)).toHaveLength(1); // 不派组员

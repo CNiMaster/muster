@@ -4,7 +4,7 @@
  * - GET    /api/blueprints                          蓝图库列表
  * - POST   /api/blueprints/:blueprintId/status      锁定/淘汰
  * - POST   /api/blueprints/:blueprintId/reset       重置为原版（仅预制蓝图）
- * - GET    /api/blueprints/match-preview?title=     按任务标题预览将穿戴的蓝图
+ * - POST   /api/blueprints/route-preview            AI 语义路由预览（词法 match-preview 退役）
  * - GET    /api/blueprints/:blueprintId/versions    版本时间线
  * - POST   /api/blueprints/:blueprintId/rollback    回滚
  * - PATCH  /api/blueprints/:blueprintId/description 用户语言描述刷新
@@ -24,13 +24,13 @@ import {
   listBlueprintVersions,
   rollbackBlueprint,
   updateBlueprintDescription,
-  matchBlueprints,
   getBlueprint,
   getBlueprintDetail,
   publishBlueprintDebugResult,
   addBlueprintStaffingSlot,
 } from '../domain/blueprint';
 import { AppError, ErrorCode } from '../../shared/errors';
+import { routeBlueprintByAI } from '../domain/capability-routing';
 
 export const blueprintsRouter = Router({ mergeParams: true });
 
@@ -62,13 +62,25 @@ blueprintsRouter.post(
   }),
 );
 
-/** 打法包一期：按任务标题预览将穿戴的蓝图与相关打法（创建任务卡用）。 */
-blueprintsRouter.get(
-  '/match-preview',
+/** AI 语义路由预览（2026-08-28 定案：词法 match-preview 退役）——创建卡预览将穿戴的蓝图，无匹配=无蓝图模式。 */
+blueprintsRouter.post(
+  '/route-preview',
   asyncHandler(async (req, res) => {
-    const title = typeof req.query.title === 'string' ? req.query.title : '';
-    if (!title.trim()) { res.json([]); return; }
-    res.json(matchBlueprints(getDb(), companyIdOf(req), title, 3).map((m) => m.blueprint));
+    const { title, brief } = z.object({ title: z.string().min(1), brief: z.string().optional() }).parse(req.body);
+    const route = await routeBlueprintByAI(getDb(), { taskTitle: title, taskBrief: brief });
+    // 富化：命中时带 label+主槽（创建卡/相关打法卡直接显示，免二次查询）
+    const bp = route.blueprintId ? getBlueprint(getDb(), route.blueprintId) : null;
+    res.json({
+      ...route,
+      blueprint: bp
+        ? {
+          id: bp.id,
+          label: bp.label,
+          mainPersonaName: bp.staffing[0]?.personaName ?? '',
+          crewNames: bp.staffing.slice(1).map((s) => s.personaName),
+        }
+        : null,
+    });
   }),
 );
 

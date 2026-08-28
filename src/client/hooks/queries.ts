@@ -1338,7 +1338,7 @@ export function useTasks(projectId: string | undefined) {
 export function useCreateTask() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ projectId, ...input }: { projectId: string; projectTaskId?:string; title: string; assigneeAgentId?: string; priority?: number; inputProtocol?: Record<string, unknown> }) =>
+    mutationFn: ({ projectId, ...input }: { projectId: string; projectTaskId?:string; title: string; assigneeAgentId?: string; priority?: number; inputProtocol?: Record<string, unknown>; blueprintId?: string }) =>
       api.post<Task>(`/api/projects/${projectId}/tasks`, input),
     onSuccess: (data) => qc.invalidateQueries({ queryKey: ['tasks', data.projectId] }),
   });
@@ -2084,13 +2084,21 @@ export function useUpdateBlueprintDescription() {
   });
 }
 
-/** 相关打法：按任务标题匹配 top-N 蓝图（去同簇；创建任务卡预览派遣用）。 */
+/** AI 语义路由预览（2026-08-28 定案：词法 match-preview 退役）——创建卡预览将穿戴的蓝图；null=无蓝图模式。 */
+export interface BlueprintRoutePreview {
+  blueprintId: string | null;
+  confidence: number;
+  reason: string;
+  blueprint: { id: string; label: string; mainPersonaName: string; crewNames: string[] } | null;
+}
+
 export function useBlueprintMatches(title: string | undefined) {
   const trimmed = (title ?? '').trim();
   return useQuery({
-    queryKey: ['blueprint-matches', trimmed],
-    queryFn: () => api.get<Blueprint[]>(`/api/blueprints/match-preview?title=${encodeURIComponent(trimmed)}`),
-    enabled: trimmed.length >= 4,
+    queryKey: ['blueprint-route-preview', trimmed],
+    queryFn: () => api.post<BlueprintRoutePreview>('/api/blueprints/route-preview', { title: trimmed }),
+    enabled: trimmed.length >= 6,
+    staleTime: 60_000,
   });
 }
 

@@ -95,8 +95,8 @@ export function ProjectContextInspector({
   const { data: swarmView } = useTaskSwarm(activeTask?.id);
   // B5 右侧三卡（非人员源，中央岗隐形后"事"可见）：专家池/蜂群/验收进度
   const { data: specialists = [] } = useProjectSpecialists(projectId);
-  // 修复轮（批次 F.2）：任务 → 最优蓝图 top-N（命中时显示，无人设命中不显示）
-  const { data: blueprintMatches = [] } = useBlueprintMatches(selectedTask?.title);
+  // 修复轮（批次 F.2）：任务 → 最优蓝图（2026-08-28 起=AI 语义路由单结果；无匹配=无蓝图模式不显示）
+  const { data: blueprintRoute } = useBlueprintMatches(selectedTask?.title);
 
   const attentionTasks = tasks.filter((task) => ATTENTION_STATES.has(task.state));
   // 批次 H.3：健康聚合（失败任务与反复重试的卡点进关注区）
@@ -111,7 +111,7 @@ export function ProjectContextInspector({
   const criteria = matchedTask?.acceptanceCriteria ?? [];
   const criteriaMet = criteria.filter((c) => c.met === true).length;
   const criteriaUnmet = criteria.filter((c) => c.met === false).length;
-  const showBlueprintCard = !uiSimple && selectedTask !== undefined && blueprintMatches.length > 0;
+  const showBlueprintCard = !uiSimple && selectedTask !== undefined && !!blueprintRoute?.blueprint;
 
   // 产物组点击 = 开「文档标签」（2026-08-27 P2：单槽 ?preview= 退役）
   const tabApi = useInspectorTabsApi();
@@ -335,7 +335,7 @@ export function ProjectContextInspector({
           groupId="crew"
           title="班底与打法"
           defaultOpen={false}
-          badge={<Badge tone="neutral">{specialists.length + blueprintMatches.length}</Badge>}
+          badge={<Badge tone="neutral">{specialists.length + (showBlueprintCard ? 1 : 0)}</Badge>}
         >
           {/* B5 专家池卡（常驻非人员源）：项目常驻专家与使用次数——中央岗隐形后"事"可见 */}
           {specialists.length > 0 && (
@@ -357,37 +357,27 @@ export function ProjectContextInspector({
             </div>
           )}
 
-          {/* 修复轮（批次 F.2）：最优蓝图 top-N——按当前选中任务标题命中（简单模式收起） */}
-          {showBlueprintCard && (
+          {/* 最优蓝图（2026-08-28 起=AI 语义路由单结果，无匹配不显示；简单模式收起） */}
+          {showBlueprintCard && blueprintRoute?.blueprint && (
             <div style={{ padding: '10px', background: 'var(--bg-elev)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
               <div className="auxiliary-section-title" style={{ padding: 0, marginBottom: '6px' }}>
-                <span>🎭 已匹配最优蓝图 {blueprintMatches.length} 个</span>
+                <span>🎭 AI 路由蓝图</span>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                {blueprintMatches.slice(0, 5).map((bp) => {
-                  const total = bp.wins + bp.losses;
-                  const winRate = total > 0 ? Math.round((bp.wins / total) * 100) : null;
-                  const crew = bp.staffing.map((s) => `${s.personaName || s.personaId}${s.role ? `（${s.role}）` : ''}`).slice(0, 4).join(' · ');
-                  return (
-                    <Link
-                      key={bp.id}
-                      to={`/blueprints/${bp.id}`}
-                      style={{
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px',
-                        padding: '4px 6px', borderRadius: 'var(--radius-sm)',
-                        background: 'var(--bg)', border: '1px solid var(--border-subtle)',
-                        fontSize: '12px', color: 'var(--fg)', textDecoration: 'none',
-                      }}
-                      title={crew || bp.description}
-                    >
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        🎭 {bp.label}
-                      </span>
-                      {winRate !== null && <Badge tone={winRate >= 60 ? 'ok' : 'neutral'}>{winRate}%</Badge>}
-                    </Link>
-                  );
-                })}
-              </div>
+              <Link
+                to={`/blueprints/${blueprintRoute.blueprint.id}`}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px',
+                  padding: '4px 6px', borderRadius: 'var(--radius-sm)',
+                  background: 'var(--bg)', border: '1px solid var(--border-subtle)',
+                  fontSize: '12px', color: 'var(--fg)', textDecoration: 'none',
+                }}
+                title={blueprintRoute.reason}
+              >
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  🎭 {blueprintRoute.blueprint.label}
+                </span>
+                <Badge tone="info">置信 {Math.round((blueprintRoute.confidence || 0) * 100)}%</Badge>
+              </Link>
             </div>
           )}
         </InspectorGroup>

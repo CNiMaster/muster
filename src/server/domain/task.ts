@@ -42,7 +42,7 @@ import { checkSwarmLimits, greyBeeAfterTask, handleSwarmTaskFailure, maybeAutoRe
 import { handleDebateTaskFailure, recordDecisionFromClarify } from './debate';
 import { recordPreferenceAnswer } from './task-preference';
 import { ensurePrimaryThread } from './thread';
-import { matchBlueprint, currentBlueprintVersion } from './blueprint';
+import { getBlueprint, currentBlueprintVersion } from './blueprint';
 import { getPersona } from './persona-library';
 import { requiredExecutorKindForCapabilities } from './capability-binding';
 import { findUserTalentForPersona } from './agent-profile';
@@ -298,6 +298,8 @@ export interface CreateTaskInput {
   swarmManaged?: boolean;
   /** 豁免蓝图自动穿戴：验收/返工等立场独立性任务保持执行者本体身份（防验收员穿上与产出者同款专家人设）。 */
   exemptBlueprintMatch?: boolean;
+  /** 显式穿戴蓝图（2026-08-28 定案：读侧词法命中退役）——校验存在且现役；未携带=无蓝图模式起步（直达路径由后台 AI 自动配接手）。 */
+  blueprintId?: string;
   /** 链路双指向（B1）：显式终返——验收后最终回流给谁。仅 root 任务生效；子任务永远继承链头值。 */
   finalReturnAgentId?: string;
 }
@@ -373,30 +375,39 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
       routedMeta = { routedByCapability: false, routingMiss: true, fallbackAgentId: project.firstAgentId };
     }
   }
-  // 蓝图组织批次3：任务未显式指定人设/技能/能力且非讨论任务时，按蓝图匹配自动穿戴
-  // （组织 = f(活) 的读取侧）。匹配结果记入 inputProtocol 供审计；无命中/人设已不存在则不穿戴。
-  // exemptBlueprintMatch：立场独立性任务（验收/返工）豁免——评审者不能穿与产出者同款的专家外套。
+  // 蓝图穿戴（2026-08-28 定案：读侧词法命中退役）——只有显式 blueprintId 才穿戴；
+  // 无携带=无蓝图模式（unrouted 留痕），直达路径的后台 AI 自动配由 capability-routing.routeAndBackfill 接手。
+  // 豁免条件不变：显式 personaId / 立场独立豁免 / 讨论任务 / 技能·能力·知识注入时均不穿蓝图。
   let personaId = input.personaId ?? null;
   let blueprintMeta: Record<string, unknown> = {};
-  // 批次 J·修复轮：命中派整组的组员槽位（match 块内收集，INSERT 后派发）
+  // 批次 J·修复轮：命中派整组的组员槽位（穿戴块内收集，INSERT 后派发）
   let crewSlots: import('./blueprint').BlueprintStaffingSlot[] = [];
-  if (!personaId
+  const explicitBlueprint = input.blueprintId
+    ? (() => {
+      const bp = getBlueprint(db, input.blueprintId!);
+      if (bp.status !== 'active') {
+        throw new AppError(ErrorCode.VALIDATION, `蓝图「${bp.label}」不是现役状态，无法穿戴`);
+      }
+      return bp;
+    })()
+    : null;
+  const wearingAllowed = !personaId
     && !input.exemptBlueprintMatch
     && !input.isDiscussion
     && !(Array.isArray(input.requiredSkillIds) && input.requiredSkillIds.length > 0)
     && !(Array.isArray(input.requiredCapabilityIds) && input.requiredCapabilityIds.length > 0)
-    && !(Array.isArray(input.knowledgeTargets) && input.knowledgeTargets.length > 0)
-  ) {
+    && !(Array.isArray(input.knowledgeTargets) && input.knowledgeTargets.length > 0);
+  if (explicitBlueprint && wearingAllowed) {
     const routedAgent = routedAssigneeId ? getAgent(db, routedAssigneeId) : null;
     // 批次 J·修复轮：命中派整组——仅当用户未显式指定执行者（已指定只穿衣不换人，语义同池路由）
     const explicitAssignee = Boolean(input.assigneeAgentId);
     if (!routedAgent?.isSystem) {
-      const match = matchBlueprint(db, project.companyId, input.title);
-      const slot = match?.blueprint.staffing[0];
-      if (match && slot && getPersona(slot.personaId)) {
+      const blueprint = explicitBlueprint;
+      const slot = blueprint.staffing[0];
+      if (slot && getPersona(slot.personaId)) {
         personaId = slot.personaId;
         // 打法包读侧消费：蓝图战绩工具（按使用次数排序）随穿戴注入上下文
-        const playbookTools = [...match.blueprint.tools]
+        const playbookTools = [...blueprint.tools]
           .sort((a, b) => b.uses - a.uses)
           .map((t) => t.id)
           .slice(0, 10);
@@ -408,20 +419,19 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
           ? findActiveSpecialistAgent(db, project.id, slot.personaId)
           : null;
         // 批次 J：2+ 槽班底升级为整组派遣（缺省并行；槽位上限随三档广深——轻=只主/中=2-3/重=满配 4）
-        if (!explicitAssignee && match.blueprint.staffing.length > 1) {
-          crewSlots = match.blueprint.staffing.slice(1, BREADTH_LIMITS[taskBreadthTier(db, (input.inputProtocol ?? {}) as Record<string, unknown>)].crewSlots);
+        if (!explicitAssignee && blueprint.staffing.length > 1) {
+          crewSlots = blueprint.staffing.slice(1, BREADTH_LIMITS[taskBreadthTier(db, (input.inputProtocol ?? {}) as Record<string, unknown>)].crewSlots);
         }
         if (specialistAgentId) routedAssigneeId = specialistAgentId;
         // 打法包一期：班底生效——2-4 槽协作成员以名称+领域描述注入执行上下文
-        const crew = match.blueprint.staffing.slice(1).map((s) => {
+        const crew = blueprint.staffing.slice(1).map((s) => {
           const p = getPersona(s.personaId);
           return { name: s.personaName, summary: p?.description ?? '' };
         });
         blueprintMeta = {
-          blueprintMatched: match.blueprint.id,
-          blueprintLabel: match.blueprint.label,
-          blueprintVersion: currentBlueprintVersion(db, match.blueprint.id),
-          blueprintScore: Math.round(match.score * 100) / 100,
+          blueprintMatched: blueprint.id,
+          blueprintLabel: blueprint.label,
+          blueprintVersion: currentBlueprintVersion(db, blueprint.id),
           ...(playbookTools.length > 0 ? { blueprintTools: playbookTools } : {}),
           ...(crew.length > 0 ? { staffingNotes: crew } : {}),
           ...(specialistAgentId
@@ -444,6 +454,11 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
         };
       }
     }
+  }
+  // 无蓝图模式留痕：可穿戴条件成立但未携带 blueprintId（词法命中已退役）——
+  // 直达路径由后台 AI 自动配接手；复盘记账对这类任务走标题聚类（新蓝图发现通道）。
+  if (!explicitBlueprint && wearingAllowed) {
+    blueprintMeta = { staffingMode: 'unrouted' };
   }
   // 链路双指向（B1）——任务契约继承，全部落 inputProtocol（无 schema 迁移）：
   // - finalReturnAgentId（验收后最终回流，链头约定不可改）：子任务永远以链头值为准（链头未约定时
