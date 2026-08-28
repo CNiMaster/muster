@@ -65,6 +65,11 @@ describe('nextAutomationRun', () => {
     // 今天不命中（周六任务，周五看）→ 不 due
     const weekend = nextAutomationRun({ ...base, schedule: { kind: 'interval', intervalMs: 60_000, days: ['sat', 'sun'] }, lastRunAt: '2026-08-22T10:00:00' }, NOW);
     expect(weekend?.dueNow).toBe(false);
+    // 复审 P2：at 在过去命中日、今天是非命中日（周六看工作日每 2 小时，上次周五 09:00+2h=11:00 已过）
+    // → 不得返回负相对时间，顺延到下一命中日（周一）同时刻
+    const sat = nextAutomationRun({ ...base, schedule: { kind: 'interval', intervalMs: 7_200_000, days: ['mon', 'tue', 'wed', 'thu', 'fri'] }, lastRunAt: '2026-08-28T09:00:00' }, new Date('2026-08-29T10:00:00'));
+    expect(sat?.dueNow).toBe(false);
+    expect(sat?.at).toEqual(new Date('2026-08-31T11:00:00'));
   });
 
   it('坏数据：非预设 kind / 缺 intervalMs / 坏 timeOfDay 返回 null 而不抛', () => {

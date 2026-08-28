@@ -16,7 +16,7 @@ import { drainSemanticSettlements } from '../domain/settlement';
 import { runMemoryHousekeeping } from '../domain/memory-housekeeping';
 import { sweepStaleStaging, sweepStaleTaskStaging } from '../domain/staging';
 import { sweepIdleStaffSpecialists } from '../domain/specialist-review';
-import { listDueAutomations, recordAndMark, setAutomationEnabled, createReminder, wakeSnoozedReminders } from '../domain/automation';
+import { listDueAutomations, recordAndMark, setAutomationEnabled, createReminder, wakeSnoozedReminders, countConsecutiveFailures, markAutomationRun } from '../domain/automation';
 import { realtime } from '../realtime';
 import { postSystemMessage } from '../domain/conversation';
 import { ensureAutomationStewardAgentId } from '../domain/system-agents';
@@ -146,6 +146,11 @@ export async function runAutomationSweep(db: DB): Promise<void> {
       }
     } catch (error) {
       recordAndMark(db, automation.id, 'failed', startedAt, `失败：${String(error).slice(0, 200)}`);
+      // 复审 P3 止损：once 失败会每轮重试且无自然成功路径，连续 5 轮失败挂起等用户处理
+      if (automation.schedule.kind === 'once' && countConsecutiveFailures(db, automation.id) >= 5) {
+        setAutomationEnabled(db, automation.id, false);
+        markAutomationRun(db, automation.id, '连续失败已挂起，请排查后重新启用');
+      }
       log.warn('automation run failed', { automationId: automation.id, kind: automation.kind, err: String(error) });
     }
   }
@@ -163,6 +168,7 @@ export class ProjectRuntimeCoordinator {
   private lastIdleReflectionRun = 0;
   private stagingWatchdogTimer: NodeJS.Timeout | null = null;
   private automationTimer: NodeJS.Timeout | null = null;
+  private automationSweepInFlight = false;
   private memoryHygieneTimer: NodeJS.Timeout | null = null;
   private readonly stagingWatchdogIntervalMs = 10 * 60_000;
   private readonly memoryHygieneIntervalMs = 30 * 60_000;
@@ -387,7 +393,12 @@ export class ProjectRuntimeCoordinator {
     // 自动化中心（整改 Part2 批次6）：每 60s 扫到点的自动化并执行——独立 timer（gh 网络 IO +
     // 后续执行链绝不占 tick）；失败记 health 跳过本轮，不轰炸。批次1：每次执行落 automation_run 历史。
     this.automationTimer = setInterval(() => {
-      void runAutomationSweep(this.db);
+      // 复审 P3：单轮超 60s（gh 网络慢）不叠加下一轮；sweep 级异常捕获防 unhandled rejection
+      if (this.automationSweepInFlight) return;
+      this.automationSweepInFlight = true;
+      void runAutomationSweep(this.db)
+        .catch((error) => log.warn('automation sweep failed', { error: String(error) }))
+        .finally(() => { this.automationSweepInFlight = false; });
     }, 60_000);
     this.automationTimer.unref?.();
 

@@ -63,13 +63,20 @@ export function nextAutomationRun(a: NextRunInput, now = new Date()): NextRunInf
     if (!ms || ms <= 0) return null;
     // 语义对齐 isAutomationDue：从未跑过 → 立即到点
     if (!a.lastRunAt) return { at: now, dueNow: true };
-    let at = new Date(Date.parse(a.lastRunAt) + ms);
-    // days 限定：命中日之外顺延到下一命中日（同一时刻；实际触发为该日首轮扫描，展示近似）
-    const matched = nextMatchingDay(a.schedule.days, at);
-    if (!matched) return null;
-    at = new Date(matched);
-    at.setHours(new Date(Date.parse(a.lastRunAt) + ms).getHours(), new Date(Date.parse(a.lastRunAt) + ms).getMinutes(), 0, 0);
-    return { at, dueNow: at.getTime() <= now.getTime() && dayMatches(a.schedule.days, now) };
+    const base = new Date(Date.parse(a.lastRunAt) + ms);
+    const at = new Date(nextMatchingDay(a.schedule.days, base) ?? base);
+    at.setHours(base.getHours(), base.getMinutes(), 0, 0);
+    // days 不跨日累积：at 已过且今天不命中 → 顺延到下一命中日同时刻（实际触发为该日首轮扫描，展示近似）
+    if (at.getTime() <= now.getTime() && !dayMatches(a.schedule.days, now)) {
+      const probe = new Date(now);
+      probe.setDate(probe.getDate() + 1);
+      const matched = nextMatchingDay(a.schedule.days, probe);
+      if (!matched) return null;
+      const rolled = new Date(matched);
+      rolled.setHours(base.getHours(), base.getMinutes(), 0, 0);
+      return { at: rolled, dueNow: false };
+    }
+    return { at, dueNow: at.getTime() <= now.getTime() };
   }
   if (a.schedule.kind === 'daily') {
     const [hh, mm] = (a.schedule.timeOfDay ?? '').split(':').map((x) => Number(x));

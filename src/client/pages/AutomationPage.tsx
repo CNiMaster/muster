@@ -60,8 +60,8 @@ const CATEGORY_LABELS: Record<Exclude<AutoCategory, 'all'>, string> = {
 
 /** 下次触发文案（语义见 shared/automation-schedule：dueNow 由启停决定展示口径，30s 心跳重算）。 */
 function nextRunText(a: AutomationDTO, now: Date): { text: string; title: string } | null {
-  // once 已跑完 → 归档（coordinator 成功后停用）派生「已完成」
-  if (a.schedule.kind === 'once' && !a.enabled && a.lastRunAt) {
+  // once 已跑完 → 归档（coordinator 成功后停用）派生「已完成」；连续失败止损挂起不冒充已完成
+  if (a.schedule.kind === 'once' && !a.enabled && a.lastRunAt && !(a.lastResult ?? '').includes('连续失败')) {
     return { text: '已完成', title: a.lastRunAt };
   }
   const next = nextAutomationRun(a, now);
@@ -255,7 +255,7 @@ export function AutomationPage(): React.ReactElement {
         <Card>
           <h3 style={{ margin: '0 0 10px', fontSize: 14 }}>⏰ 待处理提醒（{reminderData!.reminders.length}）</h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {reminderData!.reminders.map((r) => (
+            {reminderData!.reminders.slice(0, 5).map((r) => (
               <div key={r.id} style={{ padding: '8px 10px', background: 'var(--bg-elev)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <span style={{ fontSize: 13 }}>{r.message}</span>
                 <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
@@ -264,6 +264,9 @@ export function AutomationPage(): React.ReactElement {
                 </div>
               </div>
             ))}
+            {reminderData!.reminders.length > 5 && (
+              <span style={{ fontSize: 12, color: 'var(--fg-subtle)' }}>还有 {reminderData!.reminders.length - 5} 条更早的提醒，先处理上面的</span>
+            )}
           </div>
         </Card>
       )}
@@ -411,7 +414,7 @@ function AutomationRow({ a, projectLabel, onEdit, onToggle, onDelete }: {
           {a.kind === 'github-issues' ? `🔀 ${a.config.repo}` : a.kind === 'notify' ? `🔔 ${a.config.prompt ?? ''}` : `🧭 ${a.config.prompt ?? ''}`}
         </span>
         {a.capabilityBlocked && <Badge tone="warn">缺能力</Badge>}
-        <Badge tone={a.enabled ? 'ok' : 'neutral'}>{a.enabled ? '运行中' : a.schedule.kind === 'once' && a.lastRunAt ? '已完成' : '已停用'}</Badge>
+        <Badge tone={a.enabled ? 'ok' : 'neutral'}>{a.enabled ? '运行中' : a.schedule.kind === 'once' && a.lastRunAt && !(a.lastResult ?? '').includes('连续失败') ? '已完成' : '已停用'}</Badge>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, fontSize: 12, color: 'var(--fg-subtle)', flexWrap: 'wrap' }}>
         <span>{scheduleText(a)}</span>

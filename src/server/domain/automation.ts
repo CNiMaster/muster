@@ -337,6 +337,15 @@ export function listAutomationRuns(db: DB, automationId: string, limit = 50): Au
   ).all(automationId, limit) as RunRow[]).map(runFromRow);
 }
 
+/** 最近 threshold 条执行历史是否全为 failed（once 连续失败止损判据）。 */
+export function countConsecutiveFailures(db: DB, automationId: string, threshold = 5): number {
+  const rows = db.prepare(
+    'SELECT status FROM automation_run WHERE automation_id=? ORDER BY started_at DESC, id DESC LIMIT ?',
+  ).all(automationId, threshold) as Array<{ status: string }>;
+  if (rows.length < threshold) return 0;
+  return rows.every((r) => r.status === 'failed') ? threshold : 0;
+}
+
 /** 各自动化的历史条数（列表徽标用，一次查询避免 N+1）。 */
 export function countAutomationRuns(db: DB): Map<string, number> {
   const rows = db.prepare('SELECT automation_id, COUNT(*) AS n FROM automation_run GROUP BY automation_id').all() as Array<{ automation_id: string; n: number }>;
@@ -420,6 +429,9 @@ function reminderFromRow(r: ReminderRow): ReminderRecord {
   };
 }
 
+/** 已完成提醒保留天数（惰性 prune：写入时顺带清理过期 acked 行，防无限膨胀）。 */
+const REMINDER_ACKED_RETENTION_MS = 30 * 24 * 60 * 60_000;
+
 /** notify 触发时调用：落一条待提醒（弹窗数据源；页面没开着时下次打开补弹）。 */
 export function createReminder(db: DB, automationId: string, message: string): ReminderRecord {
   const rec: ReminderRecord = {
@@ -434,6 +446,8 @@ export function createReminder(db: DB, automationId: string, message: string): R
   db.prepare(
     'INSERT INTO automation_reminder (id, automation_id, message, status, remind_at, acked_at, created_at) VALUES (?,?,?,?,?,?,?)',
   ).run(rec.id, rec.automationId, rec.message, rec.status, rec.remindAt, rec.ackedAt, rec.createdAt);
+  // 复审 P3：已完成提醒 30 天后惰性清理（pending/snoozed 是活数据不动）
+  db.prepare('DELETE FROM automation_reminder WHERE status=? AND acked_at<?').run('acked', new Date(Date.now() - REMINDER_ACKED_RETENTION_MS).toISOString());
   return rec;
 }
 

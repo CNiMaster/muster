@@ -88,4 +88,23 @@ describe('runAutomationSweep（批次3 分发）', () => {
     expect(runs[0]!.status).toBe('failed');
     expect(runs[0]!.result).toContain('失败');
   });
+
+  it('复审止损：once 连续 5 轮失败自动挂起（enabled=0 + 摘要标挂起），前端不再派生已完成', async () => {
+    fixture();
+    updateWorkbench(db, { firstAgentId: null }); // dispatch 必失败
+    createAutomation(db, {
+      kind: 'dispatch',
+      config: { prompt: '永远不会成功的活' },
+      schedule: { kind: 'once', runAt: '2026-08-28T09:00:00' },
+      createdVia: 'chat',
+    });
+    for (let i = 0; i < 5; i++) await runAutomationSweep(db);
+    const row = db.prepare('SELECT enabled, last_result FROM automation').get() as { enabled: number; last_result: string };
+    expect(row.enabled).toBe(0);
+    expect(row.last_result).toContain('连续失败已挂起');
+    // 第 6 轮不再触发（挂起即出扫描范围）
+    const runCount = (db.prepare('SELECT COUNT(*) AS n FROM automation_run').get() as { n: number }).n;
+    await runAutomationSweep(db);
+    expect((db.prepare('SELECT COUNT(*) AS n FROM automation_run').get() as { n: number }).n).toBe(runCount);
+  });
 });
