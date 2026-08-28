@@ -101,6 +101,12 @@ export interface SystemSettings {
   messageGroupTerminal: boolean;
   /** 消息流工作块：连续 Write/Edit/ApplyPatch 聚合为 Changes 分组。 */
   messageGroupChanges: boolean;
+  /**
+   * 任务工作区共享仓库环境（2026-08-28，默认开）：创建任务 worktree 时把主仓库的
+   * 依赖环境（node_modules）软链接进去，任务内可直接用已装好的依赖，不再逐 worktree 新建。
+   * 关闭后每个工作区环境独立准备。仅链接、不复制；删除 worktree 时只摘链接不动目标。
+   */
+  worktreeShareEnv: boolean;
 }
 
 export function getSetting(db: DB, key: string, defaultValue: string): string {
@@ -176,6 +182,7 @@ export function getSystemSettings(db: DB): SystemSettings {
     messageGroupExplore: getSetting(db, 'message_group_explore', 'true') === 'true',
     messageGroupTerminal: getSetting(db, 'message_group_terminal', 'true') === 'true',
     messageGroupChanges: getSetting(db, 'message_group_changes', 'true') === 'true',
+    worktreeShareEnv: getSetting(db, 'worktree_share_env', 'true') === 'true',
   };
 }
 
@@ -309,5 +316,8 @@ export function saveSystemSettings(db: DB, settings: Partial<SystemSettings>): v
   for (const [field, key] of MESSAGE_BOOL_KEYS) {
     const v = (settings as Record<string, unknown>)[field];
     if (typeof v === 'boolean') setSetting(db, key, v ? 'true' : 'false');
+  }
+  if (settings.worktreeShareEnv !== undefined) {
+    setSetting(db, 'worktree_share_env', settings.worktreeShareEnv ? 'true' : 'false');
   }
 }

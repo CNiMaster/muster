@@ -634,7 +634,7 @@ function StandaloneSection(): React.ReactElement | null {
   const submit = (): void => {
     const t = title.trim();
     if (!t) return;
-    create.mutate({ projectId, title: t, launchBrief: { expectedOutcome: t, audience: '', effectAndStyle: '', constraints: '', deliverables: [], requiredCapabilityIds: [], requiredSkillIds: [], externalResearchNeeds: [], references: [], needsVisualConfirmation: false, visualReferences: [] } }, { onSuccess: () => setTitle('') });
+    create.mutate({ projectId, title: t, launchBrief: { expectedOutcome: t, audience: '', effectAndStyle: '', constraints: '', deliverables: [], requiredCapabilityIds: [], requiredSkillIds: [], externalResearchNeeds: [], references: [], needsVisualConfirmation: false, visualReferences: [], blueprintId: '' } }, { onSuccess: () => setTitle('') });
   };
 
   const onDragEnd = (e: DragEndEvent): void => {

@@ -14,34 +14,38 @@
  */
 
 :root {
-  /* ===== 色板（warm paper command desk） ===== */
-  --bg: #f5f5f4;
-  --bg-elev: #ffffff;
-  --bg-soft: #ebebeb;
-  --bg-sunken: #dedede;
-  --bg-hover: #e0e0e0;
-  --bg-input: #fafafa;
+  /* ===== 色板（monochrome gravel 灰阶·源自 7 档色板：E9EAE9/D7D7D6/BDBDBC/979796/6C6C6A/4A4A48/222120）
+   * 浅色映射：页面底=Celestial Glow #E9EAE9，浮层=其衍生浅档，正文=Eye Patch #222120，
+   * 次级文字=Boat Anchor #6C6C6A，强调/按钮=Gravel #4A4A48，边框=Anti Rainbow #BDBDBC / Silver #D7D7D6。
+   * 语义状态色（ok/warn/err/info）保留色相、轻度去饱和以融入灰阶。
+   */
+  --bg: #e9eae9;
+  --bg-elev: #f7f8f7;
+  --bg-soft: #dfe0df;
+  --bg-sunken: #d7d7d6;
+  --bg-hover: #d9dad9;
+  --bg-input: #f2f3f2;
 
-  --fg: #1d1d1f;
-  --fg-muted: #55575b;
-  --fg-subtle: #7d7f84;
+  --fg: #222120;
+  --fg-muted: #6c6c6a;
+  --fg-subtle: #979796;
 
-  --accent: #3a3b3f;
-  --accent-hover: #26272a;
-  --accent-fg: #ffffff;
+  --accent: #4a4a48;
+  --accent-hover: #222120;
+  --accent-fg: #f7f8f7;
 
-  --ok: #236e4f;
-  --ok-bg: rgba(35, 110, 79, 0.11);
-  --warn: #966114;
-  --warn-bg: rgba(183, 124, 35, 0.13);
-  --err: #c73830;
-  --err-bg: rgba(199, 56, 48, 0.11);
-  --info: #2a6382;
-  --info-bg: rgba(42, 99, 130, 0.11);
+  --ok: #4f6d5f;
+  --ok-bg: rgba(79, 109, 95, 0.12);
+  --warn: #7d6a4a;
+  --warn-bg: rgba(125, 106, 74, 0.14);
+  --err: #9e5049;
+  --err-bg: rgba(158, 80, 73, 0.12);
+  --info: #4e6a7d;
+  --info-bg: rgba(78, 106, 125, 0.12);
 
-  --border: #d9d9d8;
-  --border-subtle: #e7e7e6;
-  --border-strong: #b3b3b2;
+  --border: #bdbdbc;
+  --border-subtle: #d7d7d6;
+  --border-strong: #979796;
 
   /* ===== 间距 scale ===== */
   --space-1: 4px;
@@ -79,10 +83,10 @@
   --radius-lg: 14px;
   --radius-xl: 20px;
 
-  /* ===== 阴影 elevation ===== */
-  --shadow-1: 0 1px 2px rgba(36, 43, 47, 0.06), 0 8px 24px rgba(36, 43, 47, 0.035);
-  --shadow-2: 0 10px 30px rgba(36, 43, 47, 0.09), 0 2px 6px rgba(36, 43, 47, 0.05);
-  --shadow-3: 0 24px 64px rgba(36, 43, 47, 0.14), 0 4px 12px rgba(36, 43, 47, 0.07);
+  /* ===== 阴影 elevation（中性灰·Eye Patch 基色） ===== */
+  --shadow-1: 0 1px 2px rgba(34, 33, 32, 0.06), 0 8px 24px rgba(34, 33, 32, 0.035);
+  --shadow-2: 0 10px 30px rgba(34, 33, 32, 0.09), 0 2px 6px rgba(34, 33, 32, 0.05);
+  --shadow-3: 0 24px 64px rgba(34, 33, 32, 0.14), 0 4px 12px rgba(34, 33, 32, 0.07);
 
   /* ===== focus ring ===== */
   --focus-ring: 0 0 0 1.5px var(--bg), 0 0 0 2.5px var(--accent);
@@ -124,40 +128,40 @@
  * 字号由 useAppearance 覆写 --app-font-size——整条字号刻度（含标题）随设置缩放，见上方 type scale 注释。
  */
 :root[data-theme='dark'] {
-  /* warm-gray 深色调板（与浅色同族暖灰——原冷蓝灰底与暖字/暖 accent 三色温打架）；
+  /* monochrome gravel 深色调板（与浅色同族灰阶——Eye Patch #222120 系深端）；
      层次：bg 缝隙最深 < soft 左右栏 < elev 中栏最亮（中栏是主角，左右沉一档衬它） */
-  --bg: #171718;
-  --bg-elev: #262628;
-  --bg-soft: #1e1e20;
-  --bg-sunken: #17171a;
-  --bg-hover: #19191a;
-  --bg-input: #303033;
+  --bg: #1b1a19;
+  --bg-elev: #2c2b2a;
+  --bg-soft: #232221;
+  --bg-sunken: #191818;
+  --bg-hover: #292827;
+  --bg-input: #323130;
   /* 调板最深档：发送按钮专属（比缝隙底更深，全页唯一） */
-  --bg-deepest: #101011;
+  --bg-deepest: #141312;
 
-  --fg: #e8e8e7;
-  --fg-muted: #a3a5aa;
-  --fg-subtle: #808288;
+  --fg: #e9eae9;
+  --fg-muted: #979796;
+  --fg-subtle: #6c6c6a;
 
-  --accent: #c9cad0;
-  --accent-hover: #dcdde2;
-  --accent-fg: #1d1d1f;
+  --accent: #d7d7d6;
+  --accent-hover: #e9eae9;
+  --accent-fg: #222120;
 
-  --ok: #6fbf9a;
-  --ok-bg: rgba(111, 191, 154, 0.14);
-  --warn: #d9a35f;
-  --warn-bg: rgba(217, 163, 95, 0.14);
-  --err: #e06a62;
-  --err-bg: rgba(224, 106, 98, 0.14);
-  --info: #6fa8cc;
-  --info-bg: rgba(111, 168, 204, 0.14);
+  --ok: #8fb3a1;
+  --ok-bg: rgba(143, 179, 161, 0.14);
+  --warn: #c9ae85;
+  --warn-bg: rgba(201, 174, 133, 0.14);
+  --err: #cc7b74;
+  --err-bg: rgba(204, 123, 116, 0.14);
+  --info: #8aa9be;
+  --info-bg: rgba(138, 169, 190, 0.14);
 
-  --border: #3a3a3d;
-  --border-subtle: #2c2c2f;
-  --border-strong: #4b4b4f;
+  --border: #4a4a48;
+  --border-subtle: #353432;
+  --border-strong: #6c6c6a;
 
-  --shadow-1: 0 1px 2px rgba(20, 15, 10, 0.4), 0 8px 24px rgba(20, 15, 10, 0.3);
-  --shadow-2: 0 10px 30px rgba(20, 15, 10, 0.5), 0 2px 6px rgba(20, 15, 10, 0.4);
-  --shadow-3: 0 24px 64px rgba(20, 15, 10, 0.6), 0 4px 12px rgba(20, 15, 10, 0.45);
+  --shadow-1: 0 1px 2px rgba(10, 9, 9, 0.4), 0 8px 24px rgba(10, 9, 9, 0.3);
+  --shadow-2: 0 10px 30px rgba(10, 9, 9, 0.5), 0 2px 6px rgba(10, 9, 9, 0.4);
+  --shadow-3: 0 24px 64px rgba(10, 9, 9, 0.6), 0 4px 12px rgba(10, 9, 9, 0.45);
   --focus-ring: 0 0 0 1.5px var(--bg), 0 0 0 2.5px var(--accent);
 }

@@ -858,7 +858,7 @@ p { margin: 0 0 var(--space-3) 0; }
 .workbench.has-right .workbench-grid{grid-template-columns:minmax(var(--work-surface-min,360px),1fr) var(--work-right)}
 .workbench-navigation{display:flex;flex-direction:column;min-width:0;min-height:0;width:var(--work-left);overflow:hidden;background:var(--bg-soft);border-right:1px solid var(--border)}
 .workbench-navigation a,.workbench-navigation a:hover,.workbench-header a,.workbench-header a:hover,.workbench-inspector a,.workbench-inspector a:hover{text-decoration:none}
-:root[data-theme='dark'] .work-nav-icon.task-mark{color:#a9aab0;background:#2b2b2e}
+:root[data-theme='dark'] .work-nav-icon.task-mark{color:#979796;background:#2c2b2a}
 .workbench:not(.has-left) .workbench-navigation{display:none}
 .workbench-rail-top{display:flex;align-items:center;gap:8px;flex:0 0 auto;padding:8px 10px;border-bottom:1px solid var(--border-subtle)}
 .workbench-rail-top .workbench-command{width:auto;flex:1;min-width:0}
@@ -1216,6 +1216,19 @@ p { margin: 0 0 var(--space-3) 0; }
 .ptws-hero-sug-label{font-size:11px;color:var(--fg-subtle);font-weight:700;margin:0 2px}
 .ptws-sug-chip{border:none;background:var(--bg-soft);color:var(--fg-muted);font-size:12px;padding:4px 10px;border-radius:999px;cursor:pointer;transition:all var(--duration-fast) var(--ease-out)}
 .ptws-sug-chip:hover{background:var(--bg-hover);color:var(--fg)}
+/* 三分类创建（2026-08-28）：hero 快捷入口 + 创建卡内分类选择，点子类型直接绑定蓝图 */
+.ptws-hero-cats{display:flex;flex-direction:column;gap:10px;margin-top:16px;max-width:640px;align-self:center;width:100%}
+.ptws-hero-cat{display:flex;flex-direction:column;gap:6px}
+.ptws-hero-cat-label{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--fg-subtle);font-weight:700}
+.ptws-hero-cat-badge{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:6px;background:var(--bg-sunken);color:var(--fg-muted);font-size:11px}
+.ptws-hero-cat-chips{display:flex;flex-wrap:wrap;gap:6px}
+.ptws-cats{display:flex;flex-direction:column;gap:8px}
+.ptws-cats-row{display:flex;flex-wrap:wrap;gap:6px}
+.ptws-cat-chip,.ptws-cat-sub{border:1px solid var(--border-subtle);background:var(--bg-soft);color:var(--fg-muted);font-size:12px;padding:4px 12px;border-radius:999px;cursor:pointer;transition:all var(--duration-fast) var(--ease-out)}
+.ptws-cat-chip{font-weight:600}
+.ptws-cat-chip:hover,.ptws-cat-sub:hover{background:var(--bg-hover);color:var(--fg)}
+.ptws-cat-chip.is-active{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
+.ptws-cat-sub.is-active{background:var(--bg-sunken);border-color:var(--border-strong);color:var(--fg);font-weight:600}
 
 /* 任务行首：运行中转圈（2026-08-23 定案：跑着才显示，停了消失）；针槽固定宽度防跳动 */
 .mu-nav-spinner{width:10px;height:10px;flex:0 0 10px;border:1.5px solid var(--border-strong);border-top-color:var(--fg-muted);border-radius:50%;display:inline-block;animation:mu-wb-spin .8s linear infinite}

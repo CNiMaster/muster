@@ -15,6 +15,7 @@ import { getProject, ensureInboxProject } from './project';
 import { createTask, getTask } from './task';
 import { getAgent } from './agent';
 import { getMaterial } from './material';
+import { carrierBoundBlueprintId } from './project-task';
 import { ensureWorkspaceStaff } from './workspace-staff';
 import { maybeEnqueuePreferenceQuestion } from './task-preference';
 import { realtime } from '../realtime';
@@ -363,6 +364,9 @@ export function postUserMessage(db: DB, input: PostUserMessageInput): {
   // WP10 识图直读：图片附件转 data-uri 随任务下发（projectId 已解析，路径归属已校验）
   const userImages = projectId ? collectImageDataUris(db, attachmentRefs, projectId) : [];
   const tasks: Array<ReturnType<typeof createTask>> = [];
+  // 直接绑定蓝图（2026-08-28 创建卡子类型点选）：载体级属性——该载体下的消息派发直通穿戴，
+  // 点选即显式指定，不做标题词元猜测；未选子类型（空串/载体读取失败）走既有链路。
+  const boundBlueprintId = input.projectTaskId ? carrierBoundBlueprintId(db, input.projectTaskId) : undefined;
   if (projectId) {
     for (const recipientAgentId of recipients) {
       tasks.push(createTask(db, {
@@ -370,6 +374,7 @@ export function postUserMessage(db: DB, input: PostUserMessageInput): {
         projectTaskId: input.projectTaskId,
         assigneeAgentId: recipientAgentId,
         title: `[用户消息] ${input.content.slice(0, 40)}`,
+        ...(boundBlueprintId ? { blueprintId: boundBlueprintId } : {}),
         inputProtocol: {
           trigger: 'user_message',
           scope: input.scopeKind,

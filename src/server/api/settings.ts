@@ -100,6 +100,8 @@ export const settingsUpdateSchema = z.object({
   messageGroupExplore: z.boolean().optional(),
   messageGroupTerminal: z.boolean().optional(),
   messageGroupChanges: z.boolean().optional(),
+  // 任务工作区共享仓库环境（2026-08-28，默认开）：worktree 软链接主仓库 node_modules
+  worktreeShareEnv: z.boolean().optional(),
 });
 
 // 获取当前系统设置

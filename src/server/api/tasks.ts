@@ -39,6 +39,7 @@ import { promoteProjectStagingIfAny } from '../domain/staging';
 import { routeAndBackfill } from '../domain/capability-routing';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { listTaskEvents } from '../domain/task-event';
+import { carrierBoundBlueprintId } from '../domain/project-task';
 import { listTrace, type TraceKind } from '../domain/execution-trace';
 import { clearLoopProgress, getTaskProgressSummary } from '../domain/loop-progress';
 import { listTaskMessages, addTaskMessage } from '../domain/task-message';
@@ -101,7 +102,8 @@ const createTaskSchema = z.object({
   priority: z.number().optional(),
   /** 蓝图组织批次1：本次穿戴的人设（personas/ 相对路径）。 */
   personaId: z.string().min(1).optional(),
-  /** 显式穿戴蓝图（2026-08-28 定案：词法命中退役）——未携带=无蓝图模式起步（后台 AI 自动配接手）。 */
+  /** 直接绑定蓝图（2026-08-28 创建卡子类型点选/显式穿戴，词法命中退役）：显式指定时直通穿戴，
+   * 并跳过后台 AI 自动配；未携带 = 无蓝图模式起步（后台 AI 自动配接手）。 */
   blueprintId: z.string().min(1).optional(),
   /** 双 Loop 地基 P0.1：验收标准 checklist（用户只填 criterion 文本，id 自动生成）。 */
   acceptanceCriteria: z.array(z.object({ id: z.string().optional(), criterion: z.string().min(1) })).optional(),
@@ -119,17 +121,22 @@ taskByProjectRouter.get(
 taskByProjectRouter.post(
   '/',
   asyncHandler(async (req, res) => {
+    const db = getDb();
     const input = createTaskSchema.parse(req.body);
+    // 直接绑定补位（2026-08-28 创建卡子类型点选）：任务载体已绑蓝图而本次未显式指定时
+    //（工作单派发走此入口），回填载体 blueprintId——与消息路径（postUserMessage）同一语义。
+    const blueprintId = input.blueprintId
+      ?? (input.projectTaskId ? carrierBoundBlueprintId(db, input.projectTaskId) : undefined);
     // 双 Loop P0.1：验收标准条目补稳定 id（用户只填 criterion 文本），供后续 acceptanceMet 写回对照。
     const acceptanceCriteria = input.acceptanceCriteria?.map((c, i) => ({
       id: c.id ?? `ac_${Date.now().toString(36)}_${i}`,
       criterion: c.criterion,
     }));
-    const db = getDb();
-    const task = createTask(db, { projectId: param(req, 'id'), ...input, acceptanceCriteria });
-    // 直达路径后台自动配（2026-08-28 定案）：未显式穿戴蓝图的任务，AI 语义路由后在需求确认门
-    // 窗口内回填穿戴；fire-and-forget——失败/放弃只落事件，绝不阻塞创建响应，更不许影响任务本身。
-    if (!input.blueprintId && !input.personaId) {
+    const task = createTask(db, { projectId: param(req, 'id'), ...input, ...(blueprintId ? { blueprintId } : {}), acceptanceCriteria });
+    // 直达路径后台自动配（2026-08-28 定案）：未显式穿戴蓝图的任务（载体绑定视同显式——点选指定
+    // 优先于语义分配），AI 语义路由后在需求确认窗口内回填穿戴；fire-and-forget——失败/放弃只落
+    // 事件，绝不阻塞创建响应，更不许影响任务本身。
+    if (!blueprintId && !input.personaId) {
       void routeAndBackfill(db, task.id);
     }
     res.status(201).json(task);

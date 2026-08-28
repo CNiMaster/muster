@@ -18,6 +18,11 @@ export const projectLaunchBriefSchema = z.object({
   references: z.array(z.string()).default([]),
   needsVisualConfirmation: z.boolean().default(false),
   visualReferences: z.array(z.string()).default([]),
+  /**
+   * 直接绑定蓝图（2026-08-28 创建卡子类型点选）：载体级属性——创建卡选了子类型即指定蓝图，
+   * 该载体的运行时任务派发时直通穿戴（跳过标题词元猜测）。空 = 未指定，走既有链路。
+   */
+  blueprintId: z.string().default(''),
 }).strict();
 
 export const launchCapabilityStatusSchema = z.enum(['ready', 'attention', 'unavailable']);

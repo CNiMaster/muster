@@ -90,7 +90,7 @@
 
 .mu-btn-danger {
   background: var(--err);
-  color: #1f1d1b;
+  color: #f7f8f7;
 }
 .mu-btn-danger:hover:not(:disabled) {
   filter: brightness(1.1);
