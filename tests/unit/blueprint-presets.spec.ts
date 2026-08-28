@@ -1,5 +1,5 @@
 /**
- * 预制蓝图（2026-08-28 定案）：8 套开箱即用打法。
+ * 预制蓝图（2026-08-28 定案+扩）：26 套开箱即用打法（原 8 套 + 三分类 18 套）。
  * - 播种：source='preset' + 原版快照；staffing personaId 全部真实存在（防拼写断链）
  * - 幂等：二次调用零新增；用户 retire 后 ensure 不复活（查重含全部状态）
  * - 匹配：小说标题命中穿戴主笔（短标题 jaccard / 长标题子串兜底）
@@ -18,6 +18,10 @@ import {
 } from '../../src/server/domain/blueprint';
 import { listPersonas } from '../../src/server/domain/persona-library';
 import { createProject } from '../../src/server/domain/project';
+import { createTask } from '../../src/server/domain/task';
+import { createProjectTask, carrierBoundBlueprintId } from '../../src/server/domain/project-task';
+import { projectLaunchBriefSchema } from '../../src/shared/project-launch';
+import { TASK_CATEGORIES } from '../../src/shared/task-categories';
 
 let db: DB;
 beforeEach(() => {
@@ -33,9 +37,9 @@ function seed(): { workbenchId: string; projectId: string } {
 const NOVEL_TASK_TYPE = '小说|正文|章节';
 
 describe('预制蓝图播种', () => {
-  it('8 套定义完整：staffing personaId 全部真实存在、主槽在前、不超槽位上限', () => {
+  it('26 套定义完整：staffing personaId 全部真实存在、主槽在前、不超槽位上限', () => {
     const ids = new Set(listPersonas().map((p) => p.id));
-    expect(BLUEPRINT_PRESETS.length).toBe(8);
+    expect(BLUEPRINT_PRESETS.length).toBe(26);
     for (const preset of BLUEPRINT_PRESETS) {
       expect(preset.taskType.split('|').filter(Boolean).length).toBeGreaterThanOrEqual(2);
       expect(preset.staffing.length).toBeGreaterThanOrEqual(2);
@@ -46,11 +50,11 @@ describe('预制蓝图播种', () => {
     }
   });
 
-  it('播种 8 条 source=preset 带原版快照；二次调用幂等零新增', () => {
+  it('播种 26 条 source=preset 带原版快照；二次调用幂等零新增', () => {
     seed();
     ensureBlueprintPresets(db);
     const afterFirst = listBlueprints(db);
-    expect(afterFirst.filter((bp) => bp.source === 'preset')).toHaveLength(8);
+    expect(afterFirst.filter((bp) => bp.source === 'preset')).toHaveLength(26);
     for (const bp of afterFirst) {
       if (bp.source !== 'preset') continue;
       expect(bp.presetSnapshot).not.toBeNull();
@@ -157,5 +161,60 @@ describe('预制蓝图进化与重置', () => {
     })!;
     expect(evolved.source).toBe('evolved');
     expect(() => resetBlueprint(db, evolved.id)).toThrow();
+  });
+});
+
+describe('直接绑定（2026-08-28 创建卡子类型点选）', () => {
+  it('三分类共享定义与播种库一一对应：22 个子类型的 blueprintTaskType 都有唯一蓝图落点', () => {
+    seed();
+    ensureBlueprintPresets(db);
+    const byTaskType = new Map<string, number>();
+    for (const bp of listBlueprints(db)) byTaskType.set(bp.taskType, (byTaskType.get(bp.taskType) ?? 0) + 1);
+    const subtypes = TASK_CATEGORIES.flatMap((c) => c.subtypes);
+    expect(subtypes).toHaveLength(22);
+    for (const st of subtypes) {
+      expect(byTaskType.get(st.blueprintTaskType), `子类型「${st.label}」的 ${st.blueprintTaskType} 应对应已播种蓝图`).toBe(1);
+    }
+  });
+
+  it('显式 blueprintId 直通穿戴：标题不沾词元也穿戴指定蓝图，meta 记 blueprintPinned', () => {
+    const { projectId } = seed();
+    ensureBlueprintPresets(db);
+    const target = listBlueprints(db).find((bp) => bp.taskType === '插画|图标|IP形象')!;
+    // 标题与目标蓝图零词元交集（不蹭「插画/图标/IP形象」任何一个词）
+    const task = createTask(db, { projectId, title: '整理今天的会议纪要', blueprintId: target.id });
+    expect(task.personaId).toBe(target.staffing[0]!.personaId);
+    const proto = task.inputProtocol as Record<string, unknown>;
+    expect(proto.blueprintMatched).toBe(target.id);
+    expect(proto.blueprintPinned).toBe(true);
+  });
+
+  it('绑定蓝图退役时降级标题匹配：不阻塞建任务、不记 pinned', () => {
+    const { projectId } = seed();
+    ensureBlueprintPresets(db);
+    const video = listBlueprints(db).find((bp) => bp.taskType === '视频|剪辑|短片')!;
+    setBlueprintStatus(db, video.id, 'retired');
+    // 显式绑退役蓝图 → 降级回词元路：软件标题命中软件交付
+    const task = createTask(db, { projectId, title: '修复登录页面的 bug', blueprintId: video.id });
+    const sw = listBlueprints(db).find((bp) => bp.label === '软件交付')!;
+    expect(task.personaId).toBe(sw.staffing[0]!.personaId);
+    const proto = task.inputProtocol as Record<string, unknown>;
+    expect(proto.blueprintMatched).toBe(sw.id);
+    expect(proto.blueprintPinned).toBeUndefined();
+  });
+
+  it('载体绑定读取：launchBrief.blueprintId 直读；未绑定/载体不存在返回 undefined', () => {
+    const { projectId } = seed();
+    ensureBlueprintPresets(db);
+    const target = listBlueprints(db).find((bp) => bp.taskType === '数据|图表|可视化')!;
+    const carrier = createProjectTask(db, {
+      projectId,
+      title: '季度数据看板',
+      launchBrief: projectLaunchBriefSchema.parse({ blueprintId: target.id }),
+    });
+    expect(carrierBoundBlueprintId(db, carrier.id)).toBe(target.id);
+    const unbound = createProjectTask(db, { projectId, title: '没选子类型的活儿' });
+    expect(carrierBoundBlueprintId(db, unbound.id)).toBeUndefined();
+    expect(carrierBoundBlueprintId(db, 'pt_不存在')).toBeUndefined();
   });
 });

@@ -38,6 +38,7 @@ import { generateTaskCloseoutSummary, getTaskCloseoutSummary } from '../domain/t
 import { promoteProjectStagingIfAny } from '../domain/staging';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { listTaskEvents } from '../domain/task-event';
+import { carrierBoundBlueprintId } from '../domain/project-task';
 import { listTrace, type TraceKind } from '../domain/execution-trace';
 import { clearLoopProgress, getTaskProgressSummary } from '../domain/loop-progress';
 import { listTaskMessages, addTaskMessage } from '../domain/task-message';
@@ -100,6 +101,8 @@ const createTaskSchema = z.object({
   priority: z.number().optional(),
   /** 蓝图组织批次1：本次穿戴的人设（personas/ 相对路径）。 */
   personaId: z.string().min(1).optional(),
+  /** 直接绑定蓝图（2026-08-28 创建卡子类型点选）：显式指定时跳过标题词元匹配。 */
+  blueprintId: z.string().min(1).optional(),
   /** 双 Loop 地基 P0.1：验收标准 checklist（用户只填 criterion 文本，id 自动生成）。 */
   acceptanceCriteria: z.array(z.object({ id: z.string().optional(), criterion: z.string().min(1) })).optional(),
 });
@@ -116,13 +119,18 @@ taskByProjectRouter.get(
 taskByProjectRouter.post(
   '/',
   asyncHandler(async (req, res) => {
+    const db = getDb();
     const input = createTaskSchema.parse(req.body);
+    // 直接绑定补位（2026-08-28 创建卡子类型点选）：任务载体已绑蓝图而本次未显式指定时
+    //（工作单派发走此入口），回填载体 blueprintId——与消息路径（postUserMessage）同一语义。
+    const blueprintId = input.blueprintId
+      ?? (input.projectTaskId ? carrierBoundBlueprintId(db, input.projectTaskId) : undefined);
     // 双 Loop P0.1：验收标准条目补稳定 id（用户只填 criterion 文本），供后续 acceptanceMet 写回对照。
     const acceptanceCriteria = input.acceptanceCriteria?.map((c, i) => ({
       id: c.id ?? `ac_${Date.now().toString(36)}_${i}`,
       criterion: c.criterion,
     }));
-    res.status(201).json(createTask(getDb(), { projectId: param(req, 'id'), ...input, acceptanceCriteria }));
+    res.status(201).json(createTask(db, { projectId: param(req, 'id'), ...input, ...(blueprintId ? { blueprintId } : {}), acceptanceCriteria }));
   }),
 );
 

@@ -42,7 +42,7 @@ import { checkSwarmLimits, greyBeeAfterTask, handleSwarmTaskFailure, maybeAutoRe
 import { handleDebateTaskFailure, recordDecisionFromClarify } from './debate';
 import { recordPreferenceAnswer } from './task-preference';
 import { ensurePrimaryThread } from './thread';
-import { matchBlueprint, currentBlueprintVersion } from './blueprint';
+import { matchBlueprint, currentBlueprintVersion, getBlueprint, type BlueprintMatch } from './blueprint';
 import { getPersona } from './persona-library';
 import { requiredExecutorKindForCapabilities } from './capability-binding';
 import { findUserTalentForPersona } from './agent-profile';
@@ -294,6 +294,11 @@ export interface CreateTaskInput {
   swarmDepth?: number;
   /** 蓝图组织批次1：本次穿戴的人设（personas/ 相对路径）。不校验存在性——persona 库可热变更，缺失时上下文优雅降级。 */
   personaId?: string;
+  /**
+   * 直接绑定蓝图（2026-08-28 创建卡子类型点选）：显式指定时优先穿此蓝图、跳过标题词元匹配
+   * （语义分配是能力管理员的既有链路；用户点选是更优先的显式指定）。蓝图缺失/退役时降级标题匹配。
+   */
+  blueprintId?: string;
   /** 蜂群系统管理任务（工蜂）：contactAllow 方向与常规派发相反，跳过 crewMate 守卫。 */
   swarmManaged?: boolean;
   /** 豁免蓝图自动穿戴：验收/返工等立场独立性任务保持执行者本体身份（防验收员穿上与产出者同款专家人设）。 */
@@ -391,7 +396,20 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
     // 批次 J·修复轮：命中派整组——仅当用户未显式指定执行者（已指定只穿衣不换人，语义同池路由）
     const explicitAssignee = Boolean(input.assigneeAgentId);
     if (!routedAgent?.isSystem) {
-      const match = matchBlueprint(db, project.companyId, input.title);
+      // 直接绑定优先（2026-08-28 创建卡子类型点选）：显式 blueprintId = 用户点选指定，
+      // 不做标题词元猜测；蓝图不存在或已退役时降级回标题匹配，不阻塞建任务。
+      let match: BlueprintMatch | null = null;
+      let blueprintPinned = false;
+      if (input.blueprintId) {
+        try {
+          const bound = getBlueprint(db, input.blueprintId);
+          if (bound.status !== 'retired') {
+            match = { blueprint: bound, score: 1 };
+            blueprintPinned = true;
+          }
+        } catch { /* 蓝图不存在——降级标题匹配 */ }
+      }
+      if (!match) match = matchBlueprint(db, project.companyId, input.title);
       const slot = match?.blueprint.staffing[0];
       if (match && slot && getPersona(slot.personaId)) {
         personaId = slot.personaId;
@@ -422,6 +440,7 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
           blueprintLabel: match.blueprint.label,
           blueprintVersion: currentBlueprintVersion(db, match.blueprint.id),
           blueprintScore: Math.round(match.score * 100) / 100,
+          ...(blueprintPinned ? { blueprintPinned: true } : {}),
           ...(playbookTools.length > 0 ? { blueprintTools: playbookTools } : {}),
           ...(crew.length > 0 ? { staffingNotes: crew } : {}),
           ...(specialistAgentId

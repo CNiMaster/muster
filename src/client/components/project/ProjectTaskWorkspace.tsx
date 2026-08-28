@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type React from 'react';
 import type { Agent, Task } from '../../api/types';
 import type { ProjectTaskDTO } from '../../hooks/queries';
-import { useQueuedMessages, useQueuedMessageAction, useTask, useTaskAction, usePostMessage, useMessages, useUploadMaterial, materialRawUrl, useExecutorProfiles, useSystemSettings, useBlueprintMatches, useArtifacts, useStopAllProjectTasks, useStopTask, type MessageAttachment } from '../../hooks/queries';
+import { useQueuedMessages, useQueuedMessageAction, useTask, useTaskAction, usePostMessage, useMessages, useUploadMaterial, materialRawUrl, useExecutorProfiles, useSystemSettings, useBlueprintMatches, useBlueprints, useArtifacts, useStopAllProjectTasks, useStopTask, type MessageAttachment } from '../../hooks/queries';
 import { useUserCommands, useCompactTask, useProjectSpecialists } from '../../hooks/queries';
 import { PromptComposer, type ComposerMode } from '../workbench/PromptComposer';
 import { Button, toast } from '../Button';
@@ -17,6 +17,7 @@ import { QueueStrip } from './QueueStrip';
 import { Input, Textarea, Field } from '../Form';
 import { AutoContinueCountdown } from './AutoContinueCountdown';
 import { profileModels } from '../../../shared/executor';
+import { TASK_CATEGORIES, findTaskSubtype } from '../../../shared/task-categories';
 
 export function ProjectTaskWorkspace({
   projectId,
@@ -36,7 +37,7 @@ export function ProjectTaskWorkspace({
   projectTasks?: ProjectTaskDTO[];
   agents?: Agent[];
   onSelect: (id: string) => void;
-  onCreateTask?: (title: string, brief?: string) => void;
+  onCreateTask?: (title: string, brief?: string, blueprintId?: string) => void;
   onPublishWorkOrder?: (title: string, assigneeId?: string, options?: { mode?: string; model?: string; thinking?: string }) => void;
   publishingWorkOrder?: boolean;
   /** 外部「＋ 新建任务」触发信号（自增计数），驱动创建卡展开 */
@@ -54,6 +55,19 @@ export function ProjectTaskWorkspace({
   const [newTitle, setNewTitle] = useState('');
   const [newBrief, setNewBrief] = useState('');
   const [creating, setCreating] = useState(false);
+  // 三分类创建（2026-08-28）：分类 → 子类型两级选择，点选子类型 = 直接绑定对应蓝图（不做词元猜测）
+  const [pickedCategoryKey, setPickedCategoryKey] = useState<string | null>(null);
+  const [pickedSubtypeKey, setPickedSubtypeKey] = useState<string | null>(null);
+  const { data: allBlueprints } = useBlueprints();
+  const picked = pickedSubtypeKey ? findTaskSubtype(pickedSubtypeKey) : null;
+  const pickedBlueprint = picked && allBlueprints
+    ? allBlueprints.find((bp) => bp.taskType === picked.subtype.blueprintTaskType && bp.status !== 'retired') ?? null
+    : null;
+  const pickCategory = (key: string | null): void => {
+    setPickedCategoryKey(key);
+    setPickedSubtypeKey(null);
+  };
+  const pickSubtype = (key: string | null): void => setPickedSubtypeKey(key);
   // ＋新任务 / ☰清单（2026-08-28 撤）：清单迁右栏「现场·任务现场」（TaskChecklistCard）；新建任务走左栏项目行加号
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedAgentId, setSelectedAgentId] = useState<string>('');
@@ -99,12 +113,17 @@ export function ProjectTaskWorkspace({
   })();
 
   useEffect(() => {
-    if (newTaskSignal > 0) setCreating(true);
+    // 外部「＋」= 全新空白任务：打开同时清掉此前残留的分类/子类型选择（hero 预选被取消后不应暗中带绑）
+    if (newTaskSignal > 0) {
+      pickCategory(null);
+      setCreating(true);
+    }
   }, [newTaskSignal]);
 
   // 左栏项目行「＋」入口（2026-08-28）：?newTask=1 → 打开创建卡并清参（不残留刷新再弹）
   useEffect(() => {
     if (searchParams.get('newTask') === '1') {
+      pickCategory(null);
       setCreating(true);
       setSearchParams((prev) => {
         const next = new URLSearchParams(prev);
@@ -286,9 +305,10 @@ export function ProjectTaskWorkspace({
 
   const handleCreateNew = (): void => {
     if (!newTitle.trim()) return;
-    onCreateTask?.(newTitle.trim(), newBrief.trim() || undefined);
+    onCreateTask?.(newTitle.trim(), newBrief.trim() || undefined, pickedBlueprint?.id);
     setNewTitle('');
     setNewBrief('');
+    pickCategory(null);
     setCreating(false);
   };
 
@@ -342,7 +362,43 @@ export function ProjectTaskWorkspace({
                 placeholder="验收标准、约束条件等…"
               />
             </Field>
-            {(blueprintPreview.data ?? []).length > 0 && (
+            {/* 三分类选择（2026-08-28）：点子类型 = 直接绑定对应蓝图，开任务即穿戴 */}
+            <div className="ptws-cats">
+              <div className="ptws-cats-row">
+                {TASK_CATEGORIES.map((cat) => (
+                  <button
+                    key={cat.key}
+                    type="button"
+                    className={`ptws-cat-chip ${pickedCategoryKey === cat.key ? 'is-active' : ''}`}
+                    onClick={() => pickCategory(pickedCategoryKey === cat.key ? null : cat.key)}
+                  >
+                    {cat.label}
+                  </button>
+                ))}
+              </div>
+              {pickedCategoryKey && (
+                <div className="ptws-cats-row">
+                  {(TASK_CATEGORIES.find((c) => c.key === pickedCategoryKey)?.subtypes ?? []).map((st) => (
+                    <button
+                      key={st.key}
+                      type="button"
+                      className={`ptws-cat-sub ${pickedSubtypeKey === st.key ? 'is-active' : ''}`}
+                      onClick={() => pickSubtype(pickedSubtypeKey === st.key ? null : st.key)}
+                    >
+                      {st.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {picked && (
+                <p className="muted" style={{ margin: 0, fontSize: '12px', lineHeight: 1.6 }}>
+                  {allBlueprints && !pickedBlueprint
+                    ? `「${picked.subtype.label}」对应的蓝图已下架，任务将按标题语义匹配专家`
+                    : <>将直接穿戴 🎭 {pickedBlueprint ? pickedBlueprint.label : picked.subtype.label}（点选指定，不经标题猜测）</>}
+                </p>
+              )}
+            </div>
+            {(blueprintPreview.data ?? []).length > 0 && !picked && (
               <p className="muted" style={{ margin: 0, fontSize: '12px', lineHeight: 1.6 }}>
                 将派遣 🎭 {blueprintPreview.data![0]!.label}
                 {blueprintPreview.data!.length > 1 && (
@@ -351,7 +407,7 @@ export function ProjectTaskWorkspace({
               </p>
             )}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-              <Button variant="ghost" size="sm" onClick={() => setCreating(false)}>取消</Button>
+              <Button variant="ghost" size="sm" onClick={() => { pickCategory(null); setCreating(false); }}>取消</Button>
               <Button size="sm" disabled={!newTitle.trim()} onClick={handleCreateNew}>创建并进入</Button>
             </div>
           </div>
@@ -374,19 +430,31 @@ export function ProjectTaskWorkspace({
             </div>
             <span className="ptws-hero-badge">✨ 负责人在线</span>
             <h2>{selectedTask ? `在任务 #${selectedTask.seq} 里开始工作` : '直接交代你的目标'}</h2>
-            <p className="muted">
-              {selectedTask
-                ? '描述这步要完成什么、验收标准或约束，负责人会拆解并调度合适的智能体专家推进。'
-                : '无需建任务也能开工——发送即起草任务；也可以点左栏「＋」先立一个目标。'}
-            </p>
-            <div className="ptws-hero-suggestions">
-              <span className="ptws-hero-sug-label">快捷任务</span>
-              {['整理一份竞品对比矩阵', '写一段产品介绍文案', '复盘本周工作并给出下周计划'].map((t) => (
-                <button key={t} type="button" className="ptws-sug-chip" onClick={() => onCreateTask?.(t, '')}> {t} </button>
+            <p className="muted">输入框描述目标即可开工；也可以选一个任务类型，点选即绑定对应的打法蓝图。</p>
+            {/* 三分类快捷入口（2026-08-28）：点子类型 = 展开创建卡并预选，直接绑定对应蓝图 */}
+            <div className="ptws-hero-cats">
+              {TASK_CATEGORIES.map((cat) => (
+                <div key={cat.key} className="ptws-hero-cat">
+                  <span className="ptws-hero-cat-label">
+                    <span className="ptws-hero-cat-badge">{cat.badge}</span>
+                    {cat.label}
+                  </span>
+                  <div className="ptws-hero-cat-chips">
+                    {cat.subtypes.map((st) => (
+                      <button
+                        key={st.key}
+                        type="button"
+                        className="ptws-sug-chip"
+                        onClick={() => { pickCategory(cat.key); setPickedSubtypeKey(st.key); setCreating(true); }}
+                      >
+                        {st.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               ))}
-              <span className="ptws-hero-sug-label">定时任务</span>
-              <button type="button" className="ptws-sug-chip" onClick={() => navigate('/automations')}>每天早上汇总待办与进展 →</button>
             </div>
+            <button type="button" className="ptws-sug-chip" onClick={() => navigate('/automations')}>⏱ 定时任务：每天早上汇总待办与进展</button>
           </div>
         )}
 

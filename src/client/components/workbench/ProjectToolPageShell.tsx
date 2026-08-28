@@ -92,7 +92,7 @@ function ProjectTaskSurface({ projectId }: { projectId: string }): React.ReactEl
           projectTasks={projectTasks}
           agents={agents}
           onSelect={(id) => navigate(`/projects/${projectId}?view=task&projectTask=${id}`)}
-          onCreateTask={(title, brief) => createProjectTask.mutate({ projectId, title, brief }, { onSuccess: (item) => navigate(`/projects/${projectId}?view=task&projectTask=${item.id}`) })}
+          onCreateTask={(title, brief, blueprintId) => createProjectTask.mutate({ projectId, title, brief, blueprintId }, { onSuccess: (item) => navigate(`/projects/${projectId}?view=task&projectTask=${item.id}`) })}
           onPublishWorkOrder={(title, assigneeId, options) => {
             if (!selected) return;
             createWorkOrder.mutate({ projectId, projectTaskId: selected.id, title, assigneeAgentId: assigneeId || undefined, inputProtocol: { trigger: 'work_order', content: title, ...(options?.mode ? { mode: options.mode } : {}), ...(options?.model ? { model: options.model } : {}), ...(options?.thinking ? { thinking: options.thinking } : {}) } });

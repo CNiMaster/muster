@@ -95,6 +95,7 @@ export function SettingsPage(): React.ReactElement {
   const [msgGroupExplore, setMsgGroupExplore] = useState(true);
   const [msgGroupTerminal, setMsgGroupTerminal] = useState(true);
   const [msgGroupChanges, setMsgGroupChanges] = useState(true);
+  const [worktreeShareEnv, setWorktreeShareEnv] = useState(true);
   const [desktopNotify, setDesktopNotify] = useState(desktopNotificationsEnabled());
 
   useEffect(() => {
@@ -142,6 +143,7 @@ export function SettingsPage(): React.ReactElement {
     setMsgGroupExplore(settings.messageGroupExplore !== false);
     setMsgGroupTerminal(settings.messageGroupTerminal !== false);
     setMsgGroupChanges(settings.messageGroupChanges !== false);
+    setWorktreeShareEnv(settings.worktreeShareEnv !== false);
   }, [settings]);
 
   const handleSave = (): void => {
@@ -151,7 +153,7 @@ export function SettingsPage(): React.ReactElement {
     }
     saveSettings.mutate(
       // timeoutMs/maxToolCalls 回传服务端加载值（schema 必填、UI 已由执行器档案接管）
-      { claudeBin, model, skipPermissions, timeoutMs: settings?.timeoutMs ?? 600000, maxToolCalls: settings?.maxToolCalls ?? 30, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierHighId: tierHigh, executorTierStandardId: tierStandard, executorTierLowId: tierLow, imageGenModel, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs: egressTimeoutSec * 1000, theme, fontFamily, fontSize, locale, codeTheme, autonomousReflectionEnabled, autonomousReflectionBudgetUSD, memoryHousekeepingEnabled, swarmMaxDepth, swarmMaxWidth, swarmMaxNodes, swarmBudgetUSD, breadthDefaultTier, codeFontSize, wrapCode, waitingAutoContinueMinutes: waitingAutoContinueMin, archiveTaskAfterDays, preventSleep, interruptMode, stopGraceMs: stopGraceSec * 1000, securityMode, messageShowThinking: msgShowThinking, messageShowTodo: msgShowTodo, messageGroupExplore: msgGroupExplore, messageGroupTerminal: msgGroupTerminal, messageGroupChanges: msgGroupChanges },
+      { claudeBin, model, skipPermissions, timeoutMs: settings?.timeoutMs ?? 600000, maxToolCalls: settings?.maxToolCalls ?? 30, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierHighId: tierHigh, executorTierStandardId: tierStandard, executorTierLowId: tierLow, imageGenModel, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs: egressTimeoutSec * 1000, theme, fontFamily, fontSize, locale, codeTheme, autonomousReflectionEnabled, autonomousReflectionBudgetUSD, memoryHousekeepingEnabled, swarmMaxDepth, swarmMaxWidth, swarmMaxNodes, swarmBudgetUSD, breadthDefaultTier, codeFontSize, wrapCode, waitingAutoContinueMinutes: waitingAutoContinueMin, archiveTaskAfterDays, preventSleep, interruptMode, stopGraceMs: stopGraceSec * 1000, securityMode, messageShowThinking: msgShowThinking, messageShowTodo: msgShowTodo, messageGroupExplore: msgGroupExplore, messageGroupTerminal: msgGroupTerminal, messageGroupChanges: msgGroupChanges, worktreeShareEnv },
       {
         onSuccess: () => toast('success', '设置已保存并实时生效'),
         onError: (error: any) => toast('error', error.message ?? '保存设置失败'),
@@ -266,6 +268,9 @@ export function SettingsPage(): React.ReactElement {
                   <option value="queue">排队等本轮结束（推荐）</option>
                   <option value="interrupt">立即打断插话</option>
                 </Select>
+              </SettingsRow>
+              <SettingsRow badge="recommended" title="任务工作区共享仓库环境" hint="为每个任务工作区软链接主仓库已装好的依赖环境（如 node_modules），不再逐个工作区新建；仅链接不复制，关闭后工作区环境独立准备">
+                <Toggle checked={worktreeShareEnv} onChange={setWorktreeShareEnv} label="任务工作区共享仓库环境" />
               </SettingsRow>
 
               <SettingsFold summary="更多行为（防休眠 · 自动复盘 · 超时 · 权限跳过）">

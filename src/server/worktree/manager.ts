@@ -7,7 +7,7 @@
  - worktree 路径：~/.muster/worktrees/<taskId>
  */
 import { execSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, rmSync, realpathSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, realpathSync, symlinkSync, lstatSync } from 'node:fs';
 import path from 'node:path';
 import type { DB } from '../db/client';
 import { SERVER_CONFIG } from '../env';
@@ -85,6 +85,28 @@ export function removeWorktree(rootDir: string, info: WorktreeInfo, options: { k
 }
 
 /**
+ * 任务工作区共享仓库环境（2026-08-28，设置 worktree_share_env 默认开）：
+ * 项目根已有 node_modules 且工作区没有时软链接过去（junction 兼容 Windows）——
+ * 任务内可直接用已装好的依赖，不逐 worktree 新建环境。仅链接不复制；
+ * 已存在（无论真假）不覆盖；链接失败不阻塞任务（agent 可自行安装）。
+ * 发布侧防线见 commitAll：仅当 node_modules 是软链时从暂存区排除。
+ */
+export function linkWorktreeEnv(repoRoot: string, wtPath: string): boolean {
+  const rootModules = path.join(repoRoot, 'node_modules');
+  const wtModules = path.join(wtPath, 'node_modules');
+  if (!existsSync(rootModules)) return false;
+  if (existsSync(wtModules)) return false;
+  try {
+    symlinkSync(rootModules, wtModules, 'junction');
+    log.info('worktree env linked', { wtModules, rootModules });
+    return true;
+  } catch (err) {
+    log.warn('worktree env link failed (non-blocking)', { wtPath, err: String(err) });
+    return false;
+  }
+}
+
+/**
  * 整改批次 1：带状态的分支变更（全量发布分类用）——D→真删除，R 拆 old(D)+new(A)。
  * 合并两个来源：已提交（diff base..branch）+ 工作区未提交（status --porcelain，工作区状态优先）——
  * 发布前的分类发生在 publish 的 worktree 提交之前，删除可能尚未提交。
@@ -124,6 +146,7 @@ export function listTaskBranchChangeStatus(
       continue;
     }
     rest = unquotePath(rest);
+    if (isSharedEnvEntry(info.path, rest)) continue;
     if (xy.includes('D')) merged.set(rest, 'D');
     else if (xy.includes('?')) merged.set(rest, 'A');
     else merged.set(rest, 'M');
@@ -134,6 +157,20 @@ export function listTaskBranchChangeStatus(
 /** quotePath=false 后仅含引号/控制符的极端路径仍会被 git 加引号——剥外层引号还原。 */
 function unquotePath(p: string): string {
   return p.length >= 2 && p.startsWith('"') && p.endsWith('"') ? p.slice(1, -1) : p;
+}
+
+/**
+ * 共享环境软链条目判定（2026-08-28）：git status 把链接以未跟踪条目列出（?? node_modules），
+ * 变更清单（发布分类/白名单外守护）须排除——否则发布清单永远多一条「新增 node_modules」噪音，
+ * 守护也会因它误判「有未提交改动」。真实目录（用户仓库自己的依赖）不受影响。
+ */
+function isSharedEnvEntry(wtPath: string, entryPath: string): boolean {
+  if (entryPath !== 'node_modules') return false;
+  try {
+    return lstatSync(path.join(wtPath, 'node_modules')).isSymbolicLink();
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -151,7 +188,8 @@ export function listTaskBranchChanges(rootDir: string, info: WorktreeInfo): { co
     // 重命名：旧路径的删除也是改动，两个路径都要进守护清单（只留新路径会让旧路径的丢失静默漏网）
     if (renamed) return [renamed[1]!.trim(), renamed[2]!.trim()];
     return [l.replace(/^[A-Z?]+\s+/, '').trim()];
-  }).filter(Boolean);
+  }).filter(Boolean)
+    .filter((p) => !isSharedEnvEntry(info.path, p));
   return { committed, uncommitted };
 }
 
@@ -161,9 +199,16 @@ export function commitAll(
   options: { excludePaths?: string[] } = {},
 ): string {
   git(wtPath, ['add', '-A']);
-  for (const excluded of options.excludePaths ?? []) {
+  const excluded = [...(options.excludePaths ?? [])];
+  // 共享环境软链防线（2026-08-28）：node_modules 是我们建的软链时必须排除——
+  // git add -A 会把链接本身作为条目提交进集成分支。真实目录（用户仓库自己的依赖）
+  // 维持原行为不动；判断用 lstat（不跟随链接）。
+  try {
+    if (lstatSync(path.join(wtPath, 'node_modules')).isSymbolicLink()) excluded.push('node_modules');
+  } catch { /* 无 node_modules 或不可读——无需排除 */ }
+  for (const excludedPath of excluded) {
     // 仅从暂存区排除，文件仍留在 worktree 给恢复后的 Task 使用。
-    git(wtPath, ['reset', '-q', '--', excluded], { allowFail: true });
+    git(wtPath, ['reset', '-q', '--', excludedPath], { allowFail: true });
   }
   // 只检查暂存区。被排除的未跟踪快照不应触发空 commit。
   const staged = git(wtPath, ['diff', '--cached', '--name-only']).stdout;

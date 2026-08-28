@@ -1574,7 +1574,7 @@ export function useProjectHealth(projectId: string | undefined) {
 }
 
 export function useProjectTask(projectId:string|undefined,id:string|undefined){return useQuery({queryKey:['project-task',projectId,id],queryFn:()=>api.get<ProjectTaskDTO>(`/api/projects/${projectId}/project-tasks/${id}`),enabled:!!projectId&&!!id,refetchInterval:4000});}
-export function useCreateProjectTask(){const qc=useQueryClient();return useMutation({mutationFn:({projectId,...input}:{projectId:string;title:string;brief?:string;launchBrief?:ProjectLaunchBrief})=>api.post<ProjectTaskDTO>(`/api/projects/${projectId}/project-tasks`,input),onSuccess:data=>{qc.invalidateQueries({queryKey:['project-tasks',data.projectId]});qc.invalidateQueries({queryKey:['standalone-tasks']});}});}
+export function useCreateProjectTask(){const qc=useQueryClient();return useMutation({mutationFn:({projectId,...input}:{projectId:string;title:string;brief?:string;launchBrief?:ProjectLaunchBrief;blueprintId?:string})=>api.post<ProjectTaskDTO>(`/api/projects/${projectId}/project-tasks`,input),onSuccess:data=>{qc.invalidateQueries({queryKey:['project-tasks',data.projectId]});qc.invalidateQueries({queryKey:['standalone-tasks']});}});}
 export function useProjectTaskAction(){const qc=useQueryClient();return useMutation({mutationFn:({projectId,id,action}:{projectId:string;id:string;action:'complete'|'archive'})=>api.post<ProjectTaskDTO>(`/api/projects/${projectId}/project-tasks/${id}/${action}`),onSuccess:data=>{qc.invalidateQueries({queryKey:['project-tasks',data.projectId]});qc.invalidateQueries({queryKey:['project-task',data.projectId,data.id]});}});}
 /** 管理工作台批2：置顶/取消置顶（仅列表排序）。 */
 export function usePinProjectTask(){const qc=useQueryClient();return useMutation({mutationFn:({projectId,id,pinned}:{projectId:string;id:string;pinned:boolean})=>api.post<ProjectTaskDTO>(`/api/projects/${projectId}/project-tasks/${id}/pin`,{pinned}),onSuccess:data=>{qc.invalidateQueries({queryKey:['project-tasks',data.projectId]});qc.invalidateQueries({queryKey:['standalone-tasks']});}});}
@@ -2701,6 +2701,7 @@ export function useSaveSystemSettings() {
       messageGroupExplore?: boolean;
       messageGroupTerminal?: boolean;
       messageGroupChanges?: boolean;
+      worktreeShareEnv?: boolean;
     }) => api.post<any>('/api/settings', settings),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['systemSettings'] });

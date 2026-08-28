@@ -20,6 +20,13 @@ export function createProjectTask(db:DB,input:{projectId:string;title:string;bri
 }
 export function getProjectTask(db:DB,id:string):ProjectTask{const row=db.prepare('SELECT * FROM project_task WHERE id=?').get(id) as Row|undefined;if(!row)throw new AppError(ErrorCode.NOT_FOUND,`项目任务不存在: ${id}`);return fromRow(row);}
 export function getProjectTaskInProject(db:DB,id:string,projectId:string):ProjectTask{const task=getProjectTask(db,id);if(task.projectId!==projectId)throw new AppError(ErrorCode.VALIDATION,'项目任务不属于当前项目');return task;}
+/**
+ * 载体绑定蓝图读取（2026-08-28 创建卡子类型点选）：launchBrief.blueprintId 非空 = 该载体
+ * 已绑蓝图（消息派发与工作单派发都直通穿戴，跳过标题词元猜测）；载体不存在/未绑定返回 undefined。
+ */
+export function carrierBoundBlueprintId(db:DB,projectTaskId:string):string|undefined{
+  try{return getProjectTask(db,projectTaskId).launchBrief.blueprintId||undefined;}catch{return undefined;}
+}
 export function listProjectTasks(db:DB,projectId:string,opts?:{includeArchived?:boolean}):ProjectTask[]{
   // R2b：默认排除已归档（工作台列表干净）；归档区与「显示已归档」传 includeArchived 取全量
   const archivedFilter=opts?.includeArchived?'':" AND state!='archived'";

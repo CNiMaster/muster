@@ -56,7 +56,7 @@ import { generateCompactionSummary } from '../domain/compaction-summary';
 import { getWorkbench } from '../domain/workbench';
 import { resolveTaskRepoRoot } from '../domain/task-repo';
 import { attachedPaths } from '../domain/project-dirs';
-import { createWorktree, removeWorktree, ensureStagingWorktree, ensureTaskStagingWorktree, listTaskBranchChanges, listTaskBranchChangeStatus } from '../worktree/manager';
+import { createWorktree, removeWorktree, ensureStagingWorktree, ensureTaskStagingWorktree, listTaskBranchChanges, listTaskBranchChangeStatus, linkWorktreeEnv } from '../worktree/manager';
 import { materializeContextFiles, isMusterManagedContextFile, stripContextSection, CONTEXT_FILE_NAMES, CONTEXT_START_MARK } from '../domain/context-file';
 import { basename } from 'node:path';
 /** 自动化节奏的人话标签（播报/摘要用）。 */
@@ -464,6 +464,15 @@ export class TaskEngine {
         saveTaskRuntime(this.db, worktreeInfo);
       }
       workingDir = worktreeInfo.path;
+      // 任务工作区共享仓库环境（2026-08-28，设置 worktree_share_env 默认开）：
+      // 主仓库有 node_modules 时软链进工作区，任务内直接用已装好的依赖（新建与恢复两路都补）。
+      try {
+        if (getSystemSettings(this.db).worktreeShareEnv) {
+          linkWorktreeEnv(worktreeSourceRoot, worktreeInfo.path);
+        }
+      } catch (err) {
+        log.warn('worktree env link skipped', { taskId: task.id, err: String(err) });
+      }
       // P1-③ 上下文文件物化：章程/项目说明/协作规则 → worktree 根 AGENTS.md/CLAUDE.md 标记段，
       // CLI 的文件工具与人工都能读到规则（systemPrompt 仍是权威，此处是投影）；失败不阻断执行。
       try {

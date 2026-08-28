@@ -196,7 +196,7 @@ function NewProject(): React.ReactElement {
             expectedOutcome: desc || initialTask,
             audience: wizardResult?.audience ?? '',
             effectAndStyle: wizardResult?.style ?? '',
-            constraints: '', deliverables: [], requiredCapabilityIds: [], requiredSkillIds: [], externalResearchNeeds: [], references: [], needsVisualConfirmation: false, visualReferences: [],
+            constraints: '', deliverables: [], requiredCapabilityIds: [], requiredSkillIds: [], externalResearchNeeds: [], references: [], needsVisualConfirmation: false, visualReferences: [], blueprintId: '',
           } }, { onSuccess: (projectTask) => { toast('success', `项目「${p.name}」已创建；请先确认「${initialTask}」的需求与能力方案。`); navigate(`/projects/${p.id}?view=task&projectTask=${projectTask.id}`); } });
         },
         onError: (e) => toast('error', (e as { message?: string }).message ?? '创建失败'),
@@ -570,7 +570,7 @@ export function ProjectDetail({ projectId }: { projectId: string }): React.React
         projectTasks={projectTasks ?? []}
         agents={agents ?? []}
         onSelect={selectProjectTask}
-        onCreateTask={(title, brief) => createProjectTask.mutate({ projectId, title, brief }, { onSuccess: (item) => { selectProjectTask(item.id); toast('success', '项目任务已创建'); } })}
+        onCreateTask={(title, brief, blueprintId) => createProjectTask.mutate({ projectId, title, brief, blueprintId }, { onSuccess: (item) => { selectProjectTask(item.id); toast('success', '项目任务已创建'); } })}
         newTaskSignal={newTaskSignal}
         onPublishWorkOrder={(title, assigneeId, options) => { if (!selectedProjectTask) return; createWorkOrder.mutate({ projectId, projectTaskId: selectedProjectTask.id, title, assigneeAgentId: assigneeId || undefined, inputProtocol: { trigger: 'work_order', content: title, ...(options?.mode ? { mode: options.mode } : {}), ...(options?.model ? { model: options.model } : {}), ...(options?.thinking ? { thinking: options.thinking } : {}) } }, { onSuccess: () => toast('success', '智能体工作单已下达并开始执行') }); }}
         publishingWorkOrder={createWorkOrder.isPending}
