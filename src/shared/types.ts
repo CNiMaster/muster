@@ -162,7 +162,7 @@ export interface AgentRunResult {
   automationPlan?: {
     kind: 'github-issues';
     config: { repo: string; labelFilter?: string };
-    schedule: { kind: 'interval'; intervalMinutes: number } | { kind: 'daily'; timeOfDay: string };
+    schedule: { kind: 'interval'; intervalMinutes: number; days?: string[] } | { kind: 'daily'; timeOfDay: string; days?: string[] } | { kind: 'once'; runAt: string };
     projectId: string;
   };
 }

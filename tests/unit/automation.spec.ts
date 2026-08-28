@@ -14,7 +14,7 @@ import { clockIn } from '../../src/server/domain/workbench';
 import { ensureAutomationStewardAgentId, AUTOMATION_ROLE } from '../../src/server/domain/system-agents';
 import {
   createAutomation, listAutomations, materializeAutomationPlan, setAutomationEnabled, deleteAutomation, updateAutomation, markAutomationRun, getAutomation,
-  recordAutomationRun, listAutomationRuns, countAutomationRuns,
+  recordAutomationRun, listAutomationRuns, countAutomationRuns, isAutomationDue,
 } from '../../src/server/domain/automation';
 import { TaskEngine } from '../../src/server/task-engine/engine';
 import { FakeExecutor } from '../../src/server/task-engine/fake-executor';
@@ -105,6 +105,24 @@ describe('automation 域', () => {
     expect(() => updateAutomation(db, 'auto_missing', { config: { repo: 'a/b' } })).toThrow();
     // 校验失败不留半改：记录原样
     expect(getAutomation(db, rec.id).config).toEqual({ repo: 'a/b' });
+  });
+
+  it('批次2：once/days——校验（once 需 runAt / days 须去重子集）+ due 判定（once 过期即到点 / 非命中日不到点）', () => {
+    const projectId = seedProject('oncedays');
+    expect(() => createAutomation(db, { kind: 'github-issues', config: { repo: 'a/b' }, schedule: { kind: 'once' }, projectId, createdVia: 'form' })).toThrow();
+    expect(() => createAutomation(db, { kind: 'github-issues', config: { repo: 'a/b' }, schedule: { kind: 'once', runAt: '2026-04-08T07:00:00' }, projectId, createdVia: 'form' })).not.toThrow();
+    expect(() => createAutomation(db, { kind: 'github-issues', config: { repo: 'a/b' }, schedule: { kind: 'daily', timeOfDay: '09:00', days: ['mon', 'mon'] }, projectId, createdVia: 'form' })).toThrow();
+    expect(() => createAutomation(db, { kind: 'github-issues', config: { repo: 'a/b' }, schedule: { kind: 'daily', timeOfDay: '09:00', days: ['funday'] as never[] as string[] }, projectId, createdVia: 'form' })).toThrow();
+
+    // once 已过时刻 + 未跑 → 到点；跑完后归档（enabled=false）不再到点
+    const once = listAutomations(db, projectId).find((x) => x.schedule.kind === 'once')!;
+    expect(isAutomationDue(once, new Date('2026-04-08T08:00:00'))).toBe(true);
+    expect(isAutomationDue(once, new Date('2026-04-08T06:00:00'))).toBe(false);
+
+    // days：周五 10:00 看「仅周日 daily 09:00」不到点（即使时刻已过）
+    const sunday = createAutomation(db, { kind: 'github-issues', config: { repo: 'd/e' }, schedule: { kind: 'daily', timeOfDay: '09:00', days: ['sun'] }, projectId, createdVia: 'form' });
+    expect(isAutomationDue(sunday, new Date('2026-08-28T10:00:00'))).toBe(false); // 2026-08-28 周五
+    expect(isAutomationDue(sunday, new Date('2026-08-30T10:00:00'))).toBe(true);  // 2026-08-30 周日、时刻已过、未跑
   });
 
   it('执行历史（批次1）：记录可查新→旧；惰性 prune 每条自动化只留 100 条；计数按自动化分组', () => {

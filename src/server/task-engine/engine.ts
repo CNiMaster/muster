@@ -60,8 +60,9 @@ import { createWorktree, removeWorktree, ensureStagingWorktree, ensureTaskStagin
 import { materializeContextFiles, isMusterManagedContextFile, stripContextSection, CONTEXT_FILE_NAMES, CONTEXT_START_MARK } from '../domain/context-file';
 import { basename } from 'node:path';
 /** 自动化节奏的人话标签（播报/摘要用）。 */
-function scheduleLabel(schedule: { kind: string; intervalMinutes?: number; timeOfDay?: string }): string {
+function scheduleLabel(schedule: { kind: string; intervalMinutes?: number; timeOfDay?: string; runAt?: string }): string {
   if (schedule.kind === 'daily') return `每天 ${schedule.timeOfDay ?? ''} `;
+  if (schedule.kind === 'once') return `一次（${schedule.runAt ?? ''}）`;
   if (schedule.kind === 'interval' && schedule.intervalMinutes) {
     return schedule.intervalMinutes >= 60 && schedule.intervalMinutes % 60 === 0
       ? `每 ${schedule.intervalMinutes / 60} 小时 `
@@ -987,8 +988,10 @@ export class TaskEngine {
             config: plan.config,
             projectId: plan.projectId,
             schedule: plan.schedule.kind === 'interval'
-              ? { kind: 'interval', intervalMs: plan.schedule.intervalMinutes * 60_000 }
-              : { kind: 'daily', timeOfDay: plan.schedule.timeOfDay },
+              ? { kind: 'interval', intervalMs: plan.schedule.intervalMinutes * 60_000, ...(plan.schedule.days ? { days: plan.schedule.days } : {}) }
+              : plan.schedule.kind === 'daily'
+                ? { kind: 'daily', timeOfDay: plan.schedule.timeOfDay, ...(plan.schedule.days ? { days: plan.schedule.days } : {}) }
+                : { kind: 'once', runAt: plan.schedule.runAt },
           });
           const project = getProject(this.db, plan.projectId);
           result.summary = `已创建自动化（${created.id}）：${scheduleLabel(plan.schedule)}拉取 ${plan.config.repo} 的 GitHub Issues，派给「${project.name}」负责人处理。`;

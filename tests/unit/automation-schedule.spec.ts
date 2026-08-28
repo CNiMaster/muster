@@ -44,6 +44,29 @@ describe('nextAutomationRun', () => {
     expect(r?.at).toEqual(new Date('2026-08-29T09:00:00'));
   });
 
+  it('once：at=runAt；未到 dueNow=false；已过 dueNow=true（等扫描补跑）', () => {
+    const future = nextAutomationRun({ ...base, schedule: { kind: 'once', runAt: '2026-08-28T18:00:00' }, lastRunAt: null }, NOW);
+    expect(future?.dueNow).toBe(false);
+    expect(future?.at).toEqual(new Date('2026-08-28T18:00:00'));
+    const past = nextAutomationRun({ ...base, schedule: { kind: 'once', runAt: '2026-08-28T07:00:00' }, lastRunAt: null }, NOW);
+    expect(past?.dueNow).toBe(true);
+    expect(nextAutomationRun({ ...base, schedule: { kind: 'once', runAt: '不是时间' }, lastRunAt: null }, NOW)).toBeNull();
+  });
+
+  it('days 限定：daily 周日任务在周三看=下一周日；interval 非命中日顺延不跨日累积', () => {
+    // NOW=2026-08-28 周五；周日任务 → 08-30 09:00
+    const weekly = nextAutomationRun({ ...base, schedule: { kind: 'daily', timeOfDay: '09:00', days: ['sun'] }, lastRunAt: '2026-08-23T09:00:00' }, NOW);
+    expect(weekly?.dueNow).toBe(false);
+    expect(weekly?.at).toEqual(new Date('2026-08-30T09:00:00'));
+    // 工作日 interval：今天周五命中，上次 09:00 + 2h = 11:00 未到 → 不 due、at=周五 11:00
+    const workday = nextAutomationRun({ ...base, schedule: { kind: 'interval', intervalMs: 7_200_000, days: ['mon', 'tue', 'wed', 'thu', 'fri'] }, lastRunAt: '2026-08-28T09:00:00' }, NOW);
+    expect(workday?.dueNow).toBe(false);
+    expect(workday?.at).toEqual(new Date('2026-08-28T11:00:00'));
+    // 今天不命中（周六任务，周五看）→ 不 due
+    const weekend = nextAutomationRun({ ...base, schedule: { kind: 'interval', intervalMs: 60_000, days: ['sat', 'sun'] }, lastRunAt: '2026-08-22T10:00:00' }, NOW);
+    expect(weekend?.dueNow).toBe(false);
+  });
+
   it('坏数据：非预设 kind / 缺 intervalMs / 坏 timeOfDay 返回 null 而不抛', () => {
     expect(nextAutomationRun({ ...base, schedule: { kind: 'heartbeat' }, lastRunAt: null }, NOW)).toBeNull();
     expect(nextAutomationRun({ ...base, schedule: { kind: 'interval' }, lastRunAt: null }, NOW)).toBeNull();

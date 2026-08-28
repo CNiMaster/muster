@@ -16,7 +16,7 @@ import { drainSemanticSettlements } from '../domain/settlement';
 import { runMemoryHousekeeping } from '../domain/memory-housekeeping';
 import { sweepStaleStaging, sweepStaleTaskStaging } from '../domain/staging';
 import { sweepIdleStaffSpecialists } from '../domain/specialist-review';
-import { listDueAutomations, recordAndMark } from '../domain/automation';
+import { listDueAutomations, recordAndMark, setAutomationEnabled } from '../domain/automation';
 import { syncGithubIssues } from '../domain/github-issues';
 import { settleMemoryVotes, sweepMemoryBacklogNotice, purgeStaleMemory } from '../domain/memory';
 import { archiveStaleCompletedTasks } from '../domain/project-task';
@@ -331,6 +331,10 @@ export class ProjectRuntimeCoordinator {
               recordAndMark(this.db, automation.id, 'ok', startedAt, `新增 ${r.newCount} · 已知 ${r.skipped}`);
             } else {
               recordAndMark(this.db, automation.id, 'skipped', startedAt, `未知类型 ${automation.kind}，已跳过`);
+            }
+            // once 跑完即归档（一次性语义）：成功执行后停用，列表派生「已完成」
+            if (automation.schedule.kind === 'once') {
+              setAutomationEnabled(this.db, automation.id, false);
             }
           } catch (error) {
             recordAndMark(this.db, automation.id, 'failed', startedAt, `失败：${String(error).slice(0, 200)}`);

@@ -8,7 +8,7 @@ import type React from 'react';
 import { useEffect, useReducer, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  useWorkbench, useAutomations, useAutomationSteward, useSetAutomationEnabled, useUpdateAutomation, useDeleteAutomation, useProjects, useCreateAutomationForm, useAutomationRuns, type AutomationDTO,
+  useWorkbench, useAutomations, useAutomationSteward, useSetAutomationEnabled, useUpdateAutomation, useDeleteAutomation, useProjects, useCreateAutomationForm, useAutomationRuns, type AutomationDTO, type AutomationFormSchedule,
 } from '../hooks/queries';
 import { nextAutomationRun } from '../../shared/automation-schedule';
 import { Button, toast } from '../components/Button';
@@ -18,18 +18,51 @@ import { CardSkeleton } from '../components/Skeleton';
 import { EmptyState } from '../components/EmptyState';
 import { ConversationPanel } from '../components/ConversationPanel';
 
-function scheduleText(a: { schedule: { kind: string; intervalMs?: number; timeOfDay?: string } }): string {
-  if (a.schedule.kind === 'daily') return `每天 ${a.schedule.timeOfDay ?? ''}`;
+const DAY_LABELS: Record<string, string> = { mon: '一', tue: '二', wed: '三', thu: '四', fri: '五', sat: '六', sun: '日' };
+
+/** 周几文案：全工作日=「工作日」，全周末=「周末」，否则逐个列。 */
+function daysText(days?: string[]): string {
+  if (!days || days.length === 0) return '';
+  const workdays = ['mon', 'tue', 'wed', 'thu', 'fri'];
+  if (days.length === 5 && workdays.every((d) => days.includes(d))) return '工作日';
+  if (days.length === 2 && days.includes('sat') && days.includes('sun')) return '周末';
+  return '每周' + days.map((d) => DAY_LABELS[d] ?? '').join('');
+}
+
+function scheduleText(a: { schedule: { kind: string; intervalMs?: number; timeOfDay?: string; runAt?: string; days?: string[] } }): string {
+  if (a.schedule.kind === 'once') {
+    const at = a.schedule.runAt ? new Date(a.schedule.runAt) : null;
+    return `一次 · ${at && !Number.isNaN(at.getTime()) ? at.toLocaleString() : (a.schedule.runAt ?? '')}`;
+  }
+  const prefix = daysText(a.schedule.days);
+  if (a.schedule.kind === 'daily') return `${prefix || '每天'} ${a.schedule.timeOfDay ?? ''}`.trim();
   const minutes = Math.round((a.schedule.intervalMs ?? 0) / 60_000);
-  if (minutes >= 60 && minutes % 60 === 0) return `每 ${minutes / 60} 小时`;
-  return `每 ${minutes} 分钟`;
+  const iv = minutes >= 60 && minutes % 60 === 0 ? `每 ${minutes / 60} 小时` : `每 ${minutes} 分钟`;
+  return prefix ? `${prefix} · ${iv}` : iv;
 }
 
 /** interval 预设档；编辑非预设值（对话创建可带任意分钟）时动态并入当前值。 */
 const INTERVAL_PRESETS = [15, 30, 60, 360, 1440];
 
+/** 派生分类（不存字段防漂移）：once→一次性；github-issues→集成同步；其余（notify/dispatch）→任务提醒。 */
+type AutoCategory = 'all' | 'once' | 'recurring' | 'integration';
+function categoryOf(a: AutomationDTO): Exclude<AutoCategory, 'all'> {
+  if (a.schedule.kind === 'once') return 'once';
+  if (a.kind === 'github-issues') return 'integration';
+  return 'recurring';
+}
+const CATEGORY_LABELS: Record<Exclude<AutoCategory, 'all'>, string> = {
+  once: '一次性',
+  recurring: '任务提醒',
+  integration: '集成同步',
+};
+
 /** 下次触发文案（语义见 shared/automation-schedule：dueNow 由启停决定展示口径，30s 心跳重算）。 */
 function nextRunText(a: AutomationDTO, now: Date): { text: string; title: string } | null {
+  // once 已跑完 → 归档（coordinator 成功后停用）派生「已完成」
+  if (a.schedule.kind === 'once' && !a.enabled && a.lastRunAt) {
+    return { text: '已完成', title: a.lastRunAt };
+  }
   const next = nextAutomationRun(a, now);
   if (!next) return null;
   const title = next.at.toLocaleString();
@@ -72,9 +105,12 @@ export function AutomationPage(): React.ReactElement {
   const [repo, setRepo] = useState('');
   const [labelFilter, setLabelFilter] = useState('');
   const [projectId, setProjectId] = useState('');
-  const [scheduleKind, setScheduleKind] = useState<'interval' | 'daily'>('interval');
+  const [scheduleKind, setScheduleKind] = useState<'interval' | 'daily' | 'once'>('interval');
   const [intervalMinutes, setIntervalMinutes] = useState(60);
   const [timeOfDay, setTimeOfDay] = useState('09:00');
+  const [runAt, setRunAt] = useState('');
+  const [days, setDays] = useState<string[]>([]);
+  const [category, setCategory] = useState<AutoCategory>('all');
   const [draftInjection, setDraftInjection] = useState<{ text: string; seq: number } | null>(null);
   // 下次触发是相对时间：30s 心跳驱动重算（纯展示，不查网络）
   const [, bumpNow] = useReducer((x: number) => x + 1, 0);
@@ -92,11 +128,20 @@ export function AutomationPage(): React.ReactElement {
     setFormOpen(true);
     setRepo(a.config.repo);
     setLabelFilter(a.config.labelFilter ?? '');
-    setProjectId(a.projectId);
-    setScheduleKind(a.schedule.kind === 'daily' ? 'daily' : 'interval');
-    const minutes = a.schedule.kind === 'interval' ? Math.round((a.schedule.intervalMs ?? 3_600_000) / 60_000) : 60;
+    setProjectId(a.projectId ?? '');
+    const sched = a.schedule as { kind: string; intervalMs?: number; timeOfDay?: string; runAt?: string; days?: string[] };
+    setScheduleKind(sched.kind === 'daily' || sched.kind === 'once' ? sched.kind : 'interval');
+    const minutes = sched.kind === 'interval' ? Math.round((sched.intervalMs ?? 3_600_000) / 60_000) : 60;
     setIntervalMinutes(Math.max(1, minutes));
-    if (a.schedule.timeOfDay) setTimeOfDay(a.schedule.timeOfDay);
+    if (sched.timeOfDay) setTimeOfDay(sched.timeOfDay);
+    if (sched.kind === 'once' && sched.runAt) {
+      const d = new Date(sched.runAt);
+      if (!Number.isNaN(d.getTime())) {
+        const pad = (n: number): string => String(n).padStart(2, '0');
+        setRunAt(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`);
+      }
+    } else setRunAt('');
+    setDays(sched.days ?? []);
   };
 
   const closeForm = (): void => {
@@ -114,7 +159,15 @@ export function AutomationPage(): React.ReactElement {
       return;
     }
     const config = { repo: repo.trim(), ...(labelFilter.trim() ? { labelFilter: labelFilter.trim() } : {}) };
-    const schedule = scheduleKind === 'interval' ? { kind: 'interval' as const, intervalMinutes } : { kind: 'daily' as const, timeOfDay };
+    const schedule: AutomationFormSchedule = scheduleKind === 'interval'
+      ? { kind: 'interval', intervalMinutes, ...(days.length > 0 ? { days } : {}) }
+      : scheduleKind === 'daily'
+        ? { kind: 'daily', timeOfDay, ...(days.length > 0 ? { days } : {}) }
+        : { kind: 'once', runAt: runAt ? new Date(runAt).toISOString() : '' };
+    if (scheduleKind === 'once' && !runAt) {
+      toast('error', '请选择一次性触发的时间');
+      return;
+    }
     if (editingId) {
       updateForm.mutate(
         { id: editingId, config, schedule, projectId },
@@ -213,9 +266,10 @@ export function AutomationPage(): React.ReactElement {
               ))}
             </select>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <select value={scheduleKind} onChange={(e) => setScheduleKind(e.target.value as 'interval' | 'daily')} style={{ fontSize: 13, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)' }}>
+              <select value={scheduleKind} onChange={(e) => setScheduleKind(e.target.value as 'interval' | 'daily' | 'once')} style={{ fontSize: 13, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)' }}>
                 <option value="interval">按间隔循环</option>
                 <option value="daily">每天定点</option>
+                <option value="once">仅一次</option>
               </select>
               {scheduleKind === 'interval' ? (
                 <select value={intervalMinutes} onChange={(e) => setIntervalMinutes(Number(e.target.value))} style={{ fontSize: 13, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)' }}>
@@ -223,24 +277,69 @@ export function AutomationPage(): React.ReactElement {
                     <option key={m} value={m}>每 {m} 分钟</option>
                   ))}
                 </select>
-              ) : (
+              ) : scheduleKind === 'daily' ? (
                 <input type="time" value={timeOfDay} onChange={(e) => setTimeOfDay(e.target.value)} style={{ fontSize: 13, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)' }} />
+              ) : (
+                <input type="datetime-local" value={runAt} onChange={(e) => setRunAt(e.target.value)} style={{ fontSize: 13, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)' }} />
               )}
             </div>
+            {scheduleKind !== 'once' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 12, color: 'var(--fg-subtle)' }}>限定周几（不选=每天）：</span>
+                {Object.entries(DAY_LABELS).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setDays((prev) => (prev.includes(key) ? prev.filter((d) => d !== key) : [...prev, key]))}
+                    style={{
+                      fontSize: 12, padding: '2px 8px', borderRadius: 999, cursor: 'pointer',
+                      border: `1px solid ${days.includes(key) ? 'var(--accent)' : 'var(--border-subtle)'}`,
+                      background: days.includes(key) ? 'var(--accent-subtle)' : 'transparent',
+                      color: days.includes(key) ? 'var(--accent)' : 'var(--fg-subtle)',
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <Button variant="ghost" size="sm" onClick={closeForm}>取消</Button>
               <Button size="sm" loading={createForm.isPending || updateForm.isPending} onClick={submitForm}>{editingId ? '保存' : '创建'}</Button>
             </div>
           </div>
         )}
+        {automations.length > 0 && (
+          <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
+            {(['all', 'once', 'recurring', 'integration'] as AutoCategory[]).map((c) => {
+              const count = c === 'all' ? automations.length : automations.filter((a) => categoryOf(a) === c).length;
+              if (c !== 'all' && count === 0) return null;
+              return (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setCategory(c)}
+                  style={{
+                    fontSize: 12, padding: '2px 10px', borderRadius: 999, cursor: 'pointer',
+                    border: `1px solid ${category === c ? 'var(--accent)' : 'var(--border-subtle)'}`,
+                    background: category === c ? 'var(--accent-subtle)' : 'transparent',
+                    color: category === c ? 'var(--accent)' : 'var(--fg-subtle)',
+                  }}
+                >
+                  {c === 'all' ? '全部' : CATEGORY_LABELS[c]} {count}
+                </button>
+              );
+            })}
+          </div>
+        )}
         {automations.length === 0 ? (
           <EmptyState icon="⚙️" title="还没有自动化" />
         ) : (
-          automations.map((a) => (
+          automations.filter((a) => category === 'all' || categoryOf(a) === category).map((a) => (
             <AutomationRow
               key={a.id}
               a={a}
-              projectLabel={projectName(a.projectId)}
+              projectLabel={a.projectId ? projectName(a.projectId) : '独立任务'}
               onEdit={() => startEdit(a)}
               onToggle={() => setEnabled.mutate({ id: a.id, enabled: !a.enabled }, { onSuccess: () => toast('success', a.enabled ? '已停用' : '已启用') })}
               onDelete={() => setConfirmDelete(a.id)}
@@ -292,7 +391,9 @@ function AutomationRow({ a, projectLabel, onEdit, onToggle, onDelete }: {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, fontSize: 12, color: 'var(--fg-subtle)', flexWrap: 'wrap' }}>
         <span>{scheduleText(a)}</span>
         <span>·</span>
-        <Link to={`/projects/${a.projectId}?view=task`} style={{ color: 'var(--fg-subtle)' }}>{projectLabel}</Link>
+        {a.projectId
+          ? <Link to={`/projects/${a.projectId}?view=task`} style={{ color: 'var(--fg-subtle)' }}>{projectLabel}</Link>
+          : <span>{projectLabel}</span>}
         <span>·</span>
         <span>{a.createdVia === 'chat' ? '对话创建' : '表单创建'}</span>
       </div>

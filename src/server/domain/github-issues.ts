@@ -102,6 +102,7 @@ export async function syncGithubIssues(
 ): Promise<SyncResult> {
   const repo = automation.config.repo;
   if (!repo) throw new AppError(ErrorCode.VALIDATION, '自动化缺少 repo 配置');
+  if (!automation.projectId) throw new AppError(ErrorCode.VALIDATION, 'github-issues 自动化必须绑定项目');
   const fetcher = opts.fetcher ?? ghFetch;
   const issues = await fetcher(repo, automation.config.labelFilter);
 

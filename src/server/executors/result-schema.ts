@@ -52,7 +52,10 @@ const staffingPlanSchema = z.object({
   })).min(1),
 });
 
-// 整改计划 Part2 批次 5：自动化管家 done 契约（对话创建自动化；一期 kind 仅 github-issues）
+// 整改计划 Part2 批次 5：自动化管家 done 契约（对话创建自动化；一期 kind 仅 github-issues）。
+// 批次2 扩 schedule 轴：once（一次性）/days（周几限定）；kind 枚举批次3 再扩 notify/dispatch。
+const scheduleDaysSchema = z.array(z.enum(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'])).optional();
+
 const automationPlanSchema = z.object({
   kind: z.literal('github-issues'),
   config: z.object({
@@ -60,8 +63,9 @@ const automationPlanSchema = z.object({
     labelFilter: z.string().optional(),
   }),
   schedule: z.union([
-    z.object({ kind: z.literal('interval'), intervalMinutes: z.number().int().min(1).max(1440) }),
-    z.object({ kind: z.literal('daily'), timeOfDay: z.string().regex(/^\d{2}:\d{2}$/) }),
+    z.object({ kind: z.literal('interval'), intervalMinutes: z.number().int().min(1).max(1440), days: scheduleDaysSchema }),
+    z.object({ kind: z.literal('daily'), timeOfDay: z.string().regex(/^\d{2}:\d{2}$/), days: scheduleDaysSchema }),
+    z.object({ kind: z.literal('once'), runAt: z.string().min(1) }),
   ]),
   projectId: z.string().min(1),
 });
@@ -215,9 +219,11 @@ export const AGENT_RESULT_JSON_SCHEMA = {
         schedule: {
           type: 'object',
           properties: {
-            kind: { type: 'string', enum: ['interval', 'daily'] },
+            kind: { type: 'string', enum: ['interval', 'daily', 'once'] },
             intervalMinutes: { type: 'number' },
             timeOfDay: { type: 'string' },
+            runAt: { type: 'string' },
+            days: { type: 'array', items: { type: 'string', enum: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] } },
           },
           required: ['kind'],
         },

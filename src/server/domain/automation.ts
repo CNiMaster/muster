@@ -10,20 +10,31 @@ import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
 import { getProject } from './project';
 
-export type AutomationKind = 'github-issues';
+export type AutomationKind = 'github-issues' | 'notify' | 'dispatch';
+
+/** 周几缩写（days_json 解析域）。 */
+export const SCHEDULE_DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const;
 
 export interface AutomationSchedule {
-  kind: 'interval' | 'daily';
+  kind: 'interval' | 'daily' | 'once';
   /** interval 语义：毫秒间隔（前端按分钟换算）。 */
   intervalMs?: number;
   /** daily 语义：HH:mm。 */
   timeOfDay?: string;
+  /** once 语义：ISO 时刻（允许过去——到点未跑则在下一扫描轮立即执行，与新建 interval 首轮立即语义一致）。 */
+  runAt?: string;
+  /** 周几限定（⊆ mon..sun 去重；缺省=每天；once 忽略）。interval/daily 只在命中日触发，不跨日累积。 */
+  days?: string[];
 }
 
 export interface AutomationConfig {
   /** github-issues：owner/repo。 */
   repo?: string;
   labelFilter?: string;
+  /** notify/dispatch：触发正文（批次3）。 */
+  prompt?: string;
+  /** 能力依赖（批次3）：如 ['web-search']，缺能力时排程挂起。 */
+  requires?: string[];
 }
 
 export interface AutomationRecord {
@@ -31,8 +42,11 @@ export interface AutomationRecord {
   kind: AutomationKind;
   config: AutomationConfig;
   schedule: AutomationSchedule;
-  projectId: string;
+  /** 独立任务（notify / 未绑项目的 dispatch）为 null。 */
+  projectId: string | null;
   enabled: boolean;
+  /** 能力前置检查未过（批次3）：排程挂起，装齐能力后自动恢复。 */
+  capabilityBlocked: boolean;
   createdVia: 'chat' | 'form';
   lastRunAt: string | null;
   lastResult: string | null;
@@ -42,23 +56,33 @@ export interface AutomationRecord {
 
 interface Row {
   id: string; kind: string; config_json: string;
-  schedule_kind: string; schedule_interval_ms: number | null; time_of_day: string | null;
-  project_id: string; enabled: number; created_via: string;
+  schedule_kind: string; schedule_interval_ms: number | null; time_of_day: string | null; run_at: string | null; days_json: string | null;
+  project_id: string | null; enabled: number; capability_blocked: number; created_via: string;
   last_run_at: string | null; last_result: string | null; created_at: string; updated_at: string;
 }
 
 function fromRow(r: Row): AutomationRecord {
+  let days: string[] | undefined;
+  if (r.days_json) {
+    try {
+      const parsed = JSON.parse(r.days_json) as unknown;
+      if (Array.isArray(parsed)) days = parsed.filter((d): d is string => typeof d === 'string');
+    } catch { /* 坏数据按缺省每天处理 */ }
+  }
   return {
     id: r.id,
     kind: r.kind as AutomationKind,
     config: JSON.parse(r.config_json ?? '{}') as AutomationConfig,
     schedule: {
-      kind: r.schedule_kind as 'interval' | 'daily',
+      kind: r.schedule_kind as AutomationSchedule['kind'],
       ...(r.schedule_interval_ms != null ? { intervalMs: r.schedule_interval_ms } : {}),
       ...(r.time_of_day != null ? { timeOfDay: r.time_of_day } : {}),
+      ...(r.run_at != null ? { runAt: r.run_at } : {}),
+      ...(days && days.length > 0 ? { days } : {}),
     },
     projectId: r.project_id,
     enabled: r.enabled === 1,
+    capabilityBlocked: r.capability_blocked === 1,
     createdVia: r.created_via as 'chat' | 'form',
     lastRunAt: r.last_run_at,
     lastResult: r.last_result,
@@ -76,17 +100,37 @@ function assertSchedule(schedule: AutomationSchedule): void {
     if (!schedule.timeOfDay || !/^\d{2}:\d{2}$/.test(schedule.timeOfDay)) {
       throw new AppError(ErrorCode.VALIDATION, 'daily 自动化必须提供 HH:mm 的 timeOfDay');
     }
+  } else if (schedule.kind === 'once') {
+    if (!schedule.runAt || Number.isNaN(Date.parse(schedule.runAt))) {
+      throw new AppError(ErrorCode.VALIDATION, 'once 自动化必须提供有效的 runAt 时刻');
+    }
   } else {
     throw new AppError(ErrorCode.VALIDATION, `未知的自动化节奏：${String((schedule as { kind?: unknown }).kind)}`);
   }
+  if (schedule.days) {
+    const unique = new Set(schedule.days);
+    if (unique.size !== schedule.days.length || schedule.days.some((d) => !(SCHEDULE_DAYS as readonly string[]).includes(d))) {
+      throw new AppError(ErrorCode.VALIDATION, 'days 必须是 mon..sun 的去重数组');
+    }
+  }
+}
+
+/** 周几命中（now 的本地星期 ∈ days；days 缺省=每天）。 */
+function dayMatches(days: string[] | undefined, now: Date): boolean {
+  if (!days || days.length === 0) return true;
+  const labels = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+  return days.includes(labels[now.getDay()]!);
 }
 
 export function createAutomation(db: DB, input: {
   kind: AutomationKind; config: AutomationConfig; schedule: AutomationSchedule;
-  projectId: string; createdVia: 'chat' | 'form';
+  projectId?: string; createdVia: 'chat' | 'form';
 }): AutomationRecord {
   if (input.kind !== 'github-issues') {
     throw new AppError(ErrorCode.VALIDATION, `一期仅支持 github-issues 自动化（收到：${input.kind}）`);
+  }
+  if (!input.projectId) {
+    throw new AppError(ErrorCode.VALIDATION, 'github-issues 自动化必须绑定项目');
   }
   if (!input.config.repo || !/^[\w.-]+\/[\w.-]+$/.test(input.config.repo)) {
     throw new AppError(ErrorCode.VALIDATION, 'github-issues 自动化必须提供 owner/repo 形式的仓库');
@@ -96,11 +140,12 @@ export function createAutomation(db: DB, input: {
   const id = shortId('auto_');
   const now = nowIso();
   db.prepare(
-    `INSERT INTO automation (id, kind, config_json, schedule_kind, schedule_interval_ms, time_of_day, project_id, enabled, created_via, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,1,?,?,?)`,
+    `INSERT INTO automation (id, kind, config_json, schedule_kind, schedule_interval_ms, time_of_day, run_at, days_json, project_id, enabled, created_via, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,1,?,?,?)`,
   ).run(
     id, input.kind, JSON.stringify(input.config), input.schedule.kind,
-    input.schedule.intervalMs ?? null, input.schedule.timeOfDay ?? null,
+    input.schedule.intervalMs ?? null, input.schedule.timeOfDay ?? null, input.schedule.runAt ?? null,
+    input.schedule.days ? JSON.stringify(input.schedule.days) : null,
     input.projectId, input.createdVia, now, now,
   );
   return getAutomation(db, id);
@@ -136,19 +181,22 @@ export function updateAutomation(db: DB, id: string, patch: {
   const current = getAutomation(db, id);
   const schedule = patch.schedule ?? current.schedule;
   const config = patch.config ?? current.config;
-  const projectId = patch.projectId ?? current.projectId;
+  const projectId = patch.projectId !== undefined ? patch.projectId : current.projectId;
   if (current.kind === 'github-issues') {
+    if (!projectId) throw new AppError(ErrorCode.VALIDATION, 'github-issues 自动化必须绑定项目');
     if (!config.repo || !/^[\w.-]+\/[\w.-]+$/.test(config.repo)) {
       throw new AppError(ErrorCode.VALIDATION, 'github-issues 自动化必须提供 owner/repo 形式的仓库');
     }
   }
+  if (projectId) getProject(db, projectId);
   assertSchedule(schedule);
-  if (projectId !== current.projectId) getProject(db, projectId);
   const now = nowIso();
   db.prepare(
-    `UPDATE automation SET config_json=?, schedule_kind=?, schedule_interval_ms=?, time_of_day=?, project_id=?${patch.schedule ? ', last_run_at=NULL' : ''}, updated_at=? WHERE id=?`,
+    `UPDATE automation SET config_json=?, schedule_kind=?, schedule_interval_ms=?, time_of_day=?, run_at=?, days_json=?, project_id=?${patch.schedule ? ', last_run_at=NULL' : ''}, updated_at=? WHERE id=?`,
   ).run(
-    JSON.stringify(config), schedule.kind, schedule.intervalMs ?? null, schedule.timeOfDay ?? null, projectId, now, id,
+    JSON.stringify(config), schedule.kind, schedule.intervalMs ?? null, schedule.timeOfDay ?? null,
+    schedule.runAt ?? null, schedule.days ? JSON.stringify(schedule.days) : null,
+    projectId, now, id,
   );
   return getAutomation(db, id);
 }
@@ -243,9 +291,14 @@ export function materializeAutomationPlan(db: DB, plan: {
   return createAutomation(db, { ...plan, createdVia: 'chat' });
 }
 
-/** 到点判定（coordinator 每分钟扫）：interval=距上次运行满间隔；daily=今天本地时刻已过且今天未跑。 */
+/** 到点判定（coordinator 每分钟扫）：once=runAt 已过且未跑；interval=命中日且距上次运行满间隔；daily=命中日、今天时刻已过且今天未跑。 */
 export function isAutomationDue(a: AutomationRecord, now = new Date()): boolean {
   if (!a.enabled) return false;
+  if (a.schedule.kind === 'once') {
+    if (!a.schedule.runAt) return false;
+    return Date.parse(a.schedule.runAt) <= now.getTime();
+  }
+  if (!dayMatches(a.schedule.days, now)) return false;
   if (a.schedule.kind === 'interval') {
     if (!a.schedule.intervalMs) return false;
     if (!a.lastRunAt) return true;

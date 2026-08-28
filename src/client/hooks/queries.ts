@@ -667,10 +667,16 @@ export function useProjectPendingMerges(projectId: string | undefined) {
 export interface AutomationDTO {
   id: string;
   kind: 'github-issues';
-  config: { repo: string; labelFilter?: string };
-  schedule: { kind: 'interval'; intervalMs?: number; timeOfDay?: string } | { kind: 'daily'; timeOfDay?: string; intervalMs?: number };
-  projectId: string;
+  config: { repo: string; labelFilter?: string; prompt?: string; requires?: string[] };
+  schedule:
+    | { kind: 'interval'; intervalMs?: number; timeOfDay?: string; days?: string[] }
+    | { kind: 'daily'; timeOfDay?: string; intervalMs?: number; days?: string[] }
+    | { kind: 'once'; runAt?: string };
+  /** 独立任务（批次2 独立化）为 null。 */
+  projectId: string | null;
   enabled: boolean;
+  /** 能力前置未过（批次3）：排程挂起。 */
+  capabilityBlocked?: boolean;
   createdVia: 'chat' | 'form';
   lastRunAt: string | null;
   lastResult: string | null;
@@ -721,6 +727,15 @@ export function useAutomationRuns(automationId: string | null) {
   });
 }
 
+/** 表单节奏（批次2 扩 once/days）。 */
+export interface AutomationFormSchedule {
+  kind: 'interval' | 'daily' | 'once';
+  intervalMinutes?: number;
+  timeOfDay?: string;
+  runAt?: string;
+  days?: string[];
+}
+
 /** 编辑自动化（查看修改缺口批次）：节奏/配置/绑定项目，PATCH 与启停同一端点。 */
 export function useUpdateAutomation() {
   const qc = useQueryClient();
@@ -728,7 +743,7 @@ export function useUpdateAutomation() {
     mutationFn: ({ id, ...body }: {
       id: string;
       config: { repo: string; labelFilter?: string };
-      schedule: { kind: 'interval'; intervalMinutes: number } | { kind: 'daily'; timeOfDay: string };
+      schedule: AutomationFormSchedule;
       projectId: string;
     }) => api.patch<AutomationDTO>(`/api/automations/${id}`, body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['automations'] }),
@@ -741,7 +756,7 @@ export function useCreateAutomationForm() {
     mutationFn: (body: {
       kind: 'github-issues';
       config: { repo: string; labelFilter?: string };
-      schedule: { kind: 'interval'; intervalMinutes: number } | { kind: 'daily'; timeOfDay: string };
+      schedule: AutomationFormSchedule;
       projectId: string;
     }) => api.post<AutomationDTO>('/api/automations', body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['automations'] }),

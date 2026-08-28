@@ -53,16 +53,24 @@ automationsRouter.get('/:id/runs', asyncHandler(async (req, res) => {
   res.json(listAutomationRuns(getDb(), param(req, 'id'), Number.isFinite(limit) ? Math.min(Math.max(1, limit), 100) : 50));
 }));
 
+// 批次2 扩 schedule 轴：once/days；kind 批次3 再扩 notify/dispatch
+const scheduleDays = z.array(z.enum(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'])).optional();
+
+const scheduleSchema = z.union([
+  z.object({ kind: z.literal('interval'), intervalMinutes: z.number().int().min(1).max(1440), days: scheduleDays }),
+  z.object({ kind: z.literal('daily'), timeOfDay: z.string().regex(/^\d{2}:\d{2}$/), days: scheduleDays }),
+  z.object({ kind: z.literal('once'), runAt: z.string().min(1) }),
+]);
+
+const configSchema = z.object({
+  repo: z.string().regex(/^[\w.-]+\/[\w.-]+$/, 'owner/repo 形式'),
+  labelFilter: z.string().optional(),
+});
+
 const createSchema = z.object({
   kind: z.literal('github-issues'),
-  config: z.object({
-    repo: z.string().regex(/^[\w.-]+\/[\w.-]+$/, 'owner/repo 形式'),
-    labelFilter: z.string().optional(),
-  }),
-  schedule: z.union([
-    z.object({ kind: z.literal('interval'), intervalMinutes: z.number().int().min(1).max(1440) }),
-    z.object({ kind: z.literal('daily'), timeOfDay: z.string().regex(/^\d{2}:\d{2}$/) }),
-  ]),
+  config: configSchema,
+  schedule: scheduleSchema,
   projectId: z.string().min(1),
 });
 
@@ -72,8 +80,10 @@ automationsRouter.post('/', asyncHandler(async (req, res) => {
     kind: body.kind,
     config: body.config,
     schedule: body.schedule.kind === 'interval'
-      ? { kind: 'interval', intervalMs: body.schedule.intervalMinutes * 60_000 }
-      : { kind: 'daily', timeOfDay: body.schedule.timeOfDay },
+      ? { kind: 'interval', intervalMs: body.schedule.intervalMinutes * 60_000, ...(body.schedule.days ? { days: body.schedule.days } : {}) }
+      : body.schedule.kind === 'daily'
+        ? { kind: 'daily', timeOfDay: body.schedule.timeOfDay, ...(body.schedule.days ? { days: body.schedule.days } : {}) }
+        : { kind: 'once', runAt: body.schedule.runAt },
     projectId: body.projectId,
     createdVia: 'form',
   });
@@ -85,10 +95,7 @@ automationsRouter.post('/', asyncHandler(async (req, res) => {
  */
 const patchSchema = z.object({
   enabled: z.boolean().optional(),
-  schedule: z.union([
-    z.object({ kind: z.literal('interval'), intervalMinutes: z.number().int().min(1).max(1440) }),
-    z.object({ kind: z.literal('daily'), timeOfDay: z.string().regex(/^\d{2}:\d{2}$/) }),
-  ]).optional(),
+  schedule: scheduleSchema.optional(),
   config: z.object({
     repo: z.string().regex(/^[\w.-]+\/[\w.-]+$/, 'owner/repo 形式'),
     labelFilter: z.string().optional(),
@@ -108,8 +115,10 @@ automationsRouter.patch('/:id', asyncHandler(async (req, res) => {
     ? updateAutomation(db, id, {
         ...(schedule !== undefined ? {
           schedule: schedule.kind === 'interval'
-            ? { kind: 'interval', intervalMs: schedule.intervalMinutes * 60_000 }
-            : { kind: 'daily', timeOfDay: schedule.timeOfDay },
+            ? { kind: 'interval', intervalMs: schedule.intervalMinutes * 60_000, ...(schedule.days ? { days: schedule.days } : {}) }
+            : schedule.kind === 'daily'
+              ? { kind: 'daily', timeOfDay: schedule.timeOfDay, ...(schedule.days ? { days: schedule.days } : {}) }
+              : { kind: 'once', runAt: schedule.runAt },
         } : {}),
         ...(config !== undefined ? { config } : {}),
         ...(projectId !== undefined ? { projectId } : {}),
