@@ -49,7 +49,10 @@ import { getAgent } from '../domain/agent';
 import { ensureHrAgentId } from '../domain/system-agents';
 import { resolveArtifactPath } from '../domain/artifact-content';
 import { isPathAllowed } from '../paths';
-import { existsSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import * as path from 'node:path';
+import { readTodoList, renderTaskPlanMarkdown } from '../executors/tools/todo-tools';
+import { worktreeRoot } from '../worktree/manager';
 import { getProject } from '../domain/project';
 import { realtime } from '../realtime';
 import type { TaskState } from '../../shared/types';
@@ -501,6 +504,46 @@ taskByIdRouter.get(
     const taskId = param(req, 'id');
     getTask(getDb(), taskId); // 404 校验
     res.json(getTaskProgressSummary(getDb(), taskId));
+  }),
+);
+
+/** 计划活文档 S1：todo 草稿纸（胶囊看板「进程」分区数据源）。 */
+taskByIdRouter.get(
+  '/todo',
+  asyncHandler(async (req, res) => {
+    const db = getDb();
+    const task = getTask(db, param(req, 'id'));
+    const items = readTodoList(task.id);
+    const assignee = task.assigneeAgentId
+      ? (db.prepare('SELECT id, name FROM agent_definition WHERE id = ?').get(task.assigneeAgentId) as { id: string; name: string } | undefined ?? null)
+      : null;
+    res.json({
+      taskId: task.id,
+      items,
+      done: items.filter((it) => it.status === 'done').length,
+      total: items.length,
+      assignee,
+    });
+  }),
+);
+
+/** 计划活文档 S1：任务计划文件（worktree 现场 .muster/task_plan.md 优先，todo JSON 渲染兜底）。 */
+taskByIdRouter.get(
+  '/plan-file',
+  asyncHandler(async (req, res) => {
+    const db = getDb();
+    const task = getTask(db, param(req, 'id'));
+    const file = path.join(worktreeRoot(), task.id, '.muster', 'task_plan.md');
+    if (existsSync(file)) {
+      res.json({ taskId: task.id, source: 'file', content: readFileSync(file, 'utf8') });
+      return;
+    }
+    const items = readTodoList(task.id);
+    res.json({
+      taskId: task.id,
+      source: items.length > 0 ? 'todo' : 'empty',
+      content: renderTaskPlanMarkdown(task.id, items),
+    });
   }),
 );
 

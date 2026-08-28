@@ -1,12 +1,13 @@
 /**
  * capability parity 批次 A3：todo_read / todo_write builtin 单测。
  * 覆盖：task 隔离存储/整体替换语义/条数与长度夹紧/损坏文件容错/无任务上下文提示/handler 层。
+ * 计划活文档 S1：task_plan.md 现场镜像（双写/gitignore 防污染/截断同步/降级跳过）。
  */
 import { describe, expect, it } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { readTodoList, writeTodoList, todoReadHandler, todoWriteHandler } from '../../src/server/executors/tools/todo-tools';
+import { mirrorTaskPlan, readTodoList, renderTaskPlanMarkdown, writeTodoList, todoReadHandler, todoWriteHandler } from '../../src/server/executors/tools/todo-tools';
 import type { ToolContext } from '../../src/server/executors/tools/registry';
 
 function tmpHome(): string {
@@ -98,5 +99,71 @@ describe('handler 层', () => {
     } finally {
       delete process.env.MUSTER_HOME;
     }
+  });
+});
+
+describe('计划活文档 S1：task_plan.md 现场镜像', () => {
+  function tmpWorktree(): string {
+    return fs.mkdtempSync(path.join(os.tmpdir(), 'muster-wt-'));
+  }
+
+  it('mirrorTaskPlan：写入 workingDir/.muster/task_plan.md，含三态标记与进度', () => {
+    const wt = tmpWorktree();
+    const items = [
+      { content: '调研', status: 'done' as const },
+      { content: '写码', status: 'in_progress' as const },
+      { content: '测试', status: 'pending' as const },
+    ];
+    mirrorTaskPlan(wt, 'task-m', items);
+    const md = fs.readFileSync(path.join(wt, '.muster', 'task_plan.md'), 'utf8');
+    expect(md).toContain('# 任务计划');
+    expect(md).toContain('task-m');
+    expect(md).toContain('- [x] 调研');
+    expect(md).toContain('- [>] 写码');
+    expect(md).toContain('- [ ] 测试');
+    expect(md).toContain('1/3');
+  });
+
+  it('gitignore 防污染：首写追加 .muster/，二次写不重复', () => {
+    const wt = tmpWorktree();
+    mirrorTaskPlan(wt, 'task-g', [{ content: 'a', status: 'pending' }]);
+    mirrorTaskPlan(wt, 'task-g', [{ content: 'b', status: 'done' }]);
+    const gi = fs.readFileSync(path.join(wt, '.gitignore'), 'utf8');
+    expect(gi.split('\n').filter((l) => l.trim() === '.muster/').length).toBe(1);
+  });
+
+  it('双写一致：writeTodoList 夹紧（cap 50）后镜像反映夹紧结果', () => {
+    const wt = tmpWorktree();
+    const many = Array.from({ length: 60 }, (_, i) => ({ content: `项${i}`, status: 'pending' as const }));
+    const saved = writeTodoList('task-cap', many);
+    mirrorTaskPlan(wt, 'task-cap', saved);
+    const md = fs.readFileSync(path.join(wt, '.muster', 'task_plan.md'), 'utf8');
+    expect(saved.length).toBe(50);
+    expect(md).toContain('0/50');
+    expect(md).not.toContain('项59');
+  });
+
+  it('降级：workingDir 缺失/不存在时静默跳过不抛错', () => {
+    expect(() => mirrorTaskPlan(null, 'task-x', [])).not.toThrow();
+    expect(() => mirrorTaskPlan('/nonexistent-wt-xyz', 'task-x', [{ content: 'a', status: 'pending' }])).not.toThrow();
+  });
+
+  it('handler 集成：todo_write 后现场出现 task_plan.md', async () => {
+    process.env.MUSTER_HOME = tmpHome();
+    const wt = tmpWorktree();
+    try {
+      const ctx = { ...makeCtx('task-h'), workingDir: wt } as ToolContext;
+      await todoWriteHandler({ id: 't7', name: 'todo_write', args: { items: [{ content: '现场可见', status: 'in_progress' }] } }, ctx);
+      const md = fs.readFileSync(path.join(wt, '.muster', 'task_plan.md'), 'utf8');
+      expect(md).toContain('- [>] 现场可见');
+    } finally {
+      delete process.env.MUSTER_HOME;
+    }
+  });
+
+  it('renderTaskPlanMarkdown：空清单占位不抛错', () => {
+    const md = renderTaskPlanMarkdown('task-e', []);
+    expect(md).toContain('（清单为空）');
+    expect(md).toContain('0/0');
   });
 });

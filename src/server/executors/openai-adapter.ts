@@ -282,6 +282,7 @@ export class OpenAICompatibleAdapter implements ExecutionAdapter {
         traceTracking: { db: getDb(), taskId: ctx.task.id },
         networkRetryDelays: parseNetworkRetryDelaysFromEnv(),
         progressTracking: { db: getDb(), taskId: ctx.task.id, runId: ctx.executionRunId, inputHash },
+        resumedFromSnapshot: resumedFromRound !== null, // S2：快照续跑跳过「上次执行现场」回读
         reviewContext: { db: getDb(), taskId: ctx.task.id },
         consultationContext: {
           db: getDb(),

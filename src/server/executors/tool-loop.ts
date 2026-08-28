@@ -19,6 +19,7 @@ import {
   type ReviewContext,
 } from './tools/registry';
 import { FILE_TOOLS } from './tools/file-tools';
+import { readTodoList, renderTodo } from './tools/todo-tools';
 import { recordCapabilityUsage } from '../domain/capability-quality';
 import { appendTrace } from '../domain/execution-trace';
 import { saveLoopProgress, clearLoopProgress } from '../domain/loop-progress';
@@ -127,6 +128,12 @@ export interface ToolLoopOptions {
    * 快照失败绝不影响执行。
    */
   progressTracking?: { db: DB; taskId: string; runId?: string; inputHash: string };
+  /**
+   * 计划活文档 S2：adapter 断点续跑（messages 来自快照）时置 true——跳过启动回读。
+   * 快照历史里已含 todo 推进轨迹，重复注入「上次执行现场」反而是噪音；
+   * 冷启动（新 run / 输入变更弃快照）才需要回读 todo 恢复现场。
+   */
+  resumedFromSnapshot?: boolean;
 }
 
 export interface ToolLoopResult {
@@ -288,6 +295,50 @@ export async function callModelWithNetworkRetry(
 
 export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult> {
   const messages = [...opts.messages];
+  // 计划活文档 S2（注意力回灌）：50+ 轮后原始目标会被挤出注意力窗口（lost in the middle），
+  // 机械注入短回执把目标与 todo 现状推回上下文末端——append-only 不破坏 KV-cache 前缀。
+  // 周期回执每 GOAL_RECEIPT_EVERY_ROUNDS 轮一次；todo_write 后短时间内跳过（刚写过不重复念）；
+  // 压缩后必注一次（压缩吃掉历史时目标必须在场）。回执失败绝不影响执行。
+  const GOAL_RECEIPT_EVERY_ROUNDS = 10;
+  const GOAL_RECEIPT_MIN_GAP_AFTER_TODO_WRITE = 3;
+  const goalTaskId = opts.usageTracking?.taskId ?? opts.traceTracking?.taskId ?? opts.progressTracking?.taskId ?? opts.loopback?.taskId;
+  const originalGoal = (() => {
+    const firstUser = opts.messages.find((m) => m.role === 'user' && !m.content.startsWith('【'));
+    return firstUser ? firstLineOf(firstUser.content, 200) : '';
+  })();
+  let lastTodoWriteRound = -10_000;
+  const pushGoalReceipt = (reason: 'periodic' | 'after_compact'): void => {
+    if (!goalTaskId) return;
+    if (reason === 'periodic') {
+      if (rounds <= 0 || rounds % GOAL_RECEIPT_EVERY_ROUNDS !== 0) return;
+      if (rounds - lastTodoWriteRound < GOAL_RECEIPT_MIN_GAP_AFTER_TODO_WRITE) return;
+    }
+    try {
+      const parts = ['【目标回执】系统提醒——继续任务前对齐目标与进度（本条为系统注入，无需回复）：'];
+      if (originalGoal) parts.push(`目标：${originalGoal}`);
+      try {
+        const todo = readTodoList(goalTaskId);
+        if (todo.length > 0) {
+          const done = todo.filter((it) => it.status === 'done').length;
+          const current = todo.find((it) => it.status === 'in_progress');
+          parts.push(`清单进度：${done}/${todo.length}${current ? `，当前进行：${firstLineOf(current.content, 120)}` : ''}`);
+        }
+      } catch { /* todo 读不到就只回执目标 */ }
+      messages.push({ role: 'user', content: parts.join('\n') });
+    } catch { /* 回执失败不影响执行 */ }
+  };
+  // S2 启动回读：冷启动（非快照续跑）且此前执行留有 todo → 注入「上次执行现场」恢复上下文
+  if (goalTaskId && !opts.resumedFromSnapshot) {
+    try {
+      const todo = readTodoList(goalTaskId);
+      if (todo.length > 0) {
+        messages.push({
+          role: 'user',
+          content: `【上次执行现场】检测到此前执行留下的工作清单（系统注入，继续推进勿重做）：\n${renderTodo(todo)}`,
+        });
+      }
+    } catch { /* 回读失败不影响执行 */ }
+  }
   // R3 快照体积控制：序列化超限时存压缩版（system + 确定性摘要 + 最近 8 条），复用 L7 压缩器
   const snapshotMessages = (): ChatMessage[] => {
     if (JSON.stringify(messages).length <= 200_000) return messages;
@@ -366,6 +417,7 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult
         messages.length = 0;
         messages.push(...system, digest, ...recent);
         lastCompactMsgCount = messages.length;
+        pushGoalReceipt('after_compact'); // S2：压缩吃掉历史，目标必须立刻回到场内
       }
       // 宿主命令 /compact：手动压缩请求（API 型；engine 经共享 flag 注入）——立即压缩不限阈值
       if (opts.compactRequest?.requested && messages.length > 3) {
@@ -380,6 +432,7 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult
         if (!digest) digest = compactMessagesToDigest(oldOnes);
         messages.length = 0;
         messages.push(...system, digest, ...recent);
+        pushGoalReceipt('after_compact'); // S2：手动压缩同理
       }
       rounds++;
       inModelCall = true;
@@ -436,6 +489,7 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult
             }
           } catch { /* trace 吞 */ }
           await emergencyCompact();
+          pushGoalReceipt('after_compact'); // S2：超限自愈压缩后同样回执
           modelResult = await opts.callModel(messages, controller.signal, tools);
         }
       } finally {
@@ -549,6 +603,8 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult
             }
           }
         }
+        // S2：todo_write 成功轮次记录——周期回执在其后 3 轮内静默（刚写过不重复念）
+        if (call.name === 'todo_write' && outcome === 'success') lastTodoWriteRound = rounds;
         // 把 tool result 加回 messages
         messages.push({
           role: 'tool',
@@ -602,6 +658,7 @@ export async function runToolLoop(opts: ToolLoopOptions): Promise<ToolLoopResult
           rounds,
         };
       }
+      pushGoalReceipt('periodic'); // S2：轮末注意力回灌（append 到末尾，下一轮模型可见）
     }
   } finally {
     clearTimeout(timer);

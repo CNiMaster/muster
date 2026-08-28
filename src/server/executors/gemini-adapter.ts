@@ -15,6 +15,8 @@ import { getDb } from '../db/client';
 import { getSystemSettings } from '../domain/setting';
 import { buildThinkingParams, normalizeThinkingDepth, normalizeContextCache, thinkingSupportedByModel } from '../domain/thinking-params';
 import { log } from '../logger';
+import { getLoopProgress, computeLoopInputHash } from '../domain/loop-progress';
+import { appendTrace } from '../domain/execution-trace';
 
 export interface GeminiAdapterOptions {
   apiKey?: string;
@@ -55,7 +57,14 @@ export class GeminiAdapter implements ExecutionAdapter {
     const thinkingDepth = thinkingSupportedByModel('gemini', model) ? normalizeThinkingDepth(agentEx?.thinkingDepth) : 'off';
     const thinking = buildThinkingParams('gemini', thinkingDepth, normalizeContextCache(agentEx?.contextCache));
 
-    const messages = this.buildMessages(ctx);
+    // R3 断点续跑（计划活文档批次补齐）：与 openai-adapter 同构——input_hash 匹配的快照
+    // 为底续跑；此前 gemini 漏接 progressTracking，checkpoint 只对 OpenAI 兼容型生效。
+    const inputHash = computeLoopInputHash(ctx.inputPacket);
+    const snapshot = (() => {
+      try { return getLoopProgress(getDb(), ctx.task.id); } catch { return null; }
+    })();
+    const resumedFromRound = snapshot && snapshot.inputHash === inputHash ? snapshot.rounds : null;
+    const messages = resumedFromRound !== null ? snapshot!.messages : this.buildMessages(ctx);
     const baseURL = this.opts.baseURL;
     const callModel: CallModelFn = async (msgs, signal, tools: ToolDefinition[]) => {
       // 转换 OpenAI 风格 messages → Gemini contents
@@ -205,6 +214,12 @@ export class GeminiAdapter implements ExecutionAdapter {
     };
 
     try {
+      if (resumedFromRound !== null) {
+        // R3：续跑可见——与 openai-adapter 对齐，失败卡/trace 时间线上能看到「不是从零重跑」
+        try {
+          appendTrace(getDb(), { taskId: ctx.task.id, runId: ctx.executionRunId, kind: 'notice', name: 'checkpoint_resume', summary: `从断点续跑：已复用此前 ${resumedFromRound} 轮进度` });
+        } catch { /* trace 失败不影响执行 */ }
+      }
       const loop = await runToolLoop({
         messages,
         callModel,
@@ -219,6 +234,8 @@ export class GeminiAdapter implements ExecutionAdapter {
         permissionGuard: ctx.permissionGuard,
         usageTracking: { db: getDb(), taskId: ctx.task.id },
         traceTracking: { db: getDb(), taskId: ctx.task.id },
+        progressTracking: { db: getDb(), taskId: ctx.task.id, runId: ctx.executionRunId, inputHash },
+        resumedFromSnapshot: resumedFromRound !== null, // S2：快照续跑跳过「上次执行现场」回读
         reviewContext: { db: getDb(), taskId: ctx.task.id },
         consultationContext: {
           db: getDb(),
