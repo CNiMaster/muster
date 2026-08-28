@@ -1623,3 +1623,51 @@
 .settings-hub-icon { font-size: 18px; line-height: 1; }
 .settings-hub-title { font-size: 13px; font-weight: 650; color: var(--fg); }
 .settings-hub-desc { font-size: 12px; line-height: 1.6; color: var(--fg-muted); }
+
+/* ===== 自动化模版卡片（AutomationPage 对话卡下方，一行三个；断点跟列宽不跟窗口） ===== */
+.mu-auto-tpl { container-type: inline-size; }
+.mu-auto-tpl-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.mu-auto-tpl-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  text-align: left;
+  padding: 10px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
+}
+.mu-auto-tpl-item:hover { border-color: var(--accent); box-shadow: var(--shadow-1); }
+.mu-auto-tpl-title {
+  font-size: 12px;
+  font-weight: var(--fw-semibold);
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mu-auto-tpl-desc {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--fg-subtle);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+/* 列宽收窄分级精简：先压成单行摘要，再只留标题 */
+@container (max-width: 560px) {
+  .mu-auto-tpl-desc { -webkit-line-clamp: 1; }
+}
+@container (max-width: 380px) {
+  .mu-auto-tpl-desc { display: none; }
+  .mu-auto-tpl-item { padding: 8px 10px; }
+}

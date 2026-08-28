@@ -16,7 +16,7 @@ import { drainSemanticSettlements } from '../domain/settlement';
 import { runMemoryHousekeeping } from '../domain/memory-housekeeping';
 import { sweepStaleStaging, sweepStaleTaskStaging } from '../domain/staging';
 import { sweepIdleStaffSpecialists } from '../domain/specialist-review';
-import { listDueAutomations, markAutomationRun } from '../domain/automation';
+import { listDueAutomations, recordAndMark } from '../domain/automation';
 import { syncGithubIssues } from '../domain/github-issues';
 import { settleMemoryVotes, sweepMemoryBacklogNotice, purgeStaleMemory } from '../domain/memory';
 import { archiveStaleCompletedTasks } from '../domain/project-task';
@@ -320,19 +320,20 @@ export class ProjectRuntimeCoordinator {
     this.stagingWatchdogTimer.unref?.();
 
     // 自动化中心（整改 Part2 批次6）：每 60s 扫到点的自动化并执行——独立 timer（gh 网络 IO +
-    // 后续执行链绝不占 tick）；失败记 health 跳过本轮，不轰炸。
+    // 后续执行链绝不占 tick）；失败记 health 跳过本轮，不轰炸。批次1：每次执行落 automation_run 历史。
     this.automationTimer = setInterval(() => {
       void (async () => {
         for (const automation of listDueAutomations(this.db)) {
+          const startedAt = new Date().toISOString();
           try {
             if (automation.kind === 'github-issues') {
               const r = await syncGithubIssues(this.db, automation);
-              markAutomationRun(this.db, automation.id, `新增 ${r.newCount} · 已知 ${r.skipped}`);
+              recordAndMark(this.db, automation.id, 'ok', startedAt, `新增 ${r.newCount} · 已知 ${r.skipped}`);
             } else {
-              markAutomationRun(this.db, automation.id, `未知类型 ${automation.kind}，已跳过`);
+              recordAndMark(this.db, automation.id, 'skipped', startedAt, `未知类型 ${automation.kind}，已跳过`);
             }
           } catch (error) {
-            markAutomationRun(this.db, automation.id, `失败：${String(error).slice(0, 200)}`);
+            recordAndMark(this.db, automation.id, 'failed', startedAt, `失败：${String(error).slice(0, 200)}`);
             log.warn('automation run failed', { automationId: automation.id, kind: automation.kind, err: String(error) });
           }
         }

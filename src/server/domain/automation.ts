@@ -125,6 +125,34 @@ export function setAutomationEnabled(db: DB, id: string, enabled: boolean): Auto
   return getAutomation(db, id);
 }
 
+/**
+ * 编辑自动化（查看修改缺口批次）：节奏/配置/绑定项目可改，与 create 同规则整体校验。
+ * 改节奏 = 当作重新创建：last_run_at 清空——interval 下一轮扫描即跑（首轮立即语义），
+ * daily 今天到点未跑则今天补跑；只改配置/项目不动节奏时钟。
+ */
+export function updateAutomation(db: DB, id: string, patch: {
+  schedule?: AutomationSchedule; config?: AutomationConfig; projectId?: string;
+}): AutomationRecord {
+  const current = getAutomation(db, id);
+  const schedule = patch.schedule ?? current.schedule;
+  const config = patch.config ?? current.config;
+  const projectId = patch.projectId ?? current.projectId;
+  if (current.kind === 'github-issues') {
+    if (!config.repo || !/^[\w.-]+\/[\w.-]+$/.test(config.repo)) {
+      throw new AppError(ErrorCode.VALIDATION, 'github-issues 自动化必须提供 owner/repo 形式的仓库');
+    }
+  }
+  assertSchedule(schedule);
+  if (projectId !== current.projectId) getProject(db, projectId);
+  const now = nowIso();
+  db.prepare(
+    `UPDATE automation SET config_json=?, schedule_kind=?, schedule_interval_ms=?, time_of_day=?, project_id=?${patch.schedule ? ', last_run_at=NULL' : ''}, updated_at=? WHERE id=?`,
+  ).run(
+    JSON.stringify(config), schedule.kind, schedule.intervalMs ?? null, schedule.timeOfDay ?? null, projectId, now, id,
+  );
+  return getAutomation(db, id);
+}
+
 export function deleteAutomation(db: DB, id: string): void {
   getAutomation(db, id);
   db.prepare('DELETE FROM automation WHERE id=?').run(id);
@@ -132,6 +160,80 @@ export function deleteAutomation(db: DB, id: string): void {
 
 export function markAutomationRun(db: DB, id: string, result: string): void {
   db.prepare('UPDATE automation SET last_run_at=?, last_result=?, updated_at=? WHERE id=?').run(nowIso(), result.slice(0, 500), nowIso(), id);
+}
+
+/** 每条自动化保留的运行历史条数上限（惰性 prune，超额在写入时顺带清理）。 */
+const RUN_HISTORY_LIMIT = 100;
+
+export type AutomationRunStatus = 'ok' | 'failed' | 'skipped';
+
+export interface AutomationRunRecord {
+  id: string;
+  automationId: string;
+  status: AutomationRunStatus;
+  startedAt: string;
+  finishedAt: string | null;
+  result: string | null;
+}
+
+interface RunRow {
+  id: string; automation_id: string; status: string; started_at: string; finished_at: string | null; result: string | null;
+}
+
+function runFromRow(r: RunRow): AutomationRunRecord {
+  return {
+    id: r.id,
+    automationId: r.automation_id,
+    status: r.status as AutomationRunStatus,
+    startedAt: r.started_at,
+    finishedAt: r.finished_at,
+    result: r.result,
+  };
+}
+
+/** 写一条执行历史（批次1：循环任务历史不再丢）+ 惰性 prune 超额旧记录。 */
+export function recordAutomationRun(db: DB, input: {
+  automationId: string; status: AutomationRunStatus; startedAt: string; finishedAt?: string; result?: string;
+}): AutomationRunRecord {
+  const rec = {
+    id: shortId('autorun_'),
+    automationId: input.automationId,
+    status: input.status,
+    startedAt: input.startedAt,
+    finishedAt: input.finishedAt ?? null,
+    result: input.result ? input.result.slice(0, 500) : null,
+  };
+  db.prepare(
+    'INSERT INTO automation_run (id, automation_id, status, started_at, finished_at, result) VALUES (?,?,?,?,?,?)',
+  ).run(rec.id, rec.automationId, rec.status, rec.startedAt, rec.finishedAt, rec.result);
+  db.prepare(
+    `DELETE FROM automation_run WHERE automation_id=? AND id NOT IN (
+       SELECT id FROM automation_run WHERE automation_id=? ORDER BY started_at DESC, id DESC LIMIT ?
+     )`,
+  ).run(rec.automationId, rec.automationId, RUN_HISTORY_LIMIT);
+  return rec;
+}
+
+/** 执行历史列表（新→旧）。 */
+export function listAutomationRuns(db: DB, automationId: string, limit = 50): AutomationRunRecord[] {
+  return (db.prepare(
+    'SELECT * FROM automation_run WHERE automation_id=? ORDER BY started_at DESC, id DESC LIMIT ?',
+  ).all(automationId, limit) as RunRow[]).map(runFromRow);
+}
+
+/** 各自动化的历史条数（列表徽标用，一次查询避免 N+1）。 */
+export function countAutomationRuns(db: DB): Map<string, number> {
+  const rows = db.prepare('SELECT automation_id, COUNT(*) AS n FROM automation_run GROUP BY automation_id').all() as Array<{ automation_id: string; n: number }>;
+  return new Map(rows.map((r) => [r.automation_id, r.n]));
+}
+
+/**
+ * coordinator 执行挂点：写历史 + 更新列表摘要（last_run_at/last_result），一次调用完成。
+ * startedAt 用调度轮判定时刻，finished 落 now。
+ */
+export function recordAndMark(db: DB, id: string, status: AutomationRunStatus, startedAt: string, result: string): void {
+  recordAutomationRun(db, { automationId: id, status, startedAt, finishedAt: nowIso(), result });
+  markAutomationRun(db, id, result);
 }
 
 /** 引擎兑现入口（automationPlan done 契约 → 落库，chat 入口与表单共用本链路）。 */

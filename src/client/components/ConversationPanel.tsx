@@ -38,13 +38,15 @@ export interface ConversationPanelProps {
   onSelectQuote?: (text: string) => void;
   /** 撑满 flex 列父容器（默认固定 520px 高兜底块级父容器） */
   fill?: boolean;
+  /** 外部注入草稿（模版卡片等）：seq 变化时把 text 填入输入框（已有内容则换行追加）并聚焦到末尾。须与 !hideInput 组合（hideInput 时无内部输入框，注入只入 state 不可见）。 */
+  draftInjection?: { text: string; seq: number } | null;
   /** 群聊显式开启：显示发言人头像与姓名（单聊默认负责人名义，不显示——2026-08-23 用户定案） */
   showIdentity?: boolean;
   /** 批次三：随行讨论收口——把结论转成正式工作单（讨论本身不建任务不打断；由调用方决定建单方式）。 */
   onConvertToTask?: (extract: string) => void;
 }
 
-export function ConversationPanel({ scope, scopeId, title, recipientAgentId, projectTaskId, hideInput = false, fill = false, showIdentity = false, onConvertToTask, onSelectQuote }: ConversationPanelProps): React.ReactElement {
+export function ConversationPanel({ scope, scopeId, title, recipientAgentId, projectTaskId, hideInput = false, fill = false, showIdentity = false, onConvertToTask, onSelectQuote, draftInjection }: ConversationPanelProps): React.ReactElement {
   // 批次 H.6：划选上下文——消息区选中文字浮出"添加到当前对话"
   const [quoteSelection, setQuoteSelection] = useState<string | null>(null);
   const { data: messages, isLoading } = useMessages(scope, scopeId, recipientAgentId);
@@ -56,6 +58,7 @@ export function ConversationPanel({ scope, scopeId, title, recipientAgentId, pro
   const [showMentions, setShowMentions] = useState(false);
   const [mentionFilter, setMentionFilter] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   // WP5 流式输出：当前对话归属内正在生成的增量文本（内存态；落库/超时/流结束清除）
   const [streamText, setStreamText] = useState<{ taskId: string; text: string } | null>(null);
   const streamStaleTimer = useRef<number | null>(null);
@@ -94,6 +97,27 @@ export function ConversationPanel({ scope, scopeId, title, recipientAgentId, pro
       if (streamStaleTimer.current !== null) window.clearTimeout(streamStaleTimer.current);
     };
   }, [scope, scopeId, recipientAgentId]);
+
+  // 外部草稿注入：只按 seq 触发（父组件每次点击递增），text 取当次渲染值
+  useEffect(() => {
+    if (!draftInjection?.text) return;
+    const next = text.trim() ? `${text}\n${draftInjection.text}` : draftInjection.text;
+    setText(next);
+    const el = inputRef.current;
+    if (el) {
+      el.focus();
+      // 等受控 value 提交进 DOM 再放光标：rAF 可能先于 React 提交执行，按旧值长度 setSelectionRange
+      // 会把光标钳在开头。轮询有上限——期间用户已动手输入就不再抢光标。
+      let tries = 0;
+      const place = (): void => {
+        const node = inputRef.current;
+        if (!node || tries++ > 30) return;
+        if (node.value !== next) { requestAnimationFrame(place); return; }
+        node.setSelectionRange(next.length, next.length);
+      };
+      requestAnimationFrame(place);
+    }
+  }, [draftInjection?.seq]);
 
   // 该任务的回复已落库（messages 刷新出现 refTaskId 匹配的 assistant 消息）→ 立即清泡防重复显示
   useEffect(() => {
@@ -272,6 +296,7 @@ export function ConversationPanel({ scope, scopeId, title, recipientAgentId, pro
           <div className="mu-conv-input-row">
             <textarea
               className="mu-input mu-textarea"
+              ref={inputRef}
               value={text}
               onChange={(e) => onChange(e.target.value)}
               placeholder={recipient ? `发消息给 ${recipient.name}…  Enter 发送，Shift+Enter 换行` : '发消息给负责人…  Enter 发送，Shift+Enter 换行，@ 提及智能体'}

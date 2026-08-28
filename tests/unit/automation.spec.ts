@@ -13,7 +13,8 @@ import { ensurePrimaryThread } from '../../src/server/domain/thread';
 import { clockIn } from '../../src/server/domain/workbench';
 import { ensureAutomationStewardAgentId, AUTOMATION_ROLE } from '../../src/server/domain/system-agents';
 import {
-  createAutomation, listAutomations, materializeAutomationPlan, setAutomationEnabled, deleteAutomation,
+  createAutomation, listAutomations, materializeAutomationPlan, setAutomationEnabled, deleteAutomation, updateAutomation, markAutomationRun, getAutomation,
+  recordAutomationRun, listAutomationRuns, countAutomationRuns,
 } from '../../src/server/domain/automation';
 import { TaskEngine } from '../../src/server/task-engine/engine';
 import { FakeExecutor } from '../../src/server/task-engine/fake-executor';
@@ -67,6 +68,64 @@ describe('automation 域', () => {
     });
     expect(rec.createdVia).toBe('chat');
     expect(rec.schedule.kind).toBe('daily');
+  });
+
+  it('updateAutomation：改节奏/配置/绑定项目；改节奏重置 last_run_at（当作刚创建），只改配置不动节奏时钟', () => {
+    const projectId = seedProject('upd');
+    const other = seedProject('upd2');
+    const rec = createAutomation(db, {
+      kind: 'github-issues',
+      config: { repo: 'a/b', labelFilter: 'bug' },
+      schedule: { kind: 'interval', intervalMs: 3_600_000 },
+      projectId,
+      createdVia: 'form',
+    });
+    markAutomationRun(db, rec.id, '新增 2 · 已知 5');
+
+    // 只改配置（整体替换：不带 labelFilter 即清除）+ 换绑定项目 → 节奏与 last_run_at 不动
+    const kept = updateAutomation(db, rec.id, { config: { repo: 'c/d' }, projectId: other });
+    expect(kept.config).toEqual({ repo: 'c/d' });
+    expect(kept.projectId).toBe(other);
+    expect(kept.schedule.kind).toBe('interval');
+    expect(kept.lastRunAt).not.toBeNull();
+
+    // 改节奏 = 重新起算：last_run_at 清空（interval 下轮扫描即跑，与新建一致）
+    const rescheduled = updateAutomation(db, rec.id, { schedule: { kind: 'daily', timeOfDay: '09:30' } });
+    expect(rescheduled.schedule).toEqual({ kind: 'daily', timeOfDay: '09:30' });
+    expect(rescheduled.lastRunAt).toBeNull();
+  });
+
+  it('updateAutomation 校验：与 create 同规则（坏 repo / 坏节奏 / 未知项目 / 不存在的 id）', () => {
+    const projectId = seedProject('updval');
+    const rec = createAutomation(db, { kind: 'github-issues', config: { repo: 'a/b' }, schedule: { kind: 'interval', intervalMs: 60_000 }, projectId, createdVia: 'form' });
+    expect(() => updateAutomation(db, rec.id, { config: { repo: '不是仓库' } })).toThrow();
+    expect(() => updateAutomation(db, rec.id, { schedule: { kind: 'interval', intervalMs: 30_000 } })).toThrow();
+    expect(() => updateAutomation(db, rec.id, { schedule: { kind: 'daily' } })).toThrow();
+    expect(() => updateAutomation(db, rec.id, { projectId: 'no_such_project' })).toThrow();
+    expect(() => updateAutomation(db, 'auto_missing', { config: { repo: 'a/b' } })).toThrow();
+    // 校验失败不留半改：记录原样
+    expect(getAutomation(db, rec.id).config).toEqual({ repo: 'a/b' });
+  });
+
+  it('执行历史（批次1）：记录可查新→旧；惰性 prune 每条自动化只留 100 条；计数按自动化分组', () => {
+    const projectId = seedProject('runs');
+    const a1 = createAutomation(db, { kind: 'github-issues', config: { repo: 'a/b' }, schedule: { kind: 'interval', intervalMs: 60_000 }, projectId, createdVia: 'form' });
+    const a2 = createAutomation(db, { kind: 'github-issues', config: { repo: 'c/d' }, schedule: { kind: 'interval', intervalMs: 60_000 }, projectId, createdVia: 'form' });
+    for (let i = 0; i < 105; i++) {
+      const startedAt = new Date(Date.UTC(2026, 7, 28, 10, 0, 0) + i * 60_000).toISOString();
+      recordAutomationRun(db, { automationId: a1.id, status: 'ok', startedAt, finishedAt: new Date(Date.UTC(2026, 7, 28, 10, 0, 30) + i * 60_000).toISOString(), result: `run ${i}` });
+    }
+    recordAutomationRun(db, { automationId: a2.id, status: 'failed', startedAt: '2026-08-28T11:00:00', result: '炸了' });
+    const runs = listAutomationRuns(db, a1.id, 100);
+    expect(runs).toHaveLength(100);
+    // 新→旧：最后写入的 run 104 在最前
+    expect(runs[0]!.result).toBe('run 104');
+    expect(listAutomationRuns(db, a2.id)[0]!.status).toBe('failed');
+    const counts = countAutomationRuns(db);
+    expect(counts.get(a1.id)).toBe(100);
+    expect(counts.get(a2.id)).toBe(1);
+    // limit 参数生效
+    expect(listAutomationRuns(db, a1.id, 5)).toHaveLength(5);
   });
 });
 

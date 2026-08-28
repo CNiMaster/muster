@@ -675,6 +675,17 @@ export interface AutomationDTO {
   lastRunAt: string | null;
   lastResult: string | null;
   createdAt: string;
+  /** 执行历史条数（批次1，列表徽标）。 */
+  runCount?: number;
+}
+
+export interface AutomationRunDTO {
+  id: string;
+  automationId: string;
+  status: 'ok' | 'failed' | 'skipped';
+  startedAt: string;
+  finishedAt: string | null;
+  result: string | null;
 }
 
 export function useAutomations() {
@@ -697,6 +708,29 @@ export function useSetAutomationEnabled() {
   return useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
       api.patch<AutomationDTO>(`/api/automations/${id}`, { enabled }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['automations'] }),
+  });
+}
+
+/** 执行历史（批次1）：点开才拉。 */
+export function useAutomationRuns(automationId: string | null) {
+  return useQuery({
+    queryKey: ['automation-runs', automationId],
+    queryFn: () => api.get<AutomationRunDTO[]>(`/api/automations/${automationId}/runs`),
+    enabled: !!automationId,
+  });
+}
+
+/** 编辑自动化（查看修改缺口批次）：节奏/配置/绑定项目，PATCH 与启停同一端点。 */
+export function useUpdateAutomation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: {
+      id: string;
+      config: { repo: string; labelFilter?: string };
+      schedule: { kind: 'interval'; intervalMinutes: number } | { kind: 'daily'; timeOfDay: string };
+      projectId: string;
+    }) => api.patch<AutomationDTO>(`/api/automations/${id}`, body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['automations'] }),
   });
 }
