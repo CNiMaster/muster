@@ -161,6 +161,14 @@ export function ProjectMergesPage(): React.ReactElement {
               )}
               {item.staleHours !== null && <Badge tone="err" title="任务集成区搁置 ≥5 小时未合并">搁置 {item.staleHours}h</Badge>}
               {item.pendingRuntimeTasks > 0 && <Badge tone="warn">{item.pendingRuntimeTasks} 在飞</Badge>}
+              {item.userEdits.length > 0 && (
+                <Badge
+                  tone="warn"
+                  title={`你自己在项目目录的未提交改动，合并时将以「muster: user edits」单独成提交留痕：\n${item.userEdits.slice(0, 10).join('\n')}${item.userEdits.length > 10 ? `\n… 等 ${item.userEdits.length} 个` : ''}\n（.env/密钥类硬排除不进历史）`}
+                >
+                  手改 {item.userEdits.length} 文件随合并留痕
+                </Badge>
+              )}
               <Badge tone="neutral">{item.mergeMode === 'auto' ? '自动' : '手动'}</Badge>
               <Button size="sm" loading={mergingOne} onClick={() => void mergeOne(item)}>合并</Button>
               <Button size="sm" variant="ghost" onClick={() => setDiscardAsk(item)}>丢弃</Button>

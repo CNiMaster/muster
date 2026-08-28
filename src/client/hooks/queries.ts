@@ -647,6 +647,8 @@ export interface PendingTaskMergeDTO {
   mergeMode: 'manual' | 'auto';
   lastMergeAt: string | null;
   staleHours: number | null;
+  /** 主干未提交改动（合并时以「muster: user edits」单独成提交）。 */
+  userEdits: string[];
 }
 
 /** 批次 G·修复轮：项目下待合并的项目任务列表（15s 轮询） */

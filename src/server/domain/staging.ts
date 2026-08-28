@@ -14,6 +14,7 @@ import {
   taskStagingDiffSummary, promoteTaskStagingMerge, listTaskStagingRefs, branchAheadCount, branchBehindCount,
   taskStagingMergePreview, repoHeadOrNull, detectOrphanWorktrees,
   ensureTaskStagingWorktree,
+  listTrunkUncommitted,
 } from '../worktree/manager';
 import { callLlm } from './llm-call';
 import { getPreMergeChecks, runPreMergeChecks } from './pre-merge-checks';
@@ -163,6 +164,8 @@ export interface PendingTaskMergeItem {
   lastMergeAt: string | null;
   /** 搁置提醒：集成分支最后一次提交距今 ≥5h 时给小时数，否则 null（manual 默认下的漏合兜底）。 */
   staleHours: number | null;
+  /** 主干未提交改动（2026-08-28 提交卫生可见性）：合并时将以「muster: user edits」单独成提交的文件清单。 */
+  userEdits: string[];
 }
 
 /** 搁置提醒阈值（小时）：manual 默认下任务集成区领先超过此时长未合并 → 红点提醒。 */
@@ -269,6 +272,7 @@ export function listPendingTaskMerges(db: DB, projectId: string): PendingTaskMer
       mergeMode,
       lastMergeAt: last?.created_at ?? null,
       staleHours: staleHoursSince(ref.lastCommitAt),
+      userEdits: listTrunkUncommitted(ptRoot ?? project.rootDir),
     });
   }
   return items;
