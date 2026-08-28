@@ -457,7 +457,10 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
   }
   // 无蓝图模式留痕：可穿戴条件成立但未携带 blueprintId（词法命中已退役）——
   // 直达路径由后台 AI 自动配接手；复盘记账对这类任务走标题聚类（新蓝图发现通道）。
-  if (!explicitBlueprint && wearingAllowed) {
+  // 调用方已在 inputProtocol 显式给过 staffingMode 时不覆盖（blueprintMeta 展开在用户 protocol 之后）。
+  if (!explicitBlueprint && wearingAllowed
+    && typeof (input.inputProtocol as Record<string, unknown> | undefined)?.staffingMode !== 'string'
+  ) {
     blueprintMeta = { staffingMode: 'unrouted' };
   }
   // 链路双指向（B1）——任务契约继承，全部落 inputProtocol（无 schema 迁移）：
