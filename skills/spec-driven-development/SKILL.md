@@ -3,6 +3,10 @@ name: spec-driven-development
 description: Creates specs before coding. Use when starting a new project, feature, or significant change and no specification exists yet. Use when requirements are unclear, ambiguous, or only exist as a vague idea.
 name-zh: 规格驱动开发
 description-zh: 需求不明确时先写规格再动手——用 spec 对齐理解、驱动实现与验收
+use-cases: documentation, planning
+output-format: file-md
+editability: high
+complexity: standard
 ---
 
 # Spec-Driven Development

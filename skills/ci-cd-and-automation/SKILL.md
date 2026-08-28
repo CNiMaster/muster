@@ -3,6 +3,10 @@ name: ci-cd-and-automation
 description: Automates CI/CD pipeline setup. Use when setting up or modifying build and deployment pipelines. Use when you need to automate quality gates, configure test runners in CI, or establish deployment strategies.
 name-zh: CI/CD 与自动化
 description-zh: 搭建与维护 CI/CD 流水线——构建、测试、部署的自动化
+use-cases: automation, delivery
+output-format: code
+editability: high
+complexity: heavy
 ---
 
 # CI/CD and Automation

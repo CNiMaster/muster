@@ -8,7 +8,7 @@ export interface ClaudeStreamEventParts {
   outputs: string[];
   thinking: string[];
   toolCalls: Array<{ toolUseId: string; name: string; input: unknown }>;
-  toolResults: Array<{ toolUseId: string; content: string }>;
+  toolResults: Array<{ toolUseId: string; content: string; isError: boolean }>;
 }
 
 export function parseClaudeStreamEvent(ev: unknown): ClaudeStreamEventParts {
@@ -37,7 +37,7 @@ export function parseClaudeStreamEvent(ev: unknown): ClaudeStreamEventParts {
               return obj?.type === 'text' ? String(obj.text ?? '') : '';
             }).join('\n')
           : '';
-      parts.toolResults.push({ toolUseId: id, content: text });
+      parts.toolResults.push({ toolUseId: id, content: text, isError: block.is_error === true });
     }
   }
   return parts;

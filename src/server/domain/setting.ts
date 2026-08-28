@@ -47,6 +47,11 @@ export interface SystemSettings {
   autonomousReflectionEnabled: boolean;
   /** E4.3 空闲自主反思预算（USD/日）：公司当日总花费低于该值时才允许自动反思；0 = 关闭。 */
   autonomousReflectionBudgetUSD: number;
+  /**
+   * 选择闭环 S4：记忆内务开关（默认开——与白日梦反思两档分离：内务是 vacuum 性质的
+   * 纯规则维护，预算极小、只在空闲跑、永远给用户任务让路；关反思不该误关扫地）。
+   */
+  memoryHousekeepingEnabled: boolean;
   /** 指挥系统批次1：晨醒（每日运营优化报告）开关，默认开（保持既有行为）。 */
   /** 指挥系统批次2：蜂群最大下探深度（养蜂人→蜂→子蜂…），上限非目标。 */
   swarmMaxDepth: number;
@@ -139,6 +144,7 @@ export function getSystemSettings(db: DB): SystemSettings {
     codeTheme: getSetting(db, 'code_theme', 'default'),
     autonomousReflectionEnabled: getSetting(db, 'autonomous_reflection_enabled', 'false') === 'true',
     autonomousReflectionBudgetUSD: Number(getSetting(db, 'autonomous_reflection_budget_usd', '0')),
+    memoryHousekeepingEnabled: getSetting(db, 'memory_housekeeping_enabled', 'true') === 'true',
     swarmMaxDepth: Number(getSetting(db, 'swarm_max_depth', '3')),
     swarmMaxWidth: Number(getSetting(db, 'swarm_max_width', '5')),
     swarmMaxNodes,
@@ -228,6 +234,9 @@ export function saveSystemSettings(db: DB, settings: Partial<SystemSettings>): v
   }
   if (settings.autonomousReflectionBudgetUSD !== undefined) {
     setSetting(db, 'autonomous_reflection_budget_usd', String(settings.autonomousReflectionBudgetUSD));
+  }
+  if (settings.memoryHousekeepingEnabled !== undefined) {
+    setSetting(db, 'memory_housekeeping_enabled', settings.memoryHousekeepingEnabled ? 'true' : 'false');
   }
   if (settings.swarmMaxDepth !== undefined) {
     setSetting(db, 'swarm_max_depth', String(Math.max(1, Math.min(5, settings.swarmMaxDepth))));

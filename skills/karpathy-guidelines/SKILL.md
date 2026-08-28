@@ -3,6 +3,10 @@ name: karpathy-guidelines
 description: 编程行为四准则（思考再动手、极简优先、外科手术式修改、目标驱动验证）。Use for any coding task: 写代码、实现功能、修 bug、重构、改函数、设计 API、code review、编程实现类任务。源自 Andrej Karpathy 对编码 agent 常见毛病的批评。
 name-zh: Karpathy 编码准则
 description-zh: 一切编码任务的行事准则——假设显式化、极简实现、外科手术式修改、目标驱动
+use-cases: implementation, review
+output-format: text
+editability: medium
+complexity: light
 ---
 
 # 编程行为四准则（Karpathy Guidelines）

@@ -249,7 +249,7 @@ export interface Task {
   /** 指挥系统：蜂群树深度（根=0，蜂=1，子蜂递增）。 */
   swarmDepth: number;
   /** 指挥系统批次3：追问的结构化选项（null=自由文本追问）。 */
-  questionOptions: { id: string; label: string; detail?: string; pros?: string; cons?: string }[] | null;
+  questionOptions: { id: string; label: string; detail?: string; pros?: string; cons?: string; isDefault?: boolean }[] | null;
   /** 执行过程展示批次4：失败蜂被自动修复重发后指向替补任务。 */
   supersededBy: string | null;
   /** 蓝图打法包：本任务派遣的人设（蓝图主槽匹配，null=未派遣）。 */

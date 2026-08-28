@@ -139,6 +139,7 @@ import{approvalBroker}from'../domain/approval-broker';
 import { classifyRunFailure, RunFailure, RunWatchdog } from './run-watchdog';
 import { makeLifecycleEvent } from '../../shared/lifecycle-events';
 import { appendTrace, listTrace, type AppendTraceInput } from '../domain/execution-trace';
+import { recordCapabilityUsage } from '../domain/capability-quality';
 import { getSystemSettings } from '../domain/setting';
 import { spawnErrorHint } from '../executors/spawn-errors';
 import { scanWorktreeMediaPreviews } from '../runtime/media-preview';
@@ -808,6 +809,9 @@ export class TaskEngine {
           }
         };
         let lastDeltaPublishAt = 0;
+        // S1 CLI 遥测：toolUseId → 调用起点（onToolResult 时结算成败+耗时进 capability_usage_stat，
+        // 与 API 路径 tool-loop 埋点同表同口径；capabilityId 用工具名——CLI 原生工具无 plugin 注册表可 resolve）。
+        const cliToolStartedAt = new Map<string, { name: string; startedAt: number }>();
         for(;;){try{result = await Promise.race([withExecutorConcurrency(executorProfile?.concurrencyMode ?? 'parallel', executorProfile?.id ?? agent.id, () => adapter.run(ctx, {
             // WP5 流式输出：token 级增量节流广播（60ms 一发；message.created 才失效刷新，delta 不触发失效）。
             // 带归属（agentId/projectTaskId）供前端单聊面板过滤，蜂群/其他任务的流不串入。
@@ -824,6 +828,7 @@ export class TaskEngine {
               // 本轮文本流结束（进入工具执行）——前端清掉打字机气泡
               realtime.publish(makeLifecycleEvent('message.delta.end', { reason: 'tool-call' }, { projectId: project.id, taskId: task.id }));
               log.debug('agent tool', { taskId: task.id, name, executionRunId: executionRun?.id });
+              if (toolUseId) cliToolStartedAt.set(toolUseId, { name, startedAt: Date.now() });
               // API 路径由 tool-loop 落 trace，这里只处理 CLI 路径避免重复
               if (!traceViaEngine) return;
               const inputObj = (input ?? {}) as Record<string, unknown>;
@@ -834,10 +839,29 @@ export class TaskEngine {
               }
             },
             onThinking: (text) => { watchdog.activity(); if (traceViaEngine) recordTrace({ kind: 'thinking', summary: text.slice(0, 120), payload: { text } }); },
-            onToolResult: (toolUseId, name, content) => {
+            onToolResult: (toolUseId, name, content, isError) => {
               // 文件工具的结果已并入 file_edit 条目（与 API 路径单条目语义一致，review M5）
               if (traceViaEngine && name && !CLAUDE_FILE_TOOL_NAMES.has(name)) {
                 recordTrace({ kind: 'tool_result', name, summary: content.slice(0, 120), payload: { toolCallId: toolUseId, content } });
+              }
+              // S1 CLI 遥测：成败+耗时进 capability_usage_stat（file 工具也记——它们是真实工具调用）。
+              // 与 trace 去重口径一致（traceViaEngine=CLI 路径；API 路径由 tool-loop 埋，防双记）。
+              if (traceViaEngine && toolUseId) {
+                const started = cliToolStartedAt.get(toolUseId);
+                if (started) {
+                  cliToolStartedAt.delete(toolUseId);
+                  try {
+                    recordCapabilityUsage(this.db, {
+                      capabilityId: started.name,
+                      toolId: started.name,
+                      outcome: isError ? 'fail' : 'success',
+                      durationMs: Date.now() - started.startedAt,
+                      taskId: task.id,
+                    });
+                  } catch {
+                    /* 埋点异常吞掉，绝不影响主流程（与 tool-loop 同口径） */
+                  }
+                }
               }
             },
           })), watchdog.failure]);sessionManager.clearRecovery(projectTaskThread.id);break;}catch(error){if(/network|econn|dns|tls|proxy/i.test(error instanceof Error?error.message:String(error)))watchdog.networkError();if(!isRecoverableSessionError(error))throw error;recoveryAttempt+=1;const compactSupported=Boolean(adapter.compactSession);const recovery=recoveryAttempt===1?'retry':recoveryAttempt===2&&compactSupported?'compact':recoveryAttempt===(compactSupported?3:2)?'rotate':'stop';sessionManager.nextRecovery(projectTaskThread.id,compactSupported);if(recovery==='stop')throw error;if(recovery==='compact'&&adapter.compactSession&&ctx.sessionIdHint){try{await adapter.compactSession(ctx);}catch{const previousSessionId=ctx.sessionIdHint??null;sessionManager.rotate(projectTaskThread.id,{reason:'compact-failed',taskId:task.id});ctx.sessionIdHint=undefined;realtime.publish(makeLifecycleEvent('session.rotated',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,previousSessionId,reason:'compact-failed'},{projectId:project.id,taskId:task.id}));}}else if(recovery==='rotate'){const previousSessionId=ctx.sessionIdHint??null;sessionManager.rotate(projectTaskThread.id,{reason:'session-recovery',taskId:task.id});ctx.sessionIdHint=undefined;realtime.publish(makeLifecycleEvent('session.rotated',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,previousSessionId,reason:'session-recovery'},{projectId:project.id,taskId:task.id}));}realtime.publish(makeLifecycleEvent('session.recovered',{projectTaskId:task.projectTaskId,threadId:projectTaskThread.id,taskId:task.id,recovery},{projectId:project.id,taskId:task.id}));log.warn('retrying recoverable executor failure',{taskId:task.id,recovery,error:String(error)});}}

@@ -607,6 +607,19 @@
   max-width: 90%;
 }
 .mu-msg-task-link { font-size: var(--text-xs); }
+/* 选择闭环 S3：确认式默认值的"推荐"徽章（不改交互，只做视觉预填提示） */
+.mu-preference-default-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--warn, #b8860b);
+  background: color-mix(in srgb, var(--warn, #b8860b) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warn, #b8860b) 35%, transparent);
+  vertical-align: 1px;
+}
 .mu-conv-input-wrap {
   border-top: 1px solid var(--border-subtle);
   padding: var(--space-3);
@@ -1506,6 +1519,19 @@
   gap: 6px;
   margin: 8px 0 4px;
 }
+/* 选择闭环 S4：健康度横条（膨胀/重复/命中率 + 手动整理；关掉内务的代价可见） */
+.memory-health-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-subtle, #ddd);
+  border-radius: 8px;
+  background: var(--bg-surface, transparent);
+}
+.memory-health-strip .memory-recent-label { flex: 0 0 auto; }
 .memory-recent-label {
   font-size: var(--text-xs, 12px);
   color: var(--fg-muted, #888);

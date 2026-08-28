@@ -78,6 +78,7 @@ export function SettingsPage(): React.ReactElement {
   const [wrapCode, setWrapCode] = useState(false);
   const [autonomousReflectionEnabled, setAutonomousReflectionEnabled] = useState(false);
   const [autonomousReflectionBudgetUSD, setAutonomousReflectionBudgetUSD] = useState(5);
+  const [memoryHousekeepingEnabled, setMemoryHousekeepingEnabled] = useState(true);
   const [swarmMaxDepth, setSwarmMaxDepth] = useState(3);
   const [swarmMaxWidth, setSwarmMaxWidth] = useState(5);
   const [swarmMaxNodes, setSwarmMaxNodes] = useState(30);
@@ -124,6 +125,7 @@ export function SettingsPage(): React.ReactElement {
     setWrapCode(settings.wrapCode === true);
     setAutonomousReflectionEnabled(settings.autonomousReflectionEnabled ?? false);
     setAutonomousReflectionBudgetUSD(settings.autonomousReflectionBudgetUSD || 5);
+    setMemoryHousekeepingEnabled(settings.memoryHousekeepingEnabled ?? true);
     setSwarmMaxDepth(settings.swarmMaxDepth ?? 3);
     setSwarmMaxWidth(settings.swarmMaxWidth ?? 5);
     setSwarmMaxNodes(settings.swarmMaxNodes ?? 30);
@@ -149,7 +151,7 @@ export function SettingsPage(): React.ReactElement {
     }
     saveSettings.mutate(
       // timeoutMs/maxToolCalls 回传服务端加载值（schema 必填、UI 已由执行器档案接管）
-      { claudeBin, model, skipPermissions, timeoutMs: settings?.timeoutMs ?? 600000, maxToolCalls: settings?.maxToolCalls ?? 30, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierHighId: tierHigh, executorTierStandardId: tierStandard, executorTierLowId: tierLow, imageGenModel, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs: egressTimeoutSec * 1000, theme, fontFamily, fontSize, locale, codeTheme, autonomousReflectionEnabled, autonomousReflectionBudgetUSD, swarmMaxDepth, swarmMaxWidth, swarmMaxNodes, swarmBudgetUSD, breadthDefaultTier, codeFontSize, wrapCode, waitingAutoContinueMinutes: waitingAutoContinueMin, archiveTaskAfterDays, preventSleep, interruptMode, stopGraceMs: stopGraceSec * 1000, securityMode, messageShowThinking: msgShowThinking, messageShowTodo: msgShowTodo, messageGroupExplore: msgGroupExplore, messageGroupTerminal: msgGroupTerminal, messageGroupChanges: msgGroupChanges },
+      { claudeBin, model, skipPermissions, timeoutMs: settings?.timeoutMs ?? 600000, maxToolCalls: settings?.maxToolCalls ?? 30, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierHighId: tierHigh, executorTierStandardId: tierStandard, executorTierLowId: tierLow, imageGenModel, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs: egressTimeoutSec * 1000, theme, fontFamily, fontSize, locale, codeTheme, autonomousReflectionEnabled, autonomousReflectionBudgetUSD, memoryHousekeepingEnabled, swarmMaxDepth, swarmMaxWidth, swarmMaxNodes, swarmBudgetUSD, breadthDefaultTier, codeFontSize, wrapCode, waitingAutoContinueMinutes: waitingAutoContinueMin, archiveTaskAfterDays, preventSleep, interruptMode, stopGraceMs: stopGraceSec * 1000, securityMode, messageShowThinking: msgShowThinking, messageShowTodo: msgShowTodo, messageGroupExplore: msgGroupExplore, messageGroupTerminal: msgGroupTerminal, messageGroupChanges: msgGroupChanges },
       {
         onSuccess: () => toast('success', '设置已保存并实时生效'),
         onError: (error: any) => toast('error', error.message ?? '保存设置失败'),
@@ -296,6 +298,9 @@ export function SettingsPage(): React.ReactElement {
                     </Select>
                   </SettingsRow>
                 )}
+                <SettingsRow title="记忆内务（自动整理）" hint="后台整理记忆库：去重、归并相似条目（纯规则零成本，默认开；与白日梦复盘互不影响）">
+                  <Toggle checked={memoryHousekeepingEnabled} onChange={setMemoryHousekeepingEnabled} label="记忆内务" />
+                </SettingsRow>
                 <SettingsRow title="提问超时自动继续" hint="AI 向你提问后一直没回复，到时间自动按「请继续」往下走；也可在每张等待卡上单独调">
                   <Select value={String(waitingAutoContinueMin)} onChange={(e) => setWaitingAutoContinueMin(Number(e.target.value))}>
                     <option value="0">一直等（默认）</option>

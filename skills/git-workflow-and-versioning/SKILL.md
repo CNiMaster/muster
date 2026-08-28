@@ -3,6 +3,10 @@ name: git-workflow-and-versioning
 description: Structures git workflow practices. Use when making any code change. Use when committing, branching, resolving conflicts, or when you need to organize work across multiple parallel streams.
 name-zh: Git 工作流
 description-zh: 分支管理、合并冲突解决、版本与发布切分
+use-cases: versioning
+output-format: code
+editability: high
+complexity: light
 ---
 
 # Git Workflow and Versioning

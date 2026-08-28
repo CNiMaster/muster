@@ -11,7 +11,9 @@ import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
 import { EmptyState } from '../components/EmptyState';
 import { Input } from '../components/Form';
-import { useMemoryBoard, useMemoryBoardAction, type MemoryBoardEntry } from '../hooks/queries';
+import { useMemoryBoard, useMemoryBoardAction, useMemoryHealth, useMemoryHousekeepingAction, type MemoryBoardEntry } from '../hooks/queries';
+import { api } from '../api/client';
+import { useProjects } from '../hooks/queries';
 
 const SCOPE_TABS: Array<{ key: string; label: string }> = [
   { key: '', label: '全部' },
@@ -74,10 +76,42 @@ export function MemoryBoardPage(): React.ReactElement {
   const [scope, setScope] = useState('');
   const [q, setQ] = useState('');
   const [flashId, setFlashId] = useState<string | null>(null);
+  const [exportProjectId, setExportProjectId] = useState('');
+  const [exporting, setExporting] = useState(false);
   const { data, isLoading } = useMemoryBoard({ scope: scope || undefined, q: q || undefined });
   const action = useMemoryBoardAction();
+  const { data: healthData } = useMemoryHealth();
+  const housekeeping = useMemoryHousekeepingAction();
+  const { data: projects } = useProjects();
   // 列表本身已按 updatedAt 倒序（listMemoryEntries），最近变更条直接切片——筛选视图下显示筛选内的最近，口径自洽。
   const recent = data?.entries.slice(0, 6) ?? [];
+  const health = healthData?.health;
+
+  /** 选择闭环 S5：按项目导出（视图/bundle）——下载为文件；bundle 是换机/移交的快照（只含项目层）。 */
+  const onExport = async (kind: 'view' | 'bundle'): Promise<void> => {
+    if (!exportProjectId) return;
+    setExporting(true);
+    try {
+      const res = await api.post<{ ok: boolean; filename: string; count: number; content?: string; bundle?: unknown }>('/api/memory-board/export', {
+        projectId: exportProjectId,
+        kind,
+        format: 'markdown',
+      });
+      const text = kind === 'bundle' ? JSON.stringify(res.bundle, null, 2) : (res.content ?? '');
+      const blob = new Blob([text], { type: kind === 'bundle' ? 'application/json' : 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = res.filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast('success', kind === 'bundle' ? `已导出 bundle（${res.count} 条，仅项目层）` : `已导出 ${res.count} 条项目记忆`);
+    } catch (e) {
+      toast('error', (e as Error).message ?? '导出失败');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const onAction = (a: 'lock' | 'unlock' | 'delete' | 'correct', content?: string, id?: string): void => {
     if (!id) return;
@@ -126,6 +160,56 @@ export function MemoryBoardPage(): React.ReactElement {
               <span className="mu-muted">{formatRelativeTime(e.updatedAt)}</span>
             </button>
           ))}
+        </div>
+      )}
+      {health && (
+        <div className="memory-health-strip" aria-label="记忆库健康度">
+          <span className="memory-recent-label">健康度</span>
+          <span className="mu-muted" title="active 记忆总数（含锁定）">{health.activeEntries} 条</span>
+          <span className="mu-muted" title="近 7 天新增">+{health.addedLast7d}/周</span>
+          <span
+            className="mu-muted"
+            title="同指纹重复的多余条目数（内务自动归并的原料）"
+            style={{ color: health.duplicatePairs > 0 ? 'var(--warn, #b8860b)' : undefined }}
+          >
+            重复 {health.duplicatePairs}
+          </span>
+          <span
+            className="mu-muted"
+            title="有出场战绩的 active 记忆占比（越低说明越多记忆从未被用过）"
+            style={{ color: health.hitRate !== null && health.hitRate < 0.3 ? 'var(--warn, #b8860b)' : undefined }}
+          >
+            命中率 {health.hitRate === null ? '—' : `${Math.round(health.hitRate * 100)}%`}
+          </span>
+          {health.lastCompactionAt && (
+            <span className="mu-muted" title="上次内务压实">整理于 {formatRelativeTime(health.lastCompactionAt)}（归并 {health.lastCompactionMerged}）</span>
+          )}
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={housekeeping.isPending}
+            onClick={() => housekeeping.mutate(undefined, {
+              onSuccess: (res) => toast('success', res.result.merged > 0 ? `已归并 ${res.result.merged} 条重复` : '没有需要归并的重复'),
+              onError: (e: Error) => toast('error', e.message),
+            })}
+          >
+            立即整理
+          </Button>
+        </div>
+      )}
+      {(projects?.length ?? 0) > 0 && (
+        <div className="memory-health-strip" aria-label="按项目导出">
+          <span className="memory-recent-label">项目导出</span>
+          <select value={exportProjectId} onChange={(e) => setExportProjectId(e.target.value)} className="mu-input" style={{ maxWidth: 180 }}>
+            <option value="">选择项目…</option>
+            {projects?.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          <Button size="sm" variant="ghost" disabled={!exportProjectId || exporting} onClick={() => void onExport('view')}>
+            导出视图
+          </Button>
+          <Button size="sm" variant="ghost" disabled={!exportProjectId || exporting} onClick={() => void onExport('bundle')} title="换机/移交用快照：只含项目层记忆，不含用户偏好">
+            导出 bundle
+          </Button>
         </div>
       )}
       {isLoading ? (

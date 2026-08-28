@@ -12,6 +12,8 @@ import { isSoftCapReached, type Budget } from '../domain/usage';
 import { updateProject, getProject } from '../domain/project';
 import { settleDrainingAgents } from '../domain/agent';
 import { drainReflectionQueue, recoverStuckReflections, enqueueIdleReflections } from '../domain/reflection';
+import { drainSemanticSettlements } from '../domain/settlement';
+import { runMemoryHousekeeping } from '../domain/memory-housekeeping';
 import { sweepStaleStaging, sweepStaleTaskStaging } from '../domain/staging';
 import { sweepIdleStaffSpecialists } from '../domain/specialist-review';
 import { listDueAutomations, markAutomationRun } from '../domain/automation';
@@ -282,6 +284,10 @@ export class ProjectRuntimeCoordinator {
       void drainReflectionQueue(this.db, { maxPerTick: 3 }).catch((error) =>
         log.warn('reflection drain failed', { error: error instanceof Error ? error.message : String(error) }),
       );
+      // 选择闭环 S2：语义结算（对话抱怨分类 → 偏好纠偏事件；economy LLM，机会主义失败不重试）。
+      void drainSemanticSettlements(this.db, 2).catch((error) =>
+        log.warn('semantic settlement drain failed', { error: error instanceof Error ? error.message : String(error) }),
+      );
       // 记忆优势分：与反思同频惰性结算终态任务的注入投票（纯记账、无 LLM，同步执行不阻塞排水）。
       try {
         settleMemoryVotes(this.db);
@@ -351,6 +357,12 @@ export class ProjectRuntimeCoordinator {
         }
         const purged = purgeStaleMemory(this.db);
         if (purged.purgedDeleted + purged.purgedExpired > 0) log.info('memory hygiene purged', purged);
+        // 选择闭环 S4：记忆内务（默认开，与白日梦两档分离）——读时脏标记的条件触发摊销压实。
+        // 纯规则零 LLM、空闲定时器路径、只压脏分区——永远给用户任务让路，失败不轰炸。
+        if (getSystemSettings(this.db).memoryHousekeepingEnabled) {
+          const hk = runMemoryHousekeeping(this.db);
+          if (hk.triggered) log.info('memory housekeeping ran', { ...hk });
+        }
         // R2b：任务自动归档——archiveTaskAfterDays>0 时归档超期 completed 项目任务（单次上限 50 防长事务）
         const archiveDays = getSystemSettings(this.db).archiveTaskAfterDays;
         if (archiveDays > 0) {

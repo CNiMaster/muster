@@ -16,6 +16,7 @@ import { createTask, getTask } from './task';
 import { getAgent } from './agent';
 import { getMaterial } from './material';
 import { ensureWorkspaceStaff } from './workspace-staff';
+import { maybeEnqueuePreferenceQuestion } from './task-preference';
 import { realtime } from '../realtime';
 
 export type ScopeKind = 'workbench' | 'project' | 'side';
@@ -393,6 +394,11 @@ export function postUserMessage(db: DB, input: PostUserMessageInput): {
   if (task) {
     db.prepare('UPDATE conversation_message SET ref_task_id = ? WHERE id = ?').run(task.id, id);
     userMessage.refTaskId = task.id;
+    // 选择闭环 S3：仅用户消息派发的任务做三态偏好消费（自动派单/蜂群不问）。
+    // silent→routeHint 注入；confirm→确认式问询（默认徽章 + 不用技能出口）。
+    try {
+      maybeEnqueuePreferenceQuestion(db, task, input.content);
+    } catch { /* 偏好问询失败不影响消息派发 */ }
   }
 
   return { userMessage, task, tasks, inboxCreated };
