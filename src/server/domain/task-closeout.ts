@@ -266,3 +266,77 @@ export function getTaskCloseoutSummary(db: DB, taskId: string): TaskCloseoutSumm
   const row = db.prepare('SELECT * FROM task_closeout_summary WHERE task_id=?').get(taskId) as SummaryRow | undefined;
   return row ? fromRow(db, row) : null;
 }
+
+/**
+ * 批次 G（craft 产能）：收尾简报顺手抽取人设方法论（craft）候选。
+ *
+ * 背景：task_closeout_summary 此前是纯归档（无读取方回流）；反思 drain 的 CRAFT 每任务最多
+ * 一条产能不足。本函数在简报首次生成后跑一轮 economy 抽取：从简报正文提炼 ≤2 条「以该人设
+ * 做同类任务的可复用方法论」，以 allowAutoApprove=false 落 memory_candidate（记忆看板人工审）。
+ * 幂等：同任务已有 craft 候选（反思入账或上次抽取）即跳过；fail-open——LLM 不可用/解析失败
+ * 静默返回 0，绝不影响简报主流程。
+ * 仅在 persona 穿戴任务上跑；由 GET /closeout 首次生成路径调用（regenerate 不重复抽）。
+ */
+export async function harvestCraftCandidatesFromCloseout(db: DB, taskId: string): Promise<number> {
+  try {
+    const task = getTask(db, taskId);
+    if (!task.personaId) return 0;
+
+    // 幂等门：该任务已有 craft 候选（含反思入账的）→ 不重复抽
+    const existing = db.prepare(
+      "SELECT 1 FROM memory_candidate WHERE source_task_id=? AND scope='craft' LIMIT 1",
+    ).get(taskId);
+    if (existing) return 0;
+
+    const summary = getTaskCloseoutSummary(db, taskId);
+    if (!summary) return 0;
+    const persona = getPersona(task.personaId);
+    const personaName = persona?.name ?? task.personaId;
+    // 简报正文截断喂 economy（前三节已覆盖成果/过程/问题，足够提炼方法论）
+    const digest = summary.closeoutMarkdown.slice(0, 3000);
+
+    const { callLlm } = await import('./llm-call');
+    const llm = await callLlm(db, {
+      system: [
+        '你是「方法论萃取器」。从一次任务的收尾简报中提炼可复用的专家方法论（craft）。',
+        `规则：只提炼「以「${personaName}」人设做同类任务都适用」的方法，不写本项目具体事实；`,
+        '每条 50-150 字；最多 2 条；没有值得提炼的就给空数组；宁缺毋滥。',
+        '只输出一个 JSON 对象（不要代码围栏）：{"crafts":[{"content":"方法论正文","confidence":0-1的小数,"fingerprint":"domain:topic 可省略"}]}',
+      ].join('\n'),
+      user: digest,
+      timeoutMs: 30_000,
+      tier: 'economy',
+    });
+
+    const jsonMatch = /\{[\s\S]*\}/.exec(llm.content.trim());
+    if (!jsonMatch) return 0;
+    const parsed = JSON.parse(jsonMatch[0]) as { crafts?: Array<{ content?: unknown; confidence?: unknown; fingerprint?: unknown }> };
+    const crafts = Array.isArray(parsed.crafts) ? parsed.crafts.slice(0, 2) : [];
+    let inserted = 0;
+    for (const craft of crafts) {
+      const content = String(craft.content ?? '').trim();
+      const confidence = Number(craft.confidence);
+      if (!content || Number.isNaN(confidence) || confidence < 0 || confidence > 1) continue;
+      const { createMemoryCandidate } = await import('./memory');
+      const { ensurePersonaArchiveProfile } = await import('./agent-profile');
+      createMemoryCandidate(db, {
+        // craft 挂「人设方法论档案」宿主（与反思入账同口径）：随人设长存、按 persona_key 全局召回
+        profileId: ensurePersonaArchiveProfile(db),
+        scope: 'craft',
+        personaKey: task.personaId,
+        content,
+        sourceTaskId: taskId,
+        author: 'agent',
+        confidence,
+        canInfluence: true,
+        allowAutoApprove: false, // 顺手抽取置信度未经执行者自评——一律进看板人工审
+        fingerprint: typeof craft.fingerprint === 'string' && craft.fingerprint.trim() ? craft.fingerprint.trim().toLowerCase() : null,
+      });
+      inserted += 1;
+    }
+    return inserted;
+  } catch (e) {
+    log.warn('craft harvest from closeout skipped', { taskId, err: String(e) });
+    return 0;
+  }
+}

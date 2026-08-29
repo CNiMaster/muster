@@ -14,10 +14,11 @@
  */
 import type { DB } from '../db/client';
 
-export const SNAPSHOT_MAX_CHARS = 800;
-/** 方法论段条数与单条截断（A7）：top3、每条 100 字——方法论要精不要多，多则趋同。 */
-const CRAFT_TOP_N = 3;
-const CRAFT_LINE_MAX = 100;
+export const SNAPSHOT_MAX_CHARS = 1200;
+/** 方法论段条数与单条截断（A7；批次 G 放宽）：top5、每条 160 字——craft 产能上来后多带一点，
+ * 仍设上限尊重「快照太厚 → 同 persona 分身思维趋同」的防趋同设计（只放大不放开）。 */
+const CRAFT_TOP_N = 5;
+const CRAFT_LINE_MAX = 160;
 
 export interface SpecialistSnapshot {
   /** null = 常驻专家尚无可聚合的记忆（无 thread / 无摘要无任务）——分身退化为纯人设穿戴，不阻断。 */

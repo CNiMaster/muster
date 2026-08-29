@@ -23,6 +23,9 @@ import { getTask, type Task } from './task';
 import { getAgent } from './agent';
 import { createMemoryCandidate, searchMemory, expandMatchTokens, applySupersede, approveMemoryCandidate } from './memory';
 import { maybeSynthesizeSkillCandidates } from './skill-synthesis';
+
+/** 批次 G（craft 产能）：一次反思最多沉淀的独立 CRAFT 方法论条数。 */
+const CRAFT_MAX_PER_REFLECTION = 3;
 import { ensurePersonaArchiveProfile } from './agent-profile';
 import { getPersona } from './persona-library';
 import { evolveBlueprint, evolveBlueprintById, updateBlueprintLabel, listBlueprintVersions, type Blueprint } from './blueprint';
@@ -497,7 +500,7 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
     'PREFERENCE 聚焦"用户明确表达过的个人偏好或忌讳"（如风格、语气、格式、内容、流程倾向），必须是用户视角的喜好陈述，不要把单次请求泛化为通用偏好；' +
     'PREFERENCE 正文必须以【domain】开头，domain ∈ 风格/语气/格式/内容/流程。' +
     (persona
-      ? 'CRAFT（仅本次任务穿戴了专家人设时输出）聚焦"以该人设做这类任务的可复用方法论"——以后任何人穿戴同一人设做同类任务都适用的方法（如"写 PRD 先核对数据口径"）；只写方法，不写本项目的具体事实（那些归 LESSON）。'
+      ? 'CRAFT（仅本次任务穿戴了专家人设时输出）聚焦"以该人设做这类任务的可复用方法论"——以后任何人穿戴同一人设做同类任务都适用的方法（如"写 PRD 先核对数据口径"）；只写方法，不写本项目的具体事实（那些归 LESSON）。最多 3 条，每条独立 [CRAFT] 块。'
       : '') +
     'E2.1 每条沉淀附带一个 fingerprint 标签（形如 "domain:topic"，例如 design:color、workflow:handoff、style:business、tone:formal），紧跟置信度行后单独一行，用于后续识别跨任务的重复模式；无明确归类时该行可省略。' +
     '只产出具体、可操作、能影响下次执行的内容，不要空泛总结，不要复述任务本身。' +
@@ -560,7 +563,7 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
     '<fingerprint：domain:topic，如 style:business>',
     '<【domain】偏好正文 30-100 字，domain ∈ 风格/语气/格式/内容/流程>',
     ...(task.personaId
-      ? ['[CRAFT]', '<置信度 0-1 的小数>', '<fingerprint：domain:topic，可省略>', '<supersedes: 旧记忆id，方法论被修正时写；可省略>', `<以「${personaName}」人设做同类任务的方法论正文 50-150 字（无则写 SKIPPED）>`]
+      ? ['[CRAFT]', '<置信度 0-1 的小数>', '<fingerprint：domain:topic，可省略>', '<supersedes: 旧记忆id，方法论被修正时写；可省略>', `<以「${personaName}」人设做同类任务的方法论正文 50-150 字（无则写 SKIPPED）>`, '（批次 G：本次任务若沉淀出多条独立方法论，可重复输出 [CRAFT] 块，最多 3 条；每条自带置信度行。单条仍按上述格式。）']
       : []),
   ].filter(Boolean).join('\n');
 
@@ -581,7 +584,8 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
   const preference = feedbackText ? parseSection(text, 'PREFERENCE') : { confidence: 0, body: '', fingerprint: null as string | null, supersedesEntryId: null };
   const preferenceValid = Boolean(preference.body) && preference.confidence >= 0.7;
   // 蓝图组织批次1：CRAFT 仅在任务穿戴了人设时解析（无人设任务 prompt 不含该段，返回也会被忽略）。
-  const craft = task.personaId ? parseSection(text, 'CRAFT') : { confidence: 0, body: '', fingerprint: null as string | null, supersedesEntryId: null };
+  // 批次 G：多条化——一次反思最多 CRAFT_MAX_PER_REFLECTION 条独立方法论。
+  const crafts = task.personaId ? parseSectionBlocks(text, 'CRAFT') : [];
 
   // 蜂群工蜂的沉淀边界：一次性工蜂（role=swarm-worker）的 profile 随群收口被删（memory 的
   // ON DELETE CASCADE 连记忆行一起删）。通用经验不单独沉淀——蜂王汇总任务与根任务的反思已覆盖
@@ -592,7 +596,7 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
       task.assigneeAgentId
       && ((db.prepare('SELECT role FROM agent_definition WHERE id=?').get(task.assigneeAgentId) as { role: string } | undefined)?.role === 'swarm-worker'),
     );
-  if (isEphemeralBee && !(craft.body && task.personaId)) {
+  if (isEphemeralBee && crafts.length === 0) {
     db.prepare(
       `UPDATE task_reflection SET status='skipped', reflection_text=?, reflected_at=? WHERE id=?`,
     ).run('蜂群工蜂：通用经验并入蜂王汇总任务，不单独沉淀', nowIso(), reflection.id);
@@ -600,7 +604,7 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
   }
 
   // 各类都没有有效内容 → skipped
-  if (!lesson.body && !rule.body && !preferenceValid && !craft.body) {
+  if (!lesson.body && !rule.body && !preferenceValid && crafts.length === 0) {
     db.prepare(
       `UPDATE task_reflection SET status='skipped', reflection_text=?, reflected_at=? WHERE id=?`,
     ).run(text.slice(0, 500), nowIso(), reflection.id);
@@ -697,8 +701,10 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
   // 蓝图组织批次1：沉淀 CRAFT（人设方法论）：scope=skill + persona_key——挂在人设上跨任务、跨项目复用，
   // 下次任何智能体穿戴同一人设执行任务时经 loadContextMemories 注入。
   // 高置信（>=0.8）自动批准（命中 memory.ts 的人设键自动批准门）；低置信进候选队列人工审核。
+  // 批次 G：逐条入账（最多 CRAFT_MAX_PER_REFLECTION 条）。
   let craftBody = '';
-  if (craft.body && task.personaId) {
+  for (const craft of crafts) {
+    if (!craft.body || !task.personaId) continue;
     createMemoryCandidate(db, {
       // 蜂群工蜂的临时 profile 随群收口即删——CRAFT 挂人设档案宿主，方法论随人设长存
       profileId: isEphemeralBee ? ensurePersonaArchiveProfile(db) : profileId,
@@ -711,9 +717,11 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
       canInfluence: true,
       allowAutoApprove: craft.confidence >= 0.8,
       fingerprint: craft.fingerprint,
+      cause: craft.cause,
+      tags: craft.tags,
       supersedesEntryId: craft.supersedesEntryId,
     });
-    craftBody = craft.body;
+    craftBody += (craftBody ? '\n' : '') + craft.body;
   }
 
   const summary = [
@@ -731,19 +739,48 @@ async function reflectOnTask(db: DB, reflection: TaskReflection): Promise<'done'
   return 'done';
 }
 
+/** 批次 G：单段解析结果（原 parseSection 返回形状）。 */
+interface ParsedSection {
+  confidence: number;
+  fingerprint: string | null;
+  body: string;
+  scopeSuggestion: 'project' | 'persona' | null;
+  scopePersonaKey: string | null;
+  cause: import('./memory').MemoryCause | null;
+  tags: string[];
+  supersedesEntryId: string | null;
+}
+
+const EMPTY_SECTION: ParsedSection = { confidence: 0.7, fingerprint: null, body: '', scopeSuggestion: null, scopePersonaKey: null, cause: null, tags: [], supersedesEntryId: null };
+
 /**
  * 解析双段输出中的某一段（LESSON / RULE）。
  * 格式：[SECTION] 头 → 置信度行 → 正文行。置信度缺省 0.7，正文截断 500 字。
  * 找不到段头或正文为 SKIPPED/空 → 返回空 body（表示该类无沉淀）。
  */
-function parseSection(text: string, section: 'LESSON' | 'RULE' | 'PREFERENCE' | 'CRAFT'): { confidence: number; fingerprint: string | null; body: string; scopeSuggestion: 'project' | 'persona' | null; scopePersonaKey: string | null; cause: import('./memory').MemoryCause | null; tags: string[]; supersedesEntryId: string | null } {
-  const re = new RegExp(`\\[${section}\\]\\s*([\\s\\S]*?)(?=\\[(?:LESSON|RULE|PREFERENCE|CRAFT)\\]|$)`, 'i');
-  const match = re.exec(text);
-  if (!match) return { confidence: 0.7, fingerprint: null, body: '', scopeSuggestion: null, scopePersonaKey: null, cause: null, tags: [], supersedesEntryId: null };
-  const block = match[1]!.trim();
-  if (!block || /^SKIPPED/i.test(block)) return { confidence: 0.7, fingerprint: null, body: '', scopeSuggestion: null, scopePersonaKey: null, cause: null, tags: [], supersedesEntryId: null };
+function parseSection(text: string, section: 'LESSON' | 'RULE' | 'PREFERENCE' | 'CRAFT'): ParsedSection {
+  return parseSectionBlocks(text, section)[0] ?? EMPTY_SECTION;
+}
+
+/**
+ * 批次 G（craft 产能）：切出该段的全部块（CRAFT 多条化——一次反思最多沉淀 CRAFT_MAX_PER_REFLECTION
+ * 条独立方法论）。逐块走与 parseSection 相同的解析；空块/SKIPPED 块丢弃。
+ */
+export function parseSectionBlocks(text: string, section: 'LESSON' | 'RULE' | 'PREFERENCE' | 'CRAFT', max = CRAFT_MAX_PER_REFLECTION): ParsedSection[] {
+  const re = new RegExp(`\\[${section}\\]\\s*([\\s\\S]*?)(?=\\[(?:LESSON|RULE|PREFERENCE|CRAFT)\\]|$)`, 'gi');
+  const out: ParsedSection[] = [];
+  for (const match of text.matchAll(re)) {
+    const parsed = parseSectionBlock(match[1]!.trim());
+    if (parsed.body) out.push(parsed);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+function parseSectionBlock(block: string): ParsedSection {
+  if (!block || /^SKIPPED/i.test(block)) return { ...EMPTY_SECTION };
   const lines = block.split('\n').filter((l) => l.trim());
-  if (lines.length === 0) return { confidence: 0.7, fingerprint: null, body: '', scopeSuggestion: null, scopePersonaKey: null, cause: null, tags: [], supersedesEntryId: null };
+  if (lines.length === 0) return { ...EMPTY_SECTION };
   let confidence = 0.7;
   let body = block;
   const firstNum = parseFloat(lines[0]!);
@@ -800,7 +837,7 @@ function parseSection(text: string, section: 'LESSON' | 'RULE' | 'PREFERENCE' | 
   }
   body = bodyLines.join('\n').trim();
   body = body.slice(0, 500);
-  if (!body || /^SKIPPED/i.test(body)) return { confidence: 0.7, fingerprint: null, body: '', scopeSuggestion: null, scopePersonaKey: null, cause: null, tags: [], supersedesEntryId: null };
+  if (!body || /^SKIPPED/i.test(body)) return { ...EMPTY_SECTION };
   return { confidence, fingerprint, body, scopeSuggestion, scopePersonaKey, cause, tags, supersedesEntryId };
 }
 

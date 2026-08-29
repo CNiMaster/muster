@@ -625,7 +625,13 @@ taskByIdRouter.get(
     if (!CLOSEOUT_TERMINAL_STATES.has(task.state)) {
       throw new AppError(ErrorCode.NOT_FOUND, '任务尚未到终态，暂无收尾简报');
     }
-    const summary = getTaskCloseoutSummary(db, taskId) ?? generateTaskCloseoutSummary(db, taskId);
+    const existing = getTaskCloseoutSummary(db, taskId);
+    const summary = existing ?? generateTaskCloseoutSummary(db, taskId);
+    // 批次 G：首次生成顺手抽取人设方法论候选（幂等+fail-open，不阻塞响应主体）
+    if (!existing && task.personaId) {
+      const { harvestCraftCandidatesFromCloseout } = await import('../domain/task-closeout');
+      await harvestCraftCandidatesFromCloseout(db, taskId);
+    }
     res.json(summary);
   }),
 );
