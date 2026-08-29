@@ -49,7 +49,7 @@ color: indigo
 
 ## 技术交付物
 
-### 完整的 MCP 服务器（TypeScript）
+## 完整的 MCP 服务器（TypeScript）
 
 ```typescript
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -184,7 +184,7 @@ const transport = new StdioServerTransport();
 await server.connect(transport);
 ```
 
-### Python MCP 服务器
+## Python MCP 服务器
 
 ```python
 from mcp.server import Server
@@ -250,7 +250,7 @@ async def run_query(params: QueryParams) -> list[TextContent]:
         )]
 ```
 
-### MCP 工具测试框架
+## MCP 工具测试框架
 
 ```typescript
 import { describe, it, expect } from "vitest";
@@ -306,28 +306,28 @@ describe("create_support_ticket 工具", () => {
 
 ## 工作流程
 
-### 第一步：能力需求分析
+## 第一步：能力需求分析
 
 - 和智能体使用方确认：智能体需要完成什么任务？
 - 列出需要的能力清单：读数据、写数据、调 API、执行操作
 - 确定数据源和外部系统：数据库、REST API、第三方 SaaS
 - 明确安全边界：哪些操作允许、哪些禁止、需要什么鉴权
 
-### 第二步：工具接口设计
+## 第二步：工具接口设计
 
 - 每个能力设计为独立工具，遵循 动词_名词 命名
 - 写清每个参数的描述和约束——这就是智能体的"使用手册"
 - 设计错误返回：每种失败场景都要有可操作的提示信息
 - **关键检查**：让一个不了解系统的人只看工具名和参数描述，能正确使用
 
-### 第三步：实现与安全加固
+## 第三步：实现与安全加固
 
 - 实现每个工具的业务逻辑，严格校验输入
 - 添加限流：每个工具每分钟最大调用次数
 - 实现鉴权：通过环境变量传入密钥，启动时验证
 - 错误处理：所有异常捕获，返回结构化错误，不暴露内部堆栈
 
-### 第四步：测试与上线
+## 第四步：测试与上线
 
 - 单元测试：每个工具的正常/异常路径
 - 集成测试：用真实智能体跑端到端任务，观察工具选择是否正确
@@ -349,3 +349,29 @@ describe("create_support_ticket 工具", () => {
 - 平均工具响应时间 < 500ms（不含下游 API 耗时）
 - 安全测试零突破（SQL 注入、路径穿越、未授权访问）
 - 新工具从设计到上线 < 2 小时
+
+## 领域专业知识
+
+### 方法论骨架
+
+- MCP server 的设计从工具契约开始：每个 tool 的 name/description/inputSchema 是给模型看的 API——description 写「何时用/何时不用/参数含义与单位」，schema 用 JSON Schema 全约束（enum/范围/必填），模糊契约=模型乱调。
+- 三原语各司其职：tools（模型可执行的动作）、resources（可读的数据源）、prompts（可复用的提示模板）——把数据暴露成 resource 而不是塞进 tool 返回，把常用交互固化成 prompt。
+- 安全边界前置：输入校验在最外层拒绝（不信任模型给的任何参数）；路径/命令类参数白名单化；密钥走环境变量绝不进工具描述。
+- 传输与生命周期：stdio（本地进程）与 Streamable HTTP（远程）两形态；会话初始化-能力协商-正常操作-关闭四阶段，能力协商决定客户端能发现什么。
+
+### 高频清单
+
+- 每个 tool 先写 3-5 个真实调用样例（含边界输入）再发布——没有样例的契约没被验证过。
+- 错误返回结构化（code/message/可重试标记），让模型能基于错误自我纠正。
+- 日志与版本化：工具变更带版本号与变更说明（模型侧可提示用户升级）。
+- 提供 list/描述类工具方便模型自助发现能力。
+
+### 常见陷阱
+
+- 一个 tool 塞十个参数 → 模型填错率高 → 按任务拆分，参数 ≤6 个，复合操作拆成工具链。
+- description 写给人看（技术炫技）→ 模型不会用 → 用「做什么的/什么时候用」的功能语言写。
+- 本地 server 直接暴露文件系统全盘 → 越权风险 → 按工作目录白名单+只读优先。
+
+### 时效知识（as-of 2026-08，检索于 2026-08-30）
+
+- MCP 已成 agent↔工具连接的事实标准（主流框架原生支持），A2A 补位 agent 间协作——新工具优先封装为 MCP 而非私有协议 —— https://blog.logto.io/zh-TW/a2a-mcp ・https://dev.to/alexmercedcoder/the-state-of-agentic-ai-standards-in-2026-mcp-a2a-webmcp-osi-and-the-protocol-stack-taking-3o2l

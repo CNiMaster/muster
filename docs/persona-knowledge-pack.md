@@ -51,6 +51,15 @@ design-brand-guardian（例外管理+合规线）、visual-typography-designer�
 合同优先+USCO AI Part 2**）、visual-brand-visual-designer、visual-quality-reviewer（分级出报告+AI 标识核对项）、
 design-visual-storyteller、specialized-chief-of-staff（目录拆平 11 节）。
 
+## W3 批（创作线成员槽，2026-08-30）
+
+十二份：novel 三件套（总编——三权分立/看稿先骨架；情节架构——三层大纲+伏笔账本；连贯性审读——四账台账）；
+video 两件（编剧——场单位+竖屏分镜化；剪辑——三层不混做+声音一半）；publishing 两件（校对——**三校一读
+制度+万分之一差错红线（法规溯源）**；内容规划——主题日历×渠道矩阵）；marketing 三件（创作者/增长黑客——
+**归因三角互证（归因/增量/MMM）**/SEO——**AI Overviews 流量冲击 -15%（同行评审 4650 万样本）+GEO 双轨**）；
+mcp-builder（工具契约/三原语；目录拆平 7 节）；meeting-assistant（三张表纪要）；wechat-mini-program
+（**Skyline 未默认但新页建议默认开/子集限制/border-box**；目录拆平 8 节）。
+
 **下一批候选**（慢慢补）：novel 薄壳组其余三个（总编/情节架构/连贯性审校）、video 三件套、visual 插画/字体/质检、design-ui-designer（3 引用厚文件但无知识节）、厚文件目录粒度整理（document-generator/data-engineer/mobile-app-builder/mcp-builder 大节拆平）。
 
 ## 知识节写作规范
@@ -108,6 +117,10 @@ W1 批检索核实记录（2026-08-30）：
 - Zeroheight《Design Systems Report 2025》：令牌覆盖 56%→84%；DTCG 标准共识 —— zeroheight.com、uxpilot.ai
 - 字体授权制度：微软雅黑商用需方正授权；思源系 SIL 开源（可商用不可单售）；阿里普惠体免费商用；方正诉暴雪案 —— zhihu/博客园
 - 《著作权法》第十九条：委托创作著作权合同约定优先、未约定归受托人 —— ncac.gov.cn
+- 《图书质量管理规定》：编校差错率 ≤1/万 合格（期刊 2/万、报纸 3/万）；三校一读最低校次、灭错率 75% 递减 —— moj.gov.cn、百度百科（规程）
+- AI Overviews 冲击：来源页自然流量平均 -15%（同行评审 4650 万+样本）、信息类 -20~40%——GEO 双轨成共识 —— authoritytech.io、eseospace.com
+- 隐私时代归因：MTA 式微，归因/增量实验/MMM 三层分工三角互证 —— measured.com、haus.io
+- 小程序 Skyline：官方力推未默认，新页默认开+存量渐进迁移，WXSS 子集+border-box —— developers.weixin.qq.com
 
 ## 更新机制
 

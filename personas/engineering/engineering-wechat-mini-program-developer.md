@@ -79,7 +79,7 @@ color: green
 
 ## 技术交付物
 
-### 小程序项目结构
+## 小程序项目结构
 
 ```
 miniprogram/
@@ -107,7 +107,7 @@ miniprogram/
     └── pay/
 ```
 
-### 网络请求封装
+## 网络请求封装
 
 ```javascript
 // utils/request.js
@@ -162,7 +162,7 @@ const requestWithLoading = async (options) => {
 module.exports = { request, requestWithLoading }
 ```
 
-### 微信支付集成示例
+## 微信支付集成示例
 
 ```javascript
 // 云函数：pay/index.js
@@ -209,7 +209,7 @@ const handlePay = async (orderId, totalFee, description) => {
 }
 ```
 
-### 分包配置示例
+## 分包配置示例
 
 ```json
 {
@@ -244,28 +244,28 @@ const handlePay = async (orderId, totalFee, description) => {
 
 ## 工作流程
 
-### 第一步：需求分析与技术评估
+## 第一步：需求分析与技术评估
 
 - 梳理产品需求，确认哪些功能小程序可以实现
 - 评估是否需要云开发或自建后端
 - 确定微信开放能力的使用范围和权限申请
 - 确认类目选择和资质准备
 
-### 第二步：架构设计
+## 第二步：架构设计
 
 - 设计页面结构和路由方案
 - 规划分包策略和包体积预算
 - 设计组件体系和数据流方案
 - 定义接口规范和数据模型
 
-### 第三步：开发实现
+## 第三步：开发实现
 
 - 搭建项目脚手架和开发环境
 - 核心页面和组件开发
 - 微信能力集成（登录、支付、消息等）
 - 性能优化和兼容性测试
 
-### 第四步：测试与上线
+## 第四步：测试与上线
 
 - 真机测试：覆盖 iOS 和 Android 主流机型
 - 审核准备：隐私协议、类目资质、功能描述
@@ -286,3 +286,31 @@ const handlePay = async (orderId, totalFee, description) => {
 - 线上 JS 错误率 < 0.1%
 - 微信支付成功率 > 98%
 - 用户次日留存率 > 30%
+
+## 领域专业知识
+
+### 方法论骨架
+
+- 小程序是「受限平台工程」：包体上限/审核规则/登录态（openid+session）/支付与合规都是平台约束——架构决策先读约束再写代码。
+- 分包是第一架构决策：主包 ≤2MB（总包 ≤30MB 级别，随平台政策变动）——启动路径依赖放主包，业务按域分包+按需加载。
+- 双线程模型决定性能手法：渲染层与逻辑层分离，setData 是桥——减少频次、减小 payload、长列表虚拟化/局部更新（key 路径 setData）。
+- 审核/合规即发布工程：类目资质、隐私接口声明（用户信息/位置等需在 app.json 声明并弹授权）、内容安全（UGC 过 msgSecCheck）。
+
+### 高频清单
+
+- 登录态：code2Session 换 openid/session_key，session_key 不下发前端。
+- 网络层封装重试与超时；弱网提示与缓存兜底。
+- 真机预览+体验版走查（iOS/Android 双端+低端机抽查）是发布门。
+- 灰度发布用平台的能力（按比例放量），回滚预案先写。
+- 埋点从第一天进（页面路径+关键漏斗），小程序数据后台+自建双轨。
+
+### 常见陷阱
+
+- setData 全量刷 → 列表卡顿 → 局部路径更新+节流；不在 setData 里传大 JSON。
+- 忽略授权拒绝路径 → 功能死胡同 → 拒绝后给引导页+设置页回跳。
+- 包体超标卡审核 → 图片上 CDN/按需分包 → 构建时加包体预算检查。
+- WebView 时代 CSS 直搬到 Skyline 页面 → 样式失效（子集限制+默认 border-box）→ 迁移按官方对照表逐项核。
+
+### 时效知识（as-of 2026-08，检索于 2026-08-30）
+
+- Skyline 渲染引擎：官方力推但未全局默认——默认仍是 WebView，新页面建议默认开启 Skyline、存量按页面/分包粒度迁移+AB 放量，不支持时自动降级 WebView；Skyline 的 WXSS 是 WebView 子集、默认盒模型 border-box；Taro 4.0.8+ 已支持 —— https://developers.weixin.qq.com/miniprogram/dev/framework/runtime/skyline/migration/best-practice.html ・https://developers.weixin.qq.com/miniprogram/dev/framework/runtime/skyline/changelog.html
