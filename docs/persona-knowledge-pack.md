@@ -43,6 +43,14 @@
 engineering-ai-engineer（Agent 应用）、prompt-engineer（Skill 开发）、specialized-document-generator（文档处理）、
 data-engineer、mobile-app-builder；武器补装 document-generator=document-authoring。
 
+## W2 批（设计/品牌线，2026-08-30）
+
+八份知识包：design-ui-designer（3 引用，令牌先行；Zeroheight 2025 令牌覆盖 56%→84%/DTCG）、
+design-brand-guardian（例外管理+合规线）、visual-typography-designer（**字体授权制度性——微软雅黑属方正需授权/
+思源 SIL 可商用不可转售/阿里普惠体免费商用/方正诉暴雪判例**）、visual-illustrator（**著作权法 19 条委托创作归属
+合同优先+USCO AI Part 2**）、visual-brand-visual-designer、visual-quality-reviewer（分级出报告+AI 标识核对项）、
+design-visual-storyteller、specialized-chief-of-staff（目录拆平 11 节）。
+
 **下一批候选**（慢慢补）：novel 薄壳组其余三个（总编/情节架构/连贯性审校）、video 三件套、visual 插画/字体/质检、design-ui-designer（3 引用厚文件但无知识节）、厚文件目录粒度整理（document-generator/data-engineer/mobile-app-builder/mcp-builder 大节拆平）。
 
 ## 知识节写作规范
@@ -97,6 +105,9 @@ W1 批检索核实记录（2026-08-30）：
 - Agent 直接读写 Office 文档的工具化方向（officecli）—— developer.cloud.tencent.com
 - Lakehouse 主流落地；dbt/SQL 优先向云数仓原生演进；批流一体 Flink/StarRocks+Paimon—— juejin、infoq.cn、mirrorship.cn
 - RN 0.82 移除旧架构；Expo SDK 55 新架构恒开；SDK 54 起 React Compiler 默认—— reactnative.dev/blog、docs.expo.dev
+- Zeroheight《Design Systems Report 2025》：令牌覆盖 56%→84%；DTCG 标准共识 —— zeroheight.com、uxpilot.ai
+- 字体授权制度：微软雅黑商用需方正授权；思源系 SIL 开源（可商用不可单售）；阿里普惠体免费商用；方正诉暴雪案 —— zhihu/博客园
+- 《著作权法》第十九条：委托创作著作权合同约定优先、未约定归受托人 —— ncac.gov.cn
 
 ## 更新机制
 
