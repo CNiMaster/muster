@@ -179,6 +179,11 @@ const SAMPLE_STAGES: BlueprintStage[] = [
   { id: 'stage_4', step: 4, label: '验收交付', description: '逐条对照验收标准检查并归档' },
 ];
 
+/** 工具节点 id（台账与 stage.tools 引用共用同一命名）。 */
+function toolNodeId(toolId: string): string {
+  return `tool_${toolId}`;
+}
+
 /** 无显式 dependsOn 的 stages 物化成链式依赖（画布连线 ⇄ stages 数据的统一表达）。 */
 function materializeChain(stages: BlueprintStage[]): BlueprintStage[] {
   const hasExplicitDeps = stages.some((s) => (s.dependsOn?.length ?? 0) > 0);
@@ -198,6 +203,8 @@ function canonicalStagesJson(stages: BlueprintStage[]): string {
         description: (s.description ?? '').trim().slice(0, 200) || undefined,
         dependsOn: [...(s.dependsOn ?? [])].sort(),
         staffingPersonaIds: [...(s.staffingPersonaIds ?? [])].sort(),
+        gate: s.gate ?? undefined,
+        tools: [...(s.tools ?? [])].map((t) => ({ kind: t.kind, id: t.id })).sort((a, b) => `${a.kind}:${a.id}`.localeCompare(`${b.kind}:${b.id}`)),
       })),
   );
 }
@@ -265,13 +272,11 @@ export function BlueprintCanvasPage(): React.ReactElement {
           activeUserTalent: slot.activeUserTalent,
         },
       });
+      // M3 批次C：人员→阶段连线=该谁上（staffingPersonaIds 派生；未绑定的人员节点悬空，连线即绑定）
       const bound = stages.filter((st) => st.staffingPersonaIds?.includes(slot.personaId));
-      const targetIds = bound.length > 0
-        ? bound.map((st) => st.id)
-        : [stages[Math.min(idx, stages.length - 1)]?.id].filter(Boolean);
-      for (const targetId of targetIds) {
+      for (const targetId of bound.map((st) => st.id)) {
         initialEdges.push({
-          id: `e_staffing_${idx}_${targetId}`,
+          id: `e_staffing_${slot.personaId}_${targetId}`,
           source: nodeId,
           target: targetId,
           style: { stroke: slot.activeUserTalent ? 'var(--ok, #10b981)' : '#94a3b8', strokeDasharray: '4 4' },
@@ -279,9 +284,17 @@ export function BlueprintCanvasPage(): React.ReactElement {
       }
     });
 
-    // 3. 工具节点（右侧，示意连线）
-    bp.tools.slice(0, 6).forEach((tool, idx) => {
-      const nodeId = `tool_${tool.id}`;
+    // 3. 工具节点（右侧）：M3 批次C——集合=蓝图台账 top6 ∪ stages.tools 引用（防引用悬空）；
+    //    连线=阶段工具亲和（stage.tools 派生，连线即绑定；台账未绑定的工具悬空可拖去连）
+    const ledgerTools = bp.tools.slice(0, 6).map((t) => ({ kind: t.kind, id: t.id, uses: t.uses, wins: t.wins }));
+    const referenced = new Map<string, { kind: 'skill' | 'tool' | 'mcp'; id: string }>();
+    for (const st of stages) for (const t of st.tools ?? []) referenced.set(`${t.kind}:${t.id}`, t);
+    const toolEntries: Array<{ kind: 'skill' | 'tool' | 'mcp'; id: string; uses: number; wins: number }> = [...ledgerTools];
+    for (const t of referenced.values()) {
+      if (!toolEntries.some((x) => x.kind === t.kind && x.id === t.id)) toolEntries.push({ ...t, uses: 0, wins: 0 });
+    }
+    toolEntries.slice(0, 10).forEach((tool, idx) => {
+      const nodeId = toolNodeId(tool.id);
       const winRate = tool.uses > 0 ? Math.round((tool.wins / tool.uses) * 100) : 0;
       initialNodes.push({
         id: nodeId,
@@ -289,16 +302,17 @@ export function BlueprintCanvasPage(): React.ReactElement {
         position: { x: 600, y: 80 + idx * 100 },
         data: { name: tool.id, kind: tool.kind, uses: tool.uses, winRate },
       });
-      const targetId = stages[Math.min(2, stages.length - 1)]?.id;
-      if (targetId) {
+    });
+    for (const st of stages) {
+      for (const t of (st.tools ?? []).slice(0, 5)) {
         initialEdges.push({
-          id: `e_tool_${idx}_${targetId}`,
-          source: targetId,
-          target: nodeId,
+          id: `e_tool_${toolNodeId(t.id)}_${st.id}`,
+          source: st.id,
+          target: toolNodeId(t.id),
           style: { stroke: '#94a3b8', strokeDasharray: '2 2' },
         });
       }
-    });
+    }
 
     return { nodes: initialNodes, edges: initialEdges };
   }, [bp, effectiveStages, isSample]);
@@ -320,7 +334,11 @@ export function BlueprintCanvasPage(): React.ReactElement {
         const src = nodeById.get(e.source);
         const dst = nodeById.get(e.target);
         if (!src || !dst) return false;
-        if (src.type === 'stageNode' && dst.type === 'stageNode') return false; // 阶段间连线以蓝图为准
+        // 三类结构连线（阶段↔阶段/人员→阶段/阶段→工具）一律以蓝图派生为准——
+        // 蓝图 stages 变更（AI 提案/画布保存）后画布自动跟进，不被旧排布顶掉。
+        if (src.type === 'stageNode' && dst.type === 'stageNode') return false;
+        if (src.type === 'staffingNode' && dst.type === 'stageNode') return false;
+        if (src.type === 'stageNode' && dst.type === 'toolNode') return false;
         return !structuralIds.has(e.id);
       }) as Edge[];
       setNodes(mergedNodes);
@@ -395,21 +413,42 @@ export function BlueprintCanvasPage(): React.ReactElement {
   const buildStagesPayload = (): BlueprintStage[] => {
     const ordered = [...stageNodes].sort((a, b) => a.position.y - b.position.y);
     const stageIds = new Set(ordered.map((n) => n.id));
+    const nodeById = new Map(nodes.map((n) => [n.id, n]));
+    // 连线即绑定（M3 批次C）：阶段→阶段=依赖；人员→阶段=参与（staffingPersonaIds）；
+    // 阶段→工具=亲和（stage.tools，kind 取工具节点上的台账分类，缺省 tool）。
     const depends = new Map<string, string[]>();
+    const staffingOf = new Map<string, string[]>();
+    const toolsOf = new Map<string, Array<{ kind: 'skill' | 'tool' | 'mcp'; id: string }>>();
     for (const e of edges) {
-      if (stageIds.has(e.source) && stageIds.has(e.target) && e.source !== e.target) {
+      if (e.source === e.target) continue;
+      if (stageIds.has(e.source) && stageIds.has(e.target)) {
         const list = depends.get(e.target) ?? [];
         if (!list.includes(e.source)) list.push(e.source);
         depends.set(e.target, list);
+      } else if (e.source.startsWith('staffing_') && stageIds.has(e.target)) {
+        const personaId = e.source.slice('staffing_'.length);
+        const list = staffingOf.get(e.target) ?? [];
+        if (!list.includes(personaId) && list.length < 4) list.push(personaId);
+        staffingOf.set(e.target, list);
+      } else if (stageIds.has(e.source)) {
+        const toolNode = nodeById.get(e.target);
+        if (toolNode?.type === 'toolNode') {
+          const toolId = toolNode.data.name ?? e.target.slice('tool_'.length);
+          const rawKind = String(toolNode.data.kind ?? 'tool');
+          const kind: 'skill' | 'tool' | 'mcp' = rawKind === 'skill' || rawKind === 'mcp' ? rawKind : 'tool';
+          const list = toolsOf.get(e.source) ?? [];
+          if (!list.some((t) => t.id === toolId) && list.length < 5) list.push({ kind, id: String(toolId) });
+          toolsOf.set(e.source, list);
+        }
       }
     }
     return ordered.map((n, i) => {
       const label = String(n.data.label ?? '').trim() || `阶段 ${i + 1}`;
       const description = String(n.data.description ?? '').trim().slice(0, 200);
       const deps = (depends.get(n.id) ?? []).sort();
-      const staffingPersonaIds = Array.isArray(n.data.staffingPersonaIds) ? n.data.staffingPersonaIds : undefined;
+      const staffingPersonaIds = staffingOf.get(n.id);
       const gate = ['self-check', 'acceptance'].includes(String(n.data.gate)) ? n.data.gate as 'self-check' | 'acceptance' : undefined;
-      const tools = Array.isArray(n.data.tools) ? (n.data.tools as Array<{ kind: 'skill' | 'tool' | 'mcp'; id: string }>).slice(0, 5) : undefined;
+      const tools = toolsOf.get(n.id);
       return {
         id: n.id,
         step: i + 1,
@@ -501,7 +540,7 @@ export function BlueprintCanvasPage(): React.ReactElement {
           <div>
             <h2 style={{ margin: 0, fontSize: 16 }}>{bp.label} · 连线画布</h2>
             <small className="muted">
-              这套打法的工作流图纸：阶段怎么接、谁参与。阶段与阶段的连线是工作流本体（保存即写回蓝图、可回滚）；班底/工具连线仅示意排布。
+              这张打法的协作关系图，三类连线保存即写回蓝图（可回滚）：阶段→阶段=先后依赖；人员→阶段=该谁上（引擎按此换人）；工具→阶段=该用啥（注入执行优先级）。
             </small>
           </div>
         </div>

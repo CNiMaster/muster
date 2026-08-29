@@ -113,6 +113,28 @@ describe('优化对话结构提案解析', () => {
     expect(turn.newProposals[0]!.params).toEqual({ label: '行业调研报告' });
   });
 
+  it('update_stages 携带 gate/tools/staffingPersonaIds 全量透传入库（M3 批次C）', async () => {
+    mockLlmJson({
+      reply: '按你说的：成稿阶段绑定工具并设自检门。',
+      proposals: [
+        {
+          actionType: 'update_stages',
+          reason: '用户要求成稿阶段用文档技能且过自检',
+          expectedEffect: '阶段绑定生效',
+          params: { stages: [
+            { id: 's1', step: 1, label: '梳理' },
+            { id: 's2', step: 2, label: '成稿', staffingPersonaIds: ['p_writer'], gate: 'self-check', tools: [{ kind: 'skill', id: 'doc-writer' }] },
+          ] },
+        },
+      ],
+    });
+    const turn = await sendOptimizeChatMessage(db, companyId, blueprintId, '成稿阶段用文档技能，完成要自检');
+    expect(turn.newProposals).toHaveLength(1);
+    const stages = turn.newProposals[0]!.params.stages as Array<Record<string, unknown>>;
+    expect(stages[1]).toMatchObject({ gate: 'self-check', staffingPersonaIds: ['p_writer'] });
+    expect(stages[1]!.tools).toEqual([{ kind: 'skill', id: 'doc-writer' }]);
+  });
+
   it('治理类提案不受影响：polish_description 照旧解析', async () => {
     mockLlmJson({
       reply: '好的，先润色描述。',

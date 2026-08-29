@@ -74,11 +74,18 @@ function blueprintDigest(db: DB, companyId: string, blueprintId: string): string
     .map((s) => `${s.personaName}<${s.personaId}>${s.role ? `（${s.role}）` : ''}${s.activeUserTalent ? `（自有人才「${s.activeUserTalent.displayName}」在岗顶替）` : ''}`)
     .join('、');
   const stages = coerceBlueprintStages(detail.stages);
+  const stageBindings = stages.map((st) => {
+    const who = (st.staffingPersonaIds ?? []).join('、');
+    const kit = (st.tools ?? []).map((t) => `${t.kind}:${t.id}`).join('、');
+    const gate = st.gate && st.gate !== 'none' ? `门=${st.gate}` : '';
+    return `${st.label}[${[who || '主槽', kit || '无指定工具', gate].filter(Boolean).join(' | ')}]`;
+  }).join('；');
   const lines = [
     `蓝图「${detail.label}」(id=${detail.id}, 业务分类=${detail.taskType}, 状态=${detail.status})`,
     `战绩：${detail.wins} 胜 ${detail.losses} 负，返工 ${detail.reworkTotal} 次，纠正 ${detail.correctionTotal} 次，综合评分 ${detail.score.score ?? '观察中(样本<3)'}`,
     `班底：${staffing || '无'}`,
     `阶段工作流：${stages.length > 0 ? describeStages(stages) : '未定义（用户想拆阶段时可建议 update_stages）'}`,
+    ...(stageBindings ? [`阶段绑定详情（谁上/用什么/门）：${stageBindings}`] : []),
     `常用工具：${detail.tools.map((t) => `${t.id}(用${t.uses}次)`).join('、') || '无'}`,
     `当前描述：${detail.description || '（空）'}`,
     `版本数：${detail.versions.length}（最近：${detail.versions.slice(0, 3).map((v) => v.summary).join('；') || '无'}）`,
@@ -228,7 +235,7 @@ export async function sendOptimizeChatMessage(
     '你是 muster 工作台的「蓝图编辑助手」。用户围绕下面这一张蓝图（打法包 = 班底 + 阶段工作流 + 工具 + 描述 + 战绩的集合体）告诉你他想怎么改；你的职责是把用户的意图落成可执行的修改提案——你懂这张蓝图哪些能改、怎么改、怎么改不坏。',
     '提案动作七种：',
     '- adjust_staffing（调整班底）：params.staffing 给「完整的新班底」（1-4 槽，主槽/责任人放第一位）。personaId/personaName 只能从「人设名录」里照抄，绝不虚构、绝不改写 id。',
-    '- update_stages（调整阶段工作流）：params.stages 给「完整的新阶段列表」（1-8 个，每个 {"id","step","label","description?"}，step 从 1 连续编号即执行顺序；需要分叉/跳步时用 "dependsOn":[前置阶段id]，禁止成环）。如需标注阶段参与人可用 "staffingPersonaIds"，且只能引用当前班底里的 personaId。',
+    '- update_stages（调整阶段工作流）：params.stages 给「完整的新阶段列表」（1-8 个，每个 {"id","step","label","description?"}，step 从 1 连续编号即执行顺序；需要分叉/跳步时用 "dependsOn":[前置阶段id]，禁止成环）。"staffingPersonaIds" 标注该阶段谁上（只能引用当前班底 personaId，第一个为主责、引擎按此换人）；"tools":[{"kind":"skill|tool|mcp","id":"..."}] 标注该阶段优先用什么（≤5 个）；"gate":"self-check|acceptance" 给关键阶段设质量门（缺省无门——门是可选项，只在错了会白干后面的阶段上用，用户明说要门才加）。',
     '- polish_description（润色描述）：params.description 给新的用户语言描述。',
     '- rename_blueprint（改名）：params.label 给一个更直观的新名字（4-12 个中文字为佳，职责显而易见，不带人设名前缀）——进化蓝图的自动拼名（人设名·标题片段）常不直观，用户说名字不好就提这个。',
     '- lock（锁定，冻结自动进化）/ retire（淘汰，退出匹配）：治理动作，战绩证据足够时才提。',
