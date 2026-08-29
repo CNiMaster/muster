@@ -226,6 +226,23 @@ describe('预制蓝图进化与重置', () => {
     expect(listBlueprintVersions(db, novel.id).some((v) => v.summary.includes('重置为原版'))).toBe(true);
   });
 
+  it('稳态快路（2026-08-29 复审）：定义版本标记就位后不再回填；行被删则重新播种', () => {
+    seed();
+    ensureBlueprintPresets(db); // 播种 + 写入定义版本标记
+    const novel = listBlueprints(db).find((bp) => bp.taskType === NOVEL_TASK_TYPE)!;
+    // 手工清空 stages（模拟异常篡改）：稳态快路不做回填自愈——高频端点不重扫快照是定案取舍
+    db.prepare("UPDATE blueprint SET stages_json='[]' WHERE id=?").run(novel.id);
+    ensureBlueprintPresets(db);
+    expect(getBlueprint(db, novel.id).stages).toEqual([]);
+    // 行整行缺失：按定义重播种（带默认 stages 与新描述）
+    db.prepare('DELETE FROM blueprint WHERE id=?').run(novel.id);
+    ensureBlueprintPresets(db);
+    const reseeded = listBlueprints(db).find((bp) => bp.taskType === NOVEL_TASK_TYPE)!;
+    expect(reseeded.id).not.toBe(novel.id);
+    expect(reseeded.stages.length).toBe(4);
+    expect(reseeded.source).toBe('preset');
+  });
+
   it('evolved 蓝图拒绝重置（无原版概念，走版本回滚）', () => {
     const { workbenchId, projectId } = seed();
     ensureBlueprintPresets(db);

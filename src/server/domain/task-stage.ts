@@ -269,12 +269,18 @@ function advanceStageRunInner(
     ).run(nextAssignee, now, now, next.id);
 
     // 任务专用迁移 running→queued（阶段推进，非失败非暂停）：清租约回队列，改派执行者，游标前进。
+    // 状态守卫：任务已不在 claimed/running（异常重复推进/已被收口）→ 抛错回滚整个事务（含阶段行），
+    // 外层 fail-open 捕获后回落旧收口，绝不把已收口任务复活回队列。
     const proto = JSON.parse(taskRow?.input_protocol_json ?? '{}') as Record<string, unknown>;
     proto.stageCursor = next.step;
-    db.prepare(
+    const requeued = db.prepare(
       `UPDATE task SET state='queued', assignee_agent_id=?, assignee_thread_id=NULL,
-         lease_owner_thread_id=NULL, lease_expires_at=NULL, input_protocol_json=?, updated_at=? WHERE id=?`,
+         lease_owner_thread_id=NULL, lease_expires_at=NULL, input_protocol_json=?, updated_at=?
+       WHERE id=? AND state IN ('claimed','running')`,
     ).run(nextAssignee, JSON.stringify(proto), now, taskId);
+    if (requeued.changes === 0) {
+      throw new Error(`task ${taskId} 不在 claimed/running 状态，拒绝阶段推进（防已收口任务复活）`);
+    }
 
     appendTaskEvent(db, taskId, 'stage_advanced', {
       from: { step: current.step, label: current.label },

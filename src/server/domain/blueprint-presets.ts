@@ -22,6 +22,16 @@ import type { DB } from '../db/client';
 import { shortId, nowIso } from '../../shared/utils';
 import { commitBlueprintVersion, type BlueprintPresetSnapshot, type BlueprintStaffingSlot } from './blueprint';
 import { type BlueprintStage } from '../../shared/blueprint-stages';
+import { getSetting, setSetting } from './setting';
+
+/**
+ * 预制定义版本标记：本套定义（含默认 stages+精简描述）完成播种/回填后写入 settings，
+ * 之后 ensure 走稳态快路（存在性查重一次全表 task_type 扫描，不再逐行拉快照 JSON 做回填比对）——
+ * ensureBlueprintPresets 挂在 /api/agents 等高频端点上，稳态必须 O( defs ) 而非 O( defs × snapshot )。
+ * 升级定义时 bump 此版本号即可重新触发一次全量回填。
+ */
+const PRESET_DEF_VERSION = '2026-08-29.1';
+const PRESET_DEF_VERSION_KEY = 'blueprint_preset_def_version';
 
 export interface BlueprintPresetDef {
   /** 任务类型词元（| 拼接），高信号词 2-4 个。 */
@@ -478,14 +488,17 @@ interface PresetRow {
  * 不存在才插入（source='preset' + 原版快照），并留版本记录。
  * 已存在的预制行走增量回填（2026-08-29 批次①）：补空 stages、刷新未改动过的描述——
  * 用户改过的字段（描述≠旧快照、stages 非空）一律不碰，快照同步升级保证重置语义。
+ * 回填只在定义版本标记缺失/过期时执行一次（高频端点稳态快路，见 PRESET_DEF_VERSION）。
  */
 export function ensureBlueprintPresets(db: DB): void {
   const now = nowIso();
+  const steady = getSetting(db, PRESET_DEF_VERSION_KEY, '') === PRESET_DEF_VERSION;
+  const existing = new Set(
+    (db.prepare('SELECT task_type FROM blueprint').all() as Array<{ task_type: string }>).map((r) => r.task_type),
+  );
+
   for (const preset of BLUEPRINT_PRESETS) {
-    const row = db.prepare(
-      'SELECT id, source, description, stages_json, preset_snapshot_json FROM blueprint WHERE task_type=?',
-    ).get(preset.taskType) as PresetRow | undefined;
-    if (!row) {
+    if (!existing.has(preset.taskType)) {
       const id = shortId('bp_');
       const snapshot: BlueprintPresetSnapshot = {
         taskType: preset.taskType,
@@ -511,8 +524,12 @@ export function ensureBlueprintPresets(db: DB): void {
       })();
       continue;
     }
+    if (steady) continue; // 稳态快路：定义已就位，跳过回填比对
 
-    if ((row.source ?? 'evolved') !== 'preset') continue;
+    const row = db.prepare(
+      'SELECT id, source, description, stages_json, preset_snapshot_json FROM blueprint WHERE task_type=?',
+    ).get(preset.taskType) as PresetRow | undefined;
+    if (!row || (row.source ?? 'evolved') !== 'preset') continue;
     const snap = row.preset_snapshot_json
       ? JSON.parse(row.preset_snapshot_json) as BlueprintPresetSnapshot
       : null;
@@ -541,4 +558,6 @@ export function ensureBlueprintPresets(db: DB): void {
       commitBlueprintVersion(db, row.id, `预制定义升级：${changed.join('、')}（只刷新未被用户改动过的字段）`, ['preset_upgrade']);
     })();
   }
+
+  if (!steady) setSetting(db, PRESET_DEF_VERSION_KEY, PRESET_DEF_VERSION);
 }

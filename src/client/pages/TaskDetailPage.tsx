@@ -145,7 +145,7 @@ export function TaskDetailPage(): React.ReactElement {
               <div style={{ display: 'grid', gap: 8 }}>
                 {taskStages!.map((stage) => {
                   const stageAgent = agents?.find((a) => a.id === stage.assigneeAgentId);
-                  const tone = stage.status === 'passed' ? 'ok' : stage.status === 'running' ? 'info' : stage.status === 'failed' ? 'err' : 'neutral';
+                  const tone: 'ok' | 'info' | 'err' | 'neutral' = stage.status === 'passed' ? 'ok' : stage.status === 'running' ? 'info' : stage.status === 'failed' ? 'err' : 'neutral';
                   const toneLabel = stage.status === 'passed' ? '✅ 已完成' : stage.status === 'running' ? (task.state === 'queued' ? '⏭ 待领取' : '⚡ 执行中') : stage.status === 'failed' ? '❌ 失败' : '· 待开始';
                   return (
                     <div

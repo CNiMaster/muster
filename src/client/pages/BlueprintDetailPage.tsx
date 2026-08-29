@@ -146,7 +146,7 @@ export function BlueprintDetailPage(): React.ReactElement {
       </Card>
 
       {/* 班底配置（官方基准 vs 自有人才顶替） */}
-      <Card title={`专家班底配置（共 ${Math.max(bp.staffingWithActiveTalents.length, 1)} 槽位）`} actions={<small className="muted">自有人才开启「自动上岗」时将优先顶替执行</small>}>
+      <Card title={`专家班底配置（共 ${bp.staffingWithActiveTalents.length} 槽位）`} actions={<small className="muted">自有人才开启「自动上岗」时将优先顶替执行</small>}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
           {bp.staffingWithActiveTalents.map((slot, index) => {
             const hasUserOverride = !!slot.activeUserTalent;

@@ -144,16 +144,16 @@ describe('recordPreferenceAnswer（问→答→沉淀闭环）', () => {
     recordPreferenceAnswer(db, after, routeOption);
     const events = listPreferenceEvents(db, { profileId, kind: 'route-choice' });
     expect(events).toHaveLength(2); // 种子 1 + 回答 1
-    expect(events[0].route).toBe('skill-a');
-    expect(events[0].source).toBe('user');
-    expect(events[0].alternatives).toEqual([{ id: 'skill-a' }]);
-    expect(events[0].taskId).toBe(task.id);
+    // 2026-08-29 复审修复：同毫秒事件靠随机 id 决胜排序——按内容查找替代位置断言（防全量跑时序抖动）
+    const answered = events.find((e) => e.taskId === task.id)!;
+    expect(answered.route).toBe('skill-a');
+    expect(answered.source).toBe('user');
+    expect(answered.alternatives).toEqual([{ id: 'skill-a' }]);
 
     // review m5 修复：「不用专业技能」也落哨兵事件 __none__（出口信号不丢弃）+ answeredRoute 写回
     const noSkill = options.find((o) => o.id === 'no_skill')!;
     recordPreferenceAnswer(db, after, noSkill);
-    const optOut = listPreferenceEvents(db, { profileId, kind: 'route-choice' })[0];
-    expect(optOut.route).toBe('__none__');
+    const optOut = listPreferenceEvents(db, { profileId, kind: 'route-choice' }).find((e) => e.route === '__none__')!;
     expect(optOut.source).toBe('user');
     const afterAnswer = getTask(db, task.id)!;
     expect((afterAnswer.inputProtocol.preferenceClarify as { answeredRoute: string }).answeredRoute).toBe('__none__');

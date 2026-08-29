@@ -21,7 +21,7 @@
 - **上下文注入**：systemPrompt 追加「阶段工作流」段——全链路概览、当前阶段 k/N（label/description/参与人）、**前序阶段产出摘要**（MetaGPT 式交接）、只做本阶段的指令。
 - **完成拦截**：run 以 completed 收口时，若还有未完成阶段：当前阶段标 passed（summary/artifacts 落行）→ 下一阶段标 running → 任务**不 completed**，经专用迁移 running→queued 放回队列（task_event: stage_advanced）；**阶段改派**——下一阶段 staffingPersonaIds[0] 解析（项目专家池常驻专家 > 保留现任），改写 assignee；worktree 保留（跨阶段产物/工作现场连续）。末阶段完成才走原 completeTask（验收/终链/反思/进化记账全部照旧）。
 - **失败/等待**：失败重试、waiting_input、审批暂停、H8 停止全部原样——stage 游标不动，恢复后重跑**当前阶段**（n8n 式 retry-from-failed-step）。
-- **观测**：每阶段推进在现场对话播报里程碑（「✅ 阶段 k/N 完成…→ 进入 k+1（XX 上岗）」，对齐「执行过程即对话现场」口径）+ realtime task.stage_advanced + `GET /api/projects/:pid/tasks/:taskId/stages` + 任务详情阶段进度卡。
+- **观测**：每阶段推进在现场对话播报里程碑（「✅ 阶段 k/N 完成…→ 进入 k+1（XX 上岗）」，对齐「执行过程即对话现场」口径）+ realtime task.stage_advanced + `GET /api/tasks/:taskId/stages` + 任务详情阶段进度卡。
 
 ## 1. 为什么立项（问题陈述）
 
@@ -83,7 +83,7 @@
 
 - 新表 `project_task_stage_run`：`id, project_task_id, blueprint_id, stage_id, status(pending/running/passed/failed), attempt, started_at, finished_at, artifact_ref`。
 - Task 侧加 `stage_cursor`（或从 stage_run 推导，倾向推导少一源）。
-- API：`GET /api/projects/:pid/project-tasks/:ptid/stages`（阶段进度）、阶段失败上抛复用现有失败卡端点。
+- API：`GET /api/tasks/:taskId/stages`（M1 已实施，任务级；载体级聚合视图后续按需）、阶段失败上抛复用现有失败卡端点。
 - 契约复用 `src/shared/blueprint-stages.ts`，不新造字段。
 
 ## 6. 风险与开放问题
