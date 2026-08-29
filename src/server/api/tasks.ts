@@ -627,12 +627,13 @@ taskByIdRouter.get(
     }
     const existing = getTaskCloseoutSummary(db, taskId);
     const summary = existing ?? generateTaskCloseoutSummary(db, taskId);
-    // 批次 G：首次生成顺手抽取人设方法论候选（幂等+fail-open，不阻塞响应主体）
+    // 复审 P2：先回响应再抽取——harvest 是 economy 调用（最长 30s），放 res.json 前会把
+    // 首次打开收尾简报的请求拖死。批次 G：首次生成顺手抽取人设方法论候选（幂等+fail-open）。
+    res.json(summary);
     if (!existing && task.personaId) {
       const { harvestCraftCandidatesFromCloseout } = await import('../domain/task-closeout');
       await harvestCraftCandidatesFromCloseout(db, taskId);
     }
-    res.json(summary);
   }),
 );
 

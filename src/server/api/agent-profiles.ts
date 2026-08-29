@@ -20,7 +20,7 @@ import { resetPersonalMemory } from '../domain/memory';
 import { recruitFromDraft } from '../domain/recruitment';
 import { getEmployeeRuntime } from '../domain/employee-runtime';
 import { getEmploymentHealth } from '../domain/executor-health';
-import { listPersonas, getPersona, listPersonaDomains, searchPersonas, updateUserPersona, deleteUserPersona } from '../domain/persona-library';
+import { listPersonas, getPersona, listPersonaDomains, searchPersonas, updateUserPersona, deleteUserPersona, type Persona } from '../domain/persona-library';
 
 export const agentProfilesRouter = Router();
 export const companyEmployeesRouter = Router({ mergeParams: true });
@@ -84,7 +84,7 @@ agentProfilesRouter.get('/market', asyncHandler(async (_req, res) => {
   const countMap = new Map(countRows.map((r) => [r.profile_id, r.n]));
   const userTalents = allProfiles.filter((p) => p.source === 'user').map((p) => ({ ...p, employmentCount: countMap.get(p.id) ?? 0 }));
   const crystallizedTalents = allProfiles.filter((p) => p.source === 'crystallized').map((p) => ({ ...p, employmentCount: countMap.get(p.id) ?? 0 }));
-  const systemPersonas = listPersonas();
+  const systemPersonas = listPersonas().map(toPersonaView);
   res.json({
     userTalents,
     crystallizedTalents,
@@ -93,6 +93,15 @@ agentProfilesRouter.get('/market', asyncHandler(async (_req, res) => {
 }));
 
 // ===== Persona 专家库 =====
+
+/**
+ * 批次 E 复审：对外视图剥离 filePath——服务器绝对路径不进客户端载荷
+ * （sections 目录轻量且对 UI 有用，保留）。
+ */
+function toPersonaView(p: Persona): Omit<Persona, 'filePath'> {
+  const { filePath, ...rest } = p;
+  return rest;
+}
 
 agentProfilesRouter.get('/personas/domains', asyncHandler(async (_req, res) => {
   res.json(listPersonaDomains());
@@ -103,7 +112,7 @@ agentProfilesRouter.get('/personas', asyncHandler(async (req, res) => {
   const domain = typeof req.query.domain === 'string' && req.query.domain ? req.query.domain : undefined;
   const q = typeof req.query.q === 'string' ? req.query.q : '';
   const result = q ? searchPersonas(q) : listPersonas(domain);
-  res.json(result);
+  res.json(result.map(toPersonaView));
 }));
 
 agentProfilesRouter.get('/personas/:personaId', asyncHandler(async (req, res) => {
@@ -112,7 +121,7 @@ agentProfilesRouter.get('/personas/:personaId', asyncHandler(async (req, res) =>
     res.status(404).json({ error: '专家不存在' });
     return;
   }
-  res.json(persona);
+  res.json(toPersonaView(persona));
 }));
 
 // ===== WP3 自建人设「改/删」（仅 user/ 前缀；预置库只读） =====
@@ -123,12 +132,13 @@ const userPersonaPatchSchema = z.object({
   soul: z.string().max(2000).optional(),
   principles: z.array(z.string().max(80)).max(8).optional(),
   tools: z.array(z.string().max(60)).max(10).optional(),
+  skills: z.array(z.string().max(128)).max(10).optional(),
 });
 
 agentProfilesRouter.put('/personas/:personaId', asyncHandler(async (req, res) => {
   const patch = userPersonaPatchSchema.parse(req.body);
   try {
-    res.json(updateUserPersona(param(req, 'personaId'), patch));
+    res.json(toPersonaView(updateUserPersona(param(req, 'personaId'), patch)));
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : '编辑失败' });
   }
