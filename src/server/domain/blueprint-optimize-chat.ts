@@ -47,7 +47,7 @@ interface ChatProposalDraft {
 }
 
 const VALID_ACTIONS: BlueprintOptimizationActionType[] = [
-  'lock', 'retire', 'merge', 'polish_description', 'adjust_staffing', 'update_stages',
+  'lock', 'retire', 'merge', 'polish_description', 'adjust_staffing', 'update_stages', 'rename_blueprint',
 ];
 
 function listChatRows(db: DB, blueprintId: string): OptimizeChatMessage[] {
@@ -159,6 +159,19 @@ function parseLlmProposals(raw: string, blueprintId: string, validTargets: Set<s
         });
         continue;
       }
+      if (p.actionType === 'rename_blueprint') {
+        const label = typeof p.params?.label === 'string' ? p.params.label.trim() : '';
+        if (!label || label.length > 40) continue;
+        proposals.push({
+          blueprintId,
+          actionType: 'rename_blueprint',
+          targetBlueprintId: null,
+          reason: String(p.reason ?? '').slice(0, 500),
+          expectedEffect: String(p.expectedEffect ?? '').slice(0, 500),
+          params: { label },
+        });
+        continue;
+      }
       if (p.actionType === 'update_stages') {
         const stages = blueprintStagesSchema.safeParse(p.params?.stages);
         if (!stages.success || stages.data.length === 0) continue;
@@ -204,10 +217,11 @@ export async function sendOptimizeChatMessage(
 
   const system = [
     '你是 muster 工作台的「蓝图编辑助手」。用户围绕下面这一张蓝图（打法包 = 班底 + 阶段工作流 + 工具 + 描述 + 战绩的集合体）告诉你他想怎么改；你的职责是把用户的意图落成可执行的修改提案——你懂这张蓝图哪些能改、怎么改、怎么改不坏。',
-    '提案动作六种：',
+    '提案动作七种：',
     '- adjust_staffing（调整班底）：params.staffing 给「完整的新班底」（1-4 槽，主槽/责任人放第一位）。personaId/personaName 只能从「人设名录」里照抄，绝不虚构、绝不改写 id。',
     '- update_stages（调整阶段工作流）：params.stages 给「完整的新阶段列表」（1-8 个，每个 {"id","step","label","description?"}，step 从 1 连续编号即执行顺序；需要分叉/跳步时用 "dependsOn":[前置阶段id]，禁止成环）。如需标注阶段参与人可用 "staffingPersonaIds"，且只能引用当前班底里的 personaId。',
     '- polish_description（润色描述）：params.description 给新的用户语言描述。',
+    '- rename_blueprint（改名）：params.label 给一个更直观的新名字（4-12 个中文字为佳，职责显而易见，不带人设名前缀）——进化蓝图的自动拼名（人设名·标题片段）常不直观，用户说名字不好就提这个。',
     '- lock（锁定，冻结自动进化）/ retire（淘汰，退出匹配）：治理动作，战绩证据足够时才提。',
     '- merge（并入另一张蓝图）：必须给 targetBlueprintId，且只能从「可合并目标候选」里选——两张蓝图确实覆盖同一类活才提。',
     '原则：只改这一张蓝图；用户意图不清楚时先在 reply 里追问，不要硬给提案；结构类调整（班底/阶段）永远给完整目标值而不是只给增量；没有值得做的动作就给空数组，绝不凑数；同一动作已在待处理提案里就不要重复提。',

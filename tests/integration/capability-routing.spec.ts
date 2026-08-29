@@ -209,7 +209,7 @@ describe('evolveBlueprintById（记账分叉）', () => {
       personaId: outsider.id,
       personaName: outsider.name,
       win: true,
-      tools: ['edit_file'],
+      tools: [{ id: 'edit_file', kind: 'tool' }],
     })!;
     expect(result.id).toBe(novel.id);
     expect(result.wins).toBe(1);

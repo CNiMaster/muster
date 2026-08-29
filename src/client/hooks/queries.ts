@@ -2094,6 +2094,8 @@ export interface Blueprint {
   status: 'active' | 'locked' | 'retired';
   /** 来源：evolved=自动复盘进化；preset=预制播种（带原版快照可重置）。 */
   source: 'evolved' | 'preset';
+  /** 主槽人设所属域（批次 A3：域徽标消歧用）。 */
+  mainPersonaDomain?: string | null;
   /** 仅 preset：播种时的原版定义（重置=恢复它+清战绩）。 */
   presetSnapshot: {
     taskType: string;
@@ -2326,7 +2328,7 @@ export interface BlueprintOptimizationItem {
   id: string;
   blueprintId: string;
   /** 2026-08-29 批次③：新增结构类动作 adjust_staffing（调班底）/ update_stages（调阶段工作流）。 */
-  actionType: 'lock' | 'retire' | 'merge' | 'polish_description' | 'adjust_staffing' | 'update_stages';
+  actionType: 'lock' | 'retire' | 'merge' | 'polish_description' | 'adjust_staffing' | 'update_stages' | 'rename_blueprint';
   targetBlueprintId: string | null;
   reason: string;
   expectedEffect: string;

@@ -200,7 +200,7 @@ describe('预制蓝图进化与重置', () => {
     const outsider = listPersonas().find((p) => !novel.staffing.some((s) => s.personaId === p.id))!;
     const evolved = evolveBlueprint(db, {
       companyId: workbenchId, projectId, taskTitle: '写小说正文章节',
-      personaId: outsider.id, personaName: outsider.name, win: true, tools: ['edit_file'],
+      personaId: outsider.id, personaName: outsider.name, win: true, tools: [{ id: 'edit_file', kind: 'tool' }],
     })!;
     expect(evolved.id).toBe(novel.id);
     expect(evolved.wins).toBe(1);

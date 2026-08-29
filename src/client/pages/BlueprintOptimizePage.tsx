@@ -30,6 +30,7 @@ const ACTION_META: Record<BlueprintOptimizationItem['actionType'], { label: stri
   retire: { label: '🗑 淘汰（退出匹配）', tone: 'warn' },
   merge: { label: '🔗 合并到其他蓝图', tone: 'info' },
   polish_description: { label: '✏️ 润色描述', tone: 'neutral' },
+  rename_blueprint: { label: '🏷 改名', tone: 'neutral' },
 };
 
 /** 结构类提案预览（批次③）：班底给增删标记，阶段给链路摘要+逐段明细。 */
@@ -197,6 +198,7 @@ export function BlueprintOptimizePage(): React.ReactElement {
               {pendingItems.map((item) => {
                 const meta = ACTION_META[item.actionType];
                 const desc = item.actionType === 'polish_description' ? String(item.params?.description ?? '') : '';
+                const newLabel = item.actionType === 'rename_blueprint' ? String(item.params?.label ?? '') : '';
                 return (
                   <article key={item.id} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 12, background: 'var(--bg-elev)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
@@ -205,6 +207,7 @@ export function BlueprintOptimizePage(): React.ReactElement {
                     </div>
                     <p style={{ fontSize: 12, margin: '8px 0 4px', lineHeight: 1.5 }}>{item.reason}</p>
                     <p className="muted" style={{ fontSize: 11, margin: '0 0 8px' }}>预期：{item.expectedEffect}</p>
+                    {newLabel && <p style={{ fontSize: 12, margin: '0 0 4px' }}>新名字：<strong>{newLabel}</strong></p>}
                     {desc && (
                       <details style={{ fontSize: 11, marginBottom: 8 }}>
                         <summary className="muted" style={{ cursor: 'pointer' }}>新描述预览</summary>

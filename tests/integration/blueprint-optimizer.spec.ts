@@ -109,7 +109,7 @@ describe('blueprint optimize chat & proposals', () => {
     const a = seedBlueprint('行业调研报告撰写', 'p_writer', '笔杆子', true);
     evolveBlueprint(db, { companyId, projectId, taskTitle: '行业调研报告撰写 初稿', personaId: 'p_writer', personaName: '笔杆子', win: true, reworkCount: 1 });
     const b = seedBlueprint('行业调研排版整理', 'p_researcher', '研究员', true);
-    evolveBlueprint(db, { companyId, projectId, taskTitle: '行业调研排版整理 汇编', personaId: 'p_researcher', personaName: '研究员', win: false, tools: ['web_fetch'] });
+    evolveBlueprint(db, { companyId, projectId, taskTitle: '行业调研排版整理 汇编', personaId: 'p_researcher', personaName: '研究员', win: false, tools: [{ id: 'web_fetch', kind: 'tool' }] });
 
     expect(insertPendingOptimizationItem(db, companyId, {
       blueprintId: b, actionType: 'merge', targetBlueprintId: a,
@@ -176,6 +176,28 @@ describe('结构类提案：adjust_staffing / update_stages（2026-08-29 批次�
 
     expect(JSON.stringify(getBlueprint(db, a).staffing)).toBe(before);
     expect(listBlueprintVersions(db, a).length).toBe(versionsBefore);
+  });
+
+  it('采纳 rename_blueprint：改名落库出版；空/超长 label 拒绝', () => {
+    const a = seedBlueprint('改名提案测试', 'p_writer', '笔杆子', true);
+    insertPendingOptimizationItem(db, companyId, {
+      blueprintId: a, actionType: 'rename_blueprint', targetBlueprintId: null,
+      reason: '自动拼名不直观', expectedEffect: '名字职责显而易见', params: { label: '行业调研报告' },
+    });
+    const item = listOptimizationItems(db, companyId, a).find((i) => i.actionType === 'rename_blueprint')!;
+    const result = applyOptimizationItem(db, item.id);
+    expect(result.applied).toBe(true);
+    expect(getBlueprint(db, a).label).toBe('行业调研报告');
+    expect(listBlueprintVersions(db, a)[0]!.summary).toContain('改名');
+
+    ignoreOptimizationItem(db, item.id);
+    insertPendingOptimizationItem(db, companyId, {
+      blueprintId: a, actionType: 'rename_blueprint', targetBlueprintId: null,
+      reason: '超长', expectedEffect: '应被拒', params: { label: 'x'.repeat(41) },
+    });
+    const bad = listOptimizationItems(db, companyId, a).find((i) => i.actionType === 'rename_blueprint' && i.status === 'pending')!;
+    expect(applyOptimizationItem(db, bad.id).applied).toBe(false);
+    expect(getBlueprint(db, a).label).toBe('行业调研报告');
   });
 
   it('采纳 update_stages：合法工作流落库出版（AI 提案摘要）；班底外成员引用被拒', () => {

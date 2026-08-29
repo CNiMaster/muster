@@ -99,6 +99,20 @@ describe('优化对话结构提案解析', () => {
     expect(assistant.content).toContain('载荷不完整');
   });
 
+  it('rename_blueprint：合法 label 入库；空/超长被丢', async () => {
+    mockLlmJson({
+      reply: '名字确实不直观，改名。',
+      proposals: [
+        { actionType: 'rename_blueprint', reason: '拼名难懂', expectedEffect: '直观', params: { label: '行业调研报告' } },
+        { actionType: 'rename_blueprint', reason: '空 label', expectedEffect: 'x', params: { label: '  ' } },
+        { actionType: 'rename_blueprint', reason: '超长', expectedEffect: 'x', params: { label: 'y'.repeat(41) } },
+      ],
+    });
+    const turn = await sendOptimizeChatMessage(db, companyId, blueprintId, '这名字太怪了，改个直观的');
+    expect(turn.newProposals).toHaveLength(1);
+    expect(turn.newProposals[0]!.params).toEqual({ label: '行业调研报告' });
+  });
+
   it('治理类提案不受影响：polish_description 照旧解析', async () => {
     mockLlmJson({
       reply: '好的，先润色描述。',

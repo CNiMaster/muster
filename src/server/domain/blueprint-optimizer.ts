@@ -13,13 +13,13 @@ import type { DB } from '../db/client';
 import { z } from 'zod';
 import { shortId, nowIso } from '../../shared/utils';
 import {
-  setBlueprintStatus, updateBlueprintDescription, updateBlueprintStages, commitBlueprintVersion,
+  setBlueprintStatus, updateBlueprintDescription, updateBlueprintLabel, updateBlueprintStages, commitBlueprintVersion,
   getBlueprint, MAX_STAFFING_SLOTS, type Blueprint,
 } from './blueprint';
 import { blueprintStagesSchema, type BlueprintStage } from '../../shared/blueprint-stages';
 import { getPersona } from './persona-library';
 
-export type BlueprintOptimizationActionType = 'lock' | 'retire' | 'merge' | 'polish_description' | 'adjust_staffing' | 'update_stages';
+export type BlueprintOptimizationActionType = 'lock' | 'retire' | 'merge' | 'polish_description' | 'adjust_staffing' | 'update_stages' | 'rename_blueprint';
 
 /** adjust_staffing 提案的班底载荷契约（对话解析与采纳落地共用，防「两处各验一套」漂移）。 */
 export const staffingProposalSchema = z.array(z.object({
@@ -182,6 +182,13 @@ export function applyOptimizationItem(db: DB, itemId: string): { applied: boolea
         );
         commitBlueprintVersion(db, item.blueprintId, `班底调整：新班底 ${staffing.data.length} 槽（${roster}）`, ['ai_adjust_staffing']);
         message = '班底已调整（版本化，可回滚）';
+        return true;
+      }
+      case 'rename_blueprint': {
+        const label = typeof item.params.label === 'string' ? item.params.label.trim() : '';
+        if (!label || label.length > 40) { message = '提案缺少合法的新名字（非空且 ≤40 字）'; return false; }
+        updateBlueprintLabel(db, item.blueprintId, label, ['ai_rename']);
+        message = `已改名：「${label}」（版本化，可回滚）`;
         return true;
       }
       case 'update_stages': {

@@ -25,9 +25,68 @@ import { createMemoryCandidate, searchMemory, expandMatchTokens, applySupersede,
 import { maybeSynthesizeSkillCandidates } from './skill-synthesis';
 import { ensurePersonaArchiveProfile } from './agent-profile';
 import { getPersona } from './persona-library';
-import { evolveBlueprint, evolveBlueprintById } from './blueprint';
+import { evolveBlueprint, evolveBlueprintById, updateBlueprintLabel, listBlueprintVersions, type Blueprint } from './blueprint';
 import { maybeSynthesizeExpertCandidates } from './expert-synthesis';
 import { settleTaskSafely } from './settlement';
+
+
+/**
+ * 新建蓝图机会主义定名（批次 A2）：仅在「本 drain 刚创建」（版本链仅一条且摘要为创建语）时触发。
+ * economy 30s；输出 JSON {"label"}；2-40 字才采纳；任何失败静默保持原名（fail-open）。
+ */
+export async function maybeNameNewBlueprint(db: import('../db/client').DB, bp: Blueprint): Promise<string | null> {
+  try {
+    const versions = listBlueprintVersions(db, bp.id);
+    if (versions.length !== 1 || !versions[0]!.summary.startsWith('创建蓝图')) return null;
+    const llm = await callLlm(db, {
+      system: [
+        '你是 muster 工作台的蓝图命名师。蓝图=一类工作的打法包（班底+阶段工作流+工具+战绩）。',
+        '进化蓝图的初始名字是「执行人设名·任务标题片段」自动拼的，不直观。请根据词元与代表标题起一个更好的名字：',
+        '4-12 个中文字；直观表达这类活是什么（如「行业调研报告」「小程序交付」）；不用人设名做前缀；不用书名号/引号。',
+        '只输出一个 JSON 对象（不要代码围栏）：{"label":"新名字"}',
+      ].join('\n'),
+      user: `业务词元：${bp.taskType}\n代表任务标题：${bp.label}\n当前描述：${bp.description}`,
+      tier: 'economy',
+      timeoutMs: 30_000,
+    });
+    const parsed = JSON.parse(llm.content.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')) as { label?: unknown };
+    const label = typeof parsed.label === 'string' ? parsed.label.trim() : '';
+    if (label.length < 2 || label.length > 40 || label === bp.label) return null;
+    updateBlueprintLabel(db, bp.id, label, ['reflection_naming']);
+    return label;
+  } catch (e) {
+    log.warn('blueprint naming skipped (fail-open)', { blueprintId: bp.id, err: e instanceof Error ? e.message : String(e) });
+    return null;
+  }
+}
+
+/**
+ * 任务工具使用提取（蓝图工作流化批次 A4，2026-08-29）：带 kind 上账——
+ * tool_call 的 name 按 `mcp_<server>__<tool>` 前缀判 mcp 否则 tool；
+ * 技能不落 trace，装载结果 inputProtocol.resolvedSkillIds 按任务计一次 skill。
+ * 供蓝图进化记账（evolveBlueprint*）消费；失败返回空数组不阻断反思。
+ */
+export function collectTaskToolUsage(
+  db: import('../db/client').DB,
+  task: { id: string; inputProtocol: Record<string, unknown> | null },
+): Array<{ id: string; kind: 'skill' | 'tool' | 'mcp' }> {
+  try {
+    const rows = db.prepare(
+      `SELECT DISTINCT name FROM execution_trace WHERE task_id=? AND kind='tool_call' AND name IS NOT NULL AND name != ''`,
+    ).all(task.id) as Array<{ name: string }>;
+    const used: Array<{ id: string; kind: 'skill' | 'tool' | 'mcp' }> = rows.map((r) => ({
+      id: r.name,
+      kind: r.name.startsWith('mcp_') ? 'mcp' as const : 'tool' as const,
+    }));
+    const skillIds = Array.isArray((task.inputProtocol as Record<string, unknown> | null)?.resolvedSkillIds)
+      ? ((task.inputProtocol as Record<string, unknown>).resolvedSkillIds as string[])
+      : [];
+    for (const id of skillIds) used.push({ id, kind: 'skill' });
+    return used;
+  } catch {
+    return [];
+  }
+}
 
 /** 反思信号来源（兼作根因分类标签，喂给 prompt 与归因分析）。 */
 export type ReflectionSignal =
@@ -239,14 +298,7 @@ async function drainReflectionQueueInner(
           return Math.max(0, total - 1);
         } catch { return 0; }
       })();
-      const tools = (() => {
-        try {
-          const rows = db.prepare(
-            `SELECT DISTINCT name FROM execution_trace WHERE task_id=? AND kind='tool_call' AND name IS NOT NULL AND name != ''`,
-          ).all(task.id) as Array<{ name: string }>;
-          return rows.map((r) => r.name);
-        } catch { return []; }
-      })();
+      const tools = collectTaskToolUsage(db, task);
       const isUserOverride = task.inputProtocol.staffingMode === 'user_override';
       const userTalentName = (task.inputProtocol.userTalentOverride as any)?.displayName;
 
@@ -269,7 +321,7 @@ async function drainReflectionQueueInner(
           userTalentName,
         });
       } else {
-        evolveBlueprint(db, {
+        const created = evolveBlueprint(db, {
           projectId: task.projectId,
           taskTitle: task.title,
           personaId: task.personaId,
@@ -281,6 +333,9 @@ async function drainReflectionQueueInner(
           isUserOverride,
           userTalentName,
         });
+        // 批次 A2：新簇首建 → 机会主义 AI 定名（进化蓝图自动拼名「人设名·标题片段」不直观）。
+        // fail-open：LLM 不可用/解析失败保持拼名不改，绝不阻断反思主流程。
+        if (created) await maybeNameNewBlueprint(db, created);
       }
     } catch (err) {
       log.warn('blueprint evolution failed', {

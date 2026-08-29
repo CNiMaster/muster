@@ -12,6 +12,7 @@ import {
   useRollbackBlueprint,
   useResetBlueprint,
   useUpdateBlueprintDescription,
+  usePersonas,
 } from '../hooks/queries';
 import { coerceBlueprintStages } from '../../shared/blueprint-stages';
 import { Badge } from '../components/Badge';
@@ -36,6 +37,8 @@ export function BlueprintDetailPage(): React.ReactElement {
   const rollbackMutation = useRollbackBlueprint();
   const resetMutation = useResetBlueprint();
   const updateDescMutation = useUpdateBlueprintDescription();
+  // 批次 A3：人设域徽标（班底卡消歧——重名专家靠域区分）
+  const { data: personas } = usePersonas();
 
   const [editingDesc, setEditingDesc] = useState(false);
   const [descDraft, setDescDraft] = useState('');
@@ -163,7 +166,14 @@ export function BlueprintDetailPage(): React.ReactElement {
                     <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-muted)' }}>
                       槽位 {index + 1} {index === 0 ? '（主责任人）' : '（协作班底）'}
                     </span>
-                    <h4 style={{ margin: '4px 0 2px', fontSize: 15 }}>{slot.personaName}</h4>
+                    <h4 style={{ margin: '4px 0 2px', fontSize: 15 }}>
+                      {slot.personaName}
+                      {personas?.find((p) => p.id === slot.personaId)?.domain && (
+                        <Badge tone="neutral" style={{ fontSize: 10, marginLeft: 6 }}>
+                          📍 {personas!.find((p) => p.id === slot.personaId)!.domain}
+                        </Badge>
+                      )}
+                    </h4>
                     <span className="muted" style={{ fontSize: 12 }}>{slot.personaId}</span>
                   </div>
                   <Badge tone={hasUserOverride ? 'ok' : 'neutral'}>

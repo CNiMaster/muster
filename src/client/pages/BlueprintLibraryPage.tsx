@@ -146,6 +146,9 @@ export function BlueprintLibraryPage(): React.ReactElement {
                         {bp.label} ↗
                       </Link>
                       <Badge tone={meta.tone}>{meta.label}</Badge>
+                      {bp.mainPersonaDomain && (
+                        <Badge tone="neutral" title="主槽人设所属领域（重名专家靠域区分）">📍 {bp.mainPersonaDomain}</Badge>
+                      )}
                       {bp.source === 'preset' && (
                         <Badge tone="info" title="开箱即用的官方打法：原版存快照，进化发生在使用中，可随时重置">
                           📦 预制{hasDiverged(bp) ? ' · 已调教' : ''}

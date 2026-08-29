@@ -33,7 +33,7 @@ describe('blueprint v2', () => {
   it('新建蓝图：描述模板 + 多维战绩 + 工具记账 + 一版提交', () => {
     const bp = evolveBlueprint(db, {
       companyId, projectId, taskTitle: '制作产品发布会 PPT', personaId: 'p_writer', personaName: '笔杆子',
-      win: true, reworkCount: 1, correctionCount: 2, tools: ['web_fetch', 'slides'],
+      win: true, reworkCount: 1, correctionCount: 2, tools: [{ id: 'web_fetch', kind: 'tool' }, { id: 'slides', kind: 'tool' }],
     });
     expect(bp.description).toContain('制作产品发布会 PPT');
     expect(bp.reworkTotal).toBe(1);
@@ -55,7 +55,7 @@ describe('blueprint v2', () => {
     expect(listBlueprintVersions(db, bp2.id)).toHaveLength(2);
     expect(listBlueprintVersions(db, bp2.id)[0]!.summary).toContain('班底扩充');
     // 新工具:出版
-    const bp3 = evolveBlueprint(db, { companyId, projectId, taskTitle: '制作产品发布会 PPT', personaId: 'p_writer', personaName: '笔杆子', win: true, tools: ['image_gen'] });
+    const bp3 = evolveBlueprint(db, { companyId, projectId, taskTitle: '制作产品发布会 PPT', personaId: 'p_writer', personaName: '笔杆子', win: true, tools: [{ id: 'image_gen', kind: 'tool' }] });
     expect(listBlueprintVersions(db, bp3.id)).toHaveLength(3);
     expect(listBlueprintVersions(db, bp3.id)[0]!.summary).toContain('工具集扩充');
   });

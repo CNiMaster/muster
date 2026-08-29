@@ -73,7 +73,7 @@ export const BLUEPRINT_PRESETS: BlueprintPresetDef[] = [
     description: '用于「开发一个功能」「修复 bug」这类工程活：架构师主导设计与实现，前端跟进界面，审查员守住合并质量。',
     staffing: [
       { personaId: 'engineering/engineering-software-architect', personaName: '软件架构师', role: '设计与实现' },
-      { personaId: 'engineering/engineering-frontend-developer', personaName: '前端开发者', role: '界面实现' },
+      { personaId: 'frontend/engineering-frontend-developer', personaName: '前端开发者', role: '界面实现' },
       { personaId: 'engineering/engineering-code-reviewer', personaName: '代码审查员', role: '质量把关' },
     ],
     stages: flow([
@@ -219,7 +219,7 @@ export const BLUEPRINT_PRESETS: BlueprintPresetDef[] = [
     label: '数据分析及可视化',
     description: '用于「分析这份数据」「做可视化看板」这类数据活：数据工程师清洗加工，分析报告师出结论，设计师呈现到位。',
     staffing: [
-      { personaId: 'engineering/engineering-data-engineer', personaName: '数据工程师', role: '清洗与加工' },
+      { personaId: 'backend/engineering-data-engineer', personaName: '数据工程师', role: '清洗与加工' },
       { personaId: 'specialized/support-analytics-reporter', personaName: '分析报告师', role: '结论提炼' },
       { personaId: 'visual/visual-graphic-designer', personaName: '平面设计师', role: '图表呈现' },
     ],
@@ -286,7 +286,7 @@ export const BLUEPRINT_PRESETS: BlueprintPresetDef[] = [
     description: '用于「做一个网站」「开发落地页」这类网站活：前端主导页面实现，后端撑接口与数据，审查员守住质量。',
     staffing: [
       { personaId: 'frontend/engineering-frontend-developer', personaName: '前端开发者', role: '页面实现' },
-      { personaId: 'engineering/engineering-backend-architect', personaName: '后端架构师', role: '接口与数据' },
+      { personaId: 'backend/engineering-backend-architect', personaName: '后端架构师', role: '接口与数据' },
       { personaId: 'engineering/engineering-code-reviewer', personaName: '代码审查员', role: '质量把关' },
     ],
     stages: flow([
@@ -334,7 +334,7 @@ export const BLUEPRINT_PRESETS: BlueprintPresetDef[] = [
     description: '用于「搭流水线」「配自动部署」这类工程效能活：DevOps 自动化师搭建，SRE 管稳定性告警，审查员守变更。',
     staffing: [
       { personaId: 'devops/engineering-devops-automator', personaName: 'DevOps 自动化师', role: '流水线搭建' },
-      { personaId: 'engineering/engineering-sre', personaName: 'SRE', role: '稳定性告警' },
+      { personaId: 'devops/engineering-sre', personaName: 'SRE', role: '稳定性告警' },
       { personaId: 'engineering/engineering-code-reviewer', personaName: '代码审查员', role: '变更把关' },
     ],
     stages: flow([

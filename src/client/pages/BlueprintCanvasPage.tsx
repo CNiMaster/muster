@@ -34,6 +34,7 @@ import {
   useCanvasLayout,
   useSaveCanvasLayout,
   useUpdateBlueprintStages,
+  usePersonas,
 } from '../hooks/queries';
 import { Button, toast } from '../components/Button';
 import { Badge } from '../components/Badge';
@@ -90,7 +91,10 @@ function StaffingNodeComponent({ data }: { data: any }): React.ReactElement {
           {isUser ? '🟢 自有人才顶替' : '🏛️ 官方基准'}
         </Badge>
       </div>
-      <strong style={{ fontSize: 14 }}>{data.personaName}</strong>
+      <strong style={{ fontSize: 14 }}>
+        {data.personaName}
+        {data.domain && <span style={{ fontSize: 10, fontWeight: 400, color: 'var(--fg-muted)', marginLeft: 6 }}>📍 {data.domain}</span>}
+      </strong>
       {isUser && data.activeUserTalent && (
         <div style={{ marginTop: 4, fontSize: 11, color: 'var(--ok, #10b981)', fontWeight: 600 }}>
           👤 {data.activeUserTalent.displayName}
@@ -205,6 +209,8 @@ export function BlueprintCanvasPage(): React.ReactElement {
   const { data: bp, isLoading: isBpLoading } = useBlueprintDetail(blueprintId);
   const canvasKey = blueprintId ? `blueprint:${blueprintId}` : undefined;
   const { data: savedLayout, isLoading: isLayoutLoading } = useCanvasLayout(canvasKey);
+  // 批次 A3：班底节点域徽标（重名专家消歧）
+  const { data: personas } = usePersonas();
   const saveLayoutMutation = useSaveCanvasLayout();
   const updateStagesMutation = useUpdateBlueprintStages();
 
@@ -255,6 +261,7 @@ export function BlueprintCanvasPage(): React.ReactElement {
           slotLabel: idx === 0 ? '🎯 主责任人 (槽位 1)' : `🤝 协作成员 (槽位 ${idx + 1})`,
           personaName: slot.personaName,
           personaId: slot.personaId,
+          domain: personas?.find((p) => p.id === slot.personaId)?.domain ?? null,
           activeUserTalent: slot.activeUserTalent,
         },
       });

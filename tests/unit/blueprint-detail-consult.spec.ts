@@ -43,7 +43,7 @@ describe('Blueprint Detail, Debug Adopt & Positive Evolution', () => {
       win: true,
       reworkCount: 0,
       correctionCount: 0,
-      tools: ['write_to_file', 'view_file'],
+      tools: [{ id: 'write_to_file', kind: 'tool' }, { id: 'view_file', kind: 'tool' }],
     });
 
     evolveBlueprint(db, {
@@ -131,7 +131,7 @@ describe('Blueprint Detail, Debug Adopt & Positive Evolution', () => {
       personaId: 'qa/qa-engineer',
       personaName: 'QA Engineer',
       win: true,
-      tools: ['vitest_runner'],
+      tools: [{ id: 'vitest_runner', kind: 'tool' }],
     });
 
     // 1. Negative shield: User talent fails -> official blueprint must NOT be degraded
@@ -145,7 +145,7 @@ describe('Blueprint Detail, Debug Adopt & Positive Evolution', () => {
       reworkCount: 2,
       isUserOverride: true,
       userTalentName: 'Custom QA Intern',
-      tools: ['bad_broken_tool'],
+      tools: [{ id: 'bad_broken_tool', kind: 'tool' }],
     });
 
     expect(protectedBp.losses).toBe(0); // Official baseline didn't increase loss count
@@ -162,7 +162,7 @@ describe('Blueprint Detail, Debug Adopt & Positive Evolution', () => {
       reworkCount: 0,
       isUserOverride: true,
       userTalentName: 'Elite QA Expert',
-      tools: ['vitest_runner', 'coverage_checker'],
+      tools: [{ id: 'vitest_runner', kind: 'tool' }, { id: 'coverage_checker', kind: 'tool' }],
     });
 
     expect(upgradedBp.wins).toBe(2);

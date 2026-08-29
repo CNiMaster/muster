@@ -72,6 +72,8 @@ export interface Blueprint {
   status: BlueprintStatus;
   /** 来源：evolved=自动复盘进化；preset=预制播种（带原版快照可重置）。 */
   source: BlueprintSource;
+  /** 主槽人设所属域（批次 A3：列表/徽标消歧用；人设缺失为 null）。 */
+  mainPersonaDomain?: string | null;
   /** 仅 preset：播种时的原版定义（staffing/description/stages/taskType/label）。 */
   presetSnapshot: BlueprintPresetSnapshot | null;
   createdAt: string;
@@ -335,7 +337,7 @@ export function evolveBlueprintById(db: DB, input: {
   win: boolean;
   reworkCount?: number;
   correctionCount?: number;
-  tools?: string[];
+  tools?: BlueprintToolUsage[];
   isUserOverride?: boolean;
   userTalentName?: string;
 }): Blueprint | null {
@@ -395,7 +397,7 @@ export function evolveBlueprint(db: DB, input: {
   win: boolean;
   reworkCount?: number;
   correctionCount?: number;
-  tools?: string[];
+  tools?: BlueprintToolUsage[];
   isUserOverride?: boolean;
   userTalentName?: string;
 }): Blueprint | null {
@@ -501,17 +503,20 @@ export function evolveBlueprint(db: DB, input: {
   })();
 }
 
-function mergeTools(current: BlueprintTool[], used: string[], win: boolean): BlueprintTool[] {
+/** 工具使用记账载荷（批次 A4：带 kind 上账——skill/tool/mcp 分流，同 id 不同 kind 各记一条）。 */
+export type BlueprintToolUsage = { id: string; kind: BlueprintTool['kind'] };
+
+function mergeTools(current: BlueprintTool[], used: BlueprintToolUsage[], win: boolean): BlueprintTool[] {
   if (used.length === 0) return current;
   const map = new Map(current.map((t) => [`${t.kind}:${t.id}`, t]));
-  for (const id of used) {
-    const key = `tool:${id}`;
+  for (const u of used) {
+    const key = `${u.kind}:${u.id}`;
     const entry = map.get(key);
     if (entry) {
       entry.uses += 1;
       if (win) entry.wins += 1;
     } else {
-      map.set(key, { kind: 'tool', id, uses: 1, wins: win ? 1 : 0 });
+      map.set(key, { kind: u.kind, id: u.id, uses: 1, wins: win ? 1 : 0 });
     }
   }
   return [...map.values()].sort((a, b) => b.uses - a.uses).slice(0, MAX_TOOLS);
@@ -532,7 +537,7 @@ export function getBlueprintDetail(db: DB, id: string): BlueprintDetail {
   }));
 
   return {
-    ...bp,
+    ...withMainPersonaDomain(db, bp),
     staffingWithActiveTalents,
     versions,
     score: {
@@ -581,11 +586,17 @@ export function publishBlueprintDebugResult(db: DB, input: {
   })();
 }
 
+/** 主槽人设域富化（批次 A3：域徽标消歧——重名专家靠域区分）。 */
+function withMainPersonaDomain(db: DB, bp: Blueprint): Blueprint {
+  const main = bp.staffing[0];
+  return { ...bp, mainPersonaDomain: main ? getPersona(main.personaId)?.domain ?? null : null };
+}
+
 export function listBlueprints(db: DB, companyId?: string): Blueprint[] {
   const rows = db.prepare(
     'SELECT * FROM blueprint ORDER BY (wins + losses) DESC, updated_at DESC',
   ).all() as BlueprintRow[];
-  return rows.map((r) => fromRow(db, r));
+  return rows.map((r) => withMainPersonaDomain(db, fromRow(db, r)));
 }
 
 export function setBlueprintStatus(db: DB, id: string, status: BlueprintStatus): Blueprint {
@@ -639,6 +650,16 @@ export function updateBlueprintDescription(db: DB, id: string, description: stri
   if (!trimmed || trimmed === current.description) return current;
   db.prepare('UPDATE blueprint SET description=?, updated_at=? WHERE id=?').run(trimmed, nowIso(), id);
   commitBlueprintVersion(db, id, '描述更新：以更清晰的语言说明这类活与当前打法', ['description']);
+  return getBlueprint(db, id);
+}
+
+/** 批次 A2：蓝图改名（AI 定名/优化对话 rename 提案共用）——label 非空≤40，no-op 不出版。 */
+export function updateBlueprintLabel(db: DB, id: string, label: string, evidence: string[] = ['rename']): Blueprint {
+  const current = getBlueprint(db, id);
+  const trimmed = label.trim().slice(0, 40);
+  if (!trimmed || trimmed === current.label) return current;
+  db.prepare('UPDATE blueprint SET label=?, updated_at=? WHERE id=?').run(trimmed, nowIso(), id);
+  commitBlueprintVersion(db, id, `改名：从「${current.label}」到「${trimmed}」`, evidence);
   return getBlueprint(db, id);
 }
 
