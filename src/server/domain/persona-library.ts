@@ -25,6 +25,8 @@ export interface Persona {
   color: string;
   /** R1：人设声明的工具（frontmatter tools 键，逗号分隔），穿戴时作为工具推荐注入。 */
   tools: string[];
+  /** 批次 H：人设声明的技能（frontmatter skills 键，双根技能库 id）——穿戴即装载（resolveTaskSkills persona 源）。 */
+  skills: string[];
   /** 来源：builtin = 仓库预置库；user = 用户/沉淀管道写入 ~/.muster/personas/（WP3 双根扫描）。 */
   source: 'builtin' | 'user';
   /** 转换后的 AgentProfile 结构。 */
@@ -78,6 +80,7 @@ interface Frontmatter {
   emoji?: string;
   color?: string;
   tools?: string;
+  skills?: string;
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -128,7 +131,7 @@ export function parsePersonaFile(rel: string, domain: string | null, content: st
       if (idx > 0) {
         const key = line.slice(0, idx).trim();
         const value = line.slice(idx + 1).trim().replace(/^["']|["']$/g, '');
-        if (key === 'name' || key === 'description' || key === 'emoji' || key === 'color' || key === 'tools') {
+        if (key === 'name' || key === 'description' || key === 'emoji' || key === 'color' || key === 'tools' || key === 'skills') {
           fm[key] = value;
         }
       }
@@ -193,6 +196,12 @@ export function parsePersonaFile(rel: string, domain: string | null, content: st
     source: 'builtin' as const,
     // R1：tools 键解析——逗号分隔（容忍 YAML 风格 [a, b] 与裸列表），trim 后去空。
     tools: (fm.tools ?? '')
+      .replace(/^\[|\]$/g, '')
+      .split(',')
+      .map((t) => t.trim())
+      .filter((t) => t.length > 0),
+    // 批次 H：skills 键解析（同 tools 语法）——双根技能库 id，穿戴即装载。
+    skills: (fm.skills ?? '')
       .replace(/^\[|\]$/g, '')
       .split(',')
       .map((t) => t.trim())
@@ -380,6 +389,7 @@ export interface UserPersonaPatch {
   soul?: string;
   principles?: string[];
   tools?: string[];
+  skills?: string[];
 }
 
 /** 批次 E1：从人设原文提取非身份三节的既有内容（知识节如 ## 领域专业知识/## 工作流程），
@@ -424,6 +434,8 @@ export function updateUserPersona(id: string, patch: UserPersonaPatch): Persona 
     soul: (patch.soul ?? current.soul).trim().slice(0, 2000),
     principles: (patch.principles ?? current.principles).map((p) => p.trim().slice(0, 80)).filter(Boolean).slice(0, 8),
     tools: (patch.tools ?? current.tools).map((t) => t.trim()).filter(Boolean).slice(0, 10),
+    // 批次 H：编辑未显式给 skills 时保留原声明（重写不丢装备）
+    skills: (patch.skills ?? current.skills).map((t) => t.trim()).filter(Boolean).slice(0, 10),
   };
   const filePath = userPersonaFilePath(id);
   // 批次 E1：重写前读旧文件，保全身份三节之外的知识节（原样回拼在关键规则之后）。
@@ -435,6 +447,7 @@ export function updateUserPersona(id: string, patch: UserPersonaPatch): Persona 
     'emoji: 🧬',
     'color: "#7c5cff"',
     next.tools.length > 0 ? `tools: ${next.tools.join(', ')}` : null,
+    next.skills.length > 0 ? `skills: ${next.skills.join(', ')}` : null,
     '---',
     '',
   ].filter((line): line is string => line !== null).join('\n');

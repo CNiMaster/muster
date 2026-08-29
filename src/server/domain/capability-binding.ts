@@ -129,9 +129,11 @@ import type { Task } from './task';
 import { matchSkillsByContent, loadSkillCatalogMultiRoot } from './skill-retrieval';
 import { collectEffectivePluginSkills } from './plugin-install';
 import { USER_SKILLS_ROOT, readUserSkill, parseSkillFrontmatter, listDisabledSkills } from './user-skills';
+import { getPersona } from './persona-library';
 
 const SOURCE_PRIORITY: Record<ResolvedTaskSkill['source'], number> = {
   task: 5,
+  persona: 4.5,
   field: 4,
   employee: 3,
   retrieved: 2,
@@ -163,6 +165,15 @@ export function resolveTaskSkills(
 
   for (const skillId of metadata.requiredSkillIds ?? []) {
     candidates.push({ skillId, source: 'task', required: true, reason: 'Task 明确要求' });
+  }
+
+  // 批次 H（人设武器）：人设 frontmatter 声明的技能——穿戴即装载（声明不是门禁，缺文件标 missing）。
+  // 注意绕过下方 binding 的 agent/employee 门：人设穿戴与执行体身份无关（临时蜂也可穿）。
+  if (task.personaId) {
+    const wornPersona = getPersona(task.personaId);
+    for (const skillId of wornPersona?.skills ?? []) {
+      candidates.push({ skillId, source: 'persona', required: false, reason: `人设「${wornPersona?.name ?? task.personaId}」声明` });
+    }
   }
 
   let bindings: CapabilityBinding[] = [];
