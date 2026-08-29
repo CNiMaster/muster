@@ -14,6 +14,7 @@ import { sendOptimizeChatMessage, listOptimizeChat } from '../../src/server/doma
 import {
   insertPendingOptimizationItem, listOptimizationItems, applyOptimizationItem, ignoreOptimizationItem,
 } from '../../src/server/domain/blueprint-optimizer';
+import { listPersonas } from '../../src/server/domain/persona-library';
 
 let tdb: ReturnType<typeof makeTestDb>;
 let db: DB;
@@ -126,5 +127,86 @@ describe('blueprint optimize chat & proposals', () => {
     expect(target.tools.some((t) => t.id === 'web_fetch')).toBe(true);
     expect(source.status).toBe('retired');
     expect(listBlueprintVersions(db, target.id)[0]!.summary).toContain('合并');
+  });
+});
+
+describe('结构类提案：adjust_staffing / update_stages（2026-08-29 批次③）', () => {
+  it('采纳 adjust_staffing：真实人设的新班底落库+出版；主槽在前', () => {
+    const a = seedBlueprint('结构提案班底测试', 'p_writer', '笔杆子', true);
+    const [p1, p2] = listPersonas();
+    expect(insertPendingOptimizationItem(db, companyId, {
+      blueprintId: a, actionType: 'adjust_staffing', targetBlueprintId: null,
+      reason: '用户要求换人', expectedEffect: '班底更贴合', params: {
+        staffing: [
+          { personaId: p1.id, personaName: p1.name, role: '主责' },
+          { personaId: p2.id, personaName: p2.name },
+        ],
+      },
+    })).toBe(true);
+    const item = listOptimizationItems(db, companyId, a).find((i) => i.actionType === 'adjust_staffing')!;
+    const result = applyOptimizationItem(db, item.id);
+    expect(result.applied).toBe(true);
+    expect(getBlueprint(db, a).staffing.map((s) => s.personaId)).toEqual([p1.id, p2.id]);
+    expect(getBlueprint(db, a).staffing[0]).toMatchObject({ role: '主责' });
+    expect(listBlueprintVersions(db, a)[0]!.summary).toContain('班底调整');
+  });
+
+  it('adjust_staffing 防改坏：幽灵人设/超上限整条拒绝，蓝图原样', () => {
+    const a = seedBlueprint('幽灵班底测试', 'p_writer', '笔杆子', true);
+    const before = JSON.stringify(getBlueprint(db, a).staffing);
+    const versionsBefore = listBlueprintVersions(db, a).length;
+
+    insertPendingOptimizationItem(db, companyId, {
+      blueprintId: a, actionType: 'adjust_staffing', targetBlueprintId: null,
+      reason: '虚构成员', expectedEffect: '应被拒', params: { staffing: [{ personaId: 'ghost/不存在', personaName: '幽灵' }] },
+    });
+    const ghost = listOptimizationItems(db, companyId, a).find((i) => i.actionType === 'adjust_staffing' && i.status === 'pending')!;
+    const ghostResult = applyOptimizationItem(db, ghost.id);
+    expect(ghostResult.applied).toBe(false);
+    expect(ghostResult.message).toContain('不存在');
+    // 拒绝的提案保持 pending（沿用既有语义，用户可手动忽略）——忽略后再验超上限的 schema 门
+    ignoreOptimizationItem(db, ghost.id);
+    insertPendingOptimizationItem(db, companyId, {
+      blueprintId: a, actionType: 'adjust_staffing', targetBlueprintId: null,
+      reason: '超上限', expectedEffect: '应被拒', params: { staffing: Array.from({ length: 5 }, (_, i) => ({ personaId: `x${i}`, personaName: `x${i}` })) },
+    });
+    const oversized = listOptimizationItems(db, companyId, a).find((i) => i.actionType === 'adjust_staffing' && i.status === 'pending')!;
+    const oversizedResult = applyOptimizationItem(db, oversized.id);
+    expect(oversizedResult.applied).toBe(false);
+
+    expect(JSON.stringify(getBlueprint(db, a).staffing)).toBe(before);
+    expect(listBlueprintVersions(db, a).length).toBe(versionsBefore);
+  });
+
+  it('采纳 update_stages：合法工作流落库出版（AI 提案摘要）；班底外成员引用被拒', () => {
+    const a = seedBlueprint('阶段提案测试', 'p_writer', '笔杆子', true);
+    insertPendingOptimizationItem(db, companyId, {
+      blueprintId: a, actionType: 'update_stages', targetBlueprintId: null,
+      reason: '用户要求拆三步', expectedEffect: '流程清晰', params: {
+        stages: [
+          { id: 's1', step: 1, label: '梳理需求', description: '对齐目标' },
+          { id: 's2', step: 2, label: '成稿', staffingPersonaIds: ['p_writer'] },
+          { id: 's3', step: 3, label: '终审' },
+        ],
+      },
+    });
+    const item = listOptimizationItems(db, companyId, a).find((i) => i.actionType === 'update_stages')!;
+    const result = applyOptimizationItem(db, item.id);
+    expect(result.applied).toBe(true);
+    const bp = getBlueprint(db, a);
+    expect(bp.stages).toHaveLength(3);
+    expect(listBlueprintVersions(db, a)[0]!.summary).toContain('AI 提案');
+
+    insertPendingOptimizationItem(db, companyId, {
+      blueprintId: a, actionType: 'update_stages', targetBlueprintId: null,
+      reason: '挂幽灵成员', expectedEffect: '应被拒', params: {
+        stages: [{ id: 's1', step: 1, label: '写作', staffingPersonaIds: ['p_nobody'] }],
+      },
+    });
+    const bad = listOptimizationItems(db, companyId, a).find((i) => i.actionType === 'update_stages' && i.status === 'pending')!;
+    const badResult = applyOptimizationItem(db, bad.id);
+    expect(badResult.applied).toBe(false);
+    expect(badResult.message).toContain('班底外');
+    expect(getBlueprint(db, a).stages).toHaveLength(3); // 原样
   });
 });

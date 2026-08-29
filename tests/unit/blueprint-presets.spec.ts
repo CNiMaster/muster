@@ -22,6 +22,7 @@ import { createTask } from '../../src/server/domain/task';
 import { createProjectTask, carrierBoundBlueprintId } from '../../src/server/domain/project-task';
 import { projectLaunchBriefSchema } from '../../src/shared/project-launch';
 import { TASK_CATEGORIES } from '../../src/shared/task-categories';
+import { blueprintStagesSchema } from '../../src/shared/blueprint-stages';
 
 let db: DB;
 beforeEach(() => {
@@ -111,6 +112,80 @@ describe('预制蓝图匹配', () => {
     // 聚焦度（命中词元占蓝图词元集比例）更高的营销推广胜出，不靠插入顺序碰运气。
     const match = matchBlueprint(db, workbenchId, '开发一个新的营销渠道');
     expect(match?.blueprint.label).toBe('营销推广');
+  });
+});
+
+describe('默认阶段工作流（2026-08-29 批次①）', () => {
+  it('26 套定义全部带合法阶段：非空、schema 通过、label 在套内唯一', () => {
+    for (const preset of BLUEPRINT_PRESETS) {
+      expect(preset.stages.length, `${preset.label} 应带默认工作流`).toBeGreaterThanOrEqual(3);
+      const parsed = blueprintStagesSchema.safeParse(preset.stages);
+      expect(parsed.success, `${preset.label} 的 stages 应过契约`).toBe(true);
+      const labels = new Set(preset.stages.map((s) => s.label));
+      expect(labels.size, `${preset.label} 阶段名不应重复`).toBe(preset.stages.length);
+    }
+  });
+
+  it('播种带 stages 且快照同步；二次 ensure 幂等不重复升级', () => {
+    seed();
+    ensureBlueprintPresets(db);
+    const novel = listBlueprints(db).find((bp) => bp.taskType === NOVEL_TASK_TYPE)!;
+    expect(novel.stages.length).toBe(4);
+    expect(novel.presetSnapshot!.stages).toEqual(novel.stages);
+    const versionsAfterFirst = listBlueprintVersions(db, novel.id).length;
+    ensureBlueprintPresets(db);
+    // 已就位的行不再触发「预制定义升级」版本
+    expect(listBlueprintVersions(db, novel.id).length).toBe(versionsAfterFirst);
+    expect(getBlueprint(db, novel.id).stages).toEqual(novel.stages);
+  });
+
+  it('存量行回填：空 stages 补齐、未改动的描述刷新、用户改过的描述不动；快照同步升级', () => {
+    seed();
+    // 模拟 2026-08-28 版播种的存量行：无 stages、旧长描述存于行与快照
+    const legacySnapshot = JSON.stringify({
+      taskType: NOVEL_TASK_TYPE, label: '长篇小说创作', description: '旧版超长描述——用于「写一章小说」这类创作活，包含一整段班底与题材扩展说明。',
+      staffing: [], stages: [],
+    });
+    db.prepare(
+      `INSERT INTO blueprint (id, task_type, label, description, staffing_json, tools_json, source_project_ids_json,
+        wins, losses, rework_total, correction_total, status, created_at, updated_at, source, preset_snapshot_json)
+       VALUES ('bp_legacy_novel', ?, '长篇小说创作', ?, '[]', '[]', '[]', 2, 1, 0, 0, 'active', ?, ?, 'preset', ?)`,
+    ).run(NOVEL_TASK_TYPE, '旧版超长描述——用于「写一章小说」这类创作活，包含一整段班底与题材扩展说明。', '2026-08-28T00:00:00Z', '2026-08-28T00:00:00Z', legacySnapshot);
+
+    // 另一行：用户已手改描述（行≠快照）——描述必须保持用户版本
+    const userEditedSnapshot = JSON.stringify({
+      taskType: '软件|开发|代码|修复', label: '软件交付', description: '旧软件交付描述', staffing: [], stages: [],
+    });
+    db.prepare(
+      `INSERT INTO blueprint (id, task_type, label, description, staffing_json, tools_json, source_project_ids_json,
+        wins, losses, rework_total, correction_total, status, created_at, updated_at, source, preset_snapshot_json)
+       VALUES ('bp_legacy_sw', ?, '软件交付', '我的定制描述', '[]', '[]', '[]', 0, 0, 0, 0, 'active', ?, ?, 'preset', ?)`,
+    ).run('软件|开发|代码|修复', '2026-08-28T00:00:00Z', '2026-08-28T00:00:00Z', userEditedSnapshot);
+
+    // evolved 蓝图恰好撞 taskType（人为构造）：不走预制定义升级
+    db.prepare(
+      `INSERT INTO blueprint (id, task_type, label, description, staffing_json, tools_json, source_project_ids_json,
+        wins, losses, rework_total, correction_total, status, created_at, updated_at, source)
+       VALUES ('bp_evolved_video', ?, '视频剪辑私藏', 'd', '[]', '[]', '[]', 0, 0, 0, 0, 'active', ?, ?, 'evolved')`,
+    ).run('视频|剪辑|短片', '2026-08-28T00:00:00Z', '2026-08-28T00:00:00Z');
+
+    ensureBlueprintPresets(db);
+
+    const legacy = getBlueprint(db, 'bp_legacy_novel');
+    expect(legacy.stages.length).toBe(4);
+    expect(legacy.description).not.toContain('旧版超长描述');
+    expect(legacy.presetSnapshot!.stages).toEqual(legacy.stages);
+    expect(legacy.presetSnapshot!.description).toBe(legacy.description);
+    expect(listBlueprintVersions(db, 'bp_legacy_novel').some((v) => v.summary.includes('预制定义升级'))).toBe(true);
+
+    const userEdited = getBlueprint(db, 'bp_legacy_sw');
+    expect(userEdited.description).toBe('我的定制描述');
+    expect(userEdited.stages.length).toBe(4); // stages 仍补（此前无写入口径，空=未定制）
+    expect(userEdited.presetSnapshot!.description).toBe('旧软件交付描述'); // 快照描述不动（保留用户已偏离的原版锚点）
+
+    const evolved = getBlueprint(db, 'bp_evolved_video');
+    expect(evolved.stages).toEqual([]);
+    expect(listBlueprintVersions(db, 'bp_evolved_video')).toHaveLength(0);
   });
 });
 

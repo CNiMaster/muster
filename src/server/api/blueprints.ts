@@ -8,6 +8,7 @@
  * - GET    /api/blueprints/:blueprintId/versions    版本时间线
  * - POST   /api/blueprints/:blueprintId/rollback    回滚
  * - PATCH  /api/blueprints/:blueprintId/description 用户语言描述刷新
+ * - PUT    /api/blueprints/:blueprintId/stages      阶段工作流写回（画布编辑，版本化可回滚）
  * - GET    /api/blueprints/:blueprintId/detail      全貌（多维评分/班底/战绩）
  * - POST   /api/blueprints/:blueprintId/debug-adopt 采纳 AI 顾问体检结果
  *
@@ -24,12 +25,14 @@ import {
   listBlueprintVersions,
   rollbackBlueprint,
   updateBlueprintDescription,
+  updateBlueprintStages,
   getBlueprint,
   getBlueprintDetail,
   publishBlueprintDebugResult,
   addBlueprintStaffingSlot,
 } from '../domain/blueprint';
 import { AppError, ErrorCode } from '../../shared/errors';
+import { blueprintStagesSchema, type BlueprintStage } from '../../shared/blueprint-stages';
 import { routeBlueprintByAI } from '../domain/capability-routing';
 
 export const blueprintsRouter = Router({ mergeParams: true });
@@ -108,6 +111,18 @@ blueprintsRouter.patch(
     assertBlueprintExists(param(req, 'blueprintId'));
     const { description } = z.object({ description: z.string().min(1).max(400) }).parse(req.body);
     res.json(updateBlueprintDescription(getDb(), param(req, 'blueprintId'), description));
+  }),
+);
+
+/** 批次②（2026-08-29 蓝图工作流化）：画布阶段编辑写回——版本化提交，可回滚。 */
+blueprintsRouter.put(
+  '/:blueprintId/stages',
+  asyncHandler(async (req, res) => {
+    assertBlueprintExists(param(req, 'blueprintId'));
+    const body = z.object({ stages: blueprintStagesSchema }).parse(req.body);
+    res.json(updateBlueprintStages(getDb(), param(req, 'blueprintId'), body.stages as BlueprintStage[], {
+      evidence: ['canvas'],
+    }));
   }),
 );
 

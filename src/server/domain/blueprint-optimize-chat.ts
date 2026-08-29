@@ -1,8 +1,11 @@
 /**
- * 蓝图独立优化对话（2026-08-17 定案：退役「整体体检/consult」，改为每蓝图一个 AI 优化会话页）。
+ * 蓝图独立优化对话（2026-08-17 定案：退役「整体体检/consult」，改为每蓝图一个 AI 优化会话页；
+ * 2026-08-29 批次③重定调：AI 编辑助手=用户意图驱动——用户说想改什么，AI 负责知道哪些能改、
+ * 怎么改、改了不坏，只动用户指定这一张蓝图；不主动推销治理提案凑数）。
  *
  * 用户围绕单蓝图与 AI 沟通 → AI 回复 + 结构化提案 → 提案落 blueprint_optimization_item（pending，
- * 幂等）→ 采纳/忽略沿用 blueprint-optimizer 的版本化落地。LLM 不可用时降级为单蓝图确定性规则建议。
+ * 幂等）→ 采纳/忽略沿用 blueprint-optimizer 的版本化落地（结构类动作落地前过校验，改坏即拒）。
+ * LLM 不可用时降级为单蓝图确定性规则建议（仅治理/文案类——结构编辑必须听用户意图，不猜）。
  */
 import type { DB } from '../db/client';
 import { shortId, nowIso } from '../../shared/utils';
@@ -13,9 +16,12 @@ import {
   insertPendingOptimizationItem,
   listOptimizationItems,
   scoreOfBlueprint,
+  staffingProposalSchema,
   type BlueprintOptimizationActionType,
   type BlueprintOptimizationItem,
 } from './blueprint-optimizer';
+import { blueprintStagesSchema, coerceBlueprintStages, describeStages } from '../../shared/blueprint-stages';
+import { listPersonas } from './persona-library';
 
 export interface OptimizeChatMessage {
   id: string;
@@ -40,7 +46,9 @@ interface ChatProposalDraft {
   params?: Record<string, unknown>;
 }
 
-const VALID_ACTIONS: BlueprintOptimizationActionType[] = ['lock', 'retire', 'merge', 'polish_description'];
+const VALID_ACTIONS: BlueprintOptimizationActionType[] = [
+  'lock', 'retire', 'merge', 'polish_description', 'adjust_staffing', 'update_stages',
+];
 
 function listChatRows(db: DB, blueprintId: string): OptimizeChatMessage[] {
   const rows = db.prepare(
@@ -63,16 +71,24 @@ function insertChatMessage(db: DB, blueprintId: string, role: 'user' | 'assistan
 function blueprintDigest(db: DB, companyId: string, blueprintId: string): string {
   const detail = getBlueprintDetail(db, blueprintId);
   const staffing = detail.staffingWithActiveTalents
-    .map((s) => `${s.personaName}${s.activeUserTalent ? `（自有人才「${s.activeUserTalent.displayName}」在岗顶替）` : ''}`)
+    .map((s) => `${s.personaName}<${s.personaId}>${s.role ? `（${s.role}）` : ''}${s.activeUserTalent ? `（自有人才「${s.activeUserTalent.displayName}」在岗顶替）` : ''}`)
     .join('、');
+  const stages = coerceBlueprintStages(detail.stages);
   const lines = [
     `蓝图「${detail.label}」(id=${detail.id}, 业务分类=${detail.taskType}, 状态=${detail.status})`,
     `战绩：${detail.wins} 胜 ${detail.losses} 负，返工 ${detail.reworkTotal} 次，纠正 ${detail.correctionTotal} 次，综合评分 ${detail.score.score ?? '观察中(样本<3)'}`,
     `班底：${staffing || '无'}`,
+    `阶段工作流：${stages.length > 0 ? describeStages(stages) : '未定义（用户想拆阶段时可建议 update_stages）'}`,
     `常用工具：${detail.tools.map((t) => `${t.id}(用${t.uses}次)`).join('、') || '无'}`,
     `当前描述：${detail.description || '（空）'}`,
     `版本数：${detail.versions.length}（最近：${detail.versions.slice(0, 3).map((v) => v.summary).join('；') || '无'}）`,
   ];
+  // 人设名录（adjust_staffing 的 personaId 唯一合法来源——AI 不许虚构成员）
+  const roster = listPersonas()
+    .slice(0, 120)
+    .map((p) => `${p.name}<${p.id}>`)
+    .join('、');
+  if (roster) lines.push(`人设名录（adjust_staffing 只能从这里选，主槽在前）：${roster}`);
   // 合并候选：其他现役蓝图（LLM 提 merge 时 targetBlueprintId 必须从这里选）
   const others = listBlueprints(db, companyId)
     .filter((bp) => bp.id !== blueprintId && bp.status !== 'retired')
@@ -129,6 +145,33 @@ function parseLlmProposals(raw: string, blueprintId: string, validTargets: Set<s
       if (!p || !VALID_ACTIONS.includes(p.actionType)) continue;
       if (p.actionType === 'merge' && (!p.targetBlueprintId || p.targetBlueprintId === blueprintId || !validTargets.has(p.targetBlueprintId))) continue;
       if (p.actionType === 'polish_description' && typeof p.params?.description !== 'string') continue;
+      // 结构类提案在入库前就过契约门：载荷不合法直接丢条目（不落数据库），采纳侧还有第二道语义门。
+      if (p.actionType === 'adjust_staffing') {
+        const staffing = staffingProposalSchema.safeParse(p.params?.staffing);
+        if (!staffing.success) continue;
+        proposals.push({
+          blueprintId,
+          actionType: 'adjust_staffing',
+          targetBlueprintId: null,
+          reason: String(p.reason ?? '').slice(0, 500),
+          expectedEffect: String(p.expectedEffect ?? '').slice(0, 500),
+          params: { staffing: staffing.data },
+        });
+        continue;
+      }
+      if (p.actionType === 'update_stages') {
+        const stages = blueprintStagesSchema.safeParse(p.params?.stages);
+        if (!stages.success || stages.data.length === 0) continue;
+        proposals.push({
+          blueprintId,
+          actionType: 'update_stages',
+          targetBlueprintId: null,
+          reason: String(p.reason ?? '').slice(0, 500),
+          expectedEffect: String(p.expectedEffect ?? '').slice(0, 500),
+          params: { stages: stages.data },
+        });
+        continue;
+      }
       proposals.push({
         blueprintId,
         actionType: p.actionType,
@@ -160,10 +203,15 @@ export async function sendOptimizeChatMessage(
   );
 
   const system = [
-    '你是 muster 工作台的「单蓝图优化顾问」。用户围绕下面这一张蓝图（打法包=班底+工具+描述+战绩的集合体）与你沟通，你负责诊断并给出可执行的优化提案。',
-    '提案动作只能是四种：lock（锁定，冻结自动进化）、retire（淘汰，不再参与匹配）、merge（并入另一张蓝图，必须给 targetBlueprintId 且只能从「可合并目标候选」里选）、polish_description（params.description 给出新的用户语言描述）。',
-    '没有值得做的动作就给空数组，绝不为了凑数而建议；同一动作如果已在待处理提案里就不要重复提。',
-    '只输出一个 JSON 对象（不要代码围栏）：{"reply":"给用户看的中文说明，讲清你打算怎么优化、为什么","proposals":[{"actionType":"...","targetBlueprintId":"merge 时必填","reason":"依据","expectedEffect":"预期效果","params":{"description":"polish_description 时必填"}}]}',
+    '你是 muster 工作台的「蓝图编辑助手」。用户围绕下面这一张蓝图（打法包 = 班底 + 阶段工作流 + 工具 + 描述 + 战绩的集合体）告诉你他想怎么改；你的职责是把用户的意图落成可执行的修改提案——你懂这张蓝图哪些能改、怎么改、怎么改不坏。',
+    '提案动作六种：',
+    '- adjust_staffing（调整班底）：params.staffing 给「完整的新班底」（1-4 槽，主槽/责任人放第一位）。personaId/personaName 只能从「人设名录」里照抄，绝不虚构、绝不改写 id。',
+    '- update_stages（调整阶段工作流）：params.stages 给「完整的新阶段列表」（1-8 个，每个 {"id","step","label","description?"}，step 从 1 连续编号即执行顺序；需要分叉/跳步时用 "dependsOn":[前置阶段id]，禁止成环）。如需标注阶段参与人可用 "staffingPersonaIds"，且只能引用当前班底里的 personaId。',
+    '- polish_description（润色描述）：params.description 给新的用户语言描述。',
+    '- lock（锁定，冻结自动进化）/ retire（淘汰，退出匹配）：治理动作，战绩证据足够时才提。',
+    '- merge（并入另一张蓝图）：必须给 targetBlueprintId，且只能从「可合并目标候选」里选——两张蓝图确实覆盖同一类活才提。',
+    '原则：只改这一张蓝图；用户意图不清楚时先在 reply 里追问，不要硬给提案；结构类调整（班底/阶段）永远给完整目标值而不是只给增量；没有值得做的动作就给空数组，绝不凑数；同一动作已在待处理提案里就不要重复提。',
+    '只输出一个 JSON 对象（不要代码围栏）：{"reply":"给用户看的中文说明：先确认你理解的意图，再讲打算怎么改、为什么","proposals":[{"actionType":"...","targetBlueprintId":"merge 时必填","reason":"依据","expectedEffect":"预期效果","params":{"staffing":"adjust_staffing 时必填","stages":"update_stages 时必填","description":"polish_description 时必填"}}]}',
   ].join('\n');
   const user = [
     `【蓝图现状】\n${blueprintDigest(db, companyId, blueprintId)}`,

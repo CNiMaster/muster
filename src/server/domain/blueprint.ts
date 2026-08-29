@@ -13,6 +13,12 @@
 import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
+import {
+  blueprintStagesSchema,
+  stageSemanticErrors,
+  describeStages,
+  type BlueprintStage,
+} from '../../shared/blueprint-stages';
 import { expandMatchTokens } from './memory';
 import { findUserTalentForPersona, type AgentProfile } from './agent-profile';
 import { getPersona } from './persona-library';
@@ -633,6 +639,48 @@ export function updateBlueprintDescription(db: DB, id: string, description: stri
   if (!trimmed || trimmed === current.description) return current;
   db.prepare('UPDATE blueprint SET description=?, updated_at=? WHERE id=?').run(trimmed, nowIso(), id);
   commitBlueprintVersion(db, id, '描述更新：以更清晰的语言说明这类活与当前打法', ['description']);
+  return getBlueprint(db, id);
+}
+
+/**
+ * 批次②（2026-08-29 蓝图工作流化）：阶段工作流写回——画布编辑与 AI 结构提案共用的落库口。
+ * 契约校验（shared/blueprint-stages）之外再过语义门：非空、id 唯一、dependsOn 引用存在、
+ * 无环、staffingPersonaIds 必须引用当前班底（防「阶段挂了班底外的幽灵成员」）。
+ * step 按数组顺序重排为 1..n（对画布纵向排序与 AI 提案都宽容且确定）；no-op 不出版。
+ * 锁定蓝图允许手动改——锁的是自动进化，不是用户。
+ */
+export function updateBlueprintStages(
+  db: DB,
+  id: string,
+  stages: BlueprintStage[],
+  opts?: { summary?: string; evidence?: string[] },
+): Blueprint {
+  const parsed = blueprintStagesSchema.parse(stages) as BlueprintStage[];
+  if (parsed.length === 0) {
+    throw new AppError(ErrorCode.VALIDATION, '阶段工作流不能为空——至少保留一个阶段（想恢复出厂请用「重置为原版」或版本回滚）');
+  }
+  const errors = stageSemanticErrors(parsed);
+  if (errors.length > 0) {
+    throw new AppError(ErrorCode.VALIDATION, `阶段工作流不合法：${errors.join('；')}`);
+  }
+  const sorted = [...parsed].sort((a, b) => a.step - b.step);
+  const normalized = sorted.map((s, i) => ({ ...s, step: i + 1 }));
+
+  const bp = getBlueprint(db, id);
+  const staffingIds = new Set(bp.staffing.map((s) => s.personaId));
+  for (const stage of normalized) {
+    for (const pid of stage.staffingPersonaIds ?? []) {
+      if (!staffingIds.has(pid)) {
+        throw new AppError(ErrorCode.VALIDATION, `阶段「${stage.label}」挂了班底外的成员（${pid}）——先把人加进班底，再绑定阶段`);
+      }
+    }
+  }
+
+  if (JSON.stringify(normalized) === JSON.stringify(bp.stages)) return bp;
+  db.prepare('UPDATE blueprint SET stages_json=?, updated_at=? WHERE id=?').run(
+    JSON.stringify(normalized), nowIso(), id,
+  );
+  commitBlueprintVersion(db, id, opts?.summary ?? `阶段工作流更新：${describeStages(normalized)}`, opts?.evidence ?? ['canvas']);
   return getBlueprint(db, id);
 }
 

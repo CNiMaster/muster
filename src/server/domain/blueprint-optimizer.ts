@@ -2,14 +2,31 @@
  * 蓝图优化建议的暂存与落地（进化环收拢批次4；2026-08-17 起建议产出改为每蓝图独立优化对话，
  * 见 blueprint-optimize-chat.ts——本模块只保留提案的落库/采纳/忽略基建）。
  *
- * 提案动作：lock（锁定高胜率）/ retire（淘汰长期负）/ merge（合并近重复）/ polish_description（润色描述）。
+ * 提案动作（2026-08-29 批次③扩容：用户说想改什么，AI 负责知道怎么改）：
+ * - 治理类：lock（锁定高胜率）/ retire（淘汰长期负）/ merge（合并近重复）
+ * - 文案类：polish_description（润色描述）
+ * - 结构类：adjust_staffing（调整班底）/ update_stages（调整阶段工作流）——
+ *   落地前过硬校验（人设必须真实存在、stages 契约+无环+班底引用），校验不过整条拒绝，绝不改坏。
  * 采纳落地全部走蓝图版本化提交，用户可回滚。动作域只作用于蓝图（组织 = f(活) 的正主）。
  */
 import type { DB } from '../db/client';
+import { z } from 'zod';
 import { shortId, nowIso } from '../../shared/utils';
-import { setBlueprintStatus, updateBlueprintDescription, commitBlueprintVersion, getBlueprint, type Blueprint } from './blueprint';
+import {
+  setBlueprintStatus, updateBlueprintDescription, updateBlueprintStages, commitBlueprintVersion,
+  getBlueprint, MAX_STAFFING_SLOTS, type Blueprint,
+} from './blueprint';
+import { blueprintStagesSchema, type BlueprintStage } from '../../shared/blueprint-stages';
+import { getPersona } from './persona-library';
 
-export type BlueprintOptimizationActionType = 'lock' | 'retire' | 'merge' | 'polish_description';
+export type BlueprintOptimizationActionType = 'lock' | 'retire' | 'merge' | 'polish_description' | 'adjust_staffing' | 'update_stages';
+
+/** adjust_staffing 提案的班底载荷契约（对话解析与采纳落地共用，防「两处各验一套」漂移）。 */
+export const staffingProposalSchema = z.array(z.object({
+  personaId: z.string().min(1).max(128),
+  personaName: z.string().min(1).max(80),
+  role: z.string().max(40).optional(),
+})).min(1).max(MAX_STAFFING_SLOTS);
 
 export interface BlueprintOptimizationItem {
   id: string;
@@ -145,6 +162,46 @@ export function applyOptimizationItem(db: DB, itemId: string): { applied: boolea
         updateBlueprintDescription(db, item.blueprintId, description);
         message = '描述已更新';
         return true;
+      }
+      case 'adjust_staffing': {
+        const staffing = staffingProposalSchema.safeParse(item.params.staffing);
+        if (!staffing.success) {
+          message = '提案的班底数据不合法（需要 1-4 槽的完整新班底，每槽含 personaId/personaName）';
+          return false;
+        }
+        // 防改坏第一门：AI 不得虚构成员——personaId 必须真实存在于人设库
+        for (const slot of staffing.data) {
+          if (!getPersona(slot.personaId)) {
+            message = `人设「${slot.personaId}」不存在于人设库，已拒绝落地（AI 不得虚构成员）`;
+            return false;
+          }
+        }
+        const roster = staffing.data.map((s) => `${s.personaName}${s.role ? `（${s.role}）` : ''}`).join('、');
+        db.prepare('UPDATE blueprint SET staffing_json=?, updated_at=? WHERE id=?').run(
+          JSON.stringify(staffing.data), nowIso(), item.blueprintId,
+        );
+        commitBlueprintVersion(db, item.blueprintId, `班底调整：新班底 ${staffing.data.length} 槽（${roster}）`, ['ai_adjust_staffing']);
+        message = '班底已调整（版本化，可回滚）';
+        return true;
+      }
+      case 'update_stages': {
+        const parsed = blueprintStagesSchema.safeParse(item.params.stages);
+        if (!parsed.success || parsed.data.length === 0) {
+          message = '提案的阶段工作流不合法（1-8 个阶段，每个含 id/step/label）';
+          return false;
+        }
+        // updateBlueprintStages 自带语义门（无环/引用存在/班底引用校验），不过即抛——转成拒绝落地而非 500
+        try {
+          updateBlueprintStages(db, item.blueprintId, parsed.data as BlueprintStage[], {
+            summary: 'AI 提案：阶段工作流调整',
+            evidence: ['ai_update_stages'],
+          });
+          message = '阶段工作流已调整（版本化，可回滚）';
+          return true;
+        } catch (e) {
+          message = `阶段工作流提案被拒绝：${e instanceof Error ? e.message : String(e)}`;
+          return false;
+        }
       }
     }
   })();

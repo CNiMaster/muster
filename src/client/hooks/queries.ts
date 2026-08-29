@@ -5,6 +5,7 @@ import type { Company, Agent, AgentExecutorJson, AgentProfile, CompanyEmployee, 
 import type { CompanyCockpitDTO } from '../../shared/types';
 import type { ProjectLaunchBrief, ProjectLaunchDiscovery } from '../../shared/project-launch';
 import type { RecruitmentDraft } from '../../shared/types';
+import type { BlueprintStage } from '../../shared/blueprint-stages';
 
 export interface ExecutorProfileDTO {
   id: string;
@@ -2173,6 +2174,20 @@ export function useUpdateBlueprintDescription() {
   });
 }
 
+/** 批次②：画布阶段工作流写回（版本化，可回滚）。 */
+export function useUpdateBlueprintStages() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ blueprintId, stages }: { blueprintId: string; stages: BlueprintStage[] }) =>
+      api.put<Blueprint>(`/api/blueprints/${blueprintId}/stages`, { stages }),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ['blueprint-detail', vars.blueprintId] });
+      qc.invalidateQueries({ queryKey: ['blueprints'] });
+      qc.invalidateQueries({ queryKey: ['blueprint-versions', vars.blueprintId] });
+    },
+  });
+}
+
 /** AI 语义路由预览（2026-08-28 定案：词法 match-preview 退役）——创建卡预览将穿戴的蓝图；null=无蓝图模式。 */
 export interface BlueprintRoutePreview {
   blueprintId: string | null;
@@ -2278,7 +2293,8 @@ export function useAdoptBlueprintPersona() {
 export interface BlueprintOptimizationItem {
   id: string;
   blueprintId: string;
-  actionType: 'lock' | 'retire' | 'merge' | 'polish_description';
+  /** 2026-08-29 批次③：新增结构类动作 adjust_staffing（调班底）/ update_stages（调阶段工作流）。 */
+  actionType: 'lock' | 'retire' | 'merge' | 'polish_description' | 'adjust_staffing' | 'update_stages';
   targetBlueprintId: string | null;
   reason: string;
   expectedEffect: string;

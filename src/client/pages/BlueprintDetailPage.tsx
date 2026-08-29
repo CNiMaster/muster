@@ -13,6 +13,7 @@ import {
   useResetBlueprint,
   useUpdateBlueprintDescription,
 } from '../hooks/queries';
+import { coerceBlueprintStages } from '../../shared/blueprint-stages';
 import { Badge } from '../components/Badge';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
@@ -60,6 +61,8 @@ export function BlueprintDetailPage(): React.ReactElement {
   };
 
   const totalRuns = bp.wins + bp.losses;
+  // 批次①（2026-08-29）：阶段工作流容错读取——详情主页直接回答「这套打法分几步走」。
+  const stages = coerceBlueprintStages(bp.stages);
 
   const overviewTab = (
     <div className="section-stack" style={{ display: 'grid', gap: 16 }}>
@@ -93,8 +96,57 @@ export function BlueprintDetailPage(): React.ReactElement {
         </div>
       </Card>
 
+      {/* 阶段工作流卡（批次①：主页回答「这套打法分几步走」，画布进去改） */}
+      <Card
+        title={`工作流（${stages.length > 0 ? `${stages.length} 个阶段` : '未定义'}）`}
+        actions={stages.length > 0 ? (
+          <Link to={`/blueprints/${bp.id}/canvas`}><Button size="sm" variant="ghost">🎨 连线画布编辑</Button></Link>
+        ) : (
+          <Link to={`/blueprints/${bp.id}/canvas`}><Button size="sm" variant="ghost">🎨 去画布定义工作流</Button></Link>
+        )}
+      >
+        {stages.length === 0 ? (
+          <EmptyState
+            icon={Icons.empty}
+            title="还没有阶段工作流"
+            hint="工作流=这套活分几步、每步干什么。去连线画布添加阶段，或在 AI 优化对话里直接说「帮我把这套打法拆成阶段」。"
+          />
+        ) : (
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'stretch', gap: 0 }}>
+            {stages.map((stage, idx) => (
+              <div key={stage.id} style={{ display: 'flex', alignItems: 'center' }}>
+                <div style={{
+                  border: '1px solid var(--border)',
+                  borderRadius: 10,
+                  padding: '10px 14px',
+                  background: 'var(--bg-elev)',
+                  minWidth: 170,
+                  maxWidth: 240,
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)' }}>阶段 {stage.step}</span>
+                    {(stage.staffingPersonaIds?.length ?? 0) > 0 && (
+                      <Badge tone="ok" style={{ fontSize: 10 }}>
+                        {stage.staffingPersonaIds!.length} 人参与
+                      </Badge>
+                    )}
+                  </div>
+                  <strong style={{ fontSize: 13, display: 'block' }}>{stage.label}</strong>
+                  {stage.description && (
+                    <span className="muted" style={{ fontSize: 11, display: 'block', marginTop: 2 }}>{stage.description}</span>
+                  )}
+                </div>
+                {idx < stages.length - 1 && (
+                  <span style={{ padding: '0 8px', color: 'var(--fg-muted)', fontWeight: 700 }}>→</span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
       {/* 班底配置（官方基准 vs 自有人才顶替） */}
-      <Card title="专家班底配置（共 4 槽位）" actions={<small className="muted">自有人才开启「自动上岗」时将优先顶替执行</small>}>
+      <Card title={`专家班底配置（共 ${Math.max(bp.staffingWithActiveTalents.length, 1)} 槽位）`} actions={<small className="muted">自有人才开启「自动上岗」时将优先顶替执行</small>}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
           {bp.staffingWithActiveTalents.map((slot, index) => {
             const hasUserOverride = !!slot.activeUserTalent;
@@ -220,8 +272,16 @@ export function BlueprintDetailPage(): React.ReactElement {
           </div>
           <h1 style={{ margin: '4px 0 6px' }}>{bp.label}</h1>
           <p className="subtitle" style={{ margin: 0 }}>
-            分类: <code>{bp.taskType}</code> · {bp.description || '暂无详细打法描述。'}
+            {bp.description || '暂无打法描述——可在「AI 优化对话」里让 AI 起草。'}
           </p>
+          {/* 词元是后台匹配/聚类/审计的内部口径（2026-08-29 批次①定案：读侧 AI 接管），弱化为小字 */}
+          <div
+            className="muted"
+            style={{ fontSize: 11, marginTop: 4 }}
+            title="任务标题匹配蓝图时用的内部词元（后台聚类与审计用，不影响日常使用）"
+          >
+            匹配词元 {bp.taskType}
+          </div>
         </div>
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
