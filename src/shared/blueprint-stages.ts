@@ -18,6 +18,13 @@ export const blueprintStageSchema = z.object({
   description: z.string().max(200).optional(),
   dependsOn: z.array(z.string().min(1).max(64)).max(MAX_BLUEPRINT_STAGES).optional(),
   staffingPersonaIds: z.array(z.string().min(1).max(128)).max(4).optional(),
+  /** M2 批次B：阶段门（可选，缺省 none——门是工作流定义的一部分，不是平台强制验收）。 */
+  gate: z.enum(['none', 'self-check', 'acceptance']).optional(),
+  /** M2 批次B：阶段工具亲和（≤5；MCP 运行期 id 只做提示注入不进装备决议，与蓝图工具台账同界）。 */
+  tools: z.array(z.object({
+    kind: z.enum(['skill', 'tool', 'mcp']),
+    id: z.string().min(1).max(128),
+  })).max(5).optional(),
 });
 
 export const blueprintStagesSchema = z.array(blueprintStageSchema).max(MAX_BLUEPRINT_STAGES);
@@ -29,6 +36,8 @@ export interface BlueprintStage {
   description?: string;
   dependsOn?: string[];
   staffingPersonaIds?: string[];
+  gate?: 'none' | 'self-check' | 'acceptance';
+  tools?: Array<{ kind: 'skill' | 'tool' | 'mcp'; id: string }>;
 }
 
 /** dependsOn 图有环检测（写回蓝图前的硬门：工作流必须无环）。 */

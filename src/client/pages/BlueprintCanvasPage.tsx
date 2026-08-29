@@ -39,7 +39,7 @@ import {
 import { Button, toast } from '../components/Button';
 import { Badge } from '../components/Badge';
 import { CardSkeleton } from '../components/Skeleton';
-import { Field, Input, Textarea } from '../components/Form';
+import { Field, Input, Textarea, Select } from '../components/Form';
 import { coerceBlueprintStages, type BlueprintStage } from '../../shared/blueprint-stages';
 
 // 自定义节点：阶段工作流节点
@@ -408,6 +408,8 @@ export function BlueprintCanvasPage(): React.ReactElement {
       const description = String(n.data.description ?? '').trim().slice(0, 200);
       const deps = (depends.get(n.id) ?? []).sort();
       const staffingPersonaIds = Array.isArray(n.data.staffingPersonaIds) ? n.data.staffingPersonaIds : undefined;
+      const gate = ['self-check', 'acceptance'].includes(String(n.data.gate)) ? n.data.gate as 'self-check' | 'acceptance' : undefined;
+      const tools = Array.isArray(n.data.tools) ? (n.data.tools as Array<{ kind: 'skill' | 'tool' | 'mcp'; id: string }>).slice(0, 5) : undefined;
       return {
         id: n.id,
         step: i + 1,
@@ -415,6 +417,8 @@ export function BlueprintCanvasPage(): React.ReactElement {
         ...(description ? { description } : {}),
         ...(deps.length > 0 ? { dependsOn: deps } : {}),
         ...(staffingPersonaIds && staffingPersonaIds.length > 0 ? { staffingPersonaIds } : {}),
+        ...(gate ? { gate } : {}),
+        ...(tools && tools.length > 0 ? { tools } : {}),
       };
     });
   };
@@ -563,6 +567,16 @@ export function BlueprintCanvasPage(): React.ReactElement {
                 value={String(selectedStage.data.description ?? '')}
                 onChange={(e) => updateStageData(selectedStage.id, { description: e.target.value })}
               />
+            </Field>
+            <Field label="质量门（可选）" hint="门是工作流的事不是强制验收：none=跑完即过；self-check=轻量自检；acceptance=验收员口径快评——留给错了会白干后面的关键阶段">
+              <Select
+                value={String(selectedStage.data.gate ?? 'none')}
+                onChange={(e) => updateStageData(selectedStage.id, { gate: e.target.value })}
+              >
+                <option value="none">none · 无门（默认）</option>
+                <option value="self-check">self-check · 轻量自检</option>
+                <option value="acceptance">acceptance · 验收员快评</option>
+              </Select>
             </Field>
             <Button size="sm" variant="danger" onClick={() => deleteStage(selectedStage.id)}>
               🗑 删除该阶段

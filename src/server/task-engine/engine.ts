@@ -33,7 +33,7 @@ import {
 import { getThread, listOnlineThreads, updateThreadState } from '../domain/thread';
 import { getAgent } from '../domain/agent';
 import { assembleContext } from '../executors/context';
-import { ensureStageRuns, stageContextSection, advanceStageRun } from '../domain/task-stage';
+import { ensureStageRuns, stageContextSection, advanceStageRun, checkStageGate, failStageGate } from '../domain/task-stage';
 import { materializeSwarm, countActiveSwarmsByRequester, escalateSwarmRequest, EXPERT_SWARM_LIMITS } from '../domain/swarm';
 import { finalizeDebate, startDebate } from '../domain/debate';
 import { DISPATCHER_ROLE, JUDGE_ROLE, HR_ROLE, AUTOMATION_ROLE } from '../domain/system-agents';
@@ -1339,6 +1339,37 @@ export class TaskEngine {
       // running→queued 回队列（同一 worktree 跨阶段延续，产物/工作现场不丢）。
       // 末阶段返回 finished=正常落穿收口；域内异常 fail-open 返回 null=走旧收口（兼容底线）。
       if (result.outcome === 'completed') {
+        // M2 批次B：阶段门——当前阶段声明了 gate 时先过门（fail-open=pass；连续未过达上限自动放行，域内处理）。
+        let gateFailed: Awaited<ReturnType<typeof failStageGate>> = null;
+        let gateNote = '';
+        try {
+          const gate = await checkStageGate(this.db, task.id, {
+            summary: result.summary,
+            artifacts: (result.artifacts ?? []).map((a) => ({ path: a.path, kind: a.kind, operation: a.operation })),
+          });
+          if (gate && !gate.pass) {
+            gateFailed = failStageGate(this.db, task.id, gate.note);
+            gateNote = gate.note;
+          }
+        } catch (e) {
+          log.warn('stage gate check failed; proceeding to advance', { taskId: task.id, err: e instanceof Error ? e.message : String(e) });
+        }
+        if (gateFailed) {
+          // 门未过：任务回队列不换人（同一执行者带失败原因针对性重跑），不收口、worktree 保留。
+          preserveWorktree = true;
+          updateThreadState(this.db, thread.id, 'idle');
+          this.notifyUserMessageMilestone(task, `⛔ 阶段 ${gateFailed.step}/${gateFailed.total}「${gateFailed.label}」未过质量门：${gateNote.slice(0, 160)}——重跑本阶段`, task.id);
+          realtime.publish({
+            id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            type: 'task.stage_gate_failed',
+            projectId: project.id,
+            taskId: task.id,
+            occurredAt: new Date().toISOString(),
+            payload: { threadId: thread.id, agentId: agent.id, step: gateFailed.step, note: gateNote.slice(0, 300) },
+          });
+          log.info('task stage gate failed; re-queued same stage', { taskId: task.id, step: gateFailed.step });
+          return true;
+        }
         const advanced = advanceStageRun(this.db, task.id, {
           summary: result.summary,
           artifacts: (result.artifacts ?? []).map((a) => ({ path: a.path, kind: a.kind, operation: a.operation })),

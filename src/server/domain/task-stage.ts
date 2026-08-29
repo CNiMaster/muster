@@ -18,7 +18,9 @@ import { getBlueprint } from './blueprint';
 import { getAgent } from './agent';
 import { coerceBlueprintStages, describeStages } from '../../shared/blueprint-stages';
 import { findActiveSpecialistAgent } from './specialist-pool';
-import { appendTaskEvent } from './task-event';
+import { appendTaskEvent, listTaskEvents } from './task-event';
+import { callLlm } from './llm-call';
+import { ACCEPTANCE_PROMPT } from './acceptance-officer';
 
 export type TaskStageStatus = 'pending' | 'running' | 'passed' | 'failed';
 
@@ -33,6 +35,10 @@ export interface TaskStageRun {
   description: string | null;
   dependsOn: string[] | null;
   staffingPersonaIds: string[] | null;
+  /** M2 批次B：阶段门（冻结快照；缺省 none）。 */
+  gate: 'none' | 'self-check' | 'acceptance' | null;
+  /** M2 批次B：阶段工具亲和（冻结快照）。 */
+  tools: Array<{ kind: 'skill' | 'tool' | 'mcp'; id: string }> | null;
   status: TaskStageStatus;
   attempt: number;
   assigneeAgentId: string | null;
@@ -47,7 +53,8 @@ export interface TaskStageRun {
 interface StageRow {
   id: string; task_id: string; project_id: string; blueprint_id: string; stage_id: string;
   step: number; label: string; description: string | null; depends_on_json: string | null;
-  staffing_persona_ids_json: string | null; status: string; attempt: number; assignee_agent_id: string | null;
+  staffing_persona_ids_json: string | null; gate: string | null; tools_json: string | null;
+  status: string; attempt: number; assignee_agent_id: string | null;
   summary: string | null; artifacts_json: string; started_at: string | null; finished_at: string | null;
   created_at: string; updated_at: string;
 }
@@ -64,6 +71,8 @@ function fromRow(row: StageRow): TaskStageRun {
     description: row.description,
     dependsOn: row.depends_on_json ? JSON.parse(row.depends_on_json) as string[] : null,
     staffingPersonaIds: row.staffing_persona_ids_json ? JSON.parse(row.staffing_persona_ids_json) as string[] : null,
+    gate: (row.gate === 'self-check' || row.gate === 'acceptance') ? row.gate : null,
+    tools: row.tools_json ? JSON.parse(row.tools_json) as Array<{ kind: 'skill' | 'tool' | 'mcp'; id: string }> : null,
     status: row.status as TaskStageStatus,
     attempt: row.attempt,
     assigneeAgentId: row.assignee_agent_id,
@@ -115,14 +124,16 @@ export function ensureStageRuns(db: DB, task: Task): TaskStageRun[] | null {
     for (const stage of stages) {
       db.prepare(
         `INSERT INTO task_stage_run (id, task_id, project_id, blueprint_id, stage_id, step, label, description,
-           depends_on_json, staffing_persona_ids_json, status, attempt, assignee_agent_id, artifacts_json,
+           depends_on_json, staffing_persona_ids_json, gate, tools_json, status, attempt, assignee_agent_id, artifacts_json,
            started_at, finished_at, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, '[]', ?, NULL, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, '[]', ?, NULL, ?, ?)`,
       ).run(
         shortId('tsr_'), task.id, task.projectId, blueprintId, stage.id, stage.step, stage.label,
         stage.description ?? null,
         stage.dependsOn ? JSON.stringify(stage.dependsOn) : null,
         stage.staffingPersonaIds ? JSON.stringify(stage.staffingPersonaIds) : null,
+        stage.gate ?? null,
+        stage.tools ? JSON.stringify(stage.tools) : null,
         stage.step === 1 ? 'running' : 'pending',
         stage.step === 1 ? task.assigneeAgentId ?? null : null,
         stage.step === 1 ? now : null,
@@ -184,6 +195,17 @@ export function stageContextSection(db: DB, taskId: string): string | null {
       const files = prev.artifacts.map((a) => a.path).filter(Boolean).slice(0, 10).join('、');
       lines.push(`- 阶段 ${prev.step}/${total}「${prev.label}」：${prev.summary?.slice(0, 300) ?? '（无摘要）'}${files ? `（产出：${files}）` : ''}`);
     }
+  }
+  if ((current.tools?.length ?? 0) > 0) {
+    const pretty = current.tools!.map((t) => `${t.kind === 'skill' ? '🧩' : t.kind === 'mcp' ? '🔌' : '🔧'}${t.id}`).join('、');
+    lines.push(`本阶段优先工具（M2 阶段亲和，推荐非门禁）：${pretty}`);
+  }
+  // M2 批次B：上次门未过的反馈注入（同阶段最近一次 stage_gate_failed 的原因）——重跑时知道自己上一轮哪里没过
+  const gateFails = listTaskEvents(db, taskId)
+    .filter((e) => e.kind === 'stage_gate_failed' && (e.payload as Record<string, unknown>)?.step === current.step);
+  if (gateFails.length > 0) {
+    const last = gateFails[gateFails.length - 1]!;
+    lines.push(`⚠️ 上一轮本阶段未过质量门（第 ${gateFails.length} 次）：${String((last.payload as Record<string, unknown>).note ?? '').slice(0, 300)}——本轮请针对性修正。`);
   }
   if (upcoming.length > 0) {
     lines.push(`## 后续阶段（本次不做）：${upcoming.map((r) => r.label).join(' → ')}`);
@@ -297,4 +319,148 @@ function advanceStageRunInner(
     finished: false,
     milestone: `✅ 阶段 ${current.step}/${runs.length} 完成：${current.label} → 进入阶段 ${next.step}/${runs.length}：${next.label}（${stageAssigneeName(db, nextAssignee)} 接手）`,
   };
+}
+
+
+/** M2 批次B：门连续未过上限——达到即自动放行（门是增强不是死锁：LLM 评审抖动不该卡死流水线，
+ * 连续 3 次未过大概率是评审口径与产出形态不匹配；放行并留痕，蓝图作者可在优化对话里调整该阶段）。 */
+const GATE_MAX_FAILS = 2;
+
+export interface StageGateResult {
+  pass: boolean;
+  /** pass=true 时的留痕说明（放行/跳过原因），pass=false 为未过原因。 */
+  note: string;
+}
+
+/**
+ * M2 批次B：阶段门检查（引擎在 advanceStageRun 前调用）。
+ * - 无阶段行 / 当前阶段无门（gate 缺省 none）→ 返回 null，照常推进；
+ * - self-check：economy 轻量自检——对照阶段目标核对产出，JSON {verdict,reason}；
+ * - acceptance：同调用但 system 复用验收员口径（ACCEPTANCE_PROMPT）——留给「这步错了后面全白干」的关键阶段；
+ * - fail-open=pass：LLM 不可用/解析失败记 stage_gate_skipped 后放行（门不因评审抖动死锁）；
+ * - 连续未过达 GATE_MAX_FAILS → 自动放行并记 stage_gate_escalated（用户定调：不强制验收、别过度复杂）。
+ */
+export async function checkStageGate(
+  db: DB,
+  taskId: string,
+  result: { summary?: string; artifacts?: TaskStageRun['artifacts'] },
+): Promise<StageGateResult | null> {
+  const current = currentStageRun(db, taskId);
+  if (!current) return null;
+  const gate = current.gate ?? 'none';
+  if (gate === 'none') return null;
+
+  const taskRow = db.prepare('SELECT title, acceptance_criteria FROM task WHERE id=?').get(taskId) as
+    { title: string; acceptance_criteria: string } | undefined;
+  const criteria = (() => {
+    try {
+      const arr = JSON.parse(taskRow?.acceptance_criteria ?? '[]') as Array<{ criterion: string; met?: boolean }>;
+      return arr.map((c) => `- ${c.criterion}${c.met === false ? '（产出者自评未达标）' : ''}`).join('\n');
+    } catch { return ''; }
+  })();
+  const artifacts = (result.artifacts ?? []).map((a) => `- ${a.path}${a.operation === 'delete' ? '（删除）' : ''}`).join('\n');
+  const prevFails = listTaskEvents(db, taskId).filter((e) => e.kind === 'stage_gate_failed' && (e.payload as Record<string, unknown>)?.step === current.step);
+  const lastNote = prevFails.length > 0 ? String((prevFails[prevFails.length - 1]!.payload as Record<string, unknown>).note ?? '') : '';
+
+  const system = gate === 'acceptance'
+    ? [
+      ACCEPTANCE_PROMPT,
+      '',
+      '本次是「阶段门」快评（非整任务验收）：只核对当前阶段的产出是否达到该阶段的目标，输出契约改为只输出一个 JSON 对象（不要代码围栏）：{"verdict":"pass"|"fail","reason":"一句话依据；fail 时给可执行的修改方向"}',
+    ].join('\n')
+    : [
+      '你是 muster 工作台的阶段质量自检员。流水线的一个阶段刚完成，你对照该阶段的目标核对它的产出，判断能否进入下一阶段。',
+      '纪律：区分「风格差异」与「实质缺陷」；产出为空/与目标无关才判 fail；拿不准判 pass（门是增强不是死锁）。',
+      '只输出一个 JSON 对象（不要代码围栏）：{"verdict":"pass"|"fail","reason":"一句话依据；fail 时给可执行的修改方向"}',
+    ].join('\n');
+  const user = [
+    `任务：${taskRow?.title ?? taskId}`,
+    criteria ? `任务验收标准（供参考，非本阶段门标准）：\n${criteria}` : '',
+    `当前阶段 ${current.step}「${current.label}」目标：${current.description ?? '（无描述，按阶段名判断）'}`,
+    `本阶段产出摘要：${(result.summary ?? '').slice(0, 1500) || '（空）'}`,
+    artifacts ? `产出文件清单：\n${artifacts}` : '（无声明产物）',
+    lastNote ? `上一轮门未过原因（本轮应已针对性修正）：${lastNote}` : '',
+  ].filter(Boolean).join('\n\n');
+
+  let verdict: 'pass' | 'fail' = 'pass';
+  let note = '';
+  try {
+    const llm = await callLlm(db, { system, user, tier: 'economy', timeoutMs: 15_000 });
+    const parsed = JSON.parse(llm.content.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')) as { verdict?: unknown; reason?: unknown };
+    if (parsed.verdict === 'fail' || parsed.verdict === 'pass') {
+      verdict = parsed.verdict;
+      note = typeof parsed.reason === 'string' ? parsed.reason.slice(0, 500) : '';
+    } else {
+      appendTaskEvent(db, taskId, 'stage_gate_skipped', { step: current.step, label: current.label, note: '评审输出不可解析，放行' });
+      return { pass: true, note: '评审输出不可解析，放行' };
+    }
+  } catch {
+    appendTaskEvent(db, taskId, 'stage_gate_skipped', { step: current.step, label: current.label, note: '评审不可用，放行' });
+    return { pass: true, note: '评审不可用，放行' };
+  }
+
+  if (verdict === 'pass') return { pass: true, note };
+
+  if (prevFails.length >= GATE_MAX_FAILS) {
+    appendTaskEvent(db, taskId, 'stage_gate_escalated', {
+      step: current.step, label: current.label, note,
+      attempts: prevFails.length + 1,
+      decision: '连续未过达上限，自动放行（门是增强不是死锁；可在优化对话调整该阶段或其门）',
+    });
+    return { pass: true, note: `连续 ${prevFails.length + 1} 次未过，自动放行：${note}` };
+  }
+  return { pass: false, note };
+}
+
+/**
+ * M2 批次B：门未过落地——阶段留在 running（attempt+1）、任务回队列**不换人**（同一执行者针对性重跑）、
+ * 事件留痕（stage_gate_failed，下一轮 systemPrompt 会注入失败原因）。返回 null=无处可落（无 running 阶段/状态守卫未命中）。
+ */
+export function failStageGate(db: DB, taskId: string, note: string): { step: number; label: string; total: number } | null {
+  const runs = listStageRuns(db, taskId);
+  const current = runs.find((r) => r.status === 'running');
+  if (!current) return null;
+  const now = nowIso();
+  const ok = db.transaction((): boolean => {
+    db.prepare('UPDATE task_stage_run SET attempt=attempt+1, updated_at=? WHERE id=?').run(now, current.id);
+    const info = db.prepare(
+      `UPDATE task SET state='queued', assignee_thread_id=NULL, lease_owner_thread_id=NULL,
+         lease_expires_at=NULL, updated_at=? WHERE id=? AND state IN ('claimed','running')`,
+    ).run(now, taskId);
+    if (info.changes === 0) throw new Error(`task ${taskId} 不在 claimed/running，门失败重排落空`);
+    appendTaskEvent(db, taskId, 'stage_gate_failed', { step: current.step, label: current.label, note, attempt: current.attempt + 1 });
+    return true;
+  })();
+  return ok ? { step: current.step, label: current.label, total: runs.length } : null;
+}
+
+/**
+ * M2 批次B：阶段级记账——任务结算时按其阶段行聚合进 blueprint_stage_stat
+ * （runs=经历该阶段的任务数；reworks=阶段内额外尝试；gate_fails=门未过次数）。幂等由调用方（结算一次）保证。
+ */
+export function recordBlueprintStageStats(db: DB, blueprintId: string, taskId: string): void {
+  try {
+    const runs = listStageRuns(db, taskId);
+    if (runs.length === 0) return;
+    const gateFailsByStep = new Map<number, number>();
+    for (const e of listTaskEvents(db, taskId)) {
+      if (e.kind !== 'stage_gate_failed') continue;
+      const step = Number((e.payload as Record<string, unknown>)?.step);
+      if (Number.isFinite(step)) gateFailsByStep.set(step, (gateFailsByStep.get(step) ?? 0) + 1);
+    }
+    const now = nowIso();
+    const upsert = db.prepare(
+      `INSERT INTO blueprint_stage_stat (id, blueprint_id, stage_id, label, runs, reworks, gate_fails, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)
+       ON CONFLICT(blueprint_id, stage_id) DO UPDATE SET
+         runs=runs+1, reworks=reworks+excluded.reworks, gate_fails=gate_fails+excluded.gate_fails,
+         label=excluded.label, updated_at=excluded.updated_at`,
+    );
+    for (const stage of runs) {
+      upsert.run(shortId('bss_'), blueprintId, stage.stageId, stage.label,
+        Math.max(0, stage.attempt - 1), gateFailsByStep.get(stage.step) ?? 0, now, now);
+    }
+  } catch (e) {
+    log.warn('stage stats recording failed', { blueprintId, taskId, err: e instanceof Error ? e.message : String(e) });
+  }
 }

@@ -126,6 +126,24 @@ describe('updateBlueprintStages 写回', () => {
     expect(getBlueprint(db, blueprintId).stages).toEqual([]);
   });
 
+  it('M2 批次B：gate/tools/staffingPersonaIds 随写回落库保留', () => {
+    const updated = updateBlueprintStages(db, blueprintId, [
+      {
+        id: 'stage_1', step: 1, label: '终审',
+        staffingPersonaIds: ['p_writer'],
+        gate: 'acceptance',
+        tools: [{ kind: 'skill', id: 'doc-writer' }, { kind: 'mcp', id: 'mcp_github__create_issue' }],
+      },
+    ]);
+    const stage = (updated.stages as BlueprintStage[])[0]!;
+    expect(stage.gate).toBe('acceptance');
+    expect(stage.tools).toEqual([
+      { kind: 'skill', id: 'doc-writer' },
+      { kind: 'mcp', id: 'mcp_github__create_issue' },
+    ]);
+    expect(stage.staffingPersonaIds).toEqual(['p_writer']);
+  });
+
   it('staffingPersonaIds 引用当前班底成员可通过', () => {
     const updated = updateBlueprintStages(db, blueprintId, [
       { id: 'stage_1', step: 1, label: '写作', staffingPersonaIds: ['p_writer'] },

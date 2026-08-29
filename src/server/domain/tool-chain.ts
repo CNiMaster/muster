@@ -11,6 +11,7 @@
  * 安装走平台 marketplace API，对齐"平台管确定性"）；建议经 B1 的 [子任务完成] 回写源任务。
  */
 import type { DB } from '../db/client';
+import { currentStageRun } from './task-stage';
 import path from 'node:path';
 import type { Task } from './task';
 import { createTask } from './task';
@@ -42,7 +43,7 @@ export interface ToolChainSnapshot {
   tools: Array<{
     toolId: string;
     title: string;
-    source: 'binding' | 'persona' | 'frequent' | 'blueprint';
+    source: 'binding' | 'persona' | 'frequent' | 'blueprint' | 'stage';
     capabilityId: string;
     reason: string;
     quality: { successRate: number | null; totalCalls: number } | null;
@@ -131,6 +132,17 @@ export function buildToolChainSnapshot(db: DB, task: Task, gaps: CapabilityGap[]
     const tool = byId.get(id);
     if (tool) push(tool, 'blueprint', tool.capabilityId, '该打法历史常用工具');
   }
+  // 层 3.5（M2 批次B）：阶段工具亲和——当前运行阶段 stage.tools 与注册表求交；
+  // MCP 运行期 id / 技能 id 不在注册表 → 只走 systemPrompt 提示（与蓝图台账同界），不进装备决议。
+  try {
+    const stage = currentStageRun(db, task.id);
+    if (stage?.tools?.length) {
+      for (const t of stage.tools) {
+        const tool = byId.get(t.id);
+        if (tool) push(tool, 'stage', tool.capabilityId, `阶段「${stage.label}」指定工具`);
+      }
+    }
+  } catch { /* 阶段读取失败不阻断决议 */ }
   // 层 4：常用自动带（该执行者成功使用 ≥ 阈值）
   for (const id of collectFrequentToolIds(db, task)) {
     const tool = byId.get(id);

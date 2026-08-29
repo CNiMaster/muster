@@ -26,6 +26,7 @@ import { maybeSynthesizeSkillCandidates } from './skill-synthesis';
 import { ensurePersonaArchiveProfile } from './agent-profile';
 import { getPersona } from './persona-library';
 import { evolveBlueprint, evolveBlueprintById, updateBlueprintLabel, listBlueprintVersions, type Blueprint } from './blueprint';
+import { recordBlueprintStageStats } from './task-stage';
 import { maybeSynthesizeExpertCandidates } from './expert-synthesis';
 import { settleTaskSafely } from './settlement';
 
@@ -320,6 +321,7 @@ async function drainReflectionQueueInner(
           isUserOverride,
           userTalentName,
         });
+        recordBlueprintStageStats(db, matchedBlueprintId, task.id);
       } else {
         const created = evolveBlueprint(db, {
           projectId: task.projectId,
@@ -336,6 +338,7 @@ async function drainReflectionQueueInner(
         // 批次 A2：新簇首建 → 机会主义 AI 定名（进化蓝图自动拼名「人设名·标题片段」不直观）。
         // fail-open：LLM 不可用/解析失败保持拼名不改，绝不阻断反思主流程。
         if (created) await maybeNameNewBlueprint(db, created);
+        if (created) recordBlueprintStageStats(db, created.id, task.id);
       }
     } catch (err) {
       log.warn('blueprint evolution failed', {

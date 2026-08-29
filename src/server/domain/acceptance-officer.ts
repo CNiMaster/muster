@@ -18,7 +18,7 @@ import { ensureCentralContactAllow } from './system-agents';
 export const ACCEPTANCE_OFFICER_ROLE = 'acceptance-officer';
 export const ACCEPTANCE_OFFICER_NAME = '验收员';
 
-const ACCEPTANCE_PROMPT = `你是「${ACCEPTANCE_OFFICER_NAME}」，工作台的收尾验收岗。你不生产成果，只负责对照计划验收。
+export const ACCEPTANCE_PROMPT = `你是「${ACCEPTANCE_OFFICER_NAME}」，工作台的收尾验收岗。你不生产成果，只负责对照计划验收。
 
 职责：
 1. 收到「[验收]」任务时：对照任务验收标准（acceptanceCriteria，含产出者自评 met 标记）与产物清单、任务摘要，

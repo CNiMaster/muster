@@ -83,6 +83,15 @@ function blueprintDigest(db: DB, companyId: string, blueprintId: string): string
     `当前描述：${detail.description || '（空）'}`,
     `版本数：${detail.versions.length}（最近：${detail.versions.slice(0, 3).map((v) => v.summary).join('；') || '无'}）`,
   ];
+  // M2 批次B：阶段级统计（哪一步常返工/常被门拦）——结构类提案的数据依据
+  try {
+    const stats = db.prepare(
+      'SELECT label, runs, reworks, gate_fails FROM blueprint_stage_stat WHERE blueprint_id=? ORDER BY reworks DESC, gate_fails DESC LIMIT 8',
+    ).all(blueprintId) as Array<{ label: string; runs: number; reworks: number; gate_fails: number }>;
+    if (stats.length > 0) {
+      lines.push(`阶段统计（runs=经历任务数/返工=阶段内额外尝试/门败=质量门未过次数）：${stats.map((x) => `${x.label} ${x.runs}跑/${x.reworks}返工/${x.gate_fails}门败`).join('；')}`);
+    }
+  } catch { /* 统计缺失不影响对话 */ }
   // 人设名录（adjust_staffing 的 personaId 唯一合法来源——AI 不许虚构成员）
   const roster = listPersonas()
     .slice(0, 120)
