@@ -1700,6 +1700,38 @@ export function useRemoveProject(){const qc=useQueryClient();return useMutation(
 export function useDiscoverProjectLaunch(){const qc=useQueryClient();return useMutation({mutationFn:({projectId,id,launchBrief}:{projectId:string;id:string;launchBrief:ProjectLaunchBrief})=>api.post<ProjectTaskDTO>(`/api/projects/${projectId}/project-tasks/${id}/discover-capabilities`,{launchBrief}),onSuccess:data=>{qc.invalidateQueries({queryKey:['project-tasks',data.projectId]});qc.setQueryData(['project-task',data.projectId,data.id],data);}});}
 export function useConfirmProjectLaunch(){const qc=useQueryClient();return useMutation({mutationFn:({projectId,id,launchBrief}:{projectId:string;id:string;launchBrief:ProjectLaunchBrief})=>api.post<ProjectTaskDTO>(`/api/projects/${projectId}/project-tasks/${id}/confirm-launch`,{launchBrief}),onSuccess:data=>{qc.invalidateQueries({queryKey:['project-tasks',data.projectId]});qc.setQueryData(['project-task',data.projectId,data.id],data);}});}
 
+/** ④阶段工作流（蓝图工作流化 M1）：任务阶段进度——无阶段任务返回空数组。 */
+export interface TaskStageRunView {
+  id: string;
+  taskId: string;
+  blueprintId: string;
+  stageId: string;
+  step: number;
+  label: string;
+  description: string | null;
+  staffingPersonaIds: string[] | null;
+  status: 'pending' | 'running' | 'passed' | 'failed';
+  attempt: number;
+  assigneeAgentId: string | null;
+  summary: string | null;
+  artifacts: Array<{ path: string; kind?: string; operation?: string }>;
+  startedAt: string | null;
+  finishedAt: string | null;
+}
+
+export function useTaskStages(taskId: string | undefined) {
+  return useQuery({
+    queryKey: ['task-stages', taskId],
+    queryFn: () => api.get<TaskStageRunView[]>(`/api/tasks/${taskId}/stages`),
+    enabled: !!taskId,
+    refetchInterval: (query) => {
+      const stages = query.state.data;
+      // 流水线行进中（有 running 段且任务未收口）轮询刷新；静止不轮询。
+      return stages && stages.some((s) => s.status === 'running') ? 10_000 : false;
+    },
+  });
+}
+
 export function useTask(id: string | undefined) {
   return useQuery({
     queryKey: ['task', id],

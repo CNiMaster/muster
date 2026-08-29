@@ -4,6 +4,7 @@
  状态机（合法迁移）：
    queued → claimed → running
    running → waiting_input | waiting_dependency | paused | blocked | completed | failed
+   running → queued（④阶段工作流专用：阶段推进回队，引擎拦截非失败非暂停，事件 stage_advanced）
    waiting_input → claimed（轮到后） → running
    waiting_dependency → claimed（依赖完成） → running
    paused → claimed（恢复）→ running

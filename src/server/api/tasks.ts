@@ -4,6 +4,7 @@
  - POST  /api/projects/:id/tasks
  - GET   /api/tasks/:id
  - GET   /api/tasks/:id/events
+ - GET   /api/tasks/:id/stages   (④阶段工作流：蓝图流水线进度)
  - GET   /api/tasks/:id/trace?kind=&limit=
  - GET   /api/tasks/:id/messages
  - POST  /api/tasks/:id/clarify  (回答追问)
@@ -39,6 +40,7 @@ import { promoteProjectStagingIfAny } from '../domain/staging';
 import { routeAndBackfill } from '../domain/capability-routing';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { listTaskEvents } from '../domain/task-event';
+import { listStageRuns } from '../domain/task-stage';
 import { carrierBoundBlueprintId } from '../domain/project-task';
 import { listTrace, type TraceKind } from '../domain/execution-trace';
 import { clearLoopProgress, getTaskProgressSummary } from '../domain/loop-progress';
@@ -155,6 +157,16 @@ taskByIdRouter.get(
   '/events',
   asyncHandler(async (req, res) => {
     res.json(listTaskEvents(getDb(), param(req, 'id')));
+  }),
+);
+
+/** ④阶段工作流（蓝图工作流化 M1）：任务阶段进度——阶段链路/当前步/各阶段产出摘要；无阶段任务返回空数组。 */
+taskByIdRouter.get(
+  '/stages',
+  asyncHandler(async (req, res) => {
+    const taskId = param(req, 'id');
+    getTask(getDb(), taskId); // 404 语义
+    res.json(listStageRuns(getDb(), taskId));
   }),
 );
 

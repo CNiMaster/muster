@@ -14,6 +14,7 @@ import {
   usePersonas,
   useTaskCloseout,
   useGenerateTaskCloseout,
+  useTaskStages,
 } from '../hooks/queries';
 import type { Task } from '../api/types';
 import { Card } from '../components/Card';
@@ -31,6 +32,8 @@ export function TaskDetailPage(): React.ReactElement {
   const { data: project } = useProject(task?.projectId);
   const { data: agents } = useAgents();
   const action = useTaskAction();
+  // ④阶段工作流（蓝图工作流化 M1）：蓝图流水线进度卡——无阶段任务不渲染。
+  const { data: taskStages } = useTaskStages(taskId);
   // A5 幂等展示：已有 plan_approved 事件则不再显示「同意计划并执行」（域层同样幂等返回既有任务）
   const { data: taskEvents } = useTaskEvents(taskId);
   const planApproved = (taskEvents ?? []).some((e) => e.kind === 'plan_approved');
@@ -131,6 +134,55 @@ export function TaskDetailPage(): React.ReactElement {
           {task.summary && (
             <Card title="摘要">
               <pre className="charter">{task.summary}</pre>
+            </Card>
+          )}
+          {(taskStages ?? []).length > 0 && (
+            <Card
+              title={`阶段工作流（${taskStages!.filter((s) => s.status === 'passed').length}/${taskStages!.length}）`}
+              className="section"
+              actions={<small className="muted">按蓝图流水线推进 · 每阶段产出自动交接给下一阶段</small>}
+            >
+              <div style={{ display: 'grid', gap: 8 }}>
+                {taskStages!.map((stage) => {
+                  const stageAgent = agents?.find((a) => a.id === stage.assigneeAgentId);
+                  const tone = stage.status === 'passed' ? 'ok' : stage.status === 'running' ? 'info' : stage.status === 'failed' ? 'err' : 'neutral';
+                  const toneLabel = stage.status === 'passed' ? '✅ 已完成' : stage.status === 'running' ? (task.state === 'queued' ? '⏭ 待领取' : '⚡ 执行中') : stage.status === 'failed' ? '❌ 失败' : '· 待开始';
+                  return (
+                    <div
+                      key={stage.id}
+                      style={{
+                        display: 'flex',
+                        gap: 10,
+                        alignItems: 'flex-start',
+                        border: '1px solid var(--border)',
+                        borderRadius: 10,
+                        padding: '8px 12px',
+                        background: stage.status === 'running' && task.state !== 'queued' ? 'var(--accent-subtle, var(--bg-elev))' : 'var(--bg-elev)',
+                        opacity: stage.status === 'pending' ? 0.65 : 1,
+                      }}
+                    >
+                      <Badge tone={tone as 'ok' | 'info' | 'err' | 'neutral'}>{toneLabel}</Badge>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                          <strong style={{ fontSize: 13 }}>阶段 {stage.step} · {stage.label}</strong>
+                          {stageAgent && <span className="muted" style={{ fontSize: 11}}>{stageAgent.name} 执行</span>}
+                          {stage.attempt > 1 && <span className="muted" style={{ fontSize: 11 }}>第 {stage.attempt} 次尝试</span>}
+                        </div>
+                        {stage.description && <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>{stage.description}</div>}
+                        {stage.summary && (
+                          <details style={{ fontSize: 12, marginTop: 4 }}>
+                            <summary className="muted" style={{ cursor: 'pointer' }}>阶段产出摘要</summary>
+                            <p style={{ margin: '6px 0 0', whiteSpace: 'pre-wrap' }}>{stage.summary}</p>
+                            {stage.artifacts.length > 0 && (
+                              <p className="muted" style={{ margin: '4px 0 0' }}>产出文件：{stage.artifacts.map((a) => a.path).join('、')}</p>
+                            )}
+                          </details>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </Card>
           )}
           <ExecutionTraceCard task={task} />

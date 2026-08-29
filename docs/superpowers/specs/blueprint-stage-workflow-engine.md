@@ -1,7 +1,27 @@
 # 蓝图工作流引擎：stages 从图纸变调度（批次④）
 
-状态：proposed（2026-08-29 立项讨论稿，未动代码）
+状态：M1 已实施（2026-08-29；M2 阶段门自检/M3 画布运行视图待拍板）
 前置：批次①②③已交付——预制蓝图带默认 stages、画布/AI 编辑可写回 stages（版本化）、共享契约 `src/shared/blueprint-stages.ts`。本批回答「画上的线怎么真的跑起来」。
+
+## 0. 调研锚点（2026-08-29 实施前调查：知名工作流产品怎么做）
+
+| 范式 | 代表 | 核心机制 | 本批取舍 |
+|---|---|---|---|
+| 线性管道 | Zapier | 触发器→线性动作，分支=拆多条流 | 取其「简单事简单做」：线性 stages 是默认形态 |
+| 节点 DAG | n8n / Dify / GH Actions / Airflow | 节点=能力调用，边=控制流；**节点级状态可见+节点级重试/从失败步重跑** | 取节点级状态（StageRun 行）+ 失败停在当前阶段重跑（游标不动） |
+| 持久执行 | Temporal | 事件溯源+确定性重放，状态可恢复可暂停 | 取「状态持久化+断点续跑」：stage 行冻结蓝图快照，任务中断后重领从当前阶段继续 |
+| 状态图+检查点 | LangGraph | 显式图拥有控制流，agent 拥有语义；checkpointer 支持人审中断 | 取「引擎拥有控制流」——阶段推进由引擎拦截判定，不是 agent 对话自发；waiting_input 即天然人审中断点 |
+| SOP 装配线 | MetaGPT（PM→架构→工程→QA 各角出结构化产物） | 角色×阶段，阶段间交接**结构化产物**而非聊天记录 | 取产物交接：每阶段 summary+artifacts 落 stage 行并注入下一阶段上下文；worktree 跨阶段延续 |
+
+关键否定项：不做可视化 BPMN（结构只有 BlueprintStage）；不让 agent 自报阶段跳转（LangGraph 教训：显式控制流>自主闲聊）；不每阶段开新任务（保持单任务贯穿，任务树不膨胀，worktree/验收/终链语义不变）。
+
+## 0.5 v1 执行模型（单任务贯穿 + 引擎拦截推进）
+
+- **建阶段行**：任务领取时若穿了带 stages 的蓝图（inputProtocol.blueprintMatched）且非机制任务（讨论/建议/蜂群蜂/外包承接豁免）→ 从蓝图 stages **冻结快照**建 `task_stage_run` 行（跑动中蓝图被改/回滚不影响本任务）。
+- **上下文注入**：systemPrompt 追加「阶段工作流」段——全链路概览、当前阶段 k/N（label/description/参与人）、**前序阶段产出摘要**（MetaGPT 式交接）、只做本阶段的指令。
+- **完成拦截**：run 以 completed 收口时，若还有未完成阶段：当前阶段标 passed（summary/artifacts 落行）→ 下一阶段标 running → 任务**不 completed**，经专用迁移 running→queued 放回队列（task_event: stage_advanced）；**阶段改派**——下一阶段 staffingPersonaIds[0] 解析（项目专家池常驻专家 > 保留现任），改写 assignee；worktree 保留（跨阶段产物/工作现场连续）。末阶段完成才走原 completeTask（验收/终链/反思/进化记账全部照旧）。
+- **失败/等待**：失败重试、waiting_input、审批暂停、H8 停止全部原样——stage 游标不动，恢复后重跑**当前阶段**（n8n 式 retry-from-failed-step）。
+- **观测**：每阶段推进在现场对话播报里程碑（「✅ 阶段 k/N 完成…→ 进入 k+1（XX 上岗）」，对齐「执行过程即对话现场」口径）+ realtime task.stage_advanced + `GET /api/projects/:pid/tasks/:taskId/stages` + 任务详情阶段进度卡。
 
 ## 1. 为什么立项（问题陈述）
 
@@ -74,10 +94,10 @@
 - **并行分叉 v1 是否砍掉**：dependsOn 已支持 DAG，但执行侧 v1 串行化更稳，只保留数据结构表达力。
 - **回滚语义**：任务跑到阶段 3 时用户回滚蓝图 stages——进行中的任务按快照继续（StageRun 建 run 时冻结蓝图 stages 快照），新任务用新版。
 
-## 7. 里程碑建议
+## 7. 里程碑
 
-- M1：串行阶段推进 + 进度条 UX + 阶段 staging 产物（最小可感）。
-- M2：阶段门自检 + 失败重跑 + 阶段级记账。
-- M3：画布运行视图 + AI 优化对话阶段数据弹药。
+- **M1（已实施 2026-08-29）**：串行阶段推进——task_stage_run 表+task-stage 域模块+引擎三处挂接（领取建行/上下文注入/完成拦截改派回队）+现场播报+stages API+任务详情阶段卡。无 stages 蓝图与机制任务零行为变化（fail-open：阶段机制任何异常回落旧收口路径）。
+- M2（待拍板）：阶段门自检（验收员快评 pass/fail，fail 停当前阶段重跑）+ 阶段级记账（blueprint_stage_stat 表，哪一步常返工）。
+- M3（待拍板）：画布运行视图（历史任务路径高亮/返工标红）+ AI 优化对话阶段数据弹药。
 
 每步都保持「无 stages 蓝图 = 现状行为」的兼容底线，可随时停在任何里程碑。

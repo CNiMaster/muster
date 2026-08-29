@@ -33,6 +33,7 @@ import {
 import { getThread, listOnlineThreads, updateThreadState } from '../domain/thread';
 import { getAgent } from '../domain/agent';
 import { assembleContext } from '../executors/context';
+import { ensureStageRuns, stageContextSection, advanceStageRun } from '../domain/task-stage';
 import { materializeSwarm, countActiveSwarmsByRequester, escalateSwarmRequest, EXPERT_SWARM_LIMITS } from '../domain/swarm';
 import { finalizeDebate, startDebate } from '../domain/debate';
 import { DISPATCHER_ROLE, JUDGE_ROLE, HR_ROLE, AUTOMATION_ROLE } from '../domain/system-agents';
@@ -349,6 +350,15 @@ export class TaskEngine {
 
     const task = claimed.task;
     updateThreadState(this.db, thread.id, 'running');
+    // ④阶段工作流（蓝图工作流化 M1）：穿蓝图且有 stages 的任务，领取即确保阶段行（幂等冻结快照；
+    // 无蓝图/机制任务返回 null=零行为变化；失败不阻断——回落无阶段执行）。
+    let stageRuns: ReturnType<typeof ensureStageRuns> = null;
+    try {
+      stageRuns = ensureStageRuns(this.db, task);
+    } catch (e) {
+      log.warn('stage runs ensure failed', { taskId: task.id, err: e instanceof Error ? e.message : String(e) });
+    }
+    const stageInProgress = stageRuns !== null && stageRuns.some((r) => r.status === 'passed');
     log.info('task claimed', { taskId: task.id, seq: task.seq, threadId, agent: agent.name, projectId: project.id });
     realtime.publish({
       id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -361,7 +371,13 @@ export class TaskEngine {
     // 改版收尾：对话里给即时反馈"已开始处理"（此前只有完成后才回一条）。
     // 自动重试重领（autoRetryCount>0）不再重复播报"已开始"——首次重试只提示一次，
     // 与失败侧"未走自动重试的终态失败才回写"对称，避免一条消息刷出多条 ⏳。
-    if (task.autoRetryCount === 0) {
+    // ④阶段工作流：阶段中途重领不重复"已开始处理你的消息"，改为阶段开始播报（现场知道走到哪步）。
+    if (stageInProgress) {
+      const current = stageRuns?.find((r) => r.status === 'running');
+      if (current) {
+        this.notifyUserMessageMilestone(task, `▶ 进入阶段 ${current.step}/${stageRuns!.length}：${current.label}`, task.id);
+      }
+    } else if (task.autoRetryCount === 0) {
       this.notifyUserMessageMilestone(task, `⏳ 已开始处理你的消息：${task.title}`, task.id);
     } else if (task.autoRetryCount === 1) {
       this.notifyUserMessageMilestone(task, `⏳ 处理未完成，正在自动重试：${task.title}`, task.id);
@@ -749,6 +765,14 @@ export class TaskEngine {
         lightweight: (task.inputProtocol as Record<string, unknown>)?.lightweight === true,
       });
       ctx.systemPrompt = assembled.systemPrompt;
+      // ④阶段工作流：注入「阶段工作流」段——当前阶段 k/N + 前序阶段产出交接 + 只做本阶段纪律。
+      // 无阶段任务返回 null，零行为变化；失败不阻断执行。
+      try {
+        const stageSection = stageContextSection(this.db, task.id);
+        if (stageSection) ctx.systemPrompt += `\n\n${stageSection}\n`;
+      } catch (e) {
+        log.warn('stage context injection failed', { taskId: task.id, err: e instanceof Error ? e.message : String(e) });
+      }
       // 能力分级：蜂档注入只读声明——模型明确自己没有写/命令工具，产出走汇报通道，防幻觉尝试
       if (toolTier === 'bee') {
         ctx.systemPrompt += [
@@ -1310,6 +1334,31 @@ export class TaskEngine {
       }
       const approvalMatch=result.outcome==='blocked'?/审批请求\s+(approval_[A-Za-z0-9_-]+)/.exec(result.summary):null;
       if(approvalMatch){commitAll(worktreeInfo.path,`muster: approval checkpoint ${task.id}`,{excludePaths:resolutionContext?['.muster-conflicts']:[]});preserveWorktree=true;markTaskWaitingApproval(this.db,task.id,approvalMatch[1]!);updateThreadState(this.db,thread.id,'paused');return true;}
+      // ④阶段工作流（蓝图工作流化 M1）：流水线推进——当前阶段完成且还有后续阶段时不收口任务：
+      // 阶段产出落行、下一阶段置 running、按 staffingPersonaIds[0] 改派执行者、任务经专用迁移
+      // running→queued 回队列（同一 worktree 跨阶段延续，产物/工作现场不丢）。
+      // 末阶段返回 finished=正常落穿收口；域内异常 fail-open 返回 null=走旧收口（兼容底线）。
+      if (result.outcome === 'completed') {
+        const advanced = advanceStageRun(this.db, task.id, {
+          summary: result.summary,
+          artifacts: (result.artifacts ?? []).map((a) => ({ path: a.path, kind: a.kind, operation: a.operation })),
+        });
+        if (advanced?.advanced) {
+          preserveWorktree = true;
+          updateThreadState(this.db, thread.id, 'idle');
+          this.notifyUserMessageMilestone(task, advanced.milestone, task.id);
+          realtime.publish({
+            id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            type: 'task.stage_advanced',
+            projectId: project.id,
+            taskId: task.id,
+            occurredAt: new Date().toISOString(),
+            payload: { outcome: result.outcome, threadId: thread.id, agentId: agent.id },
+          });
+          log.info('task stage advanced', { taskId: task.id });
+          return true;
+        }
+      }
       completeTask(this.db, task.id, result);
       // capability parity D4：task_end 钩子（观测旁路）
       try { const { emitHookEvent } = await import('../domain/hook'); emitHookEvent(this.db, 'task_end', { taskId: task.id, summary: `任务完成：${(result as { summary?: string })?.summary ?? task.title}` }); } catch { /* 吞 */ }
