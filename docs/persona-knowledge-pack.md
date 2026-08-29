@@ -37,6 +37,12 @@
 
 **武器装配**（frontmatter skills/tools，17 个高频预制专家）：skills 全部用 bundled 技能库真实目录名（声明即装载，批次 H 管道）；tools 用 API 注册表 id（web_search/web_fetch 命中 tool-chain 第 2 层），CLI 原生名保留文本提示语义。分配原则：明显对口才配（评审→code-review-and-quality、前后端→TDD/api-design、DevOps→ci-cd、产品组→planning、创意组→idea-refine），单个 ≤3 个防稀释。
 
+## W1 批（工程主槽，2026-08-30）
+
+五个预制主槽知识包 + 四厚文件目录拆平（只提层级不动正文，目录 1/1/3/3 → 6/8/15/14，soul 不变）：
+engineering-ai-engineer（Agent 应用）、prompt-engineer（Skill 开发）、specialized-document-generator（文档处理）、
+data-engineer、mobile-app-builder；武器补装 document-generator=document-authoring。
+
 **下一批候选**（慢慢补）：novel 薄壳组其余三个（总编/情节架构/连贯性审校）、video 三件套、visual 插画/字体/质检、design-ui-designer（3 引用厚文件但无知识节）、厚文件目录粒度整理（document-generator/data-engineer/mobile-app-builder/mcp-builder 大节拆平）。
 
 ## 知识节写作规范
@@ -79,6 +85,18 @@
 - 蝉妈妈运营数据：72% 用户 3 秒内划走；前 3 秒完播 <32% 进推荐池概率 <8% —— chanmama.com（运营圈口径，置信中）
 - 亿邦动力：2025 抖音推荐转向内容打分制，完播+前段互动权重高 —— ebrun.com/20250715/586241.shtml
 - 北京开卷 2025 年度：图书码洋 1104 亿（-2.24%）；内容电商 +30.43% 占比超四成首超平台电商；货架 -16.50% —— 新华传媒/新京报
+
+W1 批检索核实记录（2026-08-30）：
+
+- MCP 事实标准地位 + A2A 互补双协议栈（agent↔工具 / agent↔agent）—— blog.logto.io/zh-TW/a2a-mcp、dev.to 生态综述
+- LangGraph 为 2026 生产级编排主流；框架对比—— langchain.com/resources/ai-agent-frameworks
+- 生产实测：枢纽节点故障 100% 级联 vs 叶子 9.7%—— medium（@Micheal-Lanham）Multi-Agent in Production 2026
+- Context engineering 主叙事（「提示词工程决定怎么问，上下文工程决定模型知道什么」）—— karozieminski.substack.com、promptingguide.ai
+- OpenAI 官方提示词最佳实践（结构化输出/指令前置）—— help.openai.com
+- 智能文档处理市场 141.6 亿→910.2 亿美元（2026→2034，厂商博客口径置信中等）—— jenova.ai
+- Agent 直接读写 Office 文档的工具化方向（officecli）—— developer.cloud.tencent.com
+- Lakehouse 主流落地；dbt/SQL 优先向云数仓原生演进；批流一体 Flink/StarRocks+Paimon—— juejin、infoq.cn、mirrorship.cn
+- RN 0.82 移除旧架构；Expo SDK 55 新架构恒开；SDK 54 起 React Compiler 默认—— reactnative.dev/blog、docs.expo.dev
 
 ## 更新机制
 
