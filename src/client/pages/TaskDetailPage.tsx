@@ -167,6 +167,11 @@ export function TaskDetailPage(): React.ReactElement {
                           <strong style={{ fontSize: 13 }}>阶段 {stage.step} · {stage.label}</strong>
                           {stageAgent && <span className="muted" style={{ fontSize: 11}}>{stageAgent.name} 执行</span>}
                           {stage.attempt > 1 && <span className="muted" style={{ fontSize: 11 }}>第 {stage.attempt} 次尝试</span>}
+                          {stage.gate && stage.gate !== 'none' && (
+                            <Badge tone="warn" style={{ fontSize: 10 }} title="该阶段完成后需过质量门（self-check=轻量自检 / acceptance=验收员快评）">
+                              🚧 门 · {stage.gate === 'self-check' ? '自检' : '验收'}
+                            </Badge>
+                          )}
                         </div>
                         {stage.description && <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>{stage.description}</div>}
                         {stage.summary && (

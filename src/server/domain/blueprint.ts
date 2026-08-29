@@ -309,13 +309,16 @@ export function rollbackBlueprint(db: DB, blueprintId: string, targetVersion: nu
   };
   const now = nowIso();
   return db.transaction(() => {
+    // 复审修复（批次A 复审）：label 一并恢复——A2 引入改名（AI 定名/rename 提案）后，
+    // 只回结构不回名字会留下「新名字配旧结构」的错位快照（snapshot 自始含 label）。
     db.prepare(
-      `UPDATE blueprint SET staffing_json=?, tools_json=?, stages_json=?, description=?, status=?, updated_at=? WHERE id=?`,
+      `UPDATE blueprint SET staffing_json=?, tools_json=?, stages_json=?, description=?, label=?, status=?, updated_at=? WHERE id=?`,
     ).run(
       JSON.stringify(snap.staffing ?? []),
       JSON.stringify(snap.tools ?? []),
       JSON.stringify(snap.stages ?? []),
       snap.description ?? '',
+      snap.label ?? '',
       snap.status ?? 'active',
       now, blueprintId,
     );

@@ -1710,6 +1710,7 @@ export interface TaskStageRunView {
   label: string;
   description: string | null;
   staffingPersonaIds: string[] | null;
+  gate?: 'none' | 'self-check' | 'acceptance' | null;
   status: 'pending' | 'running' | 'passed' | 'failed';
   attempt: number;
   assigneeAgentId: string | null;

@@ -69,6 +69,18 @@ describe('maybeNameNewBlueprint（fail-open）', () => {
     expect(getBlueprint(db, bp2.id).label).toBe(bp2.label);
   });
 
+  it('复审修复：改名后版本回滚 → label 随结构一起恢复', async () => {
+    const bp = newBlueprint(); // v1: 创建蓝图（label=自动拼名）
+    callLlmMock.mockResolvedValueOnce({ content: '{"label":"行业观察报告"}' });
+    await maybeNameNewBlueprint(db, bp); // v2: AI 定名
+    const named = getBlueprint(db, bp.id).label;
+    expect(named).toBe('行业观察报告');
+
+    const { rollbackBlueprint } = await import('../../src/server/domain/blueprint');
+    const restored = rollbackBlueprint(db, bp.id, 1);
+    expect(restored.label).toBe(bp.label); // 回到 v1 的拼名，不留新名字配旧结构
+  });
+
   it('非新建（版本链已 ≥2）→ 不触发 LLM', async () => {
     const bp = newBlueprint();
     db.prepare("UPDATE blueprint SET description='手动调过' WHERE id=?").run(bp.id);
