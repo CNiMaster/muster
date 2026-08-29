@@ -25,7 +25,7 @@ import { resolveTaskSkills } from '../domain/capability-binding';
 import { resolveToolRecommendations, buildCapabilityCenterSection } from '../domain/tool-recommendation';
 import { buildToolChainSection } from '../domain/tool-chain';
 import { listMaterials } from '../domain/material';
-import { getPersona, listPersonaIndex } from '../domain/persona-library';
+import { getPersona, listPersonaIndex, personaManualCatalog, personaManualPath } from '../domain/persona-library';
 import { appendTaskEvent } from '../domain/task-event';
 import { searchArchive } from '../domain/archive';
 import { searchKnowledge, ensureProjectBase, ensurePlatformBase } from '../domain/knowledge';
@@ -180,6 +180,27 @@ export function assembleContext(
     // R1：人设声明的工具（注册表命中的会以完整推荐卡进入 # 能力中心，此处为文本兜底提示）。
     if (persona.tools.length > 0) {
       sp.push('# 人设工具', `本任务按「${persona.name}」人设推荐以下工具（CLI 执行器为原生工具集，API 执行器经工具循环调用）：`, persona.tools.join('、'), '');
+    }
+    // 批次 E2（专家知识库工程）：专业手册渐进披露——正文不进 prompt（身份三节已常驻），
+    // 只注入知识节目录 + 取材方式（CLI=文件工具读绝对路径，API=read_persona_manual 工具）。
+    const manualSections = personaManualCatalog(persona);
+    if (manualSections.length > 0) {
+      const MAX_TOC_LINES = 15;
+      const tocLines = manualSections.slice(0, MAX_TOC_LINES).map((s) => `- ${s.title}（约 ${Math.max(50, Math.round(s.chars / 50) * 50)} 字）`);
+      if (manualSections.length > MAX_TOC_LINES) {
+        tocLines.push(`- …另有 ${manualSections.length - MAX_TOC_LINES} 节，完整目录见手册文件`);
+      }
+      const access = executorKind === 'cli'
+        ? `需要某节详情时，用文件工具读取手册文件「${personaManualPath(persona)}」中的对应章节（以 ## 节标题定位）后再动工。`
+        : '需要某节详情时，调用 read_persona_manual 工具按节名读取（一次一节）。';
+      sp.push(
+        '# 你的专业手册',
+        `「${persona.name}」的完整专业手册（方法论/领域知识/经验沉淀）存在手册文件中，以下是目录。与任务相关的章节开工前先读：`,
+        ...tocLines,
+        '',
+        access,
+        '',
+      );
     }
   }
   // 分身记忆快照（2026-08-24 蜂群分身专项）：蜂任务派发时注入的常驻专家只读薄手册——

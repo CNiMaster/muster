@@ -30,6 +30,7 @@ export const BEE_TOOL_ALLOWLIST = new Set([
   'notify_colleague',
   'submit_review',   // 产出走业务审批门，有自己的闸
   'done',
+  'read_persona_manual', // 批次 E2：读自己人设的专业手册（按节名服务端读取，无路径暴露，只读）
 ]);
 
 // 排除项及理由（留档防遗忘）：

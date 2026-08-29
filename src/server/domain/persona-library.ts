@@ -31,6 +31,45 @@ export interface Persona {
   soul: string;
   principles: string[];
   capabilities: Record<string, unknown>;
+  /** 批次 E1：全量 `## ` 节目录（归一后标题 + 正文字符数，文档序）——正文不进 prompt，按需读文件。 */
+  sections: Array<{ title: string; chars: number }>;
+  /** 批次 E1：人设文件绝对路径（builtin=仓库 personas/，user=$MUSTER_HOME/personas）——执行器按需读取全文用。 */
+  filePath: string;
+}
+
+/**
+ * 批次 E1（专家知识库工程）：节标题归一——剥 emoji/标点前缀与「你的/你必须…」衬词，
+ * 再按变体表映射正典节名。240 个预置文件里 56 个因标题变体（🧠 身份与记忆/你的核心使命/
+ * 必须遵守的规则…）解析近零存活；未知节名原样保留（知识节目录用）。
+ */
+const HEADING_FILLERS = ['你必须遵循的', '你必须遵守的', '你的'];
+/** 身份三节：parse 时转 soul/principles，updateUserPersona 重写时由 patch 重建，手册目录排除。 */
+const PROTECTED_SECTIONS = new Set(['你的身份与记忆', '核心使命', '关键规则']);
+const HEADING_ALIASES: Record<string, string> = {
+  身份与记忆: '你的身份与记忆',
+  身份与角色: '你的身份与记忆',
+  核心使命: '核心使命',
+  核心使命与能力: '核心使命',
+  关键规则: '关键规则',
+  必须遵守的规则: '关键规则',
+  技术交付物: '技术交付物',
+  工作流程: '工作流程',
+  成功指标: '成功指标',
+  核心职责: '核心职责',
+  产出物: '产出物',
+};
+
+export function canonicalHeading(raw: string): string {
+  let t = raw.trim().replace(/^[^\p{L}\p{N}]+/u, '');
+  // 剥编号前缀（「1. 策略基础」→「策略基础」）——nexus 等手册体文件全节带号
+  t = t.replace(/^\d+[.、::\s]+/u, '');
+  for (const filler of HEADING_FILLERS) {
+    if (t.startsWith(filler)) {
+      t = t.slice(filler.length);
+      break;
+    }
+  }
+  return HEADING_ALIASES[t] ?? t;
 }
 
 interface Frontmatter {
@@ -42,8 +81,8 @@ interface Frontmatter {
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-/** personas 目录绝对路径：仓库根 personas/（src/server/domain 上 3 级）。 */
-const PERSONAS_ROOT = path.resolve(__dirname, '../../../personas');
+/** personas 目录绝对路径：仓库根 personas/（src/server/domain 上 3 级）。批次 E1 导出（渐进披露路径重组用）。 */
+export const PERSONAS_ROOT = path.resolve(__dirname, '../../../personas');
 /** WP3 用户人设根：系统沉淀/用户自建人设落此目录（与仓库预置库双根扫描，id 加 user/ 前缀防撞）。 */
 export const USER_PERSONAS_ROOT = path.join(SERVER_CONFIG.musterDir, 'personas');
 
@@ -64,7 +103,7 @@ function scanRoot(root: string, source: 'builtin' | 'user', prefix: string, out:
         const rel = path.relative(root, abs).replace(/\.md$/, '');
         const content = readFileSync(abs, 'utf8');
         const parsed = parsePersonaFile(`${prefix}${rel.replace(/\\/g, '/')}`, domain, content);
-        if (parsed) out.push({ ...parsed, source });
+        if (parsed) out.push({ ...parsed, source, filePath: abs });
       }
     }
   };
@@ -99,14 +138,15 @@ export function parsePersonaFile(rel: string, domain: string | null, content: st
   const id = rel.replace(/\\/g, '/');
   if (!fm.name) return null;
 
-  // 按 `## ` 分节（`###` 子标题留在父节内，避免子节覆盖父节）
+  // 按 `## ` 分节（`###` 子标题留在父节内，避免子节覆盖父节）。
+  // 批次 E1：节标题先过 canonicalHeading 归一（变体并轨正典；重名节追加不覆盖），未知节名原样入目录。
   const sections = new Map<string, string>();
   let currentKey = '';
   for (const line of content.split('\n')) {
     const heading = line.match(/^##\s+(.+)$/);
     if (heading) {
-      currentKey = heading[1].trim();
-      sections.set(currentKey, '');
+      currentKey = canonicalHeading(heading[1]);
+      if (!sections.has(currentKey)) sections.set(currentKey, '');
     } else if (currentKey) {
       sections.set(currentKey, `${sections.get(currentKey) ?? ''}${line}\n`);
     }
@@ -164,7 +204,65 @@ export function parsePersonaFile(rel: string, domain: string | null, content: st
       domain: domain ?? undefined,
       personaId: id,
     },
+    // 批次 E1：全量节目录（文档序）+ 文件路径——渐进披露（scanRoot 会覆写 filePath 为真实绝对路径）。
+    sections: Array.from(sections.entries()).map(([title, body]) => ({ title, chars: body.trim().length })),
+    filePath: '',
   };
+}
+
+/** 人设手册文件绝对路径（scan 时已记录；直调 parsePersonaFile 的场景按 id 重组兜底）。 */
+export function personaManualPath(p: Persona): string {
+  if (p.filePath) return p.filePath;
+  const root = p.source === 'user' ? USER_PERSONAS_ROOT : PERSONAS_ROOT;
+  return path.join(root, `${p.id.replace(/^user\//, '')}.md`);
+}
+
+/**
+ * 批次 E2：读人设手册指定节的正文（渐进披露的取材口——API 执行器 read_persona_manual 工具后端）。
+ * 节名先过 canonicalHeading 归一比对（与 sections 目录同键）；实时读文件非缓存；
+ * 节不存在/文件不可读返回 null。
+ */
+export function readPersonaManualSection(p: Persona, title: string): string | null {
+  const want = canonicalHeading(title);
+  let raw: string;
+  try {
+    raw = readFileSync(personaManualPath(p), 'utf8');
+  } catch {
+    return null;
+  }
+  const fmMatch = raw.match(/^---\n([\s\S]*?)\n---\n?/);
+  const body = fmMatch ? raw.slice(fmMatch[0].length) : raw;
+  const found: string[] = [];
+  let currentTitle: string | null = null;
+  let lines: string[] = [];
+  const flush = (): void => {
+    if (currentTitle !== null && canonicalHeading(currentTitle) === want) {
+      found.push(lines.join('\n').trim());
+    }
+  };
+  for (const line of body.split('\n')) {
+    const heading = line.match(/^##\s+(.+)$/);
+    if (heading) {
+      flush();
+      currentTitle = heading[1].trim();
+      lines = [];
+    } else if (currentTitle !== null) {
+      lines.push(line);
+    }
+  }
+  flush();
+  return found.length > 0 ? found.join('\n\n') : null;
+}
+
+/** 手册目录排除集：身份三节（已常驻 prompt）+ 能力五节（已进 # 人设专长领域）。 */
+const CATALOG_EXCLUDED = new Set([...PROTECTED_SECTIONS, '技术交付物', '工作流程', '成功指标', '核心职责', '产出物']);
+
+/**
+ * 批次 E2：知识节目录（手册渐进披露的 TOC 数据源）——只列身份/能力之外的真知识节，
+ * 文档序，供 context 注入与手册工具的可用节名提示。
+ */
+export function personaManualCatalog(p: Persona): Array<{ title: string; chars: number }> {
+  return p.sections.filter((s) => !CATALOG_EXCLUDED.has(s.title));
 }
 
 /** 根目录 + 一级子域目录的 mtime 聚合（子域目录内新增/修改文件也能触发热加载与采纳可见性）。 */
@@ -284,9 +382,35 @@ export interface UserPersonaPatch {
   tools?: string[];
 }
 
+/** 批次 E1：从人设原文提取非身份三节的既有内容（知识节如 ## 领域专业知识/## 工作流程），
+ * 原样（原始标题+正文）按文档序返回，供 updateUserPersona 重写后回拼——用户编辑不再抹掉专家知识。
+ * 导出仅供测试直调。
+ */
+export function extractPreservableSections(raw: string): string[] {
+  const fmMatch = raw.match(/^---\n([\s\S]*?)\n---\n?/);
+  const body = fmMatch ? raw.slice(fmMatch[0].length) : raw;
+  const out: string[] = [];
+  let current: { title: string; lines: string[] } | null = null;
+  const flush = (): void => {
+    if (current) out.push([`## ${current.title}`, ...current.lines].join('\n').replace(/\n+$/, '') + '\n');
+  };
+  for (const line of body.split('\n')) {
+    const heading = line.match(/^##\s+(.+)$/);
+    if (heading) {
+      flush();
+      current = PROTECTED_SECTIONS.has(canonicalHeading(heading[1])) ? null : { title: heading[1].trim(), lines: [] };
+    } else if (current) {
+      current.lines.push(line);
+    }
+  }
+  flush();
+  return out;
+}
+
 /**
  * 编辑自建人设（查改删之「改」）：整文件按生成格式重写（frontmatter + 三节正文），
- * id/文件名不变（改名只改 frontmatter name）。仅 user/ 前缀；改完强制缓存重扫。
+ * 身份三节之外的知识节原样保全（批次 E1）；id/文件名不变（改名只改 frontmatter name）。
+ * 仅 user/ 前缀；改完强制缓存重扫。
  */
 export function updateUserPersona(id: string, patch: UserPersonaPatch): Persona {
   const current = getPersona(id);
@@ -302,6 +426,8 @@ export function updateUserPersona(id: string, patch: UserPersonaPatch): Persona 
     tools: (patch.tools ?? current.tools).map((t) => t.trim()).filter(Boolean).slice(0, 10),
   };
   const filePath = userPersonaFilePath(id);
+  // 批次 E1：重写前读旧文件，保全身份三节之外的知识节（原样回拼在关键规则之后）。
+  const preserved = extractPreservableSections(existsSync(filePath) ? readFileSync(filePath, 'utf8') : '');
   const fm = [
     '---',
     `name: ${next.name}`,
@@ -326,6 +452,7 @@ export function updateUserPersona(id: string, patch: UserPersonaPatch): Persona 
     '## 关键规则',
     '',
     ...(next.principles.length > 0 ? next.principles.map((p) => `- ${p}`) : ['- 遵循行业最佳实践。']),
+    ...(preserved.length > 0 ? ['', ...preserved.map((s) => s.replace(/\n+$/, ''))] : []),
     '',
   ].join('\n');
   mkdirSync(path.dirname(filePath), { recursive: true });

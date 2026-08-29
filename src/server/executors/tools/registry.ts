@@ -49,6 +49,7 @@ import { SEARCH_TOOL_DEFINITIONS, searchFilesHandler, globFilesHandler } from '.
 import { TODO_TOOL_DEFINITIONS, todoReadHandler, todoWriteHandler } from './todo-tools';
 import { hostBridgeTools } from './bridge-tools';
 import { KNOWLEDGE_TOOL_DEFINITIONS, searchKnowledgeHandler } from './knowledge-tools';
+import { PERSONA_TOOL_DEFINITIONS, readPersonaManualHandler } from './persona-tools';
 import { DOCUMENT_TOOL_DEFINITIONS, documentCreateHandler, documentAppendHandler } from './document-tools';
 
 // 复用 file-tools.ts 的类型定义（稳定，多处引用）
@@ -1466,6 +1467,14 @@ export function createBuiltinToolRegistry(): RuntimeToolRegistry {
     handler: searchKnowledgeHandler,
     permissionAction: 'read-file',
     source: { pluginId: BUILTIN_PLUGIN_ID, toolName: 'search_knowledge' },
+  });
+  // 批次 E2（专家知识库工程）：人设手册按节读取 builtin——API 型执行器的渐进披露取材口
+  // （CLI 型执行器走 context 注入的绝对路径用文件工具直读）。
+  registry.register({
+    definition: PERSONA_TOOL_DEFINITIONS[0]!,
+    handler: readPersonaManualHandler,
+    permissionAction: 'read-file',
+    source: { pluginId: BUILTIN_PLUGIN_ID, toolName: 'read_persona_manual' },
   });
   // capability parity 批次 E：文档生产 builtin（write-file 守卫锚=args.path，先读后写校验沿用）。
   registry.register({

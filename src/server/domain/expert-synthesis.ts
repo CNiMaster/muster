@@ -300,6 +300,10 @@ export function writeUserPersonaFile(draft: DraftCard): { personaId: string; fil
     '',
     ...draft.principles.map((p) => `- ${p}`),
     '',
+    '## 领域专业知识',
+    '',
+    '<!-- 知识补给占位（批次 E1）：合成专家出生零调研，专业经验靠任务沉淀逐步长出，此处留给知识包/知识补给写入。 -->',
+    '',
   ].join('\n');
   mkdirSync(path.dirname(filePath), { recursive: true });
   writeFileSync(filePath, `${fm}${body}`, 'utf8');
