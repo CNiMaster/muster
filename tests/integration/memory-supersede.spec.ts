@@ -15,6 +15,7 @@ import {
   loadContextMemories,
   MEMORY_CONTENT_MAX_CHARS,
   MEMORY_INJECT_PERSONAL_MAX_ENTRIES,
+  MEMORY_EXPLORATION_MAX_ENTRIES,
   searchMemory,
 } from '../../src/server/domain/memory';
 import { makeTestDb } from './setup';
@@ -152,20 +153,29 @@ describe('写入与注入配额（P0-②/P0-③）', () => {
     expect(rest).toHaveLength(2);
   });
 
-  it('personal 注入条数上限：超限条目出列且不记账', () => {
+  it('personal 注入条数上限：超限条目出列且不记账（记忆自动化批后=12 常规+2 探索豁免）', () => {
     const profile = createAgentProfile(db, { displayName: '员工' });
     const workbench = restoreWorkbench(db, { id: 'wb_cap', name: '工作台' });
     const project = createProject(db, { companyId: workbench.id, name: '项目' });
-    const total = MEMORY_INJECT_PERSONAL_MAX_ENTRIES + 5;
-    for (let i = 0; i < total; i++) {
+    // 12 条窗口期外老条目带优势分占满常规配额（饥饿构造：无探索配额时新条目永远排不过）+ 3 条窗口期内新条目
+    for (let i = 0; i < MEMORY_INJECT_PERSONAL_MAX_ENTRIES; i++) {
       createMemoryCandidate(db, {
-        profileId: profile.id, scope: 'personal', content: `偏好 ${i}：保持简短`,
+        profileId: profile.id, scope: 'personal', content: `老偏好 ${i}：保持简短`,
+        author: 'user', confidence: 1, canInfluence: true, allowAutoApprove: true,
+      });
+      db.prepare("UPDATE memory_entry SET created_at=?, adv_sum=10, vote_count=2 WHERE id=(SELECT id FROM memory_entry WHERE content LIKE ? ORDER BY created_at DESC LIMIT 1)")
+        .run(new Date(Date.now() - 20 * 86_400_000).toISOString(), `老偏好 ${i}：%`);
+    }
+    for (let i = 0; i < 3; i++) {
+      createMemoryCandidate(db, {
+        profileId: profile.id, scope: 'personal', content: `新偏好 ${i}：保持简短`,
         author: 'user', confidence: 1, canInfluence: true, allowAutoApprove: true,
       });
     }
     // 默认 LIMIT 8 会先截断，传大 limit 让 personal 专属上限（12）成为约束边界
     const injected = loadContextMemories(db, { profileId: profile.id, projectId: project.id, taskId: 'tk_budget_1', limit: 20 });
-    expect(injected.filter((e) => e.scope === 'personal').length).toBeLessThanOrEqual(MEMORY_INJECT_PERSONAL_MAX_ENTRIES);
-    expect(injected).toHaveLength(MEMORY_INJECT_PERSONAL_MAX_ENTRIES); // 库里只有 personal
+    const personal = injected.filter((e) => e.scope === 'personal');
+    expect(personal.length).toBe(MEMORY_INJECT_PERSONAL_MAX_ENTRIES + MEMORY_EXPLORATION_MAX_ENTRIES); // 12 老 + 2 探索
+    expect(personal.filter((e) => e.content.startsWith('新偏好')).length).toBe(MEMORY_EXPLORATION_MAX_ENTRIES); // 第 3 条新偏好出列
   });
 });

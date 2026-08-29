@@ -374,6 +374,17 @@ async function drainReflectionQueueInner(
   } catch (err) {
     log.warn('preference consolidation failed', { error: err instanceof Error ? err.message : String(err) });
   }
+  // 记忆自动化批（2026-08-29）：pending 候选默认全自动裁决（独立 LLM keep/drop + TTL 兜底），
+  // 人不再是必经环节；看板保留为可选干预面。关：memory_auto_adjudicate_enabled。
+  try {
+    const { adjudicatePendingMemories } = await import('./memory-adjudication');
+    const adjudicated = await adjudicatePendingMemories(db);
+    if (adjudicated.kept + adjudicated.dropped + adjudicated.expired > 0) {
+      log.info('memory auto adjudication', { ...adjudicated });
+    }
+  } catch (err) {
+    log.warn('memory adjudication tick failed', { error: err instanceof Error ? err.message : String(err) });
+  }
   return { processed: rows.length, lessons };
 }
 

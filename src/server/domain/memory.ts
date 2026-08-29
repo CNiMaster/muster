@@ -21,6 +21,27 @@ export const MEMORY_INJECT_REST_CHAR_BUDGET = 4000;
 /** personal 注入条数上限：personal 永远全量参与排序，但条数失控会挤占整个注入配额（收敛治理第一道闸）。 */
 export const MEMORY_INJECT_PERSONAL_MAX_ENTRIES = 12;
 
+/**
+ * 记忆自动化批（2026-08-29）：personal 探索配额——优势分排序下，新记忆（零优势）会被老优势
+ * 条目挤到 12 条之外永远出不了场（饥饿 → 永不积累战绩 → 永不出场）。保底把窗口期内最新的
+ * N 条并入注入（不占 12 条计数，字符预算仍硬控），新偏好先拿到出场机会、用效果说话。
+ */
+export const MEMORY_EXPLORATION_MAX_ENTRIES = 2;
+export const MEMORY_EXPLORATION_WINDOW_DAYS = 14;
+
+/**
+ * 窗口期内最新的 personal 生效记忆（探索配额候选）。不排除已在召回集里的——饥饿场景正是
+ * 「新条目已进集但被 12 条计数挡掉」：预算豁免按 id 判定，缺的补进、在集的豁免。
+ */
+function explorationPersonalRows(db: DB, now: string): EntryRow[] {
+  const cutoff = new Date(Date.parse(now) - MEMORY_EXPLORATION_WINDOW_DAYS * 86_400_000).toISOString();
+  return db.prepare(
+    `SELECT * FROM memory_entry WHERE state IN ('active','locked') AND can_influence=1
+       AND (expires_at IS NULL OR expires_at > ?) AND scope='personal' AND created_at > ?
+     ORDER BY created_at DESC LIMIT ?`,
+  ).all(now, cutoff, MEMORY_EXPLORATION_MAX_ENTRIES) as EntryRow[];
+}
+
 /** 经验归因受控词表（spec 2026-08-22-experience-library）：模型能力/方法/上下文/工具——四路由下游各取所需。 */
 export const MEMORY_CAUSES = ['model', 'method', 'context', 'tool'] as const;
 export type MemoryCause = (typeof MEMORY_CAUSES)[number];
@@ -504,7 +525,11 @@ export function loadContextMemories(db: DB, input: {
        ORDER BY ${orderClause} LIMIT ?`,
     ).all(...fullValues) as EntryRow[];
     markCompactionDirty(db, rows);
-    return recordInjected(db, input.taskId, applyInjectBudget(rows.map((row) => entryFromRow(db, row))));
+    const exploration = explorationPersonalRows(db, now);
+    const explorationIds = new Set(exploration.map((r) => r.id));
+    const inRow = new Set(rows.map((r) => r.id));
+    const merged = [...exploration.filter((r) => !inRow.has(r.id)), ...rows];
+    return recordInjected(db, input.taskId, applyInjectBudget(merged.map((row) => entryFromRow(db, row)), explorationIds));
   }
   // query 非空 → personal/craft 仍全量（craft 按人设过滤）；workspace/project 仅注入相关记忆。
   // 每个词元独立 OR 命中（英文整词、中文整段 + 二元组），既渐进又不丢用户的稳定偏好。
@@ -533,7 +558,11 @@ export function loadContextMemories(db: DB, input: {
      ORDER BY ${orderClause} LIMIT ?`,
   ).all(...values) as EntryRow[];
   markCompactionDirty(db, rows);
-  return recordInjected(db, input.taskId, applyInjectBudget(rows.map((row) => entryFromRow(db, row))));
+  const exploration = explorationPersonalRows(db, now);
+  const explorationIds = new Set(exploration.map((r) => r.id));
+  const inRow = new Set(rows.map((r) => r.id));
+  const merged = [...exploration.filter((r) => !inRow.has(r.id)), ...rows];
+  return recordInjected(db, input.taskId, applyInjectBudget(merged.map((row) => entryFromRow(db, row)), explorationIds));
 }
 
 /**
@@ -541,16 +570,18 @@ export function loadContextMemories(db: DB, input: {
  * 无上限时会挤占整个注入配额），其余段合计 ≤4000 字符。按既有排序保序截断，预算尽的条目直接出列
  * （不出场即不记账，优势分不被无辜稀释）。
  */
-function applyInjectBudget(entries: MemoryEntry[]): MemoryEntry[] {
+function applyInjectBudget(entries: MemoryEntry[], explorationIds?: Set<string>): MemoryEntry[] {
   let personalChars = 0;
   let restChars = 0;
   let personalCount = 0;
   return entries.filter((entry) => {
     if (entry.scope === 'personal') {
-      if (personalCount >= MEMORY_INJECT_PERSONAL_MAX_ENTRIES) return false;
+      // 探索配额条目不占 12 条计数（新偏好保底出场），字符预算仍硬控
+      const isExploration = explorationIds?.has(entry.id) === true;
+      if (!isExploration && personalCount >= MEMORY_INJECT_PERSONAL_MAX_ENTRIES) return false;
       if (personalChars + entry.content.length > MEMORY_INJECT_PERSONAL_CHAR_BUDGET) return false;
       personalChars += entry.content.length;
-      personalCount += 1;
+      if (!isExploration) personalCount += 1;
       return true;
     }
     if (restChars + entry.content.length > MEMORY_INJECT_REST_CHAR_BUDGET) return false;
