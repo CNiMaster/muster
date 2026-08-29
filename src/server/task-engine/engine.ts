@@ -280,7 +280,7 @@ export class TaskEngine {
   private notifyUserMessageMilestone(task: { inputProtocol?: unknown }, content: string, taskId?: string): void {
     try {
       const proto = (task.inputProtocol ?? {}) as Record<string, unknown>;
-      if (proto.trigger !== 'user_message') return;
+      if (proto.trigger !== 'user_message' && proto.trigger !== 'automation') return;
       if (typeof proto.scope !== 'string' || typeof proto.scopeId !== 'string') return;
       postSystemMessage(this.db, {
         scopeKind: proto.scope as 'workbench' | 'project',
@@ -1537,7 +1537,7 @@ export class TaskEngine {
           });
         }
       }
-      const isConvTask = task.inputProtocol.trigger === 'user_message'
+      const isConvTask = (task.inputProtocol.trigger === 'user_message' || task.inputProtocol.trigger === 'automation')
         && (task.inputProtocol.scope === 'project' || task.inputProtocol.scope === 'workbench')
         && typeof task.inputProtocol.scopeId === 'string';
       // 类型窄化：isConvTask 复合条件不自动收窄 inputProtocol 字段类型，此处显式收窄供下方播报使用

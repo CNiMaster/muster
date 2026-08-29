@@ -265,7 +265,7 @@ export function ensureDefaultProject(db: DB): { project: Project; created: boole
   const rows = db.prepare('SELECT * FROM project ORDER BY created_at ASC').all() as ProjectRow[];
   const existing = rows.map((r) => fromRow(db, r)).find((p) => {
     const s = p.settings as Record<string, unknown>;
-    return s.inbox !== true && s.standalone !== true && s.removed !== true && p.state !== 'archived';
+    return s.inbox !== true && s.standalone !== true && s.automationQueue !== true && s.removed !== true && p.state !== 'archived';
   });
   if (existing) return { project: existing, created: false };
   const staff = ensureWorkspaceStaff(db);
@@ -291,8 +291,8 @@ export function ensureDefaultProject(db: DB): { project: Project; created: boole
 export function removeProject(db: DB, id: string, options: { deleteRecords?: boolean } = {}): { removed: boolean; recordsDeleted: boolean } {
   const project = getProject(db, id);
   const settings = project.settings as Record<string, unknown>;
-  if (settings.inbox === true || settings.standalone === true) {
-    throw new AppError(ErrorCode.CONFLICT, '基础设施项目（收件箱/独立任务）不可移除');
+  if (settings.inbox === true || settings.standalone === true || settings.automationQueue === true) {
+    throw new AppError(ErrorCode.CONFLICT, '基础设施项目（收件箱/独立任务/自动化执行）不可移除');
   }
   if (options.deleteRecords) {
     db.transaction(() => {
@@ -346,7 +346,7 @@ export function updateProject(
   // 时降级为只改库名不动目录——改名本身不该被目录迁移卡死。
   if (patch.name !== undefined && patch.rootDir === undefined) {
     const settings = cur.settings as Record<string, unknown>;
-    const infra = settings.inbox === true || settings.standalone === true;
+    const infra = settings.inbox === true || settings.standalone === true || settings.automationQueue === true;
     const newName = patch.name.trim();
     if (!infra && newName && newName !== cur.name) {
       const workspaceRoot = getActiveWorkspace(db)?.rootDir ?? defaultWorkspaceRoot();

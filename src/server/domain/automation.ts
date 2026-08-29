@@ -9,7 +9,7 @@ import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
 import { getProject } from './project';
-import { listPlugins } from './plugin-adapter';
+import { getEffectivePluginsForCompany } from './plugin-install';
 
 export type AutomationKind = 'github-issues' | 'notify' | 'dispatch';
 
@@ -133,9 +133,10 @@ export const CAPABILITY_MATCHERS: Record<string, RegExp> = {
   'repo-stats': /(github|git\b|repo|pull.request|\bpr\b|issue)/i,
 };
 
-/** 已装能力清单的一次性快照（名称+描述拼接），供 requires 匹配。 */
+/** 生效能力清单快照（名称+描述拼接），供 requires 匹配——与工具装配同口径：
+ * getEffectivePluginsForCompany 已并入 opt-out 禁用决策与 status=disabled，能力中心「禁用」即时反映。 */
 export function installedCapabilityText(db: DB): string {
-  const plugins = listPlugins(db).filter((p) => p.status !== 'disabled' && p.status !== 'error');
+  const plugins = getEffectivePluginsForCompany(db).filter((p) => p.status !== 'error');
   return plugins
     .map((p) => `${p.name} ${typeof p.manifest === 'object' && p.manifest && 'description' in (p.manifest as Record<string, unknown>) ? String((p.manifest as Record<string, unknown>).description ?? '') : ''}`)
     .join('\n');
@@ -187,11 +188,12 @@ export function createAutomation(db: DB, input: {
     missing.length > 0 ? 1 : 0,
     input.createdVia, now, now,
   );
-  const rec = getAutomation(db, id);
   if (missing.length > 0) {
-    rec.lastResult = `缺能力未装：${missing.join('、')}——到能力中心安装后自动恢复排程`;
+    // 指引落库（不只内存）：列表刷新后仍可见缺口；chat 播报读同一来源
+    db.prepare('UPDATE automation SET last_result=? WHERE id=?')
+      .run(`缺能力未装：${missing.join('、')}——到能力中心安装后自动恢复排程`, id);
   }
-  return rec;
+  return getAutomation(db, id);
 }
 
 /**
@@ -258,13 +260,18 @@ export function updateAutomation(db: DB, id: string, patch: {
   }
   if (projectId) getProject(db, projectId);
   assertSchedule(schedule);
+  // 编辑改了 config（含 requires）→ 能力状态重算：缺→挂起；齐→恢复（原被挂起的重新排程）
+  const configChanged = patch.config !== undefined;
+  const missing = configChanged ? missingCapabilities(db, config.requires) : [];
+  const nextBlocked = configChanged ? missing.length > 0 : current.capabilityBlocked;
+  const nextEnabled = nextBlocked ? false : (current.capabilityBlocked ? true : current.enabled);
   const now = nowIso();
   db.prepare(
-    `UPDATE automation SET config_json=?, schedule_kind=?, schedule_interval_ms=?, time_of_day=?, run_at=?, days_json=?, project_id=?${patch.schedule ? ', last_run_at=NULL' : ''}, updated_at=? WHERE id=?`,
+    `UPDATE automation SET config_json=?, schedule_kind=?, schedule_interval_ms=?, time_of_day=?, run_at=?, days_json=?, project_id=?, capability_blocked=?, enabled=?${patch.schedule ? ', last_run_at=NULL' : ''}, updated_at=? WHERE id=?`,
   ).run(
     JSON.stringify(config), schedule.kind, schedule.intervalMs ?? null, schedule.timeOfDay ?? null,
     schedule.runAt ?? null, schedule.days ? JSON.stringify(schedule.days) : null,
-    projectId, now, id,
+    projectId, nextBlocked ? 1 : 0, nextEnabled ? 1 : 0, now, id,
   );
   return getAutomation(db, id);
 }

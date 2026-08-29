@@ -148,6 +148,7 @@ const companyExclusiveHandler = asyncHandler(async (req, res) => {
     manifest: parsed.manifest as import('../../shared/plugin').Plugin['manifest'],
   });
   realtime.publish(makeLifecycleEvent('plugin.installed', { pluginId: plugin.id }, {}));
+    recheckCapabilityBlocked(getDb()); // 安装即恢复被挂起的自动化（能力对账）
   res.status(201).json(plugin);
 });
 pluginsRouter.post('/exclusive', companyExclusiveHandler);
@@ -194,6 +195,7 @@ pluginsRouter.post(
     };
     const plugin = installPlugin(getDb(), input);
     realtime.publish(makeLifecycleEvent('plugin.installed', { pluginId: plugin.id }, {}));
+    recheckCapabilityBlocked(getDb()); // 安装即恢复被挂起的自动化（能力对账）
     res.status(201).json(plugin);
   }),
 );
@@ -203,6 +205,7 @@ pluginsRouter.delete(
   asyncHandler(async (req, res) => {
     removePlugin(getDb(), param(req, 'id'));
     realtime.publish(makeLifecycleEvent('plugin.disabled', { pluginId: param(req, 'id') }, {}));
+    recheckCapabilityBlocked(getDb()); // 卸载联动 → 依赖它的自动化重新对账挂起
     res.status(204).end();
   }),
 );
@@ -278,6 +281,7 @@ pluginsRouter.post(
       input.scope as InstallScope,
     );
     realtime.publish(makeLifecycleEvent('plugin.installed', { pluginId: plugin.id }, {}));
+    recheckCapabilityBlocked(getDb()); // 安装即恢复被挂起的自动化（能力对账）
     res.status(201).json(plugin);
   }),
 );
@@ -342,6 +346,7 @@ pluginsRouter.post(
       replaceExisting: input.replaceExisting,
     });
     realtime.publish(makeLifecycleEvent('plugin.installed', { pluginId: plugin.id }, {}));
+    recheckCapabilityBlocked(getDb()); // 安装即恢复被挂起的自动化（能力对账）
     res.status(201).json({ ...plugin, presetId: input.presetId });
   }),
 );
@@ -369,6 +374,7 @@ pluginsRouter.post(
       replaceExisting: input.replaceExisting,
     });
     realtime.publish(makeLifecycleEvent('plugin.installed', { pluginId: plugin.id }, {}));
+    recheckCapabilityBlocked(getDb()); // 安装即恢复被挂起的自动化（能力对账）
     res.status(201).json({ ...plugin, pluginName: input.pluginName });
   }),
 );
@@ -387,6 +393,7 @@ pluginsRouter.post(
       .parse(req.body);
     const plugin = await authorSkill(getDb(), input);
     realtime.publish(makeLifecycleEvent('plugin.installed', { pluginId: plugin.id }, {}));
+    recheckCapabilityBlocked(getDb()); // 安装即恢复被挂起的自动化（能力对账）
     res.status(201).json(plugin);
   }),
 );

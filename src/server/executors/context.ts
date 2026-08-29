@@ -523,7 +523,7 @@ export function assembleContext(
   }
   // 整改计划 Part2 批次5：自动化管家专属——automationPlan 契约 + 可绑定项目清单
   if (agent?.isSystem && agent.role === AUTOMATION_ROLE) {
-    const bindableProjects = db.prepare("SELECT id, name FROM project WHERE state IN ('active','draining') AND COALESCE(settings_json,'') NOT LIKE '%inbox%' ORDER BY created_at DESC LIMIT 20").all() as Array<{ id: string; name: string }>;
+    const bindableProjects = db.prepare("SELECT id, name FROM project WHERE state IN ('active','draining') AND COALESCE(settings_json,'') NOT LIKE '%inbox%' AND COALESCE(settings_json,'') NOT LIKE '%standalone%' AND COALESCE(settings_json,'') NOT LIKE '%automationQueue%' ORDER BY created_at DESC LIMIT 20").all() as Array<{ id: string; name: string }>;
     sp.push(
       '# 自动化契约（你是自动化管家，独有）',
       '用户想在自动化页创建自动化时：先问清缺的信息（仓库 / 绑定项目 / 节奏），齐了在最终 JSON 里加 automationPlan 字段并置 outcome="completed"：',

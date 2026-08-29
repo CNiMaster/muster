@@ -107,8 +107,8 @@ export function attachProjectDir(db: DB, projectId: string, input: { path: strin
   const proj = db.prepare('SELECT root_dir, settings_json FROM project WHERE id=?').get(projectId) as { root_dir: string; settings_json: string } | undefined;
   if (!proj) throw new AppError(ErrorCode.NOT_FOUND, `项目不存在: ${projectId}`);
   const settings = JSON.parse(proj.settings_json ?? '{}') as Record<string, unknown>;
-  if (settings.inbox === true || settings.standalone === true) {
-    throw new AppError(ErrorCode.CONFLICT, '基础设施项目（收件箱/独立任务）不支持绑定目录');
+  if (settings.inbox === true || settings.standalone === true || settings.automationQueue === true) {
+    throw new AppError(ErrorCode.CONFLICT, '基础设施项目（收件箱/独立任务/自动化执行）不支持绑定目录');
   }
   // 修复轮 Fix6：软件管理的 workspace 子树（projects/tasks/.system/.trash 及根本身）不可绑——
   // 绑定=用户自有数据语义（可写授权/永不回收），软件目录混进来会破坏治理边界

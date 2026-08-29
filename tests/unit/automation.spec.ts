@@ -192,6 +192,13 @@ describe('automation 域', () => {
     expect(chatNotify.projectId).toBeNull();
     expect(notify.kind).toBe('notify');
     expect(dispatch.kind).toBe('dispatch');
+    // 编辑改 requires → 能力状态双向重算（挂起/恢复）
+    const later = updateAutomation(db, dispatch.id, { config: { prompt: '写日报', requires: ['web-search'] } });
+    expect(later.capabilityBlocked).toBe(true);
+    expect(later.enabled).toBe(false);
+    const restored = updateAutomation(db, dispatch.id, { config: { prompt: '写日报' } });
+    expect(restored.capabilityBlocked).toBe(false);
+    expect(restored.enabled).toBe(true);
   });
 });
 

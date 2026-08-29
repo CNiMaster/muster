@@ -129,12 +129,13 @@ export async function runAutomationSweep(db: DB): Promise<void> {
         const queue = ensureAutomationQueueProject(db).project;
         ensurePrimaryThread(db, queue.id, workbench.firstAgentId);
         const prompt = automation.config.prompt ?? '';
+        // 对话载荷：引擎按 trigger+scope 把执行结果/追问回写工作台对话现场（与收件箱任务同款链路）
         const task = createTask(db, {
           projectId: queue.id,
           assigneeAgentId: workbench.firstAgentId,
           title: `[自动化] ${prompt.slice(0, 60)}`,
           priority: 5,
-          inputProtocol: { instruction: prompt },
+          inputProtocol: { instruction: prompt, trigger: 'automation', scope: 'workbench', scopeId: workbench.id, content: prompt },
         });
         recordAndMark(db, automation.id, 'ok', startedAt, `已派活 → ${task.id}`);
       } else {
@@ -265,22 +266,28 @@ export class ProjectRuntimeCoordinator {
             }
           }
 
-          const budget = (project.settings.budget ?? {}) as Budget;
+          // 基础设施项目（收件箱/独立任务/自动化执行队列）：只泵送任务，
+          // 不参与软顶暂停与复盘触发——隐藏项目高频产 task 会把工作台拖进 review_paused，用户无从定位
+          const ps = project.settings as Record<string, unknown>;
+          const isInfra = ps.inbox === true || ps.standalone === true || ps.automationQueue === true;
           const hasRunning = tasks.some((task) => task.state === 'claimed' || task.state === 'running');
-          if (isSoftCapReached(this.db, project.id, budget) && !hasRunning) {
-            updateProject(this.db, project.id, { state: 'paused' });
-            continue;
-          }
+          if (!isInfra) {
+            const budget = (project.settings.budget ?? {}) as Budget;
+            if (isSoftCapReached(this.db, project.id, budget) && !hasRunning) {
+              updateProject(this.db, project.id, { state: 'paused' });
+              continue;
+            }
 
-          const interval = Number(project.settings.reviewTaskInterval ?? 20);
-          const review = shouldTriggerReport(this.db, project.id, {
-            taskCountInterval: interval,
-            // 时间触发：项目 settings.reviewTimeIntervalHours 设定的小时数（0/未设表示不启用）
-            timeIntervalMs: Number(project.settings.reviewTimeIntervalHours ?? 0) * 3600_000 || undefined,
-          });
-          if (review.trigger && review.kind && !hasRunning) {
-            openReportCycle(this.db, { projectId: project.id, triggerKind: review.kind });
-            break;
+            const interval = Number(project.settings.reviewTaskInterval ?? 20);
+            const review = shouldTriggerReport(this.db, project.id, {
+              taskCountInterval: interval,
+              // 时间触发：项目 settings.reviewTimeIntervalHours 设定的小时数（0/未设表示不启用）
+              timeIntervalMs: Number(project.settings.reviewTimeIntervalHours ?? 0) * 3600_000 || undefined,
+            });
+            if (review.trigger && review.kind && !hasRunning) {
+              openReportCycle(this.db, { projectId: project.id, triggerKind: review.kind });
+              break;
+            }
           }
           const planning = ensurePlanningTask(this.db, project.id);
           if (planning) plannedTasks.push(planning.id);
