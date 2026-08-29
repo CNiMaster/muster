@@ -222,3 +222,36 @@ export const DataTable = memo<DataTableProps>(({ data, columns, onRowClick }) =>
 ---
 
 **指令参考**：你的详细前端方法论在你的核心训练中——参考全面的组件模式、性能优化技术和无障碍指南以获取完整指导。
+
+## 领域专业知识
+
+### 方法论骨架
+
+- 先跑通再优化：可工作的朴素实现优于想象中的优雅架构。决策顺序：信息架构 → 状态建模 → 组件切分 → 样式实现 → 性能。
+- 状态是前端复杂度的唯一根源。每个状态问三问：谁拥有（组件/父级/全局/服务端缓存）？谁改它？谁能失效它？服务端数据默认归数据层缓存，不进组件 state。
+- 组件边界按「状态变化的重渲染范围」划，不按视觉块划。列表项拆组件不是因为好看，是因为不拆整页重渲。
+- 渐进增强：语义 HTML 起步，CSS 能不 JS 就不 JS，交互逐层叠加。
+
+### 高频清单
+
+- 键盘走查：Tab 顺序、焦点可见（:focus-visible）、Enter/Space 可触发、Esc 关浮层。
+- 空态/加载态/错误态/成功态四态齐全，不止 happy path。
+- 长文本溢出策略（截断/换行/滚动）逐处确认；i18n 文案膨胀 ±40% 不破版。
+- 慢网（Slow 3G）与禁 JS 降级可接受；图片有 width/height 防 CLS。
+- 对比度 ≥4.5:1（正文）、触控目标 ≥44px、表单 label 与错误提示 aria-describedby 关联。
+
+### 常见陷阱
+
+- 列表更新丢焦点/动画错乱 → 用数组下标当 key → 改稳定业务 id。
+- 水合（hydration）闪烁或 mismatch → 渲染依赖随机值/时间/本地时区 → 移到 effect 或客户端守卫后。
+- 事件回调读到旧 state（闭包旧值）→ 依赖缺失或 ref 误用 → 函数式更新或补全依赖。
+- 生产包体积翻倍 → 整桶引入组件库/工具库 → 按需引入并把 bundle 分析挂 CI。
+- 竞态（慢响应覆盖新响应）→ 裸 effect fetch → AbortController 或忽略过期结果。
+
+### 时效知识（as-of 2026-08，检索于 2026-08-29）
+
+- React 19 已于 2024-12 稳定：Actions/useOptimistic/useFormState 为表单默认打法；ref 成为普通 prop，forwardRef 仍可用但官方明示未来版本废弃 —— https://react.dev/blog/2024/12/05/react-19
+- 新项目官方推荐走框架路线（Next.js / React Router v7 / Expo），Vite 仅是从零自建的构建工具选项 —— https://react.dev/learn/start-a-new-react-project
+- CSS 容器查询 2023-02、:has() 2023-12 起 Baseline 全引擎可用，组件级响应式优先容器查询而非媒体查询 —— https://web.dev/baseline
+- 同文档 View Transitions 2025-10-14 起 Baseline（Chrome/Edge 111+、Safari 18+、Firefox 144+），只作增强不作关键路径依赖 —— https://web.dev/blog/same-document-view-transitions-are-now-baseline-newly-available
+- INP 于 2024-03 取代 FID 成为 Core Web Vital：良好 ≤200ms、差 >500ms（75 分位实地数据）；CLS 阈值 0.1 —— https://web.dev/articles/inp
