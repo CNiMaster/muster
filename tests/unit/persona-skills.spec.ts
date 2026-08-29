@@ -142,3 +142,44 @@ describe('resolveTaskSkills persona 源', () => {
     expect(resolved.every((r) => r.source !== 'persona')).toBe(true);
   });
 });
+
+describe('W4：persona 源优先级次序（H-5 补断言）', () => {
+  it('同 skill 三源竞争：task(5) > persona(4.5) > field(4)', () => {
+    const c = restoreWorkbench(db, { id: `wb_pri_${Math.random().toString(36).slice(-6)}`, name: 'co' });
+    const lead = createAgent(db, { companyId: c.id, name: 'lead', role: 'lead' });
+    const p = createProject(db, { companyId: c.id, name: 'p', rootDir: makeTempGitRepo(), firstAgentId: lead.id, initialState: 'active' });
+    // field 绑定与 persona 声明、task 显式要求同指一个 skill
+    db.prepare(
+      `INSERT INTO capability_binding (id, employee_id, scope, scope_key, capability_id, skill_ids_json, purpose, load_when, created_at, updated_at, recommended_tool_ids_json, requires_executor_kind)
+       VALUES ('cb_pri_1', NULL, 'field', 'kb_pri', 'cap_pri', '["code-review-and-quality"]', '域绑定', '常载', ?, ?, '[]', '')`,
+    ).run(new Date().toISOString(), new Date().toISOString());
+
+    // 造带 skills 的 user 人设（mkdirSync/writeFileSync/USER_PERSONAS_ROOT 已在文件头导入）
+    const userRoot = `${USER_PERSONAS_ROOT}/dev`;
+    mkdirSync(userRoot, { recursive: true });
+    writeFileSync(`${userRoot}/priority-armed.md`, [
+      '---', 'name: 优先级专家', 'description: x', 'emoji: 🧬', 'color: "#7c5cff"',
+      'skills: code-review-and-quality', '---', '',
+      '# 优先级专家', '', '## 你的身份与记忆', '', '身份', '', '## 核心使命', '', '使命', '', '## 关键规则', '', '- 规则', '',
+    ].join('\n'), 'utf8');
+
+    // 仅 field + persona → persona 胜
+    const t1 = createTask(db, {
+      projectId: p.id, title: '优先级核对', assigneeAgentId: lead.id,
+      personaId: 'user/dev/priority-armed',
+      knowledgeTargets: ['kb_pri'],
+    });
+    const r1 = resolveTaskSkills(db, t1).find((r) => r.skillId === 'code-review-and-quality');
+    expect(r1?.source).toBe('persona');
+
+    // task 显式 + persona → task 胜
+    const t2 = createTask(db, {
+      projectId: p.id, title: '优先级核对2', assigneeAgentId: lead.id,
+      personaId: 'user/dev/priority-armed',
+      requiredSkillIds: ['code-review-and-quality'],
+      knowledgeTargets: ['kb_pri'],
+    });
+    const r2 = resolveTaskSkills(db, t2).find((r) => r.skillId === 'code-review-and-quality');
+    expect(r2?.source).toBe('task');
+  });
+});

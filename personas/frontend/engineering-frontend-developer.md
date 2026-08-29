@@ -240,7 +240,7 @@ export const DataTable = memo<DataTableProps>(({ data, columns, onRowClick }) =>
 - 空态/加载态/错误态/成功态四态齐全，不止 happy path。
 - 长文本溢出策略（截断/换行/滚动）逐处确认；i18n 文案膨胀 ±40% 不破版。
 - 慢网（Slow 3G）与禁 JS 降级可接受；图片有 width/height 防 CLS。
-- 对比度 ≥4.5:1（正文）、触控目标 ≥44px、表单 label 与错误提示 aria-describedby 关联。
+- 对比度 ≥4.5:1（正文）、触控目标 ≥44px、表单 label 与错误提示 aria-describedby 关联（WCAG 2.1 AA 口径 —— https://www.w3.org/WAI/WCAG21/quickref/）。
 
 ### 常见陷阱
 

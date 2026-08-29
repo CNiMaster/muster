@@ -60,7 +60,16 @@ video 两件（编剧——场单位+竖屏分镜化；剪辑——三层不混�
 mcp-builder（工具契约/三原语；目录拆平 7 节）；meeting-assistant（三张表纪要）；wechat-mini-program
 （**Skyline 未默认但新页建议默认开/子集限制/border-box**；目录拆平 8 节）。
 
-**下一批候选**（慢慢补）：novel 薄壳组其余三个（总编/情节架构/连贯性审校）、video 三件套、visual 插画/字体/质检、design-ui-designer（3 引用厚文件但无知识节）、厚文件目录粒度整理（document-generator/data-engineer/mobile-app-builder/mcp-builder 大节拆平）。
+## W4 收口（2026-08-30）
+
+- 灵魂兜底清零：6 个长尾文件补身份节（ai-citation/french/korean/salesforce/nexus）+ 解析器支持 `:brain:` 类 markdown 表情 token 前缀（workflow-architect 复活）；普查测试阈值 7→0。
+- 制度性断言补源：广告法第九条（copy-editor）/WCAG 2.1 AA（frontend/graphic-designer）/三审三校+差错率 1/万（editor-in-chief）。
+- H-5 优先级断言补齐：task(5) > persona(4.5) > field(4) 同 skill 三源竞争测试。
+- 复排名脚本 `scripts/persona-usage-rank.mjs`：三路只读证据（穿戴×3+终态×2+专家池×2+蓝图绑定）合成热度分；**真实数据积累后重跑刷新本页 Top 清单与扩产优先级**：`node scripts/persona-usage-rank.mjs [N]`。
+
+**长尾后续（真实数据驱动）**：预制 54 引用面已全覆盖知识包；下一轮扩产与优先级以复排名脚本输出为准，不再按绑定频次拍脑袋。
+
+novel 薄壳组其余三个（总编/情节架构/连贯性审校）、video 三件套、visual 插画/字体/质检、design-ui-designer（3 引用厚文件但无知识节）、厚文件目录粒度整理（document-generator/data-engineer/mobile-app-builder/mcp-builder 大节拆平）。
 
 ## 知识节写作规范
 

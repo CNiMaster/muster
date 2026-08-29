@@ -27,6 +27,8 @@ describe('canonicalHeading 标题归一', () => {
     expect(canonicalHeading('你必须遵守的关键规则')).toBe('关键规则');
     expect(canonicalHeading('你必须遵循的关键规则')).toBe('关键规则');
     expect(canonicalHeading('🛠️ 你的技术交付物')).toBe('技术交付物');
+    expect(canonicalHeading(':brain: 你的身份与记忆')).toBe('你的身份与记忆');
+    expect(canonicalHeading(':dart: 核心使命')).toBe('核心使命');
     expect(canonicalHeading('你的工作流程')).toBe('工作流程');
     expect(canonicalHeading('你的成功指标')).toBe('成功指标');
   });
@@ -103,11 +105,10 @@ describe('全库普查（批次 E1 门）', () => {
     }
   });
 
-  it('灵魂节存活：变体归一后 description 兜底只剩本身无身份/使命节的文件', () => {
+  it('灵魂节存活：变体归一+身份补写后 description 兜底清零（W4 收口门）', () => {
     const builtin = listPersonas().filter((p) => p.source === 'builtin');
     const fallen = builtin.filter((p) => p.soul === p.description || p.soul === p.name);
-    // 修复前 56 个变体文件解析近零存活；归一后仅剩 7 个本身就没有身份/使命节的文件
-    expect(fallen.length, fallen.map((p) => p.id).join(',')).toBeLessThanOrEqual(7);
+    expect(fallen.map((p) => p.id).join(','), fallen.map((p) => p.id).join(',')).toBe('');
   });
 
   it('nexus-strategy 补 frontmatter 后可见且节目录完整', () => {

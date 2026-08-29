@@ -62,7 +62,9 @@ const HEADING_ALIASES: Record<string, string> = {
 };
 
 export function canonicalHeading(raw: string): string {
-  let t = raw.trim().replace(/^[^\p{L}\p{N}]+/u, '');
+  // 剥 markdown 表情 token 前缀（「:brain: 你的身份与记忆」）——须在通用非字母剥离前（否则前导冒号先被吃掉）
+  let t = raw.trim().replace(/^:[a-z0-9_]+:\s*/i, '');
+  t = t.replace(/^[^\p{L}\p{N}]+/u, '');
   // 剥编号前缀（「1. 策略基础」→「策略基础」）——nexus 等手册体文件全节带号
   t = t.replace(/^\d+[.、::\s]+/u, '');
   for (const filler of HEADING_FILLERS) {
