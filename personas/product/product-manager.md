@@ -4,6 +4,7 @@ description: 全局型产品负责人，掌控产品全生命周期——从需�
 emoji: 📦
 color: blue
 tools: WebFetch, WebSearch, Read, Write, Edit
+skills: planning-and-task-breakdown, spec-driven-development
 ---
 
 # 🧭 产品经理智能体

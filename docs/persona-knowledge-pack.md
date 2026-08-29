@@ -23,6 +23,22 @@
 | 4 | publishing/publishing-copy-editor | 3 | 已增写 |
 | 5 | product/product-manager | 主槽（23KB 正文最深） | 已增写 |
 
+## 第二批（主槽薄人设深造 + 武器装配，2026-08-29 晚）
+
+审计发现多套预制蓝图主槽是 ~700 字模板壳，第二批优先补主槽：
+
+| personaId | 主槽 | 批次 |
+|---|---|---|
+| visual/visual-creative-director | 视觉设计/品牌设计（★2） | 知识包 |
+| novel/novel-writer | 长篇小说创作（★1） | 知识包 |
+| video/video-director | 视频制作（★1） | 知识包 |
+| publishing/publishing-editor-in-chief | 出版策划（★1） | 知识包 |
+| marketing/marketing-social-media-strategist | 营销推广成员槽 | 身份节修复（soul 兜底清零之一） |
+
+**武器装配**（frontmatter skills/tools，17 个高频预制专家）：skills 全部用 bundled 技能库真实目录名（声明即装载，批次 H 管道）；tools 用 API 注册表 id（web_search/web_fetch 命中 tool-chain 第 2 层），CLI 原生名保留文本提示语义。分配原则：明显对口才配（评审→code-review-and-quality、前后端→TDD/api-design、DevOps→ci-cd、产品组→planning、创意组→idea-refine），单个 ≤3 个防稀释。
+
+**下一批候选**（慢慢补）：novel 薄壳组其余三个（总编/情节架构/连贯性审校）、video 三件套、visual 插画/字体/质检、design-ui-designer（3 引用厚文件但无知识节）、厚文件目录粒度整理（document-generator/data-engineer/mobile-app-builder/mcp-builder 大节拆平）。
+
 ## 知识节写作规范
 
 节名固定 `## 领域专业知识`（与 expert-synthesis 入库占位同名），内部分四个小节（`###`）：
@@ -53,6 +69,16 @@
 - 美国版权局 AI 报告 Part 2（2025-01）：人类作者身份必要、仅 prompt 不足以确权 —— copyright.gov/ai/
 - 《AI 生成合成内容标识办法》2025-09-01 施行 —— cac.gov.cn 官方原文
 - 欧盟 AI Act：GPAI 2025-08-02 / 高风险 2026-08-02 —— digital-strategy.ec.europa.eu
+
+第二批检索核实记录（2026-08-29 晚）：
+
+- 腾讯研究院×D5《2025 设计行业 AI 应用趋势》：使用率 85.8%（+23.7%）、43.8% 实际项目使用 —— d5render.cn/news/ai-report-2025/
+- Figma《2026 设计师现状报告》：72% 用生成式 AI、98% 增加使用 —— meia.me/article/1510
+- 中国社科院《2025 中国网络文学发展研究报告》：用户 5.26 亿/阅读市场 502.1 亿（+16.6%）/作者 3269 万/IP 改编 3676.1 亿（+23.13%）/微短剧用户 8.5 亿破千亿 —— cssn.cn、新华网
+- 明略横竖屏创意研究：时长对竖屏传达显著负向，30s+ 横版竖版压 15s 内 —— mininglamp.com/news/7730/
+- 蝉妈妈运营数据：72% 用户 3 秒内划走；前 3 秒完播 <32% 进推荐池概率 <8% —— chanmama.com（运营圈口径，置信中）
+- 亿邦动力：2025 抖音推荐转向内容打分制，完播+前段互动权重高 —— ebrun.com/20250715/586241.shtml
+- 北京开卷 2025 年度：图书码洋 1104 亿（-2.24%）；内容电商 +30.43% 占比超四成首超平台电商；货架 -16.50% —— 新华传媒/新京报
 
 ## 更新机制
 

@@ -3,6 +3,8 @@ name: 技术文档工程师
 description: 专精于开发者文档、API 参考、README 和教程的技术写作专家。把复杂的工程概念转化为清晰、准确、开发者真正会读也用得上的文档。
 emoji: ✍️
 color: teal
+skills: documentation-and-adrs, document-authoring
+tools: web_search
 ---
 
 # 技术文档工程师
