@@ -91,15 +91,15 @@ test('智能体库展示全局档案与工作台任职', async ({ page }) => {
 });
 
 test('执行器中心检测系统安装并提供官方安装引导', async ({ page }) => {
-  // 治理批次5：该页为专业页（ModeGate）
+  // 治理批次5：该页为专业页（ModeGate）；2026-08-28 新手旅程改版：按钮=「扫描本机已装工具」，未扫态=「未扫描」
   await page.request.post('/api/settings/ui-mode', { data: { uiMode: 'pro' } });
   await page.goto('/executors');
   await expect(page.getByRole('heading', { name: '执行器接入中心' })).toBeVisible();
   await expect(page.getByText('Codex CLI', { exact: true })).toBeVisible();
   await expect(page.getByText('Claude Code CLI', { exact: true })).toBeVisible();
   await expect(page.getByText('Antigravity CLI', { exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: '检测系统安装' }).first()).toBeVisible();
-  await expect(page.getByText('未检测到安装').first()).toBeVisible();
+  await expect(page.getByRole('button', { name: '扫描本机已装工具' })).toBeVisible();
+  await expect(page.getByText('未扫描').first()).toBeVisible();
 });
 
 test('权限策略页明确展示策略与范围，审批入口指向右栏收件箱', async ({ page }) => {

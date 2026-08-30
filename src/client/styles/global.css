@@ -930,7 +930,7 @@ p { margin: 0 0 var(--space-3) 0; }
 /* Project task workspace · 空态居中开工 → 开始后消息流占满、composer 落底 */
 .project-task-workspace-stream{display:flex;flex-direction:column;height:100%;min-height:600px;gap:var(--space-3)}
 .ptws-body{flex:1;min-height:0;display:flex;flex-direction:column;gap:var(--space-3)}
-.project-task-workspace-stream.is-empty .ptws-body{justify-content:center}
+.project-task-workspace-stream.is-empty .ptws-body{justify-content:safe center}
 .ptws-hero{display:flex;flex-direction:column;gap:var(--space-2);max-width:640px;margin:0 auto;padding:0 var(--space-2);text-align:center;animation:ptws-fade-in var(--duration-moderate) var(--ease-out)}
 .ptws-hero h2{margin:0;font-size:var(--text-xl);letter-spacing:-.02em}
 .ptws-hero p{margin:0;font-size:var(--text-sm);line-height:1.6}
