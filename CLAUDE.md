@@ -4,7 +4,7 @@
 
 ## About Muster
 
-本地单用户多智能体工作台：项目任务、智能体/人设、蓝图与归档协同。方向「组织 = f(活)」——组织形状在蓝图里（自动复盘进化）。**当前默认**：双模式（`uiMode simple|pro`，默认 simple，壳顶栏切换 + ModeGate 20 条（含任务领取清单路由））+ 存储管理 `/storage`（详见「Workspace 治理」）。
+本地单用户多智能体工作台：项目任务、智能体/人设、蓝图与归档协同。组织形态跟随实际工作：结构画在蓝图里，随任务复盘自动进化。**当前默认**：双模式（`uiMode simple|pro`，默认 simple，壳顶栏切换 + ModeGate 专业页门）+ 存储管理 `/storage`（详见「Workspace 治理」）。
 
 ## 组织与名词（B5 中央六岗制：一个人就是一个公司）
 
@@ -30,11 +30,12 @@ npm run typecheck        # tsc 全量
 npm test                 # vitest 全量
 npm run test:e2e         # playwright
 npm run build            # dist/
+npm run gate             # 全量门：typecheck + vitest + build + e2e
 ```
 
-> 另有 `test:watch` / `test:product-acceptance`（零模型领域验收）/ `test:claude-smoke`（真实 Claude 两轮冒烟）/ `smoke`（77 项 HTTP）。
+> 另有 `test:watch` / `test:product-acceptance`（零模型领域验收）/ `preflight` / `smoke`（6 套 HTTP 子脚本，`scripts/smoke/`）。
 
-> 改 capability/plugin/project-readiness 等域后，`npm run dev` 下跑一遍 `npm run smoke`（77 项）。第三方引入登记 `THIRD_PARTY_NOTICES.md`。spec/plan 头部标 `状态：proposed|implemented|rejected`；重大修复落 `docs/postmortem/NNNN-*.md`。pre-push 仅 `typecheck`，全量由 CI 兜底。
+> 改 capability/plugin/project-readiness 等域后，`npm run dev` 下跑一遍 `npm run smoke`（6 套子脚本）。第三方引入登记 `THIRD_PARTY_NOTICES.md`。spec/plan 头部标 `状态：proposed|implemented|rejected`；重大修复落 `docs/postmortem/NNNN-*.md`。pre-push 仅 `typecheck`（lefthook），全量由 CI 兜底。
 
 ## Configuration
 
@@ -52,7 +53,7 @@ npm run build            # dist/
 
 ## Architecture
 
-`src/shared|server|client|tests|legacy`；`Task` 10 态、`project_task` 载体、staging 看门狗、worktree 隔离写。详见 `docs/superpowers/specs/architecture.md`。
+`src/{shared,server,client}` + 根 `tests/{unit,integration,e2e}`；`Task` 11 态、`project_task` 载体、staging 看门狗、worktree 隔离写；蓝图阶段流水线（`task_stage_run` 冻结快照）见 `docs/superpowers/specs/blueprint-stage-workflow-engine.md`。内容库（数据非代码）：根 `agents/`（原生岗）`personas/`（人设库）`skills/`（技能库）`tools/`（工具库）。详见 `docs/superpowers/specs/architecture.md`。
 
 ## Integrations & Dependencies
 

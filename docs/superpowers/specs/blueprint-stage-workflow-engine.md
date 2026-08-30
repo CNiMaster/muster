@@ -101,7 +101,7 @@
 
 - **M1（已实施 2026-08-29）**：串行阶段推进——task_stage_run 表+task-stage 域模块+引擎三处挂接（领取建行/上下文注入/完成拦截改派回队）+现场播报+stages API+任务详情阶段卡。无 stages 蓝图与机制任务零行为变化（fail-open：阶段机制任何异常回落旧收口路径）。
   - **M1 灵活性边界（用户问询定调）**：阶段内的灵活协作不受管线约束——执行者中途需要帮手（如「让人物塑造专家设计个新角色再回传」）走既有蜂群派遣/咨询/桥接分派，在 run 内发生、结果回传继续本阶段；阶段等外部依赖（waiting_dependency）恢复后仍是同一阶段。管线接管的只有「阶段结束时『下一个给谁』」——控制流归引擎（LangGraph 教训），语义与临时协作归 agent。
-  - **一蓝图多工作流：暂不做（定案）**。组织 = f(活)：同活不同打法应裂成不同蓝图，匹配层天然路由；阶段分叉已可由 dependsOn 表达。等真实使用撞到「同一张蓝图确实要两套流程」再议（先走蓝图裂变承接）。
+  - **一蓝图多工作流：暂不做（定案）**。组织形态跟随实际工作：同类活儿不同打法应裂成不同蓝图，匹配层天然路由；阶段分叉已可由 dependsOn 表达。等真实使用撞到「同一张蓝图确实要两套流程」再议（先走蓝图裂变承接）。
 - **M2（已实施 2026-08-29，ade8747）**：可选阶段门（stage.gate 声明式；self-check=economy 轻量自检/acceptance=验收员口径 ACCEPTANCE_PROMPT 快评；fail-open=pass；连续 2 败第 3 次自动放行——对 waiting_input 上抛的简化，放行留痕+播报）+ 阶段级记账（blueprint_stage_stat：runs/reworks/gate_fails，挂反思结算点；digest 注入给 AI 当提案依据）+ 阶段工具亲和（stage.tools ≤5；注入执行优先级 + resolveToolChain 第 3.5 层 source='stage'，MCP/技能 id 只提示不进装备决议）。
 - **M3（已实施 2026-08-29，b393af7）**：画布协作语义连接——三类连线保存即写回：人员→阶段=staffingPersonaIds（连线即绑定，未绑定悬空；引擎改派消费同字段）；工具→阶段=stage.tools（节点集合=台账∪引用）；阶段→阶段=dependsOn。AI update_stages 提案支持 staffingPersonaIds/tools/gate 全参数；digest 带阶段绑定详情。**运行过程可视化维持否决。**
 
