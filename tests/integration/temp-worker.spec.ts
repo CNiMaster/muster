@@ -44,7 +44,7 @@ afterEach(() => tdb.close());
 
 function getEmployment(db: DB, agentId: string) {
   return db.prepare(
-    'SELECT employment_type, temp_status, source_contract_id FROM company_employee WHERE legacy_agent_id=?',
+    'SELECT employment_type, temp_status, source_contract_id FROM employee WHERE legacy_agent_id=?',
   ).get(agentId) as { employment_type: string; temp_status: string | null; source_contract_id: string | null };
 }
 
@@ -55,7 +55,7 @@ describe('临时工招聘', () => {
       responsibilities: '做 UI 设计',
     });
     expect(result.isNewProfile).toBe(true);
-    // company_employee 标记为 temp/active
+    // employee 标记为 temp/active
     const emp = getEmployment(db, result.agentId);
     expect(emp.employment_type).toBe('temp');
     expect(emp.temp_status).toBe('active');

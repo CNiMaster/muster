@@ -10,8 +10,7 @@ import type { AddressInfo } from 'node:net';
 import { makeTestDb } from './setup';
 import { setDbForTest, closeDb } from '../../src/server/db/client';
 import { agentsRouter } from '../../src/server/api/agents';
-import { companyEmployeesRouter } from '../../src/server/api/agent-profiles';
-import { departmentsRouter } from '../../src/server/api/departments';
+import { employeesRouter } from '../../src/server/api/agent-profiles';
 import { projectsRouter } from '../../src/server/api/projects';
 import { graphsRouter } from '../../src/server/api/graphs';
 import { workflowsRouter } from '../../src/server/api/workflows';
@@ -37,8 +36,7 @@ beforeEach(async () => {
   app.use(express.json());
   // 批次A新路径（与生产挂载顺序一致的子集）
   app.use('/api/agents', agentsRouter);
-  app.use('/api/employees', companyEmployeesRouter);
-  app.use('/api/departments', departmentsRouter);
+  app.use('/api/employees', employeesRouter);
   app.use('/api/projects', projectsRouter);
   app.use('/api/relationships', graphsRouter);
   app.use('/api/workflows', workflowsRouter);
@@ -74,12 +72,6 @@ describe('资源组新路径（companyIdOf 单例兜底）', () => {
   it('POST /api/employees 缺参数 -> 400（路由命中）', async () => {
     const res = await fetch(`${base}/api/employees`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
     expect(res.status).toBe(400);
-  });
-
-  it('GET /api/departments -> 200 []', async () => {
-    const res = await fetch(`${base}/api/departments`);
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual([]);
   });
 
   it('GET /api/projects -> 200 []', async () => {

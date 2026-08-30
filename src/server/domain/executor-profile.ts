@@ -119,15 +119,15 @@ export function listExecutorProfiles(db: DB): ExecutorProfile[] {
 
 export function bindEmployeeExecutorProfile(db: DB, employeeId: string, executorProfileId: string): void {
   getExecutorProfile(db, executorProfileId);
-  const employment = db.prepare('SELECT id FROM company_employee WHERE id=?').get(employeeId) as { id: string } | undefined;
+  const employment = db.prepare('SELECT id FROM employee WHERE id=?').get(employeeId) as { id: string } | undefined;
   if (!employment) throw new AppError(ErrorCode.NOT_FOUND, `公司员工不存在: ${employeeId}`);
   if (isOrgLocked(db)) throw new AppError(ErrorCode.CONFLICT, '有任务执行中，暂不能修改员工执行器');
-  const result = db.prepare('UPDATE company_employee SET executor_profile_id=?, updated_at=? WHERE id=?').run(executorProfileId, nowIso(), employeeId);
+  const result = db.prepare('UPDATE employee SET executor_profile_id=?, updated_at=? WHERE id=?').run(executorProfileId, nowIso(), employeeId);
   if (result.changes !== 1) throw new AppError(ErrorCode.NOT_FOUND, `公司员工不存在: ${employeeId}`);
 }
 
 export function getEmployeeExecutorProfile(db: DB, employeeId: string): ExecutorProfile | null {
-  const row = db.prepare('SELECT executor_profile_id FROM company_employee WHERE id=?').get(employeeId) as { executor_profile_id: string | null } | undefined;
+  const row = db.prepare('SELECT executor_profile_id FROM employee WHERE id=?').get(employeeId) as { executor_profile_id: string | null } | undefined;
   if (!row) throw new AppError(ErrorCode.NOT_FOUND, `公司员工不存在: ${employeeId}`);
   return row.executor_profile_id ? getExecutorProfile(db, row.executor_profile_id) : null;
 }
@@ -171,7 +171,7 @@ export function updateExecutorProfile(
 export function deleteExecutorProfile(db: DB, id: string): void {
   getExecutorProfile(db, id);
   // 解除员工绑定（executor_profile_id 置空），避免悬挂引用
-  db.prepare('UPDATE company_employee SET executor_profile_id=NULL, updated_at=? WHERE executor_profile_id=?')
+  db.prepare('UPDATE employee SET executor_profile_id=NULL, updated_at=? WHERE executor_profile_id=?')
     .run(nowIso(), id);
   db.prepare('DELETE FROM connection_probe WHERE executor_profile_id=?').run(id);
   db.prepare('DELETE FROM executor_profile WHERE id=?').run(id);

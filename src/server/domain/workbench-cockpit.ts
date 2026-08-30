@@ -8,12 +8,12 @@ export function getWorkbenchCockpit(db: DB): CompanyCockpitDTO {
   const company = getWorkbench(db);
   // Review 修复 I2：收件箱项目（settings.inbox）是对话基础设施，不进驾驶舱计数与"继续当前项目"建议。
   const projects = listProjects(db, company.id).filter((p) => { const s = p.settings as Record<string, unknown>; return s?.inbox !== true && s?.automationQueue !== true; });
-  const employeeRows = db.prepare(`SELECT ce.id,ad.availability_state FROM company_employee ce JOIN agent_definition ad ON ad.id=ce.legacy_agent_id`).all() as Array<{id:string;availability_state:string}>;
+  const employeeRows = db.prepare(`SELECT ce.id,ad.availability_state FROM employee ce JOIN agent_definition ad ON ad.id=ce.legacy_agent_id`).all() as Array<{id:string;availability_state:string}>;
   const employees = { total: employeeRows.length, online: company.state === 'online' ? employeeRows.filter((row) => row.availability_state === 'online').length : 0, blocked: employeeRows.filter((row) => getEmploymentHealth(db, row.id).state !== 'ready').length };
   const pending = (db.prepare(`
     SELECT COUNT(*) AS count
     FROM permission_approval pa
-    JOIN company_employee ce ON ce.id=pa.employee_id
+    JOIN employee ce ON ce.id=pa.employee_id
     WHERE pa.status='pending'
   `).get() as { count: number }).count;
   // 业务审批（智能体产物确认）与命令审批同属"审批收件箱"，角标合并展示（2026-08-27）

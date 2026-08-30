@@ -37,7 +37,7 @@ function createHiddenBee(companyId: string, projectId: string, requesterAgentId:
   const { agentId } = createTempEmployment(db, {
     companyId, role: 'swarm-worker', requesterAgentId, name: '工蜂-1', systemPrompt: '一次性工蜂',
   });
-  db.prepare('UPDATE company_employee SET hidden=1 WHERE legacy_agent_id=?').run(agentId);
+  db.prepare('UPDATE employee SET hidden=1 WHERE legacy_agent_id=?').run(agentId);
   db.prepare('INSERT INTO project_agent_thread (id, project_id, agent_id, kind, root_thread_id, claude_session_id, context_json, state, created_at, updated_at) VALUES (?, ?, ?, ?, NULL, NULL, \'{}\', \'idle\', ?, ?)')
     .run(`th_bee_${Date.now()}`, projectId, agentId, 'primary', new Date().toISOString(), new Date().toISOString());
   return agentId;

@@ -83,7 +83,7 @@ describe('权限委托链：申请→审批', () => {
   it('上级批准后生成 permission_rule', () => {
     // 给员工绑一个权限策略（approveChangeRequest 需要员工有策略才能生成规则）
     const policy = ensureRolePermissionTemplates(db);
-    db.prepare('UPDATE company_employee SET permission_policy_id=? WHERE legacy_agent_id=?').run(policy.employee, employeeId);
+    db.prepare('UPDATE employee SET permission_policy_id=? WHERE legacy_agent_id=?').run(policy.employee, employeeId);
     const req = createPermissionChangeRequest(db, {
       companyId,
       requesterEmployeeId: employeeId,

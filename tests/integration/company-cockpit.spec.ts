@@ -59,7 +59,7 @@ describe('workbench cockpit', () => {
     connectEmployee(lead.id);
     const project = createProject(db, { companyId: company.id, name: '产品' });
     updateProject(db, project.id, { state: 'active' });
-    const leadPolicy = db.prepare('SELECT permission_policy_id id FROM company_employee WHERE id=?').get(lead.id) as { id: string };
+    const leadPolicy = db.prepare('SELECT permission_policy_id id FROM employee WHERE id=?').get(lead.id) as { id: string };
     requestApproval(db, {
       policyId: leadPolicy.id,
       employeeId: lead.id,
@@ -82,7 +82,7 @@ describe('workbench cockpit', () => {
     const other = restoreWorkbench(db, { id: 'wb_fix_2', name: 'B' });
     const outsider = createAgent(db, { companyId: other.id, name: '外部员工', role: 'lead' });
     connectEmployee(outsider.id);
-    const policy = db.prepare('SELECT permission_policy_id id FROM company_employee WHERE id=?').get(outsider.id) as { id: string };
+    const policy = db.prepare('SELECT permission_policy_id id FROM employee WHERE id=?').get(outsider.id) as { id: string };
     requestApproval(db, { policyId: policy.id, employeeId: outsider.id, taskId: 'other_task', action: 'git-push' });
 
     const cockpit = getWorkbenchCockpit(db);

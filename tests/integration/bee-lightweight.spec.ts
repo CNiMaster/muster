@@ -49,7 +49,7 @@ describe('工蜂轻量化（批次 H.0）', () => {
     const shared = db.prepare('SELECT is_temp_only FROM agent_profile WHERE id=?').get('ap_worker_bee_shared') as { is_temp_only: number | null };
     expect(shared.is_temp_only ?? 0).toBe(0);
     // 蜂任职：temp+active+hidden
-    const emp = db.prepare('SELECT employment_type, temp_status, hidden FROM company_employee WHERE legacy_agent_id=?').get(b1) as { employment_type: string; temp_status: string; hidden: number };
+    const emp = db.prepare('SELECT employment_type, temp_status, hidden FROM employee WHERE legacy_agent_id=?').get(b1) as { employment_type: string; temp_status: string; hidden: number };
     expect(emp).toMatchObject({ employment_type: 'temp', temp_status: 'active', hidden: 1 });
   });
 
@@ -66,7 +66,7 @@ describe('工蜂轻量化（批次 H.0）', () => {
     });
     dismissWorkerBee(db, bee);
     expect(db.prepare('SELECT 1 FROM agent_definition WHERE id=?').get(bee)).toBeUndefined();
-    expect(db.prepare('SELECT 1 FROM company_employee WHERE legacy_agent_id=?').get(bee)).toBeUndefined();
+    expect(db.prepare('SELECT 1 FROM employee WHERE legacy_agent_id=?').get(bee)).toBeUndefined();
     expect(db.prepare('SELECT 1 FROM agent_profile WHERE id=?').get('ap_worker_bee_shared')).toBeDefined();
     // 任务审计保留（assignee 因 FK 置空）
     const row = db.prepare('SELECT assignee_agent_id, title FROM task WHERE id=?').get(task.id) as { assignee_agent_id: string | null; title: string };

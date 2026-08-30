@@ -23,7 +23,6 @@ import {
   useDiscoverProjectLaunch,
   useConfirmProjectLaunch,
   useWorkbenchCockpit,
-  useDepartments,
   useWorkbenchAction,
   useStagingStatus,
   usePromoteStaging,
@@ -210,7 +209,7 @@ function NewProject(): React.ReactElement {
       breadcrumb={<WorkbenchContextSwitcher sectionKey="new" sectionLabel={openMode ? '打开本地项目' : '新建项目'} />}
       navigationLabel="项目导航"
       inspectorLabel="现场信息"
-      navigation={<ProjectWorkNavigation projectId="" projectTasks={[]} tasks={[]} agents={[]} departments={[]} view="task" attentionCount={0} novel={false} onNewTask={() => {}} />}
+      navigation={<ProjectWorkNavigation projectId="" projectTasks={[]} tasks={[]} agents={[]} view="task" attentionCount={0} novel={false} onNewTask={() => {}} />}
       inspector={<ProjectContextInspector projectId="" agents={[]} tasks={[]} />}
     >
       <div className="project-page work-surface-page" style={{ maxWidth: '800px', margin: '0 auto', padding: '16px 20px' }}>
@@ -390,7 +389,6 @@ export function ProjectDetail({ projectId }: { projectId: string }): React.React
   const { data: company } = useWorkbench();
   const { data: cockpit } = useWorkbenchCockpit();
   const { data: agents } = useAgents();
-  const { data: departments } = useDepartments();
   const { data: projectEvents } = useProjectEvents(projectId);
   const { data: tasks } = useTasks(projectId);
   const { data: projectTasks } = useProjectTasks(projectId);
@@ -514,7 +512,7 @@ export function ProjectDetail({ projectId }: { projectId: string }): React.React
           ? <a className="mu-btn mu-btn-primary mu-btn-sm workbench-publish-action" href="#employee-dispatch">＋ 派发工作</a>
           : null}
       </>}
-      navigation={<ProjectWorkNavigation projectId={projectId} projectTasks={projectTasks ?? []} tasks={tasks ?? []} agents={agents ?? []} departments={departments ?? []} firstAgentId={project.firstAgentId ?? company?.firstAgentId} selectedProjectTaskId={selectedProjectTaskId} selectedAgentId={selectedAgentId} view={projectView} attentionCount={attentionCount} novel={company?.kind === 'novel'} onNewTask={openNewTaskCard} />}
+      navigation={<ProjectWorkNavigation projectId={projectId} projectTasks={projectTasks ?? []} tasks={tasks ?? []} agents={agents ?? []} firstAgentId={project.firstAgentId ?? company?.firstAgentId} selectedProjectTaskId={selectedProjectTaskId} selectedAgentId={selectedAgentId} view={projectView} attentionCount={attentionCount} novel={company?.kind === 'novel'} onNewTask={openNewTaskCard} />}
       inspector={<InspectorTabsHost projectId={projectId} ctxBody={<ProjectContextInspector projectId={projectId} selectedTask={selectedProjectTask} selectedAgentId={projectView === 'employee' ? selectedAgentId : undefined} agents={agents ?? []} tasks={tasks ?? []} cockpit={cockpit} />} />}
       commandOptions={[
         ...(projectTasks ?? []).slice(0, 8).map((item) => ({ label: `#${item.seq} ${item.title}`, href: `/projects/${projectId}?view=task&projectTask=${item.id}`, group: '项目任务' })),

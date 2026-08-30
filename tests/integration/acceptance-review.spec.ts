@@ -73,7 +73,7 @@ describe('ensureAcceptanceOfficer 验收员实体', () => {
     // is_inspector → 不可删除
     expect(() => deleteAgent(db, first)).toThrow(/不能删除/);
     // 经理档（project scope no-approval）
-    const empId = (db.prepare('SELECT id FROM company_employee WHERE legacy_agent_id=?').get(first) as { id: string }).id;
+    const empId = (db.prepare('SELECT id FROM employee WHERE legacy_agent_id=?').get(first) as { id: string }).id;
     const policy = getEmployeePermissionPolicy(db, empId);
     expect(policy!.approvalStrategy).toBe('no-approval');
     expect(policy!.scope).toBe('project');

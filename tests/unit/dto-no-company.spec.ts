@@ -4,11 +4,10 @@
 import { describe, it, expect } from 'vitest';
 import type {
   Agent,
-  CompanyEmployee,
+  Employee,
   BusinessReview,
   MemoryCandidate,
   MemoryEntry,
-  Department,
   Project,
   Relationship,
 } from '../../src/client/api/types';
@@ -20,15 +19,14 @@ type AssertNoCompanyId<T> = 'companyId' extends keyof T ? never : true;
 describe('D-Task5 DTO 无 companyId 字段', () => {
   it('client DTO 类型不含 companyId', () => {
     const _agent: AssertNoCompanyId<Agent> = true;
-    const _employee: AssertNoCompanyId<CompanyEmployee> = true;
+    const _employee: AssertNoCompanyId<Employee> = true;
     const _review: AssertNoCompanyId<BusinessReview> = true;
     const _cand: AssertNoCompanyId<MemoryCandidate> = true;
     const _entry: AssertNoCompanyId<MemoryEntry> = true;
-    const _dept: AssertNoCompanyId<Department> = true;
     const _proj: AssertNoCompanyId<Project> = true;
     const _rel: AssertNoCompanyId<Relationship> = true;
-    expect([_agent, _employee, _review, _cand, _entry, _dept, _proj, _rel]).toEqual([
-      true, true, true, true, true, true, true, true,
+    expect([_agent, _employee, _review, _cand, _entry, _proj, _rel]).toEqual([
+      true, true, true, true, true, true, true,
     ]);
   });
 

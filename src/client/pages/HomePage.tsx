@@ -36,7 +36,6 @@ import {
   useWorkbench,
   useWorkbenchCockpit,
   useAgents,
-  useDepartments,
   useWorkbenchAction,
   useTasks,
   type ProjectTaskDTO,
@@ -74,7 +73,6 @@ export function HomePage(): React.ReactElement {
   const { data: company } = useWorkbench();
   const { data: cockpit } = useWorkbenchCockpit();
   const { data: agents } = useAgents();
-  const { data: departments } = useDepartments();
   const companyAction = useWorkbenchAction();
   const { data: projects, isLoading } = useProjects();
   const updateProject = useUpdateProject();
@@ -269,7 +267,6 @@ export function HomePage(): React.ReactElement {
           projectTasks={primaryProjectTasks ?? []}
           tasks={primaryTasks ?? []}
           agents={agents ?? []}
-          departments={departments ?? []}
           firstAgentId={primaryProject?.firstAgentId ?? company?.firstAgentId}
           view="task"
           attentionCount={attentionTotal}

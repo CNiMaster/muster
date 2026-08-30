@@ -36,7 +36,7 @@ function seed() {
 }
 
 function employmentId(agentId: string): string {
-  return (db.prepare('SELECT id FROM company_employee WHERE legacy_agent_id=?').get(agentId) as { id: string }).id;
+  return (db.prepare('SELECT id FROM employee WHERE legacy_agent_id=?').get(agentId) as { id: string }).id;
 }
 
 describe('persona 工具注入', () => {
@@ -90,7 +90,7 @@ describe('一次性执行体 deny 权限绑定（R1）', () => {
     });
     // 先显式绑一个非 deny 策略，再走绑定路径（模拟复用/二次确保）→ 不被覆盖
     const templates = ensureRolePermissionTemplates(db);
-    db.prepare('UPDATE company_employee SET permission_policy_id=? WHERE id=?').run(
+    db.prepare('UPDATE employee SET permission_policy_id=? WHERE id=?').run(
       templates.manager, employmentId(agentId),
     );
     bindDefaultDenyPolicy(db, agentId);

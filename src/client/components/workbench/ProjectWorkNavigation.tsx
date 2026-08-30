@@ -2,7 +2,7 @@ import type React from 'react';
 import { useUiMode, useReminders } from '../../hooks/queries';
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
-import type { Agent, Department, Project, Task } from '../../api/types';
+import type { Agent, Project, Task } from '../../api/types';
 import type { ProjectTaskDTO } from '../../hooks/queries';
 import {
   usePinProjectTask,
@@ -54,7 +54,6 @@ export function ProjectWorkNavigation({
   projectTasks = [],
   tasks = [],
   agents = [],
-  departments = [],
   firstAgentId,
   selectedProjectTaskId,
   selectedAgentId,
@@ -68,7 +67,6 @@ export function ProjectWorkNavigation({
   projectTasks: ProjectTaskDTO[];
   tasks: Task[];
   agents: Agent[];
-  departments: Department[];
   firstAgentId?: string | null;
   selectedProjectTaskId?: string;
   selectedAgentId?: string;

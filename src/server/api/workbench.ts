@@ -28,7 +28,6 @@ import { companyArtifactGallery } from '../domain/artifact';
 import { searchArchive } from '../domain/archive';
 import { listPersistentAgents } from '../domain/agent';
 import { getAgent } from '../domain/agent';
-import { listDepartments } from '../domain/department';
 import { getWorkbenchCockpit } from '../domain/workbench-cockpit';
 import {
   listCompanyTriggers,
@@ -241,15 +240,15 @@ workbenchRouter.get(
 );
 
 /**
- * 部门与员工状态看板（PRD Phase 4，清单 172）。
- * 聚合：每个部门下的员工，含 availability、当前 thread state、当前 Task 标题、积压 Task 数。
+ * 员工状态看板（PRD Phase 4，清单 172）。
+ * 聚合：员工清单，含 availability、当前 thread state、当前 Task 标题、积压 Task 数。
+ * 公司退役批次 D 收尾：部门概念下线，恒单组平铺；响应形状保持 `{ departments: [...] }`，前端消费不变。
  */
 workbenchRouter.get(
   '/status-board',
   asyncHandler(async (req, res) => {
     const db = getDb();
-    const companyId = companyIdOf(req);
-    const departments = listDepartments(db);
+    companyIdOf(req);
     // B5 观测修复→审查修复：驾驶舱按持久员工统计——隐形中央岗计入，一次性工蜂/辩手不灌水
     const agents = listPersistentAgents(db);
     // 工作台所有项目下的线程与活跃 Task
@@ -268,71 +267,30 @@ workbenchRouter.get(
       )
       .all() as Array<{ id: string; title: string; state: string; assignee_agent_id: string | null; project_id: string }>;
 
-    type SeatAgent = {
-      id: string; profileId: string; departmentId: string | null; departmentName: string | null;
-      name: string; role: string; availability: 'online' | 'draining' | 'off';
-      threadState: string | null; currentTaskId: string | null; currentTaskTitle: string | null; queuedTaskCount: number;
-    };
-    type SeatDepartment = { id: string; name: string; agents: SeatAgent[] };
-    const result: SeatDepartment[] = departments.map((dept) => {
-      const deptAgents = agents.filter((a) => a.departmentId === dept.id);
-      return {
-        id: dept.id,
-        name: dept.name,
-        agents: deptAgents.map((a) => {
-          const agentThreads = threads.filter((t) => t.agent_id === a.id);
-          // running/waiting 状态优先；否则取第一个
-          const activeThread = agentThreads.find((t) => t.thread_state === 'running')
-            ?? agentThreads.find((t) => t.thread_state === 'waiting')
-            ?? agentThreads[0];
-          const agentTasks = tasks.filter((t) => t.assignee_agent_id === a.id);
-          const currentTask = agentTasks.find((t) => t.state === 'running' || t.state === 'claimed');
-          const queuedTaskCount = agentTasks.filter((t) => t.state === 'queued').length;
-          return {
-            id: a.id,
-            profileId: a.profileId,
-            departmentId: dept.id,
-            departmentName: dept.name,
-            name: a.name,
-            role: a.role,
-            availability: a.availabilityState,
-            threadState: activeThread?.thread_state ?? null,
-            currentTaskId: currentTask?.id ?? null,
-            currentTaskTitle: currentTask?.title ?? null,
-            queuedTaskCount,
-          };
-        }),
-      };
-    });
-    // 未分配部门的员工单独成组
-    const noDeptAgents = agents.filter((a) => !a.departmentId);
-    if (noDeptAgents.length > 0) {
-      result.push({
-        id: '__unassigned__',
-        name: '未分配部门',
-        agents: noDeptAgents.map((a) => {
-          const agentThreads = threads.filter((t) => t.agent_id === a.id);
-          const activeThread = agentThreads.find((t) => t.thread_state === 'running')
-            ?? agentThreads.find((t) => t.thread_state === 'waiting')
-            ?? agentThreads[0];
-          const agentTasks = tasks.filter((t) => t.assignee_agent_id === a.id);
-          const currentTask = agentTasks.find((t) => t.state === 'running' || t.state === 'claimed');
-          return {
-            id: a.id,
-            profileId: a.profileId,
-            departmentId: null,
-            departmentName: null,
-            name: a.name,
-            role: a.role,
-            availability: a.availabilityState,
-            threadState: activeThread?.thread_state ?? null,
-            currentTaskId: currentTask?.id ?? null,
-            currentTaskTitle: currentTask?.title ?? null,
-            queuedTaskCount: agentTasks.filter((t) => t.state === 'queued').length,
-          };
-        }),
-      });
-    }
+    const result = [{
+      id: '__all__',
+      name: '员工',
+      agents: agents.map((a) => {
+        const agentThreads = threads.filter((t) => t.agent_id === a.id);
+        // running/waiting 状态优先；否则取第一个
+        const activeThread = agentThreads.find((t) => t.thread_state === 'running')
+          ?? agentThreads.find((t) => t.thread_state === 'waiting')
+          ?? agentThreads[0];
+        const agentTasks = tasks.filter((t) => t.assignee_agent_id === a.id);
+        const currentTask = agentTasks.find((t) => t.state === 'running' || t.state === 'claimed');
+        return {
+          id: a.id,
+          profileId: a.profileId,
+          name: a.name,
+          role: a.role,
+          availability: a.availabilityState,
+          threadState: activeThread?.thread_state ?? null,
+          currentTaskId: currentTask?.id ?? null,
+          currentTaskTitle: currentTask?.title ?? null,
+          queuedTaskCount: agentTasks.filter((t) => t.state === 'queued').length,
+        };
+      }),
+    }];
     res.json({ departments: result });
   }),
 );

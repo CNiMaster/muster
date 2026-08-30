@@ -48,7 +48,7 @@ export interface CreateTempEmploymentInput {
 }
 
 export interface TempEmploymentResult {
-  /** agent_definition id（= company_employee.legacy_agent_id）。 */
+  /** agent_definition id（= employee.legacy_agent_id）。 */
   agentId: string;
   profileId: string;
   /** 是否新建的 profile（true=is_temp_only=1，未转正开除会连 profile 删）。 */
@@ -101,10 +101,10 @@ export function createTempEmployment(db: DB, input: CreateTempEmploymentInput): 
     tempRecruit: true, // 豁免 org lock
   });
 
-  // 标记为临时工：更新 company_employee
+  // 标记为临时工：更新 employee
   const now = nowIso();
   db.prepare(
-    `UPDATE company_employee
+    `UPDATE employee
      SET employment_type='temp', temp_status='active', contracted_at=?, source_contract_id=?
      WHERE legacy_agent_id=?`,
   ).run(now, input.sourceContractId ?? null, agent.id);
@@ -123,14 +123,14 @@ export function createTempEmployment(db: DB, input: CreateTempEmploymentInput): 
 export function convertTempToPermanent(db: DB, agentId: string): void {
   const agent = getAgent(db, agentId);
   const row = db
-    .prepare('SELECT employment_type, temp_status FROM company_employee WHERE legacy_agent_id=?')
+    .prepare('SELECT employment_type, temp_status FROM employee WHERE legacy_agent_id=?')
     .get(agentId) as { employment_type: string; temp_status: TempStatus | null } | undefined;
   if (!row) throw new AppError(ErrorCode.NOT_FOUND, `任职记录不存在：${agentId}`);
   if (row.employment_type !== 'temp') {
     throw new AppError(ErrorCode.VALIDATION, '该员工不是临时工，无需转正');
   }
   db.prepare(
-    `UPDATE company_employee SET employment_type='permanent', temp_status=NULL, updated_at=? WHERE legacy_agent_id=?`,
+    `UPDATE employee SET employment_type='permanent', temp_status=NULL, updated_at=? WHERE legacy_agent_id=?`,
   ).run(nowIso(), agentId);
   // 若是临时新建的 profile，转正时清零 is_temp_only，正式进入人才市场
   db.prepare('UPDATE agent_profile SET is_temp_only=0 WHERE id=?').run(agent.profileId);
@@ -138,7 +138,7 @@ export function convertTempToPermanent(db: DB, agentId: string): void {
   // 否则转正员工在 API 执行器上持续全拒。显式绑定的其他策略不覆盖。
   try {
     const employment = db
-      .prepare('SELECT id FROM company_employee WHERE legacy_agent_id=?')
+      .prepare('SELECT id FROM employee WHERE legacy_agent_id=?')
       .get(agentId) as { id: string } | undefined;
     if (employment) {
       const current = getEmployeePermissionPolicy(db, employment.id);
@@ -157,13 +157,13 @@ export function convertTempToPermanent(db: DB, agentId: string): void {
  */
 export function markTempGreyed(db: DB, agentId: string): void {
   const row = db
-    .prepare('SELECT employment_type, temp_status FROM company_employee WHERE legacy_agent_id=?')
+    .prepare('SELECT employment_type, temp_status FROM employee WHERE legacy_agent_id=?')
     .get(agentId) as { employment_type: string; temp_status: TempStatus | null } | undefined;
   if (!row) throw new AppError(ErrorCode.NOT_FOUND, `任职记录不存在：${agentId}`);
   if (row.employment_type !== 'temp') return; // 非临时工无操作
   if (row.temp_status !== 'active') return; // 非 active 不重复触发
   db.prepare(
-    `UPDATE company_employee SET temp_status='greyed', updated_at=? WHERE legacy_agent_id=?`,
+    `UPDATE employee SET temp_status='greyed', updated_at=? WHERE legacy_agent_id=?`,
   ).run(nowIso(), agentId);
 }
 
@@ -179,7 +179,7 @@ export function findGreyedTempForReuse(
     // 无能力要求：返回任意 greyed 临时工
     const row = db
       .prepare(
-        `SELECT ce.legacy_agent_id FROM company_employee ce
+        `SELECT ce.legacy_agent_id FROM employee ce
          WHERE ce.employment_type = 'temp' AND ce.temp_status = 'greyed'
          ORDER BY ce.updated_at DESC LIMIT 1`,
       )
@@ -190,7 +190,7 @@ export function findGreyedTempForReuse(
   // 临时工的能力通过 capability_binding 匹配；高星级优先
   const row = db
     .prepare(
-      `SELECT ce.legacy_agent_id FROM company_employee ce
+      `SELECT ce.legacy_agent_id FROM employee ce
        JOIN agent_profile ap ON ap.id = ce.profile_id
        WHERE ce.employment_type = 'temp' AND ce.temp_status = 'greyed'
          AND EXISTS (
@@ -211,7 +211,7 @@ export function findGreyedTempForReuse(
  */
 export function reactivateGreyedTemp(db: DB, agentId: string): void {
   const row = db
-    .prepare('SELECT employment_type, temp_status FROM company_employee WHERE legacy_agent_id=?')
+    .prepare('SELECT employment_type, temp_status FROM employee WHERE legacy_agent_id=?')
     .get(agentId) as { employment_type: string; temp_status: TempStatus | null } | undefined;
   if (!row) throw new AppError(ErrorCode.NOT_FOUND, `任职记录不存在：${agentId}`);
   if (row.employment_type !== 'temp') {
@@ -221,7 +221,7 @@ export function reactivateGreyedTemp(db: DB, agentId: string): void {
     throw new AppError(ErrorCode.VALIDATION, `临时工状态 ${row.temp_status}，仅 greyed 可重新激活`);
   }
   db.prepare(
-    `UPDATE company_employee SET temp_status='active', updated_at=? WHERE legacy_agent_id=?`,
+    `UPDATE employee SET temp_status='active', updated_at=? WHERE legacy_agent_id=?`,
   ).run(nowIso(), agentId);
   // R1：greyed 复用时确保 deny 档在（旧数据创建的临时工可能没有策略绑定）。
   bindDefaultDenyPolicy(db, agentId);
@@ -250,7 +250,7 @@ export function dismissTempWorker(db: DB, agentId: string, opts: DismissTempOpti
   const row = db
     .prepare(
       `SELECT ce.employment_type, ce.temp_status, ap.is_temp_only
-       FROM company_employee ce JOIN agent_profile ap ON ap.id = ce.profile_id
+       FROM employee ce JOIN agent_profile ap ON ap.id = ce.profile_id
        WHERE ce.legacy_agent_id=?`,
     )
     .get(agentId) as { employment_type: string; temp_status: TempStatus | null; is_temp_only: number } | undefined;
@@ -272,7 +272,7 @@ export function dismissTempWorker(db: DB, agentId: string, opts: DismissTempOpti
     // 临时新建、未转正：连 profile + Agent Home 一起删，不进人才市场
     // 校验该 profile 没有其他任职（防止误删多任职的人）
     const otherEmployments = db
-      .prepare('SELECT COUNT(*) AS c FROM company_employee WHERE profile_id=?')
+      .prepare('SELECT COUNT(*) AS c FROM employee WHERE profile_id=?')
       .get(profileId) as { c: number };
     if (otherEmployments.c > 0) {
       // 还有其他任职（虽然 is_temp_only=1 但被复用了），只清记忆分区，不删 profile/Home

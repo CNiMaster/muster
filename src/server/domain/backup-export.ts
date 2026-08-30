@@ -11,7 +11,7 @@
 import type { DB } from '../db/client';
 import { nowIso, shortId } from '../../shared/utils';
 import { getWorkbench, restoreWorkbench } from './workbench';
-import { createDepartment, listDepartments } from './department';
+
 import { createAgentProfile, listAgentProfiles } from './agent-profile';
 import { createAgent, listAgents, listPersistentAgents } from './agent';
 import { listProjects } from './project';
@@ -37,12 +37,10 @@ export function exportMusterBackup(db: DB): MusterBackup {
         charter: wb.charter,
         contractJson: wb.contractJson,
         archivedAt: null,
-        departments: listDepartments(db).map((d) => ({ name: d.name, rules: d.rules })),
         // B5 观测修复→审查修复：备份含隐形中央岗（否则恢复后验收链路断人），
         // 排除一次性执行体（活跃蜂群的工蜂快照会变成恢复后的僵尸员工）
         employees: listPersistentAgents(db).map((a) => ({
           profileId: a.profileId,
-          departmentName: a.departmentId ? listDepartments(db).find((d) => d.id === a.departmentId)?.name ?? null : null,
           name: a.name,
           role: a.role,
           responsibilities: a.responsibilities,
@@ -157,10 +155,12 @@ export interface MusterCompanyExport {
   charter: string | null;
   contractJson: Record<string, unknown> | null;
   archivedAt: string | null;
-  departments: Array<{ name: string; rules?: Record<string, unknown> }>;
+  /** 公司退役批次 D 收尾：部门概念下线，新导出不再写；读旧备份包时容错忽略。 */
+  departments?: Array<{ name: string; rules?: Record<string, unknown> }>;
   employees: Array<{
     profileId: string;
-    departmentName: string | null;
+    /** 同上：旧包遗留字段，导入时忽略。 */
+    departmentName?: string | null;
     name: string;
     role: string;
     responsibilities: string;
@@ -293,18 +293,12 @@ function importCompany(db: DB, company: MusterCompanyExport, backup: MusterBacku
     contractJson: company.contractJson ?? undefined,
   });
   const companyId = company.id;
-  // 重建部门，记名称 → id 供员工映射
-  const departmentIds = new Map<string, string>();
-  for (const dept of company.departments) {
-    const createdDept = createDepartment(db, { name: dept.name, rules: dept.rules });
-    departmentIds.set(dept.name, createdDept.id);
-  }
+  // 部门概念已随公司退役下线：旧备份包中的 departments 段与员工 departmentName 容错忽略
   // 重建员工（复用现有档案或新建）
   for (const emp of company.employees) {
     const profileId = findOrCreateProfile(db, emp, backup, summary);
     createAgent(db, {
       profileId,
-      departmentId: emp.departmentName ? departmentIds.get(emp.departmentName) : undefined,
       name: emp.name,
       role: emp.role,
       responsibilities: emp.responsibilities,

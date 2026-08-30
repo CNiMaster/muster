@@ -6,7 +6,7 @@
  * 维度（初版均分权重，可在 WEIGHT 常量调整）：
  *   - 任务完成数（task WHERE assignee 是该 profile 的任职 AND state=completed）
  *   - 记忆条数（memory_entry WHERE profile_id）
- *   - 任职累计天数（company_employee 跨所有任职）
+ *   - 任职累计天数（employee 跨所有任职）
  *   - 外包验收通过数（outsourcing_contract WHERE vendor_liaison AND state=completed）
  *
  * 详见 docs/superpowers/specs/2026-08-10-temp-worker-and-handover-design.md 第五节。
@@ -48,7 +48,7 @@ export function calculateRating(db: DB, profileId: string): RatingBreakdown {
   const daysRow = db
     .prepare(
       `SELECT COALESCE(SUM(CAST((julianday(COALESCE(NULLIF(ce.updated_at,''), datetime('now'))) - julianday(ce.created_at)) AS INTEGER)), 0) AS d
-       FROM company_employee ce WHERE ce.profile_id = ?`,
+       FROM employee ce WHERE ce.profile_id = ?`,
     )
     .get(profileId) as { d: number };
 

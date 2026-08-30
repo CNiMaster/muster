@@ -679,7 +679,7 @@ taskByIdRouter.post('/:taskId/compact', asyncHandler(async (req, res) => {
   }
   let manifestId = '';
   try {
-    const bind = db.prepare('SELECT executor_profile_id FROM company_employee WHERE id=?').get(task.assignee_agent_id ?? '') as { executor_profile_id: string | null } | undefined;
+    const bind = db.prepare('SELECT executor_profile_id FROM employee WHERE id=?').get(task.assignee_agent_id ?? '') as { executor_profile_id: string | null } | undefined;
     if (bind?.executor_profile_id) {
       const profile = db.prepare('SELECT manifest_id FROM executor_profile WHERE id=?').get(bind.executor_profile_id) as { manifest_id: string } | undefined;
       manifestId = profile?.manifest_id ?? '';

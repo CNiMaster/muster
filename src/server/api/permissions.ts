@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { getDb } from '../db/client';
 import { asyncHandler, param, companyIdOf } from './middleware';
-import { bindCompanyEmployeesPermission, bindEmployeePermissionPolicy, createPermissionPolicy, listApprovalQueue, listPermissionPolicies, recordApprovalDecision, requestApproval, savePermissionRule } from '../domain/permission';
+import { bindEmployeesPermission, bindEmployeePermissionPolicy, createPermissionPolicy, listApprovalQueue, listPermissionPolicies, recordApprovalDecision, requestApproval, savePermissionRule } from '../domain/permission';
 import { approvalBroker } from '../domain/approval-broker';
 import { realtime } from '../realtime';
 import { makeLifecycleEvent } from '../../shared/lifecycle-events';
@@ -21,7 +21,7 @@ permissionsRouter.put('/employees/:employeeId/policy/:policyId', asyncHandler(as
 /** 按工作台批量绑定权限策略到所有员工（要求工作台下班）—— 公司退役批次A双挂（旧 /companies/:companyId/binding 与新 /binding）。 */
 const companyBindingHandler = asyncHandler(async (req, res) => {
   const input = z.object({ policyId: z.string().min(1) }).parse(req.body);
-  const result = bindCompanyEmployeesPermission(getDb(), input.policyId);
+  const result = bindEmployeesPermission(getDb(), input.policyId);
   res.json(result);
 });
 permissionsRouter.post('/binding', companyBindingHandler);
@@ -32,7 +32,7 @@ permissionsRouter.post('/binding', companyBindingHandler);
  */
 permissionsRouter.get('/approvals/batch-review', asyncHandler(async (_req,res)=>{
   const db=getDb();
-  const rows=db.prepare(`SELECT pa.id,pa.action,pa.command,pa.path,pa.ai_verdict,pa.ai_suggestion,pa.ai_reason,pa.ai_confidence,pa.safety_category,pa.highest_safe_level,pa.created_at,pa.policy_id,t.title taskTitle,e.name employeeName FROM permission_approval pa LEFT JOIN task t ON t.id=pa.task_id LEFT JOIN company_employee e ON e.id=pa.employee_id WHERE pa.status='pending' ORDER BY pa.created_at DESC`).all() as Array<Record<string,unknown>>;
+  const rows=db.prepare(`SELECT pa.id,pa.action,pa.command,pa.path,pa.ai_verdict,pa.ai_suggestion,pa.ai_reason,pa.ai_confidence,pa.safety_category,pa.highest_safe_level,pa.created_at,pa.policy_id,t.title taskTitle,e.name employeeName FROM permission_approval pa LEFT JOIN task t ON t.id=pa.task_id LEFT JOIN employee e ON e.id=pa.employee_id WHERE pa.status='pending' ORDER BY pa.created_at DESC`).all() as Array<Record<string,unknown>>;
   // 按 highest_safe_level 分组：company_scope/permanent 的进入"建议批量通过"
   const suggestBatch=rows.filter(r=>r.highest_safe_level==='company_scope'||r.highest_safe_level==='permanent');
   const needsManual=rows.filter(r=>!r.highest_safe_level||r.highest_safe_level==='execute_once'||r.highest_safe_level==='project_scope');

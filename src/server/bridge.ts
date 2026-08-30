@@ -360,7 +360,7 @@ bridgeRouter.post('/elevated-command', async (req, res) => {
     // 审批卡挂 assignee 的员工策略；无策略回落 lead 模板
     let policyId: string | null = null;
     try {
-      const bind = db.prepare('SELECT permission_policy_id FROM company_employee WHERE id=?').get(taskRow.assignee_agent_id ?? '') as { permission_policy_id: string | null } | undefined;
+      const bind = db.prepare('SELECT permission_policy_id FROM employee WHERE id=?').get(taskRow.assignee_agent_id ?? '') as { permission_policy_id: string | null } | undefined;
       policyId = bind?.permission_policy_id ?? null;
       if (!policyId) {
         // 幂等确保角色模板后取员工模板（ask-by-rule）——受托申请的审批载体
@@ -534,7 +534,7 @@ async function awaitManagementApproval(
   // 审批卡挂 assignee 员工策略；无策略回落员工模板（同 elevated-command）
   let policyId: string | null = null;
   try {
-    const bind = db.prepare('SELECT permission_policy_id FROM company_employee WHERE id=?').get(taskRow.assignee_agent_id ?? '') as { permission_policy_id: string | null } | undefined;
+    const bind = db.prepare('SELECT permission_policy_id FROM employee WHERE id=?').get(taskRow.assignee_agent_id ?? '') as { permission_policy_id: string | null } | undefined;
     policyId = bind?.permission_policy_id ?? null;
     if (!policyId) {
       const { ensureRolePermissionTemplates } = await import('./domain/permission-templates');

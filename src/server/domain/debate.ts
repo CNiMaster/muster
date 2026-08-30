@@ -134,7 +134,7 @@ function createDebater(db: DB, input: { projectId: string; index: number; option
     systemPrompt: debaterPrompt(input.option, input.allOptions),
   });
   db.prepare('UPDATE agent_definition SET stance=? WHERE id=?').run(`全力辩护「${input.option.label}」`, agentId);
-  db.prepare('UPDATE company_employee SET hidden=1 WHERE legacy_agent_id=?').run(agentId);
+  db.prepare('UPDATE employee SET hidden=1 WHERE legacy_agent_id=?').run(agentId);
   ensurePrimaryThread(db, input.projectId, agentId);
   return agentId;
 }

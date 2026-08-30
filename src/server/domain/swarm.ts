@@ -627,7 +627,7 @@ export function createWorkerBee(
   });
   const now = nowIso();
   db.prepare(
-    `UPDATE company_employee SET employment_type='temp', temp_status='active', hidden=1, contracted_at=? WHERE legacy_agent_id=?`,
+    `UPDATE employee SET employment_type='temp', temp_status='active', hidden=1, contracted_at=? WHERE legacy_agent_id=?`,
   ).run(now, agent.id);
   bindDefaultDenyPolicy(db, agent.id);
   ensurePrimaryThread(db, input.projectId, agent.id);
@@ -635,7 +635,7 @@ export function createWorkerBee(
 }
 
 /**
- * 轻量回收工蜂（批次 H.0）：只删 agent 行（级联清 company_employee/线程，task.assignee 置空）——
+ * 轻量回收工蜂（批次 H.0）：只删 agent 行（级联清 employee/线程，task.assignee 置空）——
  * 共享档案与 Agent Home 常驻不动。审计保留在 task 行/task_event/汇报消息/usage_record。
  * 仅接受 swarm-worker 角色，防误删正式成员。
  */

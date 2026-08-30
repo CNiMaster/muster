@@ -31,7 +31,6 @@ export interface Workspace {
 export interface Agent {
   id: string;
   profileId: string;
-  departmentId: string | null;
   name: string;
   role: string;
   responsibilities: string;
@@ -45,9 +44,9 @@ export interface Agent {
   availabilityState: 'online' | 'draining' | 'off';
   executor: AgentExecutorJson;
   stance: string;
-  /** 公司任职绑定的固定执行器档案（来自 company_employee）。 */
+  /** 公司任职绑定的固定执行器档案（来自 employee）。 */
   executorProfileId?: string | null;
-  /** 公司任职绑定的权限策略（来自 company_employee）。 */
+  /** 公司任职绑定的权限策略（来自 employee）。 */
   permissionPolicyId?: string | null;
 }
 
@@ -75,11 +74,10 @@ export interface AgentProfile {
   employmentCount?: number;
 }
 
-export interface CompanyEmployee {
+export interface Employee {
   id: string;
   profileId: string;
   legacyAgentId: string;
-  departmentId: string | null;
   role: string;
   responsibilities: string;
   executor: Record<string, unknown>;
@@ -169,14 +167,6 @@ export interface AgentExecutorJson {
   thinking?: string;
   contextWindowTokens?: number;
   maxOutputTokens?: number;
-}
-
-export interface Department {
-  id: string;
-  name: string;
-  rules: Record<string, unknown>;
-  createdAt: string;
-  updatedAt: string;
 }
 
 export interface Project {

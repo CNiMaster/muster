@@ -8,19 +8,17 @@ import type { DB } from '../db/client';
 import { AppError, ErrorCode } from '../../shared/errors';
 import { shortId, nowIso } from '../../shared/utils';
 import { getWorkbench, isOrgLocked } from './workbench';
-import { assertDepartmentInCompany } from './department';
 import {
   createAgentProfile,
-  createCompanyEmployeeRecord,
+  createEmployeeRecord,
   getAgentProfile,
-  syncCompanyEmployeeRecord,
+  syncEmployeeRecord,
 } from './agent-profile';
 
 export interface AgentDefinition {
   id: string;
   profileId: string;
   companyId: string;
-  departmentId: string | null;
   name: string;
   role: string;
   responsibilities: string;
@@ -39,9 +37,9 @@ export interface AgentDefinition {
   availabilityState: 'online' | 'draining' | 'off';
   createdAt: string;
   updatedAt: string;
-  /** 公司任职绑定的固定执行器档案（来自 company_employee.executor_profile_id）。 */
+  /** 公司任职绑定的固定执行器档案（来自 employee.executor_profile_id）。 */
   executorProfileId?: string | null;
-  /** 公司任职绑定的权限策略（来自 company_employee.permission_policy_id）。 */
+  /** 公司任职绑定的权限策略（来自 employee.permission_policy_id）。 */
   permissionPolicyId?: string | null;
 }
 
@@ -75,7 +73,6 @@ export interface AgentExecutorJson {
 interface AgentRow {
   id: string;
   profile_id: string;
-  department_id: string | null;
   name: string;
   role: string;
   responsibilities: string;
@@ -99,7 +96,6 @@ function fromRow(db: DB, r: AgentRow): AgentDefinition {
     id: r.id,
     profileId: r.profile_id,
     companyId: getWorkbench(db).id,
-    departmentId: r.department_id,
     name: r.name,
     role: r.role,
     responsibilities: r.responsibilities,
@@ -121,7 +117,6 @@ function fromRow(db: DB, r: AgentRow): AgentDefinition {
 
 export interface CreateAgentInput {
   profileId?: string;
-  departmentId?: string;
   name: string;
   role: string;
   responsibilities?: string;
@@ -217,7 +212,6 @@ function assertExecutorValid(executor: Record<string, unknown> | undefined): voi
 export function createAgent(db: DB, input: CreateAgentInput): AgentDefinition {
   getWorkbench(db); // 校验工作台存在
   assertUnlocked(db, { tempRecruit: input.tempRecruit, isSystem: input.isSystem, internalRecruit: input.internalRecruit });
-  assertDepartmentInCompany(db, input.departmentId ?? null);
   // 临时工招聘豁免 contactAllow 校验（临时工的工作关系仅限发起者，可能跨公司）
   if (!input.tempRecruit && !input.isSystem) {
     assertContactAllow(db, input.contactAllow ?? []);
@@ -238,23 +232,22 @@ export function createAgent(db: DB, input: CreateAgentInput): AgentDefinition {
     const now = nowIso();
     db.prepare(
       `INSERT INTO agent_definition
-        (id, profile_id, department_id, name, role, responsibilities, system_prompt,
+        (id, profile_id, name, role, responsibilities, system_prompt,
          skills_json, tools_json, permissions_json, contact_allow_json, can_dispatch,
          executor_json, is_inspector, stance, is_system, created_at, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     ).run(
-      id, profile.id, input.departmentId ?? null, input.name || profile.displayName, input.role,
+      id, profile.id, input.name || profile.displayName, input.role,
       input.responsibilities ?? '', input.systemPrompt ?? profile.soul,
       JSON.stringify(input.skills ?? []), JSON.stringify(input.tools ?? []),
       JSON.stringify(input.permissions ?? {}), JSON.stringify(input.contactAllow ?? []),
       input.canDispatch === false ? 0 : 1, JSON.stringify(input.executor ?? {}),
       input.isInspector ? 1 : 0, input.stance ?? '', input.isSystem ? 1 : 0, now, now,
     );
-    createCompanyEmployeeRecord(db, {
+    createEmployeeRecord(db, {
       id,
       profileId: profile.id,
       legacyAgentId: id,
-      departmentId: input.departmentId,
       role: input.role,
       responsibilities: input.responsibilities,
       executor: input.executor,
@@ -263,7 +256,7 @@ export function createAgent(db: DB, input: CreateAgentInput): AgentDefinition {
     });
     // 系统隐形岗：任职记录标记 hidden（花名册/能力路由过滤，但可领取任务）
     if (input.isSystem) {
-      db.prepare('UPDATE company_employee SET hidden=1 WHERE legacy_agent_id=?').run(id);
+      db.prepare('UPDATE employee SET hidden=1 WHERE legacy_agent_id=?').run(id);
     }
     return getAgent(db, id);
   })();
@@ -272,7 +265,6 @@ export function createAgent(db: DB, input: CreateAgentInput): AgentDefinition {
 export function recruitAgentProfile(db: DB, input: {
   profileId: string;
   role: string;
-  departmentId?: string;
   responsibilities?: string;
 }): AgentDefinition {
   const profile = getAgentProfile(db, input.profileId);
@@ -308,7 +300,7 @@ export function listAgents(db: DB, options?: { includeHidden?: boolean; visibleI
         : db.prepare(
           `SELECT a.* FROM agent_definition a
            WHERE NOT EXISTS (
-             SELECT 1 FROM company_employee ce
+             SELECT 1 FROM employee ce
              WHERE ce.legacy_agent_id = a.id AND ce.hidden = 1
            )
            ORDER BY a.created_at`,
@@ -331,10 +323,10 @@ export function listPersistentAgents(db: DB): AgentDefinition[] {
   return rows.map((row) => withEmploymentBindings(db, fromRow(db, row)));
 }
 
-/** 附带 company_employee 表的执行器/权限绑定（legacy_agent_id 与 agent_definition.id 同值）。 */
+/** 附带 employee 表的执行器/权限绑定（legacy_agent_id 与 agent_definition.id 同值）。 */
 function withEmploymentBindings(db: DB, agent: AgentDefinition): AgentDefinition {
   const row = db.prepare(
-    'SELECT executor_profile_id, permission_policy_id FROM company_employee WHERE legacy_agent_id=?',
+    'SELECT executor_profile_id, permission_policy_id FROM employee WHERE legacy_agent_id=?',
   ).get(agent.id) as { executor_profile_id: string | null; permission_policy_id: string | null } | undefined;
   return {
     ...agent,
@@ -355,26 +347,24 @@ export function updateAgent(
     ...patch,
     updatedAt: nowIso(),
   };
-  assertDepartmentInCompany(db, next.departmentId);
   assertContactAllow(db, next.contactAllow);
   assertExecutorValid(next.executor);
   db.prepare(
     `UPDATE agent_definition SET
-      department_id=?, name=?, role=?, responsibilities=?, system_prompt=?,
+      name=?, role=?, responsibilities=?, system_prompt=?,
       skills_json=?, tools_json=?, permissions_json=?, contact_allow_json=?,
       can_dispatch=?, executor_json=?, is_inspector=?, stance=?, updated_at=?
      WHERE id=?`,
   ).run(
-    next.departmentId, next.name, next.role, next.responsibilities, next.systemPrompt,
+    next.name, next.role, next.responsibilities, next.systemPrompt,
     JSON.stringify(next.skills), JSON.stringify(next.tools),
     JSON.stringify(next.permissions), JSON.stringify(next.contactAllow),
     next.canDispatch ? 1 : 0, JSON.stringify(next.executor), next.isInspector ? 1 : 0,
     next.stance ?? '',
     next.updatedAt, id,
   );
-  syncCompanyEmployeeRecord(db, {
+  syncEmployeeRecord(db, {
     id,
-    departmentId: next.departmentId,
     role: next.role,
     responsibilities: next.responsibilities,
     executor: next.executor,

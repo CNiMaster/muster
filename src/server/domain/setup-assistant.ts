@@ -55,7 +55,6 @@ const companyProposalSchema = z.object({
   name: z.string().min(1),
   kind: z.literal('novel'),
   charter: z.string().min(1),
-  departments: z.array(z.object({ name: z.string().min(1), purpose: z.string().min(1) })),
   agentNotes: z.array(z.object({ role: z.string().min(1), focus: z.string().min(1) })),
 });
 export type CompanyProposal = z.infer<typeof companyProposalSchema>;

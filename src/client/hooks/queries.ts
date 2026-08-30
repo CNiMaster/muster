@@ -1,7 +1,7 @@
 /** React Query hooks：所有数据获取集中在此。 */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
-import type { Company, Agent, AgentExecutorJson, AgentProfile, CompanyEmployee, MemoryCandidate, MemoryEntry, Department, Project, Relationship, Task, TraceItem, UsageSummary, ProjectAgentThread, Workspace, BusinessReview, Plugin, EffectivePlugin, OutsourcingContract, MarketplacePresetView, MarketplaceSearchEntry, SwarmView } from '../api/types';
+import type { Company, Agent, AgentExecutorJson, AgentProfile, Employee, MemoryCandidate, MemoryEntry, Project, Relationship, Task, TraceItem, UsageSummary, ProjectAgentThread, Workspace, BusinessReview, Plugin, EffectivePlugin, OutsourcingContract, MarketplacePresetView, MarketplaceSearchEntry, SwarmView } from '../api/types';
 import type { CompanyCockpitDTO } from '../../shared/types';
 import type { ProjectLaunchBrief, ProjectLaunchDiscovery } from '../../shared/project-launch';
 import type { RecruitmentDraft } from '../../shared/types';
@@ -48,7 +48,6 @@ export interface CompanyProposal {
   name: string;
   kind: 'novel';
   charter: string;
-  departments: Array<{ name: string; purpose: string }>;
   agentNotes: Array<{ role: string; focus: string }>;
 }
 export interface AgentProposal {
@@ -201,8 +200,6 @@ export function useWorkbenchAction() {
 export interface StatusBoardAgent {
   id: string;
   profileId: string;
-  departmentId: string | null;
-  departmentName: string | null;
   name: string;
   role: string;
   availability: 'online' | 'draining' | 'off';
@@ -326,7 +323,7 @@ export function useAgentProfile(id: string | undefined) {
 export function useProfileEmployments(id: string | undefined) {
   return useQuery({
     queryKey: ['profile-employments', id],
-    queryFn: () => api.get<CompanyEmployee[]>(`/api/agent-profiles/${id}/employments`),
+    queryFn: () => api.get<Employee[]>(`/api/agent-profiles/${id}/employments`),
     enabled: !!id,
   });
 }
@@ -476,7 +473,6 @@ export function useCreateAgent() {
     mutationFn: (input: {
       name: string;
       role: string;
-      departmentId?: string;
       responsibilities?: string;
       systemPrompt?: string;
       skills?: string[];
@@ -494,7 +490,6 @@ export function useUpdateAgent() {
   return useMutation({
     mutationFn: ({ id, ...patch }: {
       id: string;
-      departmentId?: string | null;
       name?: string;
       role?: string;
       responsibilities?: string;
@@ -553,33 +548,6 @@ export function useAgentAvailability() {
       action: 'clock-in' | 'clock-out';
     }) => api.post<Agent>(`/api/agents/${id}/${action}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['agents'] }),
-  });
-}
-
-// ===== Departments =====
-export function useDepartments() {
-  return useQuery({
-    queryKey: ['departments'],
-    queryFn: () => api.get<Department[]>(`/api/departments`),
-  });
-}
-export function useCreateDepartment() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ name }: { name: string }) =>
-      api.post<Department>(`/api/departments`, { name }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['departments'] }),
-  });
-}
-export function useDeleteDepartment() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id }: { id: string }) =>
-      api.delete(`/api/departments/${id}`),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['departments'] });
-      qc.invalidateQueries({ queryKey: ['agents'] });
-    },
   });
 }
 

@@ -76,7 +76,7 @@ const dismissTempHandler = asyncHandler(async (req, res) => {
   // 判断是否会删 profile（is_temp_only=1 且无其他任职）
   const row = getDb().prepare(
     `SELECT ap.is_temp_only,
-      (SELECT COUNT(*) FROM company_employee WHERE profile_id=ap.id) AS emp_count
+      (SELECT COUNT(*) FROM employee WHERE profile_id=ap.id) AS emp_count
      FROM agent_profile ap WHERE ap.id=?`,
   ).get(profileId) as { is_temp_only: number; emp_count: number } | undefined;
   const profileDeleted = !!(row?.is_temp_only === 1 && row?.emp_count <= 1);
@@ -103,7 +103,7 @@ tempWorkerRouter.post('/employees/:id/reactivate', reactivateTempHandler);
 const listTempHandler = asyncHandler(async (_req, res) => {
   const rows = getDb().prepare(
     `SELECT ce.*, ad.name, ad.profile_id, ap.display_name, ap.rating
-     FROM company_employee ce
+     FROM employee ce
      JOIN agent_definition ad ON ad.id = ce.legacy_agent_id
      JOIN agent_profile ap ON ap.id = ce.profile_id
      WHERE ce.employment_type = 'temp'

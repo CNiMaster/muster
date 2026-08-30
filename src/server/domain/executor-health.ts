@@ -10,7 +10,7 @@ const probeDto=(probe:ProbeRow|null)=>probe?{status:probe.status,classification:
 
 export function getEmploymentHealth(db:DB,employeeId:string):EmploymentHealthDTO{
   const employment=db.prepare(`SELECT ce.id,ce.executor_profile_id,ep.name executor_name,ce.permission_policy_id,ep.manifest_id,
-    pp.name policy_name,pp.approval_strategy,pp.scope FROM company_employee ce
+    pp.name policy_name,pp.approval_strategy,pp.scope FROM employee ce
     LEFT JOIN executor_profile ep ON ep.id=ce.executor_profile_id LEFT JOIN permission_policy pp ON pp.id=ce.permission_policy_id WHERE ce.id=?`).get(employeeId) as EmploymentRow|undefined;
   if(!employment)throw new Error(`company employee not found: ${employeeId}`);
   const baseProbe=employment.executor_profile_id?(db.prepare("SELECT status,classification,completed_at,version,model FROM connection_probe WHERE executor_profile_id=? AND kind='connectivity' ORDER BY created_at DESC,id DESC LIMIT 1").get(employment.executor_profile_id) as ProbeRow|undefined)??null:null;

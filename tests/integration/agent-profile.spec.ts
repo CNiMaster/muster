@@ -6,7 +6,7 @@ import { createAgent, deleteAgent, recruitAgentProfile, updateAgent } from '../.
 import {
   createAgentProfile,
   getAgentProfile,
-  getCompanyEmployee,
+  getEmployee,
   listProfileEmployments,
   updateAgentProfile,
 } from '../../src/server/domain/agent-profile';
@@ -32,7 +32,7 @@ describe('Agent Profile and company employment', () => {
 
     expect(agent.profileId).toMatch(/^ap_/);
     expect(getAgentProfile(db, agent.profileId).displayName).toBe('小林');
-    expect(getCompanyEmployee(db, agent.id)).toMatchObject({
+    expect(getEmployee(db, agent.id)).toMatchObject({
       id: agent.id,
       legacyAgentId: agent.id,
       profileId: agent.profileId,
@@ -65,7 +65,7 @@ describe('Agent Profile and company employment', () => {
 
     updateAgent(db, employee.id, { role: 'lead', responsibilities: '负责项目' });
 
-    expect(getCompanyEmployee(db, employee.id).role).toBe('lead');
+    expect(getEmployee(db, employee.id).role).toBe('lead');
     expect(getAgentProfile(db, profile.id)).toMatchObject({ soul: '独立思考', capabilities: { skills: ['review'] } });
   });
 
@@ -88,6 +88,6 @@ describe('Agent Profile and company employment', () => {
     updateAgentProfile(db, profile.id, { displayName: '新名字', soul: '新的长期身份' });
 
     expect(getAgentProfile(db, profile.id).displayName).toBe('新名字');
-    expect(getCompanyEmployee(db, employee.id).role).toBe('writer');
+    expect(getEmployee(db, employee.id).role).toBe('writer');
   });
 });

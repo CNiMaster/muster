@@ -33,7 +33,6 @@ const createAgentSchema = z.object({
   profileId: z.string().optional(),
   name: z.string().min(1),
   role: z.string().min(1),
-  departmentId: z.string().optional(),
   responsibilities: z.string().optional(),
   systemPrompt: z.string().optional(),
   skills: z.array(z.string()).optional(),

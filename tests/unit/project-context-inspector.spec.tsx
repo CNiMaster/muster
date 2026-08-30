@@ -55,7 +55,7 @@ vi.mock('../../src/client/hooks/queries', async (importOriginal) => {
 import { ProjectContextInspector as Inspector } from '../../src/client/components/workbench/ProjectContextInspector';
 
 const agent = {
-  id: 'ag_1', profileId: 'ap_1', companyId: 'co_1', departmentId: null, name: '研发负责人', role: 'lead', responsibilities: '把控交付质量', systemPrompt: '', skills: ['review'], tools: [], permissions: {}, isInspector: false, canDispatch: true, contactAllow: [], availabilityState: 'online', executor: {}, stance: '',
+  id: 'ag_1', profileId: 'ap_1', companyId: 'co_1', name: '研发负责人', role: 'lead', responsibilities: '把控交付质量', systemPrompt: '', skills: ['review'], tools: [], permissions: {}, isInspector: false, canDispatch: true, contactAllow: [], availabilityState: 'online', executor: {}, stance: '',
 } as Agent;
 
 const projectTask: ProjectTaskDTO = {

@@ -53,12 +53,10 @@ import type { DB } from '../../src/server/db/client';
 import { restoreWorkbench, updateWorkbench, type Workbench } from '../../src/server/domain/workbench';
 import { createAgent, type AgentDefinition, type CreateAgentInput } from '../../src/server/domain/agent';
 import { addRelationship } from '../../src/server/domain/graph';
-import { createDepartment, type Department } from '../../src/server/domain/department';
 import { GENRE_EXTENSION_PACKS } from '../../src/server/domain/novel-template';
 
 export interface NovelTemplateResult {
   company: Workbench;
-  departments: Department[];
   agents: {
     lead: AgentDefinition;
     writer: AgentDefinition;
@@ -69,17 +67,16 @@ export interface NovelTemplateResult {
   };
 }
 
-export function createNovelCompany(db: DB, input: { name: string; charter?: string; departments?: Array<{ name: string; purpose?: string }>; genres?: string[] }): NovelTemplateResult {
+export function createNovelCompany(db: DB, input: { name: string; charter?: string; genres?: string[] }): NovelTemplateResult {
   // 唯一 id：同一测试库允许多次实例化（小说项目类测试串行建多个工作台场景已退役，防呆保留）
   const company = restoreWorkbench(db, { id: `wb_novel_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, name: input.name, kind: 'novel', charter: input.charter });
-  const departments = (input.departments?.length ? input.departments : [{ name: '创作部', purpose: '正文、人物与情节协作' }, { name: '运营监察', purpose: '一致性检查' }]).map((d) => createDepartment(db, { companyId: company.id, name: d.name, rules: { purpose: d.purpose ?? '' } }));
   const mk = (name: string, role: string, responsibilities: string, extra: Partial<CreateAgentInput> = {}): AgentDefinition =>
-    createAgent(db, { companyId: company.id, departmentId: departments[0]?.id, name, role, responsibilities, contactAllow: [], ...extra });
+    createAgent(db, { companyId: company.id, name, role, responsibilities, contactAllow: [], ...extra });
   const lead = mk('项目负责人', 'lead', '拆解并派发', { canDispatch: true });
   const writer = mk('主写手', 'writer', '撰写正文');
   const character = mk('人物设计', 'character', '维护人物档案');
   const plot = mk('情节架构', 'plot', '维护大纲与伏笔');
-  const inspector = mk('运营监察', 'inspector', '观察与建议', { isInspector: true, departmentId: departments[1]?.id ?? departments[0]?.id });
+  const inspector = mk('运营监察', 'inspector', '观察与建议', { isInspector: true });
   const extra: AgentDefinition[] = [];
   const seen = new Set(['lead', 'writer', 'character', 'plot', 'inspector']);
   for (const genreId of input.genres ?? []) {
@@ -112,7 +109,7 @@ export function createNovelCompany(db: DB, input: { name: string; charter?: stri
   for (const e of creativeExtras) {
     addRelationship(db, { companyId: company.id, kind: 'communication', sourceId: writer.id, targetId: e.id, label: '求资料' });
   }
-  return { company: updatedCompany, departments, agents: { lead, writer, character, plot, inspector, extra } };
+  return { company: updatedCompany, agents: { lead, writer, character, plot, inspector, extra } };
 }
 
 export function assertLeadWriterSeparate(leadId: string, writerId: string): void {

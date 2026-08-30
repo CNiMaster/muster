@@ -5,7 +5,6 @@
  * 与 RecruitmentWizard 不同：这里选已有智能体，不招募新智能体。
  */
 import { Card } from '../../Card';
-import { Badge } from '../../Badge';
 import { useAgents, useStaffProject } from '../../../hooks/queries';
 
 export function StaffingPhase({
@@ -51,7 +50,6 @@ export function StaffingPhase({
                   onChange={(e) => handleSelect(a.id, e.target.checked)}
                 />
                 <span className="staff-pick-name">{a.role || a.name}</span>
-                {a.departmentId && <Badge tone="neutral">{a.departmentId}</Badge>}
               </label>
             </li>
           );

@@ -2,13 +2,12 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
-import type { Agent, Department, Task } from '../../src/client/api/types';
+import type { Agent, Task } from '../../src/client/api/types';
 import { ProjectWorkNavigation, projectTaskMark } from '../../src/client/components/workbench/ProjectWorkNavigation';
 import { projectSectionOptions } from '../../src/client/components/workbench/WorkbenchContextSwitcher';
 
-const lead = { id: 'ag_1', profileId: 'ap_1', companyId: 'co_1', departmentId: 'dep_1', name: '研发负责人', role: 'lead', responsibilities: '', systemPrompt: '', skills: [], tools: [], permissions: {}, isInspector: false, canDispatch: true, contactAllow: ['ag_2'], availabilityState: 'online', executor: {}, stance: '' } as Agent;
+const lead = { id: 'ag_1', profileId: 'ap_1', companyId: 'co_1', name: '研发负责人', role: 'lead', responsibilities: '', systemPrompt: '', skills: [], tools: [], permissions: {}, isInspector: false, canDispatch: true, contactAllow: ['ag_2'], availabilityState: 'online', executor: {}, stance: '' } as Agent;
 const engineer = { ...lead, id: 'ag_2', profileId: 'ap_2', name: '后端工程师', role: 'engineer', canDispatch: false } as Agent;
-const department = { id: 'dep_1', companyId: 'co_1', name: '工程部', rules: {}, createdAt: '', updatedAt: '' } as Department;
 const task = { id: 'tk_1', projectId: 'pr_1', projectTaskId: 'pt_1', seq: 3, title: '实现审批恢复', state: 'running', assigneeAgentId: 'ag_2', dispatcherAgentId: 'ag_1', parentTaskId: null, rootTaskId: null, assigneeThreadId: null, assigneeTaskThreadId: null, outcome: null, summary: '', question: null, inputProtocol: {}, outputProtocol: {}, contextRefs: [], artifacts: [], priority: 5, deadlineAt: null, completedAt: null, clarificationRounds: 0, isDiscussion: 0, createdAt: '', updatedAt: '' } as Task;
 
 describe('project task-first workbench navigation', () => {
@@ -34,7 +33,7 @@ describe('project task-first workbench navigation', () => {
       capabilityDiscovery: null, launchConfirmedAt: null, completedAt: null, archivedAt: null,
       createdAt: '', updatedAt: '',
     } as import('../../src/client/hooks/queries').ProjectTaskDTO;
-    render(<QueryClientProvider client={qc}><MemoryRouter><ProjectWorkNavigation projectId="pr_1" projectTasks={[pt]} tasks={[task]} agents={[lead, engineer]} departments={[department]} firstAgentId="ag_1" selectedProjectTaskId="pt_1" view="task" attentionCount={2} novel={false} onNewTask={() => {}} /></MemoryRouter></QueryClientProvider>);
+    render(<QueryClientProvider client={qc}><MemoryRouter><ProjectWorkNavigation projectId="pr_1" projectTasks={[pt]} tasks={[task]} agents={[lead, engineer]} firstAgentId="ag_1" selectedProjectTaskId="pt_1" view="task" attentionCount={2} novel={false} onNewTask={() => {}} /></MemoryRouter></QueryClientProvider>);
     expect(screen.getByText(/独立任务/)).toBeInTheDocument();
     // 2026-08-24 定案：独立的「当前项目任务」分组退役——任务挂在项目行下（下方任务链接断言覆盖）
     expect(screen.getByText(/项目列表/)).toBeInTheDocument();

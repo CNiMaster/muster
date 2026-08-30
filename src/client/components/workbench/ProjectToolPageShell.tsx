@@ -1,6 +1,6 @@
 import type React from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { useAgents, useWorkbench, useWorkbenchCockpit, useDepartments, useProject, useProjectTask, useProjectTasks, useTask, useTasks, useMergeAttention, useCreateProjectTask, useCreateTask } from '../../hooks/queries';
+import { useAgents, useWorkbench, useWorkbenchCockpit, useProject, useProjectTask, useProjectTasks, useTask, useTasks, useMergeAttention, useCreateProjectTask, useCreateTask } from '../../hooks/queries';
 import { ProjectContextInspector } from './ProjectContextInspector';
 import { InspectorTabsHost } from './InspectorTabsHost';
 import { ProjectWorkNavigation, type ProjectToolKey } from './ProjectWorkNavigation';
@@ -116,7 +116,6 @@ export function ProjectToolPageShell({ tool, children, projectIdOverride, select
   const { data: company } = useWorkbench();
   const { data: cockpit } = useWorkbenchCockpit();
   const { data: agents } = useAgents();
-  const { data: departments } = useDepartments();
   const { data: tasks } = useTasks(projectId);
   const { data: projectTasks } = useProjectTasks(projectId);
   const selectedId = selectedProjectTaskId ?? projectTasks?.find((item) => item.state === 'active')?.id ?? projectTasks?.[0]?.id;
@@ -131,7 +130,7 @@ export function ProjectToolPageShell({ tool, children, projectIdOverride, select
     inspectorLabel="项目任务与运行"
     attentionCount={attentionCount + (cockpit ? cockpit.approvals.pending + cockpit.approvals.businessPending : 0) + (mergeAttention?.total ?? 0)}
     primaryAction={<Link className="mu-btn mu-btn-primary mu-btn-sm" to={`/projects/${projectId}${selectedId ? `?projectTask=${selectedId}` : ''}`}>返回智能体中心</Link>}
-    navigation={<ProjectWorkNavigation projectId={projectId} projectTasks={projectTasks ?? []} tasks={tasks ?? []} agents={agents ?? []} departments={departments ?? []} firstAgentId={project?.firstAgentId ?? company?.firstAgentId} selectedProjectTaskId={selectedId} view="tool" activeTool={tool} attentionCount={attentionCount} novel={company?.kind === 'novel'} onNewTask={() => navigate(`/projects/${projectId}?view=task&projectTask=new`)} />}
+    navigation={<ProjectWorkNavigation projectId={projectId} projectTasks={projectTasks ?? []} tasks={tasks ?? []} agents={agents ?? []} firstAgentId={project?.firstAgentId ?? company?.firstAgentId} selectedProjectTaskId={selectedId} view="tool" activeTool={tool} attentionCount={attentionCount} novel={company?.kind === 'novel'} onNewTask={() => navigate(`/projects/${projectId}?view=task&projectTask=new`)} />}
     inspector={<InspectorTabsHost projectId={projectId || undefined} ctxBody={<ProjectContextInspector projectId={projectId} selectedTask={selectedTask} agents={agents ?? []} tasks={tasks ?? []} cockpit={cockpit} />} />}
     mountRightOpen={effectivePane === 'inspector' ? true : false}
     commandOptions={[
@@ -184,7 +183,7 @@ export function GlobalToolPageShell({ label, children, fullHeight = false, pane 
     }
     navigationLabel="项目组织与联系人"
     inspectorLabel="信息"
-    navigation={<ProjectWorkNavigation projectId={lastProjectId} projectTasks={projectTasks ?? []} tasks={tasks ?? []} agents={agents ?? []} departments={[]} firstAgentId={project?.firstAgentId} view="tool" attentionCount={0} novel={false} onNewTask={() => navigate(lastProjectId ? `/projects/${lastProjectId}?view=task&projectTask=new` : '/')} />}
+    navigation={<ProjectWorkNavigation projectId={lastProjectId} projectTasks={projectTasks ?? []} tasks={tasks ?? []} agents={agents ?? []} firstAgentId={project?.firstAgentId} view="tool" attentionCount={0} novel={false} onNewTask={() => navigate(lastProjectId ? `/projects/${lastProjectId}?view=task&projectTask=new` : '/')} />}
     inspector={pane === 'inspector'
       ? <InspectorToolPane title={label}>{children}</InspectorToolPane>
       : null}

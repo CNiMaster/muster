@@ -608,7 +608,7 @@ export function startUserDiscussion(db: DB, input: {
     if (agent.isSystem && !(CENTRAL_STAFF_ROLES as readonly string[]).includes(agent.role)) {
       throw new AppError(ErrorCode.VALIDATION, `系统隐形岗（${agent.name}）不可参与探讨`);
     }
-    const employment = db.prepare('SELECT hidden FROM company_employee WHERE legacy_agent_id=?').get(id) as
+    const employment = db.prepare('SELECT hidden FROM employee WHERE legacy_agent_id=?').get(id) as
       | { hidden: number }
       | undefined;
     if (employment?.hidden === 1 && !(CENTRAL_STAFF_ROLES as readonly string[]).includes(agent.role)) {

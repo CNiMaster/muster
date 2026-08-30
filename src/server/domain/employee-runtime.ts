@@ -32,7 +32,7 @@ export function getEmployeeRuntime(db: DB, profileId: string): EmployeeRuntimeDT
       ptt.state thread_state, ptt.vendor_session_id, ptt.previous_vendor_session_id,
       ptt.run_count, ptt.compaction_count, ptt.transcript_bytes, ptt.updated_at,
       COUNT(DISTINCT t.id) work_order_count
-    FROM company_employee ce
+    FROM employee ce
     JOIN project_task_thread ptt ON ptt.employee_id=ce.legacy_agent_id
     JOIN project_task pt ON pt.id=ptt.project_task_id
     JOIN project p ON p.id=pt.project_id

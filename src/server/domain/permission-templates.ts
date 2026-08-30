@@ -82,7 +82,7 @@ export function inferRoleTemplate(
 export function bindDefaultDenyPolicy(db: DB, employmentLegacyAgentId: string): void {
   try {
     const employment = db
-      .prepare('SELECT id, permission_policy_id FROM company_employee WHERE legacy_agent_id=?')
+      .prepare('SELECT id, permission_policy_id FROM employee WHERE legacy_agent_id=?')
       .get(employmentLegacyAgentId) as { id: string; permission_policy_id: string | null } | undefined;
     if (!employment || employment.permission_policy_id) return;
     bindEmployeePermissionPolicy(db, employment.id, getRoleTemplate(db, 'temp').id, { skipLock: true });

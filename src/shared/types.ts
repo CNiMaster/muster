@@ -327,7 +327,6 @@ export interface RecruitmentDraft {
   role: string;
   responsibilities: string;
   capabilities: { skills: string[]; tools: string[] };
-  departmentId: string | null;
   executorProfileId: string | null;
   permissionPolicyId: string | null;
 }

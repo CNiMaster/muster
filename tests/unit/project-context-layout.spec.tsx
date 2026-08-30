@@ -7,7 +7,7 @@ import { ProjectTaskWorkspace } from '../../src/client/components/project/Projec
 import type { ProjectTaskDTO } from '../../src/client/hooks/queries';
 
 const agent = {
-  id: 'ag_1', profileId: 'ap_1', companyId: 'co_1', departmentId: null, name: '研发负责人', role: 'lead', responsibilities: '', systemPrompt: '', skills: [], tools: [], permissions: {}, isInspector: false, canDispatch: true, contactAllow: [], availabilityState: 'online', executor: {}, stance: '',
+  id: 'ag_1', profileId: 'ap_1', companyId: 'co_1', name: '研发负责人', role: 'lead', responsibilities: '', systemPrompt: '', skills: [], tools: [], permissions: {}, isInspector: false, canDispatch: true, contactAllow: [], availabilityState: 'online', executor: {}, stance: '',
 } as Agent;
 
 const projectTask: ProjectTaskDTO = {

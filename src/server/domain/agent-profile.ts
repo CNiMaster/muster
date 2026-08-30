@@ -32,11 +32,10 @@ export interface AgentProfile {
   updatedAt: string;
 }
 
-export interface CompanyEmployee {
+export interface Employee {
   id: string;
   profileId: string;
   legacyAgentId: string;
-  departmentId: string | null;
   role: string;
   responsibilities: string;
   executor: Record<string, unknown>;
@@ -75,7 +74,6 @@ interface EmployeeRow {
   id: string;
   profile_id: string;
   legacy_agent_id: string;
-  department_id: string | null;
   role: string;
   responsibilities: string;
   executor_json: string;
@@ -110,12 +108,11 @@ function profileFromRow(row: ProfileRow): AgentProfile {
   };
 }
 
-function employeeFromRow(_db: DB, row: EmployeeRow): CompanyEmployee {
+function employeeFromRow(_db: DB, row: EmployeeRow): Employee {
   return {
     id: row.id,
     profileId: row.profile_id,
     legacyAgentId: row.legacy_agent_id,
-    departmentId: row.department_id,
     role: row.role,
     responsibilities: row.responsibilities,
     executor: JSON.parse(row.executor_json),
@@ -343,47 +340,45 @@ export function clonePersonaAsUser(db: DB, personaId: string, customName?: strin
   });
 }
 
-export function createCompanyEmployeeRecord(db: DB, input: {
+export function createEmployeeRecord(db: DB, input: {
   id: string;
   profileId: string;
   legacyAgentId: string;
-  departmentId?: string | null;
   role: string;
   responsibilities?: string;
   executor?: Record<string, unknown>;
   permission?: Record<string, unknown>;
   createdAt?: string;
-}): CompanyEmployee {
+}): Employee {
   getAgentProfile(db, input.profileId);
   const now = input.createdAt ?? nowIso();
   db.prepare(
-    `INSERT INTO company_employee (
-      id, profile_id, legacy_agent_id, department_id, role,
+    `INSERT INTO employee (
+      id, profile_id, legacy_agent_id, role,
       responsibilities, executor_json, permission_json, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
-    input.id, input.profileId, input.legacyAgentId, input.departmentId ?? null,
+    input.id, input.profileId, input.legacyAgentId,
     input.role, input.responsibilities ?? '', JSON.stringify(input.executor ?? {}),
     JSON.stringify(input.permission ?? {}), now, now,
   );
-  return getCompanyEmployee(db, input.id);
+  return getEmployee(db, input.id);
 }
 
-export function getCompanyEmployee(db: DB, id: string): CompanyEmployee {
-  const row = db.prepare('SELECT * FROM company_employee WHERE id=?').get(id) as EmployeeRow | undefined;
+export function getEmployee(db: DB, id: string): Employee {
+  const row = db.prepare('SELECT * FROM employee WHERE id=?').get(id) as EmployeeRow | undefined;
   if (!row) throw new AppError(ErrorCode.NOT_FOUND, `company employee ${id} not found`);
   return employeeFromRow(db, row);
 }
 
-export function listProfileEmployments(db: DB, profileId: string): CompanyEmployee[] {
+export function listProfileEmployments(db: DB, profileId: string): Employee[] {
   getAgentProfile(db, profileId);
-  return (db.prepare('SELECT * FROM company_employee WHERE profile_id=? ORDER BY created_at, id').all(profileId) as EmployeeRow[])
+  return (db.prepare('SELECT * FROM employee WHERE profile_id=? ORDER BY created_at, id').all(profileId) as EmployeeRow[])
     .map((row) => employeeFromRow(db, row));
 }
 
-export function syncCompanyEmployeeRecord(db: DB, input: {
+export function syncEmployeeRecord(db: DB, input: {
   id: string;
-  departmentId: string | null;
   role: string;
   responsibilities: string;
   executor: Record<string, unknown>;
@@ -391,10 +386,10 @@ export function syncCompanyEmployeeRecord(db: DB, input: {
   updatedAt: string;
 }): void {
   db.prepare(
-    `UPDATE company_employee SET department_id=?, role=?, responsibilities=?, executor_json=?,
+    `UPDATE employee SET role=?, responsibilities=?, executor_json=?,
       permission_json=?, updated_at=? WHERE id=?`,
   ).run(
-    input.departmentId, input.role, input.responsibilities, JSON.stringify(input.executor),
+    input.role, input.responsibilities, JSON.stringify(input.executor),
     JSON.stringify(input.permission), input.updatedAt, input.id,
   );
 }

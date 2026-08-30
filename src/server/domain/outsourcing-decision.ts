@@ -151,7 +151,7 @@ export function selectTempForNeed(
        WHERE ap.is_temp_only = 0
          AND EXISTS (
            SELECT 1 FROM capability_binding cb
-           JOIN company_employee ce ON ce.legacy_agent_id = cb.employee_id
+           JOIN employee ce ON ce.legacy_agent_id = cb.employee_id
            WHERE ce.profile_id = ap.id
              AND cb.capability_id IN (${placeholders})
              AND cb.employee_id IS NOT NULL

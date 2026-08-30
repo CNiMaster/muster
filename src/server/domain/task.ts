@@ -535,7 +535,7 @@ export function createTask(db: DB, input: CreateTaskInput): Task {
          WHERE t.project_id=? AND t.agent_id=?
            AND (
              EXISTS (SELECT 1 FROM agent_definition a WHERE a.id = t.agent_id AND a.is_system = 1)
-             OR NOT EXISTS (SELECT 1 FROM company_employee ce WHERE ce.legacy_agent_id = t.agent_id AND ce.hidden = 1)
+             OR NOT EXISTS (SELECT 1 FROM employee ce WHERE ce.legacy_agent_id = t.agent_id AND ce.hidden = 1)
            )
          LIMIT 1`,
       ).get(input.projectId, assignee.id);
@@ -832,7 +832,7 @@ export function claimNextTask(db: DB, threadId: string, assigneeAgentId?: string
                   WHERE id = (SELECT agent_id FROM project_agent_thread WHERE id = ?)) = 'online'
              -- B2B 临时工：greyed/dismissed 不参与派工（只有 active 的临时工可领任务）
              AND NOT EXISTS (
-               SELECT 1 FROM company_employee ce
+               SELECT 1 FROM employee ce
                WHERE ce.legacy_agent_id = (SELECT agent_id FROM project_agent_thread WHERE id = ?)
                  AND ce.employment_type = 'temp'
                  AND ce.temp_status != 'active'

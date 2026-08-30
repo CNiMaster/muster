@@ -73,7 +73,7 @@ describe('执行器档案管理（阶段二任务 2.2）', () => {
     deleteExecutorProfile(db, profile.id);
 
     expect(listExecutorProfiles(db)).toHaveLength(0);
-    const bound = db.prepare('SELECT executor_profile_id FROM company_employee WHERE id=?').get(agent.id) as { executor_profile_id: string | null };
+    const bound = db.prepare('SELECT executor_profile_id FROM employee WHERE id=?').get(agent.id) as { executor_profile_id: string | null };
     expect(bound.executor_profile_id).toBeNull();
     const probe = db.prepare('SELECT 1 FROM connection_probe WHERE id=?').get('probe_x');
     expect(probe).toBeUndefined();

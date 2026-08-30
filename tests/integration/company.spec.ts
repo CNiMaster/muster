@@ -5,14 +5,7 @@ import { getWorkbench, clockIn, clockOut, transitionWorkbench, restoreWorkbench 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { makeTestDb } from './setup';
 import type { DB } from '../../src/server/db/client';
-;
 import { clockInAgent, clockOutAgent, createAgent, updateAgent, deleteAgent } from '../../src/server/domain/agent';
-import {
-  createDepartment,
-  deleteDepartment,
-  listDepartments,
-  updateDepartment,
-} from '../../src/server/domain/department';
 import { AppError, ErrorCode } from '../../src/shared/errors';
 import { createProject } from '../../src/server/domain/project';
 import { claimNextTask, createTask, markRunning } from '../../src/server/domain/task';
@@ -116,21 +109,12 @@ describe('org config lock', () => {
     expect(() => createAgent(db, { companyId: c.id, name: '新', role: 'writer' })).toThrow();
   });
 
-  it('部门归属坍缩 + 空闲可管理（原下班锁 2026-08-23 退役为执行期锁）', () => {
+  it('部门已随公司退役批次 D 收尾下线（原部门锁测试退役）', () => {
     const company = restoreWorkbench(db, { id: 'wb_fix_10', name: 'co' });
-    const other = restoreWorkbench(db, { id: 'wb_fix_11', name: 'other' });
-    const editorial = createDepartment(db, { companyId: company.id, name: '编辑部' });
-    const foreign = createDepartment(db, { companyId: other.id, name: '外部部门' });
-    expect(updateDepartment(db, editorial.id, { name: '创作部' }).name).toBe('创作部');
-    // 公司退役批次D：department.company_id 列已删除，listDepartments 返回全量（无公司隔离）
-    expect(listDepartments(db).map((department) => department.name).sort()).toEqual(['创作部', '外部部门']);
-    // 部门归属校验坍缩为「部门存在即合法」（跨公司部门不再拒绝）
+    // 部门表已 DROP：员工创建不再有部门归属概念
     expect(() =>
-      createAgent(db, { companyId: company.id, departmentId: foreign.id, name: '错配', role: 'writer' }),
+      createAgent(db, { companyId: company.id, name: '无部门员工', role: 'writer' }),
     ).not.toThrow();
-
-    // 2026-08-23 上下班退役：部门锁只在任务执行中生效——空闲（默认 online）可管理
-    expect(() => createDepartment(db, { companyId: company.id, name: '空闲新增' })).not.toThrow();
   });
 
   it('监察员工是运行稳定性岗位，不能删除', () => {

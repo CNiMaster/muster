@@ -11,7 +11,6 @@ import type { DB } from '../../src/server/db/client';
 ;
 import { createProject, checkProjectHealth, assertProjectHealthy } from '../../src/server/domain/project';
 import { createAgent, listAgents } from '../../src/server/domain/agent';
-import { listDepartments } from '../../src/server/domain/department';
 import { ensurePrimaryThread, updateThreadState } from '../../src/server/domain/thread';
 import { saveWorkflow, validateWorkflow } from '../../src/server/domain/workflow';
 import { initializeArtifactContent } from '../../src/server/domain/artifact-content';
@@ -26,10 +25,10 @@ beforeEach(() => {
   db = tdb.db;
 });
 
-/** 复用 companies.ts status-board 的聚合逻辑（本地重放，避免依赖全局 getDb）。 */
-function aggregateStatusBoard(db: DB, companyId: string) {
-  const departments = listDepartments(db, companyId);
-  const agents = listAgents(db, companyId);
+/** 复用 workbench.ts status-board 的聚合逻辑（本地重放，避免依赖全局 getDb）。
+ * 公司退役批次 D 收尾：部门概念下线，恒单组平铺（与新后端一致）。 */
+function aggregateStatusBoard(db: DB, _companyId: string) {
+  const agents = listAgents(db);
   const threads = db
     .prepare(
       `SELECT t.id, t.agent_id, t.state AS thread_state, t.project_id
@@ -44,46 +43,24 @@ function aggregateStatusBoard(db: DB, companyId: string) {
        WHERE tk.state IN ('queued','claimed','running','waiting_input','waiting_dependency','paused')`,
     )
     .all() as Array<{ id: string; title: string; state: string; assignee_agent_id: string | null; project_id: string }>;
-  const result = departments.map((dept) => ({
-    id: dept.id,
-    name: dept.name,
-    agents: agents
-      .filter((a) => a.departmentId === dept.id)
-      .map((a) => {
-        const at = threads.find((t) => t.agent_id === a.id);
-        const atasks = tasks.filter((t) => t.assignee_agent_id === a.id);
-        return {
-          id: a.id,
-          name: a.name,
-          role: a.role,
-          availability: a.availabilityState,
-          threadState: at?.thread_state ?? null,
-          currentTaskTitle: atasks.find((t) => t.state === 'running' || t.state === 'claimed')?.title ?? null,
-          queuedTaskCount: atasks.filter((t) => t.state === 'queued').length,
-        };
-      }),
-  }));
-  const noDept = agents.filter((a) => !a.departmentId);
-  if (noDept.length > 0) {
-    result.push({
-      id: '__unassigned__',
-      name: '未分配部门',
-      agents: noDept.map((a) => {
-        const at = threads.find((t) => t.agent_id === a.id);
-        const atasks = tasks.filter((t) => t.assignee_agent_id === a.id);
-        return {
-          id: a.id,
-          name: a.name,
-          role: a.role,
-          availability: a.availabilityState,
-          threadState: at?.thread_state ?? null,
-          currentTaskTitle: atasks.find((t) => t.state === 'running' || t.state === 'claimed')?.title ?? null,
-          queuedTaskCount: atasks.filter((t) => t.state === 'queued').length,
-        };
-      }),
-    });
-  }
-  return result;
+  const mkAgent = (a: (typeof agents)[number]) => {
+    const at = threads.find((t) => t.agent_id === a.id);
+    const atasks = tasks.filter((t) => t.assignee_agent_id === a.id);
+    return {
+      id: a.id,
+      name: a.name,
+      role: a.role,
+      availability: a.availabilityState,
+      threadState: at?.thread_state ?? null,
+      currentTaskTitle: atasks.find((t) => t.state === 'running' || t.state === 'claimed')?.title ?? null,
+      queuedTaskCount: atasks.filter((t) => t.state === 'queued').length,
+    };
+  };
+  return [{
+    id: '__all__',
+    name: '员工',
+    agents: agents.map(mkAgent),
+  }];
 }
 
 describe('Batch 6.1 工作流校验 + 责任岗位', () => {
@@ -156,7 +133,7 @@ describe('Batch 6.1 工作流校验 + 责任岗位', () => {
 });
 
 describe('Batch 6.2 状态看板聚合', () => {
-  it('聚合返回部门、员工 availability、当前 Task、积压数', () => {
+  it('聚合返回员工 availability、当前 Task、积压数（恒单组平铺）', () => {
     const c = restoreWorkbench(db, { id: 'wb_fix_5', name: 'co' });
     const lead = createAgent(db, { companyId: c.id, name: '负责人', role: 'lead' });
     const writer = createAgent(db, { companyId: c.id, name: '写手', role: 'writer' });

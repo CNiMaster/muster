@@ -59,12 +59,12 @@ export function ensureAcceptanceOfficer(db: DB): string {
   });
   // B5 中央岗隐形化：验收员转为隐形职能（非 isSystem 需显式翻 hidden）——花名册不出现，
   // @ 走 visible_in='central' 口子；验收进度在右侧卡与项目对话播报可见（事可见人不直面）。
-  db.prepare('UPDATE company_employee SET hidden=1 WHERE legacy_agent_id=?').run(agent.id);
+  db.prepare('UPDATE employee SET hidden=1 WHERE legacy_agent_id=?').run(agent.id);
   db.prepare("UPDATE agent_definition SET visible_in='central' WHERE id=?").run(agent.id);
   // 经理档（skipLock：与懒确保语义一致，工作台运行中也能自愈创建）
   try {
     const employment = db
-      .prepare('SELECT id FROM company_employee WHERE legacy_agent_id=?')
+      .prepare('SELECT id FROM employee WHERE legacy_agent_id=?')
       .get(agent.id) as { id: string } | undefined;
     if (employment) {
       bindEmployeePermissionPolicy(db, employment.id, getRoleTemplate(db, 'manager').id, { skipLock: true });

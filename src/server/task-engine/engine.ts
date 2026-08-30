@@ -214,7 +214,7 @@ export class TaskEngine {
   async requestCliCompact(taskId: string): Promise<{ ok: boolean; note: string }> {
     const task = this.db.prepare('SELECT id, project_task_id, assignee_agent_id FROM task WHERE id=?').get(taskId) as { id: string; project_task_id: string | null; assignee_agent_id: string | null } | undefined;
     if (!task?.assignee_agent_id) return { ok: false, note: '任务无执行人，无法定位 CLI 会话' };
-    const bind = this.db.prepare('SELECT executor_profile_id FROM company_employee WHERE id=?').get(task.assignee_agent_id) as { executor_profile_id: string | null } | undefined;
+    const bind = this.db.prepare('SELECT executor_profile_id FROM employee WHERE id=?').get(task.assignee_agent_id) as { executor_profile_id: string | null } | undefined;
     const profile = bind?.executor_profile_id
       ? this.db.prepare('SELECT manifest_id, config FROM executor_profile WHERE id=?').get(bind.executor_profile_id) as { manifest_id: string; config: Record<string, unknown> } | undefined
       : undefined;

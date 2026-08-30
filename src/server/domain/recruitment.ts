@@ -27,7 +27,6 @@ export function recruitFromDraft(db: DB, companyId: string, draft: RecruitmentDr
       profileId,
       role: draft.role,
       responsibilities: draft.responsibilities,
-      departmentId: draft.departmentId ?? undefined,
     });
     bindEmployeeExecutorProfile(db, agent.id, draft.executorProfileId!);
     bindEmployeePermissionPolicy(db, agent.id, draft.permissionPolicyId!);

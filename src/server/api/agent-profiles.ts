@@ -23,7 +23,7 @@ import { getEmploymentHealth } from '../domain/executor-health';
 import { listPersonas, getPersona, listPersonaDomains, searchPersonas, updateUserPersona, deleteUserPersona, type Persona } from '../domain/persona-library';
 
 export const agentProfilesRouter = Router();
-export const companyEmployeesRouter = Router({ mergeParams: true });
+export const employeesRouter = Router({ mergeParams: true });
 
 const recruitmentDraftSchema = z.object({
   source: z.enum(['reuse-profile', 'new-profile']),
@@ -32,7 +32,6 @@ const recruitmentDraftSchema = z.object({
   role: z.string().min(1),
   responsibilities: z.string(),
   capabilities: z.object({ skills: z.array(z.string()), tools: z.array(z.string()) }),
-  departmentId: z.string().nullable(),
   executorProfileId: z.string().nullable(),
   permissionPolicyId: z.string().nullable(),
 });
@@ -68,7 +67,7 @@ agentProfilesRouter.get('/', asyncHandler(async (req, res) => {
     : undefined;
   const profiles = listAgentProfiles(db, { source });
   const countRows = db.prepare(
-    `SELECT profile_id, COUNT(*) as n FROM company_employee GROUP BY profile_id`,
+    `SELECT profile_id, COUNT(*) as n FROM employee GROUP BY profile_id`,
   ).all() as Array<{ profile_id: string; n: number }>;
   const countMap = new Map(countRows.map((r) => [r.profile_id, r.n]));
   res.json(profiles.map((p) => ({ ...p, employmentCount: countMap.get(p.id) ?? 0 })));
@@ -79,7 +78,7 @@ agentProfilesRouter.get('/market', asyncHandler(async (_req, res) => {
   const db = getDb();
   const allProfiles = listAgentProfiles(db);
   const countRows = db.prepare(
-    `SELECT profile_id, COUNT(*) as n FROM company_employee GROUP BY profile_id`,
+    `SELECT profile_id, COUNT(*) as n FROM employee GROUP BY profile_id`,
   ).all() as Array<{ profile_id: string; n: number }>;
   const countMap = new Map(countRows.map((r) => [r.profile_id, r.n]));
   const userTalents = allProfiles.filter((p) => p.source === 'user').map((p) => ({ ...p, employmentCount: countMap.get(p.id) ?? 0 }));
@@ -241,17 +240,16 @@ agentProfilesRouter.get('/:id/export-capability', asyncHandler(async (req, res) 
   res.json(exportCapabilityPackage(getAgentProfile(getDb(), param(req, 'id'))));
 }));
 
-companyEmployeesRouter.post('/', asyncHandler(async (req, res) => {
+employeesRouter.post('/', asyncHandler(async (req, res) => {
   const input = z.object({
     profileId: z.string().min(1),
     role: z.string().min(1),
-    departmentId: z.string().optional(),
     responsibilities: z.string().optional(),
   }).parse(req.body);
   res.status(201).json(recruitAgentProfile(getDb(), { ...input }));
 }));
 
-companyEmployeesRouter.post('/recruit', asyncHandler(async (req, res) => {
+employeesRouter.post('/recruit', asyncHandler(async (req, res) => {
   const draft = recruitmentDraftSchema.parse(req.body);
   res.status(201).json(recruitFromDraft(getDb(), companyIdOf(req), draft));
 }));
