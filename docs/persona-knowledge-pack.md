@@ -130,6 +130,7 @@ W1 批检索核实记录（2026-08-30）：
 - AI Overviews 冲击：来源页自然流量平均 -15%（同行评审 4650 万+样本）、信息类 -20~40%——GEO 双轨成共识 —— authoritytech.io、eseospace.com
 - 隐私时代归因：MTA 式微，归因/增量实验/MMM 三层分工三角互证 —— measured.com、haus.io
 - 小程序 Skyline：官方力推未默认，新页默认开+存量渐进迁移，WXSS 子集+border-box —— developers.weixin.qq.com
+- 复审轮补证：EBU R128 广播响度 -23 LUFS / ATSC A/85 -24 LKFS（数值等价）—— tcelectronic.com；D5 设计 AI 报告样本以建筑/空间设计为主（外推加注）—— d5render.cn
 
 ## 更新机制
 
