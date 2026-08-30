@@ -92,10 +92,10 @@ describe('workbench 单例路由', () => {
     expect(res.status).toBe(200);
   });
 
-  it('GET /api/workbench/status-board：空库 200 且员工组为空（部门已下线，恒单组平铺）', async () => {
+  it('GET /api/workbench/status-board：空库 200 且返回空数组（部门已下线，空库保留空态信号）', async () => {
     const res = await fetch(`${base}/api/workbench/status-board`);
     expect(res.status).toBe(200);
-    expect((await res.json())).toEqual({ departments: [{ id: '__all__', name: '员工', agents: [] }] });
+    expect((await res.json())).toEqual({ departments: [] });
   });
 
 // 公司退役 D4-1：/api/workbench/credentials 随公司级凭据层一并下线

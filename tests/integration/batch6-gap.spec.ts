@@ -56,6 +56,7 @@ function aggregateStatusBoard(db: DB, _companyId: string) {
       queuedTaskCount: atasks.filter((t) => t.state === 'queued').length,
     };
   };
+  if (agents.length === 0) return [];
   return [{
     id: '__all__',
     name: '员工',

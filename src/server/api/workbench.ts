@@ -242,15 +242,19 @@ workbenchRouter.get(
 /**
  * 员工状态看板（PRD Phase 4，清单 172）。
  * 聚合：员工清单，含 availability、当前 thread state、当前 Task 标题、积压 Task 数。
- * 公司退役批次 D 收尾：部门概念下线，恒单组平铺；响应形状保持 `{ departments: [...] }`，前端消费不变。
+ * 公司退役批次 D 收尾：部门概念下线，平铺为单组；响应形状保持 `{ departments: [...] }`。
+ * 空库返回空数组——前端两处以 departments.length 判空态，恒一组会吃掉空态文案（复审轮修复）。
  */
 workbenchRouter.get(
   '/status-board',
   asyncHandler(async (req, res) => {
     const db = getDb();
-    companyIdOf(req);
     // B5 观测修复→审查修复：驾驶舱按持久员工统计——隐形中央岗计入，一次性工蜂/辩手不灌水
     const agents = listPersistentAgents(db);
+    if (agents.length === 0) {
+      res.json({ departments: [] });
+      return;
+    }
     // 工作台所有项目下的线程与活跃 Task
     const threads = db
       .prepare(
