@@ -37,3 +37,10 @@ coverage/
 
 # 浏览器验证工具产物（playwright-mcp 运行时快照与日志）
 .playwright-mcp/
+
+# 本机环境文件（NAS 同步配置 / AI 助手本地记忆，不随仓库分发）
+.stignore
+.workbuddy/
+
+# 用户界面草图草稿（仅本地参考，不发布）
+public/screenshots-draft/
