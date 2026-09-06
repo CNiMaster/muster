@@ -29,6 +29,8 @@ companyMessagesRouter.post(
       mode: z.enum(['plan', 'ask-always', 'ask-by-rule', 'no-approval', 'deny', 'confirm-edits', 'auto-edit', 'full-access']).optional(), // H9b 新四档+旧五值兼容
       model: z.string().min(1).optional(),
       thinking: z.enum(['off', 'low', 'med', 'medium', 'high']).optional(),
+      // 2026-09-06 创建流程解耦：composer ＋菜单手动指定的蓝图，随消息派发显式穿戴
+      blueprintId: z.string().min(1).optional(),
     });
     const { content, mentions, projectTaskId, attachments, options } = z
       .object({
@@ -60,6 +62,8 @@ projectMessagesRouter.post(
       mode: z.enum(['plan', 'ask-always', 'ask-by-rule', 'no-approval', 'deny', 'confirm-edits', 'auto-edit', 'full-access']).optional(), // H9b 新四档+旧五值兼容
       model: z.string().min(1).optional(),
       thinking: z.enum(['off', 'low', 'med', 'medium', 'high']).optional(),
+      // 2026-09-06 创建流程解耦：composer ＋菜单手动指定的蓝图，随消息派发显式穿戴
+      blueprintId: z.string().min(1).optional(),
     });
     const { content, mentions, projectTaskId, attachments, options } = z
       .object({

@@ -21,7 +21,6 @@ import { createProject } from '../../src/server/domain/project';
 import { createTask } from '../../src/server/domain/task';
 import { createProjectTask, carrierBoundBlueprintId } from '../../src/server/domain/project-task';
 import { projectLaunchBriefSchema } from '../../src/shared/project-launch';
-import { TASK_CATEGORIES } from '../../src/shared/task-categories';
 import { blueprintStagesSchema } from '../../src/shared/blueprint-stages';
 
 let db: DB;
@@ -321,16 +320,14 @@ describe('预制蓝图进化与重置', () => {
   });
 });
 
-describe('直接绑定（2026-08-28 创建卡子类型点选）', () => {
-  it('三分类共享定义与播种库一一对应：22 个子类型的 blueprintTaskType 都有唯一蓝图落点', () => {
+describe('显式指定蓝图（2026-09-06 创建流程解耦：创建卡退役，显式指定走 API/composer ＋菜单）', () => {
+  it('26 套预制蓝图 taskType 无重复（蓝图库仍是能力管理的候选池）', () => {
     seed();
     ensureBlueprintPresets(db);
     const byTaskType = new Map<string, number>();
     for (const bp of listBlueprints(db)) byTaskType.set(bp.taskType, (byTaskType.get(bp.taskType) ?? 0) + 1);
-    const subtypes = TASK_CATEGORIES.flatMap((c) => c.subtypes);
-    expect(subtypes).toHaveLength(22);
-    for (const st of subtypes) {
-      expect(byTaskType.get(st.blueprintTaskType), `子类型「${st.label}」的 ${st.blueprintTaskType} 应对应已播种蓝图`).toBe(1);
+    for (const preset of BLUEPRINT_PRESETS) {
+      expect(byTaskType.get(preset.taskType), `${preset.label} 的 ${preset.taskType} 应唯一播种`).toBe(1);
     }
   });
 

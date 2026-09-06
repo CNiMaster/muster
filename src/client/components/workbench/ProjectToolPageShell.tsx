@@ -1,6 +1,6 @@
 import type React from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { useAgents, useWorkbench, useWorkbenchCockpit, useProject, useProjectTask, useProjectTasks, useTask, useTasks, useMergeAttention, useCreateProjectTask, useCreateTask } from '../../hooks/queries';
+import { useAgents, useWorkbench, useWorkbenchCockpit, useProject, useProjectTask, useProjectTasks, useTask, useTasks, useMergeAttention, useCreateTask } from '../../hooks/queries';
 import { ProjectContextInspector } from './ProjectContextInspector';
 import { InspectorTabsHost } from './InspectorTabsHost';
 import { ProjectWorkNavigation, type ProjectToolKey } from './ProjectWorkNavigation';
@@ -70,7 +70,6 @@ function ProjectTaskSurface({ projectId }: { projectId: string }): React.ReactEl
   const { data: projectTasks = [] } = useProjectTasks(projectId);
   const { data: tasks = [] } = useTasks(projectId);
   const { data: agents = [] } = useAgents();
-  const createProjectTask = useCreateProjectTask();
   const createWorkOrder = useCreateTask();
   if (!projectId) {
     return (
@@ -92,10 +91,9 @@ function ProjectTaskSurface({ projectId }: { projectId: string }): React.ReactEl
           projectTasks={projectTasks}
           agents={agents}
           onSelect={(id) => navigate(`/projects/${projectId}?view=task&projectTask=${id}`)}
-          onCreateTask={(title, brief, blueprintId) => createProjectTask.mutate({ projectId, title, brief, blueprintId }, { onSuccess: (item) => navigate(`/projects/${projectId}?view=task&projectTask=${item.id}`) })}
           onPublishWorkOrder={(title, assigneeId, options) => {
             if (!selected) return;
-            createWorkOrder.mutate({ projectId, projectTaskId: selected.id, title, assigneeAgentId: assigneeId || undefined, inputProtocol: { trigger: 'work_order', content: title, ...(options?.mode ? { mode: options.mode } : {}), ...(options?.model ? { model: options.model } : {}), ...(options?.thinking ? { thinking: options.thinking } : {}) } });
+            createWorkOrder.mutate({ projectId, projectTaskId: selected.id, title, assigneeAgentId: assigneeId || undefined, blueprintId: options?.blueprintId, inputProtocol: { trigger: 'work_order', content: title, ...(options?.mode ? { mode: options.mode } : {}), ...(options?.model ? { model: options.model } : {}), ...(options?.thinking ? { thinking: options.thinking } : {}) } });
           }}
           publishingWorkOrder={createWorkOrder.isPending}
         />
@@ -207,6 +205,10 @@ export function GlobalToolPageShell({ label, children, fullHeight = false, pane 
   >
     {pane === 'inspector'
       ? <ProjectTaskSurface projectId={lastProjectId} />
-      : <div className={fullHeight ? 'work-surface-page work-surface-page--full' : 'work-surface-page'}>{children}</div>}
+      // 普通工具页补内滚层（2026-08-31）：壳把 surface/page 锁成 overflow:hidden（吸底标签栏全高布局），
+      // fullHeight 分支自管滚动，普通分支此前没有任何滚动层 → 执行器中心等长页滚不动看不全
+      : fullHeight
+        ? <div className="work-surface-page work-surface-page--full">{children}</div>
+        : <div className="work-surface-page"><div className="work-surface-scroll">{children}</div></div>}
   </WorkbenchShell>;
 }

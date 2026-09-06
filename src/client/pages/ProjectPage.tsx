@@ -18,7 +18,6 @@ import {
   useProjectTasks,
   useArtifacts,
   useProjectTask,
-  useCreateProjectTask,
   useProjectTaskAction,
   useDiscoverProjectLaunch,
   useConfirmProjectLaunch,
@@ -31,7 +30,7 @@ import {
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
 import { Badge, StateBadge } from '../components/Badge';
-import { Input, Textarea, Select, Field } from '../components/Form';
+import { Input, Textarea, Field } from '../components/Form';
 import { EmptyState, Icons } from '../components/EmptyState';
 import { ConversationPanel } from '../components/ConversationPanel';
 import { ActivityPanel } from '../components/ActivityPanel';
@@ -46,7 +45,6 @@ import { TaskTopBar } from '../components/project/TaskTopBar';
 import { WorkbenchBottomStaffTabs } from '../components/workbench/WorkbenchBottomStaffTabs';
 import { ProjectEmployeeWorkspace } from '../components/project/ProjectEmployeeWorkspace';
 import { WorkbenchContextSwitcher } from '../components/workbench/WorkbenchContextSwitcher';
-import { usePlaybooksForTemplate } from '../hooks/queries';
 
 export type ProjectWorkbenchView = 'task' | 'employee' | 'group' | 'activity';
 
@@ -89,16 +87,14 @@ export function ProjectPage(): React.ReactElement {
   return <NewProject />;
 }
 
-/** 新建项目预设（公司模板已退场，仅按工作台类型保留小说向导开关）。 */
+/** 新建项目预设（2026-09-06 定调：名称即建，任务以对话开始——不塞默认任务）。 */
 const GENERAL_PROJECT_PRESET = {
   subtitle: '创建一个新的交付项目',
-  initialTaskTitle: '明确目标并制定执行方案',
   namePlaceholder: '例如：季度运营改进',
   descriptionPlaceholder: '一句话说明项目目标（选填）',
 };
 const NOVEL_PROJECT_PRESET = {
   subtitle: '发布一个新的故事创作企划',
-  initialTaskTitle: '编写第一章',
   namePlaceholder: '例如：星辰变',
   descriptionPlaceholder: '一句话描述这本小说（选填）',
 };
@@ -108,50 +104,32 @@ function NewProject(): React.ReactElement {
   // 公司概念已从 UI 退场：companyId 只是内部归组锚点，新建项目不感知工作台
   const { data: company } = useWorkbench();
   const companyId = company?.id;
-  const isNovelWorkspace = company?.kind === 'novel';
-  const creationPreset = isNovelWorkspace ? NOVEL_PROJECT_PRESET : GENERAL_PROJECT_PRESET;
+  const creationPreset = company?.kind === 'novel' ? NOVEL_PROJECT_PRESET : GENERAL_PROJECT_PRESET;
   const createProject = useCreateProject();
-  const createProjectTask = useCreateProjectTask();
   const generateProjectProposal = useGenerateProjectProposal();
   const pickFolder = usePickFolder();
-  // 阶段六任务 6.2：项目 Playbook 选项
-  const { data: playbookOptions } = usePlaybooksForTemplate(company?.kind);
-
-  const [mode, setMode] = useState<'standard' | 'wizard'>('wizard');
-  // 管理工作台批2：?mode=open 打开本地目录——接管既有项目（强制标准表单，聚焦目录输入）
+  // 管理工作台批2：?mode=open 打开本地目录——接管既有项目（聚焦目录输入）
   const [searchParams] = useSearchParams();
   const openMode = searchParams.get('mode') === 'open';
-  const effectiveMode = openMode ? 'standard' : (isNovelWorkspace ? mode : 'standard');
   const openDirFocusRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (openMode) openDirFocusRef.current?.focus();
   }, [openMode]);
 
-  // 基础表单状态
+  // 基础表单状态：名称即建（2026-09-06）——说明选填、目录选填，其余一概不问
   const [name, setName] = useState('');
   const [desc, setDesc] = useState('');
   const [rootDir, setRootDir] = useState('');
-  const [playbookId, setPlaybookId] = useState('');
-
-  // 对话式向导状态
+  // AI 立意（可选）：默认收起，展开后一句愿景生成名称+说明建议
+  const [showWizard, setShowWizard] = useState(false);
   const [prompt, setPrompt] = useState('');
   const [proposalNotice, setProposalNotice] = useState<string | null>(null);
-  const [wizardResult, setWizardResult] = useState<{
-    genre: string;
-    audience: string;
-    outline: string;
-    pov: string;
-    style: string;
-    sampleText: string;
-    initialTaskTitle: string;
-  } | null>(null);
 
   const handleAIAnalyze = (): void => {
     if (!prompt.trim()) {
       toast('error', '请先输入您的创作想法');
       return;
     }
-    setWizardResult(null);
     setProposalNotice(null);
     generateProjectProposal.mutate(
       { prompt: prompt.trim() },
@@ -160,9 +138,8 @@ function NewProject(): React.ReactElement {
           const proposal = result.proposal;
           setName(proposal.name);
           setDesc(`【题材】${proposal.genre}\n【受众】${proposal.audience}\n【文风】${proposal.style}\n【梗概】${proposal.outline}`);
-          setWizardResult(proposal);
-          setProposalNotice(result.warning ?? '项目蓝图由 Claude 生成，可继续修改。');
-          toast(result.source === 'claude' ? 'success' : 'info', result.warning ?? '项目蓝图已生成');
+          setProposalNotice(result.warning ?? '建议已生成，可继续修改。');
+          toast(result.source === 'claude' ? 'success' : 'info', result.warning ?? '建议已生成');
         },
         onError: (error) => toast('error', (error as Error).message),
       },
@@ -186,17 +163,12 @@ function NewProject(): React.ReactElement {
     }
 
     createProject.mutate(
-      { name, description: desc, ...(rootDir.trim() ? { rootDir: rootDir.trim() } : {}), ...(playbookId ? { playbookId } : {}) },
+      { name, description: desc, ...(rootDir.trim() ? { rootDir: rootDir.trim() } : {}) },
       {
         onSuccess: (p) => {
-          // 新项目只建立「待确认」的项目任务；确认需求与能力前不派发制作工作单。
-          const initialTask = wizardResult?.initialTaskTitle || creationPreset.initialTaskTitle;
-          createProjectTask.mutate({ projectId: p.id, title: initialTask, brief: desc, launchBrief: {
-            expectedOutcome: desc || initialTask,
-            audience: wizardResult?.audience ?? '',
-            effectAndStyle: wizardResult?.style ?? '',
-            constraints: '', deliverables: [], requiredCapabilityIds: [], requiredSkillIds: [], externalResearchNeeds: [], references: [], needsVisualConfirmation: false, visualReferences: [], blueprintId: '',
-          } }, { onSuccess: (projectTask) => { toast('success', `项目「${p.name}」已创建；请先确认「${initialTask}」的需求与能力方案。`); navigate(`/projects/${p.id}?view=task&projectTask=${projectTask.id}`); } });
+          // 2026-09-06 定调：创建即进项目对话空态——任务以对话开始，不塞任何默认任务
+          toast('success', openMode ? `已打开项目「${p.name}」` : `项目「${p.name}」已创建`);
+          navigate(`/projects/${p.id}?view=task`);
         },
         onError: (e) => toast('error', (e as { message?: string }).message ?? '创建失败'),
       },
@@ -220,163 +192,69 @@ function NewProject(): React.ReactElement {
           </div>
         </header>
 
-        {/* 模式切换 */}
-        {isNovelWorkspace && <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-4)' }}>
-          <Button variant={mode === 'wizard' ? 'primary' : 'ghost'} onClick={() => setMode('wizard')} size="sm">
-            智能对话向导
-          </Button>
-          <Button variant={mode === 'standard' ? 'primary' : 'ghost'} onClick={() => setMode('standard')} size="sm">
-            标准表单模式
-          </Button>
-        </div>}
-
-        {effectiveMode === 'wizard' ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-            {/* 对话输入框 */}
-            <Card title="输入小说愿景与核心创意">
-              <div className="form-stack">
-                <Field label="你想创作怎样的故事？" hint="例如: 写一部讲凡人修仙题材的小说，主角资质愚钝但有神秘法宝，文风热血，受众是男频读者。">
-                  <Textarea
-                    value={prompt}
-                    onChange={(e) => setPrompt(e.target.value)}
-                    placeholder="用您自然的语言描述故事想法..."
-                    style={{ height: '100px' }}
-                  />
-                </Field>
-                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                  <Button onClick={handleAIAnalyze} loading={generateProjectProposal.isPending}>
-                    生成蓝图配置
-                  </Button>
-                </div>
-              </div>
-            </Card>
-
-            {/* 生成的结构化设定预览与微调 */}
-            {wizardResult && (
-              <Card title="微调推荐配置" style={{ borderColor: 'var(--ok)' }}>
-                <div className="form-stack">
-                  {proposalNotice && <p className="muted" style={{ margin: 0 }}>{proposalNotice}</p>}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
-                    <Field label="故事名称">
-                      <Input value={name} onChange={(e) => setName(e.target.value)} />
-                    </Field>
-                    <Field label="小说题材">
-                      <Input
-                        value={wizardResult.genre}
-                        onChange={(e) => setWizardResult({ ...wizardResult, genre: e.target.value })}
-                      />
-                    </Field>
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
-                    <Field label="核心受众">
-                      <Input
-                        value={wizardResult.audience}
-                        onChange={(e) => setWizardResult({ ...wizardResult, audience: e.target.value })}
-                      />
-                    </Field>
-                    <Field label="视角选择">
-                      <Input
-                        value={wizardResult.pov}
-                        onChange={(e) => setWizardResult({ ...wizardResult, pov: e.target.value })}
-                      />
-                    </Field>
-                  </div>
-
-                  <Field label="文风基调">
-                    <Input
-                      value={wizardResult.style}
-                      onChange={(e) => setWizardResult({ ...wizardResult, style: e.target.value })}
-                    />
-                  </Field>
-
-                  <Field label="情节大纲与核心矛盾">
-                    <Textarea
-                      value={wizardResult.outline}
-                      onChange={(e) => {
-                        setWizardResult({ ...wizardResult, outline: e.target.value });
-                        setDesc(`【题材】${wizardResult.genre}\n【受众】${wizardResult.audience}\n【文风】${wizardResult.style}\n【梗概】${e.target.value}`);
-                      }}
-                      style={{ height: '80px' }}
-                    />
-                  </Field>
-
-                  <Field label="参考样文段落 (文笔风格锚定)">
-                    <Textarea
-                      value={wizardResult.sampleText}
-                      onChange={(e) => setWizardResult({ ...wizardResult, sampleText: e.target.value })}
-                      style={{ height: '60px', fontFamily: 'var(--font-sans)', fontSize: 'var(--text-xs)' }}
-                    />
-                  </Field>
-
-                  <Field label="开工初始 Task" required>
-                    <Input
-                      value={wizardResult.initialTaskTitle}
-                      onChange={(e) => setWizardResult({ ...wizardResult, initialTaskTitle: e.target.value })}
-                    />
-                  </Field>
-
-                  <Field label="项目目录（可选）" hint="留空则在默认工作区自动生成。必须填绝对路径，且在 MUSTER_ALLOWED_ROOTS 允许范围内。">
-                    <Input value={rootDir} onChange={(e) => setRootDir(e.target.value)} placeholder="例如：/Users/you/code/my-novel" />
-                  </Field>
-
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'var(--space-3)' }}>
-                    <Button onClick={submit} disabled={!name.trim()} loading={createProject.isPending}>
-                      确认设定并正式开工
-                    </Button>
-                  </div>
-                </div>
-              </Card>
+        <Card title={openMode ? '打开本地项目（接管既有目录）' : '创建项目'}>
+          <div className="form-stack">
+            {openMode && (
+              <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+                📂 填入既有项目的绝对路径即可接管该目录：已是 git 仓库则直接在其上工作，否则会自动初始化。目录内容不会被移动或修改。
+              </p>
             )}
-          </div>
-        ) : (
-          <Card title={openMode ? '打开本地项目（接管既有目录）' : '标准创建项目'}>
-            <div className="form-stack">
-              {openMode && (
-                <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-                  📂 填入既有项目的绝对路径即可接管该目录：已是 git 仓库则直接在其上工作，否则会自动初始化。目录内容不会被移动或修改。
-                </p>
-              )}
-              <Field label="项目名称" required>
-                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={creationPreset.namePlaceholder} />
-              </Field>
+            <Field label="项目名称" required>
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={openMode ? '默认取文件夹名，可修改' : creationPreset.namePlaceholder} />
+            </Field>
+            {!openMode && (
               <Field label="项目说明">
                 <Textarea value={desc} onChange={(e) => setDesc(e.target.value)} placeholder={creationPreset.descriptionPlaceholder} />
               </Field>
-              {/* 阶段六任务 6.2：项目 Playbook（工作模式） */}
-              <Field label="项目工作模式" hint="决定项目阶段、成果类型与审批节点；同一工作台可运行不同模式的项目">
-                <Select value={playbookId} onChange={(e) => setPlaybookId(e.target.value)}>
-                  <option value="">跟随工作台默认流程</option>
-                  {(playbookOptions ?? []).map((playbook) => (
-                    <option key={playbook.id} value={playbook.id}>{playbook.name} — {playbook.description}</option>
-                  ))}
-                </Select>
-              </Field>
-              <Field label={openMode ? '本地项目目录（必填）' : '项目目录（可选）'} hint={openMode
-                ? '填入既有项目的绝对路径（在 MUSTER_ALLOWED_ROOTS 允许范围内）。目录不会被移动或修改。'
-                : '留空则在默认工作区自动生成。一个工作台可同时跑多个项目，每个项目独立目录。必须填绝对路径，且在 MUSTER_ALLOWED_ROOTS 允许范围内。'}>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <input
-                    ref={openMode ? openDirFocusRef : undefined}
-                    value={rootDir}
-                    onChange={(e) => setRootDir(e.target.value)}
-                    placeholder={openMode ? '/Users/you/code/my-project' : '例如：/Users/you/code/my-project'}
-                    style={{ flex: 1, fontSize: 13, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)' }}
-                  />
-                  <Button size="sm" variant="ghost" loading={pickFolder.isPending} onClick={() => pickFolder.mutate(undefined, {
-                    onSuccess: (r) => { if (r.cancelled || !r.path) return; setRootDir(r.path); },
-                    onError: (e) => toast('info', (e as Error).message),
-                  })}>选择…</Button>
-                </div>
-              </Field>
-              <div>
-                <Button onClick={submit} disabled={!name.trim() || (openMode && !rootDir.trim())} loading={createProject.isPending}>
-                  {openMode ? '打开项目' : '创建项目'}
-                </Button>
+            )}
+            <Field label={openMode ? '本地项目目录（必填）' : '项目目录（可选）'} hint={openMode
+              ? '填入既有项目的绝对路径（在 MUSTER_ALLOWED_ROOTS 允许范围内）。目录不会被移动或修改。'
+              : '留空则在默认工作区自动生成。一个工作台可同时跑多个项目，每个项目独立目录。必须填绝对路径，且在 MUSTER_ALLOWED_ROOTS 允许范围内。'}>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input
+                  ref={openMode ? openDirFocusRef : undefined}
+                  value={rootDir}
+                  onChange={(e) => setRootDir(e.target.value)}
+                  placeholder={openMode ? '/Users/you/code/my-project' : '例如：/Users/you/code/my-project'}
+                  style={{ flex: 1, fontSize: 13, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)' }}
+                />
+                <Button size="sm" variant="ghost" loading={pickFolder.isPending} onClick={() => pickFolder.mutate(undefined, {
+                  onSuccess: (r) => {
+                    if (r.cancelled || !r.path) return;
+                    setRootDir(r.path);
+                    // 2026-08-31 用户口径：打开项目=选文件夹即用文件夹名（名称留空时自动填，选完可直接打开）
+                    const base = r.path.replace(/\/+$/, '').split('/').pop() ?? '';
+                    if (base) setName((cur) => (cur.trim() ? cur : base));
+                  },
+                  onError: (e) => toast('info', (e as Error).message),
+                })}>选择…</Button>
               </div>
+            </Field>
+            {!openMode && (
+              <div>
+                <Button variant="ghost" size="sm" onClick={() => setShowWizard((v) => !v)}>
+                  ✨ AI 帮我立意
+                </Button>
+                {showWizard && (
+                  <div className="form-stack" style={{ marginTop: 'var(--space-2)' }}>
+                    {proposalNotice && <p className="muted" style={{ margin: 0 }}>{proposalNotice}</p>}
+                    <Field label="你想做什么？" hint="一句话描述想法，生成名称与说明建议（可继续修改）；不填也能直接创建。">
+                      <Textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="例如：写一部凡人修仙题材的小说，主角资质愚钝但有神秘法宝，文风热血。" style={{ height: '80px' }} />
+                    </Field>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                      <Button size="sm" onClick={handleAIAnalyze} loading={generateProjectProposal.isPending}>生成建议</Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            <div>
+              <Button onClick={submit} disabled={!name.trim() || (openMode && !rootDir.trim())} loading={createProject.isPending}>
+                {openMode ? '打开项目' : '创建项目'}
+              </Button>
             </div>
-          </Card>
-        )}
+          </div>
+        </Card>
       </div>
     </WorkbenchShell>
   );
@@ -394,7 +272,6 @@ export function ProjectDetail({ projectId }: { projectId: string }): React.React
   const { data: projectTasks } = useProjectTasks(projectId);
   // 批次 G.7：⌘K 面板增「项目文件」组（点击直开右栏预览 ?preview=，F.3 已有 URL 驱动）
   const { data: paletteArtifacts } = useArtifacts(projectId);
-  const createProjectTask = useCreateProjectTask();
   const projectTaskAction = useProjectTaskAction();
   const discoverProjectLaunch = useDiscoverProjectLaunch();
   const confirmProjectLaunch = useConfirmProjectLaunch();
@@ -568,9 +445,8 @@ export function ProjectDetail({ projectId }: { projectId: string }): React.React
         projectTasks={projectTasks ?? []}
         agents={agents ?? []}
         onSelect={selectProjectTask}
-        onCreateTask={(title, brief, blueprintId) => createProjectTask.mutate({ projectId, title, brief, blueprintId }, { onSuccess: (item) => { selectProjectTask(item.id); toast('success', '项目任务已创建'); } })}
         newTaskSignal={newTaskSignal}
-        onPublishWorkOrder={(title, assigneeId, options) => { if (!selectedProjectTask) return; createWorkOrder.mutate({ projectId, projectTaskId: selectedProjectTask.id, title, assigneeAgentId: assigneeId || undefined, inputProtocol: { trigger: 'work_order', content: title, ...(options?.mode ? { mode: options.mode } : {}), ...(options?.model ? { model: options.model } : {}), ...(options?.thinking ? { thinking: options.thinking } : {}) } }, { onSuccess: () => toast('success', '智能体工作单已下达并开始执行') }); }}
+        onPublishWorkOrder={(title, assigneeId, options) => { if (!selectedProjectTask) return; createWorkOrder.mutate({ projectId, projectTaskId: selectedProjectTask.id, title, assigneeAgentId: assigneeId || undefined, blueprintId: options?.blueprintId, inputProtocol: { trigger: 'work_order', content: title, ...(options?.mode ? { mode: options.mode } : {}), ...(options?.model ? { model: options.model } : {}), ...(options?.thinking ? { thinking: options.thinking } : {}) } }, { onSuccess: () => toast('success', '智能体工作单已下达并开始执行') }); }}
         publishingWorkOrder={createWorkOrder.isPending}
       />}
 

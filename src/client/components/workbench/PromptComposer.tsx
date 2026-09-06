@@ -10,6 +10,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type React from 'react';
+import { Link } from 'react-router-dom';
 import type { Agent } from '../../api/types';
 import { Button } from '../Button';
 import type { MessageAttachment } from '../../hooks/queries';
@@ -124,7 +125,11 @@ export interface PromptComposerProps {
   onToggleGroupChat?: () => void;
   /** 群聊激活态：菜单项高亮、药丸显示群聊。 */
   groupChatActive?: boolean;
-  onSend: (content: string, options?: { agentId?: string; model?: string; thinking?: string; attachments?: MessageAttachment[]; mode?: ComposerMode; refs?: string[] }) => void;
+  /** 2026-09-06 创建流程解耦：＋菜单手动穿戴蓝图——候选=active 蓝图（挂载方从 useBlueprints 传入）。 */
+  blueprintOptions?: Array<{ id: string; label: string; mainPersonaName: string }>;
+  /** 聚焦信号（自增计数）：新任务/清空选择后聚焦输入框。 */
+  focusSignal?: number;
+  onSend: (content: string, options?: { agentId?: string; model?: string; thinking?: string; attachments?: MessageAttachment[]; mode?: ComposerMode; refs?: string[]; blueprintId?: string }) => void;
 }
 
 export function PromptComposer({
@@ -165,6 +170,8 @@ export function PromptComposer({
   onClearQuoted,
   onToggleGroupChat,
   groupChatActive = false,
+  blueprintOptions,
+  focusSignal,
   onSend,
 }: PromptComposerProps): React.ReactElement {
   // 批次 G.1：草稿按 draftKey 隔离持久化（muster:*:vN 约定）；无 key 保持纯内存行为
@@ -186,11 +193,17 @@ export function PromptComposer({
     window.addEventListener('muster:composer-prefill', onPrefill);
     return () => window.removeEventListener('muster:composer-prefill', onPrefill);
   }, [onSelectMode]);
+  // ＋菜单手动穿戴（2026-09-06）：选中即 chip 展示，随下一次发送显式下发并清空
+  const [pickedBlueprintId, setPickedBlueprintId] = useState<string | null>(null);
+  const pickedBlueprint = blueprintOptions?.find((b) => b.id === pickedBlueprintId) ?? null;
   const [slashIndex, setSlashIndex] = useState(0);
   // 批次 H.9：@ 引用（员工/文件/任务三类候选；refs 上送带类型前缀 token，不动旧 mentions 语义）
   const [mentionIndex, setMentionIndex] = useState(0);
   const mentionMapRef = useRef(new Map<string, string>());
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    if (focusSignal) textareaRef.current?.focus();
+  }, [focusSignal]);
   const rootRef = useRef<HTMLDivElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -323,7 +336,9 @@ export function PromptComposer({
           model: currentModel || undefined,
           thinking: thinkingDepth,
           mode: (cmd.mode as ComposerMode | undefined) || mode || undefined,
+          blueprintId: pickedBlueprintId || undefined,
         });
+        setPickedBlueprintId(null);
         setText('');
         if (draftStorageKey) window.localStorage.removeItem(draftStorageKey);
         return;
@@ -338,7 +353,9 @@ export function PromptComposer({
       attachments: attachments.length > 0 ? attachments : undefined,
       mode: mode || undefined,
       refs: extractRefs().length > 0 ? extractRefs() : undefined,
+      blueprintId: pickedBlueprintId || undefined,
     });
+    setPickedBlueprintId(null);
     setText('');
     setPanelQuote(undefined); // 批次 I-a2：本地插件引用随发送清空
     if (draftStorageKey) window.localStorage.removeItem(draftStorageKey);
@@ -379,7 +396,7 @@ export function PromptComposer({
     { token: 'model', label: '/model 切换模型', hint: '打开模型选择', apply: () => setOpenMenu('model') },
     { token: 'think', label: '/think 思考深度', hint: '切换思考档位', apply: () => cycleThinking() },
     { token: 'task', label: '/task 切换任务', hint: '打开任务选择', apply: () => setOpenMenu('task') },
-    { token: 'new', label: '/new 新建任务', hint: '展开新建任务卡', apply: () => onNewTask?.() },
+    { token: 'new', label: '/new 新对话', hint: '回到项目对话空态重新开始', apply: () => onNewTask?.() },
     // 宿主命令组（批次 I）：发给宿主的指令而非模型 prompt——/compact 支持 @人员 与 --all
     { token: 'compact', label: '/compact 压缩上下文', hint: '宿主命令：压缩运行中任务的上下文（@某人 / --all）', apply: () => { setText('/compact '); setOpenMenu(null); } },
   ].filter((command) => onSelectMode
@@ -481,6 +498,14 @@ export function PromptComposer({
       )}
 
       {/* 附件芯片行 */}
+      {pickedBlueprint && (
+        <div className="mu-composer-attachments">
+          <span className="mu-composer-attachment-chip" title="本次派发显式穿戴该蓝图">
+            🎭 {pickedBlueprint.label}
+            <button type="button" className="mu-composer-attachment-remove" aria-label="移除蓝图穿戴" onClick={() => setPickedBlueprintId(null)}>×</button>
+          </span>
+        </div>
+      )}
       {(attachments.length > 0 || uploading) && (
         <div className="mu-composer-attachments">
           {attachments.map((a) => (
@@ -546,20 +571,56 @@ export function PromptComposer({
 
       <div className="mu-prompt-toolbar">
         <div className="mu-prompt-controls">
-          {/* + 菜单：添加图片 / 添加文件（2026-08-23 定案：居左首位） */}
-          {onAddFiles && (
+          {/* + 菜单（2026-09-06 分组化）：附件 / 蓝图（本次派发显式穿戴） / 常用命令；@ 与 / 可直接键入 */}
+          {(onAddFiles || blueprintOptions) && (
             <div className="mu-composer-popover-wrap">
-              {menuButton('plus', <span className="mu-composer-icon-btn">＋</span>, '添加图片或文件附件')}
+              {menuButton('plus', <span className="mu-composer-icon-btn">＋</span>, '附件 / 蓝图 / 命令')}
               {openMenu === 'plus' && (
-                <div className="mu-composer-dropdown">
-                  <div className="mu-dropdown-header">添加附件</div>
-                  <button type="button" className="mu-dropdown-item" onClick={() => { imageInputRef.current?.click(); setOpenMenu(null); }}>
-                    <span>🖼 添加图片</span>
-                  </button>
-                  <button type="button" className="mu-dropdown-item" onClick={() => { fileInputRef.current?.click(); setOpenMenu(null); }}>
-                    <span>📄 添加文件</span>
-                  </button>
-                  <div className="mu-dropdown-hint">支持粘贴图片、拖拽文件到输入框</div>
+                <div className="mu-composer-dropdown" style={{ maxHeight: 420, overflowY: 'auto' }}>
+                  {onAddFiles && (
+                    <>
+                      <div className="mu-dropdown-header">附件</div>
+                      <button type="button" className="mu-dropdown-item" onClick={() => { imageInputRef.current?.click(); setOpenMenu(null); }}>
+                        <span>🖼 添加图片</span>
+                      </button>
+                      <button type="button" className="mu-dropdown-item" onClick={() => { fileInputRef.current?.click(); setOpenMenu(null); }}>
+                        <span>📄 添加文件</span>
+                      </button>
+                    </>
+                  )}
+                  {blueprintOptions && blueprintOptions.length > 0 && (
+                    <>
+                      <div className="mu-dropdown-header">蓝图（点选=本次派发显式穿戴，不经 AI 路由）</div>
+                      {blueprintOptions.map((bp) => (
+                        <button
+                          key={bp.id}
+                          type="button"
+                          className={`mu-dropdown-item ${bp.id === pickedBlueprintId ? 'is-active' : ''}`}
+                          onClick={() => { setPickedBlueprintId(bp.id === pickedBlueprintId ? null : bp.id); setOpenMenu(null); }}
+                        >
+                          <span>🎭 {bp.label}{bp.mainPersonaName ? `（主槽 ${bp.mainPersonaName}）` : ''}</span>
+                          {bp.id === pickedBlueprintId && <span className="mu-item-check">✓</span>}
+                        </button>
+                      ))}
+                    </>
+                  )}
+                  <div className="mu-dropdown-header">常用命令</div>
+                  {onNewTask && (
+                    <button type="button" className="mu-dropdown-item" onClick={() => { setOpenMenu(null); onNewTask(); }}>
+                      <span>🆕 新对话（/new）</span>
+                    </button>
+                  )}
+                  {modelOptions && modelOptions.length > 0 && onSelectModel && (
+                    <button type="button" className="mu-dropdown-item" onClick={() => setOpenMenu('model')}>
+                      <span>🧠 切换模型（/model）</span>
+                    </button>
+                  )}
+                  {taskOptions && taskOptions.length > 0 && onSelectTask && (
+                    <button type="button" className="mu-dropdown-item" onClick={() => setOpenMenu('task')}>
+                      <span>🧭 切换任务（/task）</span>
+                    </button>
+                  )}
+                  <div className="mu-dropdown-hint">@ 引用员工/文件/任务；斜杠命令（如 /compact）直接键入</div>
                 </div>
               )}
             </div>
@@ -698,7 +759,11 @@ export function PromptComposer({
               {openMenu === 'model' && (
                 <div className="mu-composer-dropdown" style={{ left: 'auto', right: 0 }}>
                   <div className="mu-dropdown-header">选择模型</div>
-                  {models.length === 0 && <span className="mu-dropdown-item is-static">未发现模型——在执行器中心配置</span>}
+                  {models.length === 0 && (
+                    <Link className="mu-dropdown-item" to="/executors" onClick={() => setOpenMenu(null)}>
+                      未发现模型——点此去「执行器中心」接入 →
+                    </Link>
+                  )}
                   {models.map((m) => (
                     <button
                       key={m.id}

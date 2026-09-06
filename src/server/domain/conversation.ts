@@ -16,6 +16,7 @@ import { createTask, getTask } from './task';
 import { getAgent } from './agent';
 import { getMaterial } from './material';
 import { carrierBoundBlueprintId } from './project-task';
+import { getBlueprint } from './blueprint';
 import { ensureWorkspaceStaff } from './workspace-staff';
 import { maybeEnqueuePreferenceQuestion } from './task-preference';
 import { realtime } from '../realtime';
@@ -79,6 +80,17 @@ export interface MessageOptions {
   model?: string;
   /** 归一化思考档位（med 为前端别名，入库前归一为 medium）。 */
   thinking?: 'off' | 'low' | 'medium' | 'high';
+  /** 2026-09-06 创建流程解耦：composer ＋菜单手动指定的蓝图——随本条消息派发显式穿戴（优先于载体绑定）。 */
+  blueprintId?: string;
+}
+
+/** 蓝图存在且 active 才允许显式穿戴；失效/不存在返回 false（降级走路由，不中断派发）。 */
+function isBlueprintActive(db: DB, id: string): boolean {
+  try {
+    return getBlueprint(db, id).status === 'active';
+  } catch {
+    return false;
+  }
 }
 
 function normalizeThinking(value: string | undefined): MessageOptions['thinking'] {
@@ -187,6 +199,7 @@ export interface PostUserMessageInput {
     mode?: MessageMode;
     model?: string;
     thinking?: 'off' | 'low' | 'med' | 'medium' | 'high';
+    blueprintId?: string;
   };
 }
 
@@ -274,6 +287,7 @@ export function postUserMessage(db: DB, input: PostUserMessageInput): {
     mode: input.options?.mode,
     model: input.options?.model?.trim() || undefined,
     thinking: normalizeThinking(input.options?.thinking),
+    blueprintId: input.options?.blueprintId?.trim() || undefined,
   };
   const dispatchContent = options.mode === 'plan' ? `${PLAN_PREFIX}${input.content}` : input.content;
   const userMessage: ConversationMessage = {
@@ -364,9 +378,13 @@ export function postUserMessage(db: DB, input: PostUserMessageInput): {
   // WP10 识图直读：图片附件转 data-uri 随任务下发（projectId 已解析，路径归属已校验）
   const userImages = projectId ? collectImageDataUris(db, attachmentRefs, projectId) : [];
   const tasks: Array<ReturnType<typeof createTask>> = [];
-  // 直接绑定蓝图（2026-08-28 创建卡子类型点选）：载体级属性——该载体下的消息派发直通穿戴，
-  // 点选即显式指定，不做标题词元猜测；未选子类型（空串/载体读取失败）走既有链路。
+  // 蓝图穿戴优先级（2026-09-06 创建流程解耦）：消息级显式指定（composer ＋菜单）> 载体绑定 > AI 路由。
+  // 显式指定的蓝图必须 active——失效则静默降级走路由（不因陈旧选择中断消息派发）。
   const boundBlueprintId = input.projectTaskId ? carrierBoundBlueprintId(db, input.projectTaskId) : undefined;
+  const messageBlueprintId = options.blueprintId && isBlueprintActive(db, options.blueprintId)
+    ? options.blueprintId
+    : undefined;
+  const explicitBlueprintId = messageBlueprintId ?? boundBlueprintId;
   if (projectId) {
     for (const recipientAgentId of recipients) {
       tasks.push(createTask(db, {
@@ -374,7 +392,7 @@ export function postUserMessage(db: DB, input: PostUserMessageInput): {
         projectTaskId: input.projectTaskId,
         assigneeAgentId: recipientAgentId,
         title: `[用户消息] ${input.content.slice(0, 40)}`,
-        ...(boundBlueprintId ? { blueprintId: boundBlueprintId } : {}),
+        ...(explicitBlueprintId ? { blueprintId: explicitBlueprintId } : {}),
         inputProtocol: {
           trigger: 'user_message',
           scope: input.scopeKind,
