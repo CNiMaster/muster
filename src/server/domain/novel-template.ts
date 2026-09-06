@@ -94,18 +94,27 @@ export const GENRE_RULES_PATH = 'planning/genre-rules.md';
 const GENRE_RULES_SLOT_TITLES = ['章节类型', '节奏承诺', '反馈与爽点', '题材禁忌', '疲劳词', '读者承诺'];
 
 /**
- * 启动时为小说工作台的全部在营项目补种渐进式基础成果（打法档案、canon 账本等）。
+ * 启动时为小说工作台的业务项目补种渐进式基础成果（打法档案、canon 账本等）。
  * 幂等：initializeArtifactContent 不覆盖已有内容——只补新批次引入的缺口成果（如存量项目缺 genre-rules）。
- * 返回处理的项目数（0 = 非小说工作台，静默跳过）。
+ * 跳过：归档项目、收件箱/独立任务等基础设施载体（它们不是创作现场）；单项目失败不阻断其余。
+ * 返回成功处理的项目数（0 = 非小说工作台，静默跳过）。
  */
 export function ensureNovelProjectArtifacts(db: DB): number {
   const workbench = getWorkbenchOrNull(db);
   if (!workbench || workbench.kind !== 'novel') return 0;
+  // listProjects 的 companyId 参数未参与过滤（历史怪癖）——这里显式按工作台过滤
+  const projects = listProjects(db).filter((p) => p.companyId === workbench.id);
   let ensured = 0;
-  for (const project of listProjects(db, workbench.id)) {
+  for (const project of projects) {
     if (project.state === 'archived') continue;
-    initializeNovelProject(db, project.id);
-    ensured += 1;
+    const settings = project.settings as Record<string, unknown>;
+    if (settings?.inbox === true || settings?.standalone === true) continue;
+    try {
+      initializeNovelProject(db, project.id);
+      ensured += 1;
+    } catch {
+      // 单项目 rootDir 缺失/不可写等：跳过，下次启动重试（幂等）
+    }
   }
   return ensured;
 }

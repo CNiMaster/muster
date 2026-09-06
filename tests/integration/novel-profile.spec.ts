@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { makeTestDb } from './setup';
 import { createNovelCompany } from './setup';
 import type { DB } from '../../src/server/db/client';
-import { createProject } from '../../src/server/domain/project';
+import { createProject, updateProject } from '../../src/server/domain/project';
 import { transitionWorkbench } from '../../src/server/domain/workbench';
 import {
   initializeNovelProject,
@@ -44,7 +44,7 @@ function makeTmpRoot(): string {
   return root;
 }
 
-function setupProject(name: string, { initialize = true } = {}): { projectId: string; rootDir: string } {
+function setupProject(name: string, { initialize = true } = {}): { companyId: string; projectId: string; rootDir: string } {
   const r = createNovelCompany(db, { name });
   transitionWorkbench(db, 'online');
   const rootDir = makeTmpRoot();
@@ -55,7 +55,7 @@ function setupProject(name: string, { initialize = true } = {}): { projectId: st
     firstAgentId: r.agents.lead.id,
   });
   if (initialize) initializeNovelProject(db, project.id);
-  return { projectId: project.id, rootDir };
+  return { companyId: r.company.id, projectId: project.id, rootDir };
 }
 
 describe('打法档案建档状态（getNovelProfileStatus）', () => {
@@ -139,6 +139,23 @@ describe('存量项目成果补种（ensureNovelProjectArtifacts）', () => {
     const restored = readFileSync(join(rootDir, GENRE_RULES_PATH), 'utf8');
     expect(restored).toContain('打法档案');
     expect(readFileSync(join(rootDir, 'canon/foreshadowing.md'), 'utf8')).toContain('旧版自由文本');
+  });
+
+  it('跳过收件箱等基础设施项目，业务项目正常补种', () => {
+    const { companyId, projectId, rootDir } = setupProject('过滤公司', { initialize: false });
+    const infra = createProject(db, {
+      companyId,
+      name: '收件箱',
+      rootDir: makeTmpRoot(),
+      initialState: 'active',
+    });
+    updateProject(db, infra.id, { settings: { inbox: true } });
+    // 两个项目都不初始化（等价 ensure 前的缺口态）
+    ensureNovelProjectArtifacts(db);
+    const kinds = (pid: string): string[] => listArtifacts(db, pid).map((a) => a.kind);
+    expect(kinds(projectId)).toContain('genre_rules'); // 业务项目补上了
+    expect(kinds(infra.id)).not.toContain('genre_rules'); // 基建项目不波及
+    expect(existsSync(join(rootDir, GENRE_RULES_PATH))).toBe(true);
   });
 
   it('非小说工作台静默跳过', () => {
