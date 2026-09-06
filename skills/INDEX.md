@@ -45,3 +45,9 @@
 | code-simplification | 代码能跑但难读难维护 |
 | git-workflow-and-versioning | 分支管理、冲突解决 |
 | ci-cd-and-automation | CI/CD 流水线 |
+
+## 创作（2026-09-06 起）
+| Skill | 触发场景 |
+|-------|---------|
+| story-deslop | 小说章节读着「像 AI 写的」：按功能诊断模板腔/总结腔/对称句式并最小层修写，保留作者声音 |
+

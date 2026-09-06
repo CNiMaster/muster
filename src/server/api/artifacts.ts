@@ -11,6 +11,7 @@
 
  发布冲突不通过按钮强制覆盖：TaskEngine 会保留原 worktree，并给负责人派发可交互的裁决 Task。
  - GET    /api/projects/:id/artifacts/history
+ - GET    /api/projects/:id/artifacts/novel-profile-status  打法档案建档状态（2026-09-06，待确认栏位清单）
  - GET    /api/projects/:id/artifacts/preview/*path  右栏预览（双校验 + HTML CSP，批次 F.3）
  */
 import { Router } from 'express';
@@ -20,6 +21,7 @@ import { spawn } from 'node:child_process';
 import { asyncHandler, param } from './middleware';
 import { getDb } from '../db/client';
 import { listArtifacts, artifactGallery, deleteArtifact, buildRevealCommand } from '../domain/artifact';
+import { getNovelProfileStatus } from '../domain/novel-template';
 import { getPlugin } from '../domain/plugin-adapter';
 import { getProject } from '../domain/project';
 import { peekRepoRoot } from '../domain/task-repo';
@@ -48,6 +50,13 @@ projectArtifactsRouter.get(
   asyncHandler(async (req, res) => {
     const groupBy = req.query.groupBy === 'type' ? 'type' : 'time';
     res.json(artifactGallery(getDb(), param(req, 'id'), groupBy));
+  }),
+);
+
+projectArtifactsRouter.get(
+  '/novel-profile-status',
+  asyncHandler(async (req, res) => {
+    res.json(getNovelProfileStatus(getDb(), param(req, 'id')));
   }),
 );
 

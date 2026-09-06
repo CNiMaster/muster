@@ -1947,6 +1947,22 @@ export function useArtifactHistory(projectId: string | undefined) {
     enabled: !!projectId,
   });
 }
+
+export interface NovelProfileStatusDTO {
+  exists: boolean;
+  totalSlots: number;
+  pendingSlots: number;
+  pendingTitles: string[];
+}
+
+/** 打法档案（planning/genre-rules.md）建档状态：六栏位中仍为「待定」的清单（2026-09-06）。 */
+export function useNovelProfileStatus(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ['novel-profile-status', projectId],
+    queryFn: () => api.get<NovelProfileStatusDTO>(`/api/projects/${projectId}/artifacts/novel-profile-status`),
+    enabled: !!projectId,
+  });
+}
 export function useArtifactContent(projectId: string | undefined, path: string | null) {
   return useQuery({
     queryKey: ['artifact-content', projectId, path],
@@ -1962,6 +1978,8 @@ export function useSaveArtifactContent() {
     onSuccess: (_d, vars) => {
       qc.invalidateQueries({ queryKey: ['artifact-content', vars.projectId, vars.path] });
       qc.invalidateQueries({ queryKey: ['artifacts', vars.projectId] });
+      // 打法档案改完即刷新建档状态徽标（待确认 → 已确认）
+      qc.invalidateQueries({ queryKey: ['novel-profile-status', vars.projectId] });
     },
   });
 }

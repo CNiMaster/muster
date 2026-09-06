@@ -15,7 +15,7 @@ import { createTask } from './task';
 import type { ArtifactChange } from '../../shared/types';
 import { transaction } from '../db/client';
 import { appendTaskEvent } from './task-event';
-import { MAINTENANCE_ROLES } from './novel-template';
+import { MAINTENANCE_ROLES, detectStaleHooks } from './novel-template';
 import { assertValidTimezone, localTimezone, nextDailyOccurrence } from './tz';
 
 export type ConsistencyCheckKind = 'omission' | 'continuity' | 'long_term';
@@ -426,6 +426,9 @@ export function handleChapterCompleted(db: DB, ev: ChapterCompletedEvent): strin
     relationship: `维护情感线（第${ev.chapterSeq}章）`,
   };
 
+  // 半衰期诊断（2026-09-06）：确定性解析伏笔账本，超期未回收的随维护载荷送给账本归属岗位
+  const staleHooks = detectStaleHooks(db, ev.projectId, ev.chapterSeq);
+
   for (const role of MAINTENANCE_ROLES) {
     const agentId = byRole(role);
     if (!agentId) continue;
@@ -441,6 +444,7 @@ export function handleChapterCompleted(db: DB, ev: ChapterCompletedEvent): strin
         chapterSeq: ev.chapterSeq,
         summary: ev.summary,
         artifacts: ev.artifacts,
+        ...(staleHooks.length > 0 && (role === 'plot' || role === 'foreshadowing') ? { staleHooks } : {}),
       },
       priority: 6,
     });

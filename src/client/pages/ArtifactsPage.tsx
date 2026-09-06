@@ -9,6 +9,7 @@ import {
   useProject,
   useAgents,
   useArtifactHistory,
+  useNovelProfileStatus,
   useOpenArtifactExternally,
   useRollbackArtifact,
   useArtifactGallery,
@@ -24,7 +25,7 @@ import { EmptyState, Icons } from '../components/EmptyState';
 import { MarkdownEditor } from '../components/MarkdownEditor';
 import { MarkdownPreview } from '../components/MarkdownPreview';
 
-const EDITABLE_KINDS = ['project_brief', 'synopsis', 'style_profile', 'outline', 'chapter', 'character_sheet', 'worldbuilding', 'timeline', 'foreshadowing'];
+const EDITABLE_KINDS = ['project_brief', 'synopsis', 'style_profile', 'genre_rules', 'outline', 'chapter', 'character_sheet', 'worldbuilding', 'timeline', 'foreshadowing'];
 const READONLY_KINDS = ['character_relation_view', 'plot_progress_view', 'timeline_view'];
 
 /** 通用成果类型(Phase 4 泛化:非小说工作台也可见)。 */
@@ -34,6 +35,7 @@ const KIND_LABELS: Record<string, string> = {
   project_brief: '项目说明',
   synopsis: '故事梗概',
   style_profile: '风格档案',
+  genre_rules: '打法档案',
   outline: '计划大纲',
   chapter: '章节',
   character_sheet: '人物档案',
@@ -62,6 +64,7 @@ export function ArtifactsPage(): React.ReactElement {
   const [createOpen, setCreateOpen] = useState(false);
 
   const { data: history } = useArtifactHistory(projectId);
+  const { data: profileStatus } = useNovelProfileStatus(projectId);
   const editable = (artifacts ?? []).filter((a) => EDITABLE_KINDS.includes(a.kind));
   const readonly = (artifacts ?? []).filter((a) => READONLY_KINDS.includes(a.kind));
   const other = (artifacts ?? []).filter((a) => !EDITABLE_KINDS.includes(a.kind) && !READONLY_KINDS.includes(a.kind));
@@ -82,6 +85,7 @@ export function ArtifactsPage(): React.ReactElement {
               <ArtifactList
                 items={editable}
                 agents={agents ?? []}
+                profileStatus={profileStatus}
                 onSelect={setSelectedPath}
                 empty={<EmptyState icon={Icons.empty} title="还没有可编辑成果" hint="新建章节或大纲开始创作。" />}
               />
@@ -205,11 +209,14 @@ function GalleryView({ projectId, onSelect }: { projectId: string; onSelect: (pa
 function ArtifactList({
   items,
   agents,
+  profileStatus,
   onSelect,
   empty,
 }: {
   items: { id: string; kind: string; path: string; ownerAgentId: string | null; createdTaskId: string | null; updatedAt: string }[];
   agents: { id: string; name: string; role: string }[];
+  /** 打法档案建档状态（仅 novel 工作台有值）：待确认栏位 > 0 时在档案行上亮徽标。 */
+  profileStatus?: { exists: boolean; totalSlots: number; pendingSlots: number; pendingTitles: string[] } | null;
   onSelect: (path: string) => void;
   empty: React.ReactNode;
 }): React.ReactNode {
@@ -219,12 +226,23 @@ function ArtifactList({
       {items.map((a) => {
         const owner = agents.find((x) => x.id === a.ownerAgentId);
         const readonly = READONLY_KINDS.includes(a.kind);
+        const isGenreRules = a.kind === 'genre_rules' && a.path === 'planning/genre-rules.md';
         return (
           <li key={a.id} onClick={() => onSelect(a.path)} style={{ cursor: 'pointer' }}>
             <div style={{ flex: 1 }}>
               <strong>{a.path}</strong> <span className="muted">{KIND_LABELS[a.kind] ?? a.kind}</span>
             </div>
             {owner && <Badge tone="info">{owner.name} [{owner.role}]</Badge>}
+            {/* 2026-09-06：打法档案待确认提醒——系统提示用户「这里可以建自己的打法」 */}
+            {isGenreRules && profileStatus && (
+              profileStatus.pendingSlots > 0 ? (
+                <Badge tone="warn" title={`待确认：${profileStatus.pendingTitles.join('、')}`}>
+                  待确认 {profileStatus.pendingSlots}/{profileStatus.totalSlots}
+                </Badge>
+              ) : (
+                <Badge tone="ok">打法已确认</Badge>
+              )
+            )}
             {/* R3：来源任务维度——成果由哪个任务产出 */}
             {a.createdTaskId && (
               <Link className="mu-btn mu-btn-ghost mu-btn-sm" to={`/tasks/${a.createdTaskId}`} onClick={(e) => e.stopPropagation()}>

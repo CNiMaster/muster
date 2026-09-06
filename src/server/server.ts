@@ -92,6 +92,7 @@ import { businessReviewsRouter } from './api/business-reviews';
 import { backupRouter } from './api/backup';
 import { setupRouter } from './api/setup';
 import { ensureWorkbench, updateWorkbench, DEFAULT_WORKBENCH_NAME } from './domain/workbench';
+import { ensureNovelProjectArtifacts } from './domain/novel-template';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -220,6 +221,15 @@ async function createApp(): Promise<AppHandle> {
     }
   } catch (err) {
     log.warn('default workbench ensure failed', { error: err instanceof Error ? err.message : String(err) });
+  }
+  // 2026-09-06 收尾：小说工作台的存量项目补种渐进式基础成果（打法档案等，幂等不覆盖已有内容）
+  try {
+    const novelEnsured = ensureNovelProjectArtifacts(getDb());
+    if (novelEnsured > 0) {
+      log.info('novel project artifacts ensured', { projects: novelEnsured });
+    }
+  } catch (err) {
+    log.warn('novel project artifacts ensure failed', { error: err instanceof Error ? err.message : String(err) });
   }
   // API（顶层）
   app.use('/api', healthRouter);

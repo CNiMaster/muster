@@ -11,9 +11,10 @@
  */
 import type { DB } from '../db/client';
 import { listAgents } from './agent';
-import { initializeArtifactContent } from './artifact-content';
-import type { Artifact, ArtifactKind } from './artifact';
-import { getProject } from './project';
+import { initializeArtifactContent, readArtifactContent } from './artifact-content';
+import { getArtifactByPath, type Artifact, type ArtifactKind } from './artifact';
+import { getProject, listProjects } from './project';
+import { getWorkbenchOrNull } from './workbench';
 
 /** 维护类岗位白名单（章节完成时派发维护 Task 的目标，PRD:458）。 */
 export const MAINTENANCE_ROLES = [
@@ -84,4 +85,128 @@ function defaultCharter(name: string): string {
     '- 复盘按根员工汇总，不逐条列 Task。',
     '',
   ].join('\n');
+}
+
+// ── 2026-09-06 收尾批次：存量补种 / 打法档案建档状态 / 伏笔半衰期诊断 ──
+
+/** 打法档案路径与六栏位（与 initializeNovelProject 的 genre-rules 模板保持一致）。 */
+export const GENRE_RULES_PATH = 'planning/genre-rules.md';
+const GENRE_RULES_SLOT_TITLES = ['章节类型', '节奏承诺', '反馈与爽点', '题材禁忌', '疲劳词', '读者承诺'];
+
+/**
+ * 启动时为小说工作台的全部在营项目补种渐进式基础成果（打法档案、canon 账本等）。
+ * 幂等：initializeArtifactContent 不覆盖已有内容——只补新批次引入的缺口成果（如存量项目缺 genre-rules）。
+ * 返回处理的项目数（0 = 非小说工作台，静默跳过）。
+ */
+export function ensureNovelProjectArtifacts(db: DB): number {
+  const workbench = getWorkbenchOrNull(db);
+  if (!workbench || workbench.kind !== 'novel') return 0;
+  let ensured = 0;
+  for (const project of listProjects(db, workbench.id)) {
+    if (project.state === 'archived') continue;
+    initializeNovelProject(db, project.id);
+    ensured += 1;
+  }
+  return ensured;
+}
+
+export interface NovelProfileStatus {
+  /** 档案成果是否已注册（存量项目可能在 ensure 前缺失）。 */
+  exists: boolean;
+  totalSlots: number;
+  pendingSlots: number;
+  /** 仍为「待定」的栏位标题。 */
+  pendingTitles: string[];
+}
+
+/**
+ * 打法档案建档状态：逐栏检查正文是否仍是「待定」占位。
+ * 约定与模板一致——用户把「待定」字样改掉即视为该栏已确认；档案随时可改，下一章生效。
+ */
+export function getNovelProfileStatus(db: DB, projectId: string): NovelProfileStatus {
+  if (!getArtifactByPath(db, projectId, GENRE_RULES_PATH)) {
+    return { exists: false, totalSlots: GENRE_RULES_SLOT_TITLES.length, pendingSlots: GENRE_RULES_SLOT_TITLES.length, pendingTitles: [...GENRE_RULES_SLOT_TITLES] };
+  }
+  let content = '';
+  try {
+    content = readArtifactContent(db, projectId, GENRE_RULES_PATH);
+  } catch {
+    content = '';
+  }
+  const sections = parseMarkdownH2Sections(content);
+  const pendingTitles = GENRE_RULES_SLOT_TITLES.filter((title) => {
+    const body = sections.get(title);
+    return body === undefined ? true : body.includes('待定');
+  });
+  return {
+    exists: true,
+    totalSlots: GENRE_RULES_SLOT_TITLES.length,
+    pendingSlots: pendingTitles.length,
+    pendingTitles,
+  };
+}
+
+/** 把 markdown 按 `## 标题` 切段（标题 → 小节正文，不含标题行本身）。 */
+function parseMarkdownH2Sections(content: string): Map<string, string> {
+  const sections = new Map<string, string>();
+  let current: string | null = null;
+  const buffer: string[] = [];
+  for (const line of content.split(/\r?\n/)) {
+    const match = /^##\s+(.+?)\s*$/.exec(line);
+    if (match) {
+      if (current !== null) sections.set(current, buffer.join('\n'));
+      current = match[1]!;
+      buffer.length = 0;
+    } else if (current !== null) {
+      buffer.push(line);
+    }
+  }
+  if (current !== null) sections.set(current, buffer.join('\n'));
+  return sections;
+}
+
+export interface StaleHook {
+  id: string;
+  startChapter: string;
+  status: string;
+  lastAdvanced: string;
+  expectedPayoff: string;
+  notes: string;
+}
+
+/**
+ * 伏笔半衰期诊断（确定性，不靠模型自觉）：解析伏笔账本（canon/foreshadowing.md）的行，
+ * 「已回收/弃收」以外、且「预期回收」是数字并已被当前章数越过的行判为超期。
+ * 列序与账本模板一致：编号/埋设章/类型/状态/最近推进/预期回收/依赖/备注。
+ */
+export function detectStaleHooks(db: DB, projectId: string, currentChapter: number): StaleHook[] {
+  let content = '';
+  try {
+    content = readArtifactContent(db, projectId, 'canon/foreshadowing.md');
+  } catch {
+    return [];
+  }
+  const stale: StaleHook[] = [];
+  for (const line of content.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('|') || !trimmed.endsWith('|')) continue;
+    const cells = trimmed.slice(1, -1).split('|').map((cell) => cell.trim());
+    if (cells[0] === '编号' || /^:?-{2,}:?$/.test(cells[0] ?? '')) continue;
+    const [id, startChapter, , status, lastAdvanced, expectedPayoff, , notes] = cells;
+    if (!id || id === '—' || !expectedPayoff) continue;
+    const payoffChapter = Number(expectedPayoff);
+    if (!Number.isFinite(payoffChapter)) continue;
+    if (/(已回收|弃收)/.test(status ?? '')) continue;
+    if (currentChapter > payoffChapter) {
+      stale.push({
+        id,
+        startChapter: startChapter ?? '',
+        status: status ?? '',
+        lastAdvanced: lastAdvanced ?? '',
+        expectedPayoff,
+        notes: notes ?? '',
+      });
+    }
+  }
+  return stale;
 }
