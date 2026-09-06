@@ -44,9 +44,32 @@ describe('预制蓝图播种', () => {
     for (const preset of BLUEPRINT_PRESETS) {
       expect(preset.taskType.split('|').filter(Boolean).length).toBeGreaterThanOrEqual(2);
       expect(preset.staffing.length).toBeGreaterThanOrEqual(2);
-      expect(preset.staffing.length).toBeLessThanOrEqual(4);
+      expect(preset.staffing.length).toBeLessThanOrEqual(6);
       for (const slot of preset.staffing) {
         expect(ids.has(slot.personaId), `${preset.label} 的 ${slot.personaId} 应存在于人设库`).toBe(true);
+      }
+    }
+  });
+
+  it('小说蓝图章节生产流水线：六人班底、5 阶段、审计阶段带 self-check 门、阶段绑定主责人设', () => {
+    const novel = BLUEPRINT_PRESETS.find((p) => p.taskType === NOVEL_TASK_TYPE)!;
+    expect(novel.staffing.map((s) => s.personaId)).toEqual([
+      'novel/novel-writer',
+      'novel/novel-chief-editor',
+      'novel/novel-plot-architect',
+      'novel/novel-continuity-reviewer',
+      'novel/novel-character-designer',
+      'novel/novel-worldbuilder',
+    ]);
+    expect(novel.stages.map((s) => s.label)).toEqual([
+      '设定与打法建档', '章节正文写作', '连续性与打法审计', '状态结算', '交付归档',
+    ]);
+    const audit = novel.stages.find((s) => s.label === '连续性与打法审计')!;
+    expect(audit.gate).toBe('self-check');
+    expect(audit.staffingPersonaIds).toContain('novel/novel-continuity-reviewer');
+    for (const stage of novel.stages) {
+      for (const pid of stage.staffingPersonaIds ?? []) {
+        expect(novel.staffing.some((slot) => slot.personaId === pid), `${stage.label} 绑定的 ${pid} 应在班底内`).toBe(true);
       }
     }
   });
@@ -130,7 +153,8 @@ describe('默认阶段工作流（2026-08-29 批次①）', () => {
     seed();
     ensureBlueprintPresets(db);
     const novel = listBlueprints(db).find((bp) => bp.taskType === NOVEL_TASK_TYPE)!;
-    expect(novel.stages.length).toBe(4);
+    expect(novel.stages.length).toBe(5);
+    expect(novel.staffing).toHaveLength(6);
     expect(novel.presetSnapshot!.stages).toEqual(novel.stages);
     const versionsAfterFirst = listBlueprintVersions(db, novel.id).length;
     ensureBlueprintPresets(db);
@@ -172,7 +196,8 @@ describe('默认阶段工作流（2026-08-29 批次①）', () => {
     ensureBlueprintPresets(db);
 
     const legacy = getBlueprint(db, 'bp_legacy_novel');
-    expect(legacy.stages.length).toBe(4);
+    expect(legacy.stages.length).toBe(5);
+    expect(legacy.staffing).toHaveLength(6); // 空 staffing = 未定制，随回填补默认班底
     expect(legacy.description).not.toContain('旧版超长描述');
     expect(legacy.presetSnapshot!.stages).toEqual(legacy.stages);
     expect(legacy.presetSnapshot!.description).toBe(legacy.description);
@@ -180,12 +205,52 @@ describe('默认阶段工作流（2026-08-29 批次①）', () => {
 
     const userEdited = getBlueprint(db, 'bp_legacy_sw');
     expect(userEdited.description).toBe('我的定制描述');
-    expect(userEdited.stages.length).toBe(4); // stages 仍补（此前无写入口径，空=未定制）
+    expect(userEdited.stages.length).toBe(4); // 软件交付预定义仍是 4 阶段；空 stages=未定制，按其定义补
+    expect(userEdited.staffing).toHaveLength(3); // 软件交付原班底不扩
     expect(userEdited.presetSnapshot!.description).toBe('旧软件交付描述'); // 快照描述不动（保留用户已偏离的原版锚点）
 
     const evolved = getBlueprint(db, 'bp_evolved_video');
     expect(evolved.stages).toEqual([]);
     expect(listBlueprintVersions(db, 'bp_evolved_video')).toHaveLength(0);
+  });
+
+  it('预制定义升级（2026-09-06）：未改动的 stages/staffing 随定义刷新，用户改过的不碰', () => {
+    seed();
+    ensureBlueprintPresets(db);
+    const novel = listBlueprints(db).find((bp) => bp.taskType === NOVEL_TASK_TYPE)!;
+
+    // 模拟旧版定义的存量行：4 阶段 + 4 人班底，行与快照一致（= 用户没改过）
+    const oldFlow = [
+      { id: 'stage_1', step: 1, label: '大纲与设定梳理', description: '对齐本章目标、人物状态与伏笔清单' },
+      { id: 'stage_2', step: 2, label: '章节正文写作', description: '主笔按大纲成稿，节奏与文风保持一致' },
+      { id: 'stage_3', step: 3, label: '连续性审校', description: '核对设定、时间线与前后文冲突' },
+      { id: 'stage_4', step: 4, label: '交付归档', description: '定稿入项目，更新设定簿' },
+    ];
+    const oldStaffing = novel.staffing.slice(0, 4);
+    const oldSnap = { ...novel.presetSnapshot!, stages: oldFlow, staffing: oldStaffing };
+    db.prepare('UPDATE blueprint SET stages_json=?, staffing_json=?, preset_snapshot_json=? WHERE id=?')
+      .run(JSON.stringify(oldFlow), JSON.stringify(oldStaffing), JSON.stringify(oldSnap), novel.id);
+
+    // 另一行：用户已手改 stages（行≠快照）——必须保持用户版本
+    const sw = listBlueprints(db).find((bp) => bp.label === '软件交付')!;
+    const userStages = [{ id: 'stage_1', step: 1, label: '我的自定义阶段', description: '用户自己写的流程' }];
+    db.prepare('UPDATE blueprint SET stages_json=? WHERE id=?').run(JSON.stringify(userStages), sw.id);
+
+    // 回拨定义版本标记 → 触发回填升级
+    db.prepare("UPDATE system_setting SET value='2026-08-29.1' WHERE key='blueprint_preset_def_version'").run();
+    ensureBlueprintPresets(db);
+
+    const upgraded = getBlueprint(db, novel.id);
+    expect(upgraded.stages.length).toBe(5);
+    expect(upgraded.stages.some((s) => s.gate === 'self-check')).toBe(true);
+    expect(upgraded.staffing).toHaveLength(6);
+    expect(upgraded.presetSnapshot!.stages).toEqual(upgraded.stages);
+    expect(upgraded.presetSnapshot!.staffing).toEqual(upgraded.staffing);
+    expect(listBlueprintVersions(db, novel.id).some((v) => v.summary.includes('升级默认阶段工作流'))).toBe(true);
+
+    const untouched = getBlueprint(db, sw.id);
+    expect(untouched.stages).toEqual(userStages);
+    expect(untouched.staffing).toHaveLength(3);
   });
 });
 
@@ -196,7 +261,7 @@ describe('预制蓝图进化与重置', () => {
     const novel = listBlueprints(db).find((bp) => bp.taskType === NOVEL_TASK_TYPE)!;
     const snapshotBefore = novel.presetSnapshot!;
 
-    // 进化：记一胜 + 工具入账（小说班底已满 4 槽不扩员——上限行为，散人测试走 3 槽域）
+    // 进化：记一胜 + 工具入账（小说班底已满 6 槽不扩员——上限行为，散人测试走 3 槽域）
     const outsider = listPersonas().find((p) => !novel.staffing.some((s) => s.personaId === p.id))!;
     const evolved = evolveBlueprint(db, {
       companyId: workbenchId, projectId, taskTitle: '写小说正文章节',
@@ -205,7 +270,7 @@ describe('预制蓝图进化与重置', () => {
     expect(evolved.id).toBe(novel.id);
     expect(evolved.wins).toBe(1);
     expect(evolved.tools.length).toBe(1);
-    expect(evolved.staffing).toHaveLength(4);
+    expect(evolved.staffing).toHaveLength(6);
     expect(getBlueprint(db, novel.id).presetSnapshot).toEqual(snapshotBefore);
 
     // 3 槽域验扩员：视频制作 evolve 新人设入组
@@ -239,7 +304,7 @@ describe('预制蓝图进化与重置', () => {
     ensureBlueprintPresets(db);
     const reseeded = listBlueprints(db).find((bp) => bp.taskType === NOVEL_TASK_TYPE)!;
     expect(reseeded.id).not.toBe(novel.id);
-    expect(reseeded.stages.length).toBe(4);
+    expect(reseeded.stages.length).toBe(5);
     expect(reseeded.source).toBe('preset');
   });
 

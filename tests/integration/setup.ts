@@ -48,12 +48,13 @@ export function makeTempGitRepo(): string {
 /**
  * 测试夹具：长篇小说工作台（原领域函数已随固定岗位模板退场，仅测试保留同构形状）。
  * 生产路径的默认员工 = 负责人 + 验收员（ensureWorkspaceStaff），专家角色由任务穿戴人设生成。
+ * 2026-09-06：题材扩展包退役（通用程序不预置领域答案），genres 参数随之移除；
+ * 测试需要 worldview/continuity 等岗位时用 createAgent 手工建。
  */
 import type { DB } from '../../src/server/db/client';
 import { restoreWorkbench, updateWorkbench, type Workbench } from '../../src/server/domain/workbench';
 import { createAgent, type AgentDefinition, type CreateAgentInput } from '../../src/server/domain/agent';
 import { addRelationship } from '../../src/server/domain/graph';
-import { GENRE_EXTENSION_PACKS } from '../../src/server/domain/novel-template';
 
 export interface NovelTemplateResult {
   company: Workbench;
@@ -63,11 +64,10 @@ export interface NovelTemplateResult {
     character: AgentDefinition;
     plot: AgentDefinition;
     inspector: AgentDefinition;
-    extra: AgentDefinition[];
   };
 }
 
-export function createNovelCompany(db: DB, input: { name: string; charter?: string; genres?: string[] }): NovelTemplateResult {
+export function createNovelCompany(db: DB, input: { name: string; charter?: string }): NovelTemplateResult {
   // 唯一 id：同一测试库允许多次实例化（小说项目类测试串行建多个工作台场景已退役，防呆保留）
   const company = restoreWorkbench(db, { id: `wb_novel_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, name: input.name, kind: 'novel', charter: input.charter });
   const mk = (name: string, role: string, responsibilities: string, extra: Partial<CreateAgentInput> = {}): AgentDefinition =>
@@ -77,41 +77,47 @@ export function createNovelCompany(db: DB, input: { name: string; charter?: stri
   const character = mk('人物设计', 'character', '维护人物档案');
   const plot = mk('情节架构', 'plot', '维护大纲与伏笔');
   const inspector = mk('运营监察', 'inspector', '观察与建议', { isInspector: true });
-  const extra: AgentDefinition[] = [];
-  const seen = new Set(['lead', 'writer', 'character', 'plot', 'inspector']);
-  for (const genreId of input.genres ?? []) {
-    for (const r of GENRE_EXTENSION_PACKS[genreId]?.extraRoles ?? []) {
-      if (seen.has(r.role)) continue;
-      seen.add(r.role);
-      extra.push(mk(r.name, r.role, r.responsibilities));
-    }
-  }
   const updatedCompany = updateWorkbench(db, { firstAgentId: lead.id });
-  for (const a of [writer, character, plot, inspector, ...extra]) {
+  for (const a of [writer, character, plot, inspector]) {
     addRelationship(db, { companyId: company.id, kind: 'org', sourceId: lead.id, targetId: a.id, label: '管辖' });
   }
   // 通信关系（与原领域实现同构）：lead 可联系所有人；writer 可联系创作类岗位求助
-  const creativeExtras = extra.filter((e) => e.role !== 'continuity');
-  lead.contactAllow = [writer.id, character.id, plot.id, inspector.id, ...extra.map((e) => e.id)];
-  writer.contactAllow = [character.id, plot.id, lead.id, ...creativeExtras.map((e) => e.id)];
+  lead.contactAllow = [writer.id, character.id, plot.id, inspector.id];
+  writer.contactAllow = [character.id, plot.id, lead.id];
   character.contactAllow = [lead.id, writer.id];
   plot.contactAllow = [lead.id, writer.id];
-  for (const e of extra) {
-    e.contactAllow = e.role === 'continuity' ? [lead.id, inspector.id] : [lead.id, writer.id];
-  }
-  for (const a of [lead, writer, character, plot, inspector, ...extra] as AgentDefinition[]) {
+  for (const a of [lead, writer, character, plot, inspector] as AgentDefinition[]) {
     db.prepare('UPDATE agent_definition SET contact_allow_json=? WHERE id=?').run(JSON.stringify(a.contactAllow), a.id);
   }
   addRelationship(db, { companyId: company.id, kind: 'communication', sourceId: lead.id, targetId: writer.id, label: '派发' });
   addRelationship(db, { companyId: company.id, kind: 'communication', sourceId: writer.id, targetId: character.id, label: '求人物资料' });
   addRelationship(db, { companyId: company.id, kind: 'communication', sourceId: writer.id, targetId: plot.id, label: '求情节资料' });
   addRelationship(db, { companyId: company.id, kind: 'communication', sourceId: inspector.id, targetId: lead.id, label: '告警' });
-  for (const e of creativeExtras) {
-    addRelationship(db, { companyId: company.id, kind: 'communication', sourceId: writer.id, targetId: e.id, label: '求资料' });
-  }
-  return { company: updatedCompany, agents: { lead, writer, character, plot, inspector, extra } };
+  return { company: updatedCompany, agents: { lead, writer, character, plot, inspector } };
 }
 
 export function assertLeadWriterSeparate(leadId: string, writerId: string): void {
   if (leadId === writerId) throw new Error('项目负责人与主写手必须由不同员工担任');
+}
+
+/**
+ * 给小说工作台追加扩展岗位（worldview/continuity/style 等维护岗）：
+ * 自动补「管辖」关系与 lead↔岗位双向通信授权——维护 Task 由 lead 派发，createTask 校验通信授权。
+ */
+export function createNovelExtraAgent(
+  db: DB,
+  r: NovelTemplateResult,
+  name: string,
+  role: string,
+  responsibilities: string,
+): AgentDefinition {
+  const agent = createAgent(db, { companyId: r.company.id, name, role, responsibilities, contactAllow: [] });
+  addRelationship(db, { companyId: r.company.id, kind: 'org', sourceId: r.agents.lead.id, targetId: agent.id, label: '管辖' });
+  const lead = r.agents.lead;
+  lead.contactAllow = [...lead.contactAllow, agent.id];
+  agent.contactAllow = [lead.id];
+  for (const a of [lead, agent]) {
+    db.prepare('UPDATE agent_definition SET contact_allow_json=? WHERE id=?').run(JSON.stringify(a.contactAllow), a.id);
+  }
+  return agent;
 }

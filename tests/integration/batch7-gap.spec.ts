@@ -1,13 +1,15 @@
 /**
- * Batch 7 集成测试：题材扩展包 + 可选岗位 + 维护事件动态岗位 + 人物关系图。
+ * Batch 7 集成测试：可选岗位 + 维护事件动态岗位 + 人物关系图。
+ * 2026-09-06：题材扩展包退役（通用程序不预置领域答案）——原题材包断言与 genres 用法移除，
+ * 需要 worldview/continuity/style 等岗位的用例改用 createNovelExtraAgent 手工建岗。
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import {  makeTestDb, type TestDb, createNovelCompany } from './setup';
+import {  makeTestDb, type TestDb, createNovelCompany, createNovelExtraAgent } from './setup';
 import type { DB } from '../../src/server/db/client';
 import { transitionWorkbench } from '../../src/server/domain/workbench';
 import { createProject } from '../../src/server/domain/project';
 import { listAgents } from '../../src/server/domain/agent';
-import { initializeNovelProject, GENRE_EXTENSION_PACKS, MAINTENANCE_ROLES,  } from '../../src/server/domain/novel-template';
+import { initializeNovelProject, MAINTENANCE_ROLES,  } from '../../src/server/domain/novel-template';
 import { handleChapterCompleted } from '../../src/server/domain/triggers';
 import { getCharacterGraph } from '../../src/server/domain/character-graph';
 import { listArtifacts } from '../../src/server/domain/artifact';
@@ -38,59 +40,16 @@ function makeTmpRoot(): string {
   return root;
 }
 
-describe('Batch 7.1+7.2 题材扩展包与可选岗位', () => {
-  it('GENRE_EXTENSION_PACKS 含 scifi/fantasy/romance/mystery/historical/continuity/style', () => {
-    expect(GENRE_EXTENSION_PACKS.scifi).toBeDefined();
-    expect(GENRE_EXTENSION_PACKS.fantasy).toBeDefined();
-    expect(GENRE_EXTENSION_PACKS.romance).toBeDefined();
-    expect(GENRE_EXTENSION_PACKS.mystery).toBeDefined();
-    expect(GENRE_EXTENSION_PACKS.historical).toBeDefined();
-    expect(GENRE_EXTENSION_PACKS.continuity).toBeDefined();
-    expect(GENRE_EXTENSION_PACKS.style).toBeDefined();
-  });
-
-  it('createNovelCompany 无 genres 只创建 5 基础岗位', () => {
+describe('Batch 7.1+7.2 可选岗位', () => {
+  it('默认只创建 5 基础岗位', () => {
     const r = createNovelCompany(db, { name: '基础公司' });
     const all = listAgents(db, r.company.id);
     expect(all).toHaveLength(5);
-    expect(r.agents.extra).toHaveLength(0);
-  });
-
-  it('createNovelCompany 应用 scifi 扩展包追加 worldview 岗位', () => {
-    const r = createNovelCompany(db, { name: '科幻公司', genres: ['scifi'] });
-    const all = listAgents(db, r.company.id);
-    expect(all).toHaveLength(6); // 5 基础 + worldview
-    expect(all.some((a) => a.role === 'worldview')).toBe(true);
-    expect(r.agents.extra).toHaveLength(1);
-    expect(r.agents.extra[0]!.role).toBe('worldview');
-  });
-
-  it('createNovelCompany 应用 fantasy 追加 worldview + foreshadowing', () => {
-    const r = createNovelCompany(db, { name: '奇幻公司', genres: ['fantasy'] });
-    const all = listAgents(db, r.company.id);
-    expect(all).toHaveLength(7);
-    expect(all.some((a) => a.role === 'worldview')).toBe(true);
-    expect(all.some((a) => a.role === 'foreshadowing')).toBe(true);
-  });
-
-  it('createNovelCompany 叠加 continuity + style', () => {
-    const r = createNovelCompany(db, { name: '复合公司', genres: ['continuity', 'style'] });
-    const all = listAgents(db, r.company.id);
-    expect(all).toHaveLength(7); // 5 + continuity + style
-    expect(all.some((a) => a.role === 'continuity')).toBe(true);
-    expect(all.some((a) => a.role === 'style')).toBe(true);
-  });
-
-  it('重复 genre 去重（同一 role 只创建一次）', () => {
-    const r = createNovelCompany(db, { name: '去重公司', genres: ['scifi', 'fantasy'] });
-    const all = listAgents(db, r.company.id);
-    // scifi: worldview; fantasy: worldview + foreshadowing → worldview 去重 → 5 + 2 = 7
-    expect(all).toHaveLength(7);
-    expect(all.filter((a) => a.role === 'worldview')).toHaveLength(1);
   });
 
   it('initializeNovelProject 在有 worldview 岗位时把 worldbuilding 成果归属给它', () => {
-    const r = createNovelCompany(db, { name: '归属公司', genres: ['scifi'] });
+    const r = createNovelCompany(db, { name: '归属公司' });
+    const worldviewAgent = createNovelExtraAgent(db, r, '世界观', 'worldview', '维护设定一致性');
     transitionWorkbench(db, 'online');
     const p = createProject(db, {
       companyId: r.company.id,
@@ -102,8 +61,23 @@ describe('Batch 7.1+7.2 题材扩展包与可选岗位', () => {
     const artifacts = listArtifacts(db, p.id);
     const wb = artifacts.find((a) => a.kind === 'worldbuilding');
     expect(wb).toBeDefined();
-    const worldviewAgent = listAgents(db, r.company.id).find((a) => a.role === 'worldview');
-    expect(wb!.ownerAgentId).toBe(worldviewAgent!.id);
+    expect(wb!.ownerAgentId).toBe(worldviewAgent.id);
+  });
+
+  it('initializeNovelProject 无专门岗位时 worldbuilding 回退归属 plot', () => {
+    const r = createNovelCompany(db, { name: '回退公司' });
+    transitionWorkbench(db, 'online');
+    const p = createProject(db, {
+      companyId: r.company.id,
+      name: 'p',
+      rootDir: makeTmpRoot(),
+      firstAgentId: r.agents.lead.id,
+    });
+    initializeNovelProject(db, p.id);
+    const artifacts = listArtifacts(db, p.id);
+    const wb = artifacts.find((a) => a.kind === 'worldbuilding');
+    expect(wb).toBeDefined();
+    expect(wb!.ownerAgentId).toBe(r.agents.plot.id);
   });
 });
 
@@ -138,8 +112,9 @@ describe('Batch 7.3 维护事件动态岗位', () => {
     expect(dispatched).toHaveLength(2);
   });
 
-  it('scifi 公司章节完成派发 character + plot + worldview 三个维护 Task', () => {
-    const r = createNovelCompany(db, { name: '科幻维护公司', genres: ['scifi'] });
+  it('带 worldview 岗位时章节完成派发 character + plot + worldview 三个维护 Task', () => {
+    const r = createNovelCompany(db, { name: '含世界观维护公司' });
+    createNovelExtraAgent(db, r, '世界观', 'worldview', '维护设定一致性');
     transitionWorkbench(db, 'online');
     const p = createProject(db, {
       companyId: r.company.id,
@@ -157,8 +132,10 @@ describe('Batch 7.3 维护事件动态岗位', () => {
     expect(dispatched).toHaveLength(3); // character + plot + worldview
   });
 
-  it('复合公司（continuity+style）章节完成派发 5 个维护 Task', () => {
-    const r = createNovelCompany(db, { name: '复合维护公司', genres: ['continuity', 'style'] });
+  it('带 continuity + style 岗位时章节完成派发 4 个维护 Task', () => {
+    const r = createNovelCompany(db, { name: '含审校维护公司' });
+    createNovelExtraAgent(db, r, '连续性检查', 'continuity', '跨章节一致性');
+    createNovelExtraAgent(db, r, '文风审校', 'style', '文风一致性');
     transitionWorkbench(db, 'online');
     const p = createProject(db, {
       companyId: r.company.id,
@@ -173,7 +150,7 @@ describe('Batch 7.3 维护事件动态岗位', () => {
       summary: '完成第一章',
       artifacts: [{ path: 'chapters/01.md', kind: 'chapter', operation: 'create' }],
     });
-    // character + plot + continuity + style = 4（relationship 不在基础或这些 pack 里）
+    // character + plot + continuity + style = 4（relationship 岗位未建，不派发）
     expect(dispatched).toHaveLength(4);
   });
 });

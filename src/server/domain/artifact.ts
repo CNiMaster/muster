@@ -50,6 +50,7 @@ export const EDITABLE_KINDS: string[] = [
   'project_brief',
   'synopsis',
   'style_profile',
+  'genre_rules',
   'outline',
   'chapter',
   'character_sheet',

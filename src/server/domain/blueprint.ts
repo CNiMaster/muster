@@ -1,9 +1,9 @@
 /**
  * 蓝图组织重构 批次3 + 打法包升格一期：blueprint——从使用中学出来的打法包。
  *
- * 组织 = f(活)：蓝图记录「什么类型的活 → 配什么人设班底 → 用什么工具 → 战绩如何」。
+ * 蓝图记录「什么类型的活 → 配什么人设班底 → 用什么工具 → 战绩如何」。
  * - 读取侧：任务创建时未显式指定人设/能力 → matchBlueprint 按标题词元 Jaccard 匹配，
- *   自动穿戴主槽人设（createTask 钩子），2-4 槽班底以协作提示注入上下文。
+ *   自动穿戴主槽人设（createTask 钩子），2-6 槽班底以协作提示注入上下文。
  * - 写入侧：任务终态进反思队列，drain 消化后 evolveBlueprint 记账（胜/负/返工/纠正/工具）、
  *   聚类合并——自动复盘进化，用户零手动固化。
  * - 正向吸收与负向隔离：自有人才上岗表现优异时，提取亮点升级官方默认人设；表现不佳时严格隔离不改差官方配置。
@@ -156,7 +156,8 @@ export function getBlueprint(db: DB, id: string): Blueprint {
   return fromRow(db, row);
 }
 
-export const MAX_STAFFING_SLOTS = 4;
+/** 班底槽位上限：2026-09-06 起 6 槽——小说蓝图的章节生产流水线六人齐装（建档借调世界观、结算借调人物）。 */
+export const MAX_STAFFING_SLOTS = 6;
 export const MAX_TOOLS = 10;
 export const MAX_SOURCE_PROJECTS = 8;
 export const MAX_VERSIONS = 30;

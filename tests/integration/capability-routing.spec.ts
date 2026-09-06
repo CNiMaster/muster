@@ -213,7 +213,7 @@ describe('evolveBlueprintById（记账分叉）', () => {
     })!;
     expect(result.id).toBe(novel.id);
     expect(result.wins).toBe(1);
-    expect(result.staffing).toHaveLength(4); // 小说预制已满 4 槽：上限行为，不再扩员
+    expect(result.staffing).toHaveLength(6); // 小说预制已满 6 槽：上限行为，不再扩员
     expect(result.tools.some((t) => t.id === 'edit_file')).toBe(true);
 
     // 3 槽蓝图（视频制作）验证扩员路径

@@ -191,6 +191,7 @@ export function stageContextSection(db: DB, taskId: string): string | null {
   }
   if (done.length > 0) {
     lines.push('## 前序阶段产出（交接输入，不要重做）');
+    lines.push('其中设定、规则、档案类文件（打法档案、本章意图、canon 账本等）是本任务的既定约束：先读再动手，产出与它们冲突时以档案为准；发现档案本身有误则显式指出，不要静默改写。其余摘要仅作背景参考。');
     for (const prev of done) {
       const files = prev.artifacts.map((a) => a.path).filter(Boolean).slice(0, 10).join('、');
       lines.push(`- 阶段 ${prev.step}/${total}「${prev.label}」：${prev.summary?.slice(0, 300) ?? '（无摘要）'}${files ? `（产出：${files}）` : ''}`);

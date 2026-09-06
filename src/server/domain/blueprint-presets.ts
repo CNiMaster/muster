@@ -30,7 +30,7 @@ import { getSetting, setSetting } from './setting';
  * ensureBlueprintPresets 挂在 /api/agents 等高频端点上，稳态必须 O( defs ) 而非 O( defs × snapshot )。
  * 升级定义时 bump 此版本号即可重新触发一次全量回填。
  */
-const PRESET_DEF_VERSION = '2026-08-29.1';
+const PRESET_DEF_VERSION = '2026-09-06.1';
 const PRESET_DEF_VERSION_KEY = 'blueprint_preset_def_version';
 
 export interface BlueprintPresetDef {
@@ -49,23 +49,54 @@ function flow(labels: Array<[label: string, description: string]>): BlueprintSta
   return labels.map(([label, description], i) => ({ id: `stage_${i + 1}`, step: i + 1, label, description }));
 }
 
+/**
+ * 小说蓝图的章节生产流水线（2026-09-06 inkos 理念对账）：建档→写作→审计（门）→结算→归档。
+ * 打法档案与伏笔账本是普通成果文件（内容用户自生长，不预置题材答案）；意图落位由审计门核对。
+ * 详见 docs/superpowers/specs/2026-09-06-blueprint-domain-profile.md。
+ */
+const NOVEL_STAGES: BlueprintStage[] = [
+  {
+    id: 'stage_1', step: 1, label: '设定与打法建档',
+    description: '首次执行先与用户共建打法档案（planning/genre-rules.md，已建档则只补未确认栏位）；随后冻结本章意图：目标、必须发生、绝不允许、伏笔操作（埋/推进/回收）清单，落成意图文件供后续阶段核对。',
+    staffingPersonaIds: ['novel/novel-plot-architect', 'novel/novel-worldbuilder'],
+  },
+  {
+    id: 'stage_2', step: 2, label: '章节正文写作',
+    description: '按本章意图成稿：场景要有目标-阻力-转折-后果，信息按需释放不整段说明，意图中的落位要求是硬标准；打法档案的禁忌与疲劳词清单生效。',
+    staffingPersonaIds: ['novel/novel-writer'],
+  },
+  {
+    id: 'stage_3', step: 3, label: '连续性与打法审计',
+    description: '先逐条核对本章意图硬约束（必须/禁止/落位/人物/数字/伏笔）与打法档案禁忌，再评文风；结构冲突不算风格问题。伏笔账本超期未推进的要显式提示。',
+    staffingPersonaIds: ['novel/novel-continuity-reviewer'],
+    gate: 'self-check',
+  },
+  {
+    id: 'stage_4', step: 4, label: '状态结算',
+    description: '按成稿回写账本，与正文同批交付：伏笔账本（埋设/推进/回收）、人物状态与关系、时间线、章末摘要；发现档案本身有误则显式提出，不静默改写。',
+    staffingPersonaIds: ['novel/novel-plot-architect', 'novel/novel-character-designer'],
+  },
+  {
+    id: 'stage_5', step: 5, label: '交付归档',
+    description: '终审定稿：确认正文、账本与设定簿一致，意图中的落位要求已兑现，正文与结算产物一并交付。',
+    staffingPersonaIds: ['novel/novel-chief-editor'],
+  },
+];
+
 export const BLUEPRINT_PRESETS: BlueprintPresetDef[] = [
   {
     taskType: '小说|正文|章节',
     label: '长篇小说创作',
-    description: '用于「写一章小说」「修订正文」这类创作活：主笔执笔，主编把方向与节奏，连续性审校盯设定与前后文冲突。',
+    description: '用于「写一章小说」「修订正文」这类创作活：先对齐打法与本章意图，主笔执笔，审校把门，结算回写账本，主编归档。',
     staffing: [
       { personaId: 'novel/novel-writer', personaName: '小说主笔', role: '执笔' },
       { personaId: 'novel/novel-chief-editor', personaName: '小说主编', role: '方向与节奏' },
       { personaId: 'novel/novel-plot-architect', personaName: '情节架构师', role: '主线与伏笔' },
       { personaId: 'novel/novel-continuity-reviewer', personaName: '连续性审校', role: '一致性检查' },
+      { personaId: 'novel/novel-character-designer', personaName: '人物设计师', role: '人物弧光与关系' },
+      { personaId: 'novel/novel-worldbuilder', personaName: '世界观架构师', role: '设定与规则' },
     ],
-    stages: flow([
-      ['大纲与设定梳理', '对齐本章目标、人物状态与伏笔清单'],
-      ['章节正文写作', '主笔按大纲成稿，节奏与文风保持一致'],
-      ['连续性审校', '核对设定、时间线与前后文冲突'],
-      ['交付归档', '定稿入项目，更新设定簿'],
-    ]),
+    stages: NOVEL_STAGES,
   },
   {
     taskType: '软件|开发|代码|修复',
@@ -480,14 +511,28 @@ interface PresetRow {
   source?: string | null;
   description: string;
   stages_json: string | null;
+  staffing_json: string | null;
   preset_snapshot_json: string | null;
+}
+
+/** 键序无关的稳定序列化：只用于「两份 JSON 是否表达同一结构」的比较，不落库。 */
+function stableJson(value: unknown): string {
+  return JSON.stringify(value, (_key, val) => {
+    if (val !== null && typeof val === 'object' && !Array.isArray(val)) {
+      return Object.fromEntries(
+        Object.entries(val as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : 1)),
+      );
+    }
+    return val;
+  });
 }
 
 /**
  * 幂等播种预制蓝图：按 taskType 精确查重（含全部状态——用户 retire 后重启不复活），
  * 不存在才插入（source='preset' + 原版快照），并留版本记录。
- * 已存在的预制行走增量回填（2026-08-29 批次①）：补空 stages、刷新未改动过的描述——
- * 用户改过的字段（描述≠旧快照、stages 非空）一律不碰，快照同步升级保证重置语义。
+ * 已存在的预制行走增量回填（2026-08-29 批次①；2026-09-06 扩升级规则）：补空 stages/staffing、
+ * 刷新「仍与原版快照一致」的 stages/staffing（用户没改过而预制定义已升级 → 整组换新）、
+ * 刷新未改动过的描述——用户改过的字段（与旧快照不一致）一律不碰，快照同步升级保证重置语义。
  * 回填只在定义版本标记缺失/过期时执行一次（高频端点稳态快路，见 PRESET_DEF_VERSION）。
  */
 export function ensureBlueprintPresets(db: DB): void {
@@ -527,7 +572,7 @@ export function ensureBlueprintPresets(db: DB): void {
     if (steady) continue; // 稳态快路：定义已就位，跳过回填比对
 
     const row = db.prepare(
-      'SELECT id, source, description, stages_json, preset_snapshot_json FROM blueprint WHERE task_type=?',
+      'SELECT id, source, description, stages_json, staffing_json, preset_snapshot_json FROM blueprint WHERE task_type=?',
     ).get(preset.taskType) as PresetRow | undefined;
     if (!row || (row.source ?? 'evolved') !== 'preset') continue;
     const snap = row.preset_snapshot_json
@@ -537,11 +582,33 @@ export function ensureBlueprintPresets(db: DB): void {
 
     const changed: string[] = [];
     let stagesJson: string | null = row.stages_json;
-    const currentStages = row.stages_json ? JSON.parse(row.stages_json) as unknown[] : [];
+    let staffingJson: string | null = row.staffing_json;
+    const currentStages = row.stages_json ? JSON.parse(row.stages_json) as BlueprintStage[] : [];
+    const currentStaffing = row.staffing_json ? JSON.parse(row.staffing_json) as BlueprintStaffingSlot[] : [];
     if (currentStages.length === 0) {
       stagesJson = JSON.stringify(preset.stages);
       snap.stages = preset.stages;
       changed.push('补默认阶段工作流');
+    } else if (
+      stableJson(currentStages) === stableJson(snap.stages ?? [])
+      && stableJson(snap.stages ?? []) !== stableJson(preset.stages)
+    ) {
+      // 用户没改过 stages（仍与原版快照一致）而预制定义已升级 → 整组换新
+      stagesJson = JSON.stringify(preset.stages);
+      snap.stages = preset.stages;
+      changed.push('升级默认阶段工作流');
+    }
+    if (currentStaffing.length === 0) {
+      staffingJson = JSON.stringify(preset.staffing);
+      snap.staffing = preset.staffing;
+      changed.push('补默认班底');
+    } else if (
+      stableJson(currentStaffing) === stableJson(snap.staffing ?? [])
+      && stableJson(snap.staffing ?? []) !== stableJson(preset.staffing)
+    ) {
+      staffingJson = JSON.stringify(preset.staffing);
+      snap.staffing = preset.staffing;
+      changed.push('升级默认班底');
     }
     let description = row.description;
     if (row.description === snap.description && snap.description !== preset.description) {
@@ -553,8 +620,8 @@ export function ensureBlueprintPresets(db: DB): void {
 
     db.transaction(() => {
       db.prepare(
-        'UPDATE blueprint SET stages_json=?, description=?, preset_snapshot_json=?, updated_at=? WHERE id=?',
-      ).run(stagesJson, description, JSON.stringify(snap), nowIso(), row.id);
+        'UPDATE blueprint SET stages_json=?, staffing_json=?, description=?, preset_snapshot_json=?, updated_at=? WHERE id=?',
+      ).run(stagesJson, staffingJson, description, JSON.stringify(snap), nowIso(), row.id);
       commitBlueprintVersion(db, row.id, `预制定义升级：${changed.join('、')}（只刷新未被用户改动过的字段）`, ['preset_upgrade']);
     })();
   }

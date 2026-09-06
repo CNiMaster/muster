@@ -22,5 +22,6 @@
 | docx | https://github.com/dolanmiu/docx | MIT | 文档生产 docx 生成（capability parity 批次 E） | 2026-08-26 | 依赖 |
 | exceljs | https://github.com/exceljs/exceljs | MIT | 文档生产 xlsx 生成（capability parity 批次 E） | 2026-08-26 | 依赖 |
 | pdf-lib | https://github.com/Hopding/pdf-lib | MIT | 文档生产 pdf 生成（capability parity 批次 E） | 2026-08-26 | 依赖 |
+| InkOS (Narcooo/inkos) | https://github.com/Narcooo/inkos | AGPL-3.0 | 小说蓝图章节生产流水线（建档→写作→审计→结算→归档）、打法档案栏位、伏笔账本生命周期与半衰期、受保护上下文分级的理念参考；未复制任何代码与文本，全部白话重写（2026-09-06 蓝图领域档案批次） | 2026-09-06 | 设计借鉴 |
 
 > 历史既有依赖（express/react/better-sqlite3 等）以 `package.json` 与其各自 LICENSE 为准；本表登记「新增引用/借鉴」与内容级导入。
