@@ -54,6 +54,24 @@ function candidateLine(bp: Blueprint): string {
   return `- ${bp.id} | ${bp.label} | 主槽人设：${mainName} | ${desc}`;
 }
 
+/**
+ * 标题种子的确定性洗牌：同一标题候选顺序稳定（可复现），不同标题顺序不同。
+ * 为什么要有：候选按预制优先+战绩排序时，「长篇小说创作」这类第一套预制在零战绩期永远排第一，
+ * 弱模型面对含糊标题会偷懒挑第一个还自报高置信（2026-09-06 用户实测踩中：空白任务被穿上小说蓝图）。
+ * 洗牌消掉位置信息，候选集合不变、命中判定仍在全集合上做。
+ */
+export function shuffleCandidates<T>(items: T[], seedSource: string): T[] {
+  let seed = 7;
+  for (const ch of seedSource) seed = (seed * 31 + ch.charCodeAt(0)) >>> 0;
+  const arr = [...items];
+  for (let i = arr.length - 1; i > 0; i--) {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    const j = seed % (i + 1);
+    [arr[i], arr[j]] = [arr[j]!, arr[i]!];
+  }
+  return arr;
+}
+
 /** 从 LLM 输出提取 JSON 对象（容忍 markdown 围栏与前后噪声）。 */
 function extractJsonish(text: string): Record<string, unknown> | null {
   const fence = /```(?:json)?\s*([\s\S]*?)```/.exec(text);
@@ -82,14 +100,15 @@ export async function routeBlueprintByAI(
   }
   const system = [
     '你是工作台的能力管理路由器：根据任务标题与简述，从候选蓝图（打法包）中选出最匹配的一张；',
+    '先判断标题与简述是否表达了明确的任务意图——空白、无意义字符、意图不明时必须选 none，不要猜；',
     '没有任何一张真正匹配时必须选 none——错误穿戴会误导执行与复盘，宁可不穿。',
     '只输出一个 JSON 对象，格式：{"blueprintId":"<候选 id 或 none>","confidence":<0到1>,"reason":"一句话理由"}。',
   ].join('\n');
   const user = [
     `任务标题：${input.taskTitle}`,
     input.taskBrief ? `任务简述：${input.taskBrief.slice(0, 400)}` : '',
-    '候选蓝图：',
-    ...candidates.map(candidateLine),
+    '候选蓝图（顺序已随机化，与匹配优先级无关）：',
+    ...shuffleCandidates(candidates, input.taskTitle.trim()).map(candidateLine),
   ].filter(Boolean).join('\n');
 
   try {
@@ -128,6 +147,14 @@ export async function routeAndBackfill(db: DB, taskId: string): Promise<void> {
   try {
     const task = getTask(db, taskId);
     const proto = (task.inputProtocol ?? {}) as Record<string, unknown>;
+    // 无信号不路由（2026-09-06 复审）：空白/单字符标题且无目标——没有任何路由依据，
+    // 谁也配不上，直接放弃（防弱模型在含糊输入上硬凑一个「高置信」命中）。
+    const title = task.title.trim();
+    const goal = typeof proto.goal === 'string' ? proto.goal.trim() : '';
+    if (title.length < 2 && goal.length === 0) {
+      appendTaskEvent(db, taskId, 'blueprint_route_skipped', { reason: '空白任务不路由：无标题无目标，没有任何路由依据' });
+      return;
+    }
     // 幂等+资格守卫：已穿戴人设/已有蓝图/已定真实班底模式的任务不再路由
     // （staffingMode==='unrouted' 是「可穿戴但未路由」的待路由标记，不在此列）；
     // 显式注入技能/能力/知识的任务与 createTask 穿戴块同规则——显式指定抑制蓝图穿戴。

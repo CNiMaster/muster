@@ -16,7 +16,7 @@ import { ensurePrimaryThread } from '../../src/server/domain/thread';
 import { enqueueReflection, drainReflectionQueue } from '../../src/server/domain/reflection';
 import { evolveBlueprint, getBlueprint, listBlueprints } from '../../src/server/domain/blueprint';
 import { listTaskEvents } from '../../src/server/domain/task-event';
-import { routeBlueprintByAI, routeAndBackfill } from '../../src/server/domain/capability-routing';
+import { routeBlueprintByAI, routeAndBackfill, shuffleCandidates } from '../../src/server/domain/capability-routing';
 import { ensureBlueprintPresets } from '../../src/server/domain/blueprint-presets';
 import { listPersonas } from '../../src/server/domain/persona-library';
 
@@ -192,6 +192,55 @@ describe('routeAndBackfill（直达路径后台自动配）', () => {
     expect(proto.blueprintMatched).toBe(novel.id);
     expect(proto.urgentNote).toBe('在途写入'); // 窗口内写入的键不丢
     expect(proto.goal).toBe('用户后补的目标');
+  });
+});
+
+describe('路由去偏与无信号守卫（2026-09-06 复审：空白任务被穿上小说蓝图的根因）', () => {
+  it('洗牌纯函数：同标题顺序稳定、是全量排列、不同标题顺序不同', () => {
+    const items = Array.from({ length: 26 }, (_, i) => ({ id: `bp_${i}` }));
+    const a1 = shuffleCandidates(items, '写一章重逢的剧情');
+    const a2 = shuffleCandidates(items, '写一章重逢的剧情');
+    const b = shuffleCandidates(items, '整理会议纪要');
+    expect(a1).toEqual(a2);
+    expect([...a1].map((x) => x.id).sort()).toEqual(items.map((x) => x.id).sort());
+    expect(a1.map((x) => x.id)).not.toEqual(b.map((x) => x.id));
+  });
+
+  it('同一标题两次路由：传给 LLM 的候选清单完全一致（可复现）且全候选在场', async () => {
+    const { projectId } = seed();
+    ensureBlueprintPresets(db);
+    const calls: string[] = [];
+    vi.spyOn(llmCallModule, 'callLlm').mockImplementation(async (_db, input) => {
+      calls.push(input.user);
+      return mockLlmResult('{"blueprintId":"none","confidence":1,"reason":"无匹配"}');
+    });
+    await routeBlueprintByAI(db, { taskTitle: '写一章重逢的剧情' });
+    await routeBlueprintByAI(db, { taskTitle: '写一章重逢的剧情' });
+    expect(calls[0]).toBe(calls[1]);
+    expect((calls[0]!.match(/^- /gm) ?? []).length).toBe(26);
+  });
+
+  it('空白任务不路由：无标题无目标 → 直接放弃并留事件（不调 LLM）', async () => {
+    const { projectId, leadId } = seed();
+    ensureBlueprintPresets(db);
+    const spy = vi.spyOn(llmCallModule, 'callLlm').mockResolvedValue(
+      mockLlmResult(`{"blueprintId":"whatever","confidence":0.99,"reason":"瞎猜"}`),
+    );
+    // createTask 本身拦空标题（载体创建校验）——先建真任务再模拟存量/异常空白标题
+    const blank = createTask(db, { projectId, assigneeAgentId: leadId, title: 'x' });
+    db.prepare("UPDATE task SET title=' ' WHERE id=?").run(blank.id);
+    await routeAndBackfill(db, blank.id);
+    expect(getTask(db, blank.id).personaId).toBeNull();
+    expect(spy).not.toHaveBeenCalled();
+    const skipped = listTaskEvents(db, blank.id).filter((e) => e.kind === 'blueprint_route_skipped');
+    expect(skipped).toHaveLength(1);
+    expect((skipped[0]!.payload as Record<string, unknown>).reason).toContain('空白任务');
+
+    // 有目标（goal）补信号时照常路由：1 字符标题 + goal 在场 → 走 LLM
+    const withGoal = createTask(db, { projectId, assigneeAgentId: leadId, title: 'R' });
+    db.prepare("UPDATE task SET input_protocol_json=? WHERE id=?").run(JSON.stringify({ goal: '把小说第一章写出来' }), withGoal.id);
+    await routeAndBackfill(db, withGoal.id);
+    expect(spy).toHaveBeenCalledTimes(1);
   });
 });
 
