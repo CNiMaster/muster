@@ -10,6 +10,7 @@ import { createProject } from '../../src/server/domain/project';
 import { createProjectTask } from '../../src/server/domain/project-task';
 import { restoreWorkbench, clockIn } from '../../src/server/domain/workbench';
 import { postUserMessage } from '../../src/server/domain/conversation';
+import { listTaskEvents } from '../../src/server/domain/task-event';
 import { ensureBlueprintPresets } from '../../src/server/domain/blueprint-presets';
 import { setBlueprintStatus } from '../../src/server/domain/blueprint';
 import { listBlueprints } from '../../src/server/domain/blueprint';
@@ -78,7 +79,7 @@ describe('消息级蓝图指定（composer ＋菜单手动穿戴）', () => {
     expect((r.task!.inputProtocol as Record<string, unknown>).blueprintMatched).toBe(sw.id);
   });
 
-  it('未指定时维持既有语义：无载体绑定 → 任务不穿（AI 路由后台接管）', () => {
+  it('未指定时维持既有语义：无载体绑定 → 任务不穿（AI 路由后台接管）', async () => {
     const { project } = fixture();
     const r = postUserMessage(db, {
       scopeKind: 'project',
@@ -87,5 +88,10 @@ describe('消息级蓝图指定（composer ＋菜单手动穿戴）', () => {
     });
     expect(r.task).not.toBeNull();
     expect(r.task!.personaId).toBeNull();
+    // 复审修复（2026-09-06）：消息派发是无显式蓝图时的主创建路径——AI 自动配必须被触发
+    // （fire-and-forget；测试库无 LLM 凭据 → 落 blueprint_route_skipped 事件即证明链路通）
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const routeEvents = listTaskEvents(db, r.task!.id).filter((e) => e.kind === 'blueprint_route_skipped' || e.kind === 'blueprint_routed');
+    expect(routeEvents.length).toBeGreaterThanOrEqual(1);
   });
 });

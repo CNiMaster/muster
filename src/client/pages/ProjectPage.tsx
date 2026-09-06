@@ -292,12 +292,18 @@ export function ProjectDetail({ projectId }: { projectId: string }): React.React
   const [workOrderTitle,setWorkOrderTitle]=useState('');
   const [workOrderAssignee,setWorkOrderAssignee]=useState('');
   const [employeeWorkTitle,setEmployeeWorkTitle]=useState('');
-  // 头部「＋ 新建任务」按钮触发任务视图创建卡（signal 自增驱动，同参数重复点击也能再次打开）
+  // 头部「＋ 新对话」触发（signal 自增驱动，同参数重复点击也能再次聚焦）
   const [newTaskSignal,setNewTaskSignal]=useState(0);
+  // 复审修复（2026-09-06）：「＋」=新对话——清掉当前任务选择并抑制自动兜选，
+  // 直到用户手动再选任务（否则 :316 兜底效应立刻把第一个任务选回来，新对话名存实亡）
+  const suppressAutoSelect = useRef(false);
   const openNewTaskCard=():void=>{
     const next=new URLSearchParams(searchParams);
     next.set('view','task');
+    next.delete('projectTask');
     setSearchParams(next,{replace:true});
+    setSelectedProjectTaskId(undefined);
+    suppressAutoSelect.current = true;
     setNewTaskSignal((n)=>n+1);
   };
 
@@ -314,7 +320,7 @@ export function ProjectDetail({ projectId }: { projectId: string }): React.React
   }, [searchParams, setSearchParams]);
 
   useEffect(() => {
-    if (!selectedProjectTaskId && projectTasks?.length) {
+    if (!selectedProjectTaskId && !suppressAutoSelect.current && projectTasks?.length) {
       const id = projectTasks.find((item)=>item.state==='active')?.id ?? projectTasks[0]?.id;
       if (id) {
         setSelectedProjectTaskId(id);
@@ -340,6 +346,7 @@ export function ProjectDetail({ projectId }: { projectId: string }): React.React
   const attentionCount = tasks?.filter((task) => task.state === 'blocked' || task.state === 'waiting_input').length ?? 0;
   const hasPendingStaging = Boolean(stagingStatus?.exists && stagingStatus.aheadCommits > 0);
   const selectProjectTask = (id:string):void => {
+    suppressAutoSelect.current = false; // 手动选任务解除「新对话」抑制，后续兜选恢复
     setSelectedProjectTaskId(id);
     const next = new URLSearchParams(searchParams);
     next.set('projectTask',id);

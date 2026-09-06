@@ -17,6 +17,7 @@ import { getAgent } from './agent';
 import { getMaterial } from './material';
 import { carrierBoundBlueprintId } from './project-task';
 import { getBlueprint } from './blueprint';
+import { routeAndBackfill } from './capability-routing';
 import { ensureWorkspaceStaff } from './workspace-staff';
 import { maybeEnqueuePreferenceQuestion } from './task-preference';
 import { realtime } from '../realtime';
@@ -417,6 +418,10 @@ export function postUserMessage(db: DB, input: PostUserMessageInput): {
   if (task) {
     db.prepare('UPDATE conversation_message SET ref_task_id = ? WHERE id = ?').run(task.id, id);
     userMessage.refTaskId = task.id;
+    // 复审修复（2026-09-06 创建流程解耦）：任务以对话开始后，消息派发是无显式蓝图时的主创建路径——
+    // AI 自动配（能力管理职责）同样适用；显式指定/载体绑定视同已穿戴（routeAndBackfill 幂等守卫内
+    // 判 persona/blueprintMatched，fire-and-forget 失败只落事件，不影响消息响应）。
+    if (!explicitBlueprintId) void routeAndBackfill(db, task.id);
     // 选择闭环 S3：仅用户消息派发的任务做三态偏好消费（自动派单/蜂群不问）。
     // silent→routeHint 注入；confirm→确认式问询（默认徽章 + 不用技能出口）。
     try {
