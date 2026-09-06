@@ -13,6 +13,14 @@ export interface ProfileModelEntry {
   /** 行级上下文窗口（可选；缺省继承档案级 contextWindowTokens）。 */
   contextWindowTokens?: number;
   note?: string;
+  /**
+   * 工作台模型下拉是否显示（2026-08-31 选用制）。缺省=显示（旧档案兼容）。
+   * 自动识别拉取的模型先进待选池（visible=false），在执行器中心选用后才进下拉；
+   * 手动添加的恒显示。引擎/探针取主模型不受此标记影响（仍按清单顺序）。
+   */
+  visible?: boolean;
+  /** 来源：manual=用户手填（缺省视为 manual）；fetched=自动识别拉取。待选池刷新时按此识别旧池。 */
+  source?: 'manual' | 'fetched';
 }
 
 /**
@@ -32,6 +40,8 @@ export function profileModels(config: { model?: unknown; models?: unknown } | nu
             ? { contextWindowTokens: (m as ProfileModelEntry).contextWindowTokens }
             : {}),
           ...(typeof (m as ProfileModelEntry).note === 'string' && (m as ProfileModelEntry).note ? { note: (m as ProfileModelEntry).note } : {}),
+          ...((m as ProfileModelEntry).visible === false ? { visible: false } : {}),
+          ...((m as ProfileModelEntry).source === 'fetched' ? { source: 'fetched' as const } : {}),
         });
       }
     }
@@ -54,6 +64,28 @@ export function findModelContextWindow(config: { model?: unknown; models?: unkno
   return hit?.contextWindowTokens && hit.contextWindowTokens > 0 ? hit.contextWindowTokens : undefined;
 }
 
+/**
+ * 表单行 → 提交清单（2026-08-31 选用制）：可见行在前（主模型=首行）、待选池在后；
+ * 可见行被删光时把首个待选行转正（visible 提升），避免主模型落在工作台看不见的模型上。
+ * 空 model 行剔除；source 仅 fetched 落库。
+ */
+export function normalizeApiModels(rows: ReadonlyArray<{ model: string; contextWindowTokens?: number; source?: 'manual' | 'fetched'; visible?: boolean }>): ProfileModelEntry[] {
+  const cleaned = rows
+    .map((m) => ({
+      model: m.model.trim(),
+      ...(m.contextWindowTokens && m.contextWindowTokens > 0 ? { contextWindowTokens: m.contextWindowTokens } : {}),
+      ...(m.source === 'fetched' ? { source: 'fetched' as const } : {}),
+      ...(m.visible === false ? { visible: false as const } : {}),
+    }))
+    .filter((m) => m.model);
+  const visible = cleaned.filter((m) => m.visible !== false);
+  const pool = cleaned.filter((m) => m.visible === false);
+  const promoted = visible.length === 0 && pool.length > 0
+    ? [{ ...pool[0], visible: undefined }]
+    : [];
+  return [...visible, ...promoted, ...(promoted.length > 0 ? pool.slice(1) : pool)];
+}
+
 export interface ExecutorOfficialInstall {
   guideUrl: string;
   commands: string[];
@@ -68,6 +100,8 @@ export interface ExecutorManifest {
   officialSource: string;
   concurrency: ExecutorConcurrency;
   officialInstall: ExecutorOfficialInstall | null;
+  /** 检测定义；null=该形态不可扫描（如 custom-cli 靠手动添加），前端据此裁剪「重新扫描」入口。 */
+  detection?: { command: string; args: string[] } | null;
   /** 池化统一（2026-08-17）：该执行器开箱自带的默认能力标签（用户在编辑时可按需纠偏）。 */
   defaultCapabilities?: string[];
 }

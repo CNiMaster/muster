@@ -10,6 +10,7 @@ import { ClaudeSetupGenerator } from '../domain/setup-assistant';
 import { generateCliProposal } from '../domain/cli-assistant';
 import { diagnoseInstallError, runInstallStream, type InstallEvent } from '../domain/executor-install';
 import { assertEnvName, hasLocalSecret, saveLocalSecret } from '../domain/local-env';
+import { discoverApiModels } from '../domain/model-discovery';
 
 export const executorsRouter = Router();
 
@@ -25,6 +26,19 @@ executorsRouter.post('/credentials/save', asyncHandler(async (req, res) => {
 executorsRouter.get('/credentials/status', asyncHandler(async (req, res) => {
   const name = assertEnvName(String(req.query.name ?? ''));
   res.json({ name, configured: hasLocalSecret(name) });
+}));
+
+// 模型自动识别（2026-08-31）：从服务商拉最新可用清单，表单一键刷新——
+// 手填清单会陈旧（服务商下架/新增感知不到）；识别结果由前端合并，手填的额外模型保留。
+// keyValue=本次粘贴未保存的 Key；credentialEnv=已托管的环境变量名（process.env 消费链）。
+executorsRouter.post('/models/discover', asyncHandler(async (req, res) => {
+  const input = z.object({
+    provider: z.enum(['openai', 'gemini']),
+    baseURL: z.string().trim().max(500).optional(),
+    credentialEnv: z.string().trim().max(100).optional(),
+    keyValue: z.string().max(500).optional(),
+  }).parse(req.body ?? {});
+  res.json(await discoverApiModels(input));
 }));
 
 

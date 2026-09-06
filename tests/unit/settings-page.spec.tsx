@@ -25,9 +25,6 @@ vi.mock('../../src/client/hooks/queries', async () => {
 vi.mock('../../src/client/components/settings/ToolRegistryPanel', () => ({
   ToolRegistryPanel: () => <div data-testid="tool-registry-panel" />,
 }));
-vi.mock('../../src/client/components/settings/CredentialStorePanel', () => ({
-  CredentialStorePanel: () => <div data-testid="credential-store-panel" />,
-}));
 
 import { SettingsPage } from '../../src/client/pages/SettingsPage';
 const queries = await import('../../src/client/hooks/queries');
@@ -114,8 +111,8 @@ describe('SettingsPage 两层导航与常规项（批次 G.5/G.6）', () => {
     expect(within(nav).getByText('常用')).toBeInTheDocument();
     expect(within(nav).getByText('高级')).toBeInTheDocument();
     const labels = within(nav).getAllByRole('button').map((b) => b.textContent);
-    // 常用：常规、外观、备份、用量、管理中心（2026-08-28）；高级：模型、蜂群、网络、凭据、工具
-    expect(labels).toEqual(['⚙️ 基础与行为', '🎨 外观与消息流', '💾 数据库与备份', '📊 用量与花费', '🗂️ 管理中心', '🧠 模型与档位', '🐝 蜂群调度', '🌐 网络代理', '🔑 凭据金库', '🔧 工具与 MCP', '🧑‍🔬 专家盘点']);
+    // 常用：常规、外观、备份、用量、管理中心（2026-08-28）；高级：蜂群、网络、工具（2026-08-31 模型/凭据迁执行器中心）
+    expect(labels).toEqual(['⚙️ 基础与行为', '🎨 外观与消息流', '💾 数据库与备份', '📊 用量与花费', '🗂️ 管理中心', '🐝 蜂群调度', '🌐 网络代理', '🔧 工具与 MCP', '🧑‍🔬 专家盘点']);
   });
 
   it('管理中心 Tab：六张配置台入口卡（2026-08-28 左栏治理组收纳于此）', () => {

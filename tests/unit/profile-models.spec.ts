@@ -6,7 +6,7 @@
  * - resolveContextWindow 行级优先、档案级兜底、缺省 128k
  */
 import { describe, expect, it } from 'vitest';
-import { profileModels, profilePrimaryModel, findModelContextWindow } from '../../src/shared/executor';
+import { profileModels, profilePrimaryModel, findModelContextWindow, normalizeApiModels } from '../../src/shared/executor';
 import { resolveContextWindow, DEFAULT_CONTEXT_WINDOW_TOKENS } from '../../src/server/domain/executor-profile';
 
 describe('profileModels（R5 兼容入口）', () => {
@@ -32,6 +32,53 @@ describe('profileModels（R5 兼容入口）', () => {
     expect(profileModels({})).toEqual([]);
     expect(profileModels(null)).toEqual([]);
     expect(profileModels({ models: [] })).toEqual([]);
+  });
+});
+
+describe('profileModels（2026-08-31 选用制字段）', () => {
+  it('visible=false + source=fetched 透传；manual/visible=true 视为缺省不落字段（旧档案兼容=显示）', () => {
+    const list = profileModels({
+      models: [
+        { model: 'kept', source: 'manual' },
+        { model: 'pool', visible: false, source: 'fetched' },
+        { model: 'legacy' },
+        { model: 'shown', visible: true },
+      ],
+    });
+    expect(list).toEqual([
+      { model: 'kept' },
+      { model: 'pool', visible: false, source: 'fetched' },
+      { model: 'legacy' },
+      { model: 'shown' },
+    ]);
+  });
+});
+
+describe('normalizeApiModels（选用制提交归一化）', () => {
+  it('可见行在前、待选池在后；空行剔除；窗口与 source 保留', () => {
+    const out = normalizeApiModels([
+      { model: ' kept ', contextWindowTokens: 128_000 },
+      { model: '', source: 'fetched' }, // 空行剔除
+      { model: 'pool-1', source: 'fetched', visible: false },
+      { model: 'pool-2', source: 'fetched', visible: false, contextWindowTokens: 32_000 },
+    ]);
+    expect(out).toEqual([
+      { model: 'kept', contextWindowTokens: 128_000 },
+      { model: 'pool-1', source: 'fetched', visible: false },
+      { model: 'pool-2', source: 'fetched', visible: false, contextWindowTokens: 32_000 },
+    ]);
+  });
+  it('可见行删光时首个待选行转正（主模型不得落在工作台看不见的模型上）', () => {
+    const out = normalizeApiModels([
+      { model: 'pool-1', source: 'fetched', visible: false },
+      { model: 'pool-2', source: 'fetched', visible: false },
+    ]);
+    expect(out[0]).toEqual({ model: 'pool-1', source: 'fetched' }); // visible 提升为可见
+    expect(out[1]).toEqual({ model: 'pool-2', source: 'fetched', visible: false });
+    expect(out[0].visible).toBeUndefined();
+  });
+  it('全空返回空清单', () => {
+    expect(normalizeApiModels([{ model: '' }])).toEqual([]);
   });
 });
 

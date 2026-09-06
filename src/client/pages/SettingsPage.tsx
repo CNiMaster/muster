@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
 import { desktopNotificationsEnabled, setDesktopNotificationsEnabled } from '../hooks/useTaskNotifications';
 import type React from 'react';
-import { useHealthStatus, useSaveSystemSettings, useSystemSettings, useTestConnection, useExecutorProfiles, useUiMode } from '../hooks/queries';
+import { useHealthStatus, useSaveSystemSettings, useSystemSettings, useUiMode } from '../hooks/queries';
 import { Button, toast } from '../components/Button';
 import { Card } from '../components/Card';
 import { Input, Select } from '../components/Form';
@@ -11,11 +11,10 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { SettingsRow, SettingsSectionLabel, SettingsFold, Toggle } from '../components/SettingsRow';
 import { ToolRegistryPanel } from '../components/settings/ToolRegistryPanel';
 import { SkillLibraryPanel } from '../components/settings/SkillLibraryPanel';
-import { CredentialStorePanel } from '../components/settings/CredentialStorePanel';
 import { BackupCenterPanel } from '../components/settings/BackupCenterPanel';
 import { SpecialistReviewPanel } from '../components/settings/SpecialistReviewPanel';
 
-type SettingsTab = 'general' | 'usage' | 'models' | 'swarm' | 'network' | 'appearance' | 'credentials' | 'tools' | 'backup' | 'specialists' | 'manage';
+type SettingsTab = 'general' | 'usage' | 'swarm' | 'network' | 'appearance' | 'tools' | 'backup' | 'specialists' | 'manage';
 
 /** 界面字体预设：value=CSS font-family；__custom__=用户自填。 */
 const FONT_PRESETS: Array<{ value: string; label: string }> = [
@@ -27,19 +26,19 @@ const FONT_PRESETS: Array<{ value: string; label: string }> = [
 ];
 const FONT_CUSTOM = '__custom__';
 
-/** 高级组标签（simple 模式默认折叠为一行入口；pro 全展开）。 */
-const ADVANCED_TABS: SettingsTab[] = ['models', 'swarm', 'network', 'credentials', 'tools', 'specialists'];
+/** 高级组标签（simple 模式默认折叠为一行入口；pro 全展开）。models/credentials 已迁「执行器中心」。 */
+const ADVANCED_TABS: SettingsTab[] = ['swarm', 'network', 'tools', 'specialists'];
 
 export function SettingsPage(): React.ReactElement {
   const { data: settings, isLoading } = useSystemSettings();
   const saveSettings = useSaveSystemSettings();
-  const testConnection = useTestConnection();
-  const { data: executorProfiles = [] } = useExecutorProfiles();
   const health = useHealthStatus();
   const { isSimple } = useUiMode();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const activeTab = (searchParams.get('tab') as SettingsTab) || 'general';
+  // 2026-08-31 执行器收口：models / credentials tab 已退役（迁「执行器中心」），旧链接/书签落到基础页
+  const activeTabRaw: string = searchParams.get('tab') || 'general';
+  const activeTab: SettingsTab = (activeTabRaw === 'models' || activeTabRaw === 'credentials' ? 'general' : activeTabRaw) as SettingsTab;
   const setTab = (t: SettingsTab): void => {
     const next = new URLSearchParams(searchParams);
     next.set('tab', t);
@@ -49,21 +48,13 @@ export function SettingsPage(): React.ReactElement {
   const [advancedOpened, setAdvancedOpened] = useState(false);
   const advancedVisible = !isSimple || advancedOpened || ADVANCED_TABS.includes(activeTab);
 
-  const [claudeBin, setClaudeBin] = useState('');
-  const [model, setModel] = useState('');
+  // 2026-08-31 执行器配置收口：引擎/路径/API 接入/三档位全部迁「执行器中心」——
+  // 此处不再持有对应状态；claudeBin/model/defaultProvider 等必填兼容键保存时直读服务端加载值透传
   const [skipPermissions, setSkipPermissions] = useState(false);
   // 后端 schema 必填的兼容键（超时/工具上限的日常配置已由执行器档案接管）：
   // 不渲染 UI，仅随全量保存回传服务端加载值，避免 PUT 校验失败。
   const [, setTimeoutMs] = useState(600000);
   const [, setMaxToolCalls] = useState(30);
-  const [defaultProvider, setDefaultProvider] = useState('claude-cli');
-  const [openaiBaseURL, setOpenaiBaseURL] = useState('https://api.openai.com/v1');
-  const [openaiModel, setOpenaiModel] = useState('gpt-4o');
-  const [geminiModel, setGeminiModel] = useState('gemini-2.0-flash');
-  // 执行器池统一（2026-08-17）：档位 = 执行器档案 id（高/标准/低，CLI+API 一个选择框）
-  const [tierHigh, setTierHigh] = useState('');
-  const [tierStandard, setTierStandard] = useState('');
-  const [tierLow, setTierLow] = useState('');
   const [imageGenModel, setImageGenModel] = useState('');
   const [proxyUrl, setProxyUrl] = useState('');
   const [proxyBypass, setProxyBypass] = useState('');
@@ -100,18 +91,9 @@ export function SettingsPage(): React.ReactElement {
 
   useEffect(() => {
     if (!settings) return;
-    setClaudeBin(settings.claudeBin);
-    setModel(settings.model ?? '');
     setSkipPermissions(settings.skipPermissions);
     setTimeoutMs(settings.timeoutMs);
     setMaxToolCalls(settings.maxToolCalls);
-    setDefaultProvider(settings.defaultProvider ?? 'claude-cli');
-    setOpenaiBaseURL(settings.openaiBaseURL ?? 'https://api.openai.com/v1');
-    setOpenaiModel(settings.openaiModel ?? 'gpt-4o');
-    setGeminiModel(settings.geminiModel ?? 'gemini-2.0-flash');
-    setTierHigh(settings.executorTierHighId ?? (settings.executorTierPrimaryId ?? ''));
-    setTierStandard(settings.executorTierStandardId ?? (settings.executorTierSecondaryId ?? ''));
-    setTierLow(settings.executorTierLowId ?? (settings.executorTierTertiaryId ?? ''));
     setImageGenModel(settings.imageGenModel ?? '');
     setProxyUrl(settings.proxyUrl ?? '');
     setProxyBypass(settings.proxyBypass ?? '');
@@ -147,26 +129,14 @@ export function SettingsPage(): React.ReactElement {
   }, [settings]);
 
   const handleSave = (): void => {
-    if (!claudeBin.trim()) {
-      toast('error', '执行工具路径不能为空');
-      return;
-    }
     saveSettings.mutate(
-      // timeoutMs/maxToolCalls 回传服务端加载值（schema 必填、UI 已由执行器档案接管）
-      { claudeBin, model, skipPermissions, timeoutMs: settings?.timeoutMs ?? 600000, maxToolCalls: settings?.maxToolCalls ?? 30, defaultProvider, openaiBaseURL, openaiModel, geminiModel, executorTierHighId: tierHigh, executorTierStandardId: tierStandard, executorTierLowId: tierLow, imageGenModel, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs: egressTimeoutSec * 1000, theme, fontFamily, fontSize, locale, codeTheme, autonomousReflectionEnabled, autonomousReflectionBudgetUSD, memoryHousekeepingEnabled, swarmMaxDepth, swarmMaxWidth, swarmMaxNodes, swarmBudgetUSD, breadthDefaultTier, codeFontSize, wrapCode, waitingAutoContinueMinutes: waitingAutoContinueMin, archiveTaskAfterDays, preventSleep, interruptMode, stopGraceMs: stopGraceSec * 1000, securityMode, messageShowThinking: msgShowThinking, messageShowTodo: msgShowTodo, messageGroupExplore: msgGroupExplore, messageGroupTerminal: msgGroupTerminal, messageGroupChanges: msgGroupChanges, worktreeShareEnv },
+      // 2026-08-31 执行器收口：引擎/路径/API 接入/档位全部迁「执行器中心」；
+      // 必填兼容键直读服务端加载值透传（合并语义保存，未发的键不动存量——openaiBaseURL 的 adapter 兜底消费不受影响）
+      // codeFontSize 用 0 表示「未设置/跟随默认」——必须转 undefined 再提交，否则 0 会被服务端 min(10) 拒掉（422 死锁）
+      { claudeBin: settings?.claudeBin || 'claude', model: settings?.model ?? '', skipPermissions, timeoutMs: settings?.timeoutMs ?? 600000, maxToolCalls: settings?.maxToolCalls ?? 30, imageGenModel, proxyUrl, proxyBypass, caCertPath, egressTimeoutMs: egressTimeoutSec * 1000, theme, fontFamily, fontSize, locale, codeTheme, autonomousReflectionEnabled, autonomousReflectionBudgetUSD, memoryHousekeepingEnabled, swarmMaxDepth, swarmMaxWidth, swarmMaxNodes, swarmBudgetUSD, breadthDefaultTier, codeFontSize: codeFontSize >= 10 ? codeFontSize : undefined, wrapCode, waitingAutoContinueMinutes: waitingAutoContinueMin, archiveTaskAfterDays, preventSleep, interruptMode, stopGraceMs: stopGraceSec * 1000, securityMode, messageShowThinking: msgShowThinking, messageShowTodo: msgShowTodo, messageGroupExplore: msgGroupExplore, messageGroupTerminal: msgGroupTerminal, messageGroupChanges: msgGroupChanges, worktreeShareEnv },
       {
         onSuccess: () => toast('success', '设置已保存并实时生效'),
         onError: (error: any) => toast('error', error.message ?? '保存设置失败'),
-      },
-    );
-  };
-
-  const handleTest = (): void => {
-    testConnection.mutate(
-      { claudeBin, model },
-      {
-        onSuccess: (result) => toast(result.overallSuccess ? 'success' : 'error', result.overallSuccess ? '连接测试通过' : '连接测试未通过'),
-        onError: (error: any) => toast('error', error.message ?? '测试执行失败'),
       },
     );
   };
@@ -180,7 +150,6 @@ export function SettingsPage(): React.ReactElement {
           <h1 style={{ margin: 0, fontSize: '22px' }}>系统设置</h1>
         </div>
         <div className="page-actions">
-          <Button variant="ghost" size="sm" onClick={handleTest} loading={testConnection.isPending}>测试连接</Button>
           <Button size="sm" onClick={handleSave} loading={saveSettings.isPending}>保存修改</Button>
         </div>
       </header>
@@ -208,17 +177,11 @@ export function SettingsPage(): React.ReactElement {
           {advancedVisible && (
             <>
               <div className="settings-nav-group-label">高级</div>
-              <button type="button" className={`settings-nav-item ${activeTab === 'models' ? 'is-active' : ''}`} onClick={() => setTab('models')}>
-                <span>🧠 模型与档位</span>
-              </button>
               <button type="button" className={`settings-nav-item ${activeTab === 'swarm' ? 'is-active' : ''}`} onClick={() => setTab('swarm')}>
                 <span>🐝 蜂群调度</span>
               </button>
               <button type="button" className={`settings-nav-item ${activeTab === 'network' ? 'is-active' : ''}`} onClick={() => setTab('network')}>
                 <span>🌐 网络代理</span>
-              </button>
-              <button type="button" className={`settings-nav-item ${activeTab === 'credentials' ? 'is-active' : ''}`} onClick={() => setTab('credentials')}>
-                <span>🔑 凭据金库</span>
               </button>
               <button type="button" className={`settings-nav-item ${activeTab === 'tools' ? 'is-active' : ''}`} onClick={() => setTab('tools')}>
                 <span>🔧 工具与 MCP</span>
@@ -230,7 +193,7 @@ export function SettingsPage(): React.ReactElement {
           )}
           {isSimple && !advancedVisible && (
             <button type="button" className="settings-nav-advanced-toggle" onClick={() => setAdvancedOpened(true)}>
-              ▸ 高级设置（模型 · 蜂群 · 网络 · 凭据 · 工具 · 盘点）
+              ▸ 高级设置（蜂群 · 网络 · 工具 · 盘点）
             </button>
           )}
         </nav>
@@ -239,20 +202,11 @@ export function SettingsPage(): React.ReactElement {
         <div className="settings-content-panel">
           {activeTab === 'general' && (
             <Card title="基础与行为">
-              <SettingsSectionLabel>首次使用 · 必须配置</SettingsSectionLabel>
-              <SettingsRow badge="required" title="默认执行引擎" hint="装了哪个 AI 编码工具就选哪个；选 API 需到「模型与档位」配接口参数">
-                <Select value={defaultProvider} onChange={(e) => setDefaultProvider(e.target.value)}>
-                  <option value="claude-cli">Claude Code CLI</option>
-                  <option value="codex-cli">Codex CLI</option>
-                  <option value="antigravity-cli">Antigravity CLI</option>
-                  <option value="openai">OpenAI 兼容 API</option>
-                  <option value="gemini">Gemini API</option>
-                </Select>
-              </SettingsRow>
-              <SettingsRow badge="required" title="执行工具路径" hint="系统自动检测到的命令位置，一般不用改；连接测试失败时再调整">
-                <Input value={claudeBin} onChange={(e) => setClaudeBin(e.target.value)} />
-              </SettingsRow>
-
+              {/* 2026-08-31 执行器收口：原「首次使用·必须配置」（默认执行引擎/执行工具路径）、「模型与档位」、
+                  「凭据金库」均已迁「执行器中心」（CLI / API 接入 / 档位兜底 / Key 凭据一个页面配齐） */}
+              <p className="muted" style={{ fontSize: '12px', margin: '0 0 10px' }}>
+                🛠 CLI / API 模型接入、档位分配、Key 凭据统一在<Link to="/executors">执行器中心</Link>配置。
+              </p>
               <SettingsSectionLabel>日常习惯 · 建议看一眼</SettingsSectionLabel>
               <SettingsRow badge="recommended" title="动手前先问我" hint="AI 改文件、跑命令前要不要先征求你的同意；不设置则跟随每个任务自己的安全策略">
                 <Select value={securityMode} onChange={(e) => setSecurityMode(e.target.value as typeof securityMode)}>
@@ -333,61 +287,6 @@ export function SettingsPage(): React.ReactElement {
                 <SettingsRow title="跳过权限确认" hint="打开后 AI 完全不再弹权限确认，直接改文件、跑命令——仅在你完全信任的场景使用">
                   <Toggle checked={skipPermissions} onChange={setSkipPermissions} label="跳过权限确认" />
                 </SettingsRow>
-              </SettingsFold>
-            </Card>
-          )}
-
-          {activeTab === 'models' && (
-            <Card title="模型与档位">
-              <p className="muted" style={{ fontSize: '12px', margin: '0 0 8px' }}>
-                三档告诉系统「什么活派给哪个执行器」；都不设置就全部跟随系统默认。
-              </p>
-              <SettingsRow badge="recommended" title="高级档" hint="计划、验收、裁决这类重要环节用的执行器">
-                <Select value={tierHigh} onChange={(e) => setTierHigh(e.target.value)}>
-                  <option value="">跟随系统默认</option>
-                  {executorProfiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </Select>
-              </SettingsRow>
-              <SettingsRow title="标准档" hint="普通任务的默认执行器">
-                <Select value={tierStandard} onChange={(e) => setTierStandard(e.target.value)}>
-                  <option value="">跟随系统默认</option>
-                  {executorProfiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </Select>
-              </SettingsRow>
-              <SettingsRow title="低档" hint="蜂群工蜂、快速咨询这类轻活用的执行器">
-                <Select value={tierLow} onChange={(e) => setTierLow(e.target.value)}>
-                  <option value="">跟随系统默认</option>
-                  {executorProfiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </Select>
-              </SettingsRow>
-
-              {/* 无关不显示：只在选了对应 API 引擎时才露出接口参数 */}
-              {defaultProvider === 'openai' && (
-                <>
-                  <SettingsSectionLabel>OpenAI 兼容接口</SettingsSectionLabel>
-                  <SettingsRow title="接口地址" hint="OpenAI 兼容服务的基础地址">
-                    <Input value={openaiBaseURL} onChange={(e) => setOpenaiBaseURL(e.target.value)} />
-                  </SettingsRow>
-                  <SettingsRow title="模型名" hint="该接口下使用的模型标识">
-                    <Input value={openaiModel} onChange={(e) => setOpenaiModel(e.target.value)} />
-                  </SettingsRow>
-                </>
-              )}
-              {defaultProvider === 'gemini' && (
-                <>
-                  <SettingsSectionLabel>Gemini 接口</SettingsSectionLabel>
-                  <SettingsRow title="模型名" hint="Gemini API 使用的模型标识">
-                    <Input value={geminiModel} onChange={(e) => setGeminiModel(e.target.value)} />
-                  </SettingsRow>
-                </>
-              )}
-              {defaultProvider !== 'openai' && defaultProvider !== 'gemini' && (
-                <p className="muted" style={{ fontSize: '12px', margin: '10px 0 0' }}>
-                  当前使用命令行引擎，无需配置 API 接口参数。
-                </p>
-              )}
-
-              <SettingsFold summary="更多模型（图像生成）">
                 <SettingsRow title="图像生成模型" hint="画图工具用的模型，留空用内置默认 gpt-image-1">
                   <Input value={imageGenModel} placeholder="留空默认 gpt-image-1" onChange={(e) => setImageGenModel(e.target.value)} />
                 </SettingsRow>
@@ -565,10 +464,6 @@ export function SettingsPage(): React.ReactElement {
                 </Link>
               </div>
             </Card>
-          )}
-
-          {activeTab === 'credentials' && (
-            <CredentialStorePanel />
           )}
 
           {activeTab === 'tools' && (

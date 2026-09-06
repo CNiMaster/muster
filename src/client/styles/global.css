@@ -840,7 +840,9 @@ p { margin: 0 0 var(--space-3) 0; }
 .workbench-surface::-webkit-scrollbar{display:none}
 
 /* C3 calm workbench（2026-08-23 布局重构）：左栏=全局导航 rail（到顶全高），右区=工作区（顶栏+中栏+右栏检视器）。≥740 真三栏共存，<740 抽屉。 */
-.workbench{position:fixed;inset:0;z-index:20;display:grid;grid-template-columns:auto minmax(0,1fr);color:var(--fg);background:var(--bg)}
+/* 2026-08-31：补 rows:minmax(0,1fr)——壳两层 grid 此前未约束行高，隐式行 auto 被内容撑高，
+   surface 的 overflow:auto 无溢出可滚 → 专业长页（执行器中心）底部看不全且滚轮无效 */
+.workbench{position:fixed;inset:0;z-index:20;display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-rows:minmax(0,1fr);color:var(--fg);background:var(--bg)}
 .workbench-header{position:relative;z-index:30;display:flex;align-items:center;gap:10px;min-width:0;padding:0 14px;border-bottom:1px solid var(--border);background:color-mix(in srgb,var(--bg-elev) 92%,transparent);backdrop-filter:blur(16px)}
 .workbench-brand{display:grid;place-items:center;width:28px;height:28px;flex:0 0 auto;border-radius:8px;color:#fff;background:var(--fg);font-family:Georgia,serif;font-weight:800;font-size:14px;text-decoration:none}
 .workbench-icon-button{position:relative;display:grid;place-items:center;width:28px;height:28px;flex:0 0 auto;padding:0;border:1px solid var(--border-subtle);border-radius:8px;color:var(--fg-muted);background:var(--bg-elev);cursor:pointer;transition:all var(--duration-fast) var(--ease-out)}
@@ -854,7 +856,7 @@ p { margin: 0 0 var(--space-3) 0; }
 .workbench-main{display:flex;flex-direction:column;min-width:0;min-height:0;grid-column:2}
 /* 左栏 display:none 隐藏后，main 会自动回流占住第1列（auto 轨被内容撑大、1fr 列空转）——
    显式钉在第2列让中栏吃满释放空间（2026-08-27 自动收左栏不生效的布局层根因） */
-.workbench-grid{flex:1;display:grid;min-width:0;min-height:0;position:relative;grid-template-columns:minmax(var(--work-surface-min,360px),1fr) 0;transition:grid-template-columns var(--duration-moderate) var(--ease-out)}
+.workbench-grid{flex:1;display:grid;min-width:0;min-height:0;position:relative;grid-template-columns:minmax(var(--work-surface-min,360px),1fr) 0;grid-template-rows:minmax(0,1fr);transition:grid-template-columns var(--duration-moderate) var(--ease-out)}
 .workbench.has-right .workbench-grid{grid-template-columns:minmax(var(--work-surface-min,360px),1fr) var(--work-right)}
 .workbench-navigation{display:flex;flex-direction:column;min-width:0;min-height:0;width:var(--work-left);overflow:hidden;background:var(--bg-soft);border-right:1px solid var(--border)}
 .workbench-navigation a,.workbench-navigation a:hover,.workbench-header a,.workbench-header a:hover,.workbench-inspector a,.workbench-inspector a:hover{text-decoration:none}
@@ -877,8 +879,9 @@ p { margin: 0 0 var(--space-3) 0; }
 .workbench.is-resizing .workbench-grid{transition:none}
 .workbench.is-resizing{user-select:none}
 .work-nav-section{padding:10px 8px 2px}.work-nav-heading{display:flex;align-items:center;justify-content:space-between;margin:0 8px 6px;color:var(--fg-subtle);font-size: 12px;font-weight:800;letter-spacing:.09em;text-transform:uppercase}
-.work-nav-item{display:flex;align-items:center;gap:8px;width:100%;min-width:0;padding:7px 9px;border:0;border-radius:7px;color:var(--fg-muted);background:transparent;font:inherit;font-size:12px;text-align:left;text-decoration:none;cursor:pointer;transition:all var(--duration-fast) var(--ease-out)}.work-nav-item:hover{color:var(--fg);background:color-mix(in srgb,var(--border-subtle) 55%,transparent)}.work-nav-item.is-active{color:var(--fg);background:var(--bg-sunken);font-weight:700}
+.work-nav-item{display:flex;align-items:center;gap:8px;width:100%;min-width:0;padding:7px 9px;border:0;border-radius:7px;color:var(--fg-muted);background:transparent;font:inherit;font-size:13px;text-align:left;text-decoration:none;cursor:pointer;transition:all var(--duration-fast) var(--ease-out)}.work-nav-item:hover{color:var(--fg);background:color-mix(in srgb,var(--border-subtle) 55%,transparent)}.work-nav-item.is-active{color:var(--fg);background:var(--bg-sunken);font-weight:700}
 .work-nav-icon{display:grid;place-items:center;width:20px;height:20px;flex:0 0 auto;border-radius:6px;background:var(--border-subtle);font-size: 12px}.work-nav-icon.task-mark{color:#5a5b5f;background:#e6e6e6;font-size: 11px;font-weight:850;letter-spacing:-.04em}.work-nav-item.is-active .work-nav-icon{color:#fff;background:var(--accent)}.work-nav-item.is-active .task-mark{background:hsl(var(--task-hue) 48% 42%)}.work-nav-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.work-nav-count{margin-left:auto;font-size: 12px;color:var(--fg-subtle)}
+/* 2026-08-31：左栏导航与中间正文字号拉近（12→13），分组小标题保持 12px 层级 */
 .context-inspector{display:flex;flex-direction:column;gap:10px;padding:12px}.context-title{display:flex;align-items:center;gap:8px;margin:0 0 2px;font-size:13px}.context-card{padding:10px;border:1px solid var(--border);border-radius:9px;background:var(--bg-elev)}.context-card strong{display:block;margin-bottom:4px;font-size:12px}.context-card p{margin:0;color:var(--fg-muted);font-size: 12px;line-height:1.5}
 .command-backdrop{position:fixed;inset:0;z-index:80;display:grid;place-items:start center;padding-top:12vh;background:rgba(31,35,35,.26);backdrop-filter:blur(4px)}.command-dialog{width:min(480px,calc(100vw - 28px));padding:12px;border:1px solid var(--border);border-radius:15px;background:var(--bg-elev);box-shadow:var(--shadow-3)}.command-title{display:flex;justify-content:space-between;align-items:center;padding:5px 7px 11px}.command-title button{border:0;background:transparent;font-size:20px;cursor:pointer}.command-input{width:100%;box-sizing:border-box;margin-bottom:8px;padding:9px 11px;border:1px solid var(--border);border-radius:9px;color:var(--fg);background:var(--bg-soft);font:inherit;font-size:13px;outline:none}.command-input:focus{border-color:var(--accent)}.command-links{display:grid;gap:4px;max-height:52vh;overflow:auto}.command-group{display:grid;gap:2px}.command-group-label{padding:6px 9px 3px;color:var(--fg-subtle);font-size: 12px;font-weight:800;letter-spacing:.08em}.command-links a{padding:10px;border-radius:9px;color:var(--fg);text-decoration:none}.command-links a:hover{background:var(--bg-soft)}.command-empty{margin:6px 9px;font-size:12px}
 /* 批次 H.7：终端命令折条（Bash/terminal 类工具按名判别，行内覆盖样式） */
@@ -891,6 +894,10 @@ p { margin: 0 0 var(--space-3) 0; }
 @media(max-width:739px){.workbench{grid-template-columns:minmax(0,1fr)}.workbench-grid,.workbench.has-right .workbench-grid{grid-template-columns:minmax(0,1fr)}.workbench-main{grid-column:1}.workbench-navigation{position:fixed;z-index:46;inset:0 auto 0 0;width:min(var(--work-left),88vw);box-shadow:var(--shadow-3)}.workbench:not(.has-left) .workbench-navigation{display:none}.workbench-inspector{position:fixed;z-index:45;inset:0 0 0 auto;width:min(var(--work-right),92vw);box-shadow:var(--shadow-3)}.workbench:not(.has-right) .workbench-inspector{display:none}.workbench-surface{padding:var(--space-3)}.workbench-resizer{display:none}.workbench-breadcrumb{max-width:60vw;overflow:hidden}.workbench-rail-top .workbench-command span{display:none}}
 @media(prefers-reduced-motion:reduce){.workbench-grid,.workbench-guide{transition:none;animation:none}}
 .work-surface-page,.project-tool-surface{width:100%;max-width:1050px;margin:0 auto}
+/* 普通工具页内滚层（2026-08-31）：壳把 surface/page 锁成全高 overflow:hidden（吸底标签栏布局），
+   滚动与留白由本层承接——修复执行器中心等长页滚不动 */
+.work-surface-page:not(.work-surface-page--full):not(.project-page):not(.home-page){display:flex;flex-direction:column}
+.work-surface-scroll{flex:1;min-height:0;overflow-y:auto;padding:var(--space-4) var(--space-4) var(--space-5)}
 /* 页面留白统一标准（2026-08-26 用户反馈）：自管内边距的页面（project-page/home-page 内联、--full 画布）排除在外 */
 .work-surface-page:not(.work-surface-page--full):not(.project-page):not(.home-page),.project-tool-surface{padding:var(--space-4) var(--space-4) var(--space-5)}
 /* 全局工具页进工作台（2026-08-24）：聊天/画布类页面占满中栏高度（内部自己滚动）；独立壳残留页兜底留边，不再贴视口边 */
@@ -1217,11 +1224,16 @@ p { margin: 0 0 var(--space-3) 0; }
 .ptws-sug-chip{border:none;background:var(--bg-soft);color:var(--fg-muted);font-size:12px;padding:4px 10px;border-radius:999px;cursor:pointer;transition:all var(--duration-fast) var(--ease-out)}
 .ptws-sug-chip:hover{background:var(--bg-hover);color:var(--fg)}
 /* 三分类创建（2026-08-28）：hero 快捷入口 + 创建卡内分类选择，点子类型直接绑定蓝图 */
-.ptws-hero-cats{display:flex;flex-direction:column;gap:10px;margin-top:16px;max-width:640px;align-self:center;width:100%}
-.ptws-hero-cat{display:flex;flex-direction:column;gap:6px}
-.ptws-hero-cat-label{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--fg-subtle);font-weight:700}
+/* 2026-08-31 用户定案：hero 改两排——第一排三大类标签页切换，第二排当前类子类型单排横滚（不再平铺 22 项占四五排） */
+.ptws-hero-cats{display:flex;flex-direction:column;gap:8px;margin-top:16px;max-width:640px;align-self:center;width:100%}
+.ptws-hero-cat-tabs{display:flex;gap:6px;justify-content:center;flex-wrap:nowrap}
+.ptws-hero-tab{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border-subtle);background:var(--bg-soft);color:var(--fg-muted);font-size:12px;font-weight:600;padding:5px 14px;border-radius:999px;cursor:pointer;transition:all var(--duration-fast) var(--ease-out);white-space:nowrap}
+.ptws-hero-tab:hover{background:var(--bg-hover);color:var(--fg)}
+.ptws-hero-tab.is-active{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
+.ptws-hero-tab .ptws-hero-cat-badge{background:rgba(127,127,127,.15)}
+.ptws-hero-tab.is-active .ptws-hero-cat-badge{background:rgba(255,255,255,.25)}
 .ptws-hero-cat-badge{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:6px;background:var(--bg-sunken);color:var(--fg-muted);font-size:11px}
-.ptws-hero-cat-chips{display:flex;flex-wrap:wrap;gap:6px}
+.ptws-hero-cat-strip{display:flex;flex-wrap:nowrap;overflow-x:auto;gap:6px;justify-content:flex-start;padding-bottom:2px;scrollbar-width:thin}
 .ptws-cats{display:flex;flex-direction:column;gap:8px}
 .ptws-cats-row{display:flex;flex-wrap:wrap;gap:6px}
 .ptws-cat-chip,.ptws-cat-sub{border:1px solid var(--border-subtle);background:var(--bg-soft);color:var(--fg-muted);font-size:12px;padding:4px 12px;border-radius:999px;cursor:pointer;transition:all var(--duration-fast) var(--ease-out)}
