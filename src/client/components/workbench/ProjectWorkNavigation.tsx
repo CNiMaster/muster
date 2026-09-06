@@ -74,7 +74,7 @@ export function ProjectWorkNavigation({
   activeTool?: ProjectToolKey;
   attentionCount: number;
   novel: boolean;
-  /** 「＋ 新建任务」直接展开任务视图创建卡（而非跳转） */
+  /** 「＋ 新对话」（2026-09-06 创建流程解耦）：脱离当前任务回项目对话空态并聚焦输入框（任务以对话开始） */
   onNewTask: () => void;
 }): React.ReactElement {
   // 搁置提醒红点：搁置≥5h 的待合并任务数（React Query 缓存与页面级轮询共享，不重复请求）
@@ -317,7 +317,7 @@ export function ProjectWorkNavigation({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100%', justifyContent: 'space-between' }}>
       <div>
-        {/* 顶部主操作：新建任务（直建，不跳转） */}
+        {/* 顶部主操作：新对话（2026-09-06 创建流程解耦——脱离当前任务，回到项目对话） */}
         <div style={{ padding: '10px 10px 6px' }}>
           <button
             type="button"
@@ -325,7 +325,7 @@ export function ProjectWorkNavigation({
             style={{ width: '100%', justifyContent: 'center', fontWeight: 600 }}
             onClick={onNewTask}
           >
-            <span>＋ 新建任务</span>
+            <span>＋ 新对话</span>
           </button>
         </div>
 

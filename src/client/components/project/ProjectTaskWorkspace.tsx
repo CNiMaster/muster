@@ -36,7 +36,7 @@ export function ProjectTaskWorkspace({
   onSelect: (id: string) => void;
   onPublishWorkOrder?: (title: string, assigneeId?: string, options?: { mode?: string; model?: string; thinking?: string; blueprintId?: string }) => void;
   publishingWorkOrder?: boolean;
-  /** 外部「＋ 新建任务」触发信号（自增计数），驱动创建卡展开 */
+  /** 外部「＋ 新对话」触发信号（自增计数）：清当前任务选择回对话空态并聚焦输入框 */
   newTaskSignal?: number;
 }): React.ReactElement {
   const { data: userCmdsData } = useUserCommands();

@@ -19,25 +19,25 @@ test('快速开工 API 建项目后工作台导航项目列表可见并可进入
   await expect(link).toBeVisible({ timeout: 8000 });
   await link.click();
   await expect(page).toHaveURL(new RegExp(`/projects/${project.id}`), { timeout: 8000 });
-  // 项目工作台：三栏壳层与左栏「＋ 新建任务」直建入口
+  // 项目工作台：三栏壳层与左栏「＋ 新对话」入口（2026-09-06 创建流程解耦：任务以对话开始）
   await expect(page.getByRole('navigation', { name: '项目组织与联系人' })).toBeVisible();
-  await expect(page.getByRole('button', { name: '＋ 新建任务' }).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: '＋ 新对话' }).first()).toBeVisible();
 });
 
-test('项目页：左栏与头部「＋ 新建任务」都能展开创建卡', async ({ page }) => {
+test('项目页：「＋ 新对话」脱离当前任务回到对话空态', async ({ page }) => {
   const response = await page.request.post('/api/projects/quick', {
     data: { name: `E2E直建项目-${Date.now()}` },
   });
   const { project } = await response.json();
 
   await page.goto(`/projects/${project.id}?view=task`);
-  await page.getByRole('button', { name: '＋ 新建任务' }).first().click();
-  await expect(page.getByLabel(/任务目标/)).toBeVisible();
-  await page.getByRole('button', { name: '取消' }).click();
-
-  // 头部主操作同信号：再次点击仍能打开
-  await page.getByRole('button', { name: '＋ 新建任务' }).last().click();
-  await expect(page.getByLabel(/任务目标/)).toBeVisible();
+  // 2026-09-06 创建流程解耦：创建卡已退役——「＋」=清空任务选择回到项目对话空态（hero 提示直接交代目标）
+  await page.getByRole('button', { name: '＋ 新对话' }).first().click();
+  await expect(page).toHaveURL(new RegExp(`/projects/${project.id}\\?view=task$`), { timeout: 8000 });
+  await expect(page.getByText('直接交代你的目标')).toBeVisible();
+  // 再次点击仍停留对话空态（同参数重复点击幂等）
+  await page.getByRole('button', { name: '＋ 新对话' }).first().click();
+  await expect(page.getByText('直接交代你的目标')).toBeVisible();
 });
 
 test('新建项目表单页直达', async ({ page }) => {
@@ -91,15 +91,19 @@ test('智能体库展示全局档案与工作台任职', async ({ page }) => {
 });
 
 test('执行器中心检测系统安装并提供官方安装引导', async ({ page }) => {
-  // 治理批次5：该页为专业页（ModeGate）；2026-08-28 新手旅程改版：按钮=「扫描本机已装工具」，未扫态=「未扫描」
+  // 治理批次5：该页为专业页（ModeGate）；2026-08-31 CLI/API 分标签页：扫描按钮=「检查下方工具是否已装」，未扫态=「未扫描」
   await page.request.post('/api/settings/ui-mode', { data: { uiMode: 'pro' } });
   await page.goto('/executors');
   await expect(page.getByRole('heading', { name: '执行器接入中心' })).toBeVisible();
-  await expect(page.getByText('Codex CLI', { exact: true })).toBeVisible();
-  await expect(page.getByText('Claude Code CLI', { exact: true })).toBeVisible();
-  await expect(page.getByText('Antigravity CLI', { exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: '扫描本机已装工具' })).toBeVisible();
+  // 「默认执行引擎」下拉的 option 与卡片同名——DOM 顺序卡片（strong）在前，.first() 稳定命中
+  await expect(page.getByText('Codex CLI', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Claude Code CLI', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Antigravity CLI', { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: '检查下方工具是否已装' })).toBeVisible();
   await expect(page.getByText('未扫描').first()).toBeVisible();
+  // CLI / API 标签页切换
+  await expect(page.getByRole('tab', { name: '命令行工具（CLI）' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'API 接口' })).toBeVisible();
 });
 
 test('权限策略页明确展示策略与范围，审批入口指向右栏收件箱', async ({ page }) => {
@@ -116,8 +120,8 @@ test('权限策略页明确展示策略与范围，审批入口指向右栏收�
 test('设置页窄屏不横向溢出', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/settings');
-  // 曾断言「常规执行环境」——该文案已随设置页重做改为「默认执行引擎」（stale 修复 2026-08-28）
-  await expect(page.getByText(/默认执行引擎/).first()).toBeVisible({ timeout: 8000 });
+  // 2026-08-31 执行器收口：「默认执行引擎」等已迁执行器中心，设置页只留指路文案
+  await expect(page.getByText(/执行器中心/).first()).toBeVisible({ timeout: 8000 });
 
   const hasHorizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
   expect(hasHorizontalOverflow).toBe(false);
